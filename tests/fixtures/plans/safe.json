@@ -1,0 +1,39 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.12.6",
+  "variables": {
+    "database_password": {
+      "value": "fixture-secret-must-not-be-printed"
+    }
+  },
+  "resource_changes": [
+    {
+      "address": "google_cloud_run_v2_service.authentication",
+      "mode": "managed",
+      "type": "google_cloud_run_v2_service",
+      "name": "authentication",
+      "change": {
+        "actions": ["update"],
+        "before": {
+          "dsn": "postgres://fixture-user:fixture-password@database/internal"
+        },
+        "after": {
+          "dsn": "postgres://fixture-user:changed-password@database/internal"
+        }
+      }
+    },
+    {
+      "address": "google_cloud_run_v2_job.authentication_migrations",
+      "mode": "managed",
+      "type": "google_cloud_run_v2_job",
+      "name": "authentication_migrations",
+      "change": {
+        "actions": ["create"],
+        "before": null,
+        "after": {
+          "token": "fixture-token-must-not-be-printed"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.12.6",
+  "resource_changes": [
+    {
+      "address": "google_compute_disk.postgres_data",
+      "mode": "managed",
+      "type": "google_compute_disk",
+      "name": "postgres_data",
+      "change": {
+        "actions": ["delete", "create"],
+        "before": {
+          "name": "fixture-disk-name"
+        },
+        "after": {
+          "name": "fixture-replacement-name"
+        }
+      }
+    },
+    {
+      "address": "google_project.workload",
+      "mode": "managed",
+      "type": "google_project",
+      "name": "workload",
+      "change": {
+        "actions": ["delete"],
+        "before": {
+          "project_id": "fixture-project-id"
+        },
+        "after": null
+      }
+    }
+  ]
+}

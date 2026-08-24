@@ -1,0 +1,9 @@
+packages:
+  - .
+allowBuilds:
+  core-js-pure: false
+  dtrace-provider: false
+  re2: true
+
+onlyBuiltDependencies:
+  - re2

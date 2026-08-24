@@ -1,0 +1,97 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":semanticCommits"],
+  "rangeStrategy": "pin",
+  "ignoreUnstable": true,
+  "packageRules": [
+    {
+      "description": "Keep GitHub Actions immutable in public pull-request workflows.",
+      "matchManagers": ["github-actions"],
+      "matchPackageNames": ["!a-novel-kit/workflows"],
+      "pinDigests": true
+    },
+    {
+      "description": "Keep the shared workflow actions on one reviewed release tag.",
+      "matchManagers": ["github-actions"],
+      "matchPackageNames": ["a-novel-kit/workflows"],
+      "groupName": "a-novel-kit workflows",
+      "pinDigests": false
+    },
+    {
+      "description": "Accept only complete stable SemVer image tags in the production manifest.",
+      "matchDatasources": ["docker"],
+      "matchFileNames": ["deploy/production/images.yaml"],
+      "allowedVersions": "/^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$/",
+      "versioning": "semver-coerced",
+      "pinDigests": true
+    },
+    {
+      "description": "Update the JSON Keys image family as one deployment candidate.",
+      "matchPackageNames": ["ghcr.io/a-novel/service-json-keys/**"],
+      "groupName": "service-json-keys images"
+    },
+    {
+      "description": "Update the Authentication image family as one deployment candidate.",
+      "matchPackageNames": ["ghcr.io/a-novel/service-authentication/**"],
+      "groupName": "service-authentication images"
+    },
+    {
+      "description": "Keep repository tooling on the supported Node.js 24 LTS line.",
+      "matchPackageNames": ["node"],
+      "allowedVersions": ">=24.11.0 <25",
+      "groupName": "Node.js LTS"
+    },
+    {
+      "description": "Let the OpenTofu managers own required_version instead of treating it as HashiCorp Terraform.",
+      "matchPackageNames": ["hashicorp/terraform"],
+      "enabled": false
+    },
+    {
+      "description": "Keep the OpenTofu binary and root constraints on one version.",
+      "matchPackageNames": ["opentofu/opentofu"],
+      "groupName": "OpenTofu"
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Update the OpenTofu version file.",
+      "managerFilePatterns": ["/^\\.opentofu-version$/"],
+      "matchStrings": ["(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)"],
+      "depNameTemplate": "opentofu/opentofu",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.*)$",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "description": "Keep each root's OpenTofu constraint aligned with the version file.",
+      "managerFilePatterns": ["/(^|/)versions\\.tf$/"],
+      "matchStrings": [
+        "# renovate: datasource=github-releases depName=opentofu/opentofu\\s+required_version\\s*=\\s*\"= (?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\""
+      ],
+      "depNameTemplate": "opentofu/opentofu",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.*)$",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "description": "Update pinned workflow tool versions declared beside Renovate metadata.",
+      "managerFilePatterns": ["/^\\.github/workflows/.*\\.ya?ml$/"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>[^\\s]+)\\s+(?:version\\s*=|version:)\\s*[\"']?(?<currentValue>v?[0-9]+\\.[0-9]+\\.[0-9]+)[\"']?"
+      ]
+    },
+    {
+      "customType": "regex",
+      "description": "Update stable tags and matching digests in the production manifest.",
+      "managerFilePatterns": ["/^deploy/production/images\\.yaml$/"],
+      "matchStrings": [
+        "repository:\\s*(?<depName>[^\\s]+)\\s+tag:\\s*[\"']?(?<currentValue>v[0-9]+\\.[0-9]+\\.[0-9]+)[\"']?\\s+digest:\\s*[\"']?(?<currentDigest>sha256:[a-f0-9]{64})[\"']?"
+      ],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "semver-coerced"
+    }
+  ]
+}
