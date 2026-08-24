@@ -1,0 +1,12 @@
+schemaVersion: 1
+components:
+  service-json-keys:
+    enabled: true
+    images:
+      grpc:
+        repository: ghcr.io/a-novel/service-json-keys/grpc
+        tag: feat-rotate-keys
+        digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  service-authentication:
+    enabled: false
+    images: {}

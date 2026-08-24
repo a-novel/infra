@@ -1,0 +1,36 @@
+# OpenTofu working data and local state
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfplan.json
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+*.tfbackend
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+
+# Local credentials and environment files
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+credentials*.json
+service-account*.json
+
+# Repository tooling
+node_modules/
+coverage/
+.cache/
+.DS_Store
+
+# Sanitized plan-policy fixtures are source files.
+plan*.json
+!tests/fixtures/plans/*.json

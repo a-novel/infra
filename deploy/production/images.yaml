@@ -1,0 +1,8 @@
+schemaVersion: 1
+components:
+  service-json-keys:
+    enabled: false
+    images: {}
+  service-authentication:
+    enabled: false
+    images: {}
