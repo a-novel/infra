@@ -13,9 +13,11 @@ OpenTofu and GitOps definitions for Agora's low-cost Google Cloud production env
 
 ## What this is
 
-This repository defines the Google Cloud resources and deployment controls for Agora. The first production slice serves JSON Keys over private gRPC and Authentication over public HTTPS, backed by two PostgreSQL containers on one private, preserved data plane.
+This repository defines the Google Cloud resources and deployment controls for Agora. The first production slice is designed to serve JSON Keys over private gRPC and Authentication over public HTTPS, backed by two PostgreSQL containers on one private, preserved data plane.
 
 The repository separates stable recovery resources, long-lived production infrastructure, and routine application deployments into three OpenTofu roots. That split keeps each automation identity limited to the resources it owns.
+
+The design is a small Google Cloud landing zone built from established infrastructure-as-code, least-privilege, immutable-artifact, and reviewed-deployment practices. The [architecture guide](./docs/architecture.md) records those principles and the deliberate limits that keep the platform proportionate to Agora's current scale.
 
 ## Setup
 
@@ -119,22 +121,24 @@ pnpm test
 
 ### Roots
 
-| Root                                  | Ownership                                                                                               |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `bootstrap/`                          | Stable management project, remote state, recovery storage, GitHub federation, and secret metadata.      |
-| `environments/production/foundation/` | Long-lived workload project, IAM, network, database host, backups, monitoring, and service definitions. |
-| `environments/production/release/`    | Routine image, job, revision, traffic, and database-template deployment.                                |
+| Root                                                                                    | Ownership                                                                                               |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| [`bootstrap/`](./bootstrap/README.md)                                                   | Stable management project, remote state, recovery storage, GitHub federation, and secret metadata.      |
+| [`environments/production/foundation/`](./environments/production/foundation/README.md) | Long-lived workload project, IAM, network, database host, backups, monitoring, and service definitions. |
+| [`environments/production/release/`](./environments/production/release/README.md)       | Routine image, job, revision, traffic, and database-template deployment.                                |
 
 The three names form a security allowlist. Add a root only when a new lifecycle and automation authority require an independent state boundary.
 
 ### Supporting paths
 
-| Path                            | Purpose                                                                   |
-| ------------------------------- | ------------------------------------------------------------------------- |
-| `deploy/production/images.yaml` | Enabled components plus stable SemVer image tags and exact digests.       |
-| `ops/`                          | Small, tested CI and operator shims shared by the roots.                  |
-| `tests/`                        | Mocked OpenTofu, manifest-schema, allowlist, and sanitized plan fixtures. |
-| `docs/runbooks/`                | Human recovery and deployment procedures with verifiable outcomes.        |
+| Path                            | Purpose                                                                        |
+| ------------------------------- | ------------------------------------------------------------------------------ |
+| `deploy/production/images.yaml` | Enabled components plus stable SemVer image tags and exact digests.            |
+| `ops/`                          | Small, tested CI and operator shims shared by the roots.                       |
+| `tests/`                        | Mocked OpenTofu, manifest-schema, allowlist, and sanitized plan fixtures.      |
+| `docs/architecture.md`          | Lifecycle, authority, state, delivery, and portability decisions.              |
+| `docs/google-cloud.md`          | Provider resource map, trust boundaries, and official Google Cloud references. |
+| `docs/runbooks/`                | Human recovery and deployment procedures with verifiable outcomes.             |
 
 Local modules begin only when two real call sites share a resource shape or one security invariant needs a single implementation. Singleton resources stay in their owning root.
 
@@ -155,6 +159,14 @@ The bootstrap manifest keeps both services disabled until their runtime resource
 Application deliverables remain OCI images using HTTP, gRPC, PostgreSQL, SMTP, environment configuration, health endpoints, and graceful termination. Those contracts can move to another conforming runtime.
 
 Google networking, IAM, storage, and managed runtime resources remain explicit OpenTofu resources. The repository does not maintain parallel Kubernetes, Helm, Knative, or provider-neutral wrappers before a second runtime exists.
+
+### Network boundary
+
+The [Google Cloud provider guide](./docs/google-cloud.md#network-trust-model) defines the acceptance contract for later resource changes. PostgreSQL will have no external IP, public frontend, or public firewall path. Private gRPC will use internal Cloud Run ingress plus an exact IAM invoker allowlist. A gRPC server necessarily accepts approved internal RPCs; it remains unreachable to public and unauthenticated clients.
+
+Ingress and egress are independent. JSON Keys starts with private-only egress and no public internet path. Authentication uses private VPC routes for internal destinations and managed TLS egress for SMTP. A future private GenAI gRPC service can use that public-TLS egress profile for LLM APIs without opening its ingress.
+
+These properties are targets, not current enforcement: this bootstrap contains no network, firewall, Cloud Run, IAM, or VM resources. Each property becomes enforceable with its owning resource, mocked assertion, protected apply, and post-apply verification.
 
 ## Contributing
 

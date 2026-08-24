@@ -25,11 +25,21 @@ The root checker never configures a backend. Its OpenTofu tests mock the Google 
 
 ## Infrastructure-specific concepts
 
+The [architecture guide](./docs/architecture.md) explains the root, state, authority, and deployment model. The [Google Cloud provider guide](./docs/google-cloud.md) explains the provider-specific resource, network, identity, and recovery behavior. Read both before adding a Google Cloud resource.
+
 ### Keep authority with its root
 
 The `bootstrap`, `foundation`, and `release` roots have separate state and automation identities. Put a resource in the narrowest root whose lifecycle owns it. A routine release must not gain authority over project IAM, networking, preserved storage, backup retention, or state protection.
 
 `ops/lib/roots.sh` is the single allowlist for user-supplied root names. Extend it only with an approved state and authority boundary. Never accept an arbitrary path from workflow input.
+
+### Document Google Cloud behavior with the resource
+
+A contributor may assume that the reviewer knows OpenTofu syntax. Do not assume familiarity with Google Cloud. Every new `google_*` resource updates its owning root README with its exact address, Agora purpose, access and data boundary, replacement or deletion behavior, cost and recovery impact, and links to both the provider resource page and the relevant official Google Cloud product documentation.
+
+Keep provider behavior in the root inventory or the Google Cloud guide and link to the official source. Add an HCL comment only when a repository-specific invariant is not clear from the arguments. Add or update the operator runbook in the same pull request when the resource introduces a manual prerequisite, verification, recovery action, or destructive operation.
+
+The network contracts in the provider guide are acceptance criteria. A change that adds PostgreSQL, private gRPC, or an egress profile includes mocked assertions for its exposure, IAM, routing, firewall, and deletion boundaries. It also adds post-apply checks for an allowed path and a denied path.
 
 ### Keep pull requests cloud-blind
 
