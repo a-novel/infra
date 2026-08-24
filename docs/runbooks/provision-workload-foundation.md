@@ -67,8 +67,8 @@ not exist yet.
 - The billing account is open, has a valid payment instrument, and the operator can link a project.
 - The desired workload project ID has never been used. Google project IDs are global, immutable, and
   cannot be reused after deletion.
-- The cost-alert address is monitored by a human. If it is a group, it accepts messages from Google's
-  billing and Monitoring senders.
+- The cost-alert address is monitored by a human. If it is a group, it accepts messages from Google
+  Cloud Quotas, Cloud Billing, and Cloud Monitoring.
 - The first foundation pull request and its complete sanitized plan have been reviewed. No change
   targets an unrelated project, parent, billing account, network, or secret container.
 
@@ -90,7 +90,7 @@ WORKLOAD_PROJECT_NAME='Agora production'
 read -r -p 'Management project ID: ' MANAGEMENT_PROJECT_ID
 read -r -p 'New workload project ID: ' WORKLOAD_PROJECT_ID
 read -r -p 'Billing account ID (XXXXXX-XXXXXX-XXXXXX): ' BILLING_ACCOUNT_ID
-read -r -p 'Cost-alert email address: ' COST_ALERT_EMAIL
+read -r -p 'Cost-alert and quota-contact email address: ' COST_ALERT_EMAIL
 read -r -p 'Organization ID, or blank: ' ORGANIZATION_ID
 read -r -p 'Folder ID, or blank: ' FOLDER_ID
 
@@ -320,9 +320,9 @@ printf '%s' "$COST_ALERT_EMAIL" \
   | gh secret set COST_ALERT_EMAIL --repo "$REPOSITORY" --env production-foundation
 ```
 
-`COST_ALERT_EMAIL` is only the budget recipient. Do not grant that human quota administration: the
-Cloud Quotas API's currently required technical-contact field uses the protected foundation service
-account, which already owns the code-managed quota role.
+`COST_ALERT_EMAIL` receives budget notifications and Cloud Quotas review follow-up. It carries no
+quota-administration authority; the protected foundation service account owns the code-managed quota
+role.
 
 Unset the two private operator values after upload:
 

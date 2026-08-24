@@ -87,7 +87,7 @@ variable "subnet_cidr" {
 }
 
 variable "cost_alert_email" {
-  description = "Operator email address that receives workload budget notifications."
+  description = "Operator email address that receives workload budget notifications and quota-review follow-up."
   type        = string
   sensitive   = true
 

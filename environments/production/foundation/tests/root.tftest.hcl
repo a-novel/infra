@@ -363,7 +363,7 @@ run "builds_the_protected_workload_foundation" {
       alltrue([
         for preference in values(google_cloud_quotas_quota_preference.cost_cap) :
         preference.dimensions == tomap({ region = "europe-west1" }) &&
-        preference.contact_email == "infra-foundation@agora-management-test.iam.gserviceaccount.com" &&
+        preference.contact_email == "infra@example.com" &&
         preference.ignore_safety_checks == "QUOTA_DECREASE_PERCENTAGE_TOO_HIGH"
       ]) &&
       google_cloud_quotas_quota_preference.cost_cap["cloud_run_cpu"].service == "run.googleapis.com" &&
@@ -377,7 +377,7 @@ run "builds_the_protected_workload_foundation" {
       google_cloud_quotas_quota_preference.cost_cap["cloud_run_direct_vpc_instances"].quota_config[0].preferred_value == "20" &&
       google_cloud_quotas_quota_preference.cost_cap["compute_cpu"].quota_config[0].preferred_value == "4"
     )
-    error_message = "The explicit regional Cloud Run or Compute Engine cost ceilings changed."
+    error_message = "The regional quota contact, safety bypass, or explicit cost ceilings changed."
   }
 
   assert {
