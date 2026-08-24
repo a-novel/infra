@@ -10,13 +10,17 @@ independent verification cannot safely be automated.
 
 ## Current status
 
-The repository currently declares the Google provider and an unconfigured GCS backend in three roots.
-It contains no Google Cloud `resource` blocks. No project, network, firewall, Cloud Run service, VM,
-disk, bucket, secret, or IAM binding exists because of this repository yet.
+The bootstrap root now defines the resources inside a stable management project: protected EU state,
+backup, and receipt buckets; managed-folder state boundaries; four keyless automation identities and
+GitHub OIDC providers; exact IAM; seven metadata-only secret containers; required APIs; and targeted
+Data Access audit logging. Merging the code creates nothing. The project, billing link, initial APIs,
+first local-state apply, state migration, GitHub environment protection, optional organization
+policies, and temporary-access removal remain explicit human bootstrap actions.
 
-The sections below are acceptance contracts for the resource pull requests that follow. A statement
-marked as a target becomes an enforced property only when the corresponding OpenTofu resource, mocked
-test, protected deployment, and post-apply verification have landed.
+The workload project is not implemented yet. There is still no VPC, firewall, Artifact Registry,
+Cloud Run service or job, VM, Persistent Disk, database, backup schedule, DNS record, or public
+endpoint. Network, runtime, and database sections below therefore remain acceptance contracts until
+their corresponding resource, mocked test, protected deployment, and post-apply verification land.
 
 ## Provider and resource references
 
@@ -39,9 +43,11 @@ security model, operational limits, and recovery implications behind those argum
 | Cloud Scheduler                      | Foundation               | Start recurring backup and restore-check jobs without an always-running scheduler container.                             | [Cloud Scheduler overview](https://cloud.google.com/scheduler/docs/overview)                                                                                                                                                                                                                                                                                    |
 | Cloud Monitoring and Logging         | Foundation               | Alert on service, VM, database, backup, deployment, and budget symptoms while keeping logs bounded and free of payloads. | [Alerting overview](https://cloud.google.com/monitoring/alerts) and [Cloud Logging overview](https://cloud.google.com/logging/docs/overview)                                                                                                                                                                                                                    |
 
-Each root README lists actual OpenTofu resource addresses once they exist. An inventory entry explains
-the resource's Agora purpose, access and data boundary, replacement or deletion behavior, cost and
-recovery impact, and links both the provider resource page and the relevant Google Cloud product page.
+Each root README lists its actual OpenTofu resource addresses. An inventory entry explains the
+resource's Agora purpose, access and data boundary, replacement or deletion behavior, cost and
+recovery impact, and links both the pinned provider resource page and the relevant Google Cloud
+product page. The [bootstrap inventory](../bootstrap/README.md#resource-inventory) is the first
+concrete implementation of that contract.
 
 ## Network trust model
 
@@ -171,6 +177,7 @@ Every Google Cloud resource pull request adds four kinds of evidence before it c
    recovery path.
 
 Post-apply checks query the deployed control plane and exercise both an allowed and a denied path.
-Exact commands are added only when project, resource, and identity names exist; placeholder commands
-are too easy to run against the wrong target. Agents provide commands for operators and wait for their
-sanitized result. Agents never run `gcloud`.
+Exact commands use validated shell variables only where Google requires an operator-selected global
+identifier, billing account, parent, reviewer, generation, or secret. Every variable is introduced
+and checked before use; unexplained placeholders are forbidden. Agents provide commands for operators
+and wait for their sanitized result. Agents never run `gcloud`.

@@ -29,6 +29,47 @@
         },
         "after": null
       }
+    },
+    {
+      "address": "google_service_account.automation[\"recovery\"]",
+      "mode": "managed",
+      "type": "google_service_account",
+      "name": "automation",
+      "change": {
+        "actions": ["delete"],
+        "before": {
+          "account_id": "fixture-recovery-account"
+        },
+        "after": null
+      }
+    },
+    {
+      "address": "google_storage_managed_folder.state[\"bootstrap\"]",
+      "mode": "managed",
+      "type": "google_storage_managed_folder",
+      "name": "state",
+      "change": {
+        "actions": ["delete", "create"],
+        "before": {
+          "name": "fixture-bootstrap-prefix/"
+        },
+        "after": {
+          "name": "fixture-replacement-prefix/"
+        }
+      }
+    },
+    {
+      "address": "google_secret_manager_secret.application[\"production-json-keys-app-master-key\"]",
+      "mode": "managed",
+      "type": "google_secret_manager_secret",
+      "name": "application",
+      "change": {
+        "actions": ["forget"],
+        "before": {
+          "secret_id": "fixture-forgotten-secret"
+        },
+        "after": null
+      }
     }
   ]
 }

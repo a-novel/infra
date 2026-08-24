@@ -55,28 +55,35 @@ stable recovery authority   ->   durable workload authority       ->     routine
 rare changes                     occasional changes                      frequent changes
 ```
 
-| Root                                                                            | Owns                                                                                                                          | Authority boundary                                                                                                                                  |
-| ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`bootstrap/`](../bootstrap/)                                                   | Management project, state and recovery storage, GitHub federation, automation identities, and secret metadata.                | May establish later automation identities. It does not deploy application revisions.                                                                |
-| [`environments/production/foundation/`](../environments/production/foundation/) | Workload project, IAM, VPC, private data plane, database host and disks, backups, monitoring, and stable service definitions. | May change durable infrastructure after protected human approval. It does not select routine application versions.                                  |
-| [`environments/production/release/`](../environments/production/release/)       | Container images, jobs, revisions, traffic, and database container templates described by the release manifest.               | May deploy and compensate an application release. It cannot change project IAM, networking, state protection, preserved disks, or backup retention. |
+| Root                                                                            | Owns                                                                                                                                          | Authority boundary                                                                                                                                  |
+| ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`bootstrap/`](../bootstrap/)                                                   | Resources inside the manually created management project: state and recovery storage, federation, automation identities, and secret metadata. | May establish later automation identities. It does not create its own project or deploy application revisions.                                      |
+| [`environments/production/foundation/`](../environments/production/foundation/) | Workload project, IAM, VPC, private data plane, database host and disks, backups, monitoring, and stable service definitions.                 | May change durable infrastructure after protected human approval. It does not select routine application versions.                                  |
+| [`environments/production/release/`](../environments/production/release/)       | Container images, jobs, revisions, traffic, and database container templates described by the release manifest.                               | May deploy and compensate an application release. It cannot change project IAM, networking, state protection, preserved disks, or backup retention. |
 
 The roots apply in that order. A root consumes only the small set of outputs it needs from an earlier
-root. It does not receive the earlier root's credentials or broad state authority.
+root and never embeds another root's credentials or state. The foundation automation identity is the
+deliberate high-trust exception to state isolation: after the human bootstrap, its protected workflow
+maintains both `bootstrap` and `foundation`. Release remains confined to its own state, while recovery
+can restore all three state roots without receiving IAM-administration authority.
 
 ## State and bootstrap
 
 The Google Cloud Storage backend bucket must exist before OpenTofu can use it. The initial bootstrap
 therefore starts with temporary local state under an operator's control, creates and verifies the
 management state bucket, migrates that state to the backend, and removes the temporary broad
-authority. The bootstrap runbook will provide the exact operator commands and independent checks when
-those resources land.
+authority. The [bootstrap runbook](./runbooks/bootstrap-management-plane.md) provides the exact
+operator commands, safe expected output, independent checks, partial-failure response, and cleanup.
 
-Each root then uses a distinct state prefix and a distinct automation identity. The GCS backend
-provides locking, while bucket versioning supplies recovery from an accidental state overwrite. State
-is private recovery data: it never enters Git, GitHub artifacts, pull-request comments, or public
-logs. OpenTofu manages secret containers and access policies, while operators add secret payload
-versions outside OpenTofu so payloads do not enter state.
+Each root uses a distinct managed-folder state prefix and a distinct automation identity. Writer
+identities use GCS backend locking. Read-only drift jobs use root-scoped workflow serialization and
+plan without a backend lock, so they never receive state-write permission. Object Versioning and soft
+delete supply recovery from an accidental overwrite or deletion. State is private recovery data: it
+never enters Git, GitHub artifacts, pull-request comments, or public logs. OpenTofu manages secret
+containers and access policies, while operators add secret payload versions through stdin outside
+OpenTofu so payloads do not enter state. The
+[state recovery runbook](./runbooks/state-recovery.md) restores an exact generation with an atomic
+precondition and can restore the former live generation if validation fails.
 
 The [OpenTofu GCS backend documentation](https://opentofu.org/docs/language/settings/backends/gcs/)
 defines the backend's locking and versioning requirements. The provider guide documents Agora's

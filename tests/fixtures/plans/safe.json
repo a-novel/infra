@@ -34,6 +34,21 @@
           "token": "fixture-token-must-not-be-printed"
         }
       }
+    },
+    {
+      "address": "google_storage_bucket.unchanged",
+      "mode": "managed",
+      "type": "google_storage_bucket",
+      "name": "unchanged",
+      "change": {
+        "actions": ["no-op"],
+        "before": {
+          "name": "fixture-no-op-resource"
+        },
+        "after": {
+          "name": "fixture-no-op-resource"
+        }
+      }
     }
   ]
 }

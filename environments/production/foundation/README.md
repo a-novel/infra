@@ -7,11 +7,15 @@ stable service definitions.
 ## State and authority
 
 The protected foundation identity uses this root's isolated state and requires human approval for
-changes. It may change durable production infrastructure. It cannot read secret payloads or select
-routine application versions.
+changes. It may change durable production infrastructure. It has no standing secret-payload grant
+and does not select routine application versions.
 
-The foundation consumes only the bootstrap outputs needed to find the management plane and its own
-automation identity. It does not inherit bootstrap authority.
+This root consumes only the bootstrap outputs needed to find the management plane and its own
+automation identity; it does not copy bootstrap credentials or state into foundation state. The
+same protected foundation identity is intentionally the post-bootstrap maintainer of both roots,
+however, so an approved foundation workflow can update management-plane IAM and storage as well as
+the workload foundation. Treat it as a high-trust control-plane identity. It has no standing secret
+payload grant, and every use remains environment-approved and audited.
 
 ## Current status
 
