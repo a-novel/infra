@@ -91,9 +91,10 @@ provisioned.
 
 ## Controls and update rule
 
-The USD 60 monthly workload budget is alert-only. Actual brakes are maximum Cloud Run instances,
-regional Cloud Run CPU/memory/Direct VPC quotas, the four-CPU Compute Engine quota, immutable image
-cleanup review, bounded log retention, backup lifecycle, and validated disk sizes. Quotas can prevent
+The 60-unit monthly workload budget uses the billing account currency and is alert-only. The USD
+worksheet remains the planning comparison. Actual brakes are maximum Cloud Run instances, regional
+Cloud Run CPU/memory/Direct VPC quotas, the four-CPU Compute Engine quota, immutable image cleanup
+review, bounded log retention, backup lifecycle, and validated disk sizes. Quotas can prevent
 some scaling but cannot stop every billable API, transfer, storage, or compromised workload.
 
 Update this worksheet in the same pull request when any of these changes:

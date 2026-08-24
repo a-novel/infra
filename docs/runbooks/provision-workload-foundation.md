@@ -29,12 +29,13 @@ root-specific automation identity.
 The completed procedure creates:
 
 - one workload project linked to the selected billing account;
-- ten workload APIs, one custom VPC, one regional `/24` subnet, two private Google routes, five
-  firewall rules, and three private DNS zones;
+- ten workload APIs, one custom VPC, one regional `/24` subnet, two restricted Google API routes,
+  five firewall rules, and three private DNS zones;
 - six keyless runtime identities and seven exact cross-project secret IAM bindings;
+- deprivileged default Google service accounts so none retains a primitive project role;
 - one immutable regional Docker repository and narrow release/database access;
-- four regional quota preferences, one USD 60 alert-only budget, one email channel, 30-day default
-  logging, and one narrow successful-healthcheck exclusion.
+- four regional quota preferences, one alert-only budget of 60 units in the billing account currency,
+  one email channel, 30-day default logging, and one narrow successful-healthcheck exclusion.
 
 It does not create a VM, Persistent Disk, PostgreSQL process, backup schedule, Cloud Run service or
 job, public IP, load balancer, Cloud NAT, router, VPC connector, secret payload, or application
@@ -53,7 +54,7 @@ not exist yet.
   service-account key.
 - Never delete the workload project to recover from a partial first run. Preserve it, freeze writers,
   reconcile state, and resume from the exact reviewed commit.
-- Removing, replacing, or forgetting a protected resource requires the repository's deliberate
+- Removing, replacing, or forgetting any managed resource requires the repository's deliberate
   destructive-change gate in addition to normal approval. This initial plan must contain none.
 
 ## Prerequisites
@@ -123,12 +124,15 @@ gcloud iam service-accounts describe "$FOUNDATION_SERVICE_ACCOUNT" \
   --project="$MANAGEMENT_PROJECT_ID" \
   --format='yaml(email,disabled,uniqueId)'
 gcloud billing accounts describe "$BILLING_ACCOUNT_ID" \
-  --format='yaml(name,displayName,open)'
+  --format='yaml(open,currencyCode)'
+BILLING_CURRENCY_CODE="$(gcloud billing accounts describe "$BILLING_ACCOUNT_ID" --format='value(currencyCode)')"
+[[ "$BILLING_CURRENCY_CODE" =~ ^[A-Z]{3}$ ]]
 ```
 
 Expected safe result: one intended Google account is active, GitHub is authenticated to the intended
 account, both project and service account are active, the foundation account is not disabled, and
-the billing account reports `open: true`. Share only that boolean result if assistance is needed.
+the billing account reports `open: true` with a three-letter currency code. Share only the boolean
+and currency code if assistance is needed.
 
 Confirm the workload ID is unused before authorizing creation:
 
@@ -352,8 +356,8 @@ Stop until the protected foundation workflow lands. That workflow must:
    adoption when any other resource is present or state already owns another project;
 5. create an opaque saved plan, store it only in private management storage, and print only the
    sanitized action/resource-type summary;
-6. fail when the plan deletes, replaces, or forgets a protected resource; the initial plan requires
-   no destructive label because it must contain no destructive action;
+6. fail when the plan deletes, replaces, or forgets any managed resource; the initial plan requires no
+   destructive label because it must contain no destructive action;
 7. require the environment reviewer to approve the exact unexpired plan, apply that saved plan, and
    prove convergence with a zero-change post-apply plan.
 
@@ -386,33 +390,46 @@ gcloud services list --enabled --project="$WORKLOAD_PROJECT_ID" \
 Expected safe result: the project is active with the selected parent and labels, billing is enabled,
 and exactly the ten expected service names appear in the filtered list.
 
-Verify the foundation account has no primitive role other than the temporary creator Owner, and no
-runtime identity has a user-managed key:
+Verify no service account has an unexpected primitive project role and no project service account has
+a user-managed key. The all-account enumeration is intentional: a newly introduced or
+provider-created account must not escape this check.
 
 ```bash
 gcloud projects get-iam-policy "$WORKLOAD_PROJECT_ID" \
-  --flatten='bindings[].members' \
-  --filter="bindings.members=serviceAccount:${FOUNDATION_SERVICE_ACCOUNT} AND bindings.role:(roles/owner roles/editor)" \
-  --format='table(bindings.role,bindings.members)'
+  --format=json \
+| jq -r '
+    .bindings[]
+    | select(.role == "roles/owner" or .role == "roles/editor")
+    | .role as $role
+    | .members[]
+    | select(startswith("serviceAccount:"))
+    | [$role, .]
+    | @tsv
+  '
 
-for account in \
-  agora-authentication \
-  agora-json-keys \
-  agora-database-host \
-  agora-scheduler-invoker \
-  agora-backup \
-  agora-restore; do
-  gcloud iam service-accounts keys list \
+PROJECT_SERVICE_ACCOUNTS="$(gcloud iam service-accounts list \
+  --project="$WORKLOAD_PROJECT_ID" \
+  --format='value(email)')"
+[[ -n "$PROJECT_SERVICE_ACCOUNTS" ]]
+while IFS= read -r account_email; do
+  USER_KEY_NAMES="$(gcloud iam service-accounts keys list \
     --project="$WORKLOAD_PROJECT_ID" \
-    --iam-account="${account}@${WORKLOAD_PROJECT_ID}.iam.gserviceaccount.com" \
+    --iam-account="$account_email" \
     --managed-by=user \
-    --format='value(name)'
-done
+    --format='value(name)')"
+  if [[ -n "$USER_KEY_NAMES" ]]; then
+    printf 'STOP: user-managed key exists for %s.\n' "$account_email" >&2
+    false
+  fi
+done <<<"$PROJECT_SERVICE_ACCOUNTS"
+unset PROJECT_SERVICE_ACCOUNTS USER_KEY_NAMES
+printf 'All project service accounts have zero user-managed keys.\n'
 ```
 
-Expected safe result: at most one Owner row for the foundation creator before cleanup, no Editor row,
-and no key name from any loop iteration. A key is an incident: disable it, preserve audit evidence,
-identify its creator, and do not continue.
+Expected safe result: at most one Owner row for the foundation creator before cleanup, no Editor row
+for any service account—including the default Compute Engine service account—and the final zero-key
+message. A key is an incident: disable it, preserve audit evidence, identify its creator, and do not
+continue.
 
 Verify only the intended cross-project Secret Manager members without accessing payloads:
 
@@ -433,9 +450,12 @@ for secret in \
 done
 ```
 
-Expected safe result: Authentication appears on its DSN, SMTP password, and super-admin password;
-JSON Keys appears on its master key and DSN; database host appears on the two database passwords.
-Backup, restore, scheduler, release, plan, and foundation identities do not appear. Never run
+Expected safe result: every configured human operator and
+`infra-recovery@${MANAGEMENT_PROJECT_ID}.iam.gserviceaccount.com` appear on all seven secrets.
+Authentication also appears only on its DSN, SMTP password, and super-admin password; JSON Keys
+appears only on its master key and DSN; database host appears only on the two database passwords.
+Backup, restore, scheduler, release, plan, and foundation identities do not appear. This filtered view
+intentionally omits the operators' separate Secret Version Manager bindings. Never run
 `versions access` as a verification shortcut.
 
 ## 7. Verify private routing, registry, and cost controls
@@ -456,7 +476,7 @@ gcloud compute routes list --project="$WORKLOAD_PROJECT_ID" \
 ```
 
 Expected safe result: custom mode, regional routing, MTU 1460, the selected `/24`, Private Google
-Access enabled, IPv4 only, and exactly the `199.36.153.8/30` and `34.126.0.0/18` routes. No
+Access enabled, IPv4 only, and exactly the `199.36.153.4/30` and `34.126.0.0/18` routes. No
 `0.0.0.0/0` route appears.
 
 Firewall and absence of idle/public network products:
@@ -482,14 +502,14 @@ Private DNS:
 ```bash
 gcloud dns managed-zones list --project="$WORKLOAD_PROJECT_ID" \
   --format='table(name,dnsName,visibility,privateVisibilityConfig.networks.networkUrl)'
-for zone in private-googleapis private-artifact-registry private-cloud-run; do
+for zone in restricted-googleapis private-artifact-registry private-cloud-run; do
   gcloud dns record-sets list --project="$WORKLOAD_PROJECT_ID" --zone="$zone" \
     --format='table(name,type,ttl,rrdatas)'
 done
 ```
 
 Expected safe result: exactly three private zones attached only to `agora-production`; their apex or
-wildcard records resolve through the four `private.googleapis.com` VIP addresses. End-to-end
+wildcard records resolve through the four `restricted.googleapis.com` VIP addresses. End-to-end
 resolution is tested later from attached Cloud Run and VM workloads.
 
 Artifact Registry:
@@ -512,6 +532,7 @@ Quota preferences:
 
 ```bash
 gcloud quotas preferences list --project="$WORKLOAD_PROJECT_ID" \
+  --billing-project="$MANAGEMENT_PROJECT_ID" \
   --format='table(name.segment(-1),service,quotaId,dimensions,quotaConfig.preferredValue,reconciling)'
 ```
 
@@ -531,9 +552,9 @@ gcloud beta monitoring channels list --project="$WORKLOAD_PROJECT_ID" \
   --format='table(name,type,enabled,verificationStatus,displayName)'
 ```
 
-Expected safe result: one USD 60 monthly budget scoped only to the workload project, current-spend
-thresholds 50/75/90/100%, one forecasted 100% threshold, and only the enabled email channel. A budget
-does not stop spend. If the channel reports `UNVERIFIED`, it is non-functioning: use Google Cloud
+Expected safe result: one monthly budget of 60 `$BILLING_CURRENCY_CODE` units scoped only to the
+workload project, current-spend thresholds 50/75/90/100%, one forecasted 100% threshold, and only the
+enabled email channel. A budget does not stop spend. If the channel reports `UNVERIFIED`, it is non-functioning: use Google Cloud
 Console **Monitoring → Alerting → Edit notification channels** or the documented
 [verification API](https://cloud.google.com/monitoring/alerts/using-channels-api), verify the same
 code-managed channel, then rerun the list command. Do not create a duplicate channel manually.
@@ -559,30 +580,42 @@ Run only after the protected post-apply plan reports zero change and sections 6�
 authority earlier can strand a partially configured project.
 
 For an organization-backed workload project, ask an organization-policy administrator—not CI—to
-enforce the service-account key-creation constraint before removing temporary Owner. This control is
-manual because giving workload automation organization-policy authority would create a larger risk
-than the setting protects against.
+enforce the default-service-account grant and service-account key constraints before removing
+temporary Owner. These controls are manual because giving workload automation organization-policy
+authority would create a larger risk than the settings protect against.
 
 ```bash
 gcloud projects get-ancestors "$WORKLOAD_PROJECT_ID" \
   --format='table(type,id)'
 
-gcloud resource-manager org-policies enable-enforce \
+for constraint in \
+  iam.automaticIamGrantsForDefaultServiceAccounts \
   iam.disableServiceAccountKeyCreation \
-  --project="$WORKLOAD_PROJECT_ID"
+  iam.disableServiceAccountKeyUpload; do
+  gcloud resource-manager org-policies enable-enforce \
+    "$constraint" \
+    --project="$WORKLOAD_PROJECT_ID"
+done
 
-gcloud resource-manager org-policies describe \
-  constraints/iam.disableServiceAccountKeyCreation \
-  --project="$WORKLOAD_PROJECT_ID" \
-  --effective \
-  --format=yaml
+for constraint in \
+  iam.automaticIamGrantsForDefaultServiceAccounts \
+  iam.disableServiceAccountKeyCreation \
+  iam.disableServiceAccountKeyUpload; do
+  gcloud resource-manager org-policies describe \
+    "constraints/${constraint}" \
+    --project="$WORKLOAD_PROJECT_ID" \
+    --effective \
+    --format=yaml
+done
 ```
 
 Expected safe result: the ancestor list includes the intended organization and the effective policy
-enforces the boolean constraint. Policy propagation can take several minutes. If this is a standalone
-project, do not create an organization solely for this control. Record the standalone shape and rely
-on the absence of key resources, the zero-key verification in section 6, short-lived Workload
-Identity Federation for automation, and periodic zero-key verification.
+enforces all three boolean constraints. Policy propagation can take several minutes. The
+code-managed `DEPRIVILEGE` action removes any primitive role granted before the first constraint took
+effect; the policy prevents a future default account from receiving it automatically. If this is a
+standalone project, do not create an organization solely for these controls. Record the standalone
+shape and rely on that deprivileging action, the all-account zero-key verification in section 6,
+short-lived Workload Identity Federation for automation, and periodic zero-key verification.
 
 Remove only the automatically granted foundation Owner binding:
 
@@ -622,16 +655,23 @@ Verify the cleanup:
 
 ```bash
 gcloud projects get-iam-policy "$WORKLOAD_PROJECT_ID" \
-  --flatten='bindings[].members' \
-  --filter="bindings.members=serviceAccount:${FOUNDATION_SERVICE_ACCOUNT} AND bindings.role:(roles/owner roles/editor)" \
-  --format='value(bindings.role)'
+  --format=json \
+| jq -r '
+    .bindings[]
+    | select(.role == "roles/owner" or .role == "roles/editor")
+    | .role as $role
+    | .members[]
+    | select(startswith("serviceAccount:"))
+    | [$role, .]
+    | @tsv
+  '
 gcloud billing accounts get-iam-policy "$BILLING_ACCOUNT_ID" \
   --flatten='bindings[].members' \
   --filter="bindings.members=serviceAccount:${FOUNDATION_SERVICE_ACCOUNT}" \
   --format='value(bindings.role)'
 ```
 
-Expected safe result: the first command prints nothing and the second prints only
+Expected safe result: the primitive-role audit prints nothing and the billing command prints only
 `roles/billing.costsManager`. Recheck the chosen parent with section 2's command; it must print
 nothing. Exact workload-project roles and the custom metadata role remain code-managed.
 
@@ -646,8 +686,8 @@ policy dumps, billing account IDs, email addresses, secrets, or plan values.
 Freeze every foundation writer and keep the project. Inspect the protected run's sanitized resource
 types and Google audit logs. Common new-project API propagation delays are resolved by waiting and
 creating a fresh reviewed plan; never disable deletion protection, add Owner broadly, or delete the
-project to retry. The new plan must converge the same desired state and contain no protected delete,
-replacement, or forget action.
+project to retry. The new plan must converge the same desired state and contain no managed-resource
+delete, replacement, or forget action.
 
 ### Standalone project exists but foundation state does not own it
 
@@ -670,8 +710,10 @@ compare Google's current metric and quota IDs with `cost.tf`:
 
 ```bash
 gcloud quotas info list --service=run.googleapis.com --project="$WORKLOAD_PROJECT_ID" \
+  --billing-project="$MANAGEMENT_PROJECT_ID" \
   --format='table(metric,quotaId,dimensions)'
 gcloud quotas info list --service=compute.googleapis.com --project="$WORKLOAD_PROJECT_ID" \
+  --billing-project="$MANAGEMENT_PROJECT_ID" \
   --format='table(metric,quotaId,dimensions)'
 ```
 
@@ -704,7 +746,10 @@ external addresses, forwarding rules, and public database paths are absent again
 - [Creating and managing projects](https://cloud.google.com/resource-manager/docs/creating-managing-projects)
 - [Project IAM access and automatic creator Owner](https://cloud.google.com/resource-manager/docs/access-control-proj)
 - [Cloud Billing roles](https://cloud.google.com/billing/docs/how-to/billing-access)
-- [Private Google Access](https://cloud.google.com/vpc/docs/private-google-access)
+- [Configure Private Google Access](https://cloud.google.com/vpc/docs/configure-private-google-access)
+- [Service account security best practices](https://cloud.google.com/iam/docs/best-practices-service-accounts)
+- [Default Compute Engine service accounts](https://cloud.google.com/compute/docs/access/service-accounts)
+- [Organization policies for service accounts](https://cloud.google.com/resource-manager/docs/organization-policy/restricting-service-accounts)
 - [Direct VPC egress and tag limitations](https://cloud.google.com/run/docs/configuring/vpc-direct-vpc)
 - [Cloud DNS private zones](https://cloud.google.com/dns/docs/zones/zones-overview)
 - [Artifact Registry immutable tags](https://cloud.google.com/artifact-registry/docs/docker/immutable-image-tags)

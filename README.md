@@ -175,10 +175,10 @@ Local modules begin only when two real call sites share a resource shape or one 
 ### Plan-output boundary
 
 `ops/plan-summary.sh` reads an OpenTofu JSON plan and emits only counts grouped by action and resource
-type. It blocks deletion, replacement, or state-forget actions on protected state, project,
-identity, secret, bucket, network, DNS, registry, quota, budget, and preserved-data resources, and it
-rejects unknown action combinations. Resource addresses, values, outputs, environment variables,
-DSNs, and tokens stay out of public logs.
+type. It blocks every deletion, replacement, or state-forget action on a managed resource, including
+resource types introduced after the gate was written, and rejects unknown action combinations.
+Resource addresses, values, outputs, environment variables, DSNs, and tokens stay out of public
+logs.
 
 Opaque production plans will live in private, versioned Google Cloud storage when the protected apply workflow lands. GitHub artifacts and pull-request comments never carry them.
 
@@ -200,7 +200,7 @@ The [Google Cloud provider guide](./docs/google-cloud.md#network-trust-model) de
 
 Ingress and egress are independent. JSON Keys starts with private-only egress and no public internet path. Authentication uses private VPC routes for internal destinations and managed TLS egress for SMTP. A future private GenAI gRPC service can use that public-TLS egress profile for LLM APIs without opening its ingress.
 
-The foundation code now enforces the VPC, subnet, explicit Google routes, firewall policy, and
+The foundation code now enforces the VPC, subnet, restricted Google routes, firewall policy, and
 private DNS contract in mocked tests. It deliberately provisions no NAT, router, connector, load
 balancer, or public IP. Those definitions still have no cloud effect until a protected apply is
 authorized. The Cloud Run and database-host resources that attach to the boundary have not landed,
