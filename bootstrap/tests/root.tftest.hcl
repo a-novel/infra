@@ -50,7 +50,10 @@ run "builds_the_protected_management_plane" {
 
   assert {
     condition = (
-      length(google_project_service.management) == 9 &&
+      length(google_project_service.management) == 12 &&
+      contains(keys(google_project_service.management), "billingbudgets.googleapis.com") &&
+      contains(keys(google_project_service.management), "cloudbilling.googleapis.com") &&
+      contains(keys(google_project_service.management), "cloudquotas.googleapis.com") &&
       contains(keys(google_project_service.management), "orgpolicy.googleapis.com")
     )
     error_message = "The complete management-plane API set is not retained in code."

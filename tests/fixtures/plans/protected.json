@@ -18,6 +18,19 @@
       }
     },
     {
+      "address": "google_compute_firewall.deny_other_egress",
+      "mode": "managed",
+      "type": "google_compute_firewall",
+      "name": "deny_other_egress",
+      "change": {
+        "actions": ["delete"],
+        "before": {
+          "name": "fixture-egress-deny"
+        },
+        "after": null
+      }
+    },
+    {
       "address": "google_project.workload",
       "mode": "managed",
       "type": "google_project",

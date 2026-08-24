@@ -17,10 +17,13 @@ Data Access audit logging. Merging the code creates nothing. The project, billin
 first local-state apply, state migration, GitHub environment protection, optional organization
 policies, and temporary-access removal remain explicit human bootstrap actions.
 
-The workload project is not implemented yet. There is still no VPC, firewall, Artifact Registry,
-Cloud Run service or job, VM, Persistent Disk, database, backup schedule, DNS record, or public
-endpoint. Network, runtime, and database sections below therefore remain acceptance contracts until
-their corresponding resource, mocked test, protected deployment, and post-apply verification land.
+The foundation root now defines the replaceable workload project, required APIs, a custom VPC and
+subnet, explicit private Google routes, firewall policy, private DNS, six keyless runtime identities,
+exact management-secret access, an immutable Artifact Registry repository, quota preferences, a
+project-scoped budget, and bounded logging. These resources have mocked security tests but have not
+been applied. There is still no Cloud Run service or job, VM, Persistent Disk, database, backup
+schedule, load balancer, public IP, or public endpoint. Those sections below remain acceptance
+contracts until their resource, test, protected deployment, and post-apply verification land.
 
 ## Provider and resource references
 
@@ -46,8 +49,9 @@ security model, operational limits, and recovery implications behind those argum
 Each root README lists its actual OpenTofu resource addresses. An inventory entry explains the
 resource's Agora purpose, access and data boundary, replacement or deletion behavior, cost and
 recovery impact, and links both the pinned provider resource page and the relevant Google Cloud
-product page. The [bootstrap inventory](../bootstrap/README.md#resource-inventory) is the first
-concrete implementation of that contract.
+product page. The [bootstrap inventory](../bootstrap/README.md#resource-inventory) and
+[foundation inventory](../environments/production/foundation/README.md#resource-inventory) are the
+concrete implementations of that contract.
 
 ## Network trust model
 
@@ -80,24 +84,31 @@ targeted firewall access, database credentials, and service-owned database roles
 ## PostgreSQL isolation target
 
 The database host has no external IP, public load balancer, forwarding rule, public DNS record, or
-public firewall path. Its PostgreSQL port is reachable only through the production VPC from Cloud Run service
-revisions and job executions that carry an approved, workload-specific network tag. Containers publish
-PostgreSQL on the VM's internal interface, and each database keeps its own cluster, data directory, credentials, and
-role boundary.
+public firewall path. Its PostgreSQL port is reachable only from the production subnet and targets
+only the database-host network tag. Approved Cloud Run revisions and jobs carry caller-specific tags
+that permit their TCP `5432` egress; containers publish PostgreSQL on the VM's internal interface,
+and each database keeps its own cluster, data directory, credentials, and role boundary.
+
+Google supports Direct VPC tags as firewall targets for Cloud Run egress, but not as source tags in
+ingress rules. The subnet source range is therefore intentional, not a substitute for caller
+authorization. Tagged egress, service-specific database credentials, PostgreSQL roles, and the
+database target tag form the remaining layers. See Google's
+[Direct VPC network-tag limitations](https://cloud.google.com/run/docs/configuring/vpc-direct-vpc#network-tags).
 
 The foundation tests must prove that:
 
 - the VM network interface has no external access configuration;
 - no ingress rule permits `0.0.0.0/0` or `::/0` to a database target;
-- TCP `5432` ingress targets only the database host and accepts only approved source network tags;
+- TCP `5432` ingress targets only the database host and accepts only the production subnet;
+- private callers receive only their reviewed egress tag, database credential, and database role;
 - no external load-balancing or public DNS resource targets the host;
 - the preserved data disk has deletion protection independent from VM replacement;
 - administrative TCP access uses IAP and an explicit operator identity.
 
-Google documents the outbound-only nature of NAT separately: [Public NAT permits established
-responses but not unsolicited inbound requests](https://cloud.google.com/nat/docs/public-nat). Agora
-does not rely on NAT for database isolation; the no-external-IP and firewall properties hold even if
-NAT is added later for controlled outbound traffic.
+This foundation deliberately provisions no Cloud NAT, router, or Serverless VPC Access connector.
+Private-only workloads consequently have no public VPC egress path. Adding one later is an
+architecture and cost change, not an operational toggle, and must preserve the no-external-IP and
+firewall properties above.
 
 Debug access does not weaken the production path. The runbook will use
 [IAP TCP forwarding](https://cloud.google.com/iap/docs/using-tcp-forwarding) to the VM's internal

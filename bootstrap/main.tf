@@ -20,6 +20,9 @@ locals {
   }
 
   required_services = toset([
+    "billingbudgets.googleapis.com",
+    "cloudbilling.googleapis.com",
+    "cloudquotas.googleapis.com",
     "cloudresourcemanager.googleapis.com",
     "iam.googleapis.com",
     "iamcredentials.googleapis.com",

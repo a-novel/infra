@@ -57,7 +57,9 @@ assert_equal "${PROTECTED_CODE}" "3"
 grep -Fq $'delete\tgoogle_project\t1' "${TEMP_DIR}/protected.out"
 grep -Fq $'forget\tgoogle_secret_manager_secret\t1' "${TEMP_DIR}/protected.out"
 grep -Fq $'replace\tgoogle_compute_disk\t1' "${TEMP_DIR}/protected.out"
+grep -Fq $'delete\tgoogle_compute_firewall\t1' "${TEMP_DIR}/protected.out"
 grep -Fq "google_compute_disk (1)" "${TEMP_DIR}/protected.err"
+grep -Fq "google_compute_firewall (1)" "${TEMP_DIR}/protected.err"
 grep -Fq "google_project (1)" "${TEMP_DIR}/protected.err"
 grep -Fq "google_secret_manager_secret (1)" "${TEMP_DIR}/protected.err"
 grep -Fq "google_service_account (1)" "${TEMP_DIR}/protected.err"
@@ -75,13 +77,26 @@ grep -Fq "unsupported action combination" "${TEMP_DIR}/unsupported.err"
 assert_absent "${TEMP_DIR}/unsupported.out" "fixture-unsupported-action-value"
 assert_absent "${TEMP_DIR}/unsupported.err" "fixture-unsupported-action-value"
 
-if grep -RqE 'resource[[:space:]]+"(google_secret_manager_secret_version|google_service_account_key)"' "${REPOSITORY_ROOT}/bootstrap" --include='*.tf'; then
-    printf "Bootstrap must not place secret payloads or service-account keys in state.\n" >&2
+if grep -RqE 'resource[[:space:]]+"(google_secret_manager_secret_version|google_service_account_key)"' \
+    "${REPOSITORY_ROOT}/bootstrap" \
+    "${REPOSITORY_ROOT}/environments/production/foundation" \
+    --include='*.tf'; then
+    printf "Infrastructure must not place secret payloads or service-account keys in state.\n" >&2
     exit 1
 fi
 
-if grep -RqE 'roles/(owner|editor)' "${REPOSITORY_ROOT}/bootstrap" --include='*.tf'; then
-    printf "Bootstrap automation must not use primitive Owner or Editor roles.\n" >&2
+if grep -RqE 'roles/(owner|editor)' \
+    "${REPOSITORY_ROOT}/bootstrap" \
+    "${REPOSITORY_ROOT}/environments/production/foundation" \
+    --include='*.tf'; then
+    printf "Infrastructure automation must not use primitive Owner or Editor roles.\n" >&2
+    exit 1
+fi
+
+if grep -RqE 'resource[[:space:]]+"google_(compute_router|compute_router_nat|vpc_access_connector)"' \
+    "${REPOSITORY_ROOT}/environments/production/foundation" \
+    --include='*.tf'; then
+    printf "The launch foundation must not add an idle NAT, router, or VPC connector.\n" >&2
     exit 1
 fi
 

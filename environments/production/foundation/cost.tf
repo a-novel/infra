@@ -1,0 +1,181 @@
+locals {
+  quota_preferences = {
+    cloud_run_cpu = {
+      service = "run.googleapis.com"
+      metric  = "run.googleapis.com/cpu_allocation"
+      value   = var.cloud_run_cpu_quota_millicpu
+    }
+    cloud_run_direct_vpc_instances = {
+      service = "run.googleapis.com"
+      metric  = "run.googleapis.com/instance_limit_regional"
+      value   = var.cloud_run_direct_vpc_instance_quota
+    }
+    cloud_run_memory = {
+      service = "run.googleapis.com"
+      metric  = "run.googleapis.com/mem_allocation"
+      value   = var.cloud_run_memory_quota_bytes
+    }
+    compute_cpu = {
+      service = "compute.googleapis.com"
+      metric  = "compute.googleapis.com/cpus"
+      value   = var.compute_cpu_quota
+    }
+  }
+
+  quota_ids = merge([
+    for source in values(data.google_cloud_quotas_quota_infos.service) : {
+      for quota in source.quota_infos : quota.metric => quota.quota_id
+    }
+  ]...)
+}
+
+data "google_cloud_quotas_quota_infos" "service" {
+  for_each = toset(["compute.googleapis.com", "run.googleapis.com"])
+
+  parent  = "projects/${google_project.workload.project_id}"
+  service = each.value
+
+  depends_on = [google_project_service.workload]
+}
+
+resource "google_cloud_quotas_quota_preference" "cost_cap" {
+  for_each = local.quota_preferences
+
+  parent     = "projects/${google_project.workload.project_id}"
+  service    = each.value.service
+  quota_id   = try(local.quota_ids[each.value.metric], "unavailable")
+  dimensions = { region = var.region }
+  # Cloud Quotas currently requires contactEmail for updates. Use the
+  # quota-admin identity making the request instead of granting that role to
+  # the human budget recipient; these preferences only decrease defaults.
+  contact_email = local.automation_service_accounts.foundation
+  justification = "Agora production cost ceiling; changes require reviewed infrastructure code."
+
+  # A new project starts with much larger defaults. Permit that deliberate
+  # reduction, but retain Google's block against setting a limit below usage.
+  ignore_safety_checks = "QUOTA_DECREASE_PERCENTAGE_TOO_HIGH"
+
+  quota_config {
+    preferred_value = tostring(each.value.value)
+  }
+
+  lifecycle {
+    precondition {
+      condition     = contains(keys(local.quota_ids), each.value.metric)
+      error_message = "Google Cloud did not expose the required quota metric ${each.value.metric}."
+    }
+  }
+
+  depends_on = [data.google_cloud_quotas_quota_infos.service]
+}
+
+resource "google_monitoring_notification_channel" "cost_email" {
+  project = google_project.workload.project_id
+
+  display_name = "Agora production cost alerts"
+  description  = "Human-reviewed email destination for workload budget alerts."
+  type         = "email"
+  enabled      = true
+  force_delete = false
+  labels       = { email_address = var.cost_alert_email }
+
+  deletion_policy = "PREVENT"
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [google_project_service.workload["monitoring.googleapis.com"]]
+}
+
+resource "google_billing_budget" "workload" {
+  billing_account = var.billing_account_id
+  display_name    = "Agora production workload"
+  ownership_scope = "BILLING_ACCOUNT"
+
+  budget_filter {
+    projects               = ["projects/${google_project.workload.number}"]
+    calendar_period        = "MONTH"
+    credit_types_treatment = "INCLUDE_ALL_CREDITS"
+  }
+
+  amount {
+    specified_amount {
+      currency_code = "USD"
+      units         = tostring(var.monthly_budget_usd)
+    }
+  }
+
+  threshold_rules {
+    threshold_percent = 0.5
+    spend_basis       = "CURRENT_SPEND"
+  }
+
+  threshold_rules {
+    threshold_percent = 0.75
+    spend_basis       = "CURRENT_SPEND"
+  }
+
+  threshold_rules {
+    threshold_percent = 0.9
+    spend_basis       = "CURRENT_SPEND"
+  }
+
+  threshold_rules {
+    threshold_percent = 1.0
+    spend_basis       = "CURRENT_SPEND"
+  }
+
+  threshold_rules {
+    threshold_percent = 1.0
+    spend_basis       = "FORECASTED_SPEND"
+  }
+
+  all_updates_rule {
+    disable_default_iam_recipients   = true
+    enable_project_level_recipients  = false
+    monitoring_notification_channels = [google_monitoring_notification_channel.cost_email.name]
+  }
+
+  deletion_policy = "PREVENT"
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "google_logging_project_bucket_config" "default" {
+  project = google_project.workload.project_id
+
+  location         = "global"
+  bucket_id        = "_Default"
+  retention_days   = 30
+  enable_analytics = false
+  locked           = false
+  deletion_policy  = "PREVENT"
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [google_project_service.workload["logging.googleapis.com"]]
+}
+
+# Keep failed health requests and every application/audit log. Only successful,
+# high-volume load-balancer probes to the services' real health path are dropped.
+resource "google_logging_project_exclusion" "successful_healthchecks" {
+  project = google_project.workload.project_id
+
+  name        = "successful-cloud-run-healthchecks"
+  description = "Exclude successful Cloud Run request logs for /v2/healthcheck only."
+  disabled    = false
+  filter      = <<-EOT
+    resource.type="cloud_run_revision"
+    log_id("run.googleapis.com/requests")
+    httpRequest.requestUrl=~"/v2/healthcheck(\\?.*)?$"
+    httpRequest.status>=200
+    httpRequest.status<400
+  EOT
+
+  depends_on = [google_project_service.workload["logging.googleapis.com"]]
+}
