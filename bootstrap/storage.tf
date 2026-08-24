@@ -25,6 +25,8 @@ resource "google_storage_bucket" "state" {
       type = "Delete"
     }
 
+    # Both conditions must match, preserving at least 50 generations and every
+    # generation younger than 90 days.
     condition {
       days_since_noncurrent_time = 90
       num_newer_versions         = 50
@@ -95,6 +97,8 @@ resource "google_storage_bucket" "receipts" {
       type = "Delete"
     }
 
+    # Both conditions must match, preserving at least 20 receipt generations
+    # and every generation younger than one year.
     condition {
       days_since_noncurrent_time = 365
       num_newer_versions         = 20

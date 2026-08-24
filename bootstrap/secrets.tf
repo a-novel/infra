@@ -14,6 +14,8 @@ locals {
   }
 }
 
+# Payload versions are entered outside OpenTofu so plans and state contain only
+# these container names, annotations, and lifecycle settings.
 resource "google_secret_manager_secret" "application" {
   for_each = local.secret_definitions
 

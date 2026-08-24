@@ -40,7 +40,7 @@ Stop immediately if any of these are true:
 - the checkout is dirty or not on `master`;
 - `gcloud auth list` selects a different human than the intended operator;
 - the proposed project ID already resolves;
-- the plan summary contains a deletion or replacement;
+- the plan summary contains a deletion, replacement, or state-forget action;
 - the GitHub environments permit unprotected branches;
 - foundation or recovery has no independent reviewer or still permits admin bypass;
 - a service-account user-managed key exists;
@@ -231,15 +231,15 @@ gcloud projects add-iam-policy-binding "${MANAGEMENT_PROJECT_ID}" \
   --condition=None
 ```
 
-If an existing organization policy refuses primitive roles, do not weaken that policy. Instead add
-the six future operator roles plus two temporary project-wide data roles:
+If an existing organization policy refuses primitive roles, keep that policy and add the six
+future operator roles plus two temporary project-wide data roles:
 
 ```bash
 for role in \
   roles/iam.roleAdmin \
   roles/iam.serviceAccountAdmin \
   roles/iam.workloadIdentityPoolAdmin \
-  roles/logging.configWriter \
+  roles/logging.privateLogViewer \
   roles/resourcemanager.projectIamAdmin \
   roles/serviceusage.serviceUsageAdmin \
   roles/secretmanager.admin \
@@ -374,7 +374,7 @@ ID, email, token, state value, or payload in the summary. The full binary and JS
 mode-`0700` temporary directory and must not be uploaded to GitHub or pasted into an issue.
 
 Review the resource counts against [`bootstrap/README.md`](../../bootstrap/README.md). If the summary
-contains an update, replacement, or delete, stop and investigate; this is not a first apply.
+contains an update, replacement, delete, or forget, stop and investigate; this is not a first apply.
 
 ## 8. Apply the exact reviewed plan once
 
@@ -447,7 +447,7 @@ Expected safe result: the seven IDs in the bootstrap secret-contract table and e
 `infra-*` service-account emails. Secret values do not exist yet and must not be added during this
 verification.
 
-## 10. Migrate local state to GCS and prove recovery generations exist
+## 10. Migrate local state to GCS and verify the remote backend
 
 Keep the same `TF_DATA_DIR`; it records that the current backend is local. The migration prompt must
 name the new GCS backend and ask to copy the existing state. Read it, then answer `yes`.
@@ -474,7 +474,9 @@ Expected safe result: at least one URI ending in `bootstrap/default.tfstate#<num
 a non-empty list of bootstrap resource addresses. Never run `tofu state pull` into a public terminal
 or print the state object's contents.
 
-Create a second generation with a no-change remote plan, then inspect only its sanitized summary:
+Exercise remote reads and locking with a no-change plan, then inspect only its sanitized summary. A
+clean plan does not guarantee a second state generation; Object Versioning records a generation only
+when an operation writes the state object.
 
 ```bash
 REMOTE_PLAN="${BOOTSTRAP_TEMP_DIR}/remote-verify.tfplan"

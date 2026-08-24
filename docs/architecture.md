@@ -75,12 +75,14 @@ management state bucket, migrates that state to the backend, and removes the tem
 authority. The [bootstrap runbook](./runbooks/bootstrap-management-plane.md) provides the exact
 operator commands, safe expected output, independent checks, partial-failure response, and cleanup.
 
-Each root uses a distinct managed-folder state prefix and a distinct automation identity. The GCS
-backend provides locking, while Object Versioning and soft delete supply recovery from an accidental
-overwrite or deletion. State is private recovery data: it never enters Git, GitHub artifacts,
-pull-request comments, or public logs. OpenTofu manages secret containers and access policies, while
-operators add secret payload versions through stdin outside OpenTofu so payloads do not enter state.
-The [state recovery runbook](./runbooks/state-recovery.md) restores an exact generation with an atomic
+Each root uses a distinct managed-folder state prefix and a distinct automation identity. Writer
+identities use GCS backend locking. Read-only drift jobs use root-scoped workflow serialization and
+plan without a backend lock, so they never receive state-write permission. Object Versioning and soft
+delete supply recovery from an accidental overwrite or deletion. State is private recovery data: it
+never enters Git, GitHub artifacts, pull-request comments, or public logs. OpenTofu manages secret
+containers and access policies, while operators add secret payload versions through stdin outside
+OpenTofu so payloads do not enter state. The
+[state recovery runbook](./runbooks/state-recovery.md) restores an exact generation with an atomic
 precondition and can restore the former live generation if validation fails.
 
 The [OpenTofu GCS backend documentation](https://opentofu.org/docs/language/settings/backends/gcs/)

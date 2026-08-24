@@ -41,6 +41,10 @@ trap cleanup INT EXIT
 "${REPOSITORY_ROOT}/ops/plan-summary.sh" foundation "${SCRIPT_DIR}/fixtures/plans/safe.json" >"${TEMP_DIR}/safe.out" 2>"${TEMP_DIR}/safe.err"
 grep -Fq $'create\tgoogle_cloud_run_v2_job\t1' "${TEMP_DIR}/safe.out"
 grep -Fq $'update\tgoogle_cloud_run_v2_service\t1' "${TEMP_DIR}/safe.out"
+if grep -Fq $'no-op\t' "${TEMP_DIR}/safe.out"; then
+    printf "No-op resources must not appear in the sanitized summary.\n" >&2
+    exit 1
+fi
 assert_absent "${TEMP_DIR}/safe.out" "fixture-secret-must-not-be-printed"
 assert_absent "${TEMP_DIR}/safe.out" "fixture-password"
 assert_absent "${TEMP_DIR}/safe.out" "fixture-token-must-not-be-printed"
@@ -51,13 +55,25 @@ PROTECTED_CODE=$?
 set -e
 assert_equal "${PROTECTED_CODE}" "3"
 grep -Fq $'delete\tgoogle_project\t1' "${TEMP_DIR}/protected.out"
+grep -Fq $'forget\tgoogle_secret_manager_secret\t1' "${TEMP_DIR}/protected.out"
 grep -Fq $'replace\tgoogle_compute_disk\t1' "${TEMP_DIR}/protected.out"
 grep -Fq "google_compute_disk (1)" "${TEMP_DIR}/protected.err"
 grep -Fq "google_project (1)" "${TEMP_DIR}/protected.err"
+grep -Fq "google_secret_manager_secret (1)" "${TEMP_DIR}/protected.err"
 grep -Fq "google_service_account (1)" "${TEMP_DIR}/protected.err"
 grep -Fq "google_storage_managed_folder (1)" "${TEMP_DIR}/protected.err"
 assert_absent "${TEMP_DIR}/protected.out" "fixture-disk-name"
 assert_absent "${TEMP_DIR}/protected.err" "fixture-project-id"
+assert_absent "${TEMP_DIR}/protected.err" "fixture-forgotten-secret"
+
+set +e
+"${REPOSITORY_ROOT}/ops/plan-summary.sh" foundation "${SCRIPT_DIR}/fixtures/plans/unsupported.json" >"${TEMP_DIR}/unsupported.out" 2>"${TEMP_DIR}/unsupported.err"
+UNSUPPORTED_CODE=$?
+set -e
+assert_equal "${UNSUPPORTED_CODE}" "65"
+grep -Fq "unsupported action combination" "${TEMP_DIR}/unsupported.err"
+assert_absent "${TEMP_DIR}/unsupported.out" "fixture-unsupported-action-value"
+assert_absent "${TEMP_DIR}/unsupported.err" "fixture-unsupported-action-value"
 
 if grep -RqE 'resource[[:space:]]+"(google_secret_manager_secret_version|google_service_account_key)"' "${REPOSITORY_ROOT}/bootstrap" --include='*.tf'; then
     printf "Bootstrap must not place secret payloads or service-account keys in state.\n" >&2

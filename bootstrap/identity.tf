@@ -1,10 +1,8 @@
 locals {
   plan_project_roles = toset([
     "roles/iam.roleViewer",
-    "roles/iam.securityReviewer",
     "roles/iam.serviceAccountViewer",
     "roles/iam.workloadIdentityPoolViewer",
-    "roles/logging.viewer",
     "roles/secretmanager.viewer",
     "roles/serviceusage.serviceUsageViewer",
   ])
@@ -13,12 +11,16 @@ locals {
     "roles/iam.roleAdmin",
     "roles/iam.serviceAccountAdmin",
     "roles/iam.workloadIdentityPoolAdmin",
-    "roles/logging.configWriter",
     "roles/resourcemanager.projectIamAdmin",
     "roles/serviceusage.serviceUsageAdmin",
   ])
 
-  operator_project_roles = local.foundation_project_roles
+  # Data Access audit entries are private logs. Human operators need the
+  # private viewer role to investigate state and secret operations.
+  operator_project_roles = setunion(
+    local.foundation_project_roles,
+    toset(["roles/logging.privateLogViewer"]),
+  )
 
   automation_project_bindings = merge(
     {
@@ -60,6 +62,7 @@ locals {
   plan_state_folders       = local.state_prefixes
   foundation_state_folders = toset(["bootstrap", "foundation"])
   recovery_state_folders   = local.state_prefixes
+  state_bucket_viewers     = toset(["release", "recovery"])
 }
 
 resource "google_service_account" "automation" {
@@ -113,7 +116,9 @@ resource "google_iam_workload_identity_pool_provider" "github" {
       "attribute.repository_owner_id" = "assertion.repository_owner_id"
       "attribute.ref"                 = "assertion.ref"
       "attribute.workflow_ref"        = "assertion.workflow_ref"
-      "attribute.trust_boundary"      = "'${each.key}'"
+      # This provider-owned constant prevents GitHub claims from selecting a
+      # different CI service account after the provider accepts the token.
+      "attribute.trust_boundary" = "'${each.key}'"
     },
     each.value.environment == null ? {} : {
       "attribute.environment" = "assertion.environment"
@@ -133,6 +138,8 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   ))
 
   oidc {
+    # Omitting a custom audience keeps token acceptance pinned to Google's
+    # canonical provider-resource audience.
     issuer_uri = "https://token.actions.githubusercontent.com"
   }
 
@@ -149,6 +156,8 @@ resource "google_service_account_iam_member" "github" {
   member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.trust_boundary/${each.key}"
 }
 
+# Secret Manager Admin also controls versions and payload access. This custom
+# role deliberately owns only the secret-container control plane.
 resource "google_project_iam_custom_role" "secret_metadata" {
   role_id     = "infraSecretMetadataAdmin"
   title       = "Infra Secret Metadata Admin"
@@ -176,6 +185,33 @@ resource "google_project_iam_custom_role" "secret_metadata" {
   depends_on = [google_project_service.management["iam.googleapis.com"]]
 }
 
+# Security Reviewer includes private logs and broad inventory access. Planning
+# needs only the policy and bucket metadata required to refresh this root.
+resource "google_project_iam_custom_role" "plan_metadata" {
+  role_id     = "infraPlanMetadataViewer"
+  title       = "Infra Plan Metadata Viewer"
+  description = "Read project IAM and Cloud Storage control-plane metadata without reading non-state objects or logs."
+  stage       = "GA"
+
+  permissions = [
+    "resourcemanager.projects.get",
+    "resourcemanager.projects.getIamPolicy",
+    "resourcemanager.projects.list",
+    "storage.buckets.get",
+    "storage.buckets.getIamPolicy",
+    "storage.buckets.list",
+    "storage.managedFolders.get",
+    "storage.managedFolders.getIamPolicy",
+    "storage.managedFolders.list",
+  ]
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [google_project_service.management["iam.googleapis.com"]]
+}
+
 resource "google_project_iam_member" "automation" {
   for_each = local.automation_project_bindings
 
@@ -188,6 +224,12 @@ resource "google_project_iam_member" "foundation_secret_metadata" {
   project = var.management_project_id
   role    = google_project_iam_custom_role.secret_metadata.name
   member  = "serviceAccount:${google_service_account.automation["foundation"].email}"
+}
+
+resource "google_project_iam_member" "plan_metadata" {
+  project = var.management_project_id
+  role    = google_project_iam_custom_role.plan_metadata.name
+  member  = "serviceAccount:${google_service_account.automation["plan"].email}"
 }
 
 resource "google_project_iam_member" "operator" {
@@ -223,13 +265,15 @@ resource "google_storage_bucket_iam_member" "foundation_admin" {
 }
 
 resource "google_storage_bucket_iam_member" "automation_bucket_viewer" {
-  for_each = local.trust_boundaries
+  for_each = local.state_bucket_viewers
 
   bucket = google_storage_bucket.state.name
   role   = "roles/storage.bucketViewer"
   member = "serviceAccount:${google_service_account.automation[each.key].email}"
 }
 
+# Read-only planning cannot create .tflock objects. The drift workflow must use
+# -lock=false and serialize each root with its writer instead of widening access.
 resource "google_storage_managed_folder_iam_member" "plan_state" {
   for_each = local.plan_state_folders
 

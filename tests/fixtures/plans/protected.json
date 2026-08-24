@@ -57,6 +57,19 @@
           "name": "fixture-replacement-prefix/"
         }
       }
+    },
+    {
+      "address": "google_secret_manager_secret.application[\"production-json-keys-app-master-key\"]",
+      "mode": "managed",
+      "type": "google_secret_manager_secret",
+      "name": "application",
+      "change": {
+        "actions": ["forget"],
+        "before": {
+          "secret_id": "fixture-forgotten-secret"
+        },
+        "after": null
+      }
     }
   ]
 }

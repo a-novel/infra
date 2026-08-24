@@ -67,15 +67,24 @@ esac
 
 STATE_OBJECT="gs://${STATE_BUCKET}/${STATE_ROOT}/default.tfstate"
 LOCK_OBJECT="gs://${STATE_BUCKET}/${STATE_ROOT}/default.tflock"
+
+assert_state_unlocked() {
+  local root_objects
+
+  # Listing the parent keeps authorization and network failures fatal. Testing
+  # the lock URI directly would make those failures look like an absent lock.
+  root_objects="$(gcloud storage ls "gs://${STATE_BUCKET}/${STATE_ROOT}/")"
+  if grep -Fqx -- "${LOCK_OBJECT}" <<<"${root_objects}"; then
+    printf 'Stop: %s is locked; identify the owning OpenTofu operation.\n' "${STATE_ROOT}" >&2
+    false
+  fi
+}
 ```
 
 Check for a live lock without printing its content:
 
 ```bash
-if gcloud storage ls "${LOCK_OBJECT}" >/dev/null 2>&1; then
-  printf 'Stop: %s is locked; identify the owning OpenTofu operation.\n' "${STATE_ROOT}" >&2
-  false
-fi
+assert_state_unlocked
 ```
 
 Expected safe result: no output. If locked, use audit metadata to find the principal and operation;
@@ -90,7 +99,7 @@ gcloud storage ls \
   "${STATE_OBJECT}"
 ```
 
-Expected safe result: one or more lines ending in `default.tfstate#<generation>`, ordered with size and
+Expected safe result: one or more lines ending in `default.tfstate#<generation>` with size and
 timestamps. Generation numbers, sizes, and dates are safe metadata. If there is only one generation,
 stop: there is no older version to recover.
 
@@ -165,13 +174,14 @@ print attribute values.
 Recheck that no workflow or lock appeared since inspection:
 
 ```bash
-test -z "$(gh run list --repo a-novel/infra --status in_progress --json databaseId --jq '.[].databaseId')"
-test -z "$(gh run list --repo a-novel/infra --status queued --json databaseId --jq '.[].databaseId')"
+# Assign before testing so a failed GitHub query aborts instead of looking like
+# an empty run list.
+IN_PROGRESS_RUN_IDS="$(gh run list --repo a-novel/infra --status in_progress --json databaseId --jq '.[].databaseId')"
+QUEUED_RUN_IDS="$(gh run list --repo a-novel/infra --status queued --json databaseId --jq '.[].databaseId')"
+test -z "${IN_PROGRESS_RUN_IDS}"
+test -z "${QUEUED_RUN_IDS}"
 
-if gcloud storage ls "${LOCK_OBJECT}" >/dev/null 2>&1; then
-  printf 'Stop: a new state lock appeared.\n' >&2
-  false
-fi
+assert_state_unlocked
 
 CURRENT_GENERATION="$(gcloud storage objects describe "${STATE_OBJECT}" --format='value(generation)')"
 test "${CURRENT_GENERATION}" = "${LIVE_GENERATION}"
@@ -258,8 +268,8 @@ Expected safe result depends on the incident:
 - if only the live state object was corrupt, the summary should have no changes;
 - if state was intentionally rewound while cloud resources remained newer, the summary should show
   the expected reconciliation actions by type and count;
-- any protected deletion/replacement exits with status `3` and requires a separate reviewed recovery
-  decision.
+- any protected deletion, replacement, or state-forget action exits with status `3` and requires a
+  separate reviewed recovery decision.
 
 Never apply this plan as part of state restoration. Attach only the sanitized summary and private
 hashes to the incident; route any resource reconciliation through the protected foundation or release
@@ -272,6 +282,13 @@ shows the candidate was wrong, restore that original generation over the recover
 second atomic precondition:
 
 ```bash
+IN_PROGRESS_RUN_IDS="$(gh run list --repo a-novel/infra --status in_progress --json databaseId --jq '.[].databaseId')"
+QUEUED_RUN_IDS="$(gh run list --repo a-novel/infra --status queued --json databaseId --jq '.[].databaseId')"
+test -z "${IN_PROGRESS_RUN_IDS}"
+test -z "${QUEUED_RUN_IDS}"
+
+assert_state_unlocked
+
 CURRENT_GENERATION="$(gcloud storage objects describe "${STATE_OBJECT}" --format='value(generation)')"
 test "${CURRENT_GENERATION}" = "${RESTORED_GENERATION}"
 
@@ -318,6 +335,8 @@ unset MANAGEMENT_PROJECT_ID STATE_BUCKET STATE_ROOT STATE_OBJECT LOCK_OBJECT ROO
 unset CANDIDATE_GENERATION LIVE_GENERATION CURRENT_GENERATION RESTORED_GENERATION ROLLBACK_GENERATION
 unset CANDIDATE_STATE ORIGINAL_LIVE_STATE CANDIDATE_GIT_SHA RECOVERY_CHECKOUT RECOVERY_TEMP_DIR
 unset RECOVERY_PLAN RECOVERY_PLAN_JSON RESTORE_CONFIRMATION ROLLBACK_CONFIRMATION OPERATOR_EMAIL
+unset IN_PROGRESS_RUN_IDS QUEUED_RUN_IDS
+unset -f assert_state_unlocked
 ```
 
 This permanently deletes only the private temporary copies and detached worktree. GCS generations,

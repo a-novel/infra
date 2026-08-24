@@ -160,7 +160,7 @@ Local modules begin only when two real call sites share a resource shape or one 
 
 ### Plan-output boundary
 
-`ops/plan-summary.sh` reads an OpenTofu JSON plan and emits only counts grouped by action and resource type. It blocks deletion or replacement of protected state, project, identity, secret, bucket, and database-disk resources. Resource addresses, values, outputs, environment variables, DSNs, and tokens stay out of public logs.
+`ops/plan-summary.sh` reads an OpenTofu JSON plan and emits only counts grouped by action and resource type. It blocks deletion, replacement, or state-forget actions on protected state, project, identity, secret, bucket, and database-disk resources, and it rejects unknown action combinations. Resource addresses, values, outputs, environment variables, DSNs, and tokens stay out of public logs.
 
 Opaque production plans will live in private, versioned Google Cloud storage when the protected apply workflow lands. GitHub artifacts and pull-request comments never carry them.
 

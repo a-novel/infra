@@ -132,6 +132,35 @@ run "builds_the_protected_management_plane" {
 
   assert {
     condition = (
+      contains(local.operator_project_roles, "roles/logging.privateLogViewer") &&
+      !contains(local.plan_project_roles, "roles/logging.viewer") &&
+      !contains(local.plan_project_roles, "roles/iam.securityReviewer") &&
+      !contains(local.foundation_project_roles, "roles/logging.configWriter")
+    )
+    error_message = "Audit access must stay with operators, and automation must not receive broad logging or security-reviewer grants."
+  }
+
+  assert {
+    condition = (
+      length(google_storage_bucket_iam_member.automation_bucket_viewer) == 2 &&
+      toset(google_project_iam_custom_role.plan_metadata.permissions) == toset([
+        "resourcemanager.projects.get",
+        "resourcemanager.projects.getIamPolicy",
+        "resourcemanager.projects.list",
+        "storage.buckets.get",
+        "storage.buckets.getIamPolicy",
+        "storage.buckets.list",
+        "storage.managedFolders.get",
+        "storage.managedFolders.getIamPolicy",
+        "storage.managedFolders.list",
+      ]) &&
+      google_project_iam_member.plan_metadata.role == google_project_iam_custom_role.plan_metadata.name
+    )
+    error_message = "Planning must refresh all bucket metadata without reading backup or receipt objects."
+  }
+
+  assert {
+    condition = (
       google_storage_managed_folder_iam_member.release_state.managed_folder == "release/" &&
       length(google_storage_managed_folder_iam_member.plan_state) == 3 &&
       length(google_storage_managed_folder_iam_member.recovery_state) == 3

@@ -1,0 +1,19 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.12.6",
+  "resource_changes": [
+    {
+      "address": "google_storage_bucket.future_action",
+      "mode": "managed",
+      "type": "google_storage_bucket",
+      "name": "future_action",
+      "change": {
+        "actions": ["future-action"],
+        "before": {
+          "name": "fixture-unsupported-action-value"
+        },
+        "after": null
+      }
+    }
+  ]
+}
