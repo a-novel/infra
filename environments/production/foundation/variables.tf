@@ -32,6 +32,7 @@ variable "workload_project_name" {
 variable "billing_account_id" {
   description = "Cloud Billing account ID linked to the workload project and used for its budget."
   type        = string
+  sensitive   = true
 
   validation {
     condition     = can(regex("^[0-9A-Z]{6}-[0-9A-Z]{6}-[0-9A-Z]{6}$", var.billing_account_id))
@@ -88,6 +89,7 @@ variable "subnet_cidr" {
 variable "cost_alert_email" {
   description = "Operator email address that receives workload budget notifications."
   type        = string
+  sensitive   = true
 
   validation {
     condition     = can(regex("^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$", var.cost_alert_email))
@@ -95,14 +97,14 @@ variable "cost_alert_email" {
   }
 }
 
-variable "monthly_budget_usd" {
-  description = "Alert-only monthly workload budget in USD; this notifies operators but does not stop spend."
+variable "monthly_budget_units" {
+  description = "Alert-only monthly workload budget in whole units of the billing account currency; notifications do not stop spend."
   type        = number
   default     = 60
 
   validation {
-    condition     = var.monthly_budget_usd >= 10 && var.monthly_budget_usd <= 1000 && floor(var.monthly_budget_usd) == var.monthly_budget_usd
-    error_message = "The monthly budget must be a whole USD amount from 10 through 1000."
+    condition     = var.monthly_budget_units >= 10 && var.monthly_budget_units <= 1000 && floor(var.monthly_budget_units) == var.monthly_budget_units
+    error_message = "The monthly budget must be a whole billing-currency amount from 10 through 1000."
   }
 }
 

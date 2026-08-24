@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # Classifies an OpenTofu JSON plan without printing resource values or addresses.
+# Exit 3 means at least one managed resource would be deleted or forgotten.
 # Usage: ./ops/plan-summary.sh <bootstrap|foundation|release> <plan.json>
 
 set -euo pipefail
@@ -68,52 +69,28 @@ jq -r '
     | "\(.[0].action)\t\(.[0].type)\t\(length)"
 ' "$2"
 
-PROTECTED_CHANGES="$(jq -r '
-    def protected_change:
+DESTRUCTIVE_CHANGES="$(jq -r '
+    def destructive_change:
         ((.change.actions | index("delete")) != null)
         or ((.change.actions | index("forget")) != null);
 
-    def protected_type:
-        . == "google_artifact_registry_repository"
-        or . == "google_artifact_registry_repository_iam_member"
-        or . == "google_billing_budget"
-        or . == "google_cloud_quotas_quota_preference"
-        or . == "google_compute_disk"
-        or . == "google_compute_firewall"
-        or . == "google_compute_network"
-        or . == "google_compute_route"
-        or . == "google_compute_subnetwork"
-        or . == "google_dns_managed_zone"
-        or . == "google_dns_record_set"
-        or . == "google_iam_workload_identity_pool"
-        or . == "google_iam_workload_identity_pool_provider"
-        or . == "google_project_iam_audit_config"
-        or . == "google_project_iam_custom_role"
-        or . == "google_project_iam_member"
-        or . == "google_project"
-        or . == "google_project_service"
-        or . == "google_secret_manager_secret"
-        or . == "google_secret_manager_secret_iam_member"
-        or . == "google_service_account"
-        or . == "google_service_account_iam_member"
-        or . == "google_logging_project_bucket_config"
-        or . == "google_logging_project_exclusion"
-        or . == "google_monitoring_notification_channel"
-        or . == "google_storage_bucket"
-        or . == "google_storage_bucket_iam_member"
-        or . == "google_storage_managed_folder"
-        or . == "google_storage_managed_folder_iam_member";
-
-    [.resource_changes[] | select(protected_change) | .type | select(protected_type)]
+    # Every managed type is covered so adding a resource cannot weaken the
+    # destructive-change gate by omission from an allowlist.
+    [
+      .resource_changes[]
+      | select(.mode == "managed")
+      | select(destructive_change)
+      | .type
+    ]
     | sort
     | group_by(.)
     | .[]
     | "\(.[0])\t\(length)"
 ' "$2")"
 
-if [ -n "${PROTECTED_CHANGES}" ]; then
+if [ -n "${DESTRUCTIVE_CHANGES}" ]; then
     while IFS=$'\t' read -r resource_type count; do
-        printf "Protected resource deletion, replacement, or state forget: %s (%s).\n" "${resource_type}" "${count}" >&2
-    done <<<"${PROTECTED_CHANGES}"
+        printf "Managed resource deletion, replacement, or state forget: %s (%s).\n" "${resource_type}" "${count}" >&2
+    done <<<"${DESTRUCTIVE_CHANGES}"
     exit 3
 fi

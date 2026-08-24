@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Exercises the root allowlist and sanitized destructive-plan classifier.
+# Exercises the root allowlist and fail-closed destructive-plan classifier.
 
 set -euo pipefail
 
@@ -58,6 +58,8 @@ grep -Fq $'delete\tgoogle_project\t1' "${TEMP_DIR}/protected.out"
 grep -Fq $'forget\tgoogle_secret_manager_secret\t1' "${TEMP_DIR}/protected.out"
 grep -Fq $'replace\tgoogle_compute_disk\t1' "${TEMP_DIR}/protected.out"
 grep -Fq $'delete\tgoogle_compute_firewall\t1' "${TEMP_DIR}/protected.out"
+grep -Fq $'delete\tgoogle_cloud_run_v2_service\t1' "${TEMP_DIR}/protected.out"
+grep -Fq "google_cloud_run_v2_service (1)" "${TEMP_DIR}/protected.err"
 grep -Fq "google_compute_disk (1)" "${TEMP_DIR}/protected.err"
 grep -Fq "google_compute_firewall (1)" "${TEMP_DIR}/protected.err"
 grep -Fq "google_project (1)" "${TEMP_DIR}/protected.err"
@@ -67,6 +69,7 @@ grep -Fq "google_storage_managed_folder (1)" "${TEMP_DIR}/protected.err"
 assert_absent "${TEMP_DIR}/protected.out" "fixture-disk-name"
 assert_absent "${TEMP_DIR}/protected.err" "fixture-project-id"
 assert_absent "${TEMP_DIR}/protected.err" "fixture-forgotten-secret"
+assert_absent "${TEMP_DIR}/protected.err" "fixture-future-service"
 
 set +e
 "${REPOSITORY_ROOT}/ops/plan-summary.sh" foundation "${SCRIPT_DIR}/fixtures/plans/unsupported.json" >"${TEMP_DIR}/unsupported.out" 2>"${TEMP_DIR}/unsupported.err"

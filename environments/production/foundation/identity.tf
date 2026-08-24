@@ -114,6 +114,16 @@ resource "google_project_iam_member" "foundation_project_metadata" {
   member  = "serviceAccount:${local.automation_service_accounts.foundation}"
 }
 
+# Compute API activation can grant Editor to its default service account in
+# projects without the preventive organization policy. Keep the account
+# recoverable while removing its project roles.
+resource "google_project_default_service_accounts" "workload" {
+  project = google_project.workload.project_id
+  action  = "DEPRIVILEGE"
+
+  depends_on = [google_project_service.workload["compute.googleapis.com"]]
+}
+
 resource "google_service_account" "runtime" {
   for_each = local.runtime_identities
 

@@ -29,6 +29,12 @@ locals {
   ]...)
 }
 
+data "google_billing_account" "workload" {
+  billing_account = var.billing_account_id
+  lookup_projects = false
+  open            = true
+}
+
 data "google_cloud_quotas_quota_infos" "service" {
   for_each = toset(["compute.googleapis.com", "run.googleapis.com"])
 
@@ -101,8 +107,8 @@ resource "google_billing_budget" "workload" {
 
   amount {
     specified_amount {
-      currency_code = "USD"
-      units         = tostring(var.monthly_budget_usd)
+      currency_code = data.google_billing_account.workload.currency_code
+      units         = tostring(var.monthly_budget_units)
     }
   }
 

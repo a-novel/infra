@@ -23,6 +23,12 @@ mock_provider "google" {
     }
   }
 
+  mock_data "google_billing_account" {
+    defaults = {
+      currency_code = "EUR"
+    }
+  }
+
   mock_data "google_cloud_quotas_quota_infos" {
     defaults = {
       quota_infos = [
@@ -171,32 +177,32 @@ run "builds_the_protected_workload_foundation" {
 
   assert {
     condition = (
-      length(google_compute_route.private_google_apis) == 2 &&
-      toset([for route in values(google_compute_route.private_google_apis) : route.dest_range]) ==
-      toset(["199.36.153.8/30", "34.126.0.0/18"]) &&
+      length(google_compute_route.restricted_google_apis) == 2 &&
+      toset([for route in values(google_compute_route.restricted_google_apis) : route.dest_range]) ==
+      toset(["199.36.153.4/30", "34.126.0.0/18"]) &&
       alltrue([
-        for route in values(google_compute_route.private_google_apis) :
+        for route in values(google_compute_route.restricted_google_apis) :
         route.next_hop_gateway == "default-internet-gateway"
       ])
     )
-    error_message = "The no-default-route network must retain only the two explicit private Google routes."
+    error_message = "The no-default-route network must retain only the two explicit restricted Google routes."
   }
 
   assert {
     condition = (
-      google_compute_firewall.allow_private_google_apis.direction == "EGRESS" &&
-      google_compute_firewall.allow_private_google_apis.priority < google_compute_firewall.deny_other_egress.priority &&
-      toset(google_compute_firewall.allow_private_google_apis.destination_ranges) ==
-      toset(["199.36.153.8/30", "34.126.0.0/18"]) &&
-      toset(google_compute_firewall.allow_private_google_apis.target_tags) == toset([
+      google_compute_firewall.allow_restricted_google_apis.direction == "EGRESS" &&
+      google_compute_firewall.allow_restricted_google_apis.priority < google_compute_firewall.deny_other_egress.priority &&
+      toset(google_compute_firewall.allow_restricted_google_apis.destination_ranges) ==
+      toset(["199.36.153.4/30", "34.126.0.0/18"]) &&
+      toset(google_compute_firewall.allow_restricted_google_apis.target_tags) == toset([
         "agora-authentication",
         "agora-backup",
         "agora-database",
         "agora-json-keys",
         "agora-restore",
       ]) &&
-      one(google_compute_firewall.allow_private_google_apis.allow).protocol == "tcp" &&
-      toset(one(google_compute_firewall.allow_private_google_apis.allow).ports) == toset(["443"]) &&
+      one(google_compute_firewall.allow_restricted_google_apis.allow).protocol == "tcp" &&
+      toset(one(google_compute_firewall.allow_restricted_google_apis.allow).ports) == toset(["443"]) &&
       google_compute_firewall.deny_other_egress.direction == "EGRESS" &&
       google_compute_firewall.deny_other_egress.priority == 1200 &&
       toset(google_compute_firewall.deny_other_egress.destination_ranges) == toset(["0.0.0.0/0"]) &&
@@ -233,17 +239,19 @@ run "builds_the_protected_workload_foundation" {
       length(google_dns_managed_zone.private_google_domain) == 2 &&
       toset([for zone in values(google_dns_managed_zone.private_google_domain) : zone.dns_name]) ==
       toset(["pkg.dev.", "run.app."]) &&
-      google_dns_record_set.private_googleapis.rrdatas == tolist(local.private_google_vip_addresses) &&
+      google_dns_record_set.restricted_googleapis.rrdatas == tolist(local.restricted_google_vip_addresses) &&
       alltrue([
         for record in values(google_dns_record_set.private_google_domain_apex) :
-        record.rrdatas == tolist(local.private_google_vip_addresses)
+        record.rrdatas == tolist(local.restricted_google_vip_addresses)
       ])
     )
-    error_message = "Private DNS must retain googleapis.com, pkg.dev, run.app, and the documented private VIPs."
+    error_message = "Private DNS must retain googleapis.com, pkg.dev, run.app, and the documented restricted VIPs."
   }
 
   assert {
     condition = (
+      google_project_default_service_accounts.workload.project == "agora-production-test" &&
+      google_project_default_service_accounts.workload.action == "DEPRIVILEGE" &&
       length(google_service_account.runtime) == 6 &&
       {
         for name, identity in local.runtime_identities : name => identity.account_id
@@ -295,7 +303,7 @@ run "builds_the_protected_workload_foundation" {
         binding.role == "roles/secretmanager.secretAccessor"
       ])
     )
-    error_message = "Runtime identities or exact per-secret access changed."
+    error_message = "Default-account deprivileging, runtime identities, or exact per-secret access changed."
   }
 
   assert {
@@ -379,6 +387,7 @@ run "builds_the_protected_workload_foundation" {
       google_monitoring_notification_channel.cost_email.labels == tomap({ email_address = "infra@example.com" }) &&
       google_monitoring_notification_channel.cost_email.deletion_policy == "PREVENT" &&
       google_billing_budget.workload.amount[0].specified_amount[0].units == "60" &&
+      google_billing_budget.workload.amount[0].specified_amount[0].currency_code == "EUR" &&
       toset(google_billing_budget.workload.budget_filter[0].projects) == toset(["projects/987654321098"]) &&
       toset([
         for threshold in google_billing_budget.workload.threshold_rules :

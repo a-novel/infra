@@ -18,16 +18,16 @@ locals {
 
   private_egress_tags = toset(values(local.network_tags))
 
-  private_google_api_ranges = toset([
-    "199.36.153.8/30",
+  restricted_google_api_ranges = toset([
+    "199.36.153.4/30",
     "34.126.0.0/18",
   ])
 
-  private_google_vip_addresses = [
-    "199.36.153.8",
-    "199.36.153.9",
-    "199.36.153.10",
-    "199.36.153.11",
+  restricted_google_vip_addresses = [
+    "199.36.153.4",
+    "199.36.153.5",
+    "199.36.153.6",
+    "199.36.153.7",
   ]
 
   private_google_domains = {
@@ -68,12 +68,12 @@ resource "google_compute_subnetwork" "production" {
 }
 
 # Deleting the catch-all route removes an accidental public path. These two
-# explicit routes retain only Private Google Access and direct Google API paths.
-resource "google_compute_route" "private_google_apis" {
-  for_each = local.private_google_api_ranges
+# explicit routes retain only restricted Google API and direct API paths.
+resource "google_compute_route" "restricted_google_apis" {
+  for_each = local.restricted_google_api_ranges
 
   project = google_project.workload.project_id
-  name    = "private-google-${replace(replace(each.value, ".", "-"), "/", "-")}"
+  name    = "restricted-google-${replace(replace(each.value, ".", "-"), "/", "-")}"
   network = google_compute_network.production.id
 
   dest_range       = each.value
@@ -81,14 +81,14 @@ resource "google_compute_route" "private_google_apis" {
   priority         = 1000
 }
 
-resource "google_compute_firewall" "allow_private_google_apis" {
+resource "google_compute_firewall" "allow_restricted_google_apis" {
   project = google_project.workload.project_id
-  name    = "agora-allow-private-google-apis"
+  name    = "agora-allow-restricted-google-apis"
   network = google_compute_network.production.name
 
   direction          = "EGRESS"
   priority           = 800
-  destination_ranges = sort(tolist(local.private_google_api_ranges))
+  destination_ranges = sort(tolist(local.restricted_google_api_ranges))
   target_tags        = sort(tolist(local.private_egress_tags))
 
   allow {
@@ -163,10 +163,10 @@ resource "google_compute_firewall" "allow_iap_ssh" {
 
 resource "google_dns_managed_zone" "googleapis" {
   project = google_project.workload.project_id
-  name    = "private-googleapis"
+  name    = "restricted-googleapis"
 
   dns_name        = "googleapis.com."
-  description     = "Resolve Google APIs through the private.googleapis.com VIP."
+  description     = "Resolve supported Google APIs through the restricted.googleapis.com VIP."
   visibility      = "private"
   force_destroy   = false
   deletion_policy = "PREVENT"
@@ -184,13 +184,13 @@ resource "google_dns_managed_zone" "googleapis" {
   depends_on = [google_project_service.workload["dns.googleapis.com"]]
 }
 
-resource "google_dns_record_set" "private_googleapis" {
+resource "google_dns_record_set" "restricted_googleapis" {
   project      = google_project.workload.project_id
   managed_zone = google_dns_managed_zone.googleapis.name
-  name         = "private.googleapis.com."
+  name         = "restricted.googleapis.com."
   type         = "A"
   ttl          = 300
-  rrdatas      = local.private_google_vip_addresses
+  rrdatas      = local.restricted_google_vip_addresses
 }
 
 resource "google_dns_record_set" "googleapis_wildcard" {
@@ -199,7 +199,7 @@ resource "google_dns_record_set" "googleapis_wildcard" {
   name         = "*.googleapis.com."
   type         = "CNAME"
   ttl          = 300
-  rrdatas      = ["private.googleapis.com."]
+  rrdatas      = ["restricted.googleapis.com."]
 }
 
 resource "google_dns_managed_zone" "private_google_domain" {
@@ -209,7 +209,7 @@ resource "google_dns_managed_zone" "private_google_domain" {
   name    = "private-${replace(each.key, "_", "-")}"
 
   dns_name        = each.value
-  description     = "Resolve ${each.value} through the private Google API VIP."
+  description     = "Resolve ${each.value} through the restricted Google API VIP."
   visibility      = "private"
   force_destroy   = false
   deletion_policy = "PREVENT"
@@ -235,7 +235,7 @@ resource "google_dns_record_set" "private_google_domain_apex" {
   name         = each.value
   type         = "A"
   ttl          = 300
-  rrdatas      = local.private_google_vip_addresses
+  rrdatas      = local.restricted_google_vip_addresses
 }
 
 resource "google_dns_record_set" "private_google_domain_wildcard" {
