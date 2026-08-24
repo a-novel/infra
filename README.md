@@ -23,7 +23,23 @@ The design is a small Google Cloud landing zone built from established infrastru
 
 Pull requests are cloud-blind. They receive a read-only repository token and run formatting, validation, mocked OpenTofu tests, static security analysis, and manifest checks. They receive no Google identity, protected environment, or secret payload.
 
-The repository currently has no cloud apply workflow. Google Cloud access and protected deployment environments will be introduced with the bootstrap root. Until that reviewed change lands, the setup below is the complete operator work.
+The repository currently has no cloud apply workflow. The bootstrap root defines the management
+plane, but merging or validating it creates nothing. Its one-time initial application remains a
+human-only exception performed from `master` after explicit approval; agents never run `gcloud` or
+`tofu apply`. Later routine applies must be gated by protected workflows and cannot run from a branch.
+
+### Bootstrap Google Cloud only after explicit authorization
+
+Use [Bootstrap and verify the management plane](./docs/runbooks/bootstrap-management-plane.md) after
+this change is merged and an operator is authorized to create resources. It contains the exact
+standalone or organization/folder project commands, billing and API prerequisites, temporary access,
+GitHub environments, local first plan/apply, remote-state migration, WIF/IAM verification,
+organization-policy option, broad-access removal, expected safe output, and partial-failure recovery.
+
+Do not improvise a shorter setup in the console. The only unavoidable console actions are creating a
+billing account when none exists, securing the human account and recovery codes, and disabling GitHub
+administrator bypass for the two high-authority environments where the documented public API does
+not expose that switch. Every resulting control has an independent command-line verification.
 
 ### Reconcile repository protection after this bootstrap merges
 
@@ -166,7 +182,10 @@ The [Google Cloud provider guide](./docs/google-cloud.md#network-trust-model) de
 
 Ingress and egress are independent. JSON Keys starts with private-only egress and no public internet path. Authentication uses private VPC routes for internal destinations and managed TLS egress for SMTP. A future private GenAI gRPC service can use that public-TLS egress profile for LLM APIs without opening its ingress.
 
-These properties are targets, not current enforcement: this bootstrap contains no network, firewall, Cloud Run, IAM, or VM resources. Each property becomes enforceable with its owning resource, mocked assertion, protected apply, and post-apply verification.
+These network properties are targets, not current enforcement: this bootstrap contains no workload
+network, firewall, Cloud Run, or VM resources. Its management IAM already separates future plan,
+foundation, release, and recovery automation, but a trust boundary has no network effect until the
+owning workload resources, mocked assertions, protected apply, and post-apply verification land.
 
 ## Contributing
 

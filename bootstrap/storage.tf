@@ -1,0 +1,109 @@
+locals {
+  bucket_name_prefix = "${var.management_project_id}-${data.google_project.management.number}"
+  state_prefixes     = toset(["bootstrap", "foundation", "release"])
+}
+
+resource "google_storage_bucket" "state" {
+  name          = "${local.bucket_name_prefix}-tofu-state"
+  location      = var.storage_location
+  storage_class = "STANDARD"
+
+  force_destroy               = false
+  public_access_prevention    = "enforced"
+  uniform_bucket_level_access = true
+
+  versioning {
+    enabled = true
+  }
+
+  soft_delete_policy {
+    retention_duration_seconds = 604800
+  }
+
+  lifecycle_rule {
+    action {
+      type = "Delete"
+    }
+
+    condition {
+      days_since_noncurrent_time = 90
+      num_newer_versions         = 50
+    }
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [google_project_service.management["storage.googleapis.com"]]
+}
+
+resource "google_storage_managed_folder" "state" {
+  for_each = local.state_prefixes
+
+  bucket          = google_storage_bucket.state.name
+  name            = "${each.value}/"
+  force_destroy   = false
+  deletion_policy = "PREVENT"
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "google_storage_bucket" "backups" {
+  name          = "${local.bucket_name_prefix}-backups"
+  location      = var.storage_location
+  storage_class = "STANDARD"
+
+  force_destroy               = false
+  public_access_prevention    = "enforced"
+  uniform_bucket_level_access = true
+
+  # Backup retention and lifecycle land with the stateful runtime. Disabling
+  # soft delete here avoids paying twice for one retained backup generation.
+  soft_delete_policy {
+    retention_duration_seconds = 0
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [google_project_service.management["storage.googleapis.com"]]
+}
+
+resource "google_storage_bucket" "receipts" {
+  name          = "${local.bucket_name_prefix}-deployment-receipts"
+  location      = var.storage_location
+  storage_class = "STANDARD"
+
+  force_destroy               = false
+  public_access_prevention    = "enforced"
+  uniform_bucket_level_access = true
+
+  versioning {
+    enabled = true
+  }
+
+  soft_delete_policy {
+    retention_duration_seconds = 604800
+  }
+
+  lifecycle_rule {
+    action {
+      type = "Delete"
+    }
+
+    condition {
+      days_since_noncurrent_time = 365
+      num_newer_versions         = 20
+    }
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [google_project_service.management["storage.googleapis.com"]]
+}

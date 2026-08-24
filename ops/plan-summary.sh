@@ -54,9 +54,18 @@ PROTECTED_CHANGES="$(jq -r '
         . == "google_compute_disk"
         or . == "google_iam_workload_identity_pool"
         or . == "google_iam_workload_identity_pool_provider"
+        or . == "google_project_iam_audit_config"
+        or . == "google_project_iam_custom_role"
+        or . == "google_project_iam_member"
         or . == "google_project"
         or . == "google_secret_manager_secret"
-        or . == "google_storage_bucket";
+        or . == "google_secret_manager_secret_iam_member"
+        or . == "google_service_account"
+        or . == "google_service_account_iam_member"
+        or . == "google_storage_bucket"
+        or . == "google_storage_bucket_iam_member"
+        or . == "google_storage_managed_folder"
+        or . == "google_storage_managed_folder_iam_member";
 
     [.resource_changes[] | select(destructive) | .type | select(protected_type)]
     | sort
