@@ -594,48 +594,59 @@ gcloud iam workload-identity-pools providers list \
   --format='table(name.basename(),attributeCondition)'
 ```
 
-Confirm no user-managed service-account key exists. Empty output is success:
+Confirm no project service account has a user-managed key. Enumerating the project instead of naming
+the four current accounts keeps this check fail-closed when another account is introduced:
 
 ```bash
-for account in infra-plan infra-foundation infra-release infra-recovery; do
-  gcloud iam service-accounts keys list \
+PROJECT_SERVICE_ACCOUNTS="$(gcloud iam service-accounts list \
+  --project="${MANAGEMENT_PROJECT_ID}" \
+  --format='value(email)')"
+[[ -n "$PROJECT_SERVICE_ACCOUNTS" ]]
+while IFS= read -r account_email; do
+  USER_KEY_NAMES="$(gcloud iam service-accounts keys list \
     --project="${MANAGEMENT_PROJECT_ID}" \
-    --iam-account="${account}@${MANAGEMENT_PROJECT_ID}.iam.gserviceaccount.com" \
+    --iam-account="$account_email" \
     --managed-by=user \
-    --format='value(name)'
-done
+    --format='value(name)')"
+  if [[ -n "$USER_KEY_NAMES" ]]; then
+    printf 'STOP: user-managed key exists for %s.\n' "$account_email" >&2
+    false
+  fi
+done <<<"$PROJECT_SERVICE_ACCOUNTS"
+unset PROJECT_SERVICE_ACCOUNTS USER_KEY_NAMES
+printf 'All project service accounts have zero user-managed keys.\n'
 ```
 
 For an organization-backed project, ask an organization-policy administrator—not CI—to enforce the
-two parent security policies. These controls are manual because giving automation organization-policy
+three project security policies. These controls are manual because giving automation organization-policy
 authority would be a larger risk than the setting protects against.
 
 ```bash
 gcloud projects get-ancestors "${MANAGEMENT_PROJECT_ID}" \
   --format='table(type,id)'
 
-gcloud resource-manager org-policies enable-enforce \
+for constraint in \
   iam.disableServiceAccountKeyCreation \
-  --project="${MANAGEMENT_PROJECT_ID}"
+  iam.disableServiceAccountKeyUpload \
+  storage.publicAccessPrevention; do
+  gcloud resource-manager org-policies enable-enforce \
+    "$constraint" \
+    --project="${MANAGEMENT_PROJECT_ID}"
+done
 
-gcloud resource-manager org-policies enable-enforce \
-  storage.publicAccessPrevention \
-  --project="${MANAGEMENT_PROJECT_ID}"
-
-gcloud resource-manager org-policies describe \
-  constraints/iam.disableServiceAccountKeyCreation \
-  --project="${MANAGEMENT_PROJECT_ID}" \
-  --effective \
-  --format=yaml
-
-gcloud resource-manager org-policies describe \
-  constraints/storage.publicAccessPrevention \
-  --project="${MANAGEMENT_PROJECT_ID}" \
-  --effective \
-  --format=yaml
+for constraint in \
+  iam.disableServiceAccountKeyCreation \
+  iam.disableServiceAccountKeyUpload \
+  storage.publicAccessPrevention; do
+  gcloud resource-manager org-policies describe \
+    "constraints/${constraint}" \
+    --project="${MANAGEMENT_PROJECT_ID}" \
+    --effective \
+    --format=yaml
+done
 ```
 
-Expected safe result: both effective policies enforce their boolean constraint. Policy propagation
+Expected safe result: all three effective policies enforce their boolean constraint. Policy propagation
 can take several minutes. If the project has no organization, these commands may be unavailable;
 record the standalone shape and rely on the enforced per-bucket public-access setting, the absence of
 key resources, exact WIF conditions, user-key audit, and periodic zero-key verification. Do not create
@@ -663,7 +674,7 @@ for role in roles/secretmanager.admin roles/storage.admin; do
 done
 ```
 
-Verify neither the operator nor an `infra-*` service account has Owner or Editor:
+Verify neither the operator nor any service account has Owner or Editor:
 
 ```bash
 gcloud projects get-iam-policy "${MANAGEMENT_PROJECT_ID}" --format=json \
@@ -672,7 +683,7 @@ gcloud projects get-iam-policy "${MANAGEMENT_PROJECT_ID}" --format=json \
       .bindings[]
       | select(.role == "roles/owner" or .role == "roles/editor")
       | .members[]
-      | select(. == $operator or test("^serviceAccount:infra-"))
+      | select(. == $operator or startswith("serviceAccount:"))
     ]
     | length == 0
   '

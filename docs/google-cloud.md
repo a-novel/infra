@@ -17,10 +17,13 @@ Data Access audit logging. Merging the code creates nothing. The project, billin
 first local-state apply, state migration, GitHub environment protection, optional organization
 policies, and temporary-access removal remain explicit human bootstrap actions.
 
-The workload project is not implemented yet. There is still no VPC, firewall, Artifact Registry,
-Cloud Run service or job, VM, Persistent Disk, database, backup schedule, DNS record, or public
-endpoint. Network, runtime, and database sections below therefore remain acceptance contracts until
-their corresponding resource, mocked test, protected deployment, and post-apply verification land.
+The foundation root now defines the replaceable workload project, required APIs, a custom VPC and
+subnet, explicit restricted Google routes, firewall policy, private DNS, deprivileged default service
+accounts, six keyless runtime identities, exact management-secret access, an immutable registry, a
+project-scoped budget, and bounded logging. These resources have mocked security tests but have not
+been applied. There is still no Cloud Run service or job, VM, Persistent Disk, database, backup
+schedule, load balancer, public IP, or public endpoint. Those sections below remain acceptance
+contracts until their resource, test, protected deployment, and post-apply verification land.
 
 ## Provider and resource references
 
@@ -28,26 +31,27 @@ The [`hashicorp/google` provider reference](https://registry.terraform.io/provid
 defines each resource's OpenTofu arguments. The Google Cloud links below explain the product behavior,
 security model, operational limits, and recovery implications behind those arguments.
 
-| Capability                           | Owning root              | Agora usage                                                                                                              | Official Google Cloud documentation                                                                                                                                                                                                                                                                                                                             |
-| ------------------------------------ | ------------------------ | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Resource Manager projects            | Bootstrap and foundation | Keep the recovery plane stable while allowing the workload project to be rebuilt.                                        | [Creating and managing projects](https://cloud.google.com/resource-manager/docs/creating-managing-projects)                                                                                                                                                                                                                                                     |
-| Cloud Storage                        | Bootstrap                | Store state, reviewed plans, release receipts, logical backups, and recovery records with separate prefixes and IAM.     | [Cloud Storage overview](https://cloud.google.com/storage/docs/introduction), [public access prevention](https://cloud.google.com/storage/docs/public-access-prevention), and [Object Versioning](https://cloud.google.com/storage/docs/object-versioning)                                                                                                      |
-| IAM and Workload Identity Federation | Bootstrap and foundation | Give GitHub and workloads short-lived, use-specific identities without service-account keys.                             | [Workload Identity Federation for deployment pipelines](https://cloud.google.com/iam/docs/workload-identity-federation-with-deployment-pipelines), [WIF practices](https://cloud.google.com/iam/docs/best-practices-for-using-workload-identity-federation), and [service-account practices](https://cloud.google.com/iam/docs/best-practices-service-accounts) |
-| Secret Manager                       | Bootstrap                | Manage secret metadata and exact-version access in code while operators supply payload versions.                         | [Secret Manager overview](https://cloud.google.com/secret-manager/docs/overview), [best practices](https://cloud.google.com/secret-manager/docs/best-practices), and [rotation recommendations](https://cloud.google.com/secret-manager/docs/rotation-recommendations)                                                                                          |
-| VPC, subnet, DNS, and firewall rules | Foundation               | Carry private service and database traffic, private Google API access, and explicit egress profiles.                     | [VPC overview](https://cloud.google.com/vpc/docs/vpc), [firewall rules](https://cloud.google.com/firewall/docs/firewalls), [Private Google Access](https://cloud.google.com/vpc/docs/private-google-access), and [Cloud DNS private zones](https://cloud.google.com/dns/docs/zones/zones-overview)                                                              |
-| Artifact Registry                    | Foundation and release   | Hold the regional copy of a verified GHCR digest and retain every image named by a recovery receipt.                     | [Container image names](https://cloud.google.com/artifact-registry/docs/docker/names) and [cleanup policies](https://cloud.google.com/artifact-registry/docs/repositories/cleanup-policy-overview)                                                                                                                                                              |
-| Cloud Run services and jobs          | Foundation and release   | Run scale-to-zero HTTP/gRPC services and explicit migration, initialization, rotation, backup, and restore jobs.         | [Cloud Run overview](https://cloud.google.com/run/docs/overview/what-is-cloud-run), [jobs](https://cloud.google.com/run/docs/create-jobs), and [end-to-end HTTP/2](https://cloud.google.com/run/docs/configuring/http2)                                                                                                                                         |
-| Direct VPC egress                    | Foundation and release   | Give Cloud Run revisions private addresses and apply workload-specific VPC firewall policy without a connector.          | [Direct VPC egress](https://cloud.google.com/run/docs/configuring/vpc-direct-vpc) and [private Cloud Run networking](https://cloud.google.com/run/docs/securing/private-networking)                                                                                                                                                                             |
-| Compute Engine and Shielded VM       | Foundation               | Run the always-on Container-Optimized OS database host without a public interface.                                       | [Compute Engine IP addresses](https://cloud.google.com/compute/docs/ip-addresses), [Container-Optimized OS](https://cloud.google.com/container-optimized-os/docs), and [Shielded VM](https://cloud.google.com/compute/docs/about-shielded-vm)                                                                                                                   |
-| Persistent Disk and snapshots        | Foundation               | Keep database data independent from the replaceable VM and provide crash-consistent recovery points.                     | [Persistent Disk](https://cloud.google.com/compute/docs/disks/persistent-disks), [snapshot schedules](https://cloud.google.com/compute/docs/disks/about-snapshot-schedules), and [snapshot practices](https://cloud.google.com/compute/docs/disks/snapshot-best-practices)                                                                                      |
-| Cloud Scheduler                      | Foundation               | Start recurring backup and restore-check jobs without an always-running scheduler container.                             | [Cloud Scheduler overview](https://cloud.google.com/scheduler/docs/overview)                                                                                                                                                                                                                                                                                    |
-| Cloud Monitoring and Logging         | Foundation               | Alert on service, VM, database, backup, deployment, and budget symptoms while keeping logs bounded and free of payloads. | [Alerting overview](https://cloud.google.com/monitoring/alerts) and [Cloud Logging overview](https://cloud.google.com/logging/docs/overview)                                                                                                                                                                                                                    |
+| Capability                           | Owning root              | Agora usage                                                                                                                | Official Google Cloud documentation                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------------------ | ------------------------ | -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Resource Manager projects            | Bootstrap and foundation | Keep the recovery plane stable while allowing the workload project to be rebuilt.                                          | [Creating and managing projects](https://cloud.google.com/resource-manager/docs/creating-managing-projects)                                                                                                                                                                                                                                                                                                                                                       |
+| Cloud Storage                        | Bootstrap                | Store state, reviewed plans, release receipts, logical backups, and recovery records with separate prefixes and IAM.       | [Cloud Storage overview](https://cloud.google.com/storage/docs/introduction), [public access prevention](https://cloud.google.com/storage/docs/public-access-prevention), and [Object Versioning](https://cloud.google.com/storage/docs/object-versioning)                                                                                                                                                                                                        |
+| IAM and Workload Identity Federation | Bootstrap and foundation | Give GitHub and workloads short-lived, use-specific identities without keys, and remove basic roles from default accounts. | [Workload Identity Federation for deployment pipelines](https://cloud.google.com/iam/docs/workload-identity-federation-with-deployment-pipelines), [WIF practices](https://cloud.google.com/iam/docs/best-practices-for-using-workload-identity-federation), [service-account practices](https://cloud.google.com/iam/docs/best-practices-service-accounts), and [Compute Engine service accounts](https://cloud.google.com/compute/docs/access/service-accounts) |
+| Secret Manager                       | Bootstrap                | Manage secret metadata and exact-version access in code while operators supply payload versions.                           | [Secret Manager overview](https://cloud.google.com/secret-manager/docs/overview), [best practices](https://cloud.google.com/secret-manager/docs/best-practices), and [rotation recommendations](https://cloud.google.com/secret-manager/docs/rotation-recommendations)                                                                                                                                                                                            |
+| VPC, subnet, DNS, and firewall rules | Foundation               | Carry private service and database traffic, restricted Google API access, and explicit egress profiles.                    | [VPC overview](https://cloud.google.com/vpc/docs/vpc), [firewall rules](https://cloud.google.com/firewall/docs/firewalls), [Private Google Access](https://cloud.google.com/vpc/docs/configure-private-google-access), and [Cloud DNS private zones](https://cloud.google.com/dns/docs/zones/zones-overview)                                                                                                                                                      |
+| Artifact Registry                    | Foundation and release   | Hold the regional copy of a verified GHCR digest and retain every image named by a recovery receipt.                       | [Container image names](https://cloud.google.com/artifact-registry/docs/docker/names) and [cleanup policies](https://cloud.google.com/artifact-registry/docs/repositories/cleanup-policy-overview)                                                                                                                                                                                                                                                                |
+| Cloud Run services and jobs          | Foundation and release   | Run scale-to-zero HTTP/gRPC services and explicit migration, initialization, rotation, backup, and restore jobs.           | [Cloud Run overview](https://cloud.google.com/run/docs/overview/what-is-cloud-run), [jobs](https://cloud.google.com/run/docs/create-jobs), and [end-to-end HTTP/2](https://cloud.google.com/run/docs/configuring/http2)                                                                                                                                                                                                                                           |
+| Direct VPC egress                    | Foundation and release   | Give Cloud Run revisions private addresses and apply workload-specific VPC firewall policy without a connector.            | [Direct VPC egress](https://cloud.google.com/run/docs/configuring/vpc-direct-vpc) and [private Cloud Run networking](https://cloud.google.com/run/docs/securing/private-networking)                                                                                                                                                                                                                                                                               |
+| Compute Engine and Shielded VM       | Foundation               | Run the always-on Container-Optimized OS database host without a public interface.                                         | [Compute Engine IP addresses](https://cloud.google.com/compute/docs/ip-addresses), [Container-Optimized OS](https://cloud.google.com/container-optimized-os/docs), and [Shielded VM](https://cloud.google.com/compute/docs/about-shielded-vm)                                                                                                                                                                                                                     |
+| Persistent Disk and snapshots        | Foundation               | Keep database data independent from the replaceable VM and provide crash-consistent recovery points.                       | [Persistent Disk](https://cloud.google.com/compute/docs/disks/persistent-disks), [snapshot schedules](https://cloud.google.com/compute/docs/disks/about-snapshot-schedules), and [snapshot practices](https://cloud.google.com/compute/docs/disks/snapshot-best-practices)                                                                                                                                                                                        |
+| Cloud Scheduler                      | Foundation               | Start recurring backup and restore-check jobs without an always-running scheduler container.                               | [Cloud Scheduler overview](https://cloud.google.com/scheduler/docs/overview)                                                                                                                                                                                                                                                                                                                                                                                      |
+| Cloud Monitoring and Logging         | Foundation               | Alert on service, VM, database, backup, deployment, and budget symptoms while keeping logs bounded and free of payloads.   | [Alerting overview](https://cloud.google.com/monitoring/alerts) and [Cloud Logging overview](https://cloud.google.com/logging/docs/overview)                                                                                                                                                                                                                                                                                                                      |
 
 Each root README lists its actual OpenTofu resource addresses. An inventory entry explains the
 resource's Agora purpose, access and data boundary, replacement or deletion behavior, cost and
 recovery impact, and links both the pinned provider resource page and the relevant Google Cloud
-product page. The [bootstrap inventory](../bootstrap/README.md#resource-inventory) is the first
-concrete implementation of that contract.
+product page. The [bootstrap inventory](../bootstrap/README.md#resource-inventory) and
+[foundation inventory](../environments/production/foundation/README.md#resource-inventory) are the
+concrete implementations of that contract.
 
 ## Network trust model
 
@@ -80,24 +84,31 @@ targeted firewall access, database credentials, and service-owned database roles
 ## PostgreSQL isolation target
 
 The database host has no external IP, public load balancer, forwarding rule, public DNS record, or
-public firewall path. Its PostgreSQL port is reachable only through the production VPC from Cloud Run service
-revisions and job executions that carry an approved, workload-specific network tag. Containers publish
-PostgreSQL on the VM's internal interface, and each database keeps its own cluster, data directory, credentials, and
-role boundary.
+public firewall path. Its PostgreSQL port is reachable only from the production subnet and targets
+only the database-host network tag. Approved Cloud Run revisions and jobs carry caller-specific tags
+that permit their TCP `5432` egress; containers publish PostgreSQL on the VM's internal interface,
+and each database keeps its own cluster, data directory, credentials, and role boundary.
+
+Google supports Direct VPC tags as firewall targets for Cloud Run egress, but not as source tags in
+ingress rules. The subnet source range is therefore intentional, not a substitute for caller
+authorization. Tagged egress, service-specific database credentials, PostgreSQL roles, and the
+database target tag form the remaining layers. See Google's
+[Direct VPC network-tag limitations](https://cloud.google.com/run/docs/configuring/vpc-direct-vpc#network-tags).
 
 The foundation tests must prove that:
 
 - the VM network interface has no external access configuration;
 - no ingress rule permits `0.0.0.0/0` or `::/0` to a database target;
-- TCP `5432` ingress targets only the database host and accepts only approved source network tags;
+- TCP `5432` ingress targets only the database host and accepts only the production subnet;
+- private callers receive only their reviewed egress tag, database credential, and database role;
 - no external load-balancing or public DNS resource targets the host;
 - the preserved data disk has deletion protection independent from VM replacement;
 - administrative TCP access uses IAP and an explicit operator identity.
 
-Google documents the outbound-only nature of NAT separately: [Public NAT permits established
-responses but not unsolicited inbound requests](https://cloud.google.com/nat/docs/public-nat). Agora
-does not rely on NAT for database isolation; the no-external-IP and firewall properties hold even if
-NAT is added later for controlled outbound traffic.
+This foundation deliberately provisions no Cloud NAT, router, or Serverless VPC Access connector.
+Private-only workloads consequently have no public VPC egress path. Adding one later is an
+architecture and cost change, not an operational toggle, and must preserve the no-external-IP and
+firewall properties above.
 
 Debug access does not weaken the production path. The runbook will use
 [IAP TCP forwarding](https://cloud.google.com/iap/docs/using-tcp-forwarding) to the VM's internal
@@ -138,21 +149,23 @@ Ingress controls who can call a service. Egress controls what that service can c
 service can therefore accept only approved internal RPCs while still reaching an external API through
 a separately reviewed egress profile.
 
-| Profile      | Direct VPC setting    | Public internet path                                                                                                                                                    | Initial workloads                                                        |
-| ------------ | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| Private-only | `all-traffic`         | None. The VPC has no Cloud NAT for this profile; Private Google Access supplies supported Google APIs.                                                                  | JSON Keys and jobs that need only PostgreSQL or Google APIs.             |
-| Public TLS   | `private-ranges-only` | Public destinations use Cloud Run's managed egress; private addresses and the private `run.app` VIP use the VPC. TLS and application credentials authorize public APIs. | Authentication for SMTP and a future private GenAI service for LLM APIs. |
-| No ingress   | Workload-specific     | Determined by either profile above.                                                                                                                                     | Cloud Run Jobs, which expose no request endpoint.                        |
+| Profile      | Direct VPC setting    | Public internet path                                                                                                                                                       | Initial workloads                                                        |
+| ------------ | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Private-only | `all-traffic`         | None. The VPC has no Cloud NAT; restricted Private Google Access supplies supported Google APIs.                                                                           | JSON Keys and jobs that need only PostgreSQL or supported Google APIs.   |
+| Public TLS   | `private-ranges-only` | Public destinations use Cloud Run's managed egress; private addresses and the restricted `run.app` VIP use the VPC. TLS and application credentials authorize public APIs. | Authentication for SMTP and a future private GenAI service for LLM APIs. |
+| No ingress   | Workload-specific     | Determined by either profile above.                                                                                                                                        | Cloud Run Jobs, which expose no request endpoint.                        |
 
 The private-only profile routes all traffic into the VPC, applies egress firewall policy, and has no
-NAT route to the public internet. Private Google Access lets those workloads reach required Google
-APIs without a public workload address. The public-TLS profile does not make a service publicly
-callable; its ingress and IAM remain independent.
+NAT route to the public internet. Restricted Private Google Access lets those workloads reach
+required Google APIs without a public workload address and rejects APIs unsupported by VPC Service
+Controls. No VPC Service Controls perimeter exists at this scale, so the restricted VIP narrows API
+egress without creating a project data boundary. The public-TLS profile does not make a service
+publicly callable; its ingress and IAM remain independent.
 
 Authentication uses the public-TLS profile because it must call external SMTP while also invoking
-private JSON Keys. Private Google Access and a private DNS zone resolve `run.app` to Google's private
-VIP, so the gRPC request traverses the VPC and satisfies internal ingress. Other public destinations
-continue through Cloud Run's managed egress. This avoids a permanently billed connector, NAT gateway,
+private JSON Keys. Private Google Access and a private DNS zone resolve `run.app` to Google's
+restricted VIP, so the gRPC request traverses the VPC and satisfies internal ingress. Public
+destinations continue through Cloud Run's managed egress. This avoids a permanently billed connector, NAT gateway,
 Private Service Connect endpoint, or internal load balancer at the current scale. Managed public
 egress is not a domain allowlist; TLS verification, narrow application credentials, secret handling,
 and application policy remain mandatory for SMTP and future LLM calls.
@@ -171,8 +184,8 @@ Every Google Cloud resource pull request adds four kinds of evidence before it c
 
 1. The owning root README records the exact resource and links its provider and product references.
 2. Native mocked tests assert its access, exposure, lifecycle, and deletion invariants.
-3. Static validation and the sanitized plan policy reject unsafe configuration or protected
-   destruction.
+3. Static validation rejects unsafe configuration, and the sanitized plan policy blocks destruction
+   of every managed resource.
 4. A runbook defines the operator command, expected non-secret output, independent verification, and
    recovery path.
 

@@ -23,10 +23,11 @@ The design is a small Google Cloud landing zone built from established infrastru
 
 Pull requests are cloud-blind. They receive a read-only repository token and run formatting, validation, mocked OpenTofu tests, static security analysis, and manifest checks. They receive no Google identity, protected environment, or secret payload.
 
-The repository currently has no cloud apply workflow. The bootstrap root defines the management
-plane, but merging or validating it creates nothing. Its one-time initial application remains a
-human-only exception performed from `master` after explicit approval; agents never run `gcloud` or
-`tofu apply`. Later routine applies must be gated by protected workflows and cannot run from a branch.
+The repository currently has no cloud apply workflow. The bootstrap and first workload-foundation
+resources are defined, but merging or validating them creates nothing. Bootstrap's one-time initial
+application remains a human-only exception performed from `master` after explicit approval; agents
+never run `gcloud` or `tofu apply`. The workload foundation must wait for its protected workflow and
+cannot be applied from a branch or an operator checkout.
 
 ### Bootstrap Google Cloud only after explicit authorization
 
@@ -40,6 +41,18 @@ Do not improvise a shorter setup in the console. The only unavoidable console ac
 billing account when none exists, securing the human account and recovery codes, and disabling GitHub
 administrator bypass for the two high-authority environments where the documented public API does
 not expose that switch. Every resulting control has an independent command-line verification.
+
+### Prepare the workload foundation only after bootstrap is verified
+
+Use [Provision and verify the workload foundation](./docs/runbooks/provision-workload-foundation.md)
+to choose the immutable workload project ID, record the billing and parent prerequisites, configure
+the future protected environment, and verify the resulting project, private routing, identities,
+registry, quotas, budget, and logging. The runbook contains separate organization/folder and
+standalone-project paths and the temporary Owner-removal step required after project creation.
+
+That runbook is preparation only until `.github/workflows/foundation.yaml` exists on `master` and a
+maintainer explicitly authorizes resource creation. Do not run its mutating Google Cloud commands or
+any `tofu apply` while the repository is still in this state.
 
 ### Reconcile repository protection after this bootstrap merges
 
@@ -154,13 +167,18 @@ The three names form a security allowlist. Add a root only when a new lifecycle 
 | `tests/`                        | Mocked OpenTofu, manifest-schema, allowlist, and sanitized plan fixtures.      |
 | `docs/architecture.md`          | Lifecycle, authority, state, delivery, and portability decisions.              |
 | `docs/google-cloud.md`          | Provider resource map, trust boundaries, and official Google Cloud references. |
+| `docs/costs/production.md`      | Current unit assumptions and launch/capacity monthly cost ranges.              |
 | `docs/runbooks/`                | Human recovery and deployment procedures with verifiable outcomes.             |
 
 Local modules begin only when two real call sites share a resource shape or one security invariant needs a single implementation. Singleton resources stay in their owning root.
 
 ### Plan-output boundary
 
-`ops/plan-summary.sh` reads an OpenTofu JSON plan and emits only counts grouped by action and resource type. It blocks deletion, replacement, or state-forget actions on protected state, project, identity, secret, bucket, and database-disk resources, and it rejects unknown action combinations. Resource addresses, values, outputs, environment variables, DSNs, and tokens stay out of public logs.
+`ops/plan-summary.sh` reads an OpenTofu JSON plan and emits only counts grouped by action and resource
+type. It blocks every deletion, replacement, or state-forget action on a managed resource, including
+resource types introduced after the gate was written, and rejects unknown action combinations.
+Resource addresses, values, outputs, environment variables, DSNs, and tokens stay out of public
+logs.
 
 Opaque production plans will live in private, versioned Google Cloud storage when the protected apply workflow lands. GitHub artifacts and pull-request comments never carry them.
 
@@ -182,10 +200,11 @@ The [Google Cloud provider guide](./docs/google-cloud.md#network-trust-model) de
 
 Ingress and egress are independent. JSON Keys starts with private-only egress and no public internet path. Authentication uses private VPC routes for internal destinations and managed TLS egress for SMTP. A future private GenAI gRPC service can use that public-TLS egress profile for LLM APIs without opening its ingress.
 
-These network properties are targets, not current enforcement: this bootstrap contains no workload
-network, firewall, Cloud Run, or VM resources. Its management IAM already separates future plan,
-foundation, release, and recovery automation, but a trust boundary has no network effect until the
-owning workload resources, mocked assertions, protected apply, and post-apply verification land.
+The foundation code now enforces the VPC, subnet, restricted Google routes, firewall policy, and
+private DNS contract in mocked tests. It deliberately provisions no NAT, router, connector, load
+balancer, or public IP. Those definitions still have no cloud effect until a protected apply is
+authorized. The Cloud Run and database-host resources that attach to the boundary have not landed,
+so end-to-end private gRPC and PostgreSQL reachability remain future acceptance tests.
 
 ## Contributing
 
