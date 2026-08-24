@@ -9,7 +9,10 @@ import { parse } from "yaml";
 
 const testDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(testDirectory, "..");
-const schemaPath = path.join(repositoryRoot, "deploy/production/images.schema.json");
+const schemaPath = path.join(
+  repositoryRoot,
+  "deploy/production/images.schema.json",
+);
 
 const schema = JSON.parse(await readFile(schemaPath, "utf8"));
 const validate = new Ajv2020({ allErrors: true, strict: true }).compile(schema);
@@ -31,14 +34,20 @@ test("a stable SemVer image with a digest is accepted", async () => {
 });
 
 test("a branch image tag is rejected", async () => {
-  const manifest = await readManifest("tests/fixtures/manifests/branch-tag.yaml");
+  const manifest = await readManifest(
+    "tests/fixtures/manifests/branch-tag.yaml",
+  );
 
   assert.equal(validate(manifest), false);
-  assert.ok(validate.errors?.some((error) => error.instancePath.endsWith("/tag")));
+  assert.ok(
+    validate.errors?.some((error) => error.instancePath.endsWith("/tag")),
+  );
 });
 
 test("an image without a digest is rejected", async () => {
-  const manifest = await readManifest("tests/fixtures/manifests/missing-digest.yaml");
+  const manifest = await readManifest(
+    "tests/fixtures/manifests/missing-digest.yaml",
+  );
 
   assert.equal(validate(manifest), false);
   assert.ok(validate.errors?.some((error) => error.keyword === "required"));

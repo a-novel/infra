@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "format": "prettier --write .",
+    "format": "prettier --no-config --no-editorconfig --write .",
     "lint": "pnpm lint:stylecheck && pnpm lint:renovate",
     "lint:renovate": "renovate-config-validator --strict",
-    "lint:stylecheck": "prettier --check .",
+    "lint:stylecheck": "prettier --no-config --no-editorconfig --check .",
     "test": "node --test tests/manifest-schema.test.mjs"
   },
   "devDependencies": {

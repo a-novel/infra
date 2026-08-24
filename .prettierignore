@@ -3,3 +3,12 @@
 node_modules
 *.tf
 *.tftest.hcl
+
+# Generated or centrally managed files have their own formatters.
+pnpm-lock.yaml
+.github/workflows/approve-pr.yaml
+.github/workflows/auto-approve-dependabot.yaml
+.github/workflows/derive-status.yaml
+.github/workflows/epic-freeze.yaml
+.github/workflows/epic-rollback.yaml
+.github/workflows/merge-gate.yaml
