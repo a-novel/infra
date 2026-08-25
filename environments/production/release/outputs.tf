@@ -27,3 +27,20 @@ output "postgres_recovery" {
     monitor_schedule = try(google_cloud_scheduler_job.postgres_backup_monitor[0].name, null)
   }
 }
+
+output "application_runtime" {
+  description = "Cloud Run services and explicit deploy-time jobs for the enabled application release."
+  value = var.application_release == null ? null : {
+    authentication = {
+      name = google_cloud_run_v2_service.authentication[0].name
+      uri  = google_cloud_run_v2_service.authentication[0].uri
+    }
+    jobs = {
+      for key, job in google_cloud_run_v2_job.application : key => job.name
+    }
+    json_keys = {
+      name = google_cloud_run_v2_service.json_keys[0].name
+      uri  = google_cloud_run_v2_service.json_keys[0].uri
+    }
+  }
+}

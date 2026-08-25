@@ -3,10 +3,38 @@ components:
   service-json-keys:
     enabled: true
     images:
+      database:
+        repository: ghcr.io/a-novel/service-json-keys/database
+        tag: v2.5.0
+        digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
       grpc:
         repository: ghcr.io/a-novel/service-json-keys/grpc
         tag: v2.5.0
-        digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        digest: sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+      jobs/migrations:
+        repository: ghcr.io/a-novel/service-json-keys/jobs/migrations
+        tag: v2.5.0
+        digest: sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+      jobs/rotatekeys:
+        repository: ghcr.io/a-novel/service-json-keys/jobs/rotatekeys
+        tag: v2.5.0
+        digest: sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
   service-authentication:
-    enabled: false
-    images: {}
+    enabled: true
+    images:
+      database:
+        repository: ghcr.io/a-novel/service-authentication/database
+        tag: v1.2.3
+        digest: sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+      jobs/init:
+        repository: ghcr.io/a-novel/service-authentication/jobs/init
+        tag: v1.2.3
+        digest: sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+      jobs/migrations:
+        repository: ghcr.io/a-novel/service-authentication/jobs/migrations
+        tag: v1.2.3
+        digest: sha256:1111111111111111111111111111111111111111111111111111111111111111
+      rest:
+        repository: ghcr.io/a-novel/service-authentication/rest
+        tag: v1.2.3
+        digest: sha256:2222222222222222222222222222222222222222222222222222222222222222

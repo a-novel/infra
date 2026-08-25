@@ -73,20 +73,24 @@ variable "subnet_id" {
 }
 
 variable "runtime_service_accounts" {
-  description = "Foundation-owned keyless identities used by backup, restore, and scheduler jobs."
+  description = "Foundation-owned keyless identities used by application, backup, restore, and scheduler workloads."
   type = object({
+    authentication    = string
     backup            = string
+    json_keys         = string
     restore           = string
     scheduler_invoker = string
   })
 
   validation {
     condition = (
+      var.runtime_service_accounts.authentication == "agora-authentication@${var.workload_project_id}.iam.gserviceaccount.com" &&
       var.runtime_service_accounts.backup == "agora-backup@${var.workload_project_id}.iam.gserviceaccount.com" &&
+      var.runtime_service_accounts.json_keys == "agora-json-keys@${var.workload_project_id}.iam.gserviceaccount.com" &&
       var.runtime_service_accounts.restore == "agora-restore@${var.workload_project_id}.iam.gserviceaccount.com" &&
       var.runtime_service_accounts.scheduler_invoker == "agora-scheduler-invoker@${var.workload_project_id}.iam.gserviceaccount.com"
     )
-    error_message = "Runtime identities must be the three exact foundation-owned service accounts."
+    error_message = "Runtime identities must be the five exact foundation-owned service accounts."
   }
 }
 
@@ -113,6 +117,75 @@ variable "database_releases" {
       floor(release.backup_password_version) == release.backup_password_version
     ])
     error_message = "Every backup password version must be a positive numeric Secret Manager version."
+  }
+}
+
+variable "application_release" {
+  description = "Optional atomic JSON Keys and Authentication runtime release. Values contain promoted image digests, exact secret versions, and non-secret mail/bootstrap configuration."
+  type = object({
+    authentication = object({
+      images = object({
+        init       = string
+        migrations = string
+        rest       = string
+      })
+      secrets = object({
+        postgres_dsn_version         = number
+        smtp_password_version        = number
+        super_admin_password_version = number
+      })
+      smtp = object({
+        address       = string
+        sender_domain = string
+        sender_email  = string
+        sender_name   = string
+      })
+      super_admin_email = string
+    })
+    json_keys = object({
+      images = object({
+        grpc        = string
+        migrations  = string
+        rotate_keys = string
+      })
+      secrets = object({
+        app_master_key_version = number
+        postgres_dsn_version   = number
+      })
+    })
+  })
+  default  = null
+  nullable = true
+
+  validation {
+    condition = var.application_release == null ? true : alltrue([
+      for version in [
+        var.application_release.authentication.secrets.postgres_dsn_version,
+        var.application_release.authentication.secrets.smtp_password_version,
+        var.application_release.authentication.secrets.super_admin_password_version,
+        var.application_release.json_keys.secrets.app_master_key_version,
+        var.application_release.json_keys.secrets.postgres_dsn_version,
+      ] : version >= 1 && floor(version) == version
+    ])
+    error_message = "Every application secret reference must be a positive numeric Secret Manager version."
+  }
+
+  validation {
+    condition = var.application_release == null ? true : (
+      can(regex("^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$", var.application_release.authentication.super_admin_email)) &&
+      can(regex("^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$", var.application_release.authentication.smtp.sender_email))
+    )
+    error_message = "Authentication bootstrap and SMTP sender values must be valid email addresses."
+  }
+
+  validation {
+    condition = var.application_release == null ? true : (
+      can(regex("^[a-z0-9]([a-z0-9.-]*[a-z0-9])?:587$", lower(var.application_release.authentication.smtp.address))) &&
+      lower(split(":", var.application_release.authentication.smtp.address)[0]) == lower(var.application_release.authentication.smtp.sender_domain) &&
+      length(trimspace(var.application_release.authentication.smtp.sender_name)) >= 1 &&
+      length(var.application_release.authentication.smtp.sender_name) <= 100
+    )
+    error_message = "SMTP must use a DNS host on port 587, repeat that host as sender_domain, and provide a 1-100 character sender name."
   }
 }
 

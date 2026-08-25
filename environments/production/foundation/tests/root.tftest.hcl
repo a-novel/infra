@@ -506,12 +506,28 @@ run "builds_the_protected_workload_foundation" {
         "roles/run.developer",
       ]) &&
       length(google_project_iam_member.release_application) == 2 &&
-      length(google_service_account_iam_member.release_runtime_act_as) == 3 &&
+      length(google_service_account_iam_member.release_runtime_act_as) == 5 &&
+      toset(keys(google_service_account_iam_member.release_runtime_act_as)) == toset([
+        "authentication",
+        "backup",
+        "json_keys",
+        "restore",
+        "scheduler_invoker",
+      ]) &&
       google_project_iam_custom_role.release_job_iam.permissions == toset([
         "run.jobs.getIamPolicy",
         "run.jobs.setIamPolicy",
       ]) &&
       google_project_iam_member.release_job_iam.member == "serviceAccount:infra-release@agora-management-test.iam.gserviceaccount.com" &&
+      google_project_iam_custom_role.release_service_iam.permissions == toset([
+        "run.services.getIamPolicy",
+        "run.services.setIamPolicy",
+      ]) &&
+      google_project_iam_member.release_service_iam.member == "serviceAccount:infra-release@agora-management-test.iam.gserviceaccount.com" &&
+      alltrue([
+        for binding in values(google_project_iam_member.release_application) :
+        binding.role != "roles/secretmanager.secretAccessor"
+      ]) &&
       google_storage_bucket_iam_member.backup_runtime_creator.bucket == "agora-management-test-123456789012-backups" &&
       google_storage_bucket_iam_member.backup_runtime_creator.role == "roles/storage.objectCreator" &&
       google_storage_bucket_iam_member.backup_runtime_creator.member == "serviceAccount:${google_service_account.runtime["backup"].email}" &&

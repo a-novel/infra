@@ -1,4 +1,10 @@
-mock_provider "google" {}
+mock_provider "google" {
+  mock_resource "google_cloud_run_v2_service" {
+    defaults = {
+      uri = "https://agora-json-keys-grpc-test.europe-west1.run.app"
+    }
+  }
+}
 
 variables {
   management_project_id = "agora-management-test"
@@ -8,7 +14,9 @@ variables {
   network_id            = "projects/agora-production-test/global/networks/agora-production"
   subnet_id             = "projects/agora-production-test/regions/europe-west1/subnetworks/agora-production-europe-west1"
   runtime_service_accounts = {
+    authentication    = "agora-authentication@agora-production-test.iam.gserviceaccount.com"
     backup            = "agora-backup@agora-production-test.iam.gserviceaccount.com"
+    json_keys         = "agora-json-keys@agora-production-test.iam.gserviceaccount.com"
     restore           = "agora-restore@agora-production-test.iam.gserviceaccount.com"
     scheduler_invoker = "agora-scheduler-invoker@agora-production-test.iam.gserviceaccount.com"
   }
@@ -34,9 +42,13 @@ run "keeps_recovery_disabled_before_the_database_release" {
       length(google_cloud_run_v2_job.postgres_backup_monitor) == 0 &&
       length(google_cloud_scheduler_job.postgres_backup) == 0 &&
       length(google_cloud_scheduler_job.postgres_restore) == 0 &&
-      length(google_cloud_scheduler_job.postgres_backup_monitor) == 0
+      length(google_cloud_scheduler_job.postgres_backup_monitor) == 0 &&
+      length(google_cloud_run_v2_job.application) == 0 &&
+      length(google_cloud_run_v2_service.json_keys) == 0 &&
+      length(google_cloud_run_v2_service.authentication) == 0 &&
+      length(google_cloud_run_v2_service_iam_member.json_keys_invoker) == 0
     )
-    error_message = "No recovery job or schedule may exist before both database releases are enabled."
+    error_message = "No recovery or application runtime may exist before its release contract is enabled."
   }
 }
 
@@ -273,6 +285,331 @@ run "builds_the_two_database_recovery_contracts" {
       ])
     )
     error_message = "Only the scheduler identity may invoke the five automatic recovery jobs."
+  }
+}
+
+run "builds_the_private_json_keys_and_public_authentication_runtime" {
+  command = plan
+
+  variables {
+    database_releases = {
+      authentication = {
+        image                   = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-authentication/database@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        backup_password_version = 11
+      }
+      json_keys = {
+        image                   = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-json-keys/database@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        backup_password_version = 7
+      }
+    }
+    application_release = {
+      authentication = {
+        images = {
+          init       = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-authentication/jobs/init@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          migrations = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-authentication/jobs/migrations@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          rest       = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-authentication/rest@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        }
+        secrets = {
+          postgres_dsn_version         = 11
+          smtp_password_version        = 12
+          super_admin_password_version = 13
+        }
+        smtp = {
+          address       = "smtp.example.com:587"
+          sender_domain = "smtp.example.com"
+          sender_email  = "noreply@example.com"
+          sender_name   = "Agora"
+        }
+        super_admin_email = "admin@example.com"
+      }
+      json_keys = {
+        images = {
+          grpc        = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-json-keys/grpc@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+          migrations  = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-json-keys/jobs/migrations@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+          rotate_keys = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-json-keys/jobs/rotatekeys@sha256:2222222222222222222222222222222222222222222222222222222222222222"
+        }
+        secrets = {
+          app_master_key_version = 7
+          postgres_dsn_version   = 8
+        }
+      }
+    }
+  }
+
+  assert {
+    condition = (
+      length(google_cloud_run_v2_job.application) == 4 &&
+      toset(keys(google_cloud_run_v2_job.application)) == toset([
+        "authentication_init",
+        "authentication_migrations",
+        "json_keys_migrations",
+        "json_keys_rotate",
+      ]) &&
+      alltrue([
+        for job in values(google_cloud_run_v2_job.application) :
+        !job.deletion_protection &&
+        one(job.template).task_count == 1 &&
+        one(job.template).parallelism == 1 &&
+        one(one(job.template).template).execution_environment == "EXECUTION_ENVIRONMENT_GEN2" &&
+        one(one(one(job.template).template).containers).resources[0].limits == tomap({
+          cpu    = "1"
+          memory = "512Mi"
+        }) &&
+        one(one(one(job.template).template).vpc_access).egress == "ALL_TRAFFIC" &&
+        one(one(one(job.template).template).vpc_access).network_interfaces[0].network == var.network_id &&
+        one(one(one(job.template).template).vpc_access).network_interfaces[0].subnetwork == var.subnet_id
+      ])
+    )
+    error_message = "Application jobs must remain four singleton, bounded, scale-to-zero Direct VPC executions."
+  }
+
+  assert {
+    condition = {
+      for key, job in google_cloud_run_v2_job.application : key => {
+        identity    = one(one(job.template).template).service_account
+        max_retries = one(one(job.template).template).max_retries
+        name        = job.name
+        timeout     = one(one(job.template).template).timeout
+        vpc_tag     = one(one(one(job.template).template).vpc_access).network_interfaces[0].tags[0]
+      }
+      } == {
+      authentication_init = {
+        identity    = var.runtime_service_accounts.authentication
+        max_retries = 1
+        name        = "agora-authentication-init"
+        timeout     = "300s"
+        vpc_tag     = "agora-authentication"
+      }
+      authentication_migrations = {
+        identity    = var.runtime_service_accounts.authentication
+        max_retries = 0
+        name        = "agora-authentication-migrations"
+        timeout     = "600s"
+        vpc_tag     = "agora-authentication"
+      }
+      json_keys_migrations = {
+        identity    = var.runtime_service_accounts.json_keys
+        max_retries = 0
+        name        = "agora-json-keys-migrations"
+        timeout     = "600s"
+        vpc_tag     = "agora-json-keys"
+      }
+      json_keys_rotate = {
+        identity    = var.runtime_service_accounts.json_keys
+        max_retries = 1
+        name        = "agora-json-keys-rotatekeys"
+        timeout     = "300s"
+        vpc_tag     = "agora-json-keys"
+      }
+    }
+    error_message = "Every application job must retain its exact identity, retry, timeout, name, and database path."
+  }
+
+  assert {
+    condition = (
+      alltrue([
+        for key in ["authentication_init", "authentication_migrations"] :
+        one([
+          for environment in one(one(one(google_cloud_run_v2_job.application[key].template).template).containers).env : environment
+          if environment.name == "POSTGRES_DSN"
+        ]).value_source[0].secret_key_ref[0].secret == "projects/agora-management-test/secrets/production-authentication-postgres-dsn" &&
+        one([
+          for environment in one(one(one(google_cloud_run_v2_job.application[key].template).template).containers).env : environment
+          if environment.name == "POSTGRES_DSN"
+        ]).value_source[0].secret_key_ref[0].version == "11"
+      ]) &&
+      alltrue([
+        for key in ["json_keys_migrations", "json_keys_rotate"] :
+        one([
+          for environment in one(one(one(google_cloud_run_v2_job.application[key].template).template).containers).env : environment
+          if environment.name == "POSTGRES_DSN"
+        ]).value_source[0].secret_key_ref[0].secret == "projects/agora-management-test/secrets/production-json-keys-postgres-dsn" &&
+        one([
+          for environment in one(one(one(google_cloud_run_v2_job.application[key].template).template).containers).env : environment
+          if environment.name == "POSTGRES_DSN"
+        ]).value_source[0].secret_key_ref[0].version == "8"
+      ]) &&
+      toset([
+        for environment in one(one(one(google_cloud_run_v2_job.application["authentication_init"].template).template).containers).env : environment.name
+        if length(environment.value_source) == 1
+      ]) == toset(["POSTGRES_DSN", "SUPER_ADMIN_PASSWORD"]) &&
+      toset([
+        for environment in one(one(one(google_cloud_run_v2_job.application["authentication_migrations"].template).template).containers).env : environment.name
+        if length(environment.value_source) == 1
+      ]) == toset(["POSTGRES_DSN"]) &&
+      toset([
+        for environment in one(one(one(google_cloud_run_v2_job.application["json_keys_migrations"].template).template).containers).env : environment.name
+        if length(environment.value_source) == 1
+      ]) == toset(["POSTGRES_DSN"]) &&
+      toset([
+        for environment in one(one(one(google_cloud_run_v2_job.application["json_keys_rotate"].template).template).containers).env : environment.name
+        if length(environment.value_source) == 1
+      ]) == toset(["APP_MASTER_KEY", "POSTGRES_DSN"]) &&
+      one([
+        for environment in one(one(one(google_cloud_run_v2_job.application["authentication_init"].template).template).containers).env : environment
+        if environment.name == "SUPER_ADMIN_EMAIL"
+      ]).value == "admin@example.com" &&
+      one([
+        for environment in one(one(one(google_cloud_run_v2_job.application["authentication_init"].template).template).containers).env : environment
+        if environment.name == "SUPER_ADMIN_PASSWORD"
+        ]).value_source[0].secret_key_ref[0] == {
+        secret  = "projects/agora-management-test/secrets/production-authentication-super-admin-password"
+        version = "13"
+      } &&
+      one([
+        for environment in one(one(one(google_cloud_run_v2_job.application["json_keys_rotate"].template).template).containers).env : environment
+        if environment.name == "APP_MASTER_KEY"
+        ]).value_source[0].secret_key_ref[0] == {
+        secret  = "projects/agora-management-test/secrets/production-json-keys-app-master-key"
+        version = "7"
+      }
+    )
+    error_message = "Application jobs must receive only their declared plain values and exact numeric secret versions."
+  }
+
+  assert {
+    condition = (
+      length(google_cloud_run_v2_service.json_keys) == 1 &&
+      google_cloud_run_v2_service.json_keys[0].ingress == "INGRESS_TRAFFIC_INTERNAL_ONLY" &&
+      !google_cloud_run_v2_service.json_keys[0].invoker_iam_disabled &&
+      !google_cloud_run_v2_service.json_keys[0].deletion_protection &&
+      one(google_cloud_run_v2_service.json_keys[0].scaling).min_instance_count == 0 &&
+      one(google_cloud_run_v2_service.json_keys[0].scaling).max_instance_count == 3 &&
+      one(google_cloud_run_v2_service.json_keys[0].template).service_account == var.runtime_service_accounts.json_keys &&
+      one(google_cloud_run_v2_service.json_keys[0].template).timeout == "60s" &&
+      one(google_cloud_run_v2_service.json_keys[0].template).max_instance_request_concurrency == 20 &&
+      one(google_cloud_run_v2_service.json_keys[0].template).execution_environment == "EXECUTION_ENVIRONMENT_GEN2" &&
+      one(one(google_cloud_run_v2_service.json_keys[0].template).containers).image == var.application_release.json_keys.images.grpc &&
+      one(one(google_cloud_run_v2_service.json_keys[0].template).containers).ports[0].name == "h2c" &&
+      one(one(google_cloud_run_v2_service.json_keys[0].template).containers).ports[0].container_port == 8080 &&
+      one(one(google_cloud_run_v2_service.json_keys[0].template).containers).resources[0].cpu_idle &&
+      one(one(google_cloud_run_v2_service.json_keys[0].template).containers).resources[0].limits == tomap({
+        cpu    = "1"
+        memory = "512Mi"
+      }) &&
+      length(one(one(google_cloud_run_v2_service.json_keys[0].template).containers).startup_probe) == 1 &&
+      one(one(google_cloud_run_v2_service.json_keys[0].template).containers).startup_probe[0].tcp_socket[0].port == 8080 &&
+      length(one(one(google_cloud_run_v2_service.json_keys[0].template).containers).liveness_probe) == 0 &&
+      one(one(google_cloud_run_v2_service.json_keys[0].template).vpc_access).egress == "ALL_TRAFFIC" &&
+      toset(one(one(google_cloud_run_v2_service.json_keys[0].template).vpc_access).network_interfaces[0].tags) == toset(["agora-json-keys"]) &&
+      one(google_cloud_run_v2_service.json_keys[0].traffic).percent == 100
+    )
+    error_message = "JSON Keys must remain an internal h2c service with request-based CPU, bounded scaling, TCP startup, and private-only egress."
+  }
+
+  assert {
+    condition = (
+      length(google_cloud_run_v2_service_iam_member.json_keys_invoker) == 3 &&
+      alltrue([
+        for binding in values(google_cloud_run_v2_service_iam_member.json_keys_invoker) :
+        binding.role == "roles/run.invoker" &&
+        !contains(["allUsers", "allAuthenticatedUsers"], binding.member)
+      ]) &&
+      toset([for binding in values(google_cloud_run_v2_service_iam_member.json_keys_invoker) : binding.member]) == toset([
+        "serviceAccount:agora-authentication@agora-production-test.iam.gserviceaccount.com",
+        "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com",
+        "serviceAccount:infra-release@agora-management-test.iam.gserviceaccount.com",
+      ])
+    )
+    error_message = "JSON Keys invocation must remain limited to Authentication and protected release/recovery identities."
+  }
+
+  assert {
+    condition = (
+      toset([
+        for environment in one(one(google_cloud_run_v2_service.json_keys[0].template).containers).env : environment.name
+        if length(environment.value_source) == 1
+      ]) == toset(["APP_MASTER_KEY", "POSTGRES_DSN"]) &&
+      one([
+        for environment in one(one(google_cloud_run_v2_service.json_keys[0].template).containers).env : environment
+        if environment.name == "APP_MASTER_KEY"
+        ]).value_source[0].secret_key_ref[0] == {
+        secret  = "projects/agora-management-test/secrets/production-json-keys-app-master-key"
+        version = "7"
+      } &&
+      one([
+        for environment in one(one(google_cloud_run_v2_service.json_keys[0].template).containers).env : environment
+        if environment.name == "POSTGRES_DSN"
+        ]).value_source[0].secret_key_ref[0] == {
+        secret  = "projects/agora-management-test/secrets/production-json-keys-postgres-dsn"
+        version = "8"
+      }
+    )
+    error_message = "JSON Keys may resolve only its exact master key and DSN versions."
+  }
+
+  assert {
+    condition = (
+      length(google_cloud_run_v2_service.authentication) == 1 &&
+      google_cloud_run_v2_service.authentication[0].ingress == "INGRESS_TRAFFIC_ALL" &&
+      google_cloud_run_v2_service.authentication[0].invoker_iam_disabled &&
+      !google_cloud_run_v2_service.authentication[0].deletion_protection &&
+      one(google_cloud_run_v2_service.authentication[0].scaling).min_instance_count == 0 &&
+      one(google_cloud_run_v2_service.authentication[0].scaling).max_instance_count == 3 &&
+      one(google_cloud_run_v2_service.authentication[0].template).service_account == var.runtime_service_accounts.authentication &&
+      one(google_cloud_run_v2_service.authentication[0].template).timeout == "60s" &&
+      one(google_cloud_run_v2_service.authentication[0].template).max_instance_request_concurrency == 20 &&
+      one(one(google_cloud_run_v2_service.authentication[0].template).containers).image == var.application_release.authentication.images.rest &&
+      !one(one(google_cloud_run_v2_service.authentication[0].template).containers).resources[0].cpu_idle &&
+      one(one(google_cloud_run_v2_service.authentication[0].template).containers).resources[0].limits == tomap({
+        cpu    = "1"
+        memory = "512Mi"
+      }) &&
+      one(one(google_cloud_run_v2_service.authentication[0].template).containers).startup_probe[0].http_get[0].path == "/v2/ping" &&
+      one(one(google_cloud_run_v2_service.authentication[0].template).containers).liveness_probe[0].http_get[0].path == "/v2/ping" &&
+      one(one(google_cloud_run_v2_service.authentication[0].template).vpc_access).egress == "PRIVATE_RANGES_ONLY" &&
+      toset(one(one(google_cloud_run_v2_service.authentication[0].template).vpc_access).network_interfaces[0].tags) == toset(["agora-authentication"]) &&
+      one(google_cloud_run_v2_service.authentication[0].traffic).percent == 100
+    )
+    error_message = "Authentication must remain public, scale to zero, drain background mail, and split private from managed public egress."
+  }
+
+  assert {
+    condition = (
+      one([
+        for environment in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env : environment
+        if environment.name == "GCLOUD_PROJECT_ID"
+      ]).value == var.workload_project_id &&
+      one([
+        for environment in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env : environment
+        if environment.name == "SERVICE_JSON_KEYS_HOST"
+      ]).value == "agora-json-keys-grpc-test.europe-west1.run.app" &&
+      one([
+        for environment in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env : environment
+        if environment.name == "SERVICE_JSON_KEYS_PORT"
+      ]).value == "443" &&
+      one([
+        for environment in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env : environment
+        if environment.name == "REST_TIMEOUT_SHUTDOWN"
+      ]).value == "9s" &&
+      one([
+        for environment in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env : environment
+        if environment.name == "SMTP_TIMEOUT"
+      ]).value == "5s" &&
+      toset([
+        for environment in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env : environment.name
+        if length(environment.value_source) == 1
+      ]) == toset(["POSTGRES_DSN", "SMTP_SENDER_PASSWORD"]) &&
+      one([
+        for environment in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env : environment
+        if environment.name == "POSTGRES_DSN"
+        ]).value_source[0].secret_key_ref[0] == {
+        secret  = "projects/agora-management-test/secrets/production-authentication-postgres-dsn"
+        version = "11"
+      } &&
+      one([
+        for environment in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env : environment
+        if environment.name == "SMTP_SENDER_PASSWORD"
+        ]).value_source[0].secret_key_ref[0] == {
+        secret  = "projects/agora-management-test/secrets/production-authentication-smtp-sender-password"
+        version = "12"
+      } &&
+      length([
+        for environment in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env : environment
+        if environment.name == "SUPER_ADMIN_PASSWORD"
+      ]) == 0
+    )
+    error_message = "Authentication must use the exact JSON Keys audience host, bounded shutdown/mail, and only its REST secrets."
   }
 }
 

@@ -60,7 +60,9 @@ locals {
   ])
 
   release_runtime_identities = toset([
+    "authentication",
     "backup",
+    "json_keys",
     "restore",
     "scheduler_invoker",
   ])
@@ -252,6 +254,35 @@ resource "google_project_iam_custom_role" "release_job_iam" {
 resource "google_project_iam_member" "release_job_iam" {
   project = google_project.workload.project_id
   role    = google_project_iam_custom_role.release_job_iam.name
+  member  = "serviceAccount:${local.automation_service_accounts.release}"
+}
+
+# The private caller allowlist needs service IAM policy writes. Keep that
+# authority separate from Cloud Run Admin, which also grants broad control-plane
+# and execution permissions the release identity does not use.
+resource "google_project_iam_custom_role" "release_service_iam" {
+  project = google_project.workload.project_id
+
+  role_id     = "infraReleaseServiceIam"
+  title       = "Infra Release Service IAM"
+  description = "Read and update IAM policies on release-managed Cloud Run services."
+  stage       = "GA"
+
+  permissions = [
+    "run.services.getIamPolicy",
+    "run.services.setIamPolicy",
+  ]
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [google_project_service.workload["iam.googleapis.com"]]
+}
+
+resource "google_project_iam_member" "release_service_iam" {
+  project = google_project.workload.project_id
+  role    = google_project_iam_custom_role.release_service_iam.name
   member  = "serviceAccount:${local.automation_service_accounts.release}"
 }
 
