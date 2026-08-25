@@ -18,6 +18,16 @@ variable "workload_project_id" {
   }
 }
 
+variable "backup_bucket_name" {
+  description = "Bootstrap-owned EU bucket that stores committed logical PostgreSQL recovery points."
+  type        = string
+
+  validation {
+    condition     = can(regex("^${var.management_project_id}-[0-9]+-backups$", var.backup_bucket_name))
+    error_message = "The backup bucket must be the bootstrap output for the configured management project."
+  }
+}
+
 variable "workload_project_name" {
   description = "Human-readable Google Cloud project name for the production workload."
   type        = string

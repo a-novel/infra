@@ -84,6 +84,9 @@ run "builds_the_protected_management_plane" {
   assert {
     condition = (
       google_storage_bucket.backups.public_access_prevention == "enforced" &&
+      one(google_storage_bucket.backups.retention_policy).retention_period == "604800" &&
+      !one(google_storage_bucket.backups.retention_policy).is_locked &&
+      one(one(google_storage_bucket.backups.lifecycle_rule).condition).age == 14 &&
       google_storage_bucket.backups.soft_delete_policy[0].retention_duration_seconds == 0 &&
       !google_storage_bucket.backups.force_destroy &&
       google_storage_bucket.receipts.versioning[0].enabled
@@ -173,7 +176,7 @@ run "builds_the_protected_management_plane" {
 
   assert {
     condition = (
-      length(google_secret_manager_secret.application) == 7 &&
+      length(google_secret_manager_secret.application) == 9 &&
       alltrue([
         for secret in values(google_secret_manager_secret.application) :
         secret.deletion_protection &&
@@ -185,7 +188,7 @@ run "builds_the_protected_management_plane" {
   }
 
   assert {
-    condition     = length(google_secret_manager_secret_iam_member.recovery) == 7
+    condition     = length(google_secret_manager_secret_iam_member.recovery) == 9
     error_message = "Recovery must retain explicit per-secret access."
   }
 

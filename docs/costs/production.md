@@ -17,8 +17,9 @@ before the first apply and before any fixed-cost shape change.
 The foundation-only range is the cost of applying the code while both database components remain
 disabled. The VM stays on but idle, and no PostgreSQL container runs. Compute and provisioned disks
 are the fixed cost; three DNS zones add approximately USD 0.60/month. The launch row adds active
-database images, backup retention, scale-to-zero services, and short jobs. No resource is currently
-applied, and this repository still has no protected apply workflow.
+database images, 14-day logical retention, daily snapshots, five scale-to-zero recovery jobs, and
+future services. No resource is currently applied, and this repository still has no protected apply
+workflow.
 
 ## Current unit assumptions
 
@@ -33,7 +34,7 @@ applied, and this repository still has no protected apply workflow.
 | Cloud Run services                    | Request-based, minimum instances `0`, explicit concurrency and maximum instances                                        | Idle service cost is zero; request, CPU, memory, and network usage remain variable. Google's current `europe-west1` example costs USD 13.69/month at ten million requests. |
 | Cloud Run jobs                        | Instance-based billing while a task runs, one-minute minimum                                                            | Google's hourly one-minute, 1 vCPU/512 MiB example remains within the free tier; actual migration and backup duration is measured.                                         |
 | Cloud Logging                         | First 50 GiB/project/month free; then USD 0.50/GiB ingested, including 30-day storage                                   | Thirty-day retention and the narrow successful-healthcheck exclusion aim to keep launch logging free without hiding failures.                                              |
-| Secret Manager                        | Six active versions per billing account free; then USD 0.06/version-location/month; first 10,000 access operations free | Seven initial active versions would add roughly USD 0.06/month before access overage. Metadata-only containers cost nothing.                                               |
+| Secret Manager                        | Six active versions per billing account free; then USD 0.06/version-location/month; first 10,000 access operations free | Nine initial active versions would add roughly USD 0.18/month before access overage. Metadata-only containers cost nothing.                                                |
 | VPC firewall rules                    | No charge                                                                                                               | The custom VPC, routes, Private Google Access, and ordinary firewall rules have no fixed fee; network transfer can still be billed.                                        |
 | Budget, quotas, IAM, service accounts | No fixed product charge                                                                                                 | They reduce risk but do not cap every source of spend.                                                                                                                     |
 
@@ -61,16 +62,27 @@ prices vary by region, sustained-use eligibility, calendar hours, and pricing-mo
 database-host change must refresh the exact calculator estimate before apply. The upper bound leaves
 room for snapshot churn and early operational logs without pretending those costs are fixed.
 
+At four-hour cadence and 14-day lifecycle, logical retention contains at most 84 completed archives
+per database. The capacity formula is therefore:
+
+```text
+logical retained GiB = 84 × aggregate compressed GiB of one JSON Keys + Authentication backup
+```
+
+Incomplete attempts remain until the same lifecycle deletion and add a small variable overhead. The
+hourly monitor measures all retained objects and fails above 700 GiB, leaving headroom below the
+USD 20/month logical-storage design gate at the current EU Standard-storage assumption.
+
 ## Capacity-horizon formula
 
-| Component                   | Planning assumption                                                                                   |  USD/month |
-| --------------------------- | ----------------------------------------------------------------------------------------------------- | ---------: |
-| Database compute            | One on-demand `e2-standard-2`                                                                         |      50–60 |
-| Persistent storage          | 150 GiB balanced data disk plus boot disk                                                             |      15–18 |
-| Backups and snapshots       | 84 logical restore points per database, aggregate compressed data at most 4 GiB, light snapshot churn |       5–10 |
-| Cloud Run services and jobs | Six to seven scale-to-zero services plus short jobs                                                   |       0–15 |
-| Registry and control plane  | State/receipts, registry, secrets, scheduler, private DNS, and bounded logs                           |        2–7 |
-| **Expected total**          | Low traffic, no warm instances                                                                        | **75–105** |
+| Component                   | Planning assumption                                                                                |  USD/month |
+| --------------------------- | -------------------------------------------------------------------------------------------------- | ---------: |
+| Database compute            | One on-demand `e2-standard-2`                                                                      |      50–60 |
+| Persistent storage          | 150 GiB balanced data disk plus boot disk                                                          |      15–18 |
+| Backups and snapshots       | `84 ×` aggregate compressed current backup size, at most 4 GiB combined, plus light snapshot churn |       5–10 |
+| Cloud Run services and jobs | Six to seven scale-to-zero services plus short jobs                                                |       0–15 |
+| Registry and control plane  | State/receipts, registry, secrets, scheduler, private DNS, and bounded logs                        |        2–7 |
+| **Expected total**          | Low traffic, no warm instances                                                                     | **75–105** |
 
 The four PostgreSQL databases are four isolated containers on one host, not four billed database
 instances. The topology moves to `e2-standard-2` before database three. A later `e2-standard-4`

@@ -12,10 +12,11 @@ Available procedures:
 | [Bootstrap and verify the management plane](./bootstrap-management-plane.md)       | The one-time project, billing, local-state apply, GCS migration, GitHub environment, IAM, WIF, audit, and broad-access-removal sequence.                             | Routine changes or an agent-run apply.                                                                              |
 | [Provision and verify the workload foundation](./provision-workload-foundation.md) | Parent/billing prerequisites, protected inputs, project creation/adoption, private routing, identities, registry, costs, verification, and temporary-access removal. | Application deployment, a local foundation apply, or execution before its current stop condition is lifted.         |
 | [Operate the private PostgreSQL host](./operate-postgresql-host.md)                | Idle-host and database-release verification, isolation, measurements, controlled vertical scaling, disk growth, and image/compute rollback.                          | A local apply, public debugging, schema/data rollback, or production writes before backup and restore checks exist. |
+| [Back up and restore PostgreSQL](./backup-and-restore-postgresql.md)               | Four-hour logical backups, daily snapshots, clean restore drills, retention locking, pre-change gates, alert response, RPO/RTO evidence, and PITR thresholds.        | Application rollback, ad hoc object deletion, a public database path, or bypassing protected deployment workflows.  |
 | [Add or rotate a secret version](./secret-versions.md)                             | Hidden double-entry through stdin, numeric-version rollout, disable/re-enable, delayed destruction, and audit.                                                       | Secret container metadata, GitHub secrets, or printing a payload to verify it.                                      |
 | [Recover a prior state generation](./state-recovery.md)                            | A corrupt or incorrect live GCS state generation after writers are frozen and recovery is approved.                                                                  | Ordinary application rollback or reconciling resources without a separately reviewed plan.                          |
 
 The root README's [Setup](../../README.md#setup) section links the entry points and repository-only
-validation. PostgreSQL host operations now have a runbook. Backup/restore automation and workload
-rebuild procedures land with the resources they operate; the protected bucket and backup identity
-alone are not a working backup system.
+validation. The PostgreSQL host and recovery runbooks separate compute maintenance from data
+recovery. The latter remains stop-gated until protected workflows deploy and verify the defined
+jobs, schedules, snapshots, IAM, bucket policy, and alert.

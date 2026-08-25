@@ -24,11 +24,12 @@ The design is a small Google Cloud landing zone built from established infrastru
 Pull requests are cloud-blind. They receive a read-only repository token and run formatting, validation, mocked OpenTofu tests, static security analysis, and manifest checks. They receive no Google identity, protected environment, or secret payload.
 
 The repository currently has no cloud apply workflow. Bootstrap, the workload foundation, the
-private stateful PostgreSQL host, and its narrow release-metadata command are defined, but merging or
-validating them creates nothing. Bootstrap's one-time initial application remains a human-only
-exception performed from `master` after explicit approval; agents never run `gcloud` or
-`tofu apply`. Foundation and release must wait for their protected workflows and cannot be applied
-from a branch or an operator checkout.
+private stateful PostgreSQL host, logical backup and restore jobs, daily disk snapshots, recovery
+monitoring, and the narrow release-metadata command are defined, but merging or validating them
+creates nothing. Bootstrap's one-time initial application remains a human-only exception performed
+from `master` after explicit approval; agents never run `gcloud` or `tofu apply`. Foundation and
+release must wait for their protected workflows and cannot be applied from a branch or an operator
+checkout.
 
 ### Bootstrap Google Cloud only after explicit authorization
 
@@ -52,6 +53,12 @@ registry, database host, quotas, budget, monitoring, and logging. The runbook co
 organization/folder and standalone-project paths and the temporary Owner-removal step required after
 project creation. The [PostgreSQL host runbook](./docs/runbooks/operate-postgresql-host.md) owns the
 host-specific readiness, isolation, capacity, maintenance, and rollback checks.
+
+The [PostgreSQL backup and restore runbook](./docs/runbooks/backup-and-restore-postgresql.md) owns
+recovery activation, the first-write gate, four-hour logical backups, monthly clean restores, the
+daily snapshot contract, retention locking, alert response, RPO/RTO evidence, and the PITR decision
+thresholds. Read it before enabling either database release. Its commands remain stop-gated until
+the protected workflows exist and resource creation is explicitly authorized.
 
 That runbook is preparation only until `.github/workflows/foundation.yaml` exists on `master` and a
 maintainer explicitly authorizes resource creation. Do not run its mutating Google Cloud commands or
@@ -189,10 +196,12 @@ Opaque production plans will live in private, versioned Google Cloud storage whe
 
 The manifest schema accepts complete stable tags such as `v2.5.0` plus a `sha256` digest. Branch tags and prereleases fail validation. Renovate groups each service's image family so one green merge represents one deployment candidate.
 
-The production manifest keeps both services disabled until backups, runtime resources, and verified
-image digests are ready. Foundation therefore seeds empty group-level release metadata and the host
-would remain idle. The tested deployment helper has no caller until the protected workflow lands.
-Merging this change cannot deploy an application or create a cloud resource.
+The production manifest keeps both services disabled until the recovery resources, runtime
+resources, and verified image digests are ready. Foundation therefore seeds empty group-level
+release metadata and the host would remain idle. The release root creates recovery jobs only when
+both database contracts are enabled together. The tested deployment helper has no caller until the
+protected workflow lands. Merging this change cannot deploy an application, run a backup, or create
+a cloud resource.
 
 ### Portability boundary
 
@@ -207,11 +216,13 @@ The [Google Cloud provider guide](./docs/google-cloud.md#network-trust-model) de
 Ingress and egress are independent. JSON Keys starts with private-only egress and no public internet path. Authentication uses private VPC routes for internal destinations and managed TLS egress for SMTP. A future private GenAI gRPC service can use that public-TLS egress profile for LLM APIs without opening its ingress.
 
 The foundation code now enforces the VPC, subnet, restricted Google routes, firewall policy, private
-DNS, no-external-IP stateful database group, preserved disk/address, and inbound-only database
-container networking in mocked tests. It deliberately provisions no NAT, router, connector, load
-balancer, or public IP. Those definitions still have no cloud effect until a protected apply is
-authorized. Cloud Run callers have not landed, so end-to-end private gRPC and tagged PostgreSQL
-reachability remain later acceptance tests.
+DNS, no-external-IP stateful database group, preserved disk/address, inbound-only database container
+networking, recovery identities, daily disk snapshots, and native recovery alerts in mocked tests.
+The release code gives backup jobs only private database/API egress and gives restore jobs no
+database route or secret. It deliberately provisions no NAT, router, connector, load balancer, or
+public IP. Those definitions still have no cloud effect until a protected apply is authorized.
+Application Cloud Run callers have not landed, so end-to-end private gRPC remains a later acceptance
+test.
 
 ## Contributing
 

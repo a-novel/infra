@@ -3,7 +3,8 @@
 Use this runbook to prepare, provision, and independently verify the replaceable production workload
 project and its private foundation. It covers project parent and billing authority, protected GitHub
 inputs, project adoption, private routing, runtime identities, Artifact Registry, cost controls, and
-the idle private PostgreSQL host, and removal of temporary broad access.
+the idle private PostgreSQL host, daily snapshots, recovery IAM/alerting, and removal of temporary
+broad access.
 
 ## Current stop condition
 
@@ -29,20 +30,21 @@ root-specific automation identity.
 The completed procedure creates:
 
 - one workload project linked to the selected billing account;
-- twelve workload APIs, one custom VPC, one regional `/24` subnet, two restricted Google API routes,
+- thirteen workload APIs, one custom VPC, one regional `/24` subnet, two restricted Google API routes,
   six firewall rules, and three private DNS zones;
-- six keyless runtime identities and seven exact cross-project secret IAM bindings;
+- six keyless runtime identities, eleven exact cross-project secret IAM bindings, and separate
+  create-only backup/read-only restore bucket IAM;
 - deprivileged default Google service accounts so none retains a primitive project role;
 - one immutable regional Docker repository and narrow release/database access;
 - one pinned Shielded COS template, one continuously running `e2-medium` in a stateful one-member
   group, one 20 GiB replaceable boot disk, one 50 GiB preserved balanced data disk, and one
-  stateful internal address;
+  stateful internal address with a daily EU snapshot schedule and seven-day retention;
 - four regional quota preferences, one alert-only budget of 60 units in the billing account currency,
-  one email channel, five database capacity alerts, 30-day default logging, and one narrow
-  successful-healthcheck exclusion.
+  one email channel, five database capacity alerts, one failed-recovery-job alert, 30-day default
+  logging, and one narrow successful-healthcheck exclusion.
 
-It does not create a running PostgreSQL container, backup schedule, Cloud Run service or job, public
-IP, load balancer, Cloud NAT, router, VPC connector, secret payload, or application release. The VM
+It does not create a running PostgreSQL container, logical-backup schedule, Cloud Run service or job,
+public IP, load balancer, Cloud NAT, router, VPC connector, secret payload, or application release. The VM
 stays idle because both release-manifest components are disabled. PostgreSQL and private gRPC are not
 callable after this procedure.
 
@@ -136,6 +138,11 @@ gh auth status
 
 gcloud projects describe "$MANAGEMENT_PROJECT_ID" \
   --format='yaml(projectId,projectNumber,lifecycleState)'
+MANAGEMENT_PROJECT_NUMBER="$(gcloud projects describe "$MANAGEMENT_PROJECT_ID" --format='value(projectNumber)')"
+[[ "$MANAGEMENT_PROJECT_NUMBER" =~ ^[0-9]+$ ]]
+BACKUP_BUCKET_NAME="${MANAGEMENT_PROJECT_ID}-${MANAGEMENT_PROJECT_NUMBER}-backups"
+gcloud storage buckets describe "gs://${BACKUP_BUCKET_NAME}" \
+  --format='yaml(name,location,public_access_prevention,uniform_bucket_level_access,retention_policy,lifecycle_config,soft_delete_policy)'
 gcloud iam service-accounts describe "$FOUNDATION_SERVICE_ACCOUNT" \
   --project="$MANAGEMENT_PROJECT_ID" \
   --format='yaml(email,disabled,uniqueId)'
@@ -146,9 +153,10 @@ BILLING_CURRENCY_CODE="$(gcloud billing accounts describe "$BILLING_ACCOUNT_ID" 
 ```
 
 Expected safe result: one intended Google account is active, GitHub is authenticated to the intended
-account, both project and service account are active, the foundation account is not disabled, and
-the billing account reports `open: true` with a three-letter currency code. Share only the boolean
-and currency code if assistance is needed.
+account, both project and service account are active, the foundation account is not disabled, the
+backup bucket is the protected EU bucket from bootstrap, and the billing account reports `open:
+true` with a three-letter currency code. Share only the boolean and currency code if assistance is
+needed.
 
 Confirm the workload ID is unused before authorizing creation:
 
@@ -309,6 +317,8 @@ gh variable set WORKLOAD_PROJECT_ID --repo "$REPOSITORY" --env production-founda
   --body "$WORKLOAD_PROJECT_ID"
 gh variable set WORKLOAD_PROJECT_NAME --repo "$REPOSITORY" --env production-foundation \
   --body "$WORKLOAD_PROJECT_NAME"
+gh variable set BACKUP_BUCKET_NAME --repo "$REPOSITORY" --env production-foundation \
+  --body "$BACKUP_BUCKET_NAME"
 gh variable set REGION --repo "$REPOSITORY" --env production-foundation --body "$REGION"
 gh variable set DATABASE_ZONE --repo "$REPOSITORY" --env production-foundation \
   --body "$DATABASE_ZONE"
@@ -358,7 +368,7 @@ gh variable list --repo "$REPOSITORY" --env production-foundation
 gh secret list --repo "$REPOSITORY" --env production-foundation
 ```
 
-Expected safe result: six required variables, at most one parent variable, and exactly the three
+Expected safe result: seven required variables, at most one parent variable, and exactly the three
 secret names above. The future workflow maps these names to the matching `TF_VAR_*` inputs and must
 mask them before any command. `DATABASE_OPERATOR_PRINCIPALS` is the JSON array consumed by the
 OpenTofu set input; its protected plan and state are private. Budget, database capacity, pinned COS
@@ -386,10 +396,11 @@ Stop until the protected foundation workflow lands. That workflow must:
 The implementation must replace this stop section with its exact `gh workflow run` and saved-plan
 review commands. Until then, there is deliberately no supported apply command.
 
-The expected initial summary contains creates for one project, twelve APIs, the
+The expected initial summary contains creates for one project, thirteen APIs, the
 network/subnet/routes, six firewalls, three zones and their records, six service accounts, exact
 IAM, one repository, one data disk, one immutable instance template, one stateful instance-group
-manager, five database alerts, four quota preferences, one budget/channel, and logging controls. It
+manager, one snapshot policy/attachment, six monitoring alerts, four quota preferences, one
+budget/channel, and logging controls. It
 contains zero managed-resource delete, replacement, state-forget, Cloud Run service/job, router,
 NAT, connector, load balancer, secret-version, or service-account-key actions. For standalone
 adoption, the reviewed
@@ -407,12 +418,12 @@ gcloud projects describe "$WORKLOAD_PROJECT_ID" \
 gcloud billing projects describe "$WORKLOAD_PROJECT_ID" \
   --format='yaml(projectId,billingEnabled)'
 gcloud services list --enabled --project="$WORKLOAD_PROJECT_ID" \
-  --filter='config.name:(artifactregistry.googleapis.com cloudquotas.googleapis.com cloudresourcemanager.googleapis.com compute.googleapis.com dns.googleapis.com iam.googleapis.com iap.googleapis.com logging.googleapis.com monitoring.googleapis.com oslogin.googleapis.com run.googleapis.com serviceusage.googleapis.com)' \
+  --filter='config.name:(artifactregistry.googleapis.com cloudscheduler.googleapis.com cloudquotas.googleapis.com cloudresourcemanager.googleapis.com compute.googleapis.com dns.googleapis.com iam.googleapis.com iap.googleapis.com logging.googleapis.com monitoring.googleapis.com oslogin.googleapis.com run.googleapis.com serviceusage.googleapis.com)' \
   --format='value(config.name)' | sort
 ```
 
 Expected safe result: the project is active with the selected parent and labels, billing is enabled,
-and exactly the twelve expected service names appear in the filtered list.
+and exactly the thirteen expected service names appear in the filtered list.
 
 Verify no service account has an unexpected primitive project role and no project service account has
 a user-managed key. The all-account enumeration is intentional: a newly introduced or
@@ -461,11 +472,13 @@ Verify only the intended cross-project Secret Manager members without accessing 
 for secret in \
   production-authentication-postgres-dsn \
   production-authentication-postgres-password \
+  production-authentication-postgres-backup-password \
   production-authentication-smtp-sender-password \
   production-authentication-super-admin-password \
   production-json-keys-app-master-key \
   production-json-keys-postgres-dsn \
-  production-json-keys-postgres-password; do
+  production-json-keys-postgres-password \
+  production-json-keys-postgres-backup-password; do
   gcloud secrets get-iam-policy "$secret" \
     --project="$MANAGEMENT_PROJECT_ID" \
     --flatten='bindings[].members' \
@@ -475,12 +488,29 @@ done
 ```
 
 Expected safe result: every configured human operator and
-`infra-recovery@${MANAGEMENT_PROJECT_ID}.iam.gserviceaccount.com` appear on all seven secrets.
+`infra-recovery@${MANAGEMENT_PROJECT_ID}.iam.gserviceaccount.com` appear on all nine secrets.
 Authentication also appears only on its DSN, SMTP password, and super-admin password; JSON Keys
-appears only on its master key and DSN; database host appears only on the two database passwords.
-Backup, restore, scheduler, release, plan, and foundation identities do not appear. This filtered view
-intentionally omits the operators' separate Secret Version Manager bindings. Never run
+appears only on its master key and DSN; database host appears on the four owner/backup passwords;
+backup appears only on the two backup passwords. Restore, scheduler, release, plan, and foundation
+identities do not appear. This filtered view intentionally omits the operators' separate Secret
+Version Manager bindings. Never run
 `versions access` as a verification shortcut.
+
+Verify the two runtime bucket roles without displaying unrelated members:
+
+```bash
+gcloud storage buckets get-iam-policy "gs://${BACKUP_BUCKET_NAME}" --format=json \
+  | jq --exit-status \
+      --arg backup "serviceAccount:agora-backup@${WORKLOAD_PROJECT_ID}.iam.gserviceaccount.com" \
+      --arg restore "serviceAccount:agora-restore@${WORKLOAD_PROJECT_ID}.iam.gserviceaccount.com" '
+        def roles_for($member): [.bindings[] | select(.members | index($member)) | .role] | sort;
+        (roles_for($backup) == ["roles/storage.objectCreator"]) and
+        (roles_for($restore) == ["roles/storage.objectViewer"])
+      '
+```
+
+Expected safe result: `true`. The backup account must not receive a viewer/admin role, and restore
+must not receive a creator/admin role.
 
 ## 7. Verify private routing, registry, and cost controls
 

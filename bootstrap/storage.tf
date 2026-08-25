@@ -62,8 +62,25 @@ resource "google_storage_bucket" "backups" {
   public_access_prevention    = "enforced"
   uniform_bucket_level_access = true
 
-  # Backup retention and lifecycle land with the stateful runtime. Disabling
-  # soft delete here avoids paying twice for one retained backup generation.
+  # A recovery point cannot be removed during its first seven days. Locking is
+  # a separate, irreversible operator step after the first clean restore drill.
+  retention_policy {
+    retention_period = 604800
+    is_locked        = false
+  }
+
+  lifecycle_rule {
+    action {
+      type = "Delete"
+    }
+
+    condition {
+      age = 14
+    }
+  }
+
+  # Soft delete would retain a second billable copy after lifecycle deletion.
+  # The seven-day bucket retention policy is the deliberate protection here.
   soft_delete_policy {
     retention_duration_seconds = 0
   }

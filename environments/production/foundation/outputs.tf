@@ -46,6 +46,7 @@ output "database_host" {
     machine_type           = var.database_machine_type
     ports                  = local.database_ports
     private_ip             = one(data.google_compute_instance.database.network_interface).network_ip
+    snapshot_policy        = google_compute_resource_policy.database_snapshots.name
     zone                   = var.database_zone
   }
 }
