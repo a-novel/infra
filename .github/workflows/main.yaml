@@ -41,6 +41,21 @@ jobs:
           tflint_version: v0.64.0
           cache: true
 
+      # The operational policy tests execute the same receipt validator used by
+      # protected releases, so they need the repository's pinned Node tooling.
+      - name: Install pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install operational test tooling
+        shell: bash
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
       - name: Validate reviewed roots
         shell: bash
         run: |
