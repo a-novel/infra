@@ -46,9 +46,11 @@ host failure, or zone outage interrupts both databases. Managed replacement reus
 it does not repair corrupted data. The group therefore has no autoscaler or health-based autohealing
 loop.
 
-Backup automation and a restore drill are not implemented yet. An empty cluster may be initialized
-for verification, but no application may write production data until the backup system has created a
-named recovery point and an independent restore check has passed.
+Four-hour logical backup jobs, monthly clean restore jobs, an hourly recovery monitor, and daily
+disk snapshots are defined in code. They are not deployed until the protected workflows exist. An
+empty cluster may be initialized for verification, but no application may write production data
+until both first logical backups and both independent clean restores pass the
+[recovery runbook](./backup-and-restore-postgresql.md).
 
 ## Security invariants
 
@@ -59,14 +61,14 @@ named recovery point and an independent restore check has passed.
 - Each PostgreSQL container has its own fixed bridge subnet. The host firewall allows established
   replies and rejects every connection initiated by either container, including DNS, the peer
   cluster, host services, metadata, Google APIs, and internet destinations.
-- The database runtime identity reads only the two password secrets and promoted image repository
+- The database runtime identity reads only the four owner/backup password secrets and promoted image repository
   and writes only logs and metrics.
 - Password payloads live in root-owned `/run` files. They never enter GitHub, OpenTofu input or
   state, instance metadata, Docker environment configuration, command arguments, serial output, or
   receipts. Healthy containers retain the read-only bind sources for crash restart; failed or
   disabled convergence removes them, and reboot clears the memory-backed directory.
-- Release metadata contains only a full Git commit, two promoted Artifact Registry digests, and two
-  numeric Secret Manager version IDs. Release IAM has no disk, template, network, IAM,
+- Release metadata contains only a full Git commit, two promoted Artifact Registry digests, and four
+  numeric owner/backup Secret Manager version IDs. Release IAM has no disk, template, network, IAM,
   secret-payload, or direct instance-lifecycle permission. Its sole VM permission is `setMetadata`,
   conditionally fenced to the generated `agora-database-*` member because Google requires it to
   apply the group map. Group-manager update remains coarse enough to affect group lifecycle, so only
@@ -88,10 +90,14 @@ debugging.
 - For an enabled release, record the prior private receipt, exact promoted digests, release commit,
   and numeric password versions before approving a change.
 - Add password payloads with [Add or rotate a secret version](./secret-versions.md). Keep the two
-  database passwords distinct and inside the documented 32–128 character URL-safe alphabet.
+  owner passwords and two backup passwords pairwise distinct and inside the documented 32–128
+  character URL-safe alphabet.
 - Keep both database images on the same PostgreSQL major. The current service images use PostgreSQL 18.
-- Before a change to a host containing production data, require a successful named backup and restore
-  check whose recovery point and lost-write boundary are acceptable.
+- Do not remove or override the host-supplied `agora.database_image` PostgreSQL startup setting. It
+  binds each completed logical backup to the server's running immutable digest.
+- Before a database image, migration, or host change containing production data, require the
+  recovery runbook's fresh scheduled-snapshot and logical-backup gate. Keep the latest monthly clean
+  restore evidence within its operating review window.
 
 ## Select the exact host
 
@@ -106,6 +112,7 @@ read -r -p 'Workload project ID: ' WORKLOAD_PROJECT_ID
 read -r -p 'Database zone [europe-west1-b]: ' DATABASE_ZONE
 read -r -p 'Database operator IAM member (user: or group:): ' DATABASE_OPERATOR_PRINCIPAL
 DATABASE_ZONE="${DATABASE_ZONE:-europe-west1-b}"
+DATABASE_REGION="${DATABASE_ZONE%-*}"
 DATABASE_GROUP='agora-database'
 DATABASE_DISK='agora-data'
 
@@ -178,6 +185,32 @@ Expected safe result: `READY`, 50 GiB unless reviewed code increased it, `pd-bal
 physical blocks, one current user, and database-data labels. A missing user during a controlled
 replacement is temporary; otherwise stop.
 
+Verify the code-owned snapshot schedule and attachment:
+
+```bash
+gcloud compute resource-policies describe agora-database-daily-snapshots \
+  --project="$WORKLOAD_PROJECT_ID" \
+  --region="$DATABASE_REGION" \
+  --format='yaml(name,region,snapshotSchedulePolicy)'
+
+gcloud compute disks describe "$DATABASE_DISK" \
+  --project="$WORKLOAD_PROJECT_ID" \
+  --zone="$DATABASE_ZONE" \
+  --format='yaml(name,resourcePolicies)'
+
+gcloud compute snapshots list \
+  --project="$WORKLOAD_PROJECT_ID" \
+  --filter='labels.application=agora AND labels.environment=production AND labels.role=database-snapshot' \
+  --sort-by='~creationTimestamp' \
+  --limit=1 \
+  --format='table(name,autoCreated,status,creationTimestamp,sourceDisk.basename(),storageLocations,labels.role)'
+```
+
+Expected safe result: one daily policy at 02:00 UTC, seven-day retention, `KEEP_AUTO_SNAPSHOTS`,
+`europe-west1` storage, an attachment to `agora-data`, and `autoCreated: True`. The final list can be empty only before the first
+scheduled 02:00 execution; database activation or any later database change remains blocked until a
+matching snapshot is `READY` and no older than six hours.
+
 Verify only the relevant firewall rules:
 
 ```bash
@@ -194,21 +227,28 @@ done
 ```
 
 Expected safe result: database ingress accepts only `10.20.0.0/24` on `5432,5433` and targets
-`agora-database`; JSON Keys egress allows only `5432`, Authentication only `5433`, and backup/restore
-tags appear on both rules; IAP SSH accepts only `35.235.240.0/20` on `22`; the lower-priority
-fallback denies all remaining egress.
+`agora-database`; JSON Keys egress allows only `5432`, Authentication only `5433`, and only the
+backup tag appears on both rules. The restore tag has no database allow. IAP SSH accepts only
+`35.235.240.0/20` on `22`; the lower-priority fallback denies all remaining egress.
 
-Verify all five alert policies:
+Verify all six alert policies:
 
 ```bash
 gcloud monitoring policies list \
   --project="$WORKLOAD_PROJECT_ID" \
   --filter='display_name:("Agora database")' \
   --format='table(display_name,enabled,severity,conditions[0].display_name)'
+
+gcloud monitoring policies list \
+  --project="$WORKLOAD_PROJECT_ID" \
+  --filter='display_name="Agora PostgreSQL recovery jobs unhealthy"' \
+  --format='yaml(displayName,enabled,severity,conditions.displayName)'
 ```
 
 Expected safe result: CPU above 70%, memory above 70% and 85%, and disk above 70% and 85%, all
-enabled. Monitoring is not a readiness gate.
+enabled, plus one critical recovery policy with failed-execution and missing-monitor conditions.
+Monitoring is not a readiness gate; first activation must complete the monitor once before its
+absence condition can open an incident.
 
 Verify the exact operator grants without listing unrelated members:
 
@@ -315,11 +355,13 @@ The first release is one reviewed unit. Do not enable only one database image.
 
 1. Promote the exact stable SemVer release and `sha256` digest of each service's `database` image
    into the regional `agora-production` repository.
-2. Add separate password versions for
+2. Add separate owner and backup password versions for
    `production-json-keys-postgres-password` and
-   `production-authentication-postgres-password` through the secret-version runbook. Retain only
-   their numeric IDs for release input. The host rejects an out-of-contract or reused value before
-   starting either database.
+   `production-authentication-postgres-password`, plus
+   `production-json-keys-postgres-backup-password` and
+   `production-authentication-postgres-backup-password`, through the secret-version runbook. Retain
+   only their numeric IDs for release input. The host rejects an out-of-contract or reused value
+   before starting either database.
 3. Build each DSN in an approved password manager with its matching password and the stateful private
    address:
 
@@ -340,22 +382,30 @@ The first release is one reviewed unit. Do not enable only one database image.
 
 4. Update both manifest components in one pull request with complete stable SemVer tags and exact
    digests. Confirm both images remain on PostgreSQL major 18.
-5. Supply the full merged Git commit and the two numeric password versions only through the future
+5. Enable both release-root recovery contracts with the two promoted database digests and exact
+   backup-password versions so the backup/restore jobs exist before database activation.
+6. Wait for the first foundation-scheduled `agora-data` snapshot to be `READY` and no older than six
+   hours. Google starts the daily 02:00 UTC schedule during the following hour; the first release
+   window opens only once that snapshot is ready and closes six hours after its actual creation.
+7. Supply the full merged Git commit and all four numeric password versions only through the future
    protected release workflow.
 
 The branch preview must contain no cloud credentials and cannot apply. On `master`, the protected
 database step must invoke only `ops/deploy-database-release.sh` with the project, zone, full commit,
-two promoted digests, and two positive numeric password versions. The helper validates all seven
-inputs and requires the existing all-instances map to contain exactly the five foundation-seeded
-keys. It then patches those values and invokes `update-instances` with both the minimum and maximum
-action set to `restart`. An unexpected or missing key fails before mutation. The helper must not
-create, replace, resize, or directly reconfigure a VM beyond those five keys and that restart, nor
+two promoted digests, and four positive numeric password versions. The helper validates all nine
+arguments and requires the existing all-instances map to contain exactly the seven foundation-seeded
+keys. Its shared gate requires the fresh scheduled snapshot and skips logical backup only for this
+empty first release. It then patches those values and invokes `update-instances` with both the
+minimum and maximum action set to `restart`. An unexpected or missing key fails before mutation. The
+helper must not create, replace, resize, or directly reconfigure a VM beyond those seven keys and
+that restart, nor
 may it mutate a disk, template, address, firewall, IAM binding, secret version, or service-account
 key.
 
 The release workflow has not landed, so stop here today. Once it exists, its readiness gate must
 prove both container health checks and both approved private client paths before recording success.
-No production client starts until backup and restore verification also pass.
+No production client starts until both immediate backup jobs and both clean restore jobs in the
+recovery runbook also pass.
 
 ## Measure capacity
 
@@ -425,8 +475,8 @@ through the protected workflow.
 
 Treat every machine or container-shape change as a planned outage:
 
-1. Confirm the latest named backup and restore check. Record the recovery point and accepted
-   lost-write boundary.
+1. Run the fresh scheduled-snapshot and logical-backup gate. Confirm the latest clean restore check
+   and record the recovery point and accepted lost-write boundary.
 2. Confirm the prior foundation commit, instance template, machine type, container limits, and
    release receipt.
 3. Change only reviewed inputs in the foundation root:
@@ -453,7 +503,8 @@ group template manually, or edit instance metadata with `gcloud`.
 
 Persistent Disk and EXT4 can grow but cannot shrink:
 
-1. Require a successful backup and restore check.
+1. Run the fresh scheduled-snapshot and logical-backup gate and require a current clean restore
+   check.
 2. Measure current use and choose the next 10 GiB step. Keep the value from 50 through 1,000 GiB.
 3. Increase only `database_data_disk_size_gb` in a foundation pull request.
 4. Review the protected plan. The existing disk size must update in place. The size is also recorded
@@ -478,13 +529,14 @@ replacement, so that migration needs its own reviewed code and runbook before ex
 A release rollback changes container configuration, not data:
 
 1. Freeze new application deployment and retain the failed receipt and non-secret health evidence.
-2. Identify the last healthy release commit, both promoted digests, and both numeric password
-   versions from its private receipt.
+2. Identify the last healthy release commit, both promoted digests, and all four numeric owner/backup
+   password versions from its private receipt.
 3. Confirm the old and new images share PostgreSQL major 18. A major-version rollback requires a data
    migration or restore design and cannot use this procedure.
-4. Revert the manifest through a pull request and supply the prior release commit and password
-   versions to the protected release workflow.
-5. Review one five-key all-instances metadata update followed by `update-instances` with `RESTART`
+4. Revert the manifest through a pull request and supply the prior release commit and all password
+   versions to the protected release workflow. Its pre-change gate creates a fresh recovery point
+   before rollback.
+5. Review one seven-key all-instances metadata update followed by `update-instances` with `RESTART`
    as both the minimum and most disruptive action. It must contain no foundation resource action.
 6. Approve the short outage, then repeat the host, container, and private-client checks.
 

@@ -179,17 +179,19 @@ resource "google_compute_instance_group_manager" "database" {
     delete_rule    = "NEVER"
   }
 
-  # Foundation seeds the five non-secret deployment keys, then deliberately
+  # Foundation seeds the seven non-secret deployment keys, then deliberately
   # leaves this one field to the protected release workflow. The Google
   # provider's per-instance-config resource creates a new MIG member on its
   # first apply, so it cannot safely attach metadata to this existing member.
   all_instances_config {
     metadata = {
-      agora-authentication-database-image            = ""
-      agora-authentication-postgres-password-version = "0"
-      agora-database-release-revision                = ""
-      agora-json-keys-database-image                 = ""
-      agora-json-keys-postgres-password-version      = "0"
+      agora-authentication-database-image                   = ""
+      agora-authentication-postgres-backup-password-version = "0"
+      agora-authentication-postgres-password-version        = "0"
+      agora-database-release-revision                       = ""
+      agora-json-keys-database-image                        = ""
+      agora-json-keys-postgres-backup-password-version      = "0"
+      agora-json-keys-postgres-password-version             = "0"
     }
   }
 

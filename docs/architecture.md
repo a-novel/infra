@@ -76,13 +76,16 @@ shape, startup code, firewall, IAM, and capacity alerts. A foundation apply crea
 idle state when no release metadata exists.
 
 Foundation seeds one group-level `allInstancesConfig` map containing an empty Git commit, two empty
-image references, and two zero password-version identifiers. It ignores later drift only on that
-nested map. The protected release workflow will derive all five non-secret values from reviewed
-inputs and call the tested [`deploy-database-release.sh`](../ops/deploy-database-release.sh) helper.
-The helper validates the exact project, repositories, digests, commit, zone, and positive version
-identifiers, then reads the existing map and requires exactly those five keys. Only after that
-fail-closed shape check does it invoke Google's supported all-instances update and apply it to the
-sole member with both the minimum and maximum action set to `RESTART`.
+image references, and four zero owner/backup password-version identifiers. It ignores later drift
+only on that nested map. The protected release workflow derives all seven non-secret values from
+reviewed inputs and calls the tested
+[`deploy-database-release.sh`](../ops/deploy-database-release.sh) helper. The helper validates the
+exact project, repositories, digests, commit, zone, and positive version identifiers, then reads the
+existing map and requires exactly those seven keys. Before mutation, its shared recovery gate also
+requires a ready scheduled snapshot no older than six hours and—except for an empty first
+release—fresh logical backups of both databases. Only after those fail-closed checks does it invoke
+Google's supported all-instances update and apply it to the sole member with both the minimum and
+maximum action set to `RESTART`.
 
 The MIG update policy is `OPPORTUNISTIC`, so changing group metadata or a foundation template cannot
 act on the live member before the owning protected workflow states its disruption ceiling. Routine
@@ -94,11 +97,11 @@ This small imperative edge is deliberate. The Google provider's
 calls `createInstances`; it creates a new MIG member and cannot safely adopt the existing
 foundation-owned member. Duplicating the MIG resource across two OpenTofu states would create
 overlapping ownership. Keeping the fixed command in versioned, tested code preserves one owner for
-the durable resource while the release identity remains limited to group-manager read/update and
-zonal-operation polling plus the `setMetadata` permission Google requires for an existing VM. An IAM
-condition fences that sole VM permission to generated `agora-database-*` members. The protected
-workflow and receipt are introduced by the deployment task; until then the helper has no
-authenticated caller.
+the durable resource while the release identity remains limited to group-manager read/update,
+zonal-operation polling, snapshot-metadata listing, and the `setMetadata` permission Google requires
+for an existing VM. It cannot create or delete snapshots. An IAM condition fences the sole VM
+permission to generated `agora-database-*` members. The protected workflow and receipt are introduced
+by the deployment task; until then the helper has no authenticated caller.
 
 ```text
 foundation template + stateful disk/address + MIG
@@ -115,12 +118,59 @@ release commit + image digests + secret version IDs
 
 This split gives ordinary deployments enough authority to converge both database containers and no
 disk, template, network, IAM, secret-payload, or direct instance-lifecycle permission. Google's
-group-manager update permission is coarser than the five-field operation and can affect group
+group-manager update permission is coarser than the seven-field operation and can affect group
 lifecycle indirectly, so the fixed helper, resource-name condition, protected environment,
 committed manifest, audit log, health gate, and private receipt form the remaining controls. A
 compute rollback restores the prior foundation template. An application rollback runs the same
 helper with the prior receipt. Neither rollback rewinds schema or data; that remains a separately
 approved restore.
+
+## Database recovery layers
+
+Recovery uses two complementary layers and no always-running backup controller:
+
+```text
+private PostgreSQL clusters
+      |                          preserved data disk
+      | pg_dump every 4h               | daily 02:00 UTC
+      v                                v
+create-only logical objects       crash-consistent snapshots
+      |                                |
+      v                                |
+management-project bucket              |
+      |                                |
+      | read-only                      |
+      v                                v
+fresh local restore drill       approved disk recovery only
+```
+
+Logical backups are portable and independently tested. Each backup uses the exact promoted database
+image, verifies that digest and PostgreSQL major against the running source, uses a restricted
+read-only PostgreSQL role and a unique object path, and uploads a manifest only
+after non-empty, archive-list, size, and checksum validation. The backup identity can create objects
+but cannot discover, read, overwrite, or delete them. The restore identity can read objects but has
+no database route, no secret, and no write permission. It restores into an ephemeral local-only
+cluster and runs service-specific integrity checks. An hourly job turns missing/stale manifests,
+RPO, object-size, and storage-cost violations into the same native Cloud Run completion-metric alert
+as a backup or restore failure. A metric-absence condition also reports when that hourly monitor has
+not completed for three hours.
+
+The bootstrap bucket retains every object for at least seven days and deletes it after 14 days. Its
+retention lock is deliberately enabled only through a reviewed irreversible code change after the
+first clean restore evidence. Globally scoped daily snapshots store their data in `europe-west1`,
+retain seven days while the source disk exists, and survive source-disk deletion; they are fast
+same-region crash-consistent recovery points, while the EU multi-region logical objects provide the
+regional-loss path and tested `pg_restore` evidence.
+
+The launch contract accepts one correlated Google Cloud failure domain. The management project
+separates routine workload authority, but an organization- or provider-wide compromise can still
+affect every recovery copy. A second provider adds credentials, billing, transfer, testing, and
+incident ownership; introduce it when revenue, compliance, or recovery commitments justify that
+operating cost.
+
+The [PostgreSQL recovery runbook](./runbooks/backup-and-restore-postgresql.md) owns first activation,
+retention locking, monthly RTO measurement, alert response, the one-time cross-project drill, and
+the measured thresholds that trigger a PITR design.
 
 ## State and bootstrap
 

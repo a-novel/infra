@@ -35,6 +35,10 @@ data "google_billing_account" "workload" {
   open            = true
 }
 
+data "google_project" "management" {
+  project_id = var.management_project_id
+}
+
 data "google_cloud_quotas_quota_infos" "service" {
   for_each = toset(["compute.googleapis.com", "run.googleapis.com"])
 
@@ -78,7 +82,7 @@ resource "google_monitoring_notification_channel" "cost_email" {
   project = google_project.workload.project_id
 
   display_name = "Agora production cost alerts"
-  description  = "Human-reviewed email destination for workload budget alerts."
+  description  = "Human-reviewed email destination for production infrastructure budget alerts."
   type         = "email"
   enabled      = true
   force_delete = false
@@ -95,11 +99,14 @@ resource "google_monitoring_notification_channel" "cost_email" {
 
 resource "google_billing_budget" "workload" {
   billing_account = var.billing_account_id
-  display_name    = "Agora production workload"
+  display_name    = "Agora production infrastructure"
   ownership_scope = "BILLING_ACCOUNT"
 
   budget_filter {
-    projects               = ["projects/${google_project.workload.number}"]
+    projects = sort([
+      "projects/${data.google_project.management.number}",
+      "projects/${google_project.workload.number}",
+    ])
     calendar_period        = "MONTH"
     credit_types_treatment = "INCLUDE_ALL_CREDITS"
   }

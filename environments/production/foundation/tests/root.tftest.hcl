@@ -30,6 +30,12 @@ mock_provider "google" {
     }
   }
 
+  mock_data "google_project" {
+    defaults = {
+      number = "123456789012"
+    }
+  }
+
   mock_data "google_cloud_quotas_quota_infos" {
     defaults = {
       quota_infos = [
@@ -131,6 +137,7 @@ mock_provider "google" {
 variables {
   management_project_id = "agora-management-test"
   workload_project_id   = "agora-production-test"
+  backup_bucket_name    = "agora-management-test-123456789012-backups"
   billing_account_id    = "ABCDEF-123456-ABCDEF"
   cost_alert_email      = "infra@example.com"
   database_operator_principals = [
@@ -163,9 +170,10 @@ run "builds_the_protected_workload_foundation" {
 
   assert {
     condition = (
-      length(google_project_service.workload) == 12 &&
+      length(google_project_service.workload) == 13 &&
       toset(keys(google_project_service.workload)) == toset([
         "artifactregistry.googleapis.com",
+        "cloudscheduler.googleapis.com",
         "cloudquotas.googleapis.com",
         "cloudresourcemanager.googleapis.com",
         "compute.googleapis.com",
@@ -244,6 +252,7 @@ run "builds_the_protected_workload_foundation" {
         rule.direction == "EGRESS" &&
         rule.priority == 810 &&
         toset(rule.target_tags) == local.database_egress_contracts[key].target_tags &&
+        !contains(rule.target_tags, "agora-restore") &&
         one(rule.allow).protocol == "tcp" &&
         toset(one(rule.allow).ports) == toset([tostring(local.database_egress_contracts[key].port)])
       ]) &&
@@ -295,7 +304,7 @@ run "builds_the_protected_workload_foundation" {
         for account in values(google_service_account.runtime) :
         account.deletion_policy == "PREVENT"
       ]) &&
-      length(google_secret_manager_secret_iam_member.runtime) == 7 &&
+      length(google_secret_manager_secret_iam_member.runtime) == 11 &&
       local.runtime_secret_access == {
         "authentication:postgres-dsn" = {
           identity = "authentication"
@@ -313,9 +322,25 @@ run "builds_the_protected_workload_foundation" {
           identity = "database"
           secret   = "production-authentication-postgres-password"
         }
+        "database:authentication-backup-password" = {
+          identity = "database"
+          secret   = "production-authentication-postgres-backup-password"
+        }
         "database:json-keys-password" = {
           identity = "database"
           secret   = "production-json-keys-postgres-password"
+        }
+        "database:json-keys-backup-password" = {
+          identity = "database"
+          secret   = "production-json-keys-postgres-backup-password"
+        }
+        "backup:authentication-backup-password" = {
+          identity = "backup"
+          secret   = "production-authentication-postgres-backup-password"
+        }
+        "backup:json-keys-backup-password" = {
+          identity = "backup"
+          secret   = "production-json-keys-postgres-backup-password"
         }
         "json-keys:app-master-key" = {
           identity = "json_keys"
@@ -387,6 +412,11 @@ run "builds_the_protected_workload_foundation" {
       !strcontains(google_compute_instance_template.database.metadata_startup_script, "POSTGRES_PASSWORD=") &&
       strcontains(google_compute_instance_template.database.metadata_startup_script, "--auth-local=trust") &&
       strcontains(google_compute_instance_template.database.metadata_startup_script, "pg_read_file('/run/agora-postgres-password')") &&
+      strcontains(google_compute_instance_template.database.metadata_startup_script, "pg_read_file('/run/agora-postgres-backup-password')") &&
+      strcontains(google_compute_instance_template.database.metadata_startup_script, "GRANT pg_read_all_data") &&
+      strcontains(google_compute_instance_template.database.metadata_startup_script, "database backup role has an undeclared membership") &&
+      strcontains(google_compute_instance_template.database.metadata_startup_script, "NOBYPASSRLS CONNECTION LIMIT 2") &&
+      strcontains(google_compute_instance_template.database.metadata_startup_script, "agora.database_image=$${image}") &&
       strcontains(google_compute_instance_template.database.metadata_startup_script, "log_min_error_statement=panic") &&
       !strcontains(google_compute_instance_template.database.metadata_startup_script, "\\gexec") &&
       !strcontains(google_compute_instance_template.database.metadata_startup_script, "--tty") &&
@@ -417,11 +447,13 @@ run "builds_the_protected_workload_foundation" {
       one(google_compute_instance_group_manager.database.stateful_internal_ip).interface_name == "nic0" &&
       one(google_compute_instance_group_manager.database.stateful_internal_ip).delete_rule == "NEVER" &&
       one(google_compute_instance_group_manager.database.all_instances_config).metadata == tomap({
-        agora-authentication-database-image            = ""
-        agora-authentication-postgres-password-version = "0"
-        agora-database-release-revision                = ""
-        agora-json-keys-database-image                 = ""
-        agora-json-keys-postgres-password-version      = "0"
+        agora-authentication-database-image                   = ""
+        agora-authentication-postgres-backup-password-version = "0"
+        agora-authentication-postgres-password-version        = "0"
+        agora-database-release-revision                       = ""
+        agora-json-keys-database-image                        = ""
+        agora-json-keys-postgres-backup-password-version      = "0"
+        agora-json-keys-postgres-password-version             = "0"
       }) &&
       one(google_compute_instance_group_manager.database.update_policy).type == "OPPORTUNISTIC" &&
       one(google_compute_instance_group_manager.database.update_policy).replacement_method == "RECREATE" &&
@@ -457,6 +489,7 @@ run "builds_the_protected_workload_foundation" {
         "compute.instanceGroupManagers.get",
         "compute.instanceGroupManagers.update",
         "compute.instances.setMetadata",
+        "compute.snapshots.list",
         "compute.zoneOperations.get",
       ]) &&
       google_project_iam_member.database_release.member == "serviceAccount:infra-release@agora-management-test.iam.gserviceaccount.com" &&
@@ -465,8 +498,25 @@ run "builds_the_protected_workload_foundation" {
         for permission in google_project_iam_custom_role.database_release.permissions :
         !startswith(permission, "compute.disks.") &&
         (!startswith(permission, "compute.instances.") || permission == "compute.instances.setMetadata") &&
-        !startswith(permission, "compute.instanceTemplates.")
-      ])
+        !startswith(permission, "compute.instanceTemplates.") &&
+        (!startswith(permission, "compute.snapshots.") || permission == "compute.snapshots.list")
+      ]) &&
+      local.release_application_project_roles == toset([
+        "roles/cloudscheduler.admin",
+        "roles/run.developer",
+      ]) &&
+      length(google_project_iam_member.release_application) == 2 &&
+      length(google_service_account_iam_member.release_runtime_act_as) == 3 &&
+      google_project_iam_custom_role.release_job_iam.permissions == toset([
+        "run.jobs.getIamPolicy",
+        "run.jobs.setIamPolicy",
+      ]) &&
+      google_project_iam_member.release_job_iam.member == "serviceAccount:infra-release@agora-management-test.iam.gserviceaccount.com" &&
+      google_storage_bucket_iam_member.backup_runtime_creator.bucket == "agora-management-test-123456789012-backups" &&
+      google_storage_bucket_iam_member.backup_runtime_creator.role == "roles/storage.objectCreator" &&
+      google_storage_bucket_iam_member.backup_runtime_creator.member == "serviceAccount:${google_service_account.runtime["backup"].email}" &&
+      google_storage_bucket_iam_member.restore_runtime_viewer.role == "roles/storage.objectViewer" &&
+      google_storage_bucket_iam_member.restore_runtime_viewer.member == "serviceAccount:${google_service_account.runtime["restore"].email}"
     )
     error_message = "Database runtime, operator, service-agent, or release IAM escaped its reviewed boundary."
   }
@@ -493,6 +543,51 @@ run "builds_the_protected_workload_foundation" {
       ])
     )
     error_message = "The database capacity alert set, thresholds, or stable instance-name selector changed."
+  }
+
+  assert {
+    condition = (
+      google_compute_resource_policy.database_snapshots.region == "europe-west1" &&
+      one(google_compute_resource_policy.database_snapshots.snapshot_schedule_policy).schedule[0].daily_schedule[0].days_in_cycle == 1 &&
+      one(google_compute_resource_policy.database_snapshots.snapshot_schedule_policy).schedule[0].daily_schedule[0].start_time == "02:00" &&
+      one(google_compute_resource_policy.database_snapshots.snapshot_schedule_policy).retention_policy[0].max_retention_days == 7 &&
+      one(google_compute_resource_policy.database_snapshots.snapshot_schedule_policy).retention_policy[0].on_source_disk_delete == "KEEP_AUTO_SNAPSHOTS" &&
+      !one(google_compute_resource_policy.database_snapshots.snapshot_schedule_policy).snapshot_properties[0].guest_flush &&
+      toset(one(google_compute_resource_policy.database_snapshots.snapshot_schedule_policy).snapshot_properties[0].storage_locations) == toset(["europe-west1"]) &&
+      google_compute_disk_resource_policy_attachment.database_snapshots.disk == google_compute_disk.database.name &&
+      google_monitoring_alert_policy.postgres_recovery_job_failure.severity == "CRITICAL" &&
+      google_monitoring_alert_policy.postgres_recovery_job_failure.deletion_policy == "PREVENT" &&
+      length(google_monitoring_alert_policy.postgres_recovery_job_failure.conditions) == 2 &&
+      strcontains(one([
+        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure.conditions : condition
+        if length(condition.condition_threshold) == 1
+      ]).condition_threshold[0].filter, "run.googleapis.com/job/completed_execution_count") &&
+      strcontains(one([
+        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure.conditions : condition
+        if length(condition.condition_threshold) == 1
+      ]).condition_threshold[0].filter, "metric.labels.result = \"failed\"") &&
+      strcontains(one([
+        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure.conditions : condition
+        if length(condition.condition_threshold) == 1
+      ]).condition_threshold[0].filter, "agora-postgres-") &&
+      one([
+        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure.conditions : condition
+        if length(condition.condition_absent) == 1
+      ]).condition_absent[0].duration == "10800s" &&
+      strcontains(one([
+        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure.conditions : condition
+        if length(condition.condition_absent) == 1
+      ]).condition_absent[0].filter, "resource.labels.job_name = \"agora-postgres-backup-monitor\"") &&
+      !strcontains(one([
+        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure.conditions : condition
+        if length(condition.condition_absent) == 1
+      ]).condition_absent[0].filter, "metric.labels.result") &&
+      one([
+        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure.conditions : condition
+        if length(condition.condition_absent) == 1
+      ]).condition_absent[0].trigger[0].count == 1
+    )
+    error_message = "Same-region snapshot storage or native failed/missing recovery-job alerting changed."
   }
 
   assert {
@@ -548,7 +643,10 @@ run "builds_the_protected_workload_foundation" {
       google_monitoring_notification_channel.cost_email.deletion_policy == "PREVENT" &&
       google_billing_budget.workload.amount[0].specified_amount[0].units == "60" &&
       google_billing_budget.workload.amount[0].specified_amount[0].currency_code == "EUR" &&
-      toset(google_billing_budget.workload.budget_filter[0].projects) == toset(["projects/987654321098"]) &&
+      toset(google_billing_budget.workload.budget_filter[0].projects) == toset([
+        "projects/123456789012",
+        "projects/987654321098",
+      ]) &&
       toset([
         for threshold in google_billing_budget.workload.threshold_rules :
         "${threshold.spend_basis}:${threshold.threshold_percent}"

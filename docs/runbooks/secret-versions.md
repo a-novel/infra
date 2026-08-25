@@ -7,7 +7,7 @@ history, process listings, OpenTofu state, a GitHub secret, an issue, or logs.
 
 Operators have two roles on each exact application secret: Secret Accessor for controlled recovery
 and Secret Version Manager for add, disable, re-enable, and delayed destroy. Automation has none of
-those permissions except the separately approved recovery identity, which can read the seven exact
+those permissions except the separately approved recovery identity, which can read the nine exact
 secrets. See [Secret Manager access control](https://cloud.google.com/secret-manager/docs/access-control),
 [adding versions](https://cloud.google.com/secret-manager/docs/add-secret-version), and
 [delayed destruction](https://cloud.google.com/secret-manager/docs/delay-destruction-of-secret-versions).
@@ -22,7 +22,7 @@ secrets. See [Secret Manager access control](https://cloud.google.com/secret-man
   when they refer to the same database.
 - A PostgreSQL password must contain 32–128 characters from `A-Z`, `a-z`, `0-9`, `_`, and `-` only.
   This printable URL-safe contract makes byte-exact validation and direct DSN embedding unambiguous.
-  JSON Keys and Authentication must use different values.
+  Both owner passwords and both backup passwords must be four distinct values.
 - For rotation, know every consumer and the currently pinned numeric version. Never configure a
   production consumer to use the mutable `latest` alias.
 
@@ -31,11 +31,13 @@ The allowed IDs are:
 ```text
 production-authentication-postgres-dsn
 production-authentication-postgres-password
+production-authentication-postgres-backup-password
 production-authentication-smtp-sender-password
 production-authentication-super-admin-password
 production-json-keys-app-master-key
 production-json-keys-postgres-dsn
 production-json-keys-postgres-password
+production-json-keys-postgres-backup-password
 ```
 
 ## Add one version safely
@@ -54,11 +56,13 @@ read -r -p 'Exact secret ID: ' SECRET_ID
 case "${SECRET_ID}" in
   production-authentication-postgres-dsn|\
   production-authentication-postgres-password|\
+  production-authentication-postgres-backup-password|\
   production-authentication-smtp-sender-password|\
   production-authentication-super-admin-password|\
   production-json-keys-app-master-key|\
   production-json-keys-postgres-dsn|\
-  production-json-keys-postgres-password) ;;
+  production-json-keys-postgres-password|\
+  production-json-keys-postgres-backup-password) ;;
   *) printf 'Refusing undeclared secret ID.\n' >&2; false ;;
 esac
 
@@ -83,7 +87,10 @@ test -n "${SECRET_VALUE}"
 test "${SECRET_VALUE}" = "${SECRET_VALUE_CONFIRMATION}"
 
 case "${SECRET_ID}" in
-  production-authentication-postgres-password|production-json-keys-postgres-password)
+  production-authentication-postgres-password|\
+  production-authentication-postgres-backup-password|\
+  production-json-keys-postgres-password|\
+  production-json-keys-postgres-backup-password)
     test "${#SECRET_VALUE}" -ge 32
     test "${#SECRET_VALUE}" -le 128
     [[ "${SECRET_VALUE}" =~ ^[A-Za-z0-9_-]+$ ]]
@@ -139,10 +146,12 @@ version, operator, timestamp, and reason. Do not record the value or a reversibl
 ## Initial population
 
 Repeat the add procedure separately for every secret needed by the next reviewed workload change.
-Do not populate unused containers early. Authentication and JSON Keys currently require the seven
-declared contracts; database DSNs must use the stateful private address and distinct host ports from
-the [PostgreSQL host runbook](./operate-postgresql-host.md), so create those versions only after the
-foundation output is known.
+Do not populate unused containers early. First production activation requires all nine declared
+contracts, including separate read-only backup credentials. Database DSNs must use the stateful
+private address and distinct host ports from the
+[PostgreSQL host runbook](./operate-postgresql-host.md), so create those versions only after the
+foundation output is known. Compare the four owner/backup passwords in the approved password manager
+without printing or exporting them; host startup fails closed if any pair is equal.
 
 The initial application release must pin each numeric version. Treat a missing version as a blocked
 deployment, not a reason to use `latest` or copy a value into GitHub.
@@ -164,6 +173,11 @@ rollout. Follow the PostgreSQL host runbook, schedule the documented short inter
 database before its clients, and keep the previous numeric password and DSN versions available for
 rollback. Credentials whose issuer supports two concurrently valid values can use a true overlap
 window instead.
+
+A backup password is also a coordinated database release. Add its new version, update the exact
+backup-version metadata, let host startup rotate the restricted role, and require an immediate backup
+plus clean restore before disabling the former version. The backup job and host must reference the
+same numeric version; never update only one side.
 
 Select the old numeric version explicitly and compare it with the new one:
 
@@ -229,8 +243,8 @@ after final destruction the payload is irrecoverable.
 
 For an externally valid credential such as SMTP, disabling the Secret Manager version does not revoke
 the credential at its issuer. Rotate and revoke it at the provider as a separate operator action,
-then verify both systems. Database passwords likewise require a coordinated PostgreSQL credential
-change before the old Secret Manager version is disabled.
+then verify both systems. Database owner and backup passwords likewise require a coordinated
+PostgreSQL credential change before the old Secret Manager version is disabled.
 
 ## Audit and cleanup
 

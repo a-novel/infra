@@ -125,8 +125,14 @@ printf '%s\n' \
     '    if [[ "${INVALID_METADATA_SHAPE:-false}" == "true" ]]; then' \
     "        printf '%s\\n' '{\"allInstancesConfig\":{\"properties\":{\"metadata\":{\"unexpected-key\":\"value\"}}}}'" \
     '    else' \
-    "        printf '%s\\n' '{\"allInstancesConfig\":{\"properties\":{\"metadata\":{\"agora-authentication-database-image\":\"\",\"agora-authentication-postgres-password-version\":\"0\",\"agora-database-release-revision\":\"\",\"agora-json-keys-database-image\":\"\",\"agora-json-keys-postgres-password-version\":\"0\"}}}}'" \
+    '        if [[ "${INITIAL_DATABASE_RELEASE:-false}" == "true" ]]; then current_revision=""; else current_revision="ffffffffffffffffffffffffffffffffffffffff"; fi' \
+    '        printf "{\"allInstancesConfig\":{\"properties\":{\"metadata\":{\"agora-authentication-database-image\":\"\",\"agora-authentication-postgres-backup-password-version\":\"0\",\"agora-authentication-postgres-password-version\":\"0\",\"agora-database-release-revision\":\"%s\",\"agora-json-keys-database-image\":\"\",\"agora-json-keys-postgres-backup-password-version\":\"0\",\"agora-json-keys-postgres-password-version\":\"0\"}}}}\n" "${current_revision}"' \
     '    fi' \
+    'fi' \
+    'if [[ "$*" == *"compute snapshots list"* ]]; then' \
+    '    if [[ "${STALE_SNAPSHOT:-false}" == "true" ]]; then snapshot_time="$(date -u --date="7 hours ago" +%Y-%m-%dT%H:%M:%SZ)"; else snapshot_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; fi' \
+    '    if [[ "${MANUAL_SNAPSHOT:-false}" == "true" ]]; then snapshot_auto_created=false; else snapshot_auto_created=true; fi' \
+    '    printf "[{\"name\":\"agora-scheduled-snapshot\",\"autoCreated\":%s,\"sourceDisk\":\"https://www.googleapis.com/compute/v1/projects/agora-production-test/zones/europe-west1-b/disks/agora-data\",\"status\":\"READY\",\"creationTimestamp\":\"%s\",\"storageLocations\":[\"europe-west1\"],\"labels\":{\"application\":\"agora\",\"environment\":\"production\",\"managed-by\":\"opentofu\",\"plane\":\"workload\",\"role\":\"database-snapshot\"}}]\n" "${snapshot_auto_created}" "${snapshot_time}"' \
     'fi' \
     >"${MOCK_BIN}/gcloud"
 chmod 0700 "${MOCK_BIN}/gcloud"
@@ -144,17 +150,41 @@ PATH="${MOCK_BIN}:${PATH}" GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
     "${AUTHENTICATION_IMAGE}" \
     7 \
     11 \
+    13 \
+    17 \
     >"${TEMP_DIR}/database-release.out"
 
-assert_equal "$(grep -Fc 'CALL' "${GCLOUD_ARGUMENT_LOG}")" "3"
+assert_equal "$(grep -Fc 'CALL' "${GCLOUD_ARGUMENT_LOG}")" "6"
 grep -Fqx 'describe' "${GCLOUD_ARGUMENT_LOG}"
+grep -Fqx 'snapshots' "${GCLOUD_ARGUMENT_LOG}"
+grep -Fqx 'list' "${GCLOUD_ARGUMENT_LOG}"
+assert_equal "$(grep -Fc 'execute' "${GCLOUD_ARGUMENT_LOG}")" "2"
+grep -Fqx 'agora-postgres-backup-json-keys' "${GCLOUD_ARGUMENT_LOG}"
+grep -Fqx 'agora-postgres-backup-authentication' "${GCLOUD_ARGUMENT_LOG}"
+grep -Fqx -- '--wait' "${GCLOUD_ARGUMENT_LOG}"
 grep -Fqx 'all-instances-config' "${GCLOUD_ARGUMENT_LOG}"
 grep -Fqx 'update-instances' "${GCLOUD_ARGUMENT_LOG}"
 grep -Fqx -- '--format=json(allInstancesConfig.properties.metadata)' "${GCLOUD_ARGUMENT_LOG}"
 grep -Fqx -- '--all-instances' "${GCLOUD_ARGUMENT_LOG}"
 grep -Fqx -- '--minimal-action=restart' "${GCLOUD_ARGUMENT_LOG}"
 grep -Fqx -- '--most-disruptive-allowed-action=restart' "${GCLOUD_ARGUMENT_LOG}"
-grep -Fqx -- "--metadata=agora-database-release-revision=0123456789abcdef0123456789abcdef01234567,agora-json-keys-database-image=${JSON_KEYS_IMAGE},agora-authentication-database-image=${AUTHENTICATION_IMAGE},agora-json-keys-postgres-password-version=7,agora-authentication-postgres-password-version=11" "${GCLOUD_ARGUMENT_LOG}"
+grep -Fqx -- "--metadata=agora-database-release-revision=0123456789abcdef0123456789abcdef01234567,agora-json-keys-database-image=${JSON_KEYS_IMAGE},agora-authentication-database-image=${AUTHENTICATION_IMAGE},agora-json-keys-postgres-password-version=7,agora-authentication-postgres-password-version=11,agora-json-keys-postgres-backup-password-version=13,agora-authentication-postgres-backup-password-version=17" "${GCLOUD_ARGUMENT_LOG}"
+
+# The first release has no source cluster to dump. It still requires the fresh
+# scheduled snapshot and returns before attempting a nonexistent backup job.
+: >"${GCLOUD_ARGUMENT_LOG}"
+PATH="${MOCK_BIN}:${PATH}" GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
+    INITIAL_DATABASE_RELEASE=true \
+    "${REPOSITORY_ROOT}/ops/prepare-database-change.sh" \
+    agora-production-test \
+    europe-west1-b \
+    0123456789abcdef0123456789abcdef01234567 \
+    >"${TEMP_DIR}/initial-database-gate.out"
+assert_equal "$(grep -Fc 'CALL' "${GCLOUD_ARGUMENT_LOG}")" "2"
+if grep -Fqx 'execute' "${GCLOUD_ARGUMENT_LOG}"; then
+    printf "The empty first release must not attempt a logical backup.\n" >&2
+    exit 1
+fi
 
 : >"${GCLOUD_ARGUMENT_LOG}"
 set +e
@@ -167,6 +197,8 @@ PATH="${MOCK_BIN}:${PATH}" GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
     "${AUTHENTICATION_IMAGE}" \
     7 \
     11 \
+    13 \
+    17 \
     >"${TEMP_DIR}/invalid-database-release.out" \
     2>"${TEMP_DIR}/invalid-database-release.err"
 INVALID_DATABASE_RELEASE_CODE=$?
@@ -189,6 +221,8 @@ PATH="${MOCK_BIN}:${PATH}" GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
     "${AUTHENTICATION_IMAGE}" \
     7 \
     11 \
+    13 \
+    17 \
     >"${TEMP_DIR}/invalid-database-metadata.out" \
     2>"${TEMP_DIR}/invalid-database-metadata.err"
 INVALID_DATABASE_METADATA_CODE=$?
@@ -197,6 +231,55 @@ assert_equal "${INVALID_DATABASE_METADATA_CODE}" "70"
 assert_equal "$(grep -Fc 'CALL' "${GCLOUD_ARGUMENT_LOG}")" "1"
 if grep -Eq '^(all-instances-config|update-instances)$' "${GCLOUD_ARGUMENT_LOG}"; then
     printf "Unexpected database metadata must fail before a mutation.\n" >&2
+    exit 1
+fi
+
+# A database change is blocked outside the six-hour scheduled-snapshot window,
+# before a logical backup or metadata mutation can begin.
+: >"${GCLOUD_ARGUMENT_LOG}"
+set +e
+PATH="${MOCK_BIN}:${PATH}" GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
+    STALE_SNAPSHOT=true \
+    "${REPOSITORY_ROOT}/ops/deploy-database-release.sh" \
+    agora-production-test \
+    europe-west1-b \
+    0123456789abcdef0123456789abcdef01234567 \
+    "${JSON_KEYS_IMAGE}" \
+    "${AUTHENTICATION_IMAGE}" \
+    7 \
+    11 \
+    13 \
+    17 \
+    >"${TEMP_DIR}/stale-database-snapshot.out" \
+    2>"${TEMP_DIR}/stale-database-snapshot.err"
+STALE_DATABASE_SNAPSHOT_CODE=$?
+set -e
+assert_equal "${STALE_DATABASE_SNAPSHOT_CODE}" "70"
+assert_equal "$(grep -Fc 'CALL' "${GCLOUD_ARGUMENT_LOG}")" "2"
+if grep -Eq '^(execute|all-instances-config|update-instances)$' "${GCLOUD_ARGUMENT_LOG}"; then
+    printf "A stale snapshot must fail before backup or database mutation.\n" >&2
+    exit 1
+fi
+
+# Matching labels cannot make an operator-created snapshot satisfy the
+# code-owned schedule gate.
+: >"${GCLOUD_ARGUMENT_LOG}"
+set +e
+PATH="${MOCK_BIN}:${PATH}" GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
+    INITIAL_DATABASE_RELEASE=true \
+    MANUAL_SNAPSHOT=true \
+    "${REPOSITORY_ROOT}/ops/prepare-database-change.sh" \
+    agora-production-test \
+    europe-west1-b \
+    0123456789abcdef0123456789abcdef01234567 \
+    >"${TEMP_DIR}/manual-database-snapshot.out" \
+    2>"${TEMP_DIR}/manual-database-snapshot.err"
+MANUAL_DATABASE_SNAPSHOT_CODE=$?
+set -e
+assert_equal "${MANUAL_DATABASE_SNAPSHOT_CODE}" "70"
+assert_equal "$(grep -Fc 'CALL' "${GCLOUD_ARGUMENT_LOG}")" "2"
+if grep -Eq '^(execute|all-instances-config|update-instances)$' "${GCLOUD_ARGUMENT_LOG}"; then
+    printf "A manual snapshot must fail before backup or database mutation.\n" >&2
     exit 1
 fi
 

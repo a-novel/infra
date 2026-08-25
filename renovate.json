@@ -26,6 +26,15 @@
       "pinDigests": true
     },
     {
+      "description": "Accept only complete stable SemVer curl images for create-only backup uploads.",
+      "matchDatasources": ["docker"],
+      "matchFileNames": ["environments/production/release/variables.tf"],
+      "matchPackageNames": ["alpine/curl"],
+      "allowedVersions": "/^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$/",
+      "versioning": "semver",
+      "pinDigests": true
+    },
+    {
       "description": "Update the JSON Keys image family as one deployment candidate.",
       "matchPackageNames": ["ghcr.io/a-novel/service-json-keys/**"],
       "groupName": "service-json-keys images"
@@ -92,6 +101,18 @@
       ],
       "datasourceTemplate": "docker",
       "versioningTemplate": "semver-coerced"
+    },
+    {
+      "customType": "regex",
+      "description": "Update the stable curl uploader tag and matching digest.",
+      "managerFilePatterns": [
+        "/^environments/production/release/variables\\.tf$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=docker depName=(?<depName>[^\\s]+) versioning=semver\\s+default\\s*=\\s*\"docker\\.io/[^:\\s]+:(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)@(?<currentDigest>sha256:[a-f0-9]{64})\""
+      ],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "semver"
     }
   ]
 }

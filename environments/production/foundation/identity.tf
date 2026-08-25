@@ -54,6 +54,17 @@ locals {
     "roles/monitoring.metricWriter",
   ])
 
+  release_application_project_roles = toset([
+    "roles/cloudscheduler.admin",
+    "roles/run.developer",
+  ])
+
+  release_runtime_identities = toset([
+    "backup",
+    "restore",
+    "scheduler_invoker",
+  ])
+
   database_operator_project_roles = toset([
     "roles/compute.osAdminLogin",
     "roles/compute.viewer",
@@ -84,9 +95,25 @@ locals {
       identity = "database"
       secret   = "production-authentication-postgres-password"
     }
+    "database:authentication-backup-password" = {
+      identity = "database"
+      secret   = "production-authentication-postgres-backup-password"
+    }
     "database:json-keys-password" = {
       identity = "database"
       secret   = "production-json-keys-postgres-password"
+    }
+    "database:json-keys-backup-password" = {
+      identity = "database"
+      secret   = "production-json-keys-postgres-backup-password"
+    }
+    "backup:authentication-backup-password" = {
+      identity = "backup"
+      secret   = "production-authentication-postgres-backup-password"
+    }
+    "backup:json-keys-backup-password" = {
+      identity = "backup"
+      secret   = "production-json-keys-postgres-backup-password"
     }
     "json-keys:app-master-key" = {
       identity = "json_keys"
@@ -182,6 +209,52 @@ resource "google_service_account_iam_member" "mig_database_act_as" {
   member             = "serviceAccount:${google_project.workload.number}@cloudservices.gserviceaccount.com"
 }
 
+resource "google_service_account_iam_member" "release_runtime_act_as" {
+  for_each = local.release_runtime_identities
+
+  service_account_id = google_service_account.runtime[each.value].name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${local.automation_service_accounts.release}"
+}
+
+resource "google_project_iam_member" "release_application" {
+  for_each = local.release_application_project_roles
+
+  project = google_project.workload.project_id
+  role    = each.value
+  member  = "serviceAccount:${local.automation_service_accounts.release}"
+}
+
+# Cloud Run Developer deliberately excludes policy writes. This two-permission
+# supplement lets release manage IAM on its jobs without Cloud Run Admin; the
+# reviewed release resources and tests constrain declared bindings to the
+# scheduler identity's invoker role.
+resource "google_project_iam_custom_role" "release_job_iam" {
+  project = google_project.workload.project_id
+
+  role_id     = "infraReleaseJobIam"
+  title       = "Infra Release Job IAM"
+  description = "Read and update IAM policies on release-managed Cloud Run jobs."
+  stage       = "GA"
+
+  permissions = [
+    "run.jobs.getIamPolicy",
+    "run.jobs.setIamPolicy",
+  ]
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [google_project_service.workload["iam.googleapis.com"]]
+}
+
+resource "google_project_iam_member" "release_job_iam" {
+  project = google_project.workload.project_id
+  role    = google_project_iam_custom_role.release_job_iam.name
+  member  = "serviceAccount:${local.automation_service_accounts.release}"
+}
+
 resource "google_project_iam_member" "database_runtime_observability" {
   for_each = local.database_runtime_project_roles
 
@@ -227,19 +300,20 @@ resource "google_service_account_iam_member" "database_operator_act_as" {
 # broader MIG changes. Applying it to an existing member also requires one VM
 # permission, setMetadata; the conditional binding below fences that permission
 # to the generated database-name prefix. The fixed helper and protected
-# environment remain the controls around the five declared keys.
+# environment remain the controls around the seven declared keys.
 resource "google_project_iam_custom_role" "database_release" {
   project = google_project.workload.project_id
 
   role_id     = "infraDatabaseRelease"
   title       = "Infra Database Release"
-  description = "Read and apply release metadata to an existing managed database instance."
+  description = "Read recovery metadata and apply release metadata to an existing managed database instance."
   stage       = "GA"
 
   permissions = [
     "compute.instanceGroupManagers.get",
     "compute.instanceGroupManagers.update",
     "compute.instances.setMetadata",
+    "compute.snapshots.list",
     "compute.zoneOperations.get",
   ]
 
@@ -271,4 +345,20 @@ resource "google_secret_manager_secret_iam_member" "runtime" {
   secret_id = each.value.secret
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.runtime[each.value.identity].email}"
+}
+
+# Logical backups are committed by a create-only identity. It cannot discover,
+# read, overwrite, or delete a recovery point after the upload request returns.
+resource "google_storage_bucket_iam_member" "backup_runtime_creator" {
+  bucket = var.backup_bucket_name
+  role   = "roles/storage.objectCreator"
+  member = "serviceAccount:${google_service_account.runtime["backup"].email}"
+}
+
+# Restore and freshness checks share one read-only identity. They can neither
+# create a forged completion marker nor modify or delete retained data.
+resource "google_storage_bucket_iam_member" "restore_runtime_viewer" {
+  bucket = var.backup_bucket_name
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:${google_service_account.runtime["restore"].email}"
 }

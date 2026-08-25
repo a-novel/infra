@@ -15,7 +15,6 @@ locals {
       target_tags = toset([
         local.network_tags.authentication,
         local.network_tags.backup,
-        local.network_tags.restore,
       ])
     }
     json_keys = {
@@ -23,7 +22,6 @@ locals {
       target_tags = toset([
         local.network_tags.backup,
         local.network_tags.json_keys,
-        local.network_tags.restore,
       ])
     }
   }

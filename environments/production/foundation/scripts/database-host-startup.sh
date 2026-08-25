@@ -23,7 +23,9 @@ DATABASE_CONTAINERS=(
 remove_database_secret_files() {
     rm -f -- \
         "${SECRETS_DIR}/json-keys-postgres-password" \
-        "${SECRETS_DIR}/authentication-postgres-password"
+        "${SECRETS_DIR}/json-keys-postgres-backup-password" \
+        "${SECRETS_DIR}/authentication-postgres-password" \
+        "${SECRETS_DIR}/authentication-postgres-backup-password"
 }
 
 cleanup() {
@@ -35,7 +37,7 @@ cleanup() {
         rm -f -- "${SECRET_TEMP_FILES[@]}"
     fi
 }
-trap cleanup INT EXIT
+trap cleanup EXIT
 
 stop_database_containers() {
     local container=""
@@ -59,7 +61,7 @@ remove_database_containers() {
 }
 
 handle_failure() {
-    local status="$?"
+    local status="${1:-$?}"
 
     trap - ERR
     stop_database_containers
@@ -70,6 +72,7 @@ handle_failure() {
     exit "${status}"
 }
 trap handle_failure ERR
+trap 'handle_failure 1' INT TERM
 
 metadata_request() {
     curl --fail --silent --show-error \
@@ -208,15 +211,15 @@ configure_database_firewall() {
     iptables -w -I INPUT 1 -j "${host_chain}"
 }
 
-activate_database_password() {
+activate_database_credentials() {
     local container_name="$1"
     local database_user="$2"
     local database_name="$3"
 
-    # The payload stays inside the container: a local superuser session reads
-    # the read-only file, quotes it server-side, and stores its SCRAM verifier.
-    # Every statement/error/duration/audit logger is disabled for this session,
-    # while client output is discarded and failures expose only a fixed label.
+    # Both payloads stay inside the container. A local superuser session reads
+    # the files, quotes them server-side, and stores only SCRAM verifiers. The
+    # backup role is converged to PostgreSQL's read-all-data role and cannot
+    # create databases, roles, replication slots, or bypass row security.
     if ! docker exec --interactive --user postgres \
             --env 'PGOPTIONS=-c log_statement=none -c log_min_messages=panic -c log_min_error_statement=panic -c log_min_duration_statement=-1 -c log_min_duration_sample=-1 -c log_transaction_sample_rate=0 -c log_error_verbosity=terse -c pgaudit.log=none -c auto_explain.log_min_duration=-1' \
             "${container_name}" \
@@ -227,19 +230,43 @@ activate_database_password() {
             --dbname "${database_name}" \
             >/dev/null 2>&1 <<'SQL'
 DO $activate_password$
+DECLARE
+    backup_role text := current_user || '_backup';
 BEGIN
     EXECUTE format(
         'ALTER ROLE %I PASSWORD %L',
         current_user,
         pg_read_file('/run/agora-postgres-password')
     );
+
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = backup_role) THEN
+        EXECUTE format('CREATE ROLE %I', backup_role);
+    END IF;
+
+    EXECUTE format(
+        'ALTER ROLE %I WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS CONNECTION LIMIT 2 PASSWORD %L',
+        backup_role,
+        pg_read_file('/run/agora-postgres-backup-password')
+    );
+    EXECUTE format('GRANT pg_read_all_data TO %I', backup_role);
+
+    IF EXISTS (
+        SELECT 1
+        FROM pg_auth_members membership
+        JOIN pg_roles granted_role ON granted_role.oid = membership.roleid
+        JOIN pg_roles member_role ON member_role.oid = membership.member
+        WHERE member_role.rolname = backup_role
+          AND granted_role.rolname <> 'pg_read_all_data'
+    ) THEN
+        RAISE EXCEPTION 'database backup role has an undeclared membership';
+    END IF;
 EXCEPTION WHEN OTHERS THEN
-    RAISE EXCEPTION 'database password activation failed';
+    RAISE EXCEPTION 'database credential activation failed';
 END
 $activate_password$;
 SQL
     then
-        printf 'error: database password activation failed for %s\n' "${container_name}" >&2
+        printf 'error: database credential activation failed for %s\n' "${container_name}" >&2
         return 1
     fi
 }
@@ -251,6 +278,7 @@ start_database() {
     local database_user="$4"
     local database_name="$5"
     local password_file="$6"
+    local backup_password_file="$7"
     local container_name="agora-postgres-${key}"
     local data_directory="${DATA_MOUNT}/${key}"
     local network_name="agora-database-${key}"
@@ -289,10 +317,12 @@ start_database() {
         --env "POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256 --auth-local=trust" \
         --mount "type=bind,source=${data_directory},target=/var/lib/postgresql" \
         --mount "type=bind,source=${password_file},target=/run/agora-postgres-password,readonly" \
+        --mount "type=bind,source=${backup_password_file},target=/run/agora-postgres-backup-password,readonly" \
         --tmpfs "/var/run/postgresql:rw,nosuid,nodev,size=16m" \
         "${image}" \
         postgres \
         -c "listen_addresses=*" \
+        -c "agora.database_image=${image}" \
         -c "max_connections=${MAX_CONNECTIONS}" \
         -c "password_encryption=scram-sha-256" >/dev/null
 
@@ -308,7 +338,7 @@ start_database() {
         sleep 1
     done
 
-    activate_database_password "${container_name}" "${database_user}" "${database_name}"
+    activate_database_credentials "${container_name}" "${database_user}" "${database_name}"
 }
 
 # ---- Preserved storage ----
@@ -359,7 +389,7 @@ resize2fs "${DATA_DEVICE}" >/dev/null
 RELEASE_REVISION="$(attribute_get agora-database-release-revision 2>/dev/null || true)"
 if [ -z "${RELEASE_REVISION}" ]; then
     # Foundation prepares and verifies storage but deliberately starts no
-    # database until one complete release supplies all five non-secret fields.
+    # database until one complete release supplies all seven non-secret fields.
     stop_database_containers
     remove_database_secret_files
     printf 'Database release metadata is absent; the private host remains idle.\n'
@@ -382,12 +412,16 @@ JSON_KEYS_IMAGE="$(attribute_get agora-json-keys-database-image)"
 AUTHENTICATION_IMAGE="$(attribute_get agora-authentication-database-image)"
 JSON_KEYS_PASSWORD_VERSION="$(attribute_get agora-json-keys-postgres-password-version)"
 AUTHENTICATION_PASSWORD_VERSION="$(attribute_get agora-authentication-postgres-password-version)"
+JSON_KEYS_BACKUP_PASSWORD_VERSION="$(attribute_get agora-json-keys-postgres-backup-password-version)"
+AUTHENTICATION_BACKUP_PASSWORD_VERSION="$(attribute_get agora-authentication-postgres-backup-password-version)"
 
 require_cpu "${CONTAINER_CPU}"
 require_numeric "container memory" "${CONTAINER_MEMORY_MB}"
 require_numeric "maximum connections" "${MAX_CONNECTIONS}"
 require_numeric "JSON Keys password version" "${JSON_KEYS_PASSWORD_VERSION}"
 require_numeric "Authentication password version" "${AUTHENTICATION_PASSWORD_VERSION}"
+require_numeric "JSON Keys backup password version" "${JSON_KEYS_BACKUP_PASSWORD_VERSION}"
+require_numeric "Authentication backup password version" "${AUTHENTICATION_BACKUP_PASSWORD_VERSION}"
 require_promoted_image "${JSON_KEYS_IMAGE}" "service-json-keys/database"
 require_promoted_image "${AUTHENTICATION_IMAGE}" "service-authentication/database"
 
@@ -410,6 +444,8 @@ unset ACCESS_TOKEN
 
 JSON_KEYS_PASSWORD_FILE="${SECRETS_DIR}/json-keys-postgres-password"
 AUTHENTICATION_PASSWORD_FILE="${SECRETS_DIR}/authentication-postgres-password"
+JSON_KEYS_BACKUP_PASSWORD_FILE="${SECRETS_DIR}/json-keys-postgres-backup-password"
+AUTHENTICATION_BACKUP_PASSWORD_FILE="${SECRETS_DIR}/authentication-postgres-backup-password"
 
 fetch_secret \
     production-json-keys-postgres-password \
@@ -419,9 +455,22 @@ fetch_secret \
     production-authentication-postgres-password \
     "${AUTHENTICATION_PASSWORD_VERSION}" \
     "${AUTHENTICATION_PASSWORD_FILE}"
+fetch_secret \
+    production-json-keys-postgres-backup-password \
+    "${JSON_KEYS_BACKUP_PASSWORD_VERSION}" \
+    "${JSON_KEYS_BACKUP_PASSWORD_FILE}"
+fetch_secret \
+    production-authentication-postgres-backup-password \
+    "${AUTHENTICATION_BACKUP_PASSWORD_VERSION}" \
+    "${AUTHENTICATION_BACKUP_PASSWORD_FILE}"
 
-if cmp -s "${JSON_KEYS_PASSWORD_FILE}" "${AUTHENTICATION_PASSWORD_FILE}"; then
-    printf 'error: the two database passwords must be distinct\n' >&2
+if cmp -s "${JSON_KEYS_PASSWORD_FILE}" "${AUTHENTICATION_PASSWORD_FILE}" ||
+    cmp -s "${JSON_KEYS_PASSWORD_FILE}" "${JSON_KEYS_BACKUP_PASSWORD_FILE}" ||
+    cmp -s "${JSON_KEYS_PASSWORD_FILE}" "${AUTHENTICATION_BACKUP_PASSWORD_FILE}" ||
+    cmp -s "${AUTHENTICATION_PASSWORD_FILE}" "${JSON_KEYS_BACKUP_PASSWORD_FILE}" ||
+    cmp -s "${AUTHENTICATION_PASSWORD_FILE}" "${AUTHENTICATION_BACKUP_PASSWORD_FILE}" ||
+    cmp -s "${JSON_KEYS_BACKUP_PASSWORD_FILE}" "${AUTHENTICATION_BACKUP_PASSWORD_FILE}"; then
+    printf 'error: all database owner and backup passwords must be distinct\n' >&2
     exit 1
 fi
 
@@ -449,13 +498,15 @@ start_database \
     5432 \
     agora_json_keys \
     agora_json_keys \
-    "${JSON_KEYS_PASSWORD_FILE}"
+    "${JSON_KEYS_PASSWORD_FILE}" \
+    "${JSON_KEYS_BACKUP_PASSWORD_FILE}"
 start_database \
     authentication \
     "${AUTHENTICATION_IMAGE}" \
     5433 \
     agora_authentication \
     agora_authentication \
-    "${AUTHENTICATION_PASSWORD_FILE}"
+    "${AUTHENTICATION_PASSWORD_FILE}" \
+    "${AUTHENTICATION_BACKUP_PASSWORD_FILE}"
 
 printf 'Database release %s is healthy.\n' "${RELEASE_REVISION}"

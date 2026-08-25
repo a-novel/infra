@@ -418,7 +418,7 @@ Verify the three buckets and three state IAM folders:
 ```bash
 for bucket in "${STATE_BUCKET}" "${BACKUP_BUCKET}" "${RECEIPT_BUCKET}"; do
   gcloud storage buckets describe "gs://${bucket}" \
-    --format='yaml(name,location,storageClass,publicAccessPrevention,uniformBucketLevelAccess,versioning,softDeletePolicy)'
+    --format='yaml(name,location,storage_class,public_access_prevention,uniform_bucket_level_access,versioning,soft_delete_policy,retention_policy,lifecycle_config)'
 done
 
 gcloud storage managed-folders list "gs://${STATE_BUCKET}/" --uri | sort
@@ -426,7 +426,9 @@ gcloud storage managed-folders list "gs://${STATE_BUCKET}/" --uri | sort
 
 Expected safe result: all buckets are `EU`, Standard, uniform-access, and public-access prevention is
 enforced; state and receipts have versioning and seven-day soft delete; backups have no soft-delete
-retention. Managed-folder output ends in exactly `bootstrap/`, `foundation/`, and `release/`.
+retention, a seven-day unlocked bucket retention policy, and a 14-day object lifecycle. The backup
+policy is locked only after the first successful clean restore through the dedicated recovery
+runbook. Managed-folder output ends in exactly `bootstrap/`, `foundation/`, and `release/`.
 
 Verify the metadata-only secrets and keyless identities:
 
@@ -443,7 +445,7 @@ gcloud iam service-accounts list \
   | sort
 ```
 
-Expected safe result: the seven IDs in the bootstrap secret-contract table and exactly four
+Expected safe result: the nine IDs in the bootstrap secret-contract table and exactly four
 `infra-*` service-account emails. Secret values do not exist yet and must not be added during this
 verification.
 
