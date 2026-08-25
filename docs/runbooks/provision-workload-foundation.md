@@ -38,10 +38,10 @@ The completed procedure creates:
 - one immutable regional Docker repository and narrow release/database access;
 - one pinned Shielded COS template, one continuously running `e2-medium` in a stateful one-member
   group, one 20 GiB replaceable boot disk, one 50 GiB preserved balanced data disk, and one
-  stateful internal address with a daily EU snapshot schedule and seven-day retention;
-- four regional quota preferences, one alert-only budget of 60 units in the billing account currency,
-  one email channel, five database capacity alerts, one failed-recovery-job alert, 30-day default
-  logging, and one narrow successful-healthcheck exclusion.
+  stateful internal address with a daily `europe-west1` snapshot schedule and seven-day retention;
+- four regional quota preferences, one two-project alert-only budget of 60 units in the billing
+  account currency, one email channel, five database capacity alerts, one failed-or-missing-recovery
+  alert, 30-day default logging, and one narrow successful-healthcheck exclusion.
 
 It does not create a running PostgreSQL container, logical-backup schedule, Cloud Run service or job,
 public IP, load balancer, Cloud NAT, router, VPC connector, secret payload, or application release. The VM
@@ -602,16 +602,17 @@ Budget and notification channel:
 
 ```bash
 gcloud billing budgets list --billing-account="$BILLING_ACCOUNT_ID" \
-  --filter='displayName="Agora production workload"' \
+  --filter='displayName="Agora production infrastructure"' \
   --format='yaml(displayName,amount,budgetFilter,thresholdRules,allUpdatesRule)'
 gcloud beta monitoring channels list --project="$WORKLOAD_PROJECT_ID" \
   --filter='displayName="Agora production cost alerts"' \
   --format='table(name,type,enabled,verificationStatus,displayName)'
 ```
 
-Expected safe result: one monthly budget of 60 `$BILLING_CURRENCY_CODE` units scoped only to the
-workload project, current-spend thresholds 50/75/90/100%, one forecasted 100% threshold, and only the
-enabled email channel. A budget does not stop spend. If the channel reports `UNVERIFIED`, it is non-functioning: use Google Cloud
+Expected safe result: one monthly budget of 60 `$BILLING_CURRENCY_CODE` units scoped to the
+management and workload project numbers, current-spend thresholds 50/75/90/100%, one forecasted
+100% threshold, and only the enabled email channel. A budget does not stop spend. If the channel
+reports `UNVERIFIED`, it is non-functioning: use Google Cloud
 Console **Monitoring → Alerting → Edit notification channels** or the documented
 [verification API](https://cloud.google.com/monitoring/alerts/using-channels-api), verify the same
 code-managed channel, then rerun the list command. Do not create a duplicate channel manually.

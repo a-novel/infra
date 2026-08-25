@@ -72,16 +72,21 @@ run "builds_the_two_database_recovery_contracts" {
     condition = alltrue([
       for job in values(google_cloud_run_v2_job.postgres_backup) :
       !job.deletion_protection &&
+      job.launch_stage == "BETA" &&
       one(job.template).task_count == 1 &&
       one(job.template).parallelism == 1 &&
       one(one(job.template).template).service_account == var.runtime_service_accounts.backup &&
       one(one(job.template).template).max_retries == 1 &&
       one(one(job.template).template).timeout == "1800s" &&
       one(one(job.template).template).execution_environment == "EXECUTION_ENVIRONMENT_GEN2" &&
+      one([
+        for volume in one(one(job.template).template).volumes : volume
+        if volume.name == "workspace"
+      ]).empty_dir[0].size_limit == "10Gi" &&
       one(one(one(job.template).template).vpc_access).egress == "ALL_TRAFFIC" &&
       toset(one(one(one(job.template).template).vpc_access).network_interfaces[0].tags) == toset(["agora-backup"])
     ])
-    error_message = "Backup jobs lost their singleton, retry, timeout, identity, or deny-by-default VPC contract."
+    error_message = "Backup jobs lost their singleton, Preview disk, retry, timeout, identity, or deny-by-default VPC contract."
   }
 
   assert {
@@ -180,6 +185,7 @@ run "builds_the_two_database_recovery_contracts" {
   assert {
     condition = alltrue([
       for key, job in google_cloud_run_v2_job.postgres_restore :
+      job.launch_stage == "BETA" &&
       one(one(job.template).template).service_account == var.runtime_service_accounts.restore &&
       one(one(job.template).template).max_retries == 0 &&
       one(one(job.template).template).timeout == "3600s" &&
@@ -189,6 +195,10 @@ run "builds_the_two_database_recovery_contracts" {
         for volume in one(one(job.template).template).volumes : volume
         if volume.name == "backups"
       ]).gcs[0].read_only &&
+      one([
+        for volume in one(one(job.template).template).volumes : volume
+        if volume.name == "workspace"
+      ]).empty_dir[0].size_limit == "10Gi" &&
       one([
         for environment in one(one(one(job.template).template).containers).env : environment.value
         if environment.name == "EXPECTED_EXTENSIONS"
@@ -208,7 +218,7 @@ run "builds_the_two_database_recovery_contracts" {
       strcontains(one(one(one(job.template).template).containers).args[0], "[a-z0-9_]*") &&
       strcontains(one(one(one(job.template).template).containers).args[0], "--single-transaction")
     ])
-    error_message = "Restore drills must use fresh single-transaction clusters, read-only storage, and no retry."
+    error_message = "Restore drills must use fresh single-transaction clusters, a bounded Preview disk, read-only storage, and no retry."
   }
 
   assert {
@@ -217,6 +227,10 @@ run "builds_the_two_database_recovery_contracts" {
       one(one(google_cloud_run_v2_job.postgres_backup_monitor[0].template).template).timeout == "300s" &&
       strcontains(one(one(one(google_cloud_run_v2_job.postgres_backup_monitor[0].template).template).containers).args[0], "RPO_SECONDS") &&
       strcontains(one(one(one(google_cloud_run_v2_job.postgres_backup_monitor[0].template).template).containers).args[0], "EXPECTED_KEYS") &&
+      one([
+        for environment in one(one(one(google_cloud_run_v2_job.postgres_backup_monitor[0].template).template).containers).env : environment.value
+        if environment.name == "STORAGE_ALERT_BYTES"
+      ]) == "268435456000" &&
       one(google_cloud_scheduler_job.postgres_backup_monitor[0].http_target).oauth_token[0].service_account_email == var.runtime_service_accounts.scheduler_invoker &&
       google_cloud_scheduler_job.postgres_backup_monitor[0].schedule == "5 * * * *"
     )

@@ -5,6 +5,10 @@ resource "google_cloud_run_v2_job" "postgres_backup" {
   location = var.region
   name     = "agora-postgres-backup-${each.value.object_key}"
 
+  # DISK-backed emptyDir volumes are a Cloud Run Preview feature. The 10 GiB
+  # minimum stays within the default per-instance quota and avoids a quota request.
+  launch_stage = "BETA"
+
   deletion_protection = false
   labels              = merge(local.labels, { component = each.value.object_key, role = "backup" })
 
@@ -92,7 +96,7 @@ resource "google_cloud_run_v2_job" "postgres_backup" {
 
         empty_dir {
           medium     = "DISK"
-          size_limit = "8Gi"
+          size_limit = "10Gi"
         }
       }
 
@@ -121,6 +125,12 @@ resource "google_cloud_run_v2_job" "postgres_backup" {
       }
     }
   }
+
+  # Google can normalize the launch stage after feature enrollment. Keep that
+  # provider-side normalization from creating release-plan noise.
+  lifecycle {
+    ignore_changes = [launch_stage]
+  }
 }
 
 resource "google_cloud_run_v2_job" "postgres_restore" {
@@ -129,6 +139,10 @@ resource "google_cloud_run_v2_job" "postgres_restore" {
   project  = var.workload_project_id
   location = var.region
   name     = "agora-postgres-restore-${each.value.object_key}"
+
+  # Restore uses the same bounded Preview disk contract as backup. Ten GiB is
+  # the supported minimum and requires no project quota increase.
+  launch_stage = "BETA"
 
   deletion_protection = false
   labels              = merge(local.labels, { component = each.value.object_key, role = "restore" })
@@ -200,7 +214,7 @@ resource "google_cloud_run_v2_job" "postgres_restore" {
 
         empty_dir {
           medium     = "DISK"
-          size_limit = "16Gi"
+          size_limit = "10Gi"
         }
       }
 
@@ -216,6 +230,10 @@ resource "google_cloud_run_v2_job" "postgres_restore" {
         }
       }
     }
+  }
+
+  lifecycle {
+    ignore_changes = [launch_stage]
   }
 }
 
@@ -255,10 +273,11 @@ resource "google_cloud_run_v2_job" "postgres_backup_monitor" {
           value = "21600"
         }
 
-        # 700 GiB leaves headroom below the USD 20/month object-storage gate.
+        # At the current EU cadence, 250 GiB retained keeps storage, write
+        # replication, and one monthly restore below the USD 20 design gate.
         env {
           name  = "STORAGE_ALERT_BYTES"
-          value = "751619276800"
+          value = "268435456000"
         }
 
         resources {

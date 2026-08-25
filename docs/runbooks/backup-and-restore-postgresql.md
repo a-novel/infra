@@ -10,6 +10,7 @@ exist on `master`, their protected GitHub environments are configured, and a mai
 explicitly authorized the first production apply.
 
 Google product behavior is documented by [Cloud Run jobs](https://cloud.google.com/run/docs/create-jobs),
+[Cloud Run ephemeral disk](https://cloud.google.com/run/docs/configuring/jobs/ephemeral-disk),
 [Cloud Storage retention policies](https://cloud.google.com/storage/docs/bucket-lock),
 [Cloud Storage lifecycle rules](https://cloud.google.com/storage/docs/lifecycle),
 [scheduled Persistent Disk snapshots](https://cloud.google.com/compute/docs/disks/about-snapshot-schedules),
@@ -45,10 +46,13 @@ both database recovery contracts are enabled:
 
 Cloud Scheduler authenticates with `agora-scheduler-invoker`; that account receives only
 `roles/run.invoker` on these exact jobs. Scheduler starts an execution and does not wait for it. The
-native Cloud Run failed-execution metric therefore remains the authoritative alert signal.
+native Cloud Run completion metric therefore remains authoritative: one condition detects failed
+executions and another detects three hours without a completed hourly monitor.
 
 The foundation root also attaches `agora-database-daily-snapshots` to the preserved `agora-data`
-disk. The schedule stores snapshots in the EU multi-region and keeps them after source-disk deletion.
+disk. The schedule stores snapshots in `europe-west1` for inexpensive fast local recovery and keeps
+them after source-disk deletion. Portable logical backups remain in the management project's EU
+multi-region bucket for regional-loss recovery.
 
 ## Backup commit protocol
 
@@ -56,7 +60,10 @@ Each backup job uses the exact promoted database image digest. This keeps `pg_du
 the declared owner, extensions, and schema bootstrap at the same PostgreSQL major as production.
 
 The database container writes a custom-format, zstd-compressed archive to an ephemeral volume and
-refuses to continue unless all of these checks pass:
+refuses to continue unless all of these checks pass. Disk-backed `emptyDir` is a Cloud Run Preview
+feature; backup and restore declare the `BETA` launch stage and use its supported 10 GiB minimum so
+no quota increase is required. Retries, checksums, and monthly clean restores are the acceptance
+controls for this early-product tradeoff.
 
 - the archive is non-empty and `pg_restore --list` can read it;
 - `pg_dump` emitted no warning or diagnostic;
@@ -204,9 +211,10 @@ database to dump. It is not an exception to snapshot, restore, or no-production-
 3. Run the protected database release. The pre-change helper recognizes the empty release revision,
    validates the fresh scheduled snapshot, and skips logical backup because no cluster exists yet.
 4. Verify both clusters and their four distinct credentials through the PostgreSQL host runbook.
-5. Before enabling any application writer, execute both backups and then both clean restores as shown
-   below.
-6. Record the four successful execution names, completion times, image digests, and the two selected
+5. Before enabling any application writer, execute both backups, both clean restores, and then
+   `agora-postgres-backup-monitor` once as shown below. The successful monitor completion seeds the
+   time series required by the three-hour metric-absence condition.
+6. Record the five successful execution names, completion times, image digests, and the two selected
    manifest attempt identifiers in the private recovery record. Never copy a dump, secret, full job
    definition, or raw log into GitHub.
 7. Lock bucket retention through a separately reviewed code change as described in
@@ -312,7 +320,7 @@ fails closed because a backup job refuses a server-reported image marker that di
 The gate:
 
 1. requires the exact seven-key foundation/release metadata map;
-2. finds the newest foundation-scheduled snapshot with the exact disk, labels, EU location, and
+2. finds the newest foundation-scheduled snapshot with the exact disk, labels, regional location, and
    `READY` state;
 3. rejects a snapshot older than six hours or more than five minutes in the future;
 4. for a non-empty database release, executes both logical backup jobs synchronously;
@@ -418,15 +426,22 @@ separate cross-project acceptance requirement.
 
 ## Alerts and routine review
 
-`Agora PostgreSQL recovery job failed` alerts when any `agora-postgres-*` Cloud Run execution fails.
-This one native signal covers:
+`Agora PostgreSQL recovery jobs unhealthy` has two conditions on Cloud Run's native completion
+metric: any failed `agora-postgres-*` execution, or no completed
+`agora-postgres-backup-monitor` execution for three hours. Together they cover:
 
 - backup failure, missing completion marker, or the 30-minute backup duration ceiling;
 - restore absence, checksum/catalog mismatch, restore/smoke failure, or the 60-minute duration
   ceiling;
 - an RPO older than six hours;
 - a missing, malformed, or mismatched completion manifest;
-- total retained backup objects above 700 GiB, leaving headroom below the USD 20/month storage gate.
+- total retained backup objects above 250 GiB, leaving cost headroom below the USD 20/month design
+  gate after EU write replication and one monthly restore read;
+- a stopped monitor schedule or dispatch path that produces no monitor execution.
+
+The absence condition starts only after the first successful monitor measurement; first activation
+therefore executes the monitor explicitly. Metric absence is not resource-deletion protection, so
+the reviewed deletion-label gate remains the control for removing the monitor or its schedule.
 
 The hourly monitor reads object metadata and manifests but never database payloads. After any alert:
 
@@ -447,12 +462,17 @@ Four-hour cadence over 14 days retains at most 84 completed logical archives per
 small manifests and any incomplete attempt objects until lifecycle deletion. Use:
 
 ```text
-logical GiB-month before partial attempts = 84 × aggregate compressed GiB of one JSON Keys + Authentication backup
+retained logical GiB = 84 × aggregate compressed GiB of one JSON Keys + Authentication backup
+logical USD/month ≈ (84 × 0.026 + 180 × 0.02 + 1 × 0.02) × aggregate compressed GiB
+                  ≈ 5.80 × aggregate compressed GiB
 ```
 
-For example, a combined 2 GiB current backup set retains about 168 GiB. Track incomplete attempts and
-snapshot delta storage separately. The hourly monitor measures all retained logical objects rather
-than estimating from only completed archives.
+The formula includes steady EU multi-region Standard storage, about 180 aggregate writes per
+30-day month, and one aggregate monthly read into `europe-west1`. A combined 2 GiB current set
+retains about 168 GiB and costs about USD 11.60/month before partial attempts. The 250 GiB monitor
+threshold corresponds to about a 3 GiB current set and roughly USD 17.30/month. Track incomplete
+attempts and same-region snapshot delta storage separately. The hourly monitor measures all retained
+logical objects rather than estimating from only completed archives.
 
 ## Escalate to PITR
 

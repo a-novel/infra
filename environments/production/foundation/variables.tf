@@ -40,7 +40,7 @@ variable "workload_project_name" {
 }
 
 variable "billing_account_id" {
-  description = "Cloud Billing account ID linked to the workload project and used for its budget."
+  description = "Cloud Billing account ID linked to the production projects and used for their combined budget."
   type        = string
   sensitive   = true
 
@@ -200,7 +200,7 @@ variable "database_operator_principals" {
 }
 
 variable "cost_alert_email" {
-  description = "Operator email address that receives workload budget notifications and quota-review follow-up."
+  description = "Operator email address that receives production budget notifications and quota-review follow-up."
   type        = string
   sensitive   = true
 
@@ -211,7 +211,7 @@ variable "cost_alert_email" {
 }
 
 variable "monthly_budget_units" {
-  description = "Alert-only monthly workload budget in whole units of the billing account currency; notifications do not stop spend."
+  description = "Alert-only monthly production-infrastructure budget in whole units of the billing account currency; notifications do not stop spend."
   type        = number
   default     = 60
 

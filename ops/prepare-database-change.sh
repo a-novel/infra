@@ -80,7 +80,8 @@ if ! SNAPSHOT_CREATED="$(
         --limit=1 \
         --format='json(name,autoCreated,sourceDisk,status,creationTimestamp,storageLocations,labels)' \
         | jq --exit-status --raw-output \
-            --arg source_suffix "/zones/${DATABASE_ZONE}/disks/${DATABASE_DISK}" '
+            --arg source_suffix "/zones/${DATABASE_ZONE}/disks/${DATABASE_DISK}" \
+            --arg storage_location "${DATABASE_REGION}" '
                 if length == 1
                    and .[0].autoCreated == true
                    and .[0].status == "READY"
@@ -90,7 +91,7 @@ if ! SNAPSHOT_CREATED="$(
                    and .[0].labels["managed-by"] == "opentofu"
                    and .[0].labels.plane == "workload"
                    and .[0].labels.role == "database-snapshot"
-                   and (.[0].storageLocations | index("eu")) != null
+                   and (.[0].storageLocations | index($storage_location)) != null
                 then .[0].creationTimestamp
                 else error("no valid database snapshot")
                 end

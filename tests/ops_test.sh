@@ -132,7 +132,7 @@ printf '%s\n' \
     'if [[ "$*" == *"compute snapshots list"* ]]; then' \
     '    if [[ "${STALE_SNAPSHOT:-false}" == "true" ]]; then snapshot_time="$(date -u --date="7 hours ago" +%Y-%m-%dT%H:%M:%SZ)"; else snapshot_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; fi' \
     '    if [[ "${MANUAL_SNAPSHOT:-false}" == "true" ]]; then snapshot_auto_created=false; else snapshot_auto_created=true; fi' \
-    '    printf "[{\"name\":\"agora-scheduled-snapshot\",\"autoCreated\":%s,\"sourceDisk\":\"https://www.googleapis.com/compute/v1/projects/agora-production-test/zones/europe-west1-b/disks/agora-data\",\"status\":\"READY\",\"creationTimestamp\":\"%s\",\"storageLocations\":[\"eu\"],\"labels\":{\"application\":\"agora\",\"environment\":\"production\",\"managed-by\":\"opentofu\",\"plane\":\"workload\",\"role\":\"database-snapshot\"}}]\n" "${snapshot_auto_created}" "${snapshot_time}"' \
+    '    printf "[{\"name\":\"agora-scheduled-snapshot\",\"autoCreated\":%s,\"sourceDisk\":\"https://www.googleapis.com/compute/v1/projects/agora-production-test/zones/europe-west1-b/disks/agora-data\",\"status\":\"READY\",\"creationTimestamp\":\"%s\",\"storageLocations\":[\"europe-west1\"],\"labels\":{\"application\":\"agora\",\"environment\":\"production\",\"managed-by\":\"opentofu\",\"plane\":\"workload\",\"role\":\"database-snapshot\"}}]\n" "${snapshot_auto_created}" "${snapshot_time}"' \
     'fi' \
     >"${MOCK_BIN}/gcloud"
 chmod 0700 "${MOCK_BIN}/gcloud"

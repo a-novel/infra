@@ -30,6 +30,12 @@ mock_provider "google" {
     }
   }
 
+  mock_data "google_project" {
+    defaults = {
+      number = "123456789012"
+    }
+  }
+
   mock_data "google_cloud_quotas_quota_infos" {
     defaults = {
       quota_infos = [
@@ -547,15 +553,41 @@ run "builds_the_protected_workload_foundation" {
       one(google_compute_resource_policy.database_snapshots.snapshot_schedule_policy).retention_policy[0].max_retention_days == 7 &&
       one(google_compute_resource_policy.database_snapshots.snapshot_schedule_policy).retention_policy[0].on_source_disk_delete == "KEEP_AUTO_SNAPSHOTS" &&
       !one(google_compute_resource_policy.database_snapshots.snapshot_schedule_policy).snapshot_properties[0].guest_flush &&
-      toset(one(google_compute_resource_policy.database_snapshots.snapshot_schedule_policy).snapshot_properties[0].storage_locations) == toset(["eu"]) &&
+      toset(one(google_compute_resource_policy.database_snapshots.snapshot_schedule_policy).snapshot_properties[0].storage_locations) == toset(["europe-west1"]) &&
       google_compute_disk_resource_policy_attachment.database_snapshots.disk == google_compute_disk.database.name &&
       google_monitoring_alert_policy.postgres_recovery_job_failure.severity == "CRITICAL" &&
       google_monitoring_alert_policy.postgres_recovery_job_failure.deletion_policy == "PREVENT" &&
-      strcontains(one(google_monitoring_alert_policy.postgres_recovery_job_failure.conditions).condition_threshold[0].filter, "run.googleapis.com/job/completed_execution_count") &&
-      strcontains(one(google_monitoring_alert_policy.postgres_recovery_job_failure.conditions).condition_threshold[0].filter, "metric.labels.result = \"failed\"") &&
-      strcontains(one(google_monitoring_alert_policy.postgres_recovery_job_failure.conditions).condition_threshold[0].filter, "agora-postgres-")
+      length(google_monitoring_alert_policy.postgres_recovery_job_failure.conditions) == 2 &&
+      strcontains(one([
+        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure.conditions : condition
+        if length(condition.condition_threshold) == 1
+      ]).condition_threshold[0].filter, "run.googleapis.com/job/completed_execution_count") &&
+      strcontains(one([
+        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure.conditions : condition
+        if length(condition.condition_threshold) == 1
+      ]).condition_threshold[0].filter, "metric.labels.result = \"failed\"") &&
+      strcontains(one([
+        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure.conditions : condition
+        if length(condition.condition_threshold) == 1
+      ]).condition_threshold[0].filter, "agora-postgres-") &&
+      one([
+        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure.conditions : condition
+        if length(condition.condition_absent) == 1
+      ]).condition_absent[0].duration == "10800s" &&
+      strcontains(one([
+        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure.conditions : condition
+        if length(condition.condition_absent) == 1
+      ]).condition_absent[0].filter, "resource.labels.job_name = \"agora-postgres-backup-monitor\"") &&
+      !strcontains(one([
+        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure.conditions : condition
+        if length(condition.condition_absent) == 1
+      ]).condition_absent[0].filter, "metric.labels.result") &&
+      one([
+        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure.conditions : condition
+        if length(condition.condition_absent) == 1
+      ]).condition_absent[0].trigger[0].count == 1
     )
-    error_message = "Daily crash-consistent snapshots or native recovery-job failure alerting changed."
+    error_message = "Same-region snapshot storage or native failed/missing recovery-job alerting changed."
   }
 
   assert {
@@ -611,7 +643,10 @@ run "builds_the_protected_workload_foundation" {
       google_monitoring_notification_channel.cost_email.deletion_policy == "PREVENT" &&
       google_billing_budget.workload.amount[0].specified_amount[0].units == "60" &&
       google_billing_budget.workload.amount[0].specified_amount[0].currency_code == "EUR" &&
-      toset(google_billing_budget.workload.budget_filter[0].projects) == toset(["projects/987654321098"]) &&
+      toset(google_billing_budget.workload.budget_filter[0].projects) == toset([
+        "projects/123456789012",
+        "projects/987654321098",
+      ]) &&
       toset([
         for threshold in google_billing_budget.workload.threshold_rules :
         "${threshold.spend_basis}:${threshold.threshold_percent}"

@@ -19,9 +19,12 @@ resource "google_compute_resource_policy" "database_snapshots" {
     }
 
     snapshot_properties {
-      guest_flush       = false
-      labels            = merge(local.labels, { role = "database-snapshot" })
-      storage_locations = ["eu"]
+      guest_flush = false
+      labels      = merge(local.labels, { role = "database-snapshot" })
+      # These remain globally scoped snapshots, but storing their data beside
+      # the source disk avoids multi-region transfer cost. Logical backups in
+      # the management project remain the regional-loss recovery layer.
+      storage_locations = [var.region]
     }
   }
 

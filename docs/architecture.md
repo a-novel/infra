@@ -151,13 +151,22 @@ after non-empty, archive-list, size, and checksum validation. The backup identit
 but cannot discover, read, overwrite, or delete them. The restore identity can read objects but has
 no database route, no secret, and no write permission. It restores into an ephemeral local-only
 cluster and runs service-specific integrity checks. An hourly job turns missing/stale manifests,
-RPO, object-size, and storage-cost violations into the same native Cloud Run failed-execution alert
-as a backup or restore failure.
+RPO, object-size, and storage-cost violations into the same native Cloud Run completion-metric alert
+as a backup or restore failure. A metric-absence condition also reports when that hourly monitor has
+not completed for three hours.
 
 The bootstrap bucket retains every object for at least seven days and deletes it after 14 days. Its
 retention lock is deliberately enabled only through a reviewed irreversible code change after the
-first clean restore evidence. Daily snapshots retain seven days and survive source-disk deletion;
-they are fast crash-consistent recovery points, not substitutes for `pg_restore` evidence.
+first clean restore evidence. Globally scoped daily snapshots store their data in `europe-west1`,
+retain seven days while the source disk exists, and survive source-disk deletion; they are fast
+same-region crash-consistent recovery points, while the EU multi-region logical objects provide the
+regional-loss path and tested `pg_restore` evidence.
+
+The launch contract accepts one correlated Google Cloud failure domain. The management project
+separates routine workload authority, but an organization- or provider-wide compromise can still
+affect every recovery copy. A second provider adds credentials, billing, transfer, testing, and
+incident ownership; introduce it when revenue, compliance, or recovery commitments justify that
+operating cost.
 
 The [PostgreSQL recovery runbook](./runbooks/backup-and-restore-postgresql.md) owns first activation,
 retention locking, monthly RTO measurement, alert response, the one-time cross-project drill, and

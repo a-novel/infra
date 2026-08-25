@@ -206,8 +206,8 @@ gcloud compute snapshots list \
   --format='table(name,autoCreated,status,creationTimestamp,sourceDisk.basename(),storageLocations,labels.role)'
 ```
 
-Expected safe result: one daily policy at 02:00 UTC, seven-day retention, `KEEP_AUTO_SNAPSHOTS`, EU
-storage, an attachment to `agora-data`, and `autoCreated: True`. The final list can be empty only before the first
+Expected safe result: one daily policy at 02:00 UTC, seven-day retention, `KEEP_AUTO_SNAPSHOTS`,
+`europe-west1` storage, an attachment to `agora-data`, and `autoCreated: True`. The final list can be empty only before the first
 scheduled 02:00 execution; database activation or any later database change remains blocked until a
 matching snapshot is `READY` and no older than six hours.
 
@@ -241,12 +241,14 @@ gcloud monitoring policies list \
 
 gcloud monitoring policies list \
   --project="$WORKLOAD_PROJECT_ID" \
-  --filter='display_name="Agora PostgreSQL recovery job failed"' \
-  --format='table(display_name,enabled,severity,conditions[0].display_name)'
+  --filter='display_name="Agora PostgreSQL recovery jobs unhealthy"' \
+  --format='yaml(displayName,enabled,severity,conditions.displayName)'
 ```
 
 Expected safe result: CPU above 70%, memory above 70% and 85%, and disk above 70% and 85%, all
-enabled, plus one critical failed-recovery-execution policy. Monitoring is not a readiness gate.
+enabled, plus one critical recovery policy with failed-execution and missing-monitor conditions.
+Monitoring is not a readiness gate; first activation must complete the monitor once before its
+absence condition can open an incident.
 
 Verify the exact operator grants without listing unrelated members:
 
