@@ -289,22 +289,23 @@ run "builds_the_protected_workload_foundation" {
     condition = (
       google_project_default_service_accounts.workload.project == "agora-production-test" &&
       google_project_default_service_accounts.workload.action == "DEPRIVILEGE" &&
-      length(google_service_account.runtime) == 6 &&
+      length(google_service_account.runtime) == 7 &&
       {
         for name, identity in local.runtime_identities : name => identity.account_id
         } == {
-        authentication    = "agora-authentication"
-        backup            = "agora-backup"
-        database          = "agora-database-host"
-        json_keys         = "agora-json-keys"
-        restore           = "agora-restore"
-        scheduler_invoker = "agora-scheduler-invoker"
+        authentication             = "agora-authentication"
+        authentication_initializer = "agora-auth-initializer"
+        backup                     = "agora-backup"
+        database                   = "agora-database-host"
+        json_keys                  = "agora-json-keys"
+        restore                    = "agora-restore"
+        scheduler_invoker          = "agora-scheduler-invoker"
       } &&
       alltrue([
         for account in values(google_service_account.runtime) :
         account.deletion_policy == "PREVENT"
       ]) &&
-      length(google_secret_manager_secret_iam_member.runtime) == 11 &&
+      length(google_secret_manager_secret_iam_member.runtime) == 12 &&
       local.runtime_secret_access == {
         "authentication:postgres-dsn" = {
           identity = "authentication"
@@ -314,8 +315,12 @@ run "builds_the_protected_workload_foundation" {
           identity = "authentication"
           secret   = "production-authentication-smtp-sender-password"
         }
-        "authentication:super-admin-password" = {
-          identity = "authentication"
+        "authentication-initializer:postgres-dsn" = {
+          identity = "authentication_initializer"
+          secret   = "production-authentication-postgres-dsn"
+        }
+        "authentication-initializer:super-admin-password" = {
+          identity = "authentication_initializer"
           secret   = "production-authentication-super-admin-password"
         }
         "database:authentication-password" = {
@@ -503,15 +508,42 @@ run "builds_the_protected_workload_foundation" {
       ]) &&
       local.release_application_project_roles == toset([
         "roles/cloudscheduler.admin",
-        "roles/run.developer",
       ]) &&
-      length(google_project_iam_member.release_application) == 2 &&
-      length(google_service_account_iam_member.release_runtime_act_as) == 3 &&
-      google_project_iam_custom_role.release_job_iam.permissions == toset([
+      length(google_project_iam_member.release_application) == 1 &&
+      google_project_iam_custom_role.release_cloud_run_deployer.permissions == toset([
+        "run.jobs.create",
+        "run.jobs.delete",
+        "run.jobs.get",
         "run.jobs.getIamPolicy",
+        "run.jobs.list",
         "run.jobs.setIamPolicy",
+        "run.jobs.update",
+        "run.locations.list",
+        "run.operations.get",
+        "run.services.create",
+        "run.services.delete",
+        "run.services.get",
+        "run.services.getIamPolicy",
+        "run.services.list",
+        "run.services.setIamPolicy",
+        "run.services.update",
       ]) &&
-      google_project_iam_member.release_job_iam.member == "serviceAccount:infra-release@agora-management-test.iam.gserviceaccount.com" &&
+      !contains(google_project_iam_custom_role.release_cloud_run_deployer.permissions, "run.jobs.run") &&
+      !contains(google_project_iam_custom_role.release_cloud_run_deployer.permissions, "run.jobs.runWithOverrides") &&
+      google_project_iam_member.release_cloud_run_deployer.member == "serviceAccount:infra-release@agora-management-test.iam.gserviceaccount.com" &&
+      length(google_service_account_iam_member.release_runtime_act_as) == 6 &&
+      toset(keys(google_service_account_iam_member.release_runtime_act_as)) == toset([
+        "authentication",
+        "authentication_initializer",
+        "backup",
+        "json_keys",
+        "restore",
+        "scheduler_invoker",
+      ]) &&
+      alltrue([
+        for binding in values(google_project_iam_member.release_application) :
+        binding.role != "roles/secretmanager.secretAccessor"
+      ]) &&
       google_storage_bucket_iam_member.backup_runtime_creator.bucket == "agora-management-test-123456789012-backups" &&
       google_storage_bucket_iam_member.backup_runtime_creator.role == "roles/storage.objectCreator" &&
       google_storage_bucket_iam_member.backup_runtime_creator.member == "serviceAccount:${google_service_account.runtime["backup"].email}" &&

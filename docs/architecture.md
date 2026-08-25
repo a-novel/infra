@@ -58,7 +58,7 @@ rare changes                     occasional changes                      frequen
 | Root                                                                            | Owns                                                                                                                                          | Authority boundary                                                                                                                                  |
 | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`bootstrap/`](../bootstrap/)                                                   | Resources inside the manually created management project: state and recovery storage, federation, automation identities, and secret metadata. | May establish later automation identities. It does not create its own project or deploy application revisions.                                      |
-| [`environments/production/foundation/`](../environments/production/foundation/) | Workload project, IAM, VPC, private data plane, database host and disks, backups, monitoring, and stable service definitions.                 | May change durable infrastructure after protected human approval. It does not select routine application versions.                                  |
+| [`environments/production/foundation/`](../environments/production/foundation/) | Workload project, IAM, VPC, private data plane, database host and disks, backups, monitoring, and stable runtime prerequisites.               | May change durable infrastructure after protected human approval. It does not select routine application versions.                                  |
 | [`environments/production/release/`](../environments/production/release/)       | Container images, jobs, revisions, traffic, and database container configuration described by the release manifest.                           | May deploy and compensate an application release. It cannot change project IAM, networking, state protection, preserved disks, or backup retention. |
 
 The roots apply in that order. A root consumes only the small set of outputs it needs from an earlier
@@ -66,6 +66,12 @@ root and never embeds another root's credentials or state. The foundation automa
 deliberate high-trust exception to state isolation: after the human bootstrap, its protected workflow
 maintains both `bootstrap` and `foundation`. Release remains confined to its own state, while recovery
 can restore all three state roots without receiving IAM-administration authority.
+
+Routine Cloud Run deployment and job execution are separate permissions. Release receives a custom
+deployment role without execution or override authority, then resource-level invocation only for
+migrations and JSON Keys rotation. Authentication initialization remains a named-human action because
+it reconciles the first administrator's password and role. A dedicated initializer identity keeps the
+bootstrap password outside the Authentication REST identity.
 
 ## Stateful database ownership
 
@@ -223,6 +229,14 @@ apply that exact plan after its required approval. Foundation and release identi
 A release failure restores the prior application receipt. Database migrations remain because service
 policy requires backward-compatible changes. Restoring database contents is a recovery operation with
 its own approval and runbook.
+
+The automated application graph runs the database update, JSON Keys migration and seed rotation,
+Authentication migration, private service, then public service. The first launch pauses after the
+Authentication migration until an authorized operator runs the initializer and its successful
+execution is recorded; later deployments do not repeat that gate. Cloud Scheduler continues the
+idempotent key-rotation job every hour. Authentication initialization is never invoked or retried by
+a release or scheduler trigger; an authorized operator invokes it only when the first administrator
+must be created or explicitly reconciled.
 
 ## Portability boundary
 

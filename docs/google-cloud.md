@@ -21,7 +21,7 @@ policies, and temporary-access removal remain explicit human bootstrap actions.
 
 The foundation root now defines the replaceable workload project, required APIs, a custom VPC and
 subnet, explicit restricted Google routes, firewall policy, private DNS, deprivileged default service
-accounts, six keyless runtime identities, exact management-secret access, an immutable registry, a
+accounts, seven keyless runtime identities, exact management-secret access, an immutable registry, a
 two-project production budget, bounded logging, a preserved balanced disk, and a one-member stateful managed
 instance group for PostgreSQL. Its pinned COS template, startup/shutdown scripts, stateful private
 address, operator access, release-metadata role, and capacity alerts have mocked security tests but
@@ -37,11 +37,15 @@ metadata or template change acts on the existing member before the owning workfl
 chooses `RESTART` or `REPLACE`.
 
 The release root now defines two four-hour backup jobs, two monthly clean restore jobs, one hourly
-recovery monitor, and their authenticated schedules. They scale to zero and remain absent when the
-two database contracts are disabled. No protected workflow can apply them yet. There is still no
-Cloud Run application service, load balancer, public IP, or public endpoint. Unapplied and future
-sections below remain acceptance contracts until resource, test, protected deployment, and post-apply
-verification all land.
+recovery monitor, and their authenticated schedules. It also defines four explicit application jobs,
+hourly JSON Keys rotation, private JSON Keys gRPC with an exact invoker allowlist, and public
+Authentication REST. A deploy-only role excludes job execution and overrides. Exact job IAM lets
+release run migrations and key rotation, the scheduler run rotation, and named humans run
+Authentication initialization. Every runtime scales to zero and remains absent while its atomic
+release contract is disabled. No protected workflow can apply them yet, and the production manifest
+keeps both components disabled. There is no load balancer, public IP, NAT, connector, proxy, or
+Kubernetes layer. Deployed-path sections below remain acceptance contracts until protected deployment
+and post-apply verification land.
 
 ## Provider and resource references
 
@@ -57,11 +61,11 @@ security model, operational limits, and recovery implications behind those argum
 | Secret Manager                                | Bootstrap                                    | Manage secret metadata and exact-version access in code while operators supply payload versions.                                                                                          | [Secret Manager overview](https://cloud.google.com/secret-manager/docs/overview), [best practices](https://cloud.google.com/secret-manager/docs/best-practices), and [rotation recommendations](https://cloud.google.com/secret-manager/docs/rotation-recommendations)                                                                                                                                                                                                                                                                                                          |
 | VPC, subnet, DNS, and firewall rules          | Foundation                                   | Carry private service and database traffic, restricted Google API access, and explicit egress profiles.                                                                                   | [VPC overview](https://cloud.google.com/vpc/docs/vpc), [firewall rules](https://cloud.google.com/firewall/docs/firewalls), [Private Google Access](https://cloud.google.com/vpc/docs/configure-private-google-access), and [Cloud DNS private zones](https://cloud.google.com/dns/docs/zones/zones-overview)                                                                                                                                                                                                                                                                    |
 | Artifact Registry                             | Foundation and release                       | Hold the regional copy of a verified GHCR digest and retain every image named by a recovery receipt.                                                                                      | [Container image names](https://cloud.google.com/artifact-registry/docs/docker/names) and [cleanup policies](https://cloud.google.com/artifact-registry/docs/repositories/cleanup-policy-overview)                                                                                                                                                                                                                                                                                                                                                                              |
-| Cloud Run services and jobs                   | Foundation and release                       | Run scale-to-zero HTTP/gRPC services and explicit migration, initialization, rotation, backup, and restore jobs.                                                                          | [Cloud Run overview](https://cloud.google.com/run/docs/overview/what-is-cloud-run), [jobs](https://cloud.google.com/run/docs/create-jobs), and [end-to-end HTTP/2](https://cloud.google.com/run/docs/configuring/http2)                                                                                                                                                                                                                                                                                                                                                         |
+| Cloud Run services and jobs                   | Release                                      | Run scale-to-zero HTTP/gRPC services and explicit migration, initialization, rotation, backup, and restore jobs.                                                                          | [Cloud Run overview](https://cloud.google.com/run/docs/overview/what-is-cloud-run), [jobs](https://cloud.google.com/run/docs/create-jobs), and [end-to-end HTTP/2](https://cloud.google.com/run/docs/configuring/http2)                                                                                                                                                                                                                                                                                                                                                         |
 | Direct VPC egress                             | Foundation and release                       | Give Cloud Run revisions private addresses and apply workload-specific VPC firewall policy without a connector.                                                                           | [Direct VPC egress](https://cloud.google.com/run/docs/configuring/vpc-direct-vpc) and [private Cloud Run networking](https://cloud.google.com/run/docs/securing/private-networking)                                                                                                                                                                                                                                                                                                                                                                                             |
 | Compute Engine, stateful MIG, and Shielded VM | Foundation plus protected release deployment | Keep one named, private COS database VM replaceable while preserving its address and disk; update only seven group-level release fields during routine deployment.                        | [Stateful MIGs](https://cloud.google.com/compute/docs/instance-groups/configuring-stateful-migs), [all-instances configuration](https://cloud.google.com/compute/docs/instance-groups/set-mig-aic), [apply updates](https://cloud.google.com/compute/docs/instance-groups/rolling-out-updates-to-managed-instance-groups), [preserved state](https://cloud.google.com/compute/docs/instance-groups/preserved-state), [Container-Optimized OS](https://cloud.google.com/container-optimized-os/docs), and [Shielded VM](https://cloud.google.com/compute/docs/about-shielded-vm) |
 | Persistent Disk and snapshots                 | Foundation                                   | Keep database data independent from the replaceable VM and retain one globally scoped crash-consistent disk snapshot per day for seven days, with its data stored in the workload region. | [Persistent Disk](https://cloud.google.com/compute/docs/disks/persistent-disks), [stateful disks](https://cloud.google.com/compute/docs/instance-groups/configuring-stateful-migs), [snapshot schedules](https://cloud.google.com/compute/docs/disks/about-snapshot-schedules), [snapshot storage locations](https://cloud.google.com/compute/docs/disks/snapshots#storage_location), [snapshot practices](https://cloud.google.com/compute/docs/disks/snapshot-best-practices), and [snapshot pricing](https://cloud.google.com/compute/disks-image-pricing#disk)              |
-| Cloud Scheduler                               | Release                                      | Start recurring backup, clean-restore, and recovery-monitor jobs without an always-running scheduler container.                                                                           | [Cloud Scheduler overview](https://cloud.google.com/scheduler/docs/overview), [authenticated HTTP targets](https://cloud.google.com/scheduler/docs/http-target-auth)                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Cloud Scheduler                               | Release                                      | Start recurring key-rotation, backup, clean-restore, and recovery-monitor jobs without an always-running scheduler container.                                                             | [Cloud Scheduler overview](https://cloud.google.com/scheduler/docs/overview), [scheduled Cloud Run jobs](https://cloud.google.com/run/docs/execute/jobs-on-schedule), [authenticated HTTP targets](https://cloud.google.com/scheduler/docs/http-target-auth)                                                                                                                                                                                                                                                                                                                    |
 | Cloud Monitoring and Logging                  | Foundation                                   | Alert on service, VM, database, backup, deployment, and budget symptoms while keeping logs bounded and free of payloads.                                                                  | [Alerting overview](https://cloud.google.com/monitoring/alerts) and [Cloud Logging overview](https://cloud.google.com/logging/docs/overview)                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
 Each root README lists its actual OpenTofu resource addresses. An inventory entry explains the
@@ -187,9 +191,10 @@ internal workloads to provide a service. The contract is that no public or unaut
 invoke it.
 
 The service uses Cloud Run `internal` ingress and end-to-end HTTP/2. Its IAM policy grants
-`roles/run.invoker` only to the Authentication runtime identity and the protected smoke/recovery
-identity. It grants neither `allUsers` nor `allAuthenticatedUsers`, and it has no external load
-balancer or public custom domain. Google recommends combining
+`roles/run.invoker` only to the Authentication runtime identity plus the protected release and
+recovery identities used for smoke/recovery checks. It grants neither `allUsers` nor
+`allAuthenticatedUsers`, and it has no external load balancer or public custom domain. Google
+recommends combining
 [Cloud Run ingress restrictions](https://cloud.google.com/run/docs/securing/ingress) with
 [service-to-service IAM authentication](https://cloud.google.com/run/docs/authenticating/service-to-service)
 as separate network and identity layers.
@@ -208,6 +213,30 @@ The foundation and release tests must prove that:
 Human debugging uses the
 [authenticated Cloud Run developer proxy](https://cloud.google.com/run/docs/authenticating/developers)
 with an explicitly granted operator identity. The service does not open public ingress for debugging.
+
+## Job execution boundaries
+
+Cloud Run jobs have no request ingress, but execution is still an IAM permission. The release identity
+uses a custom deployment role that contains the job and service lifecycle permissions required by the
+provider and omits `run.jobs.run` and `run.jobs.runWithOverrides`. Resource-level
+`roles/run.invoker` grants normal execution only on the jobs each caller owns. Google documents these
+permissions separately in the [Cloud Run IAM role](https://cloud.google.com/run/docs/reference/iam/roles)
+and [job execution](https://cloud.google.com/run/docs/execute/jobs) references.
+
+Release can execute both migrations and JSON Keys rotation. The scheduler identity can execute JSON
+Keys rotation and the five recovery jobs. It cannot update a job, access a secret, or connect to a
+database as itself; Cloud Run starts each job as that job's runtime identity.
+
+Authentication initialization can reset the first administrator's password and raise that account to
+the super-admin role. Only named `user:` or `group:` members receive `roles/run.invoker` on that exact
+job. The job has no release or scheduler invoker and accepts no execution overrides. Its dedicated
+runtime identity reads only the Authentication DSN and bootstrap password, which keeps the REST
+identity from reading the bootstrap credential.
+
+JSON Keys defines a 24-hour shortest key-rotation interval. The release workflow runs the idempotent
+rotation job after migration to seed a new database, and Cloud Scheduler evaluates it hourly after
+that. The hourly schedule bounds normal rotation delay below one hour while every unused execution
+scales back to zero.
 
 ## Egress profiles
 

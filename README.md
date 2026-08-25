@@ -25,11 +25,18 @@ Pull requests are cloud-blind. They receive a read-only repository token and run
 
 The repository currently has no cloud apply workflow. Bootstrap, the workload foundation, the
 private stateful PostgreSQL host, logical backup and restore jobs, daily disk snapshots, recovery
-monitoring, and the narrow release-metadata command are defined, but merging or validating them
-creates nothing. Bootstrap's one-time initial application remains a human-only exception performed
-from `master` after explicit approval; agents never run `gcloud` or `tofu apply`. Foundation and
-release must wait for their protected workflows and cannot be applied from a branch or an operator
-checkout.
+monitoring, four application jobs, the private JSON Keys and public Authentication services, and the
+narrow release-metadata command are defined, but merging or validating them creates nothing.
+The bootstrap root's one-time initial apply remains a human-only exception performed from `master`
+after explicit approval; agents never run `gcloud` or `tofu apply`. Foundation and release must wait
+for their protected workflows and cannot be applied from a branch or an operator checkout.
+
+Before the application contract can be enabled, an operator must supply at least one named `user:`
+or `group:` member through `authentication_initializer_principals`. Only those humans may execute the
+Authentication initializer, and the release and scheduler identities receive no access to it. JSON
+Keys rotation is separate: release runs it once after migration, then an hourly authenticated
+schedule keeps keys current. The [release root contract](./environments/production/release/README.md#application-runtime-contract)
+documents the exact IAM and runtime-identity boundaries.
 
 ### Bootstrap Google Cloud only after explicit authorization
 
@@ -160,11 +167,11 @@ pnpm test
 
 ### Roots
 
-| Root                                                                                    | Ownership                                                                                               |
-| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| [`bootstrap/`](./bootstrap/README.md)                                                   | Stable management project, remote state, recovery storage, GitHub federation, and secret metadata.      |
-| [`environments/production/foundation/`](./environments/production/foundation/README.md) | Long-lived workload project, IAM, network, database host, backups, monitoring, and service definitions. |
-| [`environments/production/release/`](./environments/production/release/README.md)       | Routine image, job, revision, traffic, and database-container deployment.                               |
+| Root                                                                                    | Ownership                                                                                          |
+| --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| [`bootstrap/`](./bootstrap/README.md)                                                   | Stable management project, remote state, recovery storage, GitHub federation, and secret metadata. |
+| [`environments/production/foundation/`](./environments/production/foundation/README.md) | Long-lived workload project, IAM, network, database host, backups, and monitoring controls.        |
+| [`environments/production/release/`](./environments/production/release/README.md)       | Routine image, job, revision, traffic, and database-container deployment.                          |
 
 The three names form a security allowlist. Add a root only when a new lifecycle and automation authority require an independent state boundary.
 
@@ -194,7 +201,12 @@ Opaque production plans will live in private, versioned Google Cloud storage whe
 
 ### Image updates
 
-The manifest schema accepts complete stable tags such as `v2.5.0` plus a `sha256` digest. Branch tags and prereleases fail validation. Renovate groups each service's image family so one green merge represents one deployment candidate.
+The manifest schema accepts only the eight declared database, job, and service image slots. An
+enabled component must provide its complete four-image family with exact repository names, complete
+stable tags such as `v2.5.0`, and `sha256` digests; a disabled component must provide no images.
+Branch tags, prereleases, standalone images, mismatched repositories, partial families, and
+undeclared future images fail validation. Renovate groups each service's image family so one green
+merge represents one deployment candidate.
 
 The production manifest keeps both services disabled until the recovery resources, runtime
 resources, and verified image digests are ready. Foundation therefore seeds empty group-level
@@ -218,11 +230,13 @@ Ingress and egress are independent. JSON Keys starts with private-only egress an
 The foundation code now enforces the VPC, subnet, restricted Google routes, firewall policy, private
 DNS, no-external-IP stateful database group, preserved disk/address, inbound-only database container
 networking, recovery identities, daily disk snapshots, and native recovery alerts in mocked tests.
-The release code gives backup jobs only private database/API egress and gives restore jobs no
-database route or secret. It deliberately provisions no NAT, router, connector, load balancer, or
-public IP. Those definitions still have no cloud effect until a protected apply is authorized.
-Application Cloud Run callers have not landed, so end-to-end private gRPC remains a later acceptance
-test.
+The release code gives backup and private application jobs only reviewed private database/API
+egress, gives restore jobs no database route or secret, sends every JSON Keys service connection
+through the deny-by-default VPC, and gives Authentication only split private VPC plus managed public
+SMTP egress. It deliberately provisions no NAT, router, connector, load balancer, or public IP. The
+JSON Keys IAM allowlist contains only Authentication and protected release/recovery identities.
+Those definitions still have no cloud effect until a protected apply is authorized; deployed
+allowed-and-denied path checks remain a release-workflow acceptance gate.
 
 ## Contributing
 

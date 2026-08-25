@@ -11,6 +11,10 @@ locals {
       account_id   = "agora-authentication"
       display_name = "Agora Authentication runtime"
     }
+    authentication_initializer = {
+      account_id   = "agora-auth-initializer"
+      display_name = "Agora Authentication initializer"
+    }
     backup = {
       account_id   = "agora-backup"
       display_name = "Agora PostgreSQL backup"
@@ -56,11 +60,13 @@ locals {
 
   release_application_project_roles = toset([
     "roles/cloudscheduler.admin",
-    "roles/run.developer",
   ])
 
   release_runtime_identities = toset([
+    "authentication",
+    "authentication_initializer",
     "backup",
+    "json_keys",
     "restore",
     "scheduler_invoker",
   ])
@@ -87,8 +93,12 @@ locals {
       identity = "authentication"
       secret   = "production-authentication-smtp-sender-password"
     }
-    "authentication:super-admin-password" = {
-      identity = "authentication"
+    "authentication-initializer:postgres-dsn" = {
+      identity = "authentication_initializer"
+      secret   = "production-authentication-postgres-dsn"
+    }
+    "authentication-initializer:super-admin-password" = {
+      identity = "authentication_initializer"
       secret   = "production-authentication-super-admin-password"
     }
     "database:authentication-password" = {
@@ -225,21 +235,34 @@ resource "google_project_iam_member" "release_application" {
   member  = "serviceAccount:${local.automation_service_accounts.release}"
 }
 
-# Cloud Run Developer deliberately excludes policy writes. This two-permission
-# supplement lets release manage IAM on its jobs without Cloud Run Admin; the
-# reviewed release resources and tests constrain declared bindings to the
-# scheduler identity's invoker role.
-resource "google_project_iam_custom_role" "release_job_iam" {
+# Cloud Run Developer also executes jobs and permits per-execution overrides.
+# This exact role keeps definition and IAM-policy management together because
+# the same release identity needs both; job-level bindings grant execution.
+resource "google_project_iam_custom_role" "release_cloud_run_deployer" {
   project = google_project.workload.project_id
 
-  role_id     = "infraReleaseJobIam"
-  title       = "Infra Release Job IAM"
-  description = "Read and update IAM policies on release-managed Cloud Run jobs."
+  role_id     = "infraReleaseCloudRunDeployer"
+  title       = "Infra Release Cloud Run Deployer"
+  description = "Manage release-owned Cloud Run service and job definitions and IAM policies without execution authority."
   stage       = "GA"
 
   permissions = [
+    "run.jobs.create",
+    "run.jobs.delete",
+    "run.jobs.get",
     "run.jobs.getIamPolicy",
+    "run.jobs.list",
     "run.jobs.setIamPolicy",
+    "run.jobs.update",
+    "run.locations.list",
+    "run.operations.get",
+    "run.services.create",
+    "run.services.delete",
+    "run.services.get",
+    "run.services.getIamPolicy",
+    "run.services.list",
+    "run.services.setIamPolicy",
+    "run.services.update",
   ]
 
   lifecycle {
@@ -249,9 +272,9 @@ resource "google_project_iam_custom_role" "release_job_iam" {
   depends_on = [google_project_service.workload["iam.googleapis.com"]]
 }
 
-resource "google_project_iam_member" "release_job_iam" {
+resource "google_project_iam_member" "release_cloud_run_deployer" {
   project = google_project.workload.project_id
-  role    = google_project_iam_custom_role.release_job_iam.name
+  role    = google_project_iam_custom_role.release_cloud_run_deployer.name
   member  = "serviceAccount:${local.automation_service_accounts.release}"
 }
 
