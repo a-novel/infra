@@ -27,9 +27,16 @@ The repository currently has no cloud apply workflow. Bootstrap, the workload fo
 private stateful PostgreSQL host, logical backup and restore jobs, daily disk snapshots, recovery
 monitoring, four application jobs, the private JSON Keys and public Authentication services, and the
 narrow release-metadata command are defined, but merging or validating them creates nothing.
-Bootstrap's one-time initial application remains a human-only exception performed from `master`
+The bootstrap root's one-time initial apply remains a human-only exception performed from `master`
 after explicit approval; agents never run `gcloud` or `tofu apply`. Foundation and release must wait
 for their protected workflows and cannot be applied from a branch or an operator checkout.
+
+Before the application contract can be enabled, an operator must supply at least one named `user:`
+or `group:` member through `authentication_initializer_principals`. Only those humans may execute the
+Authentication initializer, and the release and scheduler identities receive no access to it. JSON
+Keys rotation is separate: release runs it once after migration, then an hourly authenticated
+schedule keeps keys current. The [release root contract](./environments/production/release/README.md#application-runtime-contract)
+documents the exact IAM and runtime-identity boundaries.
 
 ### Bootstrap Google Cloud only after explicit authorization
 

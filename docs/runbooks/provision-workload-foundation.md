@@ -32,7 +32,7 @@ The completed procedure creates:
 - one workload project linked to the selected billing account;
 - thirteen workload APIs, one custom VPC, one regional `/24` subnet, two restricted Google API routes,
   six firewall rules, and three private DNS zones;
-- six keyless runtime identities, eleven exact cross-project secret IAM bindings, and separate
+- seven keyless runtime identities, twelve exact cross-project secret IAM bindings, and separate
   create-only backup/read-only restore bucket IAM;
 - deprivileged default Google service accounts so none retains a primitive project role;
 - one immutable regional Docker repository and narrow release/database access;
@@ -397,7 +397,7 @@ The implementation must replace this stop section with its exact `gh workflow ru
 review commands. Until then, there is deliberately no supported apply command.
 
 The expected initial summary contains creates for one project, thirteen APIs, the
-network/subnet/routes, six firewalls, three zones and their records, six service accounts, exact
+network/subnet/routes, six firewalls, three zones and their records, seven service accounts, exact
 IAM, one repository, one data disk, one immutable instance template, one stateful instance-group
 manager, one snapshot policy/attachment, six monitoring alerts, four quota preferences, one
 budget/channel, and logging controls. It
@@ -489,12 +489,43 @@ done
 
 Expected safe result: every configured human operator and
 `infra-recovery@${MANAGEMENT_PROJECT_ID}.iam.gserviceaccount.com` appear on all nine secrets.
-Authentication also appears only on its DSN, SMTP password, and super-admin password; JSON Keys
-appears only on its master key and DSN; database host appears on the four owner/backup passwords;
-backup appears only on the two backup passwords. Restore, scheduler, release, plan, and foundation
-identities do not appear. This filtered view intentionally omits the operators' separate Secret
-Version Manager bindings. Never run
+Authentication appears only on its DSN and SMTP password. Authentication initializer appears only on
+the same DSN and the super-admin password; JSON Keys appears only on its master key and DSN; database
+host appears on the four owner/backup passwords; backup appears only on the two backup passwords.
+Restore, scheduler, release, plan, and foundation identities do not appear. This filtered view
+intentionally omits the operators' separate Secret Version Manager bindings. Never run
 `versions access` as a verification shortcut.
+
+Verify that the release deployment role cannot execute a job or override an execution:
+
+```bash
+gcloud iam roles describe infraReleaseCloudRunDeployer \
+  --project="$WORKLOAD_PROJECT_ID" \
+  --format=json \
+| jq --exit-status '
+    (.includedPermissions | sort) == ([
+      "run.jobs.create",
+      "run.jobs.delete",
+      "run.jobs.get",
+      "run.jobs.getIamPolicy",
+      "run.jobs.list",
+      "run.jobs.setIamPolicy",
+      "run.jobs.update",
+      "run.locations.list",
+      "run.operations.get",
+      "run.services.create",
+      "run.services.delete",
+      "run.services.get",
+      "run.services.getIamPolicy",
+      "run.services.list",
+      "run.services.setIamPolicy",
+      "run.services.update"
+    ] | sort)
+  '
+```
+
+Expected safe result: `true`. `run.jobs.run`, `run.jobs.runWithOverrides`, project IAM, secret access,
+and networking permissions are absent.
 
 Verify the two runtime bucket roles without displaying unrelated members:
 

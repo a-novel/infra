@@ -75,22 +75,38 @@ variable "subnet_id" {
 variable "runtime_service_accounts" {
   description = "Foundation-owned keyless identities used by application, backup, restore, and scheduler workloads."
   type = object({
-    authentication    = string
-    backup            = string
-    json_keys         = string
-    restore           = string
-    scheduler_invoker = string
+    authentication             = string
+    authentication_initializer = string
+    backup                     = string
+    json_keys                  = string
+    restore                    = string
+    scheduler_invoker          = string
   })
 
   validation {
     condition = (
       var.runtime_service_accounts.authentication == "agora-authentication@${var.workload_project_id}.iam.gserviceaccount.com" &&
+      var.runtime_service_accounts.authentication_initializer == "agora-auth-initializer@${var.workload_project_id}.iam.gserviceaccount.com" &&
       var.runtime_service_accounts.backup == "agora-backup@${var.workload_project_id}.iam.gserviceaccount.com" &&
       var.runtime_service_accounts.json_keys == "agora-json-keys@${var.workload_project_id}.iam.gserviceaccount.com" &&
       var.runtime_service_accounts.restore == "agora-restore@${var.workload_project_id}.iam.gserviceaccount.com" &&
       var.runtime_service_accounts.scheduler_invoker == "agora-scheduler-invoker@${var.workload_project_id}.iam.gserviceaccount.com"
     )
-    error_message = "Runtime identities must be the five exact foundation-owned service accounts."
+    error_message = "Runtime identities must be the six exact foundation-owned service accounts."
+  }
+}
+
+variable "authentication_initializer_principals" {
+  description = "Named human IAM members allowed to execute the Authentication initializer manually."
+  type        = set(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for principal in var.authentication_initializer_principals :
+      can(regex("^(user|group):[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$", principal))
+    ])
+    error_message = "Authentication initializer principals must be user: or group: IAM members."
   }
 }
 

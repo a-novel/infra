@@ -17,7 +17,7 @@ locals {
       name             = "agora-authentication-init"
       network_tag      = "agora-authentication"
       role             = "init"
-      runtime_identity = var.runtime_service_accounts.authentication
+      runtime_identity = var.runtime_service_accounts.authentication_initializer
       secrets = {
         POSTGRES_DSN = {
           secret  = "production-authentication-postgres-dsn"
@@ -87,6 +87,11 @@ locals {
     }
   }
 
+  automated_application_jobs = {
+    for key, job in local.application_jobs : key => job
+    if key != "authentication_init"
+  }
+
   json_keys_invokers = var.application_release == null ? {} : {
     authentication = "serviceAccount:${var.runtime_service_accounts.authentication}"
     recovery       = "serviceAccount:infra-recovery@${var.management_project_id}.iam.gserviceaccount.com"
@@ -114,6 +119,16 @@ check "application_requires_database_release" {
       toset(keys(var.database_releases)) == toset(["authentication", "json_keys"])
     )
     error_message = "Application services and jobs require both database release contracts."
+  }
+}
+
+check "application_requires_named_initializers" {
+  assert {
+    condition = (
+      var.application_release == null ||
+      length(var.authentication_initializer_principals) > 0
+    )
+    error_message = "An application release requires at least one named human Authentication initializer principal."
   }
 }
 
@@ -187,6 +202,73 @@ resource "google_cloud_run_v2_job" "application" {
       }
     }
   }
+}
+
+resource "google_cloud_run_v2_job_iam_member" "application_release_invoker" {
+  for_each = local.automated_application_jobs
+
+  project  = var.workload_project_id
+  location = var.region
+  name     = google_cloud_run_v2_job.application[each.key].name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:infra-release@${var.management_project_id}.iam.gserviceaccount.com"
+}
+
+# Initialization reconciles the super-admin password and role. Named humans
+# receive normal execution only; no automation identity can invoke or override it.
+resource "google_cloud_run_v2_job_iam_member" "authentication_initializer" {
+  for_each = var.application_release == null ? toset([]) : var.authentication_initializer_principals
+
+  project  = var.workload_project_id
+  location = var.region
+  name     = google_cloud_run_v2_job.application["authentication_init"].name
+  role     = "roles/run.invoker"
+  member   = each.value
+}
+
+resource "google_cloud_run_v2_job_iam_member" "json_keys_rotation_scheduler" {
+  count = var.application_release == null ? 0 : 1
+
+  project  = var.workload_project_id
+  location = var.region
+  name     = google_cloud_run_v2_job.application["json_keys_rotate"].name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${var.runtime_service_accounts.scheduler_invoker}"
+}
+
+# The shortest embedded key interval is 24 hours. An hourly idempotent check
+# keeps rotation lag below one hour without a resident worker.
+resource "google_cloud_scheduler_job" "json_keys_rotation" {
+  count = var.application_release == null ? 0 : 1
+
+  project   = var.workload_project_id
+  region    = var.region
+  name      = "agora-json-keys-rotation"
+  schedule  = "10 * * * *"
+  time_zone = "Etc/UTC"
+
+  attempt_deadline = "180s"
+
+  retry_config {
+    retry_count          = 1
+    min_backoff_duration = "30s"
+    max_backoff_duration = "60s"
+    max_doublings        = 0
+  }
+
+  http_target {
+    http_method = "POST"
+    uri         = "https://run.googleapis.com/v2/projects/${var.workload_project_id}/locations/${var.region}/jobs/${google_cloud_run_v2_job.application["json_keys_rotate"].name}:run"
+    headers     = { "Content-Type" = "application/json" }
+    body        = base64encode("{}")
+
+    oauth_token {
+      service_account_email = var.runtime_service_accounts.scheduler_invoker
+      scope                 = "https://www.googleapis.com/auth/cloud-platform"
+    }
+  }
+
+  depends_on = [google_cloud_run_v2_job_iam_member.json_keys_rotation_scheduler]
 }
 
 resource "google_cloud_run_v2_service" "json_keys" {

@@ -67,6 +67,12 @@ deliberate high-trust exception to state isolation: after the human bootstrap, i
 maintains both `bootstrap` and `foundation`. Release remains confined to its own state, while recovery
 can restore all three state roots without receiving IAM-administration authority.
 
+Routine Cloud Run deployment and job execution are separate permissions. Release receives a custom
+deployment role without execution or override authority, then resource-level invocation only for
+migrations and JSON Keys rotation. Authentication initialization remains a named-human action because
+it reconciles the first administrator's password and role. A dedicated initializer identity keeps the
+bootstrap password outside the Authentication REST identity.
+
 ## Stateful database ownership
 
 The PostgreSQL host follows the stable infrastructure, mutable configuration pattern. Foundation
@@ -223,6 +229,14 @@ apply that exact plan after its required approval. Foundation and release identi
 A release failure restores the prior application receipt. Database migrations remain because service
 policy requires backward-compatible changes. Restoring database contents is a recovery operation with
 its own approval and runbook.
+
+The automated application graph runs the database update, JSON Keys migration and seed rotation,
+Authentication migration, private service, then public service. The first launch pauses after the
+Authentication migration until an authorized operator runs the initializer and its successful
+execution is recorded; later deployments do not repeat that gate. Cloud Scheduler continues the
+idempotent key-rotation job every hour. Authentication initialization is never invoked or retried by
+a release or scheduler trigger; an authorized operator invokes it only when the first administrator
+must be created or explicitly reconciled.
 
 ## Portability boundary
 
