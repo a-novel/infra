@@ -252,9 +252,10 @@ run "builds_the_two_database_recovery_contracts" {
         if environment.name == "STORAGE_ALERT_BYTES"
       ]) == "268435456000" &&
       one(google_cloud_scheduler_job.postgres_backup_monitor[0].http_target).oauth_token[0].service_account_email == var.runtime_service_accounts.scheduler_invoker &&
-      google_cloud_scheduler_job.postgres_backup_monitor[0].schedule == "5 * * * *"
+      google_cloud_scheduler_job.postgres_backup_monitor[0].schedule == "5 * * * *" &&
+      google_cloud_scheduler_job.postgres_backup_monitor[0].paused == true
     )
-    error_message = "The hourly read-only RPO and storage monitor changed."
+    error_message = "The hourly read-only RPO and storage monitor must stay paused until application activation."
   }
 
   assert {
@@ -268,13 +269,14 @@ run "builds_the_two_database_recovery_contracts" {
           values(google_cloud_scheduler_job.postgres_backup),
           values(google_cloud_scheduler_job.postgres_restore),
         ) :
+        schedule.paused == true &&
         schedule.time_zone == "Etc/UTC" &&
         one(schedule.http_target).http_method == "POST" &&
         one(schedule.http_target).oauth_token[0].service_account_email == var.runtime_service_accounts.scheduler_invoker &&
         endswith(one(schedule.http_target).uri, ":run")
       ])
     )
-    error_message = "Backup and monthly restore schedules must remain staggered and authenticated."
+    error_message = "Backup and monthly restore schedules must remain paused before application activation, staggered, and authenticated."
   }
 
   assert {
@@ -292,7 +294,25 @@ run "builds_the_two_database_recovery_contracts" {
         binding.member == "serviceAccount:${var.runtime_service_accounts.scheduler_invoker}"
       ])
     )
-    error_message = "Only the scheduler identity may invoke the five automatic recovery jobs."
+    error_message = "Only the scheduler identity may invoke the five recovery jobs automatically."
+  }
+
+  assert {
+    condition = (
+      length(google_cloud_run_v2_job_iam_member.backup_release) == 2 &&
+      length(google_cloud_run_v2_job_iam_member.restore_release) == 2 &&
+      length(google_cloud_run_v2_job_iam_member.monitor_release) == 1 &&
+      alltrue([
+        for binding in concat(
+          values(google_cloud_run_v2_job_iam_member.backup_release),
+          values(google_cloud_run_v2_job_iam_member.restore_release),
+          google_cloud_run_v2_job_iam_member.monitor_release,
+        ) :
+        binding.role == "roles/run.invoker" &&
+        binding.member == "serviceAccount:infra-release@agora-management-test.iam.gserviceaccount.com"
+      ])
+    )
+    error_message = "Release verification must receive normal invocation only on the five exact recovery jobs."
   }
 }
 
@@ -311,12 +331,18 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
       }
     }
     application_release = {
+      rollout = {
+        candidate_tag = "c-0123456789abcdef0123456789abcdef"
+        phase         = "active"
+      }
       authentication = {
+        active_revision = "agora-authentication-rest-0123456789ab"
         images = {
           init       = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-authentication/jobs/init@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
           migrations = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-authentication/jobs/migrations@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
           rest       = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-authentication/rest@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
         }
+        revision = "agora-authentication-rest-0123456789ab"
         secrets = {
           postgres_dsn_version         = 11
           smtp_password_version        = 12
@@ -331,11 +357,13 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
         super_admin_email = "admin@example.com"
       }
       json_keys = {
+        active_revision = "agora-json-keys-grpc-abcdef012345"
         images = {
           grpc        = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-json-keys/grpc@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
           migrations  = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-json-keys/jobs/migrations@sha256:1111111111111111111111111111111111111111111111111111111111111111"
           rotate_keys = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-json-keys/jobs/rotatekeys@sha256:2222222222222222222222222222222222222222222222222222222222222222"
         }
+        revision = "agora-json-keys-grpc-abcdef012345"
         secrets = {
           app_master_key_version = 7
           postgres_dsn_version   = 8
@@ -435,6 +463,7 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
       google_cloud_run_v2_job_iam_member.json_keys_rotation_scheduler[0].name == "agora-json-keys-rotatekeys" &&
       length(google_cloud_scheduler_job.json_keys_rotation) == 1 &&
       google_cloud_scheduler_job.json_keys_rotation[0].schedule == "10 * * * *" &&
+      google_cloud_scheduler_job.json_keys_rotation[0].paused == false &&
       google_cloud_scheduler_job.json_keys_rotation[0].time_zone == "Etc/UTC" &&
       google_cloud_scheduler_job.json_keys_rotation[0].retry_config[0].retry_count == 1 &&
       one(google_cloud_scheduler_job.json_keys_rotation[0].http_target).uri == "https://run.googleapis.com/v2/projects/agora-production-test/locations/europe-west1/jobs/agora-json-keys-rotatekeys:run" &&
@@ -530,6 +559,7 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
       length(one(one(google_cloud_run_v2_service.json_keys[0].template).containers).liveness_probe) == 0 &&
       one(one(google_cloud_run_v2_service.json_keys[0].template).vpc_access).egress == "ALL_TRAFFIC" &&
       toset(one(one(google_cloud_run_v2_service.json_keys[0].template).vpc_access).network_interfaces[0].tags) == toset(["agora-json-keys"]) &&
+      one(google_cloud_run_v2_service.json_keys[0].template).revision == var.application_release.json_keys.revision &&
       one(google_cloud_run_v2_service.json_keys[0].traffic).percent == 100
     )
     error_message = "JSON Keys must remain an internal h2c service with request-based CPU, bounded scaling, TCP startup, and private-only egress."
@@ -537,7 +567,8 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
 
   assert {
     condition = (
-      length(google_cloud_run_v2_service_iam_member.json_keys_invoker) == 3 &&
+      length(google_cloud_run_v2_service_iam_member.json_keys_invoker) == 1 &&
+      length(google_cloud_run_v2_service_iam_member.authentication_smoke_invoker) == 0 &&
       alltrue([
         for binding in values(google_cloud_run_v2_service_iam_member.json_keys_invoker) :
         binding.role == "roles/run.invoker" &&
@@ -545,11 +576,9 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
       ]) &&
       toset([for binding in values(google_cloud_run_v2_service_iam_member.json_keys_invoker) : binding.member]) == toset([
         "serviceAccount:agora-authentication@agora-production-test.iam.gserviceaccount.com",
-        "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com",
-        "serviceAccount:infra-release@agora-management-test.iam.gserviceaccount.com",
       ])
     )
-    error_message = "JSON Keys invocation must remain limited to Authentication and protected release/recovery identities."
+    error_message = "Production JSON Keys invocation must remain limited to Authentication."
   }
 
   assert {
@@ -597,6 +626,7 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
       one(one(google_cloud_run_v2_service.authentication[0].template).containers).liveness_probe[0].http_get[0].path == "/v2/ping" &&
       one(one(google_cloud_run_v2_service.authentication[0].template).vpc_access).egress == "PRIVATE_RANGES_ONLY" &&
       toset(one(one(google_cloud_run_v2_service.authentication[0].template).vpc_access).network_interfaces[0].tags) == toset(["agora-authentication"]) &&
+      one(google_cloud_run_v2_service.authentication[0].template).revision == var.application_release.authentication.revision &&
       one(google_cloud_run_v2_service.authentication[0].traffic).percent == 100
     )
     error_message = "Authentication must remain public, scale to zero, drain background mail, and split private from managed public egress."
@@ -648,6 +678,133 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
       ]) == 0
     )
     error_message = "Authentication must use the exact JSON Keys audience host, bounded shutdown/mail, and only its REST secrets."
+  }
+}
+
+run "builds_restore_only_contracts_in_a_disposable_recovery_state" {
+  command = plan
+
+  variables {
+    recovery_mode               = true
+    recovery_source_database_ip = "10.30.0.2"
+    recovery_source_project_id  = "agora-source-test"
+    recovery_backup_attempts = {
+      authentication = "1750000000-agora-auth-backup-0"
+      json_keys      = "1750000000-agora-json-backup-0"
+    }
+    recovery_database_password_versions = {
+      authentication = 17
+      json_keys      = 13
+    }
+    recovery_database_images = {
+      authentication = "europe-west1-docker.pkg.dev/agora-source-test/agora-production/service-authentication/database@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      json_keys      = "europe-west1-docker.pkg.dev/agora-source-test/agora-production/service-json-keys/database@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+    database_releases = {
+      authentication = {
+        image                   = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-authentication/database@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        backup_password_version = 11
+      }
+      json_keys = {
+        image                   = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-json-keys/database@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        backup_password_version = 7
+      }
+    }
+    application_release = {
+      rollout = {
+        candidate_tag = "c-0123456789abcdef0123456789abcdef"
+        phase         = "active"
+      }
+      authentication = {
+        active_revision = "agora-authentication-rest-0123456789ab"
+        images = {
+          init       = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-authentication/jobs/init@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          migrations = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-authentication/jobs/migrations@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          rest       = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-authentication/rest@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        }
+        revision = "agora-authentication-rest-0123456789ab"
+        secrets = {
+          postgres_dsn_version         = 11
+          smtp_password_version        = 12
+          super_admin_password_version = 13
+        }
+        smtp = {
+          address       = "smtp.example.com:587"
+          sender_domain = "smtp.example.com"
+          sender_email  = "noreply@example.com"
+          sender_name   = "Agora"
+        }
+        super_admin_email = "admin@example.com"
+      }
+      json_keys = {
+        active_revision = "agora-json-keys-grpc-abcdef012345"
+        images = {
+          grpc        = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-json-keys/grpc@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+          migrations  = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-json-keys/jobs/migrations@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+          rotate_keys = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-json-keys/jobs/rotatekeys@sha256:2222222222222222222222222222222222222222222222222222222222222222"
+        }
+        revision = "agora-json-keys-grpc-abcdef012345"
+        secrets = {
+          app_master_key_version = 7
+          postgres_dsn_version   = 8
+        }
+      }
+    }
+  }
+
+  assert {
+    condition = (
+      length(google_cloud_run_v2_job.postgres_recover) == 2 &&
+      length(google_cloud_run_v2_job.postgres_backup) == 0 &&
+      length(google_cloud_run_v2_job.postgres_restore) == 0 &&
+      length(google_cloud_run_v2_job.postgres_backup_monitor) == 0 &&
+      length(google_cloud_run_v2_job_iam_member.recover_recovery) == 2 &&
+      length(google_cloud_scheduler_job.postgres_backup) == 0 &&
+      length(google_cloud_scheduler_job.postgres_restore) == 0 &&
+      length(google_cloud_scheduler_job.postgres_backup_monitor) == 0 &&
+      length(google_cloud_scheduler_job.json_keys_rotation) == 0 &&
+      length(google_cloud_run_v2_job_iam_member.application_release_invoker) == 0 &&
+      length(google_cloud_run_v2_job.application) == 0 &&
+      length(google_cloud_run_v2_job_iam_member.backup_release) == 0 &&
+      length(google_cloud_run_v2_job_iam_member.restore_release) == 0 &&
+      length(google_cloud_run_v2_job_iam_member.monitor_release) == 0 &&
+      google_cloud_run_v2_service.authentication[0].ingress == "INGRESS_TRAFFIC_INTERNAL_ONLY" &&
+      !google_cloud_run_v2_service.authentication[0].invoker_iam_disabled &&
+      toset([for binding in values(google_cloud_run_v2_service_iam_member.json_keys_invoker) : binding.member]) == toset([
+        "serviceAccount:agora-authentication@agora-production-test.iam.gserviceaccount.com",
+      ]) &&
+      toset([for binding in values(google_cloud_run_v2_service_iam_member.authentication_smoke_invoker) : binding.member]) == toset([
+        "serviceAccount:agora-database-host@agora-production-test.iam.gserviceaccount.com",
+      ])
+    )
+    error_message = "Disposable recovery must grant only recovery automation and keep schedules, initialization, and public ingress disabled."
+  }
+
+  assert {
+    condition = alltrue([
+      for key, job in google_cloud_run_v2_job.postgres_recover :
+      job.name == "agora-postgres-recover-${local.enabled_database_contracts[key].object_key}-${substr(sha256(jsonencode({
+        attempt          = var.recovery_backup_attempts[key]
+        database_image   = var.recovery_database_images[key]
+        password_version = var.recovery_database_password_versions[key]
+      })), 0, 8)}" &&
+      one(one(job.template).template).service_account == var.runtime_service_accounts.restore &&
+      one(one(job.template).template).max_retries == 0 &&
+      toset(one(one(one(job.template).template).vpc_access).network_interfaces[0].tags) == toset(["agora-restore"]) &&
+      one([
+        for environment in one(one(one(job.template).template).containers).env : environment.value
+        if environment.name == "RECOVERY_ATTEMPT"
+      ]) == var.recovery_backup_attempts[key] &&
+      one([
+        for environment in one(one(one(job.template).template).containers).env : environment.value
+        if environment.name == "SOURCE_DATABASE_HOST"
+      ]) == var.recovery_source_database_ip &&
+      one([
+        for volume in one(one(job.template).template).volumes : volume
+        if volume.name == "database-password"
+      ]).secret[0].items[0].version == tostring(var.recovery_database_password_versions[key])
+    ])
+    error_message = "Recovery jobs must bind the exact attempt, owner secret version, private path, and non-retrying restore identity."
   }
 }
 

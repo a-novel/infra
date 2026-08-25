@@ -1,6 +1,7 @@
 locals {
   bucket_name_prefix = "${var.management_project_id}-${data.google_project.management.number}"
   state_prefixes     = toset(["bootstrap", "foundation", "release"])
+  receipt_prefixes   = toset(["production", "production/success", "recovery"])
 }
 
 resource "google_storage_bucket" "state" {
@@ -30,6 +31,23 @@ resource "google_storage_bucket" "state" {
     condition {
       days_since_noncurrent_time = 90
       num_newer_versions         = 50
+    }
+  }
+
+  lifecycle_rule {
+    action {
+      type = "Delete"
+    }
+
+    # Metadata enforces a precise 24-hour expiry. This removes abandoned live
+    # plan objects on Cloud Storage's next daily lifecycle sweep.
+    condition {
+      age = 2
+      matches_prefix = [
+        "bootstrap/plans/",
+        "foundation/plans/",
+        "release/plans/",
+      ]
     }
   }
 
@@ -127,4 +145,20 @@ resource "google_storage_bucket" "receipts" {
   }
 
   depends_on = [google_project_service.management["storage.googleapis.com"]]
+}
+
+# Receipt paths are authorization boundaries, not naming conventions. Release
+# owns production evidence; recovery can read only successful production state
+# and can create evidence only beneath its separate recovery prefix.
+resource "google_storage_managed_folder" "receipt" {
+  for_each = local.receipt_prefixes
+
+  bucket          = google_storage_bucket.receipts.name
+  name            = "${each.value}/"
+  force_destroy   = false
+  deletion_policy = "PREVENT"
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }

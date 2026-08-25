@@ -39,6 +39,12 @@ variable "workload_project_name" {
   }
 }
 
+variable "adopt_existing_project" {
+  description = "Import a human-created empty project through the reviewed plan instead of creating it; required for the standalone no-organization path."
+  type        = bool
+  default     = false
+}
+
 variable "billing_account_id" {
   description = "Cloud Billing account ID linked to the production projects and used for their combined budget."
   type        = string
@@ -263,4 +269,10 @@ variable "compute_cpu_quota" {
     condition     = var.compute_cpu_quota >= 2 && var.compute_cpu_quota <= 32 && floor(var.compute_cpu_quota) == var.compute_cpu_quota
     error_message = "The Compute Engine CPU quota must be a whole number from 2 through 32."
   }
+}
+
+variable "recovery_mode" {
+  description = "Whether this state suffix creates a disposable recovery workload with restore-only database access. Production must keep false."
+  type        = bool
+  default     = false
 }

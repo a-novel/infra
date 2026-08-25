@@ -140,6 +140,7 @@ variables {
   backup_bucket_name    = "agora-management-test-123456789012-backups"
   billing_account_id    = "ABCDEF-123456-ABCDEF"
   cost_alert_email      = "infra@example.com"
+  organization_id       = "123456789012"
   database_operator_principals = [
     "group:infra-operators@example.com",
   ]
@@ -389,7 +390,10 @@ run "builds_the_protected_workload_foundation" {
         "resourcemanager.projects.get",
         "resourcemanager.projects.list",
         "resourcemanager.projects.update",
-      ])
+      ]) &&
+      length(google_project_iam_member.plan_viewer) == 1 &&
+      google_project_iam_member.plan_viewer[0].role == "roles/viewer" &&
+      google_project_iam_member.plan_viewer[0].member == "serviceAccount:infra-plan@agora-management-test.iam.gserviceaccount.com"
     )
     error_message = "Foundation IAM must remain least-privilege and omit primitive, project-move, and project-delete authority."
   }
@@ -508,8 +512,9 @@ run "builds_the_protected_workload_foundation" {
       ]) &&
       local.release_application_project_roles == toset([
         "roles/cloudscheduler.admin",
+        "roles/cloudquotas.viewer",
       ]) &&
-      length(google_project_iam_member.release_application) == 1 &&
+      length(google_project_iam_member.release_application) == 2 &&
       google_project_iam_custom_role.release_cloud_run_deployer.permissions == toset([
         "run.jobs.create",
         "run.jobs.delete",
@@ -518,8 +523,12 @@ run "builds_the_protected_workload_foundation" {
         "run.jobs.list",
         "run.jobs.setIamPolicy",
         "run.jobs.update",
+        "run.executions.get",
+        "run.executions.list",
         "run.locations.list",
         "run.operations.get",
+        "run.revisions.get",
+        "run.revisions.list",
         "run.services.create",
         "run.services.delete",
         "run.services.get",
@@ -544,9 +553,10 @@ run "builds_the_protected_workload_foundation" {
         for binding in values(google_project_iam_member.release_application) :
         binding.role != "roles/secretmanager.secretAccessor"
       ]) &&
-      google_storage_bucket_iam_member.backup_runtime_creator.bucket == "agora-management-test-123456789012-backups" &&
-      google_storage_bucket_iam_member.backup_runtime_creator.role == "roles/storage.objectCreator" &&
-      google_storage_bucket_iam_member.backup_runtime_creator.member == "serviceAccount:${google_service_account.runtime["backup"].email}" &&
+      length(google_storage_bucket_iam_member.backup_runtime_creator) == 1 &&
+      google_storage_bucket_iam_member.backup_runtime_creator[0].bucket == "agora-management-test-123456789012-backups" &&
+      google_storage_bucket_iam_member.backup_runtime_creator[0].role == "roles/storage.objectCreator" &&
+      google_storage_bucket_iam_member.backup_runtime_creator[0].member == "serviceAccount:${google_service_account.runtime["backup"].email}" &&
       google_storage_bucket_iam_member.restore_runtime_viewer.role == "roles/storage.objectViewer" &&
       google_storage_bucket_iam_member.restore_runtime_viewer.member == "serviceAccount:${google_service_account.runtime["restore"].email}"
     )
@@ -762,6 +772,16 @@ run "rejects_two_project_parents" {
   expect_failures = [google_project.workload]
 }
 
+run "rejects_creating_a_parentless_project" {
+  command = plan
+
+  variables {
+    organization_id = null
+  }
+
+  expect_failures = [google_project.workload]
+}
+
 run "rejects_an_unreviewed_compute_scale" {
   command = plan
 
@@ -832,4 +852,53 @@ run "rejects_a_non_human_database_operator" {
   }
 
   expect_failures = [var.database_operator_principals]
+}
+
+run "limits_disposable_recovery_authority_to_the_replacement_project" {
+  command = plan
+
+  variables {
+    recovery_mode = true
+  }
+
+  assert {
+    condition = (
+      alltrue([
+        for binding in values(google_project_iam_member.foundation) :
+        binding.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com"
+      ]) &&
+      google_project_iam_member.foundation_project_metadata.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
+      google_service_account_iam_member.foundation_database_act_as.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
+      alltrue([
+        for binding in values(google_service_account_iam_member.release_runtime_act_as) :
+        binding.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com"
+      ]) &&
+      alltrue([
+        for binding in values(google_project_iam_member.release_application) :
+        binding.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com"
+      ]) &&
+      google_project_iam_member.release_cloud_run_deployer.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
+      google_project_iam_member.database_release.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
+      google_artifact_registry_repository_iam_member.release_writer.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
+      length(google_project_iam_member.plan_viewer) == 0 &&
+      length(google_artifact_registry_repository_iam_member.recovery_reader) == 0 &&
+      local.release_application_project_roles == toset(["roles/cloudquotas.viewer"])
+    )
+    error_message = "A replacement project must grant every automation boundary only to recovery, never production foundation or release."
+  }
+
+  assert {
+    condition = (
+      contains(google_compute_firewall.allow_postgres_egress["authentication"].target_tags, "agora-restore") &&
+      contains(google_compute_firewall.allow_postgres_egress["json_keys"].target_tags, "agora-restore") &&
+      contains(keys(google_secret_manager_secret_iam_member.runtime), "restore:authentication-owner-password") &&
+      contains(keys(google_secret_manager_secret_iam_member.runtime), "restore:json-keys-owner-password") &&
+      !contains(keys(google_secret_manager_secret_iam_member.runtime), "authentication-initializer:postgres-dsn") &&
+      !contains(keys(google_secret_manager_secret_iam_member.runtime), "authentication-initializer:super-admin-password") &&
+      !contains(keys(google_secret_manager_secret_iam_member.runtime), "backup:authentication-backup-password") &&
+      !contains(keys(google_secret_manager_secret_iam_member.runtime), "backup:json-keys-backup-password") &&
+      length(google_storage_bucket_iam_member.backup_runtime_creator) == 0
+    )
+    error_message = "Recovery must add only exact restore access and remove every production backup or initializer payload grant."
+  }
 }

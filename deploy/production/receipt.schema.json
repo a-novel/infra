@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/a-novel/infra/deploy/production/receipt.schema.json",
+  "title": "Agora successful production release receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "createdAt",
+    "sequence",
+    "source",
+    "activeTfvars",
+    "database",
+    "operations"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "enum": ["deployment", "rollback"] },
+    "createdAt": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "sequence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "runAttempt"],
+      "properties": {
+        "runId": { "type": "string", "pattern": "^[1-9][0-9]*$" },
+        "runAttempt": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "manifestSha256"],
+      "properties": {
+        "commit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+        "manifestSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "activeTfvars": { "type": "object" },
+    "database": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "releaseRevision",
+            "jsonKeysImage",
+            "authenticationImage",
+            "jsonKeysPasswordVersion",
+            "authenticationPasswordVersion",
+            "jsonKeysBackupPasswordVersion",
+            "authenticationBackupPasswordVersion"
+          ],
+          "properties": {
+            "releaseRevision": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{40}$"
+            },
+            "jsonKeysImage": { "$ref": "#/$defs/promotedImage" },
+            "authenticationImage": { "$ref": "#/$defs/promotedImage" },
+            "jsonKeysPasswordVersion": { "$ref": "#/$defs/secretVersion" },
+            "authenticationPasswordVersion": {
+              "$ref": "#/$defs/secretVersion"
+            },
+            "jsonKeysBackupPasswordVersion": {
+              "$ref": "#/$defs/secretVersion"
+            },
+            "authenticationBackupPasswordVersion": {
+              "$ref": "#/$defs/secretVersion"
+            }
+          }
+        }
+      ]
+    },
+    "operations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["executions", "initialization", "health"],
+      "properties": {
+        "executions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "jsonKeysMigrations",
+            "jsonKeysRotation",
+            "authenticationMigrations",
+            "postgresBackupJsonKeys",
+            "postgresBackupAuthentication",
+            "postgresRestoreJsonKeys",
+            "postgresRestoreAuthentication",
+            "postgresBackupMonitor"
+          ],
+          "properties": {
+            "jsonKeysMigrations": { "$ref": "#/$defs/optionalExecution" },
+            "jsonKeysRotation": { "$ref": "#/$defs/optionalExecution" },
+            "authenticationMigrations": { "$ref": "#/$defs/optionalExecution" },
+            "postgresBackupJsonKeys": {
+              "$ref": "#/$defs/optionalExecution"
+            },
+            "postgresBackupAuthentication": {
+              "$ref": "#/$defs/optionalExecution"
+            },
+            "postgresRestoreJsonKeys": {
+              "$ref": "#/$defs/optionalExecution"
+            },
+            "postgresRestoreAuthentication": {
+              "$ref": "#/$defs/optionalExecution"
+            },
+            "postgresBackupMonitor": {
+              "$ref": "#/$defs/optionalExecution"
+            }
+          }
+        },
+        "initialization": {
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/execution" }]
+        },
+        "health": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["jsonKeys", "authentication"],
+          "properties": {
+            "jsonKeys": { "enum": ["passed", "not-run"] },
+            "authentication": { "enum": ["passed", "not-run"] }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "execution": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,62}$"
+    },
+    "optionalExecution": {
+      "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/execution" }]
+    },
+    "secretVersion": { "type": "integer", "minimum": 1 },
+    "promotedImage": {
+      "type": "string",
+      "pattern": "^[a-z]+-[a-z]+[0-9]+-docker\\.pkg\\.dev/[a-z][a-z0-9-]{4,28}[a-z0-9]/agora-production/service-(json-keys|authentication)/database@sha256:[a-f0-9]{64}$"
+    }
+  }
+}

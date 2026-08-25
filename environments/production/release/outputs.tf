@@ -17,6 +17,9 @@ output "postgres_recovery" {
     restore_jobs = {
       for key, job in google_cloud_run_v2_job.postgres_restore : key => job.name
     }
+    recovery_jobs = {
+      for key, job in google_cloud_run_v2_job.postgres_recover : key => job.name
+    }
     monitor_job = try(google_cloud_run_v2_job.postgres_backup_monitor[0].name, null)
     backup_schedules = {
       for key, schedule in google_cloud_scheduler_job.postgres_backup : key => schedule.name
@@ -38,7 +41,7 @@ output "application_runtime" {
     jobs = {
       for key, job in google_cloud_run_v2_job.application : key => job.name
     }
-    rotation_schedule = google_cloud_scheduler_job.json_keys_rotation[0].name
+    rotation_schedule = try(google_cloud_scheduler_job.json_keys_rotation[0].name, null)
     json_keys = {
       name = google_cloud_run_v2_service.json_keys[0].name
       uri  = google_cloud_run_v2_service.json_keys[0].uri

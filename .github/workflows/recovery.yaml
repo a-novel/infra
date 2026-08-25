@@ -1,0 +1,313 @@
+name: production recovery
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Plan/apply a disposable workload, or restore exact data and deploy its receipt.
+        required: true
+        type: choice
+        options: [plan-workload, apply-workload, restore-data]
+      replacement_project_id:
+        description: New disposable Google Cloud project ID; never the production project.
+        required: true
+        type: string
+      target_receipt:
+        description: Immutable successful production run-id-attempt to recover.
+        required: true
+        type: string
+      plan_id:
+        description: apply-workload only; exact run-id-attempt printed by plan-workload.
+        required: false
+        type: string
+      json_keys_attempt:
+        description: restore-data only; exact JSON Keys backup attempt directory.
+        required: false
+        type: string
+      authentication_attempt:
+        description: restore-data only; exact Authentication backup attempt directory.
+        required: false
+        type: string
+      lost_write_window:
+        description: restore-data only; operator's acknowledged user-visible lost-write window.
+        required: false
+        type: string
+      confirm:
+        description: restore-data only; type RESTORE <replacement-project-id> exactly.
+        required: false
+        type: string
+
+run-name: "recovery ${{ inputs.operation }} ${{ inputs.replacement_project_id }} by @${{ github.actor }}"
+
+permissions: {}
+
+concurrency:
+  group: production-infrastructure
+  cancel-in-progress: false
+
+env:
+  TF_IN_AUTOMATION: "true"
+  CLOUDSDK_CORE_DISABLE_PROMPTS: "1"
+
+jobs:
+  recover:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    environment: production-recovery
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: read
+    steps:
+      - name: Check out the exact master commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install reviewed recovery tooling
+        shell: bash
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Authenticate as the recovery boundary
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_RECOVERY_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_RECOVERY_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Install the pinned Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+        with:
+          version: "581.0.0"
+
+      - name: Install OpenTofu
+        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version_file: .opentofu-version
+          tofu_wrapper: false
+          cache: true
+
+      - name: Select the immutable production receipt
+        id: receipt
+        shell: bash
+        env:
+          RECEIPT_BUCKET: ${{ vars.GCP_RECEIPT_BUCKET }}
+          TARGET_RECEIPT: ${{ inputs.target_receipt }}
+        run: |
+          set -euo pipefail
+          umask 077
+          file="${RUNNER_TEMP}/target-receipt.json"
+          ./ops/receipt-custody.sh fetch \
+            "${RECEIPT_BUCKET}" "${file}" "${TARGET_RECEIPT}"
+          printf 'file=%s\n' "${file}" >>"${GITHUB_OUTPUT}"
+
+      - name: Compile the disposable workload inputs
+        id: recovery
+        shell: bash
+        env:
+          FOUNDATION_CONFIG: ${{ secrets.FOUNDATION_TFVARS_JSON }}
+          RECEIPT_FILE: ${{ steps.receipt.outputs.file }}
+          REPLACEMENT_PROJECT_ID: ${{ inputs.replacement_project_id }}
+        run: |
+          set -euo pipefail
+          umask 077
+          config="${RUNNER_TEMP}/foundation-config.json"
+          output="${RUNNER_TEMP}/recovery"
+          printf '%s' "${FOUNDATION_CONFIG}" >"${config}"
+          jq --exit-status 'type == "object"' "${config}" >/dev/null
+          ./ops/compile-recovery.mjs \
+            "${config}" "${RECEIPT_FILE}" - "${REPLACEMENT_PROJECT_ID}" \
+            placeholder placeholder foundation "${output}"
+          printf 'directory=%s\n' "${output}" >>"${GITHUB_OUTPUT}"
+          printf 'config=%s\n' "${config}" >>"${GITHUB_OUTPUT}"
+
+      - name: Create the exact private recovery-foundation plan
+        if: inputs.operation == 'plan-workload'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RECOVERY_DIRECTORY: ${{ steps.recovery.outputs.directory }}
+          REPLACEMENT_PROJECT_ID: ${{ inputs.replacement_project_id }}
+          STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
+        run: |
+          set -euo pipefail
+          export TOFU_STATE_SUFFIX="recovery/${REPLACEMENT_PROJECT_ID}"
+          plan_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          ./ops/create-reviewed-plan.sh foundation "${STATE_BUCKET}" \
+            "${GITHUB_SHA}" "${plan_id}" \
+            "${RECOVERY_DIRECTORY}/foundation.tfvars.json"
+          printf 'Plan ID: %s\n' "${plan_id}"
+
+      - name: Apply the exact recovery-foundation plan
+        if: inputs.operation == 'apply-workload'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PLAN_ID: ${{ inputs.plan_id }}
+          RECOVERY_DIRECTORY: ${{ steps.recovery.outputs.directory }}
+          REPLACEMENT_PROJECT_ID: ${{ inputs.replacement_project_id }}
+          STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
+        run: |
+          set -euo pipefail
+          if ! [[ "${PLAN_ID}" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]; then
+            printf 'Apply requires the exact recovery plan ID.\n' >&2
+            exit 64
+          fi
+          export TOFU_STATE_SUFFIX="recovery/${REPLACEMENT_PROJECT_ID}"
+          ./ops/apply-reviewed-plan.sh foundation "${STATE_BUCKET}" \
+            "${GITHUB_SHA}" "${PLAN_ID}" \
+            "${RECOVERY_DIRECTORY}/foundation.tfvars.json"
+
+      - name: Confirm and inspect exact data recovery points
+        if: inputs.operation == 'restore-data'
+        shell: bash
+        env:
+          AUTHENTICATION_ATTEMPT: ${{ inputs.authentication_attempt }}
+          BACKUP_BUCKET: ${{ vars.GCP_BACKUP_BUCKET }}
+          CONFIRM: ${{ inputs.confirm }}
+          JSON_KEYS_ATTEMPT: ${{ inputs.json_keys_attempt }}
+          LOST_WRITE_WINDOW: ${{ inputs.lost_write_window }}
+          RECEIPT_FILE: ${{ steps.receipt.outputs.file }}
+          REPLACEMENT_PROJECT_ID: ${{ inputs.replacement_project_id }}
+        run: |
+          set -euo pipefail
+          if [ "${CONFIRM}" != "RESTORE ${REPLACEMENT_PROJECT_ID}" ] || \
+            [ -z "${LOST_WRITE_WINDOW}" ] || [ "${#LOST_WRITE_WINDOW}" -gt 500 ]; then
+            printf 'Restore requires exact typed confirmation and a bounded lost-write acknowledgement.\n' >&2
+            exit 64
+          fi
+          ./ops/verify-recovery-points.sh "${BACKUP_BUCKET}" "${RECEIPT_FILE}" \
+            "${JSON_KEYS_ATTEMPT}" "${AUTHENTICATION_ATTEMPT}"
+
+      - name: Compile exact recovery release inputs
+        if: inputs.operation == 'restore-data'
+        shell: bash
+        env:
+          AUTHENTICATION_ATTEMPT: ${{ inputs.authentication_attempt }}
+          FOUNDATION_CONFIG_FILE: ${{ steps.recovery.outputs.config }}
+          JSON_KEYS_ATTEMPT: ${{ inputs.json_keys_attempt }}
+          RECEIPT_FILE: ${{ steps.receipt.outputs.file }}
+          RECOVERY_DIRECTORY: ${{ steps.recovery.outputs.directory }}
+          REPLACEMENT_PROJECT_ID: ${{ inputs.replacement_project_id }}
+          STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
+        run: |
+          set -euo pipefail
+          export TOFU_STATE_SUFFIX="recovery/${REPLACEMENT_PROJECT_ID}"
+          outputs="${RECOVERY_DIRECTORY}/foundation-outputs.json"
+          ./ops/tofu-gate.sh output foundation "${STATE_BUCKET}" "${outputs}"
+          ./ops/compile-recovery.mjs \
+            "${FOUNDATION_CONFIG_FILE}" "${RECEIPT_FILE}" "${outputs}" \
+            "${REPLACEMENT_PROJECT_ID}" "${JSON_KEYS_ATTEMPT}" \
+            "${AUTHENTICATION_ATTEMPT}" release "${RECOVERY_DIRECTORY}"
+
+      - name: Promote receipt-owned recovery images
+        if: inputs.operation == 'restore-data'
+        shell: bash
+        env:
+          RECOVERY_DIRECTORY: ${{ steps.recovery.outputs.directory }}
+          REPLACEMENT_PROJECT_ID: ${{ inputs.replacement_project_id }}
+        run: |
+          set -euo pipefail
+          ./ops/preflight-release.sh "${RECOVERY_DIRECTORY}/preflight.json"
+          region="$(jq --raw-output '.region' "${RECOVERY_DIRECTORY}/active.tfvars.json")"
+          gcloud auth configure-docker "${region}-docker.pkg.dev" --quiet >/dev/null 2>&1
+          ./ops/promote-recovery-images.sh "${RECOVERY_DIRECTORY}/images.json"
+
+      - name: Create recovery jobs without exposing services
+        if: inputs.operation == 'restore-data'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RECOVERY_DIRECTORY: ${{ steps.recovery.outputs.directory }}
+          REPLACEMENT_PROJECT_ID: ${{ inputs.replacement_project_id }}
+          STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
+        run: |
+          set -euo pipefail
+          export TOFU_STATE_SUFFIX="recovery/${REPLACEMENT_PROJECT_ID}"
+          plan_id="${GITHUB_RUN_ID}-$((GITHUB_RUN_ATTEMPT * 10 + 1))"
+          ./ops/create-reviewed-plan.sh release "${STATE_BUCKET}" "${GITHUB_SHA}" \
+            "${plan_id}" "${RECOVERY_DIRECTORY}/staging.tfvars.json"
+          ./ops/apply-reviewed-plan.sh release "${STATE_BUCKET}" "${GITHUB_SHA}" \
+            "${plan_id}" "${RECOVERY_DIRECTORY}/staging.tfvars.json"
+
+      - name: Start the replacement databases and restore exact backups
+        if: inputs.operation == 'restore-data'
+        shell: bash
+        env:
+          RECOVERY_DIRECTORY: ${{ steps.recovery.outputs.directory }}
+          REPLACEMENT_PROJECT_ID: ${{ inputs.replacement_project_id }}
+          STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
+        run: |
+          set -euo pipefail
+          zone="$(jq --raw-output '.database_zone' "${RECOVERY_DIRECTORY}/foundation.tfvars.json")"
+          ./ops/restore-database-release.sh "${REPLACEMENT_PROJECT_ID}" "${zone}" \
+            "${RECOVERY_DIRECTORY}/database.json"
+
+          export TOFU_STATE_SUFFIX="recovery/${REPLACEMENT_PROJECT_ID}"
+          outputs="${RECOVERY_DIRECTORY}/release-outputs.json"
+          ./ops/tofu-gate.sh output release "${STATE_BUCKET}" "${outputs}"
+          region="$(jq --raw-output '.region.value' "${outputs}")"
+          for key in json_keys authentication; do
+            job="$(jq --raw-output --arg key "${key}" '.postgres_recovery.value.recovery_jobs[$key]' "${outputs}")"
+            executions="${RECOVERY_DIRECTORY}/${key}-executions.json"
+            gcloud run jobs executions list --job="${job}" \
+              --project="${REPLACEMENT_PROJECT_ID}" --region="${region}" \
+              --format=json >"${executions}" 2>/dev/null
+            if jq --exit-status \
+              'any(.[]; any(.status.conditions[]?; .type == "Completed" and .status == "True"))' \
+              "${executions}" >/dev/null; then
+              printf '%s exact recovery already completed; reusing its durable execution.\n' "${key}"
+            else
+              if ! gcloud run jobs execute "${job}" --project="${REPLACEMENT_PROJECT_ID}" \
+                --region="${region}" --wait --quiet --format=none >/dev/null 2>&1; then
+                printf '%s exact recovery failed.\n' "${key}" >&2
+                exit 70
+              fi
+            fi
+          done
+
+      - name: Deploy the selected receipt after both restores
+        if: inputs.operation == 'restore-data'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RECOVERY_DIRECTORY: ${{ steps.recovery.outputs.directory }}
+          RECEIPT_BUCKET: ${{ vars.GCP_RECEIPT_BUCKET }}
+          REPLACEMENT_PROJECT_ID: ${{ inputs.replacement_project_id }}
+          STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
+          TARGET_RECEIPT: ${{ inputs.target_receipt }}
+          LOST_WRITE_WINDOW: ${{ inputs.lost_write_window }}
+        run: |
+          set -euo pipefail
+          export TOFU_STATE_SUFFIX="recovery/${REPLACEMENT_PROJECT_ID}"
+          plan_id="${GITHUB_RUN_ID}-$((GITHUB_RUN_ATTEMPT * 10 + 2))"
+          ./ops/create-reviewed-plan.sh release "${STATE_BUCKET}" "${GITHUB_SHA}" \
+            "${plan_id}" "${RECOVERY_DIRECTORY}/active.tfvars.json"
+          ./ops/apply-reviewed-plan.sh release "${STATE_BUCKET}" "${GITHUB_SHA}" \
+            "${plan_id}" "${RECOVERY_DIRECTORY}/active.tfvars.json"
+
+          receipt="${RECOVERY_DIRECTORY}/recovery-receipt.json"
+          jq -n --arg project "${REPLACEMENT_PROJECT_ID}" \
+            --arg source "${TARGET_RECEIPT}" --arg commit "${GITHUB_SHA}" \
+            --arg run_id "${GITHUB_RUN_ID}" --arg lost "${LOST_WRITE_WINDOW}" \
+            '{schemaVersion: 1, replacementProject: $project, sourceReceipt: $source, commit: $commit, runId: $run_id, lostWriteWindow: $lost}' \
+            >"${receipt}"
+          chmod 600 "${receipt}"
+          if ! gcloud storage cp "${receipt}" \
+            "gs://${RECEIPT_BUCKET}/recovery/${REPLACEMENT_PROJECT_ID}/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json" \
+            --if-generation-match=0 --quiet >/dev/null 2>&1; then
+            printf 'The immutable recovery receipt could not be created.\n' >&2
+            exit 70
+          fi
+          printf 'Disposable recovery completed and its private receipt is durable.\n'

@@ -15,6 +15,18 @@ locals {
     "roles/serviceusage.serviceUsageAdmin",
   ])
 
+  release_project_roles = toset([
+    # Version metadata is required for preflight, but payload access remains
+    # exclusive to runtime identities and named human operators.
+    "roles/secretmanager.viewer",
+  ])
+
+  recovery_project_roles = toset([
+    # Version-state inspection rejects disabled receipt-owned versions. Secret
+    # payloads are resolved only by replacement runtime identities.
+    "roles/secretmanager.viewer",
+  ])
+
   # Data Access audit entries are private logs. Human operators need the
   # private viewer role to investigate state and secret operations.
   operator_project_roles = setunion(
@@ -32,6 +44,18 @@ locals {
     {
       for role in local.foundation_project_roles : "foundation:${role}" => {
         boundary = "foundation"
+        role     = role
+      }
+    },
+    {
+      for role in local.release_project_roles : "release:${role}" => {
+        boundary = "release"
+        role     = role
+      }
+    },
+    {
+      for role in local.recovery_project_roles : "recovery:${role}" => {
+        boundary = "recovery"
         role     = role
       }
     },
@@ -185,6 +209,39 @@ resource "google_project_iam_custom_role" "secret_metadata" {
   depends_on = [google_project_service.management["iam.googleapis.com"]]
 }
 
+# A clean-room rebuild temporarily needs to attach replacement runtime
+# identities to surviving secret containers and the backup bucket. This role
+# changes IAM metadata only: it cannot read/write objects or secret versions.
+# It has no standing member; the recovery runbook grants and removes it around
+# one replacement-foundation apply.
+resource "google_project_iam_custom_role" "recovery_metadata" {
+  role_id     = "infraRecoveryMetadataAdmin"
+  title       = "Infra Recovery Metadata Admin"
+  description = "Manage only backup-bucket and secret-container IAM during an approved clean-room rebuild."
+  stage       = "GA"
+
+  permissions = [
+    "resourcemanager.projects.get",
+    "resourcemanager.projects.list",
+    "secretmanager.secrets.get",
+    "secretmanager.secrets.getIamPolicy",
+    "secretmanager.secrets.setIamPolicy",
+    "storage.buckets.get",
+    "storage.buckets.getIamPolicy",
+    "storage.buckets.setIamPolicy",
+  ]
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [
+    google_project_service.management["iam.googleapis.com"],
+    google_project_service.management["secretmanager.googleapis.com"],
+    google_project_service.management["storage.googleapis.com"],
+  ]
+}
+
 # Security Reviewer includes private logs and broad inventory access. Planning
 # needs only the policy and bucket metadata required to refresh this root.
 resource "google_project_iam_custom_role" "plan_metadata" {
@@ -308,28 +365,46 @@ resource "google_storage_managed_folder_iam_member" "recovery_state" {
   member         = "serviceAccount:${google_service_account.automation["recovery"].email}"
 }
 
-resource "google_storage_bucket_iam_member" "release_receipt_creator" {
-  bucket = google_storage_bucket.receipts.name
-  role   = "roles/storage.objectCreator"
-  member = "serviceAccount:${google_service_account.automation["release"].email}"
+resource "google_storage_managed_folder_iam_member" "release_receipt_creator" {
+  bucket         = google_storage_managed_folder.receipt["production"].bucket
+  managed_folder = google_storage_managed_folder.receipt["production"].name
+  role           = "roles/storage.objectCreator"
+  member         = "serviceAccount:${google_service_account.automation["release"].email}"
 }
 
-resource "google_storage_bucket_iam_member" "release_receipt_viewer" {
-  bucket = google_storage_bucket.receipts.name
-  role   = "roles/storage.objectViewer"
-  member = "serviceAccount:${google_service_account.automation["release"].email}"
+resource "google_storage_managed_folder_iam_member" "release_receipt_viewer" {
+  bucket         = google_storage_managed_folder.receipt["production"].bucket
+  managed_folder = google_storage_managed_folder.receipt["production"].name
+  role           = "roles/storage.objectViewer"
+  member         = "serviceAccount:${google_service_account.automation["release"].email}"
 }
 
 resource "google_storage_bucket_iam_member" "recovery_backup_viewer" {
   bucket = google_storage_bucket.backups.name
   role   = "roles/storage.objectViewer"
   member = "serviceAccount:${google_service_account.automation["recovery"].email}"
+
+  # The GitHub runner verifies only exact immutable manifest metadata. Backup
+  # dumps are read later by the replacement runtime, never by CI.
+  condition {
+    title       = "RecoveryManifestsOnly"
+    description = "Allow protected recovery to read only committed backup manifests, not database dumps."
+    expression  = "resource.type == 'storage.googleapis.com/Object' && resource.name.startsWith('projects/_/buckets/${google_storage_bucket.backups.name}/objects/v1/') && resource.name.endsWith('/completed.manifest')"
+  }
 }
 
-resource "google_storage_bucket_iam_member" "recovery_receipt_viewer" {
-  bucket = google_storage_bucket.receipts.name
-  role   = "roles/storage.objectViewer"
-  member = "serviceAccount:${google_service_account.automation["recovery"].email}"
+resource "google_storage_managed_folder_iam_member" "recovery_receipt_viewer" {
+  bucket         = google_storage_managed_folder.receipt["production/success"].bucket
+  managed_folder = google_storage_managed_folder.receipt["production/success"].name
+  role           = "roles/storage.objectViewer"
+  member         = "serviceAccount:${google_service_account.automation["recovery"].email}"
+}
+
+resource "google_storage_managed_folder_iam_member" "recovery_receipt_creator" {
+  bucket         = google_storage_managed_folder.receipt["recovery"].bucket
+  managed_folder = google_storage_managed_folder.receipt["recovery"].name
+  role           = "roles/storage.objectCreator"
+  member         = "serviceAccount:${google_service_account.automation["recovery"].email}"
 }
 
 resource "google_project_iam_audit_config" "management" {

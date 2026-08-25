@@ -8,7 +8,7 @@ locals {
     "service-json-keys/jobs/rotatekeys"      = var.application_release.json_keys.images.rotate_keys
   }
 
-  application_jobs = var.application_release == null ? {} : {
+  declared_application_jobs = var.application_release == null ? {} : {
     authentication_init = {
       component        = "authentication"
       environment      = { SUPER_ADMIN_EMAIL = var.application_release.authentication.super_admin_email }
@@ -87,6 +87,10 @@ locals {
     }
   }
 
+  # Recovery restores an exact receipt after migrations and initialization;
+  # recreating dormant mutation jobs would widen authority without a caller.
+  application_jobs = var.recovery_mode ? {} : local.declared_application_jobs
+
   automated_application_jobs = {
     for key, job in local.application_jobs : key => job
     if key != "authentication_init"
@@ -94,8 +98,6 @@ locals {
 
   json_keys_invokers = var.application_release == null ? {} : {
     authentication = "serviceAccount:${var.runtime_service_accounts.authentication}"
-    recovery       = "serviceAccount:infra-recovery@${var.management_project_id}.iam.gserviceaccount.com"
-    release        = "serviceAccount:infra-release@${var.management_project_id}.iam.gserviceaccount.com"
   }
 }
 
@@ -205,7 +207,7 @@ resource "google_cloud_run_v2_job" "application" {
 }
 
 resource "google_cloud_run_v2_job_iam_member" "application_release_invoker" {
-  for_each = local.automated_application_jobs
+  for_each = var.recovery_mode ? {} : local.automated_application_jobs
 
   project  = var.workload_project_id
   location = var.region
@@ -217,7 +219,7 @@ resource "google_cloud_run_v2_job_iam_member" "application_release_invoker" {
 # Initialization reconciles the super-admin password and role. Named humans
 # receive normal execution only; no automation identity can invoke or override it.
 resource "google_cloud_run_v2_job_iam_member" "authentication_initializer" {
-  for_each = var.application_release == null ? toset([]) : var.authentication_initializer_principals
+  for_each = var.application_release == null || var.recovery_mode ? toset([]) : var.authentication_initializer_principals
 
   project  = var.workload_project_id
   location = var.region
@@ -227,7 +229,7 @@ resource "google_cloud_run_v2_job_iam_member" "authentication_initializer" {
 }
 
 resource "google_cloud_run_v2_job_iam_member" "json_keys_rotation_scheduler" {
-  count = var.application_release == null ? 0 : 1
+  count = var.application_release == null || var.recovery_mode ? 0 : 1
 
   project  = var.workload_project_id
   location = var.region
@@ -239,13 +241,16 @@ resource "google_cloud_run_v2_job_iam_member" "json_keys_rotation_scheduler" {
 # The shortest embedded key interval is 24 hours. An hourly idempotent check
 # keeps rotation lag below one hour without a resident worker.
 resource "google_cloud_scheduler_job" "json_keys_rotation" {
-  count = var.application_release == null ? 0 : 1
+  count = var.application_release == null || var.recovery_mode ? 0 : 1
 
   project   = var.workload_project_id
   region    = var.region
   name      = "agora-json-keys-rotation"
   schedule  = "10 * * * *"
   time_zone = "Etc/UTC"
+  # Candidate reconciliation pauses periodic writes until migrations, smoke
+  # checks, and both traffic shifts complete. Active/rollback inputs resume it.
+  paused = var.application_release.rollout.phase != "active"
 
   attempt_deadline = "180s"
 
@@ -289,6 +294,7 @@ resource "google_cloud_run_v2_service" "json_keys" {
   }
 
   template {
+    revision                         = var.application_release.json_keys.revision
     service_account                  = var.runtime_service_accounts.json_keys
     timeout                          = "60s"
     max_instance_request_concurrency = 20
@@ -380,9 +386,35 @@ resource "google_cloud_run_v2_service" "json_keys" {
     }
   }
 
-  traffic {
-    type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
-    percent = 100
+  dynamic "traffic" {
+    for_each = var.application_release.rollout.phase == "candidate" && var.application_release.json_keys.active_revision != null ? [1] : []
+
+    content {
+      type     = "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION"
+      revision = var.application_release.json_keys.active_revision
+      percent  = 100
+    }
+  }
+
+  dynamic "traffic" {
+    for_each = var.application_release.rollout.phase == "candidate" ? [1] : []
+
+    content {
+      type     = "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION"
+      revision = var.application_release.json_keys.revision
+      percent  = 0
+      tag      = var.application_release.rollout.candidate_tag
+    }
+  }
+
+  dynamic "traffic" {
+    for_each = var.application_release.rollout.phase == "active" ? [1] : []
+
+    content {
+      type     = "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION"
+      revision = var.application_release.json_keys.active_revision
+      percent  = 100
+    }
   }
 }
 
@@ -403,11 +435,11 @@ resource "google_cloud_run_v2_service" "authentication" {
   location = var.region
   name     = "agora-authentication-rest"
 
-  ingress = "INGRESS_TRAFFIC_ALL"
+  ingress = var.recovery_mode ? "INGRESS_TRAFFIC_INTERNAL_ONLY" : "INGRESS_TRAFFIC_ALL"
   # Google recommends disabling the Invoker IAM check for a public service.
   # Authentication keeps authorization in the application without an allUsers
   # IAM binding that conflicts with domain-restricted sharing policies.
-  invoker_iam_disabled = true
+  invoker_iam_disabled = var.recovery_mode ? false : true
   deletion_protection  = false
   labels               = merge(local.labels, { component = "authentication", role = "rest" })
 
@@ -417,6 +449,7 @@ resource "google_cloud_run_v2_service" "authentication" {
   }
 
   template {
+    revision                         = var.application_release.authentication.revision
     service_account                  = var.runtime_service_accounts.authentication
     timeout                          = "60s"
     max_instance_request_concurrency = 20
@@ -570,10 +603,51 @@ resource "google_cloud_run_v2_service" "authentication" {
     }
   }
 
-  traffic {
-    type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
-    percent = 100
+  dynamic "traffic" {
+    for_each = var.application_release.rollout.phase == "candidate" && var.application_release.authentication.active_revision != null ? [1] : []
+
+    content {
+      type     = "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION"
+      revision = var.application_release.authentication.active_revision
+      percent  = 100
+    }
+  }
+
+  dynamic "traffic" {
+    for_each = var.application_release.rollout.phase == "candidate" ? [1] : []
+
+    content {
+      type     = "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION"
+      revision = var.application_release.authentication.revision
+      percent  = 0
+      tag      = var.application_release.rollout.candidate_tag
+    }
+  }
+
+  dynamic "traffic" {
+    for_each = var.application_release.rollout.phase == "active" ? [1] : []
+
+    content {
+      type     = "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION"
+      revision = var.application_release.authentication.active_revision
+      percent  = 100
+    }
   }
 
   depends_on = [google_cloud_run_v2_service_iam_member.json_keys_invoker]
+}
+
+resource "google_cloud_run_v2_service_iam_member" "authentication_smoke_invoker" {
+  # Production disables the Invoker check for its public REST edge, so an IAM
+  # binding there would be redundant. Recovery keeps internal ingress and uses
+  # the disposable database host as the single in-VPC verification caller.
+  for_each = var.application_release == null || !var.recovery_mode ? toset([]) : toset([
+    "serviceAccount:agora-database-host@${var.workload_project_id}.iam.gserviceaccount.com",
+  ])
+
+  project  = var.workload_project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.authentication[0].name
+  role     = "roles/run.invoker"
+  member   = each.value
 }

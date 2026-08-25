@@ -1,5 +1,5 @@
 resource "google_cloud_run_v2_job" "postgres_backup" {
-  for_each = local.enabled_database_contracts
+  for_each = var.recovery_mode ? {} : local.enabled_database_contracts
 
   project  = var.workload_project_id
   location = var.region
@@ -134,7 +134,7 @@ resource "google_cloud_run_v2_job" "postgres_backup" {
 }
 
 resource "google_cloud_run_v2_job" "postgres_restore" {
-  for_each = local.enabled_database_contracts
+  for_each = var.recovery_mode ? {} : local.enabled_database_contracts
 
   project  = var.workload_project_id
   location = var.region
@@ -237,8 +237,143 @@ resource "google_cloud_run_v2_job" "postgres_restore" {
   }
 }
 
+# These jobs exist only in a separately stated disposable recovery project.
+# They first run the normal clean-restore drill, then restore the exact selected
+# attempt into an empty private target. Production state cannot create them.
+resource "google_cloud_run_v2_job" "postgres_recover" {
+  for_each = var.recovery_mode ? local.enabled_database_contracts : {}
+
+  project  = var.workload_project_id
+  location = var.region
+  # Reuse is safe only when the immutable archive, validation image, and target
+  # owner credential are identical. A changed contract gets a new job and then
+  # fails on the non-empty target instead of reusing unrelated success.
+  name = "agora-postgres-recover-${each.value.object_key}-${substr(sha256(jsonencode({
+    attempt          = var.recovery_backup_attempts[each.key]
+    database_image   = var.recovery_database_images[each.key]
+    password_version = var.recovery_database_password_versions[each.key]
+  })), 0, 8)}"
+
+  launch_stage        = "BETA"
+  deletion_protection = false
+  labels              = merge(local.labels, { component = each.value.object_key, role = "recovery" })
+
+  template {
+    task_count  = 1
+    parallelism = 1
+
+    template {
+      service_account       = var.runtime_service_accounts.restore
+      max_retries           = 0
+      timeout               = "3600s"
+      execution_environment = "EXECUTION_ENVIRONMENT_GEN2"
+
+      containers {
+        name    = "recover"
+        image   = each.value.image
+        command = ["/bin/bash", "-c"]
+        args = [join("\n", [
+          file("${path.module}/scripts/postgres-restore.sh"),
+          file("${path.module}/scripts/postgres-recover.sh"),
+        ])]
+
+        dynamic "env" {
+          for_each = {
+            BACKUP_ROLE          = each.value.backup_role
+            DATABASE_HOST        = var.database_private_ip
+            DATABASE_IMAGE       = var.recovery_database_images[each.key]
+            DATABASE_KEY         = each.value.object_key
+            DATABASE_NAME        = each.value.database_name
+            DATABASE_OWNER       = each.value.owner
+            DATABASE_PORT        = tostring(each.value.port)
+            EXPECTED_EXTENSIONS  = each.value.extensions
+            RECOVERY_ATTEMPT     = var.recovery_backup_attempts[each.key]
+            RECOVERY_PROJECT_ID  = var.workload_project_id
+            RECOVERY_TARGET      = "true"
+            SOURCE_DATABASE_HOST = var.recovery_source_database_ip
+            SOURCE_PROJECT_ID    = var.recovery_source_project_id
+          }
+
+          content {
+            name  = env.key
+            value = env.value
+          }
+        }
+
+        resources {
+          limits = {
+            cpu    = "2"
+            memory = "4Gi"
+          }
+        }
+
+        volume_mounts {
+          name       = "backups"
+          mount_path = "/backups"
+        }
+
+        volume_mounts {
+          name       = "workspace"
+          mount_path = "/workspace"
+        }
+
+        volume_mounts {
+          name       = "database-password"
+          mount_path = "/secrets"
+        }
+      }
+
+      volumes {
+        name = "backups"
+
+        gcs {
+          bucket    = var.backup_bucket_name
+          read_only = true
+        }
+      }
+
+      volumes {
+        name = "workspace"
+
+        empty_dir {
+          medium     = "DISK"
+          size_limit = "10Gi"
+        }
+      }
+
+      volumes {
+        name = "database-password"
+
+        secret {
+          secret = "projects/${var.management_project_id}/secrets/${each.value.owner_secret_id}"
+
+          items {
+            version = tostring(var.recovery_database_password_versions[each.key])
+            path    = "password"
+            mode    = 256
+          }
+        }
+      }
+
+      vpc_access {
+        egress = "ALL_TRAFFIC"
+
+        network_interfaces {
+          network    = var.network_id
+          subnetwork = var.subnet_id
+          tags       = ["agora-restore"]
+        }
+      }
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [launch_stage]
+  }
+}
+
 resource "google_cloud_run_v2_job" "postgres_backup_monitor" {
-  count = length(local.enabled_database_contracts) == 0 ? 0 : 1
+  count = length(local.enabled_database_contracts) == 0 || var.recovery_mode ? 0 : 1
 
   project  = var.workload_project_id
   location = var.region
@@ -316,7 +451,7 @@ resource "google_cloud_run_v2_job" "postgres_backup_monitor" {
 }
 
 resource "google_cloud_run_v2_job_iam_member" "backup_scheduler" {
-  for_each = local.enabled_database_contracts
+  for_each = var.recovery_mode ? {} : local.enabled_database_contracts
 
   project  = var.workload_project_id
   location = var.region
@@ -325,8 +460,20 @@ resource "google_cloud_run_v2_job_iam_member" "backup_scheduler" {
   member   = "serviceAccount:${var.runtime_service_accounts.scheduler_invoker}"
 }
 
+# Release can take its mandatory pre-change and post-migration recovery points,
+# but the project role itself carries no job execution or override permission.
+resource "google_cloud_run_v2_job_iam_member" "backup_release" {
+  for_each = var.recovery_mode ? {} : local.enabled_database_contracts
+
+  project  = var.workload_project_id
+  location = var.region
+  name     = google_cloud_run_v2_job.postgres_backup[each.key].name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:infra-release@${var.management_project_id}.iam.gserviceaccount.com"
+}
+
 resource "google_cloud_run_v2_job_iam_member" "restore_scheduler" {
-  for_each = local.enabled_database_contracts
+  for_each = var.recovery_mode ? {} : local.enabled_database_contracts
 
   project  = var.workload_project_id
   location = var.region
@@ -335,8 +482,28 @@ resource "google_cloud_run_v2_job_iam_member" "restore_scheduler" {
   member   = "serviceAccount:${var.runtime_service_accounts.scheduler_invoker}"
 }
 
+resource "google_cloud_run_v2_job_iam_member" "restore_release" {
+  for_each = var.recovery_mode ? {} : local.enabled_database_contracts
+
+  project  = var.workload_project_id
+  location = var.region
+  name     = google_cloud_run_v2_job.postgres_restore[each.key].name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:infra-release@${var.management_project_id}.iam.gserviceaccount.com"
+}
+
+resource "google_cloud_run_v2_job_iam_member" "recover_recovery" {
+  for_each = google_cloud_run_v2_job.postgres_recover
+
+  project  = var.workload_project_id
+  location = var.region
+  name     = each.value.name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:infra-recovery@${var.management_project_id}.iam.gserviceaccount.com"
+}
+
 resource "google_cloud_run_v2_job_iam_member" "monitor_scheduler" {
-  count = length(local.enabled_database_contracts) == 0 ? 0 : 1
+  count = length(local.enabled_database_contracts) == 0 || var.recovery_mode ? 0 : 1
 
   project  = var.workload_project_id
   location = var.region
@@ -345,14 +512,25 @@ resource "google_cloud_run_v2_job_iam_member" "monitor_scheduler" {
   member   = "serviceAccount:${var.runtime_service_accounts.scheduler_invoker}"
 }
 
+resource "google_cloud_run_v2_job_iam_member" "monitor_release" {
+  count = length(local.enabled_database_contracts) == 0 || var.recovery_mode ? 0 : 1
+
+  project  = var.workload_project_id
+  location = var.region
+  name     = google_cloud_run_v2_job.postgres_backup_monitor[0].name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:infra-release@${var.management_project_id}.iam.gserviceaccount.com"
+}
+
 resource "google_cloud_scheduler_job" "postgres_backup" {
-  for_each = local.enabled_database_contracts
+  for_each = var.recovery_mode ? {} : local.enabled_database_contracts
 
   project   = var.workload_project_id
   region    = var.region
   name      = "agora-postgres-backup-${each.value.object_key}"
   schedule  = each.value.backup_cron
   time_zone = "Etc/UTC"
+  paused    = try(var.application_release.rollout.phase, null) != "active"
 
   attempt_deadline = "180s"
 
@@ -379,13 +557,14 @@ resource "google_cloud_scheduler_job" "postgres_backup" {
 }
 
 resource "google_cloud_scheduler_job" "postgres_restore" {
-  for_each = local.enabled_database_contracts
+  for_each = var.recovery_mode ? {} : local.enabled_database_contracts
 
   project   = var.workload_project_id
   region    = var.region
   name      = "agora-postgres-restore-${each.value.object_key}"
   schedule  = each.value.restore_cron
   time_zone = "Etc/UTC"
+  paused    = try(var.application_release.rollout.phase, null) != "active"
 
   attempt_deadline = "180s"
 
@@ -412,13 +591,14 @@ resource "google_cloud_scheduler_job" "postgres_restore" {
 }
 
 resource "google_cloud_scheduler_job" "postgres_backup_monitor" {
-  count = length(local.enabled_database_contracts) == 0 ? 0 : 1
+  count = length(local.enabled_database_contracts) == 0 || var.recovery_mode ? 0 : 1
 
   project   = var.workload_project_id
   region    = var.region
   name      = "agora-postgres-backup-monitor"
   schedule  = "5 * * * *"
   time_zone = "Etc/UTC"
+  paused    = try(var.application_release.rollout.phase, null) != "active"
 
   attempt_deadline = "180s"
 

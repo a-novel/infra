@@ -66,6 +66,14 @@ run "builds_the_protected_management_plane" {
       google_storage_bucket.state.uniform_bucket_level_access &&
       google_storage_bucket.state.versioning[0].enabled &&
       google_storage_bucket.state.soft_delete_policy[0].retention_duration_seconds == 604800 &&
+      anytrue([
+        for rule in google_storage_bucket.state.lifecycle_rule :
+        try(
+          one(rule.condition).age == 2 &&
+          toset(one(rule.condition).matches_prefix) == toset(["bootstrap/plans/", "foundation/plans/", "release/plans/"]),
+          false,
+        )
+      ]) &&
       !google_storage_bucket.state.force_destroy
     )
     error_message = "The state bucket lost a durability or public-access safeguard."
@@ -79,6 +87,22 @@ run "builds_the_protected_management_plane" {
       google_storage_managed_folder.state["release"].name == "release/"
     )
     error_message = "State roots no longer have three independent managed-folder boundaries."
+  }
+
+  assert {
+    condition = (
+      length(google_storage_managed_folder.receipt) == 3 &&
+      toset([for folder in values(google_storage_managed_folder.receipt) : folder.name]) == toset([
+        "production/",
+        "production/success/",
+        "recovery/",
+      ]) &&
+      alltrue([
+        for folder in values(google_storage_managed_folder.receipt) :
+        folder.deletion_policy == "PREVENT" && !folder.force_destroy
+      ])
+    )
+    error_message = "Production and recovery receipts must remain separate deletion-protected managed-folder boundaries."
   }
 
   assert {
@@ -131,7 +155,7 @@ run "builds_the_protected_management_plane" {
       !contains(["roles/owner", "roles/editor"], binding.role)
       ]) && alltrue([
       for key in keys(google_project_iam_member.automation) :
-      startswith(key, "plan:") || startswith(key, "foundation:")
+      startswith(key, "plan:") || startswith(key, "foundation:") || startswith(key, "release:") || startswith(key, "recovery:")
     ])
     error_message = "An automation identity received a primitive Owner or Editor role."
   }
@@ -141,7 +165,9 @@ run "builds_the_protected_management_plane" {
       contains(local.operator_project_roles, "roles/logging.privateLogViewer") &&
       !contains(local.plan_project_roles, "roles/logging.viewer") &&
       !contains(local.plan_project_roles, "roles/iam.securityReviewer") &&
-      !contains(local.foundation_project_roles, "roles/logging.configWriter")
+      !contains(local.foundation_project_roles, "roles/logging.configWriter") &&
+      local.release_project_roles == toset(["roles/secretmanager.viewer"]) &&
+      local.recovery_project_roles == toset(["roles/secretmanager.viewer"])
     )
     error_message = "Audit access must stay with operators, and automation must not receive broad logging or security-reviewer grants."
   }
@@ -166,12 +192,57 @@ run "builds_the_protected_management_plane" {
   }
 
   assert {
+    condition = toset(google_project_iam_custom_role.recovery_metadata.permissions) == toset([
+      "resourcemanager.projects.get",
+      "resourcemanager.projects.list",
+      "secretmanager.secrets.get",
+      "secretmanager.secrets.getIamPolicy",
+      "secretmanager.secrets.setIamPolicy",
+      "storage.buckets.get",
+      "storage.buckets.getIamPolicy",
+      "storage.buckets.setIamPolicy",
+    ])
+    error_message = "Temporary recovery metadata authority must not read payloads or mutate backup objects."
+  }
+
+  assert {
     condition = (
       google_storage_managed_folder_iam_member.release_state.managed_folder == "release/" &&
       length(google_storage_managed_folder_iam_member.plan_state) == 3 &&
       length(google_storage_managed_folder_iam_member.recovery_state) == 3
     )
     error_message = "State IAM no longer separates plan, release, and recovery authority."
+  }
+
+
+  assert {
+    condition = (
+      google_storage_managed_folder_iam_member.release_receipt_creator.managed_folder == "production/" &&
+      google_storage_managed_folder_iam_member.release_receipt_creator.role == "roles/storage.objectCreator" &&
+      google_storage_managed_folder_iam_member.release_receipt_viewer.managed_folder == "production/" &&
+      google_storage_managed_folder_iam_member.release_receipt_viewer.role == "roles/storage.objectViewer" &&
+      google_storage_managed_folder_iam_member.recovery_receipt_viewer.managed_folder == "production/success/" &&
+      google_storage_managed_folder_iam_member.recovery_receipt_viewer.role == "roles/storage.objectViewer" &&
+      google_storage_managed_folder_iam_member.recovery_receipt_creator.managed_folder == "recovery/" &&
+      google_storage_managed_folder_iam_member.recovery_receipt_creator.role == "roles/storage.objectCreator"
+    )
+    error_message = "Release and recovery receipt authority crossed its managed-folder boundary."
+  }
+
+  assert {
+    condition = (
+      google_storage_bucket_iam_member.recovery_backup_viewer.role == "roles/storage.objectViewer" &&
+      one(google_storage_bucket_iam_member.recovery_backup_viewer.condition).title == "RecoveryManifestsOnly" &&
+      strcontains(
+        one(google_storage_bucket_iam_member.recovery_backup_viewer.condition).expression,
+        "objects/v1/",
+      ) &&
+      strcontains(
+        one(google_storage_bucket_iam_member.recovery_backup_viewer.condition).expression,
+        "completed.manifest",
+      )
+    )
+    error_message = "The recovery workflow must inspect only committed manifests and never read database dumps."
   }
 
   assert {
@@ -185,11 +256,6 @@ run "builds_the_protected_management_plane" {
       ])
     )
     error_message = "Secret containers lost their expected count or recovery protections."
-  }
-
-  assert {
-    condition     = length(google_secret_manager_secret_iam_member.recovery) == 9
-    error_message = "Recovery must retain explicit per-secret access."
   }
 
   assert {

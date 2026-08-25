@@ -79,30 +79,70 @@ if ! command -v gcloud >/dev/null 2>&1; then
     exit 69
 fi
 
-# This shared gate is also mandatory before migrations. It checks foundation's
-# seven-key metadata boundary, a ready scheduled snapshot no older than six
-# hours, and fresh logical backups before this helper can mutate the MIG.
-"${SCRIPT_DIR}/prepare-database-change.sh" \
-    "${WORKLOAD_PROJECT_ID}" \
-    "${DATABASE_ZONE}" \
-    "${RELEASE_REVISION}"
+# The protected orchestrator runs the shared gate before any mutation. Direct
+# operator use still runs it here. A proof is short-lived, exact, private local
+# workflow state; it is not an authorization credential.
+if [ -n "${DATABASE_CHANGE_PROOF:-}" ]; then
+    NOW_EPOCH="$(date -u +%s)"
+    if ! jq --exit-status \
+        --arg project "${WORKLOAD_PROJECT_ID}" \
+        --arg zone "${DATABASE_ZONE}" \
+        --arg revision "${RELEASE_REVISION}" \
+        --argjson now "${NOW_EPOCH}" '
+          type == "object" and
+          keys == ["checkedAt", "currentMetadataSha256", "project", "revision", "zone"] and
+          .project == $project and
+          .zone == $zone and
+          .revision == $revision and
+          (.currentMetadataSha256 | test("^[a-f0-9]{64}$")) and
+          (.checkedAt | type == "number") and
+          .checkedAt <= ($now + 30) and
+          .checkedAt >= ($now - 600)
+        ' "${DATABASE_CHANGE_PROOF}" >/dev/null; then
+        printf 'The database change preflight proof is invalid or stale.\n' >&2
+        exit 70
+    fi
+else
+    "${SCRIPT_DIR}/prepare-database-change.sh" \
+        "${WORKLOAD_PROJECT_ID}" \
+        "${DATABASE_ZONE}" \
+        "${RELEASE_REVISION}"
+fi
 
 # The group's OPPORTUNISTIC policy ensures allInstancesConfig acts only on new
 # members by itself. The second command is therefore mandatory and caps the
 # existing member's action at RESTART: a pending template or disk change that
 # would require replacement fails closed.
-gcloud compute instance-groups managed all-instances-config update "${DATABASE_GROUP}" \
+if ! gcloud compute instance-groups managed all-instances-config update "${DATABASE_GROUP}" \
     --project="${WORKLOAD_PROJECT_ID}" \
     --zone="${DATABASE_ZONE}" \
     --metadata="agora-database-release-revision=${RELEASE_REVISION},agora-json-keys-database-image=${JSON_KEYS_IMAGE},agora-authentication-database-image=${AUTHENTICATION_IMAGE},agora-json-keys-postgres-password-version=${JSON_KEYS_PASSWORD_VERSION},agora-authentication-postgres-password-version=${AUTHENTICATION_PASSWORD_VERSION},agora-json-keys-postgres-backup-password-version=${JSON_KEYS_BACKUP_PASSWORD_VERSION},agora-authentication-postgres-backup-password-version=${AUTHENTICATION_BACKUP_PASSWORD_VERSION}" \
-    --quiet
+    --quiet >/dev/null 2>&1; then
+    printf 'Database release metadata could not be updated.\n' >&2
+    exit 70
+fi
 
-gcloud compute instance-groups managed update-instances "${DATABASE_GROUP}" \
+if ! gcloud compute instance-groups managed update-instances "${DATABASE_GROUP}" \
     --project="${WORKLOAD_PROJECT_ID}" \
     --zone="${DATABASE_ZONE}" \
     --all-instances \
     --minimal-action=restart \
     --most-disruptive-allowed-action=restart \
-    --quiet
+    --quiet >/dev/null 2>&1; then
+    printf 'The bounded database restart could not be requested.\n' >&2
+    exit 70
+fi
+
+# Compute accepts an update request before the singleton has necessarily
+# completed its restart. Do not start migrations while the MIG is still moving.
+if ! gcloud compute instance-groups managed wait-until "${DATABASE_GROUP}" \
+    --project="${WORKLOAD_PROJECT_ID}" \
+    --zone="${DATABASE_ZONE}" \
+    --stable \
+    --timeout=600 \
+    --quiet >/dev/null 2>&1; then
+    printf 'The database host did not become stable after its restart.\n' >&2
+    exit 70
+fi
 
 printf 'Database release metadata was applied; readiness still requires the protected health gate.\n'

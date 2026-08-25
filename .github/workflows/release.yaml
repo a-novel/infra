@@ -1,0 +1,193 @@
+name: production release
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Deploy the reviewed manifest, or restore an exact prior receipt.
+        required: true
+        type: choice
+        options: [deploy, rollback]
+      target_receipt:
+        description: Rollback only; immutable run-id-attempt from the receipt inventory.
+        required: false
+        type: string
+
+run-name: "production ${{ inputs.action }} by @${{ github.actor }}"
+
+permissions: {}
+
+concurrency:
+  group: production-infrastructure
+  cancel-in-progress: false
+
+env:
+  TF_IN_AUTOMATION: "true"
+  CLOUDSDK_CORE_DISABLE_PROMPTS: "1"
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    # Sequential database safety checks and clean restores each keep their own
+    # bounded timeout; the workflow ceiling must not cancel a valid slow run.
+    timeout-minutes: 360
+    environment: production-release
+    permissions:
+      attestations: read
+      contents: read
+      id-token: write
+      pull-requests: read
+    steps:
+      - name: Check out the exact master commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install reviewed release tooling
+        shell: bash
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Materialize protected non-payload configuration
+        id: config
+        shell: bash
+        env:
+          RELEASE_CONFIG: ${{ secrets.RELEASE_CONFIG_JSON }}
+        run: |
+          set -euo pipefail
+          umask 077
+          file="${RUNNER_TEMP}/release-config.json"
+          printf '%s' "${RELEASE_CONFIG}" >"${file}"
+          jq --exit-status 'type == "object"' "${file}" >/dev/null
+          printf 'file=%s\n' "${file}" >>"${GITHUB_OUTPUT}"
+
+      # Verification happens before Google credentials exist. Pulling and
+      # inspecting an image never executes its entrypoint.
+      - name: Compile source-image verification inputs
+        if: inputs.action == 'deploy'
+        shell: bash
+        env:
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_SHA: ${{ github.sha }}
+          RELEASE_ACTION: deploy
+          RELEASE_CONFIG_FILE: ${{ steps.config.outputs.file }}
+        run: |
+          set -euo pipefail
+          umask 077
+          ./ops/compile-release.mjs \
+            deploy/production/images.yaml "${RELEASE_CONFIG_FILE}" - \
+            "${RUNNER_TEMP}/source-verification"
+
+      - name: Verify source provenance, digest, and PostgreSQL major
+        if: inputs.action == 'deploy'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./ops/verify-release-images.sh "${RUNNER_TEMP}/source-verification/release.json"
+
+      - name: Authenticate as the release boundary
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_RELEASE_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_RELEASE_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Install the pinned Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+        with:
+          version: "581.0.0"
+
+      - name: Install OpenTofu
+        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version_file: .opentofu-version
+          tofu_wrapper: false
+          cache: true
+
+      - name: Authenticate Docker to the regional registry
+        shell: bash
+        env:
+          RELEASE_CONFIG_FILE: ${{ steps.config.outputs.file }}
+        run: |
+          set -euo pipefail
+          region="$(jq --raw-output '.region' "${RELEASE_CONFIG_FILE}")"
+          gcloud auth configure-docker "${region}-docker.pkg.dev" --quiet >/dev/null 2>&1
+
+      - name: Select the receipt-owned prior state
+        id: prior
+        shell: bash
+        env:
+          ACTION: ${{ inputs.action }}
+          RECEIPT_BUCKET: ${{ vars.GCP_RECEIPT_BUCKET }}
+          TARGET_RECEIPT: ${{ inputs.target_receipt }}
+        run: |
+          set -euo pipefail
+          umask 077
+          file="${RUNNER_TEMP}/prior-receipt.json"
+          if [ "${ACTION}" = rollback ]; then
+            ./ops/receipt-custody.sh fetch \
+              "${RECEIPT_BUCKET}" "${file}" "${TARGET_RECEIPT}"
+            printf 'argument=%s\n' "${file}" >>"${GITHUB_OUTPUT}"
+          else
+            set +e
+            ./ops/receipt-custody.sh latest "${RECEIPT_BUCKET}" "${file}"
+            code=$?
+            set -e
+            if [ "${code}" -eq 0 ]; then
+              printf 'argument=%s\n' "${file}" >>"${GITHUB_OUTPUT}"
+            elif [ "${code}" -eq 4 ]; then
+              printf 'argument=-\n' >>"${GITHUB_OUTPUT}"
+            else
+              exit "${code}"
+            fi
+          fi
+
+      - name: Compile exact candidate, active, and compensation inputs
+        shell: bash
+        env:
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_SHA: ${{ github.sha }}
+          PRIOR_RECEIPT: ${{ steps.prior.outputs.argument }}
+          RELEASE_ACTION: ${{ inputs.action }}
+          RELEASE_CONFIG_FILE: ${{ steps.config.outputs.file }}
+        run: |
+          set -euo pipefail
+          umask 077
+          ./ops/compile-release.mjs \
+            deploy/production/images.yaml "${RELEASE_CONFIG_FILE}" \
+            "${PRIOR_RECEIPT}" "${RUNNER_TEMP}/release"
+
+      - name: Execute the fixed release graph
+        if: inputs.action == 'deploy'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RECEIPT_BUCKET: ${{ vars.GCP_RECEIPT_BUCKET }}
+          RELEASE_DIRECTORY: ${{ runner.temp }}/release
+          STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
+        run: ./ops/release-orchestrator.sh ./ops/google-release-driver.sh
+
+      - name: Restore the exact selected receipt
+        if: inputs.action == 'rollback'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RECEIPT_BUCKET: ${{ vars.GCP_RECEIPT_BUCKET }}
+          RELEASE_DIRECTORY: ${{ runner.temp }}/release
+          STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
+        run: |
+          set -euo pipefail
+          ./ops/google-release-driver.sh preflight
+          ./ops/google-release-driver.sh rollback

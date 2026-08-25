@@ -19,36 +19,45 @@ the dedicated runtime identity, so release automation never reads a credential.
 Release resources keep Google-level deletion protection off because intentional cleanup must remain
 possible through the repository's reviewed deletion authorization. The plan policy blocks every
 managed-resource delete, replacement, and state-forget action unless the protected workflow proves
-the deliberate deletion label. This root has no workflow caller yet, so that exception is not
-currently executable.
+the deliberate deletion label was added by a maintainer and present when the exact PR merged. The
+manual workflow rechecks that historical evidence during both plan and apply.
 
 Routine database deployment is one tested imperative edge. The
 [`deploy-database-release.sh`](../../../ops/deploy-database-release.sh) helper updates exactly seven
 non-secret values on the existing foundation-owned managed instance group: commit revision, two
 database image digests, two owner-password version numbers, and two backup-password version numbers.
-It rejects any missing or extra field and caps the live member action at `RESTART`.
+It rejects any missing or extra field, caps the live member action at `RESTART`, and waits for the
+group to become stable. An application-only release retains the preceding database revision and
+skips this restart entirely.
 
 Before a database image change or migration, the shared
 [`prepare-database-change.sh`](../../../ops/prepare-database-change.sh) gate requires a ready
 foundation-scheduled snapshot no older than six hours and synchronously creates both logical
 backups. The empty first database release is the sole logical-backup exception because no cluster
-exists yet; it still requires the snapshot. Release can list snapshot metadata but cannot create or
-delete snapshots.
+exists yet; it still requires the snapshot. A private SHA-256 proof also requires all seven live MIG
+metadata fields to match the latest immutable receipt, preventing a missing receipt or manual drift
+from being treated as first launch or silently overwritten. Release can list snapshot metadata but
+cannot create or delete snapshots.
 
 For later image changes, the gate runs against the still-deployed source-image backup jobs before
 the database host changes. After the new clusters pass health checks, the release root reconciles
 the recovery jobs to the new image digests. The server-reported startup marker rejects the opposite
 order.
 
-The protected deployment workflow must follow the fixed database → JSON Keys migration and seed
-rotation → Authentication migration → private service → public service order and restore the prior
-receipt if a health gate fails. Authentication initialization stays outside this graph because it can
-reset the first administrator's password and role. On the first launch, promotion pauses after the
-Authentication migration until a named human runs the initializer and the workflow records that exact
-successful execution. Later releases and every rollback omit initialization. Backward-compatible
-migrations remain applied; restoring database contents is a separate recovery operation. Until that
-workflow can create zero-traffic candidate revisions, smoke-test them, and shift traffic, the optional
-application release input must remain unset.
+The protected deployment workflow follows the fixed database → JSON Keys migration and seed rotation
+→ Authentication migration → backup/clean-restore verification → private service → dependent health
+check → public service order and restores the prior receipt if a health gate fails. Authentication
+initialization stays outside automation because it can reset the first administrator's password and
+role. On the first launch, promotion pauses after recovery verification until a named human runs the
+initializer and the workflow records that exact successful execution. Later releases and every
+rollback omit initialization. Backward-compatible migrations remain applied; restoring database
+contents is a separate recovery operation.
+
+Candidate reconciliation pauses every Cloud Scheduler entry before migrations or application
+traffic changes. The final active reconciliation resumes them only after recovery verification,
+both smoke checks, and both traffic shifts pass; compensation restores the prior active pause state.
+This prevents periodic work from running against a half-migrated release without deleting and
+recreating schedules.
 
 ## Current status
 
@@ -61,9 +70,11 @@ runs once per deployment and every hour. Only named human principals may execute
 has no scheduler or release invoker. The application contract itself requires both database release
 contracts. Both components remain disabled in the production image manifest.
 
-No protected release workflow exists yet, so the root has no authenticated caller and cannot be
-applied from GitHub or an operator checkout. Merging or validating this code creates no Cloud Run
-revision or execution, Storage object, scheduler entry, or other cloud resource.
+The protected release workflow is the root's only authenticated caller. It plans and applies only
+from the reviewed `master` commit through the `production-release` GitHub environment; pull requests
+and operator checkouts can validate but cannot authenticate or apply. Merging or validating this
+code creates no Cloud Run revision or execution, Storage object, scheduler entry, or other cloud
+resource. A maintainer must dispatch the workflow explicitly.
 
 ## Resource inventory
 
@@ -75,10 +86,10 @@ maintainer must understand; ordinary OpenTofu syntax is not repeated.
 | `google_cloud_run_v2_job.postgres_backup`                  | Two scale-to-zero, single-task jobs use the exact promoted database images to create custom-format logical dumps. Each job mounts one exact numeric backup-password version and writes only to an ephemeral shared volume.                                                                                 | Jobs retry once and time out after 30 minutes. The database image uses 1 vCPU/1 GiB; the stock uploader sidecar uses 1 vCPU/512 MiB. Both share the supported 10 GiB minimum Preview disk only while running. Jobs have no ingress.                                                                                                                                                              | [Provider job resource](https://registry.terraform.io/providers/hashicorp/google/7.45.0/docs/resources/cloud_run_v2_job), [Cloud Run jobs](https://cloud.google.com/run/docs/create-jobs), [ephemeral disk](https://cloud.google.com/run/docs/configuring/jobs/ephemeral-disk), [multi-container jobs](https://cloud.google.com/run/docs/create-jobs#multi-container), [`pg_dump`](https://www.postgresql.org/docs/18/app-pgdump.html)                         |
 | `google_cloud_run_v2_job.postgres_restore`                 | Two monthly jobs mount the backup bucket read-only, validate the newest committed manifest and SHA-256, then restore into a fresh local cluster with the matching database image and hardcoded service smoke checks. They receive no secret and have no production-database route.                         | Jobs do not retry and time out after 60 minutes. Each uses 2 vCPU/4 GiB plus the supported 10 GiB minimum Preview disk only while running. A failed restore cannot mutate production.                                                                                                                                                                                                            | [Provider job resource](https://registry.terraform.io/providers/hashicorp/google/7.45.0/docs/resources/cloud_run_v2_job), [ephemeral disk](https://cloud.google.com/run/docs/configuring/jobs/ephemeral-disk), [Cloud Storage volume mounts](https://cloud.google.com/run/docs/configuring/jobs/cloud-storage-volume-mounts), [`pg_restore`](https://www.postgresql.org/docs/18/app-pgrestore.html)                                                            |
 | `google_cloud_run_v2_job.postgres_backup_monitor`          | One hourly job checks both completion manifests, the six-hour RPO, matching archive size, and all retained logical-backup bytes without reading row payloads.                                                                                                                                              | It retries once, times out after five minutes, and fails above 250 GiB retained bytes. The threshold includes EU write replication and a monthly restore read while leaving headroom below the USD 20/month design gate.                                                                                                                                                                         | [Provider job resource](https://registry.terraform.io/providers/hashicorp/google/7.45.0/docs/resources/cloud_run_v2_job), [Cloud Run job monitoring](https://cloud.google.com/run/docs/monitor-jobs), [Cloud Storage pricing](https://cloud.google.com/storage/pricing)                                                                                                                                                                                        |
-| `google_cloud_run_v2_job_iam_member.*`                     | Grants normal execution on exact jobs: scheduler on five recovery jobs and rotation, release on three automated application jobs, and named humans on Authentication initialization.                                                                                                                       | No binding grants execution overrides or public access. The initializer job has no automation principal. Release's exact custom Cloud Run role can maintain these policies without Cloud Run Admin. IAM has no fixed charge.                                                                                                                                                                     | [Provider job IAM resource](https://registry.terraform.io/providers/hashicorp/google/7.45.0/docs/resources/cloud_run_v2_job_iam), [Cloud Run IAM roles](https://cloud.google.com/run/docs/reference/iam/roles), [execute jobs](https://cloud.google.com/run/docs/execute/jobs)                                                                                                                                                                                 |
+| `google_cloud_run_v2_job_iam_member.*`                     | Grants normal execution on exact jobs: scheduler on five production recovery jobs and rotation; release on three production application jobs plus the five recovery-verification jobs; recovery on only two replacement restore jobs; and named humans on production Authentication initialization.        | No binding grants execution overrides or public access. Production backup, drill, migration, rotation, monitor, and initializer jobs do not exist in recovery mode. The exact custom Cloud Run role maintains policy without Cloud Run Admin. IAM has no fixed charge.                                                                                                                           | [Provider job IAM resource](https://registry.terraform.io/providers/hashicorp/google/7.45.0/docs/resources/cloud_run_v2_job_iam), [Cloud Run IAM roles](https://cloud.google.com/run/docs/reference/iam/roles), [execute jobs](https://cloud.google.com/run/docs/execute/jobs)                                                                                                                                                                                 |
 | `google_cloud_run_v2_job.application`                      | Four explicit, no-ingress jobs run JSON Keys migrations and rotation, Authentication migrations, and manual first-admin initialization. The initializer has a dedicated identity; Authentication REST cannot read its bootstrap password. Each job uses an exact image digest and numeric secret versions. | Every execution is a singleton on 1 vCPU/512 MiB. Migrations do not retry; idempotent rotation and initialization retry once. Timeouts are five or ten minutes. `ALL_TRAFFIC` plus the NAT-free VPC denies public egress, and jobs are billed only while running.                                                                                                                                | [Provider job resource](https://registry.terraform.io/providers/hashicorp/google/7.45.0/docs/resources/cloud_run_v2_job), [Cloud Run jobs](https://cloud.google.com/run/docs/create-jobs), [Direct VPC egress](https://cloud.google.com/run/docs/configuring/vpc-direct-vpc), [Cloud Run secrets](https://cloud.google.com/run/docs/configuring/services/secrets)                                                                                              |
 | `google_cloud_run_v2_service.json_keys`                    | Runs JSON Keys on private Cloud Run ingress with its dedicated identity, h2c on port 8080, exact master-key/DSN versions, and the JSON Keys database path. All egress enters the deny-by-default VPC; there is no public internet route.                                                                   | The service scales from zero to three instances at concurrency 20 on 1 vCPU/512 MiB with request-based CPU. A bounded TCP startup probe checks the actual listener; the image's standard gRPC health endpoint currently alternates state for echo testing and is not a safe restart signal.                                                                                                      | [Provider service resource](https://registry.terraform.io/providers/hashicorp/google/7.45.0/docs/resources/cloud_run_v2_service), [Cloud Run ingress](https://cloud.google.com/run/docs/securing/ingress), [end-to-end HTTP/2](https://cloud.google.com/run/docs/configuring/http2), [health checks](https://cloud.google.com/run/docs/configuring/healthchecks), [Direct VPC egress](https://cloud.google.com/run/docs/configuring/vpc-direct-vpc)            |
-| `google_cloud_run_v2_service_iam_member.json_keys_invoker` | Grants `roles/run.invoker` on JSON Keys only to Authentication and the protected release/recovery identities used for rollout and recovery checks.                                                                                                                                                         | Three additive bindings contain no public or general authenticated principal. Internal ingress and signed identity are independent requirements. IAM has no fixed charge.                                                                                                                                                                                                                        | [Provider service IAM resource](https://registry.terraform.io/providers/hashicorp/google/7.45.0/docs/resources/cloud_run_v2_service_iam), [service-to-service authentication](https://cloud.google.com/run/docs/authenticating/service-to-service), [Cloud Run IAM roles](https://cloud.google.com/run/docs/reference/iam/roles)                                                                                                                               |
+| `google_cloud_run_v2_service_iam_member.json_keys_invoker` | Grants `roles/run.invoker` on JSON Keys only to Authentication, its sole runtime caller. Release and recovery inspect the revision through the control plane and receive no data-plane invocation grant.                                                                                                   | The single additive binding contains no public, general authenticated, or automation principal. Internal ingress and signed identity are independent requirements. IAM has no fixed charge.                                                                                                                                                                                                      | [Provider service IAM resource](https://registry.terraform.io/providers/hashicorp/google/7.45.0/docs/resources/cloud_run_v2_service_iam), [service-to-service authentication](https://cloud.google.com/run/docs/authenticating/service-to-service), [Cloud Run IAM roles](https://cloud.google.com/run/docs/reference/iam/roles)                                                                                                                               |
 | `google_cloud_run_v2_service.authentication`               | Runs the public REST edge with its dedicated identity, exact DSN/SMTP password versions, private JSON Keys host on port 443, and managed TLS SMTP on port 587. Private destinations use Direct VPC; SMTP uses Cloud Run managed public egress without NAT.                                                 | The service scales from zero to three instances at concurrency 20 on 1 vCPU/512 MiB. Instance-based CPU lets detached mail sends drain after a response; SMTP and shutdown are capped at five and nine seconds. `/v2/ping` startup/liveness probes test only the process. Disabling the Invoker IAM check is Google's recommended public-service configuration and avoids an `allUsers` binding. | [Provider service resource](https://registry.terraform.io/providers/hashicorp/google/7.45.0/docs/resources/cloud_run_v2_service), [public access](https://cloud.google.com/run/docs/authenticating/public), [billing settings](https://cloud.google.com/run/docs/configuring/cpu-allocation), [health checks](https://cloud.google.com/run/docs/configuring/healthchecks), [private networking](https://cloud.google.com/run/docs/securing/private-networking) |
 | `google_cloud_scheduler_job.postgres_backup`               | Starts JSON Keys at minute 15 and Authentication at minute 45 every four hours using OAuth as the exact scheduler identity.                                                                                                                                                                                | One API retry handles transient dispatch failure. Scheduler acceptance is not execution success; the Cloud Run metric remains authoritative. Scheduler is usage-priced with a small free allowance.                                                                                                                                                                                              | [Provider scheduler resource](https://registry.terraform.io/providers/hashicorp/google/7.45.0/docs/resources/cloud_scheduler_job), [authenticated HTTP targets](https://cloud.google.com/scheduler/docs/http-target-auth)                                                                                                                                                                                                                                      |
 | `google_cloud_scheduler_job.postgres_restore`              | Starts both clean restore drills on the first day of each month at 03:15 and 03:45 UTC.                                                                                                                                                                                                                    | Monthly scale-to-zero execution measures recoverability without a permanent staging cluster. A failed execution alerts and never reaches production PostgreSQL.                                                                                                                                                                                                                                  | [Provider scheduler resource](https://registry.terraform.io/providers/hashicorp/google/7.45.0/docs/resources/cloud_scheduler_job), [Cloud Scheduler overview](https://cloud.google.com/scheduler/docs/overview)                                                                                                                                                                                                                                                |
@@ -105,13 +116,14 @@ to read the Authentication DSN and bootstrap password; the REST identity cannot 
 No release or scheduler binding targets this job, and normal invocation cannot override its image,
 arguments, environment, task count, or timeout.
 
-The release identity receives `roles/run.invoker` only on both migrations and JSON Keys rotation.
+The release identity receives `roles/run.invoker` only on both migrations, JSON Keys rotation, and
+the five backup/clean-restore verification jobs. It has no project-wide run or override permission.
 Rotation seeds the database after migration during a deployment, then Cloud Scheduler evaluates the
 same idempotent job hourly as the foundation-owned scheduler identity. The initializer remains an
 operator action independent of release success or rollback.
 
-JSON Keys combines Cloud Run internal ingress with an exact IAM invoker allowlist. Its h2c listener
-is therefore callable only by approved internal identities, even though Cloud Run assigns the
+JSON Keys combines Cloud Run internal ingress with an exact Authentication-only IAM invoker
+allowlist. Its h2c listener is therefore callable only by that approved internal identity, even though Cloud Run assigns the
 service a `run.app` URI. `ALL_TRAFFIC` Direct VPC egress, workload tags, restricted Google API
 routes, and the VPC deny fallback give it database and supported Google API access without public
 internet access.
@@ -123,10 +135,11 @@ Private Google Access IP ranges into the VPC while arbitrary public destinations
 Cloud Run managed egress. Private `run.app` DNS therefore keeps the JSON Keys call internal, while
 TLS SMTP on port 587 needs no connector, NAT, proxy, or load balancer.
 
-Both service blocks currently express the API's bootstrap default of 100% traffic to the latest
-ready revision. The application input must stay unset until protected deployment replaces this with
-receipt-owned explicit revision targets: the candidate receives zero traffic, passes smoke checks,
-then JSON Keys shifts before Authentication. This repository has no unsafe interim caller.
+Both service blocks use receipt-owned explicit revision targets. A candidate is named immutably,
+tagged, and assigned zero traffic while the prior receipt remains at 100%. JSON Keys becomes Ready
+and moves first. Authentication's tagged candidate `/v2/healthcheck` then proves its PostgreSQL,
+SMTP, and newly active private JSON Keys gRPC dependencies before public traffic moves. On first
+launch the private service may move safely before the public edge because it has no external ingress.
 
 ## Backup and restore contract
 
@@ -142,6 +155,10 @@ SHA-256, archive catalog,
 single-transaction restore, the exact `plpgsql`/`uuid-ossp` extension set, declared service
 tables/integrity, and validated constraints. A clean
 restore cluster listens only on a local Unix socket.
+
+Disposable recovery deliberately omits the backup writer, clean-drill/monitor, migration, rotation,
+and initializer jobs and their secret grants. Its restore identity keeps bucket read-only access and
+adds only the two exact owner-password versions needed to restore into the empty replacement host.
 
 The stock [`alpine/curl`](https://hub.docker.com/r/alpine/curl) uploader/monitor image is pinned by
 complete stable SemVer and digest. The uploader command drops from the image's root default to its
@@ -165,6 +182,11 @@ Required inputs are:
 `database_releases` is empty by default and must contain exactly `authentication` and `json_keys`, or
 neither. Enabling one database alone fails validation. Images must match the exact production
 Artifact Registry repository in the selected project and region.
+
+Recovery-only inputs are generated by `compile-recovery.mjs` and are rejected in production state.
+They bind the source project, the receipt-owned source database private address and image digests,
+both exact backup attempts, and both numeric owner-password versions. The source address validates
+the archive manifest only; `database_private_ip` remains the distinct empty replacement target.
 
 `application_release` is null by default. When enabled, it requires both database releases, all six
 promoted job/service digests, the five exact positive secret versions consumed by those runtimes,

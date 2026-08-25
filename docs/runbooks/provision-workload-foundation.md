@@ -6,24 +6,22 @@ inputs, project adoption, private routing, runtime identities, Artifact Registry
 the idle private PostgreSQL host, daily snapshots, recovery IAM/alerting, and removal of temporary
 broad access.
 
-## Current stop condition
+## Authorization gate
 
-Do not execute any mutating command in this runbook yet. The repository defines the resources but
-does not contain `.github/workflows/foundation.yaml`; merging and local validation create nothing.
-Resource creation requires all of the following:
+Merging this repository creates nothing. Do not execute a mutating command or dispatch `apply` until
+the user responsible for this Google Cloud account explicitly authorizes resource creation and all
+of the following are true:
 
 1. the management-plane bootstrap is applied, migrated to remote state, and independently verified;
-2. the protected foundation workflow exists on `master` and authenticates through its exact WIF
-   provider;
+2. `.github/workflows/foundation.yaml` exists on `master` and authenticates through its exact WIF provider;
 3. `production-foundation` requires a reviewer, disallows administrator bypass, and accepts only
    protected `master` deployments;
 4. a maintainer explicitly authorizes the initial workload-project creation;
-5. the protected workflow updates this runbook with its exact dispatch command and saved-plan review
-   procedure.
+5. the plan run completed from the same current `master` commit and its sanitized summary was reviewed.
 
-Agents never run `gcloud`, `tofu apply`, or the one-time import. Operators must not substitute a local
-OpenTofu apply: it would bypass protected approval, remote plan custody, log sanitization, and the
-root-specific automation identity.
+Agents never run `gcloud` or `tofu apply`. Operators must not substitute a local OpenTofu apply: it
+would bypass protected approval, remote plan custody, log sanitization, and the root-specific
+automation identity.
 
 ## Result and non-result
 
@@ -90,6 +88,7 @@ the billing ID and personal email still stay out of public logs.
 ```bash
 set -euo pipefail
 set +x
+umask 077
 
 REPOSITORY='a-novel/infra'
 REGION='europe-west1'
@@ -106,6 +105,7 @@ read -r -p 'Organization ID, or blank: ' ORGANIZATION_ID
 read -r -p 'Folder ID, or blank: ' FOLDER_ID
 
 FOUNDATION_SERVICE_ACCOUNT="infra-foundation@${MANAGEMENT_PROJECT_ID}.iam.gserviceaccount.com"
+PLAN_SERVICE_ACCOUNT="infra-plan@${MANAGEMENT_PROJECT_ID}.iam.gserviceaccount.com"
 
 [[ "$MANAGEMENT_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
 [[ "$WORKLOAD_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
@@ -176,8 +176,8 @@ authoritative creation attempt; never weaken IAM or guess around an `ALREADY_EXI
 ### Organization or folder path (preferred when one already exists)
 
 Do not buy or create an organization solely for this deployment. When an organization/folder exists,
-grant project creation only at the narrowest selected parent. These commands are mutating and remain
-blocked by the current stop condition.
+grant project creation only at the narrowest selected parent. These commands are mutating; run them
+only after the authorization gate is lifted.
 
 For a folder:
 
@@ -246,9 +246,9 @@ to a manually created project. Do not enable APIs, attach workloads, edit that V
 network manually. Before its first plan, the protected workflow must import the project into the
 remote foundation state as `google_project.workload`. Applying the declared
 `auto_create_network = false` then deliberately removes Google's empty default VPC before the custom
-production VPC is created. The future workflow owns that one-time adoption; do not run `tofu import`
-or delete the default VPC from a local checkout. If the workflow does not yet expose this reviewed
-path, stop here.
+production VPC is created. Set `adopt_existing_project` in the protected configuration below;
+OpenTofu's declarative import block then shows the adoption in the saved plan and performs it only
+during exact-plan apply. Do not run `tofu import` or delete the default VPC from a local checkout.
 
 Verification:
 
@@ -268,7 +268,7 @@ network.
 
 The foundation identity needs Billing Account User only to attach the new project and Billing Account
 Costs Manager to manage its budget. It does not need Billing Account Administrator. These commands
-are mutating and remain blocked by the current stop condition.
+are mutating; run them only after the authorization gate is lifted.
 
 ```bash
 gcloud billing accounts add-iam-policy-binding "$BILLING_ACCOUNT_ID" \
@@ -279,6 +279,10 @@ gcloud billing accounts add-iam-policy-binding "$BILLING_ACCOUNT_ID" \
   --member="serviceAccount:${FOUNDATION_SERVICE_ACCOUNT}" \
   --role='roles/billing.costsManager' \
   --condition=None
+gcloud billing accounts add-iam-policy-binding "$BILLING_ACCOUNT_ID" \
+  --member="serviceAccount:${PLAN_SERVICE_ACCOUNT}" \
+  --role='roles/billing.viewer' \
+  --condition=None
 ```
 
 Verify without dumping the rest of the billing policy:
@@ -288,12 +292,18 @@ gcloud billing accounts get-iam-policy "$BILLING_ACCOUNT_ID" \
   --flatten='bindings[].members' \
   --filter="bindings.members=serviceAccount:${FOUNDATION_SERVICE_ACCOUNT}" \
   --format='table(bindings.role,bindings.members)'
+gcloud billing accounts get-iam-policy "$BILLING_ACCOUNT_ID" \
+  --flatten='bindings[].members' \
+  --filter="bindings.members=serviceAccount:${PLAN_SERVICE_ACCOUNT}" \
+  --format='table(bindings.role,bindings.members)'
 ```
 
 Expected safe result: exactly `roles/billing.costsManager` and `roles/billing.user`. The latter is
-removed after first convergence; Costs Manager remains so later reviewed budget edits work.
+removed after first convergence; Costs Manager remains so later reviewed budget edits work. The plan
+identity has only `roles/billing.viewer`, which is required to refresh the code-managed budget during
+the read-only drift plan and cannot change billing or spend.
 
-## 4. Store the future protected-workflow inputs
+## 4. Store the protected foundation input bundle
 
 The `production-foundation` environment must already have the protections established by the
 bootstrap runbook. Verify them before writing values:
@@ -308,95 +318,141 @@ policies are disabled, and the intended independent reviewer appears. Confirm ad
 is disabled in **Repository settings → Environments → production-foundation**; GitHub's public API
 does not expose a reliable verification field for that switch.
 
-Store public identifiers as environment variables:
+Store one complete JSON document instead of a collection of loosely coupled variables. This keeps
+the workflow interface small, masks privileged human identifiers and billing metadata as one value,
+and lets the compiler reuse the same reviewed capacity defaults for a disposable recovery project.
+It contains no application secret payload.
 
 ```bash
-gh variable set MANAGEMENT_PROJECT_ID --repo "$REPOSITORY" --env production-foundation \
-  --body "$MANAGEMENT_PROJECT_ID"
-gh variable set WORKLOAD_PROJECT_ID --repo "$REPOSITORY" --env production-foundation \
-  --body "$WORKLOAD_PROJECT_ID"
-gh variable set WORKLOAD_PROJECT_NAME --repo "$REPOSITORY" --env production-foundation \
-  --body "$WORKLOAD_PROJECT_NAME"
-gh variable set BACKUP_BUCKET_NAME --repo "$REPOSITORY" --env production-foundation \
-  --body "$BACKUP_BUCKET_NAME"
-gh variable set REGION --repo "$REPOSITORY" --env production-foundation --body "$REGION"
-gh variable set DATABASE_ZONE --repo "$REPOSITORY" --env production-foundation \
-  --body "$DATABASE_ZONE"
-gh variable set SUBNET_CIDR --repo "$REPOSITORY" --env production-foundation --body "$SUBNET_CIDR"
-
-if [[ -n "$ORGANIZATION_ID" ]]; then
-  gh variable set ORGANIZATION_ID --repo "$REPOSITORY" --env production-foundation \
-    --body "$ORGANIZATION_ID"
-  gh variable delete FOLDER_ID --repo "$REPOSITORY" --env production-foundation 2>/dev/null || true
-elif [[ -n "$FOLDER_ID" ]]; then
-  gh variable set FOLDER_ID --repo "$REPOSITORY" --env production-foundation --body "$FOLDER_ID"
-  gh variable delete ORGANIZATION_ID --repo "$REPOSITORY" --env production-foundation 2>/dev/null || true
+if [[ -z "$ORGANIZATION_ID" && -z "$FOLDER_ID" ]]; then
+  ADOPT_EXISTING_PROJECT=true
 else
-  gh variable delete ORGANIZATION_ID --repo "$REPOSITORY" --env production-foundation 2>/dev/null || true
-  gh variable delete FOLDER_ID --repo "$REPOSITORY" --env production-foundation 2>/dev/null || true
+  ADOPT_EXISTING_PROJECT=false
 fi
-```
 
-The billing account, notification address, and database operator set are not application secrets,
-but environment secrets prevent a public repository from exposing billing metadata, contact
-identity, or privileged operator identity. Pass them through stdin instead of process arguments:
+FOUNDATION_CONFIG_FILE="$(mktemp)"
+jq -n \
+  --arg management_project_id "$MANAGEMENT_PROJECT_ID" \
+  --arg workload_project_id "$WORKLOAD_PROJECT_ID" \
+  --arg workload_project_name "$WORKLOAD_PROJECT_NAME" \
+  --arg backup_bucket_name "$BACKUP_BUCKET_NAME" \
+  --arg billing_account_id "$BILLING_ACCOUNT_ID" \
+  --arg organization_id "$ORGANIZATION_ID" \
+  --arg folder_id "$FOLDER_ID" \
+  --arg region "$REGION" \
+  --arg subnet_cidr "$SUBNET_CIDR" \
+  --arg database_zone "$DATABASE_ZONE" \
+  --argjson database_operator_principals "$DATABASE_OPERATOR_PRINCIPALS" \
+  --arg cost_alert_email "$COST_ALERT_EMAIL" \
+  --argjson adopt_existing_project "$ADOPT_EXISTING_PROJECT" \
+  '{
+    management_project_id: $management_project_id,
+    workload_project_id: $workload_project_id,
+    workload_project_name: $workload_project_name,
+    backup_bucket_name: $backup_bucket_name,
+    billing_account_id: $billing_account_id,
+    organization_id: (if $organization_id == "" then null else $organization_id end),
+    folder_id: (if $folder_id == "" then null else $folder_id end),
+    region: $region,
+    subnet_cidr: $subnet_cidr,
+    database_zone: $database_zone,
+    database_operator_principals: $database_operator_principals,
+    cost_alert_email: $cost_alert_email,
+    adopt_existing_project: $adopt_existing_project
+  }' >"$FOUNDATION_CONFIG_FILE"
 
-```bash
-printf '%s' "$BILLING_ACCOUNT_ID" \
-  | gh secret set BILLING_ACCOUNT_ID --repo "$REPOSITORY" --env production-foundation
-printf '%s' "$COST_ALERT_EMAIL" \
-  | gh secret set COST_ALERT_EMAIL --repo "$REPOSITORY" --env production-foundation
-printf '%s' "$DATABASE_OPERATOR_PRINCIPALS" \
-  | gh secret set DATABASE_OPERATOR_PRINCIPALS --repo "$REPOSITORY" --env production-foundation
+jq -e '
+  ((.organization_id == null) or (.folder_id == null)) and
+  (.database_operator_principals | length >= 1) and
+  (.adopt_existing_project == ((.organization_id == null) and (.folder_id == null)))
+' "$FOUNDATION_CONFIG_FILE" >/dev/null
+
+for environment in production-foundation production-recovery; do
+  gh secret set FOUNDATION_TFVARS_JSON \
+    --repo "$REPOSITORY" --env "$environment" \
+    <"$FOUNDATION_CONFIG_FILE"
+done
+
+rm -f -- "$FOUNDATION_CONFIG_FILE"
+unset FOUNDATION_CONFIG_FILE ADOPT_EXISTING_PROJECT
+unset BILLING_ACCOUNT_ID COST_ALERT_EMAIL DATABASE_OPERATOR_PRINCIPAL DATABASE_OPERATOR_PRINCIPALS
 ```
 
 `COST_ALERT_EMAIL` receives budget notifications and Cloud Quotas review follow-up. It carries no
 quota-administration authority; the protected foundation service account owns the code-managed quota
-role.
-
-Unset the private values after upload:
+role. Verify names without printing values:
 
 ```bash
-unset BILLING_ACCOUNT_ID COST_ALERT_EMAIL DATABASE_OPERATOR_PRINCIPAL DATABASE_OPERATOR_PRINCIPALS
-```
-
-Verify the environment inventory. Variable values are intentionally public identifiers; GitHub does
-not return secret values:
-
-```bash
-gh variable list --repo "$REPOSITORY" --env production-foundation
 gh secret list --repo "$REPOSITORY" --env production-foundation
+gh secret list --repo "$REPOSITORY" --env production-recovery
 ```
 
-Expected safe result: seven required variables, at most one parent variable, and exactly the three
-secret names above. The future workflow maps these names to the matching `TF_VAR_*` inputs and must
-mask them before any command. `DATABASE_OPERATOR_PRINCIPALS` is the JSON array consumed by the
-OpenTofu set input; its protected plan and state are private. Budget, database capacity, pinned COS
-image, and quota defaults remain reviewed code instead of mutable GitHub inputs.
+Expected safe result: `production-foundation` contains `BOOTSTRAP_TFVARS_JSON` and
+`FOUNDATION_TFVARS_JSON`; `production-recovery` contains only `FOUNDATION_TFVARS_JSON`. Database
+capacity, the pinned COS image, budgets, and quotas remain reviewed OpenTofu defaults rather than
+mutable workflow inputs.
 
-## 5. Protected plan and apply (not available yet)
+## 5. Create and apply exact protected plans
 
-Stop until the protected foundation workflow lands. That workflow must:
+Reconcile bootstrap first, then foundation. Each `plan` dispatch stores one opaque binary plan and
+small non-sensitive custody record in the matching state prefix. Its ID is the plan workflow's
+`run-id-attempt`; it expires after 24 hours and can be consumed only once by the same commit and root.
+The environment reviewer approves both runs, but only the `apply` run mutates cloud resources.
 
-1. authenticate only from `master`, the exact workflow path, and `production-foundation` through the
-   `infra-foundation` WIF provider;
-2. reconcile the bootstrap root first so `billingbudgets.googleapis.com`,
-   `cloudbilling.googleapis.com`, and `cloudquotas.googleapis.com` are enabled in the management
-   project; the foundation service account uses that project as its Cloud Quotas billing project;
-3. initialize foundation state at the existing `foundation/` managed-folder boundary with locking;
-4. for the standalone path only, import the already-created project before the first plan and refuse
-   adoption when any other resource is present or state already owns another project;
-5. create an opaque saved plan, store it only in private management storage, and print only the
-   sanitized action/resource-type summary;
-6. fail when the plan deletes, replaces, or forgets any managed resource; the initial plan requires no
-   destructive label because it must contain no destructive action;
-7. require the environment reviewer to approve the exact unexpired plan, apply that saved plan, and
-   prove convergence with a zero-change post-apply plan.
+```bash
+MASTER_SHA="$(gh api "repos/${REPOSITORY}/commits/master" --jq .sha)"
+printf 'Planning commit: %s\n' "$MASTER_SHA"
 
-The implementation must replace this stop section with its exact `gh workflow run` and saved-plan
-review commands. Until then, there is deliberately no supported apply command.
+gh workflow run foundation.yaml --repo "$REPOSITORY" --ref master \
+  -f operation=plan -f root=bootstrap
+gh run list --repo "$REPOSITORY" --workflow foundation.yaml --branch master \
+  --event workflow_dispatch --limit 5 \
+  --json databaseId,headSha,displayTitle,status,conclusion,url
+```
 
-The expected initial summary contains creates for one project, thirteen APIs, the
+Select the row titled `foundation plan bootstrap`, verify `headSha` equals `MASTER_SHA`, then watch
+it and derive its exact plan ID:
+
+```bash
+read -r -p 'Bootstrap plan run ID: ' PLAN_RUN_ID
+test "$(gh api "repos/${REPOSITORY}/actions/runs/${PLAN_RUN_ID}" --jq .head_sha)" = "$MASTER_SHA"
+gh run watch "$PLAN_RUN_ID" --repo "$REPOSITORY" --exit-status
+PLAN_ATTEMPT="$(gh api "repos/${REPOSITORY}/actions/runs/${PLAN_RUN_ID}" --jq .run_attempt)"
+PLAN_ID="${PLAN_RUN_ID}-${PLAN_ATTEMPT}"
+printf 'Bootstrap plan ID: %s\n' "$PLAN_ID"
+```
+
+Review the plan job log. It may contain only action counts grouped by resource type, the plan ID,
+and control messages—never addresses, values, outputs, configuration, or provider diagnostics.
+Confirm the current `master` commit is still unchanged, then apply that plan:
+
+```bash
+test "$(gh api "repos/${REPOSITORY}/commits/master" --jq .sha)" = "$MASTER_SHA"
+gh workflow run foundation.yaml --repo "$REPOSITORY" --ref master \
+  -f operation=apply -f root=bootstrap -f plan_id="$PLAN_ID"
+```
+
+Approve the `production-foundation` deployment, select the new `foundation apply bootstrap` row with
+the same `headSha`, and watch it to success. Repeat the exact sequence with `root=foundation`:
+
+```bash
+gh workflow run foundation.yaml --repo "$REPOSITORY" --ref master \
+  -f operation=plan -f root=foundation
+gh run list --repo "$REPOSITORY" --workflow foundation.yaml --branch master \
+  --event workflow_dispatch --limit 5 \
+  --json databaseId,headSha,displayTitle,status,conclusion,url
+```
+
+Set `PLAN_RUN_ID` to the `foundation plan foundation` row, repeat the SHA/watch/attempt commands,
+review the summary, and dispatch `operation=apply`, `root=foundation`, and that new `PLAN_ID`.
+An apply attempt consumes the plan before mutation and then proves a zero-change convergence plan; a retry cannot
+apply the same plan twice.
+
+Any deletion, replacement, or state-forget action fails unless the one pull request associated with
+`MASTER_SHA` already carried the exact `allow-resource-deletion` label before merge. Adding a label
+after merge is deliberately insufficient. The initial foundation should need no such exception.
+
+The expected initial summary contains either one project creation or one declarative project import/update, thirteen APIs, the
 network/subnet/routes, six firewalls, three zones and their records, seven service accounts, exact
 IAM, one repository, one data disk, one immutable instance template, one stateful instance-group
 manager, one snapshot policy/attachment, six monitoring alerts, four quota preferences, one
@@ -487,9 +543,9 @@ for secret in \
 done
 ```
 
-Expected safe result: every configured human operator and
-`infra-recovery@${MANAGEMENT_PROJECT_ID}.iam.gserviceaccount.com` appear on all nine secrets.
-Authentication appears only on its DSN and SMTP password. Authentication initializer appears only on
+Expected safe result: every configured human operator appears on all nine secrets. No `infra-*`
+GitHub automation identity appears. Authentication appears only on its DSN and SMTP password.
+Authentication initializer appears only on
 the same DSN and the super-admin password; JSON Keys appears only on its master key and DSN; database
 host appears on the four owner/backup passwords; backup appears only on the two backup passwords.
 Restore, scheduler, release, plan, and foundation identities do not appear. This filtered view
@@ -768,7 +824,8 @@ gcloud billing accounts get-iam-policy "$BILLING_ACCOUNT_ID" \
 
 Expected safe result: the primitive-role audit prints nothing and the billing command prints only
 `roles/billing.costsManager`. Recheck the chosen parent with section 2's command; it must print
-nothing. Exact workload-project roles and the custom metadata role remain code-managed.
+nothing. Independently verify the plan identity still has exactly `roles/billing.viewer`. Exact
+workload-project roles and the custom metadata role remain code-managed.
 
 Record only the reviewed commit, workflow run URL, opaque plan checksum, project number, verification
 timestamp, and successful/failed checklist in the private deployment receipt. Do not record IAM

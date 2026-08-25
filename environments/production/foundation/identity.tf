@@ -58,8 +58,11 @@ locals {
     "roles/monitoring.metricWriter",
   ])
 
-  release_application_project_roles = toset([
+  release_application_project_roles = var.recovery_mode ? toset([
+    "roles/cloudquotas.viewer",
+    ]) : toset([
     "roles/cloudscheduler.admin",
+    "roles/cloudquotas.viewer",
   ])
 
   release_runtime_identities = toset([
@@ -84,7 +87,7 @@ locals {
     }
   }
 
-  runtime_secret_access = {
+  runtime_secret_access = merge({
     "authentication:postgres-dsn" = {
       identity = "authentication"
       secret   = "production-authentication-postgres-dsn"
@@ -92,14 +95,6 @@ locals {
     "authentication:smtp-password" = {
       identity = "authentication"
       secret   = "production-authentication-smtp-sender-password"
-    }
-    "authentication-initializer:postgres-dsn" = {
-      identity = "authentication_initializer"
-      secret   = "production-authentication-postgres-dsn"
-    }
-    "authentication-initializer:super-admin-password" = {
-      identity = "authentication_initializer"
-      secret   = "production-authentication-super-admin-password"
     }
     "database:authentication-password" = {
       identity = "database"
@@ -117,14 +112,6 @@ locals {
       identity = "database"
       secret   = "production-json-keys-postgres-backup-password"
     }
-    "backup:authentication-backup-password" = {
-      identity = "backup"
-      secret   = "production-authentication-postgres-backup-password"
-    }
-    "backup:json-keys-backup-password" = {
-      identity = "backup"
-      secret   = "production-json-keys-postgres-backup-password"
-    }
     "json-keys:app-master-key" = {
       identity = "json_keys"
       secret   = "production-json-keys-app-master-key"
@@ -133,7 +120,33 @@ locals {
       identity = "json_keys"
       secret   = "production-json-keys-postgres-dsn"
     }
-  }
+    }, var.recovery_mode ? {
+    "restore:authentication-owner-password" = {
+      identity = "restore"
+      secret   = "production-authentication-postgres-password"
+    }
+    "restore:json-keys-owner-password" = {
+      identity = "restore"
+      secret   = "production-json-keys-postgres-password"
+    }
+    } : {
+    "authentication-initializer:postgres-dsn" = {
+      identity = "authentication_initializer"
+      secret   = "production-authentication-postgres-dsn"
+    }
+    "authentication-initializer:super-admin-password" = {
+      identity = "authentication_initializer"
+      secret   = "production-authentication-super-admin-password"
+    }
+    "backup:authentication-backup-password" = {
+      identity = "backup"
+      secret   = "production-authentication-postgres-backup-password"
+    }
+    "backup:json-keys-backup-password" = {
+      identity = "backup"
+      secret   = "production-json-keys-postgres-backup-password"
+    }
+  })
 }
 
 resource "google_project_iam_custom_role" "foundation_project_metadata" {
@@ -162,13 +175,24 @@ resource "google_project_iam_member" "foundation" {
 
   project = google_project.workload.project_id
   role    = each.value
-  member  = "serviceAccount:${local.automation_service_accounts.foundation}"
+  member  = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "foundation"]}"
 }
 
 resource "google_project_iam_member" "foundation_project_metadata" {
   project = google_project.workload.project_id
   role    = google_project_iam_custom_role.foundation_project_metadata.name
-  member  = "serviceAccount:${local.automation_service_accounts.foundation}"
+  member  = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "foundation"]}"
+}
+
+# The scheduled drift workflow reads provider metadata but cannot lock or
+# write state and receives no data-access role. Recovery suffixes are inspected
+# only during an incident, so they do not grant this production plan identity.
+resource "google_project_iam_member" "plan_viewer" {
+  count = var.recovery_mode ? 0 : 1
+
+  project = google_project.workload.project_id
+  role    = "roles/viewer"
+  member  = "serviceAccount:${local.automation_service_accounts.plan}"
 }
 
 # Managed instance groups act through Google's project service agent. The
@@ -210,7 +234,7 @@ resource "google_service_account" "runtime" {
 resource "google_service_account_iam_member" "foundation_database_act_as" {
   service_account_id = google_service_account.runtime["database"].name
   role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:${local.automation_service_accounts.foundation}"
+  member             = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "foundation"]}"
 }
 
 resource "google_service_account_iam_member" "mig_database_act_as" {
@@ -224,7 +248,7 @@ resource "google_service_account_iam_member" "release_runtime_act_as" {
 
   service_account_id = google_service_account.runtime[each.value].name
   role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:${local.automation_service_accounts.release}"
+  member             = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "release"]}"
 }
 
 resource "google_project_iam_member" "release_application" {
@@ -232,7 +256,7 @@ resource "google_project_iam_member" "release_application" {
 
   project = google_project.workload.project_id
   role    = each.value
-  member  = "serviceAccount:${local.automation_service_accounts.release}"
+  member  = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "release"]}"
 }
 
 # Cloud Run Developer also executes jobs and permits per-execution overrides.
@@ -254,8 +278,12 @@ resource "google_project_iam_custom_role" "release_cloud_run_deployer" {
     "run.jobs.list",
     "run.jobs.setIamPolicy",
     "run.jobs.update",
+    "run.executions.get",
+    "run.executions.list",
     "run.locations.list",
     "run.operations.get",
+    "run.revisions.get",
+    "run.revisions.list",
     "run.services.create",
     "run.services.delete",
     "run.services.get",
@@ -275,7 +303,7 @@ resource "google_project_iam_custom_role" "release_cloud_run_deployer" {
 resource "google_project_iam_member" "release_cloud_run_deployer" {
   project = google_project.workload.project_id
   role    = google_project_iam_custom_role.release_cloud_run_deployer.name
-  member  = "serviceAccount:${local.automation_service_accounts.release}"
+  member  = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "release"]}"
 }
 
 resource "google_project_iam_member" "database_runtime_observability" {
@@ -350,7 +378,7 @@ resource "google_project_iam_custom_role" "database_release" {
 resource "google_project_iam_member" "database_release" {
   project = google_project.workload.project_id
   role    = google_project_iam_custom_role.database_release.name
-  member  = "serviceAccount:${local.automation_service_accounts.release}"
+  member  = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "release"]}"
 
   condition {
     title       = "DatabaseReleaseMemberOnly"
@@ -373,6 +401,8 @@ resource "google_secret_manager_secret_iam_member" "runtime" {
 # Logical backups are committed by a create-only identity. It cannot discover,
 # read, overwrite, or delete a recovery point after the upload request returns.
 resource "google_storage_bucket_iam_member" "backup_runtime_creator" {
+  count = var.recovery_mode ? 0 : 1
+
   bucket = var.backup_bucket_name
   role   = "roles/storage.objectCreator"
   member = "serviceAccount:${google_service_account.runtime["backup"].email}"

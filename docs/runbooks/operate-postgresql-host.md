@@ -7,12 +7,13 @@ activation, private isolation, capacity, controlled replacement, disk growth, an
 Every Google Cloud command in this document is for a named human operator. Agents never run
 `gcloud` or `tofu apply`.
 
-## Current stop condition
+## Apply boundary
 
-No protected foundation or release apply workflow exists. Merging, validating, or planning this
-repository creates nothing, and there is no supported local apply command.
+Merging, validating, or planning this repository creates nothing, and there is no supported local
+apply command. Foundation and release changes may be applied only by manually dispatching their
+protected workflow from the reviewed `master` commit.
 
-Stop before every mutating step until all of these controls exist on `master`:
+Stop before every mutating step unless all of these controls exist on `master`:
 
 1. the management plane and remote state are applied and verified;
 2. the protected foundation and release workflows authenticate through their exact Workload
@@ -47,9 +48,9 @@ it does not repair corrupted data. The group therefore has no autoscaler or heal
 loop.
 
 Four-hour logical backup jobs, monthly clean restore jobs, an hourly recovery monitor, and daily
-disk snapshots are defined in code. They are not deployed until the protected workflows exist. An
-empty cluster may be initialized for verification, but no application may write production data
-until both first logical backups and both independent clean restores pass the
+disk snapshots are defined in code. They are deployed only by the protected workflows. An empty
+cluster may be initialized for verification, but no application may write production data until
+both first logical backups and both independent clean restores pass the
 [recovery runbook](./backup-and-restore-postgresql.md).
 
 ## Security invariants
@@ -382,12 +383,13 @@ The first release is one reviewed unit. Do not enable only one database image.
 
 4. Update both manifest components in one pull request with complete stable SemVer tags and exact
    digests. Confirm both images remain on PostgreSQL major 18.
-5. Enable both release-root recovery contracts with the two promoted database digests and exact
-   backup-password versions so the backup/restore jobs exist before database activation.
+5. Prepare both release-root recovery contracts with the two promoted database digests and exact
+   backup-password versions; the protected release creates the jobs immediately after activating
+   the initially empty database host and before migrations.
 6. Wait for the first foundation-scheduled `agora-data` snapshot to be `READY` and no older than six
    hours. Google starts the daily 02:00 UTC schedule during the following hour; the first release
    window opens only once that snapshot is ready and closes six hours after its actual creation.
-7. Supply the full merged Git commit and all four numeric password versions only through the future
+7. Supply the full merged Git commit and all four numeric password versions only through the
    protected release workflow.
 
 The branch preview must contain no cloud credentials and cannot apply. On `master`, the protected
@@ -396,16 +398,17 @@ two promoted digests, and four positive numeric password versions. The helper va
 arguments and requires the existing all-instances map to contain exactly the seven foundation-seeded
 keys. Its shared gate requires the fresh scheduled snapshot and skips logical backup only for this
 empty first release. It then patches those values and invokes `update-instances` with both the
-minimum and maximum action set to `restart`. An unexpected or missing key fails before mutation. The
-helper must not create, replace, resize, or directly reconfigure a VM beyond those seven keys and
-that restart, nor
+minimum and maximum action set to `restart`, then uses the stable `wait-until` command before any
+migration. An application-only release preserves the prior database revision and skips the restart.
+An unexpected or missing key fails before mutation. The helper must not create, replace, resize, or
+directly reconfigure a VM beyond those seven keys and that restart, nor
 may it mutate a disk, template, address, firewall, IAM binding, secret version, or service-account
 key.
 
-The release workflow has not landed, so stop here today. Once it exists, its readiness gate must
-prove both container health checks and both approved private client paths before recording success.
-No production client starts until both immediate backup jobs and both clean restore jobs in the
-recovery runbook also pass.
+Dispatch the release only through [Deploy and roll back production](./deploy-production.md). Its
+candidate health gate proves both database paths and the private JSON Keys dependency before public
+Authentication traffic moves. No production client starts until both immediate backup jobs and both
+clean restore jobs in the recovery runbook also pass.
 
 ## Measure capacity
 
@@ -594,6 +597,7 @@ Do not rely on application passwords while a public path exists.
 - [MIG update policy types](https://cloud.google.com/compute/docs/instance-groups/rolling-out-updates-to-managed-instance-groups#configure_update_policy)
 - [`gcloud` all-instances update](https://cloud.google.com/sdk/gcloud/reference/compute/instance-groups/managed/all-instances-config/update)
 - [`gcloud` update instances](https://cloud.google.com/sdk/gcloud/reference/compute/instance-groups/managed/update-instances)
+- [`gcloud` wait until stable](https://cloud.google.com/sdk/gcloud/reference/compute/instance-groups/managed/wait-until)
 - [Container-Optimized OS disks and filesystems](https://cloud.google.com/container-optimized-os/docs/concepts/disks-and-filesystem)
 - [Container-Optimized OS automatic updates](https://cloud.google.com/container-optimized-os/docs/concepts/auto-update)
 - [Container-Optimized OS release notes](https://cloud.google.com/container-optimized-os/docs/release-notes)

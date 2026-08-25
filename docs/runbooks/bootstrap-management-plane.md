@@ -413,7 +413,7 @@ test -n "${BACKUP_BUCKET}"
 test -n "${RECEIPT_BUCKET}"
 ```
 
-Verify the three buckets and three state IAM folders:
+Verify the three buckets plus the state and receipt IAM folders:
 
 ```bash
 for bucket in "${STATE_BUCKET}" "${BACKUP_BUCKET}" "${RECEIPT_BUCKET}"; do
@@ -422,13 +422,17 @@ for bucket in "${STATE_BUCKET}" "${BACKUP_BUCKET}" "${RECEIPT_BUCKET}"; do
 done
 
 gcloud storage managed-folders list "gs://${STATE_BUCKET}/" --uri | sort
+gcloud storage managed-folders list "gs://${RECEIPT_BUCKET}/" --uri | sort
 ```
 
 Expected safe result: all buckets are `EU`, Standard, uniform-access, and public-access prevention is
 enforced; state and receipts have versioning and seven-day soft delete; backups have no soft-delete
 retention, a seven-day unlocked bucket retention policy, and a 14-day object lifecycle. The backup
 policy is locked only after the first successful clean restore through the dedicated recovery
-runbook. Managed-folder output ends in exactly `bootstrap/`, `foundation/`, and `release/`.
+runbook. State-folder output ends in exactly `bootstrap/`, `foundation/`, and `release/`; receipt
+output ends in exactly `production/`, `production/success/`, and `recovery/`. The nested success
+folder lets recovery read deployable receipts without reading initialization evidence or writing
+under the production prefix.
 
 Verify the metadata-only secrets and keyless identities:
 
@@ -503,67 +507,102 @@ rm -f -- bootstrap/terraform.tfstate bootstrap/terraform.tfstate.backup
 The first command should name no unexpected path. The second permanently removes only those two
 local files; it does not touch remote state.
 
-## 11. Publish non-secret workflow coordinates as GitHub variables
+## 11. Publish exact workflow coordinates and the bootstrap input bundle
 
-These values are public resource identifiers, not credentials. The repository-level pair selects the
-read-only plan identity. Environment-level variables with the same names override it only after the
-matching GitHub protection gate passes.
+Bucket names, provider resource names, and service-account emails are public identifiers, not
+credentials. Their exact GitHub variable names are part of the workflows' interface. Do not create
+generic aliases: an unexpected variable must remain unused rather than silently overriding another
+trust boundary.
 
 ```bash
 PLAN_PROVIDER="$(tofu -chdir=bootstrap output -json workload_identity_providers | jq -r .plan)"
 PLAN_ACCOUNT="$(tofu -chdir=bootstrap output -json automation_service_accounts | jq -r .plan)"
 
-gh variable set GCP_MANAGEMENT_PROJECT_ID \
-  --repo a-novel/infra \
-  --body "${MANAGEMENT_PROJECT_ID}"
-gh variable set GCP_STATE_BUCKET \
-  --repo a-novel/infra \
-  --body "${STATE_BUCKET}"
-gh variable set GCP_WORKLOAD_IDENTITY_PROVIDER \
-  --repo a-novel/infra \
-  --body "${PLAN_PROVIDER}"
-gh variable set GCP_SERVICE_ACCOUNT \
-  --repo a-novel/infra \
-  --body "${PLAN_ACCOUNT}"
+gh variable set GCP_STATE_BUCKET --repo a-novel/infra --body "${STATE_BUCKET}"
+gh variable set GCP_BACKUP_BUCKET --repo a-novel/infra --body "${BACKUP_BUCKET}"
+gh variable set GCP_RECEIPT_BUCKET --repo a-novel/infra --body "${RECEIPT_BUCKET}"
+gh variable set GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER \
+  --repo a-novel/infra --body "${PLAN_PROVIDER}"
+gh variable set GCP_PLAN_SERVICE_ACCOUNT \
+  --repo a-novel/infra --body "${PLAN_ACCOUNT}"
 
 for boundary in foundation release recovery; do
   case "${boundary}" in
-    foundation) environment='production-foundation' ;;
-    release) environment='production-release' ;;
-    recovery) environment='production-recovery' ;;
+    foundation)
+      environment='production-foundation'
+      variable_prefix='GCP_FOUNDATION'
+      ;;
+    release)
+      environment='production-release'
+      variable_prefix='GCP_RELEASE'
+      ;;
+    recovery)
+      environment='production-recovery'
+      variable_prefix='GCP_RECOVERY'
+      ;;
   esac
 
-  provider="$(tofu -chdir=bootstrap output -json workload_identity_providers | jq -r --arg boundary "${boundary}" '.[$boundary]')"
-  account="$(tofu -chdir=bootstrap output -json automation_service_accounts | jq -r --arg boundary "${boundary}" '.[$boundary]')"
+  provider="$(tofu -chdir=bootstrap output -json workload_identity_providers \
+    | jq -r --arg boundary "${boundary}" '.[$boundary]')"
+  account="$(tofu -chdir=bootstrap output -json automation_service_accounts \
+    | jq -r --arg boundary "${boundary}" '.[$boundary]')"
 
-  gh variable set GCP_WORKLOAD_IDENTITY_PROVIDER \
-    --repo a-novel/infra \
-    --env "${environment}" \
-    --body "${provider}"
-  gh variable set GCP_SERVICE_ACCOUNT \
-    --repo a-novel/infra \
-    --env "${environment}" \
-    --body "${account}"
+  gh variable set "${variable_prefix}_WORKLOAD_IDENTITY_PROVIDER" \
+    --repo a-novel/infra --env "${environment}" --body "${provider}"
+  gh variable set "${variable_prefix}_SERVICE_ACCOUNT" \
+    --repo a-novel/infra --env "${environment}" --body "${account}"
 done
 ```
 
-Verify names without treating any value as secret:
+The protected bootstrap workflow needs the same identifiers used for the first local apply. Put the
+complete JSON document in an environment secret so GitHub masks it as one value and the workflow can
+materialize it with mode `0600`. It contains no secret payload, but it does contain privileged human
+IAM member names.
+
+```bash
+BOOTSTRAP_TFVARS_FILE="${BOOTSTRAP_TEMP_DIR}/bootstrap.tfvars.json"
+jq -n \
+  --arg management_project_id "${MANAGEMENT_PROJECT_ID}" \
+  --arg operator_principal "${OPERATOR_PRINCIPAL}" \
+  '{
+    management_project_id: $management_project_id,
+    region: "europe-west1",
+    storage_location: "EU",
+    operator_principals: [$operator_principal]
+  }' >"${BOOTSTRAP_TFVARS_FILE}"
+
+jq -e '
+  (.management_project_id | type == "string") and
+  (.operator_principals | length >= 1)
+' "${BOOTSTRAP_TFVARS_FILE}" >/dev/null
+
+gh secret set BOOTSTRAP_TFVARS_JSON \
+  --repo a-novel/infra --env production-foundation \
+  <"${BOOTSTRAP_TFVARS_FILE}"
+```
+
+Verify names without printing any secret value:
 
 ```bash
 gh variable list --repo a-novel/infra
 for environment in production-foundation production-release production-recovery; do
   gh variable list --repo a-novel/infra --env "${environment}"
-done
-
-gh api repos/a-novel/infra/actions/secrets --jq .total_count
-for environment in production-foundation production-release production-recovery; do
-  gh api "repos/a-novel/infra/environments/${environment}/secrets" --jq .total_count
+  gh secret list --repo a-novel/infra --env "${environment}"
 done
 ```
 
-Expected safe result: the four repository variable names, two identity variables in each environment,
-and zero repository/environment secrets. Organization-level secrets outside this repository's
-control are not credentials for this design and must not be added as a workaround.
+Expected safe result:
+
+- repository variables are exactly `GCP_STATE_BUCKET`, `GCP_BACKUP_BUCKET`,
+  `GCP_RECEIPT_BUCKET`, `GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER`, and
+  `GCP_PLAN_SERVICE_ACCOUNT`;
+- each environment has only its matching two prefixed identity variables;
+- `production-foundation` initially has only `BOOTSTRAP_TFVARS_JSON`;
+- `production-release` and `production-recovery` initially have no environment secret.
+
+The foundation and release runbooks add `FOUNDATION_TFVARS_JSON` and `RELEASE_CONFIG_JSON` later.
+Organization-level secrets outside this repository's control are not credentials for this design and
+must not be added as a workaround.
 
 ## 12. Verify federation and remove temporary broad access
 
@@ -730,7 +769,7 @@ shell:
 ```bash
 rm -rf -- "${BOOTSTRAP_TEMP_DIR}"
 unset TF_DATA_DIR TF_VAR_management_project_id TF_VAR_operator_principals
-unset PLAN_PROVIDER PLAN_ACCOUNT BOOTSTRAP_PLAN BOOTSTRAP_PLAN_JSON
+unset PLAN_PROVIDER PLAN_ACCOUNT BOOTSTRAP_PLAN BOOTSTRAP_PLAN_JSON BOOTSTRAP_TFVARS_FILE
 unset REMOTE_PLAN REMOTE_PLAN_JSON FINAL_PLAN FINAL_PLAN_JSON
 unset STATE_BUCKET BACKUP_BUCKET RECEIPT_BUCKET MANAGEMENT_PROJECT_NUMBER
 unset MANAGEMENT_PROJECT_ID BILLING_ACCOUNT_ID OPERATOR_EMAIL OPERATOR_PRINCIPAL
@@ -740,6 +779,7 @@ unset ENVIRONMENT_REVIEWER_ID ENVIRONMENT_REVIEWER_LOGIN
 This permanently removes only the unique temporary directory created in section 7. The remote state,
 bucket generations, audit records, and GitHub variables remain.
 
-Bootstrap is complete only when all final checks pass. The next infrastructure task may add protected
-workflows, but no workflow should apply foundation or release resources before its WIF exchange,
-sanitized plan, exact-plan apply, and environment approval are independently tested.
+Bootstrap is complete only when all final checks pass. Continue with the
+[workload-foundation runbook](./provision-workload-foundation.md). Do not dispatch a foundation or
+release apply before its WIF exchange, sanitized summary, exact-plan custody, and environment gate
+match the controls described here.

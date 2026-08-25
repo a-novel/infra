@@ -106,8 +106,8 @@ overlapping ownership. Keeping the fixed command in versioned, tested code prese
 the durable resource while the release identity remains limited to group-manager read/update,
 zonal-operation polling, snapshot-metadata listing, and the `setMetadata` permission Google requires
 for an existing VM. It cannot create or delete snapshots. An IAM condition fences the sole VM
-permission to generated `agora-database-*` members. The protected workflow and receipt are introduced
-by the deployment task; until then the helper has no authenticated caller.
+permission to generated `agora-database-*` members. The protected release workflow is the helper's
+only authenticated caller, and its private receipt binds rollback to the exact preceding state.
 
 ```text
 foundation template + stateful disk/address + MIG
@@ -212,7 +212,7 @@ cloud-blind validation and security checks
 human review and coordinated merge gate
         |
         v
-protected plan and approval        (introduced by later tasks)
+manual protected plan and approval
         |
         v
 apply the exact reviewed plan
@@ -222,17 +222,20 @@ convergence, health, receipt, and drift checks
 ```
 
 Pull requests validate structure, mocked behavior, policy fixtures, manifests, and workflow security.
-They receive no Google identity and cannot read a backend. A protected workflow will later plan from
-the reviewed commit, store an opaque plan outside GitHub, expose only sanitized action counts, and
-apply that exact plan after its required approval. Foundation and release identities remain separate.
+They receive no Google identity and cannot read a backend. Protected workflows plan from the reviewed
+`master` commit, store the opaque plan in private GCS for at most 24 hours, expose only sanitized
+action counts, and bind apply to its commit, root, recovery state suffix, hash, and one-time
+consumption record. Foundation, release, recovery, and read-only drift identities remain separate.
 
 A release failure restores the prior application receipt. Database migrations remain because service
 policy requires backward-compatible changes. Restoring database contents is a recovery operation with
 its own approval and runbook.
 
 The automated application graph runs the database update, JSON Keys migration and seed rotation,
-Authentication migration, private service, then public service. The first launch pauses after the
-Authentication migration until an authorized operator runs the initializer and its successful
+Authentication migration, both backups and clean restores, private-service readiness and traffic,
+dependency health, then public traffic. Authentication's candidate health endpoint proves
+PostgreSQL, SMTP, and the newly active private JSON Keys gRPC path. The first launch pauses after
+recovery verification until an authorized operator runs the initializer and its successful
 execution is recorded; later deployments do not repeat that gate. Cloud Scheduler continues the
 idempotent key-rotation job every hour. Authentication initialization is never invoked or retried by
 a release or scheduler trigger; an authorized operator invokes it only when the first administrator

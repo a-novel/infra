@@ -24,6 +24,7 @@ override.tf.json
 *.p12
 credentials*.json
 service-account*.json
+gha-creds-*.json
 
 # Repository tooling
 node_modules/

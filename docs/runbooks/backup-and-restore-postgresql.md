@@ -104,12 +104,12 @@ retention policy.
 
 ## Security boundaries
 
-| Identity                  | Data it can reach                                                                                                  | Deliberately cannot do                                                                                                     |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
-| `agora-backup`            | Read the two exact backup-password secrets; connect privately to both PostgreSQL ports; create new backup objects. | List, read, overwrite, or delete backup objects; administer databases; use an owner credential; reach the public internet. |
-| `agora-restore`           | Read backup objects and supported restricted Google APIs.                                                          | Reach either production PostgreSQL port; read a secret; create, overwrite, or delete a backup; reach the public internet.  |
-| `agora-scheduler-invoker` | Invoke the five exact recovery jobs.                                                                               | Read backups or secrets; connect to a database; alter a job.                                                               |
-| `infra-release`           | Define the jobs and schedules, execute the pre-change gate, and list snapshot metadata.                            | Create or delete a snapshot; read backup objects or secret payloads; change bucket retention, network, or project IAM.     |
+| Identity                  | Data it can reach                                                                                                       | Deliberately cannot do                                                                                                                           |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `agora-backup`            | Read the two exact backup-password secrets; connect privately to both PostgreSQL ports; create new backup objects.      | List, read, overwrite, or delete backup objects; administer databases; use an owner credential; reach the public internet.                       |
+| `agora-restore`           | Read backup objects and supported restricted Google APIs.                                                               | Reach either production PostgreSQL port; read a secret; create, overwrite, or delete a backup; reach the public internet.                        |
+| `agora-scheduler-invoker` | Invoke the five exact recovery jobs.                                                                                    | Read backups or secrets; connect to a database; alter a job.                                                                                     |
+| `infra-release`           | Define the jobs and schedules; invoke the five exact recovery jobs during release verification; list snapshot metadata. | Run a job with overrides; create or delete a snapshot; read backup objects or secret payloads; change bucket retention, network, or project IAM. |
 
 Cloud Run jobs expose no request endpoint. All task traffic enters the deny-by-default VPC. Backup
 tasks receive the `agora-backup` tag, which allows only restricted Google APIs and the two private
@@ -201,23 +201,23 @@ the live resource with `gcloud`.
 The first empty host is the only exception to “dump before changing a database”: there is no source
 database to dump. It is not an exception to snapshot, restore, or no-production-writes requirements.
 
-1. Apply bootstrap, foundation, and release only through their approved workflows. Enable the two
-   database recovery contracts in the release root before selecting database images on the host.
+1. Apply bootstrap and foundation only through their approved workflows, then prepare the reviewed
+   production manifest and release configuration.
 2. Wait for the foundation-owned daily snapshot schedule to produce a `READY` `agora-data` snapshot.
    Google starts the 02:00 UTC schedule during the 02:00–02:59 window. The gate opens only after the
    snapshot is `READY` and closes six hours after its actual creation, no later than roughly 09:00
    UTC. Missing that window means waiting for the next scheduled snapshot; do not grant release
    permission to create one.
-3. Run the protected database release. The pre-change helper recognizes the empty release revision,
+3. Dispatch the protected release. The pre-change helper recognizes the empty release revision,
    validates the fresh scheduled snapshot, and skips logical backup because no cluster exists yet.
-4. Verify both clusters and their four distinct credentials through the PostgreSQL host runbook.
-5. Before enabling any application writer, execute both backups, both clean restores, and then
-   `agora-postgres-backup-monitor` once as shown below. The successful monitor completion seeds the
-   time series required by the three-hour metric-absence condition.
-6. Record the five successful execution names, completion times, image digests, and the two selected
-   manifest attempt identifiers in the private recovery record. Never copy a dump, secret, full job
-   definition, or raw log into GitHub.
-7. Lock bucket retention through a separately reviewed code change as described in
+   The fixed release graph then activates both clusters, runs migrations, creates both logical
+   backups, proves both clean restores, and runs `agora-postgres-backup-monitor` before the manual
+   initializer gate or any service traffic.
+4. Verify both clusters and their four distinct credentials through the PostgreSQL host runbook,
+   and verify that the successful private receipt records all five recovery execution names.
+5. Record completion times, image digests, and the two selected manifest attempt identifiers in the
+   private recovery record. Never copy a dump, secret, full job definition, or raw log into GitHub.
+6. Lock bucket retention through a separately reviewed code change as described in
    [Lock retention after proof](#lock-retention-after-proof).
 
 If any step fails, keep application writers disabled. Correct the declared image, secret version,

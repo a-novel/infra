@@ -1,0 +1,124 @@
+name: production foundation
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Create a 24-hour plan, or apply one exact prior plan ID.
+        required: true
+        type: choice
+        options: [plan, apply]
+      root:
+        description: Stable management bootstrap or replaceable workload foundation.
+        required: true
+        type: choice
+        options: [bootstrap, foundation]
+      plan_id:
+        description: Required only for apply; use the run-id-attempt printed by plan.
+        required: false
+        type: string
+
+run-name: "foundation ${{ inputs.operation }} ${{ inputs.root }} by @${{ github.actor }}"
+
+permissions: {}
+
+concurrency:
+  group: production-infrastructure
+  cancel-in-progress: false
+
+env:
+  TF_IN_AUTOMATION: "true"
+  CLOUDSDK_CORE_DISABLE_PROMPTS: "1"
+
+jobs:
+  execute:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: production-foundation
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: read
+    steps:
+      - name: Check out the exact master commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Authenticate as the foundation boundary
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Install the pinned Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+        with:
+          version: "581.0.0"
+
+      - name: Install OpenTofu
+        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version_file: .opentofu-version
+          tofu_wrapper: false
+          cache: true
+
+      - name: Materialize the protected root inputs
+        id: inputs
+        shell: bash
+        env:
+          BOOTSTRAP_CONFIG: ${{ secrets.BOOTSTRAP_TFVARS_JSON }}
+          FOUNDATION_CONFIG: ${{ secrets.FOUNDATION_TFVARS_JSON }}
+          SELECTED_ROOT: ${{ inputs.root }}
+        run: |
+          set -euo pipefail
+          umask 077
+          file="${RUNNER_TEMP}/selected.tfvars.json"
+          if [ "${SELECTED_ROOT}" = bootstrap ]; then
+            printf '%s' "${BOOTSTRAP_CONFIG}" >"${file}"
+          else
+            printf '%s' "${FOUNDATION_CONFIG}" >"${file}"
+          fi
+          jq --exit-status 'type == "object"' "${file}" >/dev/null
+          printf 'file=%s\n' "${file}" >>"${GITHUB_OUTPUT}"
+
+      - name: Create the exact private plan
+        if: inputs.operation == 'plan'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ROOT_NAME: ${{ inputs.root }}
+          STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
+          TFVARS_FILE: ${{ steps.inputs.outputs.file }}
+        run: |
+          set -euo pipefail
+          plan_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          ./ops/create-reviewed-plan.sh \
+            "${ROOT_NAME}" "${STATE_BUCKET}" "${GITHUB_SHA}" \
+            "${plan_id}" "${TFVARS_FILE}"
+          printf 'Plan ID: %s\n' "${plan_id}"
+
+      - name: Apply only the selected private plan
+        if: inputs.operation == 'apply'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PLAN_ID: ${{ inputs.plan_id }}
+          ROOT_NAME: ${{ inputs.root }}
+          STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
+          TFVARS_FILE: ${{ steps.inputs.outputs.file }}
+        run: |
+          set -euo pipefail
+          if ! [[ "${PLAN_ID}" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]; then
+            printf 'Apply requires the exact run-id-attempt printed by plan.\n' >&2
+            exit 64
+          fi
+          ./ops/apply-reviewed-plan.sh \
+            "${ROOT_NAME}" "${STATE_BUCKET}" "${GITHUB_SHA}" \
+            "${PLAN_ID}" "${TFVARS_FILE}"
+          ./ops/config-custody.sh publish \
+            "${STATE_BUCKET}" "${ROOT_NAME}" "${TFVARS_FILE}" \
+            "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}"

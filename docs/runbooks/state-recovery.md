@@ -3,8 +3,9 @@
 Use this runbook only when the live state object is corrupt, accidentally overwritten, or known to
 describe the wrong infrastructure generation. Ordinary infrastructure rollback uses a prior release
 receipt and OpenTofu apply; it does not rewrite state. State recovery changes OpenTofu's record of
-ownership and therefore requires the `production-recovery` approval boundary once that workflow
-exists.
+ownership and therefore requires a declared incident plus an independent maintainer's approval. The
+clean-room workflow deliberately does not rewrite a live state object; this exceptional
+generation-copy procedure remains a human operation.
 
 The state bucket uses GCS Object Versioning, seven-day soft delete, protected managed folders, and
 OpenTofu locking. Recovery copies a named noncurrent generation over the live object with an
@@ -23,8 +24,8 @@ payload versions.
   expected state lineage/serial if known.
 - Pause every foundation, release, drift, and recovery workflow. State locking prevents concurrent
   writers but is not a substitute for an operator freeze.
-- Use a declared human operator before recovery workflows land; afterwards, use the protected
-  recovery identity after approval.
+- Use a declared human operator. The keyless recovery identity is bound to its exact GitHub workflow
+  and cannot be impersonated from an operator shell.
 - Work in a private Bash session with tracing disabled and `umask 077`.
 - Do not recover while a `.tflock` object exists. Identify and stop the owning operation first; never
   delete a lock merely because it is old.
@@ -248,8 +249,9 @@ if [ "${STATE_ROOT}" = 'bootstrap' ]; then
 fi
 ```
 
-Foundation and release recovery procedures must extend this section when those roots gain real
-inputs; do not invent missing values. Then generate a private plan and sanitize it:
+For foundation or release, retrieve the exact current protected configuration object documented by
+the deployment runbook into this private temporary directory; do not reconstruct values from memory.
+Then generate a private plan and sanitize it:
 
 ```bash
 RECOVERY_PLAN="${RECOVERY_TEMP_DIR}/recovery.tfplan"

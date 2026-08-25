@@ -7,7 +7,7 @@ official documentation instead of being redefined here.
 `gcloud` is the Google Cloud CLI; Google Cloud is the provider. OpenTofu remains the source of truth
 for durable managed resources. Operator-only CLI commands belong in runbooks when a manual
 prerequisite or an independent verification cannot safely be automated. The one routine exception is
-a fixed, tested group-metadata command in the future protected release workflow; its committed
+a fixed, tested group-metadata command in the protected release workflow; its committed
 manifest and private receipt are the desired-state and rollback records.
 
 ## Current status
@@ -42,10 +42,9 @@ hourly JSON Keys rotation, private JSON Keys gRPC with an exact invoker allowlis
 Authentication REST. A deploy-only role excludes job execution and overrides. Exact job IAM lets
 release run migrations and key rotation, the scheduler run rotation, and named humans run
 Authentication initialization. Every runtime scales to zero and remains absent while its atomic
-release contract is disabled. No protected workflow can apply them yet, and the production manifest
-keeps both components disabled. There is no load balancer, public IP, NAT, connector, proxy, or
-Kubernetes layer. Deployed-path sections below remain acceptance contracts until protected deployment
-and post-apply verification land.
+release contract is disabled. Protected workflows are manual-only and the production manifest keeps
+both components disabled until the first reviewed activation. There is no load balancer, public IP,
+NAT, connector, proxy, or Kubernetes layer.
 
 ## Provider and resource references
 
@@ -191,9 +190,9 @@ internal workloads to provide a service. The contract is that no public or unaut
 invoke it.
 
 The service uses Cloud Run `internal` ingress and end-to-end HTTP/2. Its IAM policy grants
-`roles/run.invoker` only to the Authentication runtime identity plus the protected release and
-recovery identities used for smoke/recovery checks. It grants neither `allUsers` nor
-`allAuthenticatedUsers`, and it has no external load balancer or public custom domain. Google
+`roles/run.invoker` only to Authentication, the sole runtime caller. Release and recovery use only
+control-plane readiness inspection and receive no data-plane invocation grant. It grants neither
+`allUsers` nor `allAuthenticatedUsers`, and it has no external load balancer or public custom domain. Google
 recommends combining
 [Cloud Run ingress restrictions](https://cloud.google.com/run/docs/securing/ingress) with
 [service-to-service IAM authentication](https://cloud.google.com/run/docs/authenticating/service-to-service)
@@ -210,9 +209,9 @@ The foundation and release tests must prove that:
 - an unauthenticated request and an authenticated external-network request both fail;
 - an authenticated request from an approved internal workload succeeds.
 
-Human debugging uses the
-[authenticated Cloud Run developer proxy](https://cloud.google.com/run/docs/authenticating/developers)
-with an explicitly granted operator identity. The service does not open public ingress for debugging.
+Human private-path debugging originates from the existing database VM through IAP and uses a named
+operator plus an exact service identity. The service does not open public ingress or add a proxy for
+debugging. See the [disaster-recovery runbook](./runbooks/disaster-recovery.md#6-verify-functionality-from-the-private-replacement-network).
 
 ## Job execution boundaries
 

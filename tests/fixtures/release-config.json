@@ -1,0 +1,37 @@
+{
+  "management_project_id": "agora-management-test",
+  "workload_project_id": "agora-production-test",
+  "region": "europe-west1",
+  "database_zone": "europe-west1-b",
+  "backup_bucket_name": "agora-management-test-123456789012-backups",
+  "database_private_ip": "10.20.0.2",
+  "network_id": "projects/agora-production-test/global/networks/agora-production",
+  "subnet_id": "projects/agora-production-test/regions/europe-west1/subnetworks/agora-production-europe-west1",
+  "authentication_initializer_principals": ["group:infra@example.com"],
+  "authentication": {
+    "super_admin_email": "admin@example.com",
+    "smtp": {
+      "address": "smtp.example.com:587",
+      "sender_domain": "smtp.example.com",
+      "sender_email": "noreply@example.com",
+      "sender_name": "Agora"
+    }
+  },
+  "quota_expectations": {
+    "cloud_run_cpu_millicpu": 8000,
+    "cloud_run_memory_bytes": 17179869184,
+    "cloud_run_direct_vpc_instances": 20,
+    "compute_cpu": 4
+  },
+  "secret_versions": {
+    "authentication_postgres_password": 1,
+    "authentication_postgres_backup_password": 1,
+    "authentication_postgres_dsn": 1,
+    "authentication_smtp_password": 1,
+    "authentication_super_admin_password": 1,
+    "json_keys_postgres_password": 1,
+    "json_keys_postgres_backup_password": 1,
+    "json_keys_postgres_dsn": 1,
+    "json_keys_app_master_key": 1
+  }
+}
