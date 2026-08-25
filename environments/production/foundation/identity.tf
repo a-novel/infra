@@ -37,15 +37,35 @@ locals {
     "roles/artifactregistry.admin",
     "roles/billing.projectManager",
     "roles/cloudquotas.admin",
+    "roles/compute.instanceAdmin.v1",
     "roles/compute.networkAdmin",
     "roles/dns.admin",
     "roles/iam.roleAdmin",
     "roles/iam.serviceAccountAdmin",
     "roles/logging.configWriter",
+    "roles/monitoring.alertPolicyEditor",
     "roles/monitoring.notificationChannelEditor",
     "roles/resourcemanager.projectIamAdmin",
     "roles/serviceusage.serviceUsageAdmin",
   ])
+
+  database_runtime_project_roles = toset([
+    "roles/logging.logWriter",
+    "roles/monitoring.metricWriter",
+  ])
+
+  database_operator_project_roles = toset([
+    "roles/compute.osAdminLogin",
+    "roles/compute.viewer",
+  ])
+
+  database_operator_project_bindings = {
+    for binding in setproduct(var.database_operator_principals, local.database_operator_project_roles) :
+    "${binding[0]}:${binding[1]}" => {
+      principal = binding[0]
+      role      = binding[1]
+    }
+  }
 
   runtime_secret_access = {
     "authentication:postgres-dsn" = {
@@ -114,6 +134,15 @@ resource "google_project_iam_member" "foundation_project_metadata" {
   member  = "serviceAccount:${local.automation_service_accounts.foundation}"
 }
 
+# Managed instance groups act through Google's project service agent. The
+# service-agent role replaces a primitive Editor grant, while the account-level
+# binding below permits only attachment of the dedicated database identity.
+resource "google_project_iam_member" "mig_service_agent" {
+  project = google_project.workload.project_id
+  role    = "roles/compute.instanceGroupManagerServiceAgent"
+  member  = "serviceAccount:${google_project.workload.number}@cloudservices.gserviceaccount.com"
+}
+
 # Compute API activation can grant Editor to its default service account in
 # projects without the preventive organization policy. Keep the account
 # recoverable while removing its project roles.
@@ -139,6 +168,98 @@ resource "google_service_account" "runtime" {
   }
 
   depends_on = [google_project_service.workload["iam.googleapis.com"]]
+}
+
+resource "google_service_account_iam_member" "foundation_database_act_as" {
+  service_account_id = google_service_account.runtime["database"].name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${local.automation_service_accounts.foundation}"
+}
+
+resource "google_service_account_iam_member" "mig_database_act_as" {
+  service_account_id = google_service_account.runtime["database"].name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_project.workload.number}@cloudservices.gserviceaccount.com"
+}
+
+resource "google_project_iam_member" "database_runtime_observability" {
+  for_each = local.database_runtime_project_roles
+
+  project = google_project.workload.project_id
+  role    = each.value
+  member  = "serviceAccount:${google_service_account.runtime["database"].email}"
+}
+
+resource "google_project_iam_member" "database_operator" {
+  for_each = local.database_operator_project_bindings
+
+  project = google_project.workload.project_id
+  role    = each.value.role
+  member  = each.value.principal
+}
+
+resource "google_project_iam_member" "database_operator_iap" {
+  for_each = var.database_operator_principals
+
+  project = google_project.workload.project_id
+  role    = "roles/iap.tunnelResourceAccessor"
+  member  = each.value
+
+  condition {
+    title       = "DatabaseIAPSSHOnly"
+    description = "Permit IAP TCP forwarding only to SSH; the VPC firewall limits the target to the database host."
+    expression  = "destination.port == 22"
+  }
+}
+
+# OS Login rechecks whether an SSH operator may act as the VM's attached
+# service account. This account-level grant is required for login and does not
+# grant token-minting authority.
+resource "google_service_account_iam_member" "database_operator_act_as" {
+  for_each = var.database_operator_principals
+
+  service_account_id = google_service_account.runtime["database"].name
+  role               = "roles/iam.serviceAccountUser"
+  member             = each.value
+}
+
+# Google exposes one coarse update permission for all-instances metadata and
+# broader MIG changes. Applying it to an existing member also requires one VM
+# permission, setMetadata; the conditional binding below fences that permission
+# to the generated database-name prefix. The fixed helper and protected
+# environment remain the controls around the five declared keys.
+resource "google_project_iam_custom_role" "database_release" {
+  project = google_project.workload.project_id
+
+  role_id     = "infraDatabaseRelease"
+  title       = "Infra Database Release"
+  description = "Read and apply release metadata to an existing managed database instance."
+  stage       = "GA"
+
+  permissions = [
+    "compute.instanceGroupManagers.get",
+    "compute.instanceGroupManagers.update",
+    "compute.instances.setMetadata",
+    "compute.zoneOperations.get",
+  ]
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [google_project_service.workload["iam.googleapis.com"]]
+}
+
+resource "google_project_iam_member" "database_release" {
+  project = google_project.workload.project_id
+  role    = google_project_iam_custom_role.database_release.name
+  member  = "serviceAccount:${local.automation_service_accounts.release}"
+
+  condition {
+    title       = "DatabaseReleaseMemberOnly"
+    description = "Fence the sole VM permission to generated members of the fixed database group."
+    expression  = "resource.type != 'compute.googleapis.com/Instance' || resource.name.startsWith('projects/${google_project.workload.project_id}/zones/${var.database_zone}/instances/agora-database-')"
+  }
 }
 
 # Secret payloads stay outside OpenTofu. These additive bindings expose only

@@ -24,8 +24,10 @@ locals {
     "compute.googleapis.com",
     "dns.googleapis.com",
     "iam.googleapis.com",
+    "iap.googleapis.com",
     "logging.googleapis.com",
     "monitoring.googleapis.com",
+    "oslogin.googleapis.com",
     "run.googleapis.com",
     "serviceusage.googleapis.com",
   ])

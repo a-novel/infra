@@ -23,11 +23,12 @@ The design is a small Google Cloud landing zone built from established infrastru
 
 Pull requests are cloud-blind. They receive a read-only repository token and run formatting, validation, mocked OpenTofu tests, static security analysis, and manifest checks. They receive no Google identity, protected environment, or secret payload.
 
-The repository currently has no cloud apply workflow. The bootstrap and first workload-foundation
-resources are defined, but merging or validating them creates nothing. Bootstrap's one-time initial
-application remains a human-only exception performed from `master` after explicit approval; agents
-never run `gcloud` or `tofu apply`. The workload foundation must wait for its protected workflow and
-cannot be applied from a branch or an operator checkout.
+The repository currently has no cloud apply workflow. Bootstrap, the workload foundation, the
+private stateful PostgreSQL host, and its narrow release-metadata command are defined, but merging or
+validating them creates nothing. Bootstrap's one-time initial application remains a human-only
+exception performed from `master` after explicit approval; agents never run `gcloud` or
+`tofu apply`. Foundation and release must wait for their protected workflows and cannot be applied
+from a branch or an operator checkout.
 
 ### Bootstrap Google Cloud only after explicit authorization
 
@@ -47,8 +48,10 @@ not expose that switch. Every resulting control has an independent command-line 
 Use [Provision and verify the workload foundation](./docs/runbooks/provision-workload-foundation.md)
 to choose the immutable workload project ID, record the billing and parent prerequisites, configure
 the future protected environment, and verify the resulting project, private routing, identities,
-registry, quotas, budget, and logging. The runbook contains separate organization/folder and
-standalone-project paths and the temporary Owner-removal step required after project creation.
+registry, database host, quotas, budget, monitoring, and logging. The runbook contains separate
+organization/folder and standalone-project paths and the temporary Owner-removal step required after
+project creation. The [PostgreSQL host runbook](./docs/runbooks/operate-postgresql-host.md) owns the
+host-specific readiness, isolation, capacity, maintenance, and rollback checks.
 
 That runbook is preparation only until `.github/workflows/foundation.yaml` exists on `master` and a
 maintainer explicitly authorizes resource creation. Do not run its mutating Google Cloud commands or
@@ -154,7 +157,7 @@ pnpm test
 | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | [`bootstrap/`](./bootstrap/README.md)                                                   | Stable management project, remote state, recovery storage, GitHub federation, and secret metadata.      |
 | [`environments/production/foundation/`](./environments/production/foundation/README.md) | Long-lived workload project, IAM, network, database host, backups, monitoring, and service definitions. |
-| [`environments/production/release/`](./environments/production/release/README.md)       | Routine image, job, revision, traffic, and database-template deployment.                                |
+| [`environments/production/release/`](./environments/production/release/README.md)       | Routine image, job, revision, traffic, and database-container deployment.                               |
 
 The three names form a security allowlist. Add a root only when a new lifecycle and automation authority require an independent state boundary.
 
@@ -186,7 +189,10 @@ Opaque production plans will live in private, versioned Google Cloud storage whe
 
 The manifest schema accepts complete stable tags such as `v2.5.0` plus a `sha256` digest. Branch tags and prereleases fail validation. Renovate groups each service's image family so one green merge represents one deployment candidate.
 
-The bootstrap manifest keeps both services disabled until their runtime resources and verified image digests land. Merging this repository skeleton cannot deploy an application or create a cloud resource.
+The production manifest keeps both services disabled until backups, runtime resources, and verified
+image digests are ready. Foundation therefore seeds empty group-level release metadata and the host
+would remain idle. The tested deployment helper has no caller until the protected workflow lands.
+Merging this change cannot deploy an application or create a cloud resource.
 
 ### Portability boundary
 
@@ -200,11 +206,12 @@ The [Google Cloud provider guide](./docs/google-cloud.md#network-trust-model) de
 
 Ingress and egress are independent. JSON Keys starts with private-only egress and no public internet path. Authentication uses private VPC routes for internal destinations and managed TLS egress for SMTP. A future private GenAI gRPC service can use that public-TLS egress profile for LLM APIs without opening its ingress.
 
-The foundation code now enforces the VPC, subnet, restricted Google routes, firewall policy, and
-private DNS contract in mocked tests. It deliberately provisions no NAT, router, connector, load
+The foundation code now enforces the VPC, subnet, restricted Google routes, firewall policy, private
+DNS, no-external-IP stateful database group, preserved disk/address, and inbound-only database
+container networking in mocked tests. It deliberately provisions no NAT, router, connector, load
 balancer, or public IP. Those definitions still have no cloud effect until a protected apply is
-authorized. The Cloud Run and database-host resources that attach to the boundary have not landed,
-so end-to-end private gRPC and PostgreSQL reachability remain future acceptance tests.
+authorized. Cloud Run callers have not landed, so end-to-end private gRPC and tagged PostgreSQL
+reachability remain later acceptance tests.
 
 ## Contributing
 

@@ -8,6 +8,7 @@ mock_provider "google" {
   mock_resource "google_service_account" {
     defaults = {
       email = "runtime-mock@agora-production-test.iam.gserviceaccount.com"
+      name  = "projects/agora-production-test/serviceAccounts/runtime-mock@agora-production-test.iam.gserviceaccount.com"
     }
   }
 
@@ -107,6 +108,24 @@ mock_provider "google" {
       ]
     }
   }
+
+  mock_data "google_compute_instance_group" {
+    defaults = {
+      instances = ["projects/agora-production-test/zones/europe-west1-b/instances/agora-database-abcd"]
+      size      = 1
+    }
+  }
+
+  mock_data "google_compute_instance" {
+    defaults = {
+      name = "agora-database-abcd"
+      network_interface = [
+        {
+          network_ip = "10.20.0.5"
+        },
+      ]
+    }
+  }
 }
 
 variables {
@@ -114,6 +133,9 @@ variables {
   workload_project_id   = "agora-production-test"
   billing_account_id    = "ABCDEF-123456-ABCDEF"
   cost_alert_email      = "infra@example.com"
+  database_operator_principals = [
+    "group:infra-operators@example.com",
+  ]
 }
 
 run "builds_the_protected_workload_foundation" {
@@ -141,7 +163,7 @@ run "builds_the_protected_workload_foundation" {
 
   assert {
     condition = (
-      length(google_project_service.workload) == 10 &&
+      length(google_project_service.workload) == 12 &&
       toset(keys(google_project_service.workload)) == toset([
         "artifactregistry.googleapis.com",
         "cloudquotas.googleapis.com",
@@ -149,8 +171,10 @@ run "builds_the_protected_workload_foundation" {
         "compute.googleapis.com",
         "dns.googleapis.com",
         "iam.googleapis.com",
+        "iap.googleapis.com",
         "logging.googleapis.com",
         "monitoring.googleapis.com",
+        "oslogin.googleapis.com",
         "run.googleapis.com",
         "serviceusage.googleapis.com",
       ]) &&
@@ -214,22 +238,26 @@ run "builds_the_protected_workload_foundation" {
 
   assert {
     condition = (
-      google_compute_firewall.allow_postgres_egress.direction == "EGRESS" &&
-      google_compute_firewall.allow_postgres_egress.priority == 810 &&
-      toset(google_compute_firewall.allow_postgres_egress.target_tags) == local.database_caller_tags &&
-      one(google_compute_firewall.allow_postgres_egress.allow).protocol == "tcp" &&
-      toset(one(google_compute_firewall.allow_postgres_egress.allow).ports) == toset(["5432"]) &&
+      length(google_compute_firewall.allow_postgres_egress) == 2 &&
+      alltrue([
+        for key, rule in google_compute_firewall.allow_postgres_egress :
+        rule.direction == "EGRESS" &&
+        rule.priority == 810 &&
+        toset(rule.target_tags) == local.database_egress_contracts[key].target_tags &&
+        one(rule.allow).protocol == "tcp" &&
+        toset(one(rule.allow).ports) == toset([tostring(local.database_egress_contracts[key].port)])
+      ]) &&
       google_compute_firewall.allow_postgres_ingress.direction == "INGRESS" &&
       toset(google_compute_firewall.allow_postgres_ingress.source_ranges) == toset(["10.20.0.0/24"]) &&
       toset(google_compute_firewall.allow_postgres_ingress.target_tags) == toset(["agora-database"]) &&
       one(google_compute_firewall.allow_postgres_ingress.allow).protocol == "tcp" &&
-      toset(one(google_compute_firewall.allow_postgres_ingress.allow).ports) == toset(["5432"]) &&
+      toset(one(google_compute_firewall.allow_postgres_ingress.allow).ports) == toset(["5432", "5433"]) &&
       google_compute_firewall.allow_iap_ssh.direction == "INGRESS" &&
       toset(google_compute_firewall.allow_iap_ssh.source_ranges) == toset(["35.235.240.0/20"]) &&
       toset(google_compute_firewall.allow_iap_ssh.target_tags) == toset(["agora-database"]) &&
       toset(one(google_compute_firewall.allow_iap_ssh.allow).ports) == toset(["22"])
     )
-    error_message = "PostgreSQL must accept only private-subnet traffic and SSH through IAP."
+    error_message = "PostgreSQL must accept only per-database caller egress, private-subnet ingress, and SSH through IAP."
   }
 
   assert {
@@ -312,11 +340,13 @@ run "builds_the_protected_workload_foundation" {
         "roles/artifactregistry.admin",
         "roles/billing.projectManager",
         "roles/cloudquotas.admin",
+        "roles/compute.instanceAdmin.v1",
         "roles/compute.networkAdmin",
         "roles/dns.admin",
         "roles/iam.roleAdmin",
         "roles/iam.serviceAccountAdmin",
         "roles/logging.configWriter",
+        "roles/monitoring.alertPolicyEditor",
         "roles/monitoring.notificationChannelEditor",
         "roles/resourcemanager.projectIamAdmin",
         "roles/serviceusage.serviceUsageAdmin",
@@ -325,14 +355,144 @@ run "builds_the_protected_workload_foundation" {
         for binding in values(google_project_iam_member.foundation) :
         !contains(["roles/owner", "roles/editor"], binding.role)
       ]) &&
-      !contains(local.foundation_project_roles, "roles/compute.instanceAdmin.v1") &&
       google_project_iam_custom_role.foundation_project_metadata.permissions == toset([
         "resourcemanager.projects.get",
         "resourcemanager.projects.list",
         "resourcemanager.projects.update",
       ])
     )
-    error_message = "Foundation IAM must remain least-privilege and omit primitive, VM, move, and delete authority."
+    error_message = "Foundation IAM must remain least-privilege and omit primitive, project-move, and project-delete authority."
+  }
+
+  assert {
+    condition = (
+      google_compute_disk.database.type == "pd-balanced" &&
+      google_compute_disk.database.size == 50 &&
+      google_compute_disk.database.physical_block_size_bytes == 4096 &&
+      google_compute_disk.database.deletion_policy == "PREVENT" &&
+      google_compute_instance_template.database.machine_type == "e2-medium" &&
+      length(one(google_compute_instance_template.database.network_interface).access_config) == 0 &&
+      one(google_compute_instance_template.database.service_account).email == google_service_account.runtime["database"].email &&
+      toset(one(google_compute_instance_template.database.service_account).scopes) == toset(["cloud-platform"]) &&
+      one(google_compute_instance_template.database.shielded_instance_config).enable_secure_boot &&
+      one(google_compute_instance_template.database.shielded_instance_config).enable_vtpm &&
+      one(google_compute_instance_template.database.shielded_instance_config).enable_integrity_monitoring &&
+      google_compute_instance_template.database.metadata["enable-oslogin"] == "TRUE" &&
+      google_compute_instance_template.database.metadata["block-project-ssh-keys"] == "TRUE" &&
+      google_compute_instance_template.database.metadata["cos-update-strategy"] == "update_disabled" &&
+      google_compute_instance_template.database.metadata["serial-port-enable"] == "FALSE" &&
+      google_compute_instance_template.database.metadata["agora-database-data-disk-size-gb"] == "50" &&
+      !contains(keys(google_compute_instance_template.database.metadata), "agora-database-release-revision") &&
+      strcontains(google_compute_instance_template.database.metadata_startup_script, "POSTGRES_PASSWORD_FILE=") &&
+      !strcontains(google_compute_instance_template.database.metadata_startup_script, "POSTGRES_PASSWORD=") &&
+      strcontains(google_compute_instance_template.database.metadata_startup_script, "--auth-local=trust") &&
+      strcontains(google_compute_instance_template.database.metadata_startup_script, "pg_read_file('/run/agora-postgres-password')") &&
+      strcontains(google_compute_instance_template.database.metadata_startup_script, "log_min_error_statement=panic") &&
+      !strcontains(google_compute_instance_template.database.metadata_startup_script, "\\gexec") &&
+      !strcontains(google_compute_instance_template.database.metadata_startup_script, "--tty") &&
+      strcontains(google_compute_instance_template.database.metadata_startup_script, "^[A-Za-z0-9_-]+$") &&
+      strcontains(google_compute_instance_template.database.metadata_startup_script, "cmp -s") &&
+      strcontains(google_compute_instance_template.database.metadata_startup_script, "findmnt -n -o SOURCE") &&
+      strcontains(google_compute_instance_template.database.metadata_startup_script, "\"credHelpers\"") &&
+      !strcontains(google_compute_instance_template.database.metadata_startup_script, "HOME=") &&
+      strcontains(google_compute_instance_template.database.metadata_startup_script, "AGORA-DATABASE-EGRESS") &&
+      strcontains(google_compute_instance_template.database.metadata_startup_script, "--subnet") &&
+      strcontains(google_compute_instance_template.database.metadata_startup_script, "--dns 127.0.0.1") &&
+      !strcontains(google_compute_instance_template.database.metadata_startup_script, "--internal") &&
+      strcontains(google_compute_instance_template.database.metadata_startup_script, "--restart on-failure:5") &&
+      !strcontains(google_compute_instance_template.database.metadata_startup_script, "--restart unless-stopped") &&
+      length(google_compute_instance_template.database.disk) == 2 &&
+      one([
+        for disk in google_compute_instance_template.database.disk : disk
+        if disk.device_name == "agora-data"
+      ]).auto_delete == false &&
+      one([
+        for disk in google_compute_instance_template.database.disk : disk
+        if disk.device_name == "agora-data"
+      ]).source == google_compute_disk.database.name &&
+      google_compute_instance_group_manager.database.target_size == 1 &&
+      google_compute_instance_group_manager.database.deletion_policy == "PREVENT" &&
+      one(google_compute_instance_group_manager.database.stateful_disk).device_name == "agora-data" &&
+      one(google_compute_instance_group_manager.database.stateful_disk).delete_rule == "NEVER" &&
+      one(google_compute_instance_group_manager.database.stateful_internal_ip).interface_name == "nic0" &&
+      one(google_compute_instance_group_manager.database.stateful_internal_ip).delete_rule == "NEVER" &&
+      one(google_compute_instance_group_manager.database.all_instances_config).metadata == tomap({
+        agora-authentication-database-image            = ""
+        agora-authentication-postgres-password-version = "0"
+        agora-database-release-revision                = ""
+        agora-json-keys-database-image                 = ""
+        agora-json-keys-postgres-password-version      = "0"
+      }) &&
+      one(google_compute_instance_group_manager.database.update_policy).type == "OPPORTUNISTIC" &&
+      one(google_compute_instance_group_manager.database.update_policy).replacement_method == "RECREATE" &&
+      one(google_compute_instance_group_manager.database.update_policy).max_surge_fixed == 0 &&
+      one(google_compute_instance_group_manager.database.update_policy).max_unavailable_fixed == 1 &&
+      google_compute_instance_group_manager.database.wait_for_instances_status == "STABLE" &&
+      output.database_host.ports == local.database_ports
+    )
+    error_message = "The private stateful database host, preserved disk, or capacity defaults changed."
+  }
+
+  assert {
+    condition = (
+      google_project_iam_member.mig_service_agent.role == "roles/compute.instanceGroupManagerServiceAgent" &&
+      google_project_iam_member.mig_service_agent.member == "serviceAccount:987654321098@cloudservices.gserviceaccount.com" &&
+      google_service_account_iam_member.foundation_database_act_as.role == "roles/iam.serviceAccountUser" &&
+      google_service_account_iam_member.mig_database_act_as.member == "serviceAccount:987654321098@cloudservices.gserviceaccount.com" &&
+      local.database_runtime_project_roles == toset([
+        "roles/logging.logWriter",
+        "roles/monitoring.metricWriter",
+      ]) &&
+      length(google_project_iam_member.database_runtime_observability) == 2 &&
+      local.database_operator_project_roles == toset([
+        "roles/compute.osAdminLogin",
+        "roles/compute.viewer",
+      ]) &&
+      length(google_project_iam_member.database_operator) == 2 &&
+      one(values(google_project_iam_member.database_operator_iap)).role == "roles/iap.tunnelResourceAccessor" &&
+      one(one(values(google_project_iam_member.database_operator_iap)).condition).expression == "destination.port == 22" &&
+      one(values(google_service_account_iam_member.database_operator_act_as)).role == "roles/iam.serviceAccountUser" &&
+      one(values(google_service_account_iam_member.database_operator_act_as)).service_account_id == google_service_account.runtime["database"].name &&
+      google_project_iam_custom_role.database_release.permissions == toset([
+        "compute.instanceGroupManagers.get",
+        "compute.instanceGroupManagers.update",
+        "compute.instances.setMetadata",
+        "compute.zoneOperations.get",
+      ]) &&
+      google_project_iam_member.database_release.member == "serviceAccount:infra-release@agora-management-test.iam.gserviceaccount.com" &&
+      one(google_project_iam_member.database_release.condition).expression == "resource.type != 'compute.googleapis.com/Instance' || resource.name.startsWith('projects/agora-production-test/zones/europe-west1-b/instances/agora-database-')" &&
+      alltrue([
+        for permission in google_project_iam_custom_role.database_release.permissions :
+        !startswith(permission, "compute.disks.") &&
+        (!startswith(permission, "compute.instances.") || permission == "compute.instances.setMetadata") &&
+        !startswith(permission, "compute.instanceTemplates.")
+      ])
+    )
+    error_message = "Database runtime, operator, service-agent, or release IAM escaped its reviewed boundary."
+  }
+
+  assert {
+    condition = (
+      length(google_monitoring_alert_policy.database_capacity) == 5 &&
+      {
+        for name, policy in google_monitoring_alert_policy.database_capacity :
+        name => one(policy.conditions).condition_threshold[0].threshold_value
+        } == {
+        cpu_sustained   = 0.70
+        disk_critical   = 85
+        disk_warning    = 70
+        memory_critical = 85
+        memory_warning  = 70
+      } &&
+      alltrue([
+        for policy in values(google_monitoring_alert_policy.database_capacity) :
+        policy.deletion_policy == "PREVENT" &&
+        strcontains(one(policy.conditions).condition_threshold[0].filter, "resource.labels.zone = \"europe-west1-b\"") &&
+        strcontains(one(policy.conditions).condition_threshold[0].filter, "metric.labels.instance_name = starts_with(\"agora-database-\")") &&
+        one(policy.conditions).condition_threshold[0].trigger[0].count == 1
+      ])
+    )
+    error_message = "The database capacity alert set, thresholds, or stable instance-name selector changed."
   }
 
   assert {
@@ -480,4 +640,66 @@ run "rejects_an_unreviewed_compute_scale" {
   }
 
   expect_failures = [var.compute_cpu_quota]
+}
+
+run "rejects_a_database_zone_outside_the_region" {
+  command = plan
+
+  variables {
+    database_zone = "us-central1-a"
+  }
+
+  expect_failures = [check.database_zone_matches_region]
+}
+
+run "rejects_database_memory_without_host_headroom" {
+  command = plan
+
+  variables {
+    database_container_memory_mb = 2048
+  }
+
+  expect_failures = [check.database_container_memory_headroom]
+}
+
+run "rejects_database_cpu_without_host_headroom" {
+  command = plan
+
+  variables {
+    database_container_cpu = 1
+  }
+
+  expect_failures = [check.database_container_cpu_headroom]
+}
+
+run "rejects_an_unreviewed_database_machine" {
+  command = plan
+
+  variables {
+    database_machine_type = "n2-standard-8"
+  }
+
+  expect_failures = [var.database_machine_type]
+}
+
+run "rejects_a_non_incremental_database_disk_size" {
+  command = plan
+
+  variables {
+    database_data_disk_size_gb = 55
+  }
+
+  expect_failures = [var.database_data_disk_size_gb]
+}
+
+run "rejects_a_non_human_database_operator" {
+  command = plan
+
+  variables {
+    database_operator_principals = [
+      "serviceAccount:debug@example.iam.gserviceaccount.com",
+    ]
+  }
+
+  expect_failures = [var.database_operator_principals]
 }

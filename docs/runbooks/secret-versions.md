@@ -20,6 +20,9 @@ secrets. See [Secret Manager access control](https://cloud.google.com/secret-man
   transmit, or retain it.
 - Know the one exact secret ID and its runtime format. DSNs and passwords are different values even
   when they refer to the same database.
+- A PostgreSQL password must contain 32–128 characters from `A-Z`, `a-z`, `0-9`, `_`, and `-` only.
+  This printable URL-safe contract makes byte-exact validation and direct DSN embedding unambiguous.
+  JSON Keys and Authentication must use different values.
 - For rotation, know every consumer and the currently pinned numeric version. Never configure a
   production consumer to use the mutable `latest` alias.
 
@@ -78,11 +81,20 @@ printf '\n' >&2
 
 test -n "${SECRET_VALUE}"
 test "${SECRET_VALUE}" = "${SECRET_VALUE_CONFIRMATION}"
+
+case "${SECRET_ID}" in
+  production-authentication-postgres-password|production-json-keys-postgres-password)
+    test "${#SECRET_VALUE}" -ge 32
+    test "${#SECRET_VALUE}" -le 128
+    [[ "${SECRET_VALUE}" =~ ^[A-Za-z0-9_-]+$ ]]
+    ;;
+esac
+
 unset SECRET_VALUE_CONFIRMATION
 ```
 
-If the equality check fails, Bash exits before contacting Google. Restart the procedure; do not echo
-either variable to diagnose it.
+If an equality or PostgreSQL-format check fails, Bash exits before contacting Google. Restart the
+procedure; do not echo either variable to diagnose it.
 
 Add the version through stdin and retain only the numeric version identifier:
 
@@ -128,15 +140,16 @@ version, operator, timestamp, and reason. Do not record the value or a reversibl
 
 Repeat the add procedure separately for every secret needed by the next reviewed workload change.
 Do not populate unused containers early. Authentication and JSON Keys currently require the seven
-declared contracts; database DSNs must use internal addresses once the private data plane exists, so
-create those versions only after the foundation outputs are known.
+declared contracts; database DSNs must use the stateful private address and distinct host ports from
+the [PostgreSQL host runbook](./operate-postgresql-host.md), so create those versions only after the
+foundation output is known.
 
 The initial application release must pin each numeric version. Treat a missing version as a blocked
 deployment, not a reason to use `latest` or copy a value into GitHub.
 
-## Rotate without downtime
+## Rotate through a controlled rollout
 
-The normal sequence is additive:
+The normal sequence is additive when a consumer and credential issuer support an overlap window:
 
 1. Add and record a new enabled version using the procedure above.
 2. Update the foundation/release code or manifest to reference that exact numeric version.
@@ -144,6 +157,13 @@ The normal sequence is additive:
 4. Verify all consumers and background jobs use the new version.
 5. Disable the old version; keep it recoverable during the observation window.
 6. Destroy it only after the rollback window and any external credential revocation are complete.
+
+Do not assume this sequence is zero-downtime. A PostgreSQL password is the credential enforced by
+the running cluster, so changing the database password and the client DSN is one coordinated
+rollout. Follow the PostgreSQL host runbook, schedule the documented short interruption, update the
+database before its clients, and keep the previous numeric password and DSN versions available for
+rollback. Credentials whose issuer supports two concurrently valid values can use a true overlap
+window instead.
 
 Select the old numeric version explicitly and compare it with the new one:
 
