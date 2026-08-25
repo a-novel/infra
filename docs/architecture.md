@@ -41,7 +41,7 @@ currently reconciles the platform.
 | Workload project     | Replaceable production plane that holds the VPC, compute, services, operational storage, logs, and monitoring.   |
 | Root                 | Independently initialized OpenTofu working directory with its own state and automation authority.                |
 | Foundation           | Long-lived infrastructure that survives an ordinary application release.                                         |
-| Release              | Routine application state such as images, revisions, jobs, traffic, and the database container template.         |
+| Release              | Routine application state such as images, revisions, jobs, traffic, and database container configuration.        |
 | Ingress              | Connections accepted by a workload.                                                                              |
 | Egress               | Connections initiated by a workload. Ingress and egress are independent controls.                                |
 | Application rollback | Restoration of the prior release receipt while backward-compatible schema changes remain.                        |
@@ -59,13 +59,68 @@ rare changes                     occasional changes                      frequen
 | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`bootstrap/`](../bootstrap/)                                                   | Resources inside the manually created management project: state and recovery storage, federation, automation identities, and secret metadata. | May establish later automation identities. It does not create its own project or deploy application revisions.                                      |
 | [`environments/production/foundation/`](../environments/production/foundation/) | Workload project, IAM, VPC, private data plane, database host and disks, backups, monitoring, and stable service definitions.                 | May change durable infrastructure after protected human approval. It does not select routine application versions.                                  |
-| [`environments/production/release/`](../environments/production/release/)       | Container images, jobs, revisions, traffic, and database container templates described by the release manifest.                               | May deploy and compensate an application release. It cannot change project IAM, networking, state protection, preserved disks, or backup retention. |
+| [`environments/production/release/`](../environments/production/release/)       | Container images, jobs, revisions, traffic, and database container configuration described by the release manifest.                           | May deploy and compensate an application release. It cannot change project IAM, networking, state protection, preserved disks, or backup retention. |
 
 The roots apply in that order. A root consumes only the small set of outputs it needs from an earlier
 root and never embeds another root's credentials or state. The foundation automation identity is the
 deliberate high-trust exception to state isolation: after the human bootstrap, its protected workflow
 maintains both `bootstrap` and `foundation`. Release remains confined to its own state, while recovery
 can restore all three state roots without receiving IAM-administration authority.
+
+## Stateful database ownership
+
+The PostgreSQL host follows the stable infrastructure, mutable configuration pattern. Foundation
+owns everything whose accidental loss can destroy data or network identity: the balanced data disk,
+instance template, one-member stateful managed instance group, preserved private address, machine
+shape, startup code, firewall, IAM, and capacity alerts. A foundation apply creates the host in an
+idle state when no release metadata exists.
+
+Foundation seeds one group-level `allInstancesConfig` map containing an empty Git commit, two empty
+image references, and two zero password-version identifiers. It ignores later drift only on that
+nested map. The protected release workflow will derive all five non-secret values from reviewed
+inputs and call the tested [`deploy-database-release.sh`](../ops/deploy-database-release.sh) helper.
+The helper validates the exact project, repositories, digests, commit, zone, and positive version
+identifiers, then reads the existing map and requires exactly those five keys. Only after that
+fail-closed shape check does it invoke Google's supported all-instances update and apply it to the
+sole member with both the minimum and maximum action set to `RESTART`.
+
+The MIG update policy is `OPPORTUNISTIC`, so changing group metadata or a foundation template cannot
+act on the live member before the owning protected workflow states its disruption ceiling. Routine
+release uses `RESTART`; reviewed foundation maintenance uses `REPLACE` and `RECREATE`. The group has
+zero surge, so both are short single-host outages and neither creates a second disk writer.
+
+This small imperative edge is deliberate. The Google provider's
+[`google_compute_per_instance_config` create path](https://github.com/hashicorp/terraform-provider-google/blob/v7.45.0/google/services/compute/resource_compute_per_instance_config.go)
+calls `createInstances`; it creates a new MIG member and cannot safely adopt the existing
+foundation-owned member. Duplicating the MIG resource across two OpenTofu states would create
+overlapping ownership. Keeping the fixed command in versioned, tested code preserves one owner for
+the durable resource while the release identity remains limited to group-manager read/update and
+zonal-operation polling plus the `setMetadata` permission Google requires for an existing VM. An IAM
+condition fences that sole VM permission to generated `agora-database-*` members. The protected
+workflow and receipt are introduced by the deployment task; until then the helper has no
+authenticated caller.
+
+```text
+foundation template + stateful disk/address + MIG
+                         |
+                         v
+              one generated VM
+                         ^
+                         |
+tested group metadata update, capped at RESTART
+                         ^
+                         |
+release commit + image digests + secret version IDs
+```
+
+This split gives ordinary deployments enough authority to converge both database containers and no
+disk, template, network, IAM, secret-payload, or direct instance-lifecycle permission. Google's
+group-manager update permission is coarser than the five-field operation and can affect group
+lifecycle indirectly, so the fixed helper, resource-name condition, protected environment,
+committed manifest, audit log, health gate, and private receipt form the remaining controls. A
+compute rollback restores the prior foundation template. An application rollback runs the same
+helper with the prior receipt. Neither rollback rewinds schema or data; that remains a separately
+approved restore.
 
 ## State and bootstrap
 

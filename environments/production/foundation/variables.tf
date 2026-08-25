@@ -86,6 +86,109 @@ variable "subnet_cidr" {
   }
 }
 
+variable "database_zone" {
+  description = "Single production zone for the stateful PostgreSQL managed instance group and preserved data disk."
+  type        = string
+  default     = "europe-west1-b"
+
+  validation {
+    condition     = can(regex("^[a-z]+-[a-z]+[0-9]+-[a-z]$", var.database_zone))
+    error_message = "The database zone must be a valid Google Cloud zone name."
+  }
+}
+
+variable "database_machine_type" {
+  description = "Reviewed vertical-capacity profile for the always-on PostgreSQL host."
+  type        = string
+  default     = "e2-medium"
+
+  validation {
+    condition     = contains(["e2-medium", "e2-standard-2", "e2-standard-4"], var.database_machine_type)
+    error_message = "The database machine type must be e2-medium, e2-standard-2, or e2-standard-4."
+  }
+}
+
+variable "database_data_disk_size_gb" {
+  description = "Balanced Persistent Disk capacity shared by the isolated PostgreSQL data directories; increases are online, decreases are forbidden."
+  type        = number
+  default     = 50
+
+  validation {
+    condition = (
+      var.database_data_disk_size_gb >= 50 &&
+      var.database_data_disk_size_gb <= 1000 &&
+      floor(var.database_data_disk_size_gb) == var.database_data_disk_size_gb &&
+      var.database_data_disk_size_gb % 10 == 0
+    )
+    error_message = "The database data disk must be 50-1,000 GiB in 10 GiB increments."
+  }
+}
+
+variable "database_container_cpu" {
+  description = "Maximum vCPU allocation for each PostgreSQL container."
+  type        = number
+  default     = 0.75
+
+  validation {
+    condition     = var.database_container_cpu >= 0.25 && var.database_container_cpu <= 1.75
+    error_message = "Each database container must receive 0.25-1.75 vCPU."
+  }
+}
+
+variable "database_container_memory_mb" {
+  description = "Hard memory limit in MiB for each PostgreSQL container."
+  type        = number
+  default     = 1536
+
+  validation {
+    condition = (
+      var.database_container_memory_mb >= 512 &&
+      var.database_container_memory_mb <= 7168 &&
+      floor(var.database_container_memory_mb) == var.database_container_memory_mb &&
+      var.database_container_memory_mb % 128 == 0
+    )
+    error_message = "Each database container must receive 512-7,168 MiB in 128 MiB increments."
+  }
+}
+
+variable "database_max_connections" {
+  description = "PostgreSQL connection ceiling applied independently to each database container."
+  type        = number
+  default     = 50
+
+  validation {
+    condition     = var.database_max_connections >= 20 && var.database_max_connections <= 200 && floor(var.database_max_connections) == var.database_max_connections
+    error_message = "Each database must allow 20-200 whole-number connections."
+  }
+}
+
+variable "database_cos_image" {
+  description = "Pinned, supported Container-Optimized OS image used by the PostgreSQL instance template."
+  type        = string
+  default     = "projects/cos-cloud/global/images/cos-125-19216-532-123"
+
+  validation {
+    condition     = can(regex("^projects/cos-cloud/global/images/cos-[0-9]+(-[0-9]+)+$", var.database_cos_image))
+    error_message = "The database host must use an immutable named image from the cos-cloud project."
+  }
+}
+
+variable "database_operator_principals" {
+  description = "Human identities allowed to inspect the private database host through OS Login and IAP. Use user: or group: IAM member syntax."
+  type        = set(string)
+
+  validation {
+    condition = (
+      length(var.database_operator_principals) > 0 &&
+      alltrue([
+        for principal in var.database_operator_principals :
+        can(regex("^(user|group):[^[:space:]@]+@[^[:space:]@]+$", principal))
+      ])
+    )
+    error_message = "Provide at least one database operator as user:email or group:email. Service accounts and broad principals are not accepted."
+  }
+}
+
 variable "cost_alert_email" {
   description = "Operator email address that receives workload budget notifications and quota-review follow-up."
   type        = string

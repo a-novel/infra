@@ -3,7 +3,7 @@
 Use this runbook to prepare, provision, and independently verify the replaceable production workload
 project and its private foundation. It covers project parent and billing authority, protected GitHub
 inputs, project adoption, private routing, runtime identities, Artifact Registry, cost controls, and
-removal of temporary broad access.
+the idle private PostgreSQL host, and removal of temporary broad access.
 
 ## Current stop condition
 
@@ -29,18 +29,22 @@ root-specific automation identity.
 The completed procedure creates:
 
 - one workload project linked to the selected billing account;
-- ten workload APIs, one custom VPC, one regional `/24` subnet, two restricted Google API routes,
-  five firewall rules, and three private DNS zones;
+- twelve workload APIs, one custom VPC, one regional `/24` subnet, two restricted Google API routes,
+  six firewall rules, and three private DNS zones;
 - six keyless runtime identities and seven exact cross-project secret IAM bindings;
 - deprivileged default Google service accounts so none retains a primitive project role;
 - one immutable regional Docker repository and narrow release/database access;
+- one pinned Shielded COS template, one continuously running `e2-medium` in a stateful one-member
+  group, one 20 GiB replaceable boot disk, one 50 GiB preserved balanced data disk, and one
+  stateful internal address;
 - four regional quota preferences, one alert-only budget of 60 units in the billing account currency,
-  one email channel, 30-day default logging, and one narrow successful-healthcheck exclusion.
+  one email channel, five database capacity alerts, 30-day default logging, and one narrow
+  successful-healthcheck exclusion.
 
-It does not create a VM, Persistent Disk, PostgreSQL process, backup schedule, Cloud Run service or
-job, public IP, load balancer, Cloud NAT, router, VPC connector, secret payload, or application
-release. PostgreSQL and private gRPC are not callable after this procedure because their servers do
-not exist yet.
+It does not create a running PostgreSQL container, backup schedule, Cloud Run service or job, public
+IP, load balancer, Cloud NAT, router, VPC connector, secret payload, or application release. The VM
+stays idle because both release-manifest components are disabled. PostgreSQL and private gRPC are not
+callable after this procedure.
 
 ## Security rules for every step
 
@@ -69,6 +73,9 @@ not exist yet.
   cannot be reused after deletion.
 - The cost-alert address is monitored by a human. If it is a group, it accepts messages from Google
   Cloud Quotas, Cloud Billing, and Cloud Monitoring.
+- Select at least one named database operator as a `user:` or `group:` IAM member. This identity
+  receives privileged OS Login through IAP and must use MFA. A cross-organization operator also
+  needs OS Login External User from its own organization administrator.
 - The first foundation pull request and its complete sanitized plan have been reviewed. No change
   targets an unrelated project, parent, billing account, network, or secret container.
 
@@ -84,6 +91,7 @@ set +x
 
 REPOSITORY='a-novel/infra'
 REGION='europe-west1'
+DATABASE_ZONE='europe-west1-b'
 SUBNET_CIDR='10.20.0.0/24'
 WORKLOAD_PROJECT_NAME='Agora production'
 
@@ -91,6 +99,7 @@ read -r -p 'Management project ID: ' MANAGEMENT_PROJECT_ID
 read -r -p 'New workload project ID: ' WORKLOAD_PROJECT_ID
 read -r -p 'Billing account ID (XXXXXX-XXXXXX-XXXXXX): ' BILLING_ACCOUNT_ID
 read -r -p 'Cost-alert and quota-contact email address: ' COST_ALERT_EMAIL
+read -r -p 'Database operator IAM member (user: or group:): ' DATABASE_OPERATOR_PRINCIPAL
 read -r -p 'Organization ID, or blank: ' ORGANIZATION_ID
 read -r -p 'Folder ID, or blank: ' FOLDER_ID
 
@@ -101,16 +110,23 @@ FOUNDATION_SERVICE_ACCOUNT="infra-foundation@${MANAGEMENT_PROJECT_ID}.iam.gservi
 [[ "$MANAGEMENT_PROJECT_ID" != "$WORKLOAD_PROJECT_ID" ]]
 [[ "$BILLING_ACCOUNT_ID" =~ ^[0-9A-Z]{6}-[0-9A-Z]{6}-[0-9A-Z]{6}$ ]]
 [[ "$COST_ALERT_EMAIL" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]
+[[ "$DATABASE_ZONE" == "${REGION}-"* ]]
+[[ "$DATABASE_OPERATOR_PRINCIPAL" =~ ^(user|group):[^[:space:]@]+@[^[:space:]@]+$ ]]
 [[ -z "$ORGANIZATION_ID" || "$ORGANIZATION_ID" =~ ^[0-9]+$ ]]
 [[ -z "$FOLDER_ID" || "$FOLDER_ID" =~ ^[0-9]+$ ]]
 [[ -z "$ORGANIZATION_ID" || -z "$FOLDER_ID" ]]
 
-printf 'Repository: %s\nManagement project: %s\nWorkload project: %s\nRegion: %s\nSubnet: %s\n' \
-  "$REPOSITORY" "$MANAGEMENT_PROJECT_ID" "$WORKLOAD_PROJECT_ID" "$REGION" "$SUBNET_CIDR"
+DATABASE_OPERATOR_PRINCIPALS="$(
+  jq -cn --arg principal "$DATABASE_OPERATOR_PRINCIPAL" '[$principal]'
+)"
+
+printf 'Repository: %s\nManagement project: %s\nWorkload project: %s\nRegion: %s\nDatabase zone: %s\nSubnet: %s\n' \
+  "$REPOSITORY" "$MANAGEMENT_PROJECT_ID" "$WORKLOAD_PROJECT_ID" "$REGION" "$DATABASE_ZONE" "$SUBNET_CIDR"
 ```
 
-Expected safe result: the final five non-sensitive selections print, all validations exit zero, and
-at most one parent ID is populated. Do not print the billing account or alert address.
+Expected safe result: the final six non-sensitive selections print, all validations exit zero, and
+at most one parent ID is populated. Do not print the billing account, alert address, operator
+principal, or JSON principal set.
 
 Verify the active identities and stable bootstrap resources without changing anything:
 
@@ -294,6 +310,8 @@ gh variable set WORKLOAD_PROJECT_ID --repo "$REPOSITORY" --env production-founda
 gh variable set WORKLOAD_PROJECT_NAME --repo "$REPOSITORY" --env production-foundation \
   --body "$WORKLOAD_PROJECT_NAME"
 gh variable set REGION --repo "$REPOSITORY" --env production-foundation --body "$REGION"
+gh variable set DATABASE_ZONE --repo "$REPOSITORY" --env production-foundation \
+  --body "$DATABASE_ZONE"
 gh variable set SUBNET_CIDR --repo "$REPOSITORY" --env production-foundation --body "$SUBNET_CIDR"
 
 if [[ -n "$ORGANIZATION_ID" ]]; then
@@ -309,38 +327,42 @@ else
 fi
 ```
 
-The billing account and personal notification address are not application secrets, but environment
-secrets prevent accidental public workflow output. Pass them through stdin instead of process
-arguments:
+The billing account, notification address, and database operator set are not application secrets,
+but environment secrets prevent a public repository from exposing billing metadata, contact
+identity, or privileged operator identity. Pass them through stdin instead of process arguments:
 
 ```bash
 printf '%s' "$BILLING_ACCOUNT_ID" \
   | gh secret set BILLING_ACCOUNT_ID --repo "$REPOSITORY" --env production-foundation
 printf '%s' "$COST_ALERT_EMAIL" \
   | gh secret set COST_ALERT_EMAIL --repo "$REPOSITORY" --env production-foundation
+printf '%s' "$DATABASE_OPERATOR_PRINCIPALS" \
+  | gh secret set DATABASE_OPERATOR_PRINCIPALS --repo "$REPOSITORY" --env production-foundation
 ```
 
 `COST_ALERT_EMAIL` receives budget notifications and Cloud Quotas review follow-up. It carries no
 quota-administration authority; the protected foundation service account owns the code-managed quota
 role.
 
-Unset the two private operator values after upload:
+Unset the private values after upload:
 
 ```bash
-unset BILLING_ACCOUNT_ID COST_ALERT_EMAIL
+unset BILLING_ACCOUNT_ID COST_ALERT_EMAIL DATABASE_OPERATOR_PRINCIPAL DATABASE_OPERATOR_PRINCIPALS
 ```
 
-Verify names only; GitHub never returns secret values:
+Verify the environment inventory. Variable values are intentionally public identifiers; GitHub does
+not return secret values:
 
 ```bash
 gh variable list --repo "$REPOSITORY" --env production-foundation
 gh secret list --repo "$REPOSITORY" --env production-foundation
 ```
 
-Expected safe result: five required variables, at most one parent variable, and exactly the two
+Expected safe result: six required variables, at most one parent variable, and exactly the three
 secret names above. The future workflow maps these names to the matching `TF_VAR_*` inputs and must
-mask them before any command. Budget and quota defaults remain reviewed code instead of mutable
-GitHub inputs.
+mask them before any command. `DATABASE_OPERATOR_PRINCIPALS` is the JSON array consumed by the
+OpenTofu set input; its protected plan and state are private. Budget, database capacity, pinned COS
+image, and quota defaults remain reviewed code instead of mutable GitHub inputs.
 
 ## 5. Protected plan and apply (not available yet)
 
@@ -364,11 +386,13 @@ Stop until the protected foundation workflow lands. That workflow must:
 The implementation must replace this stop section with its exact `gh workflow run` and saved-plan
 review commands. Until then, there is deliberately no supported apply command.
 
-The expected initial summary contains creates for one project, ten APIs, the network/subnet/routes,
-five firewalls, three zones and their records, six service accounts, exact IAM, one repository, four
-quota preferences, one budget/channel, and logging controls. It contains zero managed-resource
-delete, replacement, state-forget, VM, disk, Cloud Run service/job, router, NAT, connector, load
-balancer, secret-version, or service-account-key actions. For standalone adoption, the reviewed
+The expected initial summary contains creates for one project, twelve APIs, the
+network/subnet/routes, six firewalls, three zones and their records, six service accounts, exact
+IAM, one repository, one data disk, one immutable instance template, one stateful instance-group
+manager, five database alerts, four quota preferences, one budget/channel, and logging controls. It
+contains zero managed-resource delete, replacement, state-forget, Cloud Run service/job, router,
+NAT, connector, load balancer, secret-version, or service-account-key actions. For standalone
+adoption, the reviewed
 `google_project` update also has the documented provider side effect of removing Google's empty
 default VPC; no workload may be attached to it. Do not approve a plan that differs without changing
 and reviewing the code and this runbook.
@@ -383,12 +407,12 @@ gcloud projects describe "$WORKLOAD_PROJECT_ID" \
 gcloud billing projects describe "$WORKLOAD_PROJECT_ID" \
   --format='yaml(projectId,billingEnabled)'
 gcloud services list --enabled --project="$WORKLOAD_PROJECT_ID" \
-  --filter='config.name:(artifactregistry.googleapis.com cloudquotas.googleapis.com cloudresourcemanager.googleapis.com compute.googleapis.com dns.googleapis.com iam.googleapis.com logging.googleapis.com monitoring.googleapis.com run.googleapis.com serviceusage.googleapis.com)' \
+  --filter='config.name:(artifactregistry.googleapis.com cloudquotas.googleapis.com cloudresourcemanager.googleapis.com compute.googleapis.com dns.googleapis.com iam.googleapis.com iap.googleapis.com logging.googleapis.com monitoring.googleapis.com oslogin.googleapis.com run.googleapis.com serviceusage.googleapis.com)' \
   --format='value(config.name)' | sort
 ```
 
 Expected safe result: the project is active with the selected parent and labels, billing is enabled,
-and exactly the ten expected service names appear in the filtered list.
+and exactly the twelve expected service names appear in the filtered list.
 
 Verify no service account has an unexpected primitive project role and no project service account has
 a user-managed key. The all-account enumeration is intentional: a newly introduced or
@@ -486,16 +510,19 @@ gcloud compute firewall-rules list --project="$WORKLOAD_PROJECT_ID" \
   --filter='network:agora-production' \
   --format='table(name,direction,priority,sourceRanges,destinationRanges,allowed,denied,targetTags)'
 gcloud compute routers list --project="$WORKLOAD_PROJECT_ID" --format='value(name)'
-gcloud compute addresses list --project="$WORKLOAD_PROJECT_ID" --format='value(name,addressType,address)'
+gcloud compute addresses list --project="$WORKLOAD_PROJECT_ID" \
+  --format='table(name,addressType,address,subnetwork.basename(),users.basename())'
 gcloud compute forwarding-rules list --project="$WORKLOAD_PROJECT_ID" --format='value(name)'
 gcloud services list --enabled --project="$WORKLOAD_PROJECT_ID" \
   --filter='config.name=vpcaccess.googleapis.com' --format='value(config.name)'
 ```
 
-Expected safe result: five named rules with tagged allow priorities 800/810 and a VPC-wide deny
+Expected safe result: six named rules with tagged allow priorities 800/810 and a VPC-wide deny
 priority 1200 with no target tag; database ingress has only the production subnet, IAP SSH has only
-`35.235.240.0/20`, and no public ingress exists. The remaining four commands print nothing: no
-router/NAT, reserved address, forwarding rule, or VPC Access API/connector exists.
+`35.235.240.0/20`, and no public ingress exists. The address list contains exactly the automatically
+reserved INTERNAL address preserved for the one database VM and no EXTERNAL address. The router,
+forwarding-rule, and VPC Access commands print nothing: no router/NAT, public frontend, or connector
+exists.
 
 Private DNS:
 
@@ -574,9 +601,15 @@ Expected safe result: 30-day retention, unlocked, analytics disabled, and an ena
 matches only `run.googleapis.com/requests`, `/v2/healthcheck`, and HTTP 2xx/3xx. It must not exclude
 failed health checks, application logs, or audit logs.
 
+Continue with [Operate the private PostgreSQL host](./operate-postgresql-host.md). Run its host
+selection, foundation-state, firewall, alert, and disabled-manifest IAP checks. Expected safe result:
+one private stateful VM, one mounted preserved disk, no database containers, and no public path. Do
+not enable a database release during foundation provisioning.
+
 ## 8. Remove temporary creation authority
 
-Run only after the protected post-apply plan reports zero change and sections 6–7 pass. Removing
+Run only after the protected post-apply plan reports zero change, sections 6–7 pass, and the
+database-host runbook confirms the idle host. Removing
 authority earlier can strand a partially configured project.
 
 For an organization-backed workload project, ask an organization-policy administrator—not CI—to
@@ -734,12 +767,13 @@ account for the shortest recovery window. Record the incident, finish the exact 
 verification, then remove Owner again. Never grant Owner to the release, plan, recovery, runtime, or
 GitHub principal directly.
 
-### An unexpected public or idle network resource exists
+### An unexpected public or fixed-cost network resource exists
 
 Freeze writers and identify its creator from Cloud Audit Logs. Do not delete it ad hoc if OpenTofu
 state might own it. A reviewed foundation change must remove or import/reconcile it, and the protected
-destruction gate must be deliberate. No service deployment proceeds until routers/NAT, connectors,
-external addresses, forwarding rules, and public database paths are absent again.
+destruction gate must be deliberate. The database group's one stateful internal address is expected.
+No service deployment proceeds until routers/NAT, connectors, external addresses, forwarding rules,
+and public database paths are absent again.
 
 ## References
 

@@ -10,14 +10,15 @@ before the first apply and before any fixed-cost shape change.
 
 | Profile          | What exists                                                                                                                                                                                      | Expected USD/month before tax |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------: |
-| Foundation only  | Workload project, VPC/firewalls/routes, three private DNS zones, identities, empty or small Artifact Registry, quotas, budget, and bounded logs                                                  |                 **about 1–3** |
-| Launch           | Foundation plus one on-demand `e2-medium`, preserved disks, two PostgreSQL containers, four-hour backups/snapshots, two scale-to-zero services, and short jobs                                   |                     **35–50** |
+| Foundation only  | Workload project, VPC/firewalls/routes, three private DNS zones, identities, registry, quotas, budget, bounded logs, one on-demand `e2-medium`, and its 20/50 GiB disks                          |               **about 31–40** |
+| Launch           | Foundation with its `e2-medium` running two PostgreSQL containers, plus four-hour backups/snapshots, two scale-to-zero services, and short jobs                                                  |                     **35–50** |
 | Capacity horizon | One `e2-standard-2`, four PostgreSQL containers, 150 GiB data disk, retained backups, two private gRPC services, three HTTP services, three to five jobs, and one to two scale-to-zero frontends |                    **75–105** |
 
-The foundation-only range allows modest DNS queries and image/log storage; its only unavoidable
-fixed product charge is approximately USD 0.60/month for three Cloud DNS zones. The launch and
-capacity rows describe later tickets. This foundation change does not create a VM, disk, database,
-backup, Cloud Run service, or job.
+The foundation-only range is the cost of applying the code while both database components remain
+disabled. The VM stays on but idle, and no PostgreSQL container runs. Compute and provisioned disks
+are the fixed cost; three DNS zones add approximately USD 0.60/month. The launch row adds active
+database images, backup retention, scale-to-zero services, and short jobs. No resource is currently
+applied, and this repository still has no protected apply workflow.
 
 ## Current unit assumptions
 
@@ -26,7 +27,9 @@ backup, Cloud Run service, or job.
 | Cloud DNS private zone                | USD 0.20/zone/month for the first 25 zones                                                                              | Three zones = USD 0.60/month.                                                                                                                                              |
 | Cloud DNS regular queries             | USD 0.40 per million for the first billion monthly queries                                                              | Low launch traffic should remain well below USD 1/month.                                                                                                                   |
 | Artifact Registry storage             | First 0.5 GiB per billing account free; then about USD 0.10/GiB-month                                                   | Immutable images remain inexpensive; dry-run cleanup exposes growth before deletion is enabled.                                                                            |
+| Compute Engine `e2-medium`            | Rounded on-demand `europe-west1` estimate of USD 25–30/month for one continuously running VM                            | The one-member database group has target size one and no autoscaler, so this cost continues while the foundation exists.                                                   |
 | Balanced Persistent Disk              | About USD 0.10/GiB-month in `europe-west1`                                                                              | 50 GiB is about USD 5/month; 150 GiB is about USD 15/month. Provisioned, not used, capacity is billed.                                                                     |
+| Standard Persistent Disk              | Rounded planning allowance of about USD 1/month for the 20 GiB replaceable COS boot disk                                | Each live database VM has one boot disk. Managed replacement deletes the former boot disk after the new VM takes over.                                                     |
 | Cloud Run services                    | Request-based, minimum instances `0`, explicit concurrency and maximum instances                                        | Idle service cost is zero; request, CPU, memory, and network usage remain variable. Google's current `europe-west1` example costs USD 13.69/month at ten million requests. |
 | Cloud Run jobs                        | Instance-based billing while a task runs, one-minute minimum                                                            | Google's hourly one-minute, 1 vCPU/512 MiB example remains within the free tier; actual migration and backup duration is measured.                                         |
 | Cloud Logging                         | First 50 GiB/project/month free; then USD 0.50/GiB ingested, including 30-day storage                                   | Thirty-day retention and the narrow successful-healthcheck exclusion aim to keep launch logging free without hiding failures.                                              |

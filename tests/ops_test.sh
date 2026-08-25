@@ -108,4 +108,96 @@ if grep -Fq 'allowed_audiences' "${REPOSITORY_ROOT}/bootstrap/identity.tf"; then
     exit 1
 fi
 
+# The database release helper is intentionally narrower than a general MIG
+# command wrapper: tests capture every argument and reject invalid input before
+# a cloud command can run.
+MOCK_BIN="${TEMP_DIR}/bin"
+GCLOUD_ARGUMENT_LOG="${TEMP_DIR}/gcloud-arguments.log"
+mkdir -p "${MOCK_BIN}"
+# These references expand when the generated mock runs, not while this test
+# writes it.
+# shellcheck disable=SC2016
+printf '%s\n' \
+    '#!/bin/bash' \
+    'printf "CALL\\n" >> "${GCLOUD_ARGUMENT_LOG}"' \
+    'printf "%s\\n" "$@" >> "${GCLOUD_ARGUMENT_LOG}"' \
+    'if [[ "$*" == *"instance-groups managed describe"* ]]; then' \
+    '    if [[ "${INVALID_METADATA_SHAPE:-false}" == "true" ]]; then' \
+    "        printf '%s\\n' '{\"allInstancesConfig\":{\"properties\":{\"metadata\":{\"unexpected-key\":\"value\"}}}}'" \
+    '    else' \
+    "        printf '%s\\n' '{\"allInstancesConfig\":{\"properties\":{\"metadata\":{\"agora-authentication-database-image\":\"\",\"agora-authentication-postgres-password-version\":\"0\",\"agora-database-release-revision\":\"\",\"agora-json-keys-database-image\":\"\",\"agora-json-keys-postgres-password-version\":\"0\"}}}}'" \
+    '    fi' \
+    'fi' \
+    >"${MOCK_BIN}/gcloud"
+chmod 0700 "${MOCK_BIN}/gcloud"
+
+DUMMY_DIGEST="$(printf 'a%.0s' {1..64})"
+JSON_KEYS_IMAGE="europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-json-keys/database@sha256:${DUMMY_DIGEST}"
+AUTHENTICATION_IMAGE="europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-authentication/database@sha256:${DUMMY_DIGEST}"
+
+PATH="${MOCK_BIN}:${PATH}" GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
+    "${REPOSITORY_ROOT}/ops/deploy-database-release.sh" \
+    agora-production-test \
+    europe-west1-b \
+    0123456789abcdef0123456789abcdef01234567 \
+    "${JSON_KEYS_IMAGE}" \
+    "${AUTHENTICATION_IMAGE}" \
+    7 \
+    11 \
+    >"${TEMP_DIR}/database-release.out"
+
+assert_equal "$(grep -Fc 'CALL' "${GCLOUD_ARGUMENT_LOG}")" "3"
+grep -Fqx 'describe' "${GCLOUD_ARGUMENT_LOG}"
+grep -Fqx 'all-instances-config' "${GCLOUD_ARGUMENT_LOG}"
+grep -Fqx 'update-instances' "${GCLOUD_ARGUMENT_LOG}"
+grep -Fqx -- '--format=json(allInstancesConfig.properties.metadata)' "${GCLOUD_ARGUMENT_LOG}"
+grep -Fqx -- '--all-instances' "${GCLOUD_ARGUMENT_LOG}"
+grep -Fqx -- '--minimal-action=restart' "${GCLOUD_ARGUMENT_LOG}"
+grep -Fqx -- '--most-disruptive-allowed-action=restart' "${GCLOUD_ARGUMENT_LOG}"
+grep -Fqx -- "--metadata=agora-database-release-revision=0123456789abcdef0123456789abcdef01234567,agora-json-keys-database-image=${JSON_KEYS_IMAGE},agora-authentication-database-image=${AUTHENTICATION_IMAGE},agora-json-keys-postgres-password-version=7,agora-authentication-postgres-password-version=11" "${GCLOUD_ARGUMENT_LOG}"
+
+: >"${GCLOUD_ARGUMENT_LOG}"
+set +e
+PATH="${MOCK_BIN}:${PATH}" GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
+    "${REPOSITORY_ROOT}/ops/deploy-database-release.sh" \
+    agora-production-test \
+    europe-west1-b \
+    abbreviated \
+    "${JSON_KEYS_IMAGE}" \
+    "${AUTHENTICATION_IMAGE}" \
+    7 \
+    11 \
+    >"${TEMP_DIR}/invalid-database-release.out" \
+    2>"${TEMP_DIR}/invalid-database-release.err"
+INVALID_DATABASE_RELEASE_CODE=$?
+set -e
+assert_equal "${INVALID_DATABASE_RELEASE_CODE}" "65"
+assert_equal "$(wc -c < "${GCLOUD_ARGUMENT_LOG}")" "0"
+
+# Existing metadata must have the exact foundation-owned schema. Refuse to
+# merge release fields into an unexpected map that OpenTofu intentionally
+# ignores after the initial seed.
+: >"${GCLOUD_ARGUMENT_LOG}"
+set +e
+PATH="${MOCK_BIN}:${PATH}" GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
+    INVALID_METADATA_SHAPE=true \
+    "${REPOSITORY_ROOT}/ops/deploy-database-release.sh" \
+    agora-production-test \
+    europe-west1-b \
+    0123456789abcdef0123456789abcdef01234567 \
+    "${JSON_KEYS_IMAGE}" \
+    "${AUTHENTICATION_IMAGE}" \
+    7 \
+    11 \
+    >"${TEMP_DIR}/invalid-database-metadata.out" \
+    2>"${TEMP_DIR}/invalid-database-metadata.err"
+INVALID_DATABASE_METADATA_CODE=$?
+set -e
+assert_equal "${INVALID_DATABASE_METADATA_CODE}" "70"
+assert_equal "$(grep -Fc 'CALL' "${GCLOUD_ARGUMENT_LOG}")" "1"
+if grep -Eq '^(all-instances-config|update-instances)$' "${GCLOUD_ARGUMENT_LOG}"; then
+    printf "Unexpected database metadata must fail before a mutation.\n" >&2
+    exit 1
+fi
+
 printf "Root and plan-policy fixtures passed.\n"

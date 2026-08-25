@@ -9,12 +9,24 @@ locals {
     restore        = "agora-restore"
   }
 
-  database_caller_tags = toset([
-    local.network_tags.authentication,
-    local.network_tags.backup,
-    local.network_tags.json_keys,
-    local.network_tags.restore,
-  ])
+  database_egress_contracts = {
+    authentication = {
+      port = local.database_ports.authentication
+      target_tags = toset([
+        local.network_tags.authentication,
+        local.network_tags.backup,
+        local.network_tags.restore,
+      ])
+    }
+    json_keys = {
+      port = local.database_ports.json_keys
+      target_tags = toset([
+        local.network_tags.backup,
+        local.network_tags.json_keys,
+        local.network_tags.restore,
+      ])
+    }
+  }
 
   private_egress_tags = toset(values(local.network_tags))
 
@@ -68,7 +80,8 @@ resource "google_compute_subnetwork" "production" {
 }
 
 # Deleting the catch-all route removes an accidental public path. These two
-# explicit routes retain only restricted Google API and direct API paths.
+# explicit routes retain only restricted Google API and direct API paths. IAP
+# TCP forwarding uses Google's separate non-removable system route.
 resource "google_compute_route" "restricted_google_apis" {
   for_each = local.restricted_google_api_ranges
 
@@ -98,18 +111,20 @@ resource "google_compute_firewall" "allow_restricted_google_apis" {
 }
 
 resource "google_compute_firewall" "allow_postgres_egress" {
+  for_each = local.database_egress_contracts
+
   project = google_project.workload.project_id
-  name    = "agora-allow-postgres-egress"
+  name    = "agora-allow-${replace(each.key, "_", "-")}-postgres-egress"
   network = google_compute_network.production.name
 
   direction          = "EGRESS"
   priority           = 810
   destination_ranges = [var.subnet_cidr]
-  target_tags        = sort(tolist(local.database_caller_tags))
+  target_tags        = sort(tolist(each.value.target_tags))
 
   allow {
     protocol = "tcp"
-    ports    = ["5432"]
+    ports    = [tostring(each.value.port)]
   }
 }
 
@@ -141,7 +156,7 @@ resource "google_compute_firewall" "allow_postgres_ingress" {
 
   allow {
     protocol = "tcp"
-    ports    = ["5432"]
+    ports    = ["5432", "5433"]
   }
 }
 
