@@ -208,7 +208,9 @@ async function runRenovateFixture() {
         stringify(fixtureManifest(registry)),
       ),
     ]);
-    await executeFile("git", ["init", "--quiet"], { cwd: scratch });
+    await executeFile("git", ["init", "--quiet", "--initial-branch=master"], {
+      cwd: scratch,
+    });
     await executeFile("git", ["add", "renovate.json", "deploy"], {
       cwd: scratch,
     });
@@ -229,13 +231,14 @@ async function runRenovateFixture() {
 
     let output;
     try {
-      ({ stdout: output } = await executeFile(
+      const result = await executeFile(
         renovateBinary,
         ["--platform=local", "--dry-run=lookup"],
         {
           cwd: scratch,
           env: {
             ...process.env,
+            LOG_FORMAT: "json",
             LOG_LEVEL: "debug",
             RENOVATE_BASE_DIR: path.join(scratch, "runtime/base"),
             RENOVATE_CACHE_DIR: path.join(scratch, "runtime/cache"),
@@ -243,9 +246,10 @@ async function runRenovateFixture() {
           },
           maxBuffer: 4 * 1024 * 1024,
         },
-      ));
+      );
+      output = `${result.stdout}\n${result.stderr}`;
     } catch (error) {
-      output = error.stdout ?? "";
+      output = `${error.stdout ?? ""}\n${error.stderr ?? ""}`;
       const errors = jsonRecords(output)
         .flatMap((record) => record.loggerErrors ?? [])
         .map((record) => record.msg);
