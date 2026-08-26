@@ -19,7 +19,7 @@ disabled. The VM stays on but idle, and no PostgreSQL container runs. Compute an
 are the fixed cost; three DNS zones add approximately USD 0.60/month. The launch row adds active
 database images, 14-day logical retention, daily snapshots, five scale-to-zero recovery jobs, four
 short application jobs, and two scale-to-zero services. No resource is currently applied, and this
-repository still has no protected apply workflow.
+repository deploys nothing until a protected workflow is manually dispatched from `master`.
 
 ## Current unit assumptions
 
@@ -32,7 +32,7 @@ repository still has no protected apply workflow.
 | Balanced Persistent Disk              | About USD 0.10/GiB-month in `europe-west1`                                                                                                                    | 50 GiB is about USD 5/month; 150 GiB is about USD 15/month. Provisioned, not used, capacity is billed.                                                                                                                    |
 | Standard Persistent Disk              | Rounded planning allowance of about USD 1/month for the 20 GiB replaceable COS boot disk                                                                      | Each live database VM has one boot disk. Managed replacement deletes the former boot disk after the new VM takes over.                                                                                                    |
 | Same-region standard snapshots        | USD 0.000068493/GiB-hour for stored snapshot data                                                                                                             | The globally scoped snapshots store data in `europe-west1` as the inexpensive fast local-recovery layer; billing follows changed snapshot bytes.                                                                          |
-| EU multi-region Cloud Storage         | About USD 0.026/GiB-month, plus USD 0.02/GiB for each replicated write and for reads into `europe-west1`                                                      | The logical-backup formula below includes steady retention, every scheduled write, and one monthly aggregate restore read.                                                                                                |
+| EU multi-region Cloud Storage         | About USD 0.026/GiB-month, plus USD 0.02/GiB for each replicated write and for reads into `europe-west1`                                                      | The logical-backup formula below includes steady retention, scheduled writes, the monthly drill, and one backup/restore verification per release.                                                                         |
 | Cloud Run services                    | JSON Keys uses request-based CPU; Authentication uses instance-based CPU so detached mail can drain. Both set minimum `0`, maximum `3`, and concurrency `20`. | Both scale to zero. Authentication accrues CPU/memory while an instance remains allocated, even between requests; low launch usage should fit the free allowances, but sustained traffic can materially change the range. |
 | Cloud Run jobs                        | Instance-based billing while a task runs; Preview ephemeral disk is USD 0.000109589/GiB-hour in `europe-west1`                                                | Backup and restore use the supported 10 GiB minimum only while running. Short execution keeps disk cost negligible; duration remains measured.                                                                            |
 | Cloud Scheduler                       | USD 0.10/job/month, with three jobs free per billing account                                                                                                  | Five recovery schedules plus hourly key rotation add about USD 0.30/month when the billing account's free allowance is otherwise unused.                                                                                  |
@@ -82,12 +82,19 @@ logical retained GiB = 84 × aggregate compressed GiB of one JSON Keys + Authent
 ```
 
 At six aggregate backup sets per day, the bucket also receives about 180 aggregate writes each
-30-day month. One monthly drill reads one aggregate set from the EU multi-region into
-`europe-west1`. At current public unit prices, the recurring logical-backup estimate is:
+30-day month. One monthly drill and each protected release read one aggregate set from the EU
+multi-region into `europe-west1`. Each established release writes one pre-change and one
+post-migration aggregate set and retains both for up to 14 days; first activation omits the
+pre-change set because no source database exists. If `D` is the number of established releases and
+`F` is `1` when first activation occurs in that month (otherwise `0`), the recurring logical-backup
+estimate is:
 
 ```text
-logical USD/month ≈ (84 × 0.026 + 180 × 0.02 + 1 × 0.02) × aggregate compressed GiB
-                  ≈ 5.80 × aggregate compressed GiB
+logical USD/month ≈ (84 × 0.026 + (180 + 2D + F) × 0.02
+                    + (1 + D + F) × 0.02
+                    + (2D + F) × (14 / 30) × 0.026)
+                    × aggregate compressed GiB
+                  ≈ (5.80 + 0.08D + 0.05F) × aggregate compressed GiB
 ```
 
 Incomplete attempts add a small variable overhead until lifecycle deletion. The hourly monitor

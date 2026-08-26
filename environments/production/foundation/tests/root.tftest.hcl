@@ -18,6 +18,20 @@ mock_provider "google" {
     }
   }
 
+  mock_resource "google_tags_tag_key" {
+    defaults = {
+      id   = "tagKeys/100000000001"
+      name = "100000000001"
+    }
+  }
+
+  mock_resource "google_tags_tag_value" {
+    defaults = {
+      id   = "tagValues/200000000001"
+      name = "200000000001"
+    }
+  }
+
   mock_resource "google_monitoring_notification_channel" {
     defaults = {
       name = "projects/agora-production-test/notificationChannels/cost-email"
@@ -140,8 +154,12 @@ variables {
   backup_bucket_name    = "agora-management-test-123456789012-backups"
   billing_account_id    = "ABCDEF-123456-ABCDEF"
   cost_alert_email      = "infra@example.com"
+  organization_id       = "123456789012"
   database_operator_principals = [
     "group:infra-operators@example.com",
+  ]
+  authentication_initializer_principals = [
+    "group:authentication-initializers@example.com",
   ]
 }
 
@@ -153,7 +171,15 @@ run "builds_the_protected_workload_foundation" {
       output.root_name == "foundation" &&
       output.region == "europe-west1" &&
       output.workload_project_id == "agora-production-test" &&
-      output.workload_project_number == "987654321098"
+      output.workload_project_number == "987654321098" &&
+      output.cloud_run_invocation_tags.key == "tagKeys/100000000001" &&
+      toset(keys(output.cloud_run_invocation_tags.values)) == toset([
+        "initializer",
+        "internal",
+        "recovery",
+        "release",
+        "scheduled",
+      ])
     )
     error_message = "The foundation identity, region, or project outputs changed."
   }
@@ -379,6 +405,7 @@ run "builds_the_protected_workload_foundation" {
         "roles/monitoring.alertPolicyEditor",
         "roles/monitoring.notificationChannelEditor",
         "roles/resourcemanager.projectIamAdmin",
+        "roles/resourcemanager.tagAdmin",
         "roles/serviceusage.serviceUsageAdmin",
       ]) &&
       alltrue([
@@ -389,7 +416,10 @@ run "builds_the_protected_workload_foundation" {
         "resourcemanager.projects.get",
         "resourcemanager.projects.list",
         "resourcemanager.projects.update",
-      ])
+      ]) &&
+      length(google_project_iam_member.plan_viewer) == 1 &&
+      google_project_iam_member.plan_viewer[0].role == "roles/viewer" &&
+      google_project_iam_member.plan_viewer[0].member == "serviceAccount:infra-plan@agora-management-test.iam.gserviceaccount.com"
     )
     error_message = "Foundation IAM must remain least-privilege and omit primitive, project-move, and project-delete authority."
   }
@@ -508,33 +538,43 @@ run "builds_the_protected_workload_foundation" {
       ]) &&
       local.release_application_project_roles == toset([
         "roles/cloudscheduler.admin",
+        "roles/cloudquotas.viewer",
       ]) &&
-      length(google_project_iam_member.release_application) == 1 &&
+      length(google_project_iam_member.release_application) == 2 &&
       google_project_iam_custom_role.release_cloud_run_deployer.permissions == toset([
         "run.jobs.create",
+        "run.jobs.createTagBinding",
         "run.jobs.delete",
+        "run.jobs.deleteTagBinding",
         "run.jobs.get",
-        "run.jobs.getIamPolicy",
         "run.jobs.list",
-        "run.jobs.setIamPolicy",
+        "run.jobs.listEffectiveTags",
+        "run.jobs.listTagBindings",
         "run.jobs.update",
+        "run.executions.get",
+        "run.executions.list",
         "run.locations.list",
         "run.operations.get",
+        "run.revisions.get",
+        "run.revisions.list",
         "run.services.create",
+        "run.services.createTagBinding",
         "run.services.delete",
+        "run.services.deleteTagBinding",
         "run.services.get",
-        "run.services.getIamPolicy",
         "run.services.list",
-        "run.services.setIamPolicy",
+        "run.services.listEffectiveTags",
+        "run.services.listTagBindings",
         "run.services.update",
       ]) &&
       !contains(google_project_iam_custom_role.release_cloud_run_deployer.permissions, "run.jobs.run") &&
       !contains(google_project_iam_custom_role.release_cloud_run_deployer.permissions, "run.jobs.runWithOverrides") &&
+      !contains(google_project_iam_custom_role.release_cloud_run_deployer.permissions, "run.jobs.setIamPolicy") &&
+      !contains(google_project_iam_custom_role.release_cloud_run_deployer.permissions, "run.services.setIamPolicy") &&
       google_project_iam_member.release_cloud_run_deployer.member == "serviceAccount:infra-release@agora-management-test.iam.gserviceaccount.com" &&
-      length(google_service_account_iam_member.release_runtime_act_as) == 6 &&
+      length(google_service_account_iam_member.release_runtime_act_as) == 5 &&
       toset(keys(google_service_account_iam_member.release_runtime_act_as)) == toset([
         "authentication",
-        "authentication_initializer",
         "backup",
         "json_keys",
         "restore",
@@ -544,13 +584,61 @@ run "builds_the_protected_workload_foundation" {
         for binding in values(google_project_iam_member.release_application) :
         binding.role != "roles/secretmanager.secretAccessor"
       ]) &&
-      google_storage_bucket_iam_member.backup_runtime_creator.bucket == "agora-management-test-123456789012-backups" &&
-      google_storage_bucket_iam_member.backup_runtime_creator.role == "roles/storage.objectCreator" &&
-      google_storage_bucket_iam_member.backup_runtime_creator.member == "serviceAccount:${google_service_account.runtime["backup"].email}" &&
-      google_storage_bucket_iam_member.restore_runtime_viewer.role == "roles/storage.objectViewer" &&
-      google_storage_bucket_iam_member.restore_runtime_viewer.member == "serviceAccount:${google_service_account.runtime["restore"].email}"
+      length(google_storage_bucket_iam_member.backup_runtime_creator) == 1 &&
+      google_storage_bucket_iam_member.backup_runtime_creator[0].bucket == "agora-management-test-123456789012-backups" &&
+      google_storage_bucket_iam_member.backup_runtime_creator[0].role == "roles/storage.objectCreator" &&
+      google_storage_bucket_iam_member.backup_runtime_creator[0].member == "serviceAccount:${google_service_account.runtime["backup"].email}" &&
+      google_storage_bucket_iam_member.restore_runtime_viewer[0].role == "roles/storage.objectViewer" &&
+      google_storage_bucket_iam_member.restore_runtime_viewer[0].member == "serviceAccount:${google_service_account.runtime["restore"].email}"
     )
     error_message = "Database runtime, operator, service-agent, or release IAM escaped its reviewed boundary."
+  }
+
+  assert {
+    condition = (
+      google_tags_tag_key.cloud_run_invocation.parent == "projects/987654321098" &&
+      google_tags_tag_key.cloud_run_invocation.short_name == "agora-invocation" &&
+      length(google_tags_tag_value.cloud_run_invocation) == 5 &&
+      toset([for value in values(google_tags_tag_value.cloud_run_invocation) : value.short_name]) == toset([
+        "initializer",
+        "internal",
+        "recovery",
+        "release",
+        "scheduled",
+      ]) &&
+      length(google_tags_tag_value_iam_member.release_tag_user) == 3 &&
+      length(google_tags_tag_value_iam_member.initializer_tag_user) == 1 &&
+      google_project_iam_member.release_cloud_run_invoker[0].role == "roles/run.jobsExecutor" &&
+      strcontains(one(google_project_iam_member.release_cloud_run_invoker[0].condition).expression, "resource.matchTagId") &&
+      google_project_iam_member.scheduler_cloud_run_invoker[0].role == "roles/run.jobsExecutor" &&
+      google_project_iam_member.internal_cloud_run_invoker.role == "roles/run.servicesInvoker" &&
+      google_project_iam_member.internal_cloud_run_invoker.member == "serviceAccount:${google_service_account.runtime["authentication"].email}" &&
+      length(google_project_iam_member.recovery_cloud_run_invoker) == 0 &&
+      length(google_project_iam_member.recovery_smoke_cloud_run_invoker) == 0 &&
+      one(values(google_project_iam_member.initializer_cloud_run_invoker)).role == "roles/run.jobsExecutor" &&
+      one(values(google_project_iam_member.initializer_cloud_run_invoker)).member == "group:authentication-initializers@example.com" &&
+      one(values(google_service_account_iam_member.initializer_act_as)).service_account_id == google_service_account.runtime["authentication_initializer"].name &&
+      google_project_iam_custom_role.authentication_initializer_deployer[0].permissions == toset([
+        "run.executions.get",
+        "run.executions.list",
+        "run.jobs.create",
+        "run.jobs.createTagBinding",
+        "run.jobs.delete",
+        "run.jobs.deleteTagBinding",
+        "run.jobs.get",
+        "run.jobs.list",
+        "run.jobs.listEffectiveTags",
+        "run.jobs.listTagBindings",
+        "run.jobs.update",
+        "run.locations.list",
+        "run.operations.get",
+      ]) &&
+      !contains(google_project_iam_custom_role.authentication_initializer_deployer[0].permissions, "run.jobs.run") &&
+      !contains(google_project_iam_custom_role.authentication_initializer_deployer[0].permissions, "run.jobs.runWithOverrides") &&
+      !contains(google_project_iam_custom_role.authentication_initializer_deployer[0].permissions, "run.jobs.setIamPolicy") &&
+      one(values(google_project_iam_member.authentication_initializer_deployer)).member == "group:authentication-initializers@example.com"
+    )
+    error_message = "Cloud Run tag classes must keep release, scheduler, runtime, recovery, and initializer invocation in separate least-privilege boundaries."
   }
 
   assert {
@@ -639,7 +727,8 @@ run "builds_the_protected_workload_foundation" {
       google_artifact_registry_repository_iam_member.release_writer.role == "roles/artifactregistry.writer" &&
       google_artifact_registry_repository_iam_member.release_writer.member == "serviceAccount:infra-release@agora-management-test.iam.gserviceaccount.com" &&
       google_artifact_registry_repository_iam_member.database_reader.role == "roles/artifactregistry.reader" &&
-      google_artifact_registry_repository_iam_member.database_reader.member == "serviceAccount:${google_service_account.runtime["database"].email}"
+      google_artifact_registry_repository_iam_member.database_reader.member == "serviceAccount:${google_service_account.runtime["database"].email}" &&
+      one(values(google_artifact_registry_repository_iam_member.authentication_initializer_reader)).member == "group:authentication-initializers@example.com"
     )
     error_message = "The immutable regional registry, dry-run cleanup policy, or write/read split changed."
   }
@@ -762,6 +851,16 @@ run "rejects_two_project_parents" {
   expect_failures = [google_project.workload]
 }
 
+run "rejects_creating_a_parentless_project" {
+  command = plan
+
+  variables {
+    organization_id = null
+  }
+
+  expect_failures = [google_project.workload]
+}
+
 run "rejects_an_unreviewed_compute_scale" {
   command = plan
 
@@ -832,4 +931,81 @@ run "rejects_a_non_human_database_operator" {
   }
 
   expect_failures = [var.database_operator_principals]
+}
+
+run "limits_disposable_recovery_authority_to_the_replacement_project" {
+  command = plan
+
+  variables {
+    recovery_mode = true
+  }
+
+  assert {
+    condition = (
+      alltrue([
+        for binding in values(google_project_iam_member.foundation) :
+        binding.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com"
+      ]) &&
+      google_project_iam_member.foundation_project_metadata.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
+      google_service_account_iam_member.foundation_database_act_as.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
+      alltrue([
+        for binding in values(google_service_account_iam_member.release_runtime_act_as) :
+        binding.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com"
+      ]) &&
+      alltrue([
+        for binding in values(google_project_iam_member.release_application) :
+        binding.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com"
+      ]) &&
+      google_project_iam_member.release_cloud_run_deployer.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
+      google_project_iam_member.database_release.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
+      google_artifact_registry_repository_iam_member.release_writer.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
+      length(google_project_iam_member.plan_viewer) == 0 &&
+      length(google_artifact_registry_repository_iam_member.recovery_reader) == 0 &&
+      length(google_artifact_registry_repository_iam_member.authentication_initializer_reader) == 0 &&
+      toset(keys(google_service_account_iam_member.release_runtime_act_as)) == toset([
+        "authentication",
+        "json_keys",
+        "restore",
+      ]) &&
+      length(google_tags_tag_value_iam_member.release_tag_user) == 2 &&
+      length(google_tags_tag_value_iam_member.initializer_tag_user) == 0 &&
+      length(google_project_iam_member.release_cloud_run_invoker) == 0 &&
+      length(google_project_iam_member.scheduler_cloud_run_invoker) == 0 &&
+      length(google_project_iam_member.recovery_cloud_run_invoker) == 1 &&
+      google_project_iam_member.recovery_cloud_run_invoker[0].role == "roles/run.jobsExecutor" &&
+      length(google_project_iam_member.recovery_smoke_cloud_run_invoker) == 1 &&
+      google_project_iam_member.recovery_smoke_cloud_run_invoker[0].role == "roles/run.servicesInvoker" &&
+      length(google_project_iam_member.initializer_cloud_run_invoker) == 0 &&
+      length(google_service_account_iam_member.initializer_act_as) == 0 &&
+      length(google_project_iam_custom_role.authentication_initializer_deployer) == 0 &&
+      length(google_project_iam_member.authentication_initializer_deployer) == 0 &&
+      local.release_application_project_roles == toset(["roles/cloudquotas.viewer"])
+    )
+    error_message = "A replacement project must grant every automation boundary only to recovery, never production foundation or release."
+  }
+
+  assert {
+    condition = (
+      contains(google_compute_firewall.allow_postgres_egress["authentication"].target_tags, "agora-restore") &&
+      contains(google_compute_firewall.allow_postgres_egress["json_keys"].target_tags, "agora-restore") &&
+      contains(keys(local.runtime_secret_access), "restore:authentication-owner-password") &&
+      contains(keys(local.runtime_secret_access), "restore:json-keys-owner-password") &&
+      length(google_secret_manager_secret_iam_member.runtime) == 0 &&
+      length(google_storage_bucket_iam_member.backup_runtime_creator) == 0 &&
+      length(google_storage_bucket_iam_member.restore_runtime_viewer) == 0
+    )
+    error_message = "Recovery CI must create no management-plane secret or backup-payload IAM binding; the exact contract is human-applied."
+  }
+}
+
+run "rejects_a_non_human_authentication_initializer" {
+  command = plan
+
+  variables {
+    authentication_initializer_principals = [
+      "serviceAccount:automation@agora-management-test.iam.gserviceaccount.com",
+    ]
+  }
+
+  expect_failures = [var.authentication_initializer_principals]
 }

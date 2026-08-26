@@ -58,7 +58,19 @@ resource "google_artifact_registry_repository_iam_member" "release_writer" {
   location   = google_artifact_registry_repository.production.location
   repository = google_artifact_registry_repository.production.repository_id
   role       = "roles/artifactregistry.writer"
-  member     = "serviceAccount:${local.automation_service_accounts.release}"
+  member     = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "release"]}"
+}
+
+# Recovery can copy receipt-owned immutable manifests out of production, but
+# has no writer role there.
+resource "google_artifact_registry_repository_iam_member" "recovery_reader" {
+  count = var.recovery_mode ? 0 : 1
+
+  project    = google_project.workload.project_id
+  location   = google_artifact_registry_repository.production.location
+  repository = google_artifact_registry_repository.production.repository_id
+  role       = "roles/artifactregistry.reader"
+  member     = "serviceAccount:infra-recovery@${var.management_project_id}.iam.gserviceaccount.com"
 }
 
 # The PostgreSQL VM pulls its pinned container directly. Cloud Run pulls
@@ -70,4 +82,14 @@ resource "google_artifact_registry_repository_iam_member" "database_reader" {
   repository = google_artifact_registry_repository.production.repository_id
   role       = "roles/artifactregistry.reader"
   member     = "serviceAccount:${google_service_account.runtime["database"].email}"
+}
+
+resource "google_artifact_registry_repository_iam_member" "authentication_initializer_reader" {
+  for_each = var.recovery_mode ? toset([]) : var.authentication_initializer_principals
+
+  project    = google_project.workload.project_id
+  location   = google_artifact_registry_repository.production.location
+  repository = google_artifact_registry_repository.production.repository_id
+  role       = "roles/artifactregistry.reader"
+  member     = each.value
 }

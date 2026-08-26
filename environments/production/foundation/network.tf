@@ -12,17 +12,17 @@ locals {
   database_egress_contracts = {
     authentication = {
       port = local.database_ports.authentication
-      target_tags = toset([
-        local.network_tags.authentication,
-        local.network_tags.backup,
-      ])
+      target_tags = toset(concat(
+        [local.network_tags.authentication, local.network_tags.backup],
+        var.recovery_mode ? [local.network_tags.restore] : [],
+      ))
     }
     json_keys = {
       port = local.database_ports.json_keys
-      target_tags = toset([
-        local.network_tags.backup,
-        local.network_tags.json_keys,
-      ])
+      target_tags = toset(concat(
+        [local.network_tags.backup, local.network_tags.json_keys],
+        var.recovery_mode ? [local.network_tags.restore] : [],
+      ))
     }
   }
 

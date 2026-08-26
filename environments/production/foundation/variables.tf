@@ -39,6 +39,12 @@ variable "workload_project_name" {
   }
 }
 
+variable "adopt_existing_project" {
+  description = "Import a human-created empty project through the reviewed plan instead of creating it; required for the standalone no-organization path."
+  type        = bool
+  default     = false
+}
+
 variable "billing_account_id" {
   description = "Cloud Billing account ID linked to the production projects and used for their combined budget."
   type        = string
@@ -199,6 +205,22 @@ variable "database_operator_principals" {
   }
 }
 
+variable "authentication_initializer_principals" {
+  description = "Named human identities allowed to provision and execute the one-time Authentication initializer. Use user: or group: IAM member syntax."
+  type        = set(string)
+
+  validation {
+    condition = (
+      length(var.authentication_initializer_principals) > 0 &&
+      alltrue([
+        for principal in var.authentication_initializer_principals :
+        can(regex("^(user|group):[^[:space:]@]+@[^[:space:]@]+$", principal))
+      ])
+    )
+    error_message = "Provide at least one Authentication initializer as user:email or group:email. Service accounts and broad principals are not accepted."
+  }
+}
+
 variable "cost_alert_email" {
   description = "Operator email address that receives production budget notifications and quota-review follow-up."
   type        = string
@@ -263,4 +285,10 @@ variable "compute_cpu_quota" {
     condition     = var.compute_cpu_quota >= 2 && var.compute_cpu_quota <= 32 && floor(var.compute_cpu_quota) == var.compute_cpu_quota
     error_message = "The Compute Engine CPU quota must be a whole number from 2 through 32."
   }
+}
+
+variable "recovery_mode" {
+  description = "Whether this state suffix creates a disposable recovery workload with restore-only database access. Production must keep false."
+  type        = bool
+  default     = false
 }

@@ -49,12 +49,3 @@ resource "google_secret_manager_secret_iam_member" "operator" {
   role      = each.value.role
   member    = each.value.principal
 }
-
-resource "google_secret_manager_secret_iam_member" "recovery" {
-  for_each = local.secret_definitions
-
-  project   = var.management_project_id
-  secret_id = google_secret_manager_secret.application[each.key].secret_id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.automation["recovery"].email}"
-}

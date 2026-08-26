@@ -39,8 +39,15 @@ for variable_name in \
     fi
 done
 
+if [ "${RECOVERY_TARGET:-false}" = true ] && [ -z "${SOURCE_DATABASE_HOST:-}" ]; then
+    printf 'error: recovery source database host is missing\n' >&2
+    exit 1
+fi
+EXPECTED_SOURCE_HOST="${SOURCE_DATABASE_HOST:-${DATABASE_HOST}}"
+
 if ! [[ "${DATABASE_KEY}" =~ ^[a-z][a-z0-9-]{1,30}$ ]] ||
     ! [[ "${DATABASE_HOST}" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] ||
+    ! [[ "${EXPECTED_SOURCE_HOST}" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] ||
     ! [[ "${DATABASE_PORT}" =~ ^[1-9][0-9]{2,4}$ ]] ||
     ! [[ "${DATABASE_NAME}" =~ ^[a-z][a-z0-9_]{1,62}$ ]] ||
     ! [[ "${DATABASE_OWNER}" =~ ^[a-z][a-z0-9_]{1,62}$ ]] ||
@@ -54,7 +61,15 @@ if ! [[ "${DATABASE_KEY}" =~ ^[a-z][a-z0-9-]{1,30}$ ]] ||
 fi
 
 MANIFEST_ROOT="${BACKUP_MOUNT}/v1/${DATABASE_KEY}/attempts"
-MANIFEST_FILE="$(find "${MANIFEST_ROOT}" -type f -name completed.manifest 2>/dev/null | LC_ALL=C sort | tail -n 1 || true)"
+if [ -n "${RECOVERY_ATTEMPT:-}" ]; then
+    if ! [[ "${RECOVERY_ATTEMPT}" =~ ^[0-9]+-[a-z0-9-]{1,63}-[0-9]+$ ]]; then
+        printf 'error: invalid exact recovery attempt\n' >&2
+        exit 1
+    fi
+    MANIFEST_FILE="${MANIFEST_ROOT}/${RECOVERY_ATTEMPT}/completed.manifest"
+else
+    MANIFEST_FILE="$(find "${MANIFEST_ROOT}" -type f -name completed.manifest 2>/dev/null | LC_ALL=C sort | tail -n 1 || true)"
+fi
 
 if [ -z "${MANIFEST_FILE}" ] || [ ! -r "${MANIFEST_FILE}" ] ||
     [ "$(wc -c <"${MANIFEST_FILE}")" -gt 8192 ]; then
@@ -106,11 +121,16 @@ TASK_ATTEMPT="$(manifest_value task_attempt)"
 CURRENT_MAJOR="$(pg_restore --version | sed -n 's/^pg_restore (PostgreSQL) \([0-9][0-9]*\).*/\1/p')"
 MANIFEST_DIRECTORY="$(basename "$(dirname "${MANIFEST_FILE}")")"
 NOW_EPOCH="$(date -u +%s)"
+if [ -n "${RECOVERY_ATTEMPT:-}" ]; then
+    MAX_BACKUP_AGE_SECONDS=1209600
+else
+    MAX_BACKUP_AGE_SECONDS=21600
+fi
 
 if [ "${FORMAT}" != 'agora-postgres-backup-v1' ] ||
     [ "${MANIFEST_DATABASE_KEY}" != "${DATABASE_KEY}" ] ||
     [ "${SOURCE_PROJECT}" != "${SOURCE_PROJECT_ID}" ] ||
-    [ "${SOURCE_HOST}" != "${DATABASE_HOST}" ] ||
+    [ "${SOURCE_HOST}" != "${EXPECTED_SOURCE_HOST}" ] ||
     [ "${SOURCE_PORT}" != "${DATABASE_PORT}" ] ||
     [ "${SOURCE_DATABASE}" != "${DATABASE_NAME}" ] ||
     [ "${SOURCE_OWNER}" != "${DATABASE_OWNER}" ] ||
@@ -126,7 +146,7 @@ if [ "${FORMAT}" != 'agora-postgres-backup-v1' ] ||
     ! [[ "${TASK_ATTEMPT}" =~ ^[0-9]+$ ]] ||
     [ "${COMPLETED_EPOCH}" -lt "${STARTED_EPOCH}" ] ||
     [ "${COMPLETED_EPOCH}" -gt "$((NOW_EPOCH + 300))" ] ||
-    [ "$((NOW_EPOCH - COMPLETED_EPOCH))" -gt 21600 ] ||
+    [ "$((NOW_EPOCH - COMPLETED_EPOCH))" -gt "${MAX_BACKUP_AGE_SECONDS}" ] ||
     [ "${MANIFEST_DIRECTORY}" != "${STARTED_EPOCH}-${EXECUTION}-${TASK_ATTEMPT}" ] ||
     [ "${DUMP_OBJECT}" != "v1/${DATABASE_KEY}/attempts/${MANIFEST_DIRECTORY}/database.dump" ]; then
     printf 'error: completed backup manifest does not match the restore contract\n' >&2

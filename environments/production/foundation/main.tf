@@ -15,6 +15,7 @@ locals {
     environment = "production"
     managed-by  = "opentofu"
     plane       = "workload"
+    recovery    = var.recovery_mode ? "true" : "false"
   }
 
   required_services = toset([
@@ -54,7 +55,24 @@ resource "google_project" "workload" {
       condition     = var.organization_id == null || var.folder_id == null
       error_message = "Set at most one of organization_id or folder_id."
     }
+
+    precondition {
+      condition = var.adopt_existing_project == (
+        var.organization_id == null && var.folder_id == null
+      )
+      error_message = "Set adopt_existing_project only, and always, when neither organization_id nor folder_id is configured."
+    }
   }
+}
+
+# A standalone service account has no parent on which it can receive Project
+# Creator. Declarative import keeps the one human-created empty project inside
+# the same saved-plan review/apply boundary as every other foundation action.
+import {
+  for_each = var.adopt_existing_project ? toset([var.workload_project_id]) : toset([])
+
+  to = google_project.workload
+  id = each.value
 }
 
 resource "google_project_service" "workload" {

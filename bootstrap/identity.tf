@@ -15,6 +15,18 @@ locals {
     "roles/serviceusage.serviceUsageAdmin",
   ])
 
+  release_project_roles = toset([
+    # Version metadata is required for preflight, but payload access remains
+    # exclusive to runtime identities and named human operators.
+    "roles/secretmanager.viewer",
+  ])
+
+  recovery_project_roles = toset([
+    # Version-state inspection rejects disabled receipt-owned versions. Secret
+    # payloads are resolved only by replacement runtime identities.
+    "roles/secretmanager.viewer",
+  ])
+
   # Data Access audit entries are private logs. Human operators need the
   # private viewer role to investigate state and secret operations.
   operator_project_roles = setunion(
@@ -32,6 +44,18 @@ locals {
     {
       for role in local.foundation_project_roles : "foundation:${role}" => {
         boundary = "foundation"
+        role     = role
+      }
+    },
+    {
+      for role in local.release_project_roles : "release:${role}" => {
+        boundary = "release"
+        role     = role
+      }
+    },
+    {
+      for role in local.recovery_project_roles : "recovery:${role}" => {
+        boundary = "recovery"
         role     = role
       }
     },
@@ -61,7 +85,7 @@ locals {
 
   plan_state_folders       = local.state_prefixes
   foundation_state_folders = toset(["bootstrap", "foundation"])
-  recovery_state_folders   = local.state_prefixes
+  recovery_state_folders   = local.recovery_state_prefixes
   state_bucket_viewers     = toset(["release", "recovery"])
 }
 
@@ -302,34 +326,52 @@ resource "google_storage_managed_folder_iam_member" "release_state" {
 resource "google_storage_managed_folder_iam_member" "recovery_state" {
   for_each = local.recovery_state_folders
 
-  bucket         = google_storage_managed_folder.state[each.value].bucket
-  managed_folder = google_storage_managed_folder.state[each.value].name
+  bucket         = google_storage_managed_folder.recovery_state[each.value].bucket
+  managed_folder = google_storage_managed_folder.recovery_state[each.value].name
   role           = "roles/storage.objectAdmin"
   member         = "serviceAccount:${google_service_account.automation["recovery"].email}"
 }
 
-resource "google_storage_bucket_iam_member" "release_receipt_creator" {
-  bucket = google_storage_bucket.receipts.name
-  role   = "roles/storage.objectCreator"
-  member = "serviceAccount:${google_service_account.automation["release"].email}"
+resource "google_storage_managed_folder_iam_member" "release_receipt_creator" {
+  bucket         = google_storage_managed_folder.receipt["production"].bucket
+  managed_folder = google_storage_managed_folder.receipt["production"].name
+  role           = "roles/storage.objectCreator"
+  member         = "serviceAccount:${google_service_account.automation["release"].email}"
 }
 
-resource "google_storage_bucket_iam_member" "release_receipt_viewer" {
-  bucket = google_storage_bucket.receipts.name
-  role   = "roles/storage.objectViewer"
-  member = "serviceAccount:${google_service_account.automation["release"].email}"
+resource "google_storage_managed_folder_iam_member" "release_receipt_viewer" {
+  bucket         = google_storage_managed_folder.receipt["production"].bucket
+  managed_folder = google_storage_managed_folder.receipt["production"].name
+  role           = "roles/storage.objectViewer"
+  member         = "serviceAccount:${google_service_account.automation["release"].email}"
 }
 
 resource "google_storage_bucket_iam_member" "recovery_backup_viewer" {
   bucket = google_storage_bucket.backups.name
   role   = "roles/storage.objectViewer"
   member = "serviceAccount:${google_service_account.automation["recovery"].email}"
+
+  # The GitHub runner verifies only exact immutable manifest metadata. Backup
+  # dumps are read later by the replacement runtime, never by CI.
+  condition {
+    title       = "RecoveryManifestsOnly"
+    description = "Allow protected recovery to read only committed backup manifests, not database dumps."
+    expression  = "resource.type == 'storage.googleapis.com/Object' && resource.name.startsWith('projects/_/buckets/${google_storage_bucket.backups.name}/objects/v1/') && resource.name.endsWith('/completed.manifest')"
+  }
 }
 
-resource "google_storage_bucket_iam_member" "recovery_receipt_viewer" {
-  bucket = google_storage_bucket.receipts.name
-  role   = "roles/storage.objectViewer"
-  member = "serviceAccount:${google_service_account.automation["recovery"].email}"
+resource "google_storage_managed_folder_iam_member" "recovery_receipt_viewer" {
+  bucket         = google_storage_managed_folder.receipt["production/success"].bucket
+  managed_folder = google_storage_managed_folder.receipt["production/success"].name
+  role           = "roles/storage.objectViewer"
+  member         = "serviceAccount:${google_service_account.automation["recovery"].email}"
+}
+
+resource "google_storage_managed_folder_iam_member" "recovery_receipt_creator" {
+  bucket         = google_storage_managed_folder.receipt["recovery"].bucket
+  managed_folder = google_storage_managed_folder.receipt["recovery"].name
+  role           = "roles/storage.objectCreator"
+  member         = "serviceAccount:${google_service_account.automation["recovery"].email}"
 }
 
 resource "google_project_iam_audit_config" "management" {

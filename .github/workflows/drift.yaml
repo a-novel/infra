@@ -1,0 +1,75 @@
+name: production drift
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: production-infrastructure
+  cancel-in-progress: false
+
+env:
+  TF_IN_AUTOMATION: "true"
+  CLOUDSDK_CORE_DISABLE_PROMPTS: "1"
+
+jobs:
+  inspect:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out the exact master commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Authenticate as the read-only plan boundary
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Install the pinned Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+        with:
+          version: "581.0.0"
+
+      - name: Install OpenTofu
+        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version_file: .opentofu-version
+          tofu_wrapper: false
+          cache: true
+
+      # The plan identity cannot create lock objects. Global workflow
+      # concurrency serializes this read with all protected writers instead.
+      - name: Compare every initialized root with its current private inputs
+        shell: bash
+        env:
+          STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
+        run: |
+          set -euo pipefail
+          umask 077
+          for root in bootstrap foundation release; do
+            file="${RUNNER_TEMP}/${root}.tfvars.json"
+            set +e
+            ./ops/config-custody.sh fetch "${STATE_BUCKET}" "${root}" "${file}"
+            code=$?
+            set -e
+            if [ "${code}" -eq 4 ]; then
+              printf '%s has not been initialized; drift check skipped.\n' "${root}"
+              continue
+            elif [ "${code}" -ne 0 ]; then
+              exit "${code}"
+            fi
+            TOFU_VAR_FILE="${file}" \
+              ./ops/tofu-gate.sh drift "${root}" "${STATE_BUCKET}"
+          done

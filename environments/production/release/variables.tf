@@ -75,38 +75,47 @@ variable "subnet_id" {
 variable "runtime_service_accounts" {
   description = "Foundation-owned keyless identities used by application, backup, restore, and scheduler workloads."
   type = object({
-    authentication             = string
-    authentication_initializer = string
-    backup                     = string
-    json_keys                  = string
-    restore                    = string
-    scheduler_invoker          = string
+    authentication    = string
+    backup            = string
+    json_keys         = string
+    restore           = string
+    scheduler_invoker = string
   })
 
   validation {
     condition = (
       var.runtime_service_accounts.authentication == "agora-authentication@${var.workload_project_id}.iam.gserviceaccount.com" &&
-      var.runtime_service_accounts.authentication_initializer == "agora-auth-initializer@${var.workload_project_id}.iam.gserviceaccount.com" &&
       var.runtime_service_accounts.backup == "agora-backup@${var.workload_project_id}.iam.gserviceaccount.com" &&
       var.runtime_service_accounts.json_keys == "agora-json-keys@${var.workload_project_id}.iam.gserviceaccount.com" &&
       var.runtime_service_accounts.restore == "agora-restore@${var.workload_project_id}.iam.gserviceaccount.com" &&
       var.runtime_service_accounts.scheduler_invoker == "agora-scheduler-invoker@${var.workload_project_id}.iam.gserviceaccount.com"
     )
-    error_message = "Runtime identities must be the six exact foundation-owned service accounts."
+    error_message = "Runtime identities must be the five exact foundation-owned service accounts."
   }
 }
 
-variable "authentication_initializer_principals" {
-  description = "Named human IAM members allowed to execute the Authentication initializer manually."
-  type        = set(string)
-  default     = []
+variable "cloud_run_invocation_tags" {
+  description = "Foundation-owned permanent Resource Manager tag IDs used by conditional Cloud Run invoker bindings."
+  type = object({
+    key = string
+    values = object({
+      initializer = string
+      internal    = string
+      recovery    = string
+      release     = string
+      scheduled   = string
+    })
+  })
 
   validation {
-    condition = alltrue([
-      for principal in var.authentication_initializer_principals :
-      can(regex("^(user|group):[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$", principal))
-    ])
-    error_message = "Authentication initializer principals must be user: or group: IAM members."
+    condition = (
+      can(regex("^tagKeys/[0-9]+$", var.cloud_run_invocation_tags.key)) &&
+      alltrue([
+        for value in values(var.cloud_run_invocation_tags.values) :
+        can(regex("^tagValues/[0-9]+$", value))
+      ])
+    )
+    error_message = "Cloud Run invocation tags must use permanent tagKeys/<number> and tagValues/<number> IDs."
   }
 }
 
@@ -139,12 +148,18 @@ variable "database_releases" {
 variable "application_release" {
   description = "Optional atomic JSON Keys and Authentication runtime release. Values contain promoted image digests, exact secret versions, and non-secret mail/bootstrap configuration."
   type = object({
+    rollout = object({
+      candidate_tag = string
+      phase         = string
+    })
     authentication = object({
+      active_revision = optional(string)
       images = object({
         init       = string
         migrations = string
         rest       = string
       })
+      revision = string
       secrets = object({
         postgres_dsn_version         = number
         smtp_password_version        = number
@@ -159,11 +174,13 @@ variable "application_release" {
       super_admin_email = string
     })
     json_keys = object({
+      active_revision = optional(string)
       images = object({
         grpc        = string
         migrations  = string
         rotate_keys = string
       })
+      revision = string
       secrets = object({
         app_master_key_version = number
         postgres_dsn_version   = number
@@ -188,6 +205,24 @@ variable "application_release" {
 
   validation {
     condition = var.application_release == null ? true : (
+      contains(["candidate", "active"], var.application_release.rollout.phase) &&
+      can(regex("^c-[a-f0-9]{32}$", var.application_release.rollout.candidate_tag)) &&
+      can(regex("^agora-authentication-rest-[a-f0-9]{12}$", var.application_release.authentication.revision)) &&
+      can(regex("^agora-json-keys-grpc-[a-f0-9]{12}$", var.application_release.json_keys.revision)) &&
+      (var.application_release.authentication.active_revision == null ||
+      can(regex("^agora-authentication-rest-[a-z0-9-]+$", var.application_release.authentication.active_revision))) &&
+      (var.application_release.json_keys.active_revision == null ||
+      can(regex("^agora-json-keys-grpc-[a-z0-9-]+$", var.application_release.json_keys.active_revision))) &&
+      (var.application_release.rollout.phase != "active" || (
+        var.application_release.authentication.active_revision != null &&
+        var.application_release.json_keys.active_revision != null
+      ))
+    )
+    error_message = "Rollout must name a private candidate tag, exact candidate revisions, and both active revisions before promotion."
+  }
+
+  validation {
+    condition = var.application_release == null ? true : (
       can(regex("^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$", var.application_release.authentication.super_admin_email)) &&
       can(regex("^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$", var.application_release.authentication.smtp.sender_email))
     )
@@ -202,6 +237,94 @@ variable "application_release" {
       length(var.application_release.authentication.smtp.sender_name) <= 100
     )
     error_message = "SMTP must use a DNS host on port 587, repeat that host as sender_domain, and provide a 1-100 character sender name."
+  }
+}
+
+variable "recovery_mode" {
+  description = "Create protected data-recovery jobs only in a disposable recovery workload state suffix."
+  type        = bool
+  default     = false
+}
+
+variable "recovery_source_project_id" {
+  description = "Original workload project recorded by backup manifests; required only in recovery mode."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition = var.recovery_source_project_id == null || can(regex(
+      "^[a-z][a-z0-9-]{4,28}[a-z0-9]$",
+      var.recovery_source_project_id,
+    ))
+    error_message = "The recovery source project must be null or a valid Google Cloud project ID."
+  }
+}
+
+variable "recovery_source_database_ip" {
+  description = "Original private database address recorded by the selected receipt; required only to validate recovery manifests."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition = var.recovery_source_database_ip == null || (
+      can(cidrhost("${var.recovery_source_database_ip}/32", 0)) &&
+      can(regex("^(10\\.|192\\.168\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.)", var.recovery_source_database_ip))
+    )
+    error_message = "The recovery source database host must be null or a valid private IPv4 address."
+  }
+}
+
+variable "recovery_database_images" {
+  description = "Original promoted database image references embedded in the selected backup manifests."
+  type        = map(string)
+  default     = {}
+
+  validation {
+    condition = (
+      (!var.recovery_mode && length(var.recovery_database_images) == 0) ||
+      (var.recovery_mode && toset(keys(var.recovery_database_images)) == toset(["authentication", "json_keys"]))
+    )
+    error_message = "Recovery database images are both present only in recovery mode."
+  }
+}
+
+variable "recovery_backup_attempts" {
+  description = "Exact committed backup attempt directory selected for each recovery database."
+  type        = map(string)
+  default     = {}
+
+  validation {
+    condition = (
+      (!var.recovery_mode && length(var.recovery_backup_attempts) == 0) ||
+      (var.recovery_mode &&
+        toset(keys(var.recovery_backup_attempts)) == toset(["authentication", "json_keys"]) &&
+        alltrue([
+          for attempt in values(var.recovery_backup_attempts) :
+          can(regex("^[0-9]+-[a-z0-9-]{1,63}-[0-9]+$", attempt))
+      ]))
+    )
+    error_message = "Recovery requires one exact committed attempt directory per database."
+  }
+}
+
+variable "recovery_database_password_versions" {
+  description = "Receipt-owned owner-password versions used only by disposable recovery jobs."
+  type        = map(number)
+  default     = {}
+
+  validation {
+    condition = (
+      (!var.recovery_mode && length(var.recovery_database_password_versions) == 0) ||
+      (var.recovery_mode &&
+        toset(keys(var.recovery_database_password_versions)) == toset(["authentication", "json_keys"]) &&
+        alltrue([
+          for version in values(var.recovery_database_password_versions) :
+          version >= 1 && floor(version) == version
+      ]))
+    )
+    error_message = "Recovery requires both positive numeric database owner-password versions."
   }
 }
 

@@ -1,6 +1,13 @@
 locals {
   bucket_name_prefix = "${var.management_project_id}-${data.google_project.management.number}"
   state_prefixes     = toset(["bootstrap", "foundation", "release"])
+  recovery_state_prefixes = toset([
+    "foundation/recovery",
+    "foundation/plans/recovery",
+    "release/recovery",
+    "release/plans/recovery",
+  ])
+  receipt_prefixes = toset(["production", "production/success", "recovery"])
 }
 
 resource "google_storage_bucket" "state" {
@@ -33,6 +40,23 @@ resource "google_storage_bucket" "state" {
     }
   }
 
+  lifecycle_rule {
+    action {
+      type = "Delete"
+    }
+
+    # Metadata enforces a precise 24-hour expiry. This removes abandoned live
+    # plan objects on Cloud Storage's next daily lifecycle sweep.
+    condition {
+      age = 2
+      matches_prefix = [
+        "bootstrap/plans/",
+        "foundation/plans/",
+        "release/plans/",
+      ]
+    }
+  }
+
   lifecycle {
     prevent_destroy = true
   }
@@ -51,6 +75,23 @@ resource "google_storage_managed_folder" "state" {
   lifecycle {
     prevent_destroy = true
   }
+}
+
+# Recovery writes only disposable state and plans. Nested managed folders keep
+# that incident boundary out of bootstrap and normal production state paths.
+resource "google_storage_managed_folder" "recovery_state" {
+  for_each = local.recovery_state_prefixes
+
+  bucket          = google_storage_bucket.state.name
+  name            = "${each.value}/"
+  force_destroy   = false
+  deletion_policy = "PREVENT"
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [google_storage_managed_folder.state]
 }
 
 resource "google_storage_bucket" "backups" {
@@ -127,4 +168,20 @@ resource "google_storage_bucket" "receipts" {
   }
 
   depends_on = [google_project_service.management["storage.googleapis.com"]]
+}
+
+# Receipt paths are authorization boundaries, not naming conventions. Release
+# owns production evidence; recovery can read only successful production state
+# and can create evidence only beneath its separate recovery prefix.
+resource "google_storage_managed_folder" "receipt" {
+  for_each = local.receipt_prefixes
+
+  bucket          = google_storage_bucket.receipts.name
+  name            = "${each.value}/"
+  force_destroy   = false
+  deletion_policy = "PREVENT"
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }

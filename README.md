@@ -21,21 +21,31 @@ The design is a small Google Cloud landing zone built from established infrastru
 
 ## Setup
 
-Pull requests are cloud-blind. They receive a read-only repository token and run formatting, validation, mocked OpenTofu tests, static security analysis, and manifest checks. They receive no Google identity, protected environment, or secret payload.
+Pull requests are cloud-blind. They receive a read-only repository token and run formatting,
+validation, mocked OpenTofu tests, static security analysis, and manifest checks. They receive no
+Google identity, protected environment, secret payload, or production state.
 
-The repository currently has no cloud apply workflow. Bootstrap, the workload foundation, the
-private stateful PostgreSQL host, logical backup and restore jobs, daily disk snapshots, recovery
-monitoring, four application jobs, the private JSON Keys and public Authentication services, and the
-narrow release-metadata command are defined, but merging or validating them creates nothing.
+Nothing deploys on push or pull request. Protected workflows run only by explicit manual dispatch
+from `master`; a shared concurrency lock serializes every production writer. Foundation changes use
+separate plan and apply runs: the first stores an opaque saved plan in private Google Cloud Storage
+for 24 hours, and the second applies that exact commit-, root-, state-, and hash-bound plan after
+environment approval. Routine releases use a fixed deployment graph and an immutable success
+receipt; failures compensate to the prior receipt while backward-compatible migrations remain.
+Recovery can rebuild only into a new disposable project. The sole scheduled cloud workflow is a
+read-only daily drift inspection.
+
 The bootstrap root's one-time initial apply remains a human-only exception performed from `master`
-after explicit approval; agents never run `gcloud` or `tofu apply`. Foundation and release must wait
-for their protected workflows and cannot be applied from a branch or an operator checkout.
+after explicit approval. After that first trust anchor exists, bootstrap and foundation changes use
+the protected workflow. Agents never run `gcloud` or `tofu apply` for this repository.
 
-Before the application contract can be enabled, an operator must supply at least one named `user:`
-or `group:` member through `authentication_initializer_principals`. Only those humans may execute the
-Authentication initializer, and the release and scheduler identities receive no access to it. JSON
-Keys rotation is separate: release runs it once after migration, then an hourly authenticated
-schedule keeps keys current. The [release root contract](./environments/production/release/README.md#application-runtime-contract)
+Before the application contract can be enabled, the foundation input must name at least one `user:`
+or `group:` Authentication initializer. Foundation gives only those humans the initializer service
+identity, its Resource Manager tag, and a conditional invocation grant. Routine automation cannot
+use that identity or tag, change Cloud Run IAM, invoke the initializer, or override an execution.
+The human provisions the one-time job in two phases, the first release records its exact successful
+run, and the job is then deleted. JSON Keys rotation is separate: release runs it once after
+migration, then an hourly authenticated schedule evaluates the idempotent job. The
+[release root contract](./environments/production/release/README.md#application-runtime-contract)
 documents the exact IAM and runtime-identity boundaries.
 
 ### Bootstrap Google Cloud only after explicit authorization
@@ -55,7 +65,7 @@ not expose that switch. Every resulting control has an independent command-line 
 
 Use [Provision and verify the workload foundation](./docs/runbooks/provision-workload-foundation.md)
 to choose the immutable workload project ID, record the billing and parent prerequisites, configure
-the future protected environment, and verify the resulting project, private routing, identities,
+the protected input bundle, review and apply an exact private plan, and verify the resulting project, private routing, identities,
 registry, database host, quotas, budget, monitoring, and logging. The runbook contains separate
 organization/folder and standalone-project paths and the temporary Owner-removal step required after
 project creation. The [PostgreSQL host runbook](./docs/runbooks/operate-postgresql-host.md) owns the
@@ -65,11 +75,16 @@ The [PostgreSQL backup and restore runbook](./docs/runbooks/backup-and-restore-p
 recovery activation, the first-write gate, four-hour logical backups, monthly clean restores, the
 daily snapshot contract, retention locking, alert response, RPO/RTO evidence, and the PITR decision
 thresholds. Read it before enabling either database release. Its commands remain stop-gated until
-the protected workflows exist and resource creation is explicitly authorized.
+resource creation is explicitly authorized.
 
-That runbook is preparation only until `.github/workflows/foundation.yaml` exists on `master` and a
-maintainer explicitly authorizes resource creation. Do not run its mutating Google Cloud commands or
-any `tofu apply` while the repository is still in this state.
+### Configure and operate protected releases
+
+Use [Deploy and roll back production](./docs/runbooks/deploy-production.md) to create the protected
+release input bundle, verify exact secret versions and image provenance, deploy the reviewed
+manifest, perform the human-only Authentication initialization, inspect receipts, and select an
+exact rollback target. Use [Recover production into a disposable project](./docs/runbooks/disaster-recovery.md)
+only for a declared recovery exercise or incident; it owns temporary recovery authority, exact
+backup selection, the lost-write acknowledgement, verification, and access removal.
 
 ### Reconcile repository protection after this bootstrap merges
 
@@ -197,7 +212,14 @@ resource types introduced after the gate was written, and rejects unknown action
 Resource addresses, values, outputs, environment variables, DSNs, and tokens stay out of public
 logs.
 
-Opaque production plans will live in private, versioned Google Cloud storage when the protected apply workflow lands. GitHub artifacts and pull-request comments never carry them.
+`ops/tofu-gate.sh` is the only live OpenTofu entry point. It accepts only `bootstrap`, `foundation`,
+or `release`; uses the private GCS backend; and keeps provider diagnostics in runner-private files.
+`ops/create-reviewed-plan.sh` uploads the binary saved plan plus non-sensitive custody metadata with
+a create-only Cloud Storage precondition. `ops/apply-reviewed-plan.sh` rejects a different commit,
+root, recovery state suffix, hash, destructive authorization, consumed plan, or plan older than 24
+hours. It consumes custody before applying and proves a zero-change convergence plan afterward. A
+failed apply therefore requires a fresh plan. GitHub artifacts and pull-request comments never carry
+the plan, state, configuration, or resource values.
 
 ### Image updates
 
@@ -210,10 +232,14 @@ merge represents one deployment candidate.
 
 The production manifest keeps both services disabled until the recovery resources, runtime
 resources, and verified image digests are ready. Foundation therefore seeds empty group-level
-release metadata and the host would remain idle. The release root creates recovery jobs only when
-both database contracts are enabled together. The tested deployment helper has no caller until the
-protected workflow lands. Merging this change cannot deploy an application, run a backup, or create
-a cloud resource.
+release metadata and the host remains idle. The release root creates recovery jobs only when both
+database contracts are enabled together. A manifest merge still deploys nothing: a maintainer must
+manually dispatch the protected release workflow from `master`. Source GHCR attestations, exact
+digests, family SemVer agreement, PostgreSQL major, numeric secret versions, quota grants, and fresh
+backups all fail closed before traffic changes. The release receipt records the exact promoted
+digests, secret-version identifiers, revisions, migration and rotation executions, five
+recovery-verification executions, first-launch initialization evidence, health gates, commit, and
+workflow run.
 
 ### Portability boundary
 
@@ -234,8 +260,9 @@ The release code gives backup and private application jobs only reviewed private
 egress, gives restore jobs no database route or secret, sends every JSON Keys service connection
 through the deny-by-default VPC, and gives Authentication only split private VPC plus managed public
 SMTP egress. It deliberately provisions no NAT, router, connector, load balancer, or public IP. The
-JSON Keys IAM allowlist contains only Authentication and protected release/recovery identities.
-Those definitions still have no cloud effect until a protected apply is authorized; deployed
+JSON Keys IAM allowlist contains only Authentication; release and recovery have no data-plane
+invocation grant.
+Those definitions have no cloud effect until a protected apply is authorized; deployed
 allowed-and-denied path checks remain a release-workflow acceptance gate.
 
 ## Contributing

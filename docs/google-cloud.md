@@ -7,7 +7,7 @@ official documentation instead of being redefined here.
 `gcloud` is the Google Cloud CLI; Google Cloud is the provider. OpenTofu remains the source of truth
 for durable managed resources. Operator-only CLI commands belong in runbooks when a manual
 prerequisite or an independent verification cannot safely be automated. The one routine exception is
-a fixed, tested group-metadata command in the future protected release workflow; its committed
+a fixed, tested group-metadata command in the protected release workflow; its committed
 manifest and private receipt are the desired-state and rollback records.
 
 ## Current status
@@ -42,10 +42,9 @@ hourly JSON Keys rotation, private JSON Keys gRPC with an exact invoker allowlis
 Authentication REST. A deploy-only role excludes job execution and overrides. Exact job IAM lets
 release run migrations and key rotation, the scheduler run rotation, and named humans run
 Authentication initialization. Every runtime scales to zero and remains absent while its atomic
-release contract is disabled. No protected workflow can apply them yet, and the production manifest
-keeps both components disabled. There is no load balancer, public IP, NAT, connector, proxy, or
-Kubernetes layer. Deployed-path sections below remain acceptance contracts until protected deployment
-and post-apply verification land.
+release contract is disabled. Protected workflows are manual-only and the production manifest keeps
+both components disabled until the first reviewed activation. There is no load balancer, public IP,
+NAT, connector, proxy, or Kubernetes layer.
 
 ## Provider and resource references
 
@@ -190,10 +189,11 @@ JSON Keys is a server, so it cannot be literally outbound-only: it must accept R
 internal workloads to provide a service. The contract is that no public or unauthenticated client can
 invoke it.
 
-The service uses Cloud Run `internal` ingress and end-to-end HTTP/2. Its IAM policy grants
-`roles/run.invoker` only to the Authentication runtime identity plus the protected release and
-recovery identities used for smoke/recovery checks. It grants neither `allUsers` nor
-`allAuthenticatedUsers`, and it has no external load balancer or public custom domain. Google
+The service uses Cloud Run `internal` ingress and end-to-end HTTP/2. Foundation grants
+`roles/run.servicesInvoker` to Authentication only when the target carries the permanent `internal`
+Resource Manager tag. Release can attach that value but cannot change the conditional IAM policy;
+recovery uses only control-plane readiness inspection in production. The policy grants neither
+`allUsers` nor `allAuthenticatedUsers`, and it has no external load balancer or public custom domain. Google
 recommends combining
 [Cloud Run ingress restrictions](https://cloud.google.com/run/docs/securing/ingress) with
 [service-to-service IAM authentication](https://cloud.google.com/run/docs/authenticating/service-to-service)
@@ -202,7 +202,7 @@ as separate network and identity layers.
 The foundation and release tests must prove that:
 
 - ingress is exactly `internal`;
-- IAM has the exact invoker allowlist and contains no public principal;
+- the service has the exact `internal` tag and conditional invoker allowlist, with no public principal;
 - the service uses its dedicated runtime identity;
 - end-to-end HTTP/2 is enabled for gRPC;
 - approved callers route the `run.app` destination through the production VPC using Private Google
@@ -210,28 +210,38 @@ The foundation and release tests must prove that:
 - an unauthenticated request and an authenticated external-network request both fail;
 - an authenticated request from an approved internal workload succeeds.
 
-Human debugging uses the
-[authenticated Cloud Run developer proxy](https://cloud.google.com/run/docs/authenticating/developers)
-with an explicitly granted operator identity. The service does not open public ingress for debugging.
+Human private-path debugging originates from the existing database VM through IAP and uses a named
+operator plus an exact service identity. The service does not open public ingress or add a proxy for
+debugging. See the [disaster-recovery runbook](./runbooks/disaster-recovery.md#6-verify-functionality-from-the-private-replacement-network).
 
 ## Job execution boundaries
 
 Cloud Run jobs have no request ingress, but execution is still an IAM permission. The release identity
-uses a custom deployment role that contains the job and service lifecycle permissions required by the
-provider and omits `run.jobs.run` and `run.jobs.runWithOverrides`. Resource-level
-`roles/run.invoker` grants normal execution only on the jobs each caller owns. Google documents these
-permissions separately in the [Cloud Run IAM role](https://cloud.google.com/run/docs/reference/iam/roles)
-and [job execution](https://cloud.google.com/run/docs/execute/jobs) references.
+uses a custom deployment role that contains the job/service lifecycle and tag-binding permissions
+required by the provider and omits execution, overrides, and IAM-policy access. Foundation owns
+project-level conditional `roles/run.jobsExecutor` or `roles/run.servicesInvoker` grants. They become
+effective only on Cloud Run resources carrying one exact permanent Resource Manager tag. Using the
+separate standard roles prevents a job operator from invoking services and a service caller from
+executing jobs. Google documents
+[tag-based IAM conditions](https://cloud.google.com/iam/docs/conditions-resource-attributes#resource_tags),
+[Cloud Run tags](https://cloud.google.com/run/docs/configuring/jobs/tags), and execution permissions
+separately in the [Cloud Run IAM role](https://cloud.google.com/run/docs/reference/iam/roles) and
+[job execution](https://cloud.google.com/run/docs/execute/jobs) references.
 
-Release can execute both migrations and JSON Keys rotation. The scheduler identity can execute JSON
-Keys rotation and the five recovery jobs. It cannot update a job, access a secret, or connect to a
-database as itself; Cloud Run starts each job as that job's runtime identity.
+Release can attach and invoke `release` and `scheduled` jobs. The scheduler identity can invoke only
+`scheduled` jobs. It cannot update a job, access a secret, or connect to a database as itself; Cloud
+Run starts each job as that job's runtime identity. Authentication can invoke only the `internal`
+private service. Recovery automation and the private smoke caller are confined to `recovery` targets
+in a disposable project.
 
 Authentication initialization can reset the first administrator's password and raise that account to
-the super-admin role. Only named `user:` or `group:` members receive `roles/run.invoker` on that exact
-job. The job has no release or scheduler invoker and accepts no execution overrides. Its dedicated
-runtime identity reads only the Authentication DSN and bootstrap password, which keeps the REST
-identity from reading the bootstrap credential.
+the super-admin role. Only named `user:` or `group:` members receive the initializer tag value,
+conditional invoker, narrow job deployer, initializer `actAs`, and registry read. The release identity
+has none of those capabilities and cannot read/change Cloud Run IAM. The human creates an inert job,
+attaches and verifies the initializer tag, then adds the exact secret references and executes without
+overrides. Its dedicated runtime identity reads only the Authentication DSN and bootstrap password,
+which keeps the REST identity from reading the bootstrap credential. The human deletes the job after
+the immutable success marker exists.
 
 JSON Keys defines a 24-hour shortest key-rotation interval. The release workflow runs the idempotent
 rotation job after migration to seed a new database, and Cloud Scheduler evaluates it hourly after
