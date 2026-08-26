@@ -547,6 +547,13 @@ if grep -Fq 'run_job agora-authentication-init' \
     printf 'Authentication initialization must not have an automated driver edge.\n' >&2
     exit 1
 fi
+if ! grep -Fq '.currentDatabase as $database' \
+    "${REPOSITORY_ROOT}/ops/google-release-driver.sh" ||
+    grep -Fq '.previousDatabase as $database' \
+        "${REPOSITORY_ROOT}/ops/google-release-driver.sh"; then
+    printf 'Release preflight must compare live metadata with the current receipt, not the rollback target.\n' >&2
+    exit 1
+fi
 
 # Authentication initialization is a one-time observation gate, never an
 # automated invocation. Exercise durable-marker, absent, failed, stale, and

@@ -50,6 +50,7 @@ locals {
     "roles/monitoring.alertPolicyEditor",
     "roles/monitoring.notificationChannelEditor",
     "roles/resourcemanager.projectIamAdmin",
+    "roles/resourcemanager.tagAdmin",
     "roles/serviceusage.serviceUsageAdmin",
   ])
 
@@ -65,14 +66,40 @@ locals {
     "roles/cloudquotas.viewer",
   ])
 
-  release_runtime_identities = toset([
+  release_runtime_identities = var.recovery_mode ? toset([
     "authentication",
-    "authentication_initializer",
+    "json_keys",
+    "restore",
+    ]) : toset([
+    "authentication",
     "backup",
     "json_keys",
     "restore",
     "scheduler_invoker",
   ])
+
+  cloud_run_invocation_tag_values = {
+    initializer = {
+      short_name  = "initializer"
+      description = "Human-only one-time Authentication initialization."
+    }
+    internal = {
+      short_name  = "internal"
+      description = "Private service-to-service invocation."
+    }
+    recovery = {
+      short_name  = "recovery"
+      description = "Disposable clean-room recovery execution."
+    }
+    release = {
+      short_name  = "release"
+      description = "Protected release-only migration execution."
+    }
+    scheduled = {
+      short_name  = "scheduled"
+      description = "Protected release and scheduler execution."
+    }
+  }
 
   database_operator_project_roles = toset([
     "roles/compute.osAdminLogin",
@@ -251,6 +278,142 @@ resource "google_service_account_iam_member" "release_runtime_act_as" {
   member             = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "release"]}"
 }
 
+# Resource Manager tags are authorization attributes here, not inventory
+# labels. One project-level conditional binding replaces mutable per-job IAM
+# while keeping each caller inside its reviewed workload class.
+resource "google_tags_tag_key" "cloud_run_invocation" {
+  parent      = "projects/${google_project.workload.number}"
+  short_name  = "agora-invocation"
+  description = "Cloud Run invocation boundary managed by OpenTofu."
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [google_project_service.workload["cloudresourcemanager.googleapis.com"]]
+}
+
+resource "google_tags_tag_value" "cloud_run_invocation" {
+  for_each = local.cloud_run_invocation_tag_values
+
+  parent      = google_tags_tag_key.cloud_run_invocation.id
+  short_name  = each.value.short_name
+  description = each.value.description
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "google_tags_tag_value_iam_member" "release_tag_user" {
+  for_each = var.recovery_mode ? toset(["internal", "recovery"]) : toset(["internal", "release", "scheduled"])
+
+  tag_value = google_tags_tag_value.cloud_run_invocation[each.value].name
+  role      = "roles/resourcemanager.tagUser"
+  member    = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "release"]}"
+}
+
+resource "google_tags_tag_value_iam_member" "initializer_tag_user" {
+  for_each = var.recovery_mode ? toset([]) : var.authentication_initializer_principals
+
+  tag_value = google_tags_tag_value.cloud_run_invocation["initializer"].name
+  role      = "roles/resourcemanager.tagUser"
+  member    = each.value
+}
+
+resource "google_project_iam_member" "release_cloud_run_invoker" {
+  count = var.recovery_mode ? 0 : 1
+
+  project = google_project.workload.project_id
+  role    = "roles/run.jobsExecutor"
+  member  = "serviceAccount:${local.automation_service_accounts.release}"
+
+  condition {
+    title       = "ReleaseTaggedCloudRunOnly"
+    description = "Release may invoke only migration and scheduled operational workloads."
+    expression = join(" || ", [
+      "resource.matchTagId('${google_tags_tag_key.cloud_run_invocation.id}', '${google_tags_tag_value.cloud_run_invocation["release"].id}')",
+      "resource.matchTagId('${google_tags_tag_key.cloud_run_invocation.id}', '${google_tags_tag_value.cloud_run_invocation["scheduled"].id}')",
+    ])
+  }
+}
+
+resource "google_project_iam_member" "scheduler_cloud_run_invoker" {
+  count = var.recovery_mode ? 0 : 1
+
+  project = google_project.workload.project_id
+  role    = "roles/run.jobsExecutor"
+  member  = "serviceAccount:${google_service_account.runtime["scheduler_invoker"].email}"
+
+  condition {
+    title       = "ScheduledCloudRunOnly"
+    description = "Scheduler may invoke only explicitly tagged idempotent jobs."
+    expression  = "resource.matchTagId('${google_tags_tag_key.cloud_run_invocation.id}', '${google_tags_tag_value.cloud_run_invocation["scheduled"].id}')"
+  }
+}
+
+resource "google_project_iam_member" "internal_cloud_run_invoker" {
+  project = google_project.workload.project_id
+  role    = "roles/run.servicesInvoker"
+  member  = "serviceAccount:${google_service_account.runtime["authentication"].email}"
+
+  condition {
+    title       = "InternalCloudRunOnly"
+    description = "Authentication may invoke only private internal services."
+    expression  = "resource.matchTagId('${google_tags_tag_key.cloud_run_invocation.id}', '${google_tags_tag_value.cloud_run_invocation["internal"].id}')"
+  }
+}
+
+resource "google_project_iam_member" "recovery_cloud_run_invoker" {
+  count = var.recovery_mode ? 1 : 0
+
+  project = google_project.workload.project_id
+  role    = "roles/run.jobsExecutor"
+  member  = "serviceAccount:${local.automation_service_accounts.recovery}"
+
+  condition {
+    title       = "RecoveryTaggedCloudRunOnly"
+    description = "Recovery automation may invoke only disposable recovery jobs."
+    expression  = "resource.matchTagId('${google_tags_tag_key.cloud_run_invocation.id}', '${google_tags_tag_value.cloud_run_invocation["recovery"].id}')"
+  }
+}
+
+resource "google_project_iam_member" "recovery_smoke_cloud_run_invoker" {
+  count = var.recovery_mode ? 1 : 0
+
+  project = google_project.workload.project_id
+  role    = "roles/run.servicesInvoker"
+  member  = "serviceAccount:${google_service_account.runtime["database"].email}"
+
+  condition {
+    title       = "RecoverySmokeCloudRunOnly"
+    description = "The disposable database host may invoke only tagged recovery services."
+    expression  = "resource.matchTagId('${google_tags_tag_key.cloud_run_invocation.id}', '${google_tags_tag_value.cloud_run_invocation["recovery"].id}')"
+  }
+}
+
+resource "google_project_iam_member" "initializer_cloud_run_invoker" {
+  for_each = var.recovery_mode ? toset([]) : var.authentication_initializer_principals
+
+  project = google_project.workload.project_id
+  role    = "roles/run.jobsExecutor"
+  member  = each.value
+
+  condition {
+    title       = "AuthenticationInitializerOnly"
+    description = "Named humans may invoke only the tagged one-time Authentication initializer."
+    expression  = "resource.matchTagId('${google_tags_tag_key.cloud_run_invocation.id}', '${google_tags_tag_value.cloud_run_invocation["initializer"].id}')"
+  }
+}
+
+resource "google_service_account_iam_member" "initializer_act_as" {
+  for_each = var.recovery_mode ? toset([]) : var.authentication_initializer_principals
+
+  service_account_id = google_service_account.runtime["authentication_initializer"].name
+  role               = "roles/iam.serviceAccountUser"
+  member             = each.value
+}
+
 resource "google_project_iam_member" "release_application" {
   for_each = local.release_application_project_roles
 
@@ -259,24 +422,25 @@ resource "google_project_iam_member" "release_application" {
   member  = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "release"]}"
 }
 
-# Cloud Run Developer also executes jobs and permits per-execution overrides.
-# This exact role keeps definition and IAM-policy management together because
-# the same release identity needs both; job-level bindings grant execution.
+# The release identity can reconcile definitions and approved tags. It cannot
+# execute by role, override an execution, or read/change Cloud Run IAM policy.
 resource "google_project_iam_custom_role" "release_cloud_run_deployer" {
   project = google_project.workload.project_id
 
   role_id     = "infraReleaseCloudRunDeployer"
   title       = "Infra Release Cloud Run Deployer"
-  description = "Manage release-owned Cloud Run service and job definitions and IAM policies without execution authority."
+  description = "Manage release-owned Cloud Run definitions and approved invocation tags without execution or IAM-policy authority."
   stage       = "GA"
 
   permissions = [
     "run.jobs.create",
+    "run.jobs.createTagBinding",
     "run.jobs.delete",
+    "run.jobs.deleteTagBinding",
     "run.jobs.get",
-    "run.jobs.getIamPolicy",
     "run.jobs.list",
-    "run.jobs.setIamPolicy",
+    "run.jobs.listEffectiveTags",
+    "run.jobs.listTagBindings",
     "run.jobs.update",
     "run.executions.get",
     "run.executions.list",
@@ -285,11 +449,13 @@ resource "google_project_iam_custom_role" "release_cloud_run_deployer" {
     "run.revisions.get",
     "run.revisions.list",
     "run.services.create",
+    "run.services.createTagBinding",
     "run.services.delete",
+    "run.services.deleteTagBinding",
     "run.services.get",
-    "run.services.getIamPolicy",
     "run.services.list",
-    "run.services.setIamPolicy",
+    "run.services.listEffectiveTags",
+    "run.services.listTagBindings",
     "run.services.update",
   ]
 
@@ -298,6 +464,49 @@ resource "google_project_iam_custom_role" "release_cloud_run_deployer" {
   }
 
   depends_on = [google_project_service.workload["iam.googleapis.com"]]
+}
+
+# This role is assigned only to named humans. Execution remains a separate,
+# initializer-tagged jobsExecutor grant, and overrides are never allowed.
+resource "google_project_iam_custom_role" "authentication_initializer_deployer" {
+  count = var.recovery_mode ? 0 : 1
+
+  project = google_project.workload.project_id
+
+  role_id     = "authenticationInitializerDeployer"
+  title       = "Authentication Initializer Deployer"
+  description = "Provision the human-only Authentication initializer without Cloud Run IAM-policy or execution-override authority."
+  stage       = "GA"
+
+  permissions = [
+    "run.executions.get",
+    "run.executions.list",
+    "run.jobs.create",
+    "run.jobs.createTagBinding",
+    "run.jobs.delete",
+    "run.jobs.deleteTagBinding",
+    "run.jobs.get",
+    "run.jobs.list",
+    "run.jobs.listEffectiveTags",
+    "run.jobs.listTagBindings",
+    "run.jobs.update",
+    "run.locations.list",
+    "run.operations.get",
+  ]
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [google_project_service.workload["iam.googleapis.com"]]
+}
+
+resource "google_project_iam_member" "authentication_initializer_deployer" {
+  for_each = var.recovery_mode ? toset([]) : var.authentication_initializer_principals
+
+  project = google_project.workload.project_id
+  role    = google_project_iam_custom_role.authentication_initializer_deployer[0].name
+  member  = each.value
 }
 
 resource "google_project_iam_member" "release_cloud_run_deployer" {
@@ -390,7 +599,9 @@ resource "google_project_iam_member" "database_release" {
 # Secret payloads stay outside OpenTofu. These additive bindings expose only
 # the exact pre-created container each runtime contract consumes.
 resource "google_secret_manager_secret_iam_member" "runtime" {
-  for_each = local.runtime_secret_access
+  # Replacement-project CI cannot rewrite surviving management-plane IAM.
+  # The recovery runbook grants these exact payload contracts as a human step.
+  for_each = var.recovery_mode ? {} : local.runtime_secret_access
 
   project   = var.management_project_id
   secret_id = each.value.secret
@@ -411,6 +622,8 @@ resource "google_storage_bucket_iam_member" "backup_runtime_creator" {
 # Restore and freshness checks share one read-only identity. They can neither
 # create a forged completion marker nor modify or delete retained data.
 resource "google_storage_bucket_iam_member" "restore_runtime_viewer" {
+  count = var.recovery_mode ? 0 : 1
+
   bucket = var.backup_bucket_name
   role   = "roles/storage.objectViewer"
   member = "serviceAccount:${google_service_account.runtime["restore"].email}"

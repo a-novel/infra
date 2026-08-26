@@ -84,9 +84,22 @@ run "builds_the_protected_management_plane" {
       length(google_storage_managed_folder.state) == 3 &&
       google_storage_managed_folder.state["bootstrap"].name == "bootstrap/" &&
       google_storage_managed_folder.state["foundation"].name == "foundation/" &&
-      google_storage_managed_folder.state["release"].name == "release/"
+      google_storage_managed_folder.state["release"].name == "release/" &&
+      length(google_storage_managed_folder.recovery_state) == 4 &&
+      toset([for folder in values(google_storage_managed_folder.recovery_state) : folder.name]) == toset([
+        "foundation/recovery/",
+        "foundation/plans/recovery/",
+        "release/recovery/",
+        "release/plans/recovery/",
+      ]) &&
+      output.recovery_state_prefixes == {
+        "foundation/recovery"       = "foundation/recovery/"
+        "foundation/plans/recovery" = "foundation/plans/recovery/"
+        "release/recovery"          = "release/recovery/"
+        "release/plans/recovery"    = "release/plans/recovery/"
+      }
     )
-    error_message = "State roots no longer have three independent managed-folder boundaries."
+    error_message = "Normal and disposable recovery state paths no longer have their exact managed-folder boundaries."
   }
 
   assert {
@@ -192,24 +205,21 @@ run "builds_the_protected_management_plane" {
   }
 
   assert {
-    condition = toset(google_project_iam_custom_role.recovery_metadata.permissions) == toset([
-      "resourcemanager.projects.get",
-      "resourcemanager.projects.list",
-      "secretmanager.secrets.get",
-      "secretmanager.secrets.getIamPolicy",
-      "secretmanager.secrets.setIamPolicy",
-      "storage.buckets.get",
-      "storage.buckets.getIamPolicy",
-      "storage.buckets.setIamPolicy",
-    ])
-    error_message = "Temporary recovery metadata authority must not read payloads or mutate backup objects."
-  }
-
-  assert {
     condition = (
       google_storage_managed_folder_iam_member.release_state.managed_folder == "release/" &&
       length(google_storage_managed_folder_iam_member.plan_state) == 3 &&
-      length(google_storage_managed_folder_iam_member.recovery_state) == 3
+      length(google_storage_managed_folder_iam_member.recovery_state) == 4 &&
+      toset([for binding in values(google_storage_managed_folder_iam_member.recovery_state) : binding.managed_folder]) == toset([
+        "foundation/recovery/",
+        "foundation/plans/recovery/",
+        "release/recovery/",
+        "release/plans/recovery/",
+      ]) &&
+      alltrue([
+        for binding in values(google_storage_managed_folder_iam_member.recovery_state) :
+        binding.role == "roles/storage.objectAdmin" &&
+        binding.member == "serviceAccount:${google_service_account.automation["recovery"].email}"
+      ])
     )
     error_message = "State IAM no longer separates plan, release, and recovery authority."
   }

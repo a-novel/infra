@@ -85,7 +85,7 @@ locals {
 
   plan_state_folders       = local.state_prefixes
   foundation_state_folders = toset(["bootstrap", "foundation"])
-  recovery_state_folders   = local.state_prefixes
+  recovery_state_folders   = local.recovery_state_prefixes
   state_bucket_viewers     = toset(["release", "recovery"])
 }
 
@@ -209,39 +209,6 @@ resource "google_project_iam_custom_role" "secret_metadata" {
   depends_on = [google_project_service.management["iam.googleapis.com"]]
 }
 
-# A clean-room rebuild temporarily needs to attach replacement runtime
-# identities to surviving secret containers and the backup bucket. This role
-# changes IAM metadata only: it cannot read/write objects or secret versions.
-# It has no standing member; the recovery runbook grants and removes it around
-# one replacement-foundation apply.
-resource "google_project_iam_custom_role" "recovery_metadata" {
-  role_id     = "infraRecoveryMetadataAdmin"
-  title       = "Infra Recovery Metadata Admin"
-  description = "Manage only backup-bucket and secret-container IAM during an approved clean-room rebuild."
-  stage       = "GA"
-
-  permissions = [
-    "resourcemanager.projects.get",
-    "resourcemanager.projects.list",
-    "secretmanager.secrets.get",
-    "secretmanager.secrets.getIamPolicy",
-    "secretmanager.secrets.setIamPolicy",
-    "storage.buckets.get",
-    "storage.buckets.getIamPolicy",
-    "storage.buckets.setIamPolicy",
-  ]
-
-  lifecycle {
-    prevent_destroy = true
-  }
-
-  depends_on = [
-    google_project_service.management["iam.googleapis.com"],
-    google_project_service.management["secretmanager.googleapis.com"],
-    google_project_service.management["storage.googleapis.com"],
-  ]
-}
-
 # Security Reviewer includes private logs and broad inventory access. Planning
 # needs only the policy and bucket metadata required to refresh this root.
 resource "google_project_iam_custom_role" "plan_metadata" {
@@ -359,8 +326,8 @@ resource "google_storage_managed_folder_iam_member" "release_state" {
 resource "google_storage_managed_folder_iam_member" "recovery_state" {
   for_each = local.recovery_state_folders
 
-  bucket         = google_storage_managed_folder.state[each.value].bucket
-  managed_folder = google_storage_managed_folder.state[each.value].name
+  bucket         = google_storage_managed_folder.recovery_state[each.value].bucket
+  managed_folder = google_storage_managed_folder.recovery_state[each.value].name
   role           = "roles/storage.objectAdmin"
   member         = "serviceAccount:${google_service_account.automation["recovery"].email}"
 }

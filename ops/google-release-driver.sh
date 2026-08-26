@@ -86,7 +86,9 @@ run_job() {
 
 expected_database_metadata_sha256() {
     jq --compact-output --sort-keys '
-      .previousDatabase as $database
+      # Preflight compares live metadata with the latest successful state. A
+      # manual rollback can target an older, different database contract.
+      .currentDatabase as $database
       | if $database == null then
           {
             "agora-authentication-database-image": "",

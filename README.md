@@ -38,12 +38,14 @@ The bootstrap root's one-time initial apply remains a human-only exception perfo
 after explicit approval. After that first trust anchor exists, bootstrap and foundation changes use
 the protected workflow. Agents never run `gcloud` or `tofu apply` for this repository.
 
-Before the application contract can be enabled, an operator must supply at least one named `user:`
-or `group:` member through `authentication_initializer_principals`. Only those humans may execute the
-Authentication initializer. Automation cannot invoke it or override its execution, and the first
-release waits for a durable record of the exact successful manual run. JSON Keys rotation is
-separate: release runs it once after migration, then an hourly authenticated schedule evaluates the
-idempotent job. The [release root contract](./environments/production/release/README.md#application-runtime-contract)
+Before the application contract can be enabled, the foundation input must name at least one `user:`
+or `group:` Authentication initializer. Foundation gives only those humans the initializer service
+identity, its Resource Manager tag, and a conditional invocation grant. Routine automation cannot
+use that identity or tag, change Cloud Run IAM, invoke the initializer, or override an execution.
+The human provisions the one-time job in two phases, the first release records its exact successful
+run, and the job is then deleted. JSON Keys rotation is separate: release runs it once after
+migration, then an hourly authenticated schedule evaluates the idempotent job. The
+[release root contract](./environments/production/release/README.md#application-runtime-contract)
 documents the exact IAM and runtime-identity boundaries.
 
 ### Bootstrap Google Cloud only after explicit authorization

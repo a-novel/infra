@@ -205,6 +205,22 @@ variable "database_operator_principals" {
   }
 }
 
+variable "authentication_initializer_principals" {
+  description = "Named human identities allowed to provision and execute the one-time Authentication initializer. Use user: or group: IAM member syntax."
+  type        = set(string)
+
+  validation {
+    condition = (
+      length(var.authentication_initializer_principals) > 0 &&
+      alltrue([
+        for principal in var.authentication_initializer_principals :
+        can(regex("^(user|group):[^[:space:]@]+@[^[:space:]@]+$", principal))
+      ])
+    )
+    error_message = "Provide at least one Authentication initializer as user:email or group:email. Service accounts and broad principals are not accepted."
+  }
+}
+
 variable "cost_alert_email" {
   description = "Operator email address that receives production budget notifications and quota-review follow-up."
   type        = string

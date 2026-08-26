@@ -45,7 +45,7 @@ both database recovery contracts are enabled:
 | `agora-postgres-backup-monitor`         | `5 * * * *`    | Check both manifests, RPO, object sizes, and retained bytes.                   |       5 minutes |
 
 Cloud Scheduler authenticates with `agora-scheduler-invoker`; that account receives only
-`roles/run.invoker` on these exact jobs. Scheduler starts an execution and does not wait for it. The
+`roles/run.jobsExecutor` on these exact jobs. Scheduler starts an execution and does not wait for it. The
 native Cloud Run completion metric therefore remains authoritative: one condition detects failed
 executions and another detects three hours without a completed hourly monitor.
 

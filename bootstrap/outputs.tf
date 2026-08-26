@@ -33,6 +33,11 @@ output "state_prefixes" {
   value       = { for name, folder in google_storage_managed_folder.state : name => folder.name }
 }
 
+output "recovery_state_prefixes" {
+  description = "Nested backend prefixes writable only by protected recovery automation."
+  value       = { for name, folder in google_storage_managed_folder.recovery_state : name => folder.name }
+}
+
 output "automation_service_accounts" {
   description = "Keyless CI service-account emails, keyed by trust boundary."
   value       = { for name, account in google_service_account.automation : name => account.email }

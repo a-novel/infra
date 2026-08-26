@@ -27,7 +27,7 @@ const requiredConfigKeys = [
   "database_private_ip",
   "network_id",
   "subnet_id",
-  "authentication_initializer_principals",
+  "cloud_run_invocation_tags",
   "authentication",
   "quota_expectations",
   "secret_versions",
@@ -91,11 +91,23 @@ function validateConfig(config) {
   if (config.database_zone.slice(0, -2) !== config.region) {
     fail("database_zone must belong to region");
   }
+  exactKeys(
+    config.cloud_run_invocation_tags,
+    ["key", "values"],
+    "Cloud Run invocation tags",
+  );
+  exactKeys(
+    config.cloud_run_invocation_tags.values,
+    ["initializer", "internal", "recovery", "release", "scheduled"],
+    "Cloud Run invocation tag values",
+  );
   if (
-    !Array.isArray(config.authentication_initializer_principals) ||
-    config.authentication_initializer_principals.length === 0
+    !/^tagKeys\/[0-9]+$/.test(config.cloud_run_invocation_tags.key) ||
+    !Object.values(config.cloud_run_invocation_tags.values).every((value) =>
+      /^tagValues\/[0-9]+$/.test(value),
+    )
   ) {
-    fail("at least one Authentication initializer principal is required");
+    fail("Cloud Run invocation tags must use permanent numeric IDs");
   }
   exactKeys(
     config.quota_expectations,
@@ -133,7 +145,6 @@ function validateFamilyVersions(manifest) {
 function runtimeServiceAccounts(project) {
   return {
     authentication: `agora-authentication@${project}.iam.gserviceaccount.com`,
-    authentication_initializer: `agora-auth-initializer@${project}.iam.gserviceaccount.com`,
     backup: `agora-backup@${project}.iam.gserviceaccount.com`,
     json_keys: `agora-json-keys@${project}.iam.gserviceaccount.com`,
     restore: `agora-restore@${project}.iam.gserviceaccount.com`,
@@ -150,11 +161,10 @@ function buildBaseTfvars(config) {
     database_private_ip: config.database_private_ip,
     network_id: config.network_id,
     subnet_id: config.subnet_id,
+    cloud_run_invocation_tags: config.cloud_run_invocation_tags,
     runtime_service_accounts: runtimeServiceAccounts(
       config.workload_project_id,
     ),
-    authentication_initializer_principals:
-      config.authentication_initializer_principals,
   };
 }
 
@@ -260,6 +270,7 @@ export async function compileRelease({
   manifestPath,
   configPath,
   previousReceiptPath = null,
+  currentReceiptPath = previousReceiptPath,
   outputDirectory,
   commit,
   runId,
@@ -307,6 +318,20 @@ export async function compileRelease({
   }
   if (action === "rollback" && previousReceipt === null) {
     fail("rollback requires an exact prior release receipt");
+  }
+
+  let currentReceipt = previousReceipt;
+  if (currentReceiptPath && currentReceiptPath !== previousReceiptPath) {
+    currentReceipt = await loadJson(
+      currentReceiptPath,
+      "current release receipt",
+    );
+    if (!ajv.compile(receiptSchema)(currentReceipt)) {
+      fail("the current release receipt is invalid");
+    }
+  }
+  if (action === "rollback" && currentReceipt === null) {
+    fail("rollback requires the current release receipt");
   }
 
   const seed = sha256(`${commit}:${runId}:${runAttempt}:${nonce}`);
@@ -505,6 +530,7 @@ export async function compileRelease({
     revisions,
     images,
     database,
+    currentDatabase: currentReceipt?.database ?? null,
     previousDatabase: previousReceipt?.database ?? null,
   };
 
@@ -541,6 +567,14 @@ async function main() {
     manifestPath,
     configPath,
     previousReceiptPath: receiptArgument === "-" ? null : receiptArgument,
+    currentReceiptPath:
+      process.env.CURRENT_RECEIPT === undefined
+        ? receiptArgument === "-"
+          ? null
+          : receiptArgument
+        : process.env.CURRENT_RECEIPT === "-"
+          ? null
+          : process.env.CURRENT_RECEIPT,
     outputDirectory,
     commit: process.env.GITHUB_SHA ?? "",
     runId: process.env.GITHUB_RUN_ID ?? "",

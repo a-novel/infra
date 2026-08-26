@@ -7,7 +7,16 @@
   "database_private_ip": "10.20.0.2",
   "network_id": "projects/agora-production-test/global/networks/agora-production",
   "subnet_id": "projects/agora-production-test/regions/europe-west1/subnetworks/agora-production-europe-west1",
-  "authentication_initializer_principals": ["group:infra@example.com"],
+  "cloud_run_invocation_tags": {
+    "key": "tagKeys/100000000001",
+    "values": {
+      "initializer": "tagValues/200000000001",
+      "internal": "tagValues/200000000002",
+      "recovery": "tagValues/200000000003",
+      "release": "tagValues/200000000004",
+      "scheduled": "tagValues/200000000005"
+    }
+  },
   "authentication": {
     "super_admin_email": "admin@example.com",
     "smtp": {

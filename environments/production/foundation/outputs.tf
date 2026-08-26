@@ -33,6 +33,16 @@ output "artifact_registry" {
   }
 }
 
+output "cloud_run_invocation_tags" {
+  description = "Permanent Resource Manager tag IDs that enforce Cloud Run invocation classes."
+  value = {
+    key = google_tags_tag_key.cloud_run_invocation.id
+    values = {
+      for name, value in google_tags_tag_value.cloud_run_invocation : name => value.id
+    }
+  }
+}
+
 output "database_host" {
   description = "Private stateful PostgreSQL host identifiers for operator verification and recovery records."
   value = {

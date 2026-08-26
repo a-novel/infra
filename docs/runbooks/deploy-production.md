@@ -7,6 +7,9 @@ never deploys by itself, and a branch or pull request never receives Google cred
 Official references: [Cloud Run revisions](https://cloud.google.com/run/docs/managing/revisions),
 [traffic migration and rollback](https://cloud.google.com/run/docs/rollouts-rollbacks-traffic-migration),
 [executing Cloud Run jobs](https://cloud.google.com/run/docs/execute/jobs),
+[deploying Cloud Run jobs](https://cloud.google.com/sdk/gcloud/reference/run/jobs/deploy),
+[tagging Cloud Run jobs](https://cloud.google.com/run/docs/configuring/jobs/tags),
+[Cloud Run job secrets](https://cloud.google.com/run/docs/configuring/jobs/secrets),
 [Artifact Registry image copying](https://cloud.google.com/artifact-registry/docs/docker/copy-images),
 [Secret Manager version states](https://cloud.google.com/secret-manager/docs/managing-secret-versions),
 and [GitHub artifact attestations](https://docs.github.com/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations).
@@ -36,11 +39,12 @@ It restores prior traffic, images, secret-version references, and database conta
 Migrations and row data are intentionally not reversed because migrations must remain backward
 compatible. Data restore belongs to the backup or disaster-recovery runbook.
 
-The Authentication initializer is never automated. Only configured human `user:` or `group:`
-principals receive normal invocation on that job. Release, recovery, and scheduler identities cannot
-execute it, and no principal receives `run.jobs.runWithOverrides`. JSON Keys rotation is automated
-separately: release runs it once after migration, then Cloud Scheduler evaluates the idempotent job
-at minute 10 every hour.
+The Authentication initializer is never managed by the release root. Only configured human `user:`
+or `group:` principals receive its tag, dedicated service identity, narrow deployer role, registry
+read, and conditional invocation. Release, recovery, and scheduler identities cannot attach that
+identity or tag, change Cloud Run IAM, execute it, or use execution overrides. JSON Keys rotation is
+automated separately: release runs it once after migration, then Cloud Scheduler evaluates the
+idempotent job at minute 10 every hour.
 
 ## Preconditions and stop conditions
 
@@ -139,11 +143,34 @@ gcloud compute networks describe agora-production \
 gcloud compute networks subnets describe "agora-production-${REGION}" \
   --project="$WORKLOAD_PROJECT_ID" --region="$REGION" \
   --format='yaml(name,network,ipCidrRange,privateIpGoogleAccess)'
+
+WORKLOAD_PROJECT_NUMBER="$(gcloud projects describe "$WORKLOAD_PROJECT_ID" \
+  --format='value(projectNumber)')"
+INVOCATION_TAG_KEY="$(gcloud resource-manager tags keys list \
+  --parent="projects/${WORKLOAD_PROJECT_NUMBER}" \
+  --filter='shortName=agora-invocation' --format='value(name)')"
+[[ "$INVOCATION_TAG_KEY" =~ ^tagKeys/[0-9]+$ ]]
+
+tag_value_id() {
+  gcloud resource-manager tags values list --parent="$INVOCATION_TAG_KEY" \
+    --filter="shortName=$1" --format='value(name)'
+}
+
+INITIALIZER_TAG_VALUE="$(tag_value_id initializer)"
+INTERNAL_TAG_VALUE="$(tag_value_id internal)"
+RECOVERY_TAG_VALUE="$(tag_value_id recovery)"
+RELEASE_TAG_VALUE="$(tag_value_id release)"
+SCHEDULED_TAG_VALUE="$(tag_value_id scheduled)"
+for value in "$INITIALIZER_TAG_VALUE" "$INTERNAL_TAG_VALUE" "$RECOVERY_TAG_VALUE" \
+  "$RELEASE_TAG_VALUE" "$SCHEDULED_TAG_VALUE"; do
+  [[ "$value" =~ ^tagValues/[0-9]+$ ]]
+done
 ```
 
 Expected safe result: one `agora-database-*` member with an RFC 1918 address, one custom-mode
-network, and one `10.20.0.0/24` subnet with Private Google Access. Do not print instance metadata or
-OpenTofu outputs; either can include release configuration.
+network, one `10.20.0.0/24` subnet with Private Google Access, and one permanent ID for each of the
+five invocation classes. Do not print instance metadata or OpenTofu outputs; either can include
+release configuration.
 
 ## 3. Select and verify exact secret versions
 
@@ -188,17 +215,15 @@ receipt-owned version is disabled or destroyed.
 
 ## 4. Store the protected non-payload release configuration
 
-Choose at least one named human/group initializer. SMTP is fixed to authenticated TLS submission on
-port 587, and the host and `sender_domain` are identical.
+SMTP is fixed to authenticated TLS submission on port 587, and the host and `sender_domain` are
+identical. Initializer principals are foundation inputs, not a mutable release secret.
 
 ```bash
-read -r -p 'Initializer IAM member (user: or group:): ' AUTH_INITIALIZER_PRINCIPAL
 read -r -p 'First super-admin email: ' AUTH_SUPER_ADMIN_EMAIL
 read -r -p 'SMTP DNS host (without port): ' SMTP_HOST
 read -r -p 'SMTP sender email: ' SMTP_SENDER_EMAIL
 read -r -p 'SMTP sender display name: ' SMTP_SENDER_NAME
 
-[[ "$AUTH_INITIALIZER_PRINCIPAL" =~ ^(user|group):[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]
 [[ "$AUTH_SUPER_ADMIN_EMAIL" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]
 [[ "$SMTP_HOST" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]]
 [[ "$SMTP_SENDER_EMAIL" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]
@@ -210,7 +235,10 @@ jq -n \
   --arg region "$REGION" --arg zone "$DATABASE_ZONE" \
   --arg backup "$BACKUP_BUCKET_NAME" --arg database_ip "$DATABASE_PRIVATE_IP" \
   --arg network "$NETWORK_ID" --arg subnet "$SUBNET_ID" \
-  --arg initializer "$AUTH_INITIALIZER_PRINCIPAL" --arg admin "$AUTH_SUPER_ADMIN_EMAIL" \
+  --arg invocation_key "$INVOCATION_TAG_KEY" \
+  --arg initializer_tag "$INITIALIZER_TAG_VALUE" --arg internal_tag "$INTERNAL_TAG_VALUE" \
+  --arg recovery_tag "$RECOVERY_TAG_VALUE" --arg release_tag "$RELEASE_TAG_VALUE" \
+  --arg scheduled_tag "$SCHEDULED_TAG_VALUE" --arg admin "$AUTH_SUPER_ADMIN_EMAIL" \
   --arg smtp "${SMTP_HOST}:587" --arg smtp_domain "$SMTP_HOST" \
   --arg smtp_email "$SMTP_SENDER_EMAIL" --arg smtp_name "$SMTP_SENDER_NAME" \
   --argjson ap "$AUTH_POSTGRES_PASSWORD_VERSION" \
@@ -224,7 +252,13 @@ jq -n \
     management_project_id: $management, workload_project_id: $workload,
     region: $region, database_zone: $zone, backup_bucket_name: $backup,
     database_private_ip: $database_ip, network_id: $network, subnet_id: $subnet,
-    authentication_initializer_principals: [$initializer],
+    cloud_run_invocation_tags: {
+      key: $invocation_key,
+      values: {
+        initializer: $initializer_tag, internal: $internal_tag,
+        recovery: $recovery_tag, release: $release_tag, scheduled: $scheduled_tag
+      }
+    },
     authentication: {
       super_admin_email: $admin,
       smtp: {address: $smtp, sender_domain: $smtp_domain, sender_email: $smtp_email, sender_name: $smtp_name}
@@ -246,7 +280,7 @@ jq -n \
     }
   }' >"$RELEASE_CONFIG_FILE"
 
-jq -e '(.authentication_initializer_principals | length >= 1) and (.secret_versions | length == 9)' \
+jq -e '(.cloud_run_invocation_tags.values | length == 5) and (.secret_versions | length == 9)' \
   "$RELEASE_CONFIG_FILE" >/dev/null
 gh secret set RELEASE_CONFIG_JSON --repo "$REPOSITORY" --env production-release \
   <"$RELEASE_CONFIG_FILE"
@@ -308,21 +342,130 @@ plans, state, image inventories, paired secret/version inventories, or provider 
 private receipt binds the exact migration, rotation, backup, restore, monitor, initialization when
 applicable, and health-gate evidence to the promoted revisions.
 
-### First launch: run the one human-only initializer
+On the first launch, `gh run watch` remains attached while the workflow waits for initialization.
+When the initializer prompt appears, press `Ctrl-C`; this stops only the local watcher, not the
+workflow. Complete the subsection below in the same shell, which retains the validated variables,
+then use its final `gh run watch` command to verify the workflow succeeded.
+
+### First launch: provision and run the human-only initializer
 
 Keep the live workflow log open. After migrations, it prints the initializer prompt and waits for an
-execution created after that prompt. Authenticate as a configured initializer and run exactly:
+execution created after that prompt. Authenticate as one of the initializer principals configured in
+foundation. Do not use the release service account.
+
+Copy the exact initializer `sha256:` digest from the reviewed
+`service-authentication.images.jobs/init` manifest entry. The workflow has already promoted that
+digest when it reaches the prompt:
+
+```bash
+read -r -p 'Reviewed Authentication initializer sha256 digest: ' INIT_DIGEST
+[[ "$INIT_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
+INIT_IMAGE="${REGION}-docker.pkg.dev/${WORKLOAD_PROJECT_ID}/agora-production/service-authentication/jobs/init@${INIT_DIGEST}"
+INIT_SERVICE_ACCOUNT="agora-auth-initializer@${WORKLOAD_PROJECT_ID}.iam.gserviceaccount.com"
+INIT_JOB_PARENT="//run.googleapis.com/projects/${WORKLOAD_PROJECT_ID}/locations/${REGION}/jobs/agora-authentication-init"
+MANAGEMENT_PROJECT_NUMBER="$(gcloud projects describe "$MANAGEMENT_PROJECT_ID" \
+  --format='value(projectNumber)')"
+[[ "$MANAGEMENT_PROJECT_NUMBER" =~ ^[0-9]+$ ]]
+
+gcloud artifacts docker images describe "$INIT_IMAGE" \
+  --project="$WORKLOAD_PROJECT_ID" --format='none'
+if gcloud run jobs describe agora-authentication-init \
+  --project="$WORKLOAD_PROJECT_ID" --region="$REGION" --format='none' 2>/dev/null; then
+  printf 'STOP: the one-time initializer already exists; use the partial-failure procedure.\n' >&2
+  exit 1
+fi
+```
+
+Create an inert definition first. This step deliberately includes the exact image, identity,
+capacity, and network but no environment variables, secret references, command, arguments, or
+execution flag:
+
+```bash
+gcloud run jobs deploy agora-authentication-init \
+  --project="$WORKLOAD_PROJECT_ID" --region="$REGION" \
+  --image="$INIT_IMAGE" --service-account="$INIT_SERVICE_ACCOUNT" \
+  --tasks=1 --parallelism=1 --max-retries=1 --task-timeout=300s \
+  --cpu=1 --memory=512Mi \
+  --network=agora-production --subnet="agora-production-${REGION}" \
+  --network-tags=agora-authentication --vpc-egress=all-traffic \
+  --labels=environment=production,managed-by=human-initializer,component=authentication,role=init
+
+gcloud run jobs describe agora-authentication-init \
+  --project="$WORKLOAD_PROJECT_ID" --region="$REGION" --format=export
+```
+
+Expected safe result: deployment succeeds without starting an execution. The exported definition has
+the exact digest and service account above, one task, the private network, no `env`, no secret
+annotation, and no command or arguments. Stop if any bootstrap value is already present.
+
+Attach the human-only authorization tag before adding bootstrap configuration, then prove it is the
+only direct tag:
+
+```bash
+gcloud resource-manager tags bindings create \
+  --tag-value="$INITIALIZER_TAG_VALUE" --parent="$INIT_JOB_PARENT" --location="$REGION"
+
+gcloud resource-manager tags bindings list \
+  --parent="$INIT_JOB_PARENT" --location="$REGION" --format=json \
+| jq --exit-status --arg expected "$INITIALIZER_TAG_VALUE" '
+    ([.[].tagValue] | sort) == ([$expected] | sort)
+  '
+```
+
+Expected safe result: `true`. The job must not carry `release`, `scheduled`, `internal`, or
+`recovery`. Routine automation cannot attach the initializer value or use its service account.
+
+Only after that check passes, add the exact non-payload email and two exact cross-project secret
+versions. This update does not execute the job:
+
+```bash
+gcloud run jobs update agora-authentication-init \
+  --project="$WORKLOAD_PROJECT_ID" --region="$REGION" \
+  --image="$INIT_IMAGE" --service-account="$INIT_SERVICE_ACCOUNT" \
+  --tasks=1 --parallelism=1 --max-retries=1 --task-timeout=300s \
+  --cpu=1 --memory=512Mi \
+  --network=agora-production --subnet="agora-production-${REGION}" \
+  --network-tags=agora-authentication --vpc-egress=all-traffic \
+  --set-env-vars="SUPER_ADMIN_EMAIL=${AUTH_SUPER_ADMIN_EMAIL}" \
+  --set-secrets="POSTGRES_DSN=projects/${MANAGEMENT_PROJECT_NUMBER}/secrets/production-authentication-postgres-dsn:${AUTH_POSTGRES_DSN_VERSION},SUPER_ADMIN_PASSWORD=projects/${MANAGEMENT_PROJECT_NUMBER}/secrets/production-authentication-super-admin-password:${AUTH_SUPER_ADMIN_PASSWORD_VERSION}"
+
+gcloud resource-manager tags bindings list \
+  --parent="$INIT_JOB_PARENT" --location="$REGION" --format=json \
+| jq --exit-status --arg expected "$INITIALIZER_TAG_VALUE" '
+    ([.[].tagValue] | sort) == ([$expected] | sort)
+  '
+```
+
+Expected safe result: the update finishes without an execution and the tag check remains `true`.
+Run exactly one normal execution—never add image, argument, environment, task, timeout, or secret
+overrides:
 
 ```bash
 gcloud run jobs execute agora-authentication-init \
   --project="$WORKLOAD_PROJECT_ID" --region="$REGION" --wait
 ```
 
-Do not add image, argument, environment, task, timeout, or other overrides. The workflow rejects an
-absent, failed, stale, or wrong-job execution and atomically writes the private one-time marker
-`production/initialization/complete.json`. Later releases become non-interactive. Recovery projects
+The workflow rejects an absent, failed, stale, or wrong-job execution and atomically writes the
+private one-time marker `production/initialization/complete.json`. Wait for the release workflow to
+finish successfully, then delete the dormant privileged definition while its initializer tag is
+still attached:
+
+```bash
+gh run watch "$RELEASE_RUN_ID" --repo "$REPOSITORY" --exit-status
+gcloud run jobs delete agora-authentication-init \
+  --project="$WORKLOAD_PROJECT_ID" --region="$REGION" --quiet
+if gcloud run jobs describe agora-authentication-init \
+  --project="$WORKLOAD_PROJECT_ID" --region="$REGION" --format='none' 2>/dev/null; then
+  printf 'STOP: the initializer still exists; keep its initializer tag and investigate.\n' >&2
+  exit 1
+fi
+unset INIT_DIGEST INIT_IMAGE INIT_SERVICE_ACCOUNT INIT_JOB_PARENT MANAGEMENT_PROJECT_NUMBER
+```
+
+Never detach or replace the initializer tag before deletion: an untagged privileged job could be
+retagged into a routine invocation class. Later releases are non-interactive, and recovery projects
 do not create this job or marker. If no human succeeds within 30 minutes, the release compensates;
-diagnose and dispatch a fresh run rather than fabricating the marker.
+follow the partial-failure procedure below and dispatch a fresh run rather than fabricating a marker.
 
 ## 7. Verify deployment and rotation
 
@@ -339,17 +482,31 @@ gcloud run services describe agora-authentication \
 gcloud scheduler jobs describe agora-json-keys-rotation \
   --project="$WORKLOAD_PROJECT_ID" --location="$REGION" \
   --format='yaml(name,state,schedule,timeZone,httpTarget.uri,httpTarget.oauthToken.serviceAccountEmail)'
-gcloud run jobs get-iam-policy agora-authentication-init \
-  --project="$WORKLOAD_PROJECT_ID" --region="$REGION" \
-  --format='table(bindings.role,bindings.members)'
+if gcloud run jobs describe agora-authentication-init \
+  --project="$WORKLOAD_PROJECT_ID" --region="$REGION" --format='none' 2>/dev/null; then
+  printf 'STOP: the one-time initializer still exists.\n' >&2
+  exit 1
+fi
+for tuple in \
+  "jobs/agora-authentication-migrations $RELEASE_TAG_VALUE" \
+  "jobs/agora-json-keys-migrations $RELEASE_TAG_VALUE" \
+  "jobs/agora-json-keys-rotatekeys $SCHEDULED_TAG_VALUE" \
+  "services/agora-json-keys $INTERNAL_TAG_VALUE"; do
+  read -r resource expected <<<"$tuple"
+  gcloud resource-manager tags bindings list \
+    --parent="//run.googleapis.com/projects/${WORKLOAD_PROJECT_ID}/locations/${REGION}/${resource}" \
+    --location="$REGION" --format=json \
+  | jq --exit-status --arg expected "$expected" \
+      '([.[].tagValue] | sort) == ([$expected] | sort)'
+done
 gcloud storage ls "gs://${RECEIPT_BUCKET_NAME}/production/success/*.json"
 ```
 
 Expected: the exact commit succeeded; each service has one exact revision at 100%; JSON Keys retains
 internal ingress; Authentication is the public HTTPS edge; rotation is enabled at `10 * * * *` UTC
-as the scheduler identity; initializer invokers are only named humans/groups; and the newest receipt
-ends in the release `run-id-attempt`. Do not print a receipt: it is a private recovery inventory even
-though it contains no payload secret.
+as the scheduler identity; the initializer job is absent; all four tag checks return `true`; and the
+newest receipt ends in the release `run-id-attempt`. Do not print a receipt: it is a private recovery
+inventory even though it contains no payload secret.
 
 ## 8. Restore an exact prior receipt
 
@@ -364,9 +521,32 @@ gh workflow run release.yaml --repo "$REPOSITORY" --ref master \
   -f action=rollback -f target_receipt="$TARGET_RECEIPT"
 ```
 
-The workflow validates the receipt, confirms every receipt-owned secret version remains enabled,
-routes traffic back, recreates prior templates under fresh revision names, restores database
-container metadata, proves convergence, and writes a new `rollback` receipt. It does not reverse
+The workflow treats the newest success receipt as the current live-state preflight and the selected
+receipt as the rollback destination. It validates both, requires the live database metadata to match
+the newest receipt before any change, confirms every destination-owned secret version remains
+enabled, routes traffic back, recreates prior templates under fresh revision names, restores the
+selected database container metadata, proves convergence, and writes a new `rollback` receipt. It does not reverse
 migrations or restore data. If compensation or rollback fails, freeze writes and use
 [Recover into a disposable project](./disaster-recovery.md); if only data is damaged and the workload
 project is trustworthy, use [Back up and restore PostgreSQL](./backup-and-restore-postgresql.md).
+
+## Initializer partial-failure recovery
+
+- If the release compensates before the initializer exists, create nothing. Diagnose the workflow
+  and dispatch a fresh release.
+- If an inert untagged job exists because tag attachment failed, verify its exported definition has
+  no environment or secrets. Attach only `INITIALIZER_TAG_VALUE`, recheck the sole tag, and continue
+  only while a fresh release is waiting. If that invariant is uncertain, delete the inert job and
+  restart the two-phase procedure.
+- If any untagged initializer already contains bootstrap configuration, cancel every production
+  writer and treat it as an IAM incident. Do not attach a routine tag or execute it. Preserve audit
+  evidence, delete the job, verify it is absent, and review who created or updated it before retrying.
+- If an initializer-tagged job remains after compensation, keep that tag attached. Delete the job
+  before a fresh dispatch, or rerun it without overrides only after the fresh workflow reaches its
+  prompt. A new gate deliberately ignores executions created before its own start time.
+- If deletion fails after success, leave the initializer tag attached and do not add another tag.
+  The dormant definition remains human-only; resolve the control-plane error and delete it before the
+  next routine release.
+
+Never create the initialization marker manually. Its create-only write and post-prompt successful
+execution are the evidence that makes later releases non-interactive.

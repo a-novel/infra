@@ -75,38 +75,47 @@ variable "subnet_id" {
 variable "runtime_service_accounts" {
   description = "Foundation-owned keyless identities used by application, backup, restore, and scheduler workloads."
   type = object({
-    authentication             = string
-    authentication_initializer = string
-    backup                     = string
-    json_keys                  = string
-    restore                    = string
-    scheduler_invoker          = string
+    authentication    = string
+    backup            = string
+    json_keys         = string
+    restore           = string
+    scheduler_invoker = string
   })
 
   validation {
     condition = (
       var.runtime_service_accounts.authentication == "agora-authentication@${var.workload_project_id}.iam.gserviceaccount.com" &&
-      var.runtime_service_accounts.authentication_initializer == "agora-auth-initializer@${var.workload_project_id}.iam.gserviceaccount.com" &&
       var.runtime_service_accounts.backup == "agora-backup@${var.workload_project_id}.iam.gserviceaccount.com" &&
       var.runtime_service_accounts.json_keys == "agora-json-keys@${var.workload_project_id}.iam.gserviceaccount.com" &&
       var.runtime_service_accounts.restore == "agora-restore@${var.workload_project_id}.iam.gserviceaccount.com" &&
       var.runtime_service_accounts.scheduler_invoker == "agora-scheduler-invoker@${var.workload_project_id}.iam.gserviceaccount.com"
     )
-    error_message = "Runtime identities must be the six exact foundation-owned service accounts."
+    error_message = "Runtime identities must be the five exact foundation-owned service accounts."
   }
 }
 
-variable "authentication_initializer_principals" {
-  description = "Named human IAM members allowed to execute the Authentication initializer manually."
-  type        = set(string)
-  default     = []
+variable "cloud_run_invocation_tags" {
+  description = "Foundation-owned permanent Resource Manager tag IDs used by conditional Cloud Run invoker bindings."
+  type = object({
+    key = string
+    values = object({
+      initializer = string
+      internal    = string
+      recovery    = string
+      release     = string
+      scheduled   = string
+    })
+  })
 
   validation {
-    condition = alltrue([
-      for principal in var.authentication_initializer_principals :
-      can(regex("^(user|group):[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$", principal))
-    ])
-    error_message = "Authentication initializer principals must be user: or group: IAM members."
+    condition = (
+      can(regex("^tagKeys/[0-9]+$", var.cloud_run_invocation_tags.key)) &&
+      alltrue([
+        for value in values(var.cloud_run_invocation_tags.values) :
+        can(regex("^tagValues/[0-9]+$", value))
+      ])
+    )
+    error_message = "Cloud Run invocation tags must use permanent tagKeys/<number> and tagValues/<number> IDs."
   }
 }
 

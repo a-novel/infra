@@ -135,10 +135,15 @@ jobs:
           set -euo pipefail
           umask 077
           file="${RUNNER_TEMP}/prior-receipt.json"
+          current="${RUNNER_TEMP}/current-receipt.json"
           if [ "${ACTION}" = rollback ]; then
             ./ops/receipt-custody.sh fetch \
               "${RECEIPT_BUCKET}" "${file}" "${TARGET_RECEIPT}"
+            # The selected receipt is the rollback destination; the latest
+            # receipt remains the state that preflight must observe as live.
+            ./ops/receipt-custody.sh latest "${RECEIPT_BUCKET}" "${current}"
             printf 'argument=%s\n' "${file}" >>"${GITHUB_OUTPUT}"
+            printf 'current=%s\n' "${current}" >>"${GITHUB_OUTPUT}"
           else
             set +e
             ./ops/receipt-custody.sh latest "${RECEIPT_BUCKET}" "${file}"
@@ -146,8 +151,10 @@ jobs:
             set -e
             if [ "${code}" -eq 0 ]; then
               printf 'argument=%s\n' "${file}" >>"${GITHUB_OUTPUT}"
+              printf 'current=%s\n' "${file}" >>"${GITHUB_OUTPUT}"
             elif [ "${code}" -eq 4 ]; then
               printf 'argument=-\n' >>"${GITHUB_OUTPUT}"
+              printf 'current=-\n' >>"${GITHUB_OUTPUT}"
             else
               exit "${code}"
             fi
@@ -159,6 +166,7 @@ jobs:
           GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
           GITHUB_RUN_ID: ${{ github.run_id }}
           GITHUB_SHA: ${{ github.sha }}
+          CURRENT_RECEIPT: ${{ steps.prior.outputs.current }}
           PRIOR_RECEIPT: ${{ steps.prior.outputs.argument }}
           RELEASE_ACTION: ${{ inputs.action }}
           RELEASE_CONFIG_FILE: ${{ steps.config.outputs.file }}

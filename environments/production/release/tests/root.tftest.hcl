@@ -13,16 +13,22 @@ variables {
   database_private_ip   = "10.20.0.5"
   network_id            = "projects/agora-production-test/global/networks/agora-production"
   subnet_id             = "projects/agora-production-test/regions/europe-west1/subnetworks/agora-production-europe-west1"
-  authentication_initializer_principals = [
-    "group:authentication-initializers@example.com",
-  ]
+  cloud_run_invocation_tags = {
+    key = "tagKeys/100000000001"
+    values = {
+      initializer = "tagValues/200000000001"
+      internal    = "tagValues/200000000002"
+      recovery    = "tagValues/200000000003"
+      release     = "tagValues/200000000004"
+      scheduled   = "tagValues/200000000005"
+    }
+  }
   runtime_service_accounts = {
-    authentication             = "agora-authentication@agora-production-test.iam.gserviceaccount.com"
-    authentication_initializer = "agora-auth-initializer@agora-production-test.iam.gserviceaccount.com"
-    backup                     = "agora-backup@agora-production-test.iam.gserviceaccount.com"
-    json_keys                  = "agora-json-keys@agora-production-test.iam.gserviceaccount.com"
-    restore                    = "agora-restore@agora-production-test.iam.gserviceaccount.com"
-    scheduler_invoker          = "agora-scheduler-invoker@agora-production-test.iam.gserviceaccount.com"
+    authentication    = "agora-authentication@agora-production-test.iam.gserviceaccount.com"
+    backup            = "agora-backup@agora-production-test.iam.gserviceaccount.com"
+    json_keys         = "agora-json-keys@agora-production-test.iam.gserviceaccount.com"
+    restore           = "agora-restore@agora-production-test.iam.gserviceaccount.com"
+    scheduler_invoker = "agora-scheduler-invoker@agora-production-test.iam.gserviceaccount.com"
   }
 }
 
@@ -48,13 +54,9 @@ run "keeps_recovery_disabled_before_the_database_release" {
       length(google_cloud_scheduler_job.postgres_restore) == 0 &&
       length(google_cloud_scheduler_job.postgres_backup_monitor) == 0 &&
       length(google_cloud_run_v2_job.application) == 0 &&
-      length(google_cloud_run_v2_job_iam_member.application_release_invoker) == 0 &&
-      length(google_cloud_run_v2_job_iam_member.authentication_initializer) == 0 &&
-      length(google_cloud_run_v2_job_iam_member.json_keys_rotation_scheduler) == 0 &&
       length(google_cloud_scheduler_job.json_keys_rotation) == 0 &&
       length(google_cloud_run_v2_service.json_keys) == 0 &&
-      length(google_cloud_run_v2_service.authentication) == 0 &&
-      length(google_cloud_run_v2_service_iam_member.json_keys_invoker) == 0
+      length(google_cloud_run_v2_service.authentication) == 0
     )
     error_message = "No recovery or application runtime may exist before its release contract is enabled."
   }
@@ -281,38 +283,17 @@ run "builds_the_two_database_recovery_contracts" {
 
   assert {
     condition = (
-      length(google_cloud_run_v2_job_iam_member.backup_scheduler) == 2 &&
-      length(google_cloud_run_v2_job_iam_member.restore_scheduler) == 2 &&
-      length(google_cloud_run_v2_job_iam_member.monitor_scheduler) == 1 &&
       alltrue([
-        for binding in concat(
-          values(google_cloud_run_v2_job_iam_member.backup_scheduler),
-          values(google_cloud_run_v2_job_iam_member.restore_scheduler),
-          google_cloud_run_v2_job_iam_member.monitor_scheduler,
-        ) :
-        binding.role == "roles/run.invoker" &&
-        binding.member == "serviceAccount:${var.runtime_service_accounts.scheduler_invoker}"
+        for job in concat(
+          values(google_cloud_run_v2_job.postgres_backup),
+          values(google_cloud_run_v2_job.postgres_restore),
+          google_cloud_run_v2_job.postgres_backup_monitor,
+          ) : job.tags == tomap({
+            (var.cloud_run_invocation_tags.key) = var.cloud_run_invocation_tags.values.scheduled
+        })
       ])
     )
-    error_message = "Only the scheduler identity may invoke the five recovery jobs automatically."
-  }
-
-  assert {
-    condition = (
-      length(google_cloud_run_v2_job_iam_member.backup_release) == 2 &&
-      length(google_cloud_run_v2_job_iam_member.restore_release) == 2 &&
-      length(google_cloud_run_v2_job_iam_member.monitor_release) == 1 &&
-      alltrue([
-        for binding in concat(
-          values(google_cloud_run_v2_job_iam_member.backup_release),
-          values(google_cloud_run_v2_job_iam_member.restore_release),
-          google_cloud_run_v2_job_iam_member.monitor_release,
-        ) :
-        binding.role == "roles/run.invoker" &&
-        binding.member == "serviceAccount:infra-release@agora-management-test.iam.gserviceaccount.com"
-      ])
-    )
-    error_message = "Release verification must receive normal invocation only on the five exact recovery jobs."
+    error_message = "Every scheduled recovery-point job must carry the foundation-owned scheduled invocation tag."
   }
 }
 
@@ -374,9 +355,8 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
 
   assert {
     condition = (
-      length(google_cloud_run_v2_job.application) == 4 &&
+      length(google_cloud_run_v2_job.application) == 3 &&
       toset(keys(google_cloud_run_v2_job.application)) == toset([
-        "authentication_init",
         "authentication_migrations",
         "json_keys_migrations",
         "json_keys_rotate",
@@ -396,7 +376,7 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
         one(one(one(job.template).template).vpc_access).network_interfaces[0].subnetwork == var.subnet_id
       ])
     )
-    error_message = "Application jobs must remain four singleton, bounded, scale-to-zero Direct VPC executions."
+    error_message = "Application jobs must remain three singleton, bounded, scale-to-zero Direct VPC executions."
   }
 
   assert {
@@ -407,21 +387,16 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
         name        = job.name
         timeout     = one(one(job.template).template).timeout
         vpc_tag     = one(one(one(job.template).template).vpc_access).network_interfaces[0].tags[0]
+        invocation  = job.tags[var.cloud_run_invocation_tags.key]
       }
       } == {
-      authentication_init = {
-        identity    = var.runtime_service_accounts.authentication_initializer
-        max_retries = 1
-        name        = "agora-authentication-init"
-        timeout     = "300s"
-        vpc_tag     = "agora-authentication"
-      }
       authentication_migrations = {
         identity    = var.runtime_service_accounts.authentication
         max_retries = 0
         name        = "agora-authentication-migrations"
         timeout     = "600s"
         vpc_tag     = "agora-authentication"
+        invocation  = var.cloud_run_invocation_tags.values.release
       }
       json_keys_migrations = {
         identity    = var.runtime_service_accounts.json_keys
@@ -429,6 +404,7 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
         name        = "agora-json-keys-migrations"
         timeout     = "600s"
         vpc_tag     = "agora-json-keys"
+        invocation  = var.cloud_run_invocation_tags.values.release
       }
       json_keys_rotate = {
         identity    = var.runtime_service_accounts.json_keys
@@ -436,6 +412,7 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
         name        = "agora-json-keys-rotatekeys"
         timeout     = "300s"
         vpc_tag     = "agora-json-keys"
+        invocation  = var.cloud_run_invocation_tags.values.scheduled
       }
     }
     error_message = "Every application job must retain its exact identity, retry, timeout, name, and database path."
@@ -443,24 +420,6 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
 
   assert {
     condition = (
-      length(google_cloud_run_v2_job_iam_member.application_release_invoker) == 3 &&
-      toset(keys(google_cloud_run_v2_job_iam_member.application_release_invoker)) == toset([
-        "authentication_migrations",
-        "json_keys_migrations",
-        "json_keys_rotate",
-      ]) &&
-      alltrue([
-        for binding in values(google_cloud_run_v2_job_iam_member.application_release_invoker) :
-        binding.role == "roles/run.invoker" &&
-        binding.member == "serviceAccount:infra-release@agora-management-test.iam.gserviceaccount.com"
-      ]) &&
-      length(google_cloud_run_v2_job_iam_member.authentication_initializer) == 1 &&
-      one(values(google_cloud_run_v2_job_iam_member.authentication_initializer)).role == "roles/run.invoker" &&
-      one(values(google_cloud_run_v2_job_iam_member.authentication_initializer)).member == "group:authentication-initializers@example.com" &&
-      one(values(google_cloud_run_v2_job_iam_member.authentication_initializer)).name == "agora-authentication-init" &&
-      length(google_cloud_run_v2_job_iam_member.json_keys_rotation_scheduler) == 1 &&
-      google_cloud_run_v2_job_iam_member.json_keys_rotation_scheduler[0].member == "serviceAccount:${var.runtime_service_accounts.scheduler_invoker}" &&
-      google_cloud_run_v2_job_iam_member.json_keys_rotation_scheduler[0].name == "agora-json-keys-rotatekeys" &&
       length(google_cloud_scheduler_job.json_keys_rotation) == 1 &&
       google_cloud_scheduler_job.json_keys_rotation[0].schedule == "10 * * * *" &&
       google_cloud_scheduler_job.json_keys_rotation[0].paused == false &&
@@ -469,22 +428,19 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
       one(google_cloud_scheduler_job.json_keys_rotation[0].http_target).uri == "https://run.googleapis.com/v2/projects/agora-production-test/locations/europe-west1/jobs/agora-json-keys-rotatekeys:run" &&
       one(google_cloud_scheduler_job.json_keys_rotation[0].http_target).oauth_token[0].service_account_email == var.runtime_service_accounts.scheduler_invoker
     )
-    error_message = "Application job execution must exclude initialization from automation and schedule idempotent JSON Keys rotation hourly."
+    error_message = "The tagged idempotent JSON Keys rotation job must remain scheduled hourly."
   }
 
   assert {
     condition = (
-      alltrue([
-        for key in ["authentication_init", "authentication_migrations"] :
-        one([
-          for environment in one(one(one(google_cloud_run_v2_job.application[key].template).template).containers).env : environment
-          if environment.name == "POSTGRES_DSN"
-        ]).value_source[0].secret_key_ref[0].secret == "projects/agora-management-test/secrets/production-authentication-postgres-dsn" &&
-        one([
-          for environment in one(one(one(google_cloud_run_v2_job.application[key].template).template).containers).env : environment
-          if environment.name == "POSTGRES_DSN"
-        ]).value_source[0].secret_key_ref[0].version == "11"
-      ]) &&
+      one([
+        for environment in one(one(one(google_cloud_run_v2_job.application["authentication_migrations"].template).template).containers).env : environment
+        if environment.name == "POSTGRES_DSN"
+      ]).value_source[0].secret_key_ref[0].secret == "projects/agora-management-test/secrets/production-authentication-postgres-dsn" &&
+      one([
+        for environment in one(one(one(google_cloud_run_v2_job.application["authentication_migrations"].template).template).containers).env : environment
+        if environment.name == "POSTGRES_DSN"
+      ]).value_source[0].secret_key_ref[0].version == "11" &&
       alltrue([
         for key in ["json_keys_migrations", "json_keys_rotate"] :
         one([
@@ -497,10 +453,6 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
         ]).value_source[0].secret_key_ref[0].version == "8"
       ]) &&
       toset([
-        for environment in one(one(one(google_cloud_run_v2_job.application["authentication_init"].template).template).containers).env : environment.name
-        if length(environment.value_source) == 1
-      ]) == toset(["POSTGRES_DSN", "SUPER_ADMIN_PASSWORD"]) &&
-      toset([
         for environment in one(one(one(google_cloud_run_v2_job.application["authentication_migrations"].template).template).containers).env : environment.name
         if length(environment.value_source) == 1
       ]) == toset(["POSTGRES_DSN"]) &&
@@ -512,17 +464,7 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
         for environment in one(one(one(google_cloud_run_v2_job.application["json_keys_rotate"].template).template).containers).env : environment.name
         if length(environment.value_source) == 1
       ]) == toset(["APP_MASTER_KEY", "POSTGRES_DSN"]) &&
-      one([
-        for environment in one(one(one(google_cloud_run_v2_job.application["authentication_init"].template).template).containers).env : environment
-        if environment.name == "SUPER_ADMIN_EMAIL"
-      ]).value == "admin@example.com" &&
-      one([
-        for environment in one(one(one(google_cloud_run_v2_job.application["authentication_init"].template).template).containers).env : environment
-        if environment.name == "SUPER_ADMIN_PASSWORD"
-        ]).value_source[0].secret_key_ref[0] == {
-        secret  = "projects/agora-management-test/secrets/production-authentication-super-admin-password"
-        version = "13"
-      } &&
+      !contains(keys(google_cloud_run_v2_job.application), "authentication_init") &&
       one([
         for environment in one(one(one(google_cloud_run_v2_job.application["json_keys_rotate"].template).template).containers).env : environment
         if environment.name == "APP_MASTER_KEY"
@@ -531,13 +473,16 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
         version = "7"
       }
     )
-    error_message = "Application jobs must receive only their declared plain values and exact numeric secret versions."
+    error_message = "Automated application jobs must receive only their declared exact secret versions; initialization stays absent."
   }
 
   assert {
     condition = (
       length(google_cloud_run_v2_service.json_keys) == 1 &&
       google_cloud_run_v2_service.json_keys[0].ingress == "INGRESS_TRAFFIC_INTERNAL_ONLY" &&
+      google_cloud_run_v2_service.json_keys[0].tags == tomap({
+        (var.cloud_run_invocation_tags.key) = var.cloud_run_invocation_tags.values.internal
+      }) &&
       !google_cloud_run_v2_service.json_keys[0].invoker_iam_disabled &&
       !google_cloud_run_v2_service.json_keys[0].deletion_protection &&
       one(google_cloud_run_v2_service.json_keys[0].scaling).min_instance_count == 0 &&
@@ -563,22 +508,6 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
       one(google_cloud_run_v2_service.json_keys[0].traffic).percent == 100
     )
     error_message = "JSON Keys must remain an internal h2c service with request-based CPU, bounded scaling, TCP startup, and private-only egress."
-  }
-
-  assert {
-    condition = (
-      length(google_cloud_run_v2_service_iam_member.json_keys_invoker) == 1 &&
-      length(google_cloud_run_v2_service_iam_member.authentication_smoke_invoker) == 0 &&
-      alltrue([
-        for binding in values(google_cloud_run_v2_service_iam_member.json_keys_invoker) :
-        binding.role == "roles/run.invoker" &&
-        !contains(["allUsers", "allAuthenticatedUsers"], binding.member)
-      ]) &&
-      toset([for binding in values(google_cloud_run_v2_service_iam_member.json_keys_invoker) : binding.member]) == toset([
-        "serviceAccount:agora-authentication@agora-production-test.iam.gserviceaccount.com",
-      ])
-    )
-    error_message = "Production JSON Keys invocation must remain limited to Authentication."
   }
 
   assert {
@@ -610,6 +539,7 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
       length(google_cloud_run_v2_service.authentication) == 1 &&
       google_cloud_run_v2_service.authentication[0].ingress == "INGRESS_TRAFFIC_ALL" &&
       google_cloud_run_v2_service.authentication[0].invoker_iam_disabled &&
+      length(google_cloud_run_v2_service.authentication[0].tags) == 0 &&
       !google_cloud_run_v2_service.authentication[0].deletion_protection &&
       one(google_cloud_run_v2_service.authentication[0].scaling).min_instance_count == 0 &&
       one(google_cloud_run_v2_service.authentication[0].scaling).max_instance_count == 3 &&
@@ -758,24 +688,19 @@ run "builds_restore_only_contracts_in_a_disposable_recovery_state" {
       length(google_cloud_run_v2_job.postgres_backup) == 0 &&
       length(google_cloud_run_v2_job.postgres_restore) == 0 &&
       length(google_cloud_run_v2_job.postgres_backup_monitor) == 0 &&
-      length(google_cloud_run_v2_job_iam_member.recover_recovery) == 2 &&
       length(google_cloud_scheduler_job.postgres_backup) == 0 &&
       length(google_cloud_scheduler_job.postgres_restore) == 0 &&
       length(google_cloud_scheduler_job.postgres_backup_monitor) == 0 &&
       length(google_cloud_scheduler_job.json_keys_rotation) == 0 &&
-      length(google_cloud_run_v2_job_iam_member.application_release_invoker) == 0 &&
       length(google_cloud_run_v2_job.application) == 0 &&
-      length(google_cloud_run_v2_job_iam_member.backup_release) == 0 &&
-      length(google_cloud_run_v2_job_iam_member.restore_release) == 0 &&
-      length(google_cloud_run_v2_job_iam_member.monitor_release) == 0 &&
       google_cloud_run_v2_service.authentication[0].ingress == "INGRESS_TRAFFIC_INTERNAL_ONLY" &&
       !google_cloud_run_v2_service.authentication[0].invoker_iam_disabled &&
-      toset([for binding in values(google_cloud_run_v2_service_iam_member.json_keys_invoker) : binding.member]) == toset([
-        "serviceAccount:agora-authentication@agora-production-test.iam.gserviceaccount.com",
-      ]) &&
-      toset([for binding in values(google_cloud_run_v2_service_iam_member.authentication_smoke_invoker) : binding.member]) == toset([
-        "serviceAccount:agora-database-host@agora-production-test.iam.gserviceaccount.com",
-      ])
+      google_cloud_run_v2_service.authentication[0].tags == tomap({
+        (var.cloud_run_invocation_tags.key) = var.cloud_run_invocation_tags.values.recovery
+      }) &&
+      google_cloud_run_v2_service.json_keys[0].tags == tomap({
+        (var.cloud_run_invocation_tags.key) = var.cloud_run_invocation_tags.values.internal
+      })
     )
     error_message = "Disposable recovery must grant only recovery automation and keep schedules, initialization, and public ingress disabled."
   }
@@ -790,6 +715,9 @@ run "builds_restore_only_contracts_in_a_disposable_recovery_state" {
       })), 0, 8)}" &&
       one(one(job.template).template).service_account == var.runtime_service_accounts.restore &&
       one(one(job.template).template).max_retries == 0 &&
+      job.tags == tomap({
+        (var.cloud_run_invocation_tags.key) = var.cloud_run_invocation_tags.values.recovery
+      }) &&
       toset(one(one(one(job.template).template).vpc_access).network_interfaces[0].tags) == toset(["agora-restore"]) &&
       one([
         for environment in one(one(one(job.template).template).containers).env : environment.value
@@ -818,16 +746,23 @@ run "rejects_an_invalid_project_id" {
   expect_failures = [var.workload_project_id]
 }
 
-run "rejects_an_automation_initializer" {
+run "rejects_a_non_permanent_invocation_tag" {
   command = plan
 
   variables {
-    authentication_initializer_principals = [
-      "serviceAccount:automation@agora-management-test.iam.gserviceaccount.com",
-    ]
+    cloud_run_invocation_tags = {
+      key = "environment"
+      values = {
+        initializer = "tagValues/200000000001"
+        internal    = "tagValues/200000000002"
+        recovery    = "tagValues/200000000003"
+        release     = "tagValues/200000000004"
+        scheduled   = "tagValues/200000000005"
+      }
+    }
   }
 
-  expect_failures = [var.authentication_initializer_principals]
+  expect_failures = [var.cloud_run_invocation_tags]
 }
 
 run "rejects_a_partial_database_recovery_release" {

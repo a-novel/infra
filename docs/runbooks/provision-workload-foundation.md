@@ -76,6 +76,9 @@ callable after this procedure.
 - Select at least one named database operator as a `user:` or `group:` IAM member. This identity
   receives privileged OS Login through IAP and must use MFA. A cross-organization operator also
   needs OS Login External User from its own organization administrator.
+- Select at least one named Authentication initializer as a `user:` or `group:` IAM member. This
+  human receives the narrow ability to provision and invoke the one-time initializer as its dedicated
+  identity. Use a group when several people share the duty; never use a service account.
 - The first foundation pull request and its complete sanitized plan have been reviewed. No change
   targets an unrelated project, parent, billing account, network, or secret container.
 
@@ -101,6 +104,7 @@ read -r -p 'New workload project ID: ' WORKLOAD_PROJECT_ID
 read -r -p 'Billing account ID (XXXXXX-XXXXXX-XXXXXX): ' BILLING_ACCOUNT_ID
 read -r -p 'Cost-alert and quota-contact email address: ' COST_ALERT_EMAIL
 read -r -p 'Database operator IAM member (user: or group:): ' DATABASE_OPERATOR_PRINCIPAL
+read -r -p 'Authentication initializer IAM member (user: or group:): ' AUTH_INITIALIZER_PRINCIPAL
 read -r -p 'Organization ID, or blank: ' ORGANIZATION_ID
 read -r -p 'Folder ID, or blank: ' FOLDER_ID
 
@@ -114,6 +118,7 @@ PLAN_SERVICE_ACCOUNT="infra-plan@${MANAGEMENT_PROJECT_ID}.iam.gserviceaccount.co
 [[ "$COST_ALERT_EMAIL" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]
 [[ "$DATABASE_ZONE" == "${REGION}-"* ]]
 [[ "$DATABASE_OPERATOR_PRINCIPAL" =~ ^(user|group):[^[:space:]@]+@[^[:space:]@]+$ ]]
+[[ "$AUTH_INITIALIZER_PRINCIPAL" =~ ^(user|group):[^[:space:]@]+@[^[:space:]@]+$ ]]
 [[ -z "$ORGANIZATION_ID" || "$ORGANIZATION_ID" =~ ^[0-9]+$ ]]
 [[ -z "$FOLDER_ID" || "$FOLDER_ID" =~ ^[0-9]+$ ]]
 [[ -z "$ORGANIZATION_ID" || -z "$FOLDER_ID" ]]
@@ -121,14 +126,17 @@ PLAN_SERVICE_ACCOUNT="infra-plan@${MANAGEMENT_PROJECT_ID}.iam.gserviceaccount.co
 DATABASE_OPERATOR_PRINCIPALS="$(
   jq -cn --arg principal "$DATABASE_OPERATOR_PRINCIPAL" '[$principal]'
 )"
+AUTH_INITIALIZER_PRINCIPALS="$(
+  jq -cn --arg principal "$AUTH_INITIALIZER_PRINCIPAL" '[$principal]'
+)"
 
 printf 'Repository: %s\nManagement project: %s\nWorkload project: %s\nRegion: %s\nDatabase zone: %s\nSubnet: %s\n' \
   "$REPOSITORY" "$MANAGEMENT_PROJECT_ID" "$WORKLOAD_PROJECT_ID" "$REGION" "$DATABASE_ZONE" "$SUBNET_CIDR"
 ```
 
 Expected safe result: the final six non-sensitive selections print, all validations exit zero, and
-at most one parent ID is populated. Do not print the billing account, alert address, operator
-principal, or JSON principal set.
+at most one parent ID is populated. Do not print the billing account, alert address, operator or
+initializer principal, or either JSON principal set.
 
 Verify the active identities and stable bootstrap resources without changing anything:
 
@@ -343,6 +351,7 @@ jq -n \
   --arg subnet_cidr "$SUBNET_CIDR" \
   --arg database_zone "$DATABASE_ZONE" \
   --argjson database_operator_principals "$DATABASE_OPERATOR_PRINCIPALS" \
+  --argjson authentication_initializer_principals "$AUTH_INITIALIZER_PRINCIPALS" \
   --arg cost_alert_email "$COST_ALERT_EMAIL" \
   --argjson adopt_existing_project "$ADOPT_EXISTING_PROJECT" \
   '{
@@ -357,6 +366,7 @@ jq -n \
     subnet_cidr: $subnet_cidr,
     database_zone: $database_zone,
     database_operator_principals: $database_operator_principals,
+    authentication_initializer_principals: $authentication_initializer_principals,
     cost_alert_email: $cost_alert_email,
     adopt_existing_project: $adopt_existing_project
   }' >"$FOUNDATION_CONFIG_FILE"
@@ -364,6 +374,7 @@ jq -n \
 jq -e '
   ((.organization_id == null) or (.folder_id == null)) and
   (.database_operator_principals | length >= 1) and
+  (.authentication_initializer_principals | length >= 1) and
   (.adopt_existing_project == ((.organization_id == null) and (.folder_id == null)))
 ' "$FOUNDATION_CONFIG_FILE" >/dev/null
 
@@ -376,6 +387,7 @@ done
 rm -f -- "$FOUNDATION_CONFIG_FILE"
 unset FOUNDATION_CONFIG_FILE ADOPT_EXISTING_PROJECT
 unset BILLING_ACCOUNT_ID COST_ALERT_EMAIL DATABASE_OPERATOR_PRINCIPAL DATABASE_OPERATOR_PRINCIPALS
+unset AUTH_INITIALIZER_PRINCIPAL AUTH_INITIALIZER_PRINCIPALS
 ```
 
 `COST_ALERT_EMAIL` receives budget notifications and Cloud Quotas review follow-up. It carries no
@@ -453,8 +465,9 @@ Any deletion, replacement, or state-forget action fails unless the one pull requ
 after merge is deliberately insufficient. The initial foundation should need no such exception.
 
 The expected initial summary contains either one project creation or one declarative project import/update, thirteen APIs, the
-network/subnet/routes, six firewalls, three zones and their records, seven service accounts, exact
-IAM, one repository, one data disk, one immutable instance template, one stateful instance-group
+network/subnet/routes, six firewalls, three zones and their records, seven service accounts, one
+invocation tag key with five values, exact conditional IAM, two narrow Cloud Run custom roles, one
+repository, one data disk, one immutable instance template, one stateful instance-group
 manager, one snapshot policy/attachment, six monitoring alerts, four quota preferences, one
 budget/channel, and logging controls. It
 contains zero managed-resource delete, replacement, state-forget, Cloud Run service/job, router,
@@ -561,27 +574,132 @@ gcloud iam roles describe infraReleaseCloudRunDeployer \
 | jq --exit-status '
     (.includedPermissions | sort) == ([
       "run.jobs.create",
+      "run.jobs.createTagBinding",
       "run.jobs.delete",
+      "run.jobs.deleteTagBinding",
       "run.jobs.get",
-      "run.jobs.getIamPolicy",
       "run.jobs.list",
-      "run.jobs.setIamPolicy",
+      "run.jobs.listEffectiveTags",
+      "run.jobs.listTagBindings",
       "run.jobs.update",
+      "run.executions.get",
+      "run.executions.list",
       "run.locations.list",
       "run.operations.get",
+      "run.revisions.get",
+      "run.revisions.list",
       "run.services.create",
+      "run.services.createTagBinding",
       "run.services.delete",
+      "run.services.deleteTagBinding",
       "run.services.get",
-      "run.services.getIamPolicy",
       "run.services.list",
-      "run.services.setIamPolicy",
+      "run.services.listEffectiveTags",
+      "run.services.listTagBindings",
       "run.services.update"
     ] | sort)
   '
 ```
 
-Expected safe result: `true`. `run.jobs.run`, `run.jobs.runWithOverrides`, project IAM, secret access,
-and networking permissions are absent.
+Expected safe result: `true`. `run.jobs.run`, `run.jobs.runWithOverrides`, every Cloud Run IAM-policy
+permission, project IAM, secret access, and networking permissions are absent.
+
+Verify the human-only initializer deployer separately:
+
+```bash
+gcloud iam roles describe authenticationInitializerDeployer \
+  --project="$WORKLOAD_PROJECT_ID" --format=json \
+| jq --exit-status '
+    (.includedPermissions | sort) == ([
+      "run.executions.get",
+      "run.executions.list",
+      "run.jobs.create",
+      "run.jobs.createTagBinding",
+      "run.jobs.delete",
+      "run.jobs.deleteTagBinding",
+      "run.jobs.get",
+      "run.jobs.list",
+      "run.jobs.listEffectiveTags",
+      "run.jobs.listTagBindings",
+      "run.jobs.update",
+      "run.locations.list",
+      "run.operations.get"
+    ] | sort)
+  '
+```
+
+Expected safe result: `true`. In particular, this role has neither `run.jobs.runWithOverrides` nor
+Cloud Run IAM-policy access. Normal execution comes only from the separate initializer-tag condition.
+
+Verify the five permanent authorization tags and the four production invocation conditions:
+
+```bash
+WORKLOAD_PROJECT_NUMBER="$(gcloud projects describe "$WORKLOAD_PROJECT_ID" \
+  --format='value(projectNumber)')"
+INVOCATION_TAG_KEY="$(gcloud resource-manager tags keys list \
+  --parent="projects/${WORKLOAD_PROJECT_NUMBER}" \
+  --filter='shortName=agora-invocation' --format='value(name)')"
+[[ "$INVOCATION_TAG_KEY" =~ ^tagKeys/[0-9]+$ ]]
+
+gcloud resource-manager tags values list --parent="$INVOCATION_TAG_KEY" --format=json \
+| jq --exit-status '
+    ([.[].shortName] | sort) ==
+    (["initializer", "internal", "recovery", "release", "scheduled"] | sort) and
+    all(.[].name; test("^tagValues/[0-9]+$"))
+  '
+
+gcloud projects get-iam-policy "$WORKLOAD_PROJECT_ID" --format=json \
+| jq --exit-status '
+    [
+      .bindings[]
+      | select(.role == "roles/run.jobsExecutor" or .role == "roles/run.servicesInvoker")
+      | {role, title: .condition.title}
+    ] | sort == ([
+      {role: "roles/run.jobsExecutor", title: "AuthenticationInitializerOnly"},
+      {role: "roles/run.jobsExecutor", title: "ReleaseTaggedCloudRunOnly"},
+      {role: "roles/run.jobsExecutor", title: "ScheduledCloudRunOnly"},
+      {role: "roles/run.servicesInvoker", title: "InternalCloudRunOnly"}
+    ] | sort)
+  '
+```
+
+Expected safe result: both checks return `true`. Inspect the four filtered bindings privately:
+`AuthenticationInitializerOnly` names only the initializer set, `InternalCloudRunOnly` names only
+Authentication runtime, `ReleaseTaggedCloudRunOnly` names only release automation, and
+`ScheduledCloudRunOnly` names only scheduler runtime. Every expression must use
+`resource.matchTagId` with the matching permanent key/value above. Production must have no
+`RecoveryTaggedCloudRunOnly` or `RecoverySmokeCloudRunOnly` binding. Do not paste the policy output
+into a public issue.
+
+Verify each configured initializer appears in all five required human grants and that the release
+service account appears in none of them:
+
+```bash
+INITIALIZER_TAG_VALUE="$(gcloud resource-manager tags values list \
+  --parent="$INVOCATION_TAG_KEY" --filter='shortName=initializer' --format='value(name)')"
+[[ "$INITIALIZER_TAG_VALUE" =~ ^tagValues/[0-9]+$ ]]
+
+gcloud resource-manager tags values get-iam-policy "$INITIALIZER_TAG_VALUE" \
+  --flatten='bindings[].members' --filter='bindings.role=roles/resourcemanager.tagUser' \
+  --format='table(bindings.members)'
+gcloud iam service-accounts get-iam-policy \
+  "agora-auth-initializer@${WORKLOAD_PROJECT_ID}.iam.gserviceaccount.com" \
+  --project="$WORKLOAD_PROJECT_ID" --flatten='bindings[].members' \
+  --filter='bindings.role=roles/iam.serviceAccountUser' --format='table(bindings.members)'
+gcloud artifacts repositories get-iam-policy agora-production \
+  --project="$WORKLOAD_PROJECT_ID" --location="$REGION" \
+  --flatten='bindings[].members' --filter='bindings.role=roles/artifactregistry.reader' \
+  --format='table(bindings.members)'
+gcloud projects get-iam-policy "$WORKLOAD_PROJECT_ID" \
+  --flatten='bindings[].members' \
+  --filter="bindings.role=projects/${WORKLOAD_PROJECT_ID}/roles/authenticationInitializerDeployer" \
+  --format='table(bindings.members)'
+```
+
+The fifth grant is the `AuthenticationInitializerOnly` project binding inspected above. Expected
+safe result: each named initializer is present in all five places; the release, scheduler, recovery,
+and runtime service accounts are absent from the initializer tag, initializer `actAs`, deployer, and
+initializer condition. The registry reader output may also contain the database runtime.
 
 Verify the two runtime bucket roles without displaying unrelated members:
 
@@ -901,6 +1019,8 @@ and public database paths are absent again.
 - [Cloud Billing roles](https://cloud.google.com/billing/docs/how-to/billing-access)
 - [Configure Private Google Access](https://cloud.google.com/vpc/docs/configure-private-google-access)
 - [Service account security best practices](https://cloud.google.com/iam/docs/best-practices-service-accounts)
+- [Cloud Run job tags](https://cloud.google.com/run/docs/configuring/jobs/tags)
+- [IAM conditions with Resource Manager tags](https://cloud.google.com/iam/docs/conditions-resource-attributes#resource_tags)
 - [Default Compute Engine service accounts](https://cloud.google.com/compute/docs/access/service-accounts)
 - [Organization policies for service accounts](https://cloud.google.com/resource-manager/docs/organization-policy/restricting-service-accounts)
 - [Direct VPC egress and tag limitations](https://cloud.google.com/run/docs/configuring/vpc-direct-vpc)

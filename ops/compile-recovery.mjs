@@ -62,7 +62,6 @@ function mapImages(value, region, sourceProject, targetProject) {
 function runtimeAccounts(project) {
   return {
     authentication: `agora-authentication@${project}.iam.gserviceaccount.com`,
-    authentication_initializer: `agora-auth-initializer@${project}.iam.gserviceaccount.com`,
     backup: `agora-backup@${project}.iam.gserviceaccount.com`,
     json_keys: `agora-json-keys@${project}.iam.gserviceaccount.com`,
     restore: `agora-restore@${project}.iam.gserviceaccount.com`,
@@ -158,6 +157,10 @@ async function main() {
   const outputProject = outputValue(outputs, "workload_project_id");
   const network = outputValue(outputs, "network");
   const databaseHost = outputValue(outputs, "database_host");
+  const cloudRunInvocationTags = outputValue(
+    outputs,
+    "cloud_run_invocation_tags",
+  );
   if (outputProject !== targetProject) {
     fail("recovery state identifies a different replacement project");
   }
@@ -172,6 +175,7 @@ async function main() {
   transformed.database_private_ip = databaseHost.private_ip;
   transformed.network_id = network.network_id;
   transformed.subnet_id = network.subnet_id;
+  transformed.cloud_run_invocation_tags = cloudRunInvocationTags;
   transformed.runtime_service_accounts = runtimeAccounts(targetProject);
   transformed.recovery_mode = true;
   transformed.recovery_source_project_id = sourceProject;

@@ -9,31 +9,11 @@ locals {
   }
 
   declared_application_jobs = var.application_release == null ? {} : {
-    authentication_init = {
-      component        = "authentication"
-      environment      = { SUPER_ADMIN_EMAIL = var.application_release.authentication.super_admin_email }
-      image            = var.application_release.authentication.images.init
-      max_retries      = 1
-      name             = "agora-authentication-init"
-      network_tag      = "agora-authentication"
-      role             = "init"
-      runtime_identity = var.runtime_service_accounts.authentication_initializer
-      secrets = {
-        POSTGRES_DSN = {
-          secret  = "production-authentication-postgres-dsn"
-          version = var.application_release.authentication.secrets.postgres_dsn_version
-        }
-        SUPER_ADMIN_PASSWORD = {
-          secret  = "production-authentication-super-admin-password"
-          version = var.application_release.authentication.secrets.super_admin_password_version
-        }
-      }
-      timeout = "300s"
-    }
     authentication_migrations = {
       component        = "authentication"
       environment      = {}
       image            = var.application_release.authentication.images.migrations
+      invocation_class = "release"
       max_retries      = 0
       name             = "agora-authentication-migrations"
       network_tag      = "agora-authentication"
@@ -51,6 +31,7 @@ locals {
       component        = "json-keys"
       environment      = {}
       image            = var.application_release.json_keys.images.migrations
+      invocation_class = "release"
       max_retries      = 0
       name             = "agora-json-keys-migrations"
       network_tag      = "agora-json-keys"
@@ -68,6 +49,7 @@ locals {
       component        = "json-keys"
       environment      = {}
       image            = var.application_release.json_keys.images.rotate_keys
+      invocation_class = "scheduled"
       max_retries      = 1
       name             = "agora-json-keys-rotatekeys"
       network_tag      = "agora-json-keys"
@@ -87,18 +69,9 @@ locals {
     }
   }
 
-  # Recovery restores an exact receipt after migrations and initialization;
-  # recreating dormant mutation jobs would widen authority without a caller.
+  # Recovery restores an initialized database from an exact receipt. Recreating
+  # production mutation jobs would widen authority without a caller.
   application_jobs = var.recovery_mode ? {} : local.declared_application_jobs
-
-  automated_application_jobs = {
-    for key, job in local.application_jobs : key => job
-    if key != "authentication_init"
-  }
-
-  json_keys_invokers = var.application_release == null ? {} : {
-    authentication = "serviceAccount:${var.runtime_service_accounts.authentication}"
-  }
 }
 
 check "application_images_are_promoted" {
@@ -124,16 +97,6 @@ check "application_requires_database_release" {
   }
 }
 
-check "application_requires_named_initializers" {
-  assert {
-    condition = (
-      var.application_release == null ||
-      length(var.authentication_initializer_principals) > 0
-    )
-    error_message = "An application release requires at least one named human Authentication initializer principal."
-  }
-}
-
 resource "google_cloud_run_v2_job" "application" {
   for_each = local.application_jobs
 
@@ -146,6 +109,9 @@ resource "google_cloud_run_v2_job" "application" {
     component = each.value.component
     role      = each.value.role
   })
+  tags = {
+    (var.cloud_run_invocation_tags.key) = var.cloud_run_invocation_tags.values[each.value.invocation_class]
+  }
 
   template {
     task_count  = 1
@@ -206,38 +172,6 @@ resource "google_cloud_run_v2_job" "application" {
   }
 }
 
-resource "google_cloud_run_v2_job_iam_member" "application_release_invoker" {
-  for_each = var.recovery_mode ? {} : local.automated_application_jobs
-
-  project  = var.workload_project_id
-  location = var.region
-  name     = google_cloud_run_v2_job.application[each.key].name
-  role     = "roles/run.invoker"
-  member   = "serviceAccount:infra-release@${var.management_project_id}.iam.gserviceaccount.com"
-}
-
-# Initialization reconciles the super-admin password and role. Named humans
-# receive normal execution only; no automation identity can invoke or override it.
-resource "google_cloud_run_v2_job_iam_member" "authentication_initializer" {
-  for_each = var.application_release == null || var.recovery_mode ? toset([]) : var.authentication_initializer_principals
-
-  project  = var.workload_project_id
-  location = var.region
-  name     = google_cloud_run_v2_job.application["authentication_init"].name
-  role     = "roles/run.invoker"
-  member   = each.value
-}
-
-resource "google_cloud_run_v2_job_iam_member" "json_keys_rotation_scheduler" {
-  count = var.application_release == null || var.recovery_mode ? 0 : 1
-
-  project  = var.workload_project_id
-  location = var.region
-  name     = google_cloud_run_v2_job.application["json_keys_rotate"].name
-  role     = "roles/run.invoker"
-  member   = "serviceAccount:${var.runtime_service_accounts.scheduler_invoker}"
-}
-
 # The shortest embedded key interval is 24 hours. An hourly idempotent check
 # keeps rotation lag below one hour without a resident worker.
 resource "google_cloud_scheduler_job" "json_keys_rotation" {
@@ -272,8 +206,6 @@ resource "google_cloud_scheduler_job" "json_keys_rotation" {
       scope                 = "https://www.googleapis.com/auth/cloud-platform"
     }
   }
-
-  depends_on = [google_cloud_run_v2_job_iam_member.json_keys_rotation_scheduler]
 }
 
 resource "google_cloud_run_v2_service" "json_keys" {
@@ -287,6 +219,9 @@ resource "google_cloud_run_v2_service" "json_keys" {
   invoker_iam_disabled = false
   deletion_protection  = false
   labels               = merge(local.labels, { component = "json-keys", role = "grpc" })
+  tags = {
+    (var.cloud_run_invocation_tags.key) = var.cloud_run_invocation_tags.values.internal
+  }
 
   scaling {
     min_instance_count = 0
@@ -418,16 +353,6 @@ resource "google_cloud_run_v2_service" "json_keys" {
   }
 }
 
-resource "google_cloud_run_v2_service_iam_member" "json_keys_invoker" {
-  for_each = local.json_keys_invokers
-
-  project  = var.workload_project_id
-  location = var.region
-  name     = google_cloud_run_v2_service.json_keys[0].name
-  role     = "roles/run.invoker"
-  member   = each.value
-}
-
 resource "google_cloud_run_v2_service" "authentication" {
   count = var.application_release == null ? 0 : 1
 
@@ -442,6 +367,9 @@ resource "google_cloud_run_v2_service" "authentication" {
   invoker_iam_disabled = var.recovery_mode ? false : true
   deletion_protection  = false
   labels               = merge(local.labels, { component = "authentication", role = "rest" })
+  tags = var.recovery_mode ? {
+    (var.cloud_run_invocation_tags.key) = var.cloud_run_invocation_tags.values.recovery
+  } : {}
 
   scaling {
     min_instance_count = 0
@@ -633,21 +561,4 @@ resource "google_cloud_run_v2_service" "authentication" {
       percent  = 100
     }
   }
-
-  depends_on = [google_cloud_run_v2_service_iam_member.json_keys_invoker]
-}
-
-resource "google_cloud_run_v2_service_iam_member" "authentication_smoke_invoker" {
-  # Production disables the Invoker check for its public REST edge, so an IAM
-  # binding there would be redundant. Recovery keeps internal ingress and uses
-  # the disposable database host as the single in-VPC verification caller.
-  for_each = var.application_release == null || !var.recovery_mode ? toset([]) : toset([
-    "serviceAccount:agora-database-host@${var.workload_project_id}.iam.gserviceaccount.com",
-  ])
-
-  project  = var.workload_project_id
-  location = var.region
-  name     = google_cloud_run_v2_service.authentication[0].name
-  role     = "roles/run.invoker"
-  member   = each.value
 }

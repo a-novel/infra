@@ -21,11 +21,14 @@ Official references: [project creation and management](https://cloud.google.com/
   uses the new foundation output as the distinct restore target; the recovery job rejects a manifest
   whose recorded source host differs.
 - Production lets the GitHub recovery identity read receipt-owned registry images, committed backup
-  manifests, and successful receipts, but never a database dump or secret payload. The replacement
-  restore runtime receives read-only backup objects and only the exact secret versions its contract
-  needs. Neither identity gets production image write or release-job execution.
-- Temporary parent, billing, and management-metadata authority is added by a human only around the
-  replacement foundation apply, then removed.
+  manifests, and successful receipts, but never a database dump or secret payload. It may write only
+  the four nested replacement state/plan prefixes, never bootstrap or normal production state.
+  Neither recovery identity gets production image write, release-job execution, or permission to
+  rewrite surviving IAM.
+- Temporary parent and billing authority is added by a human only around the replacement foundation
+  apply, then removed. After replacement identities exist, a human adds only the ten exact secret
+  bindings and one restore-only bucket binding below; code never receives IAM-administration power on
+  the recovery plane.
 - The replacement project grants foundation and release control only to the recovery identity; the
   production foundation/release identities receive no authority there.
 - The two selected backup manifests must match the source project, PostgreSQL 18, and the database
@@ -44,7 +47,7 @@ below pass; do not improvise a public endpoint during restore.
 
 - The management project, state bucket, backup bucket, receipt bucket, WIF providers, and secret
   containers are trusted and accessible.
-- Bootstrap has converged after the `infraRecoveryMetadataAdmin` custom role was added.
+- Bootstrap has converged after the four exact nested recovery state/plan managed folders were added.
 - `production-recovery` requires an independent reviewer, prevents self-review and administrator
   bypass, and accepts protected branches only.
 - At least one valid deployment receipt and one retained committed logical backup per database exist.
@@ -92,7 +95,6 @@ BACKUP_BUCKET="$(gh variable get GCP_BACKUP_BUCKET --repo "$REPOSITORY")"
 RECEIPT_BUCKET="$(gh variable get GCP_RECEIPT_BUCKET --repo "$REPOSITORY")"
 RECOVERY_ACCOUNT="infra-recovery@${MANAGEMENT_PROJECT_ID}.iam.gserviceaccount.com"
 RECOVERY_MEMBER="serviceAccount:${RECOVERY_ACCOUNT}"
-RECOVERY_METADATA_ROLE="projects/${MANAGEMENT_PROJECT_ID}/roles/infraRecoveryMetadataAdmin"
 
 if gcloud projects describe "$REPLACEMENT_PROJECT_ID" >/dev/null 2>&1; then
   printf 'STOP: replacement project already exists or is visible.\n' >&2
@@ -132,14 +134,12 @@ test -n "$LOST_WRITE_WINDOW"
 test "${#LOST_WRITE_WINDOW}" -le 500
 ```
 
-## 2. Grant temporary creation and metadata authority
+## 2. Grant temporary project-creation authority
 
-The bootstrap custom role changes only IAM on the nine secret containers and backup bucket. It cannot
-read/write backup objects or add/read/destroy a secret version. Grant it on the management project:
+Recovery automation never receives IAM-administration authority on the surviving management
+project. Grant only the billing authority needed to create and configure one replacement project:
 
 ```bash
-gcloud projects add-iam-policy-binding "$MANAGEMENT_PROJECT_ID" \
-  --member="$RECOVERY_MEMBER" --role="$RECOVERY_METADATA_ROLE" --condition=None
 gcloud billing accounts add-iam-policy-binding "$BILLING_ACCOUNT_ID" \
   --member="$RECOVERY_MEMBER" --role=roles/billing.user --condition=None
 gcloud billing accounts add-iam-policy-binding "$BILLING_ACCOUNT_ID" \
@@ -215,14 +215,88 @@ gh workflow run recovery.yaml --repo "$REPOSITORY" --ref master \
 Approve `production-recovery` and watch the exact `apply-workload` run to success. The saved plan is
 commit-, root-, project-state-suffix-, hash-, and 24-hour-bound and can be consumed once.
 
-## 4. Remove temporary authority before restoring data
+## 4. Grant exact replacement-runtime access, then remove creation authority
 
-The converged replacement project now grants code-managed authority to recovery itself, so remove all
-bootstrap grants before any secret-backed recovery job runs:
+The replacement identities now exist. A secured human—not GitHub automation—adds the exact
+cross-project payload contract. These are the only surviving-resource IAM mutations in the rebuild:
 
 ```bash
-gcloud projects remove-iam-policy-binding "$MANAGEMENT_PROJECT_ID" \
-  --member="$RECOVERY_MEMBER" --role="$RECOVERY_METADATA_ROLE" --condition=None
+AUTH_RUNTIME="serviceAccount:agora-authentication@${REPLACEMENT_PROJECT_ID}.iam.gserviceaccount.com"
+DATABASE_RUNTIME="serviceAccount:agora-database-host@${REPLACEMENT_PROJECT_ID}.iam.gserviceaccount.com"
+JSON_RUNTIME="serviceAccount:agora-json-keys@${REPLACEMENT_PROJECT_ID}.iam.gserviceaccount.com"
+RESTORE_RUNTIME="serviceAccount:agora-restore@${REPLACEMENT_PROJECT_ID}.iam.gserviceaccount.com"
+
+grant_secret_access() {
+  gcloud secrets add-iam-policy-binding "$1" \
+    --project="$MANAGEMENT_PROJECT_ID" --member="$2" \
+    --role=roles/secretmanager.secretAccessor --condition=None --quiet >/dev/null
+}
+
+grant_secret_access production-authentication-postgres-dsn "$AUTH_RUNTIME"
+grant_secret_access production-authentication-smtp-sender-password "$AUTH_RUNTIME"
+grant_secret_access production-authentication-postgres-password "$DATABASE_RUNTIME"
+grant_secret_access production-authentication-postgres-backup-password "$DATABASE_RUNTIME"
+grant_secret_access production-json-keys-postgres-password "$DATABASE_RUNTIME"
+grant_secret_access production-json-keys-postgres-backup-password "$DATABASE_RUNTIME"
+grant_secret_access production-json-keys-app-master-key "$JSON_RUNTIME"
+grant_secret_access production-json-keys-postgres-dsn "$JSON_RUNTIME"
+grant_secret_access production-authentication-postgres-password "$RESTORE_RUNTIME"
+grant_secret_access production-json-keys-postgres-password "$RESTORE_RUNTIME"
+
+gcloud storage buckets add-iam-policy-binding "gs://${BACKUP_BUCKET}" \
+  --member="$RESTORE_RUNTIME" --role=roles/storage.objectViewer --quiet >/dev/null
+```
+
+Do not grant the initializer, backup, scheduler, or recovery automation identity any payload role.
+The replacement can read retained recovery points but cannot create a new production backup.
+
+Verify every exact tuple and the absence of recovery-automation payload access without printing a
+whole policy:
+
+```bash
+for tuple in \
+  "production-authentication-postgres-dsn ${AUTH_RUNTIME}" \
+  "production-authentication-smtp-sender-password ${AUTH_RUNTIME}" \
+  "production-authentication-postgres-password ${DATABASE_RUNTIME}" \
+  "production-authentication-postgres-backup-password ${DATABASE_RUNTIME}" \
+  "production-json-keys-postgres-password ${DATABASE_RUNTIME}" \
+  "production-json-keys-postgres-backup-password ${DATABASE_RUNTIME}" \
+  "production-json-keys-app-master-key ${JSON_RUNTIME}" \
+  "production-json-keys-postgres-dsn ${JSON_RUNTIME}" \
+  "production-authentication-postgres-password ${RESTORE_RUNTIME}" \
+  "production-json-keys-postgres-password ${RESTORE_RUNTIME}"; do
+  read -r secret member <<<"$tuple"
+  test "$(gcloud secrets get-iam-policy "$secret" \
+    --project="$MANAGEMENT_PROJECT_ID" --flatten='bindings[].members' \
+    --filter="bindings.role=roles/secretmanager.secretAccessor AND bindings.members=${member}" \
+    --format='value(bindings.role)')" = roles/secretmanager.secretAccessor
+done
+
+for secret in \
+  production-authentication-postgres-dsn \
+  production-authentication-postgres-password \
+  production-authentication-postgres-backup-password \
+  production-authentication-smtp-sender-password \
+  production-authentication-super-admin-password \
+  production-json-keys-app-master-key \
+  production-json-keys-postgres-dsn \
+  production-json-keys-postgres-password \
+  production-json-keys-postgres-backup-password; do
+  test -z "$(gcloud secrets get-iam-policy "$secret" \
+    --project="$MANAGEMENT_PROJECT_ID" --flatten='bindings[].members' \
+    --filter="bindings.members=${RECOVERY_MEMBER}" --format='value(bindings.role)')"
+done
+
+test "$(gcloud storage buckets get-iam-policy "gs://${BACKUP_BUCKET}" \
+  --flatten='bindings[].members' \
+  --filter="bindings.members=${RESTORE_RUNTIME}" \
+  --format='value(bindings.role)')" = roles/storage.objectViewer
+```
+
+Expected safe result: every test exits zero. Now remove all temporary project-creation authority
+before any secret-backed recovery job runs:
+
+```bash
 gcloud billing accounts remove-iam-policy-binding "$BILLING_ACCOUNT_ID" \
   --member="$RECOVERY_MEMBER" --role=roles/billing.user --condition=None
 gcloud billing accounts remove-iam-policy-binding "$BILLING_ACCOUNT_ID" \
@@ -238,23 +312,15 @@ else
   gcloud projects remove-iam-policy-binding "$REPLACEMENT_PROJECT_ID" \
     --member="$RECOVERY_MEMBER" --role=roles/owner --condition=None
 fi
-```
 
-Verify no temporary role remains. Query only the exact member; do not dump full policies into an
-incident chat:
-
-```bash
-gcloud projects get-iam-policy "$MANAGEMENT_PROJECT_ID" \
-  --flatten='bindings[].members' --filter="bindings.members=${RECOVERY_MEMBER}" \
-  --format='table(bindings.role)'
 gcloud billing accounts get-iam-policy "$BILLING_ACCOUNT_ID" \
   --flatten='bindings[].members' --filter="bindings.members=${RECOVERY_MEMBER}" \
   --format='table(bindings.role)'
 ```
 
-Expected management rows are only the standing recovery roles created by bootstrap; the custom
-metadata role is absent. No `billing.user`, `billing.costsManager`, parent Project Creator, or Owner
-row remains.
+Expected safe result: no `billing.user`, `billing.costsManager`, parent Project Creator, or Owner row
+remains. Bootstrap's standing read-only recovery roles remain unchanged; there is no recovery IAM
+administrator role to grant or remove.
 
 ## 5. Restore exact data and deploy the selected receipt
 
@@ -340,3 +406,57 @@ gcloud storage ls \
 Do not leave a drill project running. Destruction is a separately reviewed, deletion-labeled plan;
 until that cleanup path is executed, disable public cutover, retain the receipt, and account for the
 extra always-on database VM in the cost record.
+
+## 7. Remove replacement access during drill cleanup
+
+For a drill, remove the eleven human-granted bindings before deleting the replacement project. For a
+real incident selected for cutover, stop here and move these bindings into a separately reviewed
+production-foundation design; do not silently keep manual production IAM.
+
+```bash
+revoke_secret_access() {
+  gcloud secrets remove-iam-policy-binding "$1" \
+    --project="$MANAGEMENT_PROJECT_ID" --member="$2" \
+    --role=roles/secretmanager.secretAccessor --condition=None --quiet >/dev/null
+}
+
+revoke_secret_access production-authentication-postgres-dsn "$AUTH_RUNTIME"
+revoke_secret_access production-authentication-smtp-sender-password "$AUTH_RUNTIME"
+revoke_secret_access production-authentication-postgres-password "$DATABASE_RUNTIME"
+revoke_secret_access production-authentication-postgres-backup-password "$DATABASE_RUNTIME"
+revoke_secret_access production-json-keys-postgres-password "$DATABASE_RUNTIME"
+revoke_secret_access production-json-keys-postgres-backup-password "$DATABASE_RUNTIME"
+revoke_secret_access production-json-keys-app-master-key "$JSON_RUNTIME"
+revoke_secret_access production-json-keys-postgres-dsn "$JSON_RUNTIME"
+revoke_secret_access production-authentication-postgres-password "$RESTORE_RUNTIME"
+revoke_secret_access production-json-keys-postgres-password "$RESTORE_RUNTIME"
+
+gcloud storage buckets remove-iam-policy-binding "gs://${BACKUP_BUCKET}" \
+  --member="$RESTORE_RUNTIME" --role=roles/storage.objectViewer --quiet >/dev/null
+
+for member in "$AUTH_RUNTIME" "$DATABASE_RUNTIME" "$JSON_RUNTIME" "$RESTORE_RUNTIME"; do
+  for secret in \
+    production-authentication-postgres-dsn \
+    production-authentication-postgres-password \
+    production-authentication-postgres-backup-password \
+    production-authentication-smtp-sender-password \
+    production-authentication-super-admin-password \
+    production-json-keys-app-master-key \
+    production-json-keys-postgres-dsn \
+    production-json-keys-postgres-password \
+    production-json-keys-postgres-backup-password; do
+    test -z "$(gcloud secrets get-iam-policy "$secret" \
+      --project="$MANAGEMENT_PROJECT_ID" --flatten='bindings[].members' \
+      --filter="bindings.members=${member}" --format='value(bindings.role)')"
+  done
+done
+test -z "$(gcloud storage buckets get-iam-policy "gs://${BACKUP_BUCKET}" \
+  --flatten='bindings[].members' --filter="bindings.members=${RESTORE_RUNTIME}" \
+  --format='value(bindings.role)')"
+unset AUTH_RUNTIME DATABASE_RUNTIME JSON_RUNTIME RESTORE_RUNTIME
+```
+
+Expected safe result: every absence check exits zero. Then use a separately reviewed plan whose pull
+request carried `allow-resource-deletion` at merge to remove the disposable project resources. Keep
+the immutable recovery receipt and nested recovery state as incident evidence; never delete normal
+production state to clean up a drill.

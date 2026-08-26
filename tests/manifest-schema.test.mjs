@@ -296,6 +296,7 @@ test("application-only releases preserve the database release identity", async (
     nonce: "unchanged",
   });
   assert.deepEqual(unchanged.release.database, first.release.database);
+  assert.deepEqual(unchanged.release.currentDatabase, first.release.database);
 
   const changedConfig = JSON.parse(await readFile(configPath, "utf8"));
   changedConfig.secret_versions.json_keys_postgres_backup_password += 1;
@@ -312,6 +313,111 @@ test("application-only releases preserve the database release identity", async (
     nonce: "changed",
   });
   assert.equal(changed.release.database.releaseRevision, "c".repeat(40));
+  await rm(scratch, { recursive: true });
+});
+
+test("manual rollback checks the latest database before restoring an older target", async () => {
+  const scratch = await mkdtemp(path.join(repositoryRoot, ".release-test-"));
+  const manifestPath = path.join(
+    repositoryRoot,
+    "tests/fixtures/manifests/valid.yaml",
+  );
+  const configPath = path.join(
+    repositoryRoot,
+    "tests/fixtures/release-config.json",
+  );
+  const target = await compileRelease({
+    manifestPath,
+    configPath,
+    outputDirectory: path.join(scratch, "target"),
+    commit: "a".repeat(40),
+    runId: "123",
+    runAttempt: 1,
+    nonce: "target",
+  });
+  const targetReceiptPath = path.join(scratch, "target-receipt.json");
+  const operations = {
+    executions: {
+      jsonKeysMigrations: null,
+      jsonKeysRotation: null,
+      authenticationMigrations: null,
+      postgresBackupJsonKeys: null,
+      postgresBackupAuthentication: null,
+      postgresRestoreJsonKeys: null,
+      postgresRestoreAuthentication: null,
+      postgresBackupMonitor: null,
+    },
+    initialization: null,
+    health: { jsonKeys: "passed", authentication: "passed" },
+  };
+  await writeFile(
+    targetReceiptPath,
+    JSON.stringify({
+      schemaVersion: 1,
+      kind: "deployment",
+      createdAt: "2026-08-25T12:00:00Z",
+      sequence: { runId: "123", runAttempt: 1 },
+      source: {
+        commit: "a".repeat(40),
+        manifestSha256: target.release.manifestSha256,
+      },
+      activeTfvars: target.activeTfvars,
+      database: target.release.database,
+      operations,
+    }),
+  );
+
+  const currentConfig = JSON.parse(await readFile(configPath, "utf8"));
+  currentConfig.secret_versions.json_keys_postgres_password = 2;
+  const currentConfigPath = path.join(scratch, "current-config.json");
+  await writeFile(currentConfigPath, JSON.stringify(currentConfig));
+  const current = await compileRelease({
+    manifestPath,
+    configPath: currentConfigPath,
+    previousReceiptPath: targetReceiptPath,
+    outputDirectory: path.join(scratch, "current"),
+    commit: "b".repeat(40),
+    runId: "124",
+    runAttempt: 1,
+    nonce: "current",
+  });
+  const currentReceiptPath = path.join(scratch, "current-receipt.json");
+  await writeFile(
+    currentReceiptPath,
+    JSON.stringify({
+      schemaVersion: 1,
+      kind: "deployment",
+      createdAt: "2026-08-25T13:00:00Z",
+      sequence: { runId: "124", runAttempt: 1 },
+      source: {
+        commit: "b".repeat(40),
+        manifestSha256: current.release.manifestSha256,
+      },
+      activeTfvars: current.activeTfvars,
+      database: current.release.database,
+      operations,
+    }),
+  );
+
+  const rollback = await compileRelease({
+    manifestPath,
+    configPath: currentConfigPath,
+    previousReceiptPath: targetReceiptPath,
+    currentReceiptPath,
+    outputDirectory: path.join(scratch, "rollback"),
+    commit: "c".repeat(40),
+    runId: "125",
+    runAttempt: 1,
+    nonce: "rollback",
+    action: "rollback",
+  });
+
+  assert.deepEqual(rollback.release.currentDatabase, current.release.database);
+  assert.deepEqual(rollback.release.previousDatabase, target.release.database);
+  assert.deepEqual(
+    rollback.rollbackTfvars.database_releases,
+    target.activeTfvars.database_releases,
+  );
   await rm(scratch, { recursive: true });
 });
 
@@ -384,6 +490,18 @@ test("recovery compilation keeps services absent until exact data restore", asyn
           },
         },
         database_host: { value: { private_ip: "10.20.0.8" } },
+        cloud_run_invocation_tags: {
+          value: {
+            key: "tagKeys/300000000001",
+            values: {
+              initializer: "tagValues/400000000001",
+              internal: "tagValues/400000000002",
+              recovery: "tagValues/400000000003",
+              release: "tagValues/400000000004",
+              scheduled: "tagValues/400000000005",
+            },
+          },
+        },
       }),
     ),
   ]);
@@ -447,6 +565,7 @@ test("recovery compilation keeps services absent until exact data restore", asyn
   assert.equal(active.workload_project_id, "agora-recovery-test");
   assert.equal(active.recovery_source_project_id, "agora-production-test");
   assert.equal(active.recovery_source_database_ip, "10.20.0.2");
+  assert.equal(active.cloud_run_invocation_tags.key, "tagKeys/300000000001");
   assert.match(
     active.application_release.authentication.images.rest,
     /\/agora-recovery-test\/agora-production\//,

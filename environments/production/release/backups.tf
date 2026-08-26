@@ -11,6 +11,9 @@ resource "google_cloud_run_v2_job" "postgres_backup" {
 
   deletion_protection = false
   labels              = merge(local.labels, { component = each.value.object_key, role = "backup" })
+  tags = {
+    (var.cloud_run_invocation_tags.key) = var.cloud_run_invocation_tags.values.scheduled
+  }
 
   template {
     task_count  = 1
@@ -146,6 +149,9 @@ resource "google_cloud_run_v2_job" "postgres_restore" {
 
   deletion_protection = false
   labels              = merge(local.labels, { component = each.value.object_key, role = "restore" })
+  tags = {
+    (var.cloud_run_invocation_tags.key) = var.cloud_run_invocation_tags.values.scheduled
+  }
 
   template {
     task_count  = 1
@@ -257,6 +263,9 @@ resource "google_cloud_run_v2_job" "postgres_recover" {
   launch_stage        = "BETA"
   deletion_protection = false
   labels              = merge(local.labels, { component = each.value.object_key, role = "recovery" })
+  tags = {
+    (var.cloud_run_invocation_tags.key) = var.cloud_run_invocation_tags.values.recovery
+  }
 
   template {
     task_count  = 1
@@ -381,6 +390,9 @@ resource "google_cloud_run_v2_job" "postgres_backup_monitor" {
 
   deletion_protection = false
   labels              = merge(local.labels, { component = "postgres", role = "backup-monitor" })
+  tags = {
+    (var.cloud_run_invocation_tags.key) = var.cloud_run_invocation_tags.values.scheduled
+  }
 
   template {
     task_count  = 1
@@ -450,78 +462,6 @@ resource "google_cloud_run_v2_job" "postgres_backup_monitor" {
   }
 }
 
-resource "google_cloud_run_v2_job_iam_member" "backup_scheduler" {
-  for_each = var.recovery_mode ? {} : local.enabled_database_contracts
-
-  project  = var.workload_project_id
-  location = var.region
-  name     = google_cloud_run_v2_job.postgres_backup[each.key].name
-  role     = "roles/run.invoker"
-  member   = "serviceAccount:${var.runtime_service_accounts.scheduler_invoker}"
-}
-
-# Release can take its mandatory pre-change and post-migration recovery points,
-# but the project role itself carries no job execution or override permission.
-resource "google_cloud_run_v2_job_iam_member" "backup_release" {
-  for_each = var.recovery_mode ? {} : local.enabled_database_contracts
-
-  project  = var.workload_project_id
-  location = var.region
-  name     = google_cloud_run_v2_job.postgres_backup[each.key].name
-  role     = "roles/run.invoker"
-  member   = "serviceAccount:infra-release@${var.management_project_id}.iam.gserviceaccount.com"
-}
-
-resource "google_cloud_run_v2_job_iam_member" "restore_scheduler" {
-  for_each = var.recovery_mode ? {} : local.enabled_database_contracts
-
-  project  = var.workload_project_id
-  location = var.region
-  name     = google_cloud_run_v2_job.postgres_restore[each.key].name
-  role     = "roles/run.invoker"
-  member   = "serviceAccount:${var.runtime_service_accounts.scheduler_invoker}"
-}
-
-resource "google_cloud_run_v2_job_iam_member" "restore_release" {
-  for_each = var.recovery_mode ? {} : local.enabled_database_contracts
-
-  project  = var.workload_project_id
-  location = var.region
-  name     = google_cloud_run_v2_job.postgres_restore[each.key].name
-  role     = "roles/run.invoker"
-  member   = "serviceAccount:infra-release@${var.management_project_id}.iam.gserviceaccount.com"
-}
-
-resource "google_cloud_run_v2_job_iam_member" "recover_recovery" {
-  for_each = google_cloud_run_v2_job.postgres_recover
-
-  project  = var.workload_project_id
-  location = var.region
-  name     = each.value.name
-  role     = "roles/run.invoker"
-  member   = "serviceAccount:infra-recovery@${var.management_project_id}.iam.gserviceaccount.com"
-}
-
-resource "google_cloud_run_v2_job_iam_member" "monitor_scheduler" {
-  count = length(local.enabled_database_contracts) == 0 || var.recovery_mode ? 0 : 1
-
-  project  = var.workload_project_id
-  location = var.region
-  name     = google_cloud_run_v2_job.postgres_backup_monitor[0].name
-  role     = "roles/run.invoker"
-  member   = "serviceAccount:${var.runtime_service_accounts.scheduler_invoker}"
-}
-
-resource "google_cloud_run_v2_job_iam_member" "monitor_release" {
-  count = length(local.enabled_database_contracts) == 0 || var.recovery_mode ? 0 : 1
-
-  project  = var.workload_project_id
-  location = var.region
-  name     = google_cloud_run_v2_job.postgres_backup_monitor[0].name
-  role     = "roles/run.invoker"
-  member   = "serviceAccount:infra-release@${var.management_project_id}.iam.gserviceaccount.com"
-}
-
 resource "google_cloud_scheduler_job" "postgres_backup" {
   for_each = var.recovery_mode ? {} : local.enabled_database_contracts
 
@@ -552,8 +492,6 @@ resource "google_cloud_scheduler_job" "postgres_backup" {
       scope                 = "https://www.googleapis.com/auth/cloud-platform"
     }
   }
-
-  depends_on = [google_cloud_run_v2_job_iam_member.backup_scheduler]
 }
 
 resource "google_cloud_scheduler_job" "postgres_restore" {
@@ -586,8 +524,6 @@ resource "google_cloud_scheduler_job" "postgres_restore" {
       scope                 = "https://www.googleapis.com/auth/cloud-platform"
     }
   }
-
-  depends_on = [google_cloud_run_v2_job_iam_member.restore_scheduler]
 }
 
 resource "google_cloud_scheduler_job" "postgres_backup_monitor" {
@@ -620,6 +556,4 @@ resource "google_cloud_scheduler_job" "postgres_backup_monitor" {
       scope                 = "https://www.googleapis.com/auth/cloud-platform"
     }
   }
-
-  depends_on = [google_cloud_run_v2_job_iam_member.monitor_scheduler]
 }

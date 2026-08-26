@@ -1,8 +1,9 @@
 #!/bin/bash
 
-# The release identity can observe but never execute the one-time initializer.
-# On first launch this gate waits for a named operator to run the exact job, then
-# creates a single immutable completion marker in the private receipt bucket.
+# The release identity can observe but never deploy or execute the one-time
+# initializer. On first launch this gate waits for a named operator to provision
+# the human-only job through the runbook and run it once, then creates a single
+# immutable completion marker in the private receipt bucket.
 # Usage: await-auth-initialization.sh <project> <region> <receipt-bucket> <commit>
 
 set -euo pipefail
@@ -78,7 +79,9 @@ if [ "${MARKER_PRESENT}" = true ]; then
 fi
 
 printf '\nAuthentication requires its one-time, human-only initialization.\n' >&2
-printf 'An approved initializer must run exactly:\n\n' >&2
+printf 'An approved initializer must first follow the two-phase setup in:\n' >&2
+printf 'docs/runbooks/deploy-production.md#first-launch-provision-and-run-the-human-only-initializer\n\n' >&2
+printf 'After that setup, run exactly:\n\n' >&2
 printf 'gcloud run jobs execute %s --project=%s --region=%s --wait\n\n' \
     "${JOB_NAME}" "${PROJECT_ID}" "${REGION}" >&2
 printf 'The release will wait for a successful exact execution; overrides are not permitted.\n' >&2

@@ -68,10 +68,12 @@ maintains both `bootstrap` and `foundation`. Release remains confined to its own
 can restore all three state roots without receiving IAM-administration authority.
 
 Routine Cloud Run deployment and job execution are separate permissions. Release receives a custom
-deployment role without execution or override authority, then resource-level invocation only for
-migrations and JSON Keys rotation. Authentication initialization remains a named-human action because
-it reconciles the first administrator's password and role. A dedicated initializer identity keeps the
-bootstrap password outside the Authentication REST identity.
+deployment role without execution, override, or IAM-policy authority. Foundation-owned conditional
+invoker bindings match permanent Resource Manager tags to release, scheduled, internal, and recovery
+workloads; release can attach only its three routine values. Authentication initialization remains a
+named-human action because it reconciles the first administrator's password and role. Only those
+humans can use its dedicated identity and tag, keeping the bootstrap password outside both the REST
+identity and routine automation.
 
 ## Stateful database ownership
 
@@ -186,10 +188,12 @@ management state bucket, migrates that state to the backend, and removes the tem
 authority. The [bootstrap runbook](./runbooks/bootstrap-management-plane.md) provides the exact
 operator commands, safe expected output, independent checks, partial-failure response, and cleanup.
 
-Each root uses a distinct managed-folder state prefix and a distinct automation identity. Writer
-identities use GCS backend locking. Read-only drift jobs use root-scoped workflow serialization and
-plan without a backend lock, so they never receive state-write permission. Object Versioning and soft
-delete supply recovery from an accidental overwrite or deletion. State is private recovery data: it
+Each normal root uses a distinct managed-folder state prefix and a distinct automation identity.
+Recovery can read normal state but can write only four nested managed folders under
+`foundation/{recovery,plans/recovery}/` and `release/{recovery,plans/recovery}/`; it cannot overwrite
+bootstrap or production state. Writer identities use GCS backend locking. Read-only drift jobs use
+root-scoped workflow serialization and plan without a backend lock, so they never receive state-write
+permission. Object Versioning and soft delete supply recovery from an accidental overwrite or deletion. State is private recovery data: it
 never enters Git, GitHub artifacts, pull-request comments, or public logs. OpenTofu manages secret
 containers and access policies, while operators add secret payload versions through stdin outside
 OpenTofu so payloads do not enter state. The
@@ -235,11 +239,12 @@ The automated application graph runs the database update, JSON Keys migration an
 Authentication migration, both backups and clean restores, private-service readiness and traffic,
 dependency health, then public traffic. Authentication's candidate health endpoint proves
 PostgreSQL, SMTP, and the newly active private JSON Keys gRPC path. The first launch pauses after
-recovery verification until an authorized operator runs the initializer and its successful
-execution is recorded; later deployments do not repeat that gate. Cloud Scheduler continues the
-idempotent key-rotation job every hour. Authentication initialization is never invoked or retried by
-a release or scheduler trigger; an authorized operator invokes it only when the first administrator
-must be created or explicitly reconciled.
+recovery verification while an authorized operator follows the two-phase runbook: create an inert
+initializer, attach and verify its human-only tag, add the exact bootstrap configuration, then run
+without overrides. The workflow records the success and the operator deletes the one-time job.
+Later deployments do not repeat that gate. Cloud Scheduler continues the idempotent key-rotation job
+every hour. Authentication initialization is never deployed, invoked, or retried by release or
+scheduler automation.
 
 ## Portability boundary
 
