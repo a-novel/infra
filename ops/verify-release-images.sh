@@ -69,9 +69,11 @@ while IFS=$'\t' read -r COMPONENT SLOT SOURCE SOURCE_DIGEST; do
     fi
 
     if [ "${SLOT}" = "database" ]; then
+        # Each reviewed release has one runnable linux/amd64 image plus its
+        # attestation descriptor, so Buildx exposes .Image as one config.
         if ! IMAGE_CONFIG="$(docker buildx imagetools inspect \
             "${SOURCE_DIGEST}" \
-            --format '{{json (index .Image "linux/amd64")}}' 2>/dev/null)"; then
+            --format '{{json .Image}}' 2>/dev/null)"; then
             printf 'A database image configuration could not be inspected.\n' >&2
             exit 70
         fi
