@@ -2,8 +2,40 @@ schemaVersion: 1
 postgresMajor: 18
 components:
   service-json-keys:
-    enabled: false
-    images: {}
+    enabled: true
+    images:
+      database:
+        repository: ghcr.io/a-novel/service-json-keys/database
+        tag: v2.5.1
+        digest: sha256:6b7d41dc1108fe30550210d6ca7c9368768435c79da872417c25a5720afc9352
+      grpc:
+        repository: ghcr.io/a-novel/service-json-keys/grpc
+        tag: v2.5.1
+        digest: sha256:228a2ab1a962980d5b2000ee17e0d28bb570b99172bc06e3f14b23351df15cb0
+      jobs/migrations:
+        repository: ghcr.io/a-novel/service-json-keys/jobs/migrations
+        tag: v2.5.1
+        digest: sha256:bf5af31fd39fcce4ff1c2cc92f9a3d3a7f08f59cf5dca9ad383819b355c9bbe8
+      jobs/rotatekeys:
+        repository: ghcr.io/a-novel/service-json-keys/jobs/rotatekeys
+        tag: v2.5.1
+        digest: sha256:2fe2620debe2038ad044e04d194e3745f93f1ddbd3b5c09093de159857579754
   service-authentication:
-    enabled: false
-    images: {}
+    enabled: true
+    images:
+      database:
+        repository: ghcr.io/a-novel/service-authentication/database
+        tag: v2.5.1
+        digest: sha256:f346a61544a2daf4522ebabdec3befa43aec3c08528b04311fab709214e076df
+      jobs/init:
+        repository: ghcr.io/a-novel/service-authentication/jobs/init
+        tag: v2.5.1
+        digest: sha256:8e5c667c06678729e3b09a405323d638ac29ae96731d70781105f3db73122b7c
+      jobs/migrations:
+        repository: ghcr.io/a-novel/service-authentication/jobs/migrations
+        tag: v2.5.1
+        digest: sha256:b2d1353bbde4518422d57a5a8d1bde9a6ade996af36a2344dcbc3cc0fca94933
+      rest:
+        repository: ghcr.io/a-novel/service-authentication/rest
+        tag: v2.5.1
+        digest: sha256:c5d0d7a197cf920072af97c92c145e8a2ce2f96bd70fc62a089ab638f8cab037

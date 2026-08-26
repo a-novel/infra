@@ -106,11 +106,13 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
+      attestations: read
       contents: read
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Install pnpm
@@ -130,9 +132,48 @@ jobs:
         shell: bash
         run: pnpm lint
 
-      - name: Test the production manifest schema
+      - name: Test release policies
         shell: bash
         run: pnpm test
+
+      - name: Validate the production image transition
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          umask 077
+          if [[ ! "${BASE_SHA}" =~ ^[a-f0-9]{40}$ ]]; then
+            printf 'The pull-request base commit is invalid.\n' >&2
+            exit 65
+          fi
+          base_manifest="${RUNNER_TEMP}/base-images.yaml"
+          git show "${BASE_SHA}:deploy/production/images.yaml" >"${base_manifest}"
+          ./ops/validate-image-update.mjs \
+            "${base_manifest}" deploy/production/images.yaml
+
+      # Compile with public fixtures before contacting GHCR. This exercises the
+      # same schema, enabled-scope, and fixed release graph used in production.
+      - name: Compile the production image candidate
+        shell: bash
+        env:
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_SHA: ${{ github.sha }}
+          RELEASE_ACTION: deploy
+        run: |
+          set -euo pipefail
+          umask 077
+          ./ops/compile-release.mjs \
+            deploy/production/images.yaml tests/fixtures/release-config.json - \
+            "${RUNNER_TEMP}/release-preview"
+
+      - name: Verify candidate provenance, digest, and PostgreSQL major
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./ops/verify-release-images.sh "${RUNNER_TEMP}/release-preview/release.json"
 
       - name: Lint GitHub Actions syntax
         uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2.2.0

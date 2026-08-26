@@ -1,6 +1,10 @@
 name: production release
 
 on:
+  push:
+    branches: [master]
+    paths:
+      - deploy/production/images.yaml
   workflow_dispatch:
     inputs:
       action:
@@ -13,7 +17,7 @@ on:
         required: false
         type: string
 
-run-name: "production ${{ inputs.action }} by @${{ github.actor }}"
+run-name: "production ${{ github.event_name == 'push' && 'deploy' || inputs.action }} by @${{ github.actor }}"
 
 permissions: {}
 
@@ -24,10 +28,15 @@ concurrency:
 env:
   TF_IN_AUTOMATION: "true"
   CLOUDSDK_CORE_DISABLE_PROMPTS: "1"
+  RELEASE_ACTION: ${{ github.event_name == 'push' && 'deploy' || inputs.action }}
 
 jobs:
   release:
-    if: github.ref == 'refs/heads/master'
+    # The repository switch prevents an unbootstrapped clone from creating an
+    # unprotected environment merely by merging its first image manifest.
+    if: >-
+      github.ref == 'refs/heads/master' &&
+      vars.PRODUCTION_RELEASES_ENABLED == 'true'
     runs-on: ubuntu-24.04
     # Sequential database safety checks and clean restores each keep their own
     # bounded timeout; the workflow ceiling must not cancel a valid slow run.
@@ -70,10 +79,10 @@ jobs:
           jq --exit-status 'type == "object"' "${file}" >/dev/null
           printf 'file=%s\n' "${file}" >>"${GITHUB_OUTPUT}"
 
-      # Verification happens before Google credentials exist. Pulling and
-      # inspecting an image never executes its entrypoint.
+      # Verification happens before Google credentials exist. Remote manifest
+      # and config inspection never downloads layers or executes an entrypoint.
       - name: Compile source-image verification inputs
-        if: inputs.action == 'deploy'
+        if: env.RELEASE_ACTION == 'deploy'
         shell: bash
         env:
           GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
@@ -89,7 +98,7 @@ jobs:
             "${RUNNER_TEMP}/source-verification"
 
       - name: Verify source provenance, digest, and PostgreSQL major
-        if: inputs.action == 'deploy'
+        if: env.RELEASE_ACTION == 'deploy'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -128,7 +137,7 @@ jobs:
         id: prior
         shell: bash
         env:
-          ACTION: ${{ inputs.action }}
+          ACTION: ${{ env.RELEASE_ACTION }}
           RECEIPT_BUCKET: ${{ vars.GCP_RECEIPT_BUCKET }}
           TARGET_RECEIPT: ${{ inputs.target_receipt }}
         run: |
@@ -168,7 +177,6 @@ jobs:
           GITHUB_SHA: ${{ github.sha }}
           CURRENT_RECEIPT: ${{ steps.prior.outputs.current }}
           PRIOR_RECEIPT: ${{ steps.prior.outputs.argument }}
-          RELEASE_ACTION: ${{ inputs.action }}
           RELEASE_CONFIG_FILE: ${{ steps.config.outputs.file }}
         run: |
           set -euo pipefail
@@ -178,7 +186,7 @@ jobs:
             "${PRIOR_RECEIPT}" "${RUNNER_TEMP}/release"
 
       - name: Execute the fixed release graph
-        if: inputs.action == 'deploy'
+        if: env.RELEASE_ACTION == 'deploy'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -188,7 +196,7 @@ jobs:
         run: ./ops/release-orchestrator.sh ./ops/google-release-driver.sh
 
       - name: Restore the exact selected receipt
-        if: inputs.action == 'rollback'
+        if: env.RELEASE_ACTION == 'rollback'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
