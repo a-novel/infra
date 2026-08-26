@@ -255,7 +255,7 @@ done
 Record which path was used. The fallback's project-wide `secretmanager.admin` and `storage.admin`
 grants are removed in section 12; the other six become OpenTofu-managed operator grants.
 
-## 6. Configure the three GitHub environments
+## 6. Configure the three GitHub environments and disabled release switch
 
 The read-only plan/drift identity deliberately has no environment. Create exactly three deployment
 environments: routine release is restricted to protected branches; foundation and recovery also
@@ -345,6 +345,19 @@ done
 Expected safe result: exactly the three environment names; foundation and recovery report
 `can_admins_bypass: false`, `protected_branches: true`, `prevent_self_review: true`, and the intended
 reviewer. Stop before cloud apply if any property differs.
+
+Create the repository-level launch switch in its fail-safe state. This switch prevents an
+unbootstrapped manifest merge from entering `production-release`; it does not replace protected
+branches, the environment policy, or the exact WIF claim checks.
+
+```bash
+gh variable set PRODUCTION_RELEASES_ENABLED \
+  --repo a-novel/infra --body false
+test "$(gh variable get PRODUCTION_RELEASES_ENABLED --repo a-novel/infra)" = false
+```
+
+Expected safe result: the test prints nothing and succeeds. Only the production deployment runbook
+may change this value to `true`, after every launch prerequisite and explicit authorization pass.
 
 ## 7. Create and inspect the initial local plan
 
@@ -594,8 +607,8 @@ done
 Expected safe result:
 
 - repository variables are exactly `GCP_STATE_BUCKET`, `GCP_BACKUP_BUCKET`,
-  `GCP_RECEIPT_BUCKET`, `GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER`, and
-  `GCP_PLAN_SERVICE_ACCOUNT`;
+  `GCP_RECEIPT_BUCKET`, `GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER`,
+  `GCP_PLAN_SERVICE_ACCOUNT`, and the false `PRODUCTION_RELEASES_ENABLED` launch switch;
 - each environment has only its matching two prefixed identity variables;
 - `production-foundation` initially has only `BOOTSTRAP_TFVARS_JSON`;
 - `production-release` and `production-recovery` initially have no environment secret.
@@ -782,4 +795,5 @@ bucket generations, audit records, and GitHub variables remain.
 Bootstrap is complete only when all final checks pass. Continue with the
 [workload-foundation runbook](./provision-workload-foundation.md). Do not dispatch a foundation or
 release apply before its WIF exchange, sanitized summary, exact-plan custody, and environment gate
-match the controls described here.
+match the controls described here. Keep `PRODUCTION_RELEASES_ENABLED=false` until the deployment
+runbook explicitly enables it.

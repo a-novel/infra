@@ -42,9 +42,11 @@ hourly JSON Keys rotation, private JSON Keys gRPC with an exact invoker allowlis
 Authentication REST. A deploy-only role excludes job execution and overrides. Exact job IAM lets
 release run migrations and key rotation, the scheduler run rotation, and named humans run
 Authentication initialization. Every runtime scales to zero and remains absent while its atomic
-release contract is disabled. Protected workflows are manual-only and the production manifest keeps
-both components disabled until the first reviewed activation. There is no load balancer, public IP,
-NAT, connector, proxy, or Kubernetes layer.
+release contract is disabled. The production manifest now selects both reviewed launch families,
+but the protected release job remains disabled by a fail-safe repository switch until bootstrap and
+the operator runbook are complete. After launch, a protected manifest merge starts the same fixed
+release graph; manual dispatch remains for first activation, retry, and rollback. There is no load
+balancer, public IP, NAT, connector, proxy, or Kubernetes layer.
 
 ## Provider and resource references
 

@@ -25,14 +25,19 @@ Pull requests are cloud-blind. They receive a read-only repository token and run
 validation, mocked OpenTofu tests, static security analysis, and manifest checks. They receive no
 Google identity, protected environment, secret payload, or production state.
 
-Nothing deploys on push or pull request. Protected workflows run only by explicit manual dispatch
-from `master`; a shared concurrency lock serializes every production writer. Foundation changes use
-separate plan and apply runs: the first stores an opaque saved plan in private Google Cloud Storage
-for 24 hours, and the second applies that exact commit-, root-, state-, and hash-bound plan after
-environment approval. Routine releases use a fixed deployment graph and an immutable success
-receipt; failures compensate to the prior receipt while backward-compatible migrations remain.
-Recovery can rebuild only into a new disposable project. The sole scheduled cloud workflow is a
-read-only daily drift inspection.
+Pull requests and branch pushes never deploy. A merge to `master` that changes only the reviewed
+production image manifest starts the protected release workflow after the fail-safe repository
+variable `PRODUCTION_RELEASES_ENABLED` is explicitly set to `true`. Until bootstrap, release inputs,
+and recovery checks are complete, a missing or false switch skips the job before its protected
+environment is entered. Foundation, recovery, rollback, and the first post-bootstrap release retain
+explicit manual entry points. A shared concurrency lock serializes every production writer.
+
+Foundation changes use separate plan and apply runs: the first stores an opaque saved plan in private
+Google Cloud Storage for 24 hours, and the second applies that exact commit-, root-, state-, and
+hash-bound plan after environment approval. Routine releases use a fixed deployment graph and an
+immutable success receipt; failures compensate to the prior receipt while backward-compatible
+migrations remain. Recovery can rebuild only into a new disposable project. The sole scheduled
+cloud workflow is a read-only daily drift inspection.
 
 The bootstrap root's one-time initial apply remains a human-only exception performed from `master`
 after explicit approval. After that first trust anchor exists, bootstrap and foundation changes use
@@ -80,9 +85,10 @@ resource creation is explicitly authorized.
 ### Configure and operate protected releases
 
 Use [Deploy and roll back production](./docs/runbooks/deploy-production.md) to create the protected
-release input bundle, verify exact secret versions and image provenance, deploy the reviewed
-manifest, perform the human-only Authentication initialization, inspect receipts, and select an
-exact rollback target. Use [Recover production into a disposable project](./docs/runbooks/disaster-recovery.md)
+release input bundle, keep the launch switch off until every prerequisite passes, verify exact
+secret versions and image provenance, deploy the reviewed manifest, perform the human-only
+Authentication initialization, inspect receipts, and select an exact rollback target. Use
+[Recover production into a disposable project](./docs/runbooks/disaster-recovery.md)
 only for a declared recovery exercise or incident; it owns temporary recovery authority, exact
 backup selection, the lost-write acknowledgement, verification, and access removal.
 
@@ -107,11 +113,11 @@ a-novel repo update --dry-run
 
 Review the first dry run before approving the interactive update. It should add the three `main.yaml` job contexts to the `master` ruleset and set GitHub default Actions code scanning to `not-configured`; the required Zizmor audit replaces that overlapping check:
 
-| Required check        | Purpose                                                                                                       |
-| --------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `validate-opentofu`   | Format, initialize without a backend, validate, run mocked tests, lint HCL and exercise plan-policy fixtures. |
-| `scan-infrastructure` | Fail on high or critical infrastructure, dependency, or secret findings from Trivy.                           |
-| `lint-repository`     | Validate workflows, Renovate configuration, formatting, and the production image schema.                      |
+| Required check        | Purpose                                                                                                        |
+| --------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `validate-opentofu`   | Format, initialize without a backend, validate, run mocked tests, lint HCL and exercise plan-policy fixtures.  |
+| `scan-infrastructure` | Fail on high or critical infrastructure, dependency, or secret findings from Trivy.                            |
+| `lint-repository`     | Validate workflows, formatting, the release transition, deterministic Renovate behavior, and image provenance. |
 
 `a-novel repo update --dry-run` renders the complete desired write set; it is not a live-state diff and therefore remains non-empty after reconciliation. On both dry runs, its header must list exactly `epic-freeze`, `lint-repository`, `merge-gate`, `scan-infrastructure`, and `validate-opentofu` as required checks.
 
@@ -196,7 +202,7 @@ The three names form a security allowlist. Add a root only when a new lifecycle 
 | ------------------------------- | ------------------------------------------------------------------------------ |
 | `deploy/production/images.yaml` | Enabled components plus stable SemVer image tags and exact digests.            |
 | `ops/`                          | Small, tested CI and operator shims shared by the roots.                       |
-| `tests/`                        | Mocked OpenTofu, manifest-schema, allowlist, and sanitized plan fixtures.      |
+| `tests/`                        | Mocked OpenTofu, manifest, Renovate, allowlist, and sanitized plan fixtures.   |
 | `docs/architecture.md`          | Lifecycle, authority, state, delivery, and portability decisions.              |
 | `docs/google-cloud.md`          | Provider resource map, trust boundaries, and official Google Cloud references. |
 | `docs/costs/production.md`      | Current unit assumptions and launch/capacity monthly cost ranges.              |
@@ -225,21 +231,25 @@ the plan, state, configuration, or resource values.
 
 The manifest schema accepts only the eight declared database, job, and service image slots. An
 enabled component must provide its complete four-image family with exact repository names, complete
-stable tags such as `v2.5.0`, and `sha256` digests; a disabled component must provide no images.
-Branch tags, prereleases, standalone images, mismatched repositories, partial families, and
-undeclared future images fail validation. Renovate groups each service's image family so one green
-merge represents one deployment candidate.
+stable `vMAJOR.MINOR.PATCH` tags, and `sha256` digests; a disabled component must provide no images.
+Branch tags, SHA tags, partial SemVer, prereleases, standalone images, mismatched repositories,
+partial families, and undeclared future images fail validation. A deterministic local-registry dry
+run proves that Renovate ignores noisy references, groups all four images for one service, separates
+service and PostgreSQL majors, and surfaces a digest changed behind an existing tag for blocking
+review. Renovate never automerges.
 
-The production manifest keeps both services disabled until the recovery resources, runtime
-resources, and verified image digests are ready. Foundation therefore seeds empty group-level
-release metadata and the host remains idle. The release root creates recovery jobs only when both
-database contracts are enabled together. A manifest merge still deploys nothing: a maintainer must
-manually dispatch the protected release workflow from `master`. Source GHCR attestations, exact
-digests, family SemVer agreement, PostgreSQL major, numeric secret versions, quota grants, and fresh
-backups all fail closed before traffic changes. The release receipt records the exact promoted
-digests, secret-version identifiers, revisions, migration and rotation executions, five
-recovery-verification executions, first-launch initialization evidence, health gates, commit, and
-workflow run.
+The production manifest selects the two reviewed `v2.5.1` launch families, but this code alone still
+creates nothing. Foundation seeds empty group-level release metadata and the host remains idle until
+protected applies and the first release are authorized. The release root creates recovery jobs only
+when both database contracts are enabled together. Once the documented launch switch is true, a
+green human merge that changes the manifest starts the protected release workflow; the first launch
+and explicit retries can be dispatched manually from `master`. Source GHCR attestations must come
+from each producer's `release.yaml` on `master` using a GitHub-hosted runner. That signer policy,
+exact tag-to-digest resolution, family SemVer agreement, PostgreSQL major, numeric secret versions,
+quota grants, and fresh backups all fail closed before traffic changes. The release receipt records
+the exact promoted digests, secret-version identifiers, revisions, migration and rotation
+executions, five recovery-verification executions, first-launch initialization evidence, health
+gates, commit, and workflow run.
 
 ### Portability boundary
 

@@ -1,8 +1,9 @@
 #!/bin/bash
 
 # Verify every public source image before Google credentials are minted. The
-# checked digest, repository, SemVer family, producer attestation, and database
-# PostgreSQL major are the only inputs accepted by later promotion.
+# checked digest, repository, SemVer family, protected release-workflow
+# attestation, and database PostgreSQL major are the only inputs accepted by
+# later promotion.
 # Usage: verify-release-images.sh <compiled-release.json>
 
 set -euo pipefail
@@ -20,6 +21,10 @@ for command in docker gh jq; do
         exit 69
     fi
 done
+if ! docker buildx version >/dev/null 2>&1; then
+    printf 'Required release verification tooling is unavailable.\n' >&2
+    exit 69
+fi
 
 if ! jq --exit-status '
     .schemaVersion == 1 and
@@ -40,31 +45,39 @@ fi
 
 while IFS=$'\t' read -r COMPONENT SLOT SOURCE SOURCE_DIGEST; do
     REPOSITORY="a-novel/${COMPONENT}"
+    SIGNER_WORKFLOW="${REPOSITORY}/.github/workflows/release.yaml"
     if ! gh attestation verify "oci://${SOURCE_DIGEST}" \
-        --repo "${REPOSITORY}" >/dev/null 2>&1; then
+        --repo "${REPOSITORY}" \
+        --signer-workflow "${SIGNER_WORKFLOW}" \
+        --source-ref refs/heads/master \
+        --deny-self-hosted-runners >/dev/null 2>&1; then
         printf 'A release image lacks a valid producer attestation.\n' >&2
         exit 70
     fi
 
-    if ! docker pull "${SOURCE}" >/dev/null 2>&1; then
-        printf 'A release image could not be pulled by immutable tag.\n' >&2
+    if ! MANIFEST="$(docker buildx imagetools inspect "${SOURCE}" \
+        --format '{{json .Manifest}}' 2>/dev/null)"; then
+        printf 'A release image manifest could not be inspected.\n' >&2
         exit 70
     fi
-    if ! docker image inspect "${SOURCE}" \
-        --format '{{json .RepoDigests}}' \
-        2>/dev/null \
-        | jq --exit-status --arg expected "${SOURCE_DIGEST}" \
-            'index($expected) != null' >/dev/null; then
+    EXPECTED_DIGEST="${SOURCE_DIGEST##*@}"
+    if ! printf '%s\n' "${MANIFEST}" \
+        | jq --exit-status --arg expected "${EXPECTED_DIGEST}" \
+            '.digest == $expected' >/dev/null; then
         printf 'A release image tag does not resolve to its reviewed digest.\n' >&2
         exit 70
     fi
 
     if [ "${SLOT}" = "database" ]; then
-        if ! docker image inspect "${SOURCE}" \
-            --format '{{json .Config.Env}}' \
-            2>/dev/null \
+        if ! IMAGE_CONFIG="$(docker buildx imagetools inspect \
+            "${SOURCE_DIGEST}" \
+            --format '{{json (index .Image "linux/amd64")}}' 2>/dev/null)"; then
+            printf 'A database image configuration could not be inspected.\n' >&2
+            exit 70
+        fi
+        if ! printf '%s\n' "${IMAGE_CONFIG}" \
             | jq --exit-status --arg major "PG_MAJOR=18" \
-                'index($major) != null' >/dev/null; then
+                '(.config.Env // []) | index($major) != null' >/dev/null; then
             printf 'A database image does not declare the reviewed PostgreSQL major.\n' >&2
             exit 70
         fi

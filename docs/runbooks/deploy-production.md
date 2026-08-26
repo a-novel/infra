@@ -1,8 +1,10 @@
 # Deploy and roll back production
 
 Use this runbook for a reviewed release of JSON Keys and Authentication, or to restore the whole
-application to one exact prior successful receipt. The workflow is manual-only: a manifest merge
-never deploys by itself, and a branch or pull request never receives Google credentials.
+application to one exact prior successful receipt. A protected merge that changes the production
+manifest starts deployment only after the documented repository launch switch is true. The first
+post-bootstrap release, an explicit retry, and rollback use manual dispatch. A branch or pull
+request never receives Google credentials.
 
 Official references: [Cloud Run revisions](https://cloud.google.com/run/docs/managing/revisions),
 [traffic migration and rollback](https://cloud.google.com/run/docs/rollouts-rollbacks-traffic-migration),
@@ -54,9 +56,12 @@ idempotent job at minute 10 every hour.
   before initialization or traffic.
 - Every application secret has an enabled numeric version created through
   [Add or rotate a secret version](./secret-versions.md).
-- Each source image has a GitHub producer attestation and a stable complete SemVer tag.
+- Each source image has a GitHub producer attestation signed by that service's `release.yaml` from
+  `master` on a GitHub-hosted runner, plus a stable complete SemVer tag.
 - `production-release` accepts only protected branches and contains only its release WIF coordinates
   plus `RELEASE_CONFIG_JSON`.
+- The repository variable `PRODUCTION_RELEASES_ENABLED` is `false` during initial setup and `true`
+  only after every prerequisite in this runbook passes.
 - The exact `master` manifest is the reviewed desired state.
 - The live PostgreSQL release metadata still matches the newest immutable receipt; the private
   preflight hash fails closed on drift or a missing receipt.
@@ -89,14 +94,18 @@ test "$MASTER_SHA" = "$(gh api "repos/${REPOSITORY}/commits/master" --jq .sha)"
 
 gh api "repos/${REPOSITORY}/environments/production-release" \
   --jq '{name,deployment_branch_policy,protection_rules}'
+RELEASES_ENABLED="$(gh variable get PRODUCTION_RELEASES_ENABLED --repo "$REPOSITORY")"
+[[ "$RELEASES_ENABLED" == false || "$RELEASES_ENABLED" == true ]]
+printf 'Production release launch switch: %s\n' "$RELEASES_ENABLED"
 gh variable list --repo "$REPOSITORY" --env production-release
 gh secret list --repo "$REPOSITORY" --env production-release
 ```
 
 Expected safe result: protected branches, no custom branch policy, exactly
 `GCP_RELEASE_WORKLOAD_IDENTITY_PROVIDER` and `GCP_RELEASE_SERVICE_ACCOUNT`, and—after section 4—only
-`RELEASE_CONFIG_JSON`. Routine release has no second approval queue because workflow code and the
-manifest already passed the protected pull-request merge gate.
+`RELEASE_CONFIG_JSON`. The launch switch must still be `false` during first-time setup. Routine
+release has no second approval queue because workflow code and the manifest already passed the
+protected pull-request merge gate.
 
 Create the deletion label if absent:
 
@@ -293,15 +302,19 @@ Secret payloads remain only in Secret Manager and are resolved by dedicated runt
 
 ## 5. Enable the reviewed image families
 
-`deploy/production/images.yaml` contains two four-image families. The first activation PR sets both
-components to `enabled: true` and fills all slots with the exact GHCR repository, one complete stable
+`deploy/production/images.yaml` contains two enabled four-image families. The first activation PR
+fills all slots with the exact GHCR repository, one complete stable
 `vMAJOR.MINOR.PATCH` shared by that family, and its exact `sha256:` digest. The schema rejects
 branches, prereleases, partial families, unknown slots, moving references, and PostgreSQL other than
-major 18. Renovate subsequently updates each family only for stable SemVer releases; its merge still
-does not deploy.
+major 18. The required pull-request check also rejects a partial family, a digest mutation behind an
+unchanged tag, or a service/PostgreSQL major mixed with another concern. Renovate subsequently opens
+human-reviewed pull requests only for stable SemVer releases and groups each service family. After
+launch, merging such a manifest pull request starts deployment automatically.
 
-For first activation, add deletion approval before merge because compensation may remove all newly
-created release resources:
+For first activation, add deletion approval before merging the exact pull request whose merge commit
+will be the `master` commit dispatched for that first release. Compensation may remove all newly
+created release resources. If another pull request lands afterward, that newer pull request needs the
+label instead because the deletion gate is bound to the exact deployed commit:
 
 ```bash
 read -r -p 'First-activation pull request number: ' ACTIVATION_PR
@@ -315,7 +328,27 @@ gh pr view "$ACTIVATION_PR" --repo "$REPOSITORY" \
 Later releases need the label only when their sanitized plan contains a deletion, replacement, or
 state-forget action.
 
-## 6. Dispatch and observe a release
+## 6. Enable releases and observe the exact deployment
+
+For first activation, keep the switch false until sections 1–5 and the backup prerequisites are
+complete. Enabling it is a deliberate launch decision; it does not retroactively trigger a manifest
+merge that already happened.
+
+```bash
+test "$(gh variable get PRODUCTION_RELEASES_ENABLED --repo "$REPOSITORY")" = false
+read -r -p 'Type enable-production-releases to authorize launch: ' RELEASE_CONFIRMATION
+test "$RELEASE_CONFIRMATION" = enable-production-releases
+gh variable set PRODUCTION_RELEASES_ENABLED --repo "$REPOSITORY" --body true
+test "$(gh variable get PRODUCTION_RELEASES_ENABLED --repo "$REPOSITORY")" = true
+unset RELEASE_CONFIRMATION
+```
+
+Expected safe result: both tests print nothing. To freeze new release and rollback runs, set the
+variable back to `false`; this does not cancel a workflow that already entered the protected
+environment.
+
+For the first activation or an explicit retry, dispatch `deploy` manually. For later releases, do
+not dispatch a duplicate: the protected manifest merge already creates a `push` run.
 
 ```bash
 git pull --ff-only
@@ -325,11 +358,12 @@ test "$MASTER_SHA" = "$(gh api "repos/${REPOSITORY}/commits/master" --jq .sha)"
 
 gh workflow run release.yaml --repo "$REPOSITORY" --ref master -f action=deploy
 gh run list --repo "$REPOSITORY" --workflow release.yaml --branch master \
-  --event workflow_dispatch --limit 5 \
+  --limit 5 \
   --json databaseId,headSha,displayTitle,status,conclusion,url
 ```
 
-Select `production deploy` with `headSha == MASTER_SHA`, then:
+Select exactly one `production deploy` with `headSha == MASTER_SHA`, whether its event was the
+automatic manifest push or the deliberate manual dispatch, then:
 
 ```bash
 read -r -p 'Release workflow run ID: ' RELEASE_RUN_ID
