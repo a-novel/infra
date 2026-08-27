@@ -1,5 +1,8 @@
 # Back up and restore PostgreSQL
 
+> First production run: the step-6 release creates and proves the recovery jobs before traffic;
+> step 7 verifies that evidence and locks retention through a separate reviewed change.
+
 This runbook operates the logical PostgreSQL backups, clean restore drills, and crash-consistent
 disk snapshots for JSON Keys and Authentication. It is the recovery procedure for database data;
 application rollback does not rewind schemas or rows.

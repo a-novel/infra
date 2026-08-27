@@ -1,5 +1,8 @@
 # Archive the legacy infrastructure repository
 
+> First production run: step 10 and the final action. Start only after every replacement acceptance
+> check passes and the owning acceptance record is closed.
+
 This runbook retires the old `a-novel/agora-infra` repository after the replacement production
 environment has passed its live operational acceptance test. Archiving is a separate, explicit
 administrator action. Nothing in this repository schedules or performs it.

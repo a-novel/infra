@@ -1,5 +1,8 @@
 # Deploy and roll back production
 
+> First production run: step 6. This procedure activates databases, proves backups and restores,
+> initializes Authentication once, and moves service traffic in the fixed order.
+
 Use this runbook for a reviewed release of JSON Keys and Authentication, or to restore the whole
 application to one exact prior successful receipt. A protected merge that changes the production
 manifest starts deployment only after the documented repository launch switch is true. The first

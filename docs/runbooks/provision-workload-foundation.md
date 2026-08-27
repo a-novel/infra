@@ -1,5 +1,8 @@
 # Provision and verify the workload foundation
 
+> First production run: step 2. Start only after management-plane bootstrap passes; finish the
+> protected plans, independent verification, and temporary-access cleanup before inspecting the host.
+
 Use this runbook to prepare, provision, and independently verify the replaceable production workload
 project and its private foundation. It covers project parent and billing authority, protected GitHub
 inputs, project adoption, private routing, runtime identities, Artifact Registry, cost controls, and

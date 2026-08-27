@@ -1,5 +1,8 @@
 # Respond to production alerts
 
+> First production run: step 8 verifies owners, channels, policies, and scheduled health after the
+> release and recovery evidence pass. For incidents, start at the matching signal instead.
+
 Use this runbook for the code-managed Google Cloud alerts and native GitHub workflow failures in the
 JSON Keys and Authentication production slice. It identifies one human owner and a first safe check
 for every signal without adding a paging service, log parser, custom metric, controller, or agent.

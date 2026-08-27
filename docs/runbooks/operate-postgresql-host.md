@@ -1,5 +1,8 @@
 # Operate the private PostgreSQL host
 
+> First production run: step 3 verifies the idle host; step 6 repeats the enabled-container checks
+> after release. Follow the exact sections named by the [ordered index](./README.md#3-verify-the-idle-postgresql-host).
+
 This runbook verifies and maintains the one-member stateful managed instance group that runs the
 JSON Keys and Authentication PostgreSQL images. It covers the idle foundation host, first database
 activation, private isolation, capacity, controlled replacement, disk growth, and rollback.

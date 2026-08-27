@@ -1,5 +1,8 @@
 # Configure hosted Plunk SMTP
 
+> First production run: step 4 configures the provider and captures its contract; step 6 performs
+> delivery tests after Authentication is live.
+
 Use this runbook to create the externally hosted SMTP dependency used by Authentication. Plunk is
 an operator-owned SaaS account, not a Google Cloud resource and not an OpenTofu-managed
 subscription. Infrastructure code consumes only its standard authenticated SMTP contract, so a

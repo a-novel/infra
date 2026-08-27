@@ -1,5 +1,8 @@
 # Add or rotate a secret version
 
+> First production run: step 5. Run the add-version procedure once per declared secret, record only
+> numeric version IDs, then continue to the protected release.
+
 OpenTofu owns Secret Manager containers and IAM; it never owns payload versions. A named human
 operator supplies one single-line payload through stdin after the management plane exists. The
 payload must never appear in Git, a `.tfvars` file, an environment file, a command argument, shell

@@ -1,5 +1,8 @@
 # Bootstrap and verify the management plane
 
+> First production run: step 1. Start from the [ordered index](./README.md#1-bootstrap-the-management-plane);
+> finish all 13 steps, then continue to workload foundation.
+
 This is the one-time, operator-only procedure for creating Agora's stable Google Cloud management
 plane, migrating its initial local state into GCS, configuring GitHub's deployment gates, and
 removing temporary broad access. It supports both a standalone billing-account project and a project

@@ -1,5 +1,8 @@
 # Recover production into a disposable project
 
+> First production run: step 9 is the clean-room acceptance drill. Later, use this only when a drill
+> is due or the production workload project is no longer trusted.
+
 Use this runbook for a clean-room recovery drill or a declared incident when the production workload
 project is no longer trusted. It builds a different Google Cloud project from code, restores two exact
 logical backups, and deploys one exact successful application receipt. Production is never repaired
