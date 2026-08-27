@@ -224,17 +224,21 @@ receipt-owned version is disabled or destroyed.
 
 ## 4. Store the protected non-payload release configuration
 
-SMTP is fixed to authenticated TLS submission on port 587, and the host and `sender_domain` are
-identical. Initializer principals are foundation inputs, not a mutable release secret.
+Complete [Configure hosted Plunk SMTP](./configure-hosted-smtp.md) first. The provider-neutral
+runtime contract is authenticated STARTTLS submission on port 587; `sender_domain` repeats the SMTP
+host because Authentication uses it for the TLS server name. Initializer principals are foundation
+inputs, not a mutable release secret.
 
 ```bash
 read -r -p 'First super-admin email: ' AUTH_SUPER_ADMIN_EMAIL
 read -r -p 'SMTP DNS host (without port): ' SMTP_HOST
+read -r -p 'SMTP username: ' SMTP_USERNAME
 read -r -p 'SMTP sender email: ' SMTP_SENDER_EMAIL
 read -r -p 'SMTP sender display name: ' SMTP_SENDER_NAME
 
 [[ "$AUTH_SUPER_ADMIN_EMAIL" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]
 [[ "$SMTP_HOST" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]]
+[[ "$SMTP_USERNAME" =~ ^[^[:space:]]{1,320}$ ]]
 [[ "$SMTP_SENDER_EMAIL" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]
 test -n "$SMTP_SENDER_NAME"
 
@@ -249,7 +253,8 @@ jq -n \
   --arg recovery_tag "$RECOVERY_TAG_VALUE" --arg release_tag "$RELEASE_TAG_VALUE" \
   --arg scheduled_tag "$SCHEDULED_TAG_VALUE" --arg admin "$AUTH_SUPER_ADMIN_EMAIL" \
   --arg smtp "${SMTP_HOST}:587" --arg smtp_domain "$SMTP_HOST" \
-  --arg smtp_email "$SMTP_SENDER_EMAIL" --arg smtp_name "$SMTP_SENDER_NAME" \
+  --arg smtp_username "$SMTP_USERNAME" --arg smtp_email "$SMTP_SENDER_EMAIL" \
+  --arg smtp_name "$SMTP_SENDER_NAME" \
   --argjson ap "$AUTH_POSTGRES_PASSWORD_VERSION" \
   --argjson ab "$AUTH_POSTGRES_BACKUP_PASSWORD_VERSION" \
   --argjson ad "$AUTH_POSTGRES_DSN_VERSION" --argjson as "$AUTH_SMTP_PASSWORD_VERSION" \
@@ -270,7 +275,10 @@ jq -n \
     },
     authentication: {
       super_admin_email: $admin,
-      smtp: {address: $smtp, sender_domain: $smtp_domain, sender_email: $smtp_email, sender_name: $smtp_name}
+      smtp: {
+        address: $smtp, sender_domain: $smtp_domain, username: $smtp_username,
+        sender_email: $smtp_email, sender_name: $smtp_name
+      }
     },
     quota_expectations: {
       cloud_run_cpu_millicpu: 8000, cloud_run_memory_bytes: 17179869184,
@@ -294,11 +302,13 @@ jq -e '(.cloud_run_invocation_tags.values | length == 5) and (.secret_versions |
 gh secret set RELEASE_CONFIG_JSON --repo "$REPOSITORY" --env production-release \
   <"$RELEASE_CONFIG_FILE"
 rm -f -- "$RELEASE_CONFIG_FILE"
-unset RELEASE_CONFIG_FILE
+unset RELEASE_CONFIG_FILE SMTP_USERNAME
 ```
 
 The workflow materializes this document with mode `0600`, never uploads it, and never prints it.
-Secret payloads remain only in Secret Manager and are resolved by dedicated runtime identities.
+The SMTP username is a non-payload login identifier but stays inside the protected bundle to avoid
+publishing tenant metadata. Secret payloads remain only in Secret Manager and are resolved by
+dedicated runtime identities.
 
 ## 5. Enable the reviewed image families
 
@@ -507,10 +517,10 @@ follow the partial-failure procedure below and dispatch a fresh run rather than 
 gh run view "$RELEASE_RUN_ID" --repo "$REPOSITORY" \
   --json headSha,status,conclusion,url,jobs \
   --jq '{headSha,status,conclusion,url,jobs:[.jobs[] | {name,conclusion}]}'
-gcloud run services describe agora-json-keys \
+gcloud run services describe agora-json-keys-grpc \
   --project="$WORKLOAD_PROJECT_ID" --region="$REGION" \
   --format='yaml(metadata.name,metadata.annotations,status.conditions,status.traffic)'
-gcloud run services describe agora-authentication \
+gcloud run services describe agora-authentication-rest \
   --project="$WORKLOAD_PROJECT_ID" --region="$REGION" \
   --format='yaml(metadata.name,status.conditions,status.traffic,status.url)'
 gcloud scheduler jobs describe agora-json-keys-rotation \
@@ -525,7 +535,7 @@ for tuple in \
   "jobs/agora-authentication-migrations $RELEASE_TAG_VALUE" \
   "jobs/agora-json-keys-migrations $RELEASE_TAG_VALUE" \
   "jobs/agora-json-keys-rotatekeys $SCHEDULED_TAG_VALUE" \
-  "services/agora-json-keys $INTERNAL_TAG_VALUE"; do
+  "services/agora-json-keys-grpc $INTERNAL_TAG_VALUE"; do
   read -r resource expected <<<"$tuple"
   gcloud resource-manager tags bindings list \
     --parent="//run.googleapis.com/projects/${WORKLOAD_PROJECT_ID}/locations/${REGION}/${resource}" \
@@ -541,6 +551,91 @@ internal ingress; Authentication is the public HTTPS edge; rotation is enabled a
 as the scheduler identity; the initializer job is absent; all four tag checks return `true`; and the
 newest receipt ends in the release `run-id-attempt`. Do not print a receipt: it is a private recovery
 inventory even though it contains no payload secret.
+
+After completing the bounded delivery, bounce, and cap tests in
+[Configure hosted Plunk SMTP](./configure-hosted-smtp.md#5-validate-without-exposing-the-credential),
+audit the current release's bounded application logs. This deliberately reads each exact deployed
+secret into a mode-`0700` scratch directory so it can prove the payload does not occur in logs; no
+payload reaches stdout, a process argument, GitHub, or OpenTofu:
+
+```bash
+LOG_AUDIT_DIRECTORY="$(mktemp -d)"
+chmod 700 "$LOG_AUDIT_DIRECTORY"
+cleanup_log_audit() {
+  rm -rf -- "$LOG_AUDIT_DIRECTORY"
+}
+trap cleanup_log_audit INT EXIT
+
+LOG_AUDIT_FILE="${LOG_AUDIT_DIRECTORY}/cloud-run.json"
+gcloud logging read '
+  (resource.type="cloud_run_revision" OR resource.type="cloud_run_job")
+  (log_id("run.googleapis.com/stdout") OR
+   log_id("run.googleapis.com/stderr") OR
+   log_id("run.googleapis.com/requests"))
+' --project="$WORKLOAD_PROJECT_ID" --freshness=24h --limit=500 \
+  --format=json >"$LOG_AUDIT_FILE"
+
+SECRET_PATTERN_ARGUMENTS=()
+while IFS=' ' read -r secret version; do
+  payload_file="${LOG_AUDIT_DIRECTORY}/${secret}"
+  gcloud secrets versions access "$version" --secret="$secret" \
+    --project="$MANAGEMENT_PROJECT_ID" --out-file="$payload_file" \
+    --quiet >/dev/null
+  test -s "$payload_file"
+  SECRET_PATTERN_ARGUMENTS+=(--file="$payload_file")
+done <<EOF
+production-authentication-postgres-password $AUTH_POSTGRES_PASSWORD_VERSION
+production-authentication-postgres-backup-password $AUTH_POSTGRES_BACKUP_PASSWORD_VERSION
+production-authentication-postgres-dsn $AUTH_POSTGRES_DSN_VERSION
+production-authentication-smtp-sender-password $AUTH_SMTP_PASSWORD_VERSION
+production-authentication-super-admin-password $AUTH_SUPER_ADMIN_PASSWORD_VERSION
+production-json-keys-postgres-password $JSON_POSTGRES_PASSWORD_VERSION
+production-json-keys-postgres-backup-password $JSON_POSTGRES_BACKUP_PASSWORD_VERSION
+production-json-keys-postgres-dsn $JSON_POSTGRES_DSN_VERSION
+production-json-keys-app-master-key $JSON_APP_MASTER_KEY_VERSION
+EOF
+
+if LC_ALL=C grep --fixed-strings "${SECRET_PATTERN_ARGUMENTS[@]}" \
+  "$LOG_AUDIT_FILE" >/dev/null; then
+  printf 'STOP: an exact deployed secret payload occurs in Cloud Run logs.\n' >&2
+  exit 1
+fi
+
+jq --exit-status '
+  length > 0 and
+  any(.[]; has("httpRequest") or has("jsonPayload")) and
+  ([
+    .[] | .jsonPayload? | .. | objects | keys[] |
+    ascii_downcase | gsub("[_-]"; "") |
+    select(
+      . == "authorization" or . == "headers" or . == "requestbody" or
+      . == "requestpayload" or . == "environment" or . == "env" or
+      . == "password" or . == "dsn" or . == "smtpcredential"
+    )
+  ] | length == 0) and
+  ([
+    .[] | (.jsonPayload?, .textPayload?) | .. | strings |
+    select(test(
+      "(?i)(postgres(?:ql)?://[^[:space:]@]+:[^[:space:]@]+@|" +
+      "authorization[[:space:]_:=\\\"]+(bearer|basic)|" +
+      "smtp_sender_password[[:space:]]*=|postgres_dsn[[:space:]]*=|" +
+      "-----BEGIN [A-Z ]*PRIVATE KEY-----)"
+    ))
+  ] | length == 0)
+' "$LOG_AUDIT_FILE" >/dev/null
+
+cleanup_log_audit
+trap - INT EXIT
+unset LOG_AUDIT_DIRECTORY LOG_AUDIT_FILE SECRET_PATTERN_ARGUMENTS payload_file secret version
+printf 'Bounded production logs contain no deployed secret or forbidden payload field.\n'
+```
+
+Expected safe result: only the final generic success line. A zero-entry result fails because it does
+not prove structured logging. The audit checks exact deployed payloads, authorization/credential
+shapes, DSN userinfo, private-key material, environment dumps, headers, and request-body fields.
+Never print the matching line when it fails; freeze releases, let the cleanup trap remove the
+sensitive scratch directory, record non-secret incident metadata, revoke exposed credentials, and follow
+[Add or rotate a secret version](./secret-versions.md).
 
 ## 8. Restore an exact prior receipt
 

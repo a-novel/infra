@@ -460,6 +460,13 @@ resource "google_cloud_run_v2_service" "authentication" {
         value = "5s"
       }
 
+      # SMTP login and sender identity are separate contracts. Some providers
+      # use a project key or tenant login that is not a valid From address.
+      env {
+        name  = "SMTP_USERNAME"
+        value = var.application_release.authentication.smtp.username
+      }
+
       env {
         name = "POSTGRES_DSN"
 

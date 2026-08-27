@@ -232,6 +232,17 @@ variable "cost_alert_email" {
   }
 }
 
+variable "operations_alert_email" {
+  description = "Production-operator email address that receives service, job, backup, and database alerts plus a second copy of budget alerts."
+  type        = string
+  sensitive   = true
+
+  validation {
+    condition     = can(regex("^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$", var.operations_alert_email))
+    error_message = "The operations alert recipient must be a valid email address."
+  }
+}
+
 variable "monthly_budget_units" {
   description = "Alert-only monthly production-infrastructure budget in whole units of the billing account currency; notifications do not stop spend."
   type        = number

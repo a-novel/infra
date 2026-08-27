@@ -30,12 +30,16 @@ locals {
 }
 
 data "google_billing_account" "workload" {
+  count = var.recovery_mode ? 0 : 1
+
   billing_account = var.billing_account_id
   lookup_projects = false
   open            = true
 }
 
 data "google_project" "management" {
+  count = var.recovery_mode ? 0 : 1
+
   project_id = var.management_project_id
 }
 
@@ -79,6 +83,8 @@ resource "google_cloud_quotas_quota_preference" "cost_cap" {
 }
 
 resource "google_monitoring_notification_channel" "cost_email" {
+  count = var.recovery_mode ? 0 : 1
+
   project = google_project.workload.project_id
 
   display_name = "Agora production cost alerts"
@@ -97,14 +103,37 @@ resource "google_monitoring_notification_channel" "cost_email" {
   depends_on = [google_project_service.workload["monitoring.googleapis.com"]]
 }
 
+resource "google_monitoring_notification_channel" "operations_email" {
+  count = var.recovery_mode ? 0 : 1
+
+  project = google_project.workload.project_id
+
+  display_name = "Agora production operations alerts"
+  description  = "Primary human destination for production service, job, backup, and database alerts."
+  type         = "email"
+  enabled      = true
+  force_delete = false
+  labels       = { email_address = var.operations_alert_email }
+
+  deletion_policy = "PREVENT"
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [google_project_service.workload["monitoring.googleapis.com"]]
+}
+
 resource "google_billing_budget" "workload" {
+  count = var.recovery_mode ? 0 : 1
+
   billing_account = var.billing_account_id
   display_name    = "Agora production infrastructure"
   ownership_scope = "BILLING_ACCOUNT"
 
   budget_filter {
     projects = sort([
-      "projects/${data.google_project.management.number}",
+      "projects/${data.google_project.management[0].number}",
       "projects/${google_project.workload.number}",
     ])
     calendar_period        = "MONTH"
@@ -113,7 +142,7 @@ resource "google_billing_budget" "workload" {
 
   amount {
     specified_amount {
-      currency_code = data.google_billing_account.workload.currency_code
+      currency_code = data.google_billing_account.workload[0].currency_code
       units         = tostring(var.monthly_budget_units)
     }
   }
@@ -139,14 +168,32 @@ resource "google_billing_budget" "workload" {
   }
 
   threshold_rules {
+    threshold_percent = 0.5
+    spend_basis       = "FORECASTED_SPEND"
+  }
+
+  threshold_rules {
+    threshold_percent = 0.75
+    spend_basis       = "FORECASTED_SPEND"
+  }
+
+  threshold_rules {
+    threshold_percent = 0.9
+    spend_basis       = "FORECASTED_SPEND"
+  }
+
+  threshold_rules {
     threshold_percent = 1.0
     spend_basis       = "FORECASTED_SPEND"
   }
 
   all_updates_rule {
-    disable_default_iam_recipients   = true
-    enable_project_level_recipients  = false
-    monitoring_notification_channels = [google_monitoring_notification_channel.cost_email.name]
+    disable_default_iam_recipients  = true
+    enable_project_level_recipients = false
+    monitoring_notification_channels = sort([
+      google_monitoring_notification_channel.cost_email[0].name,
+      google_monitoring_notification_channel.operations_email[0].name,
+    ])
   }
 
   deletion_policy = "PREVENT"
@@ -173,18 +220,19 @@ resource "google_logging_project_bucket_config" "default" {
   depends_on = [google_project_service.workload["logging.googleapis.com"]]
 }
 
-# Keep failed health requests and every application/audit log. Only successful,
-# high-volume load-balancer probes to the services' real health path are dropped.
+# Keep failed health requests and every application/audit log. Only successful
+# probes to Authentication's two exact public health paths are dropped.
 resource "google_logging_project_exclusion" "successful_healthchecks" {
   project = google_project.workload.project_id
 
   name        = "successful-cloud-run-healthchecks"
-  description = "Exclude successful Cloud Run request logs for /v2/healthcheck only."
+  description = "Exclude successful Cloud Run request logs for /v2/ping and /v2/healthcheck only."
   disabled    = false
   filter      = <<-EOT
     resource.type="cloud_run_revision"
+    resource.labels.service_name="agora-authentication-rest"
     log_id("run.googleapis.com/requests")
-    httpRequest.requestUrl=~"/v2/healthcheck(\\?.*)?$"
+    httpRequest.requestUrl=~"/v2/(ping|healthcheck)(\\?.*)?$"
     httpRequest.status>=200
     httpRequest.status<400
   EOT

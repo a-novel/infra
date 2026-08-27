@@ -28,6 +28,11 @@ DATABASE_ZONE="$(jq --raw-output '.cloud.databaseZone' "${RELEASE_FILE}")"
 COMMIT="$(jq --raw-output '.commit' "${RELEASE_FILE}")"
 RUN_ID="$(jq --raw-output '.runId' "${RELEASE_FILE}")"
 RUN_ATTEMPT="$(jq --raw-output '.runAttempt' "${RELEASE_FILE}")"
+# These names are the fixed OpenTofu resource contract. Keep traffic and
+# candidate inspection aligned with application.tf rather than deriving names
+# from image-family keys.
+AUTHENTICATION_SERVICE='agora-authentication-rest'
+JSON_KEYS_SERVICE='agora-json-keys-grpc'
 
 if [ "${COMMIT}" != "${GITHUB_SHA:?GITHUB_SHA is required}" ] ||
     [ "${RUN_ID}" != "${GITHUB_RUN_ID:?GITHUB_RUN_ID is required}" ] ||
@@ -164,7 +169,7 @@ authentication_url() {
     local tag="$1"
     local status_file=""
     status_file="$(mktemp "${RELEASE_DIRECTORY}/service.XXXXXX")"
-    gcloud run services describe agora-authentication \
+    gcloud run services describe "${AUTHENTICATION_SERVICE}" \
         --project="${PROJECT_ID}" \
         --region="${REGION}" \
         --format=json >"${status_file}" 2>/dev/null
@@ -325,11 +330,11 @@ case "${STEP}" in
         update_operation '.health.authentication = $value' passed
         ;;
     json-traffic)
-        shift_traffic agora-json-keys \
+        shift_traffic "${JSON_KEYS_SERVICE}" \
             "$(jq --raw-output '.revisions.jsonKeys' "${RELEASE_FILE}")"
         ;;
     authentication-traffic)
-        shift_traffic agora-authentication \
+        shift_traffic "${AUTHENTICATION_SERVICE}" \
             "$(jq --raw-output '.revisions.authentication' "${RELEASE_FILE}")"
         ;;
     active)
@@ -350,9 +355,9 @@ case "${STEP}" in
     rollback)
         if jq --exit-status '.application_release != null' \
             "${RELEASE_DIRECTORY}/rollback.tfvars.json" >/dev/null; then
-            shift_traffic agora-authentication \
+            shift_traffic "${AUTHENTICATION_SERVICE}" \
                 "$(jq --raw-output '.application_release.authentication.active_revision' "${RELEASE_DIRECTORY}/rollback.tfvars.json")"
-            shift_traffic agora-json-keys \
+            shift_traffic "${JSON_KEYS_SERVICE}" \
                 "$(jq --raw-output '.application_release.json_keys.active_revision' "${RELEASE_DIRECTORY}/rollback.tfvars.json")"
         fi
         apply_tfvars "${RELEASE_DIRECTORY}/rollback.tfvars.json" 3

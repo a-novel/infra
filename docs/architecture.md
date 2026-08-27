@@ -28,10 +28,10 @@ central policy engine, organization hierarchy, shared-VPC fleet, or Kubernetes c
 | Immutable application artifacts          | Releases identify OCI images by digest and verify hosted-build provenance before deployment.                     | [OCI image specification](https://specs.opencontainers.org/image-spec/) and [SLSA provenance](https://slsa.dev/spec/v1.2/provenance)           |
 | Defense in depth                         | Network reachability, workload identity, IAM, protected automation, and recovery controls reinforce one another. | [Google security-by-design guidance](https://cloud.google.com/architecture/framework/security/implement-security-by-design)                    |
 
-The repository follows the declarative and versioned OpenGitOps principles today. A later merge
-workflow will apply accepted desired state and scheduled drift checks will detect divergence. This is
-a GitOps-style delivery model, not strict OpenGitOps conformance: no continuously pulling controller
-currently reconciles the platform.
+The repository follows the declarative and versioned OpenGitOps principles today. Protected
+workflows apply accepted desired state and a scheduled read-only drift check detects divergence.
+This is a GitOps-style delivery model, not strict OpenGitOps conformance: no continuously pulling
+controller currently reconciles the platform.
 
 ## Vocabulary
 
@@ -65,7 +65,8 @@ The roots apply in that order. A root consumes only the small set of outputs it 
 root and never embeds another root's credentials or state. The foundation automation identity is the
 deliberate high-trust exception to state isolation: after the human bootstrap, its protected workflow
 maintains both `bootstrap` and `foundation`. Release remains confined to its own state, while recovery
-can restore all three state roots without receiving IAM-administration authority.
+can create isolated foundation/release recovery state without receiving IAM-administration authority
+on the surviving management or production project.
 
 Routine Cloud Run deployment and job execution are separate permissions. Release receives a custom
 deployment role without execution, override, or IAM-policy authority. Foundation-owned conditional
@@ -179,6 +180,60 @@ operating cost.
 The [PostgreSQL recovery runbook](./runbooks/backup-and-restore-postgresql.md) owns first activation,
 retention locking, monthly RTO measurement, alert response, the one-time cross-project drill, and
 the measured thresholds that trigger a PITR design.
+
+## Proportionate observability and external SMTP
+
+Foundation uses the provider's existing signals before adding software. Eight policies use native
+Cloud Run, Compute Engine, and Container-Optimized OS metrics for 5xx ratio, job failure/absence,
+database capacity, and recovery health. The existing read-only drift workflow makes one public
+`/v2/healthcheck` request every three hours and fails unless Authentication, private JSON Keys,
+private PostgreSQL, and hosted SMTP are all healthy. The production release switch gates this
+check, and the workflow reads the exact project and region from private configuration rather than
+discovering or logging them. Separate operations and cost email channels both receive the
+current/forecast budget; only operations receives Google application incidents. Successful request
+logs for the two exact health paths are excluded while failures, application logs, and audit records
+remain for 30 days.
+
+The three-hour cadence is a launch-stage cost and detection tradeoff. Authentication needs
+instance-based CPU because detached mail can continue after an HTTP response, and Google may keep
+such an instance billable for up to 15 idle minutes after every request. A five- or fifteen-minute
+uptime check could therefore keep the service continuously allocated. Eight scheduled wakes per day
+bound that exposure to at most roughly 60 instance-hours per 30-day month before organic traffic,
+while a public repository's standard GitHub runner has no usage charge. Detection can take three
+hours plus GitHub scheduling delay; this is not a page-grade SLO. Move mail to a request-bound or
+queued path, or adopt provider-native faster probes, when traffic or on-call requirements justify
+that cost.
+
+This deliberately avoids an observability agent, custom metric, log-based metric, webhook, Pub/Sub
+topic, pager, dashboard fleet, and controller at launch. Each would add credentials, cost, failure
+modes, or an operator surface without improving the current two-service response path. The
+[alert runbook](./runbooks/respond-to-alerts.md) supplies ownership and first bounded checks. Add a
+new alerting product only when response coverage or on-call requirements exceed monitored email and
+native GitHub workflow notifications.
+
+Authentication mail uses hosted Plunk through standard authenticated STARTTLS SMTP. The external
+operator owns account security, no-branding billing, category cap, domain authentication, privacy,
+credential rotation, and exit. Code knows only host, port, username, sender fields, and one exact
+Secret Manager password version. Self-hosted Plunk remains portable because its source is public,
+but operating its application, PostgreSQL, Redis, storage, notifications, TLS endpoint, delivery
+provider, backups, and abuse controls is not proportionate at launch. The
+[SMTP runbook](./runbooks/configure-hosted-smtp.md) owns that manual boundary.
+
+## Disposable recovery cleanup
+
+Recovery state and immutable receipts remain in the stable management plane. A clean-room rebuild
+creates no duplicate production budget, notification channel, or alert policy. It
+receives quota ceilings and bounded logs, and its recovery identity gains the predefined Project
+Deleter role only inside that disposable project. Production and management never grant project
+deletion.
+
+Cleanup intentionally deletes the project as one unit instead of destroying nested OpenTofu
+resources. It requires a committed exact project/receipt tuple, human attestation that all temporary
+cross-project secret/bucket access was removed, a deletion label present when that commit's pull
+request merged, protected-environment approval, code-owned recovery labels, the exact project-local
+deleter binding, and typed confirmation. Nested recovery state and the receipt remain immutable
+evidence. This exceptional path minimizes billed drill lifetime without turning routine OpenTofu
+into a project-deletion authority.
 
 ## State and bootstrap
 

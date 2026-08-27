@@ -1,6 +1,8 @@
 # Native completion metrics detect both failed recovery executions and a
 # stopped hourly monitor without another controller, custom metric, or log parser.
 resource "google_monitoring_alert_policy" "postgres_recovery_job_failure" {
+  count = var.recovery_mode ? 0 : 1
+
   project      = google_project.workload.project_id
   display_name = "Agora PostgreSQL recovery jobs unhealthy"
   combiner     = "OR"
@@ -8,7 +10,7 @@ resource "google_monitoring_alert_policy" "postgres_recovery_job_failure" {
   severity     = "CRITICAL"
 
   documentation {
-    content   = "A PostgreSQL backup, restore drill, or recovery monitor failed, or the hourly monitor has not completed for three hours. Follow the PostgreSQL backup and restore runbook before acknowledging the alert."
+    content   = "Owner: production operator. A PostgreSQL backup, restore drill, or recovery monitor failed, or the hourly monitor has not completed for three hours. Follow [Respond to production alerts](https://github.com/a-novel/infra/blob/master/docs/runbooks/respond-to-alerts.md#postgresql-backups-and-restore-drills) before acknowledging the alert."
     mime_type = "text/markdown"
   }
 
@@ -16,7 +18,7 @@ resource "google_monitoring_alert_policy" "postgres_recovery_job_failure" {
     display_name = "Failed PostgreSQL recovery execution"
 
     condition_threshold {
-      filter          = "resource.type = \"cloud_run_job\" AND metric.type = \"run.googleapis.com/job/completed_execution_count\" AND metric.labels.result = \"failed\" AND resource.labels.job_name = starts_with(\"agora-postgres-\")"
+      filter          = "resource.type = \"cloud_run_job\" AND metric.type = \"run.googleapis.com/job/completed_execution_count\" AND metric.label.result = \"failed\" AND resource.label.job_name = starts_with(\"agora-postgres-\")"
       comparison      = "COMPARISON_GT"
       threshold_value = 0
       duration        = "0s"
@@ -38,7 +40,7 @@ resource "google_monitoring_alert_policy" "postgres_recovery_job_failure" {
     # Three hours covers the hourly cadence plus Cloud Run metric visibility
     # delay while still alerting comfortably inside the six-hour RPO.
     condition_absent {
-      filter   = "resource.type = \"cloud_run_job\" AND metric.type = \"run.googleapis.com/job/completed_execution_count\" AND resource.labels.job_name = \"agora-postgres-backup-monitor\""
+      filter   = "resource.type = \"cloud_run_job\" AND metric.type = \"run.googleapis.com/job/completed_execution_count\" AND resource.label.job_name = \"agora-postgres-backup-monitor\""
       duration = "10800s"
 
       aggregations {
@@ -52,7 +54,7 @@ resource "google_monitoring_alert_policy" "postgres_recovery_job_failure" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.cost_email.name]
+  notification_channels = [google_monitoring_notification_channel.operations_email[0].name]
   deletion_policy       = "PREVENT"
 
   lifecycle {

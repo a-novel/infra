@@ -38,8 +38,9 @@ The completed procedure creates:
   group, one 20 GiB replaceable boot disk, one 50 GiB preserved balanced data disk, and one
   stateful internal address with a daily `europe-west1` snapshot schedule and seven-day retention;
 - four regional quota preferences, one two-project alert-only budget of 60 units in the billing
-  account currency, one email channel, five database capacity alerts, one failed-or-missing-recovery
-  alert, 30-day default logging, and one narrow successful-healthcheck exclusion.
+  account currency, separate cost and operations email channels, eight native alert policies,
+  30-day default logging, and one narrow successful-health exclusion. The existing read-only drift
+  workflow performs the production synthetic health check only after releases are enabled.
 
 It does not create a running PostgreSQL container, logical-backup schedule, Cloud Run service or job,
 public IP, load balancer, Cloud NAT, router, VPC connector, secret payload, or application release. The VM
@@ -71,8 +72,9 @@ callable after this procedure.
 - The billing account is open, has a valid payment instrument, and the operator can link a project.
 - The desired workload project ID has never been used. Google project IDs are global, immutable, and
   cannot be reused after deletion.
-- The cost-alert address is monitored by a human. If it is a group, it accepts messages from Google
-  Cloud Quotas, Cloud Billing, and Cloud Monitoring.
+- The cost-alert and operations-alert addresses are monitored by humans. If either is a group, it
+  accepts the documented Google Cloud Billing and Monitoring senders. Cost owns billing/quota
+  follow-up; operations owns service, job, backup, and database incidents.
 - Select at least one named database operator as a `user:` or `group:` IAM member. This identity
   receives privileged OS Login through IAP and must use MFA. A cross-organization operator also
   needs OS Login External User from its own organization administrator.
@@ -103,6 +105,7 @@ read -r -p 'Management project ID: ' MANAGEMENT_PROJECT_ID
 read -r -p 'New workload project ID: ' WORKLOAD_PROJECT_ID
 read -r -p 'Billing account ID (XXXXXX-XXXXXX-XXXXXX): ' BILLING_ACCOUNT_ID
 read -r -p 'Cost-alert and quota-contact email address: ' COST_ALERT_EMAIL
+read -r -p 'Production operations-alert email address: ' OPERATIONS_ALERT_EMAIL
 read -r -p 'Database operator IAM member (user: or group:): ' DATABASE_OPERATOR_PRINCIPAL
 read -r -p 'Authentication initializer IAM member (user: or group:): ' AUTH_INITIALIZER_PRINCIPAL
 read -r -p 'Organization ID, or blank: ' ORGANIZATION_ID
@@ -116,6 +119,7 @@ PLAN_SERVICE_ACCOUNT="infra-plan@${MANAGEMENT_PROJECT_ID}.iam.gserviceaccount.co
 [[ "$MANAGEMENT_PROJECT_ID" != "$WORKLOAD_PROJECT_ID" ]]
 [[ "$BILLING_ACCOUNT_ID" =~ ^[0-9A-Z]{6}-[0-9A-Z]{6}-[0-9A-Z]{6}$ ]]
 [[ "$COST_ALERT_EMAIL" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]
+[[ "$OPERATIONS_ALERT_EMAIL" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]
 [[ "$DATABASE_ZONE" == "${REGION}-"* ]]
 [[ "$DATABASE_OPERATOR_PRINCIPAL" =~ ^(user|group):[^[:space:]@]+@[^[:space:]@]+$ ]]
 [[ "$AUTH_INITIALIZER_PRINCIPAL" =~ ^(user|group):[^[:space:]@]+@[^[:space:]@]+$ ]]
@@ -135,8 +139,8 @@ printf 'Repository: %s\nManagement project: %s\nWorkload project: %s\nRegion: %s
 ```
 
 Expected safe result: the final six non-sensitive selections print, all validations exit zero, and
-at most one parent ID is populated. Do not print the billing account, alert address, operator or
-initializer principal, or either JSON principal set.
+at most one parent ID is populated. Do not print the billing account, either alert address, operator
+or initializer principal, or either JSON principal set.
 
 Verify the active identities and stable bootstrap resources without changing anything:
 
@@ -353,6 +357,7 @@ jq -n \
   --argjson database_operator_principals "$DATABASE_OPERATOR_PRINCIPALS" \
   --argjson authentication_initializer_principals "$AUTH_INITIALIZER_PRINCIPALS" \
   --arg cost_alert_email "$COST_ALERT_EMAIL" \
+  --arg operations_alert_email "$OPERATIONS_ALERT_EMAIL" \
   --argjson adopt_existing_project "$ADOPT_EXISTING_PROJECT" \
   '{
     management_project_id: $management_project_id,
@@ -368,6 +373,7 @@ jq -n \
     database_operator_principals: $database_operator_principals,
     authentication_initializer_principals: $authentication_initializer_principals,
     cost_alert_email: $cost_alert_email,
+    operations_alert_email: $operations_alert_email,
     adopt_existing_project: $adopt_existing_project
   }' >"$FOUNDATION_CONFIG_FILE"
 
@@ -386,13 +392,15 @@ done
 
 rm -f -- "$FOUNDATION_CONFIG_FILE"
 unset FOUNDATION_CONFIG_FILE ADOPT_EXISTING_PROJECT
-unset BILLING_ACCOUNT_ID COST_ALERT_EMAIL DATABASE_OPERATOR_PRINCIPAL DATABASE_OPERATOR_PRINCIPALS
+unset BILLING_ACCOUNT_ID COST_ALERT_EMAIL OPERATIONS_ALERT_EMAIL
+unset DATABASE_OPERATOR_PRINCIPAL DATABASE_OPERATOR_PRINCIPALS
 unset AUTH_INITIALIZER_PRINCIPAL AUTH_INITIALIZER_PRINCIPALS
 ```
 
-`COST_ALERT_EMAIL` receives budget notifications and Cloud Quotas review follow-up. It carries no
-quota-administration authority; the protected foundation service account owns the code-managed quota
-role. Verify names without printing values:
+`COST_ALERT_EMAIL` receives budget notifications and Cloud Quotas review follow-up.
+`OPERATIONS_ALERT_EMAIL` receives service, job, database, and recovery incidents; both receive the
+budget. Neither carries cloud authority. The protected foundation service account owns the
+code-managed quota and monitoring roles. Verify names without printing values:
 
 ```bash
 gh secret list --repo "$REPOSITORY" --env production-foundation
@@ -468,8 +476,8 @@ The expected initial summary contains either one project creation or one declara
 network/subnet/routes, six firewalls, three zones and their records, seven service accounts, one
 invocation tag key with five values, exact conditional IAM, two narrow Cloud Run custom roles, one
 repository, one data disk, one immutable instance template, one stateful instance-group
-manager, one snapshot policy/attachment, six monitoring alerts, four quota preferences, one
-budget/channel, and logging controls. It
+manager, one snapshot policy/attachment, eight monitoring alerts, four quota preferences, one
+budget, two notification channels, and logging controls. It
 contains zero managed-resource delete, replacement, state-forget, Cloud Run service/job, router,
 NAT, connector, load balancer, secret-version, or service-account-key actions. For standalone
 adoption, the reviewed
@@ -803,24 +811,40 @@ memory 17179869184 bytes, Direct VPC instances 20, and Compute Engine CPUs 4. If
 `reconciling: true`, wait for Google to finish and recheck; do not raise a limit just to clear the
 state.
 
-Budget and notification channel:
+Budget and notification channels:
 
 ```bash
 gcloud billing budgets list --billing-account="$BILLING_ACCOUNT_ID" \
   --filter='displayName="Agora production infrastructure"' \
   --format='yaml(displayName,amount,budgetFilter,thresholdRules,allUpdatesRule)'
 gcloud beta monitoring channels list --project="$WORKLOAD_PROJECT_ID" \
-  --filter='displayName="Agora production cost alerts"' \
+  --filter='displayName:("Agora production cost alerts" OR "Agora production operations alerts")' \
   --format='table(name,type,enabled,verificationStatus,displayName)'
 ```
 
 Expected safe result: one monthly budget of 60 `$BILLING_CURRENCY_CODE` units scoped to the
-management and workload project numbers, current-spend thresholds 50/75/90/100%, one forecasted
-100% threshold, and only the enabled email channel. A budget does not stop spend. If the channel
+management and workload project numbers, both current-spend and forecasted-spend thresholds at
+50/75/90/100%, and exactly the two enabled email channels. Default billing/project recipients are
+disabled; both code-managed channels receive the budget. A budget does not stop spend. If a channel
 reports `UNVERIFIED`, it is non-functioning: use Google Cloud
 Console **Monitoring → Alerting → Edit notification channels** or the documented
 [verification API](https://cloud.google.com/monitoring/alerts/using-channels-api), verify the same
 code-managed channel, then rerun the list command. Do not create a duplicate channel manually.
+
+Monitoring policies:
+
+```bash
+gcloud monitoring policies list --project="$WORKLOAD_PROJECT_ID" \
+  --filter='displayName:Agora' \
+  --format='table(displayName,enabled,severity)'
+```
+
+Expected safe result: eight enabled policies. Five cover database CPU/memory/disk, one covers
+PostgreSQL recovery jobs, one covers Authentication 5xx, and one covers application jobs/key
+rotation. The low-frequency Authentication/dependency check belongs to the existing `production
+drift` workflow so probes cannot keep the instance-billed service continuously allocated. It stays
+off while `PRODUCTION_RELEASES_ENABLED` is false; follow
+[Respond to production alerts](./respond-to-alerts.md#authentication-synthetic-health) after launch.
 
 Logging:
 
@@ -834,8 +858,8 @@ gcloud logging exclusions describe successful-cloud-run-healthchecks \
 ```
 
 Expected safe result: 30-day retention, unlocked, analytics disabled, and an enabled exclusion that
-matches only `run.googleapis.com/requests`, `/v2/healthcheck`, and HTTP 2xx/3xx. It must not exclude
-failed health checks, application logs, or audit logs.
+matches only `run.googleapis.com/requests`, `/v2/ping` or `/v2/healthcheck`, and HTTP 2xx/3xx. It
+must not exclude failed health checks, application logs, or audit logs.
 
 Continue with [Operate the private PostgreSQL host](./operate-postgresql-host.md). Run its host
 selection, foundation-state, firewall, alert, and disabled-manifest IAP checks. Expected safe result:
@@ -990,12 +1014,13 @@ gcloud quotas info list --service=compute.googleapis.com --project="$WORKLOAD_PR
 Update code and mocked tests when Google renamed a metric. If a requested ceiling is below live
 usage, reduce the workload first; never enable the below-usage safety bypass.
 
-### Budget or notification verification fails
+### Budget, monitoring, or notification verification fails
 
-The workload can spend even when alerts fail. Freeze further resource creation, correct the exact
-email in code/GitHub, reconcile through a reviewed foundation plan, and verify the existing channel.
-Do not add default billing recipients, Pub/Sub, webhooks, or another alerting product as an emergency
-workaround unless a separate design requires it.
+The workload can spend or fail even when alerts fail. Freeze further resource creation, correct the
+exact email or policy in code/GitHub, reconcile through a reviewed foundation plan, and verify the
+existing channel. Follow the alert runbook; do not add default billing recipients, Pub/Sub,
+webhooks, a custom metric, or another alerting product as an emergency workaround unless a separate
+design requires it.
 
 ### Temporary Owner was removed too early
 
@@ -1029,5 +1054,9 @@ and public database paths are absent again.
 - [Artifact Registry cleanup policies](https://cloud.google.com/artifact-registry/docs/repositories/cleanup-policy)
 - [Cloud Quotas OpenTofu support](https://cloud.google.com/docs/quotas/terraform-support-for-cloud-quotas)
 - [Budgets and alerts](https://cloud.google.com/billing/docs/how-to/budgets)
+- [Alerting policies](https://cloud.google.com/monitoring/alerts)
+- [Notification channels](https://cloud.google.com/monitoring/support/notification-options)
 - [Logging exclusions](https://cloud.google.com/logging/docs/exclusions)
+- [Cloud Run instance-based billing](https://cloud.google.com/run/docs/configuring/billing-settings)
+- [GitHub scheduled workflows](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)
 - [Production cost worksheet](../costs/production.md)

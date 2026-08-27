@@ -37,7 +37,7 @@ locals {
     }
   }
 
-  foundation_project_roles = toset([
+  foundation_project_roles = setunion(toset([
     "roles/artifactregistry.admin",
     "roles/billing.projectManager",
     "roles/cloudquotas.admin",
@@ -47,12 +47,13 @@ locals {
     "roles/iam.roleAdmin",
     "roles/iam.serviceAccountAdmin",
     "roles/logging.configWriter",
-    "roles/monitoring.alertPolicyEditor",
-    "roles/monitoring.notificationChannelEditor",
     "roles/resourcemanager.projectIamAdmin",
     "roles/resourcemanager.tagAdmin",
     "roles/serviceusage.serviceUsageAdmin",
-  ])
+    ]), var.recovery_mode ? toset([]) : toset([
+    "roles/monitoring.alertPolicyEditor",
+    "roles/monitoring.notificationChannelEditor",
+  ]))
 
   database_runtime_project_roles = toset([
     "roles/logging.logWriter",
@@ -209,6 +210,16 @@ resource "google_project_iam_member" "foundation_project_metadata" {
   project = google_project.workload.project_id
   role    = google_project_iam_custom_role.foundation_project_metadata.name
   member  = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "foundation"]}"
+}
+
+# The recovery identity may delete only the disposable project in which this
+# binding exists. Production never grants project-deletion authority.
+resource "google_project_iam_member" "recovery_project_deleter" {
+  count = var.recovery_mode ? 1 : 0
+
+  project = google_project.workload.project_id
+  role    = "roles/resourcemanager.projectDeleter"
+  member  = "serviceAccount:${local.automation_service_accounts.recovery}"
 }
 
 # The scheduled drift workflow reads provider metadata but cannot lock or

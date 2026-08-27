@@ -44,7 +44,7 @@ locals {
 }
 
 resource "google_monitoring_alert_policy" "database_capacity" {
-  for_each = local.database_alerts
+  for_each = var.recovery_mode ? {} : local.database_alerts
 
   project      = google_project.workload.project_id
   display_name = "Agora database ${each.value.title}"
@@ -53,7 +53,7 @@ resource "google_monitoring_alert_policy" "database_capacity" {
   severity     = each.value.severity
 
   documentation {
-    content   = "The private PostgreSQL host crossed its reviewed ${lower(each.value.title)} threshold. Follow the database-host runbook before changing capacity."
+    content   = "Owner: production operator. The private PostgreSQL host crossed its reviewed ${lower(each.value.title)} threshold. Follow [Respond to production alerts](https://github.com/a-novel/infra/blob/master/docs/runbooks/respond-to-alerts.md#database-capacity) before changing capacity."
     mime_type = "text/markdown"
   }
 
@@ -66,7 +66,7 @@ resource "google_monitoring_alert_policy" "database_capacity" {
       # Numeric VM IDs and generated-name suffixes can change during repair.
       # The fixed MIG base name selects its sole member without another
       # monitoring group or a live value baked into the policy.
-      filter          = "resource.type = \"gce_instance\" AND resource.labels.zone = \"${var.database_zone}\" AND metric.type = \"${each.value.metric}\" AND metric.labels.instance_name = starts_with(\"agora-database-\")"
+      filter          = "resource.type = \"gce_instance\" AND resource.label.zone = \"${var.database_zone}\" AND metric.type = \"${each.value.metric}\" AND metric.label.instance_name = starts_with(\"agora-database-\")"
       threshold_value = each.value.threshold
 
       aggregations {
@@ -80,7 +80,7 @@ resource "google_monitoring_alert_policy" "database_capacity" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.cost_email.name]
+  notification_channels = [google_monitoring_notification_channel.operations_email[0].name]
   deletion_policy       = "PREVENT"
 
   lifecycle {

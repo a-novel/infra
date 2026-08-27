@@ -37,7 +37,8 @@ Google Cloud Storage for 24 hours, and the second applies that exact commit-, ro
 hash-bound plan after environment approval. Routine releases use a fixed deployment graph and an
 immutable success receipt; failures compensate to the prior receipt while backward-compatible
 migrations remain. Recovery can rebuild only into a new disposable project. The sole scheduled
-cloud workflow is a read-only daily drift inspection.
+cloud workflow stays read-only: it inspects drift daily and checks Authentication plus its exact
+dependencies every three hours after production releases are enabled.
 
 The bootstrap root's one-time initial apply remains a human-only exception performed from `master`
 after explicit approval. After that first trust anchor exists, bootstrap and foundation changes use
@@ -82,15 +83,42 @@ daily snapshot contract, retention locking, alert response, RPO/RTO evidence, an
 thresholds. Read it before enabling either database release. Its commands remain stop-gated until
 resource creation is explicitly authorized.
 
+The [production alert runbook](./docs/runbooks/respond-to-alerts.md) owns the two human notification
+destinations, eight native application/database policies, the bounded GitHub synthetic health
+check, budget escalation, workflow failures, and channel-delivery verification. It deliberately
+uses Google and GitHub signals already present instead of adding a pager, bot, custom metric, or
+monitoring agent.
+
+After merging the cron definition, the GitHub account associated with that schedule must enable
+email or web Actions notifications in **GitHub settings → Notifications → System → Actions**. Wait
+for one successful three-hour health run to verify delivery, then select failed-workflow-only if
+preferred. Name a second maintainer to verify during the existing monthly recovery review that the
+workflow remains enabled and its last health job is newer than six hours. GitHub directs scheduled
+notifications to the schedule owner and automatically disables public-repository schedules after
+60 days without repository activity; the
+[alert runbook](./docs/runbooks/respond-to-alerts.md#authentication-synthetic-health) contains the
+exact verification and re-enable commands.
+
 ### Configure and operate protected releases
 
 Use [Deploy and roll back production](./docs/runbooks/deploy-production.md) to create the protected
 release input bundle, keep the launch switch off until every prerequisite passes, verify exact
 secret versions and image provenance, deploy the reviewed manifest, perform the human-only
 Authentication initialization, inspect receipts, and select an exact rollback target. Use
+[Configure hosted Plunk SMTP](./docs/runbooks/configure-hosted-smtp.md) first to create the external
+paid/no-branding account, authenticate the sending domain, set its independent spend cap, and place
+only the SMTP password in Secret Manager. Use
 [Recover production into a disposable project](./docs/runbooks/disaster-recovery.md)
 only for a declared recovery exercise or incident; it owns temporary recovery authority, exact
-backup selection, the lost-write acknowledgement, verification, and access removal.
+backup selection, the lost-write acknowledgement, measured recovery evidence, exact access removal,
+and deliberate cleanup of one reviewed disposable project.
+
+Keep `a-novel/agora-infra` active until the complete live acceptance task passes. Its eventual
+retirement is a separate administrator action described by
+[Archive the legacy infrastructure repository](./docs/runbooks/archive-legacy-infrastructure.md):
+the procedure fails closed on an absent or renamed target, requires task #277 to be closed, revokes
+legacy authority, disables legacy Actions, retains the interactive GitHub confirmation, and verifies
+the exact archived repository afterwards. This repository never performs that action automatically.
 
 ### Reconcile repository protection after this bootstrap merges
 
@@ -162,9 +190,24 @@ The repository keeps its own README, contribution guide, and AGPL-3.0 license. T
 ```bash
 gh api repos/a-novel/infra/community/profile \
   --jq '{health_percentage, files: (.files | keys)}'
+gh repo view a-novel/infra \
+  --json isSecurityPolicyEnabled,securityPolicyUrl \
+  --jq '{isSecurityPolicyEnabled,securityPolicyUrl}'
+
+gh api repos/a-novel/infra \
+  --jq '{visibility,archived,has_pages,license:.license.spdx_id,security_and_analysis}'
+gh api repos/a-novel/infra/private-vulnerability-reporting --jq .enabled
+gh api repos/a-novel/infra/releases --jq 'length'
+gh api repos/a-novel/infra/tags --jq 'length'
 ```
 
-The response should recognize `readme`, `license`, `contributing`, `code_of_conduct`, `security`, `issue_template`, and `pull_request_template`. Resolve a missing inherited file in `a-novel/.github`; do not duplicate it here.
+The community response should recognize `readme`, `license`, `contributing`, `code_of_conduct`,
+`issue_template`, and `pull_request_template`; GitHub's repository query must separately report the
+inherited security policy as enabled with a `/security/policy` URL. The repository should be public
+and active, report `AGPL-3.0`, have Pages disabled, private vulnerability reporting enabled, secret
+scanning and push protection enabled, and return zero releases and zero tags. Infrastructure ships
+through protected deployments, not packages; it intentionally has no release, tag, or Pages
+workflow. Resolve a missing inherited community file in `a-novel/.github`; do not duplicate it here.
 
 ### Prepare a local checkout
 
@@ -198,15 +241,16 @@ The three names form a security allowlist. Add a root only when a new lifecycle 
 
 ### Supporting paths
 
-| Path                            | Purpose                                                                        |
-| ------------------------------- | ------------------------------------------------------------------------------ |
-| `deploy/production/images.yaml` | Enabled components plus stable SemVer image tags and exact digests.            |
-| `ops/`                          | Small, tested CI and operator shims shared by the roots.                       |
-| `tests/`                        | Mocked OpenTofu, manifest, Renovate, allowlist, and sanitized plan fixtures.   |
-| `docs/architecture.md`          | Lifecycle, authority, state, delivery, and portability decisions.              |
-| `docs/google-cloud.md`          | Provider resource map, trust boundaries, and official Google Cloud references. |
-| `docs/costs/production.md`      | Current unit assumptions and launch/capacity monthly cost ranges.              |
-| `docs/runbooks/`                | Human recovery and deployment procedures with verifiable outcomes.             |
+| Path                                      | Purpose                                                                        |
+| ----------------------------------------- | ------------------------------------------------------------------------------ |
+| `deploy/production/images.yaml`           | Enabled components plus stable SemVer image tags and exact digests.            |
+| `deploy/production/recovery-cleanup.json` | Inactive-by-default exact authorization for one disposable recovery deletion.  |
+| `ops/`                                    | Small, tested CI and operator shims shared by the roots.                       |
+| `tests/`                                  | Mocked OpenTofu, manifest, Renovate, allowlist, and sanitized plan fixtures.   |
+| `docs/architecture.md`                    | Lifecycle, authority, state, delivery, and portability decisions.              |
+| `docs/google-cloud.md`                    | Provider resource map, trust boundaries, and official Google Cloud references. |
+| `docs/costs/production.md`                | Current unit assumptions and launch/capacity monthly cost ranges.              |
+| `docs/runbooks/`                          | Human recovery and deployment procedures with verifiable outcomes.             |
 
 Local modules begin only when two real call sites share a resource shape or one security invariant needs a single implementation. Singleton resources stay in their owning root.
 

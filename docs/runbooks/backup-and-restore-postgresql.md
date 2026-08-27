@@ -455,6 +455,11 @@ The hourly monitor reads object metadata and manifests but never database payloa
 
 Review monthly restore executions every month even when no alert fires. Cloud Scheduler acceptance
 only proves that the API request was accepted; the Cloud Run execution result proves the restore.
+During the same review, run the non-mutating inventory in
+[Authentication synthetic health](./respond-to-alerts.md#authentication-synthetic-health) and
+confirm the scheduled workflow is active, its owner is current, and its last health job is newer
+than six hours. This catches GitHub's public-repository inactivity disablement without a second
+monitor.
 
 ## Storage forecast
 

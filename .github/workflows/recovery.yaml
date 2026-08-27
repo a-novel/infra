@@ -4,10 +4,10 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Plan/apply a disposable workload, or restore exact data and deploy its receipt.
+        description: Plan/apply a disposable workload, restore exact data, or delete one reviewed drill project.
         required: true
         type: choice
-        options: [plan-workload, apply-workload, restore-data]
+        options: [plan-workload, apply-workload, restore-data, cleanup-project]
       replacement_project_id:
         description: New disposable Google Cloud project ID; never the production project.
         required: true
@@ -33,7 +33,7 @@ on:
         required: false
         type: string
       confirm:
-        description: restore-data only; type RESTORE <replacement-project-id> exactly.
+        description: Type RESTORE or DELETE followed by one space and the replacement project ID.
         required: false
         type: string
 
@@ -66,17 +66,33 @@ jobs:
           persist-credentials: false
 
       - name: Install pnpm
+        if: inputs.operation != 'cleanup-project'
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 
       - name: Install Node.js
+        if: inputs.operation != 'cleanup-project'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
           cache: pnpm
 
       - name: Install reviewed recovery tooling
+        if: inputs.operation != 'cleanup-project'
         shell: bash
         run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Materialize the protected foundation inputs
+        id: foundation
+        shell: bash
+        env:
+          FOUNDATION_CONFIG: ${{ secrets.FOUNDATION_TFVARS_JSON }}
+        run: |
+          set -euo pipefail
+          umask 077
+          config="${RUNNER_TEMP}/foundation-config.json"
+          printf '%s' "${FOUNDATION_CONFIG}" >"${config}"
+          jq --exit-status 'type == "object"' "${config}" >/dev/null
+          printf 'file=%s\n' "${config}" >>"${GITHUB_OUTPUT}"
 
       - name: Authenticate as the recovery boundary
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
@@ -92,6 +108,7 @@ jobs:
           version: "581.0.0"
 
       - name: Install OpenTofu
+        if: inputs.operation != 'cleanup-project'
         uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
         with:
           tofu_version_file: .opentofu-version
@@ -99,6 +116,7 @@ jobs:
           cache: true
 
       - name: Select the immutable production receipt
+        if: inputs.operation != 'cleanup-project'
         id: receipt
         shell: bash
         env:
@@ -113,24 +131,39 @@ jobs:
           printf 'file=%s\n' "${file}" >>"${GITHUB_OUTPUT}"
 
       - name: Compile the disposable workload inputs
+        if: inputs.operation != 'cleanup-project'
         id: recovery
         shell: bash
         env:
-          FOUNDATION_CONFIG: ${{ secrets.FOUNDATION_TFVARS_JSON }}
+          FOUNDATION_CONFIG_FILE: ${{ steps.foundation.outputs.file }}
           RECEIPT_FILE: ${{ steps.receipt.outputs.file }}
           REPLACEMENT_PROJECT_ID: ${{ inputs.replacement_project_id }}
         run: |
           set -euo pipefail
           umask 077
-          config="${RUNNER_TEMP}/foundation-config.json"
           output="${RUNNER_TEMP}/recovery"
-          printf '%s' "${FOUNDATION_CONFIG}" >"${config}"
-          jq --exit-status 'type == "object"' "${config}" >/dev/null
           ./ops/compile-recovery.mjs \
-            "${config}" "${RECEIPT_FILE}" - "${REPLACEMENT_PROJECT_ID}" \
+            "${FOUNDATION_CONFIG_FILE}" "${RECEIPT_FILE}" - "${REPLACEMENT_PROJECT_ID}" \
             placeholder placeholder foundation "${output}"
           printf 'directory=%s\n' "${output}" >>"${GITHUB_OUTPUT}"
-          printf 'config=%s\n' "${config}" >>"${GITHUB_OUTPUT}"
+          printf 'config=%s\n' "${FOUNDATION_CONFIG_FILE}" >>"${GITHUB_OUTPUT}"
+
+      - name: Delete only the committed disposable recovery target
+        if: inputs.operation == 'cleanup-project'
+        shell: bash
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          FOUNDATION_CONFIG_FILE: ${{ steps.foundation.outputs.file }}
+          GH_TOKEN: ${{ github.token }}
+          REPLACEMENT_PROJECT_ID: ${{ inputs.replacement_project_id }}
+          TARGET_RECEIPT: ${{ inputs.target_receipt }}
+        run: |
+          set -euo pipefail
+          ./ops/delete-recovery-project.sh \
+            "${GITHUB_REPOSITORY}" "${GITHUB_SHA}" \
+            "${REPLACEMENT_PROJECT_ID}" "${TARGET_RECEIPT}" \
+            "${FOUNDATION_CONFIG_FILE}" \
+            deploy/production/recovery-cleanup.json "${CONFIRM}"
 
       - name: Create the exact private recovery-foundation plan
         if: inputs.operation == 'plan-workload'
@@ -171,6 +204,7 @@ jobs:
 
       - name: Confirm and inspect exact data recovery points
         if: inputs.operation == 'restore-data'
+        id: recovery_evidence
         shell: bash
         env:
           AUTHENTICATION_ATTEMPT: ${{ inputs.authentication_attempt }}
@@ -182,13 +216,18 @@ jobs:
           REPLACEMENT_PROJECT_ID: ${{ inputs.replacement_project_id }}
         run: |
           set -euo pipefail
+          umask 077
           if [ "${CONFIRM}" != "RESTORE ${REPLACEMENT_PROJECT_ID}" ] || \
             [ -z "${LOST_WRITE_WINDOW}" ] || [ "${#LOST_WRITE_WINDOW}" -gt 500 ]; then
             printf 'Restore requires exact typed confirmation and a bounded lost-write acknowledgement.\n' >&2
             exit 64
           fi
+          started_epoch="$(date -u +%s)"
+          evidence="${RUNNER_TEMP}/recovery-points.json"
           ./ops/verify-recovery-points.sh "${BACKUP_BUCKET}" "${RECEIPT_FILE}" \
-            "${JSON_KEYS_ATTEMPT}" "${AUTHENTICATION_ATTEMPT}"
+            "${JSON_KEYS_ATTEMPT}" "${AUTHENTICATION_ATTEMPT}" "${evidence}"
+          printf 'file=%s\n' "${evidence}" >>"${GITHUB_OUTPUT}"
+          printf 'started_epoch=%s\n' "${started_epoch}" >>"${GITHUB_OUTPUT}"
 
       - name: Compile exact recovery release inputs
         if: inputs.operation == 'restore-data'
@@ -288,6 +327,8 @@ jobs:
           STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
           TARGET_RECEIPT: ${{ inputs.target_receipt }}
           LOST_WRITE_WINDOW: ${{ inputs.lost_write_window }}
+          RECOVERY_POINTS_FILE: ${{ steps.recovery_evidence.outputs.file }}
+          RECOVERY_STARTED_EPOCH: ${{ steps.recovery_evidence.outputs.started_epoch }}
         run: |
           set -euo pipefail
           export TOFU_STATE_SUFFIX="recovery/${REPLACEMENT_PROJECT_ID}"
@@ -298,10 +339,30 @@ jobs:
             "${plan_id}" "${RECOVERY_DIRECTORY}/active.tfvars.json"
 
           receipt="${RECOVERY_DIRECTORY}/recovery-receipt.json"
+          completed_epoch="$(date -u +%s)"
+          duration_seconds="$((completed_epoch - RECOVERY_STARTED_EPOCH))"
           jq -n --arg project "${REPLACEMENT_PROJECT_ID}" \
             --arg source "${TARGET_RECEIPT}" --arg commit "${GITHUB_SHA}" \
             --arg run_id "${GITHUB_RUN_ID}" --arg lost "${LOST_WRITE_WINDOW}" \
-            '{schemaVersion: 1, replacementProject: $project, sourceReceipt: $source, commit: $commit, runId: $run_id, lostWriteWindow: $lost}' \
+            --argjson started_epoch "${RECOVERY_STARTED_EPOCH}" \
+            --argjson completed_epoch "${completed_epoch}" \
+            --argjson duration_seconds "${duration_seconds}" \
+            --slurpfile points "${RECOVERY_POINTS_FILE}" '
+              {
+                schemaVersion: 2,
+                replacementProject: $project,
+                sourceReceipt: $source,
+                commit: $commit,
+                runId: $run_id,
+                lostWriteWindow: $lost,
+                recoveryPoints: $points[0],
+                restoreDeployment: {
+                  startedAt: ($started_epoch | strftime("%Y-%m-%dT%H:%M:%SZ")),
+                  completedAt: ($completed_epoch | strftime("%Y-%m-%dT%H:%M:%SZ")),
+                  durationSeconds: $duration_seconds
+                }
+              }
+            ' \
             >"${receipt}"
           chmod 600 "${receipt}"
           if ! gcloud storage cp "${receipt}" \

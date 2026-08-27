@@ -17,7 +17,7 @@ assert_equal() {
 
 assert_absent() {
     if grep -Fq "$2" "$1"; then
-        printf "Sensitive fixture text appeared in plan output.\n" >&2
+        printf "Sensitive fixture text appeared in command output.\n" >&2
         exit 1
     fi
 }
@@ -37,6 +37,89 @@ cleanup() {
     rm -rf -- "${TEMP_DIR}"
 }
 trap cleanup INT EXIT
+
+# The scheduled synthetic check must resolve only the reviewed project/region,
+# keep response content private, and reject every partial-health state.
+HEALTH_MOCK_BIN="${TEMP_DIR}/health-bin"
+mkdir -p "${HEALTH_MOCK_BIN}"
+# shellcheck disable=SC2016
+printf '%s\n' \
+    '#!/bin/bash' \
+    'set -euo pipefail' \
+    'expected="run services describe agora-authentication-rest --project=agora-production-test --region=europe-west1 --format=value(status.url) --quiet"' \
+    '[ "$*" = "${expected}" ]' \
+    'printf "%s\n" "${FAKE_AUTH_SERVICE_URL:-https://agora-authentication-rest-123456789012.europe-west1.run.app}"' \
+    >"${HEALTH_MOCK_BIN}/gcloud"
+# shellcheck disable=SC2016
+printf '%s\n' \
+    '#!/bin/bash' \
+    'set -euo pipefail' \
+    'arguments="$*"' \
+    'output=""' \
+    'while [ "$#" -gt 0 ]; do' \
+    '    if [ "$1" = --output ]; then' \
+    '        output="$2"' \
+    '        shift 2' \
+    '    else' \
+    '        shift' \
+    '    fi' \
+    'done' \
+    '[ -n "${output}" ]' \
+    '[[ "${arguments}" == *"--proto =https"* ]]' \
+    '[[ "${arguments}" == *"/v2/healthcheck" ]]' \
+    'printf "%s" "${FAKE_AUTH_HEALTH_BODY}" >"${output}"' \
+    'printf "%s" "${FAKE_AUTH_HEALTH_STATUS:-200}"' \
+    >"${HEALTH_MOCK_BIN}/curl"
+chmod 0700 "${HEALTH_MOCK_BIN}/gcloud" "${HEALTH_MOCK_BIN}/curl"
+printf '%s\n' \
+    '{"workload_project_id":"agora-production-test","region":"europe-west1"}' \
+    >"${TEMP_DIR}/foundation-health.json"
+
+HEALTHY_BODY='{"client:smtp":{"status":"up"},"api:jsonKeys":{"status":"up"},"client:postgres":{"status":"up"}}'
+PATH="${HEALTH_MOCK_BIN}:${PATH}" \
+    FAKE_AUTH_HEALTH_BODY="${HEALTHY_BODY}" \
+    "${REPOSITORY_ROOT}/ops/check-authentication-health.sh" \
+    "${TEMP_DIR}/foundation-health.json" >"${TEMP_DIR}/health.out" 2>"${TEMP_DIR}/health.err"
+grep -Fq 'Authentication and all declared dependencies are healthy.' "${TEMP_DIR}/health.out"
+assert_absent "${TEMP_DIR}/health.out" 'agora-production-test'
+assert_absent "${TEMP_DIR}/health.out" 'client:smtp'
+
+assert_health_rejected() {
+    local body="$1"
+    local status="${2:-200}"
+    local code=0
+
+    set +e
+    PATH="${HEALTH_MOCK_BIN}:${PATH}" \
+        FAKE_AUTH_HEALTH_BODY="${body}" \
+        FAKE_AUTH_HEALTH_STATUS="${status}" \
+        "${REPOSITORY_ROOT}/ops/check-authentication-health.sh" \
+        "${TEMP_DIR}/foundation-health.json" \
+        >"${TEMP_DIR}/unhealthy.out" 2>"${TEMP_DIR}/unhealthy.err"
+    code=$?
+    set -e
+    assert_equal "${code}" 70
+    assert_absent "${TEMP_DIR}/unhealthy.out" 'fixture-private-response'
+    assert_absent "${TEMP_DIR}/unhealthy.err" 'fixture-private-response'
+}
+
+assert_health_rejected \
+    '{"api:jsonKeys":{"status":"down"},"client:postgres":{"status":"up"},"client:smtp":{"status":"up"},"detail":"fixture-private-response"}'
+assert_health_rejected \
+    '{"api:jsonKeys":{"status":"up"},"client:postgres":{"status":"down"},"client:smtp":{"status":"up"}}'
+assert_health_rejected \
+    '{"api:jsonKeys":{"status":"up"},"client:postgres":{"status":"up"},"client:smtp":{"status":"down"}}'
+assert_health_rejected "${HEALTHY_BODY}" 503
+
+set +e
+PATH="${HEALTH_MOCK_BIN}:${PATH}" \
+    FAKE_AUTH_HEALTH_BODY="${HEALTHY_BODY}" \
+    FAKE_AUTH_SERVICE_URL='http://authentication.example.test' \
+    "${REPOSITORY_ROOT}/ops/check-authentication-health.sh" \
+    "${TEMP_DIR}/foundation-health.json" >/dev/null 2>&1
+INVALID_HEALTH_URL_CODE=$?
+set -e
+assert_equal "${INVALID_HEALTH_URL_CODE}" 70
 
 "${REPOSITORY_ROOT}/ops/plan-summary.sh" foundation "${SCRIPT_DIR}/fixtures/plans/safe.json" >"${TEMP_DIR}/safe.out" 2>"${TEMP_DIR}/safe.err"
 grep -Fq $'create\tgoogle_cloud_run_v2_job\t1' "${TEMP_DIR}/safe.out"
@@ -205,6 +288,96 @@ assert_deletion_gate_rejects \
     '[[{"id":1,"event":"labeled","created_at":"2026-08-25T11:00:00Z","label":{"name":"allow-resource-deletion"},"actor":{"login":"maintainer"}},{"id":2,"event":"unlabeled","created_at":"2026-08-25T11:30:00Z","label":{"name":"allow-resource-deletion"},"actor":{"login":"maintainer"}},{"id":3,"event":"merged","created_at":"2026-08-25T12:00:00Z"}]]' \
     write
 assert_deletion_gate_rejects "${PRE_MERGE_TIMELINE}" triage
+
+# Project cleanup is permitted only for the exact committed recovery target.
+# The mock records deletion without exposing project metadata in script output.
+if ! jq --exit-status '
+  .schemaVersion == 1 and
+  (if .replacementProject == null then
+    .sourceReceipt == null and .crossProjectAccessRevoked == false
+   else
+    (.replacementProject | test("^[a-z][a-z0-9-]{4,28}[a-z0-9]$")) and
+    (.sourceReceipt | test("^[1-9][0-9]*-[1-9][0-9]*$")) and
+    .crossProjectAccessRevoked == true
+   end)
+' "${REPOSITORY_ROOT}/deploy/production/recovery-cleanup.json" >/dev/null; then
+    printf 'The recovery cleanup authorization has an invalid shape.\n' >&2
+    exit 1
+fi
+
+# shellcheck disable=SC2016
+printf '%s\n' \
+    '#!/bin/bash' \
+    'if [ "$1 $2" = "projects describe" ] && [[ "$*" == *"--format=json"* ]]; then' \
+    '    if [ "${RECOVERY_LABEL_VALID:-true}" = true ]; then' \
+    '        printf '\''{"projectId":"agora-recovery-test","lifecycleState":"ACTIVE","labels":{"application":"agora","environment":"production","managed-by":"opentofu","plane":"workload","recovery":"true"}}\n'\''' \
+    '    else' \
+    '        printf '\''{"projectId":"agora-recovery-test","lifecycleState":"ACTIVE","labels":{"recovery":"false"}}\n'\''' \
+    '    fi' \
+    'elif [ "$1 $2" = "projects describe" ]; then' \
+    '    if [ -f "${RECOVERY_DELETE_STATE}" ]; then printf "DELETE_REQUESTED\n"; else printf "ACTIVE\n"; fi' \
+    'elif [ "$1 $2" = "projects get-iam-policy" ]; then' \
+    '    printf "roles/resourcemanager.projectDeleter\n"' \
+    'elif [ "$1 $2" = "projects delete" ]; then' \
+    '    : >"${RECOVERY_DELETE_STATE}"' \
+    'else' \
+    '    exit 1' \
+    'fi' \
+    >"${DELETION_MOCK_BIN}/gcloud"
+chmod 0700 "${DELETION_MOCK_BIN}/gcloud"
+
+jq -n '{management_project_id:"agora-management-test",workload_project_id:"agora-production-test"}' \
+    >"${TEMP_DIR}/cleanup-foundation.json"
+jq -n '{schemaVersion:1,replacementProject:"agora-recovery-test",sourceReceipt:"500-1",crossProjectAccessRevoked:true}' \
+    >"${TEMP_DIR}/cleanup-authorized.json"
+RECOVERY_DELETE_STATE="${TEMP_DIR}/recovery-delete-requested"
+PATH="${DELETION_MOCK_BIN}:${PATH}" \
+    PR_FIXTURE="${PR_FIXTURE}" TIMELINE_FIXTURE="${PRE_MERGE_TIMELINE}" \
+    APPROVER_PERMISSION=write RECOVERY_DELETE_STATE="${RECOVERY_DELETE_STATE}" \
+    "${REPOSITORY_ROOT}/ops/delete-recovery-project.sh" \
+    a-novel/infra "${DELETION_COMMIT}" agora-recovery-test 500-1 \
+    "${TEMP_DIR}/cleanup-foundation.json" "${TEMP_DIR}/cleanup-authorized.json" \
+    'DELETE agora-recovery-test' >"${TEMP_DIR}/recovery-cleanup.out"
+grep -Fq 'Disposable recovery project is DELETE_REQUESTED.' \
+    "${TEMP_DIR}/recovery-cleanup.out"
+test -f "${RECOVERY_DELETE_STATE}"
+
+assert_recovery_cleanup_rejects() {
+    local authorization="$1"
+    local confirmation="$2"
+    local label_valid="$3"
+    local expected="$4"
+    local foundation="${5:-${TEMP_DIR}/cleanup-foundation.json}"
+    local code=0
+    rm -f -- "${RECOVERY_DELETE_STATE}"
+    set +e
+    PATH="${DELETION_MOCK_BIN}:${PATH}" \
+        PR_FIXTURE="${PR_FIXTURE}" TIMELINE_FIXTURE="${PRE_MERGE_TIMELINE}" \
+        APPROVER_PERMISSION=write RECOVERY_DELETE_STATE="${RECOVERY_DELETE_STATE}" \
+        RECOVERY_LABEL_VALID="${label_valid}" \
+        "${REPOSITORY_ROOT}/ops/delete-recovery-project.sh" \
+        a-novel/infra "${DELETION_COMMIT}" agora-recovery-test 500-1 \
+        "${foundation}" "${authorization}" \
+        "${confirmation}" >/dev/null 2>&1
+    code=$?
+    set -e
+    assert_equal "${code}" "${expected}"
+    test ! -e "${RECOVERY_DELETE_STATE}"
+}
+
+jq '.crossProjectAccessRevoked = false' "${TEMP_DIR}/cleanup-authorized.json" \
+    >"${TEMP_DIR}/cleanup-not-revoked.json"
+jq '.management_project_id = "invalid project"' "${TEMP_DIR}/cleanup-foundation.json" \
+    >"${TEMP_DIR}/cleanup-invalid-foundation.json"
+assert_recovery_cleanup_rejects \
+    "${TEMP_DIR}/cleanup-authorized.json" 'DELETE wrong-project' true 65
+assert_recovery_cleanup_rejects \
+    "${TEMP_DIR}/cleanup-not-revoked.json" 'DELETE agora-recovery-test' true 77
+assert_recovery_cleanup_rejects \
+    "${TEMP_DIR}/cleanup-authorized.json" 'DELETE agora-recovery-test' false 77
+assert_recovery_cleanup_rejects \
+    "${TEMP_DIR}/cleanup-authorized.json" 'DELETE agora-recovery-test' true 77 \
+    "${TEMP_DIR}/cleanup-invalid-foundation.json"
 
 # Cloud Quotas omits the default-false reconciling field on some settled
 # responses. Omission is accepted, while a pending preference still fails.
@@ -542,6 +715,15 @@ for release_job in \
         exit 1
     fi
 done
+for service_contract in \
+    "AUTHENTICATION_SERVICE='agora-authentication-rest'" \
+    "JSON_KEYS_SERVICE='agora-json-keys-grpc'"; do
+    if ! grep -Fqx "${service_contract}" \
+        "${REPOSITORY_ROOT}/ops/google-release-driver.sh"; then
+        printf 'The release driver service name differs from its declared Cloud Run service.\n' >&2
+        exit 1
+    fi
+done
 if grep -Fq 'run_job agora-authentication-init' \
     "${REPOSITORY_ROOT}/ops/google-release-driver.sh"; then
     printf 'Authentication initialization must not have an automated driver edge.\n' >&2
@@ -651,6 +833,86 @@ FAKE_GCS_ROOT="${TEMP_DIR}/gcs"
 mkdir -p "${STORAGE_MOCK_BIN}" "${FAKE_GCS_ROOT}"
 ln -s "${SCRIPT_DIR}/fixtures/fake-gcloud-storage.sh" "${STORAGE_MOCK_BIN}/gcloud"
 PLAN_COMMIT=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+
+# Recovery evidence contains timestamps and ages only. It never copies backup
+# manifests or database payloads into logs or the immutable recovery receipt.
+RECOVERY_NOW="$(date -u +%s)"
+JSON_KEYS_COMPLETED="$((RECOVERY_NOW - 600))"
+AUTHENTICATION_COMPLETED="$((RECOVERY_NOW - 1200))"
+JSON_KEYS_ATTEMPT="${JSON_KEYS_COMPLETED}-json-keys-backup-1"
+AUTHENTICATION_ATTEMPT="${AUTHENTICATION_COMPLETED}-authentication-backup-1"
+JSON_KEYS_IMAGE='ghcr.io/a-novel/service-json-keys/database@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+AUTHENTICATION_IMAGE='ghcr.io/a-novel/service-authentication/database@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+
+write_recovery_manifest() {
+    local key="$1"
+    local attempt="$2"
+    local image="$3"
+    local completed="$4"
+    local directory="${FAKE_GCS_ROOT}/agora-backups-test/v1/${key}/attempts/${attempt}"
+    mkdir -p "${directory}"
+    printf '%s\n' \
+        'format=agora-postgres-backup-v1' \
+        "database_key=${key}" \
+        'source_project=agora-production-source' \
+        'source_host=private-host' \
+        'source_port=5432' \
+        "source_database=${key}" \
+        'source_owner=agora' \
+        'backup_role=agora_backup' \
+        "database_image=${image}" \
+        'postgres_major=18' \
+        'pg_dump_version=18.0' \
+        "started_epoch=$((completed - 60))" \
+        "completed_epoch=${completed}" \
+        "dump_object=v1/${key}/attempts/${attempt}/database.dump" \
+        'dump_size_bytes=1024' \
+        'dump_sha256=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc' \
+        "execution=${key}-backup" \
+        'task_attempt=1' \
+        >"${directory}/completed.manifest"
+}
+
+write_recovery_manifest json-keys "${JSON_KEYS_ATTEMPT}" \
+    "${JSON_KEYS_IMAGE}" "${JSON_KEYS_COMPLETED}"
+write_recovery_manifest authentication "${AUTHENTICATION_ATTEMPT}" \
+    "${AUTHENTICATION_IMAGE}" "${AUTHENTICATION_COMPLETED}"
+jq -n --arg json_image "${JSON_KEYS_IMAGE}" \
+    --arg authentication_image "${AUTHENTICATION_IMAGE}" '
+      {
+        activeTfvars: {workload_project_id: "agora-production-source"},
+        database: {
+          jsonKeysImage: $json_image,
+          authenticationImage: $authentication_image
+        }
+      }
+    ' >"${TEMP_DIR}/recovery-source-receipt.json"
+PATH="${STORAGE_MOCK_BIN}:${PATH}" FAKE_GCS_ROOT="${FAKE_GCS_ROOT}" \
+    "${REPOSITORY_ROOT}/ops/verify-recovery-points.sh" \
+    agora-backups-test "${TEMP_DIR}/recovery-source-receipt.json" \
+    "${JSON_KEYS_ATTEMPT}" "${AUTHENTICATION_ATTEMPT}" \
+    "${TEMP_DIR}/recovery-points.json" >"${TEMP_DIR}/recovery-points.out"
+jq --exit-status '
+  .schemaVersion == 1 and
+  (.databases.jsonKeys.ageSeconds >= 600 and .databases.jsonKeys.ageSeconds <= 610) and
+  (.databases.authentication.ageSeconds >= 1200 and .databases.authentication.ageSeconds <= 1210) and
+  .maxLostWriteWindowSeconds == .databases.authentication.ageSeconds
+' "${TEMP_DIR}/recovery-points.json" >/dev/null
+assert_equal "$(stat -c '%a' "${TEMP_DIR}/recovery-points.json")" 600
+
+# A tolerated future completion time represents clock skew, not a negative RPO.
+FUTURE_COMPLETED="$((RECOVERY_NOW + 240))"
+FUTURE_ATTEMPT="${FUTURE_COMPLETED}-json-keys-backup-1"
+write_recovery_manifest json-keys "${FUTURE_ATTEMPT}" \
+    "${JSON_KEYS_IMAGE}" "${FUTURE_COMPLETED}"
+PATH="${STORAGE_MOCK_BIN}:${PATH}" FAKE_GCS_ROOT="${FAKE_GCS_ROOT}" \
+    "${REPOSITORY_ROOT}/ops/verify-recovery-points.sh" \
+    agora-backups-test "${TEMP_DIR}/recovery-source-receipt.json" \
+    "${FUTURE_ATTEMPT}" "${AUTHENTICATION_ATTEMPT}" \
+    "${TEMP_DIR}/recovery-points-skew.json" >/dev/null
+jq --exit-status '.databases.jsonKeys.ageSeconds == 0' \
+    "${TEMP_DIR}/recovery-points-skew.json" >/dev/null
+
 printf 'opaque-plan-fixture' >"${TEMP_DIR}/plan.tfplan"
 PATH="${STORAGE_MOCK_BIN}:${PATH}" FAKE_GCS_ROOT="${FAKE_GCS_ROOT}" \
     TOFU_STATE_SUFFIX=recovery/agora-recovery-test \
