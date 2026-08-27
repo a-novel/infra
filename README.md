@@ -282,7 +282,7 @@ run proves that Renovate ignores noisy references, groups all four images for on
 service and PostgreSQL majors, and surfaces a digest changed behind an existing tag for blocking
 review. Renovate never automerges.
 
-The production manifest selects the two reviewed `v2.5.1` launch families, but this code alone still
+The production manifest selects two reviewed stable launch families, but this code alone still
 creates nothing. Foundation seeds empty group-level release metadata and the host remains idle until
 protected applies and the first release are authorized. The release root creates recovery jobs only
 when both database contracts are enabled together. Once the documented launch switch is true, a
