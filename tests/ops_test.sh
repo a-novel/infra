@@ -251,6 +251,19 @@ assert_tofu_gate_code plan "${SCRIPT_DIR}/fixtures/plans/protected.json" 3
 assert_tofu_gate_code drift "${SCRIPT_DIR}/fixtures/plans/safe.json" 2
 assert_tofu_gate_code drift "${SCRIPT_DIR}/fixtures/plans/protected.json" 2
 
+FAILED_APPLY_PLAN="${TEMP_DIR}/failed-apply.tfplan"
+: >"${FAILED_APPLY_PLAN}"
+set +e
+PATH="${TOFU_GATE_BIN}:${PATH}" \
+    FAKE_TOFU_FAIL_ACTION=apply \
+    "${REPOSITORY_ROOT}/ops/tofu-gate.sh" apply foundation agora-state-test \
+    "${FAILED_APPLY_PLAN}" >"${TEMP_DIR}/failed-apply.out" 2>"${TEMP_DIR}/failed-apply.err"
+FAILED_APPLY_CODE=$?
+set -e
+assert_equal "${FAILED_APPLY_CODE}" 1
+grep -Fq 'Protected OpenTofu apply failed' "${TEMP_DIR}/failed-apply.err"
+assert_absent "${TEMP_DIR}/failed-apply.err" 'fixture-sensitive-diagnostic'
+
 if grep -RqE 'resource[[:space:]]+"(google_secret_manager_secret_version|google_service_account_key)"' \
     "${REPOSITORY_ROOT}/bootstrap" \
     "${REPOSITORY_ROOT}/environments/production/foundation" \

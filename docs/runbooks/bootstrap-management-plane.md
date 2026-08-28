@@ -446,7 +446,7 @@ test "${BOOTSTRAP_PLAN_EXIT}" -eq 2
 
 Expected safe result: validation and all four mocked tests pass; the state list contains
 `google_storage_bucket.state` and no other managed address; and the summary contains one `update` for
-`google_storage_bucket`, plus 115 creates across the declared inventory. It prints no resource
+`google_storage_bucket`, plus 114 creates across the declared inventory. It prints no resource
 address, project ID, email, token, state value, or payload. Exit code `2` confirms that the saved plan
 contains changes. The full binary plan remains in a mode-`0700` temporary directory and must not be
 uploaded to GitHub or pasted into an issue.
@@ -472,11 +472,27 @@ Expected safe result: the gate reports that the exact reviewed bootstrap plan ap
 Record the commit SHA and apply completion time in the private operator record. State is written
 directly to the versioned GCS backend; plan values and apply diagnostics remain private.
 
-If the apply fails partway, do not delete or recreate resources with `gcloud`. Preserve
-the temporary directory, fix only the reported cause, regenerate a sanitized plan from the same
-checkout, and resume through OpenTofu. Do not repeat the bucket import when its address remains in
-state. If remote state was lost after any create succeeded, stop and prepare explicit imports; do not
-run a second blind create.
+If the apply fails partway, do not delete resources or repeat the bucket import. The gate names the
+failed stage without publishing its diagnostics. Fix the reported cause on `master`, keep the same
+variables and remote state, then save a new plan:
+
+```bash
+RECOVERY_PLAN="${BOOTSTRAP_TEMP_DIR}/bootstrap-recovery.tfplan"
+RECOVERY_PLAN_EXIT=0
+./ops/tofu-gate.sh plan bootstrap "${STATE_BUCKET}" "${RECOVERY_PLAN}" \
+  || RECOVERY_PLAN_EXIT=$?
+test "${RECOVERY_PLAN_EXIT}" -eq 2
+```
+
+Review the new sanitized summary as above, then apply that exact recovery plan:
+
+```bash
+./ops/tofu-gate.sh apply bootstrap "${STATE_BUCKET}" "${RECOVERY_PLAN}"
+./ops/tofu-gate.sh converge bootstrap "${STATE_BUCKET}"
+```
+
+If state was lost after a create succeeded, stop and prepare explicit imports instead of planning a
+second create.
 
 ## 9. Verify resources
 

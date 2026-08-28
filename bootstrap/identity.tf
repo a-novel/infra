@@ -190,7 +190,6 @@ resource "google_project_iam_custom_role" "secret_metadata" {
 
   permissions = [
     "resourcemanager.projects.get",
-    "resourcemanager.projects.list",
     "secretmanager.locations.get",
     "secretmanager.locations.list",
     "secretmanager.secrets.create",
@@ -220,7 +219,6 @@ resource "google_project_iam_custom_role" "plan_metadata" {
   permissions = [
     "resourcemanager.projects.get",
     "resourcemanager.projects.getIamPolicy",
-    "resourcemanager.projects.list",
     "storage.buckets.get",
     "storage.buckets.getIamPolicy",
     "storage.buckets.list",
