@@ -1186,4 +1186,82 @@ PATH="${STORAGE_MOCK_BIN}:${PATH}" \
 grep -Fq 'Immutable production release receipt published.' \
     "${TEMP_DIR}/receipt-300.out"
 
+# Protected workflow dispatch must resolve exactly the newly created master run,
+# wait for it, and emit only the identifier requested by the operator.
+WORKFLOW_MOCK_BIN="${TEMP_DIR}/workflow-bin"
+mkdir -p "${WORKFLOW_MOCK_BIN}"
+ln -s "${SCRIPT_DIR}/fixtures/fake-workflow-gh.sh" "${WORKFLOW_MOCK_BIN}/gh"
+ln -s "${SCRIPT_DIR}/fixtures/fake-workflow-git.sh" "${WORKFLOW_MOCK_BIN}/git"
+WORKFLOW_STATE="${TEMP_DIR}/workflow-state"
+WORKFLOW_CALLS="${TEMP_DIR}/workflow-calls"
+WORKFLOW_SHA='1234567890abcdef1234567890abcdef12345678'
+
+PLAN_ID="$(
+    PATH="${WORKFLOW_MOCK_BIN}:${PATH}" \
+        FAKE_WORKFLOW_CALLS="${WORKFLOW_CALLS}" \
+        FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
+        FAKE_WORKFLOW_STATE="${WORKFLOW_STATE}" \
+        EXPECTED_SHA="${WORKFLOW_SHA}" \
+        WORKFLOW_DISCOVERY_ATTEMPTS=1 \
+        WORKFLOW_DISCOVERY_INTERVAL_SECONDS=0 \
+        "${REPOSITORY_ROOT}/ops/run-workflow.sh" \
+            foundation.yaml run-id-attempt operation=plan root=foundation \
+            2>"${TEMP_DIR}/workflow.err"
+)"
+assert_equal "${PLAN_ID}" '202-3'
+grep -Fq 'Workflow run: https://github.com/a-novel/infra/actions/runs/202' \
+    "${TEMP_DIR}/workflow.err"
+grep -Fq 'workflow run foundation.yaml --repo a-novel/infra --ref master -f operation=plan -f root=foundation' \
+    "${WORKFLOW_CALLS}"
+
+rm -f -- "${WORKFLOW_STATE}"
+: >"${WORKFLOW_CALLS}"
+DETACHED_RUN_ID="$(
+    PATH="${WORKFLOW_MOCK_BIN}:${PATH}" \
+        FAKE_WORKFLOW_CALLS="${WORKFLOW_CALLS}" \
+        FAKE_WORKFLOW=release.yaml \
+        FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
+        FAKE_WORKFLOW_STATE="${WORKFLOW_STATE}" \
+        EXPECTED_SHA="${WORKFLOW_SHA}" \
+        WORKFLOW_DISCOVERY_ATTEMPTS=1 \
+        WORKFLOW_DISCOVERY_INTERVAL_SECONDS=0 \
+        "${REPOSITORY_ROOT}/ops/run-workflow.sh" \
+            release.yaml run-id --no-wait action=deploy \
+            2>"${TEMP_DIR}/detached-workflow.err"
+)"
+assert_equal "${DETACHED_RUN_ID}" 202
+if grep -Fq 'run watch' "${WORKFLOW_CALLS}"; then
+    printf 'A detached workflow dispatch unexpectedly started a watcher.\n' >&2
+    exit 1
+fi
+
+rm -f -- "${WORKFLOW_STATE}"
+: >"${WORKFLOW_CALLS}"
+set +e
+PATH="${WORKFLOW_MOCK_BIN}:${PATH}" \
+    FAKE_ACTIVE_WORKFLOW=true \
+    FAKE_WORKFLOW_CALLS="${WORKFLOW_CALLS}" \
+    FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
+    FAKE_WORKFLOW_STATE="${WORKFLOW_STATE}" \
+    EXPECTED_SHA="${WORKFLOW_SHA}" \
+    "${REPOSITORY_ROOT}/ops/run-workflow.sh" \
+        foundation.yaml run-id operation=apply root=foundation plan_id=202-3 \
+        >"${TEMP_DIR}/active-workflow.out" 2>"${TEMP_DIR}/active-workflow.err"
+ACTIVE_WORKFLOW_CODE=$?
+set -e
+assert_equal "${ACTIVE_WORKFLOW_CODE}" 75
+grep -Fq 'Another production infrastructure run is active' \
+    "${TEMP_DIR}/active-workflow.err"
+if grep -Fq 'workflow run' "${WORKFLOW_CALLS}"; then
+    printf 'An active production workflow did not block dispatch.\n' >&2
+    exit 1
+fi
+
+set +e
+"${REPOSITORY_ROOT}/ops/run-workflow.sh" foundation.yaml run-id malformed-input \
+    >/dev/null 2>&1
+INVALID_WORKFLOW_INPUT_CODE=$?
+set -e
+assert_equal "${INVALID_WORKFLOW_INPUT_CODE}" 64
+
 printf "Root and plan-policy fixtures passed.\n"
