@@ -412,7 +412,7 @@ gcloud storage buckets create "gs://${STATE_BUCKET}" \
 gcloud storage buckets update "gs://${STATE_BUCKET}" --versioning
 
 gcloud storage buckets describe "gs://${STATE_BUCKET}" \
-  --format='yaml(name,location,storage_class,public_access_prevention,uniform_bucket_level_access,versioning,soft_delete_policy)'
+  --format='yaml(name,location,default_storage_class,public_access_prevention,uniform_bucket_level_access,versioning_enabled,soft_delete_policy)'
 ```
 
 Expected safe result: the first lookup reports that the bucket is absent; creation succeeds; and the
