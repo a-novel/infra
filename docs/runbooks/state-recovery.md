@@ -23,11 +23,13 @@ payload versions.
 
 ## Operator context
 
-Replace `STATE_ROOT` with `bootstrap`, `foundation`, or `release`, then paste this block once:
+Run this and later blocks in the existing configured zsh session. Replace `STATE_ROOT` with
+`bootstrap`, `foundation`, or `release`, then paste this block once:
 
-```bash
-set -euo pipefail
-set +x
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 umask 077
 
 REPOSITORY='a-novel/infra'
@@ -35,6 +37,7 @@ STATE_ROOT=''
 
 MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID --repo "$REPOSITORY")"
 STATE_BUCKET="$(gh variable get GCP_STATE_BUCKET --repo "$REPOSITORY")"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 ## Preconditions
@@ -45,30 +48,41 @@ STATE_BUCKET="$(gh variable get GCP_STATE_BUCKET --repo "$REPOSITORY")"
   writers but is not a substitute for an operator freeze.
 - Use a declared human operator. The keyless recovery identity is bound to its exact GitHub workflow
   and cannot be impersonated from an operator shell.
-- Work in a private Bash or Zsh session with tracing disabled and `umask 077`.
+- Work in a private zsh session with tracing disabled and `umask 077`.
 - Do not recover while a `.tflock` object exists. Identify and stop the owning operation first; never
   delete a lock merely because it is old.
 - Recover only `bootstrap`, `foundation`, or `release`. Any other prefix is outside the root allowlist.
 
 ## 1. Freeze writers and select one state object
 
-```bash
-gh run list \
-  --repo "$REPOSITORY" \
-  --status in_progress \
-  --json databaseId,workflowName,headSha,status,url
-gh run list \
-  --repo "$REPOSITORY" \
-  --status queued \
-  --json databaseId,workflowName,headSha,status,url
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+gh api "repos/${REPOSITORY}/actions/runs?branch=master&per_page=100" --jq '[
+  .workflow_runs[]
+  | select(.status != "completed")
+  | select(
+      .path == ".github/workflows/drift.yaml" or
+      .path == ".github/workflows/foundation.yaml" or
+      .path == ".github/workflows/recovery.yaml" or
+      .path == ".github/workflows/release.yaml"
+    )
+  | {id, name, display_title, head_sha, status, html_url}
+]'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Expected safe result: both arrays are empty. If not, cancel or let the named runs finish and repeat;
-record every cancellation in the incident.
+Expected safe result: `[]`. This includes queued, requested, waiting-for-approval, pending, and
+in-progress runs. If it is non-empty, cancel or let the named runs finish and repeat; record every
+cancellation in the incident.
 
 Validate the selected bucket and root, then derive the two object names:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 test -n "${MANAGEMENT_PROJECT_ID}"
 test -n "${STATE_BUCKET}"
 
@@ -91,12 +105,17 @@ assert_state_unlocked() {
     false
   fi
 }
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Check for a live lock without printing its content:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 assert_state_unlocked
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: no output. If locked, use audit metadata to find the principal and operation;
@@ -104,11 +123,15 @@ do not run `gcloud storage rm` on the lock.
 
 ## 2. List generations and select a candidate
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud storage ls \
   --all-versions \
   --long \
   "${STATE_OBJECT}"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: one or more lines ending in `default.tfstate#<generation>` with size and
@@ -118,7 +141,10 @@ stop: there is no older version to recover.
 Copy the candidate generation number exactly, then validate that both candidate and live generations
 are numeric and different:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 CANDIDATE_GENERATION=''
 [[ "${CANDIDATE_GENERATION}" =~ ^[0-9]+$ ]]
 
@@ -129,6 +155,7 @@ test "${CANDIDATE_GENERATION}" != "${LIVE_GENERATION}"
 printf 'Candidate generation: %s\nLive generation: %s\n' \
   "${CANDIDATE_GENERATION}" \
   "${LIVE_GENERATION}"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Do not infer “latest good” from generation order alone. Match the candidate timestamp to the incident,
@@ -139,7 +166,10 @@ deployment receipt, Git commit, and audit trail.
 Create a unique private directory and download the candidate and current live state for comparison
 and emergency rollback. Neither file may leave this directory.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 RECOVERY_TEMP_DIR="$(mktemp -d)"
 CANDIDATE_STATE="${RECOVERY_TEMP_DIR}/candidate.tfstate"
 ORIGINAL_LIVE_STATE="${RECOVERY_TEMP_DIR}/original-live.tfstate"
@@ -154,11 +184,15 @@ gcloud storage cp \
   --quiet
 
 chmod 600 "${CANDIDATE_STATE}" "${ORIGINAL_LIVE_STATE}"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Inspect only lineage, serial, format version, and resource count:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 for state_file in "${CANDIDATE_STATE}" "${ORIGINAL_LIVE_STATE}"; do
   jq -e '{
     version,
@@ -171,6 +205,7 @@ done
 
 tofu state list -state="${CANDIDATE_STATE}"
 sha256sum "${CANDIDATE_STATE}" "${ORIGINAL_LIVE_STATE}"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: valid JSON state, a non-empty lineage, numeric serials, plausible resource
@@ -185,24 +220,39 @@ print attribute values.
 
 Recheck that no workflow or lock appeared since inspection:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 # Assign before testing so a failed GitHub query aborts instead of looking like
 # an empty run list.
-IN_PROGRESS_RUN_IDS="$(gh run list --repo "$REPOSITORY" --status in_progress --json databaseId --jq '.[].databaseId')"
-QUEUED_RUN_IDS="$(gh run list --repo "$REPOSITORY" --status queued --json databaseId --jq '.[].databaseId')"
-test -z "${IN_PROGRESS_RUN_IDS}"
-test -z "${QUEUED_RUN_IDS}"
+ACTIVE_RUN_IDS="$(gh api "repos/${REPOSITORY}/actions/runs?branch=master&per_page=100" --jq '
+  .workflow_runs[]
+  | select(.status != "completed")
+  | select(
+      .path == ".github/workflows/drift.yaml" or
+      .path == ".github/workflows/foundation.yaml" or
+      .path == ".github/workflows/recovery.yaml" or
+      .path == ".github/workflows/release.yaml"
+    )
+  | .id
+')"
+test -z "${ACTIVE_RUN_IDS}"
 
 assert_state_unlocked
 
 CURRENT_GENERATION="$(gcloud storage objects describe "${STATE_OBJECT}" --format='value(generation)')"
 test "${CURRENT_GENERATION}" = "${LIVE_GENERATION}"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 The final equality check is the human-readable precondition; Cloud Storage enforces it atomically in
 the copy itself:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 printf 'Type %s/%s to restore: ' "$STATE_ROOT" "$CANDIDATE_GENERATION"
 IFS= read -r RESTORE_CONFIRMATION
 test "${RESTORE_CONFIRMATION}" = "${STATE_ROOT}/${CANDIDATE_GENERATION}"
@@ -217,6 +267,7 @@ RESTORED_GENERATION="$(gcloud storage objects describe "${STATE_OBJECT}" --forma
 [[ "${RESTORED_GENERATION}" =~ ^[0-9]+$ ]]
 test "${RESTORED_GENERATION}" != "${LIVE_GENERATION}"
 printf 'Restored live generation: %s\n' "${RESTORED_GENERATION}"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: a new numeric live generation. A `412` precondition failure means another writer
@@ -229,7 +280,10 @@ State restoration does not change cloud resources. Check out the exact Git commi
 the candidate in a separate worktree, initialize only the selected backend, and make a saved plan.
 Do not apply it during this runbook.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 CANDIDATE_GIT_SHA=''
 git cat-file -e "${CANDIDATE_GIT_SHA}^{commit}"
 
@@ -248,24 +302,32 @@ tofu -chdir="${RECOVERY_CHECKOUT}/${ROOT_DIRECTORY}" init \
   -input=false \
   -backend-config="bucket=${STATE_BUCKET}" \
   -backend-config="prefix=${STATE_ROOT}"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Supply only the root's documented non-secret variables and its normal secret references. For the
 currently deployed bootstrap root:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 if [ "${STATE_ROOT}" = 'bootstrap' ]; then
   OPERATOR_EMAIL="$(gcloud config get-value account 2>/dev/null)"
   export TF_VAR_management_project_id="${MANAGEMENT_PROJECT_ID}"
   export TF_VAR_operator_principals="[\"user:${OPERATOR_EMAIL}\"]"
 fi
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 For foundation or release, retrieve the exact current protected configuration object documented by
 the deployment runbook into this private temporary directory; do not reconstruct values from memory.
 Then generate a private plan and sanitize it:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 RECOVERY_PLAN="${RECOVERY_TEMP_DIR}/recovery.tfplan"
 RECOVERY_PLAN_JSON="${RECOVERY_TEMP_DIR}/recovery.json"
 
@@ -275,6 +337,7 @@ tofu -chdir="${RECOVERY_CHECKOUT}/${ROOT_DIRECTORY}" plan \
 tofu -chdir="${RECOVERY_CHECKOUT}/${ROOT_DIRECTORY}" show \
   -json "${RECOVERY_PLAN}" >"${RECOVERY_PLAN_JSON}"
 "${RECOVERY_CHECKOUT}/ops/plan-summary.sh" "${STATE_ROOT}" "${RECOVERY_PLAN_JSON}"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result depends on the incident:
@@ -295,11 +358,22 @@ The generation that was live before recovery remains available as `LIVE_GENERATI
 shows the candidate was wrong, restore that original generation over the recovery generation with a
 second atomic precondition:
 
-```bash
-IN_PROGRESS_RUN_IDS="$(gh run list --repo "$REPOSITORY" --status in_progress --json databaseId --jq '.[].databaseId')"
-QUEUED_RUN_IDS="$(gh run list --repo "$REPOSITORY" --status queued --json databaseId --jq '.[].databaseId')"
-test -z "${IN_PROGRESS_RUN_IDS}"
-test -z "${QUEUED_RUN_IDS}"
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+ACTIVE_RUN_IDS="$(gh api "repos/${REPOSITORY}/actions/runs?branch=master&per_page=100" --jq '
+  .workflow_runs[]
+  | select(.status != "completed")
+  | select(
+      .path == ".github/workflows/drift.yaml" or
+      .path == ".github/workflows/foundation.yaml" or
+      .path == ".github/workflows/recovery.yaml" or
+      .path == ".github/workflows/release.yaml"
+    )
+  | .id
+')"
+test -z "${ACTIVE_RUN_IDS}"
 
 assert_state_unlocked
 
@@ -318,6 +392,7 @@ gcloud storage cp \
 
 ROLLBACK_GENERATION="$(gcloud storage objects describe "${STATE_OBJECT}" --format='value(generation)')"
 printf 'Original state restored as new live generation: %s\n' "${ROLLBACK_GENERATION}"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: another new live generation. Repeat the private validation plan from the
@@ -328,12 +403,16 @@ the recovery evidence.
 
 Query metadata for the exact object and recovery time:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud logging read \
   'resource.type="gcs_bucket" AND resource.labels.bucket_name="'"${STATE_BUCKET}"'" AND protoPayload.resourceName:"/'"${STATE_ROOT}"'/default.tfstate"' \
   --project="${MANAGEMENT_PROJECT_ID}" \
   --limit=30 \
   --format='table(timestamp,protoPayload.methodName,protoPayload.authenticationInfo.principalEmail)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Record candidate, former live, restored, and optional rollback generation numbers; hashes; operator;
@@ -341,7 +420,10 @@ approval; commit; plan-summary result; and timestamps. These are recovery metada
 
 Remove the detached worktree before deleting the unique temporary directory:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 git worktree remove "${RECOVERY_CHECKOUT}"
 rm -rf -- "${RECOVERY_TEMP_DIR}"
 
@@ -350,8 +432,9 @@ unset MANAGEMENT_PROJECT_ID STATE_BUCKET STATE_ROOT STATE_OBJECT LOCK_OBJECT ROO
 unset CANDIDATE_GENERATION LIVE_GENERATION CURRENT_GENERATION RESTORED_GENERATION ROLLBACK_GENERATION
 unset CANDIDATE_STATE ORIGINAL_LIVE_STATE CANDIDATE_GIT_SHA RECOVERY_CHECKOUT RECOVERY_TEMP_DIR
 unset RECOVERY_PLAN RECOVERY_PLAN_JSON RESTORE_CONFIRMATION ROLLBACK_CONFIRMATION OPERATOR_EMAIL
-unset IN_PROGRESS_RUN_IDS QUEUED_RUN_IDS
+unset ACTIVE_RUN_IDS
 unset -f assert_state_unlocked
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 This permanently deletes only the private temporary copies and detached worktree. GCS generations,

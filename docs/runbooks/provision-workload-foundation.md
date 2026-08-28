@@ -510,66 +510,68 @@ The environment reviewer approves both runs, but only the `apply` run mutates cl
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-MASTER_SHA="$(gh api "repos/${REPOSITORY}/commits/master" --jq .sha)"
+git switch master
+git pull --ff-only
+test -z "$(git status --porcelain)"
+MASTER_SHA="$(git rev-parse HEAD)"
 printf 'Planning commit: %s\n' "$MASTER_SHA"
-
-gh workflow run foundation.yaml --repo "$REPOSITORY" --ref master \
-  -f operation=plan -f root=bootstrap
-gh run list --repo "$REPOSITORY" --workflow foundation.yaml --branch master \
-  --event workflow_dispatch --limit 5 \
-  --json databaseId,headSha,displayTitle,status,conclusion,url
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-Select the row titled `foundation plan bootstrap`, verify `headSha` equals `MASTER_SHA`, then watch
-it and derive its exact plan ID:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-PLAN_RUN_ID='replace-with-bootstrap-plan-run-id'
-test "$(gh api "repos/${REPOSITORY}/actions/runs/${PLAN_RUN_ID}" --jq .head_sha)" = "$MASTER_SHA"
-gh run watch "$PLAN_RUN_ID" --repo "$REPOSITORY" --exit-status
-PLAN_ATTEMPT="$(gh api "repos/${REPOSITORY}/actions/runs/${PLAN_RUN_ID}" --jq .run_attempt)"
-PLAN_ID="${PLAN_RUN_ID}-${PLAN_ATTEMPT}"
+PLAN_ID="$(
+  EXPECTED_SHA="$MASTER_SHA" ./ops/run-workflow.sh \
+    foundation.yaml run-id-attempt operation=plan root=bootstrap
+)"
 printf 'Bootstrap plan ID: %s\n' "$PLAN_ID"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Review the plan job log. It may contain only action counts grouped by resource type, the plan ID,
-and control messages—never addresses, values, outputs, configuration, or provider diagnostics.
-Confirm the current `master` commit is still unchanged, then apply that plan:
+The helper refuses a dirty, stale, or non-`master` checkout and any already active production
+infrastructure run. It prints the exact run URL, waits through the protected environment, verifies
+the successful run identity, and returns its `run-id-attempt`. Review that run's sanitized plan
+summary. It may contain only action counts grouped by resource type, the plan ID, and control
+messages—never addresses, values, outputs, configuration, or provider diagnostics. Then apply that
+exact plan:
 
 ```zsh
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-test "$(gh api "repos/${REPOSITORY}/commits/master" --jq .sha)" = "$MASTER_SHA"
-gh workflow run foundation.yaml --repo "$REPOSITORY" --ref master \
-  -f operation=apply -f root=bootstrap -f plan_id="$PLAN_ID"
+APPLY_RUN_ID="$(
+  EXPECTED_SHA="$MASTER_SHA" ./ops/run-workflow.sh \
+    foundation.yaml run-id operation=apply root=bootstrap plan_id="$PLAN_ID"
+)"
+printf 'Bootstrap apply run ID: %s\n' "$APPLY_RUN_ID"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Approve the `production-foundation` deployment, select the new `foundation apply bootstrap` row with
-the same `headSha`, and watch it to success. Repeat the exact sequence with `root=foundation`:
+Repeat the exact sequence with `root=foundation`:
 
 ```zsh
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-gh workflow run foundation.yaml --repo "$REPOSITORY" --ref master \
-  -f operation=plan -f root=foundation
-gh run list --repo "$REPOSITORY" --workflow foundation.yaml --branch master \
-  --event workflow_dispatch --limit 5 \
-  --json databaseId,headSha,displayTitle,status,conclusion,url
+PLAN_ID="$(
+  EXPECTED_SHA="$MASTER_SHA" ./ops/run-workflow.sh \
+    foundation.yaml run-id-attempt operation=plan root=foundation
+)"
+printf 'Foundation plan ID: %s\n' "$PLAN_ID"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Set `PLAN_RUN_ID` to the `foundation plan foundation` row, repeat the SHA/watch/attempt commands,
-review the summary, and dispatch `operation=apply`, `root=foundation`, and that new `PLAN_ID`.
-An apply attempt consumes the plan before mutation and then proves a zero-change convergence plan; a retry cannot
-apply the same plan twice.
+Review the sanitized summary, then apply it:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+APPLY_RUN_ID="$(
+  EXPECTED_SHA="$MASTER_SHA" ./ops/run-workflow.sh \
+    foundation.yaml run-id operation=apply root=foundation plan_id="$PLAN_ID"
+)"
+printf 'Foundation apply run ID: %s\n' "$APPLY_RUN_ID"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Each apply consumes its plan before mutation and then proves a zero-change convergence plan; a retry
+cannot apply the same plan twice.
 
 Any deletion, replacement, or state-forget action fails unless the one pull request associated with
 `MASTER_SHA` already carried the exact `allow-resource-deletion` label before merge. Adding a label

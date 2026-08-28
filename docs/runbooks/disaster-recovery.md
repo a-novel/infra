@@ -21,11 +21,14 @@ dataset or cost-analysis service is added for one disposable project.
 
 ## Operator context
 
-Paste this block once before section 1. Incident-specific selections remain in their owning step.
+Run local blocks in the existing configured zsh session; the block explicitly labeled for the COS
+host uses that host's Bash session. Paste this block once before section 1. Incident-specific
+selections remain in their owning step.
 
-```bash
-set -euo pipefail
-set +x
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 umask 077
 
 REPOSITORY='a-novel/infra'
@@ -54,6 +57,7 @@ case "$PROJECT_PARENT_TYPE" in
   *) printf 'Unexpected project parent type: %s\n' "$PROJECT_PARENT_TYPE" >&2; false ;;
 esac
 unset PROJECT_PARENT_TYPE PROJECT_PARENT_ID
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 ## Recovery contract
@@ -116,7 +120,10 @@ is non-empty, or any recovered service becomes publicly reachable.
 Use the recorded incident start. For a drill, run the first command and paste its output into
 `INCIDENT_STARTED_AT`.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 date -u +'%Y-%m-%dT%H:%M:%SZ'
 INCIDENT_STARTED_AT=''
 REPLACEMENT_PROJECT_ID="agora-recovery-$(date -u +'%Y%m%d-%H%M')"
@@ -138,17 +145,21 @@ test "$INCIDENT_STARTED_EPOCH" -le "$(date -u +%s)"
 
 if gcloud projects describe "$REPLACEMENT_PROJECT_ID" >/dev/null 2>&1; then
   printf 'STOP: replacement project already exists or is visible.\n' >&2
-  exit 1
+  return 1
 fi
 
 gcloud storage ls "gs://${RECEIPT_BUCKET}/production/success/*.json"
 gcloud storage ls "gs://${BACKUP_BUCKET}/v1/json-keys/attempts/*/completed.manifest"
 gcloud storage ls "gs://${BACKUP_BUCKET}/v1/authentication/attempts/*/completed.manifest"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Choose the exact attempt-directory basename from each list:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 JSON_KEYS_ATTEMPT=''
 AUTHENTICATION_ATTEMPT=''
 [[ "$JSON_KEYS_ATTEMPT" =~ ^[0-9]+-[a-z0-9-]{1,63}-[0-9]+$ ]]
@@ -162,16 +173,21 @@ for tuple in \
     "gs://${BACKUP_BUCKET}/v1/${key}/attempts/${attempt}/completed.manifest" \
     | sed -n -e 's/^completed_utc=/completed_utc=/p' -e 's/^completed_epoch=/completed_epoch=/p'
 done
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Only the two completion timestamps may be copied into the incident record. Do not publish the full
 manifests. Write a concise, bounded acknowledgement such as `JSON Keys writes after <UTC> and
 Authentication writes after <UTC> may be absent`:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 LOST_WRITE_WINDOW=''
 test -n "$LOST_WRITE_WINDOW"
 test "${#LOST_WRITE_WINDOW}" -le 500
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 ## 2. Grant temporary project-creation authority
@@ -182,16 +198,23 @@ existing billing account. Recovery creates no budget and therefore needs no budg
 role. Cloud Billing IAM does not support conditional bindings, so remove this exact unconditional
 grant in section 4:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud billing accounts add-iam-policy-binding "$BILLING_ACCOUNT_ID" \
   --member="$RECOVERY_MEMBER" \
   --role=roles/billing.user \
   --format=none
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 For an existing folder or organization, grant Project Creator at exactly one parent:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 if [[ -n "$FOLDER_ID" ]]; then
   gcloud resource-manager folders add-iam-policy-binding "$FOLDER_ID" \
     --member="$RECOVERY_MEMBER" --role=roles/resourcemanager.projectCreator --condition=None
@@ -201,12 +224,16 @@ elif [[ -n "$ORGANIZATION_ID" ]]; then
 else
   printf 'Standalone path: the operator must create and bill one empty project.\n'
 fi
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 For the standalone path only, create the empty project manually and let the reviewed declarative
 import adopt it. Do not enable APIs or create a network:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 if [[ -z "$ORGANIZATION_ID" && -z "$FOLDER_ID" ]]; then
   gcloud projects create "$REPLACEMENT_PROJECT_ID" \
     --name='Agora recovery' --set-as-default=false
@@ -215,6 +242,7 @@ if [[ -z "$ORGANIZATION_ID" && -z "$FOLDER_ID" ]]; then
   gcloud projects add-iam-policy-binding "$REPLACEMENT_PROJECT_ID" \
     --member="$RECOVERY_MEMBER" --role=roles/owner --condition=None
 fi
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 The temporary Owner is unavoidable only for adopting a parentless project. It is removed immediately
@@ -222,40 +250,45 @@ after the exact foundation converges. Never grant Owner on the management or pro
 
 ## 3. Plan and apply the disposable foundation
 
-```bash
-MASTER_SHA="$(gh api "repos/${REPOSITORY}/commits/master" --jq .sha)"
-gh workflow run recovery.yaml --repo "$REPOSITORY" --ref master \
-  -f operation=plan-workload \
-  -f replacement_project_id="$REPLACEMENT_PROJECT_ID" \
-  -f target_receipt="$TARGET_RECEIPT"
-gh run list --repo "$REPOSITORY" --workflow recovery.yaml --branch master \
-  --event workflow_dispatch --limit 5 \
-  --json databaseId,headSha,displayTitle,status,conclusion,url
-```
-
-Select `recovery plan-workload <replacement>` with `headSha == MASTER_SHA`, then:
-
-```bash
-PLAN_RUN_ID='replace-with-recovery-plan-run-id'
-test "$(gh api "repos/${REPOSITORY}/actions/runs/${PLAN_RUN_ID}" --jq .head_sha)" = "$MASTER_SHA"
-gh run watch "$PLAN_RUN_ID" --repo "$REPOSITORY" --exit-status
-PLAN_ATTEMPT="$(gh api "repos/${REPOSITORY}/actions/runs/${PLAN_RUN_ID}" --jq .run_attempt)"
-PLAN_ID="${PLAN_RUN_ID}-${PLAN_ATTEMPT}"
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+git switch master
+git pull --ff-only
+test -z "$(git status --porcelain)"
+MASTER_SHA="$(git rev-parse HEAD)"
+PLAN_ID="$(
+  EXPECTED_SHA="$MASTER_SHA" ./ops/run-workflow.sh \
+    recovery.yaml run-id-attempt \
+    operation=plan-workload \
+    replacement_project_id="$REPLACEMENT_PROJECT_ID" \
+    target_receipt="$TARGET_RECEIPT"
+)"
+printf 'Recovery foundation plan ID: %s\n' "$PLAN_ID"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Review the sanitized counts. They may target only state suffix
-`foundation/recovery/<replacement-project>`. Confirm `master` is unchanged and dispatch exact apply:
+`foundation/recovery/<replacement-project>`. Then apply that exact plan:
 
-```bash
-test "$(gh api "repos/${REPOSITORY}/commits/master" --jq .sha)" = "$MASTER_SHA"
-gh workflow run recovery.yaml --repo "$REPOSITORY" --ref master \
-  -f operation=apply-workload \
-  -f replacement_project_id="$REPLACEMENT_PROJECT_ID" \
-  -f target_receipt="$TARGET_RECEIPT" \
-  -f plan_id="$PLAN_ID"
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+APPLY_RUN_ID="$(
+  EXPECTED_SHA="$MASTER_SHA" ./ops/run-workflow.sh \
+    recovery.yaml run-id \
+    operation=apply-workload \
+    replacement_project_id="$REPLACEMENT_PROJECT_ID" \
+    target_receipt="$TARGET_RECEIPT" \
+    plan_id="$PLAN_ID"
+)"
+printf 'Recovery foundation apply run ID: %s\n' "$APPLY_RUN_ID"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Approve `production-recovery` and watch the exact `apply-workload` run to success. The saved plan is
+The helper prints the exact run URL and waits through `production-recovery`. The saved plan is
 commit-, root-, project-state-suffix-, hash-, and 24-hour-bound and can be consumed once.
 
 ## 4. Grant exact replacement-runtime access, then remove creation authority
@@ -263,7 +296,10 @@ commit-, root-, project-state-suffix-, hash-, and 24-hour-bound and can be consu
 The replacement identities now exist. A secured human—not GitHub automation—adds the exact
 cross-project payload contract. These are the only surviving-resource IAM mutations in the rebuild:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 AUTH_RUNTIME="serviceAccount:agora-authentication@${REPLACEMENT_PROJECT_ID}.iam.gserviceaccount.com"
 DATABASE_RUNTIME="serviceAccount:agora-database-host@${REPLACEMENT_PROJECT_ID}.iam.gserviceaccount.com"
 JSON_RUNTIME="serviceAccount:agora-json-keys@${REPLACEMENT_PROJECT_ID}.iam.gserviceaccount.com"
@@ -288,6 +324,7 @@ grant_secret_access production-json-keys-postgres-password "$RESTORE_RUNTIME"
 
 gcloud storage buckets add-iam-policy-binding "gs://${BACKUP_BUCKET}" \
   --member="$RESTORE_RUNTIME" --role=roles/storage.objectViewer --quiet >/dev/null
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Do not grant the initializer, backup, scheduler, or recovery automation identity any payload role.
@@ -296,7 +333,10 @@ The replacement can read retained recovery points but cannot create a new produc
 Verify every exact tuple and the absence of recovery-automation payload access without printing a
 whole policy:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 for tuple in \
   "production-authentication-postgres-dsn ${AUTH_RUNTIME}" \
   "production-authentication-smtp-sender-password ${AUTH_RUNTIME}" \
@@ -334,12 +374,16 @@ test "$(gcloud storage buckets get-iam-policy "gs://${BACKUP_BUCKET}" \
   --flatten='bindings[].members' \
   --filter="bindings.members=${RESTORE_RUNTIME}" \
   --format='value(bindings.role)')" = roles/storage.objectViewer
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: every test exits zero. Now remove all temporary project-creation authority
 before any secret-backed recovery job runs:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud billing accounts remove-iam-policy-binding "$BILLING_ACCOUNT_ID" \
   --member="$RECOVERY_MEMBER" \
   --role=roles/billing.user \
@@ -359,6 +403,7 @@ fi
 gcloud billing accounts get-iam-policy "$BILLING_ACCOUNT_ID" \
   --flatten='bindings[].members' --filter="bindings.members=${RECOVERY_MEMBER}" \
   --format='table(bindings.role)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: no `billing.user`, parent Project Creator, or Owner row remains. Bootstrap's
@@ -367,43 +412,57 @@ grant or remove.
 
 ## 5. Restore exact data and deploy the selected receipt
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 CONFIRM="RESTORE ${REPLACEMENT_PROJECT_ID}"
-gh workflow run recovery.yaml --repo "$REPOSITORY" --ref master \
-  -f operation=restore-data \
-  -f replacement_project_id="$REPLACEMENT_PROJECT_ID" \
-  -f target_receipt="$TARGET_RECEIPT" \
-  -f json_keys_attempt="$JSON_KEYS_ATTEMPT" \
-  -f authentication_attempt="$AUTHENTICATION_ATTEMPT" \
-  -f lost_write_window="$LOST_WRITE_WINDOW" \
-  -f confirm="$CONFIRM"
+RECOVERY_RUN_REF="$(
+  EXPECTED_SHA="$MASTER_SHA" ./ops/run-workflow.sh \
+    recovery.yaml run-id-attempt \
+    operation=restore-data \
+    replacement_project_id="$REPLACEMENT_PROJECT_ID" \
+    target_receipt="$TARGET_RECEIPT" \
+    json_keys_attempt="$JSON_KEYS_ATTEMPT" \
+    authentication_attempt="$AUTHENTICATION_ATTEMPT" \
+    lost_write_window="$LOST_WRITE_WINDOW" \
+    confirm="$CONFIRM"
+)"
+RECOVERY_RUN_ID="${RECOVERY_RUN_REF%-*}"
+RECOVERY_RUN_ATTEMPT="${RECOVERY_RUN_REF##*-}"
+[[ "$RECOVERY_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+[[ "$RECOVERY_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+printf 'Recovery run: %s (attempt %s)\n' "$RECOVERY_RUN_ID" "$RECOVERY_RUN_ATTEMPT"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Approve `production-recovery` and watch the run. It verifies the attempts, quota grants, and receipt
-secret versions; copies receipt-owned images read-only from production into the replacement registry;
-creates only recovery jobs; starts the private database host; restores JSON Keys and Authentication
-into empty targets; then creates both internal services. Repeating the same exact recovery jobs
-reuses a durable successful execution rather than applying the archive twice.
+The helper waits through `production-recovery`. The run verifies the attempts, quota grants, and
+receipt secret versions; copies receipt-owned images read-only from production into the replacement
+registry; creates only recovery jobs; starts the private database host; restores JSON Keys and
+Authentication into empty targets; then creates both internal services. Repeating the same exact
+recovery jobs reuses a durable successful execution rather than applying the archive twice.
 
 Record the exact successful run and attempt without printing its private receipt:
 
-```bash
-gh run list --repo "$REPOSITORY" --workflow recovery.yaml --branch master \
-  --event workflow_dispatch --limit 5 \
-  --json databaseId,headSha,displayTitle,status,conclusion,url
-RECOVERY_RUN_ID='replace-with-restore-run-id'
-[[ "$RECOVERY_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 test "$(gh api "repos/${REPOSITORY}/actions/runs/${RECOVERY_RUN_ID}" --jq .head_sha)" = "$MASTER_SHA"
-gh run watch "$RECOVERY_RUN_ID" --repo "$REPOSITORY" --exit-status
-RECOVERY_RUN_ATTEMPT="$(gh api "repos/${REPOSITORY}/actions/runs/${RECOVERY_RUN_ID}" --jq .run_attempt)"
-[[ "$RECOVERY_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+gh run view "$RECOVERY_RUN_ID" --repo "$REPOSITORY" \
+  --json headSha,status,conclusion,url \
+  --jq '{headSha,status,conclusion,url}'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 ## 6. Verify functionality from the private replacement network
 
 First verify control-plane boundaries:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud run services describe agora-json-keys-grpc \
   --project="$REPLACEMENT_PROJECT_ID" --region="$REGION" \
   --format='yaml(metadata.name,metadata.annotations,status.conditions,status.traffic)'
@@ -413,6 +472,7 @@ gcloud run services describe agora-authentication-rest \
   --project="$REPLACEMENT_PROJECT_ID" --region="$REGION" \
   --format='yaml(metadata.name,metadata.annotations,status.conditions,status.traffic)'
 gcloud scheduler jobs list --project="$REPLACEMENT_PROJECT_ID" --location="$REGION"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected: both services are Ready with internal-only ingress, no public Invoker bypass, and no
@@ -421,7 +481,10 @@ scheduler. The Authentication initializer job is absent.
 Use the database VM as the already-existing private probe—no bastion, probe service, NAT, or proxy is
 added. Connect through IAP as a configured database operator:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 DATABASE_INSTANCE_URI="$(gcloud compute instance-groups managed list-instances agora-database \
   --project="$REPLACEMENT_PROJECT_ID" --zone="$DATABASE_ZONE" \
   --format='value(instance)' --limit=1)"
@@ -429,6 +492,7 @@ DATABASE_INSTANCE_NAME="${DATABASE_INSTANCE_URI##*/}"
 gcloud compute ssh "$DATABASE_INSTANCE_NAME" \
   --project="$REPLACEMENT_PROJECT_ID" --zone="$DATABASE_ZONE" \
   --tunnel-through-iap
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Inside that private COS session, paste the non-secret `RECOVERY_AUTH_URL`, request an identity token
@@ -464,10 +528,14 @@ Immediately after private health succeeds, record the actual incident/drill reco
 fetch the exact private recovery receipt to a mode-`0600` temporary file and print only bounded
 timing evidence:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 PRIVATE_HEALTH_CONFIRMED_EPOCH="$(date -u +%s)"
 ACTUAL_RTO_SECONDS="$((PRIVATE_HEALTH_CONFIRMED_EPOCH - INCIDENT_STARTED_EPOCH))"
 RECOVERY_RECEIPT_FILE="$(mktemp)"
+{
 gcloud storage cp \
   "gs://${RECEIPT_BUCKET}/recovery/${REPLACEMENT_PROJECT_ID}/${RECOVERY_RUN_ID}-${RECOVERY_RUN_ATTEMPT}.json" \
   "$RECOVERY_RECEIPT_FILE" --quiet >/dev/null
@@ -492,7 +560,11 @@ jq '{
 }' "$RECOVERY_RECEIPT_FILE"
 printf 'Actual incident/drill start-to-private-health RTO: %s seconds\n' "$ACTUAL_RTO_SECONDS"
 test "$ACTUAL_RTO_SECONDS" -le 5400
+} always {
 rm -f -- "$RECOVERY_RECEIPT_FILE"
+unset RECOVERY_RECEIPT_FILE
+}
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 The six-hour check is the measured upper bound on writes missing at recovery-point selection. The
@@ -512,16 +584,23 @@ production-foundation design; do not silently keep manual production IAM.
 
 Before removing the project, capture its provider-issued creation time in the private drill record:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 RECOVERY_CREATED_AT="$(gcloud projects describe "$REPLACEMENT_PROJECT_ID" \
   --format='value(createTime)')"
 date -u --date="$RECOVERY_CREATED_AT" +%Y-%m-%dT%H:%M:%SZ
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: one normalized UTC timestamp. Do not continue if the project cannot be
 resolved by the exact replacement ID.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 revoke_secret_access() {
   gcloud secrets remove-iam-policy-binding "$1" \
     --project="$MANAGEMENT_PROJECT_ID" --member="$2" \
@@ -562,6 +641,7 @@ test -z "$(gcloud storage buckets get-iam-policy "gs://${BACKUP_BUCKET}" \
   --flatten='bindings[].members' --filter="bindings.members=${RESTORE_RUNTIME}" \
   --format='value(bindings.role)')"
 unset AUTH_RUNTIME DATABASE_RUNTIME JSON_RUNTIME RESTORE_RUNTIME
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: every absence check exits zero. Cleanup is an exceptional project deletion,
@@ -571,7 +651,10 @@ boundary, and erase useful state evidence.
 Create one cleanup pull request that commits the exact target and the completed access-removal
 attestation:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 git switch master
 git pull --ff-only
 git switch -c "feat/infra/cleanup-${REPLACEMENT_PROJECT_ID}"
@@ -593,6 +676,7 @@ git push -u origin HEAD
 gh pr create --repo "$REPOSITORY" --base master \
   --title "chore(infra): clean up disposable recovery project" \
   --body "Authorizes deletion of one verified recovery project after all temporary cross-project access was removed."
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Have a maintainer independently compare the committed project/receipt with the private recovery
@@ -600,25 +684,36 @@ record and the absence checks above. That maintainer must add `allow-resource-de
 pull request merges; a post-merge label is invalid. After approval, green checks, and merge, refresh
 `MASTER_SHA` and dispatch only the committed target:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+git switch master
+git pull --ff-only
+test -z "$(git status --porcelain)"
 MASTER_SHA="$(gh api "repos/${REPOSITORY}/commits/master" --jq .sha)"
 test "$(gh api "repos/${REPOSITORY}/contents/deploy/production/recovery-cleanup.json?ref=${MASTER_SHA}" \
   --jq -r .content | base64 --decode | jq -r .replacementProject)" = "$REPLACEMENT_PROJECT_ID"
 
 CONFIRM="DELETE ${REPLACEMENT_PROJECT_ID}"
-gh workflow run recovery.yaml --repo "$REPOSITORY" --ref master \
-  -f operation=cleanup-project \
-  -f replacement_project_id="$REPLACEMENT_PROJECT_ID" \
-  -f target_receipt="$TARGET_RECEIPT" \
-  -f confirm="$CONFIRM"
+CLEANUP_RUN_ID="$(
+  EXPECTED_SHA="$MASTER_SHA" ./ops/run-workflow.sh \
+    recovery.yaml run-id \
+    operation=cleanup-project \
+    replacement_project_id="$REPLACEMENT_PROJECT_ID" \
+    target_receipt="$TARGET_RECEIPT" \
+    confirm="$CONFIRM"
+)"
+printf 'Recovery cleanup run ID: %s\n' "$CLEANUP_RUN_ID"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Approve `production-recovery`. The workflow installs no Node or OpenTofu tooling for cleanup. It
-matches the requested source-receipt ID to the exact committed tuple, replays the historical
-deletion-label gate for the exact merge, rejects management/production IDs, verifies the five
-code-owned recovery labels, requires the exact recovery service account to hold only the predefined
-project-deletion boundary, then requests deletion with all provider output hidden. Expected safe output is
-`Disposable recovery project is DELETE_REQUESTED.`
+The helper waits through `production-recovery`. The workflow installs no Node or OpenTofu tooling for
+cleanup. It matches the requested source-receipt ID to the exact committed tuple, replays the
+historical deletion-label gate for the exact merge, rejects management/production IDs, verifies the
+five code-owned recovery labels, requires the exact recovery service account to hold only the
+predefined project-deletion boundary, then requests deletion with all provider output hidden.
+Expected safe output is `Disposable recovery project is DELETE_REQUESTED.`
 
 Google project deletion is recoverable for its documented pending-deletion window. Do not restore a
 completed drill project unless the deletion itself was erroneous; preserve the private incident
@@ -641,12 +736,27 @@ path.
 Record the bounded lifetime from provider and workflow metadata without printing billing or receipt
 content:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 REPOSITORY='a-novel/infra'
 REPLACEMENT_PROJECT_ID=''
 RECOVERY_CREATED_AT=''
-CLEANUP_RUN_ID=''
 [[ "$REPLACEMENT_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
+CLEANUP_RUNS="$(gh run list --repo "$REPOSITORY" --workflow recovery.yaml \
+  --branch master --event workflow_dispatch --limit 100 \
+  --json databaseId,displayTitle,conclusion,createdAt)"
+CLEANUP_RUN_ID="$(jq --raw-output --arg project "$REPLACEMENT_PROJECT_ID" '
+  [
+    .[]
+    | select(.conclusion == "success")
+    | select(.displayTitle | startswith("recovery cleanup-project " + $project + " by @"))
+  ]
+  | sort_by(.createdAt)
+  | last
+  | .databaseId
+' <<<"$CLEANUP_RUNS")"
 [[ "$CLEANUP_RUN_ID" =~ ^[1-9][0-9]*$ ]]
 
 CLEANUP_RUN_METADATA="$(gh run view "$CLEANUP_RUN_ID" --repo "$REPOSITORY" \
@@ -661,13 +771,18 @@ RECOVERY_LIFETIME_SECONDS="$(($(date -u --date="$CLEANUP_COMPLETED_AT" +%s) - \
   $(date -u --date="$RECOVERY_CREATED_AT" +%s)))"
 test "$RECOVERY_LIFETIME_SECONDS" -ge 0
 printf 'Disposable recovery lifetime: %s seconds\n' "$RECOVERY_LIFETIME_SECONDS"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 `RECOVERY_CREATED_AT` is the `createTime` printed by this safe command while the project is still
 active; capture it before dispatching cleanup:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud projects describe "$REPLACEMENT_PROJECT_ID" --format='value(createTime)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 In **Google Cloud console → Billing → Reports**, select the same billing account, filter **Projects**

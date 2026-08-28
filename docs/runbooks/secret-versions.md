@@ -19,22 +19,25 @@ afterward. GitHub recovery automation cannot read payloads. See
 
 ## Operator context
 
-Paste this block once before adding or rotating a version:
+Run this and later blocks in the existing configured zsh session. Paste this block once before
+adding or rotating a version:
 
-```bash
-set -euo pipefail
-set +x
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 umask 077
 
 REPOSITORY='a-novel/infra'
 MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID --repo "$REPOSITORY")"
 [[ "$MANAGEMENT_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 ## Preconditions
 
 - Complete the [management-plane bootstrap](./bootstrap-management-plane.md).
-- Use the declared operator Google account with MFA in a private, non-recorded Bash or Zsh session.
+- Use the declared operator Google account with MFA in a private, non-recorded zsh session.
 - Obtain or generate the value in an approved password manager. Do not ask an agent to generate,
   transmit, or retain it.
 - Know the one exact secret ID and its runtime format. DSNs and passwords are different values even
@@ -66,8 +69,12 @@ production-json-keys-postgres-backup-password
 
 Run the executable from the repository root with one allowed ID:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 ./ops/add-secret-version.sh production-authentication-postgres-password
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 The script reads the management project from GitHub, checks the secret container, and asks for the
@@ -95,7 +102,10 @@ without printing or exporting them; host startup fails closed if any pair is equ
 
 Prepare all nine values, then populate the containers in dependency order with one command:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 ./ops/add-secret-version.sh \
   production-authentication-postgres-password \
   production-authentication-postgres-backup-password \
@@ -106,6 +116,7 @@ Prepare all nine values, then populate the containers in dependency order with o
   production-authentication-smtp-sender-password \
   production-authentication-super-admin-password \
   production-json-keys-app-master-key
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Look for nine `Created <secret> version <number>` lines. If the command stops partway, inspect
@@ -144,7 +155,10 @@ same numeric version; never update only one side.
 
 Add the replacement and select both numeric versions explicitly:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 SECRET_ID=''
 ./ops/add-secret-version.sh "$SECRET_ID"
 gcloud secrets versions list "$SECRET_ID" \
@@ -164,27 +178,36 @@ gcloud secrets versions describe "${OLD_VERSION_ID}" \
   --secret="${SECRET_ID}" \
   --project="${MANAGEMENT_PROJECT_ID}" \
   --format='yaml(name,state,createTime)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 After deployment evidence confirms no consumer uses it:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud secrets versions disable "${OLD_VERSION_ID}" \
   --secret="${SECRET_ID}" \
   --project="${MANAGEMENT_PROJECT_ID}" \
   --quiet \
   --format='yaml(name,state)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: the exact old version is `DISABLED`. If a rollback needs it, re-enable that
 same version and redeploy the prior receipt:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud secrets versions enable "${OLD_VERSION_ID}" \
   --secret="${SECRET_ID}" \
   --project="${MANAGEMENT_PROJECT_ID}" \
   --quiet \
   --format='yaml(name,state)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: `ENABLED`. Re-enabling changes no payload.
@@ -195,7 +218,10 @@ Destroy only a disabled version after its documented rollback window. Secret Man
 30-day delay means the destroy request schedules deletion instead of immediately erasing the payload.
 This is still a production-destructive action and requires a reviewed recovery record.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud secrets versions describe "${OLD_VERSION_ID}" \
   --secret="${SECRET_ID}" \
   --project="${MANAGEMENT_PROJECT_ID}" \
@@ -210,6 +236,7 @@ gcloud secrets versions destroy "${OLD_VERSION_ID}" \
   --project="${MANAGEMENT_PROJECT_ID}" \
   --quiet \
   --format='yaml(name,state,scheduledDestroyTime)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: a scheduled destruction time approximately 30 days ahead. During that delay,
@@ -227,12 +254,16 @@ version is disabled.
 
 Query audit metadata without payloads:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud logging read \
   'protoPayload.serviceName="secretmanager.googleapis.com" AND protoPayload.resourceName:"/secrets/'"${SECRET_ID}"'"' \
   --project="${MANAGEMENT_PROJECT_ID}" \
   --limit=20 \
   --format='table(timestamp,protoPayload.methodName,protoPayload.authenticationInfo.principalEmail)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: add/disable/enable/destroy metadata attributed to the named operator. Secret
@@ -240,9 +271,13 @@ Manager audit records do not include payloads.
 
 Clear the remaining identifiers and close the private shell:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 unset MANAGEMENT_PROJECT_ID SECRET_ID VERSION_ID OLD_VERSION_ID CONFIRM_DESTROY
 unset SECRET_VALUE SECRET_VALUE_CONFIRMATION
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 If shell tracing was ever enabled or a payload appeared on screen, treat the value as compromised:

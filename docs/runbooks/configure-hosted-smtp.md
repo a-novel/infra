@@ -19,16 +19,19 @@ Official references: [Plunk pricing](https://www.useplunk.com/pricing),
 
 ## Operator context
 
-Choose the sending identity, then paste this block once before section 1:
+Run this and later blocks in the existing configured zsh session. Choose the sending identity, then
+paste this block once before section 1:
 
-```bash
-set -euo pipefail
-set +x
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 umask 077
 
 SENDING_DOMAIN=''
 SMTP_SENDER_EMAIL=''
 SMTP_SENDER_NAME=''
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 ## Decision and boundary
@@ -130,7 +133,10 @@ policy to complete this setup.
 After DNS propagation, use the dashboard's recheck and independently inspect public DNS from a
 private terminal. Substitute only non-secret domain and selector values:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 DKIM_SELECTOR=''
 [[ "$SENDING_DOMAIN" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]]
 [[ "$DKIM_SELECTOR" =~ ^[a-z0-9_-]+$ ]]
@@ -138,6 +144,7 @@ DKIM_SELECTOR=''
 dig +short TXT "$SENDING_DOMAIN"
 dig +short CNAME "${DKIM_SELECTOR}._domainkey.${SENDING_DOMAIN}"
 dig +short TXT "_dmarc.${SENDING_DOMAIN}"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Repeat the CNAME query for all three selectors and inspect the exact bounce/MAIL FROM names from the
@@ -159,7 +166,10 @@ procedure.
 
 Validate only the non-payload fields locally:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 SMTP_HOST=''
 SMTP_USERNAME=''
 
@@ -168,6 +178,7 @@ SMTP_USERNAME=''
 [[ "$SMTP_SENDER_EMAIL" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]
 [[ "${SMTP_SENDER_EMAIL##*@}" == "$SENDING_DOMAIN" ]]
 [[ -n "$SMTP_SENDER_NAME" && "${#SMTP_SENDER_NAME}" -le 100 ]]
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Use [Add or rotate a secret version](./secret-versions.md) to write the password through hidden
