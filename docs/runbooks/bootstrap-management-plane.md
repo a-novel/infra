@@ -41,7 +41,7 @@ User, then restart this runbook. That payment and account-recovery step is inten
 Stop immediately if any of these are true:
 
 - the checkout is dirty or not on `master`;
-- `gcloud auth list` selects a different human than the intended operator;
+- `gcloud config get-value account` names a different human than the intended operator;
 - the proposed project ID already resolves;
 - the plan summary contains a deletion, replacement, or state-forget action;
 - the GitHub environments permit unprotected branches;
@@ -49,47 +49,37 @@ Stop immediately if any of these are true:
 - a service-account user-managed key exists;
 - removing temporary broad access makes the final no-change plan fail.
 
-## 1. Prepare a private operator shell
+## 1. Verify local tools and authenticate the operator
 
-Run from the repository root. The variables contain identifiers only, not payloads, but the strict
-shell mode prevents an empty identifier from targeting the wrong resource.
-
-```bash
-set -euo pipefail
-set +x
-umask 077
-
-test "$(git branch --show-current)" = "master"
-test -z "$(git status --porcelain)"
-git pull --ff-only
-
-test "$(cat .opentofu-version)" = "1.12.6"
-tofu version
-gcloud version
-gh auth status
-jq --version
-```
-
-Expected safe result: the branch and cleanliness checks print nothing; OpenTofu reports `v1.12.6`;
-the other tools report versions; and `gh` reports an authenticated account with admin access to the
-repository.
-
-Authenticate the intended Google human both for `gcloud` and for provider-compatible Application
-Default Credentials. Neither command creates a service-account key.
+The ordered index's repository gate already proves that the checkout is clean, current, and on
+`master`. When entering this runbook directly, complete
+[step 0](./README.md#0-inspect-the-repository-gate) once before continuing.
 
 ```bash
-gcloud auth login
-gcloud auth application-default login
-
-OPERATOR_EMAIL="$(gcloud config get-value account 2>/dev/null)"
-test -n "${OPERATOR_EMAIL}"
-OPERATOR_PRINCIPAL="user:${OPERATOR_EMAIL}"
-
-gcloud auth list --filter=status:ACTIVE --format='value(account)'
-printf 'OpenTofu operator: %s\n' "${OPERATOR_PRINCIPAL}"
+tofu version    # OpenTofu v1.12.6
+gcloud version  # Google Cloud SDK <installed version>
+gh --version    # gh version <installed version>
+jq --version    # jq-<installed version>
 ```
 
-Expected safe result: both final lines name the same intended human. Stop if they do not.
+Look for: OpenTofu reports exactly `v1.12.6`; the other three commands print their installed version
+and exit successfully. Their versions are not pinned by this repository.
+
+Authenticate the intended Google human once and write the same login to Application Default
+Credentials for OpenTofu. This creates no service-account key.
+
+```bash
+gcloud auth login --update-adc
+gcloud config get-value account
+```
+
+Look for: the final command names the intended human.
+
+Keep that account in the IAM member syntax used by later commands:
+
+```bash
+OPERATOR_PRINCIPAL="user:$(gcloud config get-value account 2>/dev/null)"
+```
 
 ## 2. Select billing and the globally unique management-project ID
 
@@ -788,7 +778,7 @@ unset TF_DATA_DIR TF_VAR_management_project_id TF_VAR_operator_principals
 unset PLAN_PROVIDER PLAN_ACCOUNT BOOTSTRAP_PLAN BOOTSTRAP_PLAN_JSON BOOTSTRAP_TFVARS_FILE
 unset REMOTE_PLAN REMOTE_PLAN_JSON FINAL_PLAN FINAL_PLAN_JSON
 unset STATE_BUCKET BACKUP_BUCKET RECEIPT_BUCKET MANAGEMENT_PROJECT_NUMBER
-unset MANAGEMENT_PROJECT_ID BILLING_ACCOUNT_ID OPERATOR_EMAIL OPERATOR_PRINCIPAL
+unset MANAGEMENT_PROJECT_ID BILLING_ACCOUNT_ID OPERATOR_PRINCIPAL
 unset ENVIRONMENT_REVIEWER_ID ENVIRONMENT_REVIEWER_LOGIN
 ```
 

@@ -31,20 +31,36 @@ partial-failure section. Do not repeat a mutating command only because the local
 
 ## First production run
 
-### 0. Verify the repository gate
+### 0. Inspect the repository gate
 
 Run from the infrastructure repository root:
 
 ```bash
 git switch master
 git pull --ff-only
+```
+
+Check the local checkout once:
+
+```bash
+git branch --show-current
+git status --short
+```
+
+Look for: the branch is `master`, the pull succeeds, and `git status` prints nothing. Check this once
+before starting the first run.
+
+Then inspect the GitHub gate:
+
+```bash
 ./ops/verify-repository-gate.sh
 ```
 
-`Pass`: the script ends with `Repository gate passed`; the checkout is clean at the remote `master`
-commit, GitHub authentication names the intended account, the required-check list is exactly the
-repository policy documented in the root [Setup](../../README.md#setup), and the release switch is
-false or not created yet.
+Look for: GitHub authentication names the intended account; ruleset enforcement is `active`; the
+required checks are exactly `epic-freeze`, `lint-repository`, `merge-gate`, `scan-infrastructure`,
+and `validate-opentofu`; and the release-switch result is either `[]` before bootstrap or one
+`PRODUCTION_RELEASES_ENABLED` entry whose value is `false`. Stop if the command fails or any result
+differs.
 
 `Next`: step 1.
 
