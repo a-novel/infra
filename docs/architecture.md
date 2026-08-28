@@ -238,10 +238,11 @@ into a project-deletion authority.
 ## State and bootstrap
 
 The Google Cloud Storage backend bucket must exist before OpenTofu can use it. The initial bootstrap
-therefore starts with temporary local state under an operator's control, creates and verifies the
-management state bucket, migrates that state to the backend, and removes the temporary broad
-authority. The [bootstrap runbook](./runbooks/bootstrap-management-plane.md) provides the exact
-operator commands, safe expected output, independent checks, partial-failure response, and cleanup.
+therefore creates the empty private bucket with versioning and soft delete, initializes the backend,
+and imports the bucket before the first plan. OpenTofu manages it from that plan onward, and state is
+never written to the repository checkout. The
+[bootstrap runbook](./runbooks/bootstrap-management-plane.md) provides the exact operator commands,
+safe expected output, independent checks, partial-failure response, and cleanup.
 
 Each normal root uses a distinct managed-folder state prefix and a distinct automation identity.
 Recovery can read normal state but can write only four nested managed folders under

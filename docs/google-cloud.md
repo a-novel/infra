@@ -16,8 +16,8 @@ The bootstrap root now defines the resources inside a stable management project:
 backup, and receipt buckets; managed-folder state boundaries; four keyless automation identities and
 GitHub OIDC providers; exact IAM; nine metadata-only secret containers; required APIs; and targeted
 Data Access audit logging. Merging the code creates nothing. The project, billing link, initial APIs,
-first local-state apply, state migration, GitHub environment protection, optional organization
-policies, and temporary-access removal remain explicit human bootstrap actions.
+private state-bucket seed and import, first apply, GitHub environment protection, optional
+organization policies, and temporary-access removal remain explicit human bootstrap actions.
 
 The foundation root now defines the replaceable workload project, required APIs, a custom VPC and
 subnet, explicit restricted Google routes, firewall policy, private DNS, deprivileged default service

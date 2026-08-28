@@ -4,9 +4,9 @@
 > finish all 13 steps, then continue to workload foundation.
 
 This is the one-time, operator-only procedure for creating Agora's stable Google Cloud management
-plane, migrating its initial local state into GCS, configuring GitHub's deployment gates, and
-removing temporary broad access. It supports both a standalone billing-account project and a project
-placed under an existing organization or folder.
+plane, seeding its protected GCS backend, configuring GitHub's deployment gates, and removing
+temporary broad access. It supports both a standalone billing-account project and a project placed
+under an existing organization or folder.
 
 Do not run this procedure from a pull-request branch. Do not let an agent run it. Stop after any
 unexpected output: every creation command is idempotent only within the state and identifiers
@@ -15,7 +15,9 @@ established here, and guessing during bootstrap can create a second root of trus
 Official references: [create a project](https://cloud.google.com/resource-manager/docs/creating-managing-projects),
 [link billing](https://cloud.google.com/billing/docs/how-to/modify-project),
 [Application Default Credentials](https://cloud.google.com/docs/authentication/provide-credentials-adc),
+[create a storage bucket](https://cloud.google.com/sdk/gcloud/reference/storage/buckets/create),
 [GCS backend](https://opentofu.org/docs/language/settings/backends/gcs/),
+[import existing infrastructure](https://opentofu.org/docs/cli/commands/import/),
 [GitHub environments](https://docs.github.com/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments),
 and [Google WIF for deployment pipelines](https://cloud.google.com/iam/docs/workload-identity-federation-with-deployment-pipelines).
 
@@ -44,6 +46,7 @@ Stop immediately if any of these are true:
 - the checkout is dirty or not on `master`;
 - `gcloud config get-value account` names a different human than the intended operator;
 - the proposed project ID already resolves;
+- the derived state-bucket name already resolves before section 7;
 - the plan summary contains a deletion, replacement, or state-forget action;
 - the GitHub environments permit unprotected branches;
 - foundation or recovery has no required reviewer, permits admin bypass, or allows self-review
@@ -378,9 +381,12 @@ test "$(gh variable get PRODUCTION_RELEASES_ENABLED --repo a-novel/infra)" = fal
 Expected safe result: the test prints nothing and succeeds. Only the production deployment runbook
 may change this value to `true`, after every launch prerequisite and explicit authorization pass.
 
-## 7. Create and inspect the initial local plan
+## 7. Seed the state backend and inspect the initial plan
 
-No secret payload is an OpenTofu variable. The operator list contains IAM member names only.
+The GCS backend requires a bucket that already exists. Create this one bucket with its state
+protections, initialize the backend, and import the bucket before planning. OpenTofu manages it from
+that point. No secret payload is an OpenTofu variable; the operator list contains IAM member names
+only.
 
 ```bash
 export TF_IN_AUTOMATION=true
@@ -392,21 +398,61 @@ export TF_DATA_DIR="${BOOTSTRAP_TEMP_DIR}/tofu-data"
 BOOTSTRAP_PLAN="${BOOTSTRAP_TEMP_DIR}/bootstrap.tfplan"
 BOOTSTRAP_PLAN_JSON="${BOOTSTRAP_TEMP_DIR}/bootstrap.json"
 
-tofu -chdir=bootstrap init -backend=false -input=false
+STATE_BUCKET="${MANAGEMENT_PROJECT_ID}-${MANAGEMENT_PROJECT_NUMBER}-tofu-state"
+! gcloud storage buckets describe "gs://${STATE_BUCKET}"
+
+gcloud storage buckets create "gs://${STATE_BUCKET}" \
+  --project="${MANAGEMENT_PROJECT_ID}" \
+  --location=EU \
+  --default-storage-class=STANDARD \
+  --uniform-bucket-level-access \
+  --public-access-prevention \
+  --soft-delete-duration=7d
+
+gcloud storage buckets update "gs://${STATE_BUCKET}" --versioning
+
+gcloud storage buckets describe "gs://${STATE_BUCKET}" \
+  --format='yaml(name,location,storage_class,public_access_prevention,uniform_bucket_level_access,versioning,soft_delete_policy)'
+```
+
+Expected safe result: the first lookup reports that the bucket is absent; creation succeeds; and the
+final description reports the exact derived name, `EU`, `STANDARD`, enforced public-access
+prevention, uniform access, versioning, and seven-day soft delete. Stop if the name already belongs
+to any project or any protection differs.
+
+Initialize the remote backend and let the mocked tests run before the import changes state:
+
+```bash
+tofu -chdir=bootstrap init \
+  -reconfigure \
+  -input=false \
+  -backend-config="bucket=${STATE_BUCKET}" \
+  -backend-config='prefix=bootstrap'
+
 tofu -chdir=bootstrap validate
 tofu -chdir=bootstrap test
+
+tofu -chdir=bootstrap import \
+  -input=false \
+  google_storage_bucket.state \
+  "${MANAGEMENT_PROJECT_ID}/${STATE_BUCKET}"
+
+tofu -chdir=bootstrap state list
 tofu -chdir=bootstrap plan -input=false -out="${BOOTSTRAP_PLAN}"
 tofu -chdir=bootstrap show -json "${BOOTSTRAP_PLAN}" >"${BOOTSTRAP_PLAN_JSON}"
 ./ops/plan-summary.sh bootstrap "${BOOTSTRAP_PLAN_JSON}"
 ```
 
-Expected safe result: validation and mocked tests pass; the summary prints only action, resource type,
-and count; all actions are creates; and there is no deletion, replacement, resource address, project
-ID, email, token, state value, or payload in the summary. The full binary and JSON plans remain in a
-mode-`0700` temporary directory and must not be uploaded to GitHub or pasted into an issue.
+Expected safe result: validation and all four mocked tests pass; the state list contains
+`google_storage_bucket.state` and no other managed address; and the summary contains one `update` for
+`google_storage_bucket`, plus the declared creates and any read-only project lookup. It prints no
+resource address, project ID, email, token, state value, or payload. The full binary and JSON plans
+remain in a mode-`0700` temporary directory and must not be uploaded to GitHub or pasted into an
+issue.
 
 Review the resource counts against [`bootstrap/README.md`](../../bootstrap/README.md). If the summary
-contains an update, replacement, delete, or forget, stop and investigate; this is not a first apply.
+contains an update other than the single imported state bucket, or any replacement, delete, or
+forget, stop and investigate.
 
 ## 8. Apply the exact reviewed plan once
 
@@ -419,24 +465,25 @@ test -z "$(git status --porcelain)"
 git rev-parse HEAD
 
 tofu -chdir=bootstrap apply -input=false "${BOOTSTRAP_PLAN}"
-chmod 600 bootstrap/terraform.tfstate 2>/dev/null || true
 ```
 
 Expected safe result: OpenTofu reports a successful apply and emits only the non-secret project,
 bucket, identity-provider, service-account, prefix, and secret-ID outputs. Record the commit SHA and
-the apply completion time in the private operator record.
+the apply completion time in the private operator record. State is written directly to the versioned
+GCS backend.
 
 If the apply fails partway, do not delete or recreate resources with `gcloud`. Preserve
-`bootstrap/terraform.tfstate` and the temporary directory, fix only the reported cause, regenerate a
-sanitized plan from the same checkout, and resume through OpenTofu. If state was lost after any create
-succeeded, stop and prepare explicit imports; do not run a second blind create.
+the temporary directory, fix only the reported cause, regenerate a sanitized plan from the same
+checkout, and resume through OpenTofu. Do not repeat the bucket import when its address remains in
+state. If remote state was lost after any create succeeded, stop and prepare explicit imports; do not
+run a second blind create.
 
-## 9. Verify resources before moving state
+## 9. Verify resources
 
 Read the output identifiers into shell variables without printing state:
 
 ```bash
-STATE_BUCKET="$(tofu -chdir=bootstrap output -raw state_bucket_name)"
+test "$(tofu -chdir=bootstrap output -raw state_bucket_name)" = "${STATE_BUCKET}"
 BACKUP_BUCKET="$(tofu -chdir=bootstrap output -raw backup_bucket_name)"
 RECEIPT_BUCKET="$(tofu -chdir=bootstrap output -raw receipt_bucket_name)"
 
@@ -485,21 +532,10 @@ Expected safe result: the nine IDs in the bootstrap secret-contract table and ex
 `infra-*` service-account emails. Secret values do not exist yet and must not be added during this
 verification.
 
-## 10. Migrate local state to GCS and verify the remote backend
+## 10. Verify the remote backend and absence of local state
 
-Keep the same `TF_DATA_DIR`; it records that the current backend is local. The migration prompt must
-name the new GCS backend and ask to copy the existing state. Read it, then answer `yes`.
-
-```bash
-tofu -chdir=bootstrap init \
-  -migrate-state \
-  -input=true \
-  -backend-config="bucket=${STATE_BUCKET}" \
-  -backend-config='prefix=bootstrap'
-```
-
-Expected safe result: OpenTofu reports successful backend initialization and state migration. Verify
-the remote object and use the remote backend to list addresses without exposing values:
+The same `TF_DATA_DIR` has used GCS since the bucket import. Verify the remote object and list
+addresses without exposing values:
 
 ```bash
 gcloud storage ls --all-versions \
@@ -528,16 +564,14 @@ tofu -chdir=bootstrap show -json "${REMOTE_PLAN}" >"${REMOTE_PLAN_JSON}"
 Expected safe result: only the summary header, because there are no changes. If OpenTofu reports
 drift, stop before removing temporary access.
 
-After remote state and the no-change plan are verified, remove only the exact ignored local state
-copies. Remote versioned state is the recovery source after this point.
+Confirm that no local state file was created:
 
 ```bash
-find bootstrap -maxdepth 1 -type f -name 'terraform.tfstate*' -print
-rm -f -- bootstrap/terraform.tfstate bootstrap/terraform.tfstate.backup
+test -z "$(find bootstrap -maxdepth 1 -type f -name 'terraform.tfstate*' -print)"
 ```
 
-The first command should name no unexpected path. The second permanently removes only those two
-local files; it does not touch remote state.
+Expected safe result: the test prints nothing and succeeds. The versioned GCS object is the only
+bootstrap state copy.
 
 ## 11. Publish exact workflow coordinates and the bootstrap input bundle
 
@@ -808,7 +842,8 @@ unset PLAN_PROVIDER PLAN_ACCOUNT BOOTSTRAP_PLAN BOOTSTRAP_PLAN_JSON BOOTSTRAP_TF
 unset REMOTE_PLAN REMOTE_PLAN_JSON FINAL_PLAN FINAL_PLAN_JSON
 unset STATE_BUCKET BACKUP_BUCKET RECEIPT_BUCKET MANAGEMENT_PROJECT_NUMBER
 unset MANAGEMENT_PROJECT_ID BILLING_ACCOUNT_ID OPERATOR_PRINCIPAL
-unset ENVIRONMENT_REVIEWER_ID ENVIRONMENT_REVIEWER_LOGIN
+unset ENVIRONMENT_REVIEWER_ID ENVIRONMENT_REVIEWER_LOGIN PREVENT_SELF_REVIEW
+unset BOOTSTRAP_TEMP_DIR
 ```
 
 This permanently removes only the unique temporary directory created in section 7. The remote state,
