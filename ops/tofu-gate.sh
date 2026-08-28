@@ -91,16 +91,17 @@ fi
 
 run_quietly() {
     local diagnostic_file="$1"
-    shift
+    local stage="$2"
+    shift 2
 
     if ! "$@" >"${diagnostic_file}" 2>&1; then
-        printf 'A protected OpenTofu command failed; its potentially sensitive diagnostics were not published.\n' >&2
+        printf 'Protected OpenTofu %s failed; its potentially sensitive diagnostics were not published.\n' "${stage}" >&2
         return 1
     fi
 }
 
 initialize_root() {
-    run_quietly "${TEMP_DIR}/init.log" \
+    run_quietly "${TEMP_DIR}/init.log" "backend initialization" \
         tofu -chdir="${ROOT_DIR}" init \
         -reconfigure \
         -input=false \
@@ -110,9 +111,9 @@ initialize_root() {
 }
 
 validate_root() {
-    run_quietly "${TEMP_DIR}/fmt.log" tofu -chdir="${ROOT_DIR}" fmt -check -diff
-    run_quietly "${TEMP_DIR}/validate.log" tofu -chdir="${ROOT_DIR}" validate -no-color
-    run_quietly "${TEMP_DIR}/test.log" tofu -chdir="${ROOT_DIR}" test -no-color
+    run_quietly "${TEMP_DIR}/fmt.log" "format check" tofu -chdir="${ROOT_DIR}" fmt -check -diff
+    run_quietly "${TEMP_DIR}/validate.log" validation tofu -chdir="${ROOT_DIR}" validate -no-color
+    run_quietly "${TEMP_DIR}/test.log" tests tofu -chdir="${ROOT_DIR}" test -no-color
 }
 
 classify_plan() {
@@ -201,7 +202,7 @@ case "${ACTION}" in
             printf 'The exact reviewed plan file does not exist.\n' >&2
             exit 66
         fi
-        run_quietly "${TEMP_DIR}/apply.log" \
+        run_quietly "${TEMP_DIR}/apply.log" apply \
             tofu -chdir="${ROOT_DIR}" apply -input=false -no-color "${PLAN_FILE}"
         printf 'The exact reviewed %s plan applied successfully.\n' "${ROOT_NAME}"
         ;;

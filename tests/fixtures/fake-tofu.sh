@@ -8,6 +8,11 @@ if [[ "${1:-}" == -chdir=* ]]; then
     shift
 fi
 
+if [ "${FAKE_TOFU_FAIL_ACTION:-}" = "${1:-}" ]; then
+    printf 'fixture-sensitive-diagnostic\n' >&2
+    exit 1
+fi
+
 case "${1:-}" in
     init | fmt | validate | test)
         ;;

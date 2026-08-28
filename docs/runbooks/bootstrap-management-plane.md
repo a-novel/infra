@@ -396,7 +396,6 @@ export TF_VAR_operator_principals="[\"${OPERATOR_PRINCIPAL}\"]"
 BOOTSTRAP_TEMP_DIR="$(mktemp -d)"
 export TF_DATA_DIR="${BOOTSTRAP_TEMP_DIR}/tofu-data"
 BOOTSTRAP_PLAN="${BOOTSTRAP_TEMP_DIR}/bootstrap.tfplan"
-BOOTSTRAP_PLAN_JSON="${BOOTSTRAP_TEMP_DIR}/bootstrap.json"
 
 STATE_BUCKET="${MANAGEMENT_PROJECT_ID}-${MANAGEMENT_PROJECT_NUMBER}-tofu-state"
 ! gcloud storage buckets describe "gs://${STATE_BUCKET}"
@@ -438,17 +437,19 @@ tofu -chdir=bootstrap import \
   "${MANAGEMENT_PROJECT_ID}/${STATE_BUCKET}"
 
 tofu -chdir=bootstrap state list
-tofu -chdir=bootstrap plan -input=false -out="${BOOTSTRAP_PLAN}"
-tofu -chdir=bootstrap show -json "${BOOTSTRAP_PLAN}" >"${BOOTSTRAP_PLAN_JSON}"
-./ops/plan-summary.sh bootstrap "${BOOTSTRAP_PLAN_JSON}"
+
+BOOTSTRAP_PLAN_EXIT=0
+./ops/tofu-gate.sh plan bootstrap "${STATE_BUCKET}" "${BOOTSTRAP_PLAN}" \
+  || BOOTSTRAP_PLAN_EXIT=$?
+test "${BOOTSTRAP_PLAN_EXIT}" -eq 2
 ```
 
 Expected safe result: validation and all four mocked tests pass; the state list contains
 `google_storage_bucket.state` and no other managed address; and the summary contains one `update` for
-`google_storage_bucket`, plus the declared creates and any read-only project lookup. It prints no
-resource address, project ID, email, token, state value, or payload. The full binary and JSON plans
-remain in a mode-`0700` temporary directory and must not be uploaded to GitHub or pasted into an
-issue.
+`google_storage_bucket`, plus 114 creates across the declared inventory. It prints no resource
+address, project ID, email, token, state value, or payload. Exit code `2` confirms that the saved plan
+contains changes. The full binary plan remains in a mode-`0700` temporary directory and must not be
+uploaded to GitHub or pasted into an issue.
 
 Review the resource counts against [`bootstrap/README.md`](../../bootstrap/README.md). If the summary
 contains an update other than the single imported state bucket, or any replacement, delete, or
@@ -464,19 +465,34 @@ test "$(git branch --show-current)" = "master"
 test -z "$(git status --porcelain)"
 git rev-parse HEAD
 
-tofu -chdir=bootstrap apply -input=false "${BOOTSTRAP_PLAN}"
+./ops/tofu-gate.sh apply bootstrap "${STATE_BUCKET}" "${BOOTSTRAP_PLAN}"
 ```
 
-Expected safe result: OpenTofu reports a successful apply and emits only the non-secret project,
-bucket, identity-provider, service-account, prefix, and secret-ID outputs. Record the commit SHA and
-the apply completion time in the private operator record. State is written directly to the versioned
-GCS backend.
+Expected safe result: the gate reports that the exact reviewed bootstrap plan applied successfully.
+Record the commit SHA and apply completion time in the private operator record. State is written
+directly to the versioned GCS backend; plan values and apply diagnostics remain private.
 
-If the apply fails partway, do not delete or recreate resources with `gcloud`. Preserve
-the temporary directory, fix only the reported cause, regenerate a sanitized plan from the same
-checkout, and resume through OpenTofu. Do not repeat the bucket import when its address remains in
-state. If remote state was lost after any create succeeded, stop and prepare explicit imports; do not
-run a second blind create.
+If the apply fails partway, do not delete resources or repeat the bucket import. The gate names the
+failed stage without publishing its diagnostics. Fix the reported cause on `master`, keep the same
+variables and remote state, then save a new plan:
+
+```bash
+RECOVERY_PLAN="${BOOTSTRAP_TEMP_DIR}/bootstrap-recovery.tfplan"
+RECOVERY_PLAN_EXIT=0
+./ops/tofu-gate.sh plan bootstrap "${STATE_BUCKET}" "${RECOVERY_PLAN}" \
+  || RECOVERY_PLAN_EXIT=$?
+test "${RECOVERY_PLAN_EXIT}" -eq 2
+```
+
+Review the new sanitized summary as above, then apply that exact recovery plan:
+
+```bash
+./ops/tofu-gate.sh apply bootstrap "${STATE_BUCKET}" "${RECOVERY_PLAN}"
+./ops/tofu-gate.sh converge bootstrap "${STATE_BUCKET}"
+```
+
+If state was lost after a create succeeded, stop and prepare explicit imports instead of planning a
+second create.
 
 ## 9. Verify resources
 
@@ -497,7 +513,7 @@ Verify the three buckets plus the state and receipt IAM folders:
 ```bash
 for bucket in "${STATE_BUCKET}" "${BACKUP_BUCKET}" "${RECEIPT_BUCKET}"; do
   gcloud storage buckets describe "gs://${bucket}" \
-    --format='yaml(name,location,storage_class,public_access_prevention,uniform_bucket_level_access,versioning,soft_delete_policy,retention_policy,lifecycle_config)'
+    --format='yaml(name,location,default_storage_class,public_access_prevention,uniform_bucket_level_access,versioning_enabled,soft_delete_policy,retention_policy,lifecycle_config)'
 done
 
 gcloud storage managed-folders list "gs://${STATE_BUCKET}/" --uri | sort
@@ -553,16 +569,11 @@ clean plan does not guarantee a second state generation; Object Versioning recor
 when an operation writes the state object.
 
 ```bash
-REMOTE_PLAN="${BOOTSTRAP_TEMP_DIR}/remote-verify.tfplan"
-REMOTE_PLAN_JSON="${BOOTSTRAP_TEMP_DIR}/remote-verify.json"
-
-tofu -chdir=bootstrap plan -input=false -out="${REMOTE_PLAN}" >/dev/null
-tofu -chdir=bootstrap show -json "${REMOTE_PLAN}" >"${REMOTE_PLAN_JSON}"
-./ops/plan-summary.sh bootstrap "${REMOTE_PLAN_JSON}"
+./ops/tofu-gate.sh converge bootstrap "${STATE_BUCKET}"
 ```
 
-Expected safe result: only the summary header, because there are no changes. If OpenTofu reports
-drift, stop before removing temporary access.
+Expected safe result: only the summary header followed by `bootstrap is converged.` If OpenTofu
+reports drift, stop before removing temporary access.
 
 Confirm that no local state file was created:
 
@@ -804,17 +815,12 @@ Expected safe result: `true`.
 Finally prove the least-privilege operator can still read remote state and converge the root:
 
 ```bash
-FINAL_PLAN="${BOOTSTRAP_TEMP_DIR}/final.tfplan"
-FINAL_PLAN_JSON="${BOOTSTRAP_TEMP_DIR}/final.json"
-
-tofu -chdir=bootstrap plan -input=false -out="${FINAL_PLAN}" >/dev/null
-tofu -chdir=bootstrap show -json "${FINAL_PLAN}" >"${FINAL_PLAN_JSON}"
-./ops/plan-summary.sh bootstrap "${FINAL_PLAN_JSON}"
+./ops/tofu-gate.sh converge bootstrap "${STATE_BUCKET}"
 ```
 
-Expected safe result: only the summary header. A permission error or resource change means bootstrap
-is incomplete; restore the exact temporary grant used earlier, diagnose through the sanitized plan,
-and do not enable workflows.
+Expected safe result: only the summary header followed by `bootstrap is converged.` A permission
+error or resource change means bootstrap is incomplete; restore the exact temporary grant used
+earlier, diagnose through the sanitized plan, and do not enable workflows.
 
 ## 13. Verify state locking audit evidence and finish
 
@@ -838,8 +844,7 @@ shell:
 ```bash
 rm -rf -- "${BOOTSTRAP_TEMP_DIR}"
 unset TF_DATA_DIR TF_VAR_management_project_id TF_VAR_operator_principals
-unset PLAN_PROVIDER PLAN_ACCOUNT BOOTSTRAP_PLAN BOOTSTRAP_PLAN_JSON BOOTSTRAP_TFVARS_FILE
-unset REMOTE_PLAN REMOTE_PLAN_JSON FINAL_PLAN FINAL_PLAN_JSON
+unset PLAN_PROVIDER PLAN_ACCOUNT BOOTSTRAP_PLAN BOOTSTRAP_PLAN_EXIT BOOTSTRAP_TFVARS_FILE
 unset STATE_BUCKET BACKUP_BUCKET RECEIPT_BUCKET MANAGEMENT_PROJECT_NUMBER
 unset MANAGEMENT_PROJECT_ID BILLING_ACCOUNT_ID OPERATOR_PRINCIPAL
 unset ENVIRONMENT_REVIEWER_ID ENVIRONMENT_REVIEWER_LOGIN PREVENT_SELF_REVIEW

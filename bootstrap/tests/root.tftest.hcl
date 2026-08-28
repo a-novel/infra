@@ -188,10 +188,10 @@ run "builds_the_protected_management_plane" {
   assert {
     condition = (
       length(google_storage_bucket_iam_member.automation_bucket_viewer) == 2 &&
+      !contains(google_project_iam_custom_role.secret_metadata.permissions, "resourcemanager.projects.list") &&
       toset(google_project_iam_custom_role.plan_metadata.permissions) == toset([
         "resourcemanager.projects.get",
         "resourcemanager.projects.getIamPolicy",
-        "resourcemanager.projects.list",
         "storage.buckets.get",
         "storage.buckets.getIamPolicy",
         "storage.buckets.list",
@@ -201,7 +201,7 @@ run "builds_the_protected_management_plane" {
       ]) &&
       google_project_iam_member.plan_metadata.role == google_project_iam_custom_role.plan_metadata.name
     )
-    error_message = "Planning must refresh all bucket metadata without reading backup or receipt objects."
+    error_message = "Project-scoped custom roles must use valid metadata permissions without reading backup or receipt objects."
   }
 
   assert {
@@ -280,7 +280,12 @@ run "builds_the_protected_management_plane" {
 
   assert {
     condition = (
-      length(google_project_iam_audit_config.management) == 5 &&
+      toset(keys(google_project_iam_audit_config.management)) == toset([
+        "iam.googleapis.com",
+        "secretmanager.googleapis.com",
+        "storage.googleapis.com",
+        "sts.googleapis.com",
+      ]) &&
       alltrue([
         for config in values(google_project_iam_audit_config.management) :
         toset(config.audit_log_config[*].log_type) == toset(["ADMIN_READ", "DATA_READ", "DATA_WRITE"])

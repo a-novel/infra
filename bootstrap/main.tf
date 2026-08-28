@@ -112,8 +112,9 @@ locals {
   }
 
   audited_services = toset([
+    # Service Account Credentials inherits IAM's Data Access configuration and
+    # rejects a separate service-level audit policy.
     "iam.googleapis.com",
-    "iamcredentials.googleapis.com",
     "secretmanager.googleapis.com",
     "storage.googleapis.com",
     "sts.googleapis.com",
