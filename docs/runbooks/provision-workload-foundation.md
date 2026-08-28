@@ -11,8 +11,14 @@ broad access.
 
 ## Operator context
 
-Review `WORKLOAD_PROJECT_ID` and the four alert/operator assignments, then paste this block once
-before section 1.
+Start a disposable Bash session so a strict-mode failure returns to the original terminal:
+
+```bash
+bash
+```
+
+Review `WORKLOAD_PROJECT_ID` and the four alert/operator assignments, then paste this complete block
+before section 1 or after reopening the shell.
 
 ```bash
 set -euo pipefail
@@ -26,6 +32,7 @@ SUBNET_CIDR='10.20.0.0/24'
 WORKLOAD_PROJECT_NAME='Agora production'
 
 MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID --repo "$REPOSITORY")"
+BACKUP_BUCKET_NAME="$(gh variable get GCP_BACKUP_BUCKET --repo "$REPOSITORY")"
 WORKLOAD_PROJECT_ID='agora-production-prod'
 BILLING_ACCOUNT_ID="$(gcloud billing projects describe "$MANAGEMENT_PROJECT_ID" \
   --format='value(billingAccountName.basename())')"
@@ -52,6 +59,12 @@ unset PROJECT_PARENT_TYPE PROJECT_PARENT_ID
 
 FOUNDATION_SERVICE_ACCOUNT="infra-foundation@${MANAGEMENT_PROJECT_ID}.iam.gserviceaccount.com"
 PLAN_SERVICE_ACCOUNT="infra-plan@${MANAGEMENT_PROJECT_ID}.iam.gserviceaccount.com"
+DATABASE_OPERATOR_PRINCIPALS="$(
+  jq -cn --arg principal "$DATABASE_OPERATOR_PRINCIPAL" '[$principal]'
+)"
+AUTH_INITIALIZER_PRINCIPALS="$(
+  jq -cn --arg principal "$AUTH_INITIALIZER_PRINCIPAL" '[$principal]'
+)"
 ```
 
 ## Authorization gate
@@ -151,13 +164,8 @@ Google Cloud resource.
 [[ -z "$ORGANIZATION_ID" || "$ORGANIZATION_ID" =~ ^[0-9]+$ ]]
 [[ -z "$FOLDER_ID" || "$FOLDER_ID" =~ ^[0-9]+$ ]]
 [[ -z "$ORGANIZATION_ID" || -z "$FOLDER_ID" ]]
-
-DATABASE_OPERATOR_PRINCIPALS="$(
-  jq -cn --arg principal "$DATABASE_OPERATOR_PRINCIPAL" '[$principal]'
-)"
-AUTH_INITIALIZER_PRINCIPALS="$(
-  jq -cn --arg principal "$AUTH_INITIALIZER_PRINCIPAL" '[$principal]'
-)"
+jq -e 'length >= 1' <<<"$DATABASE_OPERATOR_PRINCIPALS" >/dev/null
+jq -e 'length >= 1' <<<"$AUTH_INITIALIZER_PRINCIPALS" >/dev/null
 
 printf 'Repository: %s\nManagement project: %s\nWorkload project: %s\nRegion: %s\nDatabase zone: %s\nSubnet: %s\n' \
   "$REPOSITORY" "$MANAGEMENT_PROJECT_ID" "$WORKLOAD_PROJECT_ID" "$REGION" "$DATABASE_ZONE" "$SUBNET_CIDR"
@@ -177,7 +185,7 @@ gcloud projects describe "$MANAGEMENT_PROJECT_ID" \
   --format='yaml(projectId,projectNumber,lifecycleState)'
 MANAGEMENT_PROJECT_NUMBER="$(gcloud projects describe "$MANAGEMENT_PROJECT_ID" --format='value(projectNumber)')"
 [[ "$MANAGEMENT_PROJECT_NUMBER" =~ ^[0-9]+$ ]]
-BACKUP_BUCKET_NAME="${MANAGEMENT_PROJECT_ID}-${MANAGEMENT_PROJECT_NUMBER}-backups"
+[[ "$BACKUP_BUCKET_NAME" == "${MANAGEMENT_PROJECT_ID}-${MANAGEMENT_PROJECT_NUMBER}-backups" ]]
 gcloud storage buckets describe "gs://${BACKUP_BUCKET_NAME}" \
   --format='yaml(name,location,public_access_prevention,uniform_bucket_level_access,retention_policy,lifecycle_config,soft_delete_policy)'
 gcloud iam service-accounts describe "$FOUNDATION_SERVICE_ACCOUNT" \
