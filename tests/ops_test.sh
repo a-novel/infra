@@ -64,6 +64,7 @@ printf '%s\n' \
     '[ "$*" = "variable get GCP_MANAGEMENT_PROJECT_ID --repo a-novel/infra" ]' \
     'printf "%s" "agora-management-test"' \
     >"${SECRET_MOCK_BIN}/gh"
+# shellcheck disable=SC2016
 printf '%s\n' \
     '#!/bin/bash' \
     'set -euo pipefail' \
