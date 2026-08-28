@@ -11,18 +11,16 @@ broad access.
 
 ## Operator context
 
-Start a disposable Bash session so a strict-mode failure returns to the original terminal:
-
-```bash
-bash
-```
+Run every command block directly in the existing configured zsh session. Each block scopes its
+fail-fast options and reports `STOP` on failure without closing the operator's terminal.
 
 Review `WORKLOAD_PROJECT_ID` and the four alert/operator assignments, then paste this complete block
 before section 1 or after reopening the shell.
 
-```bash
-set -euo pipefail
-set +x
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 umask 077
 
 REPOSITORY='a-novel/infra'
@@ -65,6 +63,7 @@ DATABASE_OPERATOR_PRINCIPALS="$(
 AUTH_INITIALIZER_PRINCIPALS="$(
   jq -cn --arg principal "$AUTH_INITIALIZER_PRINCIPAL" '[$principal]'
 )"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 ## Authorization gate
@@ -150,7 +149,10 @@ callable after this procedure.
 The operator-context block supplies every stable value. Validate it before reading or mutating a
 Google Cloud resource.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 [[ "$MANAGEMENT_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
 [[ "$WORKLOAD_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
 [[ "$MANAGEMENT_PROJECT_ID" != "$WORKLOAD_PROJECT_ID" ]]
@@ -169,6 +171,7 @@ jq -e 'length >= 1' <<<"$AUTH_INITIALIZER_PRINCIPALS" >/dev/null
 
 printf 'Repository: %s\nManagement project: %s\nWorkload project: %s\nRegion: %s\nDatabase zone: %s\nSubnet: %s\n' \
   "$REPOSITORY" "$MANAGEMENT_PROJECT_ID" "$WORKLOAD_PROJECT_ID" "$REGION" "$DATABASE_ZONE" "$SUBNET_CIDR"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: the final six selections match the intended projects and fixed EU location,
@@ -177,7 +180,10 @@ either alert address, operator or initializer principal, or either JSON principa
 
 Verify the active identities and stable bootstrap resources without changing anything:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud auth list --filter=status:ACTIVE --format='table(account,status)'
 gh auth status
 
@@ -195,6 +201,7 @@ gcloud billing accounts describe "$BILLING_ACCOUNT_ID" \
   --format='yaml(open,currencyCode)'
 BILLING_CURRENCY_CODE="$(gcloud billing accounts describe "$BILLING_ACCOUNT_ID" --format='value(currencyCode)')"
 [[ "$BILLING_CURRENCY_CODE" =~ ^[A-Z]{3}$ ]]
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: one intended Google account is active, GitHub is authenticated to the intended
@@ -205,8 +212,12 @@ needed.
 
 Screen the proposed workload ID before authorizing creation:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 ! gcloud projects describe "$WORKLOAD_PROJECT_ID"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Do not continue when metadata is returned. `NOT_FOUND` or a permission error only means the project
@@ -223,20 +234,28 @@ only after the authorization gate is lifted.
 
 For a folder:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud resource-manager folders add-iam-policy-binding "$FOLDER_ID" \
   --member="serviceAccount:${FOUNDATION_SERVICE_ACCOUNT}" \
   --role='roles/resourcemanager.projectCreator' \
   --condition=None
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 For an organization without a selected folder:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud organizations add-iam-policy-binding "$ORGANIZATION_ID" \
   --member="serviceAccount:${FOUNDATION_SERVICE_ACCOUNT}" \
   --role='roles/resourcemanager.projectCreator' \
   --condition=None
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Never run both. Google grants the project creator temporary `roles/owner` on the project it creates;
@@ -244,7 +263,10 @@ section 8 removes that exact binding and the parent-level creator role after exa
 
 Verify only the chosen parent:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 if [[ -n "$FOLDER_ID" ]]; then
   gcloud resource-manager folders get-iam-policy "$FOLDER_ID" \
     --flatten='bindings[].members' \
@@ -258,6 +280,7 @@ elif [[ -n "$ORGANIZATION_ID" ]]; then
 else
   printf 'Standalone path selected; do not grant parent authority.\n'
 fi
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: exactly one Project Creator row for the foundation service account, or the
@@ -269,7 +292,10 @@ Google has no parent resource on which to grant a service account Project Creato
 account. After explicit creation authorization, the human operator creates and bills the empty
 project, then grants the foundation identity temporary Owner so exact code-managed IAM can converge:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 [[ -z "$ORGANIZATION_ID" && -z "$FOLDER_ID" ]]
 
 gcloud projects create "$WORKLOAD_PROJECT_ID" \
@@ -281,6 +307,7 @@ gcloud projects add-iam-policy-binding "$WORKLOAD_PROJECT_ID" \
   --member="serviceAccount:${FOUNDATION_SERVICE_ACCOUNT}" \
   --role='roles/owner' \
   --condition=None
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 This creates only the project and billing link. Google can attach its standard empty `default` VPC
@@ -294,11 +321,15 @@ during exact-plan apply. Do not run `tofu import` or delete the default VPC from
 
 Verification:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud projects describe "$WORKLOAD_PROJECT_ID" \
   --format='yaml(projectId,name,lifecycleState,parent)'
 gcloud billing projects describe "$WORKLOAD_PROJECT_ID" \
   --format='yaml(projectId,billingEnabled)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: the intended project is active and billing is enabled. Do not enable Compute
@@ -313,7 +344,10 @@ Costs Manager to manage its budget. It does not need Billing Account Administrat
 are mutating; run them only after the authorization gate is lifted. Cloud Billing IAM does not
 support conditional bindings, so grant only these exact members and roles.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud billing accounts add-iam-policy-binding "$BILLING_ACCOUNT_ID" \
   --member="serviceAccount:${FOUNDATION_SERVICE_ACCOUNT}" \
   --role='roles/billing.user' \
@@ -326,11 +360,15 @@ gcloud billing accounts add-iam-policy-binding "$BILLING_ACCOUNT_ID" \
   --member="serviceAccount:${PLAN_SERVICE_ACCOUNT}" \
   --role='roles/billing.viewer' \
   --format=none
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Verify without dumping the rest of the billing policy:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud billing accounts get-iam-policy "$BILLING_ACCOUNT_ID" \
   --flatten='bindings[].members' \
   --filter="bindings.members=serviceAccount:${FOUNDATION_SERVICE_ACCOUNT}" \
@@ -339,6 +377,7 @@ gcloud billing accounts get-iam-policy "$BILLING_ACCOUNT_ID" \
   --flatten='bindings[].members' \
   --filter="bindings.members=serviceAccount:${PLAN_SERVICE_ACCOUNT}" \
   --format='table(bindings.role,bindings.members)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: exactly `roles/billing.costsManager` and `roles/billing.user`. The latter is
@@ -351,9 +390,13 @@ the read-only drift plan and cannot change billing or spend.
 The `production-foundation` environment must already have the protections established by the
 bootstrap runbook. Verify them before writing values:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gh api "repos/${REPOSITORY}/environments/production-foundation" \
   --jq '{name,protected_branches:.deployment_branch_policy.protected_branches,custom_branch_policies:.deployment_branch_policy.custom_branch_policies,reviewers:[.protection_rules[]? | select(.type=="required_reviewers") | .reviewers[].reviewer.login]}'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: the environment name is exact, protected branches are enabled, custom branch
@@ -366,14 +409,19 @@ the workflow interface small, masks privileged human identifiers and billing met
 and lets the compiler reuse the same reviewed capacity defaults for a disposable recovery project.
 It contains no application secret payload.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 if [[ -z "$ORGANIZATION_ID" && -z "$FOLDER_ID" ]]; then
   ADOPT_EXISTING_PROJECT=true
 else
   ADOPT_EXISTING_PROJECT=false
 fi
 
+[[ -n "$BACKUP_BUCKET_NAME" ]]
 FOUNDATION_CONFIG_FILE="$(mktemp)"
+{
 jq -n \
   --arg management_project_id "$MANAGEMENT_PROJECT_ID" \
   --arg workload_project_id "$WORKLOAD_PROJECT_ID" \
@@ -420,12 +468,16 @@ for environment in production-foundation production-recovery; do
     --repo "$REPOSITORY" --env "$environment" \
     <"$FOUNDATION_CONFIG_FILE"
 done
+} always {
+  rm -f -- "$FOUNDATION_CONFIG_FILE"
+  unset FOUNDATION_CONFIG_FILE
+}
 
-rm -f -- "$FOUNDATION_CONFIG_FILE"
-unset FOUNDATION_CONFIG_FILE ADOPT_EXISTING_PROJECT
+unset ADOPT_EXISTING_PROJECT
 unset COST_ALERT_EMAIL OPERATIONS_ALERT_EMAIL
 unset DATABASE_OPERATOR_PRINCIPAL DATABASE_OPERATOR_PRINCIPALS
 unset AUTH_INITIALIZER_PRINCIPAL AUTH_INITIALIZER_PRINCIPALS
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 `COST_ALERT_EMAIL` receives budget notifications and Cloud Quotas review follow-up.
@@ -433,9 +485,13 @@ unset AUTH_INITIALIZER_PRINCIPAL AUTH_INITIALIZER_PRINCIPALS
 budget. Neither carries cloud authority. The protected foundation service account owns the
 code-managed quota and monitoring roles. Verify names without printing values:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gh secret list --repo "$REPOSITORY" --env production-foundation
 gh secret list --repo "$REPOSITORY" --env production-recovery
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: `production-foundation` contains `BOOTSTRAP_TFVARS_JSON` and
@@ -450,7 +506,10 @@ small non-sensitive custody record in the matching state prefix. Its ID is the p
 `run-id-attempt`; it expires after 24 hours and can be consumed only once by the same commit and root.
 The environment reviewer approves both runs, but only the `apply` run mutates cloud resources.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 MASTER_SHA="$(gh api "repos/${REPOSITORY}/commits/master" --jq .sha)"
 printf 'Planning commit: %s\n' "$MASTER_SHA"
 
@@ -459,39 +518,52 @@ gh workflow run foundation.yaml --repo "$REPOSITORY" --ref master \
 gh run list --repo "$REPOSITORY" --workflow foundation.yaml --branch master \
   --event workflow_dispatch --limit 5 \
   --json databaseId,headSha,displayTitle,status,conclusion,url
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Select the row titled `foundation plan bootstrap`, verify `headSha` equals `MASTER_SHA`, then watch
 it and derive its exact plan ID:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 PLAN_RUN_ID='replace-with-bootstrap-plan-run-id'
 test "$(gh api "repos/${REPOSITORY}/actions/runs/${PLAN_RUN_ID}" --jq .head_sha)" = "$MASTER_SHA"
 gh run watch "$PLAN_RUN_ID" --repo "$REPOSITORY" --exit-status
 PLAN_ATTEMPT="$(gh api "repos/${REPOSITORY}/actions/runs/${PLAN_RUN_ID}" --jq .run_attempt)"
 PLAN_ID="${PLAN_RUN_ID}-${PLAN_ATTEMPT}"
 printf 'Bootstrap plan ID: %s\n' "$PLAN_ID"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Review the plan job log. It may contain only action counts grouped by resource type, the plan ID,
 and control messages—never addresses, values, outputs, configuration, or provider diagnostics.
 Confirm the current `master` commit is still unchanged, then apply that plan:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 test "$(gh api "repos/${REPOSITORY}/commits/master" --jq .sha)" = "$MASTER_SHA"
 gh workflow run foundation.yaml --repo "$REPOSITORY" --ref master \
   -f operation=apply -f root=bootstrap -f plan_id="$PLAN_ID"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Approve the `production-foundation` deployment, select the new `foundation apply bootstrap` row with
 the same `headSha`, and watch it to success. Repeat the exact sequence with `root=foundation`:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gh workflow run foundation.yaml --repo "$REPOSITORY" --ref master \
   -f operation=plan -f root=foundation
 gh run list --repo "$REPOSITORY" --workflow foundation.yaml --branch master \
   --event workflow_dispatch --limit 5 \
   --json databaseId,headSha,displayTitle,status,conclusion,url
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Set `PLAN_RUN_ID` to the `foundation plan foundation` row, repeat the SHA/watch/attempt commands,
@@ -518,10 +590,13 @@ and reviewing the code and this runbook.
 
 ## 6. Verify project, billing, APIs, and IAM after apply
 
-Continue in the same private shell so the validated section 1 values remain available. If that
-shell closed, collect section 1 again before continuing.
+Continue in the same configured zsh session so the validated values remain available. After
+reopening the terminal, rerun the operator-context block and section 1 before continuing.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud projects describe "$WORKLOAD_PROJECT_ID" \
   --format='yaml(projectId,projectNumber,name,parent,lifecycleState,labels)'
 gcloud billing projects describe "$WORKLOAD_PROJECT_ID" \
@@ -529,6 +604,7 @@ gcloud billing projects describe "$WORKLOAD_PROJECT_ID" \
 gcloud services list --enabled --project="$WORKLOAD_PROJECT_ID" \
   --filter='config.name:(artifactregistry.googleapis.com cloudscheduler.googleapis.com cloudquotas.googleapis.com cloudresourcemanager.googleapis.com compute.googleapis.com dns.googleapis.com iam.googleapis.com iap.googleapis.com logging.googleapis.com monitoring.googleapis.com oslogin.googleapis.com run.googleapis.com serviceusage.googleapis.com)' \
   --format='value(config.name)' | sort
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: the project is active with the selected parent and labels, billing is enabled,
@@ -538,7 +614,10 @@ Verify no service account has an unexpected primitive project role and no projec
 a user-managed key. The all-account enumeration is intentional: a newly introduced or
 provider-created account must not escape this check.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud projects get-iam-policy "$WORKLOAD_PROJECT_ID" \
   --format=json \
 | jq -r '
@@ -568,6 +647,7 @@ while IFS= read -r account_email; do
 done <<<"$PROJECT_SERVICE_ACCOUNTS"
 unset PROJECT_SERVICE_ACCOUNTS USER_KEY_NAMES
 printf 'All project service accounts have zero user-managed keys.\n'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: at most one Owner row for the foundation creator before cleanup, no Editor row
@@ -577,7 +657,10 @@ continue.
 
 Verify only the intended cross-project Secret Manager members without accessing payloads:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 for secret in \
   production-authentication-postgres-dsn \
   production-authentication-postgres-password \
@@ -594,6 +677,7 @@ for secret in \
     --filter='bindings.role=roles/secretmanager.secretAccessor' \
     --format='table(bindings.members)'
 done
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: every configured human operator appears on all nine secrets. No `infra-*`
@@ -607,7 +691,10 @@ intentionally omits the operators' separate Secret Version Manager bindings. Nev
 
 Verify that the release deployment role cannot execute a job or override an execution:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud iam roles describe infraReleaseCloudRunDeployer \
   --project="$WORKLOAD_PROJECT_ID" \
   --format=json \
@@ -639,6 +726,7 @@ gcloud iam roles describe infraReleaseCloudRunDeployer \
       "run.services.update"
     ] | sort)
   '
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: `true`. `run.jobs.run`, `run.jobs.runWithOverrides`, every Cloud Run IAM-policy
@@ -646,7 +734,10 @@ permission, project IAM, secret access, and networking permissions are absent.
 
 Verify the human-only initializer deployer separately:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud iam roles describe authenticationInitializerDeployer \
   --project="$WORKLOAD_PROJECT_ID" --format=json \
 | jq --exit-status '
@@ -666,6 +757,7 @@ gcloud iam roles describe authenticationInitializerDeployer \
       "run.operations.get"
     ] | sort)
   '
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: `true`. In particular, this role has neither `run.jobs.runWithOverrides` nor
@@ -673,7 +765,10 @@ Cloud Run IAM-policy access. Normal execution comes only from the separate initi
 
 Verify the five permanent authorization tags and the four production invocation conditions:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 WORKLOAD_PROJECT_NUMBER="$(gcloud projects describe "$WORKLOAD_PROJECT_ID" \
   --format='value(projectNumber)')"
 INVOCATION_TAG_KEY="$(gcloud resource-manager tags keys list \
@@ -701,6 +796,7 @@ gcloud projects get-iam-policy "$WORKLOAD_PROJECT_ID" --format=json \
       {role: "roles/run.servicesInvoker", title: "InternalCloudRunOnly"}
     ] | sort)
   '
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: both checks return `true`. Inspect the four filtered bindings privately:
@@ -714,7 +810,10 @@ into a public issue.
 Verify each configured initializer appears in all five required human grants and that the release
 service account appears in none of them:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 INITIALIZER_TAG_VALUE="$(gcloud resource-manager tags values list \
   --parent="$INVOCATION_TAG_KEY" --filter='shortName=initializer' --format='value(name)')"
 [[ "$INITIALIZER_TAG_VALUE" =~ ^tagValues/[0-9]+$ ]]
@@ -734,6 +833,7 @@ gcloud projects get-iam-policy "$WORKLOAD_PROJECT_ID" \
   --flatten='bindings[].members' \
   --filter="bindings.role=projects/${WORKLOAD_PROJECT_ID}/roles/authenticationInitializerDeployer" \
   --format='table(bindings.members)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 The fifth grant is the `AuthenticationInitializerOnly` project binding inspected above. Expected
@@ -743,7 +843,10 @@ initializer condition. The registry reader output may also contain the database 
 
 Verify the two runtime bucket roles without displaying unrelated members:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud storage buckets get-iam-policy "gs://${BACKUP_BUCKET_NAME}" --format=json \
   | jq --exit-status \
       --arg backup "serviceAccount:agora-backup@${WORKLOAD_PROJECT_ID}.iam.gserviceaccount.com" \
@@ -752,6 +855,7 @@ gcloud storage buckets get-iam-policy "gs://${BACKUP_BUCKET_NAME}" --format=json
         (roles_for($backup) == ["roles/storage.objectCreator"]) and
         (roles_for($restore) == ["roles/storage.objectViewer"])
       '
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: `true`. The backup account must not receive a viewer/admin role, and restore
@@ -761,7 +865,10 @@ must not receive a creator/admin role.
 
 Network and subnet:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud compute networks describe agora-production \
   --project="$WORKLOAD_PROJECT_ID" \
   --format='yaml(name,autoCreateSubnetworks,routingConfig.routingMode,mtu,subnetworks)'
@@ -772,6 +879,7 @@ gcloud compute networks subnets describe "agora-production-${REGION}" \
 gcloud compute routes list --project="$WORKLOAD_PROJECT_ID" \
   --filter='network:agora-production' \
   --format='table(name,destRange,nextHopGateway,priority)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: custom mode, regional routing, MTU 1460, the selected `/24`, Private Google
@@ -780,7 +888,10 @@ Access enabled, IPv4 only, and exactly the `199.36.153.4/30` and `34.126.0.0/18`
 
 Firewall and absence of idle/public network products:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud compute firewall-rules list --project="$WORKLOAD_PROJECT_ID" \
   --filter='network:agora-production' \
   --format='table(name,direction,priority,sourceRanges,destinationRanges,allowed,denied,targetTags)'
@@ -790,6 +901,7 @@ gcloud compute addresses list --project="$WORKLOAD_PROJECT_ID" \
 gcloud compute forwarding-rules list --project="$WORKLOAD_PROJECT_ID" --format='value(name)'
 gcloud services list --enabled --project="$WORKLOAD_PROJECT_ID" \
   --filter='config.name=vpcaccess.googleapis.com' --format='value(config.name)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: six named rules with tagged allow priorities 800/810 and a VPC-wide deny
@@ -801,13 +913,17 @@ exists.
 
 Private DNS:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud dns managed-zones list --project="$WORKLOAD_PROJECT_ID" \
   --format='table(name,dnsName,visibility,privateVisibilityConfig.networks.networkUrl)'
 for zone in restricted-googleapis private-artifact-registry private-cloud-run; do
   gcloud dns record-sets list --project="$WORKLOAD_PROJECT_ID" --zone="$zone" \
     --format='table(name,type,ttl,rrdatas)'
 done
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: exactly three private zones attached only to `agora-production`; their apex or
@@ -816,7 +932,10 @@ resolution is tested later from attached Cloud Run and VM workloads.
 
 Artifact Registry:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud artifacts repositories describe agora-production \
   --project="$WORKLOAD_PROJECT_ID" --location="$REGION" \
   --format='yaml(name,format,mode,dockerConfig.immutableTags,cleanupPolicyDryRun,cleanupPolicies)'
@@ -824,6 +943,7 @@ gcloud artifacts repositories get-iam-policy agora-production \
   --project="$WORKLOAD_PROJECT_ID" --location="$REGION" \
   --flatten='bindings[].members' \
   --format='table(bindings.role,bindings.members)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: Docker standard repository, immutable tags enabled, cleanup dry-run enabled,
@@ -832,10 +952,14 @@ reader. Runtime service accounts do not receive redundant same-project Cloud Run
 
 Quota preferences:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud quotas preferences list --project="$WORKLOAD_PROJECT_ID" \
   --billing-project="$MANAGEMENT_PROJECT_ID" \
   --format='table(name.segment(-1),service,quotaId,dimensions,quotaConfig.preferredValue,reconciling)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: four `europe-west1` preferences corresponding to Cloud Run CPU 8000 milli-vCPU,
@@ -845,13 +969,17 @@ state.
 
 Budget and notification channels:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud billing budgets list --billing-account="$BILLING_ACCOUNT_ID" \
   --filter='displayName="Agora production infrastructure"' \
   --format='yaml(displayName,amount,budgetFilter,thresholdRules,allUpdatesRule)'
 gcloud beta monitoring channels list --project="$WORKLOAD_PROJECT_ID" \
   --filter='displayName:("Agora production cost alerts" OR "Agora production operations alerts")' \
   --format='table(name,type,enabled,verificationStatus,displayName)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: one monthly budget of 60 `$BILLING_CURRENCY_CODE` units scoped to the
@@ -865,10 +993,14 @@ code-managed channel, then rerun the list command. Do not create a duplicate cha
 
 Monitoring policies:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud monitoring policies list --project="$WORKLOAD_PROJECT_ID" \
   --filter='displayName:Agora' \
   --format='table(displayName,enabled,severity)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: eight enabled policies. Five cover database CPU/memory/disk, one covers
@@ -880,13 +1012,17 @@ off while `PRODUCTION_RELEASES_ENABLED` is false; follow
 
 Logging:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud logging buckets describe _Default --location=global \
   --project="$WORKLOAD_PROJECT_ID" \
   --format='yaml(name,retentionDays,locked,analyticsEnabled)'
 gcloud logging exclusions describe successful-cloud-run-healthchecks \
   --project="$WORKLOAD_PROJECT_ID" \
   --format='yaml(name,disabled,filter)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: 30-day retention, unlocked, analytics disabled, and an enabled exclusion that
@@ -906,7 +1042,10 @@ authority earlier can strand a partially configured project.
 
 Read the organization ancestor and effective policies before requesting any new authority:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud projects get-ancestors "$WORKLOAD_PROJECT_ID" \
   --format='table(type,id)'
 
@@ -931,25 +1070,33 @@ for constraint in \
 done
 
 printf 'Missing organization policies: %s\n' "$MISSING_ORG_POLICY_COUNT"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 An empty `POLICY_ORGANIZATION_ID` selects the standalone controls below. For an
 organization-backed project with a nonzero missing count, an organization IAM administrator
 temporarily grants the human operator Organization Policy Administrator:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 test -n "$POLICY_ORGANIZATION_ID"
 test "$MISSING_ORG_POLICY_COUNT" -gt 0
 gcloud organizations add-iam-policy-binding "$POLICY_ORGANIZATION_ID" \
   --member="$OPERATOR_PRINCIPAL" \
   --role='roles/orgpolicy.policyAdmin' \
   --condition=None
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 After the grant propagates, the operator applies only missing policies. The explicit exit capture
 ensures one failed update does not skip removal of the temporary organization-wide role:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 POLICY_UPDATE_EXIT=0
 
 for constraint in \
@@ -969,15 +1116,20 @@ for constraint in \
 done
 
 printf 'Policy update exit: %s\n' "$POLICY_UPDATE_EXIT"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 The organization IAM administrator removes that grant whether the update succeeded or failed:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud organizations remove-iam-policy-binding "$POLICY_ORGANIZATION_ID" \
   --member="$OPERATOR_PRINCIPAL" \
   --role='roles/orgpolicy.policyAdmin' \
   --condition=None
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Rerun the effective-policy loop above. All three lines must read `ENFORCED` and the missing count
@@ -990,25 +1142,36 @@ policies.
 
 Remove only the automatically granted foundation Owner binding:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud projects remove-iam-policy-binding "$WORKLOAD_PROJECT_ID" \
   --member="serviceAccount:${FOUNDATION_SERVICE_ACCOUNT}" \
   --role='roles/owner' \
   --condition=None
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Remove the one-time Billing Account User grant; retain Costs Manager for code-managed budgets:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud billing accounts remove-iam-policy-binding "$BILLING_ACCOUNT_ID" \
   --member="serviceAccount:${FOUNDATION_SERVICE_ACCOUNT}" \
   --role='roles/billing.user' \
   --format=none
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Remove the parent Project Creator binding when the organization/folder path was used:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 if [[ -n "$FOLDER_ID" ]]; then
   gcloud resource-manager folders remove-iam-policy-binding "$FOLDER_ID" \
     --member="serviceAccount:${FOUNDATION_SERVICE_ACCOUNT}" \
@@ -1020,11 +1183,15 @@ elif [[ -n "$ORGANIZATION_ID" ]]; then
     --role='roles/resourcemanager.projectCreator' \
     --condition=None
 fi
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Verify the cleanup:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud projects get-iam-policy "$WORKLOAD_PROJECT_ID" \
   --format=json \
 | jq -r '
@@ -1040,6 +1207,7 @@ gcloud billing accounts get-iam-policy "$BILLING_ACCOUNT_ID" \
   --flatten='bindings[].members' \
   --filter="bindings.members=serviceAccount:${FOUNDATION_SERVICE_ACCOUNT}" \
   --format='value(bindings.role)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: the primitive-role audit prints nothing and the billing command prints only
@@ -1049,10 +1217,14 @@ workload-project roles and the custom metadata role remain code-managed.
 
 Publish the verified workload project for later runbooks:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gh variable set GCP_WORKLOAD_PROJECT_ID \
   --repo "$REPOSITORY" --body "$WORKLOAD_PROJECT_ID"
 test "$(gh variable get GCP_WORKLOAD_PROJECT_ID --repo "$REPOSITORY")" = "$WORKLOAD_PROJECT_ID"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Record only the reviewed commit, workflow run URL, opaque plan checksum, project number, verification
@@ -1088,13 +1260,17 @@ remove the missing project from state merely to make a plan green.
 Do not hardcode a guessed provider quota ID. Ask the operator for these non-secret listings and
 compare Google's current metric and quota IDs with `cost.tf`:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud quotas info list --service=run.googleapis.com --project="$WORKLOAD_PROJECT_ID" \
   --billing-project="$MANAGEMENT_PROJECT_ID" \
   --format='table(metric,quotaId,dimensions)'
 gcloud quotas info list --service=compute.googleapis.com --project="$WORKLOAD_PROJECT_ID" \
   --billing-project="$MANAGEMENT_PROJECT_ID" \
   --format='table(metric,quotaId,dimensions)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Update code and mocked tests when Google renamed a metric. If a requested ceiling is below live
