@@ -14,6 +14,8 @@ the named next step. Open one runbook at a time; no operator needs to remember t
 4. The first management-plane apply is the only local apply. Every later apply consumes a saved,
    reviewed plan through a protected workflow.
 5. Keep `PRODUCTION_RELEASES_ENABLED=false` until step 6 tells you to change it.
+6. Every linked runbook starts with an **Operator context** block. Paste it once before its steps,
+   including when resuming in the middle.
 
 Google Cloud concepts and provider behavior are linked from the runbook that uses them. Repository-
 specific decisions, stop conditions, commands, expected results, and recovery actions remain here.
@@ -66,9 +68,9 @@ differs.
 
 ### 1. Bootstrap the management plane
 
-Run [Bootstrap and verify the management plane](./bootstrap-management-plane.md) from Preconditions
-through step 13. This is the only procedure that authorizes a local `tofu apply`, and only after its
-explicit human authorization gate passes.
+Run [Bootstrap and verify the management plane](./bootstrap-management-plane.md) from Operator
+context through step 13. This is the only procedure that authorizes a local `tofu apply`, and only
+after its explicit human authorization gate passes.
 
 Use this metadata-only check when the runbook is complete:
 
@@ -91,9 +93,9 @@ authority is removed; the release switch remains false.
 
 ### 2. Provision the workload foundation
 
-Run [Provision and verify the workload foundation](./provision-workload-foundation.md) from its
-Authorization gate through step 8. Use only the protected `foundation.yaml` plan/apply sequence. Do
-not run a local foundation apply.
+Run [Provision and verify the workload foundation](./provision-workload-foundation.md) from Operator
+context through step 8. Use only the protected `foundation.yaml` plan/apply sequence. Do not run a
+local foundation apply.
 
 After its final cleanup, rerun the zero-key and no-public-path checks from sections 6 and 7, then:
 
@@ -118,9 +120,10 @@ test "$(gh variable get PRODUCTION_RELEASES_ENABLED --repo a-novel/infra)" = fal
 
 Run these sections of [Operate the private PostgreSQL host](./operate-postgresql-host.md), in order:
 
-1. [Select the exact host](./operate-postgresql-host.md#select-the-exact-host).
-2. [Verify foundation state after apply](./operate-postgresql-host.md#verify-foundation-state-after-apply).
-3. [Inspect the host through IAP](./operate-postgresql-host.md#inspect-the-host-through-iap), using
+1. [Operator context](./operate-postgresql-host.md#operator-context).
+2. [Select the exact host](./operate-postgresql-host.md#select-the-exact-host).
+3. [Verify foundation state after apply](./operate-postgresql-host.md#verify-foundation-state-after-apply).
+4. [Inspect the host through IAP](./operate-postgresql-host.md#inspect-the-host-through-iap), using
    only the disabled-manifest commands.
 
 `Pass`: exactly one stateful VM has one private address and the preserved disk; it has no external
@@ -134,8 +137,9 @@ IP; the expected firewall and snapshot policy exist; no PostgreSQL container is 
 test "$(gh variable get PRODUCTION_RELEASES_ENABLED --repo a-novel/infra)" = false
 ```
 
-Run [Configure hosted Plunk SMTP](./configure-hosted-smtp.md) through step 4. Do not run its delivery,
-bounce, or cap tests yet; those require the released Authentication service.
+Run [Configure hosted Plunk SMTP](./configure-hosted-smtp.md) from Operator context through step 4.
+Do not run its delivery, bounce, or cap tests yet; those require the released Authentication
+service.
 
 `Pass`: the organization owns one paid no-branding Plunk project and its recovery access; spending
 is capped; tracking is disabled; the sending domain is verified; the exact STARTTLS-on-587 contract
@@ -150,7 +154,7 @@ test "$(gh variable get PRODUCTION_RELEASES_ENABLED --repo a-novel/infra)" = fal
 ```
 
 Prepare the four database passwords and construct both DSNs privately from the step-3 private
-address. Then run the single initial-population command in
+address. Paste the Operator context, then run the single initial-population command in
 [Add or rotate a secret version](./secret-versions.md). Never use `latest`.
 
 List metadata after all nine versions are added:
@@ -184,7 +188,7 @@ in the private deployment record without payloads.
 
 ### 6. Launch JSON Keys and Authentication
 
-Run [Deploy and roll back production](./deploy-production.md) from Preconditions through step 7.
+Run [Deploy and roll back production](./deploy-production.md) from Operator context through step 7.
 The sequence inside that runbook is authoritative:
 
 1. store the protected non-payload release configuration;
@@ -212,7 +216,8 @@ keep normal production writes disabled.
 
 ### 7. Lock backup retention after recovery proof
 
-Run [Back up and restore PostgreSQL](./backup-and-restore-postgresql.md), starting at
+Run [Back up and restore PostgreSQL](./backup-and-restore-postgresql.md), starting with Operator
+context and then
 [Select and verify the deployed boundary](./backup-and-restore-postgresql.md#select-and-verify-the-deployed-boundary).
 Confirm the first-release execution IDs and results. Do not rerun successful jobs merely to produce
 duplicate evidence. Follow
@@ -226,9 +231,9 @@ irreversibly locked through a reviewed code change, and the private recovery rec
 
 ### 8. Verify alert ownership and delivery
 
-Run [Respond to production alerts](./respond-to-alerts.md) once as an acceptance check. In
-particular, verify the policy inventory, both existing Google email channels, the scheduled GitHub
-health owner, and one successful health run newer than six hours.
+Run [Respond to production alerts](./respond-to-alerts.md) from Operator context once as an
+acceptance check. In particular, verify the policy inventory, both existing Google email channels,
+the scheduled GitHub health owner, and one successful health run newer than six hours.
 
 `Pass`: eight Google policies are enabled, both existing notification channels are enabled and
 verified, the current schedule owner has GitHub Actions failure notifications enabled, a second
@@ -238,9 +243,9 @@ maintainer is named, and no duplicate pager, webhook, metric, or test resource w
 
 ### 9. Prove clean-room recovery
 
-Run [Recover production into a disposable project](./disaster-recovery.md) as a drill. Execute all
-steps, including cross-project access removal, the deletion-gated cleanup pull request, project
-deletion, and delayed cost recording.
+Run [Recover production into a disposable project](./disaster-recovery.md) from Operator context as
+a drill. Execute all steps, including cross-project access removal, the deletion-gated cleanup pull
+request, project deletion, and delayed cost recording.
 
 `Pass`: the selected backups restore in a new private project; both services pass private health;
 measured RPO is no more than six hours and RTO no more than 90 minutes; temporary access is removed;
@@ -251,8 +256,9 @@ privately.
 
 ### 10. Archive the legacy repository
 
-Run [Archive the legacy infrastructure repository](./archive-legacy-infrastructure.md) only after
-the complete replacement acceptance record is closed. Keep the command's interactive confirmation.
+Run [Archive the legacy infrastructure repository](./archive-legacy-infrastructure.md) from Operator
+context only after the complete replacement acceptance record is closed. Keep the command's
+interactive confirmation.
 
 `Pass`: legacy external credentials are revoked, legacy Actions is disabled, open work is drained,
 exactly `a-novel/agora-infra` is archived, and `a-novel/infra` remains active.

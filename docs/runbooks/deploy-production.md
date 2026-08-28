@@ -19,6 +19,31 @@ Official references: [Cloud Run revisions](https://cloud.google.com/run/docs/man
 [Secret Manager version states](https://cloud.google.com/secret-manager/docs/managing-secret-versions),
 and [GitHub artifact attestations](https://docs.github.com/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations).
 
+## Operator context
+
+Complete the four hosted-SMTP values, then paste this block once before section 1:
+
+```bash
+set -euo pipefail
+set +x
+umask 077
+
+REPOSITORY='a-novel/infra'
+REGION='europe-west1'
+DATABASE_ZONE='europe-west1-b'
+
+MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID --repo "$REPOSITORY")"
+WORKLOAD_PROJECT_ID="$(gh variable get GCP_WORKLOAD_PROJECT_ID --repo "$REPOSITORY")"
+BACKUP_BUCKET_NAME="$(gh variable get GCP_BACKUP_BUCKET --repo "$REPOSITORY")"
+RECEIPT_BUCKET_NAME="$(gh variable get GCP_RECEIPT_BUCKET --repo "$REPOSITORY")"
+
+AUTH_SUPER_ADMIN_EMAIL="$(gcloud config get-value account 2>/dev/null)"
+SMTP_HOST=''
+SMTP_USERNAME=''
+SMTP_SENDER_EMAIL=''
+SMTP_SENDER_NAME=''
+```
+
 ## Guarantees and deliberate limits
 
 One globally serialized workflow performs this fixed graph:
@@ -81,14 +106,6 @@ the initializer with an override, or shows a deletion whose merge did not carry
 Run in a private terminal with tracing disabled:
 
 ```bash
-set -euo pipefail
-set +x
-umask 077
-
-REPOSITORY='a-novel/infra'
-REGION='europe-west1'
-DATABASE_ZONE='europe-west1-b'
-
 git switch master
 git pull --ff-only
 test -z "$(git status --porcelain)"
@@ -127,14 +144,10 @@ does not authorize deletion.
 ## 2. Collect foundation-owned coordinates
 
 ```bash
-MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID --repo "$REPOSITORY")"
-WORKLOAD_PROJECT_ID="$(gh variable get GCP_WORKLOAD_PROJECT_ID --repo "$REPOSITORY")"
 [[ "$MANAGEMENT_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
 [[ "$WORKLOAD_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
 [[ "$MANAGEMENT_PROJECT_ID" != "$WORKLOAD_PROJECT_ID" ]]
 
-BACKUP_BUCKET_NAME="$(gh variable get GCP_BACKUP_BUCKET --repo "$REPOSITORY")"
-RECEIPT_BUCKET_NAME="$(gh variable get GCP_RECEIPT_BUCKET --repo "$REPOSITORY")"
 [[ "$BACKUP_BUCKET_NAME" == "${MANAGEMENT_PROJECT_ID}-"*'-backups' ]]
 [[ "$RECEIPT_BUCKET_NAME" == "${MANAGEMENT_PROJECT_ID}-"*'-deployment-receipts' ]]
 
@@ -241,12 +254,6 @@ inputs, not a mutable release secret. The active Google account is the fast-path
 replace that assignment when the application administrator is another address.
 
 ```bash
-AUTH_SUPER_ADMIN_EMAIL="$(gcloud config get-value account 2>/dev/null)"
-SMTP_HOST=''
-SMTP_USERNAME=''
-SMTP_SENDER_EMAIL=''
-SMTP_SENDER_NAME=''
-
 [[ "$AUTH_SUPER_ADMIN_EMAIL" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]
 [[ "$SMTP_HOST" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]]
 [[ "$SMTP_USERNAME" =~ ^[^[:space:]]{1,320}$ ]]

@@ -21,6 +21,22 @@ Never download or print state in a shared terminal, GitHub artifact, issue, chat
 contain sensitive infrastructure attributes even though this bootstrap deliberately excludes secret
 payload versions.
 
+## Operator context
+
+Replace `STATE_ROOT` with `bootstrap`, `foundation`, or `release`, then paste this block once:
+
+```bash
+set -euo pipefail
+set +x
+umask 077
+
+REPOSITORY='a-novel/infra'
+STATE_ROOT=''
+
+MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID --repo "$REPOSITORY")"
+STATE_BUCKET="$(gh variable get GCP_STATE_BUCKET --repo "$REPOSITORY")"
+```
+
 ## Preconditions
 
 - Declare an incident/change record with the affected root, reason, last known good Git commit, and
@@ -37,16 +53,12 @@ payload versions.
 ## 1. Freeze writers and select one state object
 
 ```bash
-set -euo pipefail
-set +x
-umask 077
-
 gh run list \
-  --repo a-novel/infra \
+  --repo "$REPOSITORY" \
   --status in_progress \
   --json databaseId,workflowName,headSha,status,url
 gh run list \
-  --repo a-novel/infra \
+  --repo "$REPOSITORY" \
   --status queued \
   --json databaseId,workflowName,headSha,status,url
 ```
@@ -54,16 +66,12 @@ gh run list \
 Expected safe result: both arrays are empty. If not, cancel or let the named runs finish and repeat;
 record every cancellation in the incident.
 
-Read the non-secret bucket variable and select one allowed root:
+Validate the selected bucket and root, then derive the two object names:
 
 ```bash
-MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID --repo a-novel/infra)"
-STATE_BUCKET="$(gh variable get GCP_STATE_BUCKET --repo a-novel/infra)"
-
 test -n "${MANAGEMENT_PROJECT_ID}"
 test -n "${STATE_BUCKET}"
 
-STATE_ROOT=''
 case "${STATE_ROOT}" in
   bootstrap|foundation|release) ;;
   *) printf 'Refusing unknown state root.\n' >&2; false ;;
@@ -180,8 +188,8 @@ Recheck that no workflow or lock appeared since inspection:
 ```bash
 # Assign before testing so a failed GitHub query aborts instead of looking like
 # an empty run list.
-IN_PROGRESS_RUN_IDS="$(gh run list --repo a-novel/infra --status in_progress --json databaseId --jq '.[].databaseId')"
-QUEUED_RUN_IDS="$(gh run list --repo a-novel/infra --status queued --json databaseId --jq '.[].databaseId')"
+IN_PROGRESS_RUN_IDS="$(gh run list --repo "$REPOSITORY" --status in_progress --json databaseId --jq '.[].databaseId')"
+QUEUED_RUN_IDS="$(gh run list --repo "$REPOSITORY" --status queued --json databaseId --jq '.[].databaseId')"
 test -z "${IN_PROGRESS_RUN_IDS}"
 test -z "${QUEUED_RUN_IDS}"
 
@@ -288,8 +296,8 @@ shows the candidate was wrong, restore that original generation over the recover
 second atomic precondition:
 
 ```bash
-IN_PROGRESS_RUN_IDS="$(gh run list --repo a-novel/infra --status in_progress --json databaseId --jq '.[].databaseId')"
-QUEUED_RUN_IDS="$(gh run list --repo a-novel/infra --status queued --json databaseId --jq '.[].databaseId')"
+IN_PROGRESS_RUN_IDS="$(gh run list --repo "$REPOSITORY" --status in_progress --json databaseId --jq '.[].databaseId')"
+QUEUED_RUN_IDS="$(gh run list --repo "$REPOSITORY" --status queued --json databaseId --jq '.[].databaseId')"
 test -z "${IN_PROGRESS_RUN_IDS}"
 test -z "${QUEUED_RUN_IDS}"
 

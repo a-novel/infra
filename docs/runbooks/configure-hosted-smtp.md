@@ -17,6 +17,20 @@ Official references: [Plunk pricing](https://www.useplunk.com/pricing),
 [privacy and retention](https://www.useplunk.com/privacy), and the
 [AGPL-3.0 source](https://github.com/useplunk/plunk).
 
+## Operator context
+
+Choose the sending identity, then paste this block once before section 1:
+
+```bash
+set -euo pipefail
+set +x
+umask 077
+
+SENDING_DOMAIN=''
+SMTP_SENDER_EMAIL=''
+SMTP_SENDER_NAME=''
+```
+
 ## Decision and boundary
 
 Agora uses hosted Plunk at launch because its public source, standard SMTP interface, EU-hosted
@@ -117,7 +131,6 @@ After DNS propagation, use the dashboard's recheck and independently inspect pub
 private terminal. Substitute only non-secret domain and selector values:
 
 ```bash
-SENDING_DOMAIN=''
 DKIM_SELECTOR=''
 [[ "$SENDING_DOMAIN" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]]
 [[ "$DKIM_SELECTOR" =~ ^[a-z0-9_-]+$ ]]
@@ -149,8 +162,6 @@ Validate only the non-payload fields locally:
 ```bash
 SMTP_HOST=''
 SMTP_USERNAME=''
-SMTP_SENDER_EMAIL=''
-SMTP_SENDER_NAME=''
 
 [[ "$SMTP_HOST" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]]
 [[ "$SMTP_USERNAME" =~ ^[^[:space:]]{1,320}$ ]]

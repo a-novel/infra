@@ -19,6 +19,43 @@ Measured drill cost uses the existing
 [Cloud Billing Reports](https://cloud.google.com/billing/docs/how-to/reports); no billing-export
 dataset or cost-analysis service is added for one disposable project.
 
+## Operator context
+
+Paste this block once before section 1. Incident-specific selections remain in their owning step.
+
+```bash
+set -euo pipefail
+set +x
+umask 077
+
+REPOSITORY='a-novel/infra'
+REGION='europe-west1'
+DATABASE_ZONE='europe-west1-b'
+
+MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID --repo "$REPOSITORY")"
+SOURCE_PROJECT_ID="$(gh variable get GCP_WORKLOAD_PROJECT_ID --repo "$REPOSITORY")"
+BILLING_ACCOUNT_ID="$(gcloud billing projects describe "$SOURCE_PROJECT_ID" \
+  --format='value(billingAccountName.basename())')"
+BACKUP_BUCKET="$(gh variable get GCP_BACKUP_BUCKET --repo "$REPOSITORY")"
+RECEIPT_BUCKET="$(gh variable get GCP_RECEIPT_BUCKET --repo "$REPOSITORY")"
+RECOVERY_ACCOUNT="infra-recovery@${MANAGEMENT_PROJECT_ID}.iam.gserviceaccount.com"
+RECOVERY_MEMBER="serviceAccount:${RECOVERY_ACCOUNT}"
+
+PROJECT_PARENT_TYPE="$(gcloud projects describe "$SOURCE_PROJECT_ID" \
+  --format='value(parent.type)')"
+PROJECT_PARENT_ID="$(gcloud projects describe "$SOURCE_PROJECT_ID" \
+  --format='value(parent.id)')"
+ORGANIZATION_ID=''
+FOLDER_ID=''
+case "$PROJECT_PARENT_TYPE" in
+  organization) ORGANIZATION_ID="$PROJECT_PARENT_ID" ;;
+  folder) FOLDER_ID="$PROJECT_PARENT_ID" ;;
+  '') ;;
+  *) printf 'Unexpected project parent type: %s\n' "$PROJECT_PARENT_TYPE" >&2; false ;;
+esac
+unset PROJECT_PARENT_TYPE PROJECT_PARENT_ID
+```
+
 ## Recovery contract
 
 - The replacement project ID must be new and different from production.
@@ -80,32 +117,10 @@ Use the recorded incident start. For a drill, run the first command and paste it
 `INCIDENT_STARTED_AT`.
 
 ```bash
-set -euo pipefail
-set +x
-umask 077
-
-REPOSITORY='a-novel/infra'
-REGION='europe-west1'
-DATABASE_ZONE='europe-west1-b'
-
 date -u +'%Y-%m-%dT%H:%M:%SZ'
 INCIDENT_STARTED_AT=''
-MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID --repo "$REPOSITORY")"
-SOURCE_PROJECT_ID="$(gh variable get GCP_WORKLOAD_PROJECT_ID --repo "$REPOSITORY")"
 REPLACEMENT_PROJECT_ID="agora-recovery-$(date -u +'%Y%m%d-%H%M')"
-BILLING_ACCOUNT_ID="$(gcloud billing projects describe "$SOURCE_PROJECT_ID" \
-  --format='value(billingAccountName.basename())')"
 TARGET_RECEIPT=''
-
-PROJECT_PARENT="$(gcloud projects describe "$SOURCE_PROJECT_ID" --format='value(parent)')"
-ORGANIZATION_ID=''
-FOLDER_ID=''
-case "$PROJECT_PARENT" in
-  organizations/*) ORGANIZATION_ID="${PROJECT_PARENT#organizations/}" ;;
-  folders/*) FOLDER_ID="${PROJECT_PARENT#folders/}" ;;
-  '') ;;
-  *) printf 'Unexpected project parent: %s\n' "$PROJECT_PARENT" >&2; false ;;
-esac
 
 [[ "$MANAGEMENT_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
 [[ "$SOURCE_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
@@ -120,11 +135,6 @@ esac
 INCIDENT_STARTED_EPOCH="$(date -u --date="$INCIDENT_STARTED_AT" +%s)"
 [[ "$INCIDENT_STARTED_EPOCH" =~ ^[0-9]+$ ]]
 test "$INCIDENT_STARTED_EPOCH" -le "$(date -u +%s)"
-
-BACKUP_BUCKET="$(gh variable get GCP_BACKUP_BUCKET --repo "$REPOSITORY")"
-RECEIPT_BUCKET="$(gh variable get GCP_RECEIPT_BUCKET --repo "$REPOSITORY")"
-RECOVERY_ACCOUNT="infra-recovery@${MANAGEMENT_PROJECT_ID}.iam.gserviceaccount.com"
-RECOVERY_MEMBER="serviceAccount:${RECOVERY_ACCOUNT}"
 
 if gcloud projects describe "$REPLACEMENT_PROJECT_ID" >/dev/null 2>&1; then
   printf 'STOP: replacement project already exists or is visible.\n' >&2

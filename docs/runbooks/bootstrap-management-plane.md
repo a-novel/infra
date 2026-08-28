@@ -21,6 +21,17 @@ Official references: [create a project](https://cloud.google.com/resource-manage
 [GitHub environments](https://docs.github.com/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments),
 and [Google WIF for deployment pipelines](https://cloud.google.com/iam/docs/workload-identity-federation-with-deployment-pipelines).
 
+## Operator context
+
+This bootstrap inherits no shell variable because it creates the management identifiers itself.
+Paste this block once in a fresh Bash or Zsh shell before section 1.
+
+```bash
+set -euo pipefail
+set +x
+umask 077
+```
+
 ## Preconditions and stop conditions
 
 An operator needs all of the following:
@@ -561,8 +572,9 @@ tofu -chdir=bootstrap state list
 ```
 
 Expected safe result: at least one URI ending in `bootstrap/default.tfstate#<numeric-generation>` and
-a non-empty list of bootstrap resource addresses. Never run `tofu state pull` into a public terminal
-or print the state object's contents.
+a non-empty list of bootstrap resource addresses. The addresses include operator IAM members and
+secret-container names, so keep this output in the private terminal. Never run `tofu state pull` or
+print the state object's contents.
 
 Exercise remote reads and locking with a no-change plan, then inspect only its sanitized summary. A
 clean plan does not guarantee a second state generation; Object Versioning records a generation only
@@ -738,44 +750,105 @@ unset PROJECT_SERVICE_ACCOUNTS USER_KEY_NAMES
 printf 'All project service accounts have zero user-managed keys.\n'
 ```
 
-For an organization-backed project, ask an organization-policy administrator—not CI—to enforce the
-three project security policies. These controls are manual because giving automation organization-policy
-authority would be a larger risk than the setting protects against.
+Read the organization ancestor and the three effective policies before requesting any new
+authority:
 
 ```bash
 gcloud projects get-ancestors "${MANAGEMENT_PROJECT_ID}" \
   --format='table(type,id)'
 
-for constraint in \
-  iam.disableServiceAccountKeyCreation \
-  iam.disableServiceAccountKeyUpload \
-  storage.publicAccessPrevention; do
-  gcloud resource-manager org-policies enable-enforce \
-    "$constraint" \
-    --project="${MANAGEMENT_PROJECT_ID}"
-done
+ORGANIZATION_ID="$(gcloud projects get-ancestors "${MANAGEMENT_PROJECT_ID}" \
+  --filter='type=organization' --format='value(id)')"
+MISSING_ORG_POLICY_COUNT=0
 
 for constraint in \
   iam.disableServiceAccountKeyCreation \
   iam.disableServiceAccountKeyUpload \
   storage.publicAccessPrevention; do
-  gcloud resource-manager org-policies describe \
+  if gcloud resource-manager org-policies describe \
     "constraints/${constraint}" \
     --project="${MANAGEMENT_PROJECT_ID}" \
-    --effective \
-    --format=yaml
+    --effective --format=json \
+    | jq -e '.booleanPolicy.enforced == true' >/dev/null; then
+    printf 'ENFORCED %s\n' "$constraint"
+  else
+    printf 'MISSING  %s\n' "$constraint"
+    MISSING_ORG_POLICY_COUNT=$((MISSING_ORG_POLICY_COUNT + 1))
+  fi
 done
+
+printf 'Missing organization policies: %s\n' "$MISSING_ORG_POLICY_COUNT"
 ```
 
-Expected safe result: all three effective policies enforce their boolean constraint. Policy propagation
-can take several minutes. If the project has no organization, these commands may be unavailable;
-record the standalone shape and rely on the enforced per-bucket public-access setting, the absence of
-key resources, exact WIF conditions, user-key audit, and periodic zero-key verification. Do not create
-an organization only to gain these policies.
+An empty `ORGANIZATION_ID` selects the standalone controls below. For an organization-backed
+project with a nonzero missing count, an organization IAM administrator temporarily grants the
+human operator Organization Policy Administrator:
 
-Now remove the temporary grant chosen in section 5.
+```bash
+test -n "${ORGANIZATION_ID}"
+test "$MISSING_ORG_POLICY_COUNT" -gt 0
+gcloud organizations add-iam-policy-binding "${ORGANIZATION_ID}" \
+  --member="${OPERATOR_PRINCIPAL}" \
+  --role='roles/orgpolicy.policyAdmin' \
+  --condition=None
+```
 
-For the temporary Owner path:
+After that grant propagates, the operator enforces only missing policies. The explicit exit capture
+ensures one failed update does not skip removal of the temporary organization-wide role:
+
+```bash
+POLICY_UPDATE_EXIT=0
+
+for constraint in \
+  iam.disableServiceAccountKeyCreation \
+  iam.disableServiceAccountKeyUpload \
+  storage.publicAccessPrevention; do
+  if ! gcloud resource-manager org-policies describe \
+    "constraints/${constraint}" \
+    --project="${MANAGEMENT_PROJECT_ID}" \
+    --effective --format=json \
+    | jq -e '.booleanPolicy.enforced == true' >/dev/null; then
+    gcloud resource-manager org-policies enable-enforce \
+      "$constraint" \
+      --project="${MANAGEMENT_PROJECT_ID}" \
+      || POLICY_UPDATE_EXIT=$?
+  fi
+done
+
+printf 'Policy update exit: %s\n' "$POLICY_UPDATE_EXIT"
+```
+
+The organization IAM administrator removes that grant whether the update succeeded or failed:
+
+```bash
+gcloud organizations remove-iam-policy-binding "${ORGANIZATION_ID}" \
+  --member="${OPERATOR_PRINCIPAL}" \
+  --role='roles/orgpolicy.policyAdmin' \
+  --condition=None
+```
+
+Rerun the effective-policy loop above. All three lines must read `ENFORCED` and the missing count
+must be zero; if the update block ran, `POLICY_UPDATE_EXIT` must also be zero. Propagation can take
+several minutes. For a standalone project, record that shape and rely on the enforced bucket
+settings, exact WIF conditions, and zero-key verification. Do not create an organization only to
+gain these policies.
+
+List the operator's current project roles before choosing the section 5 cleanup path:
+
+```bash
+gcloud projects get-iam-policy "${MANAGEMENT_PROJECT_ID}" --format=json \
+| jq -r --arg operator "${OPERATOR_PRINCIPAL}" '
+    .bindings[]
+    | select(.members | index($operator))
+    | .role
+  ' \
+| sort
+```
+
+Exactly one temporary shape must appear. The preferred path contains `roles/owner`; the fallback
+contains both `roles/secretmanager.admin` and `roles/storage.admin`. Run only its matching cleanup.
+
+If `roles/owner` appears:
 
 ```bash
 gcloud projects remove-iam-policy-binding "${MANAGEMENT_PROJECT_ID}" \
@@ -784,7 +857,7 @@ gcloud projects remove-iam-policy-binding "${MANAGEMENT_PROJECT_ID}" \
   --condition=None
 ```
 
-For the no-primitive fallback, remove only the two temporary project-wide data roles:
+If both fallback data roles appear:
 
 ```bash
 for role in roles/secretmanager.admin roles/storage.admin; do
@@ -845,8 +918,10 @@ shell:
 rm -rf -- "${BOOTSTRAP_TEMP_DIR}"
 unset TF_DATA_DIR TF_VAR_management_project_id TF_VAR_operator_principals
 unset PLAN_PROVIDER PLAN_ACCOUNT BOOTSTRAP_PLAN BOOTSTRAP_PLAN_EXIT BOOTSTRAP_TFVARS_FILE
+unset RECOVERY_PLAN RECOVERY_PLAN_EXIT
 unset STATE_BUCKET BACKUP_BUCKET RECEIPT_BUCKET MANAGEMENT_PROJECT_NUMBER
-unset MANAGEMENT_PROJECT_ID BILLING_ACCOUNT_ID OPERATOR_PRINCIPAL
+unset MANAGEMENT_PROJECT_ID BILLING_ACCOUNT_ID OPERATOR_PRINCIPAL ORGANIZATION_ID
+unset MISSING_ORG_POLICY_COUNT POLICY_UPDATE_EXIT
 unset ENVIRONMENT_REVIEWER_ID ENVIRONMENT_REVIEWER_LOGIN PREVENT_SELF_REVIEW
 unset BOOTSTRAP_TEMP_DIR
 ```
