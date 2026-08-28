@@ -302,21 +302,22 @@ network.
 
 The foundation identity needs Billing Account User only to attach the new project and Billing Account
 Costs Manager to manage its budget. It does not need Billing Account Administrator. These commands
-are mutating; run them only after the authorization gate is lifted.
+are mutating; run them only after the authorization gate is lifted. Cloud Billing IAM does not
+support conditional bindings, so grant only these exact members and roles.
 
 ```bash
 gcloud billing accounts add-iam-policy-binding "$BILLING_ACCOUNT_ID" \
   --member="serviceAccount:${FOUNDATION_SERVICE_ACCOUNT}" \
   --role='roles/billing.user' \
-  --condition=None
+  --format=none
 gcloud billing accounts add-iam-policy-binding "$BILLING_ACCOUNT_ID" \
   --member="serviceAccount:${FOUNDATION_SERVICE_ACCOUNT}" \
   --role='roles/billing.costsManager' \
-  --condition=None
+  --format=none
 gcloud billing accounts add-iam-policy-binding "$BILLING_ACCOUNT_ID" \
   --member="serviceAccount:${PLAN_SERVICE_ACCOUNT}" \
   --role='roles/billing.viewer' \
-  --condition=None
+  --format=none
 ```
 
 Verify without dumping the rest of the billing policy:
@@ -994,7 +995,7 @@ Remove the one-time Billing Account User grant; retain Costs Manager for code-ma
 gcloud billing accounts remove-iam-policy-binding "$BILLING_ACCOUNT_ID" \
   --member="serviceAccount:${FOUNDATION_SERVICE_ACCOUNT}" \
   --role='roles/billing.user' \
-  --condition=None
+  --format=none
 ```
 
 Remove the parent Project Creator binding when the organization/folder path was used:
