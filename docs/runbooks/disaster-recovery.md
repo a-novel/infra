@@ -179,11 +179,14 @@ test "${#LOST_WRITE_WINDOW}" -le 500
 Recovery automation never receives IAM-administration authority on the surviving management
 project. Grant only Billing Account User, which is needed to attach one replacement project to the
 existing billing account. Recovery creates no budget and therefore needs no budget-management
-role:
+role. Cloud Billing IAM does not support conditional bindings, so remove this exact unconditional
+grant in section 4:
 
 ```bash
 gcloud billing accounts add-iam-policy-binding "$BILLING_ACCOUNT_ID" \
-  --member="$RECOVERY_MEMBER" --role=roles/billing.user --condition=None
+  --member="$RECOVERY_MEMBER" \
+  --role=roles/billing.user \
+  --format=none
 ```
 
 For an existing folder or organization, grant Project Creator at exactly one parent:
@@ -338,7 +341,9 @@ before any secret-backed recovery job runs:
 
 ```bash
 gcloud billing accounts remove-iam-policy-binding "$BILLING_ACCOUNT_ID" \
-  --member="$RECOVERY_MEMBER" --role=roles/billing.user --condition=None
+  --member="$RECOVERY_MEMBER" \
+  --role=roles/billing.user \
+  --format=none
 
 if [[ -n "$FOLDER_ID" ]]; then
   gcloud resource-manager folders remove-iam-policy-binding "$FOLDER_ID" \
