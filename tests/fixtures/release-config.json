@@ -23,7 +23,8 @@
       "address": "smtp.example.com:587",
       "sender_domain": "smtp.example.com",
       "sender_email": "noreply@example.com",
-      "sender_name": "Agora"
+      "sender_name": "Agora",
+      "username": "smtp-login@example.com"
     }
   },
   "quota_expectations": {

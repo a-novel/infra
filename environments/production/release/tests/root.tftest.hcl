@@ -334,6 +334,7 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
           sender_domain = "smtp.example.com"
           sender_email  = "noreply@example.com"
           sender_name   = "Agora"
+          username      = "smtp-login@example.com"
         }
         super_admin_email = "admin@example.com"
       }
@@ -584,6 +585,10 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
         for environment in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env : environment
         if environment.name == "SMTP_TIMEOUT"
       ]).value == "5s" &&
+      one([
+        for environment in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env : environment
+        if environment.name == "SMTP_USERNAME"
+      ]).value == "smtp-login@example.com" &&
       toset([
         for environment in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env : environment.name
         if length(environment.value_source) == 1
@@ -663,6 +668,7 @@ run "builds_restore_only_contracts_in_a_disposable_recovery_state" {
           sender_domain = "smtp.example.com"
           sender_email  = "noreply@example.com"
           sender_name   = "Agora"
+          username      = "smtp-login@example.com"
         }
         super_admin_email = "admin@example.com"
       }

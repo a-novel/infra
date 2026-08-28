@@ -1,5 +1,8 @@
 # Recover production into a disposable project
 
+> First production run: step 9 is the clean-room acceptance drill. Later, use this only when a drill
+> is due or the production workload project is no longer trusted.
+
 Use this runbook for a clean-room recovery drill or a declared incident when the production workload
 project is no longer trusted. It builds a different Google Cloud project from code, restores two exact
 logical backups, and deploys one exact successful application receipt. Production is never repaired
@@ -9,8 +12,12 @@ Official references: [project creation and management](https://cloud.google.com/
 [Cloud Billing IAM](https://cloud.google.com/billing/docs/how-to/billing-access),
 [Cloud Storage preconditions](https://cloud.google.com/storage/docs/request-preconditions),
 [Cloud Run internal ingress](https://cloud.google.com/run/docs/securing/ingress),
-[IAP TCP forwarding](https://cloud.google.com/iap/docs/using-tcp-forwarding), and
-[service-to-service authentication](https://cloud.google.com/run/docs/authenticating/service-to-service).
+[IAP TCP forwarding](https://cloud.google.com/iap/docs/using-tcp-forwarding),
+[service-to-service authentication](https://cloud.google.com/run/docs/authenticating/service-to-service), and
+[project deletion and restoration](https://cloud.google.com/resource-manager/docs/creating-managing-projects#shutting_down_projects).
+Measured drill cost uses the existing
+[Cloud Billing Reports](https://cloud.google.com/billing/docs/how-to/reports); no billing-export
+dataset or cost-analysis service is added for one disposable project.
 
 ## Recovery contract
 
@@ -31,6 +38,14 @@ Official references: [project creation and management](https://cloud.google.com/
   the recovery plane.
 - The replacement project grants foundation and release control only to the recovery identity; the
   production foundation/release identities receive no authority there.
+- Recovery creates the same private workload and quota ceilings but deliberately omits production
+  alert policies, notification channels, and the billing-account budget. Duplicating
+  them would page on an internal drill and leave a billing-account budget outside the deleted
+  project. The replacement retains bounded Cloud Logging for investigation.
+- Only inside a replacement project, the recovery identity receives Google's predefined Project
+  Deleter role. Production and management never grant project deletion. Cleanup still requires one
+  committed target, the historical deletion label, protected environment approval, exact project
+  labels, and typed confirmation.
 - The two selected backup manifests must match the source project, PostgreSQL 18, and the database
   images recorded by the selected receipt. Each recovery job refuses a non-empty target database.
 - Authentication initialization, schedulers, backup writers, and public ingress are absent. Data is
@@ -72,6 +87,7 @@ REPOSITORY='a-novel/infra'
 REGION='europe-west1'
 DATABASE_ZONE='europe-west1-b'
 
+read -r -p 'Incident or drill start (UTC, for example 2026-08-27T12:34:56Z): ' INCIDENT_STARTED_AT
 read -r -p 'Management project ID: ' MANAGEMENT_PROJECT_ID
 read -r -p 'Failed/source workload project ID: ' SOURCE_PROJECT_ID
 read -r -p 'New replacement project ID: ' REPLACEMENT_PROJECT_ID
@@ -90,6 +106,9 @@ read -r -p 'Exact successful receipt run-id-attempt: ' TARGET_RECEIPT
 [[ -z "$FOLDER_ID" || "$FOLDER_ID" =~ ^[0-9]+$ ]]
 [[ -z "$ORGANIZATION_ID" || -z "$FOLDER_ID" ]]
 [[ "$TARGET_RECEIPT" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]
+INCIDENT_STARTED_EPOCH="$(date -u --date="$INCIDENT_STARTED_AT" +%s)"
+[[ "$INCIDENT_STARTED_EPOCH" =~ ^[0-9]+$ ]]
+test "$INCIDENT_STARTED_EPOCH" -le "$(date -u +%s)"
 
 BACKUP_BUCKET="$(gh variable get GCP_BACKUP_BUCKET --repo "$REPOSITORY")"
 RECEIPT_BUCKET="$(gh variable get GCP_RECEIPT_BUCKET --repo "$REPOSITORY")"
@@ -137,13 +156,13 @@ test "${#LOST_WRITE_WINDOW}" -le 500
 ## 2. Grant temporary project-creation authority
 
 Recovery automation never receives IAM-administration authority on the surviving management
-project. Grant only the billing authority needed to create and configure one replacement project:
+project. Grant only Billing Account User, which is needed to attach one replacement project to the
+existing billing account. Recovery creates no budget and therefore needs no budget-management
+role:
 
 ```bash
 gcloud billing accounts add-iam-policy-binding "$BILLING_ACCOUNT_ID" \
   --member="$RECOVERY_MEMBER" --role=roles/billing.user --condition=None
-gcloud billing accounts add-iam-policy-binding "$BILLING_ACCOUNT_ID" \
-  --member="$RECOVERY_MEMBER" --role=roles/billing.costsManager --condition=None
 ```
 
 For an existing folder or organization, grant Project Creator at exactly one parent:
@@ -299,8 +318,6 @@ before any secret-backed recovery job runs:
 ```bash
 gcloud billing accounts remove-iam-policy-binding "$BILLING_ACCOUNT_ID" \
   --member="$RECOVERY_MEMBER" --role=roles/billing.user --condition=None
-gcloud billing accounts remove-iam-policy-binding "$BILLING_ACCOUNT_ID" \
-  --member="$RECOVERY_MEMBER" --role=roles/billing.costsManager --condition=None
 
 if [[ -n "$FOLDER_ID" ]]; then
   gcloud resource-manager folders remove-iam-policy-binding "$FOLDER_ID" \
@@ -318,9 +335,9 @@ gcloud billing accounts get-iam-policy "$BILLING_ACCOUNT_ID" \
   --format='table(bindings.role)'
 ```
 
-Expected safe result: no `billing.user`, `billing.costsManager`, parent Project Creator, or Owner row
-remains. Bootstrap's standing read-only recovery roles remain unchanged; there is no recovery IAM
-administrator role to grant or remove.
+Expected safe result: no `billing.user`, parent Project Creator, or Owner row remains. Bootstrap's
+standing read-only recovery roles remain unchanged; there is no recovery IAM administrator role to
+grant or remove.
 
 ## 5. Restore exact data and deploy the selected receipt
 
@@ -342,17 +359,31 @@ creates only recovery jobs; starts the private database host; restores JSON Keys
 into empty targets; then creates both internal services. Repeating the same exact recovery jobs
 reuses a durable successful execution rather than applying the archive twice.
 
+Record the exact successful run and attempt without printing its private receipt:
+
+```bash
+gh run list --repo "$REPOSITORY" --workflow recovery.yaml --branch master \
+  --event workflow_dispatch --limit 5 \
+  --json databaseId,headSha,displayTitle,status,conclusion,url
+read -r -p 'Successful restore-data run ID: ' RECOVERY_RUN_ID
+[[ "$RECOVERY_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+test "$(gh api "repos/${REPOSITORY}/actions/runs/${RECOVERY_RUN_ID}" --jq .head_sha)" = "$MASTER_SHA"
+gh run watch "$RECOVERY_RUN_ID" --repo "$REPOSITORY" --exit-status
+RECOVERY_RUN_ATTEMPT="$(gh api "repos/${REPOSITORY}/actions/runs/${RECOVERY_RUN_ID}" --jq .run_attempt)"
+[[ "$RECOVERY_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+```
+
 ## 6. Verify functionality from the private replacement network
 
 First verify control-plane boundaries:
 
 ```bash
-gcloud run services describe agora-json-keys \
+gcloud run services describe agora-json-keys-grpc \
   --project="$REPLACEMENT_PROJECT_ID" --region="$REGION" \
   --format='yaml(metadata.name,metadata.annotations,status.conditions,status.traffic)'
-RECOVERY_AUTH_URL="$(gcloud run services describe agora-authentication \
+RECOVERY_AUTH_URL="$(gcloud run services describe agora-authentication-rest \
   --project="$REPLACEMENT_PROJECT_ID" --region="$REGION" --format='value(status.url)')"
-gcloud run services describe agora-authentication \
+gcloud run services describe agora-authentication-rest \
   --project="$REPLACEMENT_PROJECT_ID" --region="$REGION" \
   --format='yaml(metadata.name,metadata.annotations,status.conditions,status.traffic)'
 gcloud scheduler jobs list --project="$REPLACEMENT_PROJECT_ID" --location="$REGION"
@@ -384,9 +415,16 @@ IDENTITY_TOKEN="$(curl --fail --silent \
   -H 'Metadata-Flavor: Google' \
   "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity?audience=${RECOVERY_AUTH_URL}&format=full")"
 HEALTH="$(curl --fail --silent \
+  --max-filesize 4096 \
   -H "Authorization: Bearer ${IDENTITY_TOKEN}" \
   "${RECOVERY_AUTH_URL}/v2/healthcheck")"
-test "$(printf '%s' "$HEALTH" | grep -o '"status":"up"' | wc -l)" -eq 3
+for dependency in api:jsonKeys client:postgres client:smtp; do
+  test "$(printf '%s' "$HEALTH" | grep -o "\"${dependency}\"" | wc -l)" -eq 1
+done
+test "$(printf '%s' "$HEALTH" \
+  | grep -oE '"status"[[:space:]]*:[[:space:]]*"[^"]*"' | wc -l)" -eq 3
+test "$(printf '%s' "$HEALTH" \
+  | grep -oE '"status"[[:space:]]*:[[:space:]]*"up"' | wc -l)" -eq 3
 unset IDENTITY_TOKEN HEALTH
 printf 'Private recovery health passed.\n'
 exit
@@ -396,22 +434,66 @@ Authentication's health probes its PostgreSQL database, TLS SMTP, and JSON Keys 
 Status call probes its own database. Thus one private request validates both restored data paths and
 the required private gRPC route without making either service externally callable.
 
-Finally list only the recovery receipt name and record measured RPO/RTO in the incident:
+Immediately after private health succeeds, record the actual incident/drill recovery time. Then
+fetch the exact private recovery receipt to a mode-`0600` temporary file and print only bounded
+timing evidence:
 
 ```bash
-gcloud storage ls \
-  "gs://${RECEIPT_BUCKET}/recovery/${REPLACEMENT_PROJECT_ID}/*.json"
+PRIVATE_HEALTH_CONFIRMED_EPOCH="$(date -u +%s)"
+ACTUAL_RTO_SECONDS="$((PRIVATE_HEALTH_CONFIRMED_EPOCH - INCIDENT_STARTED_EPOCH))"
+RECOVERY_RECEIPT_FILE="$(mktemp)"
+gcloud storage cp \
+  "gs://${RECEIPT_BUCKET}/recovery/${REPLACEMENT_PROJECT_ID}/${RECOVERY_RUN_ID}-${RECOVERY_RUN_ATTEMPT}.json" \
+  "$RECOVERY_RECEIPT_FILE" --quiet >/dev/null
+chmod 600 "$RECOVERY_RECEIPT_FILE"
+
+jq --exit-status --arg project "$REPLACEMENT_PROJECT_ID" \
+  --arg source "$TARGET_RECEIPT" '
+    .schemaVersion == 2 and
+    .replacementProject == $project and
+    .sourceReceipt == $source and
+    (.recoveryPoints.maxLostWriteWindowSeconds <= 21600) and
+    (.restoreDeployment.durationSeconds >= 0)
+  ' "$RECOVERY_RECEIPT_FILE" >/dev/null
+jq '{
+  recoveryPoints: {
+    observedAt: .recoveryPoints.observedAt,
+    jsonKeys: .recoveryPoints.databases.jsonKeys,
+    authentication: .recoveryPoints.databases.authentication,
+    maxLostWriteWindowSeconds: .recoveryPoints.maxLostWriteWindowSeconds
+  },
+  restoreDeployment: .restoreDeployment
+}' "$RECOVERY_RECEIPT_FILE"
+printf 'Actual incident/drill start-to-private-health RTO: %s seconds\n' "$ACTUAL_RTO_SECONDS"
+test "$ACTUAL_RTO_SECONDS" -le 5400
+rm -f -- "$RECOVERY_RECEIPT_FILE"
 ```
 
-Do not leave a drill project running. Destruction is a separately reviewed, deletion-labeled plan;
-until that cleanup path is executed, disable public cutover, retain the receipt, and account for the
-extra always-on database VM in the cost record.
+The six-hour check is the measured upper bound on writes missing at recovery-point selection. The
+90-minute check measures the full human-declared incident/drill start through private health. The
+receipt's `restoreDeployment.durationSeconds` measures only the automated backup verification,
+restore, and deployment phase; it is useful evidence but is not RTO. Record all three results,
+receipt name, and acknowledged lost-write statement in the private incident/drill record.
+
+Do not leave a drill project running. Until cleanup completes, keep public cutover disabled, retain
+the receipt and nested state, and account for the extra always-on database VM in the cost record.
 
 ## 7. Remove replacement access during drill cleanup
 
 For a drill, remove the eleven human-granted bindings before deleting the replacement project. For a
 real incident selected for cutover, stop here and move these bindings into a separately reviewed
 production-foundation design; do not silently keep manual production IAM.
+
+Before removing the project, capture its provider-issued creation time in the private drill record:
+
+```bash
+RECOVERY_CREATED_AT="$(gcloud projects describe "$REPLACEMENT_PROJECT_ID" \
+  --format='value(createTime)')"
+date -u --date="$RECOVERY_CREATED_AT" +%Y-%m-%dT%H:%M:%SZ
+```
+
+Expected safe result: one normalized UTC timestamp. Do not continue if the project cannot be
+resolved by the exact replacement ID.
 
 ```bash
 revoke_secret_access() {
@@ -456,7 +538,123 @@ test -z "$(gcloud storage buckets get-iam-policy "gs://${BACKUP_BUCKET}" \
 unset AUTH_RUNTIME DATABASE_RUNTIME JSON_RUNTIME RESTORE_RUNTIME
 ```
 
-Expected safe result: every absence check exits zero. Then use a separately reviewed plan whose pull
-request carried `allow-resource-deletion` at merge to remove the disposable project resources. Keep
-the immutable recovery receipt and nested recovery state as incident evidence; never delete normal
+Expected safe result: every absence check exits zero. Cleanup is an exceptional project deletion,
+not an OpenTofu destroy: deleting nested resources first would prolong cost, weaken the exact target
+boundary, and erase useful state evidence.
+
+Create one cleanup pull request that commits the exact target and the completed access-removal
+attestation:
+
+```bash
+git switch master
+git pull --ff-only
+git switch -c "feat/infra/cleanup-${REPLACEMENT_PROJECT_ID}"
+
+jq -n --arg project "$REPLACEMENT_PROJECT_ID" --arg receipt "$TARGET_RECEIPT" '
+  {
+    schemaVersion: 1,
+    replacementProject: $project,
+    sourceReceipt: $receipt,
+    crossProjectAccessRevoked: true
+  }
+' >deploy/production/recovery-cleanup.json
+
+git diff --check
+git diff -- deploy/production/recovery-cleanup.json
+git add deploy/production/recovery-cleanup.json
+git commit -m "chore(infra): authorize disposable recovery cleanup"
+git push -u origin HEAD
+gh pr create --repo "$REPOSITORY" --base master \
+  --title "chore(infra): clean up disposable recovery project" \
+  --body "Authorizes deletion of one verified recovery project after all temporary cross-project access was removed."
+```
+
+Have a maintainer independently compare the committed project/receipt with the private recovery
+record and the absence checks above. That maintainer must add `allow-resource-deletion` before the
+pull request merges; a post-merge label is invalid. After approval, green checks, and merge, refresh
+`MASTER_SHA` and dispatch only the committed target:
+
+```bash
+MASTER_SHA="$(gh api "repos/${REPOSITORY}/commits/master" --jq .sha)"
+test "$(gh api "repos/${REPOSITORY}/contents/deploy/production/recovery-cleanup.json?ref=${MASTER_SHA}" \
+  --jq -r .content | base64 --decode | jq -r .replacementProject)" = "$REPLACEMENT_PROJECT_ID"
+
+CONFIRM="DELETE ${REPLACEMENT_PROJECT_ID}"
+gh workflow run recovery.yaml --repo "$REPOSITORY" --ref master \
+  -f operation=cleanup-project \
+  -f replacement_project_id="$REPLACEMENT_PROJECT_ID" \
+  -f target_receipt="$TARGET_RECEIPT" \
+  -f confirm="$CONFIRM"
+```
+
+Approve `production-recovery`. The workflow installs no Node or OpenTofu tooling for cleanup. It
+matches the requested source-receipt ID to the exact committed tuple, replays the historical
+deletion-label gate for the exact merge, rejects management/production IDs, verifies the five
+code-owned recovery labels, requires the exact recovery service account to hold only the predefined
+project-deletion boundary, then requests deletion with all provider output hidden. Expected safe output is
+`Disposable recovery project is DELETE_REQUESTED.`
+
+Google project deletion is recoverable for its documented pending-deletion window. Do not restore a
+completed drill project unless the deletion itself was erroneous; preserve the private incident
+evidence first. The billing-account recovery budget was never created, so project deletion leaves no
+orphan budget. The immutable recovery receipt and nested `foundation/recovery/...` and
+`release/recovery/...` state remain in the management plane as evidence. Never delete normal
 production state to clean up a drill.
+
+Finally reset `deploy/production/recovery-cleanup.json` to its all-null/false template in a normal
+reviewed pull request. Leaving the prior exact tuple committed cannot authorize a different target,
+but resetting it makes the inactive gate unambiguous.
+
+## 8. Record measured drill cost
+
+Cost data arrives after resource use, so it cannot be truthfully embedded in the recovery receipt.
+Use Google's existing billing report after the deleted project appears in it; adding a BigQuery
+billing export solely for this drill would create a permanent dataset, IAM surface, and maintenance
+path.
+
+Record the bounded lifetime from provider and workflow metadata without printing billing or receipt
+content:
+
+```bash
+REPOSITORY='a-novel/infra'
+read -r -p 'Deleted replacement project ID: ' REPLACEMENT_PROJECT_ID
+read -r -p 'Recovery project creation time recorded before deletion (UTC): ' RECOVERY_CREATED_AT
+read -r -p 'Successful cleanup workflow run ID: ' CLEANUP_RUN_ID
+[[ "$REPLACEMENT_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
+[[ "$CLEANUP_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+
+CLEANUP_RUN_METADATA="$(gh run view "$CLEANUP_RUN_ID" --repo "$REPOSITORY" \
+  --json conclusion,displayTitle,headSha,updatedAt,url)"
+jq --exit-status --arg project "$REPLACEMENT_PROJECT_ID" '
+  .conclusion == "success" and
+  (.headSha | test("^[a-f0-9]{40}$")) and
+  (.displayTitle | startswith("recovery cleanup-project " + $project + " by @"))
+' <<<"$CLEANUP_RUN_METADATA" >/dev/null
+CLEANUP_COMPLETED_AT="$(jq --raw-output '.updatedAt' <<<"$CLEANUP_RUN_METADATA")"
+RECOVERY_LIFETIME_SECONDS="$(($(date -u --date="$CLEANUP_COMPLETED_AT" +%s) - \
+  $(date -u --date="$RECOVERY_CREATED_AT" +%s)))"
+test "$RECOVERY_LIFETIME_SECONDS" -ge 0
+printf 'Disposable recovery lifetime: %s seconds\n' "$RECOVERY_LIFETIME_SECONDS"
+```
+
+`RECOVERY_CREATED_AT` is the `createTime` printed by this safe command while the project is still
+active; capture it before dispatching cleanup:
+
+```bash
+gcloud projects describe "$REPLACEMENT_PROJECT_ID" --format='value(createTime)'
+```
+
+In **Google Cloud console → Billing → Reports**, select the same billing account, filter **Projects**
+to the deleted replacement project, choose the drill date range, group by **Service**, and include
+credits. Wait until the report includes the cleanup day. Record privately:
+
+- project ID, creation time, `DELETE_REQUESTED` workflow time, and lifetime seconds;
+- gross cost, credits, net cost, and billing currency;
+- cost grouped by Compute Engine, disks/snapshots, Cloud Run, storage, registry, logging, and other;
+- the report retrieval time and operator.
+
+Expected result: exactly the replacement project is selected, the report window covers its complete
+lifetime, and the private incident/drill record contains RPO, full start-to-health RTO, automated
+restore duration, and measured net cost. If charges continue after deletion beyond documented
+retained storage or delayed billing records, keep task #277 open and investigate before archiving
+the legacy repository.

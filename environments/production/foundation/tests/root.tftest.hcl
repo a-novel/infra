@@ -149,12 +149,13 @@ mock_provider "google" {
 }
 
 variables {
-  management_project_id = "agora-management-test"
-  workload_project_id   = "agora-production-test"
-  backup_bucket_name    = "agora-management-test-123456789012-backups"
-  billing_account_id    = "ABCDEF-123456-ABCDEF"
-  cost_alert_email      = "infra@example.com"
-  organization_id       = "123456789012"
+  management_project_id  = "agora-management-test"
+  workload_project_id    = "agora-production-test"
+  backup_bucket_name     = "agora-management-test-123456789012-backups"
+  billing_account_id     = "ABCDEF-123456-ABCDEF"
+  cost_alert_email       = "infra@example.com"
+  operations_alert_email = "operations@example.com"
+  organization_id        = "123456789012"
   database_operator_principals = [
     "group:infra-operators@example.com",
   ]
@@ -417,6 +418,7 @@ run "builds_the_protected_workload_foundation" {
         "resourcemanager.projects.list",
         "resourcemanager.projects.update",
       ]) &&
+      length(google_project_iam_member.recovery_project_deleter) == 0 &&
       length(google_project_iam_member.plan_viewer) == 1 &&
       google_project_iam_member.plan_viewer[0].role == "roles/viewer" &&
       google_project_iam_member.plan_viewer[0].member == "serviceAccount:infra-plan@agora-management-test.iam.gserviceaccount.com"
@@ -657,8 +659,9 @@ run "builds_the_protected_workload_foundation" {
       alltrue([
         for policy in values(google_monitoring_alert_policy.database_capacity) :
         policy.deletion_policy == "PREVENT" &&
-        strcontains(one(policy.conditions).condition_threshold[0].filter, "resource.labels.zone = \"europe-west1-b\"") &&
-        strcontains(one(policy.conditions).condition_threshold[0].filter, "metric.labels.instance_name = starts_with(\"agora-database-\")") &&
+        strcontains(one(policy.conditions).condition_threshold[0].filter, "resource.label.zone = \"europe-west1-b\"") &&
+        strcontains(one(policy.conditions).condition_threshold[0].filter, "metric.label.instance_name = starts_with(\"agora-database-\")") &&
+        toset(policy.notification_channels) == toset([google_monitoring_notification_channel.operations_email[0].name]) &&
         one(policy.conditions).condition_threshold[0].trigger[0].count == 1
       ])
     )
@@ -675,39 +678,71 @@ run "builds_the_protected_workload_foundation" {
       !one(google_compute_resource_policy.database_snapshots.snapshot_schedule_policy).snapshot_properties[0].guest_flush &&
       toset(one(google_compute_resource_policy.database_snapshots.snapshot_schedule_policy).snapshot_properties[0].storage_locations) == toset(["europe-west1"]) &&
       google_compute_disk_resource_policy_attachment.database_snapshots.disk == google_compute_disk.database.name &&
-      google_monitoring_alert_policy.postgres_recovery_job_failure.severity == "CRITICAL" &&
-      google_monitoring_alert_policy.postgres_recovery_job_failure.deletion_policy == "PREVENT" &&
-      length(google_monitoring_alert_policy.postgres_recovery_job_failure.conditions) == 2 &&
+      google_monitoring_alert_policy.postgres_recovery_job_failure[0].severity == "CRITICAL" &&
+      google_monitoring_alert_policy.postgres_recovery_job_failure[0].deletion_policy == "PREVENT" &&
+      toset(google_monitoring_alert_policy.postgres_recovery_job_failure[0].notification_channels) == toset([google_monitoring_notification_channel.operations_email[0].name]) &&
+      length(google_monitoring_alert_policy.postgres_recovery_job_failure[0].conditions) == 2 &&
       strcontains(one([
-        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure.conditions : condition
+        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure[0].conditions : condition
         if length(condition.condition_threshold) == 1
       ]).condition_threshold[0].filter, "run.googleapis.com/job/completed_execution_count") &&
       strcontains(one([
-        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure.conditions : condition
+        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure[0].conditions : condition
         if length(condition.condition_threshold) == 1
-      ]).condition_threshold[0].filter, "metric.labels.result = \"failed\"") &&
+      ]).condition_threshold[0].filter, "metric.label.result = \"failed\"") &&
       strcontains(one([
-        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure.conditions : condition
+        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure[0].conditions : condition
         if length(condition.condition_threshold) == 1
       ]).condition_threshold[0].filter, "agora-postgres-") &&
       one([
-        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure.conditions : condition
+        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure[0].conditions : condition
         if length(condition.condition_absent) == 1
       ]).condition_absent[0].duration == "10800s" &&
       strcontains(one([
-        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure.conditions : condition
+        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure[0].conditions : condition
         if length(condition.condition_absent) == 1
-      ]).condition_absent[0].filter, "resource.labels.job_name = \"agora-postgres-backup-monitor\"") &&
+      ]).condition_absent[0].filter, "resource.label.job_name = \"agora-postgres-backup-monitor\"") &&
       !strcontains(one([
-        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure.conditions : condition
+        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure[0].conditions : condition
         if length(condition.condition_absent) == 1
-      ]).condition_absent[0].filter, "metric.labels.result") &&
+      ]).condition_absent[0].filter, "metric.label.result") &&
       one([
-        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure.conditions : condition
+        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure[0].conditions : condition
         if length(condition.condition_absent) == 1
       ]).condition_absent[0].trigger[0].count == 1
     )
     error_message = "Same-region snapshot storage or native failed/missing recovery-job alerting changed."
+  }
+
+  assert {
+    condition = (
+      length(google_monitoring_alert_policy.authentication_error_rate) == 1 &&
+      google_monitoring_alert_policy.authentication_error_rate[0].severity == "ERROR" &&
+      toset(google_monitoring_alert_policy.authentication_error_rate[0].notification_channels) == toset([google_monitoring_notification_channel.operations_email[0].name]) &&
+      one(google_monitoring_alert_policy.authentication_error_rate[0].conditions).condition_threshold[0].threshold_value == 0.10 &&
+      one(google_monitoring_alert_policy.authentication_error_rate[0].conditions).condition_threshold[0].duration == "300s" &&
+      strcontains(one(google_monitoring_alert_policy.authentication_error_rate[0].conditions).condition_threshold[0].filter, "metric.label.response_code_class = \"5xx\"") &&
+      strcontains(one(google_monitoring_alert_policy.authentication_error_rate[0].conditions).condition_threshold[0].denominator_filter, "agora-authentication-rest") &&
+      length(google_monitoring_alert_policy.application_jobs_unhealthy) == 1 &&
+      length(google_monitoring_alert_policy.application_jobs_unhealthy[0].conditions) == 2 &&
+      strcontains(one([
+        for condition in google_monitoring_alert_policy.application_jobs_unhealthy[0].conditions : condition
+        if length(condition.condition_threshold) == 1
+      ]).condition_threshold[0].filter, "agora-authentication-") &&
+      strcontains(one([
+        for condition in google_monitoring_alert_policy.application_jobs_unhealthy[0].conditions : condition
+        if length(condition.condition_threshold) == 1
+      ]).condition_threshold[0].filter, "agora-json-keys-") &&
+      one([
+        for condition in google_monitoring_alert_policy.application_jobs_unhealthy[0].conditions : condition
+        if length(condition.condition_absent) == 1
+      ]).condition_absent[0].duration == "10800s" &&
+      strcontains(one([
+        for condition in google_monitoring_alert_policy.application_jobs_unhealthy[0].conditions : condition
+        if length(condition.condition_absent) == 1
+      ]).condition_absent[0].filter, "metric.label.result = \"succeeded\"")
+    )
+    error_message = "Authentication 5xx, application-job failure, and missed JSON Keys rotation policies changed."
   }
 
   assert {
@@ -758,32 +793,43 @@ run "builds_the_protected_workload_foundation" {
 
   assert {
     condition = (
-      google_monitoring_notification_channel.cost_email.type == "email" &&
-      google_monitoring_notification_channel.cost_email.enabled &&
-      google_monitoring_notification_channel.cost_email.labels == tomap({ email_address = "infra@example.com" }) &&
-      google_monitoring_notification_channel.cost_email.deletion_policy == "PREVENT" &&
-      google_billing_budget.workload.amount[0].specified_amount[0].units == "60" &&
-      google_billing_budget.workload.amount[0].specified_amount[0].currency_code == "EUR" &&
-      toset(google_billing_budget.workload.budget_filter[0].projects) == toset([
+      length(google_monitoring_notification_channel.cost_email) == 1 &&
+      google_monitoring_notification_channel.cost_email[0].type == "email" &&
+      google_monitoring_notification_channel.cost_email[0].enabled &&
+      google_monitoring_notification_channel.cost_email[0].labels == tomap({ email_address = "infra@example.com" }) &&
+      google_monitoring_notification_channel.cost_email[0].deletion_policy == "PREVENT" &&
+      length(google_monitoring_notification_channel.operations_email) == 1 &&
+      google_monitoring_notification_channel.operations_email[0].labels == tomap({ email_address = "operations@example.com" }) &&
+      google_monitoring_notification_channel.operations_email[0].deletion_policy == "PREVENT" &&
+      length(data.google_billing_account.workload) == 1 &&
+      length(data.google_project.management) == 1 &&
+      length(google_billing_budget.workload) == 1 &&
+      google_billing_budget.workload[0].amount[0].specified_amount[0].units == "60" &&
+      google_billing_budget.workload[0].amount[0].specified_amount[0].currency_code == "EUR" &&
+      toset(google_billing_budget.workload[0].budget_filter[0].projects) == toset([
         "projects/123456789012",
         "projects/987654321098",
       ]) &&
       toset([
-        for threshold in google_billing_budget.workload.threshold_rules :
+        for threshold in google_billing_budget.workload[0].threshold_rules :
         "${threshold.spend_basis}:${threshold.threshold_percent}"
         ]) == toset([
         "CURRENT_SPEND:0.5",
         "CURRENT_SPEND:0.75",
         "CURRENT_SPEND:0.9",
         "CURRENT_SPEND:1",
+        "FORECASTED_SPEND:0.5",
+        "FORECASTED_SPEND:0.75",
+        "FORECASTED_SPEND:0.9",
         "FORECASTED_SPEND:1",
       ]) &&
-      google_billing_budget.workload.all_updates_rule[0].disable_default_iam_recipients &&
-      !google_billing_budget.workload.all_updates_rule[0].enable_project_level_recipients &&
-      toset(google_billing_budget.workload.all_updates_rule[0].monitoring_notification_channels) == toset([google_monitoring_notification_channel.cost_email.name]) &&
+      google_billing_budget.workload[0].all_updates_rule[0].disable_default_iam_recipients &&
+      !google_billing_budget.workload[0].all_updates_rule[0].enable_project_level_recipients &&
+      length(google_billing_budget.workload[0].all_updates_rule[0].monitoring_notification_channels) == 2 &&
       google_logging_project_bucket_config.default.retention_days == 30 &&
       strcontains(google_logging_project_exclusion.successful_healthchecks.filter, "httpRequest.status>=200") &&
-      strcontains(google_logging_project_exclusion.successful_healthchecks.filter, "/v2/healthcheck") &&
+      strcontains(google_logging_project_exclusion.successful_healthchecks.filter, "resource.labels.service_name=\"agora-authentication-rest\"") &&
+      strcontains(google_logging_project_exclusion.successful_healthchecks.filter, "ping|healthcheck") &&
       !strcontains(google_logging_project_exclusion.successful_healthchecks.filter, "severity")
     )
     error_message = "Budget notification or bounded logging controls changed."
@@ -828,6 +874,16 @@ run "rejects_an_invalid_cost_email" {
   }
 
   expect_failures = [var.cost_alert_email]
+}
+
+run "rejects_an_invalid_operations_email" {
+  command = plan
+
+  variables {
+    operations_alert_email = "not-an-email"
+  }
+
+  expect_failures = [var.operations_alert_email]
 }
 
 run "rejects_a_non_ipv4_24_subnet" {
@@ -946,7 +1002,12 @@ run "limits_disposable_recovery_authority_to_the_replacement_project" {
         for binding in values(google_project_iam_member.foundation) :
         binding.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com"
       ]) &&
+      !contains(local.foundation_project_roles, "roles/monitoring.alertPolicyEditor") &&
+      !contains(local.foundation_project_roles, "roles/monitoring.notificationChannelEditor") &&
       google_project_iam_member.foundation_project_metadata.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
+      length(google_project_iam_member.recovery_project_deleter) == 1 &&
+      google_project_iam_member.recovery_project_deleter[0].role == "roles/resourcemanager.projectDeleter" &&
+      google_project_iam_member.recovery_project_deleter[0].member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
       google_service_account_iam_member.foundation_database_act_as.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
       alltrue([
         for binding in values(google_service_account_iam_member.release_runtime_act_as) :
@@ -995,6 +1056,21 @@ run "limits_disposable_recovery_authority_to_the_replacement_project" {
       length(google_storage_bucket_iam_member.restore_runtime_viewer) == 0
     )
     error_message = "Recovery CI must create no management-plane secret or backup-payload IAM binding; the exact contract is human-applied."
+  }
+
+  assert {
+    condition = (
+      length(google_monitoring_notification_channel.cost_email) == 0 &&
+      length(google_monitoring_notification_channel.operations_email) == 0 &&
+      length(data.google_billing_account.workload) == 0 &&
+      length(data.google_project.management) == 0 &&
+      length(google_billing_budget.workload) == 0 &&
+      length(google_monitoring_alert_policy.authentication_error_rate) == 0 &&
+      length(google_monitoring_alert_policy.application_jobs_unhealthy) == 0 &&
+      length(google_monitoring_alert_policy.database_capacity) == 0 &&
+      length(google_monitoring_alert_policy.postgres_recovery_job_failure) == 0
+    )
+    error_message = "A short-lived recovery project must not duplicate production budgets, notification channels, or alert policies."
   }
 }
 

@@ -21,80 +21,23 @@ The design is a small Google Cloud landing zone built from established infrastru
 
 ## Setup
 
-Pull requests are cloud-blind. They receive a read-only repository token and run formatting,
-validation, mocked OpenTofu tests, static security analysis, and manifest checks. They receive no
-Google identity, protected environment, secret payload, or production state.
+Complete the repository-only subsections below, then follow the
+[production runbook index](./docs/runbooks/README.md) from step 0 through step 10. That index is the
+single first-run order; each step names one procedure, one pass condition, and the next action.
 
-Pull requests and branch pushes never deploy. A merge to `master` that changes only the reviewed
-production image manifest starts the protected release workflow after the fail-safe repository
-variable `PRODUCTION_RELEASES_ENABLED` is explicitly set to `true`. Until bootstrap, release inputs,
-and recovery checks are complete, a missing or false switch skips the job before its protected
-environment is entered. Foundation, recovery, rollback, and the first post-bootstrap release retain
-explicit manual entry points. A shared concurrency lock serializes every production writer.
+Pull requests and branch pushes are cloud-blind and never deploy. The one-time management bootstrap
+is the only local apply and requires an explicitly authorized human. Every later cloud change runs
+from reviewed `master` through its protected workflow; agents never run `gcloud` or `tofu apply`.
+Keep `PRODUCTION_RELEASES_ENABLED=false` until the launch step explicitly changes it.
 
-Foundation changes use separate plan and apply runs: the first stores an opaque saved plan in private
-Google Cloud Storage for 24 hours, and the second applies that exact commit-, root-, state-, and
-hash-bound plan after environment approval. Routine releases use a fixed deployment graph and an
-immutable success receipt; failures compensate to the prior receipt while backward-compatible
-migrations remain. Recovery can rebuild only into a new disposable project. The sole scheduled
-cloud workflow is a read-only daily drift inspection.
-
-The bootstrap root's one-time initial apply remains a human-only exception performed from `master`
-after explicit approval. After that first trust anchor exists, bootstrap and foundation changes use
-the protected workflow. Agents never run `gcloud` or `tofu apply` for this repository.
-
-Before the application contract can be enabled, the foundation input must name at least one `user:`
-or `group:` Authentication initializer. Foundation gives only those humans the initializer service
-identity, its Resource Manager tag, and a conditional invocation grant. Routine automation cannot
-use that identity or tag, change Cloud Run IAM, invoke the initializer, or override an execution.
-The human provisions the one-time job in two phases, the first release records its exact successful
-run, and the job is then deleted. JSON Keys rotation is separate: release runs it once after
-migration, then an hourly authenticated schedule evaluates the idempotent job. The
+The [architecture guide](./docs/architecture.md) explains the lifecycle and security model. The
 [release root contract](./environments/production/release/README.md#application-runtime-contract)
-documents the exact IAM and runtime-identity boundaries.
+defines the human-only Authentication initializer, scheduled JSON Keys rotation, runtime identities,
+fixed deployment order, compensation, and receipt boundaries.
 
-### Bootstrap Google Cloud only after explicit authorization
+### Reconcile repository protection
 
-Use [Bootstrap and verify the management plane](./docs/runbooks/bootstrap-management-plane.md) after
-this change is merged and an operator is authorized to create resources. It contains the exact
-standalone or organization/folder project commands, billing and API prerequisites, temporary access,
-GitHub environments, local first plan/apply, remote-state migration, WIF/IAM verification,
-organization-policy option, broad-access removal, expected safe output, and partial-failure recovery.
-
-Do not improvise a shorter setup in the console. The only unavoidable console actions are creating a
-billing account when none exists, securing the human account and recovery codes, and disabling GitHub
-administrator bypass for the two high-authority environments where the documented public API does
-not expose that switch. Every resulting control has an independent command-line verification.
-
-### Prepare the workload foundation only after bootstrap is verified
-
-Use [Provision and verify the workload foundation](./docs/runbooks/provision-workload-foundation.md)
-to choose the immutable workload project ID, record the billing and parent prerequisites, configure
-the protected input bundle, review and apply an exact private plan, and verify the resulting project, private routing, identities,
-registry, database host, quotas, budget, monitoring, and logging. The runbook contains separate
-organization/folder and standalone-project paths and the temporary Owner-removal step required after
-project creation. The [PostgreSQL host runbook](./docs/runbooks/operate-postgresql-host.md) owns the
-host-specific readiness, isolation, capacity, maintenance, and rollback checks.
-
-The [PostgreSQL backup and restore runbook](./docs/runbooks/backup-and-restore-postgresql.md) owns
-recovery activation, the first-write gate, four-hour logical backups, monthly clean restores, the
-daily snapshot contract, retention locking, alert response, RPO/RTO evidence, and the PITR decision
-thresholds. Read it before enabling either database release. Its commands remain stop-gated until
-resource creation is explicitly authorized.
-
-### Configure and operate protected releases
-
-Use [Deploy and roll back production](./docs/runbooks/deploy-production.md) to create the protected
-release input bundle, keep the launch switch off until every prerequisite passes, verify exact
-secret versions and image provenance, deploy the reviewed manifest, perform the human-only
-Authentication initialization, inspect receipts, and select an exact rollback target. Use
-[Recover production into a disposable project](./docs/runbooks/disaster-recovery.md)
-only for a declared recovery exercise or incident; it owns temporary recovery authority, exact
-backup selection, the lost-write acknowledgement, verification, and access removal.
-
-### Reconcile repository protection after this bootstrap merges
-
-Run these commands from a clean workspace after both bootstrap pull requests have merged:
+Run these commands from a clean workspace after the repository bootstrap changes have merged:
 
 ```bash
 cd ~/git-projects/a-novel
@@ -162,9 +105,24 @@ The repository keeps its own README, contribution guide, and AGPL-3.0 license. T
 ```bash
 gh api repos/a-novel/infra/community/profile \
   --jq '{health_percentage, files: (.files | keys)}'
+gh repo view a-novel/infra \
+  --json isSecurityPolicyEnabled,securityPolicyUrl \
+  --jq '{isSecurityPolicyEnabled,securityPolicyUrl}'
+
+gh api repos/a-novel/infra \
+  --jq '{visibility,archived,has_pages,license:.license.spdx_id,security_and_analysis}'
+gh api repos/a-novel/infra/private-vulnerability-reporting --jq .enabled
+gh api repos/a-novel/infra/releases --jq 'length'
+gh api repos/a-novel/infra/tags --jq 'length'
 ```
 
-The response should recognize `readme`, `license`, `contributing`, `code_of_conduct`, `security`, `issue_template`, and `pull_request_template`. Resolve a missing inherited file in `a-novel/.github`; do not duplicate it here.
+The community response should recognize `readme`, `license`, `contributing`, `code_of_conduct`,
+`issue_template`, and `pull_request_template`; GitHub's repository query must separately report the
+inherited security policy as enabled with a `/security/policy` URL. The repository should be public
+and active, report `AGPL-3.0`, have Pages disabled, private vulnerability reporting enabled, secret
+scanning and push protection enabled, and return zero releases and zero tags. Infrastructure ships
+through protected deployments, not packages; it intentionally has no release, tag, or Pages
+workflow. Resolve a missing inherited community file in `a-novel/.github`; do not duplicate it here.
 
 ### Prepare a local checkout
 
@@ -198,15 +156,16 @@ The three names form a security allowlist. Add a root only when a new lifecycle 
 
 ### Supporting paths
 
-| Path                            | Purpose                                                                        |
-| ------------------------------- | ------------------------------------------------------------------------------ |
-| `deploy/production/images.yaml` | Enabled components plus stable SemVer image tags and exact digests.            |
-| `ops/`                          | Small, tested CI and operator shims shared by the roots.                       |
-| `tests/`                        | Mocked OpenTofu, manifest, Renovate, allowlist, and sanitized plan fixtures.   |
-| `docs/architecture.md`          | Lifecycle, authority, state, delivery, and portability decisions.              |
-| `docs/google-cloud.md`          | Provider resource map, trust boundaries, and official Google Cloud references. |
-| `docs/costs/production.md`      | Current unit assumptions and launch/capacity monthly cost ranges.              |
-| `docs/runbooks/`                | Human recovery and deployment procedures with verifiable outcomes.             |
+| Path                                      | Purpose                                                                        |
+| ----------------------------------------- | ------------------------------------------------------------------------------ |
+| `deploy/production/images.yaml`           | Enabled components plus stable SemVer image tags and exact digests.            |
+| `deploy/production/recovery-cleanup.json` | Inactive-by-default exact authorization for one disposable recovery deletion.  |
+| `ops/`                                    | Small, tested CI and operator shims shared by the roots.                       |
+| `tests/`                                  | Mocked OpenTofu, manifest, Renovate, allowlist, and sanitized plan fixtures.   |
+| `docs/architecture.md`                    | Lifecycle, authority, state, delivery, and portability decisions.              |
+| `docs/google-cloud.md`                    | Provider resource map, trust boundaries, and official Google Cloud references. |
+| `docs/costs/production.md`                | Current unit assumptions and launch/capacity monthly cost ranges.              |
+| `docs/runbooks/`                          | Human recovery and deployment procedures with verifiable outcomes.             |
 
 Local modules begin only when two real call sites share a resource shape or one security invariant needs a single implementation. Singleton resources stay in their owning root.
 
@@ -238,7 +197,7 @@ run proves that Renovate ignores noisy references, groups all four images for on
 service and PostgreSQL majors, and surfaces a digest changed behind an existing tag for blocking
 review. Renovate never automerges.
 
-The production manifest selects the two reviewed `v2.5.1` launch families, but this code alone still
+The production manifest selects two reviewed stable launch families, but this code alone still
 creates nothing. Foundation seeds empty group-level release metadata and the host remains idle until
 protected applies and the first release are authorized. The release root creates recovery jobs only
 when both database contracts are enabled together. Once the documented launch switch is true, a

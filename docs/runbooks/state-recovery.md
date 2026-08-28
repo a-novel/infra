@@ -1,5 +1,8 @@
 # Recover a prior OpenTofu state generation
 
+> Incident only: this is not part of a first run or ordinary rollback. Use it only for a corrupt,
+> overwritten, or provably incorrect live state object.
+
 Use this runbook only when the live state object is corrupt, accidentally overwritten, or known to
 describe the wrong infrastructure generation. Ordinary infrastructure rollback uses a prior release
 receipt and OpenTofu apply; it does not rewrite state. State recovery changes OpenTofu's record of

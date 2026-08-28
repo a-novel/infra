@@ -3,6 +3,9 @@ name: production drift
 on:
   schedule:
     - cron: "17 5 * * *"
+    # Eight checks/day bound instance-based idle time while still detecting a
+    # launch outage without another monitoring service or credential.
+    - cron: "43 */3 * * *"
   workflow_dispatch:
 
 permissions: {}
@@ -17,7 +20,10 @@ env:
 
 jobs:
   inspect:
-    if: github.ref == 'refs/heads/master'
+    if: >-
+      github.ref == 'refs/heads/master' &&
+      (github.event_name == 'workflow_dispatch' ||
+      github.event.schedule == '17 5 * * *')
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
@@ -73,3 +79,44 @@ jobs:
             TOFU_VAR_FILE="${file}" \
               ./ops/tofu-gate.sh drift "${root}" "${STATE_BUCKET}"
           done
+
+  health:
+    if: >-
+      github.ref == 'refs/heads/master' &&
+      vars.PRODUCTION_RELEASES_ENABLED == 'true' &&
+      (github.event_name == 'workflow_dispatch' ||
+      github.event.schedule == '43 */3 * * *')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out the exact master commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Authenticate as the read-only plan boundary
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Install the pinned Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+        with:
+          version: "581.0.0"
+
+      - name: Check Authentication and its dependencies
+        shell: bash
+        env:
+          STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
+        run: |
+          set -euo pipefail
+          umask 077
+          config="${RUNNER_TEMP}/foundation-health.tfvars.json"
+          ./ops/config-custody.sh fetch "${STATE_BUCKET}" foundation "${config}"
+          ./ops/check-authentication-health.sh "${config}"

@@ -1,5 +1,8 @@
 # Add or rotate a secret version
 
+> First production run: step 5. Run the add-version procedure once per declared secret, record only
+> numeric version IDs, then continue to the protected release.
+
 OpenTofu owns Secret Manager containers and IAM; it never owns payload versions. A named human
 operator supplies one single-line payload through stdin after the management plane exists. The
 payload must never appear in Git, a `.tfvars` file, an environment file, a command argument, shell
@@ -7,8 +10,10 @@ history, process listings, OpenTofu state, a GitHub secret, an issue, or logs.
 
 Operators have two roles on each exact application secret: Secret Accessor for controlled recovery
 and Secret Version Manager for add, disable, re-enable, and delayed destroy. Automation has none of
-those permissions except the separately approved recovery identity, which can read the nine exact
-secrets. See [Secret Manager access control](https://cloud.google.com/secret-manager/docs/access-control),
+those permissions. Dedicated production runtimes receive only their exact payload containers; a
+human grants replacement runtimes temporary exact access during clean-room recovery and removes it
+afterward. GitHub recovery automation cannot read payloads. See
+[Secret Manager access control](https://cloud.google.com/secret-manager/docs/access-control),
 [adding versions](https://cloud.google.com/secret-manager/docs/add-secret-version), and
 [delayed destruction](https://cloud.google.com/secret-manager/docs/delay-destruction-of-secret-versions).
 
@@ -25,6 +30,9 @@ secrets. See [Secret Manager access control](https://cloud.google.com/secret-man
   Both owner passwords and both backup passwords must be four distinct values.
 - For rotation, know every consumer and the currently pinned numeric version. Never configure a
   production consumer to use the mutable `latest` alias.
+- For the SMTP password, first complete the account, domain, privacy, billing-cap, and credential
+  steps in [Configure hosted Plunk SMTP](./configure-hosted-smtp.md). The password is the exact
+  provider-issued SMTP credential, not an API key invented from an example.
 
 The allowed IDs are:
 
@@ -156,6 +164,11 @@ without printing or exporting them; host startup fails closed if any pair is equ
 The initial application release must pin each numeric version. Treat a missing version as a blocked
 deployment, not a reason to use `latest` or copy a value into GitHub.
 
+For `production-authentication-smtp-sender-password`, add only the password here. The exact SMTP
+host, username, sender, and numeric version belong in protected `RELEASE_CONFIG_JSON`; the provider
+account and billing record remain in the private operations register. Pass health and one
+controlled no-branding delivery before enabling normal application mail.
+
 ## Rotate through a controlled rollout
 
 The normal sequence is additive when a consumer and credential issuer support an overlap window:
@@ -242,9 +255,11 @@ use the documented Secret Manager restore/cancel behavior if the version was sel
 after final destruction the payload is irrecoverable.
 
 For an externally valid credential such as SMTP, disabling the Secret Manager version does not revoke
-the credential at its issuer. Rotate and revoke it at the provider as a separate operator action,
-then verify both systems. Database owner and backup passwords likewise require a coordinated
-PostgreSQL credential change before the old Secret Manager version is disabled.
+the credential at its issuer. Follow the SMTP runbook: create/rotate at the provider, add the new
+Secret Manager version, deploy and verify health plus one controlled send, revoke the former
+provider credential, and only then disable its Secret Manager version. Database owner and backup
+passwords likewise require a coordinated PostgreSQL credential change before the old Secret Manager
+version is disabled.
 
 ## Audit and cleanup
 

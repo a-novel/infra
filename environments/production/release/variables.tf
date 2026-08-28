@@ -170,6 +170,7 @@ variable "application_release" {
         sender_domain = string
         sender_email  = string
         sender_name   = string
+        username      = string
       })
       super_admin_email = string
     })
@@ -234,9 +235,10 @@ variable "application_release" {
       can(regex("^[a-z0-9]([a-z0-9.-]*[a-z0-9])?:587$", lower(var.application_release.authentication.smtp.address))) &&
       lower(split(":", var.application_release.authentication.smtp.address)[0]) == lower(var.application_release.authentication.smtp.sender_domain) &&
       length(trimspace(var.application_release.authentication.smtp.sender_name)) >= 1 &&
-      length(var.application_release.authentication.smtp.sender_name) <= 100
+      length(var.application_release.authentication.smtp.sender_name) <= 100 &&
+      can(regex("^[^[:space:]]{1,320}$", var.application_release.authentication.smtp.username))
     )
-    error_message = "SMTP must use a DNS host on port 587, repeat that host as sender_domain, and provide a 1-100 character sender name."
+    error_message = "SMTP must use a DNS host on port 587, repeat that host as sender_domain, and provide bounded non-empty sender and login values."
   }
 }
 
