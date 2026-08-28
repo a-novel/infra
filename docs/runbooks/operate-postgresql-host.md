@@ -12,11 +12,13 @@ Every Google Cloud command in this document is for a named human operator. Agent
 
 ## Operator context
 
-Paste this block once before selecting the host:
+Run local blocks in the existing configured zsh session; blocks explicitly labeled for the COS host
+use that host's Bash session. Paste this block once before selecting the host:
 
-```bash
-set -euo pipefail
-set +x
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 umask 077
 
 REPOSITORY='a-novel/infra'
@@ -31,6 +33,7 @@ DATABASE_OPERATOR_PRINCIPAL="$(gcloud projects get-iam-policy "$WORKLOAD_PROJECT
   --flatten='bindings[].members' \
   --filter='bindings.role=roles/compute.osAdminLogin' \
   --format='value(bindings.members)')"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 ## Apply boundary
@@ -128,10 +131,13 @@ debugging.
 
 ## Select the exact host
 
-Use a fresh Bash or Zsh session. These values are identifiers, but project and network details
-still stay out of public issues and logs.
+These values are identifiers, but project and network details still stay out of public issues and
+logs.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 [[ "$WORKLOAD_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
 [[ "$DATABASE_ZONE" =~ ^[a-z]+-[a-z]+[0-9]+-[a-z]$ ]]
 test "$(printf '%s\n' "$DATABASE_OPERATOR_PRINCIPAL" | wc -l)" -eq 1
@@ -142,7 +148,7 @@ DATABASE_INSTANCE="$(
     --project="$WORKLOAD_PROJECT_ID" \
     --zone="$DATABASE_ZONE" \
     --format='value(instance.basename())'
-)
+)"
 test -n "$DATABASE_INSTANCE"
 test "$(printf '%s\n' "$DATABASE_INSTANCE" | wc -l)" -eq 1
 [[ "$DATABASE_INSTANCE" =~ ^agora-database-[a-z0-9-]+$ ]]
@@ -157,6 +163,7 @@ DATABASE_PRIVATE_IP="$(
 
 printf 'Group: %s\nInstance: %s\nZone: %s\nPrivate IP: %s\n' \
   "$DATABASE_GROUP" "$DATABASE_INSTANCE" "$DATABASE_ZONE" "$DATABASE_PRIVATE_IP"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: exactly one generated instance name and one address inside `10.20.0.0/24`.
@@ -166,7 +173,10 @@ Do not proceed if the group has zero or multiple members. Do not print the opera
 
 Describe the stateful group and VM without printing metadata:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud compute instance-groups managed describe "$DATABASE_GROUP" \
   --project="$WORKLOAD_PROJECT_ID" \
   --zone="$DATABASE_ZONE" \
@@ -176,6 +186,7 @@ gcloud compute instances describe "$DATABASE_INSTANCE" \
   --project="$WORKLOAD_PROJECT_ID" \
   --zone="$DATABASE_ZONE" \
   --format='yaml(name,status,machineType,networkInterfaces,serviceAccounts,tags.items,shieldedInstanceConfig,disks)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result:
@@ -191,11 +202,15 @@ Expected safe result:
 
 Verify the preserved disk:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud compute disks describe "$DATABASE_DISK" \
   --project="$WORKLOAD_PROJECT_ID" \
   --zone="$DATABASE_ZONE" \
   --format='yaml(name,status,sizeGb,type,physicalBlockSizeBytes,users,labels)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: `READY`, 50 GiB unless reviewed code increased it, `pd-balanced`, 4096-byte
@@ -204,7 +219,10 @@ replacement is temporary; otherwise stop.
 
 Verify the code-owned snapshot schedule and attachment:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud compute resource-policies describe agora-database-daily-snapshots \
   --project="$WORKLOAD_PROJECT_ID" \
   --region="$DATABASE_REGION" \
@@ -221,6 +239,7 @@ gcloud compute snapshots list \
   --sort-by='~creationTimestamp' \
   --limit=1 \
   --format='table(name,autoCreated,status,creationTimestamp,sourceDisk.basename(),storageLocations,labels.role)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: one daily policy at 02:00 UTC, seven-day retention, `KEEP_AUTO_SNAPSHOTS`,
@@ -230,7 +249,10 @@ matching snapshot is `READY` and no older than six hours.
 
 Verify only the relevant firewall rules:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 for rule in \
   agora-allow-postgres-ingress \
   agora-allow-json-keys-postgres-egress \
@@ -241,6 +263,7 @@ for rule in \
     --project="$WORKLOAD_PROJECT_ID" \
     --format='yaml(name,direction,priority,sourceRanges,destinationRanges,allowed,denied,targetTags)'
 done
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: database ingress accepts only `10.20.0.0/24` on `5432,5433` and targets
@@ -250,7 +273,10 @@ backup tag appears on both rules. The restore tag has no database allow. IAP SSH
 
 Verify all six alert policies:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud monitoring policies list \
   --project="$WORKLOAD_PROJECT_ID" \
   --filter='display_name:("Agora database")' \
@@ -260,6 +286,7 @@ gcloud monitoring policies list \
   --project="$WORKLOAD_PROJECT_ID" \
   --filter='display_name="Agora PostgreSQL recovery jobs unhealthy"' \
   --format='yaml(displayName,enabled,severity,conditions.displayName)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: CPU above 70%, memory above 70% and 85%, and disk above 70% and 85%, all
@@ -269,7 +296,10 @@ absence condition can open an incident.
 
 Verify the exact operator grants without listing unrelated members:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud projects get-iam-policy "$WORKLOAD_PROJECT_ID" \
   --flatten='bindings[].members' \
   --filter="bindings.members=${DATABASE_OPERATOR_PRINCIPAL} AND bindings.role:(roles/compute.osAdminLogin roles/compute.viewer roles/iap.tunnelResourceAccessor)" \
@@ -280,6 +310,7 @@ gcloud iam service-accounts get-iam-policy "$DATABASE_SERVICE_ACCOUNT" \
   --flatten='bindings[].members' \
   --filter="bindings.members=${DATABASE_OPERATOR_PRINCIPAL} AND bindings.role=roles/iam.serviceAccountUser" \
   --format='table(bindings.role)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: Compute Viewer and OS Admin Login, IAP Tunnel Resource Accessor with
@@ -290,11 +321,15 @@ role is required by OS Login because the VM has an attached service account.
 
 Open the privileged debug session:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud compute ssh "$DATABASE_INSTANCE" \
   --project="$WORKLOAD_PROJECT_ID" \
   --zone="$DATABASE_ZONE" \
   --tunnel-through-iap
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Do not enable shell tracing, print environment variables, run `docker inspect` without a narrow
@@ -472,10 +507,14 @@ reproducible. Renovate cannot safely resolve Google Compute Engine's named-image
 regular infrastructure dependency review, a human operator compares the pinned image with the
 supported stable milestone:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud compute images describe-from-family cos-stable \
   --project=cos-cloud \
   --format='yaml(name,status,creationTimestamp,deprecated)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 The command is read-only and prints no workload project data. Confirm the proposed milestone remains

@@ -20,16 +20,19 @@ and [Actions notification settings](https://docs.github.com/en/subscriptions-and
 
 ## Operator context
 
-Paste this block once before inspecting an alert:
+Run this and later blocks in the existing configured zsh session. Paste this block once before
+inspecting an alert:
 
-```bash
-set -euo pipefail
-set +x
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 umask 077
 
 REPOSITORY='a-novel/infra'
 REGION='europe-west1'
 WORKLOAD_PROJECT_ID="$(gh variable get GCP_WORKLOAD_PROJECT_ID --repo "$REPOSITORY")"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 ## Ownership and response rules
@@ -61,12 +64,16 @@ Every alert is a symptom, not permission to mutate production. The responder mus
 
 Validate the selected project and inspect the alert inventory without changing the default project:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 [[ "$WORKLOAD_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
 
 gcloud monitoring policies list --project="$WORKLOAD_PROJECT_ID" \
   --filter='displayName:Agora' \
   --format='table(displayName,enabled,severity)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected inventory: eight enabled policies—five database-capacity policies, Authentication 5xx,
@@ -90,17 +97,29 @@ healthy.
 
 First inspect the workflow control plane without downloading logs or credentials:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gh workflow list --repo "$REPOSITORY" --all --json name,path,state
 gh run list --repo "$REPOSITORY" --workflow drift.yaml --branch master \
   --event schedule --limit 20 \
   --json databaseId,headSha,status,conclusion,createdAt,url
-HEALTH_RUN_ID='replace-with-health-run-id'
+HEALTH_RUN_ID=''
+while IFS= read -r candidate_run_id; do
+  if gh run view "$candidate_run_id" --repo "$REPOSITORY" --json jobs \
+    --jq 'any(.jobs[]; .name == "health")' | grep -qx true; then
+    HEALTH_RUN_ID="$candidate_run_id"
+    break
+  fi
+done < <(gh run list --repo "$REPOSITORY" --workflow drift.yaml --branch master \
+  --event schedule --limit 20 --json databaseId --jq '.[].databaseId')
 [[ "$HEALTH_RUN_ID" =~ ^[1-9][0-9]*$ ]]
 gh run view "$HEALTH_RUN_ID" --repo "$REPOSITORY" --json headSha,event,jobs,url \
   --jq '{headSha,event,url,jobs:[.jobs[]|{name,conclusion}]}'
 gh api "repos/${REPOSITORY}/actions/runs/${HEALTH_RUN_ID}" \
   --jq '{actor:.actor.login,event,head_sha,status,conclusion}'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: `production drift` is active, scheduled runs use the current `master` SHA,
@@ -113,7 +132,10 @@ read-only verification below. Do not create a replacement workflow or identity.
 
 First safe checks:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud run services describe agora-authentication-rest \
   --project="$WORKLOAD_PROJECT_ID" --region="$REGION" \
   --format='yaml(metadata.name,status.url,status.latestCreatedRevisionName,status.latestReadyRevisionName,status.traffic,status.conditions)'
@@ -125,18 +147,23 @@ gcloud logging read '
   severity>=WARNING
 ' --project="$WORKLOAD_PROJECT_ID" --freshness=30m --limit=50 \
   --format='table(timestamp,severity,resource.labels.revision_name,httpRequest.status,httpRequest.latency)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Compare the latest ready revision and traffic target with the newest successful release receipt. If
 they differ, stop releases and use [Deploy and roll back production](./deploy-production.md). If
 they match, inspect revision condition metadata for both services:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 for service in agora-json-keys-grpc agora-authentication-rest; do
   gcloud run services describe "$service" \
     --project="$WORKLOAD_PROJECT_ID" --region="$REGION" \
     --format='yaml(metadata.name,status.latestReadyRevisionName,status.traffic,status.conditions)'
 done
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Do not curl or print the health response; the job already validated it privately. If JSON Keys is
@@ -146,14 +173,26 @@ private database reachability and [Configure hosted Plunk SMTP](./configure-host
 provider status, cap, credential, and domain checks. Never make JSON Keys public to debug it, add a
 NAT route, or enable unauthenticated invocation.
 
-After correcting the owning system through a reviewed path, run one read-only confirmation:
+After correcting the owning system through a reviewed path, run one read-only confirmation from the
+infrastructure repository root:
 
-```bash
-gh workflow run drift.yaml --repo "$REPOSITORY" --ref master
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+git switch master
+git pull --ff-only
+test -z "$(git status --porcelain)"
+MASTER_SHA="$(git rev-parse HEAD)"
+HEALTH_RUN_ID="$(
+  EXPECTED_SHA="$MASTER_SHA" ./ops/run-workflow.sh drift.yaml run-id
+)"
+printf 'Read-only drift and health run ID: %s\n' "$HEALTH_RUN_ID"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-The manual dispatch runs both drift inspection and synthetic health under the same read-only plan
-identity. Confirm both jobs succeed at the expected `master` SHA. Do not loop the dispatch: every
+The helper selects the exact dispatched run and waits for both jobs. The manual dispatch runs drift
+inspection and synthetic health under the same read-only plan identity. Do not loop it: every
 health request can keep Authentication's instance-based CPU allocated for up to 15 idle minutes.
 
 ## Authentication 5xx rate
@@ -165,7 +204,10 @@ than the low-frequency synthetic check, but it cannot prove dependency health du
 Use the synthetic-health metadata queries, then split only status counts in Logs Explorer or with this
 bounded query:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud logging read '
   resource.type="cloud_run_revision"
   resource.labels.service_name="agora-authentication-rest"
@@ -173,6 +215,7 @@ gcloud logging read '
   httpRequest.status>=500
 ' --project="$WORKLOAD_PROJECT_ID" --freshness=30m --limit=100 \
   --format='table(timestamp,resource.labels.revision_name,httpRequest.requestMethod,httpRequest.status,httpRequest.latency)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Do not add request URLs, query strings, principals, or bodies to the output. Correlate onset with the
@@ -188,7 +231,10 @@ code.
 `agora-json-keys-rotatekeys` execution was visible for three hours. The first protected release
 seeds the rotation time series; an absence alert before that release is not actionable.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 for job in \
   agora-json-keys-migrations \
   agora-json-keys-rotatekeys \
@@ -201,6 +247,7 @@ done
 gcloud scheduler jobs describe agora-json-keys-rotation \
   --project="$WORKLOAD_PROJECT_ID" --location="$REGION" \
   --format='yaml(name,state,schedule,timeZone,lastAttemptTime,status)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 For a migration failure, freeze deployment and inspect the failed workflow; release compensation
@@ -228,7 +275,10 @@ diagnosis.
 the hourly backup monitor has not completed for three hours. This covers four-hour logical backups,
 monthly clean restores, and the RPO/storage monitor without a custom metric or log parser.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 for job in \
   agora-postgres-backup-json-keys \
   agora-postgres-backup-authentication \
@@ -239,6 +289,7 @@ for job in \
     --project="$WORKLOAD_PROJECT_ID" --region="$REGION" --limit=5 \
     --format='table(metadata.name,metadata.creationTimestamp,status.completionTime,status.conditions.type,status.conditions.status)'
 done
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Continue with [Back up and restore PostgreSQL](./backup-and-restore-postgresql.md). It owns exact
@@ -273,9 +324,13 @@ above must review notification ownership whenever that maintainer changes.
 For a failed `production release`, `production foundation`, `production recovery`, daily drift, or
 three-hour synthetic-health run:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gh run list --repo "$REPOSITORY" --branch master --limit 20 \
   --json databaseId,workflowName,displayTitle,headSha,event,status,conclusion,createdAt,url
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Select the exact run privately, verify its `headSha`, and inspect only the first failed step. Never
@@ -291,10 +346,14 @@ retry. A health failure performs no mutation; diagnose it through
 Google does not provide a generic “send test” operation for notification channels. Verify both
 code-managed email channels after foundation apply:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud beta monitoring channels list --project="$WORKLOAD_PROJECT_ID" \
   --filter='displayName:("Agora production cost alerts" OR "Agora production operations alerts")' \
   --format='table(name,displayName,type,enabled,verificationStatus)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected result: exactly two enabled email channels. Complete any Google verification flow on those

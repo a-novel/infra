@@ -24,12 +24,15 @@ and [Google WIF for deployment pipelines](https://cloud.google.com/iam/docs/work
 ## Operator context
 
 This bootstrap inherits no shell variable because it creates the management identifiers itself.
-Paste this block once in a fresh Bash or Zsh shell before section 1.
+Run this and later blocks in the existing configured zsh session. Paste this block once before
+section 1.
 
-```bash
-set -euo pipefail
-set +x
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 umask 077
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 ## Preconditions and stop conditions
@@ -71,11 +74,15 @@ The ordered index's repository gate already proves that the checkout is clean, c
 `master`. When entering this runbook directly, complete
 [step 0](./README.md#0-inspect-the-repository-gate) once before continuing.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 tofu version    # OpenTofu v1.12.6
 gcloud version  # Google Cloud SDK <installed version>
 gh --version    # gh version <installed version>
 jq --version    # jq-<installed version>
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Look for: OpenTofu reports exactly `v1.12.6`; the other three commands print their installed version
@@ -84,17 +91,25 @@ and exit successfully. Their versions are not pinned by this repository.
 Authenticate the intended Google human once and write the same login to Application Default
 Credentials for OpenTofu. This creates no service-account key.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud auth login --update-adc
 gcloud config get-value account
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Look for: the final command names the intended human.
 
 Keep that account in the IAM member syntax used by later commands:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 OPERATOR_PRINCIPAL="user:$(gcloud config get-value account 2>/dev/null)"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 ## 2. Select billing and the globally unique management-project ID
@@ -102,7 +117,10 @@ OPERATOR_PRINCIPAL="user:$(gcloud config get-value account 2>/dev/null)"
 List the open billing accounts. The assignment below reuses the result directly when exactly one
 account is open; if several IDs are returned, replace it with the chosen `ACCOUNT_ID`.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud billing accounts list \
   --filter='open=true' \
   --format='table(name.basename(),displayName,masterBillingAccount.basename())'
@@ -112,6 +130,7 @@ BILLING_ACCOUNT_ID="$(gcloud billing accounts list \
 test -n "${BILLING_ACCOUNT_ID}"
 gcloud billing accounts describe "${BILLING_ACCOUNT_ID}" \
   --format='yaml(name,displayName,open)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: `open: true` and the intended billing account name. An account ID is not a
@@ -120,9 +139,13 @@ secret.
 Check the preferred ID. Replace it with a short organization-specific variant if project metadata
 is returned. Project IDs are global and cannot be changed later.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 MANAGEMENT_PROJECT_ID='agora-management-prod'
 ! gcloud projects describe "${MANAGEMENT_PROJECT_ID}"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Look for: `NOT_FOUND` or a permission error. `describe` cannot distinguish a missing project from a
@@ -133,8 +156,12 @@ availability check. Do not continue when metadata is returned.
 
 First inspect whether the account has an organization hierarchy:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud organizations list --format='table(name.basename(),displayName)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Choose exactly one of the following shapes.
@@ -144,9 +171,13 @@ Choose exactly one of the following shapes.
 Use this when the organization list is empty or Agora does not administer an existing organization.
 Do not create an organization solely for this early deployment.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud projects create "${MANAGEMENT_PROJECT_ID}" \
   --name='Agora management'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 ### Existing organization or folder shape
@@ -154,41 +185,57 @@ gcloud projects create "${MANAGEMENT_PROJECT_ID}" \
 Use an existing parent. List candidates, select the numeric ID, and use either `--folder` or
 `--organization`—never both.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud resource-manager folders list \
   --organization="$(gcloud organizations list --limit=1 --format='value(name.basename())')" \
   --format='table(name.basename(),displayName)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 For an existing folder:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 MANAGEMENT_FOLDER_ID='replace-with-folder-id'
 [[ "${MANAGEMENT_FOLDER_ID}" =~ ^[0-9]+$ ]]
 gcloud projects create "${MANAGEMENT_PROJECT_ID}" \
   --name='Agora management' \
   --folder="${MANAGEMENT_FOLDER_ID}"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 For an organization with no suitable folder:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 MANAGEMENT_ORGANIZATION_ID='replace-with-organization-id'
 [[ "${MANAGEMENT_ORGANIZATION_ID}" =~ ^[0-9]+$ ]]
 gcloud projects create "${MANAGEMENT_PROJECT_ID}" \
   --name='Agora management' \
   --organization="${MANAGEMENT_ORGANIZATION_ID}"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result for the selected command: Google reports project creation. Verify its immutable
 number and parent before linking billing:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 MANAGEMENT_PROJECT_NUMBER="$(gcloud projects describe "${MANAGEMENT_PROJECT_ID}" --format='value(projectNumber)')"
 [[ "${MANAGEMENT_PROJECT_NUMBER}" =~ ^[0-9]+$ ]]
 
 gcloud projects describe "${MANAGEMENT_PROJECT_ID}" \
   --format='yaml(projectId,projectNumber,name,parent)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 The `projectId`, `name`, and optional `parent` must match the choice above. Record the numeric project
@@ -196,12 +243,16 @@ number in the private change record; it is non-secret and is later embedded in W
 
 ## 4. Link billing and enable only the bootstrap APIs
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud billing projects link "${MANAGEMENT_PROJECT_ID}" \
   --billing-account="${BILLING_ACCOUNT_ID}"
 
 gcloud billing projects describe "${MANAGEMENT_PROJECT_ID}" \
   --format='yaml(projectId,billingAccountName,billingEnabled)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: `billingEnabled: true` and the selected billing account.
@@ -209,7 +260,10 @@ Expected safe result: `billingEnabled: true` and the selected billing account.
 Enable the four APIs needed to let OpenTofu manage the full declared API set. OpenTofu enables and
 retains the remaining APIs as code.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud services enable \
   cloudresourcemanager.googleapis.com \
   iam.googleapis.com \
@@ -218,6 +272,7 @@ gcloud services enable \
   --project="${MANAGEMENT_PROJECT_ID}"
 
 gcloud auth application-default set-quota-project "${MANAGEMENT_PROJECT_ID}"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: the enable command completes without error and the quota-project command names
@@ -229,17 +284,24 @@ The first apply must create IAM roles and bindings that do not exist yet. Prefer
 Owner grant below, then remove it in section 12. This grant is for the named human only; it is never
 given to automation and never stored in code.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud projects add-iam-policy-binding "${MANAGEMENT_PROJECT_ID}" \
   --member="${OPERATOR_PRINCIPAL}" \
   --role='roles/owner' \
   --condition=None
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 If an existing organization policy refuses primitive roles, keep that policy and add the six
 future operator roles plus two temporary project-wide data roles:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 for role in \
   roles/iam.roleAdmin \
   roles/iam.serviceAccountAdmin \
@@ -255,6 +317,7 @@ do
     --role="${role}" \
     --condition=None >/dev/null
 done
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Record which path was used. The fallback's project-wide `secretmanager.admin` and `storage.admin`
@@ -271,17 +334,25 @@ available.
 
 For two or more maintainers, set the other maintainer as reviewer and prevent self-review:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 ENVIRONMENT_REVIEWER_LOGIN='replace-with-github-login'
 PREVENT_SELF_REVIEW=true
 test "${ENVIRONMENT_REVIEWER_LOGIN}" != "$(gh api user --jq .login)"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 For a sole maintainer, use the current GitHub user and permit that user to approve the waiting job:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 ENVIRONMENT_REVIEWER_LOGIN="$(gh api user --jq .login)"
 PREVENT_SELF_REVIEW=false
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Solo mode still prevents an unattended apply and withholds environment credentials until the
@@ -290,18 +361,25 @@ that same account. Switch to the first setup as soon as a second trusted maintai
 
 Verify the selected reviewer has repository access:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 test -n "${ENVIRONMENT_REVIEWER_LOGIN}"
 
 ENVIRONMENT_REVIEWER_ID="$(gh api "users/${ENVIRONMENT_REVIEWER_LOGIN}" --jq .id)"
 gh api "repos/a-novel/infra/collaborators/${ENVIRONMENT_REVIEWER_LOGIN}/permission" \
   --jq '{user:.user.login,permission}'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: the selected login and at least `read` permission. Then create foundation and
 recovery with the selected policy:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 for environment in production-foundation production-recovery; do
   jq -n \
     --argjson reviewer_id "${ENVIRONMENT_REVIEWER_ID}" \
@@ -321,12 +399,16 @@ for environment in production-foundation production-recovery; do
       --input - \
       --jq '{name,can_admins_bypass,deployment_branch_policy,protection_rules}'
 done
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Create routine release without an approval queue; review already occurs through the protected merge
 and release manifest. It still requires a protected branch and its own WIF boundary.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 jq -n \
   '{
     wait_timer: 0,
@@ -342,6 +424,7 @@ jq -n \
     repos/a-novel/infra/environments/production-release \
     --input - \
     --jq '{name,can_admins_bypass,deployment_branch_policy,protection_rules}'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 GitHub's documented REST update does not expose the administrator-bypass switch. For
@@ -352,7 +435,10 @@ infrastructure resource.
 
 Independently verify all three environments:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gh api repos/a-novel/infra/environments --jq '[.environments[].name] | sort'
 
 for environment in production-foundation production-recovery; do
@@ -368,6 +454,7 @@ for environment in production-foundation production-recovery; do
       ]
     }'
 done
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: exactly the three environment names; foundation and recovery report
@@ -383,10 +470,14 @@ Create the repository-level launch switch in its fail-safe state. This switch pr
 unbootstrapped manifest merge from entering `production-release`; it does not replace protected
 branches, the environment policy, or the exact WIF claim checks.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gh variable set PRODUCTION_RELEASES_ENABLED \
   --repo a-novel/infra --body false
 test "$(gh variable get PRODUCTION_RELEASES_ENABLED --repo a-novel/infra)" = false
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: the test prints nothing and succeeds. Only the production deployment runbook
@@ -399,7 +490,10 @@ protections, initialize the backend, and import the bucket before planning. Open
 that point. No secret payload is an OpenTofu variable; the operator list contains IAM member names
 only.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 export TF_IN_AUTOMATION=true
 export TF_VAR_management_project_id="${MANAGEMENT_PROJECT_ID}"
 export TF_VAR_operator_principals="[\"${OPERATOR_PRINCIPAL}\"]"
@@ -423,6 +517,7 @@ gcloud storage buckets update "gs://${STATE_BUCKET}" --versioning
 
 gcloud storage buckets describe "gs://${STATE_BUCKET}" \
   --format='yaml(name,location,default_storage_class,public_access_prevention,uniform_bucket_level_access,versioning_enabled,soft_delete_policy)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: the first lookup reports that the bucket is absent; creation succeeds; and the
@@ -432,7 +527,10 @@ to any project or any protection differs.
 
 Initialize the remote backend and let the mocked tests run before the import changes state:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 tofu -chdir=bootstrap init \
   -reconfigure \
   -input=false \
@@ -453,6 +551,7 @@ BOOTSTRAP_PLAN_EXIT=0
 ./ops/tofu-gate.sh plan bootstrap "${STATE_BUCKET}" "${BOOTSTRAP_PLAN}" \
   || BOOTSTRAP_PLAN_EXIT=$?
 test "${BOOTSTRAP_PLAN_EXIT}" -eq 2
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: validation and all four mocked tests pass; the state list contains
@@ -471,12 +570,16 @@ forget, stop and investigate.
 Reconfirm that Git did not move after planning, then apply the saved binary plan—not a newly computed
 plan.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 test "$(git branch --show-current)" = "master"
 test -z "$(git status --porcelain)"
 git rev-parse HEAD
 
 ./ops/tofu-gate.sh apply bootstrap "${STATE_BUCKET}" "${BOOTSTRAP_PLAN}"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: the gate reports that the exact reviewed bootstrap plan applied successfully.
@@ -487,19 +590,27 @@ If the apply fails partway, do not delete resources or repeat the bucket import.
 failed stage without publishing its diagnostics. Fix the reported cause on `master`, keep the same
 variables and remote state, then save a new plan:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 RECOVERY_PLAN="${BOOTSTRAP_TEMP_DIR}/bootstrap-recovery.tfplan"
 RECOVERY_PLAN_EXIT=0
 ./ops/tofu-gate.sh plan bootstrap "${STATE_BUCKET}" "${RECOVERY_PLAN}" \
   || RECOVERY_PLAN_EXIT=$?
 test "${RECOVERY_PLAN_EXIT}" -eq 2
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Review the new sanitized summary as above, then apply that exact recovery plan:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 ./ops/tofu-gate.sh apply bootstrap "${STATE_BUCKET}" "${RECOVERY_PLAN}"
 ./ops/tofu-gate.sh converge bootstrap "${STATE_BUCKET}"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 If state was lost after a create succeeded, stop and prepare explicit imports instead of planning a
@@ -509,7 +620,10 @@ second create.
 
 Read the output identifiers into shell variables without printing state:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 test "$(tofu -chdir=bootstrap output -raw state_bucket_name)" = "${STATE_BUCKET}"
 BACKUP_BUCKET="$(tofu -chdir=bootstrap output -raw backup_bucket_name)"
 RECEIPT_BUCKET="$(tofu -chdir=bootstrap output -raw receipt_bucket_name)"
@@ -517,11 +631,15 @@ RECEIPT_BUCKET="$(tofu -chdir=bootstrap output -raw receipt_bucket_name)"
 test -n "${STATE_BUCKET}"
 test -n "${BACKUP_BUCKET}"
 test -n "${RECEIPT_BUCKET}"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Verify the three buckets plus the state and receipt IAM folders:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 for bucket in "${STATE_BUCKET}" "${BACKUP_BUCKET}" "${RECEIPT_BUCKET}"; do
   gcloud storage buckets describe "gs://${bucket}" \
     --format='yaml(name,location,default_storage_class,public_access_prevention,uniform_bucket_level_access,versioning_enabled,soft_delete_policy,retention_policy,lifecycle_config)'
@@ -529,6 +647,7 @@ done
 
 gcloud storage managed-folders list "gs://${STATE_BUCKET}/" --uri | sort
 gcloud storage managed-folders list "gs://${RECEIPT_BUCKET}/" --uri | sort
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: all buckets are `EU`, Standard, uniform-access, and public-access prevention is
@@ -542,7 +661,10 @@ under the production prefix.
 
 Verify the metadata-only secrets and keyless identities:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud secrets list \
   --project="${MANAGEMENT_PROJECT_ID}" \
   --format='value(name.basename())' \
@@ -553,6 +675,7 @@ gcloud iam service-accounts list \
   --filter='email~"^infra-(plan|foundation|release|recovery)@"' \
   --format='value(email)' \
   | sort
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: the nine IDs in the bootstrap secret-contract table and exactly four
@@ -564,11 +687,15 @@ verification.
 The same `TF_DATA_DIR` has used GCS since the bucket import. Verify the remote object and list
 addresses without exposing values:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud storage ls --all-versions \
   "gs://${STATE_BUCKET}/bootstrap/default.tfstate"
 
 tofu -chdir=bootstrap state list
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: at least one URI ending in `bootstrap/default.tfstate#<numeric-generation>` and
@@ -580,8 +707,12 @@ Exercise remote reads and locking with a no-change plan, then inspect only its s
 clean plan does not guarantee a second state generation; Object Versioning records a generation only
 when an operation writes the state object.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 ./ops/tofu-gate.sh converge bootstrap "${STATE_BUCKET}"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: only the summary header followed by `bootstrap is converged.` If OpenTofu
@@ -589,8 +720,12 @@ reports drift, stop before removing temporary access.
 
 Confirm that no local state file was created:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 test -z "$(find bootstrap -maxdepth 1 -type f -name 'terraform.tfstate*' -print)"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: the test prints nothing and succeeds. The versioned GCS object is the only
@@ -603,7 +738,10 @@ credentials. Their exact GitHub variable names are part of the workflows' interf
 generic aliases: an unexpected variable must remain unused rather than silently overriding another
 trust boundary.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 PLAN_PROVIDER="$(tofu -chdir=bootstrap output -json workload_identity_providers | jq -r .plan)"
 PLAN_ACCOUNT="$(tofu -chdir=bootstrap output -json automation_service_accounts | jq -r .plan)"
 
@@ -643,6 +781,7 @@ for boundary in foundation release recovery; do
   gh variable set "${variable_prefix}_SERVICE_ACCOUNT" \
     --repo a-novel/infra --env "${environment}" --body "${account}"
 done
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 The protected bootstrap workflow needs the same identifiers used for the first local apply. Put the
@@ -650,7 +789,10 @@ complete JSON document in an environment secret so GitHub masks it as one value 
 materialize it with mode `0600`. It contains no secret payload, but it does contain privileged human
 IAM member names.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 BOOTSTRAP_TFVARS_FILE="${BOOTSTRAP_TEMP_DIR}/bootstrap.tfvars.json"
 jq -n \
   --arg management_project_id "${MANAGEMENT_PROJECT_ID}" \
@@ -670,16 +812,21 @@ jq -e '
 gh secret set BOOTSTRAP_TFVARS_JSON \
   --repo a-novel/infra --env production-foundation \
   <"${BOOTSTRAP_TFVARS_FILE}"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Verify names without printing any secret value:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gh variable list --repo a-novel/infra
 for environment in production-foundation production-release production-recovery; do
   gh variable list --repo a-novel/infra --env "${environment}"
   gh secret list --repo a-novel/infra --env "${environment}"
 done
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result:
@@ -700,7 +847,10 @@ must not be added as a workaround.
 
 First prove that all four providers use the canonical audience and exact immutable claims:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 for provider in github-plan github-foundation github-release github-recovery; do
   gcloud iam workload-identity-pools providers describe "${provider}" \
     --project="${MANAGEMENT_PROJECT_ID}" \
@@ -714,23 +864,31 @@ for provider in github-plan github-foundation github-release github-recovery; do
       and (.attributeCondition | contains("assertion.ref == '\''refs/heads/master'\''"))
     '
 done
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: four `true` values. Inspect the safe condition text separately and confirm each
 provider names exactly its workflow and, for foundation/release/recovery, its matching environment:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud iam workload-identity-pools providers list \
   --project="${MANAGEMENT_PROJECT_ID}" \
   --location=global \
   --workload-identity-pool=github-actions \
   --format='table(name.basename(),attributeCondition)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Confirm no project service account has a user-managed key. Enumerating the project instead of naming
 the four current accounts keeps this check fail-closed when another account is introduced:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 PROJECT_SERVICE_ACCOUNTS="$(gcloud iam service-accounts list \
   --project="${MANAGEMENT_PROJECT_ID}" \
   --format='value(email)')"
@@ -748,12 +906,16 @@ while IFS= read -r account_email; do
 done <<<"$PROJECT_SERVICE_ACCOUNTS"
 unset PROJECT_SERVICE_ACCOUNTS USER_KEY_NAMES
 printf 'All project service accounts have zero user-managed keys.\n'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Read the organization ancestor and the three effective policies before requesting any new
 authority:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud projects get-ancestors "${MANAGEMENT_PROJECT_ID}" \
   --format='table(type,id)'
 
@@ -778,25 +940,33 @@ for constraint in \
 done
 
 printf 'Missing organization policies: %s\n' "$MISSING_ORG_POLICY_COUNT"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 An empty `ORGANIZATION_ID` selects the standalone controls below. For an organization-backed
 project with a nonzero missing count, an organization IAM administrator temporarily grants the
 human operator Organization Policy Administrator:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 test -n "${ORGANIZATION_ID}"
 test "$MISSING_ORG_POLICY_COUNT" -gt 0
 gcloud organizations add-iam-policy-binding "${ORGANIZATION_ID}" \
   --member="${OPERATOR_PRINCIPAL}" \
   --role='roles/orgpolicy.policyAdmin' \
   --condition=None
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 After that grant propagates, the operator enforces only missing policies. The explicit exit capture
 ensures one failed update does not skip removal of the temporary organization-wide role:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 POLICY_UPDATE_EXIT=0
 
 for constraint in \
@@ -816,15 +986,20 @@ for constraint in \
 done
 
 printf 'Policy update exit: %s\n' "$POLICY_UPDATE_EXIT"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 The organization IAM administrator removes that grant whether the update succeeded or failed:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud organizations remove-iam-policy-binding "${ORGANIZATION_ID}" \
   --member="${OPERATOR_PRINCIPAL}" \
   --role='roles/orgpolicy.policyAdmin' \
   --condition=None
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Rerun the effective-policy loop above. All three lines must read `ENFORCED` and the missing count
@@ -835,7 +1010,10 @@ gain these policies.
 
 List the operator's current project roles before choosing the section 5 cleanup path:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud projects get-iam-policy "${MANAGEMENT_PROJECT_ID}" --format=json \
 | jq -r --arg operator "${OPERATOR_PRINCIPAL}" '
     .bindings[]
@@ -843,6 +1021,7 @@ gcloud projects get-iam-policy "${MANAGEMENT_PROJECT_ID}" --format=json \
     | .role
   ' \
 | sort
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Exactly one temporary shape must appear. The preferred path contains `roles/owner`; the fallback
@@ -850,27 +1029,38 @@ contains both `roles/secretmanager.admin` and `roles/storage.admin`. Run only it
 
 If `roles/owner` appears:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud projects remove-iam-policy-binding "${MANAGEMENT_PROJECT_ID}" \
   --member="${OPERATOR_PRINCIPAL}" \
   --role='roles/owner' \
   --condition=None
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 If both fallback data roles appear:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 for role in roles/secretmanager.admin roles/storage.admin; do
   gcloud projects remove-iam-policy-binding "${MANAGEMENT_PROJECT_ID}" \
     --member="${OPERATOR_PRINCIPAL}" \
     --role="${role}" \
     --condition=None >/dev/null
 done
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Verify neither the operator nor any service account has Owner or Editor:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud projects get-iam-policy "${MANAGEMENT_PROJECT_ID}" --format=json \
 | jq -e --arg operator "${OPERATOR_PRINCIPAL}" '
     [
@@ -881,14 +1071,19 @@ gcloud projects get-iam-policy "${MANAGEMENT_PROJECT_ID}" --format=json \
     ]
     | length == 0
   '
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: `true`.
 
 Finally prove the least-privilege operator can still read remote state and converge the root:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 ./ops/tofu-gate.sh converge bootstrap "${STATE_BUCKET}"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: only the summary header followed by `bootstrap is converged.` A permission
@@ -900,12 +1095,16 @@ earlier, diagnose through the sanitized plan, and do not enable workflows.
 The remote plans above should have created and removed `bootstrap/default.tflock`. Query only audit
 metadata:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud logging read \
   'resource.type="gcs_bucket" AND resource.labels.bucket_name="'"${STATE_BUCKET}"'" AND protoPayload.resourceName:"bootstrap/default.tflock"' \
   --project="${MANAGEMENT_PROJECT_ID}" \
   --limit=20 \
   --format='table(timestamp,protoPayload.methodName,protoPayload.authenticationInfo.principalEmail)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: recent create/delete object methods for the operator. Audit records contain
@@ -914,7 +1113,10 @@ identity and resource metadata, never state content or secret payload.
 Remove the local full plans and isolated provider directory, then clear identifier variables from the
 shell:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 rm -rf -- "${BOOTSTRAP_TEMP_DIR}"
 unset TF_DATA_DIR TF_VAR_management_project_id TF_VAR_operator_principals
 unset PLAN_PROVIDER PLAN_ACCOUNT BOOTSTRAP_PLAN BOOTSTRAP_PLAN_EXIT BOOTSTRAP_TFVARS_FILE
@@ -924,6 +1126,7 @@ unset MANAGEMENT_PROJECT_ID BILLING_ACCOUNT_ID OPERATOR_PRINCIPAL ORGANIZATION_I
 unset MISSING_ORG_POLICY_COUNT POLICY_UPDATE_EXIT
 unset ENVIRONMENT_REVIEWER_ID ENVIRONMENT_REVIEWER_LOGIN PREVENT_SELF_REVIEW
 unset BOOTSTRAP_TEMP_DIR
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 This permanently removes only the unique temporary directory created in section 7. The remote state,

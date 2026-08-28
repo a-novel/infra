@@ -15,17 +15,20 @@ removes those capabilities before it archives the source.
 
 ## Operator context
 
-Paste this block once before section 1:
+Run this and later blocks in the existing configured zsh session. Paste this block once before
+section 1:
 
-```bash
-set -euo pipefail
-set +x
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 umask 077
 
 ACCEPTANCE_REPOSITORY='a-novel/.github'
 ACCEPTANCE_ISSUE='277'
 LEGACY_REPOSITORY='a-novel/agora-infra'
 REPLACEMENT_REPOSITORY='a-novel/infra'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 ## Safety contract
@@ -51,7 +54,10 @@ not evidence that the intended legacy system was safely retired.
 
 Run from any clean checkout with an authenticated GitHub CLI session:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gh issue view "${ACCEPTANCE_ISSUE}" \
   --repo "${ACCEPTANCE_REPOSITORY}" \
   --json number,state,title,url \
@@ -61,6 +67,7 @@ gh issue view "${ACCEPTANCE_ISSUE}" \
   --repo "${ACCEPTANCE_REPOSITORY}" \
   --json state \
   --jq '.state')" == 'CLOSED' ]]
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: the JSON names issue `277` with state `CLOSED`, and the final assertion exits
@@ -83,7 +90,10 @@ links required by the owning runbooks.
 
 ## 2. Prove the exact target and administrator
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gh repo view "${LEGACY_REPOSITORY}" \
   --json nameWithOwner,isArchived,visibility,defaultBranchRef,url,viewerPermission \
   --jq '{nameWithOwner,isArchived,visibility,defaultBranch:.defaultBranchRef.name,url,viewerPermission}'
@@ -95,6 +105,7 @@ gh repo view "${LEGACY_REPOSITORY}" \
   'ADMIN' ]]
 
 [[ "$(gh repo view "${REPLACEMENT_REPOSITORY}" --json isArchived --jq '.isArchived')" == 'false' ]]
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: the legacy object reports the exact `a-novel/agora-infra` name, an active
@@ -118,7 +129,10 @@ Before changing the legacy repository, complete and record this checklist in tas
 
 Inventory names and timestamps without printing secret values:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gh secret list --repo "${LEGACY_REPOSITORY}" --app actions \
   --json name,updatedAt --jq 'sort_by(.name)'
 gh secret list --repo "${LEGACY_REPOSITORY}" --app dependabot \
@@ -136,6 +150,7 @@ while IFS= read -r environment; do
     --json name,updatedAt --jq 'sort_by(.name)'
 done < <(gh api "repos/${LEGACY_REPOSITORY}/environments" \
   --jq '.environments[].name')
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: metadata only. Do not paste this inventory into a public issue if even a name
@@ -148,11 +163,15 @@ verifier, and pass/fail result. If any credential's issuer or status is unknown,
 
 After the deprecation pull request is merged, set the repository description:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gh repo edit "${LEGACY_REPOSITORY}" \
   --description 'Archived legacy infrastructure; replaced by https://github.com/a-novel/infra'
 
 gh repo view "${LEGACY_REPOSITORY}" --json description --jq '.description'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result:
@@ -166,7 +185,10 @@ Archived legacy infrastructure; replaced by https://github.com/a-novel/infra
 GitHub recommends closing issues and pull requests before archiving. Transfer anything still valid
 to the owning repository, keep a cross-link, and then require empty open queues:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gh pr list --repo "${LEGACY_REPOSITORY}" --state open --limit 1000 \
   --json number,title,url --jq '.'
 gh issue list --repo "${LEGACY_REPOSITORY}" --state open --limit 1000 \
@@ -174,15 +196,20 @@ gh issue list --repo "${LEGACY_REPOSITORY}" --state open --limit 1000 \
 gh run list --repo "${LEGACY_REPOSITORY}" --all --limit 100 \
   --json databaseId,workflowName,status,conclusion,url \
   --jq '[.[] | select(.status != "completed")]'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: `[]` from all three commands. Handle the complete open set before continuing.
 
 Disable Actions through GitHub's repository setting, then verify it independently:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gh api --method PUT "repos/${LEGACY_REPOSITORY}/actions/permissions" -F enabled=false
 gh api "repos/${LEGACY_REPOSITORY}/actions/permissions" --jq '{enabled}'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: the write returns no body and the verification prints `{"enabled":false}`.
@@ -195,10 +222,14 @@ Repeat the active-run query after disabling Actions. It must still return `[]`.
 
 Review the target one final time, then invoke GitHub CLI without the confirmation-bypass flag:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gh repo view "${LEGACY_REPOSITORY}" --json nameWithOwner,isArchived,url \
   --jq '{nameWithOwner,isArchived,url}'
 gh repo archive "${LEGACY_REPOSITORY}"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 The first command must still show exactly `a-novel/agora-infra` and `isArchived:false`. Read the CLI
@@ -206,9 +237,13 @@ warning and confirm interactively only after comparing the full owner/name with 
 
 Verify the result in a separate request:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gh repo view "${LEGACY_REPOSITORY}" --json nameWithOwner,isArchived,archivedAt,url \
   --jq '{nameWithOwner,isArchived,archivedAt,url}'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: the exact target, `isArchived:true`, and a non-null archive timestamp. Add the
@@ -219,10 +254,14 @@ verification URL and timestamp to task #277; do not reopen the task merely to ad
 An administrator can unarchive the repository. Do so only when the target was wrong or a specific
 missing record blocks incident response:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gh repo view "${LEGACY_REPOSITORY}" --json nameWithOwner,isArchived,url \
   --jq '{nameWithOwner,isArchived,url}'
 gh repo unarchive "${LEGACY_REPOSITORY}"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Keep the interactive confirmation. Record why the archive was reversed, retrieve or migrate only

@@ -22,11 +22,13 @@ and PostgreSQL's [`pg_dump`](https://www.postgresql.org/docs/18/app-pgdump.html)
 
 ## Operator context
 
-Paste this block once before selecting or invoking a recovery job:
+Run this and later blocks in the existing configured zsh session. Paste this block once before
+selecting or invoking a recovery job:
 
-```bash
-set -euo pipefail
-set +x
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 umask 077
 
 REPOSITORY='a-novel/infra'
@@ -37,6 +39,7 @@ WORKLOAD_PROJECT_ID="$(gh variable get GCP_WORKLOAD_PROJECT_ID --repo "$REPOSITO
 MANAGEMENT_PROJECT_NUMBER="$(gcloud projects describe "$MANAGEMENT_PROJECT_ID" \
   --format='value(projectNumber)')"
 BACKUP_BUCKET="${MANAGEMENT_PROJECT_ID}-${MANAGEMENT_PROJECT_NUMBER}-backups"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 ## Recovery objectives
@@ -171,7 +174,10 @@ for backups, or a local `tofu apply` as a shortcut.
 Run the following only from a private, non-recorded operator shell. These commands inspect metadata;
 they do not print secret values or backup payloads.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 [[ "${MANAGEMENT_PROJECT_ID}" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
 [[ "${WORKLOAD_PROJECT_ID}" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
 [[ "${REGION}" =~ ^[a-z]+-[a-z]+[0-9]+$ ]]
@@ -180,6 +186,7 @@ they do not print secret values or backup payloads.
 
 gcloud storage buckets describe "gs://${BACKUP_BUCKET}" \
   --format='yaml(name,location,storage_class,public_access_prevention,uniform_bucket_level_access,soft_delete_policy,retention_policy,lifecycle_config)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: the bucket is `STANDARD` in `EU`, public access prevention and uniform access
@@ -189,7 +196,10 @@ it is true permanently.
 
 Verify the jobs and schedules without exporting their full environment or embedded scripts:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud run jobs list \
   --project="${WORKLOAD_PROJECT_ID}" \
   --region="${REGION}" \
@@ -201,6 +211,7 @@ gcloud scheduler jobs list \
   --location="${REGION}" \
   --filter='name:agora-postgres-' \
   --format='table(name.basename(),schedule,timeZone,state)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: exactly the five jobs and five enabled UTC schedules in the topology table.
@@ -240,7 +251,10 @@ incomplete archive as completed or bypass a failed smoke test.
 Use this before the first write, as an operator-confirmed recovery point, or when diagnosing a
 schedule. The protected database release and migration paths invoke the same jobs automatically.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 for job in \
   agora-postgres-backup-json-keys \
   agora-postgres-backup-authentication; do
@@ -251,6 +265,7 @@ for job in \
     --quiet \
     --format='yaml(metadata.name,status.conditions,status.startTime,status.completionTime)'
 done
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: each execution completes successfully within 30 minutes. A successful task has
@@ -259,12 +274,16 @@ stream application logs.
 
 Independently list committed markers and their object metadata without downloading payloads:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 for database in json-keys authentication; do
   gcloud storage ls --long \
     "gs://${BACKUP_BUCKET}/v1/${database}/attempts/**/completed.manifest" \
     | tail -n 1
 done
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: one recent, non-zero completion manifest for each database. Treat the output as
@@ -281,7 +300,10 @@ major, copies the archive to ephemeral storage, checks size and SHA-256, and run
 initialized local cluster. The cluster listens only on a Unix socket and receives no production
 credential. Hardcoded service schema and integrity smoke checks must pass before success.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 DRILL_STARTED_EPOCH="$(date -u +%s)"
 
 for job in \
@@ -299,6 +321,7 @@ DRILL_COMPLETED_EPOCH="$(date -u +%s)"
 DRILL_SECONDS="$((DRILL_COMPLETED_EPOCH - DRILL_STARTED_EPOCH))"
 test "${DRILL_SECONDS}" -le 5400
 printf 'Both PostgreSQL clean restores completed in %s seconds.\n' "${DRILL_SECONDS}"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: each job succeeds in less than 60 minutes and the combined operator-observed
@@ -346,13 +369,17 @@ A service-only or platform-only deployment does not need a new dump. Its protect
 `agora-postgres-backup-monitor` and require success, proving both committed backups are at most six
 hours old before traffic changes:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud run jobs execute agora-postgres-backup-monitor \
   --project="${WORKLOAD_PROJECT_ID}" \
   --region="${REGION}" \
   --wait \
   --quiet \
   --format='yaml(metadata.name,status.conditions,status.startTime,status.completionTime)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 ## Lock retention after proof
@@ -367,9 +394,13 @@ succeed and their private recovery record is reviewed.
 3. Obtain the protected foundation approval and apply the exact reviewed plan from `master`.
 4. Verify independently:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud storage buckets describe "gs://${BACKUP_BUCKET}" \
   --format='yaml(name,retention_policy,soft_delete_policy,lifecycle_config)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: the retention period remains 604800 seconds, `isLocked` is true, soft delete
@@ -380,7 +411,10 @@ the irreversible desired state and review evidence belong in Git.
 
 Inspect allow policies without requesting or printing access tokens:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud storage buckets get-iam-policy "gs://${BACKUP_BUCKET}" \
   --format=json \
   | jq --exit-status \
@@ -390,11 +424,15 @@ gcloud storage buckets get-iam-policy "gs://${BACKUP_BUCKET}" \
         (roles_for($backup) == ["roles/storage.objectCreator"]) and
         (roles_for($restore) == ["roles/storage.objectViewer"])
       '
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: `true`. Also verify no user-managed keys exist:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 for account in agora-backup agora-restore agora-scheduler-invoker; do
   gcloud iam service-accounts keys list \
     --iam-account="${account}@${WORKLOAD_PROJECT_ID}.iam.gserviceaccount.com" \
@@ -402,6 +440,7 @@ for account in agora-backup agora-restore agora-scheduler-invoker; do
     --managed-by=user \
     --format='value(name)'
 done
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: no output. Any user-managed key is an incident: disable it, determine its use,
@@ -509,9 +548,13 @@ these jobs without that design.
 
 Clear operator-shell identifiers when the procedure finishes:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 unset MANAGEMENT_PROJECT_ID MANAGEMENT_PROJECT_NUMBER WORKLOAD_PROJECT_ID REGION BACKUP_BUCKET
 unset DRILL_STARTED_EPOCH DRILL_COMPLETED_EPOCH DRILL_SECONDS
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Do not manually delete an archive, manifest, snapshot, schedule, job, bucket, or IAM binding. A

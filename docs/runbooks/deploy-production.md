@@ -21,11 +21,13 @@ and [GitHub artifact attestations](https://docs.github.com/actions/how-tos/secur
 
 ## Operator context
 
-Complete the four hosted-SMTP values, then paste this block once before section 1:
+Run this and later blocks in the existing configured zsh session. Complete the four hosted-SMTP
+values, then paste this block once before section 1:
 
-```bash
-set -euo pipefail
-set +x
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 umask 077
 
 REPOSITORY='a-novel/infra'
@@ -42,6 +44,7 @@ SMTP_HOST=''
 SMTP_USERNAME=''
 SMTP_SENDER_EMAIL=''
 SMTP_SENDER_NAME=''
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 ## Guarantees and deliberate limits
@@ -105,7 +108,10 @@ the initializer with an override, or shows a deletion whose merge did not carry
 
 Run in a private terminal with tracing disabled:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 git switch master
 git pull --ff-only
 test -z "$(git status --porcelain)"
@@ -119,6 +125,7 @@ RELEASES_ENABLED="$(gh variable get PRODUCTION_RELEASES_ENABLED --repo "$REPOSIT
 printf 'Production release launch switch: %s\n' "$RELEASES_ENABLED"
 gh variable list --repo "$REPOSITORY" --env production-release
 gh secret list --repo "$REPOSITORY" --env production-release
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: protected branches, no custom branch policy, exactly
@@ -129,12 +136,16 @@ protected pull-request merge gate.
 
 Create the deletion label if absent:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gh label create allow-resource-deletion \
   --repo "$REPOSITORY" \
   --color B60205 \
   --description 'Explicit maintainer approval for managed-resource deletion at merge' \
   --force
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 The gate replays the PR timeline. It accepts the label only when a maintainer with write, maintain,
@@ -143,7 +154,10 @@ does not authorize deletion.
 
 ## 2. Collect foundation-owned coordinates
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 [[ "$MANAGEMENT_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
 [[ "$WORKLOAD_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
 [[ "$MANAGEMENT_PROJECT_ID" != "$WORKLOAD_PROJECT_ID" ]]
@@ -190,6 +204,7 @@ for value in "$INITIALIZER_TAG_VALUE" "$INTERNAL_TAG_VALUE" "$RECOVERY_TAG_VALUE
   "$RELEASE_TAG_VALUE" "$SCHEDULED_TAG_VALUE"; do
   [[ "$value" =~ ^tagValues/[0-9]+$ ]]
 done
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: one `agora-database-*` member with an RFC 1918 address, one custom-mode
@@ -202,7 +217,10 @@ release configuration.
 Use the sole enabled version automatically. During a rotation, the command lists enabled metadata
 and asks which numeric version to deploy. It never retrieves payloads.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 select_secret_version() {
   local secret_id="$1"
   local enabled_versions version_count selected_version
@@ -240,6 +258,7 @@ JSON_POSTGRES_BACKUP_PASSWORD_VERSION="$(select_secret_version production-json-k
 JSON_POSTGRES_DSN_VERSION="$(select_secret_version production-json-keys-postgres-dsn)"
 JSON_APP_MASTER_KEY_VERSION="$(select_secret_version production-json-keys-app-master-key)"
 unset -f select_secret_version
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Keep an older version enabled while any retained receipt references it; rollback fails closed if a
@@ -253,7 +272,10 @@ host because Authentication uses it for the TLS server name. Initializer princip
 inputs, not a mutable release secret. The active Google account is the fast-path first super-admin;
 replace that assignment when the application administrator is another address.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 [[ "$AUTH_SUPER_ADMIN_EMAIL" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]
 [[ "$SMTP_HOST" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]]
 [[ "$SMTP_USERNAME" =~ ^[^[:space:]]{1,320}$ ]]
@@ -261,6 +283,7 @@ replace that assignment when the application administrator is another address.
 test -n "$SMTP_SENDER_NAME"
 
 RELEASE_CONFIG_FILE="$(mktemp)"
+{
 jq -n \
   --arg management "$MANAGEMENT_PROJECT_ID" --arg workload "$WORKLOAD_PROJECT_ID" \
   --arg region "$REGION" --arg zone "$DATABASE_ZONE" \
@@ -319,8 +342,11 @@ jq -e '(.cloud_run_invocation_tags.values | length == 5) and (.secret_versions |
   "$RELEASE_CONFIG_FILE" >/dev/null
 gh secret set RELEASE_CONFIG_JSON --repo "$REPOSITORY" --env production-release \
   <"$RELEASE_CONFIG_FILE"
+} always {
 rm -f -- "$RELEASE_CONFIG_FILE"
 unset RELEASE_CONFIG_FILE SMTP_USERNAME
+}
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 The workflow materializes this document with mode `0600`, never uploads it, and never prints it.
@@ -344,13 +370,17 @@ will be the `master` commit dispatched for that first release. Compensation may 
 created release resources. If another pull request lands afterward, that newer pull request needs the
 label instead because the deletion gate is bound to the exact deployed commit:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 ACTIVATION_PR='replace-with-pull-request-number'
 [[ "$ACTIVATION_PR" =~ ^[1-9][0-9]*$ ]]
 gh pr edit "$ACTIVATION_PR" --repo "$REPOSITORY" --add-label allow-resource-deletion
 gh pr view "$ACTIVATION_PR" --repo "$REPOSITORY" \
   --json labels,reviewDecision,statusCheckRollup \
   --jq '{labels:[.labels[].name],reviewDecision,checks:[.statusCheckRollup[] | {name,status,conclusion}]}'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Later releases need the label only when their sanitized plan contains a deletion, replacement, or
@@ -362,7 +392,10 @@ For first activation, keep the switch false until sections 1–5 and the backup 
 complete. Enabling it is a deliberate launch decision; it does not retroactively trigger a manifest
 merge that already happened.
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 test "$(gh variable get PRODUCTION_RELEASES_ENABLED --repo "$REPOSITORY")" = false
 printf 'Type enable-production-releases to authorize launch: '
 IFS= read -r RELEASE_CONFIRMATION
@@ -370,34 +403,67 @@ test "$RELEASE_CONFIRMATION" = enable-production-releases
 gh variable set PRODUCTION_RELEASES_ENABLED --repo "$REPOSITORY" --body true
 test "$(gh variable get PRODUCTION_RELEASES_ENABLED --repo "$REPOSITORY")" = true
 unset RELEASE_CONFIRMATION
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: both tests print nothing. To freeze new release and rollback runs, set the
 variable back to `false`; this does not cancel a workflow that already entered the protected
 environment.
 
-For the first activation or an explicit retry, dispatch `deploy` manually. For later releases, do
-not dispatch a duplicate: the protected manifest merge already creates a `push` run.
+For the first activation or an explicit retry, dispatch `deploy` with the repository helper. It
+refuses a stale, dirty, or non-`master` checkout and any already active production infrastructure
+run, then prints the exact run URL and returns its ID:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+git switch master
+git pull --ff-only
+test -z "$(git status --porcelain)"
+MASTER_SHA="$(git rev-parse HEAD)"
+RELEASE_RUN_ID="$(
+  EXPECTED_SHA="$MASTER_SHA" ./ops/run-workflow.sh \
+    release.yaml run-id --no-wait action=deploy
+)"
+printf 'Release run ID: %s\n' "$RELEASE_RUN_ID"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Open the printed URL. For a retry that does not require first-launch initialization, wait for it now:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+gh run watch "$RELEASE_RUN_ID" --repo "$REPOSITORY" --exit-status
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+On the first launch, skip that watcher and continue with the initializer subsection when the run URL
+shows its prompt.
+
+For a later manifest update, do not dispatch a duplicate: the protected merge creates a `push` run.
+Select that exact commit automatically and wait for it:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+git switch master
 git pull --ff-only
 test -z "$(git status --porcelain)"
 MASTER_SHA="$(git rev-parse HEAD)"
 test "$MASTER_SHA" = "$(gh api "repos/${REPOSITORY}/commits/master" --jq .sha)"
-
-gh workflow run release.yaml --repo "$REPOSITORY" --ref master -f action=deploy
-gh run list --repo "$REPOSITORY" --workflow release.yaml --branch master \
-  --limit 5 \
-  --json databaseId,headSha,displayTitle,status,conclusion,url
-```
-
-Select exactly one `production deploy` with `headSha == MASTER_SHA`, whether its event was the
-automatic manifest push or the deliberate manual dispatch, then:
-
-```bash
-RELEASE_RUN_ID='replace-with-release-run-id'
-test "$(gh api "repos/${REPOSITORY}/actions/runs/${RELEASE_RUN_ID}" --jq .head_sha)" = "$MASTER_SHA"
+RELEASE_RUNS="$(gh run list --repo "$REPOSITORY" --workflow release.yaml \
+  --branch master --commit "$MASTER_SHA" --event push --limit 10 \
+  --json databaseId,headSha,displayTitle,status,conclusion,url)"
+test "$(jq 'length' <<<"$RELEASE_RUNS")" -eq 1
+RELEASE_RUN_ID="$(jq --raw-output '.[0].databaseId' <<<"$RELEASE_RUNS")"
+[[ "$RELEASE_RUN_ID" =~ ^[1-9][0-9]*$ ]]
 gh run watch "$RELEASE_RUN_ID" --repo "$REPOSITORY" --exit-status
+unset RELEASE_RUNS
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Logs contain stable stages, sanitized OpenTofu counts, and execution IDs only—never configuration,
@@ -405,10 +471,8 @@ plans, state, image inventories, paired secret/version inventories, or provider 
 private receipt binds the exact migration, rotation, backup, restore, monitor, initialization when
 applicable, and health-gate evidence to the promoted revisions.
 
-On the first launch, `gh run watch` remains attached while the workflow waits for initialization.
-When the initializer prompt appears, press `Ctrl-C`; this stops only the local watcher, not the
-workflow. Complete the subsection below in the same shell, which retains the validated variables,
-then use its final `gh run watch` command to verify the workflow succeeded.
+On the first launch, complete the subsection below in the same shell, which retains the validated
+variables, then use its final `gh run watch` command to verify the workflow succeeded.
 
 ### First launch: provision and run the human-only initializer
 
@@ -420,7 +484,10 @@ Copy the exact initializer `sha256:` digest from the reviewed
 `service-authentication.images.jobs/init` manifest entry. The workflow has already promoted that
 digest when it reaches the prompt:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 INIT_DIGEST=''
 [[ "$INIT_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
 INIT_IMAGE="${REGION}-docker.pkg.dev/${WORKLOAD_PROJECT_ID}/agora-production/service-authentication/jobs/init@${INIT_DIGEST}"
@@ -435,15 +502,19 @@ gcloud artifacts docker images describe "$INIT_IMAGE" \
 if gcloud run jobs describe agora-authentication-init \
   --project="$WORKLOAD_PROJECT_ID" --region="$REGION" --format='none' 2>/dev/null; then
   printf 'STOP: the one-time initializer already exists; use the partial-failure procedure.\n' >&2
-  exit 1
+  return 1
 fi
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Create an inert definition first. This step deliberately includes the exact image, identity,
 capacity, and network but no environment variables, secret references, command, arguments, or
 execution flag:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud run jobs deploy agora-authentication-init \
   --project="$WORKLOAD_PROJECT_ID" --region="$REGION" \
   --image="$INIT_IMAGE" --service-account="$INIT_SERVICE_ACCOUNT" \
@@ -455,6 +526,7 @@ gcloud run jobs deploy agora-authentication-init \
 
 gcloud run jobs describe agora-authentication-init \
   --project="$WORKLOAD_PROJECT_ID" --region="$REGION" --format=export
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: deployment succeeds without starting an execution. The exported definition has
@@ -464,7 +536,10 @@ annotation, and no command or arguments. Stop if any bootstrap value is already 
 Attach the human-only authorization tag before adding bootstrap configuration, then prove it is the
 only direct tag:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud resource-manager tags bindings create \
   --tag-value="$INITIALIZER_TAG_VALUE" --parent="$INIT_JOB_PARENT" --location="$REGION"
 
@@ -473,6 +548,7 @@ gcloud resource-manager tags bindings list \
 | jq --exit-status --arg expected "$INITIALIZER_TAG_VALUE" '
     ([.[].tagValue] | sort) == ([$expected] | sort)
   '
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: `true`. The job must not carry `release`, `scheduled`, `internal`, or
@@ -481,7 +557,10 @@ Expected safe result: `true`. The job must not carry `release`, `scheduled`, `in
 Only after that check passes, add the exact non-payload email and two exact cross-project secret
 versions. This update does not execute the job:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud run jobs update agora-authentication-init \
   --project="$WORKLOAD_PROJECT_ID" --region="$REGION" \
   --image="$INIT_IMAGE" --service-account="$INIT_SERVICE_ACCOUNT" \
@@ -497,15 +576,20 @@ gcloud resource-manager tags bindings list \
 | jq --exit-status --arg expected "$INITIALIZER_TAG_VALUE" '
     ([.[].tagValue] | sort) == ([$expected] | sort)
   '
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: the update finishes without an execution and the tag check remains `true`.
 Run exactly one normal execution—never add image, argument, environment, task, timeout, or secret
 overrides:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud run jobs execute agora-authentication-init \
   --project="$WORKLOAD_PROJECT_ID" --region="$REGION" --wait
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 The workflow rejects an absent, failed, stale, or wrong-job execution and atomically writes the
@@ -513,16 +597,20 @@ private one-time marker `production/initialization/complete.json`. Wait for the 
 finish successfully, then delete the dormant privileged definition while its initializer tag is
 still attached:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gh run watch "$RELEASE_RUN_ID" --repo "$REPOSITORY" --exit-status
 gcloud run jobs delete agora-authentication-init \
   --project="$WORKLOAD_PROJECT_ID" --region="$REGION" --quiet
 if gcloud run jobs describe agora-authentication-init \
   --project="$WORKLOAD_PROJECT_ID" --region="$REGION" --format='none' 2>/dev/null; then
   printf 'STOP: the initializer still exists; keep its initializer tag and investigate.\n' >&2
-  exit 1
+  return 1
 fi
 unset INIT_DIGEST INIT_IMAGE INIT_SERVICE_ACCOUNT INIT_JOB_PARENT MANAGEMENT_PROJECT_NUMBER
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Never detach or replace the initializer tag before deletion: an untagged privileged job could be
@@ -532,7 +620,10 @@ follow the partial-failure procedure below and dispatch a fresh run rather than 
 
 ## 7. Verify deployment and rotation
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gh run view "$RELEASE_RUN_ID" --repo "$REPOSITORY" \
   --json headSha,status,conclusion,url,jobs \
   --jq '{headSha,status,conclusion,url,jobs:[.jobs[] | {name,conclusion}]}'
@@ -548,7 +639,7 @@ gcloud scheduler jobs describe agora-json-keys-rotation \
 if gcloud run jobs describe agora-authentication-init \
   --project="$WORKLOAD_PROJECT_ID" --region="$REGION" --format='none' 2>/dev/null; then
   printf 'STOP: the one-time initializer still exists.\n' >&2
-  exit 1
+  return 1
 fi
 for tuple in \
   "jobs/agora-authentication-migrations $RELEASE_TAG_VALUE" \
@@ -563,6 +654,7 @@ for tuple in \
       '([.[].tagValue] | sort) == ([$expected] | sort)'
 done
 gcloud storage ls "gs://${RECEIPT_BUCKET_NAME}/production/success/*.json"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected: the exact commit succeeded; each service has one exact revision at 100%; JSON Keys retains
@@ -577,14 +669,13 @@ audit the current release's bounded application logs. This deliberately reads ea
 secret into a mode-`0700` scratch directory so it can prove the payload does not occur in logs; no
 payload reaches stdout, a process argument, GitHub, or OpenTofu:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 LOG_AUDIT_DIRECTORY="$(mktemp -d)"
 chmod 700 "$LOG_AUDIT_DIRECTORY"
-cleanup_log_audit() {
-  rm -rf -- "$LOG_AUDIT_DIRECTORY"
-}
-trap cleanup_log_audit INT EXIT
-
+{
 LOG_AUDIT_FILE="${LOG_AUDIT_DIRECTORY}/cloud-run.json"
 gcloud logging read '
   (resource.type="cloud_run_revision" OR resource.type="cloud_run_job")
@@ -617,7 +708,7 @@ EOF
 if LC_ALL=C grep --fixed-strings "${SECRET_PATTERN_ARGUMENTS[@]}" \
   "$LOG_AUDIT_FILE" >/dev/null; then
   printf 'STOP: an exact deployed secret payload occurs in Cloud Run logs.\n' >&2
-  exit 1
+  false
 fi
 
 jq --exit-status '
@@ -642,17 +733,18 @@ jq --exit-status '
     ))
   ] | length == 0)
 ' "$LOG_AUDIT_FILE" >/dev/null
-
-cleanup_log_audit
-trap - INT EXIT
+} always {
+rm -rf -- "$LOG_AUDIT_DIRECTORY"
 unset LOG_AUDIT_DIRECTORY LOG_AUDIT_FILE SECRET_PATTERN_ARGUMENTS payload_file secret version
+}
 printf 'Bounded production logs contain no deployed secret or forbidden payload field.\n'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected safe result: only the final generic success line. A zero-entry result fails because it does
 not prove structured logging. The audit checks exact deployed payloads, authorization/credential
 shapes, DSN userinfo, private-key material, environment dumps, headers, and request-body fields.
-Never print the matching line when it fails; freeze releases, let the cleanup trap remove the
+Never print the matching line when it fails; freeze releases, let the scoped cleanup remove the
 sensitive scratch directory, record non-secret incident metadata, revoke exposed credentials, and follow
 [Add or rotate a secret version](./secret-versions.md).
 
@@ -661,12 +753,23 @@ sensitive scratch directory, record non-secret incident metadata, revoke exposed
 Rollback is for a bad application release with healthy data. Choose the unpadded `run-id-attempt`
 from a prior private success object or Actions run:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud storage ls "gs://${RECEIPT_BUCKET_NAME}/production/success/*.json"
 TARGET_RECEIPT=''
 [[ "$TARGET_RECEIPT" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]
-gh workflow run release.yaml --repo "$REPOSITORY" --ref master \
-  -f action=rollback -f target_receipt="$TARGET_RECEIPT"
+git switch master
+git pull --ff-only
+test -z "$(git status --porcelain)"
+MASTER_SHA="$(git rev-parse HEAD)"
+ROLLBACK_RUN_ID="$(
+  EXPECTED_SHA="$MASTER_SHA" ./ops/run-workflow.sh \
+    release.yaml run-id action=rollback target_receipt="$TARGET_RECEIPT"
+)"
+printf 'Rollback run ID: %s\n' "$ROLLBACK_RUN_ID"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 The workflow treats the newest success receipt as the current live-state preflight and the selected

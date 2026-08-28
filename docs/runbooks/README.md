@@ -5,7 +5,9 @@ the named next step. Open one runbook at a time; no operator needs to remember t
 
 ## Rules to keep in mind
 
-1. Run operator commands in a private Bash or Zsh session with tracing disabled. Never paste
+1. Run local operator blocks directly in the existing configured zsh session. Each block scopes its
+   fail-fast options, preserves the terminal on failure, and prints `STOP`. Blocks explicitly marked
+   for a remote COS host use that host's Bash session. Keep tracing disabled and never paste
    unfiltered output into GitHub, chat, or a shared terminal.
 2. Agents never run `gcloud` or `tofu apply`. A named human runs those commands only where a runbook
    explicitly authorizes them.
@@ -20,12 +22,25 @@ the named next step. Open one runbook at a time; no operator needs to remember t
 Google Cloud concepts and provider behavior are linked from the runbook that uses them. Repository-
 specific decisions, stop conditions, commands, expected results, and recovery actions remain here.
 
+`ops/run-workflow.sh` is the only manual-dispatch helper used below. It accepts only the four
+production workflow files, pins dispatch to a clean local `master` that equals remote `master`,
+refuses to queue behind any active run in their shared concurrency group, identifies only the new
+run created by its dispatch, and waits for success by default. Progress and the approval URL go to
+stderr; its stdout is only the requested `run-id` or `run-id-attempt`. Chained plan/apply commands set
+`EXPECTED_SHA` so a new merge stops the sequence before another dispatch. The first release uses
+`--no-wait` only so its run ID remains in the operator shell while the human initializer proceeds
+from the printed run URL.
+
 ## Resume an interrupted first run
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gh variable get PRODUCTION_RELEASES_ENABLED --repo a-novel/infra
 gh run list --repo a-novel/infra --branch master --limit 20 \
   --json databaseId,workflowName,displayTitle,headSha,status,conclusion,createdAt,url
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Find the last completed `Pass` in this index. Resume at the next step or use the active runbook's
@@ -37,16 +52,24 @@ partial-failure section. Do not repeat a mutating command only because the local
 
 Run from the infrastructure repository root:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 git switch master
 git pull --ff-only
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Check the local checkout once:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 git branch --show-current
 git status --short
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Look for: the branch is `master`, the pull succeeds, and `git status` prints nothing. Check this once
@@ -54,8 +77,12 @@ before starting the first run.
 
 Then inspect the GitHub gate:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 ./ops/verify-repository-gate.sh
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Look for: GitHub authentication names the intended account; ruleset enforcement is `active`; the
@@ -74,7 +101,10 @@ after its explicit human authorization gate passes.
 
 Use this metadata-only check when the runbook is complete:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 REPOSITORY='a-novel/infra'
 test "$(gh variable get PRODUCTION_RELEASES_ENABLED --repo "$REPOSITORY")" = false
 
@@ -83,6 +113,7 @@ for environment in production-foundation production-release production-recovery;
   gh variable list --repo "$REPOSITORY" --env "$environment"
   gh secret list --repo "$REPOSITORY" --env "$environment"
 done
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 `Pass`: remote state, plan custody, four WIF providers, exact IAM, three protected environments,
@@ -99,11 +130,15 @@ local foundation apply.
 
 After its final cleanup, rerun the zero-key and no-public-path checks from sections 6 and 7, then:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 REPOSITORY='a-novel/infra'
 test "$(gh variable get PRODUCTION_RELEASES_ENABLED --repo "$REPOSITORY")" = false
 gh run list --repo "$REPOSITORY" --workflow foundation.yaml --branch master --limit 10 \
   --json databaseId,displayTitle,headSha,status,conclusion,url
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 `Pass`: one private workload project exists; the post-apply plan is empty; temporary project,
@@ -114,8 +149,12 @@ registry, budgets, quotas, alerts, logging, and runtime identities match the run
 
 ### 3. Verify the idle PostgreSQL host
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 test "$(gh variable get PRODUCTION_RELEASES_ENABLED --repo a-novel/infra)" = false
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Run these sections of [Operate the private PostgreSQL host](./operate-postgresql-host.md), in order:
@@ -133,8 +172,12 @@ IP; the expected firewall and snapshot policy exist; no PostgreSQL container is 
 
 ### 4. Configure hosted SMTP
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 test "$(gh variable get PRODUCTION_RELEASES_ENABLED --repo a-novel/infra)" = false
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Run [Configure hosted Plunk SMTP](./configure-hosted-smtp.md) from Operator context through step 4.
@@ -149,8 +192,12 @@ is recorded privately; only the SMTP password payload is ready to enter Secret M
 
 ### 5. Populate the nine secret versions
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 test "$(gh variable get PRODUCTION_RELEASES_ENABLED --repo a-novel/infra)" = false
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Prepare the four database passwords and construct both DSNs privately from the step-3 private
@@ -159,7 +206,10 @@ address. Paste the Operator context, then run the single initial-population comm
 
 List metadata after all nine versions are added:
 
-```bash
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID --repo a-novel/infra)"
 [[ "$MANAGEMENT_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
 
@@ -178,6 +228,7 @@ for secret in \
     --filter='state=ENABLED' \
     --format='table(name.basename(),state,createTime)'
 done
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 `Pass`: every secret has one selected enabled numeric version, all four database passwords are
@@ -203,8 +254,8 @@ The sequence inside that runbook is authoritative:
 9. verify the hourly JSON Keys rotation schedule and immutable receipt;
 10. complete Plunk's bounded delivery, bounce, cap, and log-leak tests.
 
-Use the runbook's `gh run watch` commands. Do not start a second run while the first is waiting for
-the initializer.
+Use the runbook's exact workflow helper. Do not start a second run while the first is waiting for the
+initializer.
 
 `Pass`: the release workflow succeeds at the exact reviewed `master` SHA; a private success receipt
 exists; the initializer job is absent; JSON Keys is private and callable only by Authentication;
