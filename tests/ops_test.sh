@@ -234,6 +234,109 @@ if grep -Fq 'allowed_audiences' "${REPOSITORY_ROOT}/bootstrap/identity.tf"; then
     exit 1
 fi
 
+# The first-run repository gate is a maintained executable rather than a
+# copy-pasted shell program. It accepts only the fixed repository policy and
+# refuses a dirty checkout, a stale commit, changed checks, or an enabled
+# release switch.
+REPOSITORY_GATE_MOCK_BIN="${TEMP_DIR}/repository-gate-bin"
+mkdir -p "${REPOSITORY_GATE_MOCK_BIN}"
+# shellcheck disable=SC2016
+printf '%s\n' \
+    '#!/bin/bash' \
+    'set -euo pipefail' \
+    'case "$*" in' \
+    '    "status --porcelain") printf "%s" "${GATE_DIRTY-}" ;;' \
+    '    "branch --show-current") printf "%s\n" "${GATE_BRANCH:-master}" ;;' \
+    '    "rev-parse HEAD") printf "%s\n" "${GATE_LOCAL_COMMIT}" ;;' \
+    '    *) exit 1 ;;' \
+    'esac' \
+    >"${REPOSITORY_GATE_MOCK_BIN}/git"
+# shellcheck disable=SC2016
+printf '%s\n' \
+    '#!/bin/bash' \
+    'set -euo pipefail' \
+    'if [ "$1 $2" = "auth status" ]; then' \
+    '    printf "Authenticated to github.com as test-maintainer.\n"' \
+    'elif [ "$1 $2" = "api repos/a-novel/infra/commits/master" ]; then' \
+    '    printf "%s\n" "${GATE_REMOTE_COMMIT}"' \
+    'elif [ "$1 $2" = "api repos/a-novel/infra/rulesets" ]; then' \
+    '    printf "123\n"' \
+    'elif [ "$1 $2" = "api repos/a-novel/infra/rulesets/123" ]; then' \
+    '    if [[ "$*" == *".enforcement"* ]]; then' \
+    '        printf "%s\n" "${GATE_ENFORCEMENT:-active}"' \
+    '    else' \
+    '        printf "%s\n" "${GATE_CHECKS}"' \
+    '    fi' \
+    'elif [ "$1 $2" = "variable list" ]; then' \
+    '    printf "%s" "${GATE_RELEASE_SWITCH-}"' \
+    'else' \
+    '    exit 1' \
+    'fi' \
+    >"${REPOSITORY_GATE_MOCK_BIN}/gh"
+chmod 0700 "${REPOSITORY_GATE_MOCK_BIN}/git" "${REPOSITORY_GATE_MOCK_BIN}/gh"
+
+GATE_COMMIT=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+GATE_EXPECTED_CHECKS=$'epic-freeze\nlint-repository\nmerge-gate\nscan-infrastructure\nvalidate-opentofu'
+PATH="${REPOSITORY_GATE_MOCK_BIN}:${PATH}" \
+    GATE_LOCAL_COMMIT="${GATE_COMMIT}" \
+    GATE_REMOTE_COMMIT="${GATE_COMMIT}" \
+    GATE_CHECKS="${GATE_EXPECTED_CHECKS}" \
+    GATE_RELEASE_SWITCH=false \
+    "${REPOSITORY_ROOT}/ops/verify-repository-gate.sh" \
+    >"${TEMP_DIR}/repository-gate.out"
+grep -Fq 'Repository gate passed for a-novel/infra' \
+    "${TEMP_DIR}/repository-gate.out"
+
+assert_repository_gate_rejects() {
+    local local_commit="$1"
+    local remote_commit="$2"
+    local checks="$3"
+    local release_switch="$4"
+    local dirty="${5-}"
+    local branch="${6:-master}"
+    local enforcement="${7:-active}"
+    local code=0
+
+    set +e
+    PATH="${REPOSITORY_GATE_MOCK_BIN}:${PATH}" \
+        GATE_LOCAL_COMMIT="${local_commit}" \
+        GATE_REMOTE_COMMIT="${remote_commit}" \
+        GATE_CHECKS="${checks}" \
+        GATE_RELEASE_SWITCH="${release_switch}" \
+        GATE_DIRTY="${dirty}" \
+        GATE_BRANCH="${branch}" \
+        GATE_ENFORCEMENT="${enforcement}" \
+        "${REPOSITORY_ROOT}/ops/verify-repository-gate.sh" \
+        >"${TEMP_DIR}/repository-gate-rejected.out" \
+        2>"${TEMP_DIR}/repository-gate-rejected.err"
+    code=$?
+    set -e
+    assert_equal "${code}" 77
+}
+
+assert_repository_gate_rejects \
+    "${GATE_COMMIT}" "${GATE_COMMIT}" "${GATE_EXPECTED_CHECKS}" false 'untracked-file'
+assert_repository_gate_rejects \
+    "${GATE_COMMIT}" "${GATE_COMMIT}" "${GATE_EXPECTED_CHECKS}" false '' feature
+assert_repository_gate_rejects \
+    "${GATE_COMMIT}" bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
+    "${GATE_EXPECTED_CHECKS}" false
+assert_repository_gate_rejects \
+    "${GATE_COMMIT}" "${GATE_COMMIT}" 'merge-gate' false
+assert_repository_gate_rejects \
+    "${GATE_COMMIT}" "${GATE_COMMIT}" "${GATE_EXPECTED_CHECKS}" false '' master disabled
+assert_repository_gate_rejects \
+    "${GATE_COMMIT}" "${GATE_COMMIT}" "${GATE_EXPECTED_CHECKS}" true
+
+PATH="${REPOSITORY_GATE_MOCK_BIN}:${PATH}" \
+    GATE_LOCAL_COMMIT="${GATE_COMMIT}" \
+    GATE_REMOTE_COMMIT="${GATE_COMMIT}" \
+    GATE_CHECKS="${GATE_EXPECTED_CHECKS}" \
+    "${REPOSITORY_ROOT}/ops/verify-repository-gate.sh" \
+    >"${TEMP_DIR}/repository-gate-absent-switch.out"
+grep -Fq 'Release switch is not created yet' \
+    "${TEMP_DIR}/repository-gate-absent-switch.out"
+
 # Destructive approval is historical merge-gate evidence, not the PR's mutable
 # current label list. A post-merge label, a pre-merge removal, or a non-maintainer
 # actor must never authorize an apply.

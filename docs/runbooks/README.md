@@ -36,37 +36,15 @@ partial-failure section. Do not repeat a mutating command only because the local
 Run from the infrastructure repository root:
 
 ```bash
-set -euo pipefail
-set +x
-umask 077
-
-REPOSITORY='a-novel/infra'
-
 git switch master
 git pull --ff-only
-test -z "$(git status --porcelain)"
-test "$(git rev-parse HEAD)" = "$(gh api "repos/${REPOSITORY}/commits/master" --jq .sha)"
-gh auth status
-
-RULESET_ID="$(gh api "repos/${REPOSITORY}/rulesets" \
-  --jq '.[] | select(.name == "master") | .id')"
-test -n "$RULESET_ID"
-gh api "repos/${REPOSITORY}/rulesets/${RULESET_ID}" \
-  --jq '[.rules[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] | sort'
-
-RELEASE_SWITCH="$(gh variable list --repo "$REPOSITORY" --json name,value \
-  --jq '.[] | select(.name == "PRODUCTION_RELEASES_ENABLED") | .value')"
-if [[ -n "$RELEASE_SWITCH" ]]; then
-  test "$RELEASE_SWITCH" = false
-else
-  printf 'Release switch is not created yet; bootstrap will create it as false.\n'
-fi
-unset RELEASE_SWITCH RULESET_ID
+./ops/verify-repository-gate.sh
 ```
 
-`Pass`: the checkout is clean at the remote `master` commit, GitHub authentication names the
-intended account, the required-check list is exactly the repository policy documented in the root
-[Setup](../../README.md#setup), and the release switch is false or not created yet.
+`Pass`: the script ends with `Repository gate passed`; the checkout is clean at the remote `master`
+commit, GitHub authentication names the intended account, the required-check list is exactly the
+repository policy documented in the root [Setup](../../README.md#setup), and the release switch is
+false or not created yet.
 
 `Next`: step 1.
 
