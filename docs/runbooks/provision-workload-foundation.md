@@ -337,7 +337,7 @@ gh api "repos/${REPOSITORY}/environments/production-foundation" \
 ```
 
 Expected safe result: the environment name is exact, protected branches are enabled, custom branch
-policies are disabled, and the intended independent reviewer appears. Confirm administrator bypass
+policies are disabled, and the configured reviewer appears. Confirm administrator bypass
 is disabled in **Repository settings → Environments → production-foundation**; GitHub's public API
 does not expose a reliable verification field for that switch.
 
