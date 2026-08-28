@@ -4,10 +4,10 @@ This root owns the stable management and recovery plane that later automation us
 rebuild production. It changes rarely and deliberately outlives the replaceable workload project.
 It does not deploy networks, databases, application services, jobs, or revisions.
 
-The management project itself is a manual root of trust. OpenTofu cannot safely create the project,
-attach its billing account, and then use that same project to hold its first state. The
-[bootstrap runbook](../docs/runbooks/bootstrap-management-plane.md) makes those one-time actions
-explicit and then moves every remaining supported control into this root.
+The management project and empty state bucket form the manual root of trust. The
+[bootstrap runbook](../docs/runbooks/bootstrap-management-plane.md) creates the bucket with private
+access, versioning, and soft delete before OpenTofu writes state, then imports it into this root.
+OpenTofu manages every later bucket change.
 
 ## Deployment status
 
@@ -16,10 +16,10 @@ The initial application is an operator-only procedure performed from `master` af
 approval. Agents never run Google Cloud commands or `tofu apply`. Pull requests continue to use a
 mocked provider, a disabled backend, and no cloud credentials.
 
-After the first application, state is migrated from an operator-controlled local file into the
-versioned GCS backend. Protected workflows then use keyless federation and exact private saved
-plans. The workflow filename, `master` ref, repository numeric identity, and protected-environment
-claim are all part of the provider condition; changing any one is a reviewed trust migration.
+The first plan and apply use the versioned GCS backend. Protected workflows then use keyless
+federation and exact private saved plans. The workflow filename, `master` ref, repository numeric
+identity, and protected-environment claim are all part of the provider condition; changing any one
+is a reviewed trust migration.
 
 ## Resource inventory
 

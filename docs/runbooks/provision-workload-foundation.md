@@ -15,7 +15,7 @@ Merging this repository creates nothing. Do not execute a mutating command or di
 the user responsible for this Google Cloud account explicitly authorizes resource creation and all
 of the following are true:
 
-1. the management-plane bootstrap is applied, migrated to remote state, and independently verified;
+1. the management-plane bootstrap is applied to its remote state and independently verified;
 2. `.github/workflows/foundation.yaml` exists on `master` and authenticates through its exact WIF provider;
 3. `production-foundation` requires a reviewer, disallows administrator bypass, and accepts only
    protected `master` deployments;
