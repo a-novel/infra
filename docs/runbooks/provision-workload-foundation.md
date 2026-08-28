@@ -89,9 +89,10 @@ callable after this procedure.
 
 ## 1. Collect and validate non-payload inputs
 
-Start a fresh Bash or Zsh shell with history expansion and tracing disabled. The prompts avoid recording
-values in shell history. These identifiers are configuration, not application secret payloads, but
-the billing ID and personal email still stay out of public logs.
+Start a fresh Bash or Zsh shell with tracing disabled. Google and GitHub supply every stable value;
+the only proposed value below is the new workload project ID. The active Google account is the
+default alert recipient, database operator, and Authentication initializer. Replace those four
+assignments before continuing when another user or group owns a role.
 
 ```bash
 set -euo pipefail
@@ -105,14 +106,24 @@ SUBNET_CIDR='10.20.0.0/24'
 WORKLOAD_PROJECT_NAME='Agora production'
 
 MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID --repo "$REPOSITORY")"
-WORKLOAD_PROJECT_ID="$(./ops/prompt.sh 'New workload project ID: ')"
-BILLING_ACCOUNT_ID="$(./ops/prompt.sh 'Billing account ID (XXXXXX-XXXXXX-XXXXXX): ')"
-COST_ALERT_EMAIL="$(./ops/prompt.sh 'Cost-alert and quota-contact email address: ')"
-OPERATIONS_ALERT_EMAIL="$(./ops/prompt.sh 'Production operations-alert email address: ')"
-DATABASE_OPERATOR_PRINCIPAL="$(./ops/prompt.sh 'Database operator IAM member (user: or group:): ')"
-AUTH_INITIALIZER_PRINCIPAL="$(./ops/prompt.sh 'Authentication initializer IAM member (user: or group:): ')"
-ORGANIZATION_ID="$(./ops/prompt.sh 'Organization ID, or blank: ')"
-FOLDER_ID="$(./ops/prompt.sh 'Folder ID, or blank: ')"
+WORKLOAD_PROJECT_ID='agora-production-prod'
+BILLING_ACCOUNT_ID="$(gcloud billing projects describe "$MANAGEMENT_PROJECT_ID" \
+  --format='value(billingAccountName.basename())')"
+OPERATOR_EMAIL="$(gcloud config get-value account 2>/dev/null)"
+COST_ALERT_EMAIL="$OPERATOR_EMAIL"
+OPERATIONS_ALERT_EMAIL="$OPERATOR_EMAIL"
+DATABASE_OPERATOR_PRINCIPAL="user:${OPERATOR_EMAIL}"
+AUTH_INITIALIZER_PRINCIPAL="user:${OPERATOR_EMAIL}"
+
+PROJECT_PARENT="$(gcloud projects describe "$MANAGEMENT_PROJECT_ID" --format='value(parent)')"
+ORGANIZATION_ID=''
+FOLDER_ID=''
+case "$PROJECT_PARENT" in
+  organizations/*) ORGANIZATION_ID="${PROJECT_PARENT#organizations/}" ;;
+  folders/*) FOLDER_ID="${PROJECT_PARENT#folders/}" ;;
+  '') ;;
+  *) printf 'Unexpected project parent: %s\n' "$PROJECT_PARENT" >&2; false ;;
+esac
 
 FOUNDATION_SERVICE_ACCOUNT="infra-foundation@${MANAGEMENT_PROJECT_ID}.iam.gserviceaccount.com"
 PLAN_SERVICE_ACCOUNT="infra-plan@${MANAGEMENT_PROJECT_ID}.iam.gserviceaccount.com"
@@ -141,9 +152,9 @@ printf 'Repository: %s\nManagement project: %s\nWorkload project: %s\nRegion: %s
   "$REPOSITORY" "$MANAGEMENT_PROJECT_ID" "$WORKLOAD_PROJECT_ID" "$REGION" "$DATABASE_ZONE" "$SUBNET_CIDR"
 ```
 
-Expected safe result: the final six non-sensitive selections print, all validations exit zero, and
-at most one parent ID is populated. Do not print the billing account, either alert address, operator
-or initializer principal, or either JSON principal set.
+Expected safe result: the final six selections match the intended projects and fixed EU location,
+all validations exit zero, and at most one parent ID is populated. Do not print the billing account,
+either alert address, operator or initializer principal, or either JSON principal set.
 
 Verify the active identities and stable bootstrap resources without changing anything:
 
@@ -173,18 +184,15 @@ backup bucket is the protected EU bucket from bootstrap, and the billing account
 true` with a three-letter currency code. Share only the boolean and currency code if assistance is
 needed.
 
-Confirm the workload ID is unused before authorizing creation:
+Screen the proposed workload ID before authorizing creation:
 
 ```bash
-if gcloud projects describe "$WORKLOAD_PROJECT_ID" --format='value(projectId)' >/dev/null 2>&1; then
-  printf 'STOP: project ID already exists; choose the adoption path or a different ID.\n' >&2
-  exit 1
-fi
-printf 'Project ID is not visible to the active operator.\n'
+! gcloud projects describe "$WORKLOAD_PROJECT_ID"
 ```
 
-An inaccessible project can produce the same result as an unused ID. The first protected plan is the
-authoritative creation attempt; never weaken IAM or guess around an `ALREADY_EXISTS` response.
+Do not continue when metadata is returned. `NOT_FOUND` or a permission error only means the project
+is not visible to this account; the first protected plan is the authoritative availability check.
+Choose another ID after an `ALREADY_EXISTS` response.
 
 ## 2. Choose exactly one project-parent path
 
@@ -437,7 +445,7 @@ Select the row titled `foundation plan bootstrap`, verify `headSha` equals `MAST
 it and derive its exact plan ID:
 
 ```bash
-PLAN_RUN_ID="$(./ops/prompt.sh 'Bootstrap plan run ID: ')"
+PLAN_RUN_ID='replace-with-bootstrap-plan-run-id'
 test "$(gh api "repos/${REPOSITORY}/actions/runs/${PLAN_RUN_ID}" --jq .head_sha)" = "$MASTER_SHA"
 gh run watch "$PLAN_RUN_ID" --repo "$REPOSITORY" --exit-status
 PLAN_ATTEMPT="$(gh api "repos/${REPOSITORY}/actions/runs/${PLAN_RUN_ID}" --jq .run_attempt)"

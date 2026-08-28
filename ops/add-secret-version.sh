@@ -50,7 +50,6 @@ for command_name in gh gcloud; do
     fi
 done
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID --repo a-novel/infra)"
 if ! [[ "${MANAGEMENT_PROJECT_ID}" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]; then
     printf 'GCP_MANAGEMENT_PROJECT_ID is missing or invalid.\n' >&2
@@ -67,8 +66,17 @@ add_secret_version() {
     local secret_id="$1"
     local secret_value secret_value_confirmation version_id version_state
 
-    secret_value="$("${SCRIPT_DIR}/prompt.sh" --secret "${secret_id} value: ")"
-    secret_value_confirmation="$("${SCRIPT_DIR}/prompt.sh" --secret "Repeat ${secret_id} value: ")"
+    printf '%s value: ' "${secret_id}" >&2
+    if ! IFS= read -r -s secret_value; then
+        printf '\nInput ended before a value was read.\n' >&2
+        return 65
+    fi
+    printf '\nRepeat %s value: ' "${secret_id}" >&2
+    if ! IFS= read -r -s secret_value_confirmation; then
+        printf '\nInput ended before the repeated value was read.\n' >&2
+        return 65
+    fi
+    printf '\n' >&2
     if [ -z "${secret_value}" ] || [ "${secret_value}" != "${secret_value_confirmation}" ]; then
         printf 'Secret values are empty or do not match.\n' >&2
         return 65

@@ -114,13 +114,17 @@ set +x
 
 WORKLOAD_PROJECT_ID="$(gh variable get GCP_WORKLOAD_PROJECT_ID --repo a-novel/infra)"
 DATABASE_ZONE='europe-west1-b'
-DATABASE_OPERATOR_PRINCIPAL="$(./ops/prompt.sh 'Database operator IAM member (user: or group:): ')"
+DATABASE_OPERATOR_PRINCIPAL="$(gcloud projects get-iam-policy "$WORKLOAD_PROJECT_ID" \
+  --flatten='bindings[].members' \
+  --filter='bindings.role=roles/compute.osAdminLogin' \
+  --format='value(bindings.members)')"
 DATABASE_REGION="${DATABASE_ZONE%-*}"
 DATABASE_GROUP='agora-database'
 DATABASE_DISK='agora-data'
 
 [[ "$WORKLOAD_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
 [[ "$DATABASE_ZONE" =~ ^[a-z]+-[a-z]+[0-9]+-[a-z]$ ]]
+test "$(printf '%s\n' "$DATABASE_OPERATOR_PRINCIPAL" | wc -l)" -eq 1
 [[ "$DATABASE_OPERATOR_PRINCIPAL" =~ ^(user|group):[^[:space:]@]+@[^[:space:]@]+$ ]]
 
 DATABASE_INSTANCE="$(

@@ -206,7 +206,8 @@ select_secret_version() {
       gcloud secrets versions list "$secret_id" \
         --project="$MANAGEMENT_PROJECT_ID" --filter='state=ENABLED' \
         --format='table(name.basename(),state,createTime)' >&2
-      selected_version="$(./ops/prompt.sh "Enabled numeric version for ${secret_id}: ")"
+      printf 'Enabled numeric version for %s: ' "$secret_id" >&2
+      IFS= read -r selected_version
       ;;
   esac
 
@@ -236,14 +237,15 @@ receipt-owned version is disabled or destroyed.
 Complete [Configure hosted Plunk SMTP](./configure-hosted-smtp.md) first. The provider-neutral
 runtime contract is authenticated STARTTLS submission on port 587; `sender_domain` repeats the SMTP
 host because Authentication uses it for the TLS server name. Initializer principals are foundation
-inputs, not a mutable release secret.
+inputs, not a mutable release secret. The active Google account is the fast-path first super-admin;
+replace that assignment when the application administrator is another address.
 
 ```bash
-AUTH_SUPER_ADMIN_EMAIL="$(./ops/prompt.sh 'First super-admin email: ')"
-SMTP_HOST="$(./ops/prompt.sh 'SMTP DNS host (without port): ')"
-SMTP_USERNAME="$(./ops/prompt.sh 'SMTP username: ')"
-SMTP_SENDER_EMAIL="$(./ops/prompt.sh 'SMTP sender email: ')"
-SMTP_SENDER_NAME="$(./ops/prompt.sh 'SMTP sender display name: ')"
+AUTH_SUPER_ADMIN_EMAIL="$(gcloud config get-value account 2>/dev/null)"
+SMTP_HOST=''
+SMTP_USERNAME=''
+SMTP_SENDER_EMAIL=''
+SMTP_SENDER_NAME=''
 
 [[ "$AUTH_SUPER_ADMIN_EMAIL" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]
 [[ "$SMTP_HOST" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]]
@@ -336,7 +338,7 @@ created release resources. If another pull request lands afterward, that newer p
 label instead because the deletion gate is bound to the exact deployed commit:
 
 ```bash
-ACTIVATION_PR="$(./ops/prompt.sh 'First-activation pull request number: ')"
+ACTIVATION_PR='replace-with-pull-request-number'
 [[ "$ACTIVATION_PR" =~ ^[1-9][0-9]*$ ]]
 gh pr edit "$ACTIVATION_PR" --repo "$REPOSITORY" --add-label allow-resource-deletion
 gh pr view "$ACTIVATION_PR" --repo "$REPOSITORY" \
@@ -355,7 +357,8 @@ merge that already happened.
 
 ```bash
 test "$(gh variable get PRODUCTION_RELEASES_ENABLED --repo "$REPOSITORY")" = false
-RELEASE_CONFIRMATION="$(./ops/prompt.sh 'Type enable-production-releases to authorize launch: ')"
+printf 'Type enable-production-releases to authorize launch: '
+IFS= read -r RELEASE_CONFIRMATION
 test "$RELEASE_CONFIRMATION" = enable-production-releases
 gh variable set PRODUCTION_RELEASES_ENABLED --repo "$REPOSITORY" --body true
 test "$(gh variable get PRODUCTION_RELEASES_ENABLED --repo "$REPOSITORY")" = true
@@ -385,7 +388,7 @@ Select exactly one `production deploy` with `headSha == MASTER_SHA`, whether its
 automatic manifest push or the deliberate manual dispatch, then:
 
 ```bash
-RELEASE_RUN_ID="$(./ops/prompt.sh 'Release workflow run ID: ')"
+RELEASE_RUN_ID='replace-with-release-run-id'
 test "$(gh api "repos/${REPOSITORY}/actions/runs/${RELEASE_RUN_ID}" --jq .head_sha)" = "$MASTER_SHA"
 gh run watch "$RELEASE_RUN_ID" --repo "$REPOSITORY" --exit-status
 ```
@@ -411,7 +414,7 @@ Copy the exact initializer `sha256:` digest from the reviewed
 digest when it reaches the prompt:
 
 ```bash
-INIT_DIGEST="$(./ops/prompt.sh 'Reviewed Authentication initializer sha256 digest: ')"
+INIT_DIGEST=''
 [[ "$INIT_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
 INIT_IMAGE="${REGION}-docker.pkg.dev/${WORKLOAD_PROJECT_ID}/agora-production/service-authentication/jobs/init@${INIT_DIGEST}"
 INIT_SERVICE_ACCOUNT="agora-auth-initializer@${WORKLOAD_PROJECT_ID}.iam.gserviceaccount.com"
@@ -653,7 +656,7 @@ from a prior private success object or Actions run:
 
 ```bash
 gcloud storage ls "gs://${RECEIPT_BUCKET_NAME}/production/success/*.json"
-TARGET_RECEIPT="$(./ops/prompt.sh 'Exact prior receipt run-id-attempt: ')"
+TARGET_RECEIPT=''
 [[ "$TARGET_RECEIPT" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]
 gh workflow run release.yaml --repo "$REPOSITORY" --ref master \
   -f action=rollback -f target_receipt="$TARGET_RECEIPT"
