@@ -89,7 +89,7 @@ gh workflow list --repo "$REPOSITORY" --all --json name,path,state
 gh run list --repo "$REPOSITORY" --workflow drift.yaml --branch master \
   --event schedule --limit 20 \
   --json databaseId,headSha,status,conclusion,createdAt,url
-HEALTH_RUN_ID="$(./ops/prompt.sh 'Latest 43 */3 health run database ID: ')"
+HEALTH_RUN_ID='replace-with-health-run-id'
 [[ "$HEALTH_RUN_ID" =~ ^[1-9][0-9]*$ ]]
 gh run view "$HEALTH_RUN_ID" --repo "$REPOSITORY" --json headSha,event,jobs,url \
   --jq '{headSha,event,url,jobs:[.jobs[]|{name,conclusion}]}'

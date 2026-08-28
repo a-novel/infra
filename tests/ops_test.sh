@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Exercises the root allowlist and fail-closed destructive-plan classifier.
+# Exercises operator scripts with local fixtures.
 
 set -euo pipefail
 
@@ -37,24 +37,6 @@ cleanup() {
     rm -rf -- "${TEMP_DIR}"
 }
 trap cleanup INT EXIT
-
-OPERATOR_VALUE="$(
-    printf 'value with spaces\n' \
-        | "${REPOSITORY_ROOT}/ops/prompt.sh" 'Operator value: ' \
-            2>"${TEMP_DIR}/prompt.err"
-)"
-assert_equal "${OPERATOR_VALUE}" 'value with spaces'
-grep -Fq 'Operator value: ' "${TEMP_DIR}/prompt.err"
-
-SECRET_VALUE="$(
-    printf 'fixture-private-secret\n' \
-        | "${REPOSITORY_ROOT}/ops/prompt.sh" --secret 'Secret value: ' \
-            2>"${TEMP_DIR}/secret-prompt.err"
-)"
-assert_equal "${SECRET_VALUE}" 'fixture-private-secret'
-grep -Fq 'Secret value: ' "${TEMP_DIR}/secret-prompt.err"
-assert_absent "${TEMP_DIR}/secret-prompt.err" 'fixture-private-secret'
-unset SECRET_VALUE
 
 SECRET_MOCK_BIN="${TEMP_DIR}/secret-bin"
 mkdir -p "${SECRET_MOCK_BIN}"

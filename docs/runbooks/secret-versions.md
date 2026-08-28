@@ -132,10 +132,14 @@ Add the replacement and select both numeric versions explicitly:
 
 ```bash
 MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID --repo a-novel/infra)"
-SECRET_ID="$(./ops/prompt.sh 'Exact secret ID: ')"
+SECRET_ID=''
 ./ops/add-secret-version.sh "$SECRET_ID"
-VERSION_ID="$(./ops/prompt.sh 'New numeric version: ')"
-OLD_VERSION_ID="$(./ops/prompt.sh 'Old numeric version to disable: ')"
+gcloud secrets versions list "$SECRET_ID" \
+  --project="$MANAGEMENT_PROJECT_ID" \
+  --format='table(name.basename(),state,createTime)' \
+  --sort-by='~createTime'
+VERSION_ID=''
+OLD_VERSION_ID=''
 [[ "${VERSION_ID}" =~ ^[0-9]+$ ]]
 [[ "${OLD_VERSION_ID}" =~ ^[0-9]+$ ]]
 test "${OLD_VERSION_ID}" != "${VERSION_ID}"
@@ -184,7 +188,8 @@ gcloud secrets versions describe "${OLD_VERSION_ID}" \
   --project="${MANAGEMENT_PROJECT_ID}" \
   --format='yaml(name,state,createTime)'
 
-CONFIRM_DESTROY="$(./ops/prompt.sh "Type ${SECRET_ID}/${OLD_VERSION_ID} to schedule destruction: ")"
+printf 'Type %s/%s to schedule destruction: ' "$SECRET_ID" "$OLD_VERSION_ID"
+IFS= read -r CONFIRM_DESTROY
 test "${CONFIRM_DESTROY}" = "${SECRET_ID}/${OLD_VERSION_ID}"
 
 gcloud secrets versions destroy "${OLD_VERSION_ID}" \

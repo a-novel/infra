@@ -83,23 +83,16 @@ OPERATOR_PRINCIPAL="user:$(gcloud config get-value account 2>/dev/null)"
 
 ## 2. Select billing and the globally unique management-project ID
 
-List only open billing accounts, choose one by its `ACCOUNT_ID`, and verify the choice before
-creating a project.
+List the open billing accounts. The assignment below reuses the result directly when exactly one
+account is open; if several IDs are returned, replace it with the chosen `ACCOUNT_ID`.
 
 ```bash
 gcloud billing accounts list \
   --filter='open=true' \
   --format='table(name.basename(),displayName,masterBillingAccount.basename())'
 
-OPEN_BILLING_ACCOUNT_IDS="$(gcloud billing accounts list \
+BILLING_ACCOUNT_ID="$(gcloud billing accounts list \
   --filter='open=true' --format='value(name.basename())')"
-OPEN_BILLING_ACCOUNT_COUNT="$(printf '%s\n' "$OPEN_BILLING_ACCOUNT_IDS" | grep -c . || true)"
-case "$OPEN_BILLING_ACCOUNT_COUNT" in
-  1) BILLING_ACCOUNT_ID="$OPEN_BILLING_ACCOUNT_IDS" ;;
-  0) printf 'Stop: no open billing account is available.\n' >&2; false ;;
-  *) BILLING_ACCOUNT_ID="$(./ops/prompt.sh 'Billing account ID: ')" ;;
-esac
-unset OPEN_BILLING_ACCOUNT_IDS OPEN_BILLING_ACCOUNT_COUNT
 test -n "${BILLING_ACCOUNT_ID}"
 gcloud billing accounts describe "${BILLING_ACCOUNT_ID}" \
   --format='yaml(name,displayName,open)'
@@ -108,23 +101,17 @@ gcloud billing accounts describe "${BILLING_ACCOUNT_ID}" \
 Expected safe result: `open: true` and the intended billing account name. An account ID is not a
 secret.
 
-Choose a permanent, globally unique project ID. `agora-management-prod` is the preferred base; add a
-short organization-specific suffix only if Google reports that it is unavailable. A project ID
-cannot be changed later.
+Check the preferred ID. Replace it with a short organization-specific variant if project metadata
+is returned. Project IDs are global and cannot be changed later.
 
 ```bash
-MANAGEMENT_PROJECT_ID="$(./ops/prompt.sh 'Permanent management project ID [agora-management-prod]: ')"
-MANAGEMENT_PROJECT_ID="${MANAGEMENT_PROJECT_ID:-agora-management-prod}"
-[[ "${MANAGEMENT_PROJECT_ID}" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
-
-if gcloud projects describe "${MANAGEMENT_PROJECT_ID}" >/dev/null 2>&1; then
-  printf 'Stop: project %s already exists or is already visible.\n' "${MANAGEMENT_PROJECT_ID}" >&2
-  false
-fi
+MANAGEMENT_PROJECT_ID='agora-management-prod'
+! gcloud projects describe "${MANAGEMENT_PROJECT_ID}"
 ```
 
-Expected safe result: no output and exit status zero. Do not reuse a project created for another
-purpose.
+Look for: `NOT_FOUND` or a permission error. `describe` cannot distinguish a missing project from a
+project the active account cannot access, so the create command in the next step is the definitive
+availability check. Do not continue when metadata is returned.
 
 ## 3. Create exactly one project
 
@@ -160,7 +147,7 @@ gcloud resource-manager folders list \
 For an existing folder:
 
 ```bash
-MANAGEMENT_FOLDER_ID="$(./ops/prompt.sh 'Existing folder numeric ID: ')"
+MANAGEMENT_FOLDER_ID='replace-with-folder-id'
 [[ "${MANAGEMENT_FOLDER_ID}" =~ ^[0-9]+$ ]]
 gcloud projects create "${MANAGEMENT_PROJECT_ID}" \
   --name='Agora management' \
@@ -170,7 +157,7 @@ gcloud projects create "${MANAGEMENT_PROJECT_ID}" \
 For an organization with no suitable folder:
 
 ```bash
-MANAGEMENT_ORGANIZATION_ID="$(./ops/prompt.sh 'Existing organization numeric ID: ')"
+MANAGEMENT_ORGANIZATION_ID='replace-with-organization-id'
 [[ "${MANAGEMENT_ORGANIZATION_ID}" =~ ^[0-9]+$ ]]
 gcloud projects create "${MANAGEMENT_PROJECT_ID}" \
   --name='Agora management' \
@@ -264,7 +251,7 @@ environments: routine release is restricted to protected branches; foundation an
 require a different human reviewer and prevent self-review.
 
 ```bash
-ENVIRONMENT_REVIEWER_LOGIN="$(./ops/prompt.sh 'Second maintainer GitHub login: ')"
+ENVIRONMENT_REVIEWER_LOGIN='replace-with-github-login'
 test -n "${ENVIRONMENT_REVIEWER_LOGIN}"
 test "${ENVIRONMENT_REVIEWER_LOGIN}" != "$(gh api user --jq .login)"
 

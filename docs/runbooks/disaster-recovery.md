@@ -76,7 +76,8 @@ is non-empty, or any recovered service becomes publicly reachable.
 
 ## 1. Declare the target, receipt, and recovery points
 
-Use a private terminal with tracing disabled:
+Use the recorded incident start. For a drill, run the first command and paste its output into
+`INCIDENT_STARTED_AT`.
 
 ```bash
 set -euo pipefail
@@ -87,14 +88,24 @@ REPOSITORY='a-novel/infra'
 REGION='europe-west1'
 DATABASE_ZONE='europe-west1-b'
 
-INCIDENT_STARTED_AT="$(./ops/prompt.sh 'Incident or drill start (UTC, for example 2026-08-27T12:34:56Z): ')"
+date -u +'%Y-%m-%dT%H:%M:%SZ'
+INCIDENT_STARTED_AT=''
 MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID --repo "$REPOSITORY")"
 SOURCE_PROJECT_ID="$(gh variable get GCP_WORKLOAD_PROJECT_ID --repo "$REPOSITORY")"
-REPLACEMENT_PROJECT_ID="$(./ops/prompt.sh 'New replacement project ID: ')"
-BILLING_ACCOUNT_ID="$(./ops/prompt.sh 'Billing account ID: ')"
-ORGANIZATION_ID="$(./ops/prompt.sh 'Organization ID, or blank: ')"
-FOLDER_ID="$(./ops/prompt.sh 'Folder ID, or blank: ')"
-TARGET_RECEIPT="$(./ops/prompt.sh 'Exact successful receipt run-id-attempt: ')"
+REPLACEMENT_PROJECT_ID="agora-recovery-$(date -u +'%Y%m%d-%H%M')"
+BILLING_ACCOUNT_ID="$(gcloud billing projects describe "$SOURCE_PROJECT_ID" \
+  --format='value(billingAccountName.basename())')"
+TARGET_RECEIPT=''
+
+PROJECT_PARENT="$(gcloud projects describe "$SOURCE_PROJECT_ID" --format='value(parent)')"
+ORGANIZATION_ID=''
+FOLDER_ID=''
+case "$PROJECT_PARENT" in
+  organizations/*) ORGANIZATION_ID="${PROJECT_PARENT#organizations/}" ;;
+  folders/*) FOLDER_ID="${PROJECT_PARENT#folders/}" ;;
+  '') ;;
+  *) printf 'Unexpected project parent: %s\n' "$PROJECT_PARENT" >&2; false ;;
+esac
 
 [[ "$MANAGEMENT_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
 [[ "$SOURCE_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
@@ -128,8 +139,8 @@ gcloud storage ls "gs://${BACKUP_BUCKET}/v1/authentication/attempts/*/completed.
 Choose the exact attempt-directory basename from each list:
 
 ```bash
-JSON_KEYS_ATTEMPT="$(./ops/prompt.sh 'JSON Keys backup attempt: ')"
-AUTHENTICATION_ATTEMPT="$(./ops/prompt.sh 'Authentication backup attempt: ')"
+JSON_KEYS_ATTEMPT=''
+AUTHENTICATION_ATTEMPT=''
 [[ "$JSON_KEYS_ATTEMPT" =~ ^[0-9]+-[a-z0-9-]{1,63}-[0-9]+$ ]]
 [[ "$AUTHENTICATION_ATTEMPT" =~ ^[0-9]+-[a-z0-9-]{1,63}-[0-9]+$ ]]
 
@@ -148,7 +159,7 @@ manifests. Write a concise, bounded acknowledgement such as `JSON Keys writes af
 Authentication writes after <UTC> may be absent`:
 
 ```bash
-LOST_WRITE_WINDOW="$(./ops/prompt.sh 'Acknowledged lost-write window (max 500 characters): ')"
+LOST_WRITE_WINDOW=''
 test -n "$LOST_WRITE_WINDOW"
 test "${#LOST_WRITE_WINDOW}" -le 500
 ```
@@ -212,7 +223,7 @@ gh run list --repo "$REPOSITORY" --workflow recovery.yaml --branch master \
 Select `recovery plan-workload <replacement>` with `headSha == MASTER_SHA`, then:
 
 ```bash
-PLAN_RUN_ID="$(./ops/prompt.sh 'Recovery plan run ID: ')"
+PLAN_RUN_ID='replace-with-recovery-plan-run-id'
 test "$(gh api "repos/${REPOSITORY}/actions/runs/${PLAN_RUN_ID}" --jq .head_sha)" = "$MASTER_SHA"
 gh run watch "$PLAN_RUN_ID" --repo "$REPOSITORY" --exit-status
 PLAN_ATTEMPT="$(gh api "repos/${REPOSITORY}/actions/runs/${PLAN_RUN_ID}" --jq .run_attempt)"
@@ -365,7 +376,7 @@ Record the exact successful run and attempt without printing its private receipt
 gh run list --repo "$REPOSITORY" --workflow recovery.yaml --branch master \
   --event workflow_dispatch --limit 5 \
   --json databaseId,headSha,displayTitle,status,conclusion,url
-RECOVERY_RUN_ID="$(./ops/prompt.sh 'Successful restore-data run ID: ')"
+RECOVERY_RUN_ID='replace-with-restore-run-id'
 [[ "$RECOVERY_RUN_ID" =~ ^[1-9][0-9]*$ ]]
 test "$(gh api "repos/${REPOSITORY}/actions/runs/${RECOVERY_RUN_ID}" --jq .head_sha)" = "$MASTER_SHA"
 gh run watch "$RECOVERY_RUN_ID" --repo "$REPOSITORY" --exit-status
@@ -409,7 +420,7 @@ Inside that private COS session, paste the non-secret `RECOVERY_AUTH_URL`, reque
 from the VM metadata server, and require all three dependency probes to be up:
 
 ```bash
-RECOVERY_AUTH_URL="$(./ops/prompt.sh 'Internal Authentication service URL: ')"
+RECOVERY_AUTH_URL=''
 [[ "$RECOVERY_AUTH_URL" =~ ^https://[a-z0-9.-]+\.run\.app$ ]]
 IDENTITY_TOKEN="$(curl --fail --silent \
   -H 'Metadata-Flavor: Google' \
@@ -617,9 +628,9 @@ content:
 
 ```bash
 REPOSITORY='a-novel/infra'
-REPLACEMENT_PROJECT_ID="$(./ops/prompt.sh 'Deleted replacement project ID: ')"
-RECOVERY_CREATED_AT="$(./ops/prompt.sh 'Recovery project creation time recorded before deletion (UTC): ')"
-CLEANUP_RUN_ID="$(./ops/prompt.sh 'Successful cleanup workflow run ID: ')"
+REPLACEMENT_PROJECT_ID=''
+RECOVERY_CREATED_AT=''
+CLEANUP_RUN_ID=''
 [[ "$REPLACEMENT_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
 [[ "$CLEANUP_RUN_ID" =~ ^[1-9][0-9]*$ ]]
 

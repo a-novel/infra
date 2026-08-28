@@ -63,7 +63,7 @@ STATE_BUCKET="$(gh variable get GCP_STATE_BUCKET --repo a-novel/infra)"
 test -n "${MANAGEMENT_PROJECT_ID}"
 test -n "${STATE_BUCKET}"
 
-STATE_ROOT="$(./ops/prompt.sh 'State root (bootstrap, foundation, or release): ')"
+STATE_ROOT=''
 case "${STATE_ROOT}" in
   bootstrap|foundation|release) ;;
   *) printf 'Refusing unknown state root.\n' >&2; false ;;
@@ -111,7 +111,7 @@ Copy the candidate generation number exactly, then validate that both candidate 
 are numeric and different:
 
 ```bash
-CANDIDATE_GENERATION="$(./ops/prompt.sh 'Candidate generation to inspect: ')"
+CANDIDATE_GENERATION=''
 [[ "${CANDIDATE_GENERATION}" =~ ^[0-9]+$ ]]
 
 LIVE_GENERATION="$(gcloud storage objects describe "${STATE_OBJECT}" --format='value(generation)')"
@@ -195,7 +195,8 @@ The final equality check is the human-readable precondition; Cloud Storage enfor
 the copy itself:
 
 ```bash
-RESTORE_CONFIRMATION="$(./ops/prompt.sh "Type ${STATE_ROOT}/${CANDIDATE_GENERATION} to restore: ")"
+printf 'Type %s/%s to restore: ' "$STATE_ROOT" "$CANDIDATE_GENERATION"
+IFS= read -r RESTORE_CONFIRMATION
 test "${RESTORE_CONFIRMATION}" = "${STATE_ROOT}/${CANDIDATE_GENERATION}"
 
 gcloud storage cp \
@@ -221,7 +222,7 @@ the candidate in a separate worktree, initialize only the selected backend, and 
 Do not apply it during this runbook.
 
 ```bash
-CANDIDATE_GIT_SHA="$(./ops/prompt.sh 'Candidate state Git commit SHA: ')"
+CANDIDATE_GIT_SHA=''
 git cat-file -e "${CANDIDATE_GIT_SHA}^{commit}"
 
 RECOVERY_CHECKOUT="${RECOVERY_TEMP_DIR}/checkout"
@@ -297,7 +298,8 @@ assert_state_unlocked
 CURRENT_GENERATION="$(gcloud storage objects describe "${STATE_OBJECT}" --format='value(generation)')"
 test "${CURRENT_GENERATION}" = "${RESTORED_GENERATION}"
 
-ROLLBACK_CONFIRMATION="$(./ops/prompt.sh "Type rollback/${LIVE_GENERATION} to restore the original live state: ")"
+printf 'Type rollback/%s to restore the original live state: ' "$LIVE_GENERATION"
+IFS= read -r ROLLBACK_CONFIRMATION
 test "${ROLLBACK_CONFIRMATION}" = "rollback/${LIVE_GENERATION}"
 
 gcloud storage cp \
