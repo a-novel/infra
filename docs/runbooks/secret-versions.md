@@ -17,6 +17,20 @@ afterward. GitHub recovery automation cannot read payloads. See
 [adding versions](https://cloud.google.com/secret-manager/docs/add-secret-version), and
 [delayed destruction](https://cloud.google.com/secret-manager/docs/delay-destruction-of-secret-versions).
 
+## Operator context
+
+Paste this block once before adding or rotating a version:
+
+```bash
+set -euo pipefail
+set +x
+umask 077
+
+REPOSITORY='a-novel/infra'
+MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID --repo "$REPOSITORY")"
+[[ "$MANAGEMENT_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
+```
+
 ## Preconditions
 
 - Complete the [management-plane bootstrap](./bootstrap-management-plane.md).
@@ -131,7 +145,6 @@ same numeric version; never update only one side.
 Add the replacement and select both numeric versions explicitly:
 
 ```bash
-MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID --repo a-novel/infra)"
 SECRET_ID=''
 ./ops/add-secret-version.sh "$SECRET_ID"
 gcloud secrets versions list "$SECRET_ID" \

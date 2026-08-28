@@ -20,6 +20,25 @@ Google product behavior is documented by [Cloud Run jobs](https://cloud.google.c
 and PostgreSQL's [`pg_dump`](https://www.postgresql.org/docs/18/app-pgdump.html) and
 [`pg_restore`](https://www.postgresql.org/docs/18/app-pgrestore.html) references.
 
+## Operator context
+
+Paste this block once before selecting or invoking a recovery job:
+
+```bash
+set -euo pipefail
+set +x
+umask 077
+
+REPOSITORY='a-novel/infra'
+REGION='europe-west1'
+
+MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID --repo "$REPOSITORY")"
+WORKLOAD_PROJECT_ID="$(gh variable get GCP_WORKLOAD_PROJECT_ID --repo "$REPOSITORY")"
+MANAGEMENT_PROJECT_NUMBER="$(gcloud projects describe "$MANAGEMENT_PROJECT_ID" \
+  --format='value(projectNumber)')"
+BACKUP_BUCKET="${MANAGEMENT_PROJECT_ID}-${MANAGEMENT_PROJECT_NUMBER}-backups"
+```
+
 ## Recovery objectives
 
 | Objective           | Contract                                                                                                                                            |
@@ -153,21 +172,11 @@ Run the following only from a private, non-recorded operator shell. These comman
 they do not print secret values or backup payloads.
 
 ```bash
-set -euo pipefail
-set +x
-
-MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID --repo a-novel/infra)"
-WORKLOAD_PROJECT_ID="$(gh variable get GCP_WORKLOAD_PROJECT_ID --repo a-novel/infra)"
-REGION='europe-west1'
-
 [[ "${MANAGEMENT_PROJECT_ID}" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
 [[ "${WORKLOAD_PROJECT_ID}" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
 [[ "${REGION}" =~ ^[a-z]+-[a-z]+[0-9]+$ ]]
 
-MANAGEMENT_PROJECT_NUMBER="$(gcloud projects describe "${MANAGEMENT_PROJECT_ID}" \
-  --format='value(projectNumber)')"
 [[ "${MANAGEMENT_PROJECT_NUMBER}" =~ ^[0-9]+$ ]]
-BACKUP_BUCKET="${MANAGEMENT_PROJECT_ID}-${MANAGEMENT_PROJECT_NUMBER}-backups"
 
 gcloud storage buckets describe "gs://${BACKUP_BUCKET}" \
   --format='yaml(name,location,storage_class,public_access_prevention,uniform_bucket_level_access,soft_delete_policy,retention_policy,lifecycle_config)'

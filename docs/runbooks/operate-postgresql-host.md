@@ -10,6 +10,29 @@ activation, private isolation, capacity, controlled replacement, disk growth, an
 Every Google Cloud command in this document is for a named human operator. Agents never run
 `gcloud` or `tofu apply`.
 
+## Operator context
+
+Paste this block once before selecting the host:
+
+```bash
+set -euo pipefail
+set +x
+umask 077
+
+REPOSITORY='a-novel/infra'
+DATABASE_ZONE='europe-west1-b'
+DATABASE_GROUP='agora-database'
+DATABASE_DISK='agora-data'
+
+WORKLOAD_PROJECT_ID="$(gh variable get GCP_WORKLOAD_PROJECT_ID --repo "$REPOSITORY")"
+DATABASE_REGION="${DATABASE_ZONE%-*}"
+DATABASE_SERVICE_ACCOUNT="agora-database-host@${WORKLOAD_PROJECT_ID}.iam.gserviceaccount.com"
+DATABASE_OPERATOR_PRINCIPAL="$(gcloud projects get-iam-policy "$WORKLOAD_PROJECT_ID" \
+  --flatten='bindings[].members' \
+  --filter='bindings.role=roles/compute.osAdminLogin' \
+  --format='value(bindings.members)')"
+```
+
 ## Apply boundary
 
 Merging, validating, or planning this repository creates nothing, and there is no supported local
@@ -109,19 +132,6 @@ Use a fresh Bash or Zsh session. These values are identifiers, but project and n
 still stay out of public issues and logs.
 
 ```bash
-set -euo pipefail
-set +x
-
-WORKLOAD_PROJECT_ID="$(gh variable get GCP_WORKLOAD_PROJECT_ID --repo a-novel/infra)"
-DATABASE_ZONE='europe-west1-b'
-DATABASE_OPERATOR_PRINCIPAL="$(gcloud projects get-iam-policy "$WORKLOAD_PROJECT_ID" \
-  --flatten='bindings[].members' \
-  --filter='bindings.role=roles/compute.osAdminLogin' \
-  --format='value(bindings.members)')"
-DATABASE_REGION="${DATABASE_ZONE%-*}"
-DATABASE_GROUP='agora-database'
-DATABASE_DISK='agora-data'
-
 [[ "$WORKLOAD_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
 [[ "$DATABASE_ZONE" =~ ^[a-z]+-[a-z]+[0-9]+-[a-z]$ ]]
 test "$(printf '%s\n' "$DATABASE_OPERATOR_PRINCIPAL" | wc -l)" -eq 1
@@ -260,8 +270,6 @@ absence condition can open an incident.
 Verify the exact operator grants without listing unrelated members:
 
 ```bash
-DATABASE_SERVICE_ACCOUNT="agora-database-host@${WORKLOAD_PROJECT_ID}.iam.gserviceaccount.com"
-
 gcloud projects get-iam-policy "$WORKLOAD_PROJECT_ID" \
   --flatten='bindings[].members' \
   --filter="bindings.members=${DATABASE_OPERATOR_PRINCIPAL} AND bindings.role:(roles/compute.osAdminLogin roles/compute.viewer roles/iap.tunnelResourceAccessor)" \

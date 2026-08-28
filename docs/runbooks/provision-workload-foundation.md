@@ -9,6 +9,51 @@ inputs, project adoption, private routing, runtime identities, Artifact Registry
 the idle private PostgreSQL host, daily snapshots, recovery IAM/alerting, and removal of temporary
 broad access.
 
+## Operator context
+
+Review `WORKLOAD_PROJECT_ID` and the four alert/operator assignments, then paste this block once
+before section 1.
+
+```bash
+set -euo pipefail
+set +x
+umask 077
+
+REPOSITORY='a-novel/infra'
+REGION='europe-west1'
+DATABASE_ZONE='europe-west1-b'
+SUBNET_CIDR='10.20.0.0/24'
+WORKLOAD_PROJECT_NAME='Agora production'
+
+MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID --repo "$REPOSITORY")"
+WORKLOAD_PROJECT_ID='agora-production-prod'
+BILLING_ACCOUNT_ID="$(gcloud billing projects describe "$MANAGEMENT_PROJECT_ID" \
+  --format='value(billingAccountName.basename())')"
+OPERATOR_EMAIL="$(gcloud config get-value account 2>/dev/null)"
+COST_ALERT_EMAIL="$OPERATOR_EMAIL"
+OPERATIONS_ALERT_EMAIL="$OPERATOR_EMAIL"
+DATABASE_OPERATOR_PRINCIPAL="user:${OPERATOR_EMAIL}"
+AUTH_INITIALIZER_PRINCIPAL="user:${OPERATOR_EMAIL}"
+OPERATOR_PRINCIPAL="user:${OPERATOR_EMAIL}"
+
+PROJECT_PARENT_TYPE="$(gcloud projects describe "$MANAGEMENT_PROJECT_ID" \
+  --format='value(parent.type)')"
+PROJECT_PARENT_ID="$(gcloud projects describe "$MANAGEMENT_PROJECT_ID" \
+  --format='value(parent.id)')"
+ORGANIZATION_ID=''
+FOLDER_ID=''
+case "$PROJECT_PARENT_TYPE" in
+  organization) ORGANIZATION_ID="$PROJECT_PARENT_ID" ;;
+  folder) FOLDER_ID="$PROJECT_PARENT_ID" ;;
+  '') ;;
+  *) printf 'Unexpected project parent type: %s\n' "$PROJECT_PARENT_TYPE" >&2; false ;;
+esac
+unset PROJECT_PARENT_TYPE PROJECT_PARENT_ID
+
+FOUNDATION_SERVICE_ACCOUNT="infra-foundation@${MANAGEMENT_PROJECT_ID}.iam.gserviceaccount.com"
+PLAN_SERVICE_ACCOUNT="infra-plan@${MANAGEMENT_PROJECT_ID}.iam.gserviceaccount.com"
+```
+
 ## Authorization gate
 
 Merging this repository creates nothing. Do not execute a mutating command or dispatch `apply` until
@@ -89,45 +134,10 @@ callable after this procedure.
 
 ## 1. Collect and validate non-payload inputs
 
-Start a fresh Bash or Zsh shell with tracing disabled. Google and GitHub supply every stable value;
-the only proposed value below is the new workload project ID. The active Google account is the
-default alert recipient, database operator, and Authentication initializer. Replace those four
-assignments before continuing when another user or group owns a role.
+The operator-context block supplies every stable value. Validate it before reading or mutating a
+Google Cloud resource.
 
 ```bash
-set -euo pipefail
-set +x
-umask 077
-
-REPOSITORY='a-novel/infra'
-REGION='europe-west1'
-DATABASE_ZONE='europe-west1-b'
-SUBNET_CIDR='10.20.0.0/24'
-WORKLOAD_PROJECT_NAME='Agora production'
-
-MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID --repo "$REPOSITORY")"
-WORKLOAD_PROJECT_ID='agora-production-prod'
-BILLING_ACCOUNT_ID="$(gcloud billing projects describe "$MANAGEMENT_PROJECT_ID" \
-  --format='value(billingAccountName.basename())')"
-OPERATOR_EMAIL="$(gcloud config get-value account 2>/dev/null)"
-COST_ALERT_EMAIL="$OPERATOR_EMAIL"
-OPERATIONS_ALERT_EMAIL="$OPERATOR_EMAIL"
-DATABASE_OPERATOR_PRINCIPAL="user:${OPERATOR_EMAIL}"
-AUTH_INITIALIZER_PRINCIPAL="user:${OPERATOR_EMAIL}"
-
-PROJECT_PARENT="$(gcloud projects describe "$MANAGEMENT_PROJECT_ID" --format='value(parent)')"
-ORGANIZATION_ID=''
-FOLDER_ID=''
-case "$PROJECT_PARENT" in
-  organizations/*) ORGANIZATION_ID="${PROJECT_PARENT#organizations/}" ;;
-  folders/*) FOLDER_ID="${PROJECT_PARENT#folders/}" ;;
-  '') ;;
-  *) printf 'Unexpected project parent: %s\n' "$PROJECT_PARENT" >&2; false ;;
-esac
-
-FOUNDATION_SERVICE_ACCOUNT="infra-foundation@${MANAGEMENT_PROJECT_ID}.iam.gserviceaccount.com"
-PLAN_SERVICE_ACCOUNT="infra-plan@${MANAGEMENT_PROJECT_ID}.iam.gserviceaccount.com"
-
 [[ "$MANAGEMENT_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
 [[ "$WORKLOAD_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
 [[ "$MANAGEMENT_PROJECT_ID" != "$WORKLOAD_PROJECT_ID" ]]
@@ -137,6 +147,7 @@ PLAN_SERVICE_ACCOUNT="infra-plan@${MANAGEMENT_PROJECT_ID}.iam.gserviceaccount.co
 [[ "$DATABASE_ZONE" == "${REGION}-"* ]]
 [[ "$DATABASE_OPERATOR_PRINCIPAL" =~ ^(user|group):[^[:space:]@]+@[^[:space:]@]+$ ]]
 [[ "$AUTH_INITIALIZER_PRINCIPAL" =~ ^(user|group):[^[:space:]@]+@[^[:space:]@]+$ ]]
+[[ "$OPERATOR_PRINCIPAL" =~ ^user:[^[:space:]@]+@[^[:space:]@]+$ ]]
 [[ -z "$ORGANIZATION_ID" || "$ORGANIZATION_ID" =~ ^[0-9]+$ ]]
 [[ -z "$FOLDER_ID" || "$FOLDER_ID" =~ ^[0-9]+$ ]]
 [[ -z "$ORGANIZATION_ID" || -z "$FOLDER_ID" ]]
@@ -884,43 +895,89 @@ Run only after the protected post-apply plan reports zero change, sections 6–7
 database-host runbook confirms the idle host. Removing
 authority earlier can strand a partially configured project.
 
-For an organization-backed workload project, ask an organization-policy administrator—not CI—to
-enforce the default-service-account grant and service-account key constraints before removing
-temporary Owner. These controls are manual because giving workload automation organization-policy
-authority would create a larger risk than the settings protect against.
+Read the organization ancestor and effective policies before requesting any new authority:
 
 ```bash
 gcloud projects get-ancestors "$WORKLOAD_PROJECT_ID" \
   --format='table(type,id)'
 
-for constraint in \
-  iam.automaticIamGrantsForDefaultServiceAccounts \
-  iam.disableServiceAccountKeyCreation \
-  iam.disableServiceAccountKeyUpload; do
-  gcloud resource-manager org-policies enable-enforce \
-    "$constraint" \
-    --project="$WORKLOAD_PROJECT_ID"
-done
+POLICY_ORGANIZATION_ID="$(gcloud projects get-ancestors "$WORKLOAD_PROJECT_ID" \
+  --filter='type=organization' --format='value(id)')"
+MISSING_ORG_POLICY_COUNT=0
 
 for constraint in \
   iam.automaticIamGrantsForDefaultServiceAccounts \
   iam.disableServiceAccountKeyCreation \
   iam.disableServiceAccountKeyUpload; do
-  gcloud resource-manager org-policies describe \
+  if gcloud resource-manager org-policies describe \
     "constraints/${constraint}" \
     --project="$WORKLOAD_PROJECT_ID" \
-    --effective \
-    --format=yaml
+    --effective --format=json \
+    | jq -e '.booleanPolicy.enforced == true' >/dev/null; then
+    printf 'ENFORCED %s\n' "$constraint"
+  else
+    printf 'MISSING  %s\n' "$constraint"
+    MISSING_ORG_POLICY_COUNT=$((MISSING_ORG_POLICY_COUNT + 1))
+  fi
 done
+
+printf 'Missing organization policies: %s\n' "$MISSING_ORG_POLICY_COUNT"
 ```
 
-Expected safe result: the ancestor list includes the intended organization and the effective policy
-enforces all three boolean constraints. Policy propagation can take several minutes. The
-code-managed `DEPRIVILEGE` action removes any primitive role granted before the first constraint took
-effect; the policy prevents a future default account from receiving it automatically. If this is a
-standalone project, do not create an organization solely for these controls. Record the standalone
-shape and rely on that deprivileging action, the all-account zero-key verification in section 6,
-short-lived Workload Identity Federation for automation, and periodic zero-key verification.
+An empty `POLICY_ORGANIZATION_ID` selects the standalone controls below. For an
+organization-backed project with a nonzero missing count, an organization IAM administrator
+temporarily grants the human operator Organization Policy Administrator:
+
+```bash
+test -n "$POLICY_ORGANIZATION_ID"
+test "$MISSING_ORG_POLICY_COUNT" -gt 0
+gcloud organizations add-iam-policy-binding "$POLICY_ORGANIZATION_ID" \
+  --member="$OPERATOR_PRINCIPAL" \
+  --role='roles/orgpolicy.policyAdmin' \
+  --condition=None
+```
+
+After the grant propagates, the operator applies only missing policies. The explicit exit capture
+ensures one failed update does not skip removal of the temporary organization-wide role:
+
+```bash
+POLICY_UPDATE_EXIT=0
+
+for constraint in \
+  iam.automaticIamGrantsForDefaultServiceAccounts \
+  iam.disableServiceAccountKeyCreation \
+  iam.disableServiceAccountKeyUpload; do
+  if ! gcloud resource-manager org-policies describe \
+    "constraints/${constraint}" \
+    --project="$WORKLOAD_PROJECT_ID" \
+    --effective --format=json \
+    | jq -e '.booleanPolicy.enforced == true' >/dev/null; then
+    gcloud resource-manager org-policies enable-enforce \
+      "$constraint" \
+      --project="$WORKLOAD_PROJECT_ID" \
+      || POLICY_UPDATE_EXIT=$?
+  fi
+done
+
+printf 'Policy update exit: %s\n' "$POLICY_UPDATE_EXIT"
+```
+
+The organization IAM administrator removes that grant whether the update succeeded or failed:
+
+```bash
+gcloud organizations remove-iam-policy-binding "$POLICY_ORGANIZATION_ID" \
+  --member="$OPERATOR_PRINCIPAL" \
+  --role='roles/orgpolicy.policyAdmin' \
+  --condition=None
+```
+
+Rerun the effective-policy loop above. All three lines must read `ENFORCED` and the missing count
+must be zero; if the update block ran, `POLICY_UPDATE_EXIT` must also be zero. Propagation can take
+several minutes. The code-managed `DEPRIVILEGE` action removes any primitive role granted before
+the first constraint took effect. For a standalone project, record that shape and rely on
+deprivileging, the all-account zero-key verification in section 6, short-lived Workload Identity
+Federation, and periodic zero-key verification. Do not create an organization only to gain these
+policies.
 
 Remove only the automatically granted foundation Owner binding:
 

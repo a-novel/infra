@@ -18,6 +18,20 @@ synthetic signal; see [scheduled workflows](https://docs.github.com/en/actions/r
 [workflow notifications](https://docs.github.com/en/actions/concepts/workflows-and-actions/notifications-for-workflow-runs),
 and [Actions notification settings](https://docs.github.com/en/subscriptions-and-notifications/how-tos/managing-github-actions-notifications).
 
+## Operator context
+
+Paste this block once before inspecting an alert:
+
+```bash
+set -euo pipefail
+set +x
+umask 077
+
+REPOSITORY='a-novel/infra'
+REGION='europe-west1'
+WORKLOAD_PROJECT_ID="$(gh variable get GCP_WORKLOAD_PROJECT_ID --repo "$REPOSITORY")"
+```
+
 ## Ownership and response rules
 
 The monitored `operations_alert_email` is the primary owner for Google service, job, database, and
@@ -45,17 +59,9 @@ Every alert is a symptom, not permission to mutate production. The responder mus
 5. close the incident only after the signal has recovered, the latest private receipt is known, and
    the cause and follow-up are recorded.
 
-Prepare a private terminal without selecting a default project globally:
+Validate the selected project and inspect the alert inventory without changing the default project:
 
 ```bash
-set -euo pipefail
-set +x
-umask 077
-
-REPOSITORY='a-novel/infra'
-REGION='europe-west1'
-DATABASE_ZONE='europe-west1-b'
-WORKLOAD_PROJECT_ID="$(gh variable get GCP_WORKLOAD_PROJECT_ID --repo "$REPOSITORY")"
 [[ "$WORKLOAD_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
 
 gcloud monitoring policies list --project="$WORKLOAD_PROJECT_ID" \

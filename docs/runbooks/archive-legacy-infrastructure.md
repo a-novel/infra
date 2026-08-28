@@ -13,6 +13,21 @@ open issues and pull requests and updating the README and description first. Arc
 governance control, not a cloud shutdown or credential-revocation mechanism, so this procedure
 removes those capabilities before it archives the source.
 
+## Operator context
+
+Paste this block once before section 1:
+
+```bash
+set -euo pipefail
+set +x
+umask 077
+
+ACCEPTANCE_REPOSITORY='a-novel/.github'
+ACCEPTANCE_ISSUE='277'
+LEGACY_REPOSITORY='a-novel/agora-infra'
+REPLACEMENT_REPOSITORY='a-novel/infra'
+```
+
 ## Safety contract
 
 - Archive exactly `a-novel/agora-infra`; never infer a renamed repository and never substitute
@@ -37,13 +52,6 @@ not evidence that the intended legacy system was safely retired.
 Run from any clean checkout with an authenticated GitHub CLI session:
 
 ```bash
-set -euo pipefail
-
-ACCEPTANCE_REPOSITORY='a-novel/.github'
-ACCEPTANCE_ISSUE='277'
-LEGACY_REPOSITORY='a-novel/agora-infra'
-REPLACEMENT_REPOSITORY='a-novel/infra'
-
 gh issue view "${ACCEPTANCE_ISSUE}" \
   --repo "${ACCEPTANCE_REPOSITORY}" \
   --json number,state,title,url \
