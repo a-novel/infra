@@ -386,7 +386,9 @@ mkdir -p "${PREFLIGHT_MOCK_BIN}"
 # shellcheck disable=SC2016
 printf '%s\n' \
     '#!/bin/bash' \
+    'if [ -n "${PREFLIGHT_GCLOUD_LOG:-}" ]; then printf "%s\n" "$1 $2 $3" >>"${PREFLIGHT_GCLOUD_LOG}"; fi' \
     'if [ "$1 $2 $3" = "secrets versions describe" ]; then' \
+    '    if [ "${PREFLIGHT_SECRET_MISSING:-false}" = true ]; then exit 1; fi' \
     '    printf "ENABLED\n"' \
     'elif [ "$1 $2 $3" = "quotas preferences list" ]; then' \
     '    jq --argjson pending "${PREFLIGHT_PENDING:-false}" '\''
@@ -407,6 +409,7 @@ chmod 0700 "${PREFLIGHT_MOCK_BIN}/gcloud"
 jq -n '
   {
     schemaVersion: 1,
+    action: "rollback",
     cloud: {
       managementProjectId: "agora-management-test",
       workloadProjectId: "agora-production-test",
@@ -424,6 +427,53 @@ jq -n '
 PATH="${PREFLIGHT_MOCK_BIN}:${PATH}" \
     "${REPOSITORY_ROOT}/ops/preflight-release.sh" \
     "${TEMP_DIR}/preflight.json" >"${TEMP_DIR}/preflight.out"
+
+# A deploy always has consumers, while the compensated pre-first-release
+# rollback is the sole valid empty inventory.
+jq '.action = "deploy"' "${TEMP_DIR}/preflight.json" \
+    >"${TEMP_DIR}/preflight-empty-deploy.json"
+PREFLIGHT_GCLOUD_LOG="${TEMP_DIR}/preflight-gcloud.log"
+: >"${PREFLIGHT_GCLOUD_LOG}"
+set +e
+PATH="${PREFLIGHT_MOCK_BIN}:${PATH}" \
+    PREFLIGHT_GCLOUD_LOG="${PREFLIGHT_GCLOUD_LOG}" \
+    "${REPOSITORY_ROOT}/ops/preflight-release.sh" \
+    "${TEMP_DIR}/preflight-empty-deploy.json" >/dev/null 2>&1
+EMPTY_DEPLOY_PREFLIGHT_CODE=$?
+set -e
+assert_equal "${EMPTY_DEPLOY_PREFLIGHT_CODE}" 65
+assert_equal "$(wc -c <"${PREFLIGHT_GCLOUD_LOG}")" 0
+
+jq '
+  .action = "deploy" |
+  .cloud.secretVersions = [range(1; 10) | ["production-test-\(.)", .]]
+' "${TEMP_DIR}/preflight.json" >"${TEMP_DIR}/preflight-deploy.json"
+
+: >"${PREFLIGHT_GCLOUD_LOG}"
+PATH="${PREFLIGHT_MOCK_BIN}:${PATH}" \
+    PREFLIGHT_GCLOUD_LOG="${PREFLIGHT_GCLOUD_LOG}" \
+    "${REPOSITORY_ROOT}/ops/preflight-release.sh" \
+    "${TEMP_DIR}/preflight-deploy.json" >/dev/null
+assert_equal "$(grep -Fxc 'secrets versions describe' "${PREFLIGHT_GCLOUD_LOG}")" 9
+assert_equal "$(grep -Fxc 'quotas preferences list' "${PREFLIGHT_GCLOUD_LOG}")" 1
+
+# A missing or inaccessible version stops the release before quota inspection
+# and before the orchestrator can reach image promotion or workload mutation.
+: >"${PREFLIGHT_GCLOUD_LOG}"
+set +e
+PATH="${PREFLIGHT_MOCK_BIN}:${PATH}" \
+    PREFLIGHT_GCLOUD_LOG="${PREFLIGHT_GCLOUD_LOG}" \
+    PREFLIGHT_SECRET_MISSING=true \
+    "${REPOSITORY_ROOT}/ops/preflight-release.sh" \
+    "${TEMP_DIR}/preflight-deploy.json" >/dev/null 2>&1
+MISSING_SECRET_PREFLIGHT_CODE=$?
+set -e
+assert_equal "${MISSING_SECRET_PREFLIGHT_CODE}" 70
+assert_equal "$(grep -Fxc 'secrets versions describe' "${PREFLIGHT_GCLOUD_LOG}")" 1
+if grep -Fqx 'quotas preferences list' "${PREFLIGHT_GCLOUD_LOG}"; then
+    printf 'A missing secret version must stop preflight before quota inspection.\n' >&2
+    exit 1
+fi
 
 set +e
 PATH="${PREFLIGHT_MOCK_BIN}:${PATH}" PREFLIGHT_PENDING=true \

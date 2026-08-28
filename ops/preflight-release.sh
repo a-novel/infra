@@ -25,10 +25,16 @@ done
 
 if ! jq --exit-status '
     .schemaVersion == 1 and
+    (.action == "deploy" or .action == "rollback") and
     (.cloud.managementProjectId | test("^[a-z][a-z0-9-]{4,28}[a-z0-9]$")) and
     (.cloud.workloadProjectId | test("^[a-z][a-z0-9-]{4,28}[a-z0-9]$")) and
     (.cloud.region | test("^[a-z]+-[a-z]+[0-9]+$")) and
-    ((.cloud.secretVersions | length) == 0 or (.cloud.secretVersions | length) == 9) and
+    # Only rollback to the pre-first-release state has no secret consumers.
+    (
+      (.action == "deploy" and (.cloud.secretVersions | length) == 9) or
+      (.action == "rollback" and
+        ((.cloud.secretVersions | length) == 0 or (.cloud.secretVersions | length) == 9))
+    ) and
     all(.cloud.secretVersions[];
       (.[0] | test("^production-[a-z0-9-]+$")) and
       (.[1] | type == "number" and . >= 1 and floor == .)
