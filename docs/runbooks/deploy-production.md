@@ -127,8 +127,8 @@ does not authorize deletion.
 ## 2. Collect foundation-owned coordinates
 
 ```bash
-read -r -p 'Management project ID: ' MANAGEMENT_PROJECT_ID
-read -r -p 'Production workload project ID: ' WORKLOAD_PROJECT_ID
+MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID --repo "$REPOSITORY")"
+WORKLOAD_PROJECT_ID="$(gh variable get GCP_WORKLOAD_PROJECT_ID --repo "$REPOSITORY")"
 [[ "$MANAGEMENT_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
 [[ "$WORKLOAD_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
 [[ "$MANAGEMENT_PROJECT_ID" != "$WORKLOAD_PROJECT_ID" ]]
@@ -186,40 +186,46 @@ release configuration.
 
 ## 3. Select and verify exact secret versions
 
-Enter only numeric version IDs; never retrieve payloads:
+Use the sole enabled version automatically. During a rotation, the command lists enabled metadata
+and asks which numeric version to deploy. It never retrieves payloads.
 
 ```bash
-read -r -p 'Authentication PostgreSQL owner password version: ' AUTH_POSTGRES_PASSWORD_VERSION
-read -r -p 'Authentication PostgreSQL backup password version: ' AUTH_POSTGRES_BACKUP_PASSWORD_VERSION
-read -r -p 'Authentication PostgreSQL DSN version: ' AUTH_POSTGRES_DSN_VERSION
-read -r -p 'Authentication SMTP password version: ' AUTH_SMTP_PASSWORD_VERSION
-read -r -p 'Authentication super-admin password version: ' AUTH_SUPER_ADMIN_PASSWORD_VERSION
-read -r -p 'JSON Keys PostgreSQL owner password version: ' JSON_POSTGRES_PASSWORD_VERSION
-read -r -p 'JSON Keys PostgreSQL backup password version: ' JSON_POSTGRES_BACKUP_PASSWORD_VERSION
-read -r -p 'JSON Keys PostgreSQL DSN version: ' JSON_POSTGRES_DSN_VERSION
-read -r -p 'JSON Keys application master-key version: ' JSON_APP_MASTER_KEY_VERSION
+select_secret_version() {
+  local secret_id="$1"
+  local enabled_versions version_count selected_version
 
-for version in "$AUTH_POSTGRES_PASSWORD_VERSION" "$AUTH_POSTGRES_BACKUP_PASSWORD_VERSION" \
-  "$AUTH_POSTGRES_DSN_VERSION" "$AUTH_SMTP_PASSWORD_VERSION" \
-  "$AUTH_SUPER_ADMIN_PASSWORD_VERSION" "$JSON_POSTGRES_PASSWORD_VERSION" \
-  "$JSON_POSTGRES_BACKUP_PASSWORD_VERSION" "$JSON_POSTGRES_DSN_VERSION" \
-  "$JSON_APP_MASTER_KEY_VERSION"; do
-  [[ "$version" =~ ^[1-9][0-9]*$ ]]
-done
+  enabled_versions="$(gcloud secrets versions list "$secret_id" \
+    --project="$MANAGEMENT_PROJECT_ID" --filter='state=ENABLED' \
+    --format='value(name.basename())')"
+  version_count="$(printf '%s\n' "$enabled_versions" | grep -c . || true)"
 
-check_secret_version() {
-  test "$(gcloud secrets versions describe "$2" --secret="$1" \
+  case "$version_count" in
+    0) printf 'No enabled version exists for %s.\n' "$secret_id" >&2; return 1 ;;
+    1) selected_version="$enabled_versions" ;;
+    *)
+      gcloud secrets versions list "$secret_id" \
+        --project="$MANAGEMENT_PROJECT_ID" --filter='state=ENABLED' \
+        --format='table(name.basename(),state,createTime)' >&2
+      selected_version="$(./ops/prompt.sh "Enabled numeric version for ${secret_id}: ")"
+      ;;
+  esac
+
+  [[ "$selected_version" =~ ^[1-9][0-9]*$ ]]
+  test "$(gcloud secrets versions describe "$selected_version" --secret="$secret_id" \
     --project="$MANAGEMENT_PROJECT_ID" --format='value(state)')" = ENABLED
+  printf '%s' "$selected_version"
 }
-check_secret_version production-authentication-postgres-password "$AUTH_POSTGRES_PASSWORD_VERSION"
-check_secret_version production-authentication-postgres-backup-password "$AUTH_POSTGRES_BACKUP_PASSWORD_VERSION"
-check_secret_version production-authentication-postgres-dsn "$AUTH_POSTGRES_DSN_VERSION"
-check_secret_version production-authentication-smtp-sender-password "$AUTH_SMTP_PASSWORD_VERSION"
-check_secret_version production-authentication-super-admin-password "$AUTH_SUPER_ADMIN_PASSWORD_VERSION"
-check_secret_version production-json-keys-postgres-password "$JSON_POSTGRES_PASSWORD_VERSION"
-check_secret_version production-json-keys-postgres-backup-password "$JSON_POSTGRES_BACKUP_PASSWORD_VERSION"
-check_secret_version production-json-keys-postgres-dsn "$JSON_POSTGRES_DSN_VERSION"
-check_secret_version production-json-keys-app-master-key "$JSON_APP_MASTER_KEY_VERSION"
+
+AUTH_POSTGRES_PASSWORD_VERSION="$(select_secret_version production-authentication-postgres-password)"
+AUTH_POSTGRES_BACKUP_PASSWORD_VERSION="$(select_secret_version production-authentication-postgres-backup-password)"
+AUTH_POSTGRES_DSN_VERSION="$(select_secret_version production-authentication-postgres-dsn)"
+AUTH_SMTP_PASSWORD_VERSION="$(select_secret_version production-authentication-smtp-sender-password)"
+AUTH_SUPER_ADMIN_PASSWORD_VERSION="$(select_secret_version production-authentication-super-admin-password)"
+JSON_POSTGRES_PASSWORD_VERSION="$(select_secret_version production-json-keys-postgres-password)"
+JSON_POSTGRES_BACKUP_PASSWORD_VERSION="$(select_secret_version production-json-keys-postgres-backup-password)"
+JSON_POSTGRES_DSN_VERSION="$(select_secret_version production-json-keys-postgres-dsn)"
+JSON_APP_MASTER_KEY_VERSION="$(select_secret_version production-json-keys-app-master-key)"
+unset -f select_secret_version
 ```
 
 Keep an older version enabled while any retained receipt references it; rollback fails closed if a
@@ -233,11 +239,11 @@ host because Authentication uses it for the TLS server name. Initializer princip
 inputs, not a mutable release secret.
 
 ```bash
-read -r -p 'First super-admin email: ' AUTH_SUPER_ADMIN_EMAIL
-read -r -p 'SMTP DNS host (without port): ' SMTP_HOST
-read -r -p 'SMTP username: ' SMTP_USERNAME
-read -r -p 'SMTP sender email: ' SMTP_SENDER_EMAIL
-read -r -p 'SMTP sender display name: ' SMTP_SENDER_NAME
+AUTH_SUPER_ADMIN_EMAIL="$(./ops/prompt.sh 'First super-admin email: ')"
+SMTP_HOST="$(./ops/prompt.sh 'SMTP DNS host (without port): ')"
+SMTP_USERNAME="$(./ops/prompt.sh 'SMTP username: ')"
+SMTP_SENDER_EMAIL="$(./ops/prompt.sh 'SMTP sender email: ')"
+SMTP_SENDER_NAME="$(./ops/prompt.sh 'SMTP sender display name: ')"
 
 [[ "$AUTH_SUPER_ADMIN_EMAIL" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]
 [[ "$SMTP_HOST" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]]
@@ -330,7 +336,7 @@ created release resources. If another pull request lands afterward, that newer p
 label instead because the deletion gate is bound to the exact deployed commit:
 
 ```bash
-read -r -p 'First-activation pull request number: ' ACTIVATION_PR
+ACTIVATION_PR="$(./ops/prompt.sh 'First-activation pull request number: ')"
 [[ "$ACTIVATION_PR" =~ ^[1-9][0-9]*$ ]]
 gh pr edit "$ACTIVATION_PR" --repo "$REPOSITORY" --add-label allow-resource-deletion
 gh pr view "$ACTIVATION_PR" --repo "$REPOSITORY" \
@@ -349,7 +355,7 @@ merge that already happened.
 
 ```bash
 test "$(gh variable get PRODUCTION_RELEASES_ENABLED --repo "$REPOSITORY")" = false
-read -r -p 'Type enable-production-releases to authorize launch: ' RELEASE_CONFIRMATION
+RELEASE_CONFIRMATION="$(./ops/prompt.sh 'Type enable-production-releases to authorize launch: ')"
 test "$RELEASE_CONFIRMATION" = enable-production-releases
 gh variable set PRODUCTION_RELEASES_ENABLED --repo "$REPOSITORY" --body true
 test "$(gh variable get PRODUCTION_RELEASES_ENABLED --repo "$REPOSITORY")" = true
@@ -379,7 +385,7 @@ Select exactly one `production deploy` with `headSha == MASTER_SHA`, whether its
 automatic manifest push or the deliberate manual dispatch, then:
 
 ```bash
-read -r -p 'Release workflow run ID: ' RELEASE_RUN_ID
+RELEASE_RUN_ID="$(./ops/prompt.sh 'Release workflow run ID: ')"
 test "$(gh api "repos/${REPOSITORY}/actions/runs/${RELEASE_RUN_ID}" --jq .head_sha)" = "$MASTER_SHA"
 gh run watch "$RELEASE_RUN_ID" --repo "$REPOSITORY" --exit-status
 ```
@@ -405,7 +411,7 @@ Copy the exact initializer `sha256:` digest from the reviewed
 digest when it reaches the prompt:
 
 ```bash
-read -r -p 'Reviewed Authentication initializer sha256 digest: ' INIT_DIGEST
+INIT_DIGEST="$(./ops/prompt.sh 'Reviewed Authentication initializer sha256 digest: ')"
 [[ "$INIT_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
 INIT_IMAGE="${REGION}-docker.pkg.dev/${WORKLOAD_PROJECT_ID}/agora-production/service-authentication/jobs/init@${INIT_DIGEST}"
 INIT_SERVICE_ACCOUNT="agora-auth-initializer@${WORKLOAD_PROJECT_ID}.iam.gserviceaccount.com"
@@ -647,7 +653,7 @@ from a prior private success object or Actions run:
 
 ```bash
 gcloud storage ls "gs://${RECEIPT_BUCKET_NAME}/production/success/*.json"
-read -r -p 'Exact prior receipt run-id-attempt: ' TARGET_RECEIPT
+TARGET_RECEIPT="$(./ops/prompt.sh 'Exact prior receipt run-id-attempt: ')"
 [[ "$TARGET_RECEIPT" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]
 gh workflow run release.yaml --repo "$REPOSITORY" --ref master \
   -f action=rollback -f target_receipt="$TARGET_RECEIPT"

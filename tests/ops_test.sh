@@ -38,6 +38,75 @@ cleanup() {
 }
 trap cleanup INT EXIT
 
+OPERATOR_VALUE="$(
+    printf 'value with spaces\n' \
+        | "${REPOSITORY_ROOT}/ops/prompt.sh" 'Operator value: ' \
+            2>"${TEMP_DIR}/prompt.err"
+)"
+assert_equal "${OPERATOR_VALUE}" 'value with spaces'
+grep -Fq 'Operator value: ' "${TEMP_DIR}/prompt.err"
+
+SECRET_VALUE="$(
+    printf 'fixture-private-secret\n' \
+        | "${REPOSITORY_ROOT}/ops/prompt.sh" --secret 'Secret value: ' \
+            2>"${TEMP_DIR}/secret-prompt.err"
+)"
+assert_equal "${SECRET_VALUE}" 'fixture-private-secret'
+grep -Fq 'Secret value: ' "${TEMP_DIR}/secret-prompt.err"
+assert_absent "${TEMP_DIR}/secret-prompt.err" 'fixture-private-secret'
+unset SECRET_VALUE
+
+SECRET_MOCK_BIN="${TEMP_DIR}/secret-bin"
+mkdir -p "${SECRET_MOCK_BIN}"
+printf '%s\n' \
+    '#!/bin/bash' \
+    'set -euo pipefail' \
+    '[ "$*" = "variable get GCP_MANAGEMENT_PROJECT_ID --repo a-novel/infra" ]' \
+    'printf "%s" "agora-management-test"' \
+    >"${SECRET_MOCK_BIN}/gh"
+# shellcheck disable=SC2016
+printf '%s\n' \
+    '#!/bin/bash' \
+    'set -euo pipefail' \
+    'case "$*" in' \
+    '  "secrets describe production-authentication-postgres-password --project=agora-management-test --format=yaml(name,annotations,createTime,versionDestroyTtl)")' \
+    '    printf "%s\n" "name: production-authentication-postgres-password" ;;' \
+    '  "secrets versions add production-authentication-postgres-password --project=agora-management-test --data-file=- --quiet --format=value(name.basename())")' \
+    '    payload="$(cat)"' \
+    '    [ "$payload" = "$FAKE_EXPECTED_SECRET" ]' \
+    '    printf "%s" "7" ;;' \
+    '  "secrets versions describe 7 --secret=production-authentication-postgres-password --project=agora-management-test --format=value(state)")' \
+    '    printf "%s" "ENABLED" ;;' \
+    '  "secrets versions describe 7 --secret=production-authentication-postgres-password --project=agora-management-test --format=yaml(name,state,createTime,destroyTime,scheduledDestroyTime)")' \
+    '    printf "%s\n" "state: ENABLED" ;;' \
+    '  *) exit 64 ;;' \
+    'esac' \
+    >"${SECRET_MOCK_BIN}/gcloud"
+chmod 0700 "${SECRET_MOCK_BIN}/gh" "${SECRET_MOCK_BIN}/gcloud"
+
+POSTGRES_SECRET='Abcdefghijklmnopqrstuvwxyz_12345'
+CREATED_SECRET_VERSION="$(
+    printf '%s\n%s\n' "${POSTGRES_SECRET}" "${POSTGRES_SECRET}" \
+        | PATH="${SECRET_MOCK_BIN}:${PATH}" \
+            FAKE_EXPECTED_SECRET="${POSTGRES_SECRET}" \
+            "${REPOSITORY_ROOT}/ops/add-secret-version.sh" \
+                production-authentication-postgres-password \
+                2>"${TEMP_DIR}/add-secret.err"
+)"
+assert_equal "${CREATED_SECRET_VERSION}" \
+    'Created production-authentication-postgres-password version 7.'
+assert_absent "${TEMP_DIR}/add-secret.err" "${POSTGRES_SECRET}"
+
+set +e
+"${REPOSITORY_ROOT}/ops/add-secret-version.sh" \
+    production-authentication-postgres-password \
+    production-authentication-postgres-password \
+    >"${TEMP_DIR}/duplicate-secret.out" 2>"${TEMP_DIR}/duplicate-secret.err"
+DUPLICATE_SECRET_CODE=$?
+set -e
+assert_equal "${DUPLICATE_SECRET_CODE}" 65
+grep -Fq 'Refusing duplicate secret ID' "${TEMP_DIR}/duplicate-secret.err"
+
 # The scheduled synthetic check must resolve only the reviewed project/region,
 # keep response content private, and reject every partial-health state.
 HEALTH_MOCK_BIN="${TEMP_DIR}/health-bin"

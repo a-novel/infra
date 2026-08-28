@@ -117,8 +117,8 @@ After DNS propagation, use the dashboard's recheck and independently inspect pub
 private terminal. Substitute only non-secret domain and selector values:
 
 ```bash
-read -r -p 'Sending domain: ' SENDING_DOMAIN
-read -r -p 'First Plunk DKIM selector: ' DKIM_SELECTOR
+SENDING_DOMAIN="$(./ops/prompt.sh 'Sending domain: ')"
+DKIM_SELECTOR="$(./ops/prompt.sh 'First Plunk DKIM selector: ')"
 [[ "$SENDING_DOMAIN" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]]
 [[ "$DKIM_SELECTOR" =~ ^[a-z0-9_-]+$ ]]
 
@@ -147,10 +147,10 @@ procedure.
 Validate only the non-payload fields locally:
 
 ```bash
-read -r -p 'SMTP DNS host (without port): ' SMTP_HOST
-read -r -p 'SMTP username: ' SMTP_USERNAME
-read -r -p 'SMTP sender email: ' SMTP_SENDER_EMAIL
-read -r -p 'SMTP sender display name: ' SMTP_SENDER_NAME
+SMTP_HOST="$(./ops/prompt.sh 'SMTP DNS host (without port): ')"
+SMTP_USERNAME="$(./ops/prompt.sh 'SMTP username: ')"
+SMTP_SENDER_EMAIL="$(./ops/prompt.sh 'SMTP sender email: ')"
+SMTP_SENDER_NAME="$(./ops/prompt.sh 'SMTP sender display name: ')"
 
 [[ "$SMTP_HOST" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]]
 [[ "$SMTP_USERNAME" =~ ^[^[:space:]]{1,320}$ ]]

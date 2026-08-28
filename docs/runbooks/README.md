@@ -5,8 +5,8 @@ the named next step. Open one runbook at a time; no operator needs to remember t
 
 ## Rules to keep in mind
 
-1. Run operator commands in a private Bash session with tracing disabled. Never paste unfiltered
-   output into GitHub, chat, or a shared terminal.
+1. Run operator commands in a private Bash or Zsh session with tracing disabled. Never paste
+   unfiltered output into GitHub, chat, or a shared terminal.
 2. Agents never run `gcloud` or `tofu apply`. A named human runs those commands only where a runbook
    explicitly authorizes them.
 3. A branch or pull request can validate and preview only. Cloud changes run from reviewed `master`
@@ -149,14 +149,14 @@ is recorded privately; only the SMTP password payload is ready to enter Secret M
 test "$(gh variable get PRODUCTION_RELEASES_ENABLED --repo a-novel/infra)" = false
 ```
 
-Use [Add or rotate a secret version](./secret-versions.md) once for each allowed ID. Create the four
-database passwords first, construct both DSNs privately from the step-3 private address, then add the
-remaining values. Never use `latest`.
+Prepare the four database passwords and construct both DSNs privately from the step-3 private
+address. Then run the single initial-population command in
+[Add or rotate a secret version](./secret-versions.md). Never use `latest`.
 
 List metadata after all nine versions are added:
 
 ```bash
-read -r -p 'Management project ID: ' MANAGEMENT_PROJECT_ID
+MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID --repo a-novel/infra)"
 [[ "$MANAGEMENT_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
 
 for secret in \

@@ -91,7 +91,15 @@ gcloud billing accounts list \
   --filter='open=true' \
   --format='table(name.basename(),displayName,masterBillingAccount.basename())'
 
-read -r -p 'Billing account ID: ' BILLING_ACCOUNT_ID
+OPEN_BILLING_ACCOUNT_IDS="$(gcloud billing accounts list \
+  --filter='open=true' --format='value(name.basename())')"
+OPEN_BILLING_ACCOUNT_COUNT="$(printf '%s\n' "$OPEN_BILLING_ACCOUNT_IDS" | grep -c . || true)"
+case "$OPEN_BILLING_ACCOUNT_COUNT" in
+  1) BILLING_ACCOUNT_ID="$OPEN_BILLING_ACCOUNT_IDS" ;;
+  0) printf 'Stop: no open billing account is available.\n' >&2; false ;;
+  *) BILLING_ACCOUNT_ID="$(./ops/prompt.sh 'Billing account ID: ')" ;;
+esac
+unset OPEN_BILLING_ACCOUNT_IDS OPEN_BILLING_ACCOUNT_COUNT
 test -n "${BILLING_ACCOUNT_ID}"
 gcloud billing accounts describe "${BILLING_ACCOUNT_ID}" \
   --format='yaml(name,displayName,open)'
@@ -105,7 +113,8 @@ short organization-specific suffix only if Google reports that it is unavailable
 cannot be changed later.
 
 ```bash
-read -r -p 'Permanent management project ID: ' MANAGEMENT_PROJECT_ID
+MANAGEMENT_PROJECT_ID="$(./ops/prompt.sh 'Permanent management project ID [agora-management-prod]: ')"
+MANAGEMENT_PROJECT_ID="${MANAGEMENT_PROJECT_ID:-agora-management-prod}"
 [[ "${MANAGEMENT_PROJECT_ID}" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
 
 if gcloud projects describe "${MANAGEMENT_PROJECT_ID}" >/dev/null 2>&1; then
@@ -151,7 +160,7 @@ gcloud resource-manager folders list \
 For an existing folder:
 
 ```bash
-read -r -p 'Existing folder numeric ID: ' MANAGEMENT_FOLDER_ID
+MANAGEMENT_FOLDER_ID="$(./ops/prompt.sh 'Existing folder numeric ID: ')"
 [[ "${MANAGEMENT_FOLDER_ID}" =~ ^[0-9]+$ ]]
 gcloud projects create "${MANAGEMENT_PROJECT_ID}" \
   --name='Agora management' \
@@ -161,7 +170,7 @@ gcloud projects create "${MANAGEMENT_PROJECT_ID}" \
 For an organization with no suitable folder:
 
 ```bash
-read -r -p 'Existing organization numeric ID: ' MANAGEMENT_ORGANIZATION_ID
+MANAGEMENT_ORGANIZATION_ID="$(./ops/prompt.sh 'Existing organization numeric ID: ')"
 [[ "${MANAGEMENT_ORGANIZATION_ID}" =~ ^[0-9]+$ ]]
 gcloud projects create "${MANAGEMENT_PROJECT_ID}" \
   --name='Agora management' \
@@ -255,7 +264,7 @@ environments: routine release is restricted to protected branches; foundation an
 require a different human reviewer and prevent self-review.
 
 ```bash
-read -r -p 'Second maintainer GitHub login: ' ENVIRONMENT_REVIEWER_LOGIN
+ENVIRONMENT_REVIEWER_LOGIN="$(./ops/prompt.sh 'Second maintainer GitHub login: ')"
 test -n "${ENVIRONMENT_REVIEWER_LOGIN}"
 test "${ENVIRONMENT_REVIEWER_LOGIN}" != "$(gh api user --jq .login)"
 
@@ -524,6 +533,8 @@ trust boundary.
 PLAN_PROVIDER="$(tofu -chdir=bootstrap output -json workload_identity_providers | jq -r .plan)"
 PLAN_ACCOUNT="$(tofu -chdir=bootstrap output -json automation_service_accounts | jq -r .plan)"
 
+gh variable set GCP_MANAGEMENT_PROJECT_ID \
+  --repo a-novel/infra --body "${MANAGEMENT_PROJECT_ID}"
 gh variable set GCP_STATE_BUCKET --repo a-novel/infra --body "${STATE_BUCKET}"
 gh variable set GCP_BACKUP_BUCKET --repo a-novel/infra --body "${BACKUP_BUCKET}"
 gh variable set GCP_RECEIPT_BUCKET --repo a-novel/infra --body "${RECEIPT_BUCKET}"
@@ -599,7 +610,8 @@ done
 
 Expected safe result:
 
-- repository variables are exactly `GCP_STATE_BUCKET`, `GCP_BACKUP_BUCKET`,
+- repository variables are exactly `GCP_MANAGEMENT_PROJECT_ID`, `GCP_STATE_BUCKET`,
+  `GCP_BACKUP_BUCKET`,
   `GCP_RECEIPT_BUCKET`, `GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER`,
   `GCP_PLAN_SERVICE_ACCOUNT`, and the false `PRODUCTION_RELEASES_ENABLED` launch switch;
 - each environment has only its matching two prefixed identity variables;
