@@ -156,10 +156,9 @@ they do not print secret values or backup payloads.
 set -euo pipefail
 set +x
 
-read -r -p 'Management project ID: ' MANAGEMENT_PROJECT_ID
-read -r -p 'Workload project ID: ' WORKLOAD_PROJECT_ID
-read -r -p 'Production region [europe-west1]: ' REGION
-REGION="${REGION:-europe-west1}"
+MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID --repo a-novel/infra)"
+WORKLOAD_PROJECT_ID="$(gh variable get GCP_WORKLOAD_PROJECT_ID --repo a-novel/infra)"
+REGION='europe-west1'
 
 [[ "${MANAGEMENT_PROJECT_ID}" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
 [[ "${WORKLOAD_PROJECT_ID}" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]

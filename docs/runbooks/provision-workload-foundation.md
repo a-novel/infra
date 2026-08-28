@@ -89,7 +89,7 @@ callable after this procedure.
 
 ## 1. Collect and validate non-payload inputs
 
-Start a fresh Bash shell with history expansion and tracing disabled. The prompts avoid recording
+Start a fresh Bash or Zsh shell with history expansion and tracing disabled. The prompts avoid recording
 values in shell history. These identifiers are configuration, not application secret payloads, but
 the billing ID and personal email still stay out of public logs.
 
@@ -104,15 +104,15 @@ DATABASE_ZONE='europe-west1-b'
 SUBNET_CIDR='10.20.0.0/24'
 WORKLOAD_PROJECT_NAME='Agora production'
 
-read -r -p 'Management project ID: ' MANAGEMENT_PROJECT_ID
-read -r -p 'New workload project ID: ' WORKLOAD_PROJECT_ID
-read -r -p 'Billing account ID (XXXXXX-XXXXXX-XXXXXX): ' BILLING_ACCOUNT_ID
-read -r -p 'Cost-alert and quota-contact email address: ' COST_ALERT_EMAIL
-read -r -p 'Production operations-alert email address: ' OPERATIONS_ALERT_EMAIL
-read -r -p 'Database operator IAM member (user: or group:): ' DATABASE_OPERATOR_PRINCIPAL
-read -r -p 'Authentication initializer IAM member (user: or group:): ' AUTH_INITIALIZER_PRINCIPAL
-read -r -p 'Organization ID, or blank: ' ORGANIZATION_ID
-read -r -p 'Folder ID, or blank: ' FOLDER_ID
+MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID --repo "$REPOSITORY")"
+WORKLOAD_PROJECT_ID="$(./ops/prompt.sh 'New workload project ID: ')"
+BILLING_ACCOUNT_ID="$(./ops/prompt.sh 'Billing account ID (XXXXXX-XXXXXX-XXXXXX): ')"
+COST_ALERT_EMAIL="$(./ops/prompt.sh 'Cost-alert and quota-contact email address: ')"
+OPERATIONS_ALERT_EMAIL="$(./ops/prompt.sh 'Production operations-alert email address: ')"
+DATABASE_OPERATOR_PRINCIPAL="$(./ops/prompt.sh 'Database operator IAM member (user: or group:): ')"
+AUTH_INITIALIZER_PRINCIPAL="$(./ops/prompt.sh 'Authentication initializer IAM member (user: or group:): ')"
+ORGANIZATION_ID="$(./ops/prompt.sh 'Organization ID, or blank: ')"
+FOLDER_ID="$(./ops/prompt.sh 'Folder ID, or blank: ')"
 
 FOUNDATION_SERVICE_ACCOUNT="infra-foundation@${MANAGEMENT_PROJECT_ID}.iam.gserviceaccount.com"
 PLAN_SERVICE_ACCOUNT="infra-plan@${MANAGEMENT_PROJECT_ID}.iam.gserviceaccount.com"
@@ -395,7 +395,7 @@ done
 
 rm -f -- "$FOUNDATION_CONFIG_FILE"
 unset FOUNDATION_CONFIG_FILE ADOPT_EXISTING_PROJECT
-unset BILLING_ACCOUNT_ID COST_ALERT_EMAIL OPERATIONS_ALERT_EMAIL
+unset COST_ALERT_EMAIL OPERATIONS_ALERT_EMAIL
 unset DATABASE_OPERATOR_PRINCIPAL DATABASE_OPERATOR_PRINCIPALS
 unset AUTH_INITIALIZER_PRINCIPAL AUTH_INITIALIZER_PRINCIPALS
 ```
@@ -437,7 +437,7 @@ Select the row titled `foundation plan bootstrap`, verify `headSha` equals `MAST
 it and derive its exact plan ID:
 
 ```bash
-read -r -p 'Bootstrap plan run ID: ' PLAN_RUN_ID
+PLAN_RUN_ID="$(./ops/prompt.sh 'Bootstrap plan run ID: ')"
 test "$(gh api "repos/${REPOSITORY}/actions/runs/${PLAN_RUN_ID}" --jq .head_sha)" = "$MASTER_SHA"
 gh run watch "$PLAN_RUN_ID" --repo "$REPOSITORY" --exit-status
 PLAN_ATTEMPT="$(gh api "repos/${REPOSITORY}/actions/runs/${PLAN_RUN_ID}" --jq .run_attempt)"
@@ -490,7 +490,8 @@ and reviewing the code and this runbook.
 
 ## 6. Verify project, billing, APIs, and IAM after apply
 
-Re-enter the section 1 values in a fresh shell. Do not print the billing account or email. Then run:
+Continue in the same private shell so the validated section 1 values remain available. If that
+shell closed, collect section 1 again before continuing.
 
 ```bash
 gcloud projects describe "$WORKLOAD_PROJECT_ID" \
@@ -971,6 +972,14 @@ Expected safe result: the primitive-role audit prints nothing and the billing co
 `roles/billing.costsManager`. Recheck the chosen parent with section 2's command; it must print
 nothing. Independently verify the plan identity still has exactly `roles/billing.viewer`. Exact
 workload-project roles and the custom metadata role remain code-managed.
+
+Publish the verified workload project for later runbooks:
+
+```bash
+gh variable set GCP_WORKLOAD_PROJECT_ID \
+  --repo "$REPOSITORY" --body "$WORKLOAD_PROJECT_ID"
+test "$(gh variable get GCP_WORKLOAD_PROJECT_ID --repo "$REPOSITORY")" = "$WORKLOAD_PROJECT_ID"
+```
 
 Record only the reviewed commit, workflow run URL, opaque plan checksum, project number, verification
 timestamp, and successful/failed checklist in the private deployment receipt. Do not record IAM

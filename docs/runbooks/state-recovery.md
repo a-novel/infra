@@ -29,7 +29,7 @@ payload versions.
   writers but is not a substitute for an operator freeze.
 - Use a declared human operator. The keyless recovery identity is bound to its exact GitHub workflow
   and cannot be impersonated from an operator shell.
-- Work in a private Bash session with tracing disabled and `umask 077`.
+- Work in a private Bash or Zsh session with tracing disabled and `umask 077`.
 - Do not recover while a `.tflock` object exists. Identify and stop the owning operation first; never
   delete a lock merely because it is old.
 - Recover only `bootstrap`, `foundation`, or `release`. Any other prefix is outside the root allowlist.
@@ -63,7 +63,7 @@ STATE_BUCKET="$(gh variable get GCP_STATE_BUCKET --repo a-novel/infra)"
 test -n "${MANAGEMENT_PROJECT_ID}"
 test -n "${STATE_BUCKET}"
 
-read -r -p 'State root (bootstrap, foundation, or release): ' STATE_ROOT
+STATE_ROOT="$(./ops/prompt.sh 'State root (bootstrap, foundation, or release): ')"
 case "${STATE_ROOT}" in
   bootstrap|foundation|release) ;;
   *) printf 'Refusing unknown state root.\n' >&2; false ;;
@@ -111,7 +111,7 @@ Copy the candidate generation number exactly, then validate that both candidate 
 are numeric and different:
 
 ```bash
-read -r -p 'Candidate generation to inspect: ' CANDIDATE_GENERATION
+CANDIDATE_GENERATION="$(./ops/prompt.sh 'Candidate generation to inspect: ')"
 [[ "${CANDIDATE_GENERATION}" =~ ^[0-9]+$ ]]
 
 LIVE_GENERATION="$(gcloud storage objects describe "${STATE_OBJECT}" --format='value(generation)')"
@@ -195,7 +195,7 @@ The final equality check is the human-readable precondition; Cloud Storage enfor
 the copy itself:
 
 ```bash
-read -r -p "Type ${STATE_ROOT}/${CANDIDATE_GENERATION} to restore: " RESTORE_CONFIRMATION
+RESTORE_CONFIRMATION="$(./ops/prompt.sh "Type ${STATE_ROOT}/${CANDIDATE_GENERATION} to restore: ")"
 test "${RESTORE_CONFIRMATION}" = "${STATE_ROOT}/${CANDIDATE_GENERATION}"
 
 gcloud storage cp \
@@ -221,7 +221,7 @@ the candidate in a separate worktree, initialize only the selected backend, and 
 Do not apply it during this runbook.
 
 ```bash
-read -r -p 'Candidate state Git commit SHA: ' CANDIDATE_GIT_SHA
+CANDIDATE_GIT_SHA="$(./ops/prompt.sh 'Candidate state Git commit SHA: ')"
 git cat-file -e "${CANDIDATE_GIT_SHA}^{commit}"
 
 RECOVERY_CHECKOUT="${RECOVERY_TEMP_DIR}/checkout"
@@ -297,7 +297,7 @@ assert_state_unlocked
 CURRENT_GENERATION="$(gcloud storage objects describe "${STATE_OBJECT}" --format='value(generation)')"
 test "${CURRENT_GENERATION}" = "${RESTORED_GENERATION}"
 
-read -r -p "Type rollback/${LIVE_GENERATION} to restore the original live state: " ROLLBACK_CONFIRMATION
+ROLLBACK_CONFIRMATION="$(./ops/prompt.sh "Type rollback/${LIVE_GENERATION} to restore the original live state: ")"
 test "${ROLLBACK_CONFIRMATION}" = "rollback/${LIVE_GENERATION}"
 
 gcloud storage cp \

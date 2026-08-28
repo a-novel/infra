@@ -55,7 +55,7 @@ umask 077
 REPOSITORY='a-novel/infra'
 REGION='europe-west1'
 DATABASE_ZONE='europe-west1-b'
-read -r -p 'Production workload project ID: ' WORKLOAD_PROJECT_ID
+WORKLOAD_PROJECT_ID="$(gh variable get GCP_WORKLOAD_PROJECT_ID --repo "$REPOSITORY")"
 [[ "$WORKLOAD_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
 
 gcloud monitoring policies list --project="$WORKLOAD_PROJECT_ID" \
@@ -89,7 +89,7 @@ gh workflow list --repo "$REPOSITORY" --all --json name,path,state
 gh run list --repo "$REPOSITORY" --workflow drift.yaml --branch master \
   --event schedule --limit 20 \
   --json databaseId,headSha,status,conclusion,createdAt,url
-read -r -p 'Latest 43 */3 health run database ID: ' HEALTH_RUN_ID
+HEALTH_RUN_ID="$(./ops/prompt.sh 'Latest 43 */3 health run database ID: ')"
 [[ "$HEALTH_RUN_ID" =~ ^[1-9][0-9]*$ ]]
 gh run view "$HEALTH_RUN_ID" --repo "$REPOSITORY" --json headSha,event,jobs,url \
   --jq '{headSha,event,url,jobs:[.jobs[]|{name,conclusion}]}'

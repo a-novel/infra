@@ -105,17 +105,16 @@ debugging.
 
 ## Select the exact host
 
-Use a fresh Bash session. These values are identifiers, but project and network details still stay
-out of public issues and logs.
+Use a fresh Bash or Zsh session. These values are identifiers, but project and network details
+still stay out of public issues and logs.
 
 ```bash
 set -euo pipefail
 set +x
 
-read -r -p 'Workload project ID: ' WORKLOAD_PROJECT_ID
-read -r -p 'Database zone [europe-west1-b]: ' DATABASE_ZONE
-read -r -p 'Database operator IAM member (user: or group:): ' DATABASE_OPERATOR_PRINCIPAL
-DATABASE_ZONE="${DATABASE_ZONE:-europe-west1-b}"
+WORKLOAD_PROJECT_ID="$(gh variable get GCP_WORKLOAD_PROJECT_ID --repo a-novel/infra)"
+DATABASE_ZONE='europe-west1-b'
+DATABASE_OPERATOR_PRINCIPAL="$(./ops/prompt.sh 'Database operator IAM member (user: or group:): ')"
 DATABASE_REGION="${DATABASE_ZONE%-*}"
 DATABASE_GROUP='agora-database'
 DATABASE_DISK='agora-data'
@@ -124,14 +123,14 @@ DATABASE_DISK='agora-data'
 [[ "$DATABASE_ZONE" =~ ^[a-z]+-[a-z]+[0-9]+-[a-z]$ ]]
 [[ "$DATABASE_OPERATOR_PRINCIPAL" =~ ^(user|group):[^[:space:]@]+@[^[:space:]@]+$ ]]
 
-mapfile -t DATABASE_INSTANCES < <(
+DATABASE_INSTANCE="$(
   gcloud compute instance-groups managed list-instances "$DATABASE_GROUP" \
     --project="$WORKLOAD_PROJECT_ID" \
     --zone="$DATABASE_ZONE" \
     --format='value(instance.basename())'
 )
-[[ "${#DATABASE_INSTANCES[@]}" -eq 1 ]]
-DATABASE_INSTANCE="${DATABASE_INSTANCES[0]}"
+test -n "$DATABASE_INSTANCE"
+test "$(printf '%s\n' "$DATABASE_INSTANCE" | wc -l)" -eq 1
 [[ "$DATABASE_INSTANCE" =~ ^agora-database-[a-z0-9-]+$ ]]
 
 DATABASE_PRIVATE_IP="$(
