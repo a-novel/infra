@@ -63,8 +63,8 @@ below pass; do not improvise a public endpoint during restore.
 - The management project, state bucket, backup bucket, receipt bucket, WIF providers, and secret
   containers are trusted and accessible.
 - Bootstrap has converged after the four exact nested recovery state/plan managed folders were added.
-- `production-recovery` requires an independent reviewer, prevents self-review and administrator
-  bypass, and accepts protected branches only.
+- `production-recovery` requires a reviewer, rejects administrator bypass, accepts protected branches
+  only, and prevents self-review unless the bootstrap runbook's solo-maintainer exception is active.
 - At least one valid deployment receipt and one retained committed logical backup per database exist.
 - The incident commander froze application writers or explicitly accepted continued writes being
   outside the selected recovery points.

@@ -23,8 +23,8 @@ Stop before every mutating step unless all of these controls exist on `master`:
    Identity Federation providers;
 3. each workflow stores its opaque saved plan only in private Google Cloud storage and prints only
    the sanitized action/resource-type summary;
-4. the matching GitHub environment requires an independent reviewer and rejects administrator
-   bypass;
+4. the matching GitHub environment requires a reviewer, rejects administrator bypass, and prevents
+   self-review unless the bootstrap runbook's solo-maintainer exception is active;
 5. OpenTofu applies only the reviewed, unexpired plan from the merged commit; the database release
    step invokes only the fixed repository helper with reviewed manifest/receipt inputs; both paths
    prove convergence afterward.

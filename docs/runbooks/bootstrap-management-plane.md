@@ -27,8 +27,9 @@ An operator needs all of the following:
   Google Cloud;
 - permission to create a project and link the chosen open billing account;
 - for an organization/folder placement, permission to create projects at that parent;
-- GitHub admin access to `a-novel/infra` and a second maintainer with at least read access who can
-  approve foundation and recovery jobs;
+- GitHub admin access to `a-novel/infra`; use a second trusted maintainer with at least read access
+  as the foundation and recovery reviewer when one is available, otherwise use the documented
+  solo-maintainer exception;
 - `gcloud`, `gh`, `jq`, Git, and OpenTofu `1.12.6` installed locally;
 - `master` containing this bootstrap change, with all required checks green;
 - a private terminal that is not recording, streaming, or running with shell tracing.
@@ -45,7 +46,8 @@ Stop immediately if any of these are true:
 - the proposed project ID already resolves;
 - the plan summary contains a deletion, replacement, or state-forget action;
 - the GitHub environments permit unprotected branches;
-- foundation or recovery has no independent reviewer or still permits admin bypass;
+- foundation or recovery has no required reviewer, permits admin bypass, or allows self-review
+  outside the documented solo-maintainer exception;
 - a service-account user-managed key exists;
 - removing temporary broad access makes the final no-change plan fail.
 
@@ -248,12 +250,34 @@ grants are removed in section 12; the other six become OpenTofu-managed operator
 
 The read-only plan/drift identity deliberately has no environment. Create exactly three deployment
 environments: routine release is restricted to protected branches; foundation and recovery also
-require a different human reviewer and prevent self-review.
+require manual approval and reject administrator bypass.
+
+Use one reviewer setup below. Prefer an independent reviewer whenever a second trusted maintainer is
+available.
+
+For two or more maintainers, set the other maintainer as reviewer and prevent self-review:
 
 ```bash
 ENVIRONMENT_REVIEWER_LOGIN='replace-with-github-login'
-test -n "${ENVIRONMENT_REVIEWER_LOGIN}"
+PREVENT_SELF_REVIEW=true
 test "${ENVIRONMENT_REVIEWER_LOGIN}" != "$(gh api user --jq .login)"
+```
+
+For a sole maintainer, use the current GitHub user and permit that user to approve the waiting job:
+
+```bash
+ENVIRONMENT_REVIEWER_LOGIN="$(gh api user --jq .login)"
+PREVENT_SELF_REVIEW=false
+```
+
+Solo mode still prevents an unattended apply and withholds environment credentials until the
+operator approves the job. It cannot provide independent review or protect against compromise of
+that same account. Switch to the first setup as soon as a second trusted maintainer is available.
+
+Verify the selected reviewer has repository access:
+
+```bash
+test -n "${ENVIRONMENT_REVIEWER_LOGIN}"
 
 ENVIRONMENT_REVIEWER_ID="$(gh api "users/${ENVIRONMENT_REVIEWER_LOGIN}" --jq .id)"
 gh api "repos/a-novel/infra/collaborators/${ENVIRONMENT_REVIEWER_LOGIN}/permission" \
@@ -261,15 +285,16 @@ gh api "repos/a-novel/infra/collaborators/${ENVIRONMENT_REVIEWER_LOGIN}/permissi
 ```
 
 Expected safe result: the selected login and at least `read` permission. Then create foundation and
-recovery with the same independent reviewer:
+recovery with the selected policy:
 
 ```bash
 for environment in production-foundation production-recovery; do
   jq -n \
     --argjson reviewer_id "${ENVIRONMENT_REVIEWER_ID}" \
+    --argjson prevent_self_review "${PREVENT_SELF_REVIEW}" \
     '{
       wait_timer: 0,
-      prevent_self_review: true,
+      prevent_self_review: $prevent_self_review,
       reviewers: [{type: "User", id: $reviewer_id}],
       deployment_branch_policy: {
         protected_branches: true,
@@ -332,8 +357,13 @@ done
 ```
 
 Expected safe result: exactly the three environment names; foundation and recovery report
-`can_admins_bypass: false`, `protected_branches: true`, `prevent_self_review: true`, and the intended
-reviewer. Stop before cloud apply if any property differs.
+`can_admins_bypass: false`, `protected_branches: true`, the selected reviewer, and the chosen
+`prevent_self_review` value (`true` for independent review or `false` for solo mode). Stop before
+cloud apply if any property differs.
+
+When a second trusted maintainer becomes available, rerun this section with their login and
+`PREVENT_SELF_REVIEW=true`. This updates only the GitHub environment protection; it requires no
+cloud apply.
 
 Create the repository-level launch switch in its fail-safe state. This switch prevents an
 unbootstrapped manifest merge from entering `production-release`; it does not replace protected
