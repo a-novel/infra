@@ -672,8 +672,19 @@ gcloud projects add-iam-policy-binding "$WORKLOAD_PROJECT_ID" \
   --role='roles/iam.securityReviewer' \
   --condition=None \
   --format=none
+
+TEMPORARY_SECURITY_REVIEWER_BINDING="$(gcloud projects get-iam-policy "$WORKLOAD_PROJECT_ID" \
+  --flatten='bindings[].members' \
+  --filter="bindings.role=roles/iam.securityReviewer AND bindings.members=${OPERATOR_PRINCIPAL}" \
+  --format='value(bindings.role)')"
+[[ "$TEMPORARY_SECURITY_REVIEWER_BINDING" == "roles/iam.securityReviewer" ]]
+unset TEMPORARY_SECURITY_REVIEWER_BINDING
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
+
+Google can take up to seven minutes to propagate this allow-policy change. If an audit command
+reports `PERMISSION_DENIED` while the exact binding above is present, retry only that read after
+propagation; do not grant another role.
 
 If an IAM audit fails, skip to the temporary Security Reviewer cleanup below before troubleshooting.
 
@@ -895,8 +906,12 @@ INITIALIZER_TAG_VALUE="$(gcloud resource-manager tags values list \
 [[ "$INITIALIZER_TAG_VALUE" =~ ^tagValues/[0-9]+$ ]]
 
 gcloud resource-manager tags values get-iam-policy "$INITIALIZER_TAG_VALUE" \
-  --flatten='bindings[].members' --filter='bindings.role=roles/resourcemanager.tagUser' \
-  --format='table(bindings.members)'
+  --format=json \
+| jq -r '
+    .bindings[]?
+    | select(.role == "roles/resourcemanager.tagUser")
+    | .members[]
+  '
 gcloud iam service-accounts get-iam-policy \
   "agora-auth-initializer@${WORKLOAD_PROJECT_ID}.iam.gserviceaccount.com" \
   --project="$WORKLOAD_PROJECT_ID" --flatten='bindings[].members' \
