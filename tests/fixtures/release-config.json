@@ -2,7 +2,7 @@
   "management_project_id": "agora-management-test",
   "workload_project_id": "agora-production-test",
   "region": "europe-west1",
-  "database_zone": "europe-west1-b",
+  "database_zone": "europe-west1-c",
   "backup_bucket_name": "agora-management-test-123456789012-backups",
   "database_private_ip": "10.20.0.2",
   "network_id": "projects/agora-production-test/global/networks/agora-production",

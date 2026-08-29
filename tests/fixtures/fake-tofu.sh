@@ -8,7 +8,8 @@ if [[ "${1:-}" == -chdir=* ]]; then
     shift
 fi
 
-if [ "${FAKE_TOFU_FAIL_ACTION:-}" = "${1:-}" ] && [ "${1:-}" != plan ]; then
+if [ "${FAKE_TOFU_FAIL_ACTION:-}" = "${1:-}" ] &&
+    [ "${1:-}" != plan ] && [ "${1:-}" != apply ]; then
     printf 'fixture-sensitive-diagnostic\n' >&2
     exit 1
 fi
@@ -17,10 +18,23 @@ case "${1:-}" in
     init | fmt | validate | test)
         ;;
     apply)
+        event_file=""
+        for argument in "$@"; do
+            if [[ "${argument}" == -json-into=* ]]; then
+                event_file="${argument#-json-into=}"
+            fi
+        done
         if [ -n "${FAKE_TOFU_REQUIRE_ABSENT:-}" ] &&
             [ -e "${FAKE_TOFU_REQUIRE_ABSENT}" ]; then
             printf 'Saved plan was still replayable when apply began.\n' >&2
             exit 77
+        fi
+        if [ "${FAKE_TOFU_FAIL_ACTION:-}" = apply ]; then
+            if [ -n "${FAKE_TOFU_DIAGNOSTICS:-}" ] && [ -n "${event_file}" ]; then
+                command cat "${FAKE_TOFU_DIAGNOSTICS}" >"${event_file}"
+            fi
+            printf 'fixture-sensitive-diagnostic\n' >&2
+            exit 1
         fi
         ;;
     plan)

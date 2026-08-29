@@ -270,6 +270,8 @@ grep -Fq $'UNKNOWN\tgoogle_compute_disk\tcapacity.tf:82\t1' \
     "${TEMP_DIR}/failed-plan.err"
 grep -Fq $'CONFIGURATION\t-\tchecks.tf:7\t1' "${TEMP_DIR}/failed-plan.err"
 grep -Fq $'CONFIGURATION\t-\tcost.tf:27\t1' "${TEMP_DIR}/failed-plan.err"
+grep -Fq $'ZONE_RESOURCE_POOL_EXHAUSTED\tgoogle_compute_disk\tdatabase.tf:54\t1' \
+    "${TEMP_DIR}/failed-plan.err"
 assert_absent "${TEMP_DIR}/failed-plan.out" 'fixture-sensitive'
 assert_absent "${TEMP_DIR}/failed-plan.err" 'fixture-sensitive'
 
@@ -278,13 +280,18 @@ FAILED_APPLY_PLAN="${TEMP_DIR}/failed-apply.tfplan"
 set +e
 PATH="${TOFU_GATE_BIN}:${PATH}" \
     FAKE_TOFU_FAIL_ACTION=apply \
+    FAKE_TOFU_DIAGNOSTICS="${SCRIPT_DIR}/fixtures/plan-diagnostics.jsonl" \
     "${REPOSITORY_ROOT}/ops/tofu-gate.sh" apply foundation agora-state-test \
     "${FAILED_APPLY_PLAN}" >"${TEMP_DIR}/failed-apply.out" 2>"${TEMP_DIR}/failed-apply.err"
 FAILED_APPLY_CODE=$?
 set -e
 assert_equal "${FAILED_APPLY_CODE}" 1
 grep -Fq 'Protected OpenTofu apply failed' "${TEMP_DIR}/failed-apply.err"
+grep -Fq $'ZONE_RESOURCE_POOL_EXHAUSTED\tgoogle_compute_disk\tdatabase.tf:54\t1' \
+    "${TEMP_DIR}/failed-apply.err"
+assert_absent "${TEMP_DIR}/failed-apply.out" 'fixture-sensitive'
 assert_absent "${TEMP_DIR}/failed-apply.err" 'fixture-sensitive-diagnostic'
+assert_absent "${TEMP_DIR}/failed-apply.err" 'fixture-sensitive-detail'
 
 if grep -RqE 'resource[[:space:]]+"(google_secret_manager_secret_version|google_service_account_key)"' \
     "${REPOSITORY_ROOT}/bootstrap" \
@@ -591,7 +598,7 @@ printf '%s\n' \
     'if [[ "$*" == *"compute snapshots list"* ]]; then' \
     '    if [[ "${STALE_SNAPSHOT:-false}" == "true" ]]; then snapshot_time="$(date -u --date="7 hours ago" +%Y-%m-%dT%H:%M:%SZ)"; else snapshot_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; fi' \
     '    if [[ "${MANUAL_SNAPSHOT:-false}" == "true" ]]; then snapshot_auto_created=false; else snapshot_auto_created=true; fi' \
-    '    printf "[{\"name\":\"agora-scheduled-snapshot\",\"autoCreated\":%s,\"sourceDisk\":\"https://www.googleapis.com/compute/v1/projects/agora-production-test/zones/europe-west1-b/disks/agora-data\",\"status\":\"READY\",\"creationTimestamp\":\"%s\",\"storageLocations\":[\"europe-west1\"],\"labels\":{\"application\":\"agora\",\"environment\":\"production\",\"managed-by\":\"opentofu\",\"plane\":\"workload\",\"role\":\"database-snapshot\"}}]\n" "${snapshot_auto_created}" "${snapshot_time}"' \
+    '    printf "[{\"name\":\"agora-scheduled-snapshot\",\"autoCreated\":%s,\"sourceDisk\":\"https://www.googleapis.com/compute/v1/projects/agora-production-test/zones/europe-west1-c/disks/agora-data\",\"status\":\"READY\",\"creationTimestamp\":\"%s\",\"storageLocations\":[\"europe-west1\"],\"labels\":{\"application\":\"agora\",\"environment\":\"production\",\"managed-by\":\"opentofu\",\"plane\":\"workload\",\"role\":\"database-snapshot\"}}]\n" "${snapshot_auto_created}" "${snapshot_time}"' \
     'fi' \
     >"${MOCK_BIN}/gcloud"
 chmod 0700 "${MOCK_BIN}/gcloud"
@@ -603,7 +610,7 @@ AUTHENTICATION_IMAGE="europe-west1-docker.pkg.dev/agora-production-test/agora-pr
 PATH="${MOCK_BIN}:${PATH}" GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
     "${REPOSITORY_ROOT}/ops/deploy-database-release.sh" \
     agora-production-test \
-    europe-west1-b \
+    europe-west1-c \
     0123456789abcdef0123456789abcdef01234567 \
     "${JSON_KEYS_IMAGE}" \
     "${AUTHENTICATION_IMAGE}" \
@@ -639,7 +646,7 @@ PATH="${MOCK_BIN}:${PATH}" GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
     INITIAL_DATABASE_RELEASE=true \
     "${REPOSITORY_ROOT}/ops/prepare-database-change.sh" \
     agora-production-test \
-    europe-west1-b \
+    europe-west1-c \
     0123456789abcdef0123456789abcdef01234567 \
     >"${TEMP_DIR}/initial-database-gate.out"
 assert_equal "$(grep -Fc 'CALL' "${GCLOUD_ARGUMENT_LOG}")" "2"
@@ -656,7 +663,7 @@ PATH="${MOCK_BIN}:${PATH}" GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
     INITIAL_DATABASE_RELEASE=true \
     "${REPOSITORY_ROOT}/ops/prepare-database-change.sh" \
     agora-production-test \
-    europe-west1-b \
+    europe-west1-c \
     0123456789abcdef0123456789abcdef01234567 \
     "${INITIAL_DATABASE_PROOF}" \
     >"${TEMP_DIR}/initial-database-proof.out"
@@ -671,7 +678,7 @@ PATH="${MOCK_BIN}:${PATH}" GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
     INITIAL_DATABASE_RELEASE=true \
     "${REPOSITORY_ROOT}/ops/prepare-database-change.sh" \
     agora-production-test \
-    europe-west1-b \
+    europe-west1-c \
     0123456789abcdef0123456789abcdef01234567 \
     "${TEMP_DIR}/rejected-database-proof.json" \
     ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff \
@@ -691,7 +698,7 @@ set +e
 PATH="${MOCK_BIN}:${PATH}" GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
     "${REPOSITORY_ROOT}/ops/deploy-database-release.sh" \
     agora-production-test \
-    europe-west1-b \
+    europe-west1-c \
     abbreviated \
     "${JSON_KEYS_IMAGE}" \
     "${AUTHENTICATION_IMAGE}" \
@@ -715,7 +722,7 @@ PATH="${MOCK_BIN}:${PATH}" GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
     INVALID_METADATA_SHAPE=true \
     "${REPOSITORY_ROOT}/ops/deploy-database-release.sh" \
     agora-production-test \
-    europe-west1-b \
+    europe-west1-c \
     0123456789abcdef0123456789abcdef01234567 \
     "${JSON_KEYS_IMAGE}" \
     "${AUTHENTICATION_IMAGE}" \
@@ -742,7 +749,7 @@ PATH="${MOCK_BIN}:${PATH}" GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
     STALE_SNAPSHOT=true \
     "${REPOSITORY_ROOT}/ops/deploy-database-release.sh" \
     agora-production-test \
-    europe-west1-b \
+    europe-west1-c \
     0123456789abcdef0123456789abcdef01234567 \
     "${JSON_KEYS_IMAGE}" \
     "${AUTHENTICATION_IMAGE}" \
@@ -770,7 +777,7 @@ PATH="${MOCK_BIN}:${PATH}" GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
     MANUAL_SNAPSHOT=true \
     "${REPOSITORY_ROOT}/ops/prepare-database-change.sh" \
     agora-production-test \
-    europe-west1-b \
+    europe-west1-c \
     0123456789abcdef0123456789abcdef01234567 \
     >"${TEMP_DIR}/manual-database-snapshot.out" \
     2>"${TEMP_DIR}/manual-database-snapshot.err"

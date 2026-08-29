@@ -105,7 +105,7 @@ variable "subnet_cidr" {
 variable "database_zone" {
   description = "Single production zone for the stateful PostgreSQL managed instance group and preserved data disk."
   type        = string
-  default     = "europe-west1-b"
+  default     = "europe-west1-c"
 
   validation {
     condition     = can(regex("^[a-z]+-[a-z]+[0-9]+-[a-z]$", var.database_zone))
