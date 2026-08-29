@@ -319,8 +319,10 @@ network manually. Before its first plan, the protected workflow must import the 
 remote foundation state as `google_project.workload`. The Google provider removes a default VPC only
 while creating a project; updating an imported project does not repeat that cleanup. Set
 `adopt_existing_project` in the protected configuration below. When the default VPC exists, the
-reviewed recovery configuration also imports it as `google_compute_network.default_adoption` before
-a separate deletion-labeled change removes it. Do not run `tofu import` or delete the VPC locally.
+first recovery pull request changes the `adopt_default_network` default to `true` and imports it as
+`google_compute_network.default_adoption`. After that apply, a separate deletion-labeled pull
+request returns the default to `false`. Do not add this switch to the protected configuration, run
+`tofu import`, or delete the VPC locally.
 
 Verification:
 
@@ -639,9 +641,9 @@ a project. When that empty VPC already exists, the recovery plan must show exact
 have no create, update, replacement, deletion, or state-forget action; a first foundation can still
 create the separate `google_compute_network.production` resource. Applying the import changes only
 OpenTofu state. Stop after the apply: removing the imported address belongs in a separate pull
-request that carries `allow-resource-deletion`, and its protected apply must complete before the
-network checks below can pass. Do not approve a plan that differs without changing and reviewing
-the code and this runbook.
+request that returns the `adopt_default_network` default to `false` and carries
+`allow-resource-deletion`. Its protected apply must complete before the network checks below can
+pass. Do not approve a plan that differs without changing and reviewing the code and this runbook.
 
 ## 6. Verify project, billing, APIs, and IAM after apply
 
@@ -1483,8 +1485,8 @@ No service deployment proceeds until routers/NAT, connectors, external addresses
 and public database paths are absent again.
 
 For an empty Google-created default VPC left behind by project import, first merge and apply an
-import-only foundation plan for `google_compute_network.default_adoption`. Stop if that plan changes
-the network. Then remove the imported address in a second pull request carrying
+import-only foundation plan that changes the `adopt_default_network` default to `true`. Stop if that
+plan changes the network. Then return the default to `false` in a second pull request carrying
 `allow-resource-deletion`, apply it, and rerun section 7. Use exact self-link comparisons from JSON
 when auditing networks; `gcloud` text filters can match substrings and are not a deletion proof.
 

@@ -46,9 +46,9 @@ variable "adopt_existing_project" {
 }
 
 variable "adopt_default_network" {
-  description = "Import the audited empty default VPC before its separately reviewed deletion."
+  description = "Adopt an audited empty default VPC into state for a separately reviewed deletion."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "billing_account_id" {
