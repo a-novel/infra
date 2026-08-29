@@ -507,6 +507,8 @@ small non-sensitive custody record in the matching state prefix. Its ID is the p
 `run-id-attempt`; it expires after 24 hours and can be consumed only once by the same commit and root.
 The environment reviewer approves both runs, but only the `apply` run mutates cloud resources.
 
+Refresh the repository:
+
 ```zsh
 () {
 setopt local_options err_return pipe_fail
@@ -514,13 +516,32 @@ unsetopt err_exit nounset xtrace
 git switch master
 git pull --ff-only
 test -z "$(git status --porcelain)"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Collect the workflow commit:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 MASTER_SHA="$(git rev-parse HEAD)"
+test "$MASTER_SHA" = "$(gh api "repos/${REPOSITORY}/commits/master" --jq .sha)"
 printf 'Planning commit: %s\n' "$MASTER_SHA"
-PLAN_ID="$(
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Create the bootstrap plan:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+BOOTSTRAP_PLAN_ID="$(
   EXPECTED_SHA="$MASTER_SHA" ./ops/run-workflow.sh \
     foundation.yaml run-id-attempt operation=plan root=bootstrap
 )"
-printf 'Bootstrap plan ID: %s\n' "$PLAN_ID"
+printf 'Bootstrap plan ID: %s\n' "$BOOTSTRAP_PLAN_ID"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
@@ -535,25 +556,50 @@ exact plan:
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-APPLY_RUN_ID="$(
+BOOTSTRAP_APPLY_RUN_ID="$(
   EXPECTED_SHA="$MASTER_SHA" ./ops/run-workflow.sh \
-    foundation.yaml run-id operation=apply root=bootstrap plan_id="$PLAN_ID"
+    foundation.yaml run-id operation=apply root=bootstrap plan_id="$BOOTSTRAP_PLAN_ID"
 )"
-printf 'Bootstrap apply run ID: %s\n' "$APPLY_RUN_ID"
+printf 'Bootstrap apply run ID: %s\n' "$BOOTSTRAP_APPLY_RUN_ID"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Repeat the exact sequence with `root=foundation`:
+When bootstrap already converged, resume here; do not create or apply another bootstrap plan.
+Refresh the repository before the independent foundation plan:
 
 ```zsh
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-PLAN_ID="$(
+git switch master
+git pull --ff-only
+test -z "$(git status --porcelain)"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Collect the workflow commit:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+MASTER_SHA="$(git rev-parse HEAD)"
+test "$MASTER_SHA" = "$(gh api "repos/${REPOSITORY}/commits/master" --jq .sha)"
+printf 'Planning commit: %s\n' "$MASTER_SHA"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Create the foundation plan:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+FOUNDATION_PLAN_ID="$(
   EXPECTED_SHA="$MASTER_SHA" ./ops/run-workflow.sh \
     foundation.yaml run-id-attempt operation=plan root=foundation
 )"
-printf 'Foundation plan ID: %s\n' "$PLAN_ID"
+printf 'Foundation plan ID: %s\n' "$FOUNDATION_PLAN_ID"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
@@ -563,11 +609,11 @@ Review the sanitized summary, then apply it:
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-APPLY_RUN_ID="$(
+FOUNDATION_APPLY_RUN_ID="$(
   EXPECTED_SHA="$MASTER_SHA" ./ops/run-workflow.sh \
-    foundation.yaml run-id operation=apply root=foundation plan_id="$PLAN_ID"
+    foundation.yaml run-id operation=apply root=foundation plan_id="$FOUNDATION_PLAN_ID"
 )"
-printf 'Foundation apply run ID: %s\n' "$APPLY_RUN_ID"
+printf 'Foundation apply run ID: %s\n' "$FOUNDATION_APPLY_RUN_ID"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 

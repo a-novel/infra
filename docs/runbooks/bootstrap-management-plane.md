@@ -525,6 +525,30 @@ final description reports the exact derived name, `EU`, `STANDARD`, enforced pub
 prevention, uniform access, versioning, and seven-day soft delete. Stop if the name already belongs
 to any project or any protection differs.
 
+Refresh the repository before creating the local plan:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+git switch master
+git pull --ff-only
+test -z "$(git status --porcelain)"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Collect the workflow commit:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+MASTER_SHA="$(git rev-parse HEAD)"
+test "$MASTER_SHA" = "$(gh api repos/a-novel/infra/commits/master --jq .sha)"
+printf 'Bootstrap commit: %s\n' "$MASTER_SHA"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
 Initialize the remote backend and let the mocked tests run before the import changes state:
 
 ```zsh
@@ -576,8 +600,17 @@ setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 test "$(git branch --show-current)" = "master"
 test -z "$(git status --porcelain)"
-git rev-parse HEAD
+test "$(git rev-parse HEAD)" = "$MASTER_SHA"
+test "$MASTER_SHA" = "$(gh api repos/a-novel/infra/commits/master --jq .sha)"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
 
+Apply the reviewed plan:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 ./ops/tofu-gate.sh apply bootstrap "${STATE_BUCKET}" "${BOOTSTRAP_PLAN}"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
@@ -1122,7 +1155,7 @@ unset TF_DATA_DIR TF_VAR_management_project_id TF_VAR_operator_principals
 unset PLAN_PROVIDER PLAN_ACCOUNT BOOTSTRAP_PLAN BOOTSTRAP_PLAN_EXIT BOOTSTRAP_TFVARS_FILE
 unset RECOVERY_PLAN RECOVERY_PLAN_EXIT
 unset STATE_BUCKET BACKUP_BUCKET RECEIPT_BUCKET MANAGEMENT_PROJECT_NUMBER
-unset MANAGEMENT_PROJECT_ID BILLING_ACCOUNT_ID OPERATOR_PRINCIPAL ORGANIZATION_ID
+unset MANAGEMENT_PROJECT_ID BILLING_ACCOUNT_ID OPERATOR_PRINCIPAL ORGANIZATION_ID MASTER_SHA
 unset MISSING_ORG_POLICY_COUNT POLICY_UPDATE_EXIT
 unset ENVIRONMENT_REVIEWER_ID ENVIRONMENT_REVIEWER_LOGIN PREVENT_SELF_REVIEW
 unset BOOTSTRAP_TEMP_DIR

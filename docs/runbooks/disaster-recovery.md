@@ -250,6 +250,8 @@ after the exact foundation converges. Never grant Owner on the management or pro
 
 ## 3. Plan and apply the disposable foundation
 
+Refresh the repository:
+
 ```zsh
 () {
 setopt local_options err_return pipe_fail
@@ -257,15 +259,35 @@ unsetopt err_exit nounset xtrace
 git switch master
 git pull --ff-only
 test -z "$(git status --porcelain)"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Collect the workflow commit:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 MASTER_SHA="$(git rev-parse HEAD)"
-PLAN_ID="$(
+test "$MASTER_SHA" = "$(gh api "repos/${REPOSITORY}/commits/master" --jq .sha)"
+printf 'Recovery commit: %s\n' "$MASTER_SHA"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Create the disposable-foundation plan:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+RECOVERY_FOUNDATION_PLAN_ID="$(
   EXPECTED_SHA="$MASTER_SHA" ./ops/run-workflow.sh \
     recovery.yaml run-id-attempt \
     operation=plan-workload \
     replacement_project_id="$REPLACEMENT_PROJECT_ID" \
     target_receipt="$TARGET_RECEIPT"
 )"
-printf 'Recovery foundation plan ID: %s\n' "$PLAN_ID"
+printf 'Recovery foundation plan ID: %s\n' "$RECOVERY_FOUNDATION_PLAN_ID"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
@@ -276,15 +298,15 @@ Review the sanitized counts. They may target only state suffix
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-APPLY_RUN_ID="$(
+RECOVERY_FOUNDATION_APPLY_RUN_ID="$(
   EXPECTED_SHA="$MASTER_SHA" ./ops/run-workflow.sh \
     recovery.yaml run-id \
     operation=apply-workload \
     replacement_project_id="$REPLACEMENT_PROJECT_ID" \
     target_receipt="$TARGET_RECEIPT" \
-    plan_id="$PLAN_ID"
+    plan_id="$RECOVERY_FOUNDATION_PLAN_ID"
 )"
-printf 'Recovery foundation apply run ID: %s\n' "$APPLY_RUN_ID"
+printf 'Recovery foundation apply run ID: %s\n' "$RECOVERY_FOUNDATION_APPLY_RUN_ID"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
@@ -411,6 +433,21 @@ standing read-only recovery roles remain unchanged; there is no recovery IAM adm
 grant or remove.
 
 ## 5. Restore exact data and deploy the selected receipt
+
+Confirm that the disposable foundation's commit remains current:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+test "$(git branch --show-current)" = master
+test -z "$(git status --porcelain)"
+test "$(git rev-parse HEAD)" = "$MASTER_SHA"
+test "$MASTER_SHA" = "$(gh api "repos/${REPOSITORY}/commits/master" --jq .sha)"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Dispatch data restore and application recovery:
 
 ```zsh
 () {
@@ -657,8 +694,31 @@ setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 git switch master
 git pull --ff-only
-git switch -c "feat/infra/cleanup-${REPLACEMENT_PROJECT_ID}"
+test -z "$(git status --porcelain)"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
 
+Create the cleanup branch:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+CLEANUP_BRANCH="feat/infra/cleanup-${REPLACEMENT_PROJECT_ID}"
+if git show-ref --verify --quiet "refs/heads/${CLEANUP_BRANCH}"; then
+  git switch "$CLEANUP_BRANCH"
+else
+  git switch -c "$CLEANUP_BRANCH"
+fi
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Write and inspect the exact cleanup target:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 jq -n --arg project "$REPLACEMENT_PROJECT_ID" --arg receipt "$TARGET_RECEIPT" '
   {
     schemaVersion: 1,
@@ -670,6 +730,15 @@ jq -n --arg project "$REPLACEMENT_PROJECT_ID" --arg receipt "$TARGET_RECEIPT" '
 
 git diff --check
 git diff -- deploy/production/recovery-cleanup.json
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Commit and publish the cleanup request:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 git add deploy/production/recovery-cleanup.json
 git commit -m "chore(infra): authorize disposable recovery cleanup"
 git push -u origin HEAD
@@ -682,7 +751,7 @@ gh pr create --repo "$REPOSITORY" --base master \
 Have a maintainer independently compare the committed project/receipt with the private recovery
 record and the absence checks above. That maintainer must add `allow-resource-deletion` before the
 pull request merges; a post-merge label is invalid. After approval, green checks, and merge, refresh
-`MASTER_SHA` and dispatch only the committed target:
+the repository:
 
 ```zsh
 () {
@@ -691,11 +760,31 @@ unsetopt err_exit nounset xtrace
 git switch master
 git pull --ff-only
 test -z "$(git status --porcelain)"
-MASTER_SHA="$(gh api "repos/${REPOSITORY}/commits/master" --jq .sha)"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Collect the cleanup workflow variables:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+MASTER_SHA="$(git rev-parse HEAD)"
+test "$MASTER_SHA" = "$(gh api "repos/${REPOSITORY}/commits/master" --jq .sha)"
 test "$(gh api "repos/${REPOSITORY}/contents/deploy/production/recovery-cleanup.json?ref=${MASTER_SHA}" \
   --jq -r .content | base64 --decode | jq -r .replacementProject)" = "$REPLACEMENT_PROJECT_ID"
 
 CONFIRM="DELETE ${REPLACEMENT_PROJECT_ID}"
+printf 'Cleanup commit: %s\n' "$MASTER_SHA"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Dispatch cleanup for the committed target:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 CLEANUP_RUN_ID="$(
   EXPECTED_SHA="$MASTER_SHA" ./ops/run-workflow.sh \
     recovery.yaml run-id \

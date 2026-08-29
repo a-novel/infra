@@ -115,9 +115,27 @@ unsetopt err_exit nounset xtrace
 git switch master
 git pull --ff-only
 test -z "$(git status --porcelain)"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Collect the workflow commit:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 MASTER_SHA="$(git rev-parse HEAD)"
 test "$MASTER_SHA" = "$(gh api "repos/${REPOSITORY}/commits/master" --jq .sha)"
+printf 'Release commit: %s\n' "$MASTER_SHA"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
 
+Inspect the release gate:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gh api "repos/${REPOSITORY}/environments/production-release" \
   --jq '{name,deployment_branch_policy,protection_rules}'
 RELEASES_ENABLED="$(gh variable get PRODUCTION_RELEASES_ENABLED --repo "$REPOSITORY")"
@@ -421,7 +439,27 @@ unsetopt err_exit nounset xtrace
 git switch master
 git pull --ff-only
 test -z "$(git status --porcelain)"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Collect the workflow commit:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 MASTER_SHA="$(git rev-parse HEAD)"
+test "$MASTER_SHA" = "$(gh api "repos/${REPOSITORY}/commits/master" --jq .sha)"
+printf 'Release commit: %s\n' "$MASTER_SHA"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Dispatch the release:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 RELEASE_RUN_ID="$(
   EXPECTED_SHA="$MASTER_SHA" ./ops/run-workflow.sh \
     release.yaml run-id --no-wait action=deploy
@@ -444,7 +482,7 @@ On the first launch, skip that watcher and continue with the initializer subsect
 shows its prompt.
 
 For a later manifest update, do not dispatch a duplicate: the protected merge creates a `push` run.
-Select that exact commit automatically and wait for it:
+Refresh the repository first:
 
 ```zsh
 () {
@@ -453,16 +491,45 @@ unsetopt err_exit nounset xtrace
 git switch master
 git pull --ff-only
 test -z "$(git status --porcelain)"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Collect the workflow commit:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 MASTER_SHA="$(git rev-parse HEAD)"
 test "$MASTER_SHA" = "$(gh api "repos/${REPOSITORY}/commits/master" --jq .sha)"
+printf 'Release commit: %s\n' "$MASTER_SHA"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Select the automatic run for that commit:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 RELEASE_RUNS="$(gh run list --repo "$REPOSITORY" --workflow release.yaml \
   --branch master --commit "$MASTER_SHA" --event push --limit 10 \
   --json databaseId,headSha,displayTitle,status,conclusion,url)"
 test "$(jq 'length' <<<"$RELEASE_RUNS")" -eq 1
 RELEASE_RUN_ID="$(jq --raw-output '.[0].databaseId' <<<"$RELEASE_RUNS")"
 [[ "$RELEASE_RUN_ID" =~ ^[1-9][0-9]*$ ]]
-gh run watch "$RELEASE_RUN_ID" --repo "$REPOSITORY" --exit-status
 unset RELEASE_RUNS
+printf 'Release run ID: %s\n' "$RELEASE_RUN_ID"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Wait for the selected run:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+gh run watch "$RELEASE_RUN_ID" --repo "$REPOSITORY" --exit-status
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
@@ -594,14 +661,22 @@ gcloud run jobs execute agora-authentication-init \
 
 The workflow rejects an absent, failed, stale, or wrong-job execution and atomically writes the
 private one-time marker `production/initialization/complete.json`. Wait for the release workflow to
-finish successfully, then delete the dormant privileged definition while its initializer tag is
-still attached:
+finish successfully:
 
 ```zsh
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 gh run watch "$RELEASE_RUN_ID" --repo "$REPOSITORY" --exit-status
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Delete the dormant privileged definition while its initializer tag is still attached:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 gcloud run jobs delete agora-authentication-init \
   --project="$WORKLOAD_PROJECT_ID" --region="$REGION" --quiet
 if gcloud run jobs describe agora-authentication-init \
@@ -760,10 +835,39 @@ unsetopt err_exit nounset xtrace
 gcloud storage ls "gs://${RECEIPT_BUCKET_NAME}/production/success/*.json"
 TARGET_RECEIPT=''
 [[ "$TARGET_RECEIPT" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Refresh the repository:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 git switch master
 git pull --ff-only
 test -z "$(git status --porcelain)"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Collect the workflow commit:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 MASTER_SHA="$(git rev-parse HEAD)"
+test "$MASTER_SHA" = "$(gh api "repos/${REPOSITORY}/commits/master" --jq .sha)"
+printf 'Rollback commit: %s\n' "$MASTER_SHA"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Dispatch the rollback:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 ROLLBACK_RUN_ID="$(
   EXPECTED_SHA="$MASTER_SHA" ./ops/run-workflow.sh \
     release.yaml run-id action=rollback target_receipt="$TARGET_RECEIPT"

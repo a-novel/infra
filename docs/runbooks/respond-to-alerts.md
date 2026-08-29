@@ -174,7 +174,7 @@ provider status, cap, credential, and domain checks. Never make JSON Keys public
 NAT route, or enable unauthenticated invocation.
 
 After correcting the owning system through a reviewed path, run one read-only confirmation from the
-infrastructure repository root:
+infrastructure repository root. Refresh the repository first:
 
 ```zsh
 () {
@@ -183,7 +183,27 @@ unsetopt err_exit nounset xtrace
 git switch master
 git pull --ff-only
 test -z "$(git status --porcelain)"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Collect the workflow commit:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 MASTER_SHA="$(git rev-parse HEAD)"
+test "$MASTER_SHA" = "$(gh api "repos/${REPOSITORY}/commits/master" --jq .sha)"
+printf 'Health-check commit: %s\n' "$MASTER_SHA"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Dispatch the read-only check:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 HEALTH_RUN_ID="$(
   EXPECTED_SHA="$MASTER_SHA" ./ops/run-workflow.sh drift.yaml run-id
 )"

@@ -43,6 +43,51 @@ test("local runbook commands are scoped for the configured zsh session", () => {
   assert.ok(zshBlockCount > 0);
 });
 
+test("workflow commands keep restartable repository-state boundaries", () => {
+  let commitCollectionBlockCount = 0;
+  let workflowInvocationBlockCount = 0;
+
+  for (const { name, content } of runbooks) {
+    for (const match of content.matchAll(/```zsh\n([\s\S]*?)\n```/g)) {
+      const body = match[1];
+
+      if (body.includes("git pull --ff-only")) {
+        assert.doesNotMatch(
+          body,
+          /MASTER_SHA=|\.\/ops\/run-workflow\.sh/,
+          `${name} combines repository refresh with commit collection or workflow invocation`,
+        );
+      }
+
+      if (body.includes('MASTER_SHA="$(git rev-parse HEAD)"')) {
+        commitCollectionBlockCount += 1;
+        assert.match(
+          body,
+          /gh api .*commits\/master/,
+          `${name} collects MASTER_SHA without checking remote master`,
+        );
+        assert.doesNotMatch(
+          body,
+          /\.\/ops\/run-workflow\.sh/,
+          `${name} combines commit collection with workflow invocation`,
+        );
+      }
+
+      if (body.includes("./ops/run-workflow.sh")) {
+        workflowInvocationBlockCount += 1;
+        assert.doesNotMatch(
+          body,
+          /git switch master|git pull --ff-only|MASTER_SHA=.*git rev-parse/,
+          `${name} combines workflow invocation with repository-state collection`,
+        );
+      }
+    }
+  }
+
+  assert.ok(commitCollectionBlockCount > 0);
+  assert.ok(workflowInvocationBlockCount > 0);
+});
+
 test("Bash fences are limited to commands pasted inside remote COS hosts", () => {
   const bashBlocks = [];
   for (const { name, content } of runbooks) {
