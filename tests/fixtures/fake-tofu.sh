@@ -8,7 +8,7 @@ if [[ "${1:-}" == -chdir=* ]]; then
     shift
 fi
 
-if [ "${FAKE_TOFU_FAIL_ACTION:-}" = "${1:-}" ]; then
+if [ "${FAKE_TOFU_FAIL_ACTION:-}" = "${1:-}" ] && [ "${1:-}" != plan ]; then
     printf 'fixture-sensitive-diagnostic\n' >&2
     exit 1
 fi
@@ -25,11 +25,21 @@ case "${1:-}" in
         ;;
     plan)
         output=""
+        event_file=""
         for argument in "$@"; do
             if [[ "${argument}" == -out=* ]]; then
                 output="${argument#-out=}"
+            elif [[ "${argument}" == -json-into=* ]]; then
+                event_file="${argument#-json-into=}"
             fi
         done
+        if [ "${FAKE_TOFU_FAIL_ACTION:-}" = plan ]; then
+            if [ -n "${FAKE_TOFU_DIAGNOSTICS:-}" ] && [ -n "${event_file}" ]; then
+                command cat "${FAKE_TOFU_DIAGNOSTICS}" >"${event_file}"
+            fi
+            printf 'fixture-sensitive-diagnostic\n' >&2
+            exit 1
+        fi
         if [ -z "${output}" ]; then
             exit 64
         fi
