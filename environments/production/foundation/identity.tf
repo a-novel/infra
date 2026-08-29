@@ -105,6 +105,7 @@ locals {
   database_operator_project_roles = toset([
     "roles/compute.osAdminLogin",
     "roles/compute.viewer",
+    "roles/logging.viewer",
   ])
 
   database_operator_project_bindings = {
@@ -187,7 +188,6 @@ resource "google_project_iam_custom_role" "foundation_project_metadata" {
 
   permissions = [
     "resourcemanager.projects.get",
-    "resourcemanager.projects.list",
     "resourcemanager.projects.update",
   ]
 

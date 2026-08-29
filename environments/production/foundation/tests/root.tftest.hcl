@@ -415,7 +415,6 @@ run "builds_the_protected_workload_foundation" {
       ]) &&
       google_project_iam_custom_role.foundation_project_metadata.permissions == toset([
         "resourcemanager.projects.get",
-        "resourcemanager.projects.list",
         "resourcemanager.projects.update",
       ]) &&
       length(google_project_iam_member.recovery_project_deleter) == 0 &&
@@ -516,8 +515,9 @@ run "builds_the_protected_workload_foundation" {
       local.database_operator_project_roles == toset([
         "roles/compute.osAdminLogin",
         "roles/compute.viewer",
+        "roles/logging.viewer",
       ]) &&
-      length(google_project_iam_member.database_operator) == 2 &&
+      length(google_project_iam_member.database_operator) == 3 &&
       one(values(google_project_iam_member.database_operator_iap)).role == "roles/iap.tunnelResourceAccessor" &&
       one(one(values(google_project_iam_member.database_operator_iap)).condition).expression == "destination.port == 22" &&
       one(values(google_service_account_iam_member.database_operator_act_as)).role == "roles/iam.serviceAccountUser" &&
