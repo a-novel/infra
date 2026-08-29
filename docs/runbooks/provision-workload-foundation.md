@@ -659,9 +659,7 @@ gcloud services list --enabled --project="$WORKLOAD_PROJECT_ID" \
 Expected safe result: the project is active with the selected parent and labels, billing is enabled,
 and exactly the thirteen expected service names appear in the filtered list.
 
-Verify no service account has an unexpected primitive project role and no project service account has
-a user-managed key. The all-account enumeration is intentional: a newly introduced or
-provider-created account must not escape this check.
+Verify no service account has an unexpected primitive project role:
 
 ```zsh
 () {
@@ -678,6 +676,34 @@ gcloud projects get-iam-policy "$WORKLOAD_PROJECT_ID" \
     | [$role, .]
     | @tsv
   '
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Expected safe result: at most one Owner row for the foundation creator before cleanup and no Editor
+row for any service account, including the default Compute Engine service account.
+
+The key audit inventories every project service account so an unmanaged or provider-created account
+cannot escape it. Temporarily grant the human operator Google's read-only View Service Accounts role,
+which includes account and key listing without key mutation:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+gcloud projects add-iam-policy-binding "$WORKLOAD_PROJECT_ID" \
+  --member="$OPERATOR_PRINCIPAL" \
+  --role='roles/iam.serviceAccountViewer' \
+  --condition=None \
+  --format=none
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+After IAM propagation, run the key audit:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 
 PROJECT_SERVICE_ACCOUNTS="$(gcloud iam service-accounts list \
   --project="$WORKLOAD_PROJECT_ID" \
@@ -699,10 +725,32 @@ printf 'All project service accounts have zero user-managed keys.\n'
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Expected safe result: at most one Owner row for the foundation creator before cleanup, no Editor row
-for any service account—including the default Compute Engine service account—and the final zero-key
-message. A key is an incident: disable it, preserve audit evidence, identify its creator, and do not
-continue.
+Expected safe result: the final zero-key message. A key is an incident: disable it, preserve audit
+evidence, identify its creator, and do not continue.
+
+Remove the temporary viewer binding even when the audit failed, then confirm its absence:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+gcloud projects remove-iam-policy-binding "$WORKLOAD_PROJECT_ID" \
+  --member="$OPERATOR_PRINCIPAL" \
+  --role='roles/iam.serviceAccountViewer' \
+  --condition=None \
+  --format=none
+
+TEMPORARY_VIEWER_BINDING="$(gcloud projects get-iam-policy "$WORKLOAD_PROJECT_ID" \
+  --flatten='bindings[].members' \
+  --filter="bindings.role=roles/iam.serviceAccountViewer AND bindings.members=${OPERATOR_PRINCIPAL}" \
+  --format='value(bindings.role)')"
+[[ -z "$TEMPORARY_VIEWER_BINDING" ]]
+unset TEMPORARY_VIEWER_BINDING
+printf 'Temporary service-account viewer removed.\n'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Expected safe result: `Temporary service-account viewer removed.`
 
 Verify only the intended cross-project Secret Manager members without accessing payloads:
 
@@ -1382,6 +1430,8 @@ and public database paths are absent again.
 - [Cloud Run job tags](https://cloud.google.com/run/docs/configuring/jobs/tags)
 - [IAM conditions with Resource Manager tags](https://cloud.google.com/iam/docs/conditions-resource-attributes#resource_tags)
 - [Default Compute Engine service accounts](https://cloud.google.com/compute/docs/access/service-accounts)
+- [View Service Accounts role](https://cloud.google.com/iam/docs/roles-permissions/iam#iam.serviceAccountViewer)
+- [List and inspect service account keys](https://cloud.google.com/iam/docs/keys-list-get)
 - [Organization policies for service accounts](https://cloud.google.com/resource-manager/docs/organization-policy/restricting-service-accounts)
 - [Direct VPC egress and tag limitations](https://cloud.google.com/run/docs/configuring/vpc-direct-vpc)
 - [Cloud DNS private zones](https://cloud.google.com/dns/docs/zones/zones-overview)
