@@ -18,6 +18,8 @@ the named next step. Open one runbook at a time; no operator needs to remember t
 5. Keep `PRODUCTION_RELEASES_ENABLED=false` until step 6 tells you to change it.
 6. Every linked runbook starts with an **Operator context** block. Paste it once before its steps,
    including when resuming in the middle.
+7. Repository refresh, workflow-commit collection, and workflow invocation use separate command
+   blocks. Rerun only the failed block. Collect `MASTER_SHA` again after every successful pull.
 
 Google Cloud concepts and provider behavior are linked from the runbook that uses them. Repository-
 specific decisions, stop conditions, commands, expected results, and recovery actions remain here.
