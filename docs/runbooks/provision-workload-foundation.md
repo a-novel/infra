@@ -137,8 +137,9 @@ callable after this procedure.
   accepts the documented Google Cloud Billing and Monitoring senders. Cost owns billing/quota
   follow-up; operations owns service, job, backup, and database incidents.
 - Select at least one named database operator as a `user:` or `group:` IAM member. This identity
-  receives privileged OS Login through IAP and must use MFA. A cross-organization operator also
-  needs OS Login External User from its own organization administrator.
+  receives privileged OS Login through IAP and read-only access to workload logs. Data Access logs
+  remain restricted. It must use MFA. A cross-organization operator also needs OS Login External
+  User from its own organization administrator.
 - Select at least one named Authentication initializer as a `user:` or `group:` IAM member. This
   human receives the narrow ability to provision and invoke the one-time initializer as its dedicated
   identity. Use a group when several people share the duty; never use a service account.
@@ -1238,10 +1239,30 @@ policy dumps, billing account IDs, email addresses, secrets, or plan values.
 ### Project exists after a failed apply
 
 Freeze every foundation writer and keep the project. Inspect the protected run's sanitized resource
-types and Google audit logs, then inspect the foundation state. If state already owns
-`google_project.workload`, wait for Google API propagation and create a fresh reviewed plan. The new
-plan must converge the same desired state and contain no managed-resource delete, replacement, or
-forget action.
+types and foundation state. Use the operator context's `WORKLOAD_PROJECT_ID`; the GitHub variable is
+published only after section 8 succeeds. Read only failed Admin Activity entries:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+gcloud logging read \
+  'logName:"cloudaudit.googleapis.com%2Factivity" AND protoPayload.status.code!=0' \
+  --project="$WORKLOAD_PROJECT_ID" \
+  --billing-project="$MANAGEMENT_PROJECT_ID" \
+  --freshness=2h \
+  --limit=50 \
+  --format='table(timestamp,protoPayload.serviceName,protoPayload.methodName,protoPayload.status.code,protoPayload.status.message)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+If state already owns `google_project.workload`, create a fresh reviewed plan after API and quota
+propagation. Service-account quota or concurrent IAM errors need no workaround when state and the
+fresh plan prove those resources converged. Retry a `compute.disks.insert`
+`ZONE_RESOURCE_POOL_EXHAUSTED` failure only when state confirms no disk was created. If it repeats on
+a fresh apply, stop and change the selected zone through reviewed code and protected inputs. Changing
+zones after the data disk exists is a database migration. Every recovery plan must contain no
+managed-resource deletion, replacement, or forget action.
 
 ### Existing project is absent from foundation state
 
@@ -1323,6 +1344,8 @@ and public database paths are absent again.
 - [Alerting policies](https://cloud.google.com/monitoring/alerts)
 - [Notification channels](https://cloud.google.com/monitoring/support/notification-options)
 - [Logging exclusions](https://cloud.google.com/logging/docs/exclusions)
+- [Cloud Logging access control](https://cloud.google.com/logging/docs/access-control)
+- [Compute Engine API errors](https://cloud.google.com/compute/docs/reference/rest/v1/errors)
 - [Cloud Run instance-based billing](https://cloud.google.com/run/docs/configuring/billing-settings)
 - [GitHub scheduled workflows](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)
 - [Production cost worksheet](../costs/production.md)
