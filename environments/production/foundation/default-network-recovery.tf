@@ -9,6 +9,11 @@ resource "google_compute_network" "default_adoption" {
   auto_create_subnetworks = true
   deletion_policy         = "DELETE"
 
+  lifecycle {
+    # State adoption preserves provider-created fields until the deletion review.
+    ignore_changes = all
+  }
+
   depends_on = [google_project_service.workload["compute.googleapis.com"]]
 }
 
