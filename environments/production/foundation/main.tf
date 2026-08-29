@@ -42,8 +42,8 @@ resource "google_project" "workload" {
   org_id          = var.folder_id == null ? var.organization_id : null
   folder_id       = var.folder_id
 
-  # Google initially creates a default VPC; the provider deletes that empty
-  # network before this resource completes so only the reviewed custom VPC remains.
+  # The provider deletes Google's default VPC while creating a project. An
+  # imported project needs the explicit recovery resource declared separately.
   auto_create_network = false
   deletion_policy     = "PREVENT"
   labels              = local.labels

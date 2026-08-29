@@ -151,8 +151,10 @@ mock_provider "google" {
 }
 
 variables {
-  management_project_id  = "agora-management-test"
-  workload_project_id    = "agora-production-test"
+  management_project_id = "agora-management-test"
+  workload_project_id   = "agora-production-test"
+  # OpenTofu's test context cannot execute configuration-driven imports.
+  adopt_default_network  = false
   backup_bucket_name     = "agora-management-test-123456789012-backups"
   billing_account_id     = "ABCDEF-123456-ABCDEF"
   cost_alert_email       = "infra@example.com"
@@ -1020,6 +1022,7 @@ run "limits_disposable_recovery_authority_to_the_replacement_project" {
       google_project_iam_member.release_cloud_run_deployer.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
       google_project_iam_member.database_release.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
       google_artifact_registry_repository_iam_member.release_writer.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
+      length(google_compute_network.default_adoption) == 0 &&
       length(google_project_iam_member.plan_viewer) == 0 &&
       length(google_artifact_registry_repository_iam_member.recovery_reader) == 0 &&
       length(google_artifact_registry_repository_iam_member.authentication_initializer_reader) == 0 &&

@@ -316,11 +316,11 @@ gcloud projects add-iam-policy-binding "$WORKLOAD_PROJECT_ID" \
 This creates only the project and billing link. Google can attach its standard empty `default` VPC
 to a manually created project. Do not enable APIs, attach workloads, edit that VPC, or add another
 network manually. Before its first plan, the protected workflow must import the project into the
-remote foundation state as `google_project.workload`. Applying the declared
-`auto_create_network = false` then deliberately removes Google's empty default VPC before the custom
-production VPC is created. Set `adopt_existing_project` in the protected configuration below;
-OpenTofu's declarative import block then shows the adoption in the saved plan and performs it only
-during exact-plan apply. Do not run `tofu import` or delete the default VPC from a local checkout.
+remote foundation state as `google_project.workload`. The Google provider removes a default VPC only
+while creating a project; updating an imported project does not repeat that cleanup. Set
+`adopt_existing_project` in the protected configuration below. When the default VPC exists, the
+reviewed recovery configuration also imports it as `google_compute_network.default_adoption` before
+a separate deletion-labeled change removes it. Do not run `tofu import` or delete the VPC locally.
 
 Verification:
 
@@ -335,10 +335,9 @@ gcloud billing projects describe "$WORKLOAD_PROJECT_ID" \
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Expected safe result: the intended project is active and billing is enabled. Do not enable Compute
-Engine merely to inspect its possible default VPC. The protected adoption later enables the required
-API, removes only that empty provider-created VPC, and proves that `agora-production` is the sole
-network.
+Expected safe result: the intended project is active and billing is enabled. The protected workflow
+enables Compute Engine, verifies and adopts any empty default VPC, and later removes it through the
+normal destructive-change gate.
 
 ## 3. Grant exact billing-account prerequisites
 
@@ -632,10 +631,17 @@ instance-group manager, one snapshot policy/attachment, eight monitoring alerts,
 preferences, one budget, two notification channels, and logging controls. An adopted project may
 also show `update google_project 1` when its existing settings differ from code. The summary must
 contain zero managed-resource delete, replacement, state-forget, Cloud Run service/job, router,
-NAT, connector, load balancer, secret-version, or service-account-key actions. During adoption, the
-reviewed `google_project` action also has the documented provider side effect of removing Google's
-empty default VPC; no workload may be attached to it. Do not approve a plan that differs without
-changing and reviewing the code and this runbook.
+NAT, connector, load balancer, secret-version, or service-account-key actions.
+
+An imported project keeps Google's default VPC because the provider removes it only while creating
+a project. When that empty VPC already exists, the recovery plan must show exactly
+`import google_compute_network 1` for `google_compute_network.default_adoption`. That address must
+have no create, update, replacement, deletion, or state-forget action; a first foundation can still
+create the separate `google_compute_network.production` resource. Applying the import changes only
+OpenTofu state. Stop after the apply: removing the imported address belongs in a separate pull
+request that carries `allow-resource-deletion`, and its protected apply must complete before the
+network checks below can pass. Do not approve a plan that differs without changing and reviewing
+the code and this runbook.
 
 ## 6. Verify project, billing, APIs, and IAM after apply
 
@@ -659,9 +665,36 @@ gcloud services list --enabled --project="$WORKLOAD_PROJECT_ID" \
 Expected safe result: the project is active with the selected parent and labels, billing is enabled,
 and exactly the thirteen expected service names appear in the filtered list.
 
-Verify no service account has an unexpected primitive project role and no project service account has
-a user-managed key. The all-account enumeration is intentional: a newly introduced or
-provider-created account must not escape this check.
+The IAM audit needs read access to service-account keys, custom roles, tags, and resource policies.
+Temporarily grant the human operator Google's predefined Security Reviewer role. It lists resources
+and allow policies without reading application payloads or changing cloud resources:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+gcloud projects add-iam-policy-binding "$WORKLOAD_PROJECT_ID" \
+  --member="$OPERATOR_PRINCIPAL" \
+  --role='roles/iam.securityReviewer' \
+  --condition=None \
+  --format=none
+
+TEMPORARY_SECURITY_REVIEWER_BINDING="$(gcloud projects get-iam-policy "$WORKLOAD_PROJECT_ID" \
+  --flatten='bindings[].members' \
+  --filter="bindings.role=roles/iam.securityReviewer AND bindings.members=${OPERATOR_PRINCIPAL}" \
+  --format='value(bindings.role)')"
+[[ "$TEMPORARY_SECURITY_REVIEWER_BINDING" == "roles/iam.securityReviewer" ]]
+unset TEMPORARY_SECURITY_REVIEWER_BINDING
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Google can take up to seven minutes to propagate this allow-policy change. If an audit command
+reports `PERMISSION_DENIED` while the exact binding above is present, retry only that read after
+propagation; do not grant another role.
+
+If an IAM audit fails, skip to the temporary Security Reviewer cleanup below before troubleshooting.
+
+Verify no service account has an unexpected primitive project role:
 
 ```zsh
 () {
@@ -678,6 +711,19 @@ gcloud projects get-iam-policy "$WORKLOAD_PROJECT_ID" \
     | [$role, .]
     | @tsv
   '
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Expected safe result: at most one Owner row for the foundation creator before cleanup and no Editor
+row for any service account, including the default Compute Engine service account.
+
+The key audit inventories every project service account so an unmanaged or provider-created account
+cannot escape it:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 
 PROJECT_SERVICE_ACCOUNTS="$(gcloud iam service-accounts list \
   --project="$WORKLOAD_PROJECT_ID" \
@@ -699,10 +745,8 @@ printf 'All project service accounts have zero user-managed keys.\n'
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Expected safe result: at most one Owner row for the foundation creator before cleanup, no Editor row
-for any service account—including the default Compute Engine service account—and the final zero-key
-message. A key is an incident: disable it, preserve audit evidence, identify its creator, and do not
-continue.
+Expected safe result: the final zero-key message. A key is an incident: disable it, preserve audit
+evidence, identify its creator, and do not continue.
 
 Verify only the intended cross-project Secret Manager members without accessing payloads:
 
@@ -868,8 +912,12 @@ INITIALIZER_TAG_VALUE="$(gcloud resource-manager tags values list \
 [[ "$INITIALIZER_TAG_VALUE" =~ ^tagValues/[0-9]+$ ]]
 
 gcloud resource-manager tags values get-iam-policy "$INITIALIZER_TAG_VALUE" \
-  --flatten='bindings[].members' --filter='bindings.role=roles/resourcemanager.tagUser' \
-  --format='table(bindings.members)'
+  --format=json \
+| jq -r '
+    .bindings[]?
+    | select(.role == "roles/resourcemanager.tagUser")
+    | .members[]
+  '
 gcloud iam service-accounts get-iam-policy \
   "agora-auth-initializer@${WORKLOAD_PROJECT_ID}.iam.gserviceaccount.com" \
   --project="$WORKLOAD_PROJECT_ID" --flatten='bindings[].members' \
@@ -889,6 +937,30 @@ The fifth grant is the `AuthenticationInitializerOnly` project binding inspected
 safe result: each named initializer is present in all five places; the release, scheduler, recovery,
 and runtime service accounts are absent from the initializer tag, initializer `actAs`, deployer, and
 initializer condition. The registry reader output may also contain the database runtime.
+
+Remove the temporary Security Reviewer even when an audit failed, then confirm its absence:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+gcloud projects remove-iam-policy-binding "$WORKLOAD_PROJECT_ID" \
+  --member="$OPERATOR_PRINCIPAL" \
+  --role='roles/iam.securityReviewer' \
+  --condition=None \
+  --format=none
+
+TEMPORARY_SECURITY_REVIEWER_BINDING="$(gcloud projects get-iam-policy "$WORKLOAD_PROJECT_ID" \
+  --flatten='bindings[].members' \
+  --filter="bindings.role=roles/iam.securityReviewer AND bindings.members=${OPERATOR_PRINCIPAL}" \
+  --format='value(bindings.role)')"
+[[ -z "$TEMPORARY_SECURITY_REVIEWER_BINDING" ]]
+unset TEMPORARY_SECURITY_REVIEWER_BINDING
+printf 'Temporary Security Reviewer removed.\n'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Expected safe result: `Temporary Security Reviewer removed.`
 
 Verify the two runtime bucket roles without displaying unrelated members:
 
@@ -925,15 +997,42 @@ gcloud compute networks subnets describe "agora-production-${REGION}" \
   --project="$WORKLOAD_PROJECT_ID" \
   --region="$REGION" \
   --format='yaml(name,ipCidrRange,privateIpGoogleAccess,stackType,network)'
-gcloud compute routes list --project="$WORKLOAD_PROJECT_ID" \
-  --filter='network:agora-production' \
-  --format='table(name,destRange,nextHopGateway,priority)'
+
+PRODUCTION_NETWORK_URL="$(gcloud compute networks describe agora-production \
+  --project="$WORKLOAD_PROJECT_ID" \
+  --format='value(selfLink)')"
+
+gcloud compute networks list --project="$WORKLOAD_PROJECT_ID" --format=json \
+| jq --exit-status --arg network "$PRODUCTION_NETWORK_URL" '
+    length == 1 and
+    .[0].selfLink == $network and
+    .[0].name == "agora-production" and
+    .[0].autoCreateSubnetworks == false
+  '
+
+gcloud compute routes list --project="$WORKLOAD_PROJECT_ID" --format=json \
+| jq --exit-status --raw-output \
+    --arg network "$PRODUCTION_NETWORK_URL" \
+    --arg subnet "$SUBNET_CIDR" '
+      [.[] | select(.network == $network)]
+      | select(
+          length == 3 and
+          any(.[]; .destRange == $subnet and .priority == 0) and
+          ([.[] | select(.name | startswith("restricted-google-")) | .destRange] | sort) ==
+            (["199.36.153.4/30", "34.126.0.0/18"] | sort) and
+          all(.[]; .destRange != "0.0.0.0/0")
+        )
+      | sort_by(.name)[]
+      | [.name, .destRange, (.priority | tostring), (.nextHopGateway // "-")]
+      | @tsv
+    '
+unset PRODUCTION_NETWORK_URL
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Expected safe result: custom mode, regional routing, MTU 1460, the selected `/24`, Private Google
-Access enabled, IPv4 only, and exactly the `199.36.153.4/30` and `34.126.0.0/18` routes. No
-`0.0.0.0/0` route appears.
+Expected safe result: `true`, custom mode, regional routing, MTU 1460, the selected `/24`, Private
+Google Access enabled, and IPv4 only. The route output contains the automatic `/24` subnet route and
+the explicit `199.36.153.4/30` and `34.126.0.0/18` routes. No second VPC or `0.0.0.0/0` route exists.
 
 Firewall and absence of idle/public network products:
 
@@ -941,9 +1040,20 @@ Firewall and absence of idle/public network products:
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-gcloud compute firewall-rules list --project="$WORKLOAD_PROJECT_ID" \
-  --filter='network:agora-production' \
-  --format='table(name,direction,priority,sourceRanges,destinationRanges,allowed,denied,targetTags)'
+PRODUCTION_NETWORK_URL="$(gcloud compute networks describe agora-production \
+  --project="$WORKLOAD_PROJECT_ID" \
+  --format='value(selfLink)')"
+
+gcloud compute firewall-rules list --project="$WORKLOAD_PROJECT_ID" --format=json \
+| jq --exit-status --arg network "$PRODUCTION_NETWORK_URL" '
+    [
+      .[]
+      | select(.network == $network)
+      | {name, direction, priority, sourceRanges, destinationRanges, allowed, denied, targetTags}
+    ]
+    | if length == 6 then sort_by(.name) else error("expected six production firewall rules") end
+  '
+unset PRODUCTION_NETWORK_URL
 gcloud compute routers list --project="$WORKLOAD_PROJECT_ID" --format='value(name)'
 gcloud compute addresses list --project="$WORKLOAD_PROJECT_ID" \
   --format='table(name,addressType,address,subnetwork.basename(),users.basename())'
@@ -1372,16 +1482,28 @@ destruction gate must be deliberate. The database group's one stateful internal 
 No service deployment proceeds until routers/NAT, connectors, external addresses, forwarding rules,
 and public database paths are absent again.
 
+For an empty Google-created default VPC left behind by project import, first merge and apply an
+import-only foundation plan for `google_compute_network.default_adoption`. Stop if that plan changes
+the network. Then remove the imported address in a second pull request carrying
+`allow-resource-deletion`, apply it, and rerun section 7. Use exact self-link comparisons from JSON
+when auditing networks; `gcloud` text filters can match substrings and are not a deletion proof.
+
 ## References
 
 - [Creating and managing projects](https://cloud.google.com/resource-manager/docs/creating-managing-projects)
 - [Project IAM access and automatic creator Owner](https://cloud.google.com/resource-manager/docs/access-control-proj)
 - [Cloud Billing roles](https://cloud.google.com/billing/docs/how-to/billing-access)
+- [Default VPC network](https://cloud.google.com/vpc/docs/vpc#default-network)
 - [Configure Private Google Access](https://cloud.google.com/vpc/docs/configure-private-google-access)
+- [`gcloud` topic filters](https://cloud.google.com/sdk/gcloud/reference/topic/filters)
 - [Service account security best practices](https://cloud.google.com/iam/docs/best-practices-service-accounts)
 - [Cloud Run job tags](https://cloud.google.com/run/docs/configuring/jobs/tags)
 - [IAM conditions with Resource Manager tags](https://cloud.google.com/iam/docs/conditions-resource-attributes#resource_tags)
 - [Default Compute Engine service accounts](https://cloud.google.com/compute/docs/access/service-accounts)
+- [Security Reviewer role](https://cloud.google.com/iam/docs/roles-permissions/iam#iam.securityReviewer)
+- [List and inspect service account keys](https://cloud.google.com/iam/docs/keys-list-get)
+- [Create and manage custom roles](https://cloud.google.com/iam/docs/creating-custom-roles#viewing_the_role_metadata)
+- [Create and manage tags](https://cloud.google.com/resource-manager/docs/tags/tags-creating-and-managing)
 - [Organization policies for service accounts](https://cloud.google.com/resource-manager/docs/organization-policy/restricting-service-accounts)
 - [Direct VPC egress and tag limitations](https://cloud.google.com/run/docs/configuring/vpc-direct-vpc)
 - [Cloud DNS private zones](https://cloud.google.com/dns/docs/zones/zones-overview)
