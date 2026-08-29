@@ -32,7 +32,7 @@ umask 077
 
 REPOSITORY='a-novel/infra'
 REGION='europe-west1'
-DATABASE_ZONE='europe-west1-b'
+DATABASE_ZONE='europe-west1-c'
 
 MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID --repo "$REPOSITORY")"
 WORKLOAD_PROJECT_ID="$(gh variable get GCP_WORKLOAD_PROJECT_ID --repo "$REPOSITORY")"

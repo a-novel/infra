@@ -25,7 +25,7 @@ umask 077
 
 REPOSITORY='a-novel/infra'
 REGION='europe-west1'
-DATABASE_ZONE='europe-west1-b'
+DATABASE_ZONE='europe-west1-c'
 SUBNET_CIDR='10.20.0.0/24'
 WORKLOAD_PROJECT_NAME='Agora production'
 
@@ -1306,9 +1306,11 @@ If state already owns `google_project.workload`, create a fresh reviewed plan af
 propagation. Service-account quota or concurrent IAM errors need no workaround when state and the
 fresh plan prove those resources converged. Retry a `compute.disks.insert`
 `ZONE_RESOURCE_POOL_EXHAUSTED` failure only when state confirms no disk was created. If it repeats on
-a fresh apply, stop and change the selected zone through reviewed code and protected inputs. Changing
-zones after the data disk exists is a database migration. Every recovery plan must contain no
-managed-resource deletion, replacement, or forget action.
+a fresh apply, stop and change the selected zone through reviewed code and protected inputs. Before
+the disk exists, that plan may replace only `google_project_iam_member.database_release` because its
+IAM condition names the zone; put `allow-resource-deletion` on the correcting PR before merge and
+reject every other deletion, replacement, or forget action. Changing zones after the data disk exists
+is a database migration.
 
 ### Existing project is absent from foundation state
 

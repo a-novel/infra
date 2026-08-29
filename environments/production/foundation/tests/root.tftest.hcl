@@ -133,7 +133,7 @@ mock_provider "google" {
 
   mock_data "google_compute_instance_group" {
     defaults = {
-      instances = ["projects/agora-production-test/zones/europe-west1-b/instances/agora-database-abcd"]
+      instances = ["projects/agora-production-test/zones/europe-west1-c/instances/agora-database-abcd"]
       size      = 1
     }
   }
@@ -532,7 +532,7 @@ run "builds_the_protected_workload_foundation" {
         "compute.zoneOperations.get",
       ]) &&
       google_project_iam_member.database_release.member == "serviceAccount:infra-release@agora-management-test.iam.gserviceaccount.com" &&
-      one(google_project_iam_member.database_release.condition).expression == "resource.type != 'compute.googleapis.com/Instance' || resource.name.startsWith('projects/agora-production-test/zones/europe-west1-b/instances/agora-database-')" &&
+      one(google_project_iam_member.database_release.condition).expression == "resource.type != 'compute.googleapis.com/Instance' || resource.name.startsWith('projects/agora-production-test/zones/europe-west1-c/instances/agora-database-')" &&
       alltrue([
         for permission in google_project_iam_custom_role.database_release.permissions :
         !startswith(permission, "compute.disks.") &&
@@ -661,7 +661,7 @@ run "builds_the_protected_workload_foundation" {
       alltrue([
         for policy in values(google_monitoring_alert_policy.database_capacity) :
         policy.deletion_policy == "PREVENT" &&
-        strcontains(one(policy.conditions).condition_threshold[0].filter, "resource.label.zone = \"europe-west1-b\"") &&
+        strcontains(one(policy.conditions).condition_threshold[0].filter, "resource.label.zone = \"europe-west1-c\"") &&
         strcontains(one(policy.conditions).condition_threshold[0].filter, "metric.label.instance_name = starts_with(\"agora-database-\")") &&
         toset(policy.notification_channels) == toset([google_monitoring_notification_channel.operations_email[0].name]) &&
         one(policy.conditions).condition_threshold[0].trigger[0].count == 1

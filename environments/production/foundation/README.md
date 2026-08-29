@@ -144,7 +144,7 @@ single boundary; their `for_each` keys are part of the reviewed configuration an
 `user:` or `group:` IAM members. `organization_id` or `folder_id` is optional and mutually
 exclusive.
 
-Defaults keep production in `europe-west1` and the database in `europe-west1-b`, use
+Defaults keep production in `europe-west1` and the database in `europe-west1-c`, use
 `10.20.0.0/24`, run an `e2-medium` with a 50 GiB `pd-balanced` data disk, give each PostgreSQL
 container 0.75 vCPU and 1,536 MiB with no swap, cap each cluster at 50 connections, pin a named COS
 image, set the alert-only budget to 60 whole billing-currency units, and apply the quota ceilings

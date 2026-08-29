@@ -22,7 +22,7 @@ unsetopt err_exit nounset xtrace
 umask 077
 
 REPOSITORY='a-novel/infra'
-DATABASE_ZONE='europe-west1-b'
+DATABASE_ZONE='europe-west1-c'
 DATABASE_GROUP='agora-database'
 DATABASE_DISK='agora-data'
 
