@@ -786,6 +786,21 @@ Restore, scheduler, release, plan, and foundation identities do not appear. This
 intentionally omits the operators' separate Secret Version Manager bindings. Never run
 `versions access` as a verification shortcut.
 
+The custom-role audits require `iam.roles.get`. Temporarily grant the human operator Google's
+read-only Role Viewer:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+gcloud projects add-iam-policy-binding "$WORKLOAD_PROJECT_ID" \
+  --member="$OPERATOR_PRINCIPAL" \
+  --role='roles/iam.roleViewer' \
+  --condition=None \
+  --format=none
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
 Verify that the release deployment role cannot execute a job or override an execution:
 
 ```zsh
@@ -859,6 +874,30 @@ gcloud iam roles describe authenticationInitializerDeployer \
 
 Expected safe result: `true`. In particular, this role has neither `run.jobs.runWithOverrides` nor
 Cloud Run IAM-policy access. Normal execution comes only from the separate initializer-tag condition.
+
+Remove the temporary role viewer even when either audit failed, then confirm its absence:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+gcloud projects remove-iam-policy-binding "$WORKLOAD_PROJECT_ID" \
+  --member="$OPERATOR_PRINCIPAL" \
+  --role='roles/iam.roleViewer' \
+  --condition=None \
+  --format=none
+
+TEMPORARY_ROLE_VIEWER_BINDING="$(gcloud projects get-iam-policy "$WORKLOAD_PROJECT_ID" \
+  --flatten='bindings[].members' \
+  --filter="bindings.role=roles/iam.roleViewer AND bindings.members=${OPERATOR_PRINCIPAL}" \
+  --format='value(bindings.role)')"
+[[ -z "$TEMPORARY_ROLE_VIEWER_BINDING" ]]
+unset TEMPORARY_ROLE_VIEWER_BINDING
+printf 'Temporary role viewer removed.\n'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Expected safe result: `Temporary role viewer removed.`
 
 Verify the five permanent authorization tags and the four production invocation conditions:
 
@@ -1432,6 +1471,8 @@ and public database paths are absent again.
 - [Default Compute Engine service accounts](https://cloud.google.com/compute/docs/access/service-accounts)
 - [View Service Accounts role](https://cloud.google.com/iam/docs/roles-permissions/iam#iam.serviceAccountViewer)
 - [List and inspect service account keys](https://cloud.google.com/iam/docs/keys-list-get)
+- [Role Viewer](https://cloud.google.com/iam/docs/roles-permissions/iam#iam.roleViewer)
+- [Create and manage custom roles](https://cloud.google.com/iam/docs/creating-custom-roles#viewing_the_role_metadata)
 - [Organization policies for service accounts](https://cloud.google.com/resource-manager/docs/organization-policy/restricting-service-accounts)
 - [Direct VPC egress and tag limitations](https://cloud.google.com/run/docs/configuring/vpc-direct-vpc)
 - [Cloud DNS private zones](https://cloud.google.com/dns/docs/zones/zones-overview)
