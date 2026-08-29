@@ -481,7 +481,6 @@ printf '%s\n' \
     [
       {service:"run.googleapis.com", dimensions:{region:"europe-west1"}, justification:"Agora production cost ceiling; changes require reviewed infrastructure code.", quotaConfig:{preferredValue:"8000", grantedValue:"8000"}},
       {service:"run.googleapis.com", dimensions:{region:"europe-west1"}, justification:"Agora production cost ceiling; changes require reviewed infrastructure code.", quotaConfig:{preferredValue:"17179869184", grantedValue:"17179869184"}},
-      {service:"run.googleapis.com", dimensions:{region:"europe-west1"}, justification:"Agora production cost ceiling; changes require reviewed infrastructure code.", quotaConfig:{preferredValue:"20", grantedValue:"20"}},
       {service:"compute.googleapis.com", dimensions:{region:"europe-west1"}, justification:"Agora production cost ceiling; changes require reviewed infrastructure code.", reconciling:$pending, quotaConfig:{preferredValue:"4", grantedValue:"4"}}
     ]'\'' <<EOF
 null
@@ -504,7 +503,6 @@ jq -n '
       quotaExpectations: {
         cloud_run_cpu_millicpu: 8000,
         cloud_run_memory_bytes: 17179869184,
-        cloud_run_direct_vpc_instances: 20,
         compute_cpu: 4
       }
     }

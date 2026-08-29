@@ -111,12 +111,7 @@ function validateConfig(config) {
   }
   exactKeys(
     config.quota_expectations,
-    [
-      "cloud_run_cpu_millicpu",
-      "cloud_run_memory_bytes",
-      "cloud_run_direct_vpc_instances",
-      "compute_cpu",
-    ],
+    ["cloud_run_cpu_millicpu", "cloud_run_memory_bytes", "compute_cpu"],
     "quota expectations",
   );
   if (

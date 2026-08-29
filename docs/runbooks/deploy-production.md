@@ -53,7 +53,7 @@ One globally serialized workflow performs this fixed graph:
 
 1. verify all eight GHCR images, exact digests, producer attestations, family SemVer, and PostgreSQL
    major before obtaining Google credentials;
-2. verify nine numeric secret versions, four fully granted quota preferences, a recent scheduled
+2. verify nine numeric secret versions, three fully granted quota preferences, a recent scheduled
    disk snapshot, and fresh logical backups for both databases;
 3. copy the exact digests into regional Artifact Registry and verify the destination digests;
 4. restart the stateful PostgreSQL host with receipt-bound images and secret versions;
@@ -323,7 +323,7 @@ jq -n \
     },
     quota_expectations: {
       cloud_run_cpu_millicpu: 8000, cloud_run_memory_bytes: 17179869184,
-      cloud_run_direct_vpc_instances: 20, compute_cpu: 4
+      compute_cpu: 4
     },
     secret_versions: {
       authentication_postgres_password: $ap,

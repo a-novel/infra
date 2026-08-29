@@ -256,8 +256,6 @@ async function main() {
           recoveryFoundation.cloud_run_cpu_quota_millicpu ?? 8000,
         cloud_run_memory_bytes:
           recoveryFoundation.cloud_run_memory_quota_bytes ?? 17179869184,
-        cloud_run_direct_vpc_instances:
-          recoveryFoundation.cloud_run_direct_vpc_instance_quota ?? 20,
         compute_cpu: recoveryFoundation.compute_cpu_quota ?? 4,
       },
       secretVersions: [
