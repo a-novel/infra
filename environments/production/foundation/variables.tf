@@ -40,7 +40,7 @@ variable "workload_project_name" {
 }
 
 variable "adopt_existing_project" {
-  description = "Import a human-created empty project through the reviewed plan instead of creating it; required for the standalone no-organization path."
+  description = "Import an existing project through the reviewed plan; required for standalone projects and interrupted project-creation recovery."
   type        = bool
   default     = false
 }

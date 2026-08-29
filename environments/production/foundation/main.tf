@@ -57,17 +57,19 @@ resource "google_project" "workload" {
     }
 
     precondition {
-      condition = var.adopt_existing_project == (
-        var.organization_id == null && var.folder_id == null
+      condition = (
+        var.adopt_existing_project ||
+        var.organization_id != null ||
+        var.folder_id != null
       )
-      error_message = "Set adopt_existing_project only, and always, when neither organization_id nor folder_id is configured."
+      error_message = "Set adopt_existing_project when neither organization_id nor folder_id is configured."
     }
   }
 }
 
-# A standalone service account has no parent on which it can receive Project
-# Creator. Declarative import keeps the one human-created empty project inside
-# the same saved-plan review/apply boundary as every other foundation action.
+# Adopt either the standalone project's human-created shell or a project that
+# Google created before an interrupted apply could persist it to remote state.
+# The import remains inside the saved-plan review/apply boundary.
 import {
   for_each = var.adopt_existing_project ? toset([var.workload_project_id]) : toset([])
 

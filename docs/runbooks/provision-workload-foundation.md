@@ -32,6 +32,7 @@ WORKLOAD_PROJECT_NAME='Agora production'
 MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID --repo "$REPOSITORY")"
 BACKUP_BUCKET_NAME="$(gh variable get GCP_BACKUP_BUCKET --repo "$REPOSITORY")"
 WORKLOAD_PROJECT_ID='agora-production-prod'
+ADOPT_EXISTING_PROJECT=false
 BILLING_ACCOUNT_ID="$(gcloud billing projects describe "$MANAGEMENT_PROJECT_ID" \
   --format='value(billingAccountName.basename())')"
 OPERATOR_EMAIL="$(gcloud config get-value account 2>/dev/null)"
@@ -166,6 +167,7 @@ unsetopt err_exit nounset xtrace
 [[ -z "$ORGANIZATION_ID" || "$ORGANIZATION_ID" =~ ^[0-9]+$ ]]
 [[ -z "$FOLDER_ID" || "$FOLDER_ID" =~ ^[0-9]+$ ]]
 [[ -z "$ORGANIZATION_ID" || -z "$FOLDER_ID" ]]
+[[ "$ADOPT_EXISTING_PROJECT" == true || "$ADOPT_EXISTING_PROJECT" == false ]]
 jq -e 'length >= 1' <<<"$DATABASE_OPERATOR_PRINCIPALS" >/dev/null
 jq -e 'length >= 1' <<<"$AUTH_INITIALIZER_PRINCIPALS" >/dev/null
 
@@ -415,8 +417,6 @@ setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 if [[ -z "$ORGANIZATION_ID" && -z "$FOLDER_ID" ]]; then
   ADOPT_EXISTING_PROJECT=true
-else
-  ADOPT_EXISTING_PROJECT=false
 fi
 
 [[ -n "$BACKUP_BUCKET_NAME" ]]
@@ -460,7 +460,7 @@ jq -e '
   ((.organization_id == null) or (.folder_id == null)) and
   (.database_operator_principals | length >= 1) and
   (.authentication_initializer_principals | length >= 1) and
-  (.adopt_existing_project == ((.organization_id == null) and (.folder_id == null)))
+  (.adopt_existing_project or (.organization_id != null) or (.folder_id != null))
 ' "$FOUNDATION_CONFIG_FILE" >/dev/null
 
 for environment in production-foundation production-recovery; do
@@ -577,18 +577,18 @@ Any deletion, replacement, or state-forget action fails unless the one pull requ
 `MASTER_SHA` already carried the exact `allow-resource-deletion` label before merge. Adding a label
 after merge is deliberately insufficient. The initial foundation should need no such exception.
 
-The expected initial summary contains either one project creation or one declarative project import/update, thirteen APIs, the
-network/subnet/routes, six firewalls, three zones and their records, seven service accounts, one
-invocation tag key with five values, exact conditional IAM, two narrow Cloud Run custom roles, one
-repository, one data disk, one immutable instance template, one stateful instance-group
-manager, one snapshot policy/attachment, eight monitoring alerts, four quota preferences, one
-budget, two notification channels, and logging controls. It
-contains zero managed-resource delete, replacement, state-forget, Cloud Run service/job, router,
-NAT, connector, load balancer, secret-version, or service-account-key actions. For standalone
-adoption, the reviewed
-`google_project` update also has the documented provider side effect of removing Google's empty
-default VPC; no workload may be attached to it. Do not approve a plan that differs without changing
-and reviewing the code and this runbook.
+The expected initial summary contains either one project creation or `import google_project 1`,
+thirteen APIs, the network/subnet/routes, six firewalls, three zones and their records, seven
+service accounts, one invocation tag key with five values, exact conditional IAM, two narrow Cloud
+Run custom roles, one repository, one data disk, one immutable instance template, one stateful
+instance-group manager, one snapshot policy/attachment, eight monitoring alerts, four quota
+preferences, one budget, two notification channels, and logging controls. An adopted project may
+also show `update google_project 1` when its existing settings differ from code. The summary must
+contain zero managed-resource delete, replacement, state-forget, Cloud Run service/job, router,
+NAT, connector, load balancer, secret-version, or service-account-key actions. During adoption, the
+reviewed `google_project` action also has the documented provider side effect of removing Google's
+empty default VPC; no workload may be attached to it. Do not approve a plan that differs without
+changing and reviewing the code and this runbook.
 
 ## 6. Verify project, billing, APIs, and IAM after apply
 
@@ -1235,20 +1235,22 @@ policy dumps, billing account IDs, email addresses, secrets, or plan values.
 
 ## Partial-failure recovery
 
-### Project exists but apply failed
+### Project exists after a failed apply
 
 Freeze every foundation writer and keep the project. Inspect the protected run's sanitized resource
-types and Google audit logs. Common new-project API propagation delays are resolved by waiting and
-creating a fresh reviewed plan; never disable deletion protection, add Owner broadly, or delete the
-project to retry. The new plan must converge the same desired state and contain no managed-resource
-delete, replacement, or forget action.
+types and Google audit logs, then inspect the foundation state. If state already owns
+`google_project.workload`, wait for Google API propagation and create a fresh reviewed plan. The new
+plan must converge the same desired state and contain no managed-resource delete, replacement, or
+forget action.
 
-### Standalone project exists but foundation state does not own it
+### Existing project is absent from foundation state
 
-Do not plan creation again and do not run a local import. Keep the empty project, verify its numeric
-ID and billing link, and use only the protected workflow's one-time adoption path. The import target
-is exactly `google_project.workload` and the import ID is exactly the chosen project ID. After import,
-review a fresh saved plan before applying any other resource.
+Do not plan creation again, delete the project, or run a local import. Verify that its ID, name,
+parent, billing link, and labels match the declared project. In the operator-context block, set
+`ADOPT_EXISTING_PROJECT=true`, rerun section 4, and commit any required code correction before
+dispatching another protected plan. That plan must import exactly the chosen project as
+`google_project.workload`, create only the remaining declared resources, and contain no managed
+resource deletion, replacement, or forget action. Apply only that reviewed plan.
 
 ### State owns the project but Google reports it missing
 
