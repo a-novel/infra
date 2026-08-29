@@ -269,6 +269,7 @@ grep -Fq $'PERMISSION_DENIED\tgoogle_project\tidentity.tf:47\t1' \
 grep -Fq $'UNKNOWN\tgoogle_compute_disk\tcapacity.tf:82\t1' \
     "${TEMP_DIR}/failed-plan.err"
 grep -Fq $'CONFIGURATION\t-\tchecks.tf:7\t1' "${TEMP_DIR}/failed-plan.err"
+grep -Fq $'CONFIGURATION\t-\tcost.tf:27\t1' "${TEMP_DIR}/failed-plan.err"
 assert_absent "${TEMP_DIR}/failed-plan.out" 'fixture-sensitive'
 assert_absent "${TEMP_DIR}/failed-plan.err" 'fixture-sensitive'
 
