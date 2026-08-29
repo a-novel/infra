@@ -178,7 +178,8 @@ Resource addresses, values, outputs, environment variables, DSNs, and tokens sta
 logs.
 
 `ops/tofu-gate.sh` is the only live OpenTofu entry point. It accepts only `bootstrap`, `foundation`,
-or `release`; uses the private GCS backend; and keeps provider diagnostics in runner-private files.
+or `release`; uses the private GCS backend; and keeps raw provider diagnostics in runner-private
+files. A failed plan publishes only a fixed reason, resource type, configuration source, and count.
 `ops/create-reviewed-plan.sh` uploads the binary saved plan plus non-sensitive custody metadata with
 a create-only Cloud Storage precondition. `ops/apply-reviewed-plan.sh` rejects a different commit,
 root, recovery state suffix, hash, destructive authorization, consumed plan, or plan older than 24

@@ -253,6 +253,25 @@ assert_tofu_gate_code plan "${SCRIPT_DIR}/fixtures/plans/protected.json" 3
 assert_tofu_gate_code drift "${SCRIPT_DIR}/fixtures/plans/safe.json" 2
 assert_tofu_gate_code drift "${SCRIPT_DIR}/fixtures/plans/protected.json" 2
 
+set +e
+PATH="${TOFU_GATE_BIN}:${PATH}" \
+    FAKE_TOFU_FAIL_ACTION=plan \
+    FAKE_TOFU_DIAGNOSTICS="${SCRIPT_DIR}/fixtures/plan-diagnostics.jsonl" \
+    "${REPOSITORY_ROOT}/ops/tofu-gate.sh" plan foundation agora-state-test \
+    "${TEMP_DIR}/failed-plan.tfplan" \
+    >"${TEMP_DIR}/failed-plan.out" 2>"${TEMP_DIR}/failed-plan.err"
+FAILED_PLAN_CODE=$?
+set -e
+assert_equal "${FAILED_PLAN_CODE}" 1
+grep -Fq 'OpenTofu planning failed' "${TEMP_DIR}/failed-plan.err"
+grep -Fq $'PERMISSION_DENIED\tgoogle_project\tidentity.tf:47\t1' \
+    "${TEMP_DIR}/failed-plan.err"
+grep -Fq $'UNKNOWN\tgoogle_compute_disk\tcapacity.tf:82\t1' \
+    "${TEMP_DIR}/failed-plan.err"
+grep -Fq $'CONFIGURATION\t-\tchecks.tf:7\t1' "${TEMP_DIR}/failed-plan.err"
+assert_absent "${TEMP_DIR}/failed-plan.out" 'fixture-sensitive'
+assert_absent "${TEMP_DIR}/failed-plan.err" 'fixture-sensitive'
+
 FAILED_APPLY_PLAN="${TEMP_DIR}/failed-apply.tfplan"
 : >"${FAILED_APPLY_PLAN}"
 set +e

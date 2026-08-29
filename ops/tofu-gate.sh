@@ -150,15 +150,106 @@ classify_plan() {
     esac
 }
 
+summarize_plan_failure() {
+    local event_file="$1"
+    local summary_file="${TEMP_DIR}/plan-diagnostics.tsv"
+
+    if [ ! -s "${event_file}" ]; then
+        printf 'Sanitized plan diagnostics were unavailable.\n' >&2
+        return
+    fi
+
+    # Raw diagnostic text may contain configuration values. The public summary
+    # is built only from fixed reasons and strictly filtered source metadata.
+    if ! jq --raw-output --slurp '
+        def diagnostic_text:
+            [.diagnostic.summary?, .diagnostic.detail?]
+            | map(select(type == "string"))
+            | join("\n");
+
+        def diagnostic_reason:
+            diagnostic_text as $text
+            | (.diagnostic.summary? // "") as $summary
+            | if ($text | test("ZONE_RESOURCE_POOL_EXHAUSTED"; "i")) then "ZONE_RESOURCE_POOL_EXHAUSTED"
+              elif ($text | test("RESOURCE_EXHAUSTED|quota (has been )?(reached|exceeded)|rate limit"; "i")) then "RESOURCE_EXHAUSTED"
+              elif ($text | test("PERMISSION_DENIED|permission denied|forbidden|error:? +403|status( code)?[ :=]+403|code[ :=]+403"; "i")) then "PERMISSION_DENIED"
+              elif ($text | test("UNAUTHENTICATED|error:? +401|status( code)?[ :=]+401|code[ :=]+401|default credentials"; "i")) then "UNAUTHENTICATED"
+              elif ($text | test("NOT_FOUND|not found|does not exist|error:? +404|status( code)?[ :=]+404|code[ :=]+404"; "i")) then "NOT_FOUND"
+              elif ($text | test("INVALID_ARGUMENT|error:? +400|status( code)?[ :=]+400|code[ :=]+400"; "i")) then "INVALID_ARGUMENT"
+              elif ($text | test("FAILED_PRECONDITION|state lock|state is locked"; "i")) then "FAILED_PRECONDITION"
+              elif ($text | test("ALREADY_EXISTS|error:? +409|status( code)?[ :=]+409|code[ :=]+409"; "i")) then "ALREADY_EXISTS"
+              elif ($text | test("ABORTED|concurrent policy changes"; "i")) then "ABORTED"
+              elif ($text | test("DEADLINE_EXCEEDED|error:? +504|status( code)?[ :=]+504|code[ :=]+504"; "i")) then "DEADLINE_EXCEEDED"
+              elif ($text | test("UNAVAILABLE|error:? +503|status( code)?[ :=]+503|code[ :=]+503"; "i")) then "UNAVAILABLE"
+              elif ($text | test("INTERNAL|error:? +500|status( code)?[ :=]+500|code[ :=]+500"; "i")) then "INTERNAL"
+              elif ($summary | test("^(Invalid|Unsupported|Missing required|Reference to undeclared|Error in function call|Inconsistent|Resource precondition failed|Module not installed|Provider configuration not present)"; "i")) then "CONFIGURATION"
+              else "UNKNOWN"
+              end;
+
+        def diagnostic_resource_type:
+            (.diagnostic.snippet.context? // "") as $context
+            | if ($context | type) == "string" then
+                ($context
+                 | (capture("^(data|resource) \"(?<type>google_[a-z0-9_]+)\"") // {type: "-"})
+                 | .type)
+              else "-"
+              end;
+
+        def diagnostic_source:
+            (.diagnostic.range? // {}) as $range
+            | ($range.filename? // "") as $raw_filename
+            | (if ($raw_filename | type) == "string" then
+                 ($raw_filename | gsub("\\\\"; "/") | split("/") | last)
+               else ""
+               end) as $filename
+            | ($range.start.line? // 0) as $line
+            | if ($filename | test("^[A-Za-z0-9][A-Za-z0-9._-]*$"))
+                 and (($line | type) == "number")
+                 and ($line >= 1)
+                 and ($line == ($line | floor)) then
+                "\($filename):\($line)"
+              else "-"
+              end;
+
+        [
+          .[]
+          | select(.type == "diagnostic" and .diagnostic.severity == "error")
+          | {
+              reason: diagnostic_reason,
+              resource_type: diagnostic_resource_type,
+              source: diagnostic_source
+            }
+        ]
+        | sort_by(.reason, .resource_type, .source)
+        | group_by([.reason, .resource_type, .source])
+        | .[]
+        | [.[0].reason, .[0].resource_type, .[0].source, (length | tostring)]
+        | @tsv
+    ' "${event_file}" >"${summary_file}" 2>"${TEMP_DIR}/plan-diagnostics.log"; then
+        printf 'Sanitized plan diagnostics were unavailable.\n' >&2
+        return
+    fi
+
+    if [ ! -s "${summary_file}" ]; then
+        printf 'Sanitized plan diagnostics were unavailable.\n' >&2
+        return
+    fi
+
+    printf 'reason\tresource_type\tsource\tcount\n' >&2
+    command cat "${summary_file}" >&2
+}
+
 plan_changes() {
     local output_plan="$1"
     local lock_flag="$2"
+    local event_file="${TEMP_DIR}/plan-events.jsonl"
     local plan_code=0
     local summary_code=0
 
     if tofu -chdir="${ROOT_DIR}" plan \
         -detailed-exitcode \
         -input=false \
+        -json-into="${event_file}" \
         -lock="${lock_flag}" \
         -no-color \
         -out="${output_plan}" \
@@ -181,6 +272,7 @@ plan_changes() {
             ;;
         1)
             printf 'OpenTofu planning failed; its potentially sensitive diagnostics were not published.\n' >&2
+            summarize_plan_failure "${event_file}"
             return 1
             ;;
         *)
