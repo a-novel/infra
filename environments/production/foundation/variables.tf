@@ -45,6 +45,12 @@ variable "adopt_existing_project" {
   default     = false
 }
 
+variable "adopt_default_network" {
+  description = "Import the audited empty default VPC before its separately reviewed deletion."
+  type        = bool
+  default     = true
+}
+
 variable "billing_account_id" {
   description = "Cloud Billing account ID linked to the production projects and used for their combined budget."
   type        = string
