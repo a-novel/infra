@@ -150,12 +150,12 @@ classify_plan() {
     esac
 }
 
-summarize_plan_failure() {
+summarize_failure() {
     local event_file="$1"
-    local summary_file="${TEMP_DIR}/plan-diagnostics.tsv"
+    local summary_file="${TEMP_DIR}/sanitized-diagnostics.tsv"
 
     if [ ! -s "${event_file}" ]; then
-        printf 'Sanitized plan diagnostics were unavailable.\n' >&2
+        printf 'Sanitized OpenTofu diagnostics were unavailable.\n' >&2
         return
     fi
 
@@ -225,13 +225,13 @@ summarize_plan_failure() {
         | .[]
         | [.[0].reason, .[0].resource_type, .[0].source, (length | tostring)]
         | @tsv
-    ' "${event_file}" >"${summary_file}" 2>"${TEMP_DIR}/plan-diagnostics.log"; then
-        printf 'Sanitized plan diagnostics were unavailable.\n' >&2
+    ' "${event_file}" >"${summary_file}" 2>"${TEMP_DIR}/sanitized-diagnostics.log"; then
+        printf 'Sanitized OpenTofu diagnostics were unavailable.\n' >&2
         return
     fi
 
     if [ ! -s "${summary_file}" ]; then
-        printf 'Sanitized plan diagnostics were unavailable.\n' >&2
+        printf 'Sanitized OpenTofu diagnostics were unavailable.\n' >&2
         return
     fi
 
@@ -272,7 +272,7 @@ plan_changes() {
             ;;
         1)
             printf 'OpenTofu planning failed; its potentially sensitive diagnostics were not published.\n' >&2
-            summarize_plan_failure "${event_file}"
+            summarize_failure "${event_file}"
             return 1
             ;;
         *)
@@ -280,6 +280,24 @@ plan_changes() {
             return 70
             ;;
     esac
+}
+
+apply_plan() {
+    local saved_plan="$1"
+    local event_file="${TEMP_DIR}/apply-events.jsonl"
+
+    if tofu -chdir="${ROOT_DIR}" apply \
+        -input=false \
+        -json-into="${event_file}" \
+        -no-color \
+        "${saved_plan}" \
+        >"${TEMP_DIR}/apply.log" 2>&1; then
+        return 0
+    fi
+
+    printf 'Protected OpenTofu apply failed; its potentially sensitive diagnostics were not published.\n' >&2
+    summarize_failure "${event_file}"
+    return 1
 }
 
 initialize_root
@@ -294,8 +312,7 @@ case "${ACTION}" in
             printf 'The exact reviewed plan file does not exist.\n' >&2
             exit 66
         fi
-        run_quietly "${TEMP_DIR}/apply.log" apply \
-            tofu -chdir="${ROOT_DIR}" apply -input=false -no-color "${PLAN_FILE}"
+        apply_plan "${PLAN_FILE}"
         printf 'The exact reviewed %s plan applied successfully.\n' "${ROOT_NAME}"
         ;;
     output)

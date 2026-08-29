@@ -270,6 +270,8 @@ grep -Fq $'UNKNOWN\tgoogle_compute_disk\tcapacity.tf:82\t1' \
     "${TEMP_DIR}/failed-plan.err"
 grep -Fq $'CONFIGURATION\t-\tchecks.tf:7\t1' "${TEMP_DIR}/failed-plan.err"
 grep -Fq $'CONFIGURATION\t-\tcost.tf:27\t1' "${TEMP_DIR}/failed-plan.err"
+grep -Fq $'ZONE_RESOURCE_POOL_EXHAUSTED\tgoogle_compute_disk\tdatabase.tf:54\t1' \
+    "${TEMP_DIR}/failed-plan.err"
 assert_absent "${TEMP_DIR}/failed-plan.out" 'fixture-sensitive'
 assert_absent "${TEMP_DIR}/failed-plan.err" 'fixture-sensitive'
 
@@ -278,13 +280,18 @@ FAILED_APPLY_PLAN="${TEMP_DIR}/failed-apply.tfplan"
 set +e
 PATH="${TOFU_GATE_BIN}:${PATH}" \
     FAKE_TOFU_FAIL_ACTION=apply \
+    FAKE_TOFU_DIAGNOSTICS="${SCRIPT_DIR}/fixtures/plan-diagnostics.jsonl" \
     "${REPOSITORY_ROOT}/ops/tofu-gate.sh" apply foundation agora-state-test \
     "${FAILED_APPLY_PLAN}" >"${TEMP_DIR}/failed-apply.out" 2>"${TEMP_DIR}/failed-apply.err"
 FAILED_APPLY_CODE=$?
 set -e
 assert_equal "${FAILED_APPLY_CODE}" 1
 grep -Fq 'Protected OpenTofu apply failed' "${TEMP_DIR}/failed-apply.err"
+grep -Fq $'ZONE_RESOURCE_POOL_EXHAUSTED\tgoogle_compute_disk\tdatabase.tf:54\t1' \
+    "${TEMP_DIR}/failed-apply.err"
+assert_absent "${TEMP_DIR}/failed-apply.out" 'fixture-sensitive'
 assert_absent "${TEMP_DIR}/failed-apply.err" 'fixture-sensitive-diagnostic'
+assert_absent "${TEMP_DIR}/failed-apply.err" 'fixture-sensitive-detail'
 
 if grep -RqE 'resource[[:space:]]+"(google_secret_manager_secret_version|google_service_account_key)"' \
     "${REPOSITORY_ROOT}/bootstrap" \
