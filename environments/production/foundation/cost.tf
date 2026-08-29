@@ -22,11 +22,17 @@ locals {
     }
   }
 
-  quota_ids = merge([
-    for source in values(data.google_cloud_quotas_quota_infos.service) : {
-      for quota in source.quota_infos : quota.metric => quota.quota_id
-    }
-  ]...)
+  # A metric can identify several quota IDs. Each cost cap requires one
+  # regional match in its declared service.
+  quota_id_candidates = {
+    for name, preference in local.quota_preferences : name => [
+      for quota in data.google_cloud_quotas_quota_infos.service[preference.service].quota_infos :
+      quota.quota_id
+      if quota.service == preference.service &&
+      quota.metric == preference.metric &&
+      toset(quota.dimensions) == toset(["region"])
+    ]
+  }
 }
 
 data "google_billing_account" "workload" {
@@ -55,9 +61,13 @@ data "google_cloud_quotas_quota_infos" "service" {
 resource "google_cloud_quotas_quota_preference" "cost_cap" {
   for_each = local.quota_preferences
 
-  parent     = "projects/${google_project.workload.project_id}"
-  service    = each.value.service
-  quota_id   = try(local.quota_ids[each.value.metric], "unavailable")
+  parent  = "projects/${google_project.workload.project_id}"
+  service = each.value.service
+  quota_id = (
+    length(local.quota_id_candidates[each.key]) == 1
+    ? one(local.quota_id_candidates[each.key])
+    : "unavailable"
+  )
   dimensions = { region = var.region }
   # IAM grants on the foundation identity authorize the request. Google sends
   # quota-review follow-up to the monitored operator address.
@@ -74,8 +84,8 @@ resource "google_cloud_quotas_quota_preference" "cost_cap" {
 
   lifecycle {
     precondition {
-      condition     = contains(keys(local.quota_ids), each.value.metric)
-      error_message = "Google Cloud did not expose the required quota metric ${each.value.metric}."
+      condition     = length(local.quota_id_candidates[each.key]) == 1
+      error_message = "Google Cloud must expose exactly one regional quota for metric ${each.value.metric} in service ${each.value.service}."
     }
   }
 

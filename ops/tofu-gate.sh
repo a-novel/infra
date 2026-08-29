@@ -182,7 +182,7 @@ summarize_plan_failure() {
               elif ($text | test("DEADLINE_EXCEEDED|error:? +504|status( code)?[ :=]+504|code[ :=]+504"; "i")) then "DEADLINE_EXCEEDED"
               elif ($text | test("UNAVAILABLE|error:? +503|status( code)?[ :=]+503|code[ :=]+503"; "i")) then "UNAVAILABLE"
               elif ($text | test("INTERNAL|error:? +500|status( code)?[ :=]+500|code[ :=]+500"; "i")) then "INTERNAL"
-              elif ($summary | test("^(Invalid|Unsupported|Missing required|Reference to undeclared|Error in function call|Inconsistent|Resource precondition failed|Module not installed|Provider configuration not present)"; "i")) then "CONFIGURATION"
+              elif ($summary | test("^(Invalid|Unsupported|Missing required|Reference to undeclared|Error in function call|Inconsistent|Duplicate object key|Resource precondition failed|Module not installed|Provider configuration not present)"; "i")) then "CONFIGURATION"
               else "UNKNOWN"
               end;
 
