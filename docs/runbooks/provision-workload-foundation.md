@@ -98,7 +98,7 @@ The completed procedure creates:
 - one pinned Shielded COS template, one continuously running `e2-medium` in a stateful one-member
   group, one 20 GiB replaceable boot disk, one 50 GiB preserved balanced data disk, and one
   stateful internal address with a daily `europe-west1` snapshot schedule and seven-day retention;
-- four regional quota preferences, one two-project alert-only budget of 60 units in the billing
+- three regional quota preferences, one two-project alert-only budget of 60 units in the billing
   account currency, separate cost and operations email channels, eight native alert policies,
   30-day default logging, and one narrow successful-health exclusion. The existing read-only drift
   workflow performs the production synthetic health check only after releases are enabled.
@@ -582,7 +582,7 @@ The expected initial summary contains either one project creation or `import goo
 thirteen APIs, the network/subnet/routes, six firewalls, three zones and their records, seven
 service accounts, one invocation tag key with five values, exact conditional IAM, two narrow Cloud
 Run custom roles, one repository, one data disk, one immutable instance template, one stateful
-instance-group manager, one snapshot policy/attachment, eight monitoring alerts, four quota
+instance-group manager, one snapshot policy/attachment, eight monitoring alerts, three quota
 preferences, one budget, two notification channels, and logging controls. An adopted project may
 also show `update google_project 1` when its existing settings differ from code. The summary must
 contain zero managed-resource delete, replacement, state-forget, Cloud Run service/job, router,
@@ -965,8 +965,8 @@ gcloud quotas preferences list --project="$WORKLOAD_PROJECT_ID" \
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Expected safe result: four `europe-west1` preferences corresponding to Cloud Run CPU 8000 milli-vCPU,
-memory 17179869184 bytes, Direct VPC instances 20, and Compute Engine CPUs 4. If any row reports
+Expected safe result: three `europe-west1` preferences corresponding to Cloud Run CPU 8000 milli-vCPU,
+memory 17179869184 bytes, and Compute Engine CPUs 4. If any row reports
 `reconciling: true`, wait for Google to finish and recheck; do not raise a limit just to clear the
 state.
 

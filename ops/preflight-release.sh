@@ -75,8 +75,8 @@ if ! jq --exit-status \
           .justification == "Agora production cost ceiling; changes require reviewed infrastructure code." and
           .dimensions.region == $region
         ) ] as $preferences |
-      ($preferences | length == 4) and
-      ([$preferences[] | select(.service == "run.googleapis.com")] | length == 3) and
+      ($preferences | length == 3) and
+      ([$preferences[] | select(.service == "run.googleapis.com")] | length == 2) and
       ([$preferences[] | select(.service == "compute.googleapis.com")] | length == 1) and
       all($preferences[];
         # The API may omit this default-false field after reconciliation.
@@ -84,7 +84,7 @@ if ! jq --exit-status \
         (.quotaConfig.preferredValue | tonumber) == (.quotaConfig.grantedValue | tonumber)
       ) and
       ([$preferences[] | select(.service == "run.googleapis.com") | (.quotaConfig.preferredValue | tonumber)] | sort) ==
-        ([$expected.cloud_run_cpu_millicpu, $expected.cloud_run_memory_bytes, $expected.cloud_run_direct_vpc_instances] | sort) and
+        ([$expected.cloud_run_cpu_millicpu, $expected.cloud_run_memory_bytes] | sort) and
       ([$preferences[] | select(.service == "compute.googleapis.com") | (.quotaConfig.preferredValue | tonumber)]) ==
         [$expected.compute_cpu]
     ' "${QUOTAS_FILE}" >/dev/null; then

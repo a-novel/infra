@@ -276,17 +276,6 @@ variable "cloud_run_memory_quota_bytes" {
   }
 }
 
-variable "cloud_run_direct_vpc_instance_quota" {
-  description = "Regional ceiling for Cloud Run instances using Direct VPC egress."
-  type        = number
-  default     = 20
-
-  validation {
-    condition     = var.cloud_run_direct_vpc_instance_quota >= 2 && var.cloud_run_direct_vpc_instance_quota <= 100 && floor(var.cloud_run_direct_vpc_instance_quota) == var.cloud_run_direct_vpc_instance_quota
-    error_message = "The Direct VPC instance quota must be a whole number from 2 through 100."
-  }
-}
-
 variable "compute_cpu_quota" {
   description = "Regional Compute Engine CPU ceiling for the stateful data plane."
   type        = number

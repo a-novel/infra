@@ -30,7 +30,6 @@
   "quota_expectations": {
     "cloud_run_cpu_millicpu": 8000,
     "cloud_run_memory_bytes": 17179869184,
-    "cloud_run_direct_vpc_instances": 20,
     "compute_cpu": 4
   },
   "secret_versions": {

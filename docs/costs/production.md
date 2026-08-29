@@ -161,8 +161,8 @@ The 60-unit monthly production-infrastructure budget spans the management and wo
 uses the billing account currency, alerts both human channels at current and forecasted
 50/75/90/100%, and is alert-only. The USD worksheet remains the planning comparison. Hosted Plunk
 has a separate operator-set transactional category cap because it is outside Google billing. Actual
-Google brakes are maximum Cloud Run instances, regional
-Cloud Run CPU/memory/Direct VPC quotas, the four-CPU Compute Engine quota, immutable image cleanup
+Google brakes are maximum Cloud Run instances, single-task jobs, regional
+Cloud Run CPU/memory quotas, the four-CPU Compute Engine quota, immutable image cleanup
 review, bounded log retention, backup lifecycle, and validated disk sizes. Quotas can prevent
 some scaling but cannot stop every billable API, transfer, storage, or compromised workload.
 

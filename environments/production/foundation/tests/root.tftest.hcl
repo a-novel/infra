@@ -89,22 +89,24 @@ mock_provider "google" {
           service                    = "run.googleapis.com"
           service_request_quota_uri  = ""
         },
+        # Google exposes zonal and regional Compute CPU records under the same
+        # metric. Only the regional record is valid for this preference.
         {
           container_type             = "PROJECT"
-          dimensions                 = ["region"]
+          dimensions                 = ["zone"]
           dimensions_infos           = []
           is_concurrent              = true
           is_fixed                   = false
           is_precise                 = true
-          metric                     = "run.googleapis.com/instance_limit_regional"
-          metric_display_name        = "Direct VPC instances"
+          metric                     = "compute.googleapis.com/cpus"
+          metric_display_name        = "CPUs"
           metric_unit                = "1"
-          name                       = "services/run.googleapis.com/quotaInfos/MaxInstancesLimitWithDirectVpcEgressPerProjectRegion"
-          quota_display_name         = "Direct VPC instances"
-          quota_id                   = "MaxInstancesLimitWithDirectVpcEgressPerProjectRegion"
+          name                       = "services/compute.googleapis.com/quotaInfos/CPUS-per-project-zone"
+          quota_display_name         = "CPUs"
+          quota_id                   = "CPUS-per-project-zone"
           quota_increase_eligibility = []
           refresh_interval           = "60s"
-          service                    = "run.googleapis.com"
+          service                    = "compute.googleapis.com"
           service_request_quota_uri  = ""
         },
         {
@@ -770,7 +772,7 @@ run "builds_the_protected_workload_foundation" {
 
   assert {
     condition = (
-      length(google_cloud_quotas_quota_preference.cost_cap) == 4 &&
+      length(google_cloud_quotas_quota_preference.cost_cap) == 3 &&
       alltrue([
         for preference in values(google_cloud_quotas_quota_preference.cost_cap) :
         preference.dimensions == tomap({ region = "europe-west1" }) &&
@@ -780,12 +782,10 @@ run "builds_the_protected_workload_foundation" {
       google_cloud_quotas_quota_preference.cost_cap["cloud_run_cpu"].service == "run.googleapis.com" &&
       local.quota_preferences["cloud_run_cpu"].metric == "run.googleapis.com/cpu_allocation" &&
       local.quota_preferences["cloud_run_memory"].metric == "run.googleapis.com/mem_allocation" &&
-      local.quota_preferences["cloud_run_direct_vpc_instances"].metric == "run.googleapis.com/instance_limit_regional" &&
       google_cloud_quotas_quota_preference.cost_cap["compute_cpu"].service == "compute.googleapis.com" &&
       local.quota_preferences["compute_cpu"].metric == "compute.googleapis.com/cpus" &&
       google_cloud_quotas_quota_preference.cost_cap["cloud_run_cpu"].quota_config[0].preferred_value == "8000" &&
       google_cloud_quotas_quota_preference.cost_cap["cloud_run_memory"].quota_config[0].preferred_value == "17179869184" &&
-      google_cloud_quotas_quota_preference.cost_cap["cloud_run_direct_vpc_instances"].quota_config[0].preferred_value == "20" &&
       google_cloud_quotas_quota_preference.cost_cap["compute_cpu"].quota_config[0].preferred_value == "4"
     )
     error_message = "The regional quota contact, safety bypass, or explicit cost ceilings changed."

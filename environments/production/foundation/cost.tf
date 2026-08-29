@@ -5,11 +5,6 @@ locals {
       metric  = "run.googleapis.com/cpu_allocation"
       value   = var.cloud_run_cpu_quota_millicpu
     }
-    cloud_run_direct_vpc_instances = {
-      service = "run.googleapis.com"
-      metric  = "run.googleapis.com/instance_limit_regional"
-      value   = var.cloud_run_direct_vpc_instance_quota
-    }
     cloud_run_memory = {
       service = "run.googleapis.com"
       metric  = "run.googleapis.com/mem_allocation"
