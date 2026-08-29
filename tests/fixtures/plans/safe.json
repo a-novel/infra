@@ -49,6 +49,24 @@
           "name": "fixture-no-op-resource"
         }
       }
+    },
+    {
+      "address": "google_project.workload",
+      "mode": "managed",
+      "type": "google_project",
+      "name": "workload",
+      "change": {
+        "actions": ["no-op"],
+        "before": {
+          "project_id": "fixture-imported-project"
+        },
+        "after": {
+          "project_id": "fixture-imported-project"
+        },
+        "importing": {
+          "id": "fixture-import-id-must-not-be-printed"
+        }
+      }
     }
   ]
 }

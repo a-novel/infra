@@ -48,8 +48,9 @@ if ! jq -e '
 fi
 
 printf "action\tresource_type\tcount\n"
-# OpenTofu includes unchanged resources as no-op changes. Omit them so a clean
-# plan produces only the summary header.
+# Import metadata is independent from the underlying action, so report it as a
+# separate row. An import with matching configuration would otherwise disappear
+# as a no-op, while an import with drift must show both import and update.
 jq -r '
     def classified_action:
         .change.actions as $actions
@@ -62,7 +63,20 @@ jq -r '
           else "no-op"
           end;
 
-    [.resource_changes[] | {type: .type, action: classified_action} | select(.action != "no-op")]
+    [
+      .resource_changes[] as $resource
+      | (
+          if $resource.change.importing != null then
+            {type: $resource.type, action: "import"}
+          else
+            empty
+          end
+        ),
+        (
+          {type: $resource.type, action: ($resource | classified_action)}
+          | select(.action != "no-op")
+        )
+    ]
     | sort_by(.action, .type)
     | group_by([.action, .type])
     | .[]

@@ -174,6 +174,7 @@ assert_equal "${INVALID_HEALTH_URL_CODE}" 70
 
 "${REPOSITORY_ROOT}/ops/plan-summary.sh" foundation "${SCRIPT_DIR}/fixtures/plans/safe.json" >"${TEMP_DIR}/safe.out" 2>"${TEMP_DIR}/safe.err"
 grep -Fq $'create\tgoogle_cloud_run_v2_job\t1' "${TEMP_DIR}/safe.out"
+grep -Fq $'import\tgoogle_project\t1' "${TEMP_DIR}/safe.out"
 grep -Fq $'update\tgoogle_cloud_run_v2_service\t1' "${TEMP_DIR}/safe.out"
 if grep -Fq $'no-op\t' "${TEMP_DIR}/safe.out"; then
     printf "No-op resources must not appear in the sanitized summary.\n" >&2
@@ -182,6 +183,7 @@ fi
 assert_absent "${TEMP_DIR}/safe.out" "fixture-secret-must-not-be-printed"
 assert_absent "${TEMP_DIR}/safe.out" "fixture-password"
 assert_absent "${TEMP_DIR}/safe.out" "fixture-token-must-not-be-printed"
+assert_absent "${TEMP_DIR}/safe.out" "fixture-import-id-must-not-be-printed"
 
 set +e
 "${REPOSITORY_ROOT}/ops/plan-summary.sh" foundation "${SCRIPT_DIR}/fixtures/plans/protected.json" >"${TEMP_DIR}/protected.out" 2>"${TEMP_DIR}/protected.err"
