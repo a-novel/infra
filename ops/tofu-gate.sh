@@ -189,7 +189,9 @@ summarize_plan_failure() {
         def diagnostic_resource_type:
             (.diagnostic.snippet.context? // "") as $context
             | if ($context | type) == "string" then
-                (($context | capture("^(data|resource) \"(?<type>google_[a-z0-9_]+)\"")?.type) // "-")
+                ($context
+                 | (capture("^(data|resource) \"(?<type>google_[a-z0-9_]+)\"") // {type: "-"})
+                 | .type)
               else "-"
               end;
 
