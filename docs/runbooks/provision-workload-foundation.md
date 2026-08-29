@@ -659,6 +659,24 @@ gcloud services list --enabled --project="$WORKLOAD_PROJECT_ID" \
 Expected safe result: the project is active with the selected parent and labels, billing is enabled,
 and exactly the thirteen expected service names appear in the filtered list.
 
+The IAM audit needs read access to service-account keys, custom roles, tags, and resource policies.
+Temporarily grant the human operator Google's predefined Security Reviewer role. It lists resources
+and allow policies without reading application payloads or changing cloud resources:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+gcloud projects add-iam-policy-binding "$WORKLOAD_PROJECT_ID" \
+  --member="$OPERATOR_PRINCIPAL" \
+  --role='roles/iam.securityReviewer' \
+  --condition=None \
+  --format=none
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+If an IAM audit fails, skip to the temporary Security Reviewer cleanup below before troubleshooting.
+
 Verify no service account has an unexpected primitive project role:
 
 ```zsh
@@ -683,22 +701,7 @@ Expected safe result: at most one Owner row for the foundation creator before cl
 row for any service account, including the default Compute Engine service account.
 
 The key audit inventories every project service account so an unmanaged or provider-created account
-cannot escape it. Temporarily grant the human operator Google's read-only View Service Accounts role,
-which includes account and key listing without key mutation:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-gcloud projects add-iam-policy-binding "$WORKLOAD_PROJECT_ID" \
-  --member="$OPERATOR_PRINCIPAL" \
-  --role='roles/iam.serviceAccountViewer' \
-  --condition=None \
-  --format=none
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-After IAM propagation, run the key audit:
+cannot escape it:
 
 ```zsh
 () {
@@ -727,30 +730,6 @@ printf 'All project service accounts have zero user-managed keys.\n'
 
 Expected safe result: the final zero-key message. A key is an incident: disable it, preserve audit
 evidence, identify its creator, and do not continue.
-
-Remove the temporary viewer binding even when the audit failed, then confirm its absence:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-gcloud projects remove-iam-policy-binding "$WORKLOAD_PROJECT_ID" \
-  --member="$OPERATOR_PRINCIPAL" \
-  --role='roles/iam.serviceAccountViewer' \
-  --condition=None \
-  --format=none
-
-TEMPORARY_VIEWER_BINDING="$(gcloud projects get-iam-policy "$WORKLOAD_PROJECT_ID" \
-  --flatten='bindings[].members' \
-  --filter="bindings.role=roles/iam.serviceAccountViewer AND bindings.members=${OPERATOR_PRINCIPAL}" \
-  --format='value(bindings.role)')"
-[[ -z "$TEMPORARY_VIEWER_BINDING" ]]
-unset TEMPORARY_VIEWER_BINDING
-printf 'Temporary service-account viewer removed.\n'
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-Expected safe result: `Temporary service-account viewer removed.`
 
 Verify only the intended cross-project Secret Manager members without accessing payloads:
 
@@ -785,21 +764,6 @@ host appears on the four owner/backup passwords; backup appears only on the two 
 Restore, scheduler, release, plan, and foundation identities do not appear. This filtered view
 intentionally omits the operators' separate Secret Version Manager bindings. Never run
 `versions access` as a verification shortcut.
-
-The custom-role audits require `iam.roles.get`. Temporarily grant the human operator Google's
-read-only Role Viewer:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-gcloud projects add-iam-policy-binding "$WORKLOAD_PROJECT_ID" \
-  --member="$OPERATOR_PRINCIPAL" \
-  --role='roles/iam.roleViewer' \
-  --condition=None \
-  --format=none
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
 
 Verify that the release deployment role cannot execute a job or override an execution:
 
@@ -874,30 +838,6 @@ gcloud iam roles describe authenticationInitializerDeployer \
 
 Expected safe result: `true`. In particular, this role has neither `run.jobs.runWithOverrides` nor
 Cloud Run IAM-policy access. Normal execution comes only from the separate initializer-tag condition.
-
-Remove the temporary role viewer even when either audit failed, then confirm its absence:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-gcloud projects remove-iam-policy-binding "$WORKLOAD_PROJECT_ID" \
-  --member="$OPERATOR_PRINCIPAL" \
-  --role='roles/iam.roleViewer' \
-  --condition=None \
-  --format=none
-
-TEMPORARY_ROLE_VIEWER_BINDING="$(gcloud projects get-iam-policy "$WORKLOAD_PROJECT_ID" \
-  --flatten='bindings[].members' \
-  --filter="bindings.role=roles/iam.roleViewer AND bindings.members=${OPERATOR_PRINCIPAL}" \
-  --format='value(bindings.role)')"
-[[ -z "$TEMPORARY_ROLE_VIEWER_BINDING" ]]
-unset TEMPORARY_ROLE_VIEWER_BINDING
-printf 'Temporary role viewer removed.\n'
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-Expected safe result: `Temporary role viewer removed.`
 
 Verify the five permanent authorization tags and the four production invocation conditions:
 
@@ -976,6 +916,30 @@ The fifth grant is the `AuthenticationInitializerOnly` project binding inspected
 safe result: each named initializer is present in all five places; the release, scheduler, recovery,
 and runtime service accounts are absent from the initializer tag, initializer `actAs`, deployer, and
 initializer condition. The registry reader output may also contain the database runtime.
+
+Remove the temporary Security Reviewer even when an audit failed, then confirm its absence:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+gcloud projects remove-iam-policy-binding "$WORKLOAD_PROJECT_ID" \
+  --member="$OPERATOR_PRINCIPAL" \
+  --role='roles/iam.securityReviewer' \
+  --condition=None \
+  --format=none
+
+TEMPORARY_SECURITY_REVIEWER_BINDING="$(gcloud projects get-iam-policy "$WORKLOAD_PROJECT_ID" \
+  --flatten='bindings[].members' \
+  --filter="bindings.role=roles/iam.securityReviewer AND bindings.members=${OPERATOR_PRINCIPAL}" \
+  --format='value(bindings.role)')"
+[[ -z "$TEMPORARY_SECURITY_REVIEWER_BINDING" ]]
+unset TEMPORARY_SECURITY_REVIEWER_BINDING
+printf 'Temporary Security Reviewer removed.\n'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Expected safe result: `Temporary Security Reviewer removed.`
 
 Verify the two runtime bucket roles without displaying unrelated members:
 
@@ -1469,10 +1433,10 @@ and public database paths are absent again.
 - [Cloud Run job tags](https://cloud.google.com/run/docs/configuring/jobs/tags)
 - [IAM conditions with Resource Manager tags](https://cloud.google.com/iam/docs/conditions-resource-attributes#resource_tags)
 - [Default Compute Engine service accounts](https://cloud.google.com/compute/docs/access/service-accounts)
-- [View Service Accounts role](https://cloud.google.com/iam/docs/roles-permissions/iam#iam.serviceAccountViewer)
+- [Security Reviewer role](https://cloud.google.com/iam/docs/roles-permissions/iam#iam.securityReviewer)
 - [List and inspect service account keys](https://cloud.google.com/iam/docs/keys-list-get)
-- [Role Viewer](https://cloud.google.com/iam/docs/roles-permissions/iam#iam.roleViewer)
 - [Create and manage custom roles](https://cloud.google.com/iam/docs/creating-custom-roles#viewing_the_role_metadata)
+- [Create and manage tags](https://cloud.google.com/resource-manager/docs/tags/tags-creating-and-managing)
 - [Organization policies for service accounts](https://cloud.google.com/resource-manager/docs/organization-policy/restricting-service-accounts)
 - [Direct VPC egress and tag limitations](https://cloud.google.com/run/docs/configuring/vpc-direct-vpc)
 - [Cloud DNS private zones](https://cloud.google.com/dns/docs/zones/zones-overview)
