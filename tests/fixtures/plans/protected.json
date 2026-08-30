@@ -45,6 +45,7 @@
     },
     {
       "address": "google_project.workload",
+      "deposed": "fixture-deposed-key-must-not-be-printed",
       "mode": "managed",
       "type": "google_project",
       "name": "workload",

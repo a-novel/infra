@@ -350,7 +350,7 @@ Expected safe result depends on the incident:
 
 - if only the live state object was corrupt, the summary should have no changes;
 - if state was intentionally rewound while cloud resources remained newer, the summary should show
-  the expected reconciliation actions by type and count;
+  the expected reconciliation actions by type, count, and current or deposed generation;
 - any managed-resource deletion, replacement, or state-forget action exits with status `3` and requires a
   separate reviewed recovery decision.
 

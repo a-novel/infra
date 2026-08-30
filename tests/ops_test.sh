@@ -259,9 +259,10 @@ set -e
 assert_equal "${INVALID_HEALTH_URL_CODE}" 70
 
 "${REPOSITORY_ROOT}/ops/plan-summary.sh" foundation "${SCRIPT_DIR}/fixtures/plans/safe.json" >"${TEMP_DIR}/safe.out" 2>"${TEMP_DIR}/safe.err"
-grep -Fq $'create\tgoogle_cloud_run_v2_job\t1' "${TEMP_DIR}/safe.out"
-grep -Fq $'import\tgoogle_project\t1' "${TEMP_DIR}/safe.out"
-grep -Fq $'update\tgoogle_cloud_run_v2_service\t1' "${TEMP_DIR}/safe.out"
+grep -Fq $'action\tresource_type\tcount\tgeneration' "${TEMP_DIR}/safe.out"
+grep -Fq $'create\tgoogle_cloud_run_v2_job\t1\tcurrent' "${TEMP_DIR}/safe.out"
+grep -Fq $'import\tgoogle_project\t1\tcurrent' "${TEMP_DIR}/safe.out"
+grep -Fq $'update\tgoogle_cloud_run_v2_service\t1\tcurrent' "${TEMP_DIR}/safe.out"
 if grep -Fq $'no-op\t' "${TEMP_DIR}/safe.out"; then
     printf "No-op resources must not appear in the sanitized summary.\n" >&2
     exit 1
@@ -276,22 +277,24 @@ set +e
 PROTECTED_CODE=$?
 set -e
 assert_equal "${PROTECTED_CODE}" "3"
-grep -Fq $'delete\tgoogle_project\t1' "${TEMP_DIR}/protected.out"
-grep -Fq $'forget\tgoogle_secret_manager_secret\t1' "${TEMP_DIR}/protected.out"
-grep -Fq $'replace\tgoogle_compute_disk\t1' "${TEMP_DIR}/protected.out"
-grep -Fq $'delete\tgoogle_compute_firewall\t1' "${TEMP_DIR}/protected.out"
-grep -Fq $'delete\tgoogle_cloud_run_v2_service\t1' "${TEMP_DIR}/protected.out"
-grep -Fq "google_cloud_run_v2_service (1)" "${TEMP_DIR}/protected.err"
-grep -Fq "google_compute_disk (1)" "${TEMP_DIR}/protected.err"
-grep -Fq "google_compute_firewall (1)" "${TEMP_DIR}/protected.err"
-grep -Fq "google_project (1)" "${TEMP_DIR}/protected.err"
-grep -Fq "google_secret_manager_secret (1)" "${TEMP_DIR}/protected.err"
-grep -Fq "google_service_account (1)" "${TEMP_DIR}/protected.err"
-grep -Fq "google_storage_managed_folder (1)" "${TEMP_DIR}/protected.err"
+grep -Fq $'delete\tgoogle_project\t1\tdeposed' "${TEMP_DIR}/protected.out"
+grep -Fq $'forget\tgoogle_secret_manager_secret\t1\tcurrent' "${TEMP_DIR}/protected.out"
+grep -Fq $'replace\tgoogle_compute_disk\t1\tcurrent' "${TEMP_DIR}/protected.out"
+grep -Fq $'delete\tgoogle_compute_firewall\t1\tcurrent' "${TEMP_DIR}/protected.out"
+grep -Fq $'delete\tgoogle_cloud_run_v2_service\t1\tcurrent' "${TEMP_DIR}/protected.out"
+grep -Fq "google_cloud_run_v2_service (1, current)" "${TEMP_DIR}/protected.err"
+grep -Fq "google_compute_disk (1, current)" "${TEMP_DIR}/protected.err"
+grep -Fq "google_compute_firewall (1, current)" "${TEMP_DIR}/protected.err"
+grep -Fq "google_project (1, deposed)" "${TEMP_DIR}/protected.err"
+grep -Fq "google_secret_manager_secret (1, current)" "${TEMP_DIR}/protected.err"
+grep -Fq "google_service_account (1, current)" "${TEMP_DIR}/protected.err"
+grep -Fq "google_storage_managed_folder (1, current)" "${TEMP_DIR}/protected.err"
 assert_absent "${TEMP_DIR}/protected.out" "fixture-disk-name"
 assert_absent "${TEMP_DIR}/protected.err" "fixture-project-id"
 assert_absent "${TEMP_DIR}/protected.err" "fixture-forgotten-secret"
 assert_absent "${TEMP_DIR}/protected.err" "fixture-future-service"
+assert_absent "${TEMP_DIR}/protected.out" "fixture-deposed-key-must-not-be-printed"
+assert_absent "${TEMP_DIR}/protected.err" "fixture-deposed-key-must-not-be-printed"
 
 set +e
 "${REPOSITORY_ROOT}/ops/plan-summary.sh" foundation "${SCRIPT_DIR}/fixtures/plans/unsupported.json" >"${TEMP_DIR}/unsupported.out" 2>"${TEMP_DIR}/unsupported.err"
