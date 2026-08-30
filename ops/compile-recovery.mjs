@@ -205,6 +205,10 @@ async function main() {
   transformed.application_release.authentication.revision = `agora-authentication-rest-${seed.slice(0, 12)}`;
   transformed.application_release.authentication.active_revision =
     transformed.application_release.authentication.revision;
+  transformed.application_release.authentication.secrets.postgres_password_version =
+    receipt.database.authenticationPasswordVersion;
+  transformed.application_release.json_keys.secrets.postgres_password_version =
+    receipt.database.jsonKeysPasswordVersion;
   transformed.application_release.json_keys.revision = `agora-json-keys-grpc-${seed.slice(12, 24)}`;
   transformed.application_release.json_keys.active_revision =
     transformed.application_release.json_keys.revision;
@@ -260,10 +264,6 @@ async function main() {
       },
       secretVersions: [
         [
-          "production-authentication-postgres-dsn",
-          versions.authentication.secrets.postgres_dsn_version,
-        ],
-        [
           "production-authentication-postgres-password",
           receipt.database.authenticationPasswordVersion,
         ],
@@ -282,10 +282,6 @@ async function main() {
         [
           "production-json-keys-app-master-key",
           versions.json_keys.secrets.app_master_key_version,
-        ],
-        [
-          "production-json-keys-postgres-dsn",
-          versions.json_keys.secrets.postgres_dsn_version,
         ],
         [
           "production-json-keys-postgres-password",

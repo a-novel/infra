@@ -14,7 +14,7 @@ manifest and private receipt are the desired-state and rollback records.
 
 The bootstrap root now defines the resources inside a stable management project: protected EU state,
 backup, and receipt buckets; managed-folder state boundaries; four keyless automation identities and
-GitHub OIDC providers; exact IAM; nine metadata-only secret containers; required APIs; and targeted
+GitHub OIDC providers; exact IAM; seven live secret containers plus two empty retirement candidates; required APIs; and targeted
 Data Access audit logging. Merging the code creates nothing. The project, billing link, initial APIs,
 private state-bucket seed and import, first apply, GitHub environment protection, optional
 organization policies, and temporary-access removal remain explicit human bootstrap actions.
@@ -173,9 +173,9 @@ removes them, and reboot clears `/run`.
 
 Launch uses Google Cloud's authenticated, integrity-protected, encrypted private-IP VPC transport
 instead of adding a PostgreSQL certificate authority that this team would have to issue, rotate,
-and recover. The DSNs therefore use `sslmode=disable` only inside this one private network, with
-SCRAM providing database authentication. An external, hybrid, or differently trusted network path
-requires a reviewed PostgreSQL TLS design and coordinated DSN rotation first. See
+and recover. Application runtimes therefore set `POSTGRES_TLS_ENABLED=false` only inside this private network,
+with SCRAM providing database authentication. An external, hybrid, or differently trusted network
+path requires a reviewed PostgreSQL TLS design and coordinated runtime reconfiguration first. See
 [encryption in transit inside Google's virtual network](https://cloud.google.com/docs/security/encryption-in-transit#google_cloud_virtual_network_authentication_and_encryption).
 
 This foundation deliberately provisions no Cloud NAT, router, or Serverless VPC Access connector.
@@ -249,7 +249,7 @@ the super-admin role. Only named `user:` or `group:` members receive the initial
 conditional invoker, narrow job deployer, initializer `actAs`, and registry read. The release identity
 has none of those capabilities and cannot read/change Cloud Run IAM. The human creates an inert job,
 attaches and verifies the initializer tag, then adds the exact secret references and executes without
-overrides. Its dedicated runtime identity reads only the Authentication DSN and bootstrap password,
+overrides. Its dedicated runtime identity reads only the Authentication owner password and bootstrap password,
 which keeps the REST identity from reading the bootstrap credential. The human deletes the job after
 the immutable success marker exists.
 

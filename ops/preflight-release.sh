@@ -31,9 +31,9 @@ if ! jq --exit-status '
     (.cloud.region | test("^[a-z]+-[a-z]+[0-9]+$")) and
     # Only rollback to the pre-first-release state has no secret consumers.
     (
-      (.action == "deploy" and (.cloud.secretVersions | length) == 9) or
+      (.action == "deploy" and (.cloud.secretVersions | length) == 7) or
       (.action == "rollback" and
-        ((.cloud.secretVersions | length) == 0 or (.cloud.secretVersions | length) == 9))
+        ((.cloud.secretVersions | length) == 0 or (.cloud.secretVersions | length) == 7))
     ) and
     all(.cloud.secretVersions[];
       (.[0] | test("^production-[a-z0-9-]+$")) and

@@ -257,15 +257,26 @@ run "builds_the_protected_management_plane" {
 
   assert {
     condition = (
-      length(google_secret_manager_secret.application) == 9 &&
+      length(google_secret_manager_secret.application) == 7 &&
       alltrue([
         for secret in values(google_secret_manager_secret.application) :
         secret.deletion_protection &&
         secret.deletion_policy == "PREVENT" &&
         secret.version_destroy_ttl == "2592000s"
-      ])
+      ]) &&
+      toset(keys(google_secret_manager_secret.retiring_application)) == toset([
+        "production-authentication-postgres-dsn",
+        "production-json-keys-postgres-dsn",
+      ]) &&
+      alltrue([
+        for secret in values(google_secret_manager_secret.retiring_application) :
+        !secret.deletion_protection &&
+        secret.deletion_policy == "DELETE" &&
+        secret.version_destroy_ttl == "2592000s"
+      ]) &&
+      length(local.application_secret_ids) == 9
     )
-    error_message = "Secret containers lost their expected count or recovery protections."
+    error_message = "Seven active secrets must stay protected while the two empty DSN containers are explicitly disarmed."
   }
 
   assert {

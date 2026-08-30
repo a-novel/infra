@@ -698,9 +698,8 @@ gcloud iam service-accounts list \
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Expected safe result: the nine IDs in the bootstrap secret-contract table and exactly four
-`infra-*` service-account emails. Secret values do not exist yet and must not be added during this
-verification.
+Expected safe result: seven live IDs, the two empty DSN retirement candidates, and exactly four
+`infra-*` service-account emails. Do not add a version to either DSN container.
 
 ## 10. Verify the remote backend and absence of local state
 

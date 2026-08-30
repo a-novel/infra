@@ -325,7 +325,7 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
         }
         revision = "agora-authentication-rest-0123456789ab"
         secrets = {
-          postgres_dsn_version         = 11
+          postgres_password_version    = 11
           smtp_password_version        = 12
           super_admin_password_version = 13
         }
@@ -347,8 +347,8 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
         }
         revision = "agora-json-keys-grpc-abcdef012345"
         secrets = {
-          app_master_key_version = 7
-          postgres_dsn_version   = 8
+          app_master_key_version    = 7
+          postgres_password_version = 8
         }
       }
     }
@@ -436,35 +436,35 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
     condition = (
       one([
         for environment in one(one(one(google_cloud_run_v2_job.application["authentication_migrations"].template).template).containers).env : environment
-        if environment.name == "POSTGRES_DSN"
-      ]).value_source[0].secret_key_ref[0].secret == "projects/agora-management-test/secrets/production-authentication-postgres-dsn" &&
+        if environment.name == "POSTGRES_PASSWORD"
+      ]).value_source[0].secret_key_ref[0].secret == "projects/agora-management-test/secrets/production-authentication-postgres-password" &&
       one([
         for environment in one(one(one(google_cloud_run_v2_job.application["authentication_migrations"].template).template).containers).env : environment
-        if environment.name == "POSTGRES_DSN"
+        if environment.name == "POSTGRES_PASSWORD"
       ]).value_source[0].secret_key_ref[0].version == "11" &&
       alltrue([
         for key in ["json_keys_migrations", "json_keys_rotate"] :
         one([
           for environment in one(one(one(google_cloud_run_v2_job.application[key].template).template).containers).env : environment
-          if environment.name == "POSTGRES_DSN"
-        ]).value_source[0].secret_key_ref[0].secret == "projects/agora-management-test/secrets/production-json-keys-postgres-dsn" &&
+          if environment.name == "POSTGRES_PASSWORD"
+        ]).value_source[0].secret_key_ref[0].secret == "projects/agora-management-test/secrets/production-json-keys-postgres-password" &&
         one([
           for environment in one(one(one(google_cloud_run_v2_job.application[key].template).template).containers).env : environment
-          if environment.name == "POSTGRES_DSN"
+          if environment.name == "POSTGRES_PASSWORD"
         ]).value_source[0].secret_key_ref[0].version == "8"
       ]) &&
       toset([
         for environment in one(one(one(google_cloud_run_v2_job.application["authentication_migrations"].template).template).containers).env : environment.name
         if length(environment.value_source) == 1
-      ]) == toset(["POSTGRES_DSN"]) &&
+      ]) == toset(["POSTGRES_PASSWORD"]) &&
       toset([
         for environment in one(one(one(google_cloud_run_v2_job.application["json_keys_migrations"].template).template).containers).env : environment.name
         if length(environment.value_source) == 1
-      ]) == toset(["POSTGRES_DSN"]) &&
+      ]) == toset(["POSTGRES_PASSWORD"]) &&
       toset([
         for environment in one(one(one(google_cloud_run_v2_job.application["json_keys_rotate"].template).template).containers).env : environment.name
         if length(environment.value_source) == 1
-      ]) == toset(["APP_MASTER_KEY", "POSTGRES_DSN"]) &&
+      ]) == toset(["APP_MASTER_KEY", "POSTGRES_PASSWORD"]) &&
       !contains(keys(google_cloud_run_v2_job.application), "authentication_init") &&
       one([
         for environment in one(one(one(google_cloud_run_v2_job.application["json_keys_rotate"].template).template).containers).env : environment
@@ -475,6 +475,49 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
       }
     )
     error_message = "Automated application jobs must receive only their declared exact secret versions; initialization stays absent."
+  }
+
+  assert {
+    condition = (
+      local.application_database_environment == {
+        authentication = {
+          POSTGRES_HOST        = "10.20.0.5"
+          POSTGRES_PORT        = "5433"
+          POSTGRES_USER        = "agora_authentication"
+          POSTGRES_DATABASE    = "agora_authentication"
+          POSTGRES_TLS_ENABLED = "false"
+        }
+        json_keys = {
+          POSTGRES_HOST        = "10.20.0.5"
+          POSTGRES_PORT        = "5432"
+          POSTGRES_USER        = "agora_json_keys"
+          POSTGRES_DATABASE    = "agora_json_keys"
+          POSTGRES_TLS_ENABLED = "false"
+        }
+      } &&
+      alltrue([
+        for key, expected in {
+          authentication_migrations = local.application_database_environment.authentication
+          json_keys_migrations      = local.application_database_environment.json_keys
+          json_keys_rotate          = local.application_database_environment.json_keys
+          } : {
+          for environment in one(one(one(google_cloud_run_v2_job.application[key].template).template).containers).env :
+          environment.name => environment.value
+          if contains(keys(expected), environment.name) && length(environment.value_source) == 0
+        } == expected
+      ]) &&
+      {
+        for environment in one(one(google_cloud_run_v2_service.json_keys[0].template).containers).env :
+        environment.name => environment.value
+        if contains(keys(local.application_database_environment.json_keys), environment.name) && length(environment.value_source) == 0
+      } == local.application_database_environment.json_keys &&
+      {
+        for environment in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env :
+        environment.name => environment.value
+        if contains(keys(local.application_database_environment.authentication), environment.name) && length(environment.value_source) == 0
+      } == local.application_database_environment.authentication
+    )
+    error_message = "Every application runtime must receive its exact discrete private-database settings."
   }
 
   assert {
@@ -516,7 +559,7 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
       toset([
         for environment in one(one(google_cloud_run_v2_service.json_keys[0].template).containers).env : environment.name
         if length(environment.value_source) == 1
-      ]) == toset(["APP_MASTER_KEY", "POSTGRES_DSN"]) &&
+      ]) == toset(["APP_MASTER_KEY", "POSTGRES_PASSWORD"]) &&
       one([
         for environment in one(one(google_cloud_run_v2_service.json_keys[0].template).containers).env : environment
         if environment.name == "APP_MASTER_KEY"
@@ -526,13 +569,13 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
       } &&
       one([
         for environment in one(one(google_cloud_run_v2_service.json_keys[0].template).containers).env : environment
-        if environment.name == "POSTGRES_DSN"
+        if environment.name == "POSTGRES_PASSWORD"
         ]).value_source[0].secret_key_ref[0] == {
-        secret  = "projects/agora-management-test/secrets/production-json-keys-postgres-dsn"
+        secret  = "projects/agora-management-test/secrets/production-json-keys-postgres-password"
         version = "8"
       }
     )
-    error_message = "JSON Keys may resolve only its exact master key and DSN versions."
+    error_message = "JSON Keys may resolve only its exact master-key and owner-password versions."
   }
 
   assert {
@@ -592,12 +635,12 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
       toset([
         for environment in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env : environment.name
         if length(environment.value_source) == 1
-      ]) == toset(["POSTGRES_DSN", "SMTP_SENDER_PASSWORD"]) &&
+      ]) == toset(["POSTGRES_PASSWORD", "SMTP_SENDER_PASSWORD"]) &&
       one([
         for environment in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env : environment
-        if environment.name == "POSTGRES_DSN"
+        if environment.name == "POSTGRES_PASSWORD"
         ]).value_source[0].secret_key_ref[0] == {
-        secret  = "projects/agora-management-test/secrets/production-authentication-postgres-dsn"
+        secret  = "projects/agora-management-test/secrets/production-authentication-postgres-password"
         version = "11"
       } &&
       one([
@@ -659,7 +702,7 @@ run "builds_restore_only_contracts_in_a_disposable_recovery_state" {
         }
         revision = "agora-authentication-rest-0123456789ab"
         secrets = {
-          postgres_dsn_version         = 11
+          postgres_password_version    = 11
           smtp_password_version        = 12
           super_admin_password_version = 13
         }
@@ -681,8 +724,8 @@ run "builds_restore_only_contracts_in_a_disposable_recovery_state" {
         }
         revision = "agora-json-keys-grpc-abcdef012345"
         secrets = {
-          app_master_key_version = 7
-          postgres_dsn_version   = 8
+          app_master_key_version    = 7
+          postgres_password_version = 8
         }
       }
     }

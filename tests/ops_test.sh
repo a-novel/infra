@@ -626,7 +626,7 @@ assert_equal "$(wc -c <"${PREFLIGHT_GCLOUD_LOG}")" 0
 
 jq '
   .action = "deploy" |
-  .cloud.secretVersions = [range(1; 10) | ["production-test-\(.)", .]]
+  .cloud.secretVersions = [range(1; 8) | ["production-test-\(.)", .]]
 ' "${TEMP_DIR}/preflight.json" >"${TEMP_DIR}/preflight-deploy.json"
 
 : >"${PREFLIGHT_GCLOUD_LOG}"
@@ -634,7 +634,7 @@ PATH="${PREFLIGHT_MOCK_BIN}:${PATH}" \
     PREFLIGHT_GCLOUD_LOG="${PREFLIGHT_GCLOUD_LOG}" \
     "${REPOSITORY_ROOT}/ops/preflight-release.sh" \
     "${TEMP_DIR}/preflight-deploy.json" >/dev/null
-assert_equal "$(grep -Fxc 'secrets versions describe' "${PREFLIGHT_GCLOUD_LOG}")" 9
+assert_equal "$(grep -Fxc 'secrets versions describe' "${PREFLIGHT_GCLOUD_LOG}")" 7
 assert_equal "$(grep -Fxc 'quotas preferences list' "${PREFLIGHT_GCLOUD_LOG}")" 1
 
 # A missing or inaccessible version stops the release before quota inspection

@@ -311,14 +311,14 @@ grant_secret_access() {
     --role=roles/secretmanager.secretAccessor --condition=None --quiet >/dev/null
 }
 
-grant_secret_access production-authentication-postgres-dsn "$AUTH_RUNTIME"
+grant_secret_access production-authentication-postgres-password "$AUTH_RUNTIME"
 grant_secret_access production-authentication-smtp-sender-password "$AUTH_RUNTIME"
 grant_secret_access production-authentication-postgres-password "$DATABASE_RUNTIME"
 grant_secret_access production-authentication-postgres-backup-password "$DATABASE_RUNTIME"
 grant_secret_access production-json-keys-postgres-password "$DATABASE_RUNTIME"
 grant_secret_access production-json-keys-postgres-backup-password "$DATABASE_RUNTIME"
 grant_secret_access production-json-keys-app-master-key "$JSON_RUNTIME"
-grant_secret_access production-json-keys-postgres-dsn "$JSON_RUNTIME"
+grant_secret_access production-json-keys-postgres-password "$JSON_RUNTIME"
 grant_secret_access production-authentication-postgres-password "$RESTORE_RUNTIME"
 grant_secret_access production-json-keys-postgres-password "$RESTORE_RUNTIME"
 
@@ -338,14 +338,14 @@ whole policy:
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 for tuple in \
-  "production-authentication-postgres-dsn ${AUTH_RUNTIME}" \
+  "production-authentication-postgres-password ${AUTH_RUNTIME}" \
   "production-authentication-smtp-sender-password ${AUTH_RUNTIME}" \
   "production-authentication-postgres-password ${DATABASE_RUNTIME}" \
   "production-authentication-postgres-backup-password ${DATABASE_RUNTIME}" \
   "production-json-keys-postgres-password ${DATABASE_RUNTIME}" \
   "production-json-keys-postgres-backup-password ${DATABASE_RUNTIME}" \
   "production-json-keys-app-master-key ${JSON_RUNTIME}" \
-  "production-json-keys-postgres-dsn ${JSON_RUNTIME}" \
+  "production-json-keys-postgres-password ${JSON_RUNTIME}" \
   "production-authentication-postgres-password ${RESTORE_RUNTIME}" \
   "production-json-keys-postgres-password ${RESTORE_RUNTIME}"; do
   read -r secret member <<<"$tuple"
@@ -356,13 +356,11 @@ for tuple in \
 done
 
 for secret in \
-  production-authentication-postgres-dsn \
   production-authentication-postgres-password \
   production-authentication-postgres-backup-password \
   production-authentication-smtp-sender-password \
   production-authentication-super-admin-password \
   production-json-keys-app-master-key \
-  production-json-keys-postgres-dsn \
   production-json-keys-postgres-password \
   production-json-keys-postgres-backup-password; do
   test -z "$(gcloud secrets get-iam-policy "$secret" \
@@ -592,14 +590,14 @@ revoke_secret_access() {
     --role=roles/secretmanager.secretAccessor --condition=None --quiet >/dev/null
 }
 
-revoke_secret_access production-authentication-postgres-dsn "$AUTH_RUNTIME"
+revoke_secret_access production-authentication-postgres-password "$AUTH_RUNTIME"
 revoke_secret_access production-authentication-smtp-sender-password "$AUTH_RUNTIME"
 revoke_secret_access production-authentication-postgres-password "$DATABASE_RUNTIME"
 revoke_secret_access production-authentication-postgres-backup-password "$DATABASE_RUNTIME"
 revoke_secret_access production-json-keys-postgres-password "$DATABASE_RUNTIME"
 revoke_secret_access production-json-keys-postgres-backup-password "$DATABASE_RUNTIME"
 revoke_secret_access production-json-keys-app-master-key "$JSON_RUNTIME"
-revoke_secret_access production-json-keys-postgres-dsn "$JSON_RUNTIME"
+revoke_secret_access production-json-keys-postgres-password "$JSON_RUNTIME"
 revoke_secret_access production-authentication-postgres-password "$RESTORE_RUNTIME"
 revoke_secret_access production-json-keys-postgres-password "$RESTORE_RUNTIME"
 
@@ -608,13 +606,11 @@ gcloud storage buckets remove-iam-policy-binding "gs://${BACKUP_BUCKET}" \
 
 for member in "$AUTH_RUNTIME" "$DATABASE_RUNTIME" "$JSON_RUNTIME" "$RESTORE_RUNTIME"; do
   for secret in \
-    production-authentication-postgres-dsn \
     production-authentication-postgres-password \
     production-authentication-postgres-backup-password \
     production-authentication-smtp-sender-password \
     production-authentication-super-admin-password \
     production-json-keys-app-master-key \
-    production-json-keys-postgres-dsn \
     production-json-keys-postgres-password \
     production-json-keys-postgres-backup-password; do
     test -z "$(gcloud secrets get-iam-policy "$secret" \

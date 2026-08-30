@@ -343,17 +343,17 @@ run "builds_the_project_replacement_window" {
       ]) &&
       length(google_secret_manager_secret_iam_member.runtime) == 12 &&
       local.runtime_secret_access == {
-        "authentication:postgres-dsn" = {
+        "authentication:postgres-password" = {
           identity = "authentication"
-          secret   = "production-authentication-postgres-dsn"
+          secret   = "production-authentication-postgres-password"
         }
         "authentication:smtp-password" = {
           identity = "authentication"
           secret   = "production-authentication-smtp-sender-password"
         }
-        "authentication-initializer:postgres-dsn" = {
+        "authentication-initializer:postgres-password" = {
           identity = "authentication_initializer"
-          secret   = "production-authentication-postgres-dsn"
+          secret   = "production-authentication-postgres-password"
         }
         "authentication-initializer:super-admin-password" = {
           identity = "authentication_initializer"
@@ -387,9 +387,9 @@ run "builds_the_project_replacement_window" {
           identity = "json_keys"
           secret   = "production-json-keys-app-master-key"
         }
-        "json-keys:postgres-dsn" = {
+        "json-keys:postgres-password" = {
           identity = "json_keys"
-          secret   = "production-json-keys-postgres-dsn"
+          secret   = "production-json-keys-postgres-password"
         }
       } &&
       alltrue([

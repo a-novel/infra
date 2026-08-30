@@ -395,14 +395,22 @@ audit_foundation() {
             fail 'no public Secret Manager principals'
         fi
         case "$secret_name" in
-            production-authentication-postgres-dsn)
-                expected_secret_services='["agora-auth-initializer", "agora-authentication"]'
+            production-authentication-postgres-dsn | production-json-keys-postgres-dsn)
+                expected_secret_services='[]'
+                secret_versions="$(gcloud secrets versions list "$secret_name" \
+                    --project="$MANAGEMENT_PROJECT_ID" --format=json)"
+                if ! jq --exit-status 'length == 0' <<<"$secret_versions" >/dev/null; then
+                    fail "empty retiring Secret Manager container ${secret_name}"
+                fi
                 ;;
             production-authentication-postgres-backup-password | production-json-keys-postgres-backup-password)
                 expected_secret_services='["agora-backup", "agora-database-host"]'
                 ;;
-            production-authentication-postgres-password | production-json-keys-postgres-password)
-                expected_secret_services='["agora-database-host"]'
+            production-authentication-postgres-password)
+                expected_secret_services='["agora-auth-initializer", "agora-authentication", "agora-database-host"]'
+                ;;
+            production-json-keys-postgres-password)
+                expected_secret_services='["agora-database-host", "agora-json-keys"]'
                 ;;
             production-authentication-smtp-sender-password)
                 expected_secret_services='["agora-authentication"]'
@@ -410,7 +418,7 @@ audit_foundation() {
             production-authentication-super-admin-password)
                 expected_secret_services='["agora-auth-initializer"]'
                 ;;
-            production-json-keys-app-master-key | production-json-keys-postgres-dsn)
+            production-json-keys-app-master-key)
                 expected_secret_services='["agora-json-keys"]'
                 ;;
         esac
@@ -441,7 +449,7 @@ audit_foundation() {
             fail "Secret Manager runtime allowlist for ${secret_name}"
         fi
     done
-    pass 'required Secret Manager containers and runtime allowlists'
+    pass 'seven active secrets and two empty DSN retirement candidates'
 
     backup_policy_json="$(gcloud storage buckets get-iam-policy \
         "gs://${BACKUP_BUCKET_NAME}" --format=json)"

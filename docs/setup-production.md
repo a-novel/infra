@@ -59,7 +59,7 @@ gh run list --repo a-novel/infra --branch master --limit 20 --json databaseId,wo
 |    2 | [Provision the workload foundation](./runbooks/provision-workload-foundation.md).                                                                                                                        | The workload project and both protected roots converge; the final audit passes; temporary access is removed.                                            |
 |    3 | [Inspect the PostgreSQL host](./runbooks/operate-postgresql-host.md#select-the-exact-host) through [foundation verification](./runbooks/operate-postgresql-host.md#verify-foundation-state-after-apply). | One private VM and preserved disk exist; no external IP or running database container exists.                                                           |
 |    4 | [Configure and persist hosted SMTP](#4-configure-and-persist-the-smtp-contract).                                                                                                                         | The provider account, cost cap, privacy settings, domain, DKIM, SPF, DMARC, and non-secret contract pass.                                               |
-|    5 | [Create the initial payload versions](#5-create-the-initial-payload-versions).                                                                                                                           | All nine containers have one selected enabled numeric version; no payload was printed.                                                                  |
+|    5 | [Create the initial payload versions](#5-create-the-initial-payload-versions).                                                                                                                           | All seven live containers have one selected enabled numeric version; no payload was printed.                                                            |
 |    6 | [Activate production](#6-activate-production).                                                                                                                                                           | The reviewed release succeeds, the initializer is deleted, traffic is healthy, recovery jobs pass, rotation is scheduled, and the receipt is immutable. |
 |    7 | [Lock backup retention](#7-lock-backup-retention).                                                                                                                                                       | The seven-day bucket retention policy is irreversibly locked through reviewed code.                                                                     |
 |    8 | [Verify alert delivery](./runbooks/respond-to-alerts.md#verify-channels-without-adding-machinery).                                                                                                       | Both channels and all policies have owners and deliver tests.                                                                                           |
@@ -89,39 +89,26 @@ manager until step 5.
 The foundation created empty Secret Manager containers. Prepare these values in the approved
 password manager; do not export them:
 
-| Secret                                               | Initial value                                                                                             |
-| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `production-authentication-postgres-password`        | A random 64-character value using only `A-Z`, `a-z`, `0-9`, `_`, and `-`.                                 |
-| `production-authentication-postgres-backup-password` | A different random value with the same contract.                                                          |
-| `production-json-keys-postgres-password`             | A third different random value with the same contract.                                                    |
-| `production-json-keys-postgres-backup-password`      | A fourth different random value with the same contract.                                                   |
-| `production-authentication-postgres-dsn`             | `postgres://agora_authentication:<owner-password>@<private-ip>:5433/agora_authentication?sslmode=disable` |
-| `production-json-keys-postgres-dsn`                  | `postgres://agora_json_keys:<owner-password>@<private-ip>:5432/agora_json_keys?sslmode=disable`           |
-| `production-authentication-smtp-sender-password`     | The exact Plunk `sk_` secret key, not its `pk_` public key.                                               |
-| `production-authentication-super-admin-password`     | A separate random 64-character password-manager value.                                                    |
-| `production-json-keys-app-master-key`                | Exactly 64 hexadecimal characters representing 32 random bytes.                                           |
-
-Obtain `<private-ip>` without printing instance metadata:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-WORKLOAD_PROJECT_ID="$INFRA_WORKLOAD_PROJECT_ID"
-DATABASE_ZONE="$(gcloud compute instance-groups managed list --project="$WORKLOAD_PROJECT_ID" --filter='name=agora-database' --format='value(zone.basename())')"
-[[ "$DATABASE_ZONE" =~ ^[a-z]+-[a-z]+[0-9]+-[a-z]$ ]]
-DATABASE_INSTANCE_URI="$(gcloud compute instance-groups managed list-instances agora-database --project="$WORKLOAD_PROJECT_ID" --zone="$DATABASE_ZONE" --format='value(instance)' --limit=1)"
-DATABASE_INSTANCE_NAME="${DATABASE_INSTANCE_URI##*/}"
-gcloud compute instances describe "$DATABASE_INSTANCE_NAME" --project="$WORKLOAD_PROJECT_ID" --zone="$DATABASE_ZONE" --format='value(networkInterfaces[0].networkIP)'
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
+| Secret                                               | Initial value                                                             |
+| ---------------------------------------------------- | ------------------------------------------------------------------------- |
+| `production-authentication-postgres-password`        | A random 64-character value using only `A-Z`, `a-z`, `0-9`, `_`, and `-`. |
+| `production-authentication-postgres-backup-password` | A different random value with the same contract.                          |
+| `production-json-keys-postgres-password`             | A third different random value with the same contract.                    |
+| `production-json-keys-postgres-backup-password`      | A fourth different random value with the same contract.                   |
+| `production-authentication-smtp-sender-password`     | The exact Plunk `sk_` secret key, not its `pk_` public key.               |
+| `production-authentication-super-admin-password`     | A separate random 64-character password-manager value.                    |
+| `production-json-keys-app-master-key`                | Exactly 64 hexadecimal characters representing 32 random bytes.           |
 
 Generate passwords with the password manager's cryptographic generator. Compare the four database
-passwords there and confirm they are all distinct. Do not generate or assemble any payload in the
-shell. The private VPC protects the two `sslmode=disable` database paths; adding a hybrid, external,
-or differently trusted network requires PostgreSQL TLS and new DSNs.
+passwords there and confirm they are all distinct. Do not generate or assemble a payload in the
+shell. Host, port, user, database, and TLS mode are derived from reviewed infrastructure; only the
+password is secret. The private VPC protects the non-TLS database path. A hybrid, external, or
+differently trusted network requires a reviewed PostgreSQL TLS design first.
 
-Create the nine immutable versions in dependency order. The script prompts twice with terminal echo
+Do not add a version to either legacy `*-postgres-dsn` retirement candidate. The foundation audit
+requires both containers to remain empty until their separately gated deletion.
+
+Create the seven immutable versions in dependency order. The script prompts twice with terminal echo
 disabled and prints only safe IDs and numeric versions:
 
 ```zsh
@@ -133,22 +120,20 @@ unsetopt err_exit nounset xtrace
   production-authentication-postgres-backup-password \
   production-json-keys-postgres-password \
   production-json-keys-postgres-backup-password \
-  production-authentication-postgres-dsn \
-  production-json-keys-postgres-dsn \
   production-authentication-smtp-sender-password \
   production-authentication-super-admin-password \
   production-json-keys-app-master-key
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Expected: nine `Created <secret> version <number>` lines. If it stops partway, list version metadata
+Expected: seven `Created <secret> version <number>` lines. If it stops partway, list version metadata
 and rerun only the remaining IDs. Never create duplicates to reproduce terminal output and never use
 the mutable `latest` alias.
 
 ## 6. Activate production
 
 Use [Deploy and roll back production](./runbooks/deploy-production.md) sections 1–4 to verify the
-boundary, select the nine numeric versions, and store `RELEASE_CONFIG_JSON`. Then prepare one pull
+boundary, select the seven numeric versions, and store `RELEASE_CONFIG_JSON`. Then prepare one pull
 request that fills both complete image families in `deploy/production/images.yaml` with stable
 SemVer tags and exact `sha256:` digests. Both database images must use PostgreSQL 18.
 
@@ -232,17 +217,31 @@ WORKLOAD_PROJECT_ID="$INFRA_WORKLOAD_PROJECT_ID"
 DATABASE_ZONE="$(gcloud compute instance-groups managed list --project="$WORKLOAD_PROJECT_ID" --filter='name=agora-database' --format='value(zone.basename())')"
 [[ "$DATABASE_ZONE" =~ ^[a-z]+-[a-z]+[0-9]+-[a-z]$ ]]
 REGION="${DATABASE_ZONE%-*}"
+DATABASE_INSTANCE_URI="$(gcloud compute instance-groups managed list-instances agora-database --project="$WORKLOAD_PROJECT_ID" --zone="$DATABASE_ZONE" --format='value(instance)' --limit=1)"
+DATABASE_INSTANCE_NAME="${DATABASE_INSTANCE_URI##*/}"
+DATABASE_PRIVATE_IP="$(gcloud compute instances describe "$DATABASE_INSTANCE_NAME" --project="$WORKLOAD_PROJECT_ID" --zone="$DATABASE_ZONE" --format='value(networkInterfaces[0].networkIP)')"
+[[ "$DATABASE_PRIVATE_IP" =~ ^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.) ]]
 AUTH_SUPER_ADMIN_EMAIL="$(gcloud config get-value account 2>/dev/null)"
 MANAGEMENT_PROJECT_NUMBER="$(gcloud projects describe "$MANAGEMENT_PROJECT_ID" --format='value(projectNumber)')"
 WORKLOAD_PROJECT_NUMBER="$(gcloud projects describe "$WORKLOAD_PROJECT_ID" --format='value(projectNumber)')"
 INVOCATION_TAG_KEY="$(gcloud resource-manager tags keys list --parent="projects/${WORKLOAD_PROJECT_NUMBER}" --filter='shortName=agora-invocation' --format='value(name)')"
 INITIALIZER_TAG_VALUE="$(gcloud resource-manager tags values list --parent="$INVOCATION_TAG_KEY" --filter='shortName=initializer' --format='value(name)')"
-AUTH_POSTGRES_DSN_VERSION="$(gcloud secrets versions list production-authentication-postgres-dsn --project="$MANAGEMENT_PROJECT_ID" --filter='state=ENABLED' --format='value(name.basename())')"
-AUTH_SUPER_ADMIN_PASSWORD_VERSION="$(gcloud secrets versions list production-authentication-super-admin-password --project="$MANAGEMENT_PROJECT_ID" --filter='state=ENABLED' --format='value(name.basename())')"
+sole_enabled_secret_version() {
+  gcloud secrets versions list "$1" --project="$MANAGEMENT_PROJECT_ID" --format=json \
+    | jq --raw-output '
+        map(select(.state == "ENABLED"))
+        | if length == 1 then .[0].name | split("/") | last
+          else error("expected exactly one enabled secret version")
+          end
+      '
+}
+AUTH_POSTGRES_PASSWORD_VERSION="$(sole_enabled_secret_version production-authentication-postgres-password)"
+AUTH_SUPER_ADMIN_PASSWORD_VERSION="$(sole_enabled_secret_version production-authentication-super-admin-password)"
+unset -f sole_enabled_secret_version
 INIT_DIGEST="$(node --input-type=module -e 'import { readFile } from "node:fs/promises"; import { parse } from "yaml"; const manifest = parse(await readFile("deploy/production/images.yaml", "utf8")); process.stdout.write(manifest.components["service-authentication"].images["jobs/init"].digest);')"
 [[ "$MANAGEMENT_PROJECT_NUMBER" =~ ^[0-9]+$ ]]
 [[ "$INITIALIZER_TAG_VALUE" =~ ^tagValues/[0-9]+$ ]]
-[[ "$AUTH_POSTGRES_DSN_VERSION" =~ ^[1-9][0-9]*$ ]]
+[[ "$AUTH_POSTGRES_PASSWORD_VERSION" =~ ^[1-9][0-9]*$ ]]
 [[ "$AUTH_SUPER_ADMIN_PASSWORD_VERSION" =~ ^[1-9][0-9]*$ ]]
 [[ "$INIT_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
 INIT_IMAGE="${REGION}-docker.pkg.dev/${WORKLOAD_PROJECT_ID}/agora-production/service-authentication/jobs/init@${INIT_DIGEST}"
@@ -345,8 +344,8 @@ gcloud run jobs update agora-authentication-init \
   --cpu=1 --memory=512Mi \
   --network=agora-production --subnet="agora-production-${REGION}" \
   --network-tags=agora-authentication --vpc-egress=all-traffic \
-  --set-env-vars="SUPER_ADMIN_EMAIL=${AUTH_SUPER_ADMIN_EMAIL}" \
-  --set-secrets="POSTGRES_DSN=projects/${MANAGEMENT_PROJECT_NUMBER}/secrets/production-authentication-postgres-dsn:${AUTH_POSTGRES_DSN_VERSION},SUPER_ADMIN_PASSWORD=projects/${MANAGEMENT_PROJECT_NUMBER}/secrets/production-authentication-super-admin-password:${AUTH_SUPER_ADMIN_PASSWORD_VERSION}"
+  --set-env-vars="SUPER_ADMIN_EMAIL=${AUTH_SUPER_ADMIN_EMAIL},POSTGRES_HOST=${DATABASE_PRIVATE_IP},POSTGRES_PORT=5433,POSTGRES_USER=agora_authentication,POSTGRES_DATABASE=agora_authentication,POSTGRES_TLS_ENABLED=false" \
+  --set-secrets="POSTGRES_PASSWORD=projects/${MANAGEMENT_PROJECT_NUMBER}/secrets/production-authentication-postgres-password:${AUTH_POSTGRES_PASSWORD_VERSION},SUPER_ADMIN_PASSWORD=projects/${MANAGEMENT_PROJECT_NUMBER}/secrets/production-authentication-super-admin-password:${AUTH_SUPER_ADMIN_PASSWORD_VERSION}"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
@@ -507,7 +506,7 @@ review evidence belong in Git.
 | Foundation final audit passes and temporary access is removed.        | Step 3.                                                                |
 | Idle private host and disk pass inspection.                           | Step 4.                                                                |
 | SMTP domain and contract pass; no secret versions exist.              | Step 5.                                                                |
-| All nine numeric versions exist; no release configuration exists.     | Step 6, deploy sections 1–4.                                           |
+| All seven numeric versions exist; no release configuration exists.    | Step 6, deploy sections 1–4.                                           |
 | Release is waiting for initialization.                                | [Run the initializer](#run-the-human-only-authentication-initializer). |
 | Release receipt and recovery evidence pass; retention is unlocked.    | Step 7.                                                                |
 | Retention, alerts, and clean-room drill pass.                         | Step 10.                                                               |

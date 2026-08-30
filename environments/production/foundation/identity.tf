@@ -119,9 +119,9 @@ locals {
   }
 
   runtime_secret_access = merge({
-    "authentication:postgres-dsn" = {
+    "authentication:postgres-password" = {
       identity = "authentication"
-      secret   = "production-authentication-postgres-dsn"
+      secret   = "production-authentication-postgres-password"
     }
     "authentication:smtp-password" = {
       identity = "authentication"
@@ -147,9 +147,9 @@ locals {
       identity = "json_keys"
       secret   = "production-json-keys-app-master-key"
     }
-    "json-keys:postgres-dsn" = {
+    "json-keys:postgres-password" = {
       identity = "json_keys"
-      secret   = "production-json-keys-postgres-dsn"
+      secret   = "production-json-keys-postgres-password"
     }
     }, var.recovery_mode ? {
     "restore:authentication-owner-password" = {
@@ -161,9 +161,9 @@ locals {
       secret   = "production-json-keys-postgres-password"
     }
     } : {
-    "authentication-initializer:postgres-dsn" = {
+    "authentication-initializer:postgres-password" = {
       identity = "authentication_initializer"
-      secret   = "production-authentication-postgres-dsn"
+      secret   = "production-authentication-postgres-password"
     }
     "authentication-initializer:super-admin-password" = {
       identity = "authentication_initializer"

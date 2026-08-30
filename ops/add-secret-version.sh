@@ -14,13 +14,11 @@ fi
 
 is_declared_secret() {
     case "$1" in
-        production-authentication-postgres-dsn | \
-            production-authentication-postgres-password | \
+        production-authentication-postgres-password | \
             production-authentication-postgres-backup-password | \
             production-authentication-smtp-sender-password | \
             production-authentication-super-admin-password | \
             production-json-keys-app-master-key | \
-            production-json-keys-postgres-dsn | \
             production-json-keys-postgres-password | \
             production-json-keys-postgres-backup-password) return 0 ;;
         *) return 1 ;;

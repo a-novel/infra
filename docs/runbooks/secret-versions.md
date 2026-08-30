@@ -43,10 +43,9 @@ MANAGEMENT_PROJECT_ID="$INFRA_MANAGEMENT_PROJECT_ID"
 - Use the declared operator Google account with MFA in a private, non-recorded zsh session.
 - Obtain or generate the value in an approved password manager. Do not ask an agent to generate,
   transmit, or retain it.
-- Know the one exact secret ID and its runtime format. DSNs and passwords are different values even
-  when they refer to the same database.
+- Know the one exact secret ID and its runtime format.
 - A PostgreSQL password must contain 32–128 characters from `A-Z`, `a-z`, `0-9`, `_`, and `-` only.
-  This printable URL-safe contract makes byte-exact validation and direct DSN embedding unambiguous.
+  This printable contract makes byte-exact validation unambiguous.
   Both owner passwords and both backup passwords must be four distinct values.
 - For rotation, know every consumer and the currently pinned numeric version. Never configure a
   production consumer to use the mutable `latest` alias.
@@ -57,13 +56,11 @@ MANAGEMENT_PROJECT_ID="$INFRA_MANAGEMENT_PROJECT_ID"
 The allowed IDs are:
 
 ```text
-production-authentication-postgres-dsn
 production-authentication-postgres-password
 production-authentication-postgres-backup-password
 production-authentication-smtp-sender-password
 production-authentication-super-admin-password
 production-json-keys-app-master-key
-production-json-keys-postgres-dsn
 production-json-keys-postgres-password
 production-json-keys-postgres-backup-password
 ```
@@ -106,10 +103,9 @@ The normal sequence is additive when a consumer and credential issuer support an
 6. Destroy it only after the rollback window and any external credential revocation are complete.
 
 Do not assume this sequence is zero-downtime. A PostgreSQL password is the credential enforced by
-the running cluster, so changing the database password and the client DSN is one coordinated
-rollout. Follow the PostgreSQL host runbook, schedule the documented short interruption, update the
-database before its clients, and keep the previous numeric password and DSN versions available for
-rollback. Credentials whose issuer supports two concurrently valid values can use a true overlap
+the running cluster, so changing the database password and its selected client version is one
+coordinated rollout. Follow the PostgreSQL host runbook, schedule the documented short interruption, update the
+database before its clients, and keep the previous numeric password version available for rollback. Credentials whose issuer supports two concurrently valid values can use a true overlap
 window instead.
 
 A backup password is also a coordinated database release. Add its new version, update the exact
@@ -117,30 +113,38 @@ backup-version metadata, let host startup rotate the restricted role, and requir
 plus clean restore before disabling the former version. The backup job and host must reference the
 same numeric version; never update only one side.
 
-Add the replacement and select both numeric versions explicitly:
+Set `SECRET_ID` in the session to one exact allowed ID above, then add the replacement:
 
 ```zsh
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-SECRET_ID=''
+: "${SECRET_ID:?Set SECRET_ID to one allowed secret ID}"
 ./ops/add-secret-version.sh "$SECRET_ID"
 gcloud secrets versions list "$SECRET_ID" \
   --project="$MANAGEMENT_PROJECT_ID" \
   --format='table(name.basename(),state,createTime)' \
   --sort-by='~createTime'
-VERSION_ID=''
-OLD_VERSION_ID=''
-[[ "${VERSION_ID}" =~ ^[0-9]+$ ]]
-[[ "${OLD_VERSION_ID}" =~ ^[0-9]+$ ]]
-test "${OLD_VERSION_ID}" != "${VERSION_ID}"
-test "$(gcloud secrets versions describe "${VERSION_ID}" \
-  --secret="${SECRET_ID}" --project="${MANAGEMENT_PROJECT_ID}" \
-  --format='value(state)')" = ENABLED
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
 
-gcloud secrets versions describe "${OLD_VERSION_ID}" \
-  --secret="${SECRET_ID}" \
-  --project="${MANAGEMENT_PROJECT_ID}" \
+Set `VERSION_ID` to the new numeric version printed by the script. Set `OLD_VERSION_ID` to the
+numeric version pinned by the current release configuration or receipt, then verify both:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+: "${VERSION_ID:?Set VERSION_ID to the new numeric version}"
+: "${OLD_VERSION_ID:?Set OLD_VERSION_ID to the currently pinned numeric version}"
+[[ "$VERSION_ID" =~ ^[1-9][0-9]*$ ]]
+[[ "$OLD_VERSION_ID" =~ ^[1-9][0-9]*$ ]]
+test "$OLD_VERSION_ID" != "$VERSION_ID"
+test "$(gcloud secrets versions describe "$VERSION_ID" \
+  --secret="$SECRET_ID" --project="$MANAGEMENT_PROJECT_ID" \
+  --format='value(state)')" = ENABLED
+gcloud secrets versions describe "$OLD_VERSION_ID" \
+  --secret="$SECRET_ID" --project="$MANAGEMENT_PROJECT_ID" \
   --format='yaml(name,state,createTime)'
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
