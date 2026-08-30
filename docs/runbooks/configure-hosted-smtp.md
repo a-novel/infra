@@ -19,8 +19,8 @@ Official references: [Plunk pricing](https://www.useplunk.com/pricing),
 
 ## Operator context
 
-Run this and later blocks in the existing configured zsh session. Choose the sending identity, then
-paste this block once before section 1:
+Run this and later blocks in the existing configured zsh session. Set the public production sending
+identity once before section 1. Keep these values in the shell session, not `.envrc`:
 
 ```zsh
 () {
@@ -28,9 +28,24 @@ setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 umask 077
 
-SENDING_DOMAIN=''
-SMTP_SENDER_EMAIL=''
-SMTP_SENDER_NAME=''
+SENDING_DOMAIN='agorastoryverse.com'
+SMTP_SENDER_EMAIL='noreply@agorastoryverse.com'
+SMTP_SENDER_NAME='Agora'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Validate the values in a separate command:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+[[ "$SENDING_DOMAIN" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]]
+[[ "$SMTP_SENDER_EMAIL" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]
+[[ "${SMTP_SENDER_EMAIL##*@}" == "$SENDING_DOMAIN" ]]
+[[ -n "$SMTP_SENDER_NAME" && "${#SMTP_SENDER_NAME}" -le 100 ]]
+
+printf 'Sending identity: %s <%s>\n' "$SMTP_SENDER_NAME" "$SMTP_SENDER_EMAIL"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
@@ -113,44 +128,68 @@ delete the hosted project only after the replacement has passed a controlled sen
 
 ## 3. Verify the sending domain
 
-Add the exact sending domain in the Plunk project. Copy the current DNS records from its dashboard;
-do not copy example values from this runbook or another tenant.
-
-The expected record classes are:
-
-1. three DKIM CNAME records;
-2. one SPF TXT policy;
-3. one bounce-handling MX record;
-4. a DMARC TXT policy, strongly recommended;
-5. optional aligned MAIL FROM MX/TXT records when enabled.
-
-A domain can have only one SPF policy. If one already exists, merge Plunk's dashboard-provided
-mechanism into that single record; never publish a second `v=spf1` TXT value. Begin DMARC in monitor
-mode only if the domain has not already adopted a stronger reviewed policy. Route aggregate reports
-to a monitored mailbox, inspect them, then tighten deliberately. Do not weaken an existing DMARC
-policy to complete this setup.
-
-After DNS propagation, use the dashboard's recheck and independently inspect public DNS from a
-private terminal. Substitute only non-secret domain and selector values:
+Add the exact sending domain in the Plunk project and apply every DNS row its dashboard marks
+required. The current production project uses the three public DKIM records below. Update this
+input block in a reviewed pull request when Plunk rotates them:
 
 ```zsh
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-DKIM_SELECTOR=''
-[[ "$SENDING_DOMAIN" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]]
-[[ "$DKIM_SELECTOR" =~ ^[a-z0-9_-]+$ ]]
-
-dig +short TXT "$SENDING_DOMAIN"
-dig +short CNAME "${DKIM_SELECTOR}._domainkey.${SENDING_DOMAIN}"
-dig +short TXT "_dmarc.${SENDING_DOMAIN}"
+DKIM_SELECTORS=(
+  'sx26hz64iyv52crxuhamldljjrpq5hek'
+  '4hwnpc7ctbezd6i2e4pojudopxbfq5iv'
+  'm2tk4izfqneq6kg6tf6zqqkbglnpwy23'
+)
+DMARC_REPORT_EMAIL='dmarc-reports@agorastoryverse.com'
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Repeat the CNAME query for all three selectors and inspect the exact bounce/MAIL FROM names from the
-dashboard. Expected result: Plunk reports every required record verified, exactly one SPF policy is
-published, all DKIM selectors resolve, and the sending domain has a deliberate DMARC posture. DNS
-can take up to 72 hours to propagate; wait rather than adding duplicates.
+Create a private, monitored Google Workspace group at `dmarc-reports@agorastoryverse.com`. Allow
+external email delivery to the group and prove it from an address outside the Workspace domain.
+Publish this DNS record after the delivery test succeeds:
+
+| Type  | Name     | Value                                                            |
+| ----- | -------- | ---------------------------------------------------------------- |
+| `TXT` | `_dmarc` | `v=DMARC1; p=none; rua=mailto:dmarc-reports@agorastoryverse.com` |
+
+Keep the existing Google Workspace MX records. A domain can publish only one SPF policy. If Plunk's
+dashboard supplies an SPF mechanism, merge that exact mechanism into the existing policy. Add a
+bounce or MAIL FROM record only when the dashboard supplies its exact name and value.
+
+After DNS propagation, use the dashboard recheck and validate public DNS separately:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+local selector resolved_target published_dmarc spf_records
+
+(( ${#DKIM_SELECTORS[@]} == 3 ))
+[[ "$DMARC_REPORT_EMAIL" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]
+
+for selector in "${DKIM_SELECTORS[@]}"; do
+  [[ "$selector" =~ ^[a-z0-9_-]+$ ]]
+  resolved_target="$(dig +short CNAME "${selector}._domainkey.${SENDING_DOMAIN}")"
+  [[ "$resolved_target" == "${selector}.dkim.amazonses.com." ]]
+  printf 'DKIM %s -> %s\n' "$selector" "$resolved_target"
+done
+
+spf_records="$(dig +short TXT "$SENDING_DOMAIN" | grep '^"v=spf1')"
+[[ -n "$spf_records" ]]
+[[ "$(printf '%s\n' "$spf_records" | wc -l | tr -d ' ')" == 1 ]]
+printf 'SPF %s\n' "$spf_records"
+
+published_dmarc="$(dig +short TXT "_dmarc.${SENDING_DOMAIN}" | tr -d '"')"
+[[ "$published_dmarc" == *'v=DMARC1;'* ]]
+[[ "$published_dmarc" == *"rua=mailto:${DMARC_REPORT_EMAIL}"* ]]
+printf 'DMARC %s\n' "$published_dmarc"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Expected result: all three DKIM checks, the single SPF check, and the DMARC check print values, and
+Plunk reports every required row verified. DNS can take up to 72 hours to propagate; wait before
+retrying the same checks.
 
 ## 4. Capture the exact SMTP contract
 
@@ -159,25 +198,35 @@ submission host, username, and password shown for this project. Plunk currently 
 ports 465 and 587; Agora requires STARTTLS on `587`, not implicit TLS on `465` and never plaintext
 port `25`.
 
-Do not assume the username equals the sender address, project ID, or API-key name. Do not invent a
-host from examples. If the hosted dashboard does not provide an authenticated SMTP credential, stop
-and open an infrastructure issue; do not switch the application to the HTTP API inside an operator
-procedure.
-
-Validate only the non-payload fields locally:
+Set the current public hosted SMTP fields in the shell. Plunk publishes these values for its hosted
+service; replace them if the project's credentials page shows different values:
 
 ```zsh
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-SMTP_HOST=''
-SMTP_USERNAME=''
+SMTP_HOST='smtp.useplunk.com'
+SMTP_USERNAME='plunk'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+The password is the project's secret key. Do not assign it to a shell variable. If the hosted
+dashboard does not provide an authenticated SMTP credential, stop and open an infrastructure issue.
+
+Validate the non-secret contract separately:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
 
 [[ "$SMTP_HOST" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]]
 [[ "$SMTP_USERNAME" =~ ^[^[:space:]]{1,320}$ ]]
 [[ "$SMTP_SENDER_EMAIL" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]
 [[ "${SMTP_SENDER_EMAIL##*@}" == "$SENDING_DOMAIN" ]]
 [[ -n "$SMTP_SENDER_NAME" && "${#SMTP_SENDER_NAME}" -le 100 ]]
+
+printf 'SMTP endpoint: %s@%s:587\n' "$SMTP_USERNAME" "$SMTP_HOST"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
