@@ -31,6 +31,7 @@ umask 077
 REPOSITORY='a-novel/infra'
 DATABASE_GROUP='agora-database'
 DATABASE_DISK='agora-data'
+DATABASE_SSH_KEY_FILE="${DATABASE_SSH_KEY_FILE:-$HOME/.ssh/google_compute_engine_ecdsa}"
 
 WORKLOAD_PROJECT_ID="$INFRA_WORKLOAD_PROJECT_ID"
 DATABASE_SERVICE_ACCOUNT="agora-database-host@${WORKLOAD_PROJECT_ID}.iam.gserviceaccount.com"
@@ -334,7 +335,35 @@ is required by OS Login because the VM has an attached service account.
 
 ## Inspect the host through IAP
 
-Open the privileged debug session:
+Set `DATABASE_SSH_KEY_FILE` to an existing private-key path whose public half is `<path>.pub`. The
+default creates a dedicated ECDSA P-256 pair when neither file exists. Enter a passphrase when prompted.
+
+Create or verify the local pair, then register its public key in OS Login for one hour:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+umask 077
+
+if [[ ! -e "$DATABASE_SSH_KEY_FILE" && ! -e "${DATABASE_SSH_KEY_FILE}.pub" ]]; then
+  mkdir -p -- "$(dirname -- "$DATABASE_SSH_KEY_FILE")"
+  ssh-keygen -t ecdsa -b 256 -C 'a-novel-database-operator' -f "$DATABASE_SSH_KEY_FILE"
+fi
+test -s "$DATABASE_SSH_KEY_FILE"
+test -s "${DATABASE_SSH_KEY_FILE}.pub"
+
+if gcloud compute os-login ssh-keys describe --project="$WORKLOAD_PROJECT_ID" --key-file="${DATABASE_SSH_KEY_FILE}.pub" >/dev/null 2>&1; then
+  gcloud compute os-login ssh-keys update --project="$WORKLOAD_PROJECT_ID" --key-file="${DATABASE_SSH_KEY_FILE}.pub" --ttl=1h >/dev/null
+else
+  gcloud compute os-login ssh-keys add --project="$WORKLOAD_PROJECT_ID" --key-file="${DATABASE_SSH_KEY_FILE}.pub" --ttl=1h >/dev/null
+fi
+
+gcloud compute os-login ssh-keys describe --project="$WORKLOAD_PROJECT_ID" --key-file="${DATABASE_SSH_KEY_FILE}.pub" --format='value(fingerprint)'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+The output contains one fingerprint. Open the privileged debug session with that exact private key:
 
 ```zsh
 () {
@@ -343,6 +372,7 @@ unsetopt err_exit nounset xtrace
 gcloud compute ssh "$DATABASE_INSTANCE" \
   --project="$WORKLOAD_PROJECT_ID" \
   --zone="$DATABASE_ZONE" \
+  --ssh-key-file="$DATABASE_SSH_KEY_FILE" \
   --tunnel-through-iap
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
@@ -350,11 +380,12 @@ gcloud compute ssh "$DATABASE_INSTANCE" \
 Do not enable shell tracing, print environment variables, run `docker inspect` without a narrow
 `--format`, print files below `/run/agora`, or query the metadata access token.
 
+Every COS command below occupies one physical line. Paste and verify one command at a time.
+
 When the production manifest is disabled, run:
 
 ```bash
-sudo docker ps --filter 'name=agora-postgres-' \
-  --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
+sudo docker ps --filter 'name=agora-postgres-' --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
 sudo findmnt --noheadings --output SOURCE,TARGET,FSTYPE,OPTIONS /mnt/disks/agora-data
 sudo df --output=source,size,used,avail,pcent,target /mnt/disks/agora-data
 ```
@@ -365,21 +396,13 @@ Expected safe result: no database container row, and the preserved disk is mount
 When an approved release is enabled, inspect only non-secret fields:
 
 ```bash
-sudo docker ps --filter 'name=agora-postgres-' \
-  --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Image}}'
-
-for network in agora-database-json-keys agora-database-authentication; do
-  sudo docker network inspect "$network" \
-    --format '{{.Name}} internal={{.Internal}} subnet={{range .IPAM.Config}}{{.Subnet}}{{end}}'
-done
-
+sudo docker ps --filter 'name=agora-postgres-' --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Image}}'
+sudo docker network inspect agora-database-json-keys --format '{{.Name}} internal={{.Internal}} subnet={{range .IPAM.Config}}{{.Subnet}}{{end}}'
+sudo docker network inspect agora-database-authentication --format '{{.Name}} internal={{.Internal}} subnet={{range .IPAM.Config}}{{.Subnet}}{{end}}'
 sudo iptables -S AGORA-DATABASE-EGRESS
 sudo iptables -S AGORA-DATABASE-HOST
-
-for container in agora-postgres-json-keys agora-postgres-authentication; do
-  sudo docker inspect "$container" \
-    --format '{{.Name}} running={{.State.Running}} health={{.State.Health.Status}} restart={{.HostConfig.RestartPolicy.Name}} memory={{.HostConfig.Memory}} swap={{.HostConfig.MemorySwap}}'
-done
+sudo docker inspect agora-postgres-json-keys --format '{{.Name}} running={{.State.Running}} health={{.State.Health.Status}} restart={{.HostConfig.RestartPolicy.Name}} memory={{.HostConfig.Memory}} swap={{.HostConfig.MemorySwap}}'
+sudo docker inspect agora-postgres-authentication --format '{{.Name}} running={{.State.Running}} health={{.State.Health.Status}} restart={{.HostConfig.RestartPolicy.Name}} memory={{.HostConfig.Memory}} swap={{.HostConfig.MemorySwap}}'
 ```
 
 Expected safe result:
@@ -397,22 +420,11 @@ Expected safe result:
 Prove external name resolution and metadata access fail from both containers:
 
 ```bash
-for container in agora-postgres-json-keys agora-postgres-authentication; do
-  if sudo docker exec "$container" getent hosts example.com >/dev/null 2>&1; then
-    printf 'STOP: %s resolved an external name.\n' "$container" >&2
-    false
-  fi
-
-  if sudo docker exec "$container" \
-    timeout 3 bash -c '</dev/tcp/169.254.169.254/80' >/dev/null 2>&1; then
-    printf 'STOP: %s reached the metadata address.\n' "$container" >&2
-    false
-  fi
-done
-printf 'Database container egress checks were denied.\n'
+for container in agora-postgres-json-keys agora-postgres-authentication; do if sudo docker exec "$container" getent hosts example.com >/dev/null 2>&1; then printf 'STOP: %s resolved an external name.\n' "$container" >&2; false; else printf 'PASS %s external DNS denied.\n' "$container"; fi; done
+for container in agora-postgres-json-keys agora-postgres-authentication; do if sudo docker exec "$container" timeout 3 bash -c '</dev/tcp/169.254.169.254/80' >/dev/null 2>&1; then printf 'STOP: %s reached metadata.\n' "$container" >&2; false; else printf 'PASS %s metadata denied.\n' "$container"; fi; done
 ```
 
-Expected safe result: only the final denial message. Exit the IAP session after inspection.
+Expected safe result: four `PASS` lines and no `STOP` line. Exit the IAP session after inspection.
 
 ## Prepare the first database release
 
@@ -480,20 +492,9 @@ Use Cloud Monitoring for host CPU, guest memory, and guest disk trends. During a
 collect a point-in-time container and PostgreSQL view without payload data:
 
 ```bash
-sudo docker stats --no-stream \
-  --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.PIDs}}'
-
-for tuple in \
-  'agora-postgres-json-keys agora_json_keys agora_json_keys' \
-  'agora-postgres-authentication agora_authentication agora_authentication'; do
-  read -r container role database <<<"$tuple"
-  sudo docker exec --user postgres "$container" \
-    psql --no-psqlrc --tuples-only --no-align \
-      --username="$role" \
-      --dbname="$database" \
-      --command="SELECT count(*) AS current_connections, current_setting('max_connections') AS max_connections FROM pg_stat_activity;"
-done
-
+sudo docker stats --no-stream --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.PIDs}}'
+sudo docker exec --user postgres agora-postgres-json-keys psql --no-psqlrc --tuples-only --no-align --username=agora_json_keys --dbname=agora_json_keys --command="SELECT count(*) AS current_connections, current_setting('max_connections') AS max_connections FROM pg_stat_activity;"
+sudo docker exec --user postgres agora-postgres-authentication psql --no-psqlrc --tuples-only --no-align --username=agora_authentication --dbname=agora_authentication --command="SELECT count(*) AS current_connections, current_setting('max_connections') AS max_connections FROM pg_stat_activity;"
 sudo df --output=size,used,avail,pcent,target /mnt/disks/agora-data
 ```
 
@@ -675,6 +676,9 @@ Do not rely on application passwords while a public path exists.
 - [Docker port publishing](https://docs.docker.com/engine/network/port-publishing/)
 - [Docker restart policies](https://docs.docker.com/engine/containers/start-containers-automatically/)
 - [OS Login setup](https://cloud.google.com/compute/docs/oslogin/set-up-oslogin)
+- [Create SSH keys](https://cloud.google.com/compute/docs/connect/create-ssh-keys)
+- [Add SSH keys to OS Login](https://cloud.google.com/compute/docs/connect/add-ssh-keys#os-login)
+- [`gcloud` OS Login SSH key update](https://cloud.google.com/sdk/gcloud/reference/compute/os-login/ssh-keys/update)
 - [IAP TCP forwarding](https://cloud.google.com/iap/docs/using-tcp-forwarding)
 - [Cloud Monitoring access control](https://cloud.google.com/monitoring/access-control)
 - [Service Usage access control](https://cloud.google.com/service-usage/docs/access-control)
