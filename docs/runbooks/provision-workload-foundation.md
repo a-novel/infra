@@ -182,8 +182,9 @@ Registry repository, one preserved database disk and stateful instance group, sn
 quotas, logging controls, notification channels, and monitoring policies.
 
 Stop for any unexpected deletion, replacement, state-forget, public IP, router/NAT, VPC connector,
-load balancer, Cloud Run workload, secret version, or service-account key. A destructive plan must
-have been created from a pull request that already carried `allow-resource-deletion` before merge.
+load balancer, Cloud Run workload, secret version, or service-account key. The exact `master` commit
+must be the merge commit of one pull request carrying `allow-resource-deletion` at merge time. A
+later label change has no effect; merge another labeled pull request and create a fresh plan.
 
 Apply only the printed plan ID:
 
@@ -308,6 +309,7 @@ plan values, or secret material.
 | Temporary grants complete, configuration absent | Step 2; `configure` safely replaces the protected document.                                    |
 | Configuration complete, no plan                 | Step 3.                                                                                        |
 | Plan succeeded, apply absent                    | Review and apply that exact unexpired ID; do not create another plan.                          |
+| Plan rejected by the deletion-label gate        | Merge another labeled PR, refresh `master`, and create a fresh plan; no usable plan ID exists. |
 | Apply failed                                    | Use its sanitized reason, merge the correction, refresh `master`, and create a new plan.       |
 | Apply succeeded                                 | Step 5; never repeat the successful apply.                                                     |
 | Audit permission denied                         | Confirm the exact Security Reviewer binding, wait for propagation, rerun only `audit`.         |
