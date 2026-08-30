@@ -82,6 +82,7 @@ audit_foundation() {
     local billing_json
     local services_json
     local policy_json
+    local cloud_run_service_agent
     local service_accounts
     local key_names
     local networks_json
@@ -127,6 +128,12 @@ audit_foundation() {
         fail 'workload project identity'
     fi
     pass 'workload project identity'
+
+    project_number="$(jq --raw-output '.projectNumber' <<<"$project_json")"
+    if ! [[ "$project_number" =~ ^[0-9]+$ ]]; then
+        fail 'workload project number'
+    fi
+    cloud_run_service_agent="serviceAccount:service-${project_number}@serverless-robot-prod.iam.gserviceaccount.com"
 
     billing_json="$(gcloud billing projects describe "$WORKLOAD_PROJECT_ID" --format=json)"
     if ! jq --exit-status '.billingEnabled == true' <<<"$billing_json" >/dev/null; then
@@ -237,6 +244,28 @@ audit_foundation() {
         fail 'human-only Authentication initializer deployment'
     fi
 
+    # Google creates an unconditional service-agent grant when Cloud Run is enabled.
+    if ! jq --exit-status --arg service_agent "$cloud_run_service_agent" '
+      [
+        .bindings[]?
+        | select(.role == "roles/run.serviceAgent")
+        | {
+            role,
+            title: .condition.title,
+            expression: .condition.expression,
+            members: (.members | sort)
+          }
+      ] == [{
+        role: "roles/run.serviceAgent",
+        title: null,
+        expression: null,
+        members: [$service_agent]
+      }]
+    ' <<<"$policy_json" >/dev/null; then
+        fail 'Cloud Run service agent IAM'
+    fi
+    pass 'Cloud Run service agent IAM'
+
     if ! jq --exit-status \
         --arg release "serviceAccount:infra-release@${MANAGEMENT_PROJECT_ID}.iam.gserviceaccount.com" \
         --arg scheduler "serviceAccount:agora-scheduler-invoker@${WORKLOAD_PROJECT_ID}.iam.gserviceaccount.com" \
@@ -244,7 +273,10 @@ audit_foundation() {
         --argjson initializers "$initializer_members" '
       [
         .bindings[]?
-        | select(.role | startswith("roles/run."))
+        | select(
+            (.role | startswith("roles/run.")) and
+            .role != "roles/run.serviceAgent"
+          )
         | {
             role,
             title: .condition.title,
@@ -544,10 +576,6 @@ audit_foundation() {
     fi
     pass 'immutable production registry and access allowlist'
 
-    project_number="$(jq --raw-output '.projectNumber' <<<"$project_json")"
-    if ! [[ "$project_number" =~ ^[0-9]+$ ]]; then
-        fail 'workload project number'
-    fi
     tag_keys_json="$(gcloud resource-manager tags keys list \
         --parent="projects/${project_number}" --format=json)"
     invocation_key="$(jq --raw-output '

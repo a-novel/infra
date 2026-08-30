@@ -1603,6 +1603,46 @@ if grep -Fq 'projects get-iam-policy' "${FOUNDATION_CALLS}"; then
     exit 1
 fi
 
+# Validate Google's service-agent exception without weakening the invocation allowlist.
+assert_foundation_cloud_run_boundary() {
+    local mode="$1"
+    local expected_code="$2"
+    local output_file="${TEMP_DIR}/foundation-audit-cloud-run-${mode}.out"
+    local error_file="${TEMP_DIR}/foundation-audit-cloud-run-${mode}.err"
+    local code=0
+
+    : >"${FOUNDATION_CALLS}"
+    set +e
+    PATH="${FOUNDATION_AUDIT_MOCK_BIN}:${PATH}" \
+        FAKE_FOUNDATION_CALLS="${FOUNDATION_CALLS}" \
+        FAKE_FOUNDATION_SECRETS="${FOUNDATION_SECRETS}" \
+        FAKE_FOUNDATION_SERVICE_MODE=allowed \
+        FAKE_FOUNDATION_IAM_MODE="$mode" \
+        INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \
+        INFRA_WORKLOAD_PROJECT_ID=workload-project-prod \
+        "${REPOSITORY_ROOT}/ops/foundation-audit.sh" \
+        >"$output_file" 2>"$error_file"
+    code=$?
+    set -e
+    assert_equal "$code" "$expected_code"
+}
+
+assert_foundation_cloud_run_boundary valid-service-agent 64
+grep -Fq 'PASS Cloud Run service agent IAM' \
+    "${TEMP_DIR}/foundation-audit-cloud-run-valid-service-agent.out"
+grep -Fq 'PASS conditional Cloud Run invocation IAM' \
+    "${TEMP_DIR}/foundation-audit-cloud-run-valid-service-agent.out"
+
+assert_foundation_cloud_run_boundary wrong-service-agent 70
+grep -Fq 'FAIL Cloud Run service agent IAM' \
+    "${TEMP_DIR}/foundation-audit-cloud-run-wrong-service-agent.err"
+
+assert_foundation_cloud_run_boundary unexpected-run-role 70
+grep -Fq 'PASS Cloud Run service agent IAM' \
+    "${TEMP_DIR}/foundation-audit-cloud-run-unexpected-run-role.out"
+grep -Fq 'FAIL conditional Cloud Run invocation IAM' \
+    "${TEMP_DIR}/foundation-audit-cloud-run-unexpected-run-role.err"
+
 # The one local bootstrap apply uses an external binary plan plus non-secret
 # commit/checksum custody and consumes that review before mutation.
 BOOTSTRAP_MOCK_BIN="${TEMP_DIR}/bootstrap-bin"

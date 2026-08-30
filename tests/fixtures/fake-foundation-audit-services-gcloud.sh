@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Stops a foundation audit immediately after its enabled-service boundary.
+# Provides service and Cloud Run IAM responses for boundary-focused audit tests.
 
 set -euo pipefail
 
@@ -23,9 +23,54 @@ required_services='[
   {"config":{"name":"serviceusage.googleapis.com"}}
 ]'
 
+cloud_run_policy='{
+  "bindings": [
+    {
+      "role": "projects/workload-project-prod/roles/authenticationInitializerDeployer",
+      "members": ["user:operator@example.com"]
+    },
+    {
+      "role": "roles/run.jobsExecutor",
+      "members": ["user:operator@example.com"],
+      "condition": {
+        "title": "AuthenticationInitializerOnly",
+        "expression": "resource.matchTagId(\"tagKeys/1\", \"tagValues/1\")"
+      }
+    },
+    {
+      "role": "roles/run.jobsExecutor",
+      "members": ["serviceAccount:infra-release@management-project-prod.iam.gserviceaccount.com"],
+      "condition": {
+        "title": "ReleaseTaggedCloudRunOnly",
+        "expression": "resource.matchTagId(\"tagKeys/1\", \"tagValues/2\")"
+      }
+    },
+    {
+      "role": "roles/run.jobsExecutor",
+      "members": ["serviceAccount:agora-scheduler-invoker@workload-project-prod.iam.gserviceaccount.com"],
+      "condition": {
+        "title": "ScheduledCloudRunOnly",
+        "expression": "resource.matchTagId(\"tagKeys/1\", \"tagValues/3\")"
+      }
+    },
+    {
+      "role": "roles/run.serviceAgent",
+      "members": ["serviceAccount:service-123456789012@serverless-robot-prod.iam.gserviceaccount.com"]
+    },
+    {
+      "role": "roles/run.servicesInvoker",
+      "members": ["serviceAccount:agora-authentication@workload-project-prod.iam.gserviceaccount.com"],
+      "condition": {
+        "title": "InternalCloudRunOnly",
+        "expression": "resource.matchTagId(\"tagKeys/1\", \"tagValues/4\")"
+      }
+    }
+  ]
+}'
+
 case "$*" in
     "projects describe workload-project-prod --format=json")
-        printf '%s\n' '{"projectId":"workload-project-prod","lifecycleState":"ACTIVE","labels":{"application":"agora","environment":"production","managed-by":"opentofu","plane":"workload","recovery":"false"}}'
+        printf '%s\n' '{"projectId":"workload-project-prod","projectNumber":"123456789012","lifecycleState":"ACTIVE","labels":{"application":"agora","environment":"production","managed-by":"opentofu","plane":"workload","recovery":"false"}}'
         ;;
     "billing projects describe workload-project-prod --format=json")
         printf '%s\n' '{"billingEnabled":true}'
@@ -59,7 +104,31 @@ case "$*" in
         esac
         ;;
     "projects get-iam-policy workload-project-prod --format=json")
-        exit 64
+        case "${FAKE_FOUNDATION_IAM_MODE:-stop}" in
+            valid-service-agent)
+                printf '%s\n' "$cloud_run_policy"
+                ;;
+            wrong-service-agent)
+                jq --compact-output '
+                  (.bindings[] | select(.role == "roles/run.serviceAgent").members) =
+                  ["serviceAccount:unexpected@example.com"]
+                ' <<<"$cloud_run_policy"
+                ;;
+            unexpected-run-role)
+                jq --compact-output '
+                  .bindings += [{
+                    role: "roles/run.admin",
+                    members: ["user:operator@example.com"]
+                  }]
+                ' <<<"$cloud_run_policy"
+                ;;
+            stop)
+                exit 64
+                ;;
+            *)
+                exit 64
+                ;;
+        esac
         ;;
     *)
         exit 64
