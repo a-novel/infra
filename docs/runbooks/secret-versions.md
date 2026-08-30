@@ -19,8 +19,15 @@ afterward. GitHub recovery automation cannot read payloads. See
 
 ## Operator context
 
-Run this and later blocks in the existing configured zsh session. Paste this block once before
-adding or rotating a version:
+Load the published project coordinates, then run later blocks in the existing configured zsh
+session:
+
+```sh
+. ./.envrc
+./ops/verify-operator-env.sh --github
+```
+
+Paste this block once before adding or rotating a version:
 
 ```zsh
 () {
@@ -29,8 +36,7 @@ unsetopt err_exit nounset xtrace
 umask 077
 
 REPOSITORY='a-novel/infra'
-MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID --repo "$REPOSITORY")"
-[[ "$MANAGEMENT_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
+MANAGEMENT_PROJECT_ID="$INFRA_MANAGEMENT_PROJECT_ID"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
@@ -77,10 +83,11 @@ unsetopt err_exit nounset xtrace
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-The script reads the management project from GitHub, checks the secret container, and asks for the
-payload twice with terminal echo disabled. It sends the matching single-line value through stdin,
-verifies the new version metadata, and prints only the safe secret ID and numeric version to stdout.
-A failed match or PostgreSQL password-format check exits before contacting Secret Manager.
+The script verifies the selected management project against GitHub, checks the secret container,
+and asks for the payload twice with terminal echo disabled. It sends the matching single-line value
+through stdin, verifies the new version metadata, and prints only the safe secret ID and numeric
+version to stdout. A failed match or PostgreSQL password-format check exits before contacting Secret
+Manager.
 
 Look for: the selected container has the expected runtime annotation and a 30-day destruction delay;
 the created numeric version is `ENABLED` with no destruction time. If creation fails before an ID is

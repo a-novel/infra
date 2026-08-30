@@ -23,8 +23,14 @@ payload versions.
 
 ## Operator context
 
-Run this and later blocks in the existing configured zsh session. Replace `STATE_ROOT` with
-`bootstrap`, `foundation`, or `release`, then paste this block once:
+Load the published project coordinates. Then run later blocks in the existing configured zsh
+session, replace `STATE_ROOT` with `bootstrap`, `foundation`, or `release`, and paste the context
+block once:
+
+```sh
+. ./.envrc
+./ops/verify-operator-env.sh --github
+```
 
 ```zsh
 () {
@@ -35,7 +41,7 @@ umask 077
 REPOSITORY='a-novel/infra'
 STATE_ROOT=''
 
-MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID --repo "$REPOSITORY")"
+MANAGEMENT_PROJECT_ID="$INFRA_MANAGEMENT_PROJECT_ID"
 STATE_BUCKET="$(gh variable get GCP_STATE_BUCKET --repo "$REPOSITORY")"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```

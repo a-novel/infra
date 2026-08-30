@@ -50,9 +50,13 @@ for command_name in gh gcloud; do
     fi
 done
 
-MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID --repo a-novel/infra)"
-if ! [[ "${MANAGEMENT_PROJECT_ID}" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]; then
-    printf 'GCP_MANAGEMENT_PROJECT_ID is missing or invalid.\n' >&2
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+"${SCRIPT_DIR}/verify-operator-env.sh" >/dev/null
+MANAGEMENT_PROJECT_ID="$INFRA_MANAGEMENT_PROJECT_ID"
+PUBLISHED_MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID \
+    --repo a-novel/infra)"
+if [ "$PUBLISHED_MANAGEMENT_PROJECT_ID" != "$MANAGEMENT_PROJECT_ID" ]; then
+    printf 'INFRA_MANAGEMENT_PROJECT_ID does not match GCP_MANAGEMENT_PROJECT_ID.\n' >&2
     exit 65
 fi
 

@@ -21,8 +21,13 @@ and [GitHub artifact attestations](https://docs.github.com/actions/how-tos/secur
 
 ## Operator context
 
-Run this and later blocks in the existing configured zsh session. Complete the four hosted-SMTP
-values, then paste this block once before section 1:
+Load the published project coordinates. Then run later blocks in the existing configured zsh
+session, complete the four hosted-SMTP values, and paste the context block once before section 1:
+
+```sh
+. ./.envrc
+./ops/verify-operator-env.sh --github
+```
 
 ```zsh
 () {
@@ -34,8 +39,8 @@ REPOSITORY='a-novel/infra'
 REGION='europe-west1'
 DATABASE_ZONE='europe-west1-c'
 
-MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID --repo "$REPOSITORY")"
-WORKLOAD_PROJECT_ID="$(gh variable get GCP_WORKLOAD_PROJECT_ID --repo "$REPOSITORY")"
+MANAGEMENT_PROJECT_ID="$INFRA_MANAGEMENT_PROJECT_ID"
+WORKLOAD_PROJECT_ID="$INFRA_WORKLOAD_PROJECT_ID"
 BACKUP_BUCKET_NAME="$(gh variable get GCP_BACKUP_BUCKET --repo "$REPOSITORY")"
 RECEIPT_BUCKET_NAME="$(gh variable get GCP_RECEIPT_BUCKET --repo "$REPOSITORY")"
 

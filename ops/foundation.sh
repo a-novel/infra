@@ -7,11 +7,11 @@ set -euo pipefail
 usage() {
     cat >&2 <<EOF
 Usage:
-  $0 configure --workload-project-id <id> [configuration options]
-  $0 grant --workload-project-id <id> [parent options]
-  $0 grant-audit-access --workload-project-id <id>
-  $0 revoke-audit-access --workload-project-id <id>
-  $0 finish --workload-project-id <id> [parent options]
+  $0 configure [configuration options]
+  $0 grant [parent options]
+  $0 grant-audit-access
+  $0 revoke-audit-access
+  $0 finish [parent options]
 
 Configuration options:
   --workload-project-name <name>              Default: Agora production
@@ -47,10 +47,6 @@ require_command() {
     fi
 }
 
-is_project_id() {
-    [[ "$1" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
-}
-
 is_email() {
     [[ "$1" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]
 }
@@ -79,7 +75,10 @@ if [ -z "$COMMAND" ]; then
 fi
 shift
 
-WORKLOAD_PROJECT_ID=''
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+"${SCRIPT_DIR}/verify-operator-env.sh" >/dev/null
+WORKLOAD_PROJECT_ID="$INFRA_WORKLOAD_PROJECT_ID"
+MANAGEMENT_PROJECT_ID="$INFRA_MANAGEMENT_PROJECT_ID"
 WORKLOAD_PROJECT_NAME='Agora production'
 REGION='europe-west1'
 DATABASE_ZONE=''
@@ -98,11 +97,6 @@ AUTH_INITIALIZER_PRINCIPALS=()
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        --workload-project-id)
-            [ "$#" -ge 2 ] || usage
-            WORKLOAD_PROJECT_ID="$2"
-            shift 2
-            ;;
         --workload-project-name)
             [ "$#" -ge 2 ] || usage
             WORKLOAD_PROJECT_NAME="$2"
@@ -184,9 +178,6 @@ case "$COMMAND" in
     *) usage ;;
 esac
 
-if ! is_project_id "$WORKLOAD_PROJECT_ID"; then
-    fail 'workload project ID is invalid' 64
-fi
 if [ "$PARENT_OPTION_COUNT" -gt 1 ]; then
     fail 'choose only one project parent' 64
 fi
@@ -231,10 +222,8 @@ done
 export CLOUDSDK_CORE_DISABLE_PROMPTS=1
 umask 077
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPOSITORY_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 REPOSITORY='a-novel/infra'
-MANAGEMENT_PROJECT_ID=''
 BACKUP_BUCKET_NAME=''
 BILLING_ACCOUNT_ID=''
 OPERATOR_EMAIL=''
@@ -260,10 +249,12 @@ require_reviewed_master() {
 }
 
 load_management_context() {
-    MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID --repo "$REPOSITORY")"
-    if ! is_project_id "$MANAGEMENT_PROJECT_ID" ||
-        [ "$MANAGEMENT_PROJECT_ID" = "$WORKLOAD_PROJECT_ID" ]; then
-        fail 'management project coordinate is invalid'
+    local published_management_project_id
+
+    published_management_project_id="$(gh variable get GCP_MANAGEMENT_PROJECT_ID \
+        --repo "$REPOSITORY")"
+    if [ "$published_management_project_id" != "$MANAGEMENT_PROJECT_ID" ]; then
+        fail 'INFRA_MANAGEMENT_PROJECT_ID does not match GCP_MANAGEMENT_PROJECT_ID'
     fi
     FOUNDATION_SERVICE_ACCOUNT="infra-foundation@${MANAGEMENT_PROJECT_ID}.iam.gserviceaccount.com"
     PLAN_SERVICE_ACCOUNT="infra-plan@${MANAGEMENT_PROJECT_ID}.iam.gserviceaccount.com"

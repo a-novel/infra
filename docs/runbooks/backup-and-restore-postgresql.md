@@ -22,8 +22,15 @@ and PostgreSQL's [`pg_dump`](https://www.postgresql.org/docs/18/app-pgdump.html)
 
 ## Operator context
 
-Run this and later blocks in the existing configured zsh session. Paste this block once before
-selecting or invoking a recovery job:
+Load the published project coordinates, then run later blocks in the existing configured zsh
+session:
+
+```sh
+. ./.envrc
+./ops/verify-operator-env.sh --github
+```
+
+Paste this block once before selecting or invoking a recovery job:
 
 ```zsh
 () {
@@ -34,8 +41,8 @@ umask 077
 REPOSITORY='a-novel/infra'
 REGION='europe-west1'
 
-MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID --repo "$REPOSITORY")"
-WORKLOAD_PROJECT_ID="$(gh variable get GCP_WORKLOAD_PROJECT_ID --repo "$REPOSITORY")"
+MANAGEMENT_PROJECT_ID="$INFRA_MANAGEMENT_PROJECT_ID"
+WORKLOAD_PROJECT_ID="$INFRA_WORKLOAD_PROJECT_ID"
 MANAGEMENT_PROJECT_NUMBER="$(gcloud projects describe "$MANAGEMENT_PROJECT_ID" \
   --format='value(projectNumber)')"
 BACKUP_BUCKET="${MANAGEMENT_PROJECT_ID}-${MANAGEMENT_PROJECT_NUMBER}-backups"

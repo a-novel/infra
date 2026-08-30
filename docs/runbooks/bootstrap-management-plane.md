@@ -23,9 +23,17 @@ and [Google WIF for deployment pipelines](https://cloud.google.com/iam/docs/work
 
 ## Operator context
 
-This bootstrap inherits no shell variable because it creates the management identifiers itself.
-Run this and later blocks in the existing configured zsh session. Paste this block once before
-section 1.
+The operator selects both stable project IDs before bootstrap. Create `.envrc` once with the root
+[project-coordinate setup](../../README.md#choose-the-project-coordinates), then load and validate
+it before running later blocks in the existing configured zsh session:
+
+```sh
+. ./.envrc
+./ops/verify-operator-env.sh
+```
+
+The verifier must print `PASS operator project coordinates`. Paste this block once before section 1
+to set the private-file mode used by temporary bootstrap artifacts:
 
 ```zsh
 () {
@@ -136,14 +144,13 @@ gcloud billing accounts describe "${BILLING_ACCOUNT_ID}" \
 Expected safe result: `open: true` and the intended billing account name. An account ID is not a
 secret.
 
-Check the preferred ID. Replace it with a short organization-specific variant if project metadata
-is returned. Project IDs are global and cannot be changed later.
+Check the selected management ID. Project IDs are global and cannot be changed later.
 
 ```zsh
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-MANAGEMENT_PROJECT_ID='agora-management-prod'
+MANAGEMENT_PROJECT_ID="$INFRA_MANAGEMENT_PROJECT_ID"
 ! gcloud projects describe "${MANAGEMENT_PROJECT_ID}"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
@@ -561,7 +568,7 @@ tofu -chdir=bootstrap state list
 install -d -m 700 "$HOME/.local/state/a-novel-infra"
 BOOTSTRAP_PLAN_EXIT=0
 ./ops/bootstrap-plan.sh plan \
-  a-novel-management-prod "$HOME/.local/state/a-novel-infra/bootstrap.tfplan" \
+  "$HOME/.local/state/a-novel-infra/bootstrap.tfplan" \
   || BOOTSTRAP_PLAN_EXIT=$?
 test "${BOOTSTRAP_PLAN_EXIT}" -eq 2
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
@@ -571,7 +578,7 @@ Expected safe result: validation and all four mocked tests pass; the state list 
 `google_storage_bucket.state` and no other managed address; and the summary contains one `update` for
 `google_storage_bucket`, plus 114 creates across the declared inventory. It prints no resource
 address, project ID, email, token, state value, or payload. Exit code `2` confirms that the saved plan
-contains changes. Replace `a-novel-management-prod` when another management project was selected.
+contains changes.
 The full binary plan and its mode-`0600` non-secret custody record remain outside the repository;
 neither may be uploaded to GitHub or pasted into an issue.
 
@@ -588,7 +595,7 @@ Apply the saved binary plan—not a newly computed plan:
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 ./ops/bootstrap-plan.sh apply \
-  a-novel-management-prod "$HOME/.local/state/a-novel-infra/bootstrap.tfplan"
+  "$HOME/.local/state/a-novel-infra/bootstrap.tfplan"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
@@ -608,7 +615,7 @@ setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 RECOVERY_PLAN_EXIT=0
 ./ops/bootstrap-plan.sh plan \
-  a-novel-management-prod "$HOME/.local/state/a-novel-infra/bootstrap-recovery.tfplan" \
+  "$HOME/.local/state/a-novel-infra/bootstrap-recovery.tfplan" \
   || RECOVERY_PLAN_EXIT=$?
 test "${RECOVERY_PLAN_EXIT}" -eq 2
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
@@ -621,7 +628,7 @@ Review the new sanitized summary as above, then apply that exact recovery plan:
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 ./ops/bootstrap-plan.sh apply \
-  a-novel-management-prod "$HOME/.local/state/a-novel-infra/bootstrap-recovery.tfplan"
+  "$HOME/.local/state/a-novel-infra/bootstrap-recovery.tfplan"
 ./ops/tofu-gate.sh converge bootstrap "${STATE_BUCKET}"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```

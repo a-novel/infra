@@ -13,7 +13,14 @@ Every Google Cloud command in this document is for a named human operator. Agent
 ## Operator context
 
 Run local blocks in the existing configured zsh session; blocks explicitly labeled for the COS host
-use that host's Bash session. Paste this block once before selecting the host:
+use that host's Bash session. Load the published project coordinates first:
+
+```sh
+. ./.envrc
+./ops/verify-operator-env.sh --github
+```
+
+Paste this block once before selecting the host:
 
 ```zsh
 () {
@@ -26,7 +33,7 @@ DATABASE_ZONE='europe-west1-c'
 DATABASE_GROUP='agora-database'
 DATABASE_DISK='agora-data'
 
-WORKLOAD_PROJECT_ID="$(gh variable get GCP_WORKLOAD_PROJECT_ID --repo "$REPOSITORY")"
+WORKLOAD_PROJECT_ID="$INFRA_WORKLOAD_PROJECT_ID"
 DATABASE_REGION="${DATABASE_ZONE%-*}"
 DATABASE_SERVICE_ACCOUNT="agora-database-host@${WORKLOAD_PROJECT_ID}.iam.gserviceaccount.com"
 DATABASE_OPERATOR_PRINCIPAL="$(gcloud projects get-iam-policy "$WORKLOAD_PROJECT_ID" \

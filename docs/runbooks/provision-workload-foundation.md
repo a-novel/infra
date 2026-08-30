@@ -6,9 +6,8 @@ Application containers and secret payloads are deliberately absent.
 
 The operator interfaces are [`ops/foundation.sh`](../../ops/foundation.sh) for controlled mutations
 and [`ops/foundation-audit.sh`](../../ops/foundation-audit.sh) for read-only acceptance. Every
-invocation starts from GitHub and Google Cloud metadata, so a new shell can resume any step. The
-examples use `agora-production-prod`; replace that argument consistently when provisioning another
-project.
+invocation validates the operator-selected project IDs before reading GitHub or Google Cloud
+metadata, so the same commands work for a replacement project.
 
 ## Authorization gate
 
@@ -28,6 +27,18 @@ Do not continue while another production infrastructure workflow is active. Do n
 Run from the repository root with `gh`, `gcloud`, and `jq` authenticated to the intended
 accounts. The management bootstrap must have published `GCP_MANAGEMENT_PROJECT_ID` and
 `GCP_BACKUP_BUCKET`.
+
+Create `.envrc` once with the root
+[project-coordinate setup](../../README.md#choose-the-project-coordinates), then load the reviewed
+coordinates before this runbook:
+
+```sh
+. ./.envrc
+./ops/verify-operator-env.sh
+```
+
+Expected: `PASS operator project coordinates`. This guide deliberately uses the local workload ID
+before `finish` publishes it to GitHub.
 
 Refresh the reviewed branch:
 
@@ -53,7 +64,7 @@ and `PRODUCTION_RELEASES_ENABLED=false`.
 For a workload project beside the management project, parent selection is automatic:
 
 ```sh
-./ops/foundation.sh grant --workload-project-id agora-production-prod
+./ops/foundation.sh grant
 ```
 
 The command reads the management project's parent. It grants Project Creator at that organization
@@ -64,7 +75,6 @@ Use an explicit narrower folder only when the workload project belongs there:
 
 ```sh
 ./ops/foundation.sh grant \
-  --workload-project-id agora-production-prod \
   --folder-id 123456789012
 ```
 
@@ -77,7 +87,6 @@ only the empty billed project when it is absent and marks it for OpenTofu adopti
 
 ```sh
 ./ops/foundation.sh grant \
-  --workload-project-id agora-production-prod \
   --standalone \
   --adopt-existing-project
 ```
@@ -104,7 +113,7 @@ The defaults are the reviewed low-cost production shape:
 Publish those defaults:
 
 ```sh
-./ops/foundation.sh configure --workload-project-id agora-production-prod
+./ops/foundation.sh configure
 ```
 
 The command verifies the `production-foundation` environment before writing one masked
@@ -115,7 +124,6 @@ Specify only genuine choices. Repeated principal flags create a protected allowl
 
 ```sh
 ./ops/foundation.sh configure \
-  --workload-project-id agora-production-prod \
   --database-zone europe-west1-c \
   --cost-alert-email operations@example.com \
   --operations-alert-email operations@example.com \
@@ -200,18 +208,19 @@ Google references:
 Grant the active Google user the predefined read-only Security Reviewer role:
 
 ```sh
-./ops/foundation.sh grant-audit-access --workload-project-id agora-production-prod
+./ops/foundation.sh grant-audit-access
 ```
 
 Allow IAM propagation, then run the independently repeatable audit:
 
 ```sh
-./ops/foundation-audit.sh --workload-project-id agora-production-prod
+./ops/foundation-audit.sh
 ```
 
 It fails at the first named invariant and prints no secret value. It verifies:
 
-- workload identity, labels, billing, and the exact API allowlist;
+- workload identity, labels, billing, every managed API, and only the reviewed Google-default or
+  dependency APIs beside them;
 - no unexpected primitive service-account role or user-managed service-account key;
 - no public or unexpected service-account Secret Manager principal;
 - all nine required secret containers, with each runtime restricted to its exact payload set;
@@ -225,7 +234,7 @@ It fails at the first named invariant and prints no secret value. It verifies:
 Remove the temporary reviewer even when the audit fails:
 
 ```sh
-./ops/foundation.sh revoke-audit-access --workload-project-id agora-production-prod
+./ops/foundation.sh revoke-audit-access
 ```
 
 Expected: every line begins with `PASS`; the cleanup ends with
@@ -271,7 +280,7 @@ Remove only the temporary Owner, Billing Account User, and parent Project Creato
 publish the verified project ID:
 
 ```sh
-./ops/foundation.sh finish --workload-project-id agora-production-prod
+./ops/foundation.sh finish
 ```
 
 Use the same explicit parent option as steps 1–2 when automatic parent selection was not used.
@@ -280,9 +289,9 @@ Costs Manager and the plan identity's Billing Viewer intentionally remain.
 Run the final audit with temporary read access:
 
 ```sh
-./ops/foundation.sh grant-audit-access --workload-project-id agora-production-prod
-./ops/foundation-audit.sh --workload-project-id agora-production-prod --final
-./ops/foundation.sh revoke-audit-access --workload-project-id agora-production-prod
+./ops/foundation.sh grant-audit-access
+./ops/foundation-audit.sh --final
+./ops/foundation.sh revoke-audit-access
 ```
 
 Expected: the final primitive-role check passes, all other audit checks remain green, and

@@ -14,6 +14,7 @@ removes that temporary authority.
 
 | Command                                                    | Purpose                                                                                      | Cloud mutation                                                           |
 | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| [`verify-operator-env.sh`](./verify-operator-env.sh)       | Validate the operator-selected management and workload project IDs.                          | No                                                                       |
 | [`verify-repository-gate.sh`](./verify-repository-gate.sh) | Verify rulesets, required checks, environments, labels, and the disabled release switch.     | No                                                                       |
 | [`bootstrap-plan.sh`](./bootstrap-plan.sh)                 | Create or consume the one local bootstrap plan with commit and checksum custody.             | `apply` only                                                             |
 | [`foundation.sh`](./foundation.sh)                         | Configure, provision, and deprivilege the workload foundation from a fresh shell.            | Only the named `configure`, `grant*`, `revoke*`, and `finish` operations |
@@ -25,6 +26,17 @@ Run these from the repository root. They use Bash internally and work from an ex
 session; do not source them. Exit code `64` means invalid operator input, `65` means a rejected
 repository or identity boundary, `69` means a missing command, `70` means a remote result could
 not be proven, and `75` means another production workflow is active.
+
+Source the ignored project-coordinate file once in each shell before using a human entry point:
+
+```sh
+. ./.envrc
+./ops/verify-operator-env.sh
+```
+
+Add `--github` after bootstrap or foundation has published coordinates. It compares every published
+`GCP_*_PROJECT_ID` with the local selection and fails on a mismatch. The file contains identifiers
+only; secrets and one-run selections never belong there.
 
 Commands that grant authority, publish protected configuration, or dispatch a workflow require a
 clean local `master` equal to remote `master`. Read-only audits and emergency revocation remain

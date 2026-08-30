@@ -20,8 +20,15 @@ and [Actions notification settings](https://docs.github.com/en/subscriptions-and
 
 ## Operator context
 
-Run this and later blocks in the existing configured zsh session. Paste this block once before
-inspecting an alert:
+Load the published project coordinates, then run later blocks in the existing configured zsh
+session:
+
+```sh
+. ./.envrc
+./ops/verify-operator-env.sh --github
+```
+
+Paste this block once before inspecting an alert:
 
 ```zsh
 () {
@@ -31,7 +38,7 @@ umask 077
 
 REPOSITORY='a-novel/infra'
 REGION='europe-west1'
-WORKLOAD_PROJECT_ID="$(gh variable get GCP_WORKLOAD_PROJECT_ID --repo "$REPOSITORY")"
+WORKLOAD_PROJECT_ID="$INFRA_WORKLOAD_PROJECT_ID"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 

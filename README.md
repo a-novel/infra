@@ -35,6 +35,27 @@ The [architecture guide](./docs/architecture.md) explains the lifecycle and secu
 defines the human-only Authentication initializer, scheduled JSON Keys rotation, runtime identities,
 fixed deployment order, compensation, and receipt boundaries.
 
+### Choose the project coordinates
+
+The two Google Cloud project IDs are stable public coordinates, not secrets. Keep the selected IDs
+in the ignored `.envrc`; runbooks and human-facing scripts read the exported values instead of
+embedding a one-time production name.
+
+```sh
+if [ ! -e .envrc ]; then
+  cp .envrc.example .envrc
+fi
+chmod 600 .envrc
+${EDITOR:-vi} .envrc
+. ./.envrc
+./ops/verify-operator-env.sh
+```
+
+Replace both placeholders before the final two commands. The verifier prints
+`PASS operator project coordinates`. Keep credentials, tokens, secret payloads, plan IDs, receipts,
+and incident-specific recovery IDs out of this file. Operators with `direnv` may authorize the same
+file after reviewing it; `direnv` is optional.
+
 ### Reconcile repository protection
 
 Run these commands from a clean workspace after the repository bootstrap changes have merged:

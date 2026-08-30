@@ -20,6 +20,22 @@ const runbooks = await Promise.all(
   })),
 );
 
+async function collectFiles(directory) {
+  const files = [];
+
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const entryPath = path.join(directory, entry.name);
+
+    if (entry.isDirectory()) {
+      files.push(...(await collectFiles(entryPath)));
+    } else if (entry.isFile()) {
+      files.push(entryPath);
+    }
+  }
+
+  return files;
+}
+
 test("local runbook commands are scoped for the configured zsh session", () => {
   let zshBlockCount = 0;
 
@@ -96,6 +112,94 @@ test("migrated first-run guides use stateless operator commands", () => {
   assert.match(allRunbooks, /run-workflow\.sh foundation plan foundation/);
   assert.match(allRunbooks, /foundation\.sh configure/);
   assert.match(allRunbooks, /foundation-audit\.sh/);
+});
+
+test("operator-owned project coordinates stay explicit and repeatable", async () => {
+  const envrcExample = await readFile(
+    path.join(repositoryRoot, ".envrc.example"),
+    "utf8",
+  );
+  const gitignore = await readFile(
+    path.join(repositoryRoot, ".gitignore"),
+    "utf8",
+  );
+  const exportLines = envrcExample
+    .split("\n")
+    .filter((line) => line.startsWith("export "));
+
+  assert.deepEqual(exportLines, [
+    "export INFRA_MANAGEMENT_PROJECT_ID='replace-with-management-project-id'",
+    "export INFRA_WORKLOAD_PROJECT_ID='replace-with-workload-project-id'",
+  ]);
+  assert.doesNotMatch(
+    exportLines.join("\n"),
+    /SECRET|TOKEN|PASSWORD|CREDENTIAL/,
+  );
+  assert.ok(
+    gitignore.split("\n").includes(".envrc"),
+    ".envrc must remain ignored",
+  );
+
+  const coordinateRunbooks = new Map([
+    ["README.md", "./ops/verify-operator-env.sh --github"],
+    ["backup-and-restore-postgresql.md", "--github"],
+    ["bootstrap-management-plane.md", "./ops/verify-operator-env.sh\n"],
+    ["deploy-production.md", "--github"],
+    ["disaster-recovery.md", "--github"],
+    ["operate-postgresql-host.md", "--github"],
+    ["provision-workload-foundation.md", "./ops/verify-operator-env.sh\n"],
+    ["respond-to-alerts.md", "--github"],
+    ["secret-versions.md", "--github"],
+    ["state-recovery.md", "--github"],
+  ]);
+
+  for (const [name, verifier] of coordinateRunbooks) {
+    const { content } = runbooks.find((runbook) => runbook.name === name);
+
+    assert.match(content, /\. \.\/\.envrc/);
+    assert.ok(
+      content.includes(verifier),
+      `${name} has the wrong verifier mode`,
+    );
+  }
+
+  const operatorSources = [
+    path.join(repositoryRoot, "README.md"),
+    path.join(repositoryRoot, ".envrc.example"),
+    ...(await collectFiles(path.join(repositoryRoot, "docs"))),
+    ...(await collectFiles(path.join(repositoryRoot, "ops"))),
+    ...(await collectFiles(path.join(repositoryRoot, "tests"))),
+  ];
+  const retiredProjectIds = [
+    ["agora", "production", "prod"].join("-"),
+    ["a", "novel", "management", "prod"].join("-"),
+    ["agora", "management", "prod"].join("-"),
+  ];
+
+  for (const sourcePath of operatorSources) {
+    const content = await readFile(sourcePath, "utf8");
+
+    for (const retiredProjectId of retiredProjectIds) {
+      assert.ok(
+        !content.includes(retiredProjectId),
+        `${path.relative(repositoryRoot, sourcePath)} embeds a retired project ID`,
+      );
+    }
+  }
+
+  const foundationSources = [
+    await readFile(path.join(repositoryRoot, "ops/foundation.sh"), "utf8"),
+    await readFile(
+      path.join(repositoryRoot, "ops/foundation-audit.sh"),
+      "utf8",
+    ),
+    runbooks.find(
+      (runbook) => runbook.name === "provision-workload-foundation.md",
+    ).content,
+  ].join("\n");
+  assert.doesNotMatch(foundationSources, /--workload-project-id/);
+  assert.match(foundationSources, /INFRA_MANAGEMENT_PROJECT_ID/);
+  assert.match(foundationSources, /INFRA_WORKLOAD_PROJECT_ID/);
 });
 
 test("runbook operator-script links resolve to executable files", async () => {
