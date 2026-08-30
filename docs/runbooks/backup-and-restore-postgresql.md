@@ -1,16 +1,8 @@
 # Back up and restore PostgreSQL
 
-> First production run: the step-6 release creates and proves the recovery jobs before traffic;
-> step 7 verifies that evidence and locks retention through a separate reviewed change.
-
 This runbook operates the logical PostgreSQL backups, clean restore drills, and crash-consistent
 disk snapshots for JSON Keys and Authentication. It is the recovery procedure for database data;
 application rollback does not rewind schemas or rows.
-
-The resources are defined but are not deployed yet. Merging their definitions creates nothing. Do
-not run a mutating command in this runbook until the management, foundation, and release workflows
-exist on `master`, their protected GitHub environments are configured, and a maintainer has
-explicitly authorized the first production apply.
 
 Google product behavior is documented by [Cloud Run jobs](https://cloud.google.com/run/docs/create-jobs),
 [Cloud Run ephemeral disk](https://cloud.google.com/run/docs/configuring/jobs/ephemeral-disk),
@@ -57,7 +49,7 @@ BACKUP_BUCKET="${MANAGEMENT_PROJECT_ID}-${MANAGEMENT_PROJECT_NUMBER}-backups"
 | Logical-restore RTO | Measure every drill against 90 minutes. The automated restore job fails after 60 minutes so the target is missed before the objective is exhausted. |
 | Logical retention   | Six restore points per day for 14 days: 84 attempts per database, subject to successful completion.                                                 |
 | Snapshot retention  | One crash-consistent data-disk snapshot each day at 02:00 UTC, retained for seven days.                                                             |
-| Production writes   | Forbidden until both first logical backups and both clean restore drills succeed.                                                                   |
+| Production writes   | Freeze when the latest logical backups or clean restore drills do not meet the contracts above.                                                     |
 
 A logical dump is the primary portable recovery point. A disk snapshot is a faster, crash-consistent
 host recovery point and does not replace a tested logical restore. Point-in-time recovery is
@@ -198,8 +190,7 @@ gcloud storage buckets describe "gs://${BACKUP_BUCKET}" \
 
 Expected safe result: the bucket is `STANDARD` in `EU`, public access prevention and uniform access
 are enabled, soft-delete retention is zero, object lifecycle age is 14 days, and bucket retention is
-seven days. Before the first successful clean restore, `isLocked` is false. After the lock step below,
-it is true permanently.
+seven days with `isLocked` set to `true`.
 
 Verify the jobs and schedules without exporting their full environment or embedded scripts:
 
@@ -225,38 +216,10 @@ Expected safe result: exactly the five jobs and five enabled UTC schedules in th
 If either count or any schedule differs, stop and reconcile the reviewed OpenTofu state; do not patch
 the live resource with `gcloud`.
 
-## First production activation
-
-The first empty host is the only exception to “dump before changing a database”: there is no source
-database to dump. It is not an exception to snapshot, restore, or no-production-writes requirements.
-
-1. Apply bootstrap and foundation only through their approved workflows, then prepare the reviewed
-   production manifest and release configuration.
-2. Wait for the foundation-owned daily snapshot schedule to produce a `READY` `agora-data` snapshot.
-   Google starts the 02:00 UTC schedule during the 02:00–02:59 window. The gate opens only after the
-   snapshot is `READY` and closes six hours after its actual creation, no later than roughly 09:00
-   UTC. Missing that window means waiting for the next scheduled snapshot; do not grant release
-   permission to create one.
-3. Dispatch the protected release. The pre-change helper recognizes the empty release revision,
-   validates the fresh scheduled snapshot, and skips logical backup because no cluster exists yet.
-   The fixed release graph then activates both clusters, runs migrations, creates both logical
-   backups, proves both clean restores, and runs `agora-postgres-backup-monitor` before the manual
-   initializer gate or any service traffic.
-4. Verify both clusters and their four distinct credentials through the PostgreSQL host runbook,
-   and verify that the successful private receipt records all five recovery execution names.
-5. Record completion times, image digests, and the two selected manifest attempt identifiers in the
-   private recovery record. Never copy a dump, secret, full job definition, or raw log into GitHub.
-6. Lock bucket retention through a separately reviewed code change as described in
-   [Lock retention after proof](#lock-retention-after-proof).
-
-If any step fails, keep application writers disabled. Correct the declared image, secret version,
-IAM, network, or schema contract in code and restart from the first failed step. Never mark an
-incomplete archive as completed or bypass a failed smoke test.
-
 ## Execute an immediate logical backup
 
-Use this before the first write, as an operator-confirmed recovery point, or when diagnosing a
-schedule. The protected database release and migration paths invoke the same jobs automatically.
+Use this as an operator-confirmed recovery point or when diagnosing a schedule. The protected
+database release and migration paths invoke the same jobs automatically.
 
 ```zsh
 () {
@@ -389,31 +352,6 @@ gcloud run jobs execute agora-postgres-backup-monitor \
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-## Lock retention after proof
-
-Locking a Cloud Storage retention policy is irreversible. After it is locked, it cannot be removed
-or shortened; only an increase is allowed. Do this once, only after both first clean restore jobs
-succeed and their private recovery record is reviewed.
-
-1. Open a dedicated pull request changing only `google_storage_bucket.backups.retention_policy` in
-   `bootstrap/storage.tf` from `is_locked = false` to `is_locked = true`.
-2. Confirm the sanitized plan changes one bucket in place, with no replacement or deletion.
-3. Obtain the protected foundation approval and apply the exact reviewed plan from `master`.
-4. Verify independently:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-gcloud storage buckets describe "gs://${BACKUP_BUCKET}" \
-  --format='yaml(name,retention_policy,soft_delete_policy,lifecycle_config)'
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-Expected safe result: the retention period remains 604800 seconds, `isLocked` is true, soft delete
-remains zero, and lifecycle age remains 14 days. Never use a direct bucket-lock command as a shortcut;
-the irreversible desired state and review evidence belong in Git.
-
 ## Verify least privilege
 
 Inspect allow policies without requesting or printing access tokens:
@@ -453,34 +391,6 @@ done
 Expected safe result: no output. Any user-managed key is an incident: disable it, determine its use,
 remove it through the approved response, and verify WIF/runtime authentication before resuming.
 
-## Later cross-project recovery acceptance
-
-The monthly jobs prove the archive against a fresh cluster but run in the production workload
-project. The epic's final recovery-acceptance task,
-[`a-novel/.github#277`](https://github.com/a-novel/.github/issues/277), owns one additional restore
-in a newly created, disposable preproduction project. That later exercise proves recovery does not
-depend on the workload project's IAM or network. It is a one-time human recovery exercise, not a
-permanent fourth OpenTofu root or an always-on environment.
-
-Use a dedicated reviewed recovery change and the `production-recovery` approval. The temporary
-project must have its own billing link, Cloud Run service agent, and keyless runtime account. Copy
-the already deployed restore job through the Cloud Run v2 API after removing production VPC access
-and replacing its service account. Grant the temporary runtime read-only access to the backup bucket
-and grant the temporary Cloud Run service agent read-only access to the exact production Artifact
-Registry repository. Do not copy a backup password or owner password: the restore job needs neither.
-
-Do not perform that exercise during this task: its reviewed command set cannot be validated until
-the production jobs exist. Task #277 must add the exact project creation, API-copy, execution,
-evidence, IAM-revocation, and project-deletion commands using the then-current Cloud Run v2 export
-schema. A maintainer must compare the copied job's image digest, embedded restore script hash,
-read-only bucket mount, lack of secrets, and lack of VPC access with the deployed production job
-before execution.
-
-Stop rather than improvising if that reviewed command set is absent. This protects against silently
-copying output-only fields or production service-account/VPC references as Google evolves the API.
-The monthly clean-room jobs in this task establish routine recoverability; task #277 closes the
-separate cross-project acceptance requirement.
-
 ## Alerts and routine review
 
 `Agora PostgreSQL recovery jobs unhealthy` has two conditions on Cloud Run's native completion
@@ -496,9 +406,9 @@ metric: any failed `agora-postgres-*` execution, or no completed
   gate after EU write replication and one monthly restore read;
 - a stopped monitor schedule or dispatch path that produces no monitor execution.
 
-The absence condition starts only after the first successful monitor measurement; first activation
-therefore executes the monitor explicitly. Metric absence is not resource-deletion protection, so
-the reviewed deletion-label gate remains the control for removing the monitor or its schedule.
+The absence condition starts only after the first successful monitor measurement. Metric absence is
+not resource-deletion protection, so the reviewed deletion-label gate remains the control for
+removing the monitor or its schedule.
 
 The hourly monitor reads object metadata and manifests but never database payloads. After any alert:
 

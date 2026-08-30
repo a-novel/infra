@@ -1,11 +1,8 @@
 # Operate the private PostgreSQL host
 
-> First production run: step 3 verifies the idle host; step 6 repeats the enabled-container checks
-> after release. Follow the exact sections named by the [ordered index](./README.md#first-production-run).
-
 This runbook verifies and maintains the one-member stateful managed instance group that runs the
-JSON Keys and Authentication PostgreSQL images. It covers the idle foundation host, first database
-activation, private isolation, capacity, controlled replacement, disk growth, and rollback.
+JSON Keys and Authentication PostgreSQL images. It covers private isolation, capacity, controlled
+replacement, disk growth, and rollback.
 
 Every Google Cloud command in this document is for a named human operator. Agents never run
 `gcloud` or `tofu apply`.
@@ -82,7 +79,7 @@ loop.
 Four-hour logical backup jobs, monthly clean restore jobs, an hourly recovery monitor, and daily
 disk snapshots are defined in code. They are deployed only by the protected workflows. An empty
 cluster may be initialized for verification, but no application may write production data until
-both first logical backups and both independent clean restores pass the
+the latest logical backups and both independent clean restores pass the
 [recovery runbook](./backup-and-restore-postgresql.md).
 
 ## Security invariants
@@ -257,9 +254,9 @@ gcloud compute snapshots list \
 ```
 
 Expected safe result: one daily policy at 02:00 UTC, seven-day retention, `KEEP_AUTO_SNAPSHOTS`,
-`europe-west1` storage, an attachment to `agora-data`, and `autoCreated: True`. The final list can be empty only before the first
-scheduled 02:00 execution; database activation or any later database change remains blocked until a
-matching snapshot is `READY` and no older than six hours.
+`europe-west1` storage, an attachment to `agora-data`, and one `READY` snapshot with
+`autoCreated: True`. Any database change remains blocked unless the newest matching snapshot is no
+older than six hours.
 
 Verify only the relevant firewall rules:
 
@@ -305,8 +302,8 @@ gcloud monitoring policies list \
 
 Expected safe result: CPU above 70%, memory above 70% and 85%, and disk above 70% and 85%, all
 enabled, plus one critical recovery policy with failed-execution and missing-monitor conditions.
-Monitoring is not a readiness gate; first activation must complete the monitor once before its
-absence condition can open an incident.
+Monitoring is not a readiness gate. Its absence condition can open an incident only after the
+monitor has completed successfully once.
 
 Verify the exact operator grants without listing unrelated members:
 
@@ -425,66 +422,6 @@ for container in agora-postgres-json-keys agora-postgres-authentication; do if s
 ```
 
 Expected safe result: four `PASS` lines and no `STOP` line. Exit the IAP session after inspection.
-
-## Prepare the first database release
-
-The first release is one reviewed unit. Do not enable only one database image.
-
-1. Promote the exact stable SemVer release and `sha256` digest of each service's `database` image
-   into the regional `agora-production` repository.
-2. Add separate owner and backup password versions for
-   `production-json-keys-postgres-password` and
-   `production-authentication-postgres-password`, plus
-   `production-json-keys-postgres-backup-password` and
-   `production-authentication-postgres-backup-password`, through the secret-version runbook. Retain
-   only their numeric IDs for release input. The host rejects an out-of-contract or reused value
-   before starting either database.
-3. Build each DSN in an approved password manager with its matching password and the stateful private
-   address:
-
-   | Secret container                         | Required shape                                                                                      |
-   | ---------------------------------------- | --------------------------------------------------------------------------------------------------- |
-   | `production-json-keys-postgres-dsn`      | `postgres://agora_json_keys:<password>@<private-ip>:5432/agora_json_keys?sslmode=disable`           |
-   | `production-authentication-postgres-dsn` | `postgres://agora_authentication:<password>@<private-ip>:5433/agora_authentication?sslmode=disable` |
-
-   Launch deliberately avoids a self-managed PostgreSQL certificate authority. `sslmode=disable` is
-   acceptable only while callers and the host stay on private addresses in this Google Cloud VPC:
-   [Google's virtual network authenticates, integrity-protects, and encrypts private-IP traffic](https://cloud.google.com/docs/security/encryption-in-transit#google_cloud_virtual_network_authentication_and_encryption),
-   while SCRAM authenticates PostgreSQL. Before adding an external, hybrid, or differently trusted
-   network path, design PostgreSQL TLS and rotate both DSNs; do not change this flag by itself.
-
-   The password contract is URL-safe, so these forms need no percent encoding. Enter the complete
-   DSN twice through the hidden stdin procedure. Never assemble it in a shell argument, `.tfvars`,
-   GitHub secret, or environment variable.
-
-4. Update both manifest components in one pull request with complete stable SemVer tags and exact
-   digests. Confirm both images remain on PostgreSQL major 18.
-5. Prepare both release-root recovery contracts with the two promoted database digests and exact
-   backup-password versions; the protected release creates the jobs immediately after activating
-   the initially empty database host and before migrations.
-6. Wait for the first foundation-scheduled `agora-data` snapshot to be `READY` and no older than six
-   hours. Google starts the daily 02:00 UTC schedule during the following hour; the first release
-   window opens only once that snapshot is ready and closes six hours after its actual creation.
-7. Supply the full merged Git commit and all four numeric password versions only through the
-   protected release workflow.
-
-The branch preview must contain no cloud credentials and cannot apply. On `master`, the protected
-database step must invoke only `ops/deploy-database-release.sh` with the project, zone, full commit,
-two promoted digests, and four positive numeric password versions. The helper validates all nine
-arguments and requires the existing all-instances map to contain exactly the seven foundation-seeded
-keys. Its shared gate requires the fresh scheduled snapshot and skips logical backup only for this
-empty first release. It then patches those values and invokes `update-instances` with both the
-minimum and maximum action set to `restart`, then uses the stable `wait-until` command before any
-migration. An application-only release preserves the prior database revision and skips the restart.
-An unexpected or missing key fails before mutation. The helper must not create, replace, resize, or
-directly reconfigure a VM beyond those seven keys and that restart, nor
-may it mutate a disk, template, address, firewall, IAM binding, secret version, or service-account
-key.
-
-Dispatch the release only through [Deploy and roll back production](./deploy-production.md). Its
-candidate health gate proves both database paths and the private JSON Keys dependency before public
-Authentication traffic moves. No production client starts until both immediate backup jobs and both
-clean restore jobs in the recovery runbook also pass.
 
 ## Measure capacity
 

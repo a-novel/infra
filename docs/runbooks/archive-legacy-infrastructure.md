@@ -1,7 +1,7 @@
 # Archive the legacy infrastructure repository
 
-> First production run: step 10 and the final action. Start only after every replacement acceptance
-> check passes and the owning acceptance record is closed.
+> One-time setup-completion procedure. Start only from the final step in the
+> [production setup sequence](../setup-production.md#setup-sequence).
 
 This runbook retires the old `a-novel/agora-infra` repository after the replacement production
 environment has passed its live operational acceptance test. Archiving is a separate, explicit

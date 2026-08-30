@@ -1,8 +1,5 @@
 # Add or rotate a secret version
 
-> First production run: step 5. Run the add-version procedure once per declared secret, record only
-> numeric version IDs, then continue to the protected release.
-
 OpenTofu owns Secret Manager containers and IAM; it never owns payload versions. A named human
 operator supplies one single-line payload through stdin after the management plane exists. The
 payload must never appear in Git, a `.tfvars` file, an environment file, a command argument, shell
@@ -96,50 +93,6 @@ for.
 
 Record the non-secret project ID, secret ID, numeric version, operator, timestamp, and reason in the
 private deployment record. Keep the payload only in the approved password manager.
-
-## Initial population
-
-This is mandatory first-production-run step 5, before the deployment runbook. Its deployment
-selector verifies existing version metadata; it does not create missing payloads.
-
-Repeat the add procedure separately for every secret needed by the next reviewed workload change.
-Do not populate unused containers early. First production activation requires all nine declared
-contracts, including separate read-only backup credentials. Database DSNs must use the stateful
-private address and distinct host ports from the
-[PostgreSQL host runbook](./operate-postgresql-host.md), so create those versions only after the
-foundation output is known. Generate four independent cryptographically random owner/backup
-passwords in the approved password manager using the 32–128 character contract above. Compare them
-there without printing or exporting them; host startup fails closed if any pair is equal.
-
-Prepare all nine values, then populate the containers in dependency order with one command:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-./ops/add-secret-version.sh \
-  production-authentication-postgres-password \
-  production-authentication-postgres-backup-password \
-  production-json-keys-postgres-password \
-  production-json-keys-postgres-backup-password \
-  production-authentication-postgres-dsn \
-  production-json-keys-postgres-dsn \
-  production-authentication-smtp-sender-password \
-  production-authentication-super-admin-password \
-  production-json-keys-app-master-key
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-Look for nine `Created <secret> version <number>` lines. If the command stops partway, inspect
-version metadata and rerun it with only the remaining IDs.
-
-The initial application release must pin each numeric version. Treat a missing version as a blocked
-deployment, not a reason to use `latest` or copy a value into GitHub.
-
-For `production-authentication-smtp-sender-password`, add only the password here. The exact SMTP
-host, username, sender, and numeric version belong in protected `RELEASE_CONFIG_JSON`; the provider
-account and billing record remain in the private operations register. Pass health and one
-controlled no-branding delivery before enabling normal application mail.
 
 ## Rotate through a controlled rollout
 

@@ -1,13 +1,9 @@
 # Deploy and roll back production
 
-> First production run: step 6. This procedure activates databases, proves backups and restores,
-> initializes Authentication once, and moves service traffic in the fixed order.
-
 Use this runbook for a reviewed release of JSON Keys and Authentication, or to restore the whole
 application to one exact prior successful receipt. A protected merge that changes the production
-manifest starts deployment only after the documented repository launch switch is true. The first
-post-bootstrap release, an explicit retry, and rollback use manual dispatch. A branch or pull
-request never receives Google credentials.
+manifest starts deployment only while the repository release switch is true. An explicit retry and
+rollback use manual dispatch. A branch or pull request never receives Google credentials.
 
 Official references: [Cloud Run revisions](https://cloud.google.com/run/docs/managing/revisions),
 [traffic migration and rollback](https://cloud.google.com/run/docs/rollouts-rollbacks-traffic-migration),
@@ -37,8 +33,6 @@ unsetopt err_exit nounset xtrace
 umask 077
 
 REPOSITORY='a-novel/infra'
-REGION='europe-west1'
-DATABASE_ZONE='europe-west1-c'
 
 MANAGEMENT_PROJECT_ID="$INFRA_MANAGEMENT_PROJECT_ID"
 WORKLOAD_PROJECT_ID="$INFRA_WORKLOAD_PROJECT_ID"
@@ -63,11 +57,10 @@ One globally serialized workflow performs this fixed graph:
 6. execute JSON Keys migrations, JSON Keys rotation, then Authentication migrations;
 7. execute both logical backups, restore both into clean disposable clusters, and run the backup
    monitor;
-8. on first launch only, wait for the exact human-run Authentication initializer and record it;
-9. verify the private JSON Keys revision is Ready and move it to 100%;
-10. call Authentication's candidate `/v2/healthcheck`, which probes its database, SMTP, and the newly
-    active private JSON Keys gRPC dependency, then move Authentication to 100%;
-11. converge OpenTofu, resume periodic schedulers, and publish an immutable private receipt.
+8. verify the private JSON Keys revision is Ready and move it to 100%;
+9. call Authentication's candidate `/v2/healthcheck`, which probes its database, SMTP, and the newly
+   active private JSON Keys gRPC dependency, then move Authentication to 100%;
+10. converge OpenTofu, resume periodic schedulers, and publish an immutable private receipt.
 
 After the database rollout begins, any failure follows one compensation edge to the preceding receipt.
 It restores prior traffic, images, secret-version references, and database container metadata.
@@ -84,28 +77,20 @@ idempotent job at minute 10 every hour.
 ## Preconditions and stop conditions
 
 - Bootstrap and foundation have converged through their protected workflows.
-- For an existing deployment, the latest scheduled clean-restore drills and backup monitor are
-  healthy. First activation proves both new backups and both clean restores inside this release
-  before initialization or traffic.
-- Every application secret has an enabled numeric version created through
-  [initial population](./secret-versions.md#initial-population). On the first run, complete that
-  procedure before opening this guide.
+- The latest scheduled clean-restore drills and backup monitor are healthy.
+- Every application secret has an enabled numeric version managed through
+  [the secret-version runbook](./secret-versions.md).
 - Each source image has a GitHub producer attestation signed by that service's `release.yaml` from
   `master` on a GitHub-hosted runner, plus a stable complete SemVer tag.
 - `production-release` accepts only protected branches and contains only its release WIF coordinates
   plus `RELEASE_CONFIG_JSON`.
-- The repository variable `PRODUCTION_RELEASES_ENABLED` is `false` during initial setup and `true`
-  only after every prerequisite in this runbook passes.
+- The repository variable `PRODUCTION_RELEASES_ENABLED` is `true`.
 - The exact `master` manifest is the reviewed desired state.
 - The live PostgreSQL release metadata still matches the newest immutable receipt; the private
   preflight hash fails closed on drift or a missing receipt.
-- For the first application release only, a maintainer added `allow-resource-deletion` before the
-  release PR merged. First-launch compensation must be authorized to remove a partially created
-  application and return to the empty receipt.
-
-Stop if a workflow requests a service-account key, prints a plan/configuration value, asks to invoke
-the initializer with an override, or shows a deletion whose merge did not carry
-`allow-resource-deletion`.
+  Stop if a workflow requests a service-account key, prints a plan/configuration value, asks to invoke
+  the initializer with an override, or shows a deletion whose merge did not carry
+  `allow-resource-deletion`.
 
 ## 1. Verify the repository and release environment
 
@@ -138,10 +123,9 @@ gh secret list --repo "$REPOSITORY" --env production-release
 ```
 
 Expected safe result: protected branches, no custom branch policy, exactly
-`GCP_RELEASE_WORKLOAD_IDENTITY_PROVIDER` and `GCP_RELEASE_SERVICE_ACCOUNT`, and—after section 4—only
-`RELEASE_CONFIG_JSON`. The launch switch must still be `false` during first-time setup. Routine
-release has no second approval queue because workflow code and the manifest already passed the
-protected pull-request merge gate.
+`GCP_RELEASE_WORKLOAD_IDENTITY_PROVIDER` and `GCP_RELEASE_SERVICE_ACCOUNT`, and only
+`RELEASE_CONFIG_JSON`. The launch switch is `true`. A routine release has no second approval queue
+because workflow code and the manifest already passed the protected pull-request merge gate.
 
 Create the deletion label if absent:
 
@@ -173,6 +157,10 @@ unsetopt err_exit nounset xtrace
 
 [[ "$BACKUP_BUCKET_NAME" == "${MANAGEMENT_PROJECT_ID}-"*'-backups' ]]
 [[ "$RECEIPT_BUCKET_NAME" == "${MANAGEMENT_PROJECT_ID}-"*'-deployment-receipts' ]]
+
+DATABASE_ZONE="$(gcloud compute instance-groups managed list --project="$WORKLOAD_PROJECT_ID" --filter='name=agora-database' --format='value(zone.basename())')"
+[[ "$DATABASE_ZONE" =~ ^[a-z]+-[a-z]+[0-9]+-[a-z]$ ]]
+REGION="${DATABASE_ZONE%-*}"
 
 DATABASE_INSTANCE_URI="$(gcloud compute instance-groups managed list-instances agora-database \
   --project="$WORKLOAD_PROJECT_ID" --zone="$DATABASE_ZONE" \
@@ -223,9 +211,8 @@ release configuration.
 
 ## 3. Select and verify exact secret versions
 
-This section selects existing versions; it never creates payloads. On the first run, enter it only
-after initial population prints nine `Created <secret> version <number>` lines. If it reports no
-enabled version, stop and populate the remaining secrets before retrying.
+This section selects existing versions; it never creates payloads. If it reports no enabled version,
+stop and use the secret-version runbook before retrying.
 
 Use the sole enabled version automatically. During a rotation, the command lists enabled metadata
 and asks which numeric version to deploy. It never retrieves payloads.
@@ -369,101 +356,36 @@ dedicated runtime identities.
 
 ## 5. Enable the reviewed image families
 
-`deploy/production/images.yaml` contains two enabled four-image families. The first activation PR
+`deploy/production/images.yaml` contains two enabled four-image families. Every enabled family
 fills all slots with the exact GHCR repository, one complete stable
 `vMAJOR.MINOR.PATCH` shared by that family, and its exact `sha256:` digest. The schema rejects
 branches, prereleases, partial families, unknown slots, moving references, and PostgreSQL other than
 major 18. The required pull-request check also rejects a partial family, a digest mutation behind an
 unchanged tag, or a service/PostgreSQL major mixed with another concern. Renovate subsequently opens
-human-reviewed pull requests only for stable SemVer releases and groups each service family. After
-launch, merging such a manifest pull request starts deployment automatically.
+human-reviewed pull requests only for stable SemVer releases and groups each service family. Merging
+such a manifest pull request starts deployment automatically.
 
-For first activation, add deletion approval before merging the exact pull request whose merge commit
-will be the `master` commit dispatched for that first release. Compensation may remove all newly
-created release resources. If another pull request lands afterward, that newer pull request needs the
-label instead because the deletion gate is bound to the exact deployed commit:
+Add `allow-resource-deletion` before merge only when the sanitized plan contains a deletion,
+replacement, or state-forget action.
 
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-ACTIVATION_PR='replace-with-pull-request-number'
-[[ "$ACTIVATION_PR" =~ ^[1-9][0-9]*$ ]]
-gh pr edit "$ACTIVATION_PR" --repo "$REPOSITORY" --add-label allow-resource-deletion
-gh pr view "$ACTIVATION_PR" --repo "$REPOSITORY" \
-  --json labels,reviewDecision,statusCheckRollup \
-  --jq '{labels:[.labels[].name],reviewDecision,checks:[.statusCheckRollup[] | {name,status,conclusion}]}'
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
+## 6. Observe or retry the exact deployment
 
-Later releases need the label only when their sanitized plan contains a deletion, replacement, or
-state-forget action.
+The release switch must already be `true`. Setting it to `false` freezes new release and rollback
+runs but does not cancel a workflow that already entered the protected environment.
 
-## 6. Enable releases and observe the exact deployment
-
-For first activation, keep the switch false until sections 1–5 and the backup prerequisites are
-complete. Enabling it is a deliberate launch decision; it does not retroactively trigger a manifest
-merge that already happened.
+For an explicit retry, the helper refuses a stale, dirty, or non-`master` checkout and any active
+production infrastructure run:
 
 ```zsh
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-test "$(gh variable get PRODUCTION_RELEASES_ENABLED --repo "$REPOSITORY")" = false
-printf 'Type enable-production-releases to authorize launch: '
-IFS= read -r RELEASE_CONFIRMATION
-test "$RELEASE_CONFIRMATION" = enable-production-releases
-gh variable set PRODUCTION_RELEASES_ENABLED --repo "$REPOSITORY" --body true
-test "$(gh variable get PRODUCTION_RELEASES_ENABLED --repo "$REPOSITORY")" = true
-unset RELEASE_CONFIRMATION
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-Expected safe result: both tests print nothing. To freeze new release and rollback runs, set the
-variable back to `false`; this does not cancel a workflow that already entered the protected
-environment.
-
-For the first activation or an explicit retry, dispatch `deploy` with the repository helper. It
-refuses a stale, dirty, or non-`master` checkout and any already active production infrastructure
-run, then prints the exact run URL and returns its ID:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-git switch master
-git pull --ff-only
-test -z "$(git status --porcelain)"
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-Dispatch the release:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-RELEASE_RUN_ID="$(./ops/run-workflow.sh release deploy --no-wait)"
+RELEASE_RUN_ID="$(./ops/run-workflow.sh release deploy)"
 printf 'Release run ID: %s\n' "$RELEASE_RUN_ID"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Open the printed URL. The detached form is reserved for first launch because the workflow must wait
-while the human initializer runs. For a later explicit retry that has no initializer pause, use the
-blocking form instead:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-./ops/run-workflow.sh release deploy
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-On the first launch, continue with the initializer subsection when the detached run URL shows its
-prompt.
-
-For a later manifest update, do not dispatch a duplicate: the protected merge creates a `push` run.
+For a manifest update, do not dispatch a duplicate: the protected merge creates a `push` run.
 Refresh the repository first:
 
 ```zsh
@@ -505,163 +427,8 @@ gh run watch "$RELEASE_RUN_ID" --repo "$REPOSITORY" --exit-status
 
 Logs contain stable stages, sanitized OpenTofu counts, and execution IDs only—never configuration,
 plans, state, image inventories, paired secret/version inventories, or provider diagnostics. The
-private receipt binds the exact migration, rotation, backup, restore, monitor, initialization when
-applicable, and health-gate evidence to the promoted revisions.
-
-On the first launch, complete the subsection below in the same shell, which retains the validated
-variables, then use its final `gh run watch` command to verify the workflow succeeded.
-
-### First launch: provision and run the human-only initializer
-
-Keep the live workflow log open. After migrations, it prints the initializer prompt and waits for an
-execution created after that prompt. Authenticate as one of the initializer principals configured in
-foundation. Do not use the release service account.
-
-Copy the exact initializer `sha256:` digest from the reviewed
-`service-authentication.images.jobs/init` manifest entry. The workflow has already promoted that
-digest when it reaches the prompt:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-INIT_DIGEST=''
-[[ "$INIT_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
-INIT_IMAGE="${REGION}-docker.pkg.dev/${WORKLOAD_PROJECT_ID}/agora-production/service-authentication/jobs/init@${INIT_DIGEST}"
-INIT_SERVICE_ACCOUNT="agora-auth-initializer@${WORKLOAD_PROJECT_ID}.iam.gserviceaccount.com"
-INIT_JOB_PARENT="//run.googleapis.com/projects/${WORKLOAD_PROJECT_ID}/locations/${REGION}/jobs/agora-authentication-init"
-MANAGEMENT_PROJECT_NUMBER="$(gcloud projects describe "$MANAGEMENT_PROJECT_ID" \
-  --format='value(projectNumber)')"
-[[ "$MANAGEMENT_PROJECT_NUMBER" =~ ^[0-9]+$ ]]
-
-gcloud artifacts docker images describe "$INIT_IMAGE" \
-  --project="$WORKLOAD_PROJECT_ID" --format='none'
-if gcloud run jobs describe agora-authentication-init \
-  --project="$WORKLOAD_PROJECT_ID" --region="$REGION" --format='none' 2>/dev/null; then
-  printf 'STOP: the one-time initializer already exists; use the partial-failure procedure.\n' >&2
-  return 1
-fi
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-Create an inert definition first. This step deliberately includes the exact image, identity,
-capacity, and network but no environment variables, secret references, command, arguments, or
-execution flag:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-gcloud run jobs deploy agora-authentication-init \
-  --project="$WORKLOAD_PROJECT_ID" --region="$REGION" \
-  --image="$INIT_IMAGE" --service-account="$INIT_SERVICE_ACCOUNT" \
-  --tasks=1 --parallelism=1 --max-retries=1 --task-timeout=300s \
-  --cpu=1 --memory=512Mi \
-  --network=agora-production --subnet="agora-production-${REGION}" \
-  --network-tags=agora-authentication --vpc-egress=all-traffic \
-  --labels=environment=production,managed-by=human-initializer,component=authentication,role=init
-
-gcloud run jobs describe agora-authentication-init \
-  --project="$WORKLOAD_PROJECT_ID" --region="$REGION" --format=export
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-Expected safe result: deployment succeeds without starting an execution. The exported definition has
-the exact digest and service account above, one task, the private network, no `env`, no secret
-annotation, and no command or arguments. Stop if any bootstrap value is already present.
-
-Attach the human-only authorization tag before adding bootstrap configuration, then prove it is the
-only direct tag:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-gcloud resource-manager tags bindings create \
-  --tag-value="$INITIALIZER_TAG_VALUE" --parent="$INIT_JOB_PARENT" --location="$REGION"
-
-gcloud resource-manager tags bindings list \
-  --parent="$INIT_JOB_PARENT" --location="$REGION" --format=json \
-| jq --exit-status --arg expected "$INITIALIZER_TAG_VALUE" '
-    ([.[].tagValue] | sort) == ([$expected] | sort)
-  '
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-Expected safe result: `true`. The job must not carry `release`, `scheduled`, `internal`, or
-`recovery`. Routine automation cannot attach the initializer value or use its service account.
-
-Only after that check passes, add the exact non-payload email and two exact cross-project secret
-versions. This update does not execute the job:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-gcloud run jobs update agora-authentication-init \
-  --project="$WORKLOAD_PROJECT_ID" --region="$REGION" \
-  --image="$INIT_IMAGE" --service-account="$INIT_SERVICE_ACCOUNT" \
-  --tasks=1 --parallelism=1 --max-retries=1 --task-timeout=300s \
-  --cpu=1 --memory=512Mi \
-  --network=agora-production --subnet="agora-production-${REGION}" \
-  --network-tags=agora-authentication --vpc-egress=all-traffic \
-  --set-env-vars="SUPER_ADMIN_EMAIL=${AUTH_SUPER_ADMIN_EMAIL}" \
-  --set-secrets="POSTGRES_DSN=projects/${MANAGEMENT_PROJECT_NUMBER}/secrets/production-authentication-postgres-dsn:${AUTH_POSTGRES_DSN_VERSION},SUPER_ADMIN_PASSWORD=projects/${MANAGEMENT_PROJECT_NUMBER}/secrets/production-authentication-super-admin-password:${AUTH_SUPER_ADMIN_PASSWORD_VERSION}"
-
-gcloud resource-manager tags bindings list \
-  --parent="$INIT_JOB_PARENT" --location="$REGION" --format=json \
-| jq --exit-status --arg expected "$INITIALIZER_TAG_VALUE" '
-    ([.[].tagValue] | sort) == ([$expected] | sort)
-  '
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-Expected safe result: the update finishes without an execution and the tag check remains `true`.
-Run exactly one normal execution—never add image, argument, environment, task, timeout, or secret
-overrides:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-gcloud run jobs execute agora-authentication-init \
-  --project="$WORKLOAD_PROJECT_ID" --region="$REGION" --wait
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-The workflow rejects an absent, failed, stale, or wrong-job execution and atomically writes the
-private one-time marker `production/initialization/complete.json`. Wait for the release workflow to
-finish successfully:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-gh run watch "$RELEASE_RUN_ID" --repo "$REPOSITORY" --exit-status
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-Delete the dormant privileged definition while its initializer tag is still attached:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-gcloud run jobs delete agora-authentication-init \
-  --project="$WORKLOAD_PROJECT_ID" --region="$REGION" --quiet
-if gcloud run jobs describe agora-authentication-init \
-  --project="$WORKLOAD_PROJECT_ID" --region="$REGION" --format='none' 2>/dev/null; then
-  printf 'STOP: the initializer still exists; keep its initializer tag and investigate.\n' >&2
-  return 1
-fi
-unset INIT_DIGEST INIT_IMAGE INIT_SERVICE_ACCOUNT INIT_JOB_PARENT MANAGEMENT_PROJECT_NUMBER
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-Never detach or replace the initializer tag before deletion: an untagged privileged job could be
-retagged into a routine invocation class. Later releases are non-interactive, and recovery projects
-do not create this job or marker. If no human succeeds within 30 minutes, the release compensates;
-follow the partial-failure procedure below and dispatch a fresh run rather than fabricating a marker.
+private receipt binds the exact migration, rotation, backup, restore, monitor, and health-gate
+evidence to the promoted revisions.
 
 ## 7. Verify deployment and rotation
 
@@ -838,24 +605,3 @@ selected database container metadata, proves convergence, and writes a new `roll
 migrations or restore data. If compensation or rollback fails, freeze writes and use
 [Recover into a disposable project](./disaster-recovery.md); if only data is damaged and the workload
 project is trustworthy, use [Back up and restore PostgreSQL](./backup-and-restore-postgresql.md).
-
-## Initializer partial-failure recovery
-
-- If the release compensates before the initializer exists, create nothing. Diagnose the workflow
-  and dispatch a fresh release.
-- If an inert untagged job exists because tag attachment failed, verify its exported definition has
-  no environment or secrets. Attach only `INITIALIZER_TAG_VALUE`, recheck the sole tag, and continue
-  only while a fresh release is waiting. If that invariant is uncertain, delete the inert job and
-  restart the two-phase procedure.
-- If any untagged initializer already contains bootstrap configuration, cancel every production
-  writer and treat it as an IAM incident. Do not attach a routine tag or execute it. Preserve audit
-  evidence, delete the job, verify it is absent, and review who created or updated it before retrying.
-- If an initializer-tagged job remains after compensation, keep that tag attached. Delete the job
-  before a fresh dispatch, or rerun it without overrides only after the fresh workflow reaches its
-  prompt. A new gate deliberately ignores executions created before its own start time.
-- If deletion fails after success, leave the initializer tag attached and do not add another tag.
-  The dormant definition remains human-only; resolve the control-plane error and delete it before the
-  next routine release.
-
-Never create the initialization marker manually. Its create-only write and post-prompt successful
-execution are the evidence that makes later releases non-interactive.

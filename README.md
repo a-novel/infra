@@ -21,9 +21,10 @@ The design is a small Google Cloud landing zone built from established infrastru
 
 ## Setup
 
-Complete the repository-only subsections below, then follow the
-[production runbook index](./docs/runbooks/README.md) from step 0 through step 10. That index is the
-single first-run order; each step names one procedure, one pass condition, and the next action.
+Complete the repository-only subsections below, then follow
+[Set up production](./docs/setup-production.md). After setup, use the
+[production operations index](./docs/runbooks/README.md) for deployments, rotations, recovery, and
+incidents.
 
 Pull requests and branch pushes are cloud-blind and never deploy. The one-time management bootstrap
 is the only local apply and requires an explicitly authorized human. Every later cloud change runs
@@ -35,11 +36,11 @@ The [architecture guide](./docs/architecture.md) explains the lifecycle and secu
 defines the human-only Authentication initializer, scheduled JSON Keys rotation, runtime identities,
 fixed deployment order, compensation, and receipt boundaries.
 
-### Choose the project coordinates
+### Configure persistent operator inputs
 
-The two Google Cloud project IDs are stable public coordinates, not secrets. Keep the selected IDs
-in the ignored `.envrc`; runbooks and human-facing scripts read the exported values instead of
-embedding a one-time production name.
+Keep stable, non-secret values used by multiple procedures in the ignored `.envrc`. Start by
+setting the two Google Cloud project IDs. The production setup guide tells you when and where to
+obtain the four SMTP values; add them to the same file before its SMTP step.
 
 ```sh
 if [ ! -e .envrc ]; then
@@ -51,7 +52,7 @@ ${EDITOR:-vi} .envrc
 ./ops/verify-operator-env.sh
 ```
 
-Replace both placeholders before the final two commands. The verifier prints
+Replace the two project-ID placeholders before the final two commands. The verifier prints
 `PASS operator project coordinates`. Keep credentials, tokens, secret payloads, plan IDs, receipts,
 and incident-specific recovery IDs out of this file. Operators with `direnv` may authorize the same
 file after reviewing it; `direnv` is optional.

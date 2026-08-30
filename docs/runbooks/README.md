@@ -1,7 +1,7 @@
-# Production runbooks
+# Production operations
 
-This is the complete first-production-run order. Open only the current linked guide; each detailed
-guide owns its commands, expected result, and recovery path.
+These runbooks operate an existing production environment. For a new environment, follow the
+one-time [production setup guide](../setup-production.md) instead.
 
 ## Operating rules
 
@@ -11,7 +11,8 @@ guide owns its commands, expected result, and recovery path.
   GitHub environment.
 - The management bootstrap is the only local apply. Every later apply consumes one reviewed saved
   plan.
-- Keep `PRODUCTION_RELEASES_ENABLED=false` until the launch guide explicitly enables it.
+- Treat `PRODUCTION_RELEASES_ENABLED` as the release kill switch. Set it to `false` to freeze new
+  release and rollback runs.
 - Never paste secret payloads, plan/state values, credentials, authorization headers, or unfiltered
   provider diagnostics into GitHub or chat.
 - Stop when a named invariant fails. Resume that command after correction; do not replay earlier
@@ -21,10 +22,10 @@ The human command map is [`ops/README.md`](../../ops/README.md). Architecture be
 [`docs/architecture.md`](../architecture.md), and Google-specific resource details belong in
 [`docs/google-cloud.md`](../google-cloud.md).
 
-## Start or resume
+## Start an operation
 
 Create `.envrc` once with the root
-[project-coordinate setup](../../README.md#choose-the-project-coordinates). Load it, then refresh the
+[persistent operator configuration](../../README.md#configure-persistent-operator-inputs). Load it, then refresh the
 repository and verify its gate:
 
 ```sh
@@ -37,8 +38,7 @@ git status --short
 ```
 
 Expected: the local IDs match every coordinate already published to GitHub, `master` is current,
-status is empty, the repository gate passes, and the release switch is `false` before launch. Before
-the management or workload coordinate is first published, the verifier checks the local value only.
+status is empty, and the repository gate passes.
 
 If resuming, inspect recent workflow state without changing anything:
 
@@ -47,34 +47,9 @@ gh run list --repo a-novel/infra --branch master --limit 20 \
   --json databaseId,workflowName,displayTitle,headSha,status,conclusion,createdAt,url
 ```
 
-Resume after the last completed PASS row below. An active workflow must finish or be recovered before
-another production command is dispatched.
+An active workflow must finish or be recovered before another production command is dispatched.
 
-## First production run
-
-| Step | Procedure                                                                                                    | PASS condition                                                                                                                                                                               |
-| ---: | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-|    0 | Run the repository refresh and gate above.                                                                   | Clean current `master`; exact required checks, environments, labels, and disabled release switch.                                                                                            |
-|    1 | [Bootstrap and verify the management plane](./bootstrap-management-plane.md).                                | Remote state, plan custody, four WIF providers, protected environments, recovery storage, secret containers, and audit controls pass; bootstrap authority is removed.                        |
-|    2 | [Provision and verify the workload foundation](./provision-workload-foundation.md).                          | Both protected roots converge; one private workload project passes the stateless audit; temporary project, parent, billing, and audit access is removed.                                     |
-|    3 | [Inspect the idle PostgreSQL host](./operate-postgresql-host.md#operator-context).                           | One private VM and preserved disk; no external IP and no running database container.                                                                                                         |
-|    4 | [Configure hosted Plunk SMTP](./configure-hosted-smtp.md).                                                   | Organization-owned no-branding project, recovery access, spend cap, verified domain, tracking disabled, and private STARTTLS contract.                                                       |
-|    5 | [Add the nine initial secret versions](./secret-versions.md).                                                | One selected enabled numeric version per secret; distinct database passwords; DSNs target only the private host; no payload appears in logs.                                                 |
-|    6 | [Deploy JSON Keys and Authentication](./deploy-production.md).                                               | Exact reviewed release succeeds; initializer job is deleted; JSON Keys is private; Authentication is healthy; first backups/restores pass; hourly key rotation exists; receipt is immutable. |
-|    7 | [Lock backup retention after recovery proof](./backup-and-restore-postgresql.md#lock-retention-after-proof). | Both backups are fresh, clean restores meet RTO, snapshots exist, and the seven-day retention policy is locked by reviewed code.                                                             |
-|    8 | [Verify alert ownership and delivery](./respond-to-alerts.md).                                               | Eight policies and both verified email channels are active; scheduled GitHub health has a named owner and a recent success.                                                                  |
-|    9 | [Run a clean-room recovery drill](./disaster-recovery.md).                                                   | Private replacement passes health and RPO/RTO; temporary access is removed; deletion-gated cleanup reaches `DELETE_REQUESTED`; cost is recorded privately.                                   |
-|   10 | [Archive the legacy infrastructure repository](./archive-legacy-infrastructure.md).                          | Legacy credentials and Actions are disabled, open work is drained, and only `a-novel/agora-infra` is archived.                                                                               |
-
-Steps 4–6 are a hard sequence: after SMTP, stop and populate all nine secret versions. The
-deployment selector reads existing version metadata; it is not a fallback secret-creation step.
-
-Do not advance on a partial PASS. A successful workflow is not rerun merely to recreate terminal
-output; record its URL and continue.
-
-## Routine and incident entry points
-
-Do not restart the first-run sequence for routine work.
+## Runbook index
 
 | Need                                                   | Procedure                                                              |
 | ------------------------------------------------------ | ---------------------------------------------------------------------- |
@@ -82,6 +57,7 @@ Do not restart the first-run sequence for routine work.
 | Scale, resize, inspect, or roll back the database host | [Operate the private PostgreSQL host](./operate-postgresql-host.md)    |
 | Back up, restore, or prove a pre-change recovery gate  | [Back up and restore PostgreSQL](./backup-and-restore-postgresql.md)   |
 | Add, rotate, disable, or destroy a payload version     | [Add or rotate a secret version](./secret-versions.md)                 |
+| Replace or verify the hosted SMTP provider             | [Configure hosted SMTP](./configure-hosted-smtp.md)                    |
 | Diagnose an alert or scheduled-check failure           | [Respond to production alerts](./respond-to-alerts.md)                 |
 | Rebuild after the workload project is untrusted        | [Recover production into a disposable project](./disaster-recovery.md) |
 | Recover an incorrect OpenTofu state object             | [Recover a prior state generation](./state-recovery.md)                |
