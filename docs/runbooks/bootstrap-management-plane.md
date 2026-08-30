@@ -1,6 +1,6 @@
 # Bootstrap and verify the management plane
 
-> First production run: step 1. Start from the [ordered index](./README.md#1-bootstrap-the-management-plane);
+> First production run: step 1. Start from the [ordered index](./README.md#first-production-run);
 > finish all 13 steps, then continue to workload foundation.
 
 This is the one-time, operator-only procedure for creating Agora's stable Google Cloud management
@@ -72,7 +72,7 @@ Stop immediately if any of these are true:
 
 The ordered index's repository gate already proves that the checkout is clean, current, and on
 `master`. When entering this runbook directly, complete
-[step 0](./README.md#0-inspect-the-repository-gate) once before continuing.
+[Start or resume](./README.md#start-or-resume) once before continuing.
 
 ```zsh
 () {
@@ -500,7 +500,6 @@ export TF_VAR_operator_principals="[\"${OPERATOR_PRINCIPAL}\"]"
 
 BOOTSTRAP_TEMP_DIR="$(mktemp -d)"
 export TF_DATA_DIR="${BOOTSTRAP_TEMP_DIR}/tofu-data"
-BOOTSTRAP_PLAN="${BOOTSTRAP_TEMP_DIR}/bootstrap.tfplan"
 
 STATE_BUCKET="${MANAGEMENT_PROJECT_ID}-${MANAGEMENT_PROJECT_NUMBER}-tofu-state"
 ! gcloud storage buckets describe "gs://${STATE_BUCKET}"
@@ -537,18 +536,6 @@ test -z "$(git status --porcelain)"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Collect the workflow commit:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-MASTER_SHA="$(git rev-parse HEAD)"
-test "$MASTER_SHA" = "$(gh api repos/a-novel/infra/commits/master --jq .sha)"
-printf 'Bootstrap commit: %s\n' "$MASTER_SHA"
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
 Initialize the remote backend and let the mocked tests run before the import changes state:
 
 ```zsh
@@ -571,8 +558,10 @@ tofu -chdir=bootstrap import \
 
 tofu -chdir=bootstrap state list
 
+install -d -m 700 "$HOME/.local/state/a-novel-infra"
 BOOTSTRAP_PLAN_EXIT=0
-./ops/tofu-gate.sh plan bootstrap "${STATE_BUCKET}" "${BOOTSTRAP_PLAN}" \
+./ops/bootstrap-plan.sh plan \
+  a-novel-management-prod "$HOME/.local/state/a-novel-infra/bootstrap.tfplan" \
   || BOOTSTRAP_PLAN_EXIT=$?
 test "${BOOTSTRAP_PLAN_EXIT}" -eq 2
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
@@ -582,8 +571,9 @@ Expected safe result: validation and all four mocked tests pass; the state list 
 `google_storage_bucket.state` and no other managed address; and the summary contains one `update` for
 `google_storage_bucket`, plus 114 creates across the declared inventory. It prints no resource
 address, project ID, email, token, state value, or payload. Exit code `2` confirms that the saved plan
-contains changes. The full binary plan remains in a mode-`0700` temporary directory and must not be
-uploaded to GitHub or pasted into an issue.
+contains changes. Replace `a-novel-management-prod` when another management project was selected.
+The full binary plan and its mode-`0600` non-secret custody record remain outside the repository;
+neither may be uploaded to GitHub or pasted into an issue.
 
 Review the resource counts against [`bootstrap/README.md`](../../bootstrap/README.md). If the summary
 contains an update other than the single imported state bucket, or any replacement, delete, or
@@ -591,33 +581,22 @@ forget, stop and investigate.
 
 ## 8. Apply the exact reviewed plan once
 
-Reconfirm that Git did not move after planning, then apply the saved binary plan—not a newly computed
-plan.
+Apply the saved binary plan—not a newly computed plan:
 
 ```zsh
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-test "$(git branch --show-current)" = "master"
-test -z "$(git status --porcelain)"
-test "$(git rev-parse HEAD)" = "$MASTER_SHA"
-test "$MASTER_SHA" = "$(gh api repos/a-novel/infra/commits/master --jq .sha)"
+./ops/bootstrap-plan.sh apply \
+  a-novel-management-prod "$HOME/.local/state/a-novel-infra/bootstrap.tfplan"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Apply the reviewed plan:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-./ops/tofu-gate.sh apply bootstrap "${STATE_BUCKET}" "${BOOTSTRAP_PLAN}"
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-Expected safe result: the gate reports that the exact reviewed bootstrap plan applied successfully.
-Record the commit SHA and apply completion time in the private operator record. State is written
-directly to the versioned GCS backend; plan values and apply diagnostics remain private.
+Expected safe result: custody proves the plan checksum, project, state bucket, and exact unchanged
+local/remote `master` commit, consumes the plan before mutation, and reports success. Record the
+commit SHA and completion time in the private operator record. State is written directly to the
+versioned GCS backend; plan values and apply diagnostics remain private. The consumed binary plan
+is removed, while its non-secret checksum/commit record remains marked `consumed: true`.
 
 If the apply fails partway, do not delete resources or repeat the bucket import. The gate names the
 failed stage without publishing its diagnostics. Fix the reported cause on `master`, keep the same
@@ -627,9 +606,9 @@ variables and remote state, then save a new plan:
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-RECOVERY_PLAN="${BOOTSTRAP_TEMP_DIR}/bootstrap-recovery.tfplan"
 RECOVERY_PLAN_EXIT=0
-./ops/tofu-gate.sh plan bootstrap "${STATE_BUCKET}" "${RECOVERY_PLAN}" \
+./ops/bootstrap-plan.sh plan \
+  a-novel-management-prod "$HOME/.local/state/a-novel-infra/bootstrap-recovery.tfplan" \
   || RECOVERY_PLAN_EXIT=$?
 test "${RECOVERY_PLAN_EXIT}" -eq 2
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
@@ -641,7 +620,8 @@ Review the new sanitized summary as above, then apply that exact recovery plan:
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-./ops/tofu-gate.sh apply bootstrap "${STATE_BUCKET}" "${RECOVERY_PLAN}"
+./ops/bootstrap-plan.sh apply \
+  a-novel-management-prod "$HOME/.local/state/a-novel-infra/bootstrap-recovery.tfplan"
 ./ops/tofu-gate.sh converge bootstrap "${STATE_BUCKET}"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
@@ -1152,10 +1132,10 @@ setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 rm -rf -- "${BOOTSTRAP_TEMP_DIR}"
 unset TF_DATA_DIR TF_VAR_management_project_id TF_VAR_operator_principals
-unset PLAN_PROVIDER PLAN_ACCOUNT BOOTSTRAP_PLAN BOOTSTRAP_PLAN_EXIT BOOTSTRAP_TFVARS_FILE
-unset RECOVERY_PLAN RECOVERY_PLAN_EXIT
+unset PLAN_PROVIDER PLAN_ACCOUNT BOOTSTRAP_PLAN_EXIT BOOTSTRAP_TFVARS_FILE
+unset RECOVERY_PLAN_EXIT
 unset STATE_BUCKET BACKUP_BUCKET RECEIPT_BUCKET MANAGEMENT_PROJECT_NUMBER
-unset MANAGEMENT_PROJECT_ID BILLING_ACCOUNT_ID OPERATOR_PRINCIPAL ORGANIZATION_ID MASTER_SHA
+unset MANAGEMENT_PROJECT_ID BILLING_ACCOUNT_ID OPERATOR_PRINCIPAL ORGANIZATION_ID
 unset MISSING_ORG_POLICY_COUNT POLICY_UPDATE_EXIT
 unset ENVIRONMENT_REVIEWER_ID ENVIRONMENT_REVIEWER_LOGIN PREVENT_SELF_REVIEW
 unset BOOTSTRAP_TEMP_DIR

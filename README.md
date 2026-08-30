@@ -160,7 +160,7 @@ The three names form a security allowlist. Add a root only when a new lifecycle 
 | ----------------------------------------- | ------------------------------------------------------------------------------ |
 | `deploy/production/images.yaml`           | Enabled components plus stable SemVer image tags and exact digests.            |
 | `deploy/production/recovery-cleanup.json` | Inactive-by-default exact authorization for one disposable recovery deletion.  |
-| `ops/`                                    | Small, tested CI and operator shims shared by the roots.                       |
+| [`ops/`](./ops/README.md)                 | Human operator commands and protected workflow internals.                      |
 | `tests/`                                  | Mocked OpenTofu, manifest, Renovate, allowlist, and sanitized plan fixtures.   |
 | `docs/architecture.md`                    | Lifecycle, authority, state, delivery, and portability decisions.              |
 | `docs/google-cloud.md`                    | Provider resource map, trust boundaries, and official Google Cloud references. |
@@ -177,7 +177,9 @@ resource types introduced after the gate was written, and rejects unknown action
 Resource addresses, values, outputs, environment variables, DSNs, and tokens stay out of public
 logs.
 
-`ops/tofu-gate.sh` is the only live OpenTofu entry point. It accepts only `bootstrap`, `foundation`,
+`ops/tofu-gate.sh` is the protected live OpenTofu entry point. Human operators reach the one local
+bootstrap plan/apply through `ops/bootstrap-plan.sh`, which adds commit and checksum custody. The
+gate accepts only `bootstrap`, `foundation`,
 or `release`; uses the private GCS backend; and keeps raw provider diagnostics in runner-private
 files. A failed plan publishes only a fixed reason, resource type, configuration source, and count.
 `ops/create-reviewed-plan.sh` uploads the binary saved plan plus non-sensitive custody metadata with

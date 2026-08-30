@@ -1228,11 +1228,10 @@ PLAN_ID="$(
         FAKE_WORKFLOW_CALLS="${WORKFLOW_CALLS}" \
         FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
         FAKE_WORKFLOW_STATE="${WORKFLOW_STATE}" \
-        EXPECTED_SHA="${WORKFLOW_SHA}" \
         WORKFLOW_DISCOVERY_ATTEMPTS=1 \
         WORKFLOW_DISCOVERY_INTERVAL_SECONDS=0 \
         "${REPOSITORY_ROOT}/ops/run-workflow.sh" \
-            foundation.yaml run-id-attempt operation=plan root=foundation \
+            foundation plan foundation \
             2>"${TEMP_DIR}/workflow.err"
 )"
 assert_equal "${PLAN_ID}" '202-3'
@@ -1249,16 +1248,99 @@ DETACHED_RUN_ID="$(
         FAKE_WORKFLOW=release.yaml \
         FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
         FAKE_WORKFLOW_STATE="${WORKFLOW_STATE}" \
-        EXPECTED_SHA="${WORKFLOW_SHA}" \
         WORKFLOW_DISCOVERY_ATTEMPTS=1 \
         WORKFLOW_DISCOVERY_INTERVAL_SECONDS=0 \
         "${REPOSITORY_ROOT}/ops/run-workflow.sh" \
-            release.yaml run-id --no-wait action=deploy \
+            release deploy --no-wait \
             2>"${TEMP_DIR}/detached-workflow.err"
 )"
 assert_equal "${DETACHED_RUN_ID}" 202
 if grep -Fq 'run watch' "${WORKFLOW_CALLS}"; then
     printf 'A detached workflow dispatch unexpectedly started a watcher.\n' >&2
+    exit 1
+fi
+
+rm -f -- "${WORKFLOW_STATE}"
+: >"${WORKFLOW_CALLS}"
+RECOVERY_RUN_REF="$(
+    PATH="${WORKFLOW_MOCK_BIN}:${PATH}" \
+        FAKE_WORKFLOW_CALLS="${WORKFLOW_CALLS}" \
+        FAKE_WORKFLOW=recovery.yaml \
+        FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
+        FAKE_WORKFLOW_STATE="${WORKFLOW_STATE}" \
+        WORKFLOW_DISCOVERY_ATTEMPTS=1 \
+        WORKFLOW_DISCOVERY_INTERVAL_SECONDS=0 \
+        "${REPOSITORY_ROOT}/ops/run-workflow.sh" recovery restore-data \
+            recovery-project-prod 202-3 \
+            100-json-1 101-authentication-1 \
+            'no known lost writes' 'RESTORE recovery-project-prod' \
+            2>"${TEMP_DIR}/recovery-workflow.err"
+)"
+assert_equal "${RECOVERY_RUN_REF}" 202-3
+grep -Fq 'workflow run recovery.yaml --repo a-novel/infra --ref master -f operation=restore-data -f replacement_project_id=recovery-project-prod -f target_receipt=202-3' \
+    "${WORKFLOW_CALLS}"
+grep -Fq -- '-f json_keys_attempt=100-json-1 -f authentication_attempt=101-authentication-1' \
+    "${WORKFLOW_CALLS}"
+grep -Fq -- '-f lost_write_window=no known lost writes -f confirm=RESTORE recovery-project-prod' \
+    "${WORKFLOW_CALLS}"
+
+rm -f -- "${WORKFLOW_STATE}"
+: >"${WORKFLOW_CALLS}"
+APPLY_RUN_ID="$(
+    PATH="${WORKFLOW_MOCK_BIN}:${PATH}" \
+        FAKE_WORKFLOW_CALLS="${WORKFLOW_CALLS}" \
+        FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
+        FAKE_WORKFLOW_STATE="${WORKFLOW_STATE}" \
+        WORKFLOW_DISCOVERY_ATTEMPTS=1 \
+        WORKFLOW_DISCOVERY_INTERVAL_SECONDS=0 \
+        "${REPOSITORY_ROOT}/ops/run-workflow.sh" \
+            foundation apply foundation 202-3 \
+            2>"${TEMP_DIR}/apply-workflow.err"
+)"
+assert_equal "${APPLY_RUN_ID}" 202
+grep -Fq \
+    'workflow run foundation.yaml --repo a-novel/infra --ref master -f operation=apply -f root=foundation -f plan_id=202-3' \
+    "${WORKFLOW_CALLS}"
+
+rm -f -- "${WORKFLOW_STATE}"
+: >"${WORKFLOW_CALLS}"
+set +e
+PATH="${WORKFLOW_MOCK_BIN}:${PATH}" \
+    FAKE_PLAN_WORKFLOW_SHA='0000000000000000000000000000000000000000' \
+    FAKE_WORKFLOW_CALLS="${WORKFLOW_CALLS}" \
+    FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
+    FAKE_WORKFLOW_STATE="${WORKFLOW_STATE}" \
+    "${REPOSITORY_ROOT}/ops/run-workflow.sh" \
+        foundation apply foundation 202-3 \
+        >"${TEMP_DIR}/stale-plan.out" 2>"${TEMP_DIR}/stale-plan.err"
+STALE_PLAN_CODE=$?
+set -e
+assert_equal "${STALE_PLAN_CODE}" 65
+grep -Fq 'selected plan commit is no longer the local master commit' \
+    "${TEMP_DIR}/stale-plan.err"
+if grep -Fq 'workflow run' "${WORKFLOW_CALLS}"; then
+    printf 'A stale reviewed plan unexpectedly dispatched a workflow.\n' >&2
+    exit 1
+fi
+
+rm -f -- "${WORKFLOW_STATE}"
+: >"${WORKFLOW_CALLS}"
+set +e
+PATH="${WORKFLOW_MOCK_BIN}:${PATH}" \
+    FAKE_PLAN_DISPLAY_TITLE='foundation apply foundation by @operator' \
+    FAKE_WORKFLOW_CALLS="${WORKFLOW_CALLS}" \
+    FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
+    FAKE_WORKFLOW_STATE="${WORKFLOW_STATE}" \
+    "${REPOSITORY_ROOT}/ops/run-workflow.sh" \
+        foundation apply foundation 202-3 \
+        >"${TEMP_DIR}/wrong-plan-kind.out" 2>"${TEMP_DIR}/wrong-plan-kind.err"
+WRONG_PLAN_KIND_CODE=$?
+set -e
+assert_equal "${WRONG_PLAN_KIND_CODE}" 65
+grep -Fq 'not a successful matching workflow attempt' \
+    "${TEMP_DIR}/wrong-plan-kind.err"
+if grep -Fq 'workflow run' "${WORKFLOW_CALLS}"; then
+    printf 'A non-plan workflow attempt unexpectedly dispatched apply.\n' >&2
     exit 1
 fi
 
@@ -1270,9 +1352,8 @@ PATH="${WORKFLOW_MOCK_BIN}:${PATH}" \
     FAKE_WORKFLOW_CALLS="${WORKFLOW_CALLS}" \
     FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
     FAKE_WORKFLOW_STATE="${WORKFLOW_STATE}" \
-    EXPECTED_SHA="${WORKFLOW_SHA}" \
     "${REPOSITORY_ROOT}/ops/run-workflow.sh" \
-        foundation.yaml run-id operation=apply root=foundation plan_id=202-3 \
+        foundation apply foundation 202-3 \
         >"${TEMP_DIR}/active-workflow.out" 2>"${TEMP_DIR}/active-workflow.err"
 ACTIVE_WORKFLOW_CODE=$?
 set -e
@@ -1285,10 +1366,146 @@ if grep -Fq 'workflow run' "${WORKFLOW_CALLS}"; then
 fi
 
 set +e
-"${REPOSITORY_ROOT}/ops/run-workflow.sh" foundation.yaml run-id malformed-input \
+"${REPOSITORY_ROOT}/ops/run-workflow.sh" foundation plan \
     >/dev/null 2>&1
 INVALID_WORKFLOW_INPUT_CODE=$?
 set -e
 assert_equal "${INVALID_WORKFLOW_INPUT_CODE}" 64
+
+set +e
+"${REPOSITORY_ROOT}/ops/run-workflow.sh" recovery restore-data \
+    recovery-project-prod 202-3 \
+    100-json-1 101-authentication-1 'no known lost writes' \
+    'RESTORE wrong-project' >/dev/null 2>&1
+INVALID_RECOVERY_CONFIRMATION_CODE=$?
+"${REPOSITORY_ROOT}/ops/foundation.sh" configure \
+    --workload-project-id INVALID >/dev/null 2>&1
+INVALID_FOUNDATION_PROJECT_CODE=$?
+"${REPOSITORY_ROOT}/ops/foundation-audit.sh" \
+    --workload-project-id INVALID >/dev/null 2>&1
+INVALID_FOUNDATION_AUDIT_PROJECT_CODE=$?
+set -e
+assert_equal "${INVALID_RECOVERY_CONFIRMATION_CODE}" 64
+assert_equal "${INVALID_FOUNDATION_PROJECT_CODE}" 64
+assert_equal "${INVALID_FOUNDATION_AUDIT_PROJECT_CODE}" 64
+
+# Foundation configuration derives every coordinate in a fresh process, writes
+# only the protected JSON document, and keeps billing/human metadata off stdout.
+FOUNDATION_MOCK_BIN="${TEMP_DIR}/foundation-bin"
+FOUNDATION_CALLS="${TEMP_DIR}/foundation-calls"
+FOUNDATION_SECRETS="${TEMP_DIR}/foundation-secrets"
+mkdir -p "${FOUNDATION_MOCK_BIN}"
+ln -s "${SCRIPT_DIR}/fixtures/fake-foundation-gh.sh" "${FOUNDATION_MOCK_BIN}/gh"
+ln -s "${SCRIPT_DIR}/fixtures/fake-foundation-gcloud.sh" "${FOUNDATION_MOCK_BIN}/gcloud"
+ln -s "${SCRIPT_DIR}/fixtures/fake-workflow-git.sh" "${FOUNDATION_MOCK_BIN}/git"
+: >"${FOUNDATION_CALLS}"
+: >"${FOUNDATION_SECRETS}"
+FOUNDATION_OUTPUT="$(
+    PATH="${FOUNDATION_MOCK_BIN}:${PATH}" \
+        FAKE_FOUNDATION_CALLS="${FOUNDATION_CALLS}" \
+        FAKE_FOUNDATION_SECRETS="${FOUNDATION_SECRETS}" \
+        FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
+        "${REPOSITORY_ROOT}/ops/foundation.sh" configure \
+            --workload-project-id agora-production-prod
+)"
+grep -Fq 'PASS protected foundation environment' <<<"${FOUNDATION_OUTPUT}"
+grep -Fq 'PASS protected foundation configuration' <<<"${FOUNDATION_OUTPUT}"
+assert_equal "$(wc -l <"${FOUNDATION_SECRETS}" | tr -d ' ')" 2
+grep -Fq -- '--env production-foundation' "${FOUNDATION_SECRETS}"
+grep -Fq -- '--env production-recovery' "${FOUNDATION_SECRETS}"
+grep -Fq '"workload_project_id":"agora-production-prod"' "${FOUNDATION_SECRETS}"
+grep -Fq '"organization_id":"123456789012"' "${FOUNDATION_SECRETS}"
+grep -Fq '"adopt_existing_project":false' "${FOUNDATION_SECRETS}"
+if grep -Eq 'operator@example\.com|ABCDEF-123456-ABCDEF' <<<"${FOUNDATION_OUTPUT}"; then
+    printf 'Protected foundation metadata leaked to stdout.\n' >&2
+    exit 1
+fi
+
+set +e
+PATH="${FOUNDATION_MOCK_BIN}:${PATH}" \
+    FAKE_FOUNDATION_CALLS="${FOUNDATION_CALLS}" \
+    FAKE_FOUNDATION_SECRETS="${FOUNDATION_SECRETS}" \
+    FAKE_GIT_DIRTY=true \
+    FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
+    "${REPOSITORY_ROOT}/ops/foundation.sh" configure \
+        --workload-project-id agora-production-prod \
+        >"${TEMP_DIR}/dirty-foundation.out" 2>"${TEMP_DIR}/dirty-foundation.err"
+DIRTY_FOUNDATION_CODE=$?
+set -e
+assert_equal "${DIRTY_FOUNDATION_CODE}" 65
+assert_equal "$(wc -l <"${FOUNDATION_SECRETS}" | tr -d ' ')" 2
+grep -Fq 'requires a clean local master checkout' \
+    "${TEMP_DIR}/dirty-foundation.err"
+
+# Read-only audit access derives only the active human identity; it does not
+# require unrelated billing, backup, or project-parent permissions.
+: >"${FOUNDATION_CALLS}"
+FOUNDATION_AUDIT_ACCESS_OUTPUT="$(
+    PATH="${FOUNDATION_MOCK_BIN}:${PATH}" \
+        FAKE_FOUNDATION_CALLS="${FOUNDATION_CALLS}" \
+        FAKE_FOUNDATION_SECRETS="${FOUNDATION_SECRETS}" \
+        FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
+        "${REPOSITORY_ROOT}/ops/foundation.sh" grant-audit-access \
+            --workload-project-id agora-production-prod
+)"
+grep -Fq 'PASS temporary audit access' <<<"${FOUNDATION_AUDIT_ACCESS_OUTPUT}"
+grep -Fq 'config get-value account' "${FOUNDATION_CALLS}"
+grep -Fq 'projects get-iam-policy agora-production-prod' "${FOUNDATION_CALLS}"
+if grep -Eq 'billing|GCP_BACKUP_BUCKET|parent\.(type|id)' "${FOUNDATION_CALLS}"; then
+    printf 'Audit access loaded unrelated foundation context.\n' >&2
+    exit 1
+fi
+
+# The one local bootstrap apply uses an external binary plan plus non-secret
+# commit/checksum custody and consumes that review before mutation.
+BOOTSTRAP_MOCK_BIN="${TEMP_DIR}/bootstrap-bin"
+BOOTSTRAP_PLAN="${TEMP_DIR}/bootstrap-plan.tfplan"
+BOOTSTRAP_CALLS="${TEMP_DIR}/bootstrap-calls"
+BOOTSTRAP_STATE="${TEMP_DIR}/bootstrap-workflow-state"
+mkdir -p "${BOOTSTRAP_MOCK_BIN}"
+ln -s "${SCRIPT_DIR}/fixtures/fake-foundation-gcloud.sh" "${BOOTSTRAP_MOCK_BIN}/gcloud"
+ln -s "${SCRIPT_DIR}/fixtures/fake-workflow-gh.sh" "${BOOTSTRAP_MOCK_BIN}/gh"
+ln -s "${SCRIPT_DIR}/fixtures/fake-workflow-git.sh" "${BOOTSTRAP_MOCK_BIN}/git"
+ln -s "${SCRIPT_DIR}/fixtures/fake-tofu.sh" "${BOOTSTRAP_MOCK_BIN}/tofu"
+: >"${BOOTSTRAP_CALLS}"
+set +e
+PATH="${BOOTSTRAP_MOCK_BIN}:${PATH}" \
+    FAKE_FOUNDATION_CALLS="${BOOTSTRAP_CALLS}" \
+    FAKE_WORKFLOW_CALLS="${BOOTSTRAP_CALLS}" \
+    FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
+    FAKE_WORKFLOW_STATE="${BOOTSTRAP_STATE}" \
+    FAKE_TOFU_PLAN_CODE=2 \
+    FAKE_TOFU_PLAN_JSON="${SCRIPT_DIR}/fixtures/plans/safe.json" \
+    "${REPOSITORY_ROOT}/ops/bootstrap-plan.sh" plan \
+        management-project-prod "${BOOTSTRAP_PLAN}" \
+        >"${TEMP_DIR}/bootstrap-plan.out" 2>"${TEMP_DIR}/bootstrap-plan.err"
+BOOTSTRAP_PLAN_CODE=$?
+set -e
+assert_equal "${BOOTSTRAP_PLAN_CODE}" 2
+test -f "${BOOTSTRAP_PLAN}"
+test -f "${BOOTSTRAP_PLAN}.metadata.json"
+jq --exit-status \
+    --arg commit "${WORKFLOW_SHA}" '
+      .schemaVersion == 1 and
+      .root == "bootstrap" and
+      .commit == $commit and
+      .consumed == false
+    ' "${BOOTSTRAP_PLAN}.metadata.json" >/dev/null
+
+PATH="${BOOTSTRAP_MOCK_BIN}:${PATH}" \
+    FAKE_FOUNDATION_CALLS="${BOOTSTRAP_CALLS}" \
+    FAKE_WORKFLOW_CALLS="${BOOTSTRAP_CALLS}" \
+    FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
+    FAKE_WORKFLOW_STATE="${BOOTSTRAP_STATE}" \
+    FAKE_TOFU_PLAN_CODE=0 \
+    FAKE_TOFU_PLAN_JSON="${SCRIPT_DIR}/fixtures/plans/safe.json" \
+    "${REPOSITORY_ROOT}/ops/bootstrap-plan.sh" apply \
+        management-project-prod "${BOOTSTRAP_PLAN}" \
+        >"${TEMP_DIR}/bootstrap-apply.out" 2>"${TEMP_DIR}/bootstrap-apply.err"
+jq --exit-status '.consumed == true' \
+    "${BOOTSTRAP_PLAN}.metadata.json" >/dev/null
+test ! -e "${BOOTSTRAP_PLAN}"
+grep -Fq 'exact reviewed local bootstrap plan was consumed' \
+    "${TEMP_DIR}/bootstrap-apply.out"
 
 printf "Root and plan-policy fixtures passed.\n"

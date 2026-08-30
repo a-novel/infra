@@ -27,12 +27,14 @@ case "${1:-}" in
                 ;;
             "repos/a-novel/infra/actions/runs/${RUN_ID}")
                 jq -n \
-                    --arg sha "${COMMIT}" \
-                    --arg path ".github/workflows/${WORKFLOW}" \
+                    --arg sha "${FAKE_PLAN_WORKFLOW_SHA:-${COMMIT}}" \
+                    --arg path ".github/workflows/${FAKE_PLAN_WORKFLOW:-${WORKFLOW}}" \
+                    --arg title "${FAKE_PLAN_DISPLAY_TITLE:-foundation plan foundation by @operator}" \
                     --argjson attempt "${RUN_ATTEMPT}" '
                       {
                         head_sha: $sha,
                         path: $path,
+                        display_title: $title,
                         event: "workflow_dispatch",
                         status: "completed",
                         conclusion: "success",

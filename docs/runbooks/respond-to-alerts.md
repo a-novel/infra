@@ -186,28 +186,13 @@ test -z "$(git status --porcelain)"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Collect the workflow commit:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-MASTER_SHA="$(git rev-parse HEAD)"
-test "$MASTER_SHA" = "$(gh api "repos/${REPOSITORY}/commits/master" --jq .sha)"
-printf 'Health-check commit: %s\n' "$MASTER_SHA"
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
 Dispatch the read-only check:
 
 ```zsh
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-HEALTH_RUN_ID="$(
-  EXPECTED_SHA="$MASTER_SHA" ./ops/run-workflow.sh drift.yaml run-id
-)"
-printf 'Read-only drift and health run ID: %s\n' "$HEALTH_RUN_ID"
+./ops/run-workflow.sh drift
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
