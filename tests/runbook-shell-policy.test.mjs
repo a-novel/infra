@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -44,10 +44,14 @@ test("local runbook commands are scoped for the configured zsh session", () => {
 });
 
 test("workflow commands keep restartable repository-state boundaries", () => {
-  let commitCollectionBlockCount = 0;
   let workflowInvocationBlockCount = 0;
 
   for (const { name, content } of runbooks) {
+    assert.doesNotMatch(
+      content,
+      /MASTER_SHA|EXPECTED_SHA/,
+      `${name} carries workflow commit state between commands`,
+    );
     for (const match of content.matchAll(/```zsh\n([\s\S]*?)\n```/g)) {
       const body = match[1];
 
@@ -56,20 +60,6 @@ test("workflow commands keep restartable repository-state boundaries", () => {
           body,
           /MASTER_SHA=|\.\/ops\/run-workflow\.sh/,
           `${name} combines repository refresh with commit collection or workflow invocation`,
-        );
-      }
-
-      if (body.includes('MASTER_SHA="$(git rev-parse HEAD)"')) {
-        commitCollectionBlockCount += 1;
-        assert.match(
-          body,
-          /gh api .*commits\/master/,
-          `${name} collects MASTER_SHA without checking remote master`,
-        );
-        assert.doesNotMatch(
-          body,
-          /\.\/ops\/run-workflow\.sh/,
-          `${name} combines commit collection with workflow invocation`,
         );
       }
 
@@ -84,8 +74,47 @@ test("workflow commands keep restartable repository-state boundaries", () => {
     }
   }
 
-  assert.ok(commitCollectionBlockCount > 0);
   assert.ok(workflowInvocationBlockCount > 0);
+});
+
+test("migrated first-run guides use stateless operator commands", () => {
+  for (const name of ["README.md", "provision-workload-foundation.md"]) {
+    const { content } = runbooks.find((runbook) => runbook.name === name);
+
+    assert.doesNotMatch(
+      content,
+      /\(\) \{|setopt |unsetopt |MASTER_SHA|EXPECTED_SHA/,
+    );
+  }
+
+  const allRunbooks = runbooks.map(({ content }) => content).join("\n");
+  assert.doesNotMatch(
+    allRunbooks,
+    /run-workflow\.sh\s+(drift|foundation|release|recovery)\.yaml/,
+  );
+  assert.doesNotMatch(allRunbooks, /run-workflow\.sh[\s\\\n]+.*operation=/);
+  assert.match(allRunbooks, /run-workflow\.sh foundation plan foundation/);
+  assert.match(allRunbooks, /foundation\.sh configure/);
+  assert.match(allRunbooks, /foundation-audit\.sh/);
+});
+
+test("runbook operator-script links resolve to executable files", async () => {
+  const linkedScripts = new Set();
+
+  for (const { content } of runbooks) {
+    for (const match of content.matchAll(
+      /(?:\.\.\/\.\.\/|\.\/)ops\/([a-z0-9-]+\.sh)/g,
+    )) {
+      linkedScripts.add(match[1]);
+    }
+  }
+
+  assert.ok(linkedScripts.size > 0);
+  for (const script of linkedScripts) {
+    const metadata = await stat(path.join(repositoryRoot, "ops", script));
+    assert.ok(metadata.isFile(), `${script} is not a file`);
+    assert.notEqual(metadata.mode & 0o111, 0, `${script} is not executable`);
+  }
 });
 
 test("Bash fences are limited to commands pasted inside remote COS hosts", () => {

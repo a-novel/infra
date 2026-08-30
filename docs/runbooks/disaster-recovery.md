@@ -262,32 +262,14 @@ test -z "$(git status --porcelain)"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Collect the workflow commit:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-MASTER_SHA="$(git rev-parse HEAD)"
-test "$MASTER_SHA" = "$(gh api "repos/${REPOSITORY}/commits/master" --jq .sha)"
-printf 'Recovery commit: %s\n' "$MASTER_SHA"
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
 Create the disposable-foundation plan:
 
 ```zsh
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-RECOVERY_FOUNDATION_PLAN_ID="$(
-  EXPECTED_SHA="$MASTER_SHA" ./ops/run-workflow.sh \
-    recovery.yaml run-id-attempt \
-    operation=plan-workload \
-    replacement_project_id="$REPLACEMENT_PROJECT_ID" \
-    target_receipt="$TARGET_RECEIPT"
-)"
-printf 'Recovery foundation plan ID: %s\n' "$RECOVERY_FOUNDATION_PLAN_ID"
+./ops/run-workflow.sh recovery plan-workload \
+  "$REPLACEMENT_PROJECT_ID" "$TARGET_RECEIPT"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
@@ -298,15 +280,8 @@ Review the sanitized counts. They may target only state suffix
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-RECOVERY_FOUNDATION_APPLY_RUN_ID="$(
-  EXPECTED_SHA="$MASTER_SHA" ./ops/run-workflow.sh \
-    recovery.yaml run-id \
-    operation=apply-workload \
-    replacement_project_id="$REPLACEMENT_PROJECT_ID" \
-    target_receipt="$TARGET_RECEIPT" \
-    plan_id="$RECOVERY_FOUNDATION_PLAN_ID"
-)"
-printf 'Recovery foundation apply run ID: %s\n' "$RECOVERY_FOUNDATION_APPLY_RUN_ID"
+./ops/run-workflow.sh recovery apply-workload \
+  "$REPLACEMENT_PROJECT_ID" "$TARGET_RECEIPT" 1234567890-1
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
@@ -434,37 +409,16 @@ grant or remove.
 
 ## 5. Restore exact data and deploy the selected receipt
 
-Confirm that the disposable foundation's commit remains current:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-test "$(git branch --show-current)" = master
-test -z "$(git status --porcelain)"
-test "$(git rev-parse HEAD)" = "$MASTER_SHA"
-test "$MASTER_SHA" = "$(gh api "repos/${REPOSITORY}/commits/master" --jq .sha)"
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
 Dispatch data restore and application recovery:
 
 ```zsh
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-CONFIRM="RESTORE ${REPLACEMENT_PROJECT_ID}"
-RECOVERY_RUN_REF="$(
-  EXPECTED_SHA="$MASTER_SHA" ./ops/run-workflow.sh \
-    recovery.yaml run-id-attempt \
-    operation=restore-data \
-    replacement_project_id="$REPLACEMENT_PROJECT_ID" \
-    target_receipt="$TARGET_RECEIPT" \
-    json_keys_attempt="$JSON_KEYS_ATTEMPT" \
-    authentication_attempt="$AUTHENTICATION_ATTEMPT" \
-    lost_write_window="$LOST_WRITE_WINDOW" \
-    confirm="$CONFIRM"
-)"
+RECOVERY_RUN_REF="$(./ops/run-workflow.sh recovery restore-data \
+  "$REPLACEMENT_PROJECT_ID" "$TARGET_RECEIPT" \
+  "$JSON_KEYS_ATTEMPT" "$AUTHENTICATION_ATTEMPT" \
+  "$LOST_WRITE_WINDOW" "RESTORE ${REPLACEMENT_PROJECT_ID}")"
 RECOVERY_RUN_ID="${RECOVERY_RUN_REF%-*}"
 RECOVERY_RUN_ATTEMPT="${RECOVERY_RUN_REF##*-}"
 [[ "$RECOVERY_RUN_ID" =~ ^[1-9][0-9]*$ ]]
@@ -479,18 +433,9 @@ registry; creates only recovery jobs; starts the private database host; restores
 Authentication into empty targets; then creates both internal services. Repeating the same exact
 recovery jobs reuses a durable successful execution rather than applying the archive twice.
 
-Record the exact successful run and attempt without printing its private receipt:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-test "$(gh api "repos/${REPOSITORY}/actions/runs/${RECOVERY_RUN_ID}" --jq .head_sha)" = "$MASTER_SHA"
-gh run view "$RECOVERY_RUN_ID" --repo "$REPOSITORY" \
-  --json headSha,status,conclusion,url \
-  --jq '{headSha,status,conclusion,url}'
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
+Record the exact successful run URL and `run-id-attempt` printed by the helper. Its final identity
+check already proves the workflow, commit, event, attempt, and successful conclusion without
+printing the private receipt.
 
 ## 6. Verify functionality from the private replacement network
 
@@ -769,13 +714,8 @@ Collect the cleanup workflow variables:
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-MASTER_SHA="$(git rev-parse HEAD)"
-test "$MASTER_SHA" = "$(gh api "repos/${REPOSITORY}/commits/master" --jq .sha)"
-test "$(gh api "repos/${REPOSITORY}/contents/deploy/production/recovery-cleanup.json?ref=${MASTER_SHA}" \
+test "$(gh api "repos/${REPOSITORY}/contents/deploy/production/recovery-cleanup.json?ref=master" \
   --jq -r .content | base64 --decode | jq -r .replacementProject)" = "$REPLACEMENT_PROJECT_ID"
-
-CONFIRM="DELETE ${REPLACEMENT_PROJECT_ID}"
-printf 'Cleanup commit: %s\n' "$MASTER_SHA"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
@@ -785,15 +725,9 @@ Dispatch cleanup for the committed target:
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-CLEANUP_RUN_ID="$(
-  EXPECTED_SHA="$MASTER_SHA" ./ops/run-workflow.sh \
-    recovery.yaml run-id \
-    operation=cleanup-project \
-    replacement_project_id="$REPLACEMENT_PROJECT_ID" \
-    target_receipt="$TARGET_RECEIPT" \
-    confirm="$CONFIRM"
-)"
-printf 'Recovery cleanup run ID: %s\n' "$CLEANUP_RUN_ID"
+./ops/run-workflow.sh recovery cleanup-project \
+  "$REPLACEMENT_PROJECT_ID" "$TARGET_RECEIPT" \
+  "DELETE ${REPLACEMENT_PROJECT_ID}"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 

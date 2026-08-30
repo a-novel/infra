@@ -118,18 +118,6 @@ test -z "$(git status --porcelain)"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Collect the workflow commit:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-MASTER_SHA="$(git rev-parse HEAD)"
-test "$MASTER_SHA" = "$(gh api "repos/${REPOSITORY}/commits/master" --jq .sha)"
-printf 'Release commit: %s\n' "$MASTER_SHA"
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
 Inspect the release gate:
 
 ```zsh
@@ -442,44 +430,31 @@ test -z "$(git status --porcelain)"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Collect the workflow commit:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-MASTER_SHA="$(git rev-parse HEAD)"
-test "$MASTER_SHA" = "$(gh api "repos/${REPOSITORY}/commits/master" --jq .sha)"
-printf 'Release commit: %s\n' "$MASTER_SHA"
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
 Dispatch the release:
 
 ```zsh
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-RELEASE_RUN_ID="$(
-  EXPECTED_SHA="$MASTER_SHA" ./ops/run-workflow.sh \
-    release.yaml run-id --no-wait action=deploy
-)"
+RELEASE_RUN_ID="$(./ops/run-workflow.sh release deploy --no-wait)"
 printf 'Release run ID: %s\n' "$RELEASE_RUN_ID"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Open the printed URL. For a retry that does not require first-launch initialization, wait for it now:
+Open the printed URL. The detached form is reserved for first launch because the workflow must wait
+while the human initializer runs. For a later explicit retry that has no initializer pause, use the
+blocking form instead:
 
 ```zsh
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-gh run watch "$RELEASE_RUN_ID" --repo "$REPOSITORY" --exit-status
+./ops/run-workflow.sh release deploy
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-On the first launch, skip that watcher and continue with the initializer subsection when the run URL
-shows its prompt.
+On the first launch, continue with the initializer subsection when the detached run URL shows its
+prompt.
 
 For a later manifest update, do not dispatch a duplicate: the protected merge creates a `push` run.
 Refresh the repository first:
@@ -494,18 +469,6 @@ test -z "$(git status --porcelain)"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Collect the workflow commit:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-MASTER_SHA="$(git rev-parse HEAD)"
-test "$MASTER_SHA" = "$(gh api "repos/${REPOSITORY}/commits/master" --jq .sha)"
-printf 'Release commit: %s\n' "$MASTER_SHA"
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
 Select the automatic run for that commit:
 
 ```zsh
@@ -513,7 +476,7 @@ Select the automatic run for that commit:
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 RELEASE_RUNS="$(gh run list --repo "$REPOSITORY" --workflow release.yaml \
-  --branch master --commit "$MASTER_SHA" --event push --limit 10 \
+  --branch master --commit "$(git rev-parse HEAD)" --event push --limit 10 \
   --json databaseId,headSha,displayTitle,status,conclusion,url)"
 test "$(jq 'length' <<<"$RELEASE_RUNS")" -eq 1
 RELEASE_RUN_ID="$(jq --raw-output '.[0].databaseId' <<<"$RELEASE_RUNS")"
@@ -850,29 +813,13 @@ test -z "$(git status --porcelain)"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Collect the workflow commit:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-MASTER_SHA="$(git rev-parse HEAD)"
-test "$MASTER_SHA" = "$(gh api "repos/${REPOSITORY}/commits/master" --jq .sha)"
-printf 'Rollback commit: %s\n' "$MASTER_SHA"
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
 Dispatch the rollback:
 
 ```zsh
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-ROLLBACK_RUN_ID="$(
-  EXPECTED_SHA="$MASTER_SHA" ./ops/run-workflow.sh \
-    release.yaml run-id action=rollback target_receipt="$TARGET_RECEIPT"
-)"
-printf 'Rollback run ID: %s\n' "$ROLLBACK_RUN_ID"
+./ops/run-workflow.sh release rollback "$TARGET_RECEIPT"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
