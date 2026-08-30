@@ -939,8 +939,10 @@ unsetopt err_exit nounset xtrace
 gcloud projects get-ancestors "${MANAGEMENT_PROJECT_ID}" \
   --format='table(type,id)'
 
-ORGANIZATION_ID="$(gcloud projects get-ancestors "${MANAGEMENT_PROJECT_ID}" \
-  --filter='type=organization' --format='value(id)')"
+ORGANIZATION_ID="$(
+  gcloud projects get-ancestors "${MANAGEMENT_PROJECT_ID}" --format=json \
+    | jq -r '.[] | select(.type == "organization") | .id'
+)"
 MISSING_ORG_POLICY_COUNT=0
 
 for constraint in \
