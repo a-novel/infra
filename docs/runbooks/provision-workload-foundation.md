@@ -154,8 +154,10 @@ immutable production registry.
 Derive the organization and active operator:
 
 ```sh
-ORGANIZATION_ID="$(gcloud projects get-ancestors "$INFRA_WORKLOAD_PROJECT_ID" \
-  --filter='type=organization' --format='value(id)')"
+ORGANIZATION_ID="$(
+  gcloud projects get-ancestors "$INFRA_WORKLOAD_PROJECT_ID" --format=json \
+    | jq -r '.[] | select(.type == "organization") | .id'
+)"
 OPERATOR_PRINCIPAL="user:$(gcloud config get-value account 2>/dev/null)"
 
 printf 'Organization: %s\nOperator: %s\n' \
