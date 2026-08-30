@@ -47,10 +47,12 @@ if ! jq -e '
     exit 65
 fi
 
-printf "action\tresource_type\tcount\n"
+printf "action\tresource_type\tcount\tgeneration\n"
 # Import metadata is independent from the underlying action, so report it as a
 # separate row. An import with matching configuration would otherwise disappear
 # as a no-op, while an import with drift must show both import and update.
+# The generation distinguishes failed create-before-destroy cleanup without
+# exposing resource addresses or OpenTofu's opaque deposed keys.
 jq -r '
     def classified_action:
         .change.actions as $actions
@@ -63,24 +65,37 @@ jq -r '
           else "no-op"
           end;
 
+    def classified_generation:
+        if ((.deposed? // "") | length) > 0 then "deposed"
+        else "current"
+        end;
+
     [
       .resource_changes[] as $resource
       | (
           if $resource.change.importing != null then
-            {type: $resource.type, action: "import"}
+            {
+              type: $resource.type,
+              action: "import",
+              generation: ($resource | classified_generation)
+            }
           else
             empty
           end
         ),
         (
-          {type: $resource.type, action: ($resource | classified_action)}
+          {
+            type: $resource.type,
+            action: ($resource | classified_action),
+            generation: ($resource | classified_generation)
+          }
           | select(.action != "no-op")
         )
     ]
-    | sort_by(.action, .type)
-    | group_by([.action, .type])
+    | sort_by(.action, .type, .generation)
+    | group_by([.action, .type, .generation])
     | .[]
-    | "\(.[0].action)\t\(.[0].type)\t\(length)"
+    | "\(.[0].action)\t\(.[0].type)\t\(length)\t\(.[0].generation)"
 ' "$2"
 
 DESTRUCTIVE_CHANGES="$(jq -r '
@@ -94,17 +109,25 @@ DESTRUCTIVE_CHANGES="$(jq -r '
       .resource_changes[]
       | select(.mode == "managed")
       | select(destructive_change)
-      | .type
+      | {
+          type,
+          generation: (
+            if ((.deposed? // "") | length) > 0 then "deposed"
+            else "current"
+            end
+          )
+        }
     ]
-    | sort
-    | group_by(.)
+    | sort_by(.type, .generation)
+    | group_by([.type, .generation])
     | .[]
-    | "\(.[0])\t\(length)"
+    | "\(.[0].type)\t\(length)\t\(.[0].generation)"
 ' "$2")"
 
 if [ -n "${DESTRUCTIVE_CHANGES}" ]; then
-    while IFS=$'\t' read -r resource_type count; do
-        printf "Managed resource deletion, replacement, or state forget: %s (%s).\n" "${resource_type}" "${count}" >&2
+    while IFS=$'\t' read -r resource_type count generation; do
+        printf "Managed resource deletion, replacement, or state forget: %s (%s, %s).\n" \
+            "${resource_type}" "${count}" "${generation}" >&2
     done <<<"${DESTRUCTIVE_CHANGES}"
     exit 3
 fi

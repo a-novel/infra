@@ -192,11 +192,11 @@ Local modules begin only when two real call sites share a resource shape or one 
 
 ### Plan-output boundary
 
-`ops/plan-summary.sh` reads an OpenTofu JSON plan and emits only counts grouped by action and resource
-type. It blocks every deletion, replacement, or state-forget action on a managed resource, including
-resource types introduced after the gate was written, and rejects unknown action combinations.
-Resource addresses, values, outputs, environment variables, DSNs, and tokens stay out of public
-logs.
+`ops/plan-summary.sh` reads an OpenTofu JSON plan and emits only counts grouped by action, resource
+type, and current or deposed generation. It blocks every deletion, replacement, or state-forget
+action on a managed resource, including resource types introduced after the gate was written, and
+rejects unknown action combinations. Resource addresses, deposed keys, values, outputs, environment
+variables, DSNs, and tokens stay out of public logs.
 
 `ops/tofu-gate.sh` is the protected live OpenTofu entry point. Human operators reach the one local
 bootstrap plan/apply through `ops/bootstrap-plan.sh`, which adds commit and checksum custody. The
