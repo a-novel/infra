@@ -12,7 +12,8 @@ health check, while scale-to-zero jobs remain release resources.
 > **Temporary project-replacement window:** Provider and lifecycle deletion guards are disabled
 > across this root for the pre-launch workload rebuild. Destructive plan custody and apply still
 > require the exact merge commit's maintainer-added `allow-resource-deletion` label. The inventory
-> below describes the required steady state. Tracked in
+> below describes the required steady state. The replacement project is created before Google
+> receives the current project's deletion request. Tracked in
 > [a-novel/.github#289](https://github.com/a-novel/.github/issues/289).
 
 ## State and authority
