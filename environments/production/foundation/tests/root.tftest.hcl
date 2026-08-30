@@ -525,8 +525,10 @@ run "builds_the_project_replacement_window" {
         "roles/compute.osAdminLogin",
         "roles/compute.viewer",
         "roles/logging.viewer",
+        "roles/monitoring.alertPolicyViewer",
+        "roles/serviceusage.serviceUsageConsumer",
       ]) &&
-      length(google_project_iam_member.database_operator) == 3 &&
+      length(google_project_iam_member.database_operator) == 5 &&
       one(values(google_project_iam_member.database_operator_iap)).role == "roles/iap.tunnelResourceAccessor" &&
       one(one(values(google_project_iam_member.database_operator_iap)).condition).expression == "destination.port == 22" &&
       one(values(google_service_account_iam_member.database_operator_act_as)).role == "roles/iam.serviceAccountUser" &&

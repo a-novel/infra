@@ -1628,10 +1628,16 @@ assert_foundation_cloud_run_boundary() {
 }
 
 assert_foundation_cloud_run_boundary valid-service-agent 64
+grep -Fq 'PASS database operator project IAM' \
+    "${TEMP_DIR}/foundation-audit-cloud-run-valid-service-agent.out"
 grep -Fq 'PASS Cloud Run service agent IAM' \
     "${TEMP_DIR}/foundation-audit-cloud-run-valid-service-agent.out"
 grep -Fq 'PASS conditional Cloud Run invocation IAM' \
     "${TEMP_DIR}/foundation-audit-cloud-run-valid-service-agent.out"
+
+assert_foundation_cloud_run_boundary missing-operator-api-access 70
+grep -Fq 'FAIL database operator project IAM' \
+    "${TEMP_DIR}/foundation-audit-cloud-run-missing-operator-api-access.err"
 
 assert_foundation_cloud_run_boundary wrong-service-agent 70
 grep -Fq 'FAIL Cloud Run service agent IAM' \

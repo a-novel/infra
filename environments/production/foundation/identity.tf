@@ -106,6 +106,8 @@ locals {
     "roles/compute.osAdminLogin",
     "roles/compute.viewer",
     "roles/logging.viewer",
+    "roles/monitoring.alertPolicyViewer",
+    "roles/serviceusage.serviceUsageConsumer",
   ])
 
   database_operator_project_bindings = {

@@ -229,6 +229,45 @@ audit_foundation() {
     fi
     pass 'primitive service-account roles'
 
+    if ! jq --exit-status '
+      . as $policy
+      | def has_unconditional($role; $member):
+          any($policy.bindings[]?;
+            .role == $role and
+            ((.condition // null) == null) and
+            (.members | index($member) != null)
+          );
+        def has_database_iap($member):
+          any($policy.bindings[]?;
+            .role == "roles/iap.tunnelResourceAccessor" and
+            .condition.title == "DatabaseIAPSSHOnly" and
+            .condition.expression == "destination.port == 22" and
+            (.members | index($member) != null)
+          );
+        ([
+          $policy.bindings[]?
+          | select(
+              .role == "roles/compute.osAdminLogin" and
+              ((.condition // null) == null)
+            )
+          | .members[]?
+        ] | sort | unique) as $operators
+      | ($operators | length >= 1) and
+        all($operators[]; startswith("user:") or startswith("group:")) and
+        all($operators[];
+          . as $operator
+          | has_unconditional("roles/compute.osAdminLogin"; $operator) and
+            has_unconditional("roles/compute.viewer"; $operator) and
+            has_unconditional("roles/logging.viewer"; $operator) and
+            has_unconditional("roles/monitoring.alertPolicyViewer"; $operator) and
+            has_unconditional("roles/serviceusage.serviceUsageConsumer"; $operator) and
+            has_database_iap($operator)
+        )
+    ' <<<"$policy_json" >/dev/null; then
+        fail 'database operator project IAM'
+    fi
+    pass 'database operator project IAM'
+
     initializer_members="$(jq --compact-output --arg role \
         "projects/${WORKLOAD_PROJECT_ID}/roles/authenticationInitializerDeployer" '
       [

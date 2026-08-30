@@ -29,17 +29,12 @@ unsetopt err_exit nounset xtrace
 umask 077
 
 REPOSITORY='a-novel/infra'
-DATABASE_ZONE='europe-west1-c'
 DATABASE_GROUP='agora-database'
 DATABASE_DISK='agora-data'
 
 WORKLOAD_PROJECT_ID="$INFRA_WORKLOAD_PROJECT_ID"
-DATABASE_REGION="${DATABASE_ZONE%-*}"
 DATABASE_SERVICE_ACCOUNT="agora-database-host@${WORKLOAD_PROJECT_ID}.iam.gserviceaccount.com"
-DATABASE_OPERATOR_PRINCIPAL="$(gcloud projects get-iam-policy "$WORKLOAD_PROJECT_ID" \
-  --flatten='bindings[].members' \
-  --filter='bindings.role=roles/compute.osAdminLogin' \
-  --format='value(bindings.members)')"
+DATABASE_OPERATOR_PRINCIPAL="user:$(gcloud config get-value account 2>/dev/null)"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
@@ -118,9 +113,10 @@ debugging.
 ## Prerequisites
 
 - Complete [Provision and verify the workload foundation](./provision-workload-foundation.md).
-- Use a Google account listed in `database_operator_principals`. It needs Compute Viewer, OS Admin
-  Login, IAP Tunnel Resource Accessor limited to port `22`, and Service Account User on the exact
-  database runtime identity.
+- Use a Google account listed in `database_operator_principals`. It needs Compute Viewer, Logs
+  Viewer, Monitoring AlertPolicy Viewer, Service Usage Consumer, OS Admin Login, IAP Tunnel
+  Resource Accessor limited to port `22`, and Service Account User on the exact database runtime
+  identity.
 - An operator from another Google organization also needs OS Login External User from that
   organization's administrator. This manual grant stays outside workload-project automation.
 - Keep MFA enabled and work in a private, non-recorded shell with tracing disabled.
@@ -146,9 +142,19 @@ logs.
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 [[ "$WORKLOAD_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
-[[ "$DATABASE_ZONE" =~ ^[a-z]+-[a-z]+[0-9]+-[a-z]$ ]]
 test "$(printf '%s\n' "$DATABASE_OPERATOR_PRINCIPAL" | wc -l)" -eq 1
 [[ "$DATABASE_OPERATOR_PRINCIPAL" =~ ^(user|group):[^[:space:]@]+@[^[:space:]@]+$ ]]
+
+DATABASE_ZONE="$(
+  gcloud compute instance-groups managed list \
+    --project="$WORKLOAD_PROJECT_ID" \
+    --filter="name=${DATABASE_GROUP}" \
+    --format='value(zone.basename())'
+)"
+test -n "$DATABASE_ZONE"
+test "$(printf '%s\n' "$DATABASE_ZONE" | wc -l)" -eq 1
+[[ "$DATABASE_ZONE" =~ ^[a-z]+-[a-z]+[0-9]+-[a-z]$ ]]
+DATABASE_REGION="${DATABASE_ZONE%-*}"
 
 DATABASE_INSTANCE="$(
   gcloud compute instance-groups managed list-instances "$DATABASE_GROUP" \
@@ -192,7 +198,7 @@ gcloud compute instance-groups managed describe "$DATABASE_GROUP" \
 gcloud compute instances describe "$DATABASE_INSTANCE" \
   --project="$WORKLOAD_PROJECT_ID" \
   --zone="$DATABASE_ZONE" \
-  --format='yaml(name,status,machineType,networkInterfaces,serviceAccounts,tags.items,shieldedInstanceConfig,disks)'
+  --format='yaml(name,status,machineType,networkInterfaces,serviceAccounts,tags.items,shieldedInstanceConfig,disks.deviceName,disks.boot,disks.autoDelete,disks.mode,disks.source)'
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
@@ -309,7 +315,7 @@ setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 gcloud projects get-iam-policy "$WORKLOAD_PROJECT_ID" \
   --flatten='bindings[].members' \
-  --filter="bindings.members=${DATABASE_OPERATOR_PRINCIPAL} AND bindings.role:(roles/compute.osAdminLogin roles/compute.viewer roles/iap.tunnelResourceAccessor)" \
+  --filter="bindings.members=${DATABASE_OPERATOR_PRINCIPAL} AND bindings.role:(roles/compute.osAdminLogin roles/compute.viewer roles/iap.tunnelResourceAccessor roles/logging.viewer roles/monitoring.alertPolicyViewer roles/serviceusage.serviceUsageConsumer)" \
   --format='table(bindings.role,bindings.condition.expression)'
 
 gcloud iam service-accounts get-iam-policy "$DATABASE_SERVICE_ACCOUNT" \
@@ -320,9 +326,11 @@ gcloud iam service-accounts get-iam-policy "$DATABASE_SERVICE_ACCOUNT" \
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Expected safe result: Compute Viewer and OS Admin Login, IAP Tunnel Resource Accessor with
-`destination.port == 22`, and Service Account User on only the database runtime identity. The last
-role is required by OS Login because the VM has an attached service account.
+Expected safe result: Compute Viewer, Logs Viewer, Monitoring AlertPolicy Viewer, Service Usage
+Consumer, OS Admin Login, IAP Tunnel Resource Accessor with `destination.port == 22`, and Service
+Account User on only the database runtime identity. Service Usage Consumer lets the named operator
+charge Monitoring API use to this project; it cannot enable or disable an API. Service Account User
+is required by OS Login because the VM has an attached service account.
 
 ## Inspect the host through IAP
 
@@ -668,6 +676,8 @@ Do not rely on application passwords while a public path exists.
 - [Docker restart policies](https://docs.docker.com/engine/containers/start-containers-automatically/)
 - [OS Login setup](https://cloud.google.com/compute/docs/oslogin/set-up-oslogin)
 - [IAP TCP forwarding](https://cloud.google.com/iap/docs/using-tcp-forwarding)
+- [Cloud Monitoring access control](https://cloud.google.com/monitoring/access-control)
+- [Service Usage access control](https://cloud.google.com/service-usage/docs/access-control)
 - [Google-managed IAP routes](https://cloud.google.com/vpc/docs/routes#special_return_paths)
 - [Persistent Disk resize](https://cloud.google.com/compute/docs/disks/resize-persistent-disk)
 - [Production cost worksheet](../costs/production.md)
