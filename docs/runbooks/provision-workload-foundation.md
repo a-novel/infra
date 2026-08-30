@@ -1,126 +1,65 @@
 # Provision the workload foundation
 
-Use this guide after the management-plane bootstrap passes. It creates the replaceable production
-project and its private network, identities, stateful PostgreSQL host, registry, budgets, and alerts.
-Application containers and secret payloads are deliberately absent.
+This runbook creates the production project, private network, identities, PostgreSQL host,
+registry, budgets, and alerts. It does not deploy application containers or secret payloads.
 
-The operator interfaces are [`ops/foundation.sh`](../../ops/foundation.sh) for controlled mutations
-and [`ops/foundation-audit.sh`](../../ops/foundation-audit.sh) for read-only acceptance. Every
-invocation validates the operator-selected project IDs before reading GitHub or Google Cloud
-metadata, so the same commands work for a replacement project.
-
-## Authorization gate
-
-The permanent configuration is applied only by [`foundation.yaml`](../../.github/workflows/foundation.yaml)
-from reviewed `master`. The human commands below can only:
-
-- publish the protected non-payload input document;
-- grant and later remove the minimum project-creation and billing prerequisites;
-- grant and later remove the current human's read-only Security Reviewer role;
-- inspect the resulting security boundary.
-
-Do not continue while another production infrastructure workflow is active. Do not enable
-`PRODUCTION_RELEASES_ENABLED` in this guide.
+Stop if another production infrastructure workflow is active. Keep
+`PRODUCTION_RELEASES_ENABLED=false` throughout this runbook.
 
 ## Prerequisites
 
-Run from the repository root with `gh`, `gcloud`, and `jq` authenticated to the intended
-accounts. The management bootstrap must have published `GCP_MANAGEMENT_PROJECT_ID` and
-`GCP_BACKUP_BUCKET`.
-
-Create `.envrc` once with the root
-[project-coordinate setup](../../README.md#choose-the-project-coordinates), then load the reviewed
-coordinates before this runbook:
+Run from the repository root with `gh`, `gcloud`, and `jq` authenticated:
 
 ```sh
 . ./.envrc
 ./ops/verify-operator-env.sh
-```
 
-Expected: `PASS operator project coordinates`. This guide deliberately uses the local workload ID
-before `finish` publishes it to GitHub.
-
-Refresh the reviewed branch:
-
-```sh
 git switch master
 git pull --ff-only
 git status --short
-```
 
-Expected: `master` is current and the final command prints nothing.
-
-Verify the repository protection once:
-
-```sh
 ./ops/verify-repository-gate.sh
 ```
 
-Expected: the ruleset and required checks pass, all three production environments are protected,
-and `PRODUCTION_RELEASES_ENABLED=false`.
+Expected: both verification scripts pass, `master` is current, `git status` prints nothing, and
+the production release switch is disabled.
 
-## 1. Grant the temporary provisioning boundary
+## 1. Grant temporary provisioning access
 
-For a workload project beside the management project, parent selection is automatic:
+Use the management project's parent:
 
 ```sh
 ./ops/foundation.sh grant
 ```
 
-The command reads the management project's parent. It grants Project Creator at that organization
-or folder, Billing Account User and Costs Manager to the foundation identity, and Billing Viewer to
-the read-only plan identity. It never grants Billing Administrator.
-
-Use an explicit narrower folder only when the workload project belongs there:
+Use a specific folder only when the workload project belongs there:
 
 ```sh
-./ops/foundation.sh grant \
-  --folder-id 123456789012
+./ops/foundation.sh grant --folder-id 123456789012
 ```
 
-When adopting an existing organization- or folder-backed project, add
-`--adopt-existing-project`. The command verifies the existing project's parent before granting the
-foundation identity temporary Owner; `finish` removes that role.
-
-For a parentless account, the operator must deliberately select the standalone path. This creates
-only the empty billed project when it is absent and marks it for OpenTofu adoption:
+For a parentless project:
 
 ```sh
-./ops/foundation.sh grant \
-  --standalone \
-  --adopt-existing-project
+./ops/foundation.sh grant --standalone --adopt-existing-project
 ```
 
-Expected: `PASS temporary foundation access`. Rerunning the organization/folder form is
-idempotent. A standalone retry reuses an existing visible project; stop on an ambiguous permission
-error instead of guessing whether the ID is free.
+Add `--adopt-existing-project` to the organization or folder command when the workload project
+already exists. Reuse the same parent option in steps 2 and 7.
 
-Google references:
-[creating projects](https://cloud.google.com/resource-manager/docs/creating-managing-projects),
-[Project Creator](https://cloud.google.com/resource-manager/docs/access-control-proj),
-and [Cloud Billing IAM](https://cloud.google.com/billing/docs/how-to/billing-access).
+Expected: `PASS temporary foundation access`. Stop on an ambiguous permission error; do not guess
+whether a project ID is available.
 
-## 2. Publish the protected foundation configuration
+## 2. Publish the protected configuration
 
-The defaults are the reviewed low-cost production shape:
-
-- project name `Agora production`;
-- region `europe-west1`, database zone `europe-west1-c`;
-- subnet `10.20.0.0/24`;
-- the active Google user as cost recipient, operations recipient, database operator, and
-  Authentication initializer.
-
-Publish those defaults:
+The defaults are `europe-west1`, `europe-west1-c`, `10.20.0.0/24`, and the active Google user for
+alerts, database operations, and Authentication initialization:
 
 ```sh
 ./ops/foundation.sh configure
 ```
 
-The command verifies the `production-foundation` environment before writing one masked
-`FOUNDATION_TFVARS_JSON` secret to `production-foundation` and `production-recovery`. It
-contains billing and human-principal metadata but no application secret payload.
-
-Specify only genuine choices. Repeated principal flags create a protected allowlist:
+Override only deliberate choices:
 
 ```sh
 ./ops/foundation.sh configure \
@@ -131,9 +70,8 @@ Specify only genuine choices. Repeated principal flags create a protected allowl
   --auth-initializer-principal group:authentication-initializers@example.com
 ```
 
-Add the same parent option used in step 1 when it was not automatic. Add
-`--adopt-existing-project` only when the project already exists; it is mandatory with
-`--standalone`.
+Add the step 1 parent option when it was explicit. Add `--adopt-existing-project` only for an
+existing project.
 
 Expected:
 
@@ -142,152 +80,159 @@ PASS protected foundation environment
 PASS protected foundation configuration
 ```
 
-Confirm **Settings → Environments → production-foundation → Prevent administrators from bypassing
-protection rules** remains enabled. GitHub does not expose a reliable API field for this switch.
+In **Settings > Environments > production-foundation**, confirm **Prevent administrators from
+bypassing protection rules** is enabled. GitHub does not expose this switch reliably through its
+API.
 
 ## 3. Reconcile the management bootstrap
-
-The protected bootstrap root must converge before the workload root can mutate. Create a fresh
-saved plan:
 
 ```sh
 ./ops/run-workflow.sh foundation plan bootstrap
 ```
 
-A successful command prints an opaque plan ID such as `1234567890-1`. Review the workflow's
-sanitized action counts. If it reports no changes, continue to step 4. If it reports expected
-bootstrap drift, apply that exact ID:
+Review the sanitized counts. If the plan has changes, apply its exact printed ID:
 
 ```sh
 ./ops/run-workflow.sh foundation apply bootstrap 1234567890-1
 ```
 
-Replace the example ID; never infer or reuse one. The helper verifies that the plan attempt
-succeeded, belongs to `foundation.yaml`, and was created from the exact current local and remote
-`master` commit. Plan custody enforces the root, hash, 24-hour lifetime, one-time consumption, and
-the deletion-label decision recorded when the plan was created.
+Skip the apply when the plan has no changes. Never infer, edit, or reuse a plan ID.
 
-## 4. Plan and apply the workload foundation
-
-Create the workload plan:
+## 4. Apply the workload foundation
 
 ```sh
 ./ops/run-workflow.sh foundation plan foundation
 ```
 
-Review the sanitized resource-type counts. A first organization-backed deployment should create the
-project, thirteen APIs, one custom VPC/subnet, restricted Google routes and DNS, six firewall rules,
-seven runtime service accounts, invocation tags and conditional IAM, one immutable Artifact
-Registry repository, one preserved database disk and stateful instance group, snapshots, budgets,
-quotas, logging controls, notification channels, and monitoring policies.
+Review the sanitized counts. Stop for any unexpected deletion, replacement, state-forget, public
+IP, router/NAT, VPC connector, load balancer, Cloud Run workload, secret version, or
+service-account key. A deletion or replacement requires a fresh plan from a PR merged with the
+`allow-resource-deletion` label.
 
-Stop for any unexpected deletion, replacement, state-forget, public IP, router/NAT, VPC connector,
-load balancer, Cloud Run workload, secret version, or service-account key. The exact `master` commit
-must be the merge commit of one pull request carrying `allow-resource-deletion` at merge time. A
-later label change has no effect; merge another labeled pull request and create a fresh plan.
-
-Apply only the printed plan ID:
+Apply only the printed ID:
 
 ```sh
 ./ops/run-workflow.sh foundation apply foundation 1234567890-1
 ```
 
-The apply consumes that plan once and finishes by proving a zero-change convergence plan. Do not
-dispatch another apply when the workflow succeeds.
+Success includes a zero-change convergence plan. Do not repeat a successful apply.
 
-A manually created project can contain Google's empty `default` VPC. In that case, stop at the
-plan and use the reviewed two-PR adoption path: first set `adopt_default_network=true` and import
-only `google_compute_network.default_adoption`; then remove it in a separate
-`allow-resource-deletion` pull request. Never delete or import that network locally.
-
-Google references:
-[Terraform operations](https://cloud.google.com/docs/terraform/best-practices/operations) and
-[OpenTofu saved-plan apply](https://opentofu.org/docs/cli/commands/apply/).
+If a manually created project contains Google's empty `default` VPC, stop. Use the reviewed
+two-PR adoption and deletion path; never import or delete it locally.
 
 ## 5. Audit the deployed boundary
 
-Grant the active Google user the predefined read-only Security Reviewer role:
+Grant temporary read access:
 
 ```sh
 ./ops/foundation.sh grant-audit-access
 ```
 
-Allow IAM propagation, then run the independently repeatable audit:
+After IAM propagation:
 
 ```sh
 ./ops/foundation-audit.sh
 ```
 
-It fails at the first named invariant and prints no secret value. It verifies:
-
-- workload identity, labels, billing, every managed API, and only the reviewed Google-default or
-  dependency APIs beside them;
-- no unexpected primitive service-account role or user-managed service-account key;
-- no public or unexpected service-account Secret Manager principal;
-- all nine required secret containers, with each runtime restricted to its exact payload set;
-- create-only backup and read-only restore access on the recovery bucket;
-- exact conditional Cloud Run invocation classes and human-only initializer deployment, tag use,
-  and service-account impersonation;
-- one private VPC, only the restricted routes and six reviewed firewall rules;
-- no external address, router/NAT, forwarding rule, or other public/fixed-cost network product;
-- immutable Artifact Registry and the exact Cloud Run invocation-tag classes.
-
-Remove the temporary reviewer even when the audit fails:
+Always remove the grant, including after failure:
 
 ```sh
 ./ops/foundation.sh revoke-audit-access
 ```
 
-Expected: every line begins with `PASS`; the cleanup ends with
-`PASS temporary audit access removed`. A propagation-time `PERMISSION_DENIED` is a reason to
-retry the read-only audit, not to grant a broader role.
+Expected: every audit line begins with `PASS`; cleanup prints
+`PASS temporary audit access removed`. On `PERMISSION_DENIED`, wait and rerun only the audit.
+Do not grant a broader role.
 
-OpenTofu's post-apply convergence remains the authoritative exact-resource/IAM comparison. This
-audit covers high-impact independent invariants that are easy to miss in a plan summary.
+The audit checks project and billing identity, managed APIs, IAM and service-account keys, Secret
+Manager allowlists, backup/restore separation, Cloud Run invocation boundaries, the private
+network, firewall and route allowlists, absence of public or fixed-cost network products, and the
+immutable production registry.
 
-## 6. Enforce organization policies when an organization already exists
+## 6. Enforce the service-account organization policies
 
-Inspect these effective constraints in Google Cloud Console or with the
-[Organization Policy CLI](https://cloud.google.com/resource-manager/docs/organization-policy/creating-managing-policies):
+Derive the organization and active operator:
 
-- `iam.automaticIamGrantsForDefaultServiceAccounts`;
-- `iam.disableServiceAccountKeyCreation`;
-- `iam.disableServiceAccountKeyUpload`.
+```sh
+ORGANIZATION_ID="$(gcloud projects get-ancestors "$INFRA_WORKLOAD_PROJECT_ID" \
+  --filter='type=organization' --format='value(id)')"
+OPERATOR_PRINCIPAL="user:$(gcloud config get-value account 2>/dev/null)"
 
-For an organization-backed project, all three must be enforced. If one is missing, an organization
-administrator temporarily grants the named operator `roles/orgpolicy.policyAdmin`; the operator
-enforces only the missing constraint at the workload project; the administrator immediately removes
-the role. Keep those grant/enforce/revoke actions separate so the broad role is removed even after a
-failed policy update.
+printf 'Organization: %s\nOperator: %s\n' \
+  "$ORGANIZATION_ID" "$OPERATOR_PRINCIPAL"
+```
 
-For a standalone project, record that organization policies are unavailable. Rely on the
-code-managed default-account deprivileging, the zero-key audit above, short-lived Workload Identity
-Federation, and periodic drift audits. Do not create an organization solely for this deployment.
+If `Organization` is empty, record the standalone exception and continue to step 7. Do not create
+an organization solely for this deployment.
 
-This remains a deliberate manual security gate: the repository must not automate granting itself
-organization-wide policy authority.
+Inspect the effective policies:
 
-## 7. Remove one-time authority and publish the workload coordinate
+```sh
+for CONSTRAINT in \
+  iam.automaticIamGrantsForDefaultServiceAccounts \
+  iam.disableServiceAccountKeyCreation \
+  iam.disableServiceAccountKeyUpload; do
+  gcloud resource-manager org-policies describe "$CONSTRAINT" \
+    --project="$INFRA_WORKLOAD_PROJECT_ID" \
+    --effective \
+    --format='value(constraint,booleanPolicy.enforced)'
+done
+```
 
-Run only after:
+Expected: all three lines end in `True`. If they do, skip directly to step 7.
 
-- both protected roots converge;
-- step 5 passes;
-- the organization-policy decision is recorded;
-- [the private PostgreSQL host](./operate-postgresql-host.md) has one private address, no external
-  address, its preserved disk, and no running database container.
+If any policy is not enforced, an organization administrator grants the active operator temporary
+Organization Policy Administrator:
 
-Remove only the temporary Owner, Billing Account User, and parent Project Creator bindings, then
-publish the verified project ID:
+```sh
+gcloud organizations add-iam-policy-binding "$ORGANIZATION_ID" \
+  --member="$OPERATOR_PRINCIPAL" \
+  --role='roles/orgpolicy.policyAdmin' \
+  --condition=None
+```
+
+After IAM propagation, run only the missing policy commands:
+
+```sh
+gcloud resource-manager org-policies enable-enforce \
+  iam.automaticIamGrantsForDefaultServiceAccounts \
+  --project="$INFRA_WORKLOAD_PROJECT_ID"
+
+gcloud resource-manager org-policies enable-enforce \
+  iam.disableServiceAccountKeyCreation \
+  --project="$INFRA_WORKLOAD_PROJECT_ID"
+
+gcloud resource-manager org-policies enable-enforce \
+  iam.disableServiceAccountKeyUpload \
+  --project="$INFRA_WORKLOAD_PROJECT_ID"
+```
+
+Always remove the temporary organization-wide role, including after a failed policy command:
+
+```sh
+gcloud organizations remove-iam-policy-binding "$ORGANIZATION_ID" \
+  --member="$OPERATOR_PRINCIPAL" \
+  --role='roles/orgpolicy.policyAdmin' \
+  --condition=None
+```
+
+Repeat the inspection command until all three lines end in `True`. Policy propagation can take up
+to 15 minutes. Stop if the temporary role cannot be removed.
+
+## 7. Remove provisioning access
+
+Continue only after both roots converge, step 5 passes, the step 6 decision is recorded, and the
+[PostgreSQL host](./operate-postgresql-host.md) has one private address, no external address, its
+preserved disk, and no running database container.
 
 ```sh
 ./ops/foundation.sh finish
 ```
 
-Use the same explicit parent option as steps 1–2 when automatic parent selection was not used.
-Costs Manager and the plan identity's Billing Viewer intentionally remain.
+Use the same explicit parent option as steps 1-2. The command removes temporary Owner, Billing
+Account User, and Project Creator access, then publishes the workload project ID.
 
-Run the final audit with temporary read access:
+Run the final audit:
 
 ```sh
 ./ops/foundation.sh grant-audit-access
@@ -295,35 +240,35 @@ Run the final audit with temporary read access:
 ./ops/foundation.sh revoke-audit-access
 ```
 
-Expected: the final primitive-role check passes, all other audit checks remain green, and
-`GCP_WORKLOAD_PROJECT_ID` equals the selected project.
+Expected: every audit check passes and `GCP_WORKLOAD_PROJECT_ID` matches
+`INFRA_WORKLOAD_PROJECT_ID`.
 
-Record only the workflow URLs, opaque plan IDs/checksums, project number, timestamp, and named PASS
-results in the private deployment record. Do not record billing IDs, email addresses, IAM dumps,
-plan values, or secret material.
+Record only workflow URLs, opaque plan IDs/checksums, the project number, timestamp, and named
+`PASS` results. Never record billing IDs, email addresses, IAM dumps, plan values, or secrets.
 
-## Resume and failure map
+## Resume after a stop
 
-| Last result                                     | Resume                                                                                         |
-| ----------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Temporary grants complete, configuration absent | Step 2; `configure` safely replaces the protected document.                                    |
-| Configuration complete, no plan                 | Step 3.                                                                                        |
-| Plan succeeded, apply absent                    | Review and apply that exact unexpired ID; do not create another plan.                          |
-| Plan rejected by the deletion-label gate        | Merge another labeled PR, refresh `master`, and create a fresh plan; no usable plan ID exists. |
-| Apply failed                                    | Use its sanitized reason, merge the correction, refresh `master`, and create a new plan.       |
-| Apply succeeded                                 | Step 5; never repeat the successful apply.                                                     |
-| Audit permission denied                         | Confirm the exact Security Reviewer binding, wait for propagation, rerun only `audit`.         |
-| Audit failed                                    | Revoke audit access, correct through a reviewed plan/apply, then repeat step 5.                |
-| Finish partly completed                         | Rerun `finish`; it removes only bindings that are still present.                               |
-| Project exists but state does not own it        | Stop. Use the reviewed `adopt_existing_project` import path; never run local `tofu import`.    |
-| State owns a missing project                    | Stop all mutations and follow [state recovery](./state-recovery.md).                           |
-| Google reports quota or zone exhaustion         | Do not add capacity. Use the approved alternate zone/metric fix in code and create a new plan. |
+| Last result                              | Resume                                                                                         |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Temporary grants complete                | Step 2.                                                                                        |
+| Configuration complete                   | Step 3.                                                                                        |
+| Plan succeeded, apply absent             | Apply that exact unexpired ID.                                                                 |
+| Deletion-label gate rejected the plan    | Merge another labeled PR, refresh `master`, and create a fresh plan.                           |
+| Apply failed                             | Merge the correction, refresh `master`, and create a fresh plan.                               |
+| Apply succeeded                          | Step 5; do not repeat the apply.                                                               |
+| Audit permission denied                  | Wait for propagation and rerun only the audit.                                                 |
+| Audit failed                             | Revoke access, correct through reviewed plan/apply, then repeat step 5.                        |
+| Organization policy update failed        | Remove the temporary role, correct the error, then repeat step 6.                              |
+| `finish` partly completed                | Rerun `finish`; it removes only bindings still present.                                        |
+| Project exists but state does not own it | Use the reviewed `adopt_existing_project` path; never run local `tofu import`.                 |
+| State owns a missing project             | Stop all mutations and follow [state recovery](./state-recovery.md).                           |
+| Quota or zone exhausted                  | Change the reviewed zone or quota selection in code and create a fresh plan; do not add quota. |
 
 ## References
 
 - [Architecture decisions](../architecture.md)
 - [Google Cloud resource map](../google-cloud.md)
 - [Google project hierarchy](https://cloud.google.com/resource-manager/docs/cloud-platform-resource-hierarchy)
-- [Workload Identity Federation](https://cloud.google.com/iam/docs/workload-identity-federation)
-- [Secret Manager access control](https://cloud.google.com/secret-manager/docs/access-control)
-- [VPC firewall rules](https://cloud.google.com/firewall/docs/firewalls)
+- [Organization Policy CLI](https://cloud.google.com/sdk/gcloud/reference/resource-manager/org-policies)
+- [Service-account security](https://cloud.google.com/iam/docs/best-practices-service-accounts)
+- [OpenTofu saved-plan apply](https://opentofu.org/docs/cli/commands/apply/)
