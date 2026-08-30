@@ -14,7 +14,7 @@ manifest and private receipt are the desired-state and rollback records.
 
 The bootstrap root now defines the resources inside a stable management project: protected EU state,
 backup, and receipt buckets; managed-folder state boundaries; four keyless automation identities and
-GitHub OIDC providers; exact IAM; seven live secret containers plus two empty retirement candidates; required APIs; and targeted
+GitHub OIDC providers; exact IAM; seven protected secret containers; required APIs; and targeted
 Data Access audit logging. Merging the code creates nothing. The project, billing link, initial APIs,
 private state-bucket seed and import, first apply, GitHub environment protection, optional
 organization policies, and temporary-access removal remain explicit human bootstrap actions.

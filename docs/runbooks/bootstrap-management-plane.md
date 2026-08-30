@@ -576,7 +576,7 @@ test "${BOOTSTRAP_PLAN_EXIT}" -eq 2
 
 Expected safe result: validation and all four mocked tests pass; the state list contains
 `google_storage_bucket.state` and no other managed address; and the summary contains one `update` for
-`google_storage_bucket`, plus 114 creates across the declared inventory. It prints no resource
+`google_storage_bucket`, plus 108 creates across the declared inventory. It prints no resource
 address, project ID, email, token, state value, or payload. Exit code `2` confirms that the saved plan
 contains changes.
 The full binary plan and its mode-`0600` non-secret custody record remain outside the repository;
@@ -698,8 +698,7 @@ gcloud iam service-accounts list \
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Expected safe result: seven live IDs, the two empty DSN retirement candidates, and exactly four
-`infra-*` service-account emails. Do not add a version to either DSN container.
+Expected safe result: seven secret IDs and exactly four `infra-*` service-account emails.
 
 ## 10. Verify the remote backend and absence of local state
 

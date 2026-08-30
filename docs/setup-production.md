@@ -105,9 +105,6 @@ shell. Host, port, user, database, and TLS mode are derived from reviewed infras
 password is secret. The private VPC protects the non-TLS database path. A hybrid, external, or
 differently trusted network requires a reviewed PostgreSQL TLS design first.
 
-Do not add a version to either legacy `*-postgres-dsn` retirement candidate. The foundation audit
-requires both containers to remain empty until their separately gated deletion.
-
 Create the seven immutable versions in dependency order. The script prompts twice with terminal echo
 disabled and prints only safe IDs and numeric versions:
 

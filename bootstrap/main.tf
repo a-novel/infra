@@ -72,7 +72,7 @@ locals {
     }
   }
 
-  active_secret_definitions = {
+  secret_definitions = {
     production-authentication-postgres-password = {
       contract = "POSTGRES_PASSWORD"
       purpose  = "Authentication database owner password"
@@ -102,24 +102,6 @@ locals {
       purpose  = "JSON Keys database read-only backup password"
     }
   }
-
-  # These empty containers are disarmed before their deletion plan is reviewed.
-  # Tracked in https://github.com/a-novel/infra/issues/53
-  retiring_secret_definitions = {
-    production-authentication-postgres-dsn = {
-      contract = "RETIRED"
-      purpose  = "Retired Authentication PostgreSQL connection string"
-    }
-    production-json-keys-postgres-dsn = {
-      contract = "RETIRED"
-      purpose  = "Retired JSON Keys PostgreSQL connection string"
-    }
-  }
-
-  secret_definitions = merge(
-    local.active_secret_definitions,
-    local.retiring_secret_definitions,
-  )
 
   audited_services = toset([
     # Service Account Credentials inherits IAM's Data Access configuration and
