@@ -35,12 +35,10 @@
   "secret_versions": {
     "authentication_postgres_password": 1,
     "authentication_postgres_backup_password": 1,
-    "authentication_postgres_dsn": 1,
     "authentication_smtp_password": 1,
     "authentication_super_admin_password": 1,
     "json_keys_postgres_password": 1,
     "json_keys_postgres_backup_password": 1,
-    "json_keys_postgres_dsn": 1,
     "json_keys_app_master_key": 1
   }
 }

@@ -161,7 +161,7 @@ variable "application_release" {
       })
       revision = string
       secrets = object({
-        postgres_dsn_version         = number
+        postgres_password_version    = number
         smtp_password_version        = number
         super_admin_password_version = number
       })
@@ -183,8 +183,8 @@ variable "application_release" {
       })
       revision = string
       secrets = object({
-        app_master_key_version = number
-        postgres_dsn_version   = number
+        app_master_key_version    = number
+        postgres_password_version = number
       })
     })
   })
@@ -194,11 +194,11 @@ variable "application_release" {
   validation {
     condition = var.application_release == null ? true : alltrue([
       for version in [
-        var.application_release.authentication.secrets.postgres_dsn_version,
+        var.application_release.authentication.secrets.postgres_password_version,
         var.application_release.authentication.secrets.smtp_password_version,
         var.application_release.authentication.secrets.super_admin_password_version,
         var.application_release.json_keys.secrets.app_master_key_version,
-        var.application_release.json_keys.secrets.postgres_dsn_version,
+        var.application_release.json_keys.secrets.postgres_password_version,
       ] : version >= 1 && floor(version) == version
     ])
     error_message = "Every application secret reference must be a positive numeric Secret Manager version."

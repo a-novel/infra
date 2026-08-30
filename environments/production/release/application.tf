@@ -8,10 +8,22 @@ locals {
     "service-json-keys/jobs/rotatekeys"      = var.application_release.json_keys.images.rotate_keys
   }
 
+  # The database host exposes no TLS listener. Private VPC routing, caller
+  # tags, container egress controls, and database credentials form this boundary.
+  application_database_environment = {
+    for key, contract in local.database_contracts : key => {
+      POSTGRES_HOST        = var.database_private_ip
+      POSTGRES_PORT        = tostring(contract.port)
+      POSTGRES_USER        = contract.owner
+      POSTGRES_DATABASE    = contract.database_name
+      POSTGRES_TLS_ENABLED = "false"
+    }
+  }
+
   declared_application_jobs = var.application_release == null ? {} : {
     authentication_migrations = {
       component        = "authentication"
-      environment      = {}
+      environment      = local.application_database_environment.authentication
       image            = var.application_release.authentication.images.migrations
       invocation_class = "release"
       max_retries      = 0
@@ -20,16 +32,16 @@ locals {
       role             = "migrations"
       runtime_identity = var.runtime_service_accounts.authentication
       secrets = {
-        POSTGRES_DSN = {
-          secret  = "production-authentication-postgres-dsn"
-          version = var.application_release.authentication.secrets.postgres_dsn_version
+        POSTGRES_PASSWORD = {
+          secret  = "production-authentication-postgres-password"
+          version = var.application_release.authentication.secrets.postgres_password_version
         }
       }
       timeout = "600s"
     }
     json_keys_migrations = {
       component        = "json-keys"
-      environment      = {}
+      environment      = local.application_database_environment.json_keys
       image            = var.application_release.json_keys.images.migrations
       invocation_class = "release"
       max_retries      = 0
@@ -38,16 +50,16 @@ locals {
       role             = "migrations"
       runtime_identity = var.runtime_service_accounts.json_keys
       secrets = {
-        POSTGRES_DSN = {
-          secret  = "production-json-keys-postgres-dsn"
-          version = var.application_release.json_keys.secrets.postgres_dsn_version
+        POSTGRES_PASSWORD = {
+          secret  = "production-json-keys-postgres-password"
+          version = var.application_release.json_keys.secrets.postgres_password_version
         }
       }
       timeout = "600s"
     }
     json_keys_rotate = {
       component        = "json-keys"
-      environment      = {}
+      environment      = local.application_database_environment.json_keys
       image            = var.application_release.json_keys.images.rotate_keys
       invocation_class = "scheduled"
       max_retries      = 1
@@ -60,9 +72,9 @@ locals {
           secret  = "production-json-keys-app-master-key"
           version = var.application_release.json_keys.secrets.app_master_key_version
         }
-        POSTGRES_DSN = {
-          secret  = "production-json-keys-postgres-dsn"
-          version = var.application_release.json_keys.secrets.postgres_dsn_version
+        POSTGRES_PASSWORD = {
+          secret  = "production-json-keys-postgres-password"
+          version = var.application_release.json_keys.secrets.postgres_password_version
         }
       }
       timeout = "300s"
@@ -264,6 +276,15 @@ resource "google_cloud_run_v2_service" "json_keys" {
         value = "20"
       }
 
+      dynamic "env" {
+        for_each = local.application_database_environment.json_keys
+
+        content {
+          name  = env.key
+          value = env.value
+        }
+      }
+
       env {
         name = "APP_MASTER_KEY"
 
@@ -276,12 +297,12 @@ resource "google_cloud_run_v2_service" "json_keys" {
       }
 
       env {
-        name = "POSTGRES_DSN"
+        name = "POSTGRES_PASSWORD"
 
         value_source {
           secret_key_ref {
-            secret  = "projects/${var.management_project_id}/secrets/production-json-keys-postgres-dsn"
-            version = tostring(var.application_release.json_keys.secrets.postgres_dsn_version)
+            secret  = "projects/${var.management_project_id}/secrets/production-json-keys-postgres-password"
+            version = tostring(var.application_release.json_keys.secrets.postgres_password_version)
           }
         }
       }
@@ -407,6 +428,15 @@ resource "google_cloud_run_v2_service" "authentication" {
         value = "20"
       }
 
+      dynamic "env" {
+        for_each = local.application_database_environment.authentication
+
+        content {
+          name  = env.key
+          value = env.value
+        }
+      }
+
       env {
         name  = "REST_PORT"
         value = "8080"
@@ -468,12 +498,12 @@ resource "google_cloud_run_v2_service" "authentication" {
       }
 
       env {
-        name = "POSTGRES_DSN"
+        name = "POSTGRES_PASSWORD"
 
         value_source {
           secret_key_ref {
-            secret  = "projects/${var.management_project_id}/secrets/production-authentication-postgres-dsn"
-            version = tostring(var.application_release.authentication.secrets.postgres_dsn_version)
+            secret  = "projects/${var.management_project_id}/secrets/production-authentication-postgres-password"
+            version = tostring(var.application_release.authentication.secrets.postgres_password_version)
           }
         }
       }

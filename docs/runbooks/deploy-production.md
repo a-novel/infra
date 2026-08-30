@@ -49,7 +49,7 @@ One globally serialized workflow performs this fixed graph:
 
 1. verify all eight GHCR images, exact digests, producer attestations, family SemVer, and PostgreSQL
    major before obtaining Google credentials;
-2. verify nine numeric secret versions, three fully granted quota preferences, a recent scheduled
+2. verify seven numeric secret versions, three fully granted quota preferences, a recent scheduled
    disk snapshot, and fresh logical backups for both databases;
 3. copy the exact digests into regional Artifact Registry and verify the destination digests;
 4. restart the stateful PostgreSQL host with receipt-bound images and secret versions;
@@ -225,9 +225,11 @@ select_secret_version() {
   local secret_id="$1"
   local enabled_versions version_count selected_version
 
-  enabled_versions="$(gcloud secrets versions list "$secret_id" \
-    --project="$MANAGEMENT_PROJECT_ID" --filter='state=ENABLED' \
-    --format='value(name.basename())')"
+  enabled_versions="$(
+    gcloud secrets versions list "$secret_id" \
+      --project="$MANAGEMENT_PROJECT_ID" --format=json |
+      jq --raw-output '.[] | select(.state == "ENABLED") | .name | split("/") | last'
+  )"
   version_count="$(printf '%s\n' "$enabled_versions" | grep -c . || true)"
 
   case "$version_count" in
@@ -235,8 +237,13 @@ select_secret_version() {
     1) selected_version="$enabled_versions" ;;
     *)
       gcloud secrets versions list "$secret_id" \
-        --project="$MANAGEMENT_PROJECT_ID" --filter='state=ENABLED' \
-        --format='table(name.basename(),state,createTime)' >&2
+        --project="$MANAGEMENT_PROJECT_ID" --format=json |
+        jq --raw-output '
+          ["VERSION", "STATE", "CREATED"],
+          (.[] | select(.state == "ENABLED") |
+            [(.name | split("/") | last), .state, .createTime])
+          | @tsv
+        ' >&2
       printf 'Enabled numeric version for %s: ' "$secret_id" >&2
       IFS= read -r selected_version
       ;;
@@ -250,12 +257,10 @@ select_secret_version() {
 
 AUTH_POSTGRES_PASSWORD_VERSION="$(select_secret_version production-authentication-postgres-password)"
 AUTH_POSTGRES_BACKUP_PASSWORD_VERSION="$(select_secret_version production-authentication-postgres-backup-password)"
-AUTH_POSTGRES_DSN_VERSION="$(select_secret_version production-authentication-postgres-dsn)"
 AUTH_SMTP_PASSWORD_VERSION="$(select_secret_version production-authentication-smtp-sender-password)"
 AUTH_SUPER_ADMIN_PASSWORD_VERSION="$(select_secret_version production-authentication-super-admin-password)"
 JSON_POSTGRES_PASSWORD_VERSION="$(select_secret_version production-json-keys-postgres-password)"
 JSON_POSTGRES_BACKUP_PASSWORD_VERSION="$(select_secret_version production-json-keys-postgres-backup-password)"
-JSON_POSTGRES_DSN_VERSION="$(select_secret_version production-json-keys-postgres-dsn)"
 JSON_APP_MASTER_KEY_VERSION="$(select_secret_version production-json-keys-app-master-key)"
 unset -f select_secret_version
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
@@ -298,11 +303,11 @@ jq -n \
   --arg smtp_name "$SMTP_SENDER_NAME" \
   --argjson ap "$AUTH_POSTGRES_PASSWORD_VERSION" \
   --argjson ab "$AUTH_POSTGRES_BACKUP_PASSWORD_VERSION" \
-  --argjson ad "$AUTH_POSTGRES_DSN_VERSION" --argjson as "$AUTH_SMTP_PASSWORD_VERSION" \
+  --argjson as "$AUTH_SMTP_PASSWORD_VERSION" \
   --argjson aa "$AUTH_SUPER_ADMIN_PASSWORD_VERSION" \
   --argjson jp "$JSON_POSTGRES_PASSWORD_VERSION" \
   --argjson jb "$JSON_POSTGRES_BACKUP_PASSWORD_VERSION" \
-  --argjson jd "$JSON_POSTGRES_DSN_VERSION" --argjson jm "$JSON_APP_MASTER_KEY_VERSION" \
+  --argjson jm "$JSON_APP_MASTER_KEY_VERSION" \
   '{
     management_project_id: $management, workload_project_id: $workload,
     region: $region, database_zone: $zone, backup_bucket_name: $backup,
@@ -328,17 +333,15 @@ jq -n \
     secret_versions: {
       authentication_postgres_password: $ap,
       authentication_postgres_backup_password: $ab,
-      authentication_postgres_dsn: $ad,
       authentication_smtp_password: $as,
       authentication_super_admin_password: $aa,
       json_keys_postgres_password: $jp,
       json_keys_postgres_backup_password: $jb,
-      json_keys_postgres_dsn: $jd,
       json_keys_app_master_key: $jm
     }
   }' >"$RELEASE_CONFIG_FILE"
 
-jq -e '(.cloud_run_invocation_tags.values | length == 5) and (.secret_versions | length == 9)' \
+jq -e '(.cloud_run_invocation_tags.values | length == 5) and (.secret_versions | length == 7)' \
   "$RELEASE_CONFIG_FILE" >/dev/null
 gh secret set RELEASE_CONFIG_JSON --repo "$REPOSITORY" --env production-release \
   <"$RELEASE_CONFIG_FILE"
@@ -508,12 +511,10 @@ while IFS=' ' read -r secret version; do
 done <<EOF
 production-authentication-postgres-password $AUTH_POSTGRES_PASSWORD_VERSION
 production-authentication-postgres-backup-password $AUTH_POSTGRES_BACKUP_PASSWORD_VERSION
-production-authentication-postgres-dsn $AUTH_POSTGRES_DSN_VERSION
 production-authentication-smtp-sender-password $AUTH_SMTP_PASSWORD_VERSION
 production-authentication-super-admin-password $AUTH_SUPER_ADMIN_PASSWORD_VERSION
 production-json-keys-postgres-password $JSON_POSTGRES_PASSWORD_VERSION
 production-json-keys-postgres-backup-password $JSON_POSTGRES_BACKUP_PASSWORD_VERSION
-production-json-keys-postgres-dsn $JSON_POSTGRES_DSN_VERSION
 production-json-keys-app-master-key $JSON_APP_MASTER_KEY_VERSION
 EOF
 
@@ -562,15 +563,15 @@ sensitive scratch directory, record non-secret incident metadata, revoke exposed
 
 ## 8. Restore an exact prior receipt
 
-Rollback is for a bad application release with healthy data. Choose the unpadded `run-id-attempt`
-from a prior private success object or Actions run:
+Rollback is for a bad application release with healthy data. Set `TARGET_RECEIPT` in the session
+to the exact unpadded `run-id-attempt` from a prior private success object or Actions run:
 
 ```zsh
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 gcloud storage ls "gs://${RECEIPT_BUCKET_NAME}/production/success/*.json"
-TARGET_RECEIPT=''
+: "${TARGET_RECEIPT:?Set TARGET_RECEIPT to an exact run-id-attempt}"
 [[ "$TARGET_RECEIPT" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```

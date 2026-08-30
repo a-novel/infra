@@ -36,12 +36,10 @@ const requiredConfigKeys = [
 const requiredSecretVersions = [
   "authentication_postgres_password",
   "authentication_postgres_backup_password",
-  "authentication_postgres_dsn",
   "authentication_smtp_password",
   "authentication_super_admin_password",
   "json_keys_postgres_password",
   "json_keys_postgres_backup_password",
-  "json_keys_postgres_dsn",
   "json_keys_app_master_key",
 ];
 
@@ -222,7 +220,7 @@ function applicationRelease(
       },
       revision: revisions.authentication,
       secrets: {
-        postgres_dsn_version: versions.authentication_postgres_dsn,
+        postgres_password_version: versions.authentication_postgres_password,
         smtp_password_version: versions.authentication_smtp_password,
         super_admin_password_version:
           versions.authentication_super_admin_password,
@@ -242,7 +240,7 @@ function applicationRelease(
       revision: revisions.jsonKeys,
       secrets: {
         app_master_key_version: versions.json_keys_app_master_key,
-        postgres_dsn_version: versions.json_keys_postgres_dsn,
+        postgres_password_version: versions.json_keys_postgres_password,
       },
     },
   };
@@ -423,10 +421,6 @@ export async function compileRelease({
 
   let checkedSecretVersions = [
     [
-      "production-authentication-postgres-dsn",
-      config.secret_versions.authentication_postgres_dsn,
-    ],
-    [
       "production-authentication-postgres-password",
       config.secret_versions.authentication_postgres_password,
     ],
@@ -447,10 +441,6 @@ export async function compileRelease({
       config.secret_versions.json_keys_app_master_key,
     ],
     [
-      "production-json-keys-postgres-dsn",
-      config.secret_versions.json_keys_postgres_dsn,
-    ],
-    [
       "production-json-keys-postgres-password",
       config.secret_versions.json_keys_postgres_password,
     ],
@@ -465,12 +455,8 @@ export async function compileRelease({
     checkedSecretVersions = targetApplication
       ? [
           [
-            "production-authentication-postgres-dsn",
-            targetApplication.authentication.secrets.postgres_dsn_version,
-          ],
-          [
             "production-authentication-postgres-password",
-            targetDatabase.authenticationPasswordVersion,
+            targetApplication.authentication.secrets.postgres_password_version,
           ],
           [
             "production-authentication-postgres-backup-password",
@@ -490,12 +476,8 @@ export async function compileRelease({
             targetApplication.json_keys.secrets.app_master_key_version,
           ],
           [
-            "production-json-keys-postgres-dsn",
-            targetApplication.json_keys.secrets.postgres_dsn_version,
-          ],
-          [
             "production-json-keys-postgres-password",
-            targetDatabase.jsonKeysPasswordVersion,
+            targetApplication.json_keys.secrets.postgres_password_version,
           ],
           [
             "production-json-keys-postgres-backup-password",

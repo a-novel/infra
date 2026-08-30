@@ -163,6 +163,27 @@ test("release compilation emits candidate, active, and rollback inputs", async (
   );
   assert.equal(result.activeTfvars.application_release.rollout.phase, "active");
   assert.equal(result.rollbackTfvars.application_release, null);
+  assert.deepEqual(result.release.cloud.secretVersions, [
+    ["production-authentication-postgres-password", 1],
+    ["production-authentication-postgres-backup-password", 1],
+    ["production-authentication-smtp-sender-password", 1],
+    ["production-authentication-super-admin-password", 1],
+    ["production-json-keys-app-master-key", 1],
+    ["production-json-keys-postgres-password", 1],
+    ["production-json-keys-postgres-backup-password", 1],
+  ]);
+  assert.deepEqual(
+    result.activeTfvars.application_release.authentication.secrets,
+    {
+      postgres_password_version: 1,
+      smtp_password_version: 1,
+      super_admin_password_version: 1,
+    },
+  );
+  assert.deepEqual(result.activeTfvars.application_release.json_keys.secrets, {
+    app_master_key_version: 1,
+    postgres_password_version: 1,
+  });
   assert.match(
     result.release.database.jsonKeysImage,
     /^europe-west1-docker\.pkg\.dev\/agora-production-test\//,
@@ -418,6 +439,15 @@ test("manual rollback checks the latest database before restoring an older targe
     rollback.rollbackTfvars.database_releases,
     target.activeTfvars.database_releases,
   );
+  assert.deepEqual(rollback.release.cloud.secretVersions, [
+    ["production-authentication-postgres-password", 1],
+    ["production-authentication-postgres-backup-password", 1],
+    ["production-authentication-smtp-sender-password", 1],
+    ["production-authentication-super-admin-password", 1],
+    ["production-json-keys-app-master-key", 1],
+    ["production-json-keys-postgres-password", 1],
+    ["production-json-keys-postgres-backup-password", 1],
+  ]);
   await rm(scratch, { recursive: true });
 });
 
@@ -565,6 +595,14 @@ test("recovery compilation keeps services absent until exact data restore", asyn
   assert.equal(active.workload_project_id, "agora-recovery-test");
   assert.equal(active.recovery_source_project_id, "agora-production-test");
   assert.equal(active.recovery_source_database_ip, "10.20.0.2");
+  assert.equal(
+    active.application_release.authentication.secrets.postgres_password_version,
+    receipt.database.authenticationPasswordVersion,
+  );
+  assert.equal(
+    active.application_release.json_keys.secrets.postgres_password_version,
+    receipt.database.jsonKeysPasswordVersion,
+  );
   assert.equal(active.cloud_run_invocation_tags.key, "tagKeys/300000000001");
   assert.match(
     active.application_release.authentication.images.rest,
