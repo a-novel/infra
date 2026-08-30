@@ -262,21 +262,20 @@ printf 'Sending domain: %s\n' "$sender_domain"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Use [Add or rotate a secret version](./secret-versions.md) to write the password through hidden
-double entry to `production-authentication-smtp-sender-password`. Record only its numeric Secret
-Manager version. Stop here; do not construct or upload `RELEASE_CONFIG_JSON` from this runbook.
+## First-run handoff
 
-When following [Deploy and roll back production](./deploy-production.md), run its sections in order:
+Do not open the deployment runbook yet. Continue to
+[Initial population](./secret-versions.md#initial-population), prepare all nine payloads, and run its
+single dependency-ordered command. It includes `production-authentication-smtp-sender-password` and
+prompts for every payload through hidden double entry.
 
-1. [Select and verify exact secret versions](./deploy-production.md#3-select-and-verify-exact-secret-versions)
-   assigns the enabled numeric SMTP version to `AUTH_SMTP_PASSWORD_VERSION` without reading its
-   payload.
-2. [Store the protected non-payload release configuration](./deploy-production.md#4-store-the-protected-non-payload-release-configuration)
-   reads the four non-secret SMTP values from `.envrc`, builds the complete temporary JSON, and
-   uploads it as the protected GitHub environment secret.
+Only advance after nine `Created <secret> version <number>` lines. When resuming a partial
+population, inspect version metadata and pass only the remaining IDs; do not create duplicates to
+reproduce terminal output.
 
-Run both command blocks without manually editing the JSON. Only the numeric version enters the
-document; the SMTP password never does.
+[Deploy and roll back production](./deploy-production.md) then selects those numeric versions and
+constructs `RELEASE_CONFIG_JSON` automatically. The operator never edits that document, and the
+SMTP password payload never enters it.
 
 ## 5. Validate without exposing the credential
 

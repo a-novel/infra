@@ -66,6 +66,9 @@ another production command is dispatched.
 |    9 | [Run a clean-room recovery drill](./disaster-recovery.md).                                                   | Private replacement passes health and RPO/RTO; temporary access is removed; deletion-gated cleanup reaches `DELETE_REQUESTED`; cost is recorded privately.                                   |
 |   10 | [Archive the legacy infrastructure repository](./archive-legacy-infrastructure.md).                          | Legacy credentials and Actions are disabled, open work is drained, and only `a-novel/agora-infra` is archived.                                                                               |
 
+Steps 4–6 are a hard sequence: after SMTP, stop and populate all nine secret versions. The
+deployment selector reads existing version metadata; it is not a fallback secret-creation step.
+
 Do not advance on a partial PASS. A successful workflow is not rerun merely to recreate terminal
 output; record its URL and continue.
 
