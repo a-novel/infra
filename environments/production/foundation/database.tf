@@ -61,11 +61,7 @@ resource "google_compute_disk" "database" {
 
   labels = merge(local.labels, { role = "database-data" })
 
-  deletion_policy = "PREVENT"
-
-  lifecycle {
-    prevent_destroy = true
-  }
+  deletion_policy = "DELETE"
 
   depends_on = [google_project_service.workload["compute.googleapis.com"]]
 }
@@ -208,11 +204,9 @@ resource "google_compute_instance_group_manager" "database" {
 
   wait_for_instances        = true
   wait_for_instances_status = "STABLE"
-  deletion_policy           = "PREVENT"
+  deletion_policy           = "DELETE"
 
   lifecycle {
-    prevent_destroy = true
-
     # Routine deployment patches only allInstancesConfig and applies it with a
     # restart-only ceiling. Foundation still owns every other MIG property.
     ignore_changes = [all_instances_config]

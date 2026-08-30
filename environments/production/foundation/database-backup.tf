@@ -28,10 +28,6 @@ resource "google_compute_resource_policy" "database_snapshots" {
     }
   }
 
-  lifecycle {
-    prevent_destroy = true
-  }
-
   depends_on = [google_project_service.workload["compute.googleapis.com"]]
 }
 

@@ -45,12 +45,14 @@ resource "google_project" "workload" {
   # The provider deletes Google's default VPC while creating a project. An
   # imported project needs the explicit recovery resource declared separately.
   auto_create_network = false
-  deletion_policy     = "PREVENT"
-  labels              = local.labels
+  # The provider enforces this policy from prior state during deletion, so the
+  # operator applies it before switching the project ID. Destructive plan
+  # custody still requires approval on the exact merge commit. Tracked in
+  # https://github.com/a-novel/.github/issues/289
+  deletion_policy = "DELETE"
+  labels          = local.labels
 
   lifecycle {
-    prevent_destroy = true
-
     precondition {
       condition     = var.organization_id == null || var.folder_id == null
       error_message = "Set at most one of organization_id or folder_id."

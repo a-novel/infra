@@ -55,9 +55,5 @@ resource "google_monitoring_alert_policy" "postgres_recovery_job_failure" {
   }
 
   notification_channels = [google_monitoring_notification_channel.operations_email[0].name]
-  deletion_policy       = "PREVENT"
-
-  lifecycle {
-    prevent_destroy = true
-  }
+  deletion_policy       = "DELETE"
 }
