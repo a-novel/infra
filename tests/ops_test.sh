@@ -64,11 +64,10 @@ grep -Fq 'INFRA_MANAGEMENT_PROJECT_ID is missing or invalid' \
     "${TEMP_DIR}/operator-malformed.err"
 
 set +e
-(
-    # shellcheck source=../.envrc.example
-    . "${REPOSITORY_ROOT}/.envrc.example"
-    "${REPOSITORY_ROOT}/ops/verify-operator-env.sh"
-) >"${TEMP_DIR}/operator-placeholder.out" 2>"${TEMP_DIR}/operator-placeholder.err"
+INFRA_MANAGEMENT_PROJECT_ID=replace-with-management-project-id \
+    INFRA_WORKLOAD_PROJECT_ID=replace-with-workload-project-id \
+    "${REPOSITORY_ROOT}/ops/verify-operator-env.sh" \
+    >"${TEMP_DIR}/operator-placeholder.out" 2>"${TEMP_DIR}/operator-placeholder.err"
 PLACEHOLDER_OPERATOR_ENV_CODE=$?
 set -e
 assert_equal "${PLACEHOLDER_OPERATOR_ENV_CODE}" 64
