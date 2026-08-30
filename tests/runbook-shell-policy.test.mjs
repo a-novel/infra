@@ -9,6 +9,7 @@ const repositoryRoot = path.resolve(testDirectory, "..");
 const runbookDirectory = path.join(repositoryRoot, "docs/runbooks");
 const stopHandler =
   "} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'";
+const directSessionAssignment = /^export SMTP_DKIM_CNAME_RECORDS='[^'\n]+'$/;
 
 const runbookNames = (await readdir(runbookDirectory))
   .filter((name) => name.endsWith(".md"))
@@ -43,6 +44,10 @@ test("local runbook commands are scoped for the configured zsh session", () => {
     assert.doesNotMatch(content, /set -euo pipefail|set \+x/);
     for (const match of content.matchAll(/```zsh\n([\s\S]*?)\n```/g)) {
       zshBlockCount += 1;
+      if (directSessionAssignment.test(match[1])) {
+        continue;
+      }
+
       assert.ok(
         match[1].startsWith(
           "() {\nsetopt local_options err_return pipe_fail\nunsetopt err_exit nounset xtrace\n",
@@ -80,6 +85,12 @@ test("hosted SMTP operator inputs are parameterized", () => {
   ]) {
     assert.match(smtpRunbook, new RegExp(`\\b${variable}\\b`));
   }
+
+  assert.match(smtpRunbook, /^export SMTP_DKIM_CNAME_RECORDS='[^']+'$/m);
+  assert.doesNotMatch(
+    smtpRunbook,
+    /IFS=\s*read\s+-r\s+SMTP_DKIM_CNAME_RECORDS/,
+  );
 
   assert.doesNotMatch(
     smtpRunbook,
