@@ -99,11 +99,7 @@ resource "google_monitoring_notification_channel" "cost_email" {
   force_delete = false
   labels       = { email_address = var.cost_alert_email }
 
-  deletion_policy = "PREVENT"
-
-  lifecycle {
-    prevent_destroy = true
-  }
+  deletion_policy = "DELETE"
 
   depends_on = [google_project_service.workload["monitoring.googleapis.com"]]
 }
@@ -120,11 +116,7 @@ resource "google_monitoring_notification_channel" "operations_email" {
   force_delete = false
   labels       = { email_address = var.operations_alert_email }
 
-  deletion_policy = "PREVENT"
-
-  lifecycle {
-    prevent_destroy = true
-  }
+  deletion_policy = "DELETE"
 
   depends_on = [google_project_service.workload["monitoring.googleapis.com"]]
 }
@@ -201,11 +193,7 @@ resource "google_billing_budget" "workload" {
     ])
   }
 
-  deletion_policy = "PREVENT"
-
-  lifecycle {
-    prevent_destroy = true
-  }
+  deletion_policy = "DELETE"
 }
 
 resource "google_logging_project_bucket_config" "default" {
@@ -216,11 +204,7 @@ resource "google_logging_project_bucket_config" "default" {
   retention_days   = 30
   enable_analytics = false
   locked           = false
-  deletion_policy  = "PREVENT"
-
-  lifecycle {
-    prevent_destroy = true
-  }
+  deletion_policy  = "DELETE"
 
   depends_on = [google_project_service.workload["logging.googleapis.com"]]
 }

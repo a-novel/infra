@@ -9,6 +9,12 @@ in `europe-west1`. Foundation also owns recovery identities, bucket IAM, eight n
 and separate human cost/operations channels; the existing drift workflow owns the bounded public
 health check, while scale-to-zero jobs remain release resources.
 
+> **Temporary project-replacement window:** Provider and lifecycle deletion guards are disabled
+> across this root for the pre-launch workload rebuild. Destructive plan custody and apply still
+> require the exact merge commit's maintainer-added `allow-resource-deletion` label. The inventory
+> below describes the required steady state. Tracked in
+> [a-novel/.github#289](https://github.com/a-novel/.github/issues/289).
+
 ## State and authority
 
 The protected foundation identity uses the `foundation/` object boundary in the management state

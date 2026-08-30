@@ -55,10 +55,6 @@ resource "google_compute_network" "production" {
   mtu                             = 1460
   routing_mode                    = "REGIONAL"
 
-  lifecycle {
-    prevent_destroy = true
-  }
-
   depends_on = [google_project_service.workload["compute.googleapis.com"]]
 }
 
@@ -71,10 +67,6 @@ resource "google_compute_subnetwork" "production" {
   network                  = google_compute_network.production.id
   private_ip_google_access = true
   stack_type               = "IPV4_ONLY"
-
-  lifecycle {
-    prevent_destroy = true
-  }
 }
 
 # Deleting the catch-all route removes an accidental public path. These two
@@ -182,16 +174,12 @@ resource "google_dns_managed_zone" "googleapis" {
   description     = "Resolve supported Google APIs through the restricted.googleapis.com VIP."
   visibility      = "private"
   force_destroy   = false
-  deletion_policy = "PREVENT"
+  deletion_policy = "DELETE"
 
   private_visibility_config {
     networks {
       network_url = google_compute_network.production.id
     }
-  }
-
-  lifecycle {
-    prevent_destroy = true
   }
 
   depends_on = [google_project_service.workload["dns.googleapis.com"]]
@@ -225,16 +213,12 @@ resource "google_dns_managed_zone" "private_google_domain" {
   description     = "Resolve ${each.value} through the restricted Google API VIP."
   visibility      = "private"
   force_destroy   = false
-  deletion_policy = "PREVENT"
+  deletion_policy = "DELETE"
 
   private_visibility_config {
     networks {
       network_url = google_compute_network.production.id
     }
-  }
-
-  lifecycle {
-    prevent_destroy = true
   }
 
   depends_on = [google_project_service.workload["dns.googleapis.com"]]

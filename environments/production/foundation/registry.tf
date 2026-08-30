@@ -44,11 +44,7 @@ resource "google_artifact_registry_repository" "production" {
     }
   }
 
-  deletion_policy = "PREVENT"
-
-  lifecycle {
-    prevent_destroy = true
-  }
+  deletion_policy = "DELETE"
 
   depends_on = [google_project_service.workload["artifactregistry.googleapis.com"]]
 }

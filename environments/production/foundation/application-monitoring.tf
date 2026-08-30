@@ -49,11 +49,7 @@ resource "google_monitoring_alert_policy" "authentication_error_rate" {
   }
 
   notification_channels = [google_monitoring_notification_channel.operations_email[0].name]
-  deletion_policy       = "PREVENT"
-
-  lifecycle {
-    prevent_destroy = true
-  }
+  deletion_policy       = "DELETE"
 }
 
 # One native Cloud Run metric covers every declared application job failure.
@@ -114,9 +110,5 @@ resource "google_monitoring_alert_policy" "application_jobs_unhealthy" {
   }
 
   notification_channels = [google_monitoring_notification_channel.operations_email[0].name]
-  deletion_policy       = "PREVENT"
-
-  lifecycle {
-    prevent_destroy = true
-  }
+  deletion_policy       = "DELETE"
 }

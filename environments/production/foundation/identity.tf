@@ -191,10 +191,6 @@ resource "google_project_iam_custom_role" "foundation_project_metadata" {
     "resourcemanager.projects.update",
   ]
 
-  lifecycle {
-    prevent_destroy = true
-  }
-
   depends_on = [google_project_service.workload["iam.googleapis.com"]]
 }
 
@@ -260,11 +256,7 @@ resource "google_service_account" "runtime" {
   display_name = each.value.display_name
   description  = "Keyless production identity for the ${replace(each.key, "_", " ")} boundary."
 
-  deletion_policy = "PREVENT"
-
-  lifecycle {
-    prevent_destroy = true
-  }
+  deletion_policy = "DELETE"
 
   depends_on = [google_project_service.workload["iam.googleapis.com"]]
 }
@@ -297,10 +289,6 @@ resource "google_tags_tag_key" "cloud_run_invocation" {
   short_name  = "agora-invocation"
   description = "Cloud Run invocation boundary managed by OpenTofu."
 
-  lifecycle {
-    prevent_destroy = true
-  }
-
   depends_on = [google_project_service.workload["cloudresourcemanager.googleapis.com"]]
 }
 
@@ -310,10 +298,6 @@ resource "google_tags_tag_value" "cloud_run_invocation" {
   parent      = google_tags_tag_key.cloud_run_invocation.id
   short_name  = each.value.short_name
   description = each.value.description
-
-  lifecycle {
-    prevent_destroy = true
-  }
 }
 
 resource "google_tags_tag_value_iam_member" "release_tag_user" {
@@ -470,10 +454,6 @@ resource "google_project_iam_custom_role" "release_cloud_run_deployer" {
     "run.services.update",
   ]
 
-  lifecycle {
-    prevent_destroy = true
-  }
-
   depends_on = [google_project_service.workload["iam.googleapis.com"]]
 }
 
@@ -504,10 +484,6 @@ resource "google_project_iam_custom_role" "authentication_initializer_deployer" 
     "run.locations.list",
     "run.operations.get",
   ]
-
-  lifecycle {
-    prevent_destroy = true
-  }
 
   depends_on = [google_project_service.workload["iam.googleapis.com"]]
 }
@@ -587,10 +563,6 @@ resource "google_project_iam_custom_role" "database_release" {
     "compute.snapshots.list",
     "compute.zoneOperations.get",
   ]
-
-  lifecycle {
-    prevent_destroy = true
-  }
 
   depends_on = [google_project_service.workload["iam.googleapis.com"]]
 }

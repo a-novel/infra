@@ -168,7 +168,7 @@ variables {
   ]
 }
 
-run "builds_the_protected_workload_foundation" {
+run "builds_the_project_replacement_window" {
   command = plan
 
   assert {
@@ -192,11 +192,11 @@ run "builds_the_protected_workload_foundation" {
   assert {
     condition = (
       google_project.workload.auto_create_network == false &&
-      google_project.workload.deletion_policy == "PREVENT" &&
+      google_project.workload.deletion_policy == "DELETE" &&
       google_project.workload.labels == tomap(local.labels) &&
       google_project.workload.billing_account == "ABCDEF-123456-ABCDEF"
     )
-    error_message = "The workload project lost billing, labels, automatic-network prevention, or deletion protection."
+    error_message = "The workload project replacement window lost billing, labels, automatic-network prevention, or its temporary deletion policy."
   }
 
   assert {
@@ -304,9 +304,14 @@ run "builds_the_protected_workload_foundation" {
     condition = (
       google_dns_managed_zone.googleapis.visibility == "private" &&
       google_dns_managed_zone.googleapis.dns_name == "googleapis.com." &&
+      google_dns_managed_zone.googleapis.deletion_policy == "DELETE" &&
       length(google_dns_managed_zone.private_google_domain) == 2 &&
       toset([for zone in values(google_dns_managed_zone.private_google_domain) : zone.dns_name]) ==
       toset(["pkg.dev.", "run.app."]) &&
+      alltrue([
+        for zone in values(google_dns_managed_zone.private_google_domain) :
+        zone.deletion_policy == "DELETE"
+      ]) &&
       google_dns_record_set.restricted_googleapis.rrdatas == tolist(local.restricted_google_vip_addresses) &&
       alltrue([
         for record in values(google_dns_record_set.private_google_domain_apex) :
@@ -334,7 +339,7 @@ run "builds_the_protected_workload_foundation" {
       } &&
       alltrue([
         for account in values(google_service_account.runtime) :
-        account.deletion_policy == "PREVENT"
+        account.deletion_policy == "DELETE"
       ]) &&
       length(google_secret_manager_secret_iam_member.runtime) == 12 &&
       local.runtime_secret_access == {
@@ -434,7 +439,7 @@ run "builds_the_protected_workload_foundation" {
       google_compute_disk.database.type == "pd-balanced" &&
       google_compute_disk.database.size == 50 &&
       google_compute_disk.database.physical_block_size_bytes == 4096 &&
-      google_compute_disk.database.deletion_policy == "PREVENT" &&
+      google_compute_disk.database.deletion_policy == "DELETE" &&
       google_compute_instance_template.database.machine_type == "e2-medium" &&
       length(one(google_compute_instance_template.database.network_interface).access_config) == 0 &&
       one(google_compute_instance_template.database.service_account).email == google_service_account.runtime["database"].email &&
@@ -481,7 +486,7 @@ run "builds_the_protected_workload_foundation" {
         if disk.device_name == "agora-data"
       ]).source == google_compute_disk.database.name &&
       google_compute_instance_group_manager.database.target_size == 1 &&
-      google_compute_instance_group_manager.database.deletion_policy == "PREVENT" &&
+      google_compute_instance_group_manager.database.deletion_policy == "DELETE" &&
       one(google_compute_instance_group_manager.database.stateful_disk).device_name == "agora-data" &&
       one(google_compute_instance_group_manager.database.stateful_disk).delete_rule == "NEVER" &&
       one(google_compute_instance_group_manager.database.stateful_internal_ip).interface_name == "nic0" &&
@@ -662,7 +667,7 @@ run "builds_the_protected_workload_foundation" {
       } &&
       alltrue([
         for policy in values(google_monitoring_alert_policy.database_capacity) :
-        policy.deletion_policy == "PREVENT" &&
+        policy.deletion_policy == "DELETE" &&
         strcontains(one(policy.conditions).condition_threshold[0].filter, "resource.label.zone = \"europe-west1-c\"") &&
         strcontains(one(policy.conditions).condition_threshold[0].filter, "metric.label.instance_name = starts_with(\"agora-database-\")") &&
         toset(policy.notification_channels) == toset([google_monitoring_notification_channel.operations_email[0].name]) &&
@@ -683,7 +688,7 @@ run "builds_the_protected_workload_foundation" {
       toset(one(google_compute_resource_policy.database_snapshots.snapshot_schedule_policy).snapshot_properties[0].storage_locations) == toset(["europe-west1"]) &&
       google_compute_disk_resource_policy_attachment.database_snapshots.disk == google_compute_disk.database.name &&
       google_monitoring_alert_policy.postgres_recovery_job_failure[0].severity == "CRITICAL" &&
-      google_monitoring_alert_policy.postgres_recovery_job_failure[0].deletion_policy == "PREVENT" &&
+      google_monitoring_alert_policy.postgres_recovery_job_failure[0].deletion_policy == "DELETE" &&
       toset(google_monitoring_alert_policy.postgres_recovery_job_failure[0].notification_channels) == toset([google_monitoring_notification_channel.operations_email[0].name]) &&
       length(google_monitoring_alert_policy.postgres_recovery_job_failure[0].conditions) == 2 &&
       strcontains(one([
@@ -722,12 +727,14 @@ run "builds_the_protected_workload_foundation" {
     condition = (
       length(google_monitoring_alert_policy.authentication_error_rate) == 1 &&
       google_monitoring_alert_policy.authentication_error_rate[0].severity == "ERROR" &&
+      google_monitoring_alert_policy.authentication_error_rate[0].deletion_policy == "DELETE" &&
       toset(google_monitoring_alert_policy.authentication_error_rate[0].notification_channels) == toset([google_monitoring_notification_channel.operations_email[0].name]) &&
       one(google_monitoring_alert_policy.authentication_error_rate[0].conditions).condition_threshold[0].threshold_value == 0.10 &&
       one(google_monitoring_alert_policy.authentication_error_rate[0].conditions).condition_threshold[0].duration == "300s" &&
       strcontains(one(google_monitoring_alert_policy.authentication_error_rate[0].conditions).condition_threshold[0].filter, "metric.label.response_code_class = \"5xx\"") &&
       strcontains(one(google_monitoring_alert_policy.authentication_error_rate[0].conditions).condition_threshold[0].denominator_filter, "agora-authentication-rest") &&
       length(google_monitoring_alert_policy.application_jobs_unhealthy) == 1 &&
+      google_monitoring_alert_policy.application_jobs_unhealthy[0].deletion_policy == "DELETE" &&
       length(google_monitoring_alert_policy.application_jobs_unhealthy[0].conditions) == 2 &&
       strcontains(one([
         for condition in google_monitoring_alert_policy.application_jobs_unhealthy[0].conditions : condition
@@ -755,6 +762,7 @@ run "builds_the_protected_workload_foundation" {
       google_artifact_registry_repository.production.location == "europe-west1" &&
       google_artifact_registry_repository.production.docker_config[0].immutable_tags &&
       google_artifact_registry_repository.production.cleanup_policy_dry_run &&
+      google_artifact_registry_repository.production.deletion_policy == "DELETE" &&
       {
         for policy in google_artifact_registry_repository.production.cleanup_policies :
         policy.id => policy.action
@@ -799,13 +807,14 @@ run "builds_the_protected_workload_foundation" {
       google_monitoring_notification_channel.cost_email[0].type == "email" &&
       google_monitoring_notification_channel.cost_email[0].enabled &&
       google_monitoring_notification_channel.cost_email[0].labels == tomap({ email_address = "infra@example.com" }) &&
-      google_monitoring_notification_channel.cost_email[0].deletion_policy == "PREVENT" &&
+      google_monitoring_notification_channel.cost_email[0].deletion_policy == "DELETE" &&
       length(google_monitoring_notification_channel.operations_email) == 1 &&
       google_monitoring_notification_channel.operations_email[0].labels == tomap({ email_address = "operations@example.com" }) &&
-      google_monitoring_notification_channel.operations_email[0].deletion_policy == "PREVENT" &&
+      google_monitoring_notification_channel.operations_email[0].deletion_policy == "DELETE" &&
       length(data.google_billing_account.workload) == 1 &&
       length(data.google_project.management) == 1 &&
       length(google_billing_budget.workload) == 1 &&
+      google_billing_budget.workload[0].deletion_policy == "DELETE" &&
       google_billing_budget.workload[0].amount[0].specified_amount[0].units == "60" &&
       google_billing_budget.workload[0].amount[0].specified_amount[0].currency_code == "EUR" &&
       toset(google_billing_budget.workload[0].budget_filter[0].projects) == toset([
@@ -829,6 +838,7 @@ run "builds_the_protected_workload_foundation" {
       !google_billing_budget.workload[0].all_updates_rule[0].enable_project_level_recipients &&
       length(google_billing_budget.workload[0].all_updates_rule[0].monitoring_notification_channels) == 2 &&
       google_logging_project_bucket_config.default.retention_days == 30 &&
+      google_logging_project_bucket_config.default.deletion_policy == "DELETE" &&
       strcontains(google_logging_project_exclusion.successful_healthchecks.filter, "httpRequest.status>=200") &&
       strcontains(google_logging_project_exclusion.successful_healthchecks.filter, "resource.labels.service_name=\"agora-authentication-rest\"") &&
       strcontains(google_logging_project_exclusion.successful_healthchecks.filter, "ping|healthcheck") &&
