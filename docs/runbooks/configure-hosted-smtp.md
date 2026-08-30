@@ -264,10 +264,19 @@ printf 'Sending domain: %s\n' "$sender_domain"
 
 Use [Add or rotate a secret version](./secret-versions.md) to write the password through hidden
 double entry to `production-authentication-smtp-sender-password`. Record only its numeric Secret
-Manager version. Put `${SMTP_HOST}:587`, `SMTP_USERNAME`, the sender values, and the numeric password
-version in the protected `RELEASE_CONFIG_JSON` exactly as described by
-[Deploy and roll back production](./deploy-production.md#4-store-the-protected-non-payload-release-configuration).
-Never store the password in that JSON document.
+Manager version. Stop here; do not construct or upload `RELEASE_CONFIG_JSON` from this runbook.
+
+When following [Deploy and roll back production](./deploy-production.md), run its sections in order:
+
+1. [Select and verify exact secret versions](./deploy-production.md#3-select-and-verify-exact-secret-versions)
+   assigns the enabled numeric SMTP version to `AUTH_SMTP_PASSWORD_VERSION` without reading its
+   payload.
+2. [Store the protected non-payload release configuration](./deploy-production.md#4-store-the-protected-non-payload-release-configuration)
+   reads the four non-secret SMTP values from `.envrc`, builds the complete temporary JSON, and
+   uploads it as the protected GitHub environment secret.
+
+Run both command blocks without manually editing the JSON. Only the numeric version enters the
+document; the SMTP password never does.
 
 ## 5. Validate without exposing the credential
 
