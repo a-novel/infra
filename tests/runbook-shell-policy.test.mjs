@@ -59,6 +59,17 @@ test("local runbook commands are scoped for the configured zsh session", () => {
   assert.ok(zshBlockCount > 0);
 });
 
+test("hosted SMTP operator inputs are concrete", () => {
+  const { content } = runbooks.find(
+    (runbook) => runbook.name === "configure-hosted-smtp.md",
+  );
+
+  assert.doesNotMatch(content, /^\s*[A-Z][A-Z0-9_]*=''$/m);
+  assert.match(content, /^SENDING_DOMAIN='[^']+'$/m);
+  assert.match(content, /^DKIM_SELECTORS=\($/m);
+  assert.match(content, /^SMTP_HOST='[^']+'$/m);
+});
+
 test("workflow commands keep restartable repository-state boundaries", () => {
   let workflowInvocationBlockCount = 0;
 
