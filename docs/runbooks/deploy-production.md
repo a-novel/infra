@@ -21,8 +21,9 @@ and [GitHub artifact attestations](https://docs.github.com/actions/how-tos/secur
 
 ## Operator context
 
-Load the published project coordinates. Then run later blocks in the existing configured zsh
-session, complete the four hosted-SMTP values, and paste the context block once before section 1:
+Load the published project coordinates and the non-secret SMTP parameters configured by
+[Configure hosted Plunk SMTP](./configure-hosted-smtp.md). Then paste the context block once before
+section 1:
 
 ```sh
 . ./.envrc
@@ -45,10 +46,6 @@ BACKUP_BUCKET_NAME="$(gh variable get GCP_BACKUP_BUCKET --repo "$REPOSITORY")"
 RECEIPT_BUCKET_NAME="$(gh variable get GCP_RECEIPT_BUCKET --repo "$REPOSITORY")"
 
 AUTH_SUPER_ADMIN_EMAIL="$(gcloud config get-value account 2>/dev/null)"
-SMTP_HOST=''
-SMTP_USERNAME=''
-SMTP_SENDER_EMAIL=''
-SMTP_SENDER_NAME=''
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 

@@ -59,15 +59,37 @@ test("local runbook commands are scoped for the configured zsh session", () => {
   assert.ok(zshBlockCount > 0);
 });
 
-test("hosted SMTP operator inputs are concrete", () => {
-  const { content } = runbooks.find(
+test("hosted SMTP operator inputs are parameterized", () => {
+  const { content: smtpRunbook } = runbooks.find(
     (runbook) => runbook.name === "configure-hosted-smtp.md",
   );
+  const { content: deploymentRunbook } = runbooks.find(
+    (runbook) => runbook.name === "deploy-production.md",
+  );
 
-  assert.doesNotMatch(content, /^\s*[A-Z][A-Z0-9_]*=''$/m);
-  assert.match(content, /^SENDING_DOMAIN='[^']+'$/m);
-  assert.match(content, /^DKIM_SELECTORS=\($/m);
-  assert.match(content, /^SMTP_HOST='[^']+'$/m);
+  for (const content of [smtpRunbook, deploymentRunbook]) {
+    assert.doesNotMatch(content, /^\s*SMTP_[A-Z0-9_]*=/m);
+  }
+
+  for (const variable of [
+    "SMTP_HOST",
+    "SMTP_USERNAME",
+    "SMTP_SENDER_EMAIL",
+    "SMTP_SENDER_NAME",
+    "SMTP_DKIM_CNAME_RECORDS",
+  ]) {
+    assert.match(smtpRunbook, new RegExp(`\\b${variable}\\b`));
+  }
+
+  assert.doesNotMatch(
+    smtpRunbook,
+    /^\s*(?:SENDING_DOMAIN|DMARC_REPORT_EMAIL|DKIM_SELECTORS)=/m,
+  );
+  assert.match(smtpRunbook, /sender_domain="\$\{SMTP_SENDER_EMAIL##\*@\}"/);
+  assert.match(
+    smtpRunbook,
+    /dmarc_report_email="dmarc-reports@\$\{sender_domain\}"/,
+  );
 });
 
 test("workflow commands keep restartable repository-state boundaries", () => {
