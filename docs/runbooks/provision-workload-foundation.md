@@ -1,5 +1,8 @@
 # Provision the workload foundation
 
+> One-time setup procedure. Follow it from the
+> [production setup sequence](../setup-production.md#setup-sequence).
+
 This runbook creates the production project, private network, identities, PostgreSQL host,
 registry, budgets, and alerts. It does not deploy application containers or secret payloads.
 

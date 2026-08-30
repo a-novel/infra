@@ -1,8 +1,5 @@
 # Respond to production alerts
 
-> First production run: step 8 verifies owners, channels, policies, and scheduled health after the
-> release and recovery evidence pass. For incidents, start at the matching signal instead.
-
 Use this runbook for the code-managed Google Cloud alerts and native GitHub workflow failures in the
 JSON Keys and Authentication production slice. It identifies one human owner and a first safe check
 for every signal without adding a paging service, log parser, custom metric, controller, or agent.
@@ -240,8 +237,8 @@ code.
 
 **Signal:** `Agora application jobs unhealthy`. Any `agora-authentication-*` or
 `agora-json-keys-*` Cloud Run job reported a failed execution, or no successful
-`agora-json-keys-rotatekeys` execution was visible for three hours. The first protected release
-seeds the rotation time series; an absence alert before that release is not actionable.
+`agora-json-keys-rotatekeys` execution was visible for three hours. An absence signal without any
+prior successful rotation measurement is not actionable.
 
 ```zsh
 () {

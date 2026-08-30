@@ -1,7 +1,7 @@
 # Bootstrap and verify the management plane
 
-> First production run: step 1. Start from the [ordered index](./README.md#first-production-run);
-> finish all 13 steps, then continue to workload foundation.
+> One-time setup procedure. Follow all 13 steps from the
+> [production setup sequence](../setup-production.md#setup-sequence).
 
 This is the one-time, operator-only procedure for creating Agora's stable Google Cloud management
 plane, seeding its protected GCS backend, configuring GitHub's deployment gates, and removing
@@ -24,7 +24,7 @@ and [Google WIF for deployment pipelines](https://cloud.google.com/iam/docs/work
 ## Operator context
 
 The operator selects both stable project IDs before bootstrap. Create `.envrc` once with the root
-[project-coordinate setup](../../README.md#choose-the-project-coordinates), then load and validate
+[persistent operator configuration](../../README.md#configure-persistent-operator-inputs), then load and validate
 it before running later blocks in the existing configured zsh session:
 
 ```sh
@@ -78,9 +78,9 @@ Stop immediately if any of these are true:
 
 ## 1. Verify local tools and authenticate the operator
 
-The ordered index's repository gate already proves that the checkout is clean, current, and on
-`master`. When entering this runbook directly, complete
-[Start or resume](./README.md#start-or-resume) once before continuing.
+The production setup guide's repository gate already proves that the checkout is clean, current, and
+on `master`. When entering this procedure directly, complete
+[Start or resume](../setup-production.md#start-or-resume) once before continuing.
 
 ```zsh
 () {
@@ -1154,8 +1154,8 @@ unset BOOTSTRAP_TEMP_DIR
 This permanently removes only the unique temporary directory created in section 7. The remote state,
 bucket generations, audit records, and GitHub variables remain.
 
-Bootstrap is complete only when all final checks pass. Continue with the
-[workload-foundation runbook](./provision-workload-foundation.md). Do not dispatch a foundation or
+Bootstrap is complete only when all final checks pass. Return to
+[setup step 2](../setup-production.md#setup-sequence). Do not dispatch a foundation or
 release apply before its WIF exchange, sanitized summary, exact-plan custody, and environment gate
 match the controls described here. Keep `PRODUCTION_RELEASES_ENABLED=false` until the deployment
-runbook explicitly enables it.
+setup explicitly enables it.

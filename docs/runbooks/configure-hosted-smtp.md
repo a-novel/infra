@@ -1,9 +1,7 @@
 # Configure hosted Plunk SMTP
 
-> First production run: step 4 configures the provider and captures its contract; step 6 performs
-> delivery tests after Authentication is live.
-
-Use this runbook to create the externally hosted SMTP dependency used by Authentication. Plunk is
+Use this runbook to configure or replace the externally hosted SMTP dependency used by
+Authentication. Plunk is
 an operator-owned SaaS account, not a Google Cloud resource and not an OpenTofu-managed
 subscription. Infrastructure code consumes only its standard authenticated SMTP contract, so a
 future provider change does not require an application rewrite.
@@ -31,7 +29,7 @@ file.
 | `SMTP_SENDER_EMAIL` | In the Plunk project, open **Settings → Domains** and choose an organization-controlled sender address whose domain exactly matches the verified production domain. Plunk does not choose this address. |
 | `SMTP_SENDER_NAME`  | Choose the production display name shown to recipients, between 1 and 100 characters. Plunk does not supply this value.                                                                                 |
 
-Add one `export NAME='actual value'` line per row to `.envrc`, then reload it:
+Replace the four matching placeholders already present in `.envrc`, then reload it:
 
 ```sh
 ${EDITOR:-vi} .envrc
@@ -262,29 +260,14 @@ printf 'Sending domain: %s\n' "$sender_domain"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-## First-run handoff
-
-Do not open the deployment runbook yet. Continue to
-[Initial population](./secret-versions.md#initial-population), prepare all nine payloads, and run its
-single dependency-ordered command. It includes `production-authentication-smtp-sender-password` and
-prompts for every payload through hidden double entry.
-
-Only advance after nine `Created <secret> version <number>` lines. When resuming a partial
-population, inspect version metadata and pass only the remaining IDs; do not create duplicates to
-reproduce terminal output.
-
-[Deploy and roll back production](./deploy-production.md) then selects those numeric versions and
-constructs `RELEASE_CONFIG_JSON` automatically. The operator never edits that document, and the
-SMTP password payload never enters it.
-
 ## 5. Validate without exposing the credential
 
 Do not test with `openssl`, `swaks`, or a command-line SMTP client: those paths commonly place the
 credential in arguments, debug output, or transcripts. Let the protected Authentication release
 consume the exact Secret Manager version.
 
-1. Keep `PRODUCTION_RELEASES_ENABLED=false` until all release prerequisites pass.
-2. Run the protected first release from the reviewed manifest.
+1. Add or rotate the SMTP password with the [secret-version runbook](./secret-versions.md).
+2. Run the protected release from the reviewed manifest.
 3. Confirm the candidate `/v2/healthcheck` succeeds. A failure must report only the dependency name,
    never the SMTP response body or credential.
 4. Through the normal application flow, send one non-sensitive transactional test to the selected

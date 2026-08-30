@@ -1,3 +1,7 @@
-# Project IDs are public coordinates. Keep credentials and secret payloads out of this file.
+# Stable public operator inputs. Keep credentials and secret payloads out of this file.
 export INFRA_MANAGEMENT_PROJECT_ID='replace-with-management-project-id'
 export INFRA_WORKLOAD_PROJECT_ID='replace-with-workload-project-id'
+export SMTP_HOST='replace-with-smtp-hostname'
+export SMTP_USERNAME='replace-with-smtp-username'
+export SMTP_SENDER_EMAIL='replace-with-sender-email'
+export SMTP_SENDER_NAME='replace-with-sender-name'

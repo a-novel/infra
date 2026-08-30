@@ -20,6 +20,14 @@ const runbooks = await Promise.all(
     content: await readFile(path.join(runbookDirectory, name), "utf8"),
   })),
 );
+const setupGuide = {
+  name: "setup-production.md",
+  content: await readFile(
+    path.join(repositoryRoot, "docs/setup-production.md"),
+    "utf8",
+  ),
+};
+const operatorGuides = [setupGuide, ...runbooks];
 
 async function collectFiles(directory) {
   const files = [];
@@ -40,7 +48,7 @@ async function collectFiles(directory) {
 test("local runbook commands are scoped for the configured zsh session", () => {
   let zshBlockCount = 0;
 
-  for (const { name, content } of runbooks) {
+  for (const { name, content } of operatorGuides) {
     assert.doesNotMatch(content, /set -euo pipefail|set \+x/);
     for (const match of content.matchAll(/```zsh\n([\s\S]*?)\n```/g)) {
       zshBlockCount += 1;
@@ -106,7 +114,7 @@ test("hosted SMTP operator inputs are parameterized", () => {
 test("workflow commands keep restartable repository-state boundaries", () => {
   let workflowInvocationBlockCount = 0;
 
-  for (const { name, content } of runbooks) {
+  for (const { name, content } of operatorGuides) {
     assert.doesNotMatch(
       content,
       /MASTER_SHA|EXPECTED_SHA/,
@@ -137,7 +145,7 @@ test("workflow commands keep restartable repository-state boundaries", () => {
   assert.ok(workflowInvocationBlockCount > 0);
 });
 
-test("migrated first-run guides use stateless operator commands", () => {
+test("delegated setup procedures use stateless operator commands", () => {
   for (const name of ["README.md", "provision-workload-foundation.md"]) {
     const { content } = runbooks.find((runbook) => runbook.name === name);
 
@@ -174,6 +182,10 @@ test("operator-owned project coordinates stay explicit and repeatable", async ()
   assert.deepEqual(exportLines, [
     "export INFRA_MANAGEMENT_PROJECT_ID='replace-with-management-project-id'",
     "export INFRA_WORKLOAD_PROJECT_ID='replace-with-workload-project-id'",
+    "export SMTP_HOST='replace-with-smtp-hostname'",
+    "export SMTP_USERNAME='replace-with-smtp-username'",
+    "export SMTP_SENDER_EMAIL='replace-with-sender-email'",
+    "export SMTP_SENDER_NAME='replace-with-sender-name'",
   ]);
   assert.doesNotMatch(
     exportLines.join("\n"),
@@ -206,6 +218,11 @@ test("operator-owned project coordinates stay explicit and repeatable", async ()
       `${name} has the wrong verifier mode`,
     );
   }
+
+  assert.ok(setupGuide.content.includes(". ./.envrc"));
+  assert.ok(
+    setupGuide.content.includes("./ops/verify-operator-env.sh --github"),
+  );
 
   const operatorSources = [
     path.join(repositoryRoot, "README.md"),
@@ -246,10 +263,10 @@ test("operator-owned project coordinates stay explicit and repeatable", async ()
   assert.match(foundationSources, /INFRA_WORKLOAD_PROJECT_ID/);
 });
 
-test("runbook operator-script links resolve to executable files", async () => {
+test("operator-guide script links resolve to executable files", async () => {
   const linkedScripts = new Set();
 
-  for (const { content } of runbooks) {
+  for (const { content } of operatorGuides) {
     for (const match of content.matchAll(
       /(?:\.\.\/\.\.\/|\.\/)ops\/([a-z0-9-]+\.sh)/g,
     )) {
@@ -267,7 +284,7 @@ test("runbook operator-script links resolve to executable files", async () => {
 
 test("Bash fences are limited to commands pasted inside remote COS hosts", () => {
   const bashBlocks = [];
-  for (const { name, content } of runbooks) {
+  for (const { name, content } of operatorGuides) {
     for (const match of content.matchAll(/```bash\n([\s\S]*?)\n```/g)) {
       bashBlocks.push({ name, body: match[1] });
     }
@@ -292,5 +309,64 @@ test("Bash fences are limited to commands pasted inside remote COS hosts", () =>
         (name === "disaster-recovery.md" &&
           body.startsWith("RECOVERY_AUTH_URL=''")),
     ),
+  );
+});
+
+test("one-time production work lives only in the setup guide", () => {
+  assert.match(
+    setupGuide.content,
+    /## 5\. Create the initial payload versions/,
+  );
+  assert.match(
+    setupGuide.content,
+    /\.\/ops\/add-secret-version\.sh[\s\\\n]+production-authentication-postgres-password/,
+  );
+  assert.match(
+    setupGuide.content,
+    /### Run the human-only Authentication initializer/,
+  );
+  assert.match(setupGuide.content, /## 7\. Lock backup retention/);
+
+  const operationalNames = [
+    "README.md",
+    "backup-and-restore-postgresql.md",
+    "configure-hosted-smtp.md",
+    "deploy-production.md",
+    "disaster-recovery.md",
+    "operate-postgresql-host.md",
+    "respond-to-alerts.md",
+    "secret-versions.md",
+  ];
+  const setupOnlyHeadings =
+    /First production run|Initial population|First-run handoff|First production activation|First launch:|Prepare the first database release|Lock retention after proof|Initializer partial-failure recovery/i;
+  const operationalContent = operationalNames
+    .map((name) => runbooks.find((runbook) => runbook.name === name).content)
+    .join("\n");
+
+  for (const name of operationalNames) {
+    const { content } = runbooks.find((runbook) => runbook.name === name);
+
+    assert.doesNotMatch(
+      content,
+      setupOnlyHeadings,
+      `${name} contains setup work`,
+    );
+  }
+
+  assert.doesNotMatch(
+    operationalContent,
+    /\.\/ops\/add-secret-version\.sh\s*\\\s*production-authentication-postgres-password\s*\\/,
+  );
+  assert.doesNotMatch(
+    operationalContent,
+    /gcloud run jobs deploy agora-authentication-init/,
+  );
+  assert.doesNotMatch(
+    operationalContent,
+    /gh variable set PRODUCTION_RELEASES_ENABLED[^\n]*--body true/,
+  );
+  assert.doesNotMatch(
+    operationalContent,
+    /retention_policy\.is_locked[^\n]*false[^\n]*true/,
   );
 });
