@@ -99,13 +99,17 @@ private deployment record. Keep the payload only in the approved password manage
 
 ## Initial population
 
+This is mandatory first-production-run step 5, before the deployment runbook. Its deployment
+selector verifies existing version metadata; it does not create missing payloads.
+
 Repeat the add procedure separately for every secret needed by the next reviewed workload change.
 Do not populate unused containers early. First production activation requires all nine declared
 contracts, including separate read-only backup credentials. Database DSNs must use the stateful
 private address and distinct host ports from the
 [PostgreSQL host runbook](./operate-postgresql-host.md), so create those versions only after the
-foundation output is known. Compare the four owner/backup passwords in the approved password manager
-without printing or exporting them; host startup fails closed if any pair is equal.
+foundation output is known. Generate four independent cryptographically random owner/backup
+passwords in the approved password manager using the 32–128 character contract above. Compare them
+there without printing or exporting them; host startup fails closed if any pair is equal.
 
 Prepare all nine values, then populate the containers in dependency order with one command:
 

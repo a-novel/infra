@@ -88,7 +88,8 @@ idempotent job at minute 10 every hour.
   healthy. First activation proves both new backups and both clean restores inside this release
   before initialization or traffic.
 - Every application secret has an enabled numeric version created through
-  [Add or rotate a secret version](./secret-versions.md).
+  [initial population](./secret-versions.md#initial-population). On the first run, complete that
+  procedure before opening this guide.
 - Each source image has a GitHub producer attestation signed by that service's `release.yaml` from
   `master` on a GitHub-hosted runner, plus a stable complete SemVer tag.
 - `production-release` accepts only protected branches and contains only its release WIF coordinates
@@ -221,6 +222,10 @@ five invocation classes. Do not print instance metadata or OpenTofu outputs; eit
 release configuration.
 
 ## 3. Select and verify exact secret versions
+
+This section selects existing versions; it never creates payloads. On the first run, enter it only
+after initial population prints nine `Created <secret> version <number>` lines. If it reports no
+enabled version, stop and populate the remaining secrets before retrying.
 
 Use the sole enabled version automatically. During a rotation, the command lists enabled metadata
 and asks which numeric version to deploy. It never retrieves payloads.
