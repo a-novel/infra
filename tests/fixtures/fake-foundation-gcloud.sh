@@ -23,10 +23,10 @@ case "$*" in
     "projects describe management-project-prod --format=value(projectNumber)")
         printf '%s\n' 123456789012
         ;;
-    "projects get-iam-policy agora-production-prod --format=json")
+    "projects get-iam-policy workload-project-prod --format=json")
         printf '%s\n' '{"bindings":[]}'
         ;;
-    "projects add-iam-policy-binding agora-production-prod --member=user:operator@example.com --role=roles/iam.securityReviewer --condition=None --format=none")
+    "projects add-iam-policy-binding workload-project-prod --member=user:operator@example.com --role=roles/iam.securityReviewer --condition=None --format=none")
         ;;
     *)
         exit 64

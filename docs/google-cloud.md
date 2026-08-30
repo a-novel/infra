@@ -38,6 +38,12 @@ backups, then caps the existing member's update at `RESTART`. The group is `OPPO
 metadata or template change acts on the existing member before the owning workflow explicitly
 chooses `RESTART` or `REPLACE`.
 
+OpenTofu owns the thirteen workload APIs declared by the foundation root. Service Usage can also
+enable default services and dependencies, so the independent audit accepts only the reviewed
+auxiliary set beside those thirteen and reports any new service by name. This keeps unexpected
+products visible without trying to disable services Google manages on behalf of an enabled API. See
+[Service Usage dependencies](https://cloud.google.com/service-usage/docs/overview#service_dependencies).
+
 The release root now defines two four-hour backup jobs, two monthly clean restore jobs, one hourly
 recovery monitor, and their authenticated schedules. It also defines four explicit application jobs,
 hourly JSON Keys rotation, private JSON Keys gRPC with an exact invoker allowlist, and public

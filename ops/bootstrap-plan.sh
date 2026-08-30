@@ -6,7 +6,7 @@ set -euo pipefail
 umask 077
 
 usage() {
-    printf 'Usage: %s <plan|apply> <management-project-id> <absolute-plan-file>\n' "$0" >&2
+    printf 'Usage: %s <plan|apply> <absolute-plan-file>\n' "$0" >&2
     exit 64
 }
 
@@ -15,20 +15,19 @@ fail() {
     exit "${2:-65}"
 }
 
-if [ "$#" -ne 3 ]; then
+if [ "$#" -ne 2 ]; then
     usage
 fi
 
 ACTION="$1"
-MANAGEMENT_PROJECT_ID="$2"
-PLAN_FILE="$3"
+PLAN_FILE="$2"
 case "$ACTION" in
     plan | apply) ;;
     *) usage ;;
 esac
-if ! [[ "$MANAGEMENT_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]; then
-    fail 'Invalid management project ID.' 64
-fi
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+"${SCRIPT_DIR}/verify-operator-env.sh" >/dev/null
+MANAGEMENT_PROJECT_ID="$INFRA_MANAGEMENT_PROJECT_ID"
 if [[ "$PLAN_FILE" != /* ]] || [[ "$PLAN_FILE" == */ ]]; then
     fail 'The private bootstrap plan path must be an absolute file path.' 64
 fi
@@ -54,7 +53,6 @@ for command_name in gcloud gh git jq sha256sum; do
     fi
 done
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPOSITORY_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 METADATA_FILE="${PLAN_FILE}.metadata.json"
 REPOSITORY='a-novel/infra'

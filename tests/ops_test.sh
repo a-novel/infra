@@ -38,6 +38,91 @@ cleanup() {
 }
 trap cleanup INT EXIT
 
+OPERATOR_MOCK_BIN="${TEMP_DIR}/operator-bin"
+mkdir -p "${OPERATOR_MOCK_BIN}"
+ln -s "${SCRIPT_DIR}/fixtures/fake-operator-gh.sh" "${OPERATOR_MOCK_BIN}/gh"
+
+set +e
+env -u INFRA_MANAGEMENT_PROJECT_ID -u INFRA_WORKLOAD_PROJECT_ID \
+    "${REPOSITORY_ROOT}/ops/verify-operator-env.sh" \
+    >"${TEMP_DIR}/operator-missing.out" 2>"${TEMP_DIR}/operator-missing.err"
+MISSING_OPERATOR_ENV_CODE=$?
+set -e
+assert_equal "${MISSING_OPERATOR_ENV_CODE}" 64
+grep -Fq 'INFRA_MANAGEMENT_PROJECT_ID is missing or invalid' \
+    "${TEMP_DIR}/operator-missing.err"
+
+set +e
+INFRA_MANAGEMENT_PROJECT_ID=INVALID \
+    INFRA_WORKLOAD_PROJECT_ID=workload-project-prod \
+    "${REPOSITORY_ROOT}/ops/verify-operator-env.sh" \
+    >"${TEMP_DIR}/operator-malformed.out" 2>"${TEMP_DIR}/operator-malformed.err"
+MALFORMED_OPERATOR_ENV_CODE=$?
+set -e
+assert_equal "${MALFORMED_OPERATOR_ENV_CODE}" 64
+grep -Fq 'INFRA_MANAGEMENT_PROJECT_ID is missing or invalid' \
+    "${TEMP_DIR}/operator-malformed.err"
+
+set +e
+(
+    # shellcheck source=../.envrc.example
+    . "${REPOSITORY_ROOT}/.envrc.example"
+    "${REPOSITORY_ROOT}/ops/verify-operator-env.sh"
+) >"${TEMP_DIR}/operator-placeholder.out" 2>"${TEMP_DIR}/operator-placeholder.err"
+PLACEHOLDER_OPERATOR_ENV_CODE=$?
+set -e
+assert_equal "${PLACEHOLDER_OPERATOR_ENV_CODE}" 64
+grep -Fq 'INFRA_MANAGEMENT_PROJECT_ID is missing or invalid' \
+    "${TEMP_DIR}/operator-placeholder.err"
+
+OPERATOR_OUTPUT="$(
+    INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \
+        INFRA_WORKLOAD_PROJECT_ID=workload-project-prod \
+        "${REPOSITORY_ROOT}/ops/verify-operator-env.sh"
+)"
+assert_equal "${OPERATOR_OUTPUT}" 'PASS operator project coordinates'
+
+set +e
+INFRA_MANAGEMENT_PROJECT_ID=workload-project-prod \
+    INFRA_WORKLOAD_PROJECT_ID=workload-project-prod \
+    "${REPOSITORY_ROOT}/ops/verify-operator-env.sh" \
+    >"${TEMP_DIR}/operator-equal.out" 2>"${TEMP_DIR}/operator-equal.err"
+EQUAL_OPERATOR_ENV_CODE=$?
+set -e
+assert_equal "${EQUAL_OPERATOR_ENV_CODE}" 64
+grep -Fq 'management and workload project IDs must differ' \
+    "${TEMP_DIR}/operator-equal.err"
+
+PUBLISHED_OPERATOR_OUTPUT="$(
+    PATH="${OPERATOR_MOCK_BIN}:${PATH}" \
+        INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \
+        INFRA_WORKLOAD_PROJECT_ID=workload-project-prod \
+        "${REPOSITORY_ROOT}/ops/verify-operator-env.sh" --github
+)"
+assert_equal "${PUBLISHED_OPERATOR_OUTPUT}" 'PASS published project coordinates'
+
+UNPUBLISHED_OPERATOR_OUTPUT="$(
+    PATH="${OPERATOR_MOCK_BIN}:${PATH}" \
+        FAKE_OPERATOR_GITHUB_MODE=unpublished \
+        INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \
+        INFRA_WORKLOAD_PROJECT_ID=workload-project-prod \
+        "${REPOSITORY_ROOT}/ops/verify-operator-env.sh" --github
+)"
+assert_equal "${UNPUBLISHED_OPERATOR_OUTPUT}" 'PASS published project coordinates'
+
+set +e
+PATH="${OPERATOR_MOCK_BIN}:${PATH}" \
+    FAKE_OPERATOR_GITHUB_MODE=mismatch \
+    INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \
+    INFRA_WORKLOAD_PROJECT_ID=workload-project-prod \
+    "${REPOSITORY_ROOT}/ops/verify-operator-env.sh" --github \
+    >"${TEMP_DIR}/operator-mismatch.out" 2>"${TEMP_DIR}/operator-mismatch.err"
+MISMATCHED_OPERATOR_ENV_CODE=$?
+set -e
+assert_equal "${MISMATCHED_OPERATOR_ENV_CODE}" 65
+grep -Fq 'does not match the published GitHub coordinate' \
+    "${TEMP_DIR}/operator-mismatch.err"
+
 SECRET_MOCK_BIN="${TEMP_DIR}/secret-bin"
 mkdir -p "${SECRET_MOCK_BIN}"
 printf '%s\n' \
@@ -71,6 +156,8 @@ CREATED_SECRET_VERSION="$(
     printf '%s\n%s\n' "${POSTGRES_SECRET}" "${POSTGRES_SECRET}" \
         | PATH="${SECRET_MOCK_BIN}:${PATH}" \
             FAKE_EXPECTED_SECRET="${POSTGRES_SECRET}" \
+            INFRA_MANAGEMENT_PROJECT_ID=agora-management-test \
+            INFRA_WORKLOAD_PROJECT_ID=agora-production-test \
             "${REPOSITORY_ROOT}/ops/add-secret-version.sh" \
                 production-authentication-postgres-password \
                 2>"${TEMP_DIR}/add-secret.err"
@@ -1378,11 +1465,13 @@ set +e
     100-json-1 101-authentication-1 'no known lost writes' \
     'RESTORE wrong-project' >/dev/null 2>&1
 INVALID_RECOVERY_CONFIRMATION_CODE=$?
-"${REPOSITORY_ROOT}/ops/foundation.sh" configure \
-    --workload-project-id INVALID >/dev/null 2>&1
+INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \
+    INFRA_WORKLOAD_PROJECT_ID=INVALID \
+    "${REPOSITORY_ROOT}/ops/foundation.sh" configure >/dev/null 2>&1
 INVALID_FOUNDATION_PROJECT_CODE=$?
-"${REPOSITORY_ROOT}/ops/foundation-audit.sh" \
-    --workload-project-id INVALID >/dev/null 2>&1
+INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \
+    INFRA_WORKLOAD_PROJECT_ID=INVALID \
+    "${REPOSITORY_ROOT}/ops/foundation-audit.sh" >/dev/null 2>&1
 INVALID_FOUNDATION_AUDIT_PROJECT_CODE=$?
 set -e
 assert_equal "${INVALID_RECOVERY_CONFIRMATION_CODE}" 64
@@ -1405,15 +1494,16 @@ FOUNDATION_OUTPUT="$(
         FAKE_FOUNDATION_CALLS="${FOUNDATION_CALLS}" \
         FAKE_FOUNDATION_SECRETS="${FOUNDATION_SECRETS}" \
         FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
-        "${REPOSITORY_ROOT}/ops/foundation.sh" configure \
-            --workload-project-id agora-production-prod
+        INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \
+        INFRA_WORKLOAD_PROJECT_ID=workload-project-prod \
+        "${REPOSITORY_ROOT}/ops/foundation.sh" configure
 )"
 grep -Fq 'PASS protected foundation environment' <<<"${FOUNDATION_OUTPUT}"
 grep -Fq 'PASS protected foundation configuration' <<<"${FOUNDATION_OUTPUT}"
 assert_equal "$(wc -l <"${FOUNDATION_SECRETS}" | tr -d ' ')" 2
 grep -Fq -- '--env production-foundation' "${FOUNDATION_SECRETS}"
 grep -Fq -- '--env production-recovery' "${FOUNDATION_SECRETS}"
-grep -Fq '"workload_project_id":"agora-production-prod"' "${FOUNDATION_SECRETS}"
+grep -Fq '"workload_project_id":"workload-project-prod"' "${FOUNDATION_SECRETS}"
 grep -Fq '"organization_id":"123456789012"' "${FOUNDATION_SECRETS}"
 grep -Fq '"adopt_existing_project":false' "${FOUNDATION_SECRETS}"
 if grep -Eq 'operator@example\.com|ABCDEF-123456-ABCDEF' <<<"${FOUNDATION_OUTPUT}"; then
@@ -1427,8 +1517,9 @@ PATH="${FOUNDATION_MOCK_BIN}:${PATH}" \
     FAKE_FOUNDATION_SECRETS="${FOUNDATION_SECRETS}" \
     FAKE_GIT_DIRTY=true \
     FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
+    INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \
+    INFRA_WORKLOAD_PROJECT_ID=workload-project-prod \
     "${REPOSITORY_ROOT}/ops/foundation.sh" configure \
-        --workload-project-id agora-production-prod \
         >"${TEMP_DIR}/dirty-foundation.out" 2>"${TEMP_DIR}/dirty-foundation.err"
 DIRTY_FOUNDATION_CODE=$?
 set -e
@@ -1445,14 +1536,68 @@ FOUNDATION_AUDIT_ACCESS_OUTPUT="$(
         FAKE_FOUNDATION_CALLS="${FOUNDATION_CALLS}" \
         FAKE_FOUNDATION_SECRETS="${FOUNDATION_SECRETS}" \
         FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
-        "${REPOSITORY_ROOT}/ops/foundation.sh" grant-audit-access \
-            --workload-project-id agora-production-prod
+        INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \
+        INFRA_WORKLOAD_PROJECT_ID=workload-project-prod \
+        "${REPOSITORY_ROOT}/ops/foundation.sh" grant-audit-access
 )"
 grep -Fq 'PASS temporary audit access' <<<"${FOUNDATION_AUDIT_ACCESS_OUTPUT}"
 grep -Fq 'config get-value account' "${FOUNDATION_CALLS}"
-grep -Fq 'projects get-iam-policy agora-production-prod' "${FOUNDATION_CALLS}"
+grep -Fq 'projects get-iam-policy workload-project-prod' "${FOUNDATION_CALLS}"
 if grep -Eq 'billing|GCP_BACKUP_BUCKET|parent\.(type|id)' "${FOUNDATION_CALLS}"; then
     printf 'Audit access loaded unrelated foundation context.\n' >&2
+    exit 1
+fi
+
+# The audit accepts only managed APIs plus reviewed Google defaults and
+# dependencies, while still reporting missing or unknown APIs precisely.
+FOUNDATION_AUDIT_MOCK_BIN="${TEMP_DIR}/foundation-audit-bin"
+mkdir -p "${FOUNDATION_AUDIT_MOCK_BIN}"
+ln -s "${SCRIPT_DIR}/fixtures/fake-foundation-gh.sh" \
+    "${FOUNDATION_AUDIT_MOCK_BIN}/gh"
+ln -s "${SCRIPT_DIR}/fixtures/fake-foundation-audit-services-gcloud.sh" \
+    "${FOUNDATION_AUDIT_MOCK_BIN}/gcloud"
+
+assert_foundation_service_boundary() {
+    local mode="$1"
+    local expected_code="$2"
+    local output_file="${TEMP_DIR}/foundation-audit-${mode}.out"
+    local error_file="${TEMP_DIR}/foundation-audit-${mode}.err"
+    local code=0
+
+    : >"${FOUNDATION_CALLS}"
+    set +e
+    PATH="${FOUNDATION_AUDIT_MOCK_BIN}:${PATH}" \
+        FAKE_FOUNDATION_CALLS="${FOUNDATION_CALLS}" \
+        FAKE_FOUNDATION_SECRETS="${FOUNDATION_SECRETS}" \
+        FAKE_FOUNDATION_SERVICE_MODE="$mode" \
+        INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \
+        INFRA_WORKLOAD_PROJECT_ID=workload-project-prod \
+        "${REPOSITORY_ROOT}/ops/foundation-audit.sh" \
+        >"$output_file" 2>"$error_file"
+    code=$?
+    set -e
+    assert_equal "$code" "$expected_code"
+}
+
+assert_foundation_service_boundary allowed 64
+grep -Fq 'PASS enabled service boundary' \
+    "${TEMP_DIR}/foundation-audit-allowed.out"
+grep -Fq 'projects get-iam-policy workload-project-prod --format=json' \
+    "${FOUNDATION_CALLS}"
+
+assert_foundation_service_boundary missing 70
+grep -Fq 'MISSING_API=run.googleapis.com' \
+    "${TEMP_DIR}/foundation-audit-missing.err"
+if grep -Fq 'projects get-iam-policy' "${FOUNDATION_CALLS}"; then
+    printf 'A missing required API did not stop the foundation audit.\n' >&2
+    exit 1
+fi
+
+assert_foundation_service_boundary unexpected 70
+grep -Fq 'UNEXPECTED_API=unknown.googleapis.com' \
+    "${TEMP_DIR}/foundation-audit-unexpected.err"
+if grep -Fq 'projects get-iam-policy' "${FOUNDATION_CALLS}"; then
+    printf 'An unknown API did not stop the foundation audit.\n' >&2
     exit 1
 fi
 
@@ -1476,8 +1621,10 @@ PATH="${BOOTSTRAP_MOCK_BIN}:${PATH}" \
     FAKE_WORKFLOW_STATE="${BOOTSTRAP_STATE}" \
     FAKE_TOFU_PLAN_CODE=2 \
     FAKE_TOFU_PLAN_JSON="${SCRIPT_DIR}/fixtures/plans/safe.json" \
+    INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \
+    INFRA_WORKLOAD_PROJECT_ID=workload-project-prod \
     "${REPOSITORY_ROOT}/ops/bootstrap-plan.sh" plan \
-        management-project-prod "${BOOTSTRAP_PLAN}" \
+        "${BOOTSTRAP_PLAN}" \
         >"${TEMP_DIR}/bootstrap-plan.out" 2>"${TEMP_DIR}/bootstrap-plan.err"
 BOOTSTRAP_PLAN_CODE=$?
 set -e
@@ -1499,8 +1646,10 @@ PATH="${BOOTSTRAP_MOCK_BIN}:${PATH}" \
     FAKE_WORKFLOW_STATE="${BOOTSTRAP_STATE}" \
     FAKE_TOFU_PLAN_CODE=0 \
     FAKE_TOFU_PLAN_JSON="${SCRIPT_DIR}/fixtures/plans/safe.json" \
+    INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \
+    INFRA_WORKLOAD_PROJECT_ID=workload-project-prod \
     "${REPOSITORY_ROOT}/ops/bootstrap-plan.sh" apply \
-        management-project-prod "${BOOTSTRAP_PLAN}" \
+        "${BOOTSTRAP_PLAN}" \
         >"${TEMP_DIR}/bootstrap-apply.out" 2>"${TEMP_DIR}/bootstrap-apply.err"
 jq --exit-status '.consumed == true' \
     "${BOOTSTRAP_PLAN}.metadata.json" >/dev/null

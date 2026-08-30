@@ -23,17 +23,22 @@ The human command map is [`ops/README.md`](../../ops/README.md). Architecture be
 
 ## Start or resume
 
-Refresh the repository and verify its gate:
+Create `.envrc` once with the root
+[project-coordinate setup](../../README.md#choose-the-project-coordinates). Load it, then refresh the
+repository and verify its gate:
 
 ```sh
+. ./.envrc
+./ops/verify-operator-env.sh --github
 git switch master
 git pull --ff-only
 git status --short
 ./ops/verify-repository-gate.sh
 ```
 
-Expected: `master` is current, status is empty, the repository gate passes, and the release switch
-is `false` before launch.
+Expected: the local IDs match every coordinate already published to GitHub, `master` is current,
+status is empty, the repository gate passes, and the release switch is `false` before launch. Before
+the management or workload coordinate is first published, the verifier checks the local value only.
 
 If resuming, inspect recent workflow state without changing anything:
 

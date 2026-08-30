@@ -7,7 +7,7 @@
 set -euo pipefail
 
 usage() {
-    printf 'Usage: %s --workload-project-id <id> [--final]\n' "$0" >&2
+    printf 'Usage: %s [--final]\n' "$0" >&2
     exit 64
 }
 
@@ -26,10 +26,6 @@ require_command() {
     fi
 }
 
-is_project_id() {
-    [[ "$1" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
-}
-
 is_private_24_cidr() {
     local first
     local second
@@ -44,15 +40,9 @@ is_private_24_cidr() {
         [ "$third" -le 255 ] && [ "$fourth" -eq 0 ]
 }
 
-WORKLOAD_PROJECT_ID=''
 FINAL_AUDIT=false
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        --workload-project-id)
-            [ "$#" -ge 2 ] || usage
-            WORKLOAD_PROJECT_ID="$2"
-            shift 2
-            ;;
         --final)
             FINAL_AUDIT=true
             shift
@@ -63,9 +53,11 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
-if ! is_project_id "$WORKLOAD_PROJECT_ID"; then
-    fail 'workload project ID is invalid' 64
-fi
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+"${SCRIPT_DIR}/verify-operator-env.sh" >/dev/null
+WORKLOAD_PROJECT_ID="$INFRA_WORKLOAD_PROJECT_ID"
+MANAGEMENT_PROJECT_ID="$INFRA_MANAGEMENT_PROJECT_ID"
+
 for command_name in gh gcloud grep jq; do
     require_command "$command_name"
 done
@@ -74,11 +66,11 @@ export CLOUDSDK_CORE_DISABLE_PROMPTS=1
 umask 077
 
 REPOSITORY='a-novel/infra'
-MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID --repo "$REPOSITORY")"
 BACKUP_BUCKET_NAME="$(gh variable get GCP_BACKUP_BUCKET --repo "$REPOSITORY")"
-if ! is_project_id "$MANAGEMENT_PROJECT_ID" ||
-    [ "$MANAGEMENT_PROJECT_ID" = "$WORKLOAD_PROJECT_ID" ]; then
-    fail 'management project coordinate is invalid'
+PUBLISHED_MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID \
+    --repo "$REPOSITORY")"
+if [ "$PUBLISHED_MANAGEMENT_PROJECT_ID" != "$MANAGEMENT_PROJECT_ID" ]; then
+    fail 'INFRA_MANAGEMENT_PROJECT_ID does not match GCP_MANAGEMENT_PROJECT_ID'
 fi
 if ! [[ "$BACKUP_BUCKET_NAME" =~ ^[a-z0-9][a-z0-9._-]{1,221}[a-z0-9]$ ]]; then
     fail 'backup bucket coordinate is invalid'
@@ -115,6 +107,11 @@ audit_foundation() {
     local expected_secret_services
     local initializer_members
     local backup_policy_json
+    local required_services_json
+    local allowed_auxiliary_services_json
+    local missing_services
+    local unexpected_services
+    local service_name
     local -a expected_secrets
 
     project_json="$(gcloud projects describe "$WORKLOAD_PROJECT_ID" --format=json)"
@@ -138,8 +135,7 @@ audit_foundation() {
     pass 'workload billing link'
 
     services_json="$(gcloud services list --enabled --project="$WORKLOAD_PROJECT_ID" --format=json)"
-    if ! jq --exit-status '
-      ([.[].config.name] | sort) == ([
+    required_services_json='[
         "artifactregistry.googleapis.com",
         "cloudquotas.googleapis.com",
         "cloudresourcemanager.googleapis.com",
@@ -153,11 +149,39 @@ audit_foundation() {
         "oslogin.googleapis.com",
         "run.googleapis.com",
         "serviceusage.googleapis.com"
-      ] | sort)
-    ' <<<"$services_json" >/dev/null; then
-        fail 'enabled service allowlist'
+      ]'
+    # Google can enable defaults and service dependencies beside the APIs
+    # OpenTofu owns. The explicit auxiliary set keeps new products reviewable.
+    allowed_auxiliary_services_json='[
+        "cloudtrace.googleapis.com",
+        "containerregistry.googleapis.com",
+        "iamcredentials.googleapis.com",
+        "pubsub.googleapis.com",
+        "storage-api.googleapis.com",
+        "storage-component.googleapis.com",
+        "telemetry.googleapis.com"
+      ]'
+    missing_services="$(jq --raw-output \
+        --argjson required "$required_services_json" '
+          ([.[].config.name] | unique) as $actual
+          | ($required - $actual)[]?
+        ' <<<"$services_json")"
+    unexpected_services="$(jq --raw-output \
+        --argjson required "$required_services_json" \
+        --argjson auxiliary "$allowed_auxiliary_services_json" '
+          ([.[].config.name] | unique) as $actual
+          | ($actual - ($required + $auxiliary))[]?
+        ' <<<"$services_json")"
+    if [ -n "$missing_services" ] || [ -n "$unexpected_services" ]; then
+        while IFS= read -r service_name; do
+            [ -n "$service_name" ] && printf 'MISSING_API=%s\n' "$service_name" >&2
+        done <<<"$missing_services"
+        while IFS= read -r service_name; do
+            [ -n "$service_name" ] && printf 'UNEXPECTED_API=%s\n' "$service_name" >&2
+        done <<<"$unexpected_services"
+        fail 'enabled service boundary'
     fi
-    pass 'enabled service allowlist'
+    pass 'enabled service boundary'
 
     policy_json="$(gcloud projects get-iam-policy "$WORKLOAD_PROJECT_ID" --format=json)"
     if ! jq --exit-status '

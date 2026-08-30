@@ -22,8 +22,14 @@ dataset or cost-analysis service is added for one disposable project.
 ## Operator context
 
 Run local blocks in the existing configured zsh session; the block explicitly labeled for the COS
-host uses that host's Bash session. Paste this block once before section 1. Incident-specific
-selections remain in their owning step.
+host uses that host's Bash session. Load the published production coordinates first:
+
+```sh
+. ./.envrc
+./ops/verify-operator-env.sh --github
+```
+
+Paste this block once before section 1. Incident-specific selections remain in their owning step.
 
 ```zsh
 () {
@@ -35,8 +41,8 @@ REPOSITORY='a-novel/infra'
 REGION='europe-west1'
 DATABASE_ZONE='europe-west1-c'
 
-MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID --repo "$REPOSITORY")"
-SOURCE_PROJECT_ID="$(gh variable get GCP_WORKLOAD_PROJECT_ID --repo "$REPOSITORY")"
+MANAGEMENT_PROJECT_ID="$INFRA_MANAGEMENT_PROJECT_ID"
+SOURCE_PROJECT_ID="$INFRA_WORKLOAD_PROJECT_ID"
 BILLING_ACCOUNT_ID="$(gcloud billing projects describe "$SOURCE_PROJECT_ID" \
   --format='value(billingAccountName.basename())')"
 BACKUP_BUCKET="$(gh variable get GCP_BACKUP_BUCKET --repo "$REPOSITORY")"
