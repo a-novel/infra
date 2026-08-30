@@ -41,16 +41,11 @@ ${EDITOR:-vi} .envrc
 `SMTP_DKIM_CNAME_RECORDS` is used only by this runbook, so keep it in the current shell. In the
 Plunk project, open **Settings → Domains**, expand the production sender domain, and copy every DKIM
 `CNAME` row. Preserve each full **Name** and **Value**, join each row as `name=value`, then join the
-pairs with commas and no spaces. Paste that one resulting line at this prompt:
+pairs with commas and no spaces. Set the resulting value directly, replacing the quoted example
+with the value assembled from the dashboard:
 
 ```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-printf 'DKIM CNAME name=target pairs, comma-separated: '
-IFS= read -r SMTP_DKIM_CNAME_RECORDS
-export SMTP_DKIM_CNAME_RECORDS
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+export SMTP_DKIM_CNAME_RECORDS='full-name-1=full-target-1,full-name-2=full-target-2'
 ```
 
 Validate all five inputs:
