@@ -97,10 +97,7 @@ write_metadata() {
     chmod 600 "$PLAN_FILE"
     plan_sha="$(sha256sum "$PLAN_FILE" | cut -d ' ' -f 1)"
     temporary_metadata="$(mktemp "${METADATA_FILE}.XXXXXX")"
-    cleanup_metadata() {
-        rm -f -- "$temporary_metadata"
-    }
-    trap cleanup_metadata INT TERM EXIT
+    trap 'rm -f -- "${temporary_metadata:-}"' INT TERM EXIT
     jq -n \
         --arg project "$MANAGEMENT_PROJECT_ID" \
         --arg bucket "$STATE_BUCKET" \
@@ -125,10 +122,7 @@ consume_metadata() {
     local temporary_metadata
 
     temporary_metadata="$(mktemp "${METADATA_FILE}.XXXXXX")"
-    cleanup_metadata() {
-        rm -f -- "$temporary_metadata"
-    }
-    trap cleanup_metadata INT TERM EXIT
+    trap 'rm -f -- "${temporary_metadata:-}"' INT TERM EXIT
     jq '.consumed = true' "$METADATA_FILE" >"$temporary_metadata"
     chmod 600 "$temporary_metadata"
     mv -- "$temporary_metadata" "$METADATA_FILE"

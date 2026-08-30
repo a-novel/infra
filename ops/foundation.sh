@@ -691,7 +691,7 @@ finish_foundation() {
 
     gh variable set GCP_WORKLOAD_PROJECT_ID \
         --repo "$REPOSITORY" --body "$WORKLOAD_PROJECT_ID"
-    if [ "$(gh variable get GCP_WORKLOAD_PROJECT_ID --repo "$REPOSITORY")" !=
+    if [ "$(gh variable get GCP_WORKLOAD_PROJECT_ID --repo "$REPOSITORY")" != \
         "$WORKLOAD_PROJECT_ID" ]; then
         fail 'published workload project coordinate'
     fi
