@@ -53,6 +53,10 @@ resource "google_project" "workload" {
   labels          = local.labels
 
   lifecycle {
+    # Allocate the globally unique replacement ID before Google receives the
+    # current project's deletion request.
+    create_before_destroy = true
+
     precondition {
       condition     = var.organization_id == null || var.folder_id == null
       error_message = "Set at most one of organization_id or folder_id."
