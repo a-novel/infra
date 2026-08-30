@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Provides service and Cloud Run IAM responses for boundary-focused audit tests.
+# Provides service and IAM responses for boundary-focused foundation audits.
 
 set -euo pipefail
 
@@ -27,6 +27,34 @@ cloud_run_policy='{
   "bindings": [
     {
       "role": "projects/workload-project-prod/roles/authenticationInitializerDeployer",
+      "members": ["user:operator@example.com"]
+    },
+    {
+      "role": "roles/compute.osAdminLogin",
+      "members": ["user:operator@example.com"]
+    },
+    {
+      "role": "roles/compute.viewer",
+      "members": ["user:operator@example.com"]
+    },
+    {
+      "role": "roles/iap.tunnelResourceAccessor",
+      "members": ["user:operator@example.com"],
+      "condition": {
+        "title": "DatabaseIAPSSHOnly",
+        "expression": "destination.port == 22"
+      }
+    },
+    {
+      "role": "roles/logging.viewer",
+      "members": ["user:operator@example.com"]
+    },
+    {
+      "role": "roles/monitoring.alertPolicyViewer",
+      "members": ["user:operator@example.com"]
+    },
+    {
+      "role": "roles/serviceusage.serviceUsageConsumer",
       "members": ["user:operator@example.com"]
     },
     {
@@ -120,6 +148,13 @@ case "$*" in
                     role: "roles/run.admin",
                     members: ["user:operator@example.com"]
                   }]
+                ' <<<"$cloud_run_policy"
+                ;;
+            missing-operator-api-access)
+                jq --compact-output '
+                  del(.bindings[] |
+                    select(.role == "roles/serviceusage.serviceUsageConsumer")
+                  )
                 ' <<<"$cloud_run_policy"
                 ;;
             stop)
