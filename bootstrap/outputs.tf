@@ -50,5 +50,5 @@ output "workload_identity_providers" {
 
 output "secret_ids" {
   description = "Metadata-only Secret Manager containers. Secret versions are deliberately outside OpenTofu state."
-  value       = local.application_secret_ids
+  value       = { for name, secret in google_secret_manager_secret.application : name => secret.secret_id }
 }

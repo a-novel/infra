@@ -257,35 +257,35 @@ run "builds_the_protected_management_plane" {
 
   assert {
     condition = (
-      length(google_secret_manager_secret.application) == 7 &&
+      toset(keys(google_secret_manager_secret.application)) == toset([
+        "production-authentication-postgres-backup-password",
+        "production-authentication-postgres-password",
+        "production-authentication-smtp-sender-password",
+        "production-authentication-super-admin-password",
+        "production-json-keys-app-master-key",
+        "production-json-keys-postgres-backup-password",
+        "production-json-keys-postgres-password",
+      ]) &&
       alltrue([
         for secret in values(google_secret_manager_secret.application) :
         secret.deletion_protection &&
         secret.deletion_policy == "PREVENT" &&
         secret.version_destroy_ttl == "2592000s"
-      ]) &&
-      toset(keys(google_secret_manager_secret.retiring_application)) == toset([
-        "production-authentication-postgres-dsn",
-        "production-json-keys-postgres-dsn",
-      ]) &&
-      alltrue([
-        for secret in values(google_secret_manager_secret.retiring_application) :
-        !secret.deletion_protection &&
-        secret.deletion_policy == "DELETE" &&
-        secret.version_destroy_ttl == "2592000s"
-      ]) &&
-      length(local.application_secret_ids) == 9
+      ])
     )
-    error_message = "Seven active secrets must stay protected while the two empty DSN containers are explicitly disarmed."
+    error_message = "The exact seven application secret containers must remain protected."
   }
 
   assert {
-    condition = toset([
-      for binding in values(google_secret_manager_secret_iam_member.operator) : binding.role
-      ]) == toset([
-      "roles/secretmanager.secretAccessor",
-      "roles/secretmanager.secretVersionManager",
-    ])
+    condition = (
+      length(google_secret_manager_secret_iam_member.operator) == 14 &&
+      toset([
+        for binding in values(google_secret_manager_secret_iam_member.operator) : binding.role
+        ]) == toset([
+        "roles/secretmanager.secretAccessor",
+        "roles/secretmanager.secretVersionManager",
+      ])
+    )
     error_message = "Human operators need exact per-secret payload and reversible version-lifecycle access."
   }
 

@@ -58,7 +58,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 WORKLOAD_PROJECT_ID="$INFRA_WORKLOAD_PROJECT_ID"
 MANAGEMENT_PROJECT_ID="$INFRA_MANAGEMENT_PROJECT_ID"
 
-for command_name in gh gcloud grep jq; do
+for command_name in gh gcloud jq; do
     require_command "$command_name"
 done
 
@@ -104,6 +104,7 @@ audit_foundation() {
     local initializer_tag_policy
     local initializer_service_account_policy
     local secret_inventory
+    local expected_secret_inventory
     local secret_policy
     local expected_secret_services
     local initializer_members
@@ -368,23 +369,21 @@ audit_foundation() {
     pass 'zero user-managed service-account keys'
 
     expected_secrets=(
-        production-authentication-postgres-dsn
         production-authentication-postgres-password
         production-authentication-postgres-backup-password
         production-authentication-smtp-sender-password
         production-authentication-super-admin-password
         production-json-keys-app-master-key
-        production-json-keys-postgres-dsn
         production-json-keys-postgres-password
         production-json-keys-postgres-backup-password
     )
     secret_inventory="$(gcloud secrets list --project="$MANAGEMENT_PROJECT_ID" \
-        --format='value(name.basename())')"
+        --format='value(name.basename())' | sort)"
+    expected_secret_inventory="$(printf '%s\n' "${expected_secrets[@]}" | sort)"
+    if [ "$secret_inventory" != "$expected_secret_inventory" ]; then
+        fail 'exact Secret Manager container inventory'
+    fi
     for secret_name in "${expected_secrets[@]}"; do
-        if ! grep --fixed-strings --line-regexp --quiet \
-            "$secret_name" <<<"$secret_inventory"; then
-            fail "required Secret Manager container ${secret_name}"
-        fi
         secret_policy="$(gcloud secrets get-iam-policy "$secret_name" \
             --project="$MANAGEMENT_PROJECT_ID" --format=json)"
         if ! jq --exit-status '
@@ -395,14 +394,6 @@ audit_foundation() {
             fail 'no public Secret Manager principals'
         fi
         case "$secret_name" in
-            production-authentication-postgres-dsn | production-json-keys-postgres-dsn)
-                expected_secret_services='[]'
-                secret_versions="$(gcloud secrets versions list "$secret_name" \
-                    --project="$MANAGEMENT_PROJECT_ID" --format=json)"
-                if ! jq --exit-status 'length == 0' <<<"$secret_versions" >/dev/null; then
-                    fail "empty retiring Secret Manager container ${secret_name}"
-                fi
-                ;;
             production-authentication-postgres-backup-password | production-json-keys-postgres-backup-password)
                 expected_secret_services='["agora-backup", "agora-database-host"]'
                 ;;
@@ -449,7 +440,7 @@ audit_foundation() {
             fail "Secret Manager runtime allowlist for ${secret_name}"
         fi
     done
-    pass 'seven active secrets and two empty DSN retirement candidates'
+    pass 'seven Secret Manager containers and runtime allowlists'
 
     backup_policy_json="$(gcloud storage buckets get-iam-policy \
         "gs://${BACKUP_BUCKET_NAME}" --format=json)"
