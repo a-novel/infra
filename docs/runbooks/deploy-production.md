@@ -39,7 +39,9 @@ WORKLOAD_PROJECT_ID="$INFRA_WORKLOAD_PROJECT_ID"
 BACKUP_BUCKET_NAME="$(gh variable get GCP_BACKUP_BUCKET --repo "$REPOSITORY")"
 RECEIPT_BUCKET_NAME="$(gh variable get GCP_RECEIPT_BUCKET --repo "$REPOSITORY")"
 
-AUTH_SUPER_ADMIN_EMAIL="$(gcloud config get-value account 2>/dev/null)"
+OPERATOR_PRINCIPAL="user:$(gcloud config get-value account 2>/dev/null)"
+[[ "$OPERATOR_PRINCIPAL" =~ ^user:[^[:space:]@]+@[^[:space:]@]+$ ]]
+AUTH_SUPER_ADMIN_EMAIL="${OPERATOR_PRINCIPAL#user:}"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
@@ -147,6 +149,21 @@ does not authorize deletion.
 
 ## 2. Collect foundation-owned coordinates
 
+Tag IDs are non-secret metadata, but listing them requires Tag Viewer. Grant that view-only role to the
+active operator for this lookup:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+gcloud projects add-iam-policy-binding "$WORKLOAD_PROJECT_ID" \
+  --member="$OPERATOR_PRINCIPAL" \
+  --role=roles/resourcemanager.tagViewer \
+  --condition=None \
+  --format=none
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
 ```zsh
 () {
 setopt local_options err_return pipe_fail
@@ -162,10 +179,9 @@ DATABASE_ZONE="$(gcloud compute instance-groups managed list --project="$WORKLOA
 [[ "$DATABASE_ZONE" =~ ^[a-z]+-[a-z]+[0-9]+-[a-z]$ ]]
 REGION="${DATABASE_ZONE%-*}"
 
-DATABASE_INSTANCE_URI="$(gcloud compute instance-groups managed list-instances agora-database \
+DATABASE_INSTANCE_NAME="$(gcloud compute instance-groups managed list-instances agora-database \
   --project="$WORKLOAD_PROJECT_ID" --zone="$DATABASE_ZONE" \
-  --format='value(instance)' --limit=1)"
-DATABASE_INSTANCE_NAME="${DATABASE_INSTANCE_URI##*/}"
+  --format='value(instance.basename())' --limit=1)"
 [[ "$DATABASE_INSTANCE_NAME" == agora-database-* ]]
 DATABASE_PRIVATE_IP="$(gcloud compute instances describe "$DATABASE_INSTANCE_NAME" \
   --project="$WORKLOAD_PROJECT_ID" --zone="$DATABASE_ZONE" \
@@ -208,6 +224,21 @@ Expected safe result: one `agora-database-*` member with an RFC 1918 address, on
 network, one `10.20.0.0/24` subnet with Private Google Access, and one permanent ID for each of the
 five invocation classes. Do not print instance metadata or OpenTofu outputs; either can include
 release configuration.
+
+Remove the temporary binding now. If collection failed after the grant, run this cleanup before
+retrying:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+gcloud projects remove-iam-policy-binding "$WORKLOAD_PROJECT_ID" \
+  --member="$OPERATOR_PRINCIPAL" \
+  --role=roles/resourcemanager.tagViewer \
+  --condition=None \
+  --format=none
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
 
 ## 3. Select and verify exact secret versions
 
