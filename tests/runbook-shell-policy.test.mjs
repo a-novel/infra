@@ -186,6 +186,25 @@ test("database host operations are one-line restartable commands", () => {
   assert.doesNotMatch(debugRunbook, /^gcloud compute ssh /m);
 });
 
+test("release coordinate discovery uses bounded tag inspection access", () => {
+  const { content: deploymentRunbook } = runbooks.find(
+    (runbook) => runbook.name === "deploy-production.md",
+  );
+
+  for (const content of [deploymentRunbook, setupGuide.content]) {
+    assert.match(content, /--format='value\(instance\.basename\(\)\)'/);
+    assert.doesNotMatch(content, /DATABASE_INSTANCE_URI/);
+    assert.match(
+      content,
+      /projects add-iam-policy-binding[\s\S]*?--role=roles\/resourcemanager\.tagViewer[\s\S]*?--condition=None/,
+    );
+    assert.match(
+      content,
+      /projects remove-iam-policy-binding[\s\S]*?--role=roles\/resourcemanager\.tagViewer[\s\S]*?--condition=None/,
+    );
+  }
+});
+
 test("operator-owned project coordinates stay explicit and repeatable", async () => {
   const envrc = await readFile(path.join(repositoryRoot, ".envrc"), "utf8");
   const gitignore = await readFile(

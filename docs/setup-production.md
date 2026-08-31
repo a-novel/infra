@@ -191,6 +191,22 @@ for Authentication initialization.
 
 ### Run the human-only Authentication initializer
 
+Grant the active operator temporary Tag Viewer access before collecting live tag IDs:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+OPERATOR_PRINCIPAL="user:$(gcloud config get-value account 2>/dev/null)"
+[[ "$OPERATOR_PRINCIPAL" =~ ^user:[^[:space:]@]+@[^[:space:]@]+$ ]]
+gcloud projects add-iam-policy-binding "$INFRA_WORKLOAD_PROJECT_ID" \
+  --member="$OPERATOR_PRINCIPAL" \
+  --role=roles/resourcemanager.tagViewer \
+  --condition=None \
+  --format=none
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
 Collect every coordinate from live state and the reviewed manifest. This block extracts the digest;
 do not paste or edit one:
 
@@ -204,14 +220,17 @@ WORKLOAD_PROJECT_ID="$INFRA_WORKLOAD_PROJECT_ID"
 DATABASE_ZONE="$(gcloud compute instance-groups managed list --project="$WORKLOAD_PROJECT_ID" --filter='name=agora-database' --format='value(zone.basename())')"
 [[ "$DATABASE_ZONE" =~ ^[a-z]+-[a-z]+[0-9]+-[a-z]$ ]]
 REGION="${DATABASE_ZONE%-*}"
-DATABASE_INSTANCE_URI="$(gcloud compute instance-groups managed list-instances agora-database --project="$WORKLOAD_PROJECT_ID" --zone="$DATABASE_ZONE" --format='value(instance)' --limit=1)"
-DATABASE_INSTANCE_NAME="${DATABASE_INSTANCE_URI##*/}"
+DATABASE_INSTANCE_NAME="$(gcloud compute instance-groups managed list-instances agora-database --project="$WORKLOAD_PROJECT_ID" --zone="$DATABASE_ZONE" --format='value(instance.basename())' --limit=1)"
+[[ "$DATABASE_INSTANCE_NAME" == agora-database-* ]]
 DATABASE_PRIVATE_IP="$(gcloud compute instances describe "$DATABASE_INSTANCE_NAME" --project="$WORKLOAD_PROJECT_ID" --zone="$DATABASE_ZONE" --format='value(networkInterfaces[0].networkIP)')"
 [[ "$DATABASE_PRIVATE_IP" =~ ^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.) ]]
 AUTH_SUPER_ADMIN_EMAIL="$(gcloud config get-value account 2>/dev/null)"
 MANAGEMENT_PROJECT_NUMBER="$(gcloud projects describe "$MANAGEMENT_PROJECT_ID" --format='value(projectNumber)')"
+[[ "$MANAGEMENT_PROJECT_NUMBER" =~ ^[0-9]+$ ]]
 WORKLOAD_PROJECT_NUMBER="$(gcloud projects describe "$WORKLOAD_PROJECT_ID" --format='value(projectNumber)')"
+[[ "$WORKLOAD_PROJECT_NUMBER" =~ ^[0-9]+$ ]]
 INVOCATION_TAG_KEY="$(gcloud resource-manager tags keys list --parent="projects/${WORKLOAD_PROJECT_NUMBER}" --filter='shortName=agora-invocation' --format='value(name)')"
+[[ "$INVOCATION_TAG_KEY" =~ ^tagKeys/[0-9]+$ ]]
 INITIALIZER_TAG_VALUE="$(gcloud resource-manager tags values list --parent="$INVOCATION_TAG_KEY" --filter='shortName=initializer' --format='value(name)')"
 sole_enabled_secret_version() {
   gcloud secrets versions list "$1" --project="$MANAGEMENT_PROJECT_ID" --format=json \
@@ -226,7 +245,6 @@ AUTH_POSTGRES_PASSWORD_VERSION="$(sole_enabled_secret_version production-authent
 AUTH_SUPER_ADMIN_PASSWORD_VERSION="$(sole_enabled_secret_version production-authentication-super-admin-password)"
 unset -f sole_enabled_secret_version
 INIT_DIGEST="$(node --input-type=module -e 'import { readFile } from "node:fs/promises"; import { parse } from "yaml"; const manifest = parse(await readFile("deploy/production/images.yaml", "utf8")); process.stdout.write(manifest.components["service-authentication"].images["jobs/init"].digest);')"
-[[ "$MANAGEMENT_PROJECT_NUMBER" =~ ^[0-9]+$ ]]
 [[ "$INITIALIZER_TAG_VALUE" =~ ^tagValues/[0-9]+$ ]]
 [[ "$AUTH_POSTGRES_PASSWORD_VERSION" =~ ^[1-9][0-9]*$ ]]
 [[ "$AUTH_SUPER_ADMIN_PASSWORD_VERSION" =~ ^[1-9][0-9]*$ ]]
@@ -235,6 +253,21 @@ INIT_IMAGE="${REGION}-docker.pkg.dev/${WORKLOAD_PROJECT_ID}/agora-production/ser
 INIT_SERVICE_ACCOUNT="agora-auth-initializer@${WORKLOAD_PROJECT_ID}.iam.gserviceaccount.com"
 INIT_JOB_PARENT="//run.googleapis.com/projects/${WORKLOAD_PROJECT_ID}/locations/${REGION}/jobs/agora-authentication-init"
 gcloud artifacts docker images describe "$INIT_IMAGE" --project="$WORKLOAD_PROJECT_ID" --format='none'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Remove the temporary binding now. If collection failed after the grant, run this cleanup before
+retrying:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+gcloud projects remove-iam-policy-binding "$WORKLOAD_PROJECT_ID" \
+  --member="$OPERATOR_PRINCIPAL" \
+  --role=roles/resourcemanager.tagViewer \
+  --condition=None \
+  --format=none
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
