@@ -144,6 +144,11 @@ gh pr view "$ACTIVATION_PR" --repo "$REPOSITORY" --json labels,reviewDecision,st
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
+The labeled merge must remain the exact `master` commit used for the first release. If another pull
+request merges first, create a fresh pull request, add `allow-resource-deletion` before it merges,
+and launch from that new merge commit. A post-merge label is invalid; an exit `77` at this preflight
+made no production mutation and needs no rollback.
+
 Merge only after review and required checks pass. Pull that merge to local `master`, then enable the
 one-time launch switch:
 
