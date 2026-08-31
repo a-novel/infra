@@ -19,7 +19,7 @@ const testDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(testDirectory, "..");
 const script = path.join(repositoryRoot, "ops/database-host.sh");
 
-test("database host SSH setup is repeatable and derives the live host", async (context) => {
+test("database host access is repeatable and derives the live host", async (context) => {
   const temporaryDirectory = await mkdtemp(
     path.join(os.tmpdir(), "infra-database-host-"),
   );
@@ -38,14 +38,6 @@ test("database host SSH setup is repeatable and derives the live host", async (c
 set -euo pipefail
 printf '%s\\n' "$*" >>"$FAKE_GCLOUD_LOG"
 case "$*" in
-  "compute os-login ssh-keys describe "*"--format=value(fingerprint)")
-    printf '%s\\n' 'SHA256:fixture-fingerprint'
-    ;;
-  "compute os-login ssh-keys describe "*)
-    [ "\${FAKE_KEY_EXISTS:-false}" = true ]
-    ;;
-  "compute os-login ssh-keys add "*|"compute os-login ssh-keys update "*)
-    ;;
   "compute instance-groups managed list "*)
     printf '%s\\n' 'europe-west1-d'
     ;;
@@ -54,6 +46,8 @@ case "$*" in
     ;;
   "compute instances describe "*"--format=value(networkInterfaces[0].networkIP)")
     printf '%s\\n' '10.20.0.2'
+    ;;
+  "compute instance-groups managed describe "*|"compute instances describe "*|"compute disks describe "*|"compute resource-policies describe "*|"compute snapshots list "*|"compute firewall-rules describe "*|"monitoring policies list "*)
     ;;
   "compute ssh "*)
     ;;
@@ -84,52 +78,44 @@ printf '%s\\n' 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFixture a-novel-database-op
   await chmod(path.join(binaryDirectory, "gcloud"), 0o700);
   await chmod(path.join(binaryDirectory, "ssh-keygen"), 0o700);
 
-  const baseEnvironment = {
+  const localEnvironment = {
     ...process.env,
     PATH: `${binaryDirectory}:${process.env.PATH}`,
     FAKE_GCLOUD_LOG: gcloudLog,
     FAKE_KEYGEN_LOG: keygenLog,
+    HOME: temporaryDirectory,
+  };
+  const cloudEnvironment = {
+    ...localEnvironment,
     INFRA_MANAGEMENT_PROJECT_ID: "management-project-prod",
     INFRA_WORKLOAD_PROJECT_ID: "workload-project-prod",
-    HOME: temporaryDirectory,
   };
 
   await assert.rejects(
-    execFile(script, ["inspect", "--ttl", "2h"], { env: baseEnvironment }),
+    execFile(script, ["inspect", "--ttl", "2h"], { env: cloudEnvironment }),
+    (error) => error.code === 64,
+  );
+  await assert.rejects(
+    execFile(script, ["key", "--ttl", "2h"], { env: localEnvironment }),
     (error) => error.code === 64,
   );
 
   const created = await execFile(script, ["key"], {
-    env: baseEnvironment,
+    env: localEnvironment,
   });
-  assert.equal(
-    created.stdout.trim(),
-    "PASS OS Login SSH key SHA256:fixture-fingerprint",
-  );
+  assert.equal(created.stdout.trim(), "PASS local SSH key pair");
   assert.match(
     await readFile(path.join(`${keyFile}.pub`), "utf8"),
     /^ssh-ed25519 /,
   );
   assert.match(await readFile(keygenLog, "utf8"), /-t ed25519 -a 64/);
-  assert.match(
-    await readFile(gcloudLog, "utf8"),
-    /compute os-login ssh-keys add .*--ttl=1h/,
-  );
+  assert.equal(await readFile(gcloudLog, "utf8"), "");
 
-  await writeFile(gcloudLog, "");
-  const renewed = await execFile(
-    script,
-    ["key", "--key-file", keyFile, "--ttl", "2h"],
-    { env: { ...baseEnvironment, FAKE_KEY_EXISTS: "true" } },
-  );
-  assert.equal(
-    renewed.stdout.trim(),
-    "PASS OS Login SSH key SHA256:fixture-fingerprint",
-  );
-  assert.match(
-    await readFile(gcloudLog, "utf8"),
-    /compute os-login ssh-keys update .*--ttl=2h/,
-  );
+  const reused = await execFile(script, ["key", "--key-file", keyFile], {
+    env: localEnvironment,
+  });
+  assert.equal(reused.stdout.trim(), "PASS local SSH key pair");
+  assert.equal(await readFile(gcloudLog, "utf8"), "");
   assert.equal(
     (await readFile(keygenLog, "utf8")).trim().split("\n").length,
     1,
@@ -138,7 +124,7 @@ printf '%s\\n' 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFixture a-novel-database-op
   await writeFile(halfKeyFile, "fixture-private-key\n");
   await assert.rejects(
     execFile(script, ["key", "--key-file", halfKeyFile], {
-      env: baseEnvironment,
+      env: localEnvironment,
     }),
     (error) =>
       error.code === 64 &&
@@ -146,8 +132,8 @@ printf '%s\\n' 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFixture a-novel-database-op
   );
 
   await writeFile(gcloudLog, "");
-  await execFile(script, ["ssh", "--key-file", keyFile], {
-    env: { ...baseEnvironment, FAKE_KEY_EXISTS: "true" },
+  await execFile(script, ["ssh", "--key-file", keyFile, "--ttl", "2h"], {
+    env: cloudEnvironment,
   });
   const sshLog = await readFile(gcloudLog, "utf8");
   assert.match(
@@ -157,16 +143,28 @@ printf '%s\\n' 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFixture a-novel-database-op
   assert.match(
     sshLog,
     new RegExp(
-      `compute ssh agora-database-test --project=workload-project-prod --zone=europe-west1-d --ssh-key-file=${keyFile} --ssh-key-expire-after=1h --tunnel-through-iap`,
+      `compute ssh agora-database-test --project=workload-project-prod --zone=europe-west1-d --ssh-key-file=${keyFile} --ssh-key-expire-after=2h --tunnel-through-iap`,
     ),
   );
+  assert.doesNotMatch(sshLog, /compute os-login/);
 
   await writeFile(gcloudLog, "");
   await execFile(script, ["troubleshoot", "--key-file", keyFile], {
-    env: { ...baseEnvironment, FAKE_KEY_EXISTS: "true" },
+    env: cloudEnvironment,
   });
   assert.match(
     await readFile(gcloudLog, "utf8"),
     /compute ssh .*--tunnel-through-iap --troubleshoot/,
+  );
+
+  await writeFile(gcloudLog, "");
+  const inspected = await execFile(script, ["inspect"], {
+    env: cloudEnvironment,
+  });
+  assert.match(inspected.stdout, /PASS database host inspection\n$/);
+  const inspectionLog = await readFile(gcloudLog, "utf8");
+  assert.doesNotMatch(
+    inspectionLog,
+    /get-iam-policy|config get-value account|compute os-login/,
   );
 });

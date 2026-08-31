@@ -94,10 +94,10 @@ debugging.
 ## Prerequisites
 
 - Complete [Provision and verify the workload foundation](./provision-workload-foundation.md).
-- Use a Google account listed in `database_operator_principals`. It needs Compute Viewer, Logs
-  Viewer, Monitoring AlertPolicy Viewer, Service Usage Consumer, OS Admin Login, IAP Tunnel
-  Resource Accessor limited to port `22`, and Service Account User on the exact database runtime
-  identity.
+- Use a Google account covered by `database_operator_principals`, directly or through a listed
+  group. It needs Compute Viewer, Logs Viewer, Monitoring AlertPolicy Viewer, Service Usage
+  Consumer, OS Admin Login, IAP Tunnel Resource Accessor limited to port `22`, and Service Account
+  User on the exact database runtime identity.
 - An operator from another Google organization also needs OS Login External User from that
   organization's administrator. This manual grant stays outside workload-project automation.
 - Keep MFA enabled and work in a private, non-recorded shell with tracing disabled.
@@ -119,9 +119,9 @@ debugging.
 ./ops/database-host.sh inspect
 ```
 
-The command derives the current zone and generated instance, then prints only the state needed to
-verify the group, VM, disk, snapshot policy, firewall, alerts, and active operator grants. It must
-end with `PASS database host inspection`.
+The command derives the current zone and generated instance, then prints the group, VM, disk,
+snapshot policy, firewall rules, and alerts. It must end with `PASS database host inspection`. The
+final foundation audit is the authoritative IAM check.
 
 Check these boundaries in its output:
 
@@ -129,9 +129,7 @@ Check these boundaries in its output:
   stateful `nic0`, and preserved `agora-data`;
 - one `READY` balanced disk, the daily seven-day snapshot policy, and a recent automatic snapshot;
 - only the reviewed PostgreSQL, IAP SSH, and deny-all egress firewall rules;
-- the five database capacity alerts and the critical recovery alert;
-- Compute Viewer, Logs Viewer, Monitoring AlertPolicy Viewer, Service Usage Consumer, OS Admin
-  Login, port-22 IAP access, and Service Account User for the active operator.
+- the five database capacity alerts and the critical recovery alert.
 
 Use the [debug runbook](./debug-postgresql-host.md) for the reusable Ed25519 key, IAP connection,
 safe one-line host checks, and reviewed operator access changes.
@@ -323,8 +321,6 @@ Do not rely on application passwords while a public path exists.
 - [Docker restart policies](https://docs.docker.com/engine/containers/start-containers-automatically/)
 - [OS Login setup](https://cloud.google.com/compute/docs/oslogin/set-up-oslogin)
 - [Create SSH keys](https://cloud.google.com/compute/docs/connect/create-ssh-keys)
-- [Add SSH keys to OS Login](https://cloud.google.com/compute/docs/connect/add-ssh-keys#os-login)
-- [`gcloud` OS Login SSH key update](https://cloud.google.com/sdk/gcloud/reference/compute/os-login/ssh-keys/update)
 - [IAP TCP forwarding](https://cloud.google.com/iap/docs/using-tcp-forwarding)
 - [Cloud Monitoring access control](https://cloud.google.com/monitoring/access-control)
 - [Service Usage access control](https://cloud.google.com/service-usage/docs/access-control)

@@ -8,7 +8,7 @@ usage() {
     cat >&2 <<EOF
 Usage:
   $0 inspect
-  $0 key [--key-file <path>] [--ttl <duration>]
+  $0 key [--key-file <path>]
   $0 ssh [--key-file <path>] [--ttl <duration>]
   $0 troubleshoot [--key-file <path>] [--ttl <duration>]
 EOF
@@ -55,6 +55,7 @@ while [ "$#" -gt 0 ]; do
             shift 2
             ;;
         --ttl)
+            [ "$COMMAND" != key ] || usage
             [ "$#" -ge 2 ] || usage
             KEY_TTL="$2"
             shift 2
@@ -65,29 +66,33 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
-if [ "$COMMAND" != inspect ]; then
+if [ "$COMMAND" = ssh ] || [ "$COMMAND" = troubleshoot ]; then
     if ! [[ "$KEY_TTL" =~ ^[1-9][0-9]*(s|m|h|d)$ ]]; then
         fail 'SSH key TTL is invalid' 64
     fi
+fi
+if [ "$COMMAND" != inspect ]; then
     if [ -z "$KEY_FILE" ] || [[ "$KEY_FILE" == *$'\n'* ]]; then
         fail 'SSH key path is invalid' 64
     fi
 fi
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-"${SCRIPT_DIR}/verify-operator-env.sh" >/dev/null
-WORKLOAD_PROJECT_ID="$INFRA_WORKLOAD_PROJECT_ID"
+WORKLOAD_PROJECT_ID=''
 DATABASE_GROUP='agora-database'
 DATABASE_DISK='agora-data'
 DATABASE_SNAPSHOT_POLICY='agora-database-daily-snapshots'
-DATABASE_SERVICE_ACCOUNT="agora-database-host@${WORKLOAD_PROJECT_ID}.iam.gserviceaccount.com"
 DATABASE_ZONE=''
 DATABASE_REGION=''
 DATABASE_INSTANCE=''
 DATABASE_PRIVATE_IP=''
 
-require_command gcloud
-export CLOUDSDK_CORE_DISABLE_PROMPTS=1
+load_cloud_context() {
+    "${SCRIPT_DIR}/verify-operator-env.sh" >/dev/null
+    WORKLOAD_PROJECT_ID="$INFRA_WORKLOAD_PROJECT_ID"
+    require_command gcloud
+    export CLOUDSDK_CORE_DISABLE_PROMPTS=1
+}
 
 load_host() {
     DATABASE_ZONE="$(gcloud compute instance-groups managed list \
@@ -117,10 +122,9 @@ load_host() {
     fi
 }
 
-prepare_key() {
+ensure_key() {
     local public_key_file="${KEY_FILE}.pub"
     local key_type
-    local fingerprint
 
     require_command ssh-keygen
     umask 077
@@ -141,40 +145,12 @@ prepare_key() {
         *) fail 'use an Ed25519 or ECDSA SSH key' 64 ;;
     esac
 
-    if gcloud compute os-login ssh-keys describe \
-        --project="$WORKLOAD_PROJECT_ID" \
-        --key-file="$public_key_file" >/dev/null 2>&1; then
-        gcloud compute os-login ssh-keys update \
-            --project="$WORKLOAD_PROJECT_ID" \
-            --key-file="$public_key_file" \
-            --ttl="$KEY_TTL" \
-            --format=none
-    else
-        gcloud compute os-login ssh-keys add \
-            --project="$WORKLOAD_PROJECT_ID" \
-            --key-file="$public_key_file" \
-            --ttl="$KEY_TTL" \
-            --format=none
-    fi
-
-    fingerprint="$(gcloud compute os-login ssh-keys describe \
-        --project="$WORKLOAD_PROJECT_ID" \
-        --key-file="$public_key_file" \
-        --format='value(fingerprint)')"
-    if [ -z "$fingerprint" ] || [[ "$fingerprint" == *$'\n'* ]]; then
-        fail 'OS Login did not return one SSH key fingerprint'
-    fi
-    pass "OS Login SSH key ${fingerprint}"
+    pass 'local SSH key pair'
 }
 
 inspect_host() {
-    local operator_principal
-
+    load_cloud_context
     load_host
-    operator_principal="user:$(gcloud config get-value account 2>/dev/null)"
-    if ! [[ "$operator_principal" =~ ^user:[^[:space:]@]+@[^[:space:]@]+$ ]]; then
-        fail 'active Google account is invalid'
-    fi
 
     printf 'Database group: %s\nDatabase instance: %s\nZone: %s\nPrivate IP: %s\n' \
         "$DATABASE_GROUP" "$DATABASE_INSTANCE" "$DATABASE_ZONE" "$DATABASE_PRIVATE_IP"
@@ -213,22 +189,14 @@ inspect_host() {
     gcloud monitoring policies list --project="$WORKLOAD_PROJECT_ID" \
         --filter='display_name="Agora PostgreSQL recovery jobs unhealthy"' \
         --format='table(display_name,enabled,severity,conditions[0].display_name)'
-    gcloud projects get-iam-policy "$WORKLOAD_PROJECT_ID" \
-        --flatten='bindings[].members' \
-        --filter="bindings.members=${operator_principal} AND bindings.role:(roles/compute.osAdminLogin roles/compute.viewer roles/iap.tunnelResourceAccessor roles/logging.viewer roles/monitoring.alertPolicyViewer roles/serviceusage.serviceUsageConsumer)" \
-        --format='table(bindings.role,bindings.condition.expression)'
-    gcloud iam service-accounts get-iam-policy "$DATABASE_SERVICE_ACCOUNT" \
-        --project="$WORKLOAD_PROJECT_ID" \
-        --flatten='bindings[].members' \
-        --filter="bindings.members=${operator_principal} AND bindings.role=roles/iam.serviceAccountUser" \
-        --format='table(bindings.role)'
     pass 'database host inspection'
 }
 
 open_ssh() {
     local -a extra_arguments=()
 
-    prepare_key
+    load_cloud_context
+    ensure_key
     load_host
     if [ "$COMMAND" = troubleshoot ]; then
         extra_arguments+=(--troubleshoot)
@@ -244,6 +212,6 @@ open_ssh() {
 
 case "$COMMAND" in
     inspect) inspect_host ;;
-    key) prepare_key ;;
+    key) ensure_key ;;
     ssh | troubleshoot) open_ssh ;;
 esac

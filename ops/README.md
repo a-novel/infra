@@ -20,7 +20,7 @@ removes that temporary authority.
 | [`foundation.sh`](./foundation.sh)                         | Configure, provision, and deprivilege the workload foundation from a fresh shell.            | Only the named `configure`, `grant*`, `revoke*`, and `finish` operations |
 | [`foundation-audit.sh`](./foundation-audit.sh)             | Check additive IAM, key, secret, registry, and network boundaries OpenTofu cannot close.     | No                                                                       |
 | [`run-workflow.sh`](./run-workflow.sh)                     | Dispatch one semantic protected plan, apply, deploy, rollback, drift, or recovery operation. | Only inside the selected protected workflow                              |
-| [`database-host.sh`](./database-host.sh)                   | Inspect the database host, register an OS Login key, or connect through IAP.                 | OS Login public-key registration only                                    |
+| [`database-host.sh`](./database-host.sh)                   | Inspect the database host, prepare a local EC key, or connect through IAP.                   | OS Login public-key upload during `ssh` and `troubleshoot`               |
 | [`add-secret-version.sh`](./add-secret-version.sh)         | Add one Secret Manager version from hidden terminal input without echoing the payload.       | Yes                                                                      |
 
 Run these from the repository root. They use Bash internally and work from an existing zsh or Bash

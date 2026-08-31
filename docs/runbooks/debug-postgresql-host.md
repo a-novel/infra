@@ -13,8 +13,9 @@ Run from the repository root:
 ./ops/verify-operator-env.sh --github
 ```
 
-The active Google account must be listed in `INFRA_DATABASE_OPERATOR_PRINCIPALS`. An account from
-another Google organization also needs OS Login External User from its own administrator.
+The active Google account must receive the access configured by
+`INFRA_DATABASE_OPERATOR_PRINCIPALS`, directly or through a listed group. An account from another
+Google organization also needs OS Login External User from its own administrator.
 
 ## Inspect the host
 
@@ -22,9 +23,8 @@ another Google organization also needs OS Login External User from its own admin
 ./ops/database-host.sh inspect
 ```
 
-The command prints only control-plane fields needed to verify the one-member group, private VM,
-preserved disk, snapshot policy, firewall rules, alerts, and the active operator's grants. It must
-end with `PASS database host inspection`.
+The command prints the private VM, preserved disk, snapshot policy, firewall rules, and alerts. It
+must end with `PASS database host inspection`. The final foundation audit is the IAM check.
 
 ## Create or reuse the SSH key
 
@@ -41,20 +41,20 @@ To reuse an existing Ed25519 or ECDSA pair, pass its private path:
 ./ops/database-host.sh key --key-file "$HOME/.ssh/id_ed25519"
 ```
 
-Both the private file and `<path>.pub` must exist. A half-existing or non-EC pair fails closed. The
-public key is registered in the operator's OS Login profile for one hour; the private key never
-leaves the workstation. Repeat the command to renew the same key rather than creating another.
+Both the private file and `<path>.pub` must exist. A half-existing or non-EC pair fails closed. This
+command checks only the local pair; the private key never leaves the workstation.
 
 ## Connect through IAP
 
-The SSH command also creates or renews the default key, then discovers the current host:
+The SSH command checks the local key, discovers the current host, uploads the public key to OS Login
+for one hour, and connects:
 
 ```sh
 ./ops/database-host.sh ssh
 ```
 
-Use the same `--key-file` option when reusing another pair. If login fails, collect the bounded
-Google diagnostic without changing infrastructure:
+Use the same `--key-file` option when reusing another pair. Repeat the SSH command to renew the
+one-hour key registration. If login fails, collect the bounded Google diagnostic:
 
 ```sh
 ./ops/database-host.sh troubleshoot
@@ -136,6 +136,5 @@ an untested replacement.
 - [OS Login](https://cloud.google.com/compute/docs/oslogin)
 - [SSH access best practices](https://cloud.google.com/compute/docs/connect/ssh-best-practices/login-access)
 - [`gcloud compute ssh`](https://cloud.google.com/sdk/gcloud/reference/compute/ssh)
-- [OS Login SSH keys](https://cloud.google.com/sdk/gcloud/reference/compute/os-login/ssh-keys/add)
 - [IAP TCP forwarding](https://cloud.google.com/iap/docs/using-tcp-forwarding)
 - [`ssh-keygen`](https://man.openbsd.org/ssh-keygen.1)
