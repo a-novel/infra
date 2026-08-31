@@ -1498,6 +1498,12 @@ FOUNDATION_OUTPUT="$(
         FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
         INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \
         INFRA_WORKLOAD_PROJECT_ID=workload-project-prod \
+        INFRA_REGION=europe-west1 \
+        INFRA_DATABASE_ZONE=europe-west1-d \
+        INFRA_COST_ALERT_EMAIL=costs@example.com \
+        INFRA_OPERATIONS_ALERT_EMAIL=operations@example.com \
+        INFRA_DATABASE_OPERATOR_PRINCIPALS='group:database-operators@example.com user:second@example.com' \
+        INFRA_AUTH_INITIALIZER_PRINCIPALS='group:authentication-initializers@example.com' \
         "${REPOSITORY_ROOT}/ops/foundation.sh" configure
 )"
 grep -Fq 'PASS protected foundation environment' <<<"${FOUNDATION_OUTPUT}"
@@ -1507,6 +1513,12 @@ grep -Fq -- '--env production-foundation' "${FOUNDATION_SECRETS}"
 grep -Fq -- '--env production-recovery' "${FOUNDATION_SECRETS}"
 grep -Fq '"workload_project_id":"workload-project-prod"' "${FOUNDATION_SECRETS}"
 grep -Fq '"organization_id":"123456789012"' "${FOUNDATION_SECRETS}"
+grep -Fq '"region":"europe-west1"' "${FOUNDATION_SECRETS}"
+grep -Fq '"database_zone":"europe-west1-d"' "${FOUNDATION_SECRETS}"
+grep -Fq '"database_operator_principals":["group:database-operators@example.com","user:second@example.com"]' "${FOUNDATION_SECRETS}"
+grep -Fq '"authentication_initializer_principals":["group:authentication-initializers@example.com"]' "${FOUNDATION_SECRETS}"
+grep -Fq '"cost_alert_email":"costs@example.com"' "${FOUNDATION_SECRETS}"
+grep -Fq '"operations_alert_email":"operations@example.com"' "${FOUNDATION_SECRETS}"
 grep -Fq '"adopt_existing_project":false' "${FOUNDATION_SECRETS}"
 if grep -Eq 'operator@example\.com|ABCDEF-123456-ABCDEF' <<<"${FOUNDATION_OUTPUT}"; then
     printf 'Protected foundation metadata leaked to stdout.\n' >&2

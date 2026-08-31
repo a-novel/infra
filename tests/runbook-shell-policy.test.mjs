@@ -166,40 +166,72 @@ test("delegated setup procedures use stateless operator commands", () => {
   assert.match(allRunbooks, /foundation-audit\.sh/);
 });
 
-test("operator-owned project coordinates stay explicit and repeatable", async () => {
-  const envrcExample = await readFile(
-    path.join(repositoryRoot, ".envrc.example"),
-    "utf8",
+test("database host operations are one-line restartable commands", () => {
+  const { content: hostRunbook } = runbooks.find(
+    (runbook) => runbook.name === "operate-postgresql-host.md",
   );
+  const { content: debugRunbook } = runbooks.find(
+    (runbook) => runbook.name === "debug-postgresql-host.md",
+  );
+
+  for (const content of [hostRunbook, debugRunbook]) {
+    assert.doesNotMatch(content, /\(\) \{|setopt |unsetopt /);
+  }
+  for (const operation of ["inspect", "key", "ssh", "troubleshoot"]) {
+    assert.match(
+      debugRunbook,
+      new RegExp(`^\\./ops/database-host\\.sh ${operation}(?: |$)`, "m"),
+    );
+  }
+  assert.doesNotMatch(debugRunbook, /^gcloud compute ssh /m);
+});
+
+test("operator-owned project coordinates stay explicit and repeatable", async () => {
+  const envrc = await readFile(path.join(repositoryRoot, ".envrc"), "utf8");
   const gitignore = await readFile(
     path.join(repositoryRoot, ".gitignore"),
     "utf8",
   );
-  const exportLines = envrcExample
+  const exportLines = envrc
     .split("\n")
     .filter((line) => line.startsWith("export "));
+  const exportNames = exportLines.map(
+    (line) => line.match(/^export ([A-Z0-9_]+)='[^'\n]+'$/)?.[1],
+  );
 
-  assert.deepEqual(exportLines, [
-    "export INFRA_MANAGEMENT_PROJECT_ID='replace-with-management-project-id'",
-    "export INFRA_WORKLOAD_PROJECT_ID='replace-with-workload-project-id'",
-    "export SMTP_HOST='replace-with-smtp-hostname'",
-    "export SMTP_USERNAME='replace-with-smtp-username'",
-    "export SMTP_SENDER_EMAIL='replace-with-sender-email'",
-    "export SMTP_SENDER_NAME='replace-with-sender-name'",
+  assert.deepEqual(exportNames, [
+    "INFRA_MANAGEMENT_PROJECT_ID",
+    "INFRA_WORKLOAD_PROJECT_ID",
+    "INFRA_REGION",
+    "INFRA_DATABASE_ZONE",
+    "INFRA_COST_ALERT_EMAIL",
+    "INFRA_OPERATIONS_ALERT_EMAIL",
+    "INFRA_DATABASE_OPERATOR_PRINCIPALS",
+    "INFRA_AUTH_INITIALIZER_PRINCIPALS",
+    "SMTP_HOST",
+    "SMTP_USERNAME",
+    "SMTP_SENDER_EMAIL",
+    "SMTP_SENDER_NAME",
   ]);
   assert.doesNotMatch(
     exportLines.join("\n"),
-    /SECRET|TOKEN|PASSWORD|CREDENTIAL/,
+    /SECRET|TOKEN|PASSWORD|CREDENTIAL|replace-with/,
   );
+  assert.doesNotMatch(envrc, /\$\(|`|source |\. \.\//);
   assert.ok(
-    gitignore.split("\n").includes(".envrc"),
-    ".envrc must remain ignored",
+    !gitignore.split("\n").includes(".envrc"),
+    ".envrc must remain tracked",
+  );
+  await assert.rejects(
+    readFile(path.join(repositoryRoot, ".envrc.example"), "utf8"),
+    (error) => error.code === "ENOENT",
   );
 
   const coordinateRunbooks = new Map([
     ["README.md", "./ops/verify-operator-env.sh --github"],
     ["backup-and-restore-postgresql.md", "--github"],
     ["bootstrap-management-plane.md", "./ops/verify-operator-env.sh\n"],
+    ["debug-postgresql-host.md", "--github"],
     ["deploy-production.md", "--github"],
     ["disaster-recovery.md", "--github"],
     ["operate-postgresql-host.md", "--github"],
@@ -226,7 +258,6 @@ test("operator-owned project coordinates stay explicit and repeatable", async ()
 
   const operatorSources = [
     path.join(repositoryRoot, "README.md"),
-    path.join(repositoryRoot, ".envrc.example"),
     ...(await collectFiles(path.join(repositoryRoot, "docs"))),
     ...(await collectFiles(path.join(repositoryRoot, "ops"))),
     ...(await collectFiles(path.join(repositoryRoot, "tests"))),
@@ -294,7 +325,11 @@ test("Bash fences are limited to commands pasted inside remote COS hosts", () =>
   assert.equal(
     bashBlocks.filter(({ name }) => name === "operate-postgresql-host.md")
       .length,
-    4,
+    1,
+  );
+  assert.equal(
+    bashBlocks.filter(({ name }) => name === "debug-postgresql-host.md").length,
+    3,
   );
   assert.equal(
     bashBlocks.filter(({ name }) => name === "disaster-recovery.md").length,
@@ -303,7 +338,8 @@ test("Bash fences are limited to commands pasted inside remote COS hosts", () =>
   assert.ok(
     bashBlocks.every(
       ({ name, body }) =>
-        (name === "operate-postgresql-host.md" &&
+        ((name === "operate-postgresql-host.md" ||
+          name === "debug-postgresql-host.md") &&
           (body.startsWith("sudo docker") ||
             body.startsWith("for container in agora-postgres-json-keys"))) ||
         (name === "disaster-recovery.md" &&

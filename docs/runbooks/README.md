@@ -24,8 +24,8 @@ The human command map is [`ops/README.md`](../../ops/README.md). Architecture be
 
 ## Start an operation
 
-Create `.envrc` once with the root
-[persistent operator configuration](../../README.md#configure-persistent-operator-inputs). Load it, then refresh the
+Review the committed root
+[persistent operator configuration](../../README.md#review-persistent-operator-inputs). Load it, then refresh the
 repository and verify its gate:
 
 ```sh
@@ -55,6 +55,7 @@ An active workflow must finish or be recovered before another production command
 | ------------------------------------------------------ | ---------------------------------------------------------------------- |
 | Deploy or roll back an application version             | [Deploy and roll back production](./deploy-production.md)              |
 | Scale, resize, inspect, or roll back the database host | [Operate the private PostgreSQL host](./operate-postgresql-host.md)    |
+| Inspect or SSH to the private database host            | [Debug the private PostgreSQL host](./debug-postgresql-host.md)        |
 | Back up, restore, or prove a pre-change recovery gate  | [Back up and restore PostgreSQL](./backup-and-restore-postgresql.md)   |
 | Add, rotate, disable, or destroy a payload version     | [Add or rotate a secret version](./secret-versions.md)                 |
 | Replace or verify the hosted SMTP provider             | [Configure hosted SMTP](./configure-hosted-smtp.md)                    |
