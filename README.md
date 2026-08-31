@@ -36,26 +36,21 @@ The [architecture guide](./docs/architecture.md) explains the lifecycle and secu
 defines the human-only Authentication initializer, scheduled JSON Keys rotation, runtime identities,
 fixed deployment order, compensation, and receipt boundaries.
 
-### Configure persistent operator inputs
+### Review persistent operator inputs
 
-Keep stable, non-secret values used by multiple procedures in the ignored `.envrc`. Start by
-setting the two Google Cloud project IDs. The production setup guide tells you when and where to
-obtain the four SMTP values; add them to the same file before its SMTP step.
+The committed `.envrc` is the reviewed source for stable, non-secret production choices. It contains
+project IDs, region and zone, alert recipients, authorized human principals, and hosted-SMTP
+metadata. Change it through a pull request when deploying another environment or changing an
+operator contract.
 
 ```sh
-if [ ! -e .envrc ]; then
-  cp .envrc.example .envrc
-fi
-chmod 600 .envrc
-${EDITOR:-vi} .envrc
 . ./.envrc
 ./ops/verify-operator-env.sh
 ```
 
-Replace the two project-ID placeholders before the final two commands. The verifier prints
-`PASS operator project coordinates`. Keep credentials, tokens, secret payloads, plan IDs, receipts,
-and incident-specific recovery IDs out of this file. Operators with `direnv` may authorize the same
-file after reviewing it; `direnv` is optional.
+The verifier prints `PASS operator project coordinates`. Credentials, tokens, secret payloads, plan
+IDs, receipts, and incident-specific recovery IDs never belong in `.envrc`. Operators with
+`direnv` may run `direnv allow` after reviewing each change; plain shell sourcing remains supported.
 
 ### Reconcile repository protection
 
@@ -186,6 +181,7 @@ The three names form a security allowlist. Add a root only when a new lifecycle 
 | `tests/`                                  | Mocked OpenTofu, manifest, Renovate, allowlist, and sanitized plan fixtures.   |
 | `docs/architecture.md`                    | Lifecycle, authority, state, delivery, and portability decisions.              |
 | `docs/google-cloud.md`                    | Provider resource map, trust boundaries, and official Google Cloud references. |
+| `docs/runbooks/debug-postgresql-host.md`  | Private OS Login and IAP inspection procedure.                                 |
 | `docs/costs/production.md`                | Current unit assumptions and launch/capacity monthly cost ranges.              |
 | `docs/runbooks/`                          | Human recovery and deployment procedures with verifiable outcomes.             |
 

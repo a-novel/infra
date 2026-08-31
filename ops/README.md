@@ -20,6 +20,7 @@ removes that temporary authority.
 | [`foundation.sh`](./foundation.sh)                         | Configure, provision, and deprivilege the workload foundation from a fresh shell.            | Only the named `configure`, `grant*`, `revoke*`, and `finish` operations |
 | [`foundation-audit.sh`](./foundation-audit.sh)             | Check additive IAM, key, secret, registry, and network boundaries OpenTofu cannot close.     | No                                                                       |
 | [`run-workflow.sh`](./run-workflow.sh)                     | Dispatch one semantic protected plan, apply, deploy, rollback, drift, or recovery operation. | Only inside the selected protected workflow                              |
+| [`database-host.sh`](./database-host.sh)                   | Inspect the database host, register an OS Login key, or connect through IAP.                 | OS Login public-key registration only                                    |
 | [`add-secret-version.sh`](./add-secret-version.sh)         | Add one Secret Manager version from hidden terminal input without echoing the payload.       | Yes                                                                      |
 
 Run these from the repository root. They use Bash internally and work from an existing zsh or Bash
@@ -27,7 +28,7 @@ session; do not source them. Exit code `64` means invalid operator input, `65` m
 repository or identity boundary, `69` means a missing command, `70` means a remote result could
 not be proven, and `75` means another production workflow is active.
 
-Source the ignored project-coordinate file once in each shell before using a human entry point:
+Source the committed non-secret operator defaults once in each shell:
 
 ```sh
 . ./.envrc
@@ -35,12 +36,21 @@ Source the ignored project-coordinate file once in each shell before using a hum
 ```
 
 Add `--github` after bootstrap or foundation has published coordinates. It compares every published
-`GCP_*_PROJECT_ID` with the local selection and fails on a mismatch. The file contains identifiers
-only; secrets and one-run selections never belong there.
+`GCP_*_PROJECT_ID` with the reviewed selection and fails on a mismatch. Credentials, payloads,
+plan IDs, receipts, and one-run incident inputs never belong in `.envrc`.
 
 Commands that grant authority, publish protected configuration, or dispatch a workflow require a
 clean local `master` equal to remote `master`. Read-only audits and emergency revocation remain
 available without that repository check.
+
+### Database host operations
+
+```text
+./ops/database-host.sh inspect
+./ops/database-host.sh key
+./ops/database-host.sh ssh
+./ops/database-host.sh troubleshoot
+```
 
 ### Protected workflow operations
 

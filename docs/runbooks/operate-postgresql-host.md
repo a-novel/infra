@@ -9,32 +9,15 @@ Every Google Cloud command in this document is for a named human operator. Agent
 
 ## Operator context
 
-Run local blocks in the existing configured zsh session; blocks explicitly labeled for the COS host
-use that host's Bash session. Load the published project coordinates first:
+Load the committed operator defaults before every local command:
 
 ```sh
 . ./.envrc
 ./ops/verify-operator-env.sh --github
 ```
 
-Paste this block once before selecting the host:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-umask 077
-
-REPOSITORY='a-novel/infra'
-DATABASE_GROUP='agora-database'
-DATABASE_DISK='agora-data'
-DATABASE_SSH_KEY_FILE="${DATABASE_SSH_KEY_FILE:-$HOME/.ssh/google_compute_engine_ecdsa}"
-
-WORKLOAD_PROJECT_ID="$INFRA_WORKLOAD_PROJECT_ID"
-DATABASE_SERVICE_ACCOUNT="agora-database-host@${WORKLOAD_PROJECT_ID}.iam.gserviceaccount.com"
-DATABASE_OPERATOR_PRINCIPAL="user:$(gcloud config get-value account 2>/dev/null)"
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
+Host discovery, inspection, and SSH are stateless commands documented in
+[Debug the private PostgreSQL host](./debug-postgresql-host.md).
 
 ## Apply boundary
 
@@ -130,298 +113,28 @@ debugging.
   recovery runbook's fresh scheduled-snapshot and logical-backup gate. Keep the latest monthly clean
   restore evidence within its operating review window.
 
-## Select the exact host
-
-These values are identifiers, but project and network details still stay out of public issues and
-logs.
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-[[ "$WORKLOAD_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
-test "$(printf '%s\n' "$DATABASE_OPERATOR_PRINCIPAL" | wc -l)" -eq 1
-[[ "$DATABASE_OPERATOR_PRINCIPAL" =~ ^(user|group):[^[:space:]@]+@[^[:space:]@]+$ ]]
-
-DATABASE_ZONE="$(
-  gcloud compute instance-groups managed list \
-    --project="$WORKLOAD_PROJECT_ID" \
-    --filter="name=${DATABASE_GROUP}" \
-    --format='value(zone.basename())'
-)"
-test -n "$DATABASE_ZONE"
-test "$(printf '%s\n' "$DATABASE_ZONE" | wc -l)" -eq 1
-[[ "$DATABASE_ZONE" =~ ^[a-z]+-[a-z]+[0-9]+-[a-z]$ ]]
-DATABASE_REGION="${DATABASE_ZONE%-*}"
-
-DATABASE_INSTANCE="$(
-  gcloud compute instance-groups managed list-instances "$DATABASE_GROUP" \
-    --project="$WORKLOAD_PROJECT_ID" \
-    --zone="$DATABASE_ZONE" \
-    --format='value(instance.basename())'
-)"
-test -n "$DATABASE_INSTANCE"
-test "$(printf '%s\n' "$DATABASE_INSTANCE" | wc -l)" -eq 1
-[[ "$DATABASE_INSTANCE" =~ ^agora-database-[a-z0-9-]+$ ]]
-
-DATABASE_PRIVATE_IP="$(
-  gcloud compute instances describe "$DATABASE_INSTANCE" \
-    --project="$WORKLOAD_PROJECT_ID" \
-    --zone="$DATABASE_ZONE" \
-    --format='value(networkInterfaces[0].networkIP)'
-)"
-[[ "$DATABASE_PRIVATE_IP" =~ ^10\.20\.0\.[0-9]{1,3}$ ]]
-
-printf 'Group: %s\nInstance: %s\nZone: %s\nPrivate IP: %s\n' \
-  "$DATABASE_GROUP" "$DATABASE_INSTANCE" "$DATABASE_ZONE" "$DATABASE_PRIVATE_IP"
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-Expected safe result: exactly one generated instance name and one address inside `10.20.0.0/24`.
-Do not proceed if the group has zero or multiple members. Do not print the operator principal.
-
 ## Verify foundation state after apply
 
-Describe the stateful group and VM without printing metadata:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-gcloud compute instance-groups managed describe "$DATABASE_GROUP" \
-  --project="$WORKLOAD_PROJECT_ID" \
-  --zone="$DATABASE_ZONE" \
-  --format='yaml(name,targetSize,instanceGroup,updatePolicy,statefulPolicy,status)'
-
-gcloud compute instances describe "$DATABASE_INSTANCE" \
-  --project="$WORKLOAD_PROJECT_ID" \
-  --zone="$DATABASE_ZONE" \
-  --format='yaml(name,status,machineType,networkInterfaces,serviceAccounts,tags.items,shieldedInstanceConfig,disks.deviceName,disks.boot,disks.autoDelete,disks.mode,disks.source)'
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```sh
+./ops/database-host.sh inspect
 ```
 
-Expected safe result:
+The command derives the current zone and generated instance, then prints only the state needed to
+verify the group, VM, disk, snapshot policy, firewall, alerts, and active operator grants. It must
+end with `PASS database host inspection`.
 
-- target size is one;
-- the update policy is `OPPORTUNISTIC` and uses `RECREATE`, zero surge, and one unavailable instance;
-- `agora-data` and `nic0` have a `NEVER` delete rule;
-- the VM is `RUNNING`, tagged only `agora-database`, and uses
-  `agora-database-host@<project>.iam.gserviceaccount.com`;
-- `networkInterfaces[0].accessConfigs` is empty or absent;
-- Secure Boot, vTPM, and integrity monitoring are enabled;
-- the boot disk and `agora-data` are attached read/write.
+Check these boundaries in its output:
 
-Verify the preserved disk:
+- one `RUNNING` VM with no external address, the database service account, shielded-VM controls,
+  stateful `nic0`, and preserved `agora-data`;
+- one `READY` balanced disk, the daily seven-day snapshot policy, and a recent automatic snapshot;
+- only the reviewed PostgreSQL, IAP SSH, and deny-all egress firewall rules;
+- the five database capacity alerts and the critical recovery alert;
+- Compute Viewer, Logs Viewer, Monitoring AlertPolicy Viewer, Service Usage Consumer, OS Admin
+  Login, port-22 IAP access, and Service Account User for the active operator.
 
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-gcloud compute disks describe "$DATABASE_DISK" \
-  --project="$WORKLOAD_PROJECT_ID" \
-  --zone="$DATABASE_ZONE" \
-  --format='yaml(name,status,sizeGb,type,physicalBlockSizeBytes,users,labels)'
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-Expected safe result: `READY`, 50 GiB unless reviewed code increased it, `pd-balanced`, 4096-byte
-physical blocks, one current user, and database-data labels. A missing user during a controlled
-replacement is temporary; otherwise stop.
-
-Verify the code-owned snapshot schedule and attachment:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-gcloud compute resource-policies describe agora-database-daily-snapshots \
-  --project="$WORKLOAD_PROJECT_ID" \
-  --region="$DATABASE_REGION" \
-  --format='yaml(name,region,snapshotSchedulePolicy)'
-
-gcloud compute disks describe "$DATABASE_DISK" \
-  --project="$WORKLOAD_PROJECT_ID" \
-  --zone="$DATABASE_ZONE" \
-  --format='yaml(name,resourcePolicies)'
-
-gcloud compute snapshots list \
-  --project="$WORKLOAD_PROJECT_ID" \
-  --filter='labels.application=agora AND labels.environment=production AND labels.role=database-snapshot' \
-  --sort-by='~creationTimestamp' \
-  --limit=1 \
-  --format='table(name,autoCreated,status,creationTimestamp,sourceDisk.basename(),storageLocations,labels.role)'
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-Expected safe result: one daily policy at 02:00 UTC, seven-day retention, `KEEP_AUTO_SNAPSHOTS`,
-`europe-west1` storage, an attachment to `agora-data`, and one `READY` snapshot with
-`autoCreated: True`. Any database change remains blocked unless the newest matching snapshot is no
-older than six hours.
-
-Verify only the relevant firewall rules:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-for rule in \
-  agora-allow-postgres-ingress \
-  agora-allow-json-keys-postgres-egress \
-  agora-allow-authentication-postgres-egress \
-  agora-allow-iap-ssh \
-  agora-deny-other-vpc-egress; do
-  gcloud compute firewall-rules describe "$rule" \
-    --project="$WORKLOAD_PROJECT_ID" \
-    --format='yaml(name,direction,priority,sourceRanges,destinationRanges,allowed,denied,targetTags)'
-done
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-Expected safe result: database ingress accepts only `10.20.0.0/24` on `5432,5433` and targets
-`agora-database`; JSON Keys egress allows only `5432`, Authentication only `5433`, and only the
-backup tag appears on both rules. The restore tag has no database allow. IAP SSH accepts only
-`35.235.240.0/20` on `22`; the lower-priority fallback denies all remaining egress.
-
-Verify all six alert policies:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-gcloud monitoring policies list \
-  --project="$WORKLOAD_PROJECT_ID" \
-  --filter='display_name:("Agora database")' \
-  --format='table(display_name,enabled,severity,conditions[0].display_name)'
-
-gcloud monitoring policies list \
-  --project="$WORKLOAD_PROJECT_ID" \
-  --filter='display_name="Agora PostgreSQL recovery jobs unhealthy"' \
-  --format='yaml(displayName,enabled,severity,conditions.displayName)'
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-Expected safe result: CPU above 70%, memory above 70% and 85%, and disk above 70% and 85%, all
-enabled, plus one critical recovery policy with failed-execution and missing-monitor conditions.
-Monitoring is not a readiness gate. Its absence condition can open an incident only after the
-monitor has completed successfully once.
-
-Verify the exact operator grants without listing unrelated members:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-gcloud projects get-iam-policy "$WORKLOAD_PROJECT_ID" \
-  --flatten='bindings[].members' \
-  --filter="bindings.members=${DATABASE_OPERATOR_PRINCIPAL} AND bindings.role:(roles/compute.osAdminLogin roles/compute.viewer roles/iap.tunnelResourceAccessor roles/logging.viewer roles/monitoring.alertPolicyViewer roles/serviceusage.serviceUsageConsumer)" \
-  --format='table(bindings.role,bindings.condition.expression)'
-
-gcloud iam service-accounts get-iam-policy "$DATABASE_SERVICE_ACCOUNT" \
-  --project="$WORKLOAD_PROJECT_ID" \
-  --flatten='bindings[].members' \
-  --filter="bindings.members=${DATABASE_OPERATOR_PRINCIPAL} AND bindings.role=roles/iam.serviceAccountUser" \
-  --format='table(bindings.role)'
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-Expected safe result: Compute Viewer, Logs Viewer, Monitoring AlertPolicy Viewer, Service Usage
-Consumer, OS Admin Login, IAP Tunnel Resource Accessor with `destination.port == 22`, and Service
-Account User on only the database runtime identity. Service Usage Consumer lets the named operator
-charge Monitoring API use to this project; it cannot enable or disable an API. Service Account User
-is required by OS Login because the VM has an attached service account.
-
-## Inspect the host through IAP
-
-Set `DATABASE_SSH_KEY_FILE` to an existing private-key path whose public half is `<path>.pub`. The
-default creates a dedicated ECDSA P-256 pair when neither file exists. Enter a passphrase when prompted.
-
-Create or verify the local pair, then register its public key in OS Login for one hour:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-umask 077
-
-if [[ ! -e "$DATABASE_SSH_KEY_FILE" && ! -e "${DATABASE_SSH_KEY_FILE}.pub" ]]; then
-  mkdir -p -- "$(dirname -- "$DATABASE_SSH_KEY_FILE")"
-  ssh-keygen -t ecdsa -b 256 -C 'a-novel-database-operator' -f "$DATABASE_SSH_KEY_FILE"
-fi
-test -s "$DATABASE_SSH_KEY_FILE"
-test -s "${DATABASE_SSH_KEY_FILE}.pub"
-
-if gcloud compute os-login ssh-keys describe --project="$WORKLOAD_PROJECT_ID" --key-file="${DATABASE_SSH_KEY_FILE}.pub" >/dev/null 2>&1; then
-  gcloud compute os-login ssh-keys update --project="$WORKLOAD_PROJECT_ID" --key-file="${DATABASE_SSH_KEY_FILE}.pub" --ttl=1h >/dev/null
-else
-  gcloud compute os-login ssh-keys add --project="$WORKLOAD_PROJECT_ID" --key-file="${DATABASE_SSH_KEY_FILE}.pub" --ttl=1h >/dev/null
-fi
-
-gcloud compute os-login ssh-keys describe --project="$WORKLOAD_PROJECT_ID" --key-file="${DATABASE_SSH_KEY_FILE}.pub" --format='value(fingerprint)'
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-The output contains one fingerprint. Open the privileged debug session with that exact private key:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-gcloud compute ssh "$DATABASE_INSTANCE" \
-  --project="$WORKLOAD_PROJECT_ID" \
-  --zone="$DATABASE_ZONE" \
-  --ssh-key-file="$DATABASE_SSH_KEY_FILE" \
-  --tunnel-through-iap
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-Do not enable shell tracing, print environment variables, run `docker inspect` without a narrow
-`--format`, print files below `/run/agora`, or query the metadata access token.
-
-Every COS command below occupies one physical line. Paste and verify one command at a time.
-
-When the production manifest is disabled, run:
-
-```bash
-sudo docker ps --filter 'name=agora-postgres-' --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
-sudo findmnt --noheadings --output SOURCE,TARGET,FSTYPE,OPTIONS /mnt/disks/agora-data
-sudo df --output=source,size,used,avail,pcent,target /mnt/disks/agora-data
-```
-
-Expected safe result: no database container row, and the preserved disk is mounted as EXT4 with
-`noatime,nosuid,nodev`. An idle foundation host still incurs its monthly VM and disk cost.
-
-When an approved release is enabled, inspect only non-secret fields:
-
-```bash
-sudo docker ps --filter 'name=agora-postgres-' --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Image}}'
-sudo docker network inspect agora-database-json-keys --format '{{.Name}} internal={{.Internal}} subnet={{range .IPAM.Config}}{{.Subnet}}{{end}}'
-sudo docker network inspect agora-database-authentication --format '{{.Name}} internal={{.Internal}} subnet={{range .IPAM.Config}}{{.Subnet}}{{end}}'
-sudo iptables -S AGORA-DATABASE-EGRESS
-sudo iptables -S AGORA-DATABASE-HOST
-sudo docker inspect agora-postgres-json-keys --format '{{.Name}} running={{.State.Running}} health={{.State.Health.Status}} restart={{.HostConfig.RestartPolicy.Name}} memory={{.HostConfig.Memory}} swap={{.HostConfig.MemorySwap}}'
-sudo docker inspect agora-postgres-authentication --format '{{.Name}} running={{.State.Running}} health={{.State.Health.Status}} restart={{.HostConfig.RestartPolicy.Name}} memory={{.HostConfig.Memory}} swap={{.HostConfig.MemorySwap}}'
-```
-
-Expected safe result:
-
-- exactly two healthy containers, with JSON Keys published on the VM address at `5432` and
-  Authentication at `5433`;
-- separate non-internal bridges at `172.31.254.0/30` and `172.31.254.4/30`;
-- the egress chain returns only established/related traffic from `172.31.254.0/29` and rejects the
-  rest;
-- the host chain rejects that same source range;
-- restart policy is `on-failure` with five retries, and memory-swap equals the memory limit so
-  containers do not swap. `on-failure` deliberately does not start containers when Docker boots;
-  the metadata startup script restores the deny rules before recreating them.
-
-Prove external name resolution and metadata access fail from both containers:
-
-```bash
-for container in agora-postgres-json-keys agora-postgres-authentication; do if sudo docker exec "$container" getent hosts example.com >/dev/null 2>&1; then printf 'STOP: %s resolved an external name.\n' "$container" >&2; false; else printf 'PASS %s external DNS denied.\n' "$container"; fi; done
-for container in agora-postgres-json-keys agora-postgres-authentication; do if sudo docker exec "$container" timeout 3 bash -c '</dev/tcp/169.254.169.254/80' >/dev/null 2>&1; then printf 'STOP: %s reached metadata.\n' "$container" >&2; false; else printf 'PASS %s metadata denied.\n' "$container"; fi; done
-```
-
-Expected safe result: four `PASS` lines and no `STOP` line. Exit the IAP session after inspection.
+Use the [debug runbook](./debug-postgresql-host.md) for the reusable Ed25519 key, IAP connection,
+safe one-line host checks, and reviewed operator access changes.
 
 ## Measure capacity
 
@@ -460,14 +173,10 @@ reproducible. Renovate cannot safely resolve Google Compute Engine's named-image
 regular infrastructure dependency review, a human operator compares the pinned image with the
 supported stable milestone:
 
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
+```sh
 gcloud compute images describe-from-family cos-stable \
   --project=cos-cloud \
   --format='yaml(name,status,creationTimestamp,deprecated)'
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 The command is read-only and prints no workload project data. Confirm the proposed milestone remains

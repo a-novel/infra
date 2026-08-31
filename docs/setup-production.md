@@ -16,21 +16,16 @@ rotate a secret, restore data, or handle an incident.
 
 ## Start or resume
 
-Create the ignored operator file and set the two project IDs before step 1:
+Review the committed non-secret production defaults, then load them:
 
 ```sh
-if [ ! -e .envrc ]; then
-  cp .envrc.example .envrc
-fi
-chmod 600 .envrc
-${EDITOR:-vi} .envrc
 . ./.envrc
 ./ops/verify-operator-env.sh
 ```
 
-Use the globally unique management and workload project IDs chosen for this environment. Leave the
-four SMTP placeholders until step 4; their authoritative sources are listed there. Credentials and
-payloads never belong in this file.
+For another environment, update `.envrc` through a pull request before step 1. It contains only
+stable IDs, placement, human principals, alert recipients, and SMTP metadata. Credentials and
+payloads never belong there. With `direnv`, run `direnv allow` after reviewing a change.
 
 Before every resumed step:
 
@@ -52,26 +47,26 @@ gh run list --repo a-novel/infra --branch master --limit 20 --json databaseId,wo
 
 ## Setup sequence
 
-| Step | Procedure                                                                                                                                                                                                | PASS condition                                                                                                                                          |
-| ---: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-|    0 | Run [Start or resume](#start-or-resume).                                                                                                                                                                 | Clean current `master`; repository gate passes.                                                                                                         |
-|    1 | [Bootstrap the management plane](./runbooks/bootstrap-management-plane.md).                                                                                                                              | State, WIF, protected environments, secret containers, and audit controls pass; temporary bootstrap authority is removed.                               |
-|    2 | [Provision the workload foundation](./runbooks/provision-workload-foundation.md).                                                                                                                        | The workload project and both protected roots converge; the final audit passes; temporary access is removed.                                            |
-|    3 | [Inspect the PostgreSQL host](./runbooks/operate-postgresql-host.md#select-the-exact-host) through [foundation verification](./runbooks/operate-postgresql-host.md#verify-foundation-state-after-apply). | One private VM and preserved disk exist; no external IP or running database container exists.                                                           |
-|    4 | [Configure and persist hosted SMTP](#4-configure-and-persist-the-smtp-contract).                                                                                                                         | The provider account, cost cap, privacy settings, domain, DKIM, SPF, DMARC, and non-secret contract pass.                                               |
-|    5 | [Create the initial payload versions](#5-create-the-initial-payload-versions).                                                                                                                           | All seven live containers have one selected enabled numeric version; no payload was printed.                                                            |
-|    6 | [Activate production](#6-activate-production).                                                                                                                                                           | The reviewed release succeeds, the initializer is deleted, traffic is healthy, recovery jobs pass, rotation is scheduled, and the receipt is immutable. |
-|    7 | [Lock backup retention](#7-lock-backup-retention).                                                                                                                                                       | The seven-day bucket retention policy is irreversibly locked through reviewed code.                                                                     |
-|    8 | [Verify alert delivery](./runbooks/respond-to-alerts.md#verify-channels-without-adding-machinery).                                                                                                       | Both channels and all policies have owners and deliver tests.                                                                                           |
-|    9 | [Run the clean-room recovery drill](./runbooks/disaster-recovery.md).                                                                                                                                    | A private replacement passes RPO/RTO and health; temporary access and project are removed.                                                              |
-|   10 | [Archive the legacy repository](./runbooks/archive-legacy-infrastructure.md).                                                                                                                            | Legacy credentials and Actions are disabled, work is drained, and only `a-novel/agora-infra` is archived.                                               |
+| Step | Procedure                                                                                          | PASS condition                                                                                                                                          |
+| ---: | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+|    0 | Run [Start or resume](#start-or-resume).                                                           | Clean current `master`; repository gate passes.                                                                                                         |
+|    1 | [Bootstrap the management plane](./runbooks/bootstrap-management-plane.md).                        | State, WIF, protected environments, secret containers, and audit controls pass; temporary bootstrap authority is removed.                               |
+|    2 | [Provision the workload foundation](./runbooks/provision-workload-foundation.md).                  | The workload project and both protected roots converge; the final audit passes; temporary access is removed.                                            |
+|    3 | [Inspect the PostgreSQL host and prepare OS Login](./runbooks/debug-postgresql-host.md).           | One private VM and preserved disk exist; the operator's bounded SSH key is registered; no public path exists.                                           |
+|    4 | [Configure and persist hosted SMTP](#4-configure-and-persist-the-smtp-contract).                   | The provider account, cost cap, privacy settings, domain, DKIM, SPF, DMARC, and non-secret contract pass.                                               |
+|    5 | [Create the initial payload versions](#5-create-the-initial-payload-versions).                     | All seven live containers have one selected enabled numeric version; no payload was printed.                                                            |
+|    6 | [Activate production](#6-activate-production).                                                     | The reviewed release succeeds, the initializer is deleted, traffic is healthy, recovery jobs pass, rotation is scheduled, and the receipt is immutable. |
+|    7 | [Lock backup retention](#7-lock-backup-retention).                                                 | The seven-day bucket retention policy is irreversibly locked through reviewed code.                                                                     |
+|    8 | [Verify alert delivery](./runbooks/respond-to-alerts.md#verify-channels-without-adding-machinery). | Both channels and all policies have owners and deliver tests.                                                                                           |
+|    9 | [Run the clean-room recovery drill](./runbooks/disaster-recovery.md).                              | A private replacement passes RPO/RTO and health; temporary access and project are removed.                                                              |
+|   10 | [Archive the legacy repository](./runbooks/archive-legacy-infrastructure.md).                      | Legacy credentials and Actions are disabled, work is drained, and only `a-novel/agora-infra` is archived.                                               |
 
 Do not advance on a partial PASS. Record successful workflow URLs and private acceptance evidence.
 
 ## 4. Configure and persist the SMTP contract
 
-Follow the [hosted SMTP procedure](./runbooks/configure-hosted-smtp.md). It identifies four
-long-lived non-secret values; put their actual values in `.envrc`:
+Follow the [hosted SMTP procedure](./runbooks/configure-hosted-smtp.md). It verifies the four
+long-lived non-secret values committed in `.envrc`:
 
 | Variable            | Value                                                              |
 | ------------------- | ------------------------------------------------------------------ |
@@ -80,9 +75,8 @@ long-lived non-secret values; put their actual values in `.envrc`:
 | `SMTP_SENDER_EMAIL` | The organization-controlled sender address on the verified domain. |
 | `SMTP_SENDER_NAME`  | The display name recipients should see.                            |
 
-`SMTP_DKIM_CNAME_RECORDS` is needed only while verifying DNS, so set it in that runbook's shell,
-not in `.envrc`. The Plunk `sk_` secret key is the SMTP password and remains in the password
-manager until step 5.
+`SMTP_DKIM_CNAME_RECORDS` is a one-run DNS input and stays in that runbook's shell. The Plunk `sk_`
+key is the SMTP password and remains in the password manager until step 5.
 
 ## 5. Create the initial payload versions
 
@@ -105,13 +99,10 @@ shell. Host, port, user, database, and TLS mode are derived from reviewed infras
 password is secret. The private VPC protects the non-TLS database path. A hybrid, external, or
 differently trusted network requires a reviewed PostgreSQL TLS design first.
 
-Create the seven immutable versions in dependency order. The script prompts twice with terminal echo
-disabled and prints only safe IDs and numeric versions:
+Create the seven immutable versions in dependency order. The script reads each value twice with
+terminal echo disabled and prints only safe IDs and numeric versions:
 
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
+```sh
 ./ops/add-secret-version.sh \
   production-authentication-postgres-password \
   production-authentication-postgres-backup-password \
@@ -120,7 +111,6 @@ unsetopt err_exit nounset xtrace
   production-authentication-smtp-sender-password \
   production-authentication-super-admin-password \
   production-json-keys-app-master-key
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Expected: seven `Created <secret> version <number>` lines. If it stops partway, list version metadata

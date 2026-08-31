@@ -55,26 +55,15 @@ whether a project ID is available.
 
 ## 2. Publish the protected configuration
 
-The defaults are `europe-west1`, `europe-west1-c`, `10.20.0.0/24`, and the active Google user for
-alerts, database operations, and Authentication initialization:
+Region, database zone, alert recipients, and authorized humans come from the reviewed `.envrc`:
 
 ```sh
 ./ops/foundation.sh configure
 ```
 
-Override only deliberate choices:
-
-```sh
-./ops/foundation.sh configure \
-  --database-zone europe-west1-c \
-  --cost-alert-email operations@example.com \
-  --operations-alert-email operations@example.com \
-  --database-operator-principal group:database-operators@example.com \
-  --auth-initializer-principal group:authentication-initializers@example.com
-```
-
-Add the step 1 parent option when it was explicit. Add `--adopt-existing-project` only for an
-existing project.
+Change a stable value in `.envrc` through a pull request, then reload it before this command. Reuse
+the step 1 parent option when it was explicit. Add `--adopt-existing-project` only for an existing
+project.
 
 Expected:
 

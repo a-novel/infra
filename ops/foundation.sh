@@ -15,13 +15,13 @@ Usage:
 
 Configuration options:
   --workload-project-name <name>              Default: Agora production
-  --region <region>                           Default: europe-west1
-  --database-zone <zone>                      Default: <region>-c
+  --region <region>                           Default: INFRA_REGION or europe-west1
+  --database-zone <zone>                      Default: INFRA_DATABASE_ZONE or <region>-c
   --subnet-cidr <cidr>                        Default: 10.20.0.0/24
-  --cost-alert-email <email>                  Default: active Google account
-  --operations-alert-email <email>            Default: active Google account
-  --database-operator-principal <principal>   Repeatable; default: active Google user
-  --auth-initializer-principal <principal>    Repeatable; default: active Google user
+  --cost-alert-email <email>                  Default: INFRA_COST_ALERT_EMAIL or active account
+  --operations-alert-email <email>            Default: INFRA_OPERATIONS_ALERT_EMAIL or active account
+  --database-operator-principal <principal>   Repeatable; overrides INFRA_DATABASE_OPERATOR_PRINCIPALS
+  --auth-initializer-principal <principal>    Repeatable; overrides INFRA_AUTH_INITIALIZER_PRINCIPALS
   --adopt-existing-project
 
 Parent options (choose at most one; default: management-project parent):
@@ -80,11 +80,11 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 WORKLOAD_PROJECT_ID="$INFRA_WORKLOAD_PROJECT_ID"
 MANAGEMENT_PROJECT_ID="$INFRA_MANAGEMENT_PROJECT_ID"
 WORKLOAD_PROJECT_NAME='Agora production'
-REGION='europe-west1'
-DATABASE_ZONE=''
+REGION="${INFRA_REGION:-europe-west1}"
+DATABASE_ZONE="${INFRA_DATABASE_ZONE:-}"
 SUBNET_CIDR='10.20.0.0/24'
-COST_ALERT_EMAIL=''
-OPERATIONS_ALERT_EMAIL=''
+COST_ALERT_EMAIL="${INFRA_COST_ALERT_EMAIL:-}"
+OPERATIONS_ALERT_EMAIL="${INFRA_OPERATIONS_ALERT_EMAIL:-}"
 ORGANIZATION_ID=''
 FOLDER_ID=''
 STANDALONE=false
@@ -410,6 +410,14 @@ configure_foundation() {
     fi
     if ! is_email "$COST_ALERT_EMAIL" || ! is_email "$OPERATIONS_ALERT_EMAIL"; then
         fail 'alert email is invalid' 64
+    fi
+    if [ "${#DATABASE_OPERATOR_PRINCIPALS[@]}" -eq 0 ] &&
+        [ -n "${INFRA_DATABASE_OPERATOR_PRINCIPALS:-}" ]; then
+        read -r -a DATABASE_OPERATOR_PRINCIPALS <<<"$INFRA_DATABASE_OPERATOR_PRINCIPALS"
+    fi
+    if [ "${#AUTH_INITIALIZER_PRINCIPALS[@]}" -eq 0 ] &&
+        [ -n "${INFRA_AUTH_INITIALIZER_PRINCIPALS:-}" ]; then
+        read -r -a AUTH_INITIALIZER_PRINCIPALS <<<"$INFRA_AUTH_INITIALIZER_PRINCIPALS"
     fi
     if [ "${#DATABASE_OPERATOR_PRINCIPALS[@]}" -eq 0 ]; then
         DATABASE_OPERATOR_PRINCIPALS=("$OPERATOR_PRINCIPAL")

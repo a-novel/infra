@@ -19,7 +19,6 @@ override.tf.json
 .env
 .env.*
 !.env.example
-.envrc
 *.key
 *.pem
 *.p12
