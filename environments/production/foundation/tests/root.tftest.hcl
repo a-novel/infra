@@ -534,6 +534,7 @@ run "builds_the_project_replacement_window" {
       one(values(google_service_account_iam_member.database_operator_act_as)).role == "roles/iam.serviceAccountUser" &&
       one(values(google_service_account_iam_member.database_operator_act_as)).service_account_id == google_service_account.runtime["database"].name &&
       google_project_iam_custom_role.database_release.permissions == toset([
+        "compute.autoscalers.list",
         "compute.instanceGroupManagers.get",
         "compute.instanceGroupManagers.update",
         "compute.instances.setMetadata",
@@ -544,6 +545,7 @@ run "builds_the_project_replacement_window" {
       one(google_project_iam_member.database_release.condition).expression == "resource.type != 'compute.googleapis.com/Instance' || resource.name.startsWith('projects/agora-production-test/zones/europe-west1-c/instances/agora-database-')" &&
       alltrue([
         for permission in google_project_iam_custom_role.database_release.permissions :
+        (!startswith(permission, "compute.autoscalers.") || permission == "compute.autoscalers.list") &&
         !startswith(permission, "compute.disks.") &&
         (!startswith(permission, "compute.instances.") || permission == "compute.instances.setMetadata") &&
         !startswith(permission, "compute.instanceTemplates.") &&
