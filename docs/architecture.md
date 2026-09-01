@@ -91,7 +91,7 @@ reviewed inputs and calls the tested
 [`deploy-database-release.sh`](../ops/deploy-database-release.sh) helper. The helper validates the
 exact project, repositories, digests, commit, zone, and positive version identifiers, then reads the
 existing map and requires exactly those seven keys. Before mutation, its shared recovery gate also
-requires a ready scheduled snapshot no older than six hours and—except for an empty first
+requires a ready scheduled snapshot no older than 26 hours and—except for an empty first
 release—fresh logical backups of both databases. Only after those fail-closed checks does it invoke
 Google's supported all-instances update and apply it to the sole member with both the minimum and
 maximum action set to `RESTART`.

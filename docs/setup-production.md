@@ -179,7 +179,7 @@ test "$(gh variable get PRODUCTION_RELEASES_ENABLED --repo a-novel/infra)" = tru
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Wait for a `READY` `agora-data` scheduled snapshot no older than six hours. Then start the release
+Wait for a `READY` `agora-data` scheduled snapshot no older than 26 hours. Then start the release
 without blocking the shell; the workflow pauses for the human-only initializer:
 
 ```zsh

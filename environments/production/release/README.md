@@ -34,7 +34,7 @@ skips this restart entirely.
 
 Before a database image change or migration, the shared
 [`prepare-database-change.sh`](../../../ops/prepare-database-change.sh) gate requires a ready
-foundation-scheduled snapshot no older than six hours and synchronously creates both logical
+foundation-scheduled snapshot no older than 26 hours and synchronously creates both logical
 backups. The empty first database release is the sole logical-backup exception because no cluster
 exists yet; it still requires the snapshot. A private SHA-256 proof also requires all seven live MIG
 metadata fields to match the latest immutable receipt, preventing a missing receipt or manual drift

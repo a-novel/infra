@@ -92,7 +92,7 @@ only after resource creation has been explicitly authorized.
   Google's coarse group-manager update permission. Google also requires `setMetadata` to apply the
   map; an IAM condition fences that sole VM permission to the generated `agora-database-*` member.
   The helper refuses an existing map with any missing or unknown key before mutation. Before a
-  database image change or migration it also requires a scheduled snapshot no older than six hours
+  database image change or migration it also requires a scheduled snapshot no older than 26 hours
   and both fresh logical backups. The role may list snapshot metadata but cannot create or delete a
   snapshot; it has no disk, template, direct instance-lifecycle, network, or IAM permission. The
   group permission can still change group behavior, so only the fixed protected helper may use it.
