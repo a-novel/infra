@@ -677,7 +677,10 @@ printf '%s\n' \
     'printf "CALL\\n" >> "${GCLOUD_ARGUMENT_LOG}"' \
     'printf "%s\\n" "$@" >> "${GCLOUD_ARGUMENT_LOG}"' \
     'if [[ "$*" == *"instance-groups managed describe"* ]]; then' \
-    '    if [[ "${INVALID_METADATA_SHAPE:-false}" == "true" ]]; then' \
+    '    if [[ "${METADATA_DESCRIBE_ERROR:-false}" == "true" ]]; then' \
+    '        printf "mock metadata describe denied\\n" >&2' \
+    '        exit 1' \
+    '    elif [[ "${INVALID_METADATA_SHAPE:-false}" == "true" ]]; then' \
     "        printf '%s\\n' '{\"allInstancesConfig\":{\"properties\":{\"metadata\":{\"unexpected-key\":\"value\"}}}}'" \
     '    else' \
     '        if [[ "${INITIAL_DATABASE_RELEASE:-false}" == "true" ]]; then current_revision=""; else current_revision="ffffffffffffffffffffffffffffffffffffffff"; fi' \
@@ -722,7 +725,7 @@ grep -Fqx 'update-instances' "${GCLOUD_ARGUMENT_LOG}"
 grep -Fqx 'wait-until' "${GCLOUD_ARGUMENT_LOG}"
 grep -Fqx -- '--stable' "${GCLOUD_ARGUMENT_LOG}"
 grep -Fqx -- '--timeout=600' "${GCLOUD_ARGUMENT_LOG}"
-grep -Fqx -- '--format=json(allInstancesConfig.properties.metadata)' "${GCLOUD_ARGUMENT_LOG}"
+grep -Fqx -- '--format=json' "${GCLOUD_ARGUMENT_LOG}"
 grep -Fqx -- '--all-instances' "${GCLOUD_ARGUMENT_LOG}"
 grep -Fqx -- '--minimal-action=restart' "${GCLOUD_ARGUMENT_LOG}"
 grep -Fqx -- '--most-disruptive-allowed-action=restart' "${GCLOUD_ARGUMENT_LOG}"
@@ -826,8 +829,38 @@ INVALID_DATABASE_METADATA_CODE=$?
 set -e
 assert_equal "${INVALID_DATABASE_METADATA_CODE}" "70"
 assert_equal "$(grep -Fc 'CALL' "${GCLOUD_ARGUMENT_LOG}")" "1"
+grep -Fq '"missing":' "${TEMP_DIR}/invalid-database-metadata.err"
+grep -Fq '"unexpected":["unexpected-key"]' "${TEMP_DIR}/invalid-database-metadata.err"
+if grep -Fq '"value"' "${TEMP_DIR}/invalid-database-metadata.err"; then
+    printf "Database metadata diagnostics must not print metadata values.\n" >&2
+    exit 1
+fi
 if grep -Eq '^(all-instances-config|update-instances)$' "${GCLOUD_ARGUMENT_LOG}"; then
     printf "Unexpected database metadata must fail before a mutation.\n" >&2
+    exit 1
+fi
+
+# A retrieval failure keeps the original Cloud CLI diagnostic distinct from a
+# valid response whose metadata keys violate the release contract.
+: >"${GCLOUD_ARGUMENT_LOG}"
+set +e
+PATH="${MOCK_BIN}:${PATH}" GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
+    METADATA_DESCRIBE_ERROR=true \
+    "${REPOSITORY_ROOT}/ops/prepare-database-change.sh" \
+    agora-production-test \
+    europe-west1-c \
+    0123456789abcdef0123456789abcdef01234567 \
+    >"${TEMP_DIR}/inaccessible-database-metadata.out" \
+    2>"${TEMP_DIR}/inaccessible-database-metadata.err"
+INACCESSIBLE_DATABASE_METADATA_CODE=$?
+set -e
+assert_equal "${INACCESSIBLE_DATABASE_METADATA_CODE}" "70"
+assert_equal "$(grep -Fc 'CALL' "${GCLOUD_ARGUMENT_LOG}")" "1"
+grep -Fq 'mock metadata describe denied' "${TEMP_DIR}/inaccessible-database-metadata.err"
+grep -Fq 'Database release metadata could not be inspected.' \
+    "${TEMP_DIR}/inaccessible-database-metadata.err"
+if grep -Fq 'shape differs' "${TEMP_DIR}/inaccessible-database-metadata.err"; then
+    printf "A metadata retrieval failure must not be reported as a shape mismatch.\n" >&2
     exit 1
 fi
 

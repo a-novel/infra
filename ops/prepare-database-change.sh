@@ -48,31 +48,51 @@ fi
 # The exact map shape is the shared boundary between foundation and release.
 # Hash the complete prior map without printing it; images and secret-version
 # IDs never enter a public workflow log.
-if ! CURRENT_METADATA="$(
+EXPECTED_METADATA_KEYS='[
+  "agora-authentication-database-image",
+  "agora-authentication-postgres-backup-password-version",
+  "agora-authentication-postgres-password-version",
+  "agora-database-release-revision",
+  "agora-json-keys-database-image",
+  "agora-json-keys-postgres-backup-password-version",
+  "agora-json-keys-postgres-password-version"
+]'
+
+if ! DATABASE_GROUP_JSON="$(
     gcloud compute instance-groups managed describe "${DATABASE_GROUP}" \
         --project="${WORKLOAD_PROJECT_ID}" \
         --zone="${DATABASE_ZONE}" \
-        --format='json(allInstancesConfig.properties.metadata)' \
-        2>/dev/null \
-        | jq --compact-output --exit-status --sort-keys '
-            (.allInstancesConfig.properties.metadata // {}) as $metadata
-            | if ($metadata | keys) == [
-                "agora-authentication-database-image",
-                "agora-authentication-postgres-backup-password-version",
-                "agora-authentication-postgres-password-version",
-                "agora-database-release-revision",
-                "agora-json-keys-database-image",
-                "agora-json-keys-postgres-backup-password-version",
-                "agora-json-keys-postgres-password-version"
-              ]
-              then $metadata
-              else error("unexpected database release metadata")
-              end
-        '
+        --format=json
+)"; then
+    printf 'Database release metadata could not be inspected.\n' >&2
+    exit 70
+fi
+
+if ! CURRENT_METADATA="$(
+    jq --compact-output --exit-status --sort-keys \
+        --argjson expected "${EXPECTED_METADATA_KEYS}" '
+          (.allInstancesConfig.properties.metadata // null) as $metadata
+          | if ($metadata | type) != "object"
+            then error({
+              missing: $expected,
+              unexpected: [],
+              metadataType: ($metadata | type)
+            })
+            else ($metadata | keys) as $actual
+              | if $actual == $expected
+                then $metadata
+                else error({
+                  missing: ($expected - $actual),
+                  unexpected: ($actual - $expected)
+                })
+                end
+            end
+        ' <<<"${DATABASE_GROUP_JSON}"
 )"; then
     printf 'Database release metadata shape differs from the reviewed seven-key contract.\n' >&2
     exit 70
 fi
+unset DATABASE_GROUP_JSON EXPECTED_METADATA_KEYS
 
 CURRENT_RELEASE_REVISION="$(
     jq --raw-output '.["agora-database-release-revision"]' <<<"${CURRENT_METADATA}"
