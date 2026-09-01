@@ -765,6 +765,72 @@ jq --exit-status '
   (.currentMetadataSha256 | test("^[a-f0-9]{64}$"))
 ' "${INITIAL_DATABASE_PROOF}" >/dev/null
 
+DRIVER_MOCK_BIN="${TEMP_DIR}/driver-bin"
+DRIVER_RELEASE_DIRECTORY="${TEMP_DIR}/driver-release"
+mkdir -p "${DRIVER_MOCK_BIN}" "${DRIVER_RELEASE_DIRECTORY}"
+# shellcheck disable=SC2016
+printf '%s\n' \
+    '#!/bin/bash' \
+    'if [ "$1 $2 $3" = "secrets versions describe" ]; then' \
+    '    printf "ENABLED\n"' \
+    'elif [ "$1 $2 $3" = "quotas preferences list" ]; then' \
+    '    printf "%s\n" "[{\"service\":\"run.googleapis.com\",\"dimensions\":{\"region\":\"europe-west1\"},\"quotaConfig\":{\"preferredValue\":\"8000\",\"grantedValue\":\"8000\"}},{\"service\":\"run.googleapis.com\",\"dimensions\":{\"region\":\"europe-west1\"},\"quotaConfig\":{\"preferredValue\":\"17179869184\",\"grantedValue\":\"17179869184\"}},{\"service\":\"compute.googleapis.com\",\"dimensions\":{\"region\":\"europe-west1\"},\"quotaConfig\":{\"preferredValue\":\"4\",\"grantedValue\":\"4\"}}]"' \
+    'else' \
+    '    exec "${DATABASE_GCLOUD}" "$@"' \
+    'fi' \
+    >"${DRIVER_MOCK_BIN}/gcloud"
+chmod 0700 "${DRIVER_MOCK_BIN}/gcloud"
+
+DRIVER_COMMIT=0123456789abcdef0123456789abcdef01234567
+jq -n --arg commit "${DRIVER_COMMIT}" '
+  {
+    releaseRevision: "",
+    jsonKeysImage: "",
+    authenticationImage: "",
+    jsonKeysPasswordVersion: 0,
+    authenticationPasswordVersion: 0,
+    jsonKeysBackupPasswordVersion: 0,
+    authenticationBackupPasswordVersion: 0
+  } as $database |
+  {
+    schemaVersion: 1,
+    action: "deploy",
+    commit: $commit,
+    runId: "123",
+    runAttempt: 1,
+    cloud: {
+      managementProjectId: "agora-management-test",
+      workloadProjectId: "agora-production-test",
+      region: "europe-west1",
+      databaseZone: "europe-west1-c",
+      secretVersions: [range(1; 8) | ["production-test-\(.)", 1]],
+      quotaExpectations: {
+        cloud_run_cpu_millicpu: 8000,
+        cloud_run_memory_bytes: 17179869184,
+        compute_cpu: 4
+      }
+    },
+    currentDatabase: $database,
+    previousDatabase: $database
+  }
+' >"${DRIVER_RELEASE_DIRECTORY}/release.json"
+
+: >"${GCLOUD_ARGUMENT_LOG}"
+PATH="${DRIVER_MOCK_BIN}:${PATH}" \
+    DATABASE_GCLOUD="${MOCK_BIN}/gcloud" \
+    GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
+    INITIAL_DATABASE_RELEASE=true \
+    RELEASE_DIRECTORY="${DRIVER_RELEASE_DIRECTORY}" \
+    STATE_BUCKET=agora-state-test \
+    RECEIPT_BUCKET=agora-receipts-test \
+    GITHUB_SHA="${DRIVER_COMMIT}" \
+    GITHUB_RUN_ID=123 \
+    GITHUB_RUN_ATTEMPT=1 \
+    "${REPOSITORY_ROOT}/ops/google-release-driver.sh" preflight \
+    >"${TEMP_DIR}/driver-preflight.out"
+test -s "${DRIVER_RELEASE_DIRECTORY}/database-change-proof.json"
+test -s "${DRIVER_RELEASE_DIRECTORY}/operations.json"
+
 : >"${GCLOUD_ARGUMENT_LOG}"
 set +e
 PATH="${MOCK_BIN}:${PATH}" GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
