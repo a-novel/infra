@@ -685,7 +685,7 @@ printf '%s\n' \
     '    fi' \
     'fi' \
     'if [[ "$*" == *"compute snapshots list"* ]]; then' \
-    '    if [[ "${STALE_SNAPSHOT:-false}" == "true" ]]; then snapshot_time="$(date -u --date="7 hours ago" +%Y-%m-%dT%H:%M:%SZ)"; else snapshot_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; fi' \
+    '    if [[ -n "${SNAPSHOT_AGE_HOURS:-}" ]]; then snapshot_time="$(date -u --date="${SNAPSHOT_AGE_HOURS} hours ago" +%Y-%m-%dT%H:%M:%SZ)"; else snapshot_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; fi' \
     '    if [[ "${MANUAL_SNAPSHOT:-false}" == "true" ]]; then snapshot_auto_created=false; else snapshot_auto_created=true; fi' \
     '    printf "[{\"name\":\"agora-scheduled-snapshot\",\"autoCreated\":%s,\"sourceDisk\":\"https://www.googleapis.com/compute/v1/projects/agora-production-test/zones/europe-west1-c/disks/agora-data\",\"status\":\"READY\",\"creationTimestamp\":\"%s\",\"storageLocations\":[\"europe-west1\"],\"labels\":{\"application\":\"agora\",\"environment\":\"production\",\"managed-by\":\"opentofu\",\"plane\":\"workload\",\"role\":\"database-snapshot\"}}]\n" "${snapshot_auto_created}" "${snapshot_time}"' \
     'fi' \
@@ -728,11 +728,12 @@ grep -Fqx -- '--minimal-action=restart' "${GCLOUD_ARGUMENT_LOG}"
 grep -Fqx -- '--most-disruptive-allowed-action=restart' "${GCLOUD_ARGUMENT_LOG}"
 grep -Fqx -- "--metadata=agora-database-release-revision=0123456789abcdef0123456789abcdef01234567,agora-json-keys-database-image=${JSON_KEYS_IMAGE},agora-authentication-database-image=${AUTHENTICATION_IMAGE},agora-json-keys-postgres-password-version=7,agora-authentication-postgres-password-version=11,agora-json-keys-postgres-backup-password-version=13,agora-authentication-postgres-backup-password-version=17" "${GCLOUD_ARGUMENT_LOG}"
 
-# The first release has no source cluster to dump. It still requires the fresh
-# scheduled snapshot and returns before attempting a nonexistent backup job.
+# The first release has no source cluster to dump. A 25-hour daily snapshot is
+# accepted, and the gate returns before attempting a nonexistent backup job.
 : >"${GCLOUD_ARGUMENT_LOG}"
 PATH="${MOCK_BIN}:${PATH}" GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
     INITIAL_DATABASE_RELEASE=true \
+    SNAPSHOT_AGE_HOURS=25 \
     "${REPOSITORY_ROOT}/ops/prepare-database-change.sh" \
     agora-production-test \
     europe-west1-c \
@@ -830,12 +831,12 @@ if grep -Eq '^(all-instances-config|update-instances)$' "${GCLOUD_ARGUMENT_LOG}"
     exit 1
 fi
 
-# A database change is blocked outside the six-hour scheduled-snapshot window,
+# A database change is blocked outside the 26-hour daily snapshot window,
 # before a logical backup or metadata mutation can begin.
 : >"${GCLOUD_ARGUMENT_LOG}"
 set +e
 PATH="${MOCK_BIN}:${PATH}" GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
-    STALE_SNAPSHOT=true \
+    SNAPSHOT_AGE_HOURS=27 \
     "${REPOSITORY_ROOT}/ops/deploy-database-release.sh" \
     agora-production-test \
     europe-west1-c \

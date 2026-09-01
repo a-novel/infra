@@ -131,8 +131,8 @@ if ! SNAPSHOT_EPOCH="$(date -u --date="${SNAPSHOT_CREATED}" +%s 2>/dev/null)"; t
 fi
 NOW_EPOCH="$(date -u +%s)"
 SNAPSHOT_AGE_SECONDS=$((NOW_EPOCH - SNAPSHOT_EPOCH))
-if [ "${SNAPSHOT_AGE_SECONDS}" -lt -300 ] || [ "${SNAPSHOT_AGE_SECONDS}" -gt 21600 ]; then
-    printf 'The latest scheduled database snapshot is outside the six-hour change window.\n' >&2
+if [ "${SNAPSHOT_AGE_SECONDS}" -lt -300 ] || [ "${SNAPSHOT_AGE_SECONDS}" -gt 93600 ]; then
+    printf 'The latest scheduled database snapshot is outside the 26-hour daily change window.\n' >&2
     exit 70
 fi
 

@@ -326,14 +326,13 @@ The gate:
 1. requires the exact seven-key foundation/release metadata map;
 2. finds the newest foundation-scheduled snapshot with the exact disk, labels, regional location, and
    `READY` state;
-3. rejects a snapshot older than six hours or more than five minutes in the future;
+3. rejects a snapshot older than 26 hours or more than five minutes in the future;
 4. for a non-empty database release, executes both logical backup jobs synchronously;
 5. exits before any database metadata or migration can change.
 
 The release identity can list snapshots but cannot create or delete them. With one daily snapshot,
-planned database changes therefore occur after the 02:00–02:59 UTC scheduler window and until six
-hours after the actual snapshot creation time. This deliberate window avoids an on-demand snapshot
-controller and a second snapshot lifecycle.
+the 26-hour window covers scheduler and readiness jitter without an on-demand snapshot controller
+or a second snapshot lifecycle.
 
 A service-only or platform-only deployment does not need a new dump. Its protected workflow must run
 `agora-postgres-backup-monitor` and require success, proving both committed backups are at most six
