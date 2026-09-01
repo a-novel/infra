@@ -71,10 +71,7 @@ fi
 if ! jq --exit-status \
     --arg region "${REGION}" \
     --argjson expected "$(jq '.cloud.quotaExpectations' "${RELEASE_FILE}")" '
-      [ .[] | select(
-          .justification == "Agora production cost ceiling; changes require reviewed infrastructure code." and
-          .dimensions.region == $region
-        ) ] as $preferences |
+      [ .[] | select(.dimensions.region == $region) ] as $preferences |
       ($preferences | length == 3) and
       ([$preferences[] | select(.service == "run.googleapis.com")] | length == 2) and
       ([$preferences[] | select(.service == "compute.googleapis.com")] | length == 1) and

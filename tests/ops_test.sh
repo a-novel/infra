@@ -561,8 +561,8 @@ assert_recovery_cleanup_rejects \
     "${TEMP_DIR}/cleanup-authorized.json" 'DELETE agora-recovery-test' true 77 \
     "${TEMP_DIR}/cleanup-invalid-foundation.json"
 
-# Cloud Quotas omits the default-false reconciling field on some settled
-# responses. Omission is accepted, while a pending preference still fails.
+# Cloud Quotas may omit the optional justification and default-false
+# reconciling fields. Omission is accepted, while a pending preference fails.
 PREFLIGHT_MOCK_BIN="${TEMP_DIR}/preflight-bin"
 mkdir -p "${PREFLIGHT_MOCK_BIN}"
 # shellcheck disable=SC2016
@@ -575,9 +575,9 @@ printf '%s\n' \
     'elif [ "$1 $2 $3" = "quotas preferences list" ]; then' \
     '    jq --argjson pending "${PREFLIGHT_PENDING:-false}" '\''
     [
-      {service:"run.googleapis.com", dimensions:{region:"europe-west1"}, justification:"Agora production cost ceiling; changes require reviewed infrastructure code.", quotaConfig:{preferredValue:"8000", grantedValue:"8000"}},
-      {service:"run.googleapis.com", dimensions:{region:"europe-west1"}, justification:"Agora production cost ceiling; changes require reviewed infrastructure code.", quotaConfig:{preferredValue:"17179869184", grantedValue:"17179869184"}},
-      {service:"compute.googleapis.com", dimensions:{region:"europe-west1"}, justification:"Agora production cost ceiling; changes require reviewed infrastructure code.", reconciling:$pending, quotaConfig:{preferredValue:"4", grantedValue:"4"}}
+      {service:"run.googleapis.com", dimensions:{region:"europe-west1"}, quotaConfig:{preferredValue:"8000", grantedValue:"8000"}},
+      {service:"run.googleapis.com", dimensions:{region:"europe-west1"}, quotaConfig:{preferredValue:"17179869184", grantedValue:"17179869184"}},
+      {service:"compute.googleapis.com", dimensions:{region:"europe-west1"}, reconciling:$pending, quotaConfig:{preferredValue:"4", grantedValue:"4"}}
     ]'\'' <<EOF
 null
 EOF' \
