@@ -90,7 +90,7 @@ run_job() {
 }
 
 expected_database_metadata_sha256() {
-    jq --compact-output --sort-keys '
+    jq --join-output --compact-output --sort-keys '
       # Preflight compares live metadata with the latest successful state. A
       # manual rollback can target an older, different database contract.
       .currentDatabase as $database
