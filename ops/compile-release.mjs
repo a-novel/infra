@@ -332,7 +332,7 @@ export async function compileRelease({
     authentication: `agora-authentication-rest-${seed.slice(0, 12)}`,
     jsonKeys: `agora-json-keys-grpc-${seed.slice(12, 24)}`,
   };
-  const candidateTag = `c-${sha256(`${seed}:candidate`).slice(0, 32)}`;
+  const candidateTag = `c-${sha256(`${seed}:candidate`).slice(0, 16)}`;
   const images = normalizeImages(config, manifest);
   const baseTfvars = buildBaseTfvars(config);
   const previousActive = previousReceipt?.activeTfvars?.application_release;

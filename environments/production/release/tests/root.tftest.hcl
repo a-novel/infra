@@ -313,7 +313,7 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
     }
     application_release = {
       rollout = {
-        candidate_tag = "c-0123456789abcdef0123456789abcdef"
+        candidate_tag = "c-0123456789abcdef"
         phase         = "active"
       }
       authentication = {
@@ -675,7 +675,7 @@ run "routes_a_first_release_to_its_only_revisions" {
     }
     application_release = {
       rollout = {
-        candidate_tag = "c-0123456789abcdef0123456789abcdef"
+        candidate_tag = "c-0123456789abcdef"
         phase         = "candidate"
       }
       authentication = {
@@ -721,12 +721,13 @@ run "routes_a_first_release_to_its_only_revisions" {
         google_cloud_run_v2_service.authentication[0],
         ] : (
         length(service.traffic) == 1 &&
+        one(service.traffic).type == "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST" &&
         one(service.traffic).percent == 100 &&
-        one(service.traffic).revision == one(service.template).revision &&
+        one(service.traffic).revision == null &&
         one(service.traffic).tag == var.application_release.rollout.candidate_tag
       )
     ])
-    error_message = "A first release must route all traffic to its tagged candidate because no prior revision exists."
+    error_message = "A first release must route all traffic to its tagged latest revision because no prior revision exists."
   }
 }
 
@@ -761,7 +762,7 @@ run "builds_restore_only_contracts_in_a_disposable_recovery_state" {
     }
     application_release = {
       rollout = {
-        candidate_tag = "c-0123456789abcdef0123456789abcdef"
+        candidate_tag = "c-0123456789abcdef"
         phase         = "active"
       }
       authentication = {
@@ -823,6 +824,21 @@ run "builds_restore_only_contracts_in_a_disposable_recovery_state" {
       })
     )
     error_message = "Disposable recovery must grant only recovery automation and keep schedules, initialization, and public ingress disabled."
+  }
+
+  assert {
+    condition = alltrue([
+      for service in [
+        google_cloud_run_v2_service.json_keys[0],
+        google_cloud_run_v2_service.authentication[0],
+        ] : (
+        length(service.traffic) == 1 &&
+        one(service.traffic).type == "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST" &&
+        one(service.traffic).percent == 100 &&
+        one(service.traffic).revision == null
+      )
+    ])
+    error_message = "Disposable recovery must route each newly created service to its latest revision."
   }
 
   assert {

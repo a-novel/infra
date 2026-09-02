@@ -199,7 +199,7 @@ async function main() {
     )
     .digest("hex");
   transformed.application_release.rollout = {
-    candidate_tag: `c-${seed.slice(24, 56)}`,
+    candidate_tag: `c-${seed.slice(24, 40)}`,
     phase: "active",
   };
   transformed.application_release.authentication.revision = `agora-authentication-rest-${seed.slice(0, 12)}`;

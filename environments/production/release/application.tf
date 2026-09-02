@@ -356,10 +356,9 @@ resource "google_cloud_run_v2_service" "json_keys" {
     for_each = var.application_release.rollout.phase == "candidate" ? [1] : []
 
     content {
-      type     = "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION"
-      revision = var.application_release.json_keys.revision
-      percent  = var.application_release.json_keys.active_revision == null ? 100 : 0
-      tag      = var.application_release.rollout.candidate_tag
+      type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
+      percent = var.application_release.json_keys.active_revision == null ? 100 : 0
+      tag     = var.application_release.rollout.candidate_tag
     }
   }
 
@@ -367,8 +366,8 @@ resource "google_cloud_run_v2_service" "json_keys" {
     for_each = var.application_release.rollout.phase == "active" ? [1] : []
 
     content {
-      type     = "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION"
-      revision = var.application_release.json_keys.active_revision
+      type     = var.recovery_mode ? "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST" : "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION"
+      revision = var.recovery_mode ? null : var.application_release.json_keys.active_revision
       percent  = 100
     }
   }
@@ -582,10 +581,9 @@ resource "google_cloud_run_v2_service" "authentication" {
     for_each = var.application_release.rollout.phase == "candidate" ? [1] : []
 
     content {
-      type     = "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION"
-      revision = var.application_release.authentication.revision
-      percent  = var.application_release.authentication.active_revision == null ? 100 : 0
-      tag      = var.application_release.rollout.candidate_tag
+      type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
+      percent = var.application_release.authentication.active_revision == null ? 100 : 0
+      tag     = var.application_release.rollout.candidate_tag
     }
   }
 
@@ -593,8 +591,8 @@ resource "google_cloud_run_v2_service" "authentication" {
     for_each = var.application_release.rollout.phase == "active" ? [1] : []
 
     content {
-      type     = "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION"
-      revision = var.application_release.authentication.active_revision
+      type     = var.recovery_mode ? "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST" : "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION"
+      revision = var.recovery_mode ? null : var.application_release.authentication.active_revision
       percent  = 100
     }
   }
