@@ -399,7 +399,9 @@ unchanged tag, or a service/PostgreSQL major mixed with another concern. Renovat
 human-reviewed pull requests only for stable SemVer releases and groups each service family. Merging
 such a manifest pull request starts deployment automatically.
 
-Add `allow-resource-deletion` before merge only when the sanitized plan contains a deletion,
+Before the first successful release, add `allow-resource-deletion` to every exact pull request whose
+merge commit will be deployed because compensation may delete resources created by a partial rollout.
+After the first success receipt exists, add it only when the sanitized plan contains a deletion,
 replacement, or state-forget action.
 
 ## 6. Observe or retry the exact deployment
