@@ -95,6 +95,13 @@ add_secret_version() {
                 return 65
             fi
             ;;
+        production-json-keys-app-master-key)
+            if [ "${#secret_value}" -ne 64 ] || \
+                ! [[ "${secret_value}" =~ ^[A-Fa-f0-9]{64}$ ]]; then
+                printf 'JSON Keys master key requires exactly 64 hexadecimal characters.\n' >&2
+                return 65
+            fi
+            ;;
     esac
 
     version_id="$(
