@@ -137,13 +137,23 @@ printf '%s\n' \
     'case "$*" in' \
     '  "secrets describe production-authentication-postgres-password --project=agora-management-test --format=yaml(name,annotations,createTime,versionDestroyTtl)")' \
     '    printf "%s\n" "name: production-authentication-postgres-password" ;;' \
+    '  "secrets describe production-json-keys-app-master-key --project=agora-management-test --format=yaml(name,annotations,createTime,versionDestroyTtl)")' \
+    '    printf "%s\n" "name: production-json-keys-app-master-key" ;;' \
     '  "secrets versions add production-authentication-postgres-password --project=agora-management-test --data-file=- --quiet --format=value(name.basename())")' \
     '    payload="$(cat)"' \
     '    [ "$payload" = "$FAKE_EXPECTED_SECRET" ]' \
     '    printf "%s" "7" ;;' \
+    '  "secrets versions add production-json-keys-app-master-key --project=agora-management-test --data-file=- --quiet --format=value(name.basename())")' \
+    '    payload="$(cat)"' \
+    '    [ "$payload" = "$FAKE_EXPECTED_SECRET" ]' \
+    '    printf "%s" "8" ;;' \
     '  "secrets versions describe 7 --secret=production-authentication-postgres-password --project=agora-management-test --format=value(state)")' \
     '    printf "%s" "ENABLED" ;;' \
     '  "secrets versions describe 7 --secret=production-authentication-postgres-password --project=agora-management-test --format=yaml(name,state,createTime,destroyTime,scheduledDestroyTime)")' \
+    '    printf "%s\n" "state: ENABLED" ;;' \
+    '  "secrets versions describe 8 --secret=production-json-keys-app-master-key --project=agora-management-test --format=value(state)")' \
+    '    printf "%s" "ENABLED" ;;' \
+    '  "secrets versions describe 8 --secret=production-json-keys-app-master-key --project=agora-management-test --format=yaml(name,state,createTime,destroyTime,scheduledDestroyTime)")' \
     '    printf "%s\n" "state: ENABLED" ;;' \
     '  *) exit 64 ;;' \
     'esac' \
@@ -164,6 +174,39 @@ CREATED_SECRET_VERSION="$(
 assert_equal "${CREATED_SECRET_VERSION}" \
     'Created production-authentication-postgres-password version 7.'
 assert_absent "${TEMP_DIR}/add-secret.err" "${POSTGRES_SECRET}"
+
+printf -v INVALID_MASTER_KEY 'v%063d' 0
+set +e
+printf '%s\n%s\n' "${INVALID_MASTER_KEY}" "${INVALID_MASTER_KEY}" \
+    | PATH="${SECRET_MOCK_BIN}:${PATH}" \
+        FAKE_EXPECTED_SECRET="${INVALID_MASTER_KEY}" \
+        INFRA_MANAGEMENT_PROJECT_ID=agora-management-test \
+        INFRA_WORKLOAD_PROJECT_ID=agora-production-test \
+        "${REPOSITORY_ROOT}/ops/add-secret-version.sh" \
+            production-json-keys-app-master-key \
+            >"${TEMP_DIR}/invalid-master-key.out" 2>"${TEMP_DIR}/invalid-master-key.err"
+INVALID_MASTER_KEY_CODE=$?
+set -e
+assert_equal "${INVALID_MASTER_KEY_CODE}" 65
+grep -Fq 'JSON Keys master key requires exactly 64 hexadecimal characters.' \
+    "${TEMP_DIR}/invalid-master-key.err"
+assert_absent "${TEMP_DIR}/invalid-master-key.err" "${INVALID_MASTER_KEY}"
+
+printf -v MASTER_KEY '%064d' 0
+CREATED_MASTER_KEY_VERSION="$(
+    printf '%s\n%s\n' "${MASTER_KEY}" "${MASTER_KEY}" \
+        | PATH="${SECRET_MOCK_BIN}:${PATH}" \
+            FAKE_EXPECTED_SECRET="${MASTER_KEY}" \
+            INFRA_MANAGEMENT_PROJECT_ID=agora-management-test \
+            INFRA_WORKLOAD_PROJECT_ID=agora-production-test \
+            "${REPOSITORY_ROOT}/ops/add-secret-version.sh" \
+                production-json-keys-app-master-key \
+                2>"${TEMP_DIR}/add-master-key.err"
+)"
+assert_equal "${CREATED_MASTER_KEY_VERSION}" \
+    'Created production-json-keys-app-master-key version 8.'
+assert_absent "${TEMP_DIR}/add-master-key.err" "${MASTER_KEY}"
+unset INVALID_MASTER_KEY INVALID_MASTER_KEY_CODE MASTER_KEY
 
 set +e
 "${REPOSITORY_ROOT}/ops/add-secret-version.sh" \
