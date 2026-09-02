@@ -106,11 +106,13 @@ This small imperative edge is deliberate. The Google provider's
 calls `createInstances`; it creates a new MIG member and cannot safely adopt the existing
 foundation-owned member. Duplicating the MIG resource across two OpenTofu states would create
 overlapping ownership. Keeping the fixed command in versioned, tested code preserves one owner for
-the durable resource while the release identity remains limited to group-manager read/update,
-zonal-operation polling, snapshot-metadata listing, and the `setMetadata` permission Google requires
-for an existing VM. It cannot create or delete snapshots. An IAM condition fences the sole VM
-permission to generated `agora-database-*` members. The protected release workflow is the helper's
-only authenticated caller, and its private receipt binds rollback to the exact preceding state.
+the durable resource while the release identity receives group-manager read/update, zonal-operation
+polling, snapshot-metadata listing, and only the supporting checks Compute reauthorizes for the full
+member specification. Resource bindings fence those checks to the generated VM and boot-disk prefix,
+exact preserved disk, template, and subnet, plus a four-permission internal-address role. It cannot
+mutate snapshots or external addresses; delete VMs or disks; start or stop VMs; or change IAM. The
+protected release workflow is the helper's only authenticated caller, and its private receipt binds
+rollback to the exact preceding state.
 
 ```text
 foundation template + stateful disk/address + MIG
@@ -125,8 +127,8 @@ tested group metadata update, capped at RESTART
 release commit + image digests + secret version IDs
 ```
 
-This split gives ordinary deployments enough authority to converge both database containers and no
-disk, template, network, IAM, secret-payload, or direct instance-lifecycle permission. Google's
+This split keeps durable resource ownership in foundation while letting routine release converge
+both database containers through the fixed helper and supporting resource checks above. Google's
 group-manager update permission is coarser than the seven-field operation and can affect group
 lifecycle indirectly, so the fixed helper, resource-name condition, protected environment,
 committed manifest, audit log, health gate, and private receipt form the remaining controls. A

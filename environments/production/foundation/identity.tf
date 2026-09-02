@@ -546,9 +546,8 @@ resource "google_service_account_iam_member" "database_operator_act_as" {
 }
 
 # Compute authorizes an all-instances metadata patch against the group's full
-# member specification. Separate bindings keep the coarse group update at the
-# project, member checks on the generated VM and boot-disk prefix, template
-# reads on the exact template, and network use on the exact subnet.
+# member specification. Separate bindings keep each supporting permission at
+# the narrowest resource scope Compute exposes.
 resource "google_project_iam_custom_role" "database_release" {
   project = google_project.workload.project_id
 
@@ -608,6 +607,29 @@ resource "google_project_iam_member" "database_release_member" {
   }
 }
 
+resource "google_project_iam_custom_role" "database_release_data_disk" {
+  project = google_project.workload.project_id
+
+  role_id     = "infraDatabaseReleaseDataDisk"
+  title       = "Infra Database Release Data Disk"
+  description = "Attach the preserved database data disk while applying group release metadata."
+  stage       = "GA"
+
+  permissions = [
+    "compute.disks.use",
+  ]
+
+  depends_on = [google_project_service.workload["iam.googleapis.com"]]
+}
+
+resource "google_compute_disk_iam_member" "database_release" {
+  project = google_project.workload.project_id
+  zone    = var.database_zone
+  name    = google_compute_disk.database.name
+  role    = google_project_iam_custom_role.database_release_data_disk.name
+  member  = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "release"]}"
+}
+
 resource "google_project_iam_custom_role" "database_release_template" {
   project = google_project.workload.project_id
 
@@ -628,6 +650,33 @@ resource "google_compute_instance_template_iam_member" "database_release" {
   project = google_project.workload.project_id
   name    = google_compute_instance_template.database.name
   role    = google_project_iam_custom_role.database_release_template.name
+  member  = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "release"]}"
+}
+
+# Stateful MIG patches authorize generated regional Address resources. Compute
+# Address has no resource IAM policy or condition resource attributes, so this
+# single-purpose project role is the narrowest available scope.
+resource "google_project_iam_custom_role" "database_release_address" {
+  project = google_project.workload.project_id
+
+  role_id     = "infraDatabaseReleaseAddress"
+  title       = "Infra Database Release Address"
+  description = "Authorize stateful internal-address checks during database group metadata patches."
+  stage       = "GA"
+
+  permissions = [
+    "compute.addresses.createInternal",
+    "compute.addresses.deleteInternal",
+    "compute.addresses.get",
+    "compute.addresses.useInternal",
+  ]
+
+  depends_on = [google_project_service.workload["iam.googleapis.com"]]
+}
+
+resource "google_project_iam_member" "database_release_address" {
+  project = google_project.workload.project_id
+  role    = google_project_iam_custom_role.database_release_address.name
   member  = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "release"]}"
 }
 

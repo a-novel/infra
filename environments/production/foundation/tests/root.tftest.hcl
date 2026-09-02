@@ -557,6 +557,15 @@ run "builds_the_project_replacement_window" {
       ]) &&
       google_project_iam_member.database_release_member.member == "serviceAccount:infra-release@agora-management-test.iam.gserviceaccount.com" &&
       one(google_project_iam_member.database_release_member.condition).expression == "resource.type == 'compute.googleapis.com/Instance' && resource.name.startsWith('projects/agora-production-test/zones/europe-west1-c/instances/agora-database-') || resource.type == 'compute.googleapis.com/Disk' && resource.name.startsWith('projects/agora-production-test/zones/europe-west1-c/disks/agora-database-')" &&
+      google_project_iam_custom_role.database_release_data_disk.permissions == toset([
+        "compute.disks.use",
+      ]) &&
+      google_compute_disk_iam_member.database_release.project == "agora-production-test" &&
+      google_compute_disk_iam_member.database_release.zone == "europe-west1-c" &&
+      google_compute_disk_iam_member.database_release.name == "agora-data" &&
+      google_compute_disk_iam_member.database_release.role == google_project_iam_custom_role.database_release_data_disk.name &&
+      length(google_compute_disk_iam_member.database_release.condition) == 0 &&
+      google_compute_disk_iam_member.database_release.member == "serviceAccount:infra-release@agora-management-test.iam.gserviceaccount.com" &&
       google_project_iam_custom_role.database_release_template.permissions == toset([
         "compute.instanceTemplates.get",
         "compute.instanceTemplates.useReadOnly",
@@ -565,6 +574,16 @@ run "builds_the_project_replacement_window" {
       google_compute_instance_template_iam_member.database_release.name == "agora-database-test-template" &&
       google_compute_instance_template_iam_member.database_release.role == google_project_iam_custom_role.database_release_template.name &&
       google_compute_instance_template_iam_member.database_release.member == "serviceAccount:infra-release@agora-management-test.iam.gserviceaccount.com" &&
+      google_project_iam_custom_role.database_release_address.permissions == toset([
+        "compute.addresses.createInternal",
+        "compute.addresses.deleteInternal",
+        "compute.addresses.get",
+        "compute.addresses.useInternal",
+      ]) &&
+      google_project_iam_member.database_release_address.role == google_project_iam_custom_role.database_release_address.name &&
+      google_project_iam_member.database_release_address.project == "agora-production-test" &&
+      google_project_iam_member.database_release_address.member == "serviceAccount:infra-release@agora-management-test.iam.gserviceaccount.com" &&
+      length(google_project_iam_member.database_release_address.condition) == 0 &&
       google_compute_subnetwork_iam_member.database_release.project == "agora-production-test" &&
       google_compute_subnetwork_iam_member.database_release.region == "europe-west1" &&
       google_compute_subnetwork_iam_member.database_release.subnetwork == "agora-production-europe-west1" &&
@@ -1055,7 +1074,9 @@ run "limits_disposable_recovery_authority_to_the_replacement_project" {
       google_project_iam_member.release_cloud_run_deployer.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
       google_project_iam_member.database_release.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
       google_project_iam_member.database_release_member.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
+      google_compute_disk_iam_member.database_release.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
       google_compute_instance_template_iam_member.database_release.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
+      google_project_iam_member.database_release_address.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
       google_compute_subnetwork_iam_member.database_release.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
       google_artifact_registry_repository_iam_member.release_writer.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
       length(google_compute_network.default_adoption) == 0 &&
