@@ -34,6 +34,19 @@ function copyStableManifest() {
   return structuredClone(stableManifest);
 }
 
+function assertCloudRunCandidateTag(candidateTag) {
+  assert.match(candidateTag, /^c-[a-f0-9]{16}$/);
+  for (const serviceName of [
+    "agora-authentication-rest",
+    "agora-json-keys-grpc",
+  ]) {
+    assert.ok(
+      serviceName.length + candidateTag.length <= 46,
+      `${serviceName} and ${candidateTag} exceed Cloud Run's combined 46-character limit`,
+    );
+  }
+}
+
 test("the production manifest matches its schema", async () => {
   const manifest = await readManifest("deploy/production/images.yaml");
 
@@ -161,6 +174,7 @@ test("release compilation emits candidate, active, and rollback inputs", async (
     result.candidateTfvars.application_release.rollout.phase,
     "candidate",
   );
+  assertCloudRunCandidateTag(result.release.candidateTag);
   assert.equal(result.activeTfvars.application_release.rollout.phase, "active");
   assert.equal(result.rollbackTfvars.application_release, null);
   assert.deepEqual(result.release.cloud.secretVersions, [
@@ -591,6 +605,7 @@ test("recovery compilation keeps services absent until exact data restore", asyn
     await readFile(path.join(recoveryOutput, "active.tfvars.json"), "utf8"),
   );
   assert.equal(staging.application_release, null);
+  assertCloudRunCandidateTag(active.application_release.rollout.candidate_tag);
   assert.equal(active.recovery_mode, true);
   assert.equal(active.workload_project_id, "agora-recovery-test");
   assert.equal(active.recovery_source_project_id, "agora-production-test");

@@ -140,11 +140,13 @@ Private Google Access IP ranges into the VPC while arbitrary public destinations
 Cloud Run managed egress. Private `run.app` DNS therefore keeps the JSON Keys call internal, while
 TLS SMTP on port 587 needs no connector, NAT, proxy, or load balancer.
 
-Both service blocks use receipt-owned explicit revision targets. A candidate is named immutably,
-tagged, and assigned zero traffic while the prior receipt remains at 100%. JSON Keys becomes Ready
-and moves first. Authentication's tagged candidate `/v2/healthcheck` then proves its PostgreSQL,
-SMTP, and newly active private JSON Keys gRPC dependencies before public traffic moves. On first
-launch the private service may move safely before the public edge because it has no external ingress.
+Each candidate template has an immutable revision name and a short private tag. Candidate
+reconciliation targets Cloud Run's latest revision because its named revision is created by that
+request; the prior receipt remains at 100%. Active reconciliation pins the receipt-owned revision.
+JSON Keys becomes Ready and moves first. Authentication's tagged candidate `/v2/healthcheck` then
+proves its PostgreSQL, SMTP, and newly active private JSON Keys gRPC dependencies before public
+traffic moves. On first launch the private service may move safely before the public edge because it
+has no external ingress.
 
 ## Backup and restore contract
 

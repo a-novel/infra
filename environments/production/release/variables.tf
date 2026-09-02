@@ -207,7 +207,7 @@ variable "application_release" {
   validation {
     condition = var.application_release == null ? true : (
       contains(["candidate", "active"], var.application_release.rollout.phase) &&
-      can(regex("^c-[a-f0-9]{32}$", var.application_release.rollout.candidate_tag)) &&
+      can(regex("^c-[a-f0-9]{16}$", var.application_release.rollout.candidate_tag)) &&
       can(regex("^agora-authentication-rest-[a-f0-9]{12}$", var.application_release.authentication.revision)) &&
       can(regex("^agora-json-keys-grpc-[a-f0-9]{12}$", var.application_release.json_keys.revision)) &&
       (var.application_release.authentication.active_revision == null ||
