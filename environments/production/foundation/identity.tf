@@ -548,9 +548,11 @@ resource "google_service_account_iam_member" "database_operator_act_as" {
 # Google exposes one coarse update permission for all-instances metadata and
 # broader MIG changes. Applying it to an existing member also requires one VM
 # permission, setMetadata; the conditional binding below fences that permission
-# to the generated database-name prefix. The managed-group inspection command
-# also lists attached autoscalers, so it needs the read-only list permission.
-# The fixed helper and protected environment remain the controls around the
+# to the generated database-name prefix. Compute revalidates the group's source
+# template when patching it, so the release identity also needs read-only use of
+# that template. The managed-group inspection command also lists attached
+# autoscalers, so it needs the read-only list permission. The fixed helper and
+# protected environment remain the controls around the
 # seven declared keys.
 resource "google_project_iam_custom_role" "database_release" {
   project = google_project.workload.project_id
@@ -565,6 +567,7 @@ resource "google_project_iam_custom_role" "database_release" {
     "compute.instanceGroupManagers.get",
     "compute.instanceGroupManagers.update",
     "compute.instances.setMetadata",
+    "compute.instanceTemplates.useReadOnly",
     "compute.snapshots.list",
     "compute.zoneOperations.get",
   ]
