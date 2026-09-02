@@ -272,6 +272,11 @@ assert_absent "${TEMP_DIR}/safe.out" "fixture-password"
 assert_absent "${TEMP_DIR}/safe.out" "fixture-token-must-not-be-printed"
 assert_absent "${TEMP_DIR}/safe.out" "fixture-import-id-must-not-be-printed"
 
+"${REPOSITORY_ROOT}/ops/plan-summary.sh" release "${SCRIPT_DIR}/fixtures/plans/no-changes.json" >"${TEMP_DIR}/no-changes.out" 2>"${TEMP_DIR}/no-changes.err"
+assert_equal "$(wc -l <"${TEMP_DIR}/no-changes.out" | tr -d ' ')" 1
+grep -Fqx $'action\tresource_type\tcount\tgeneration' "${TEMP_DIR}/no-changes.out"
+assert_equal "$(wc -c <"${TEMP_DIR}/no-changes.err" | tr -d ' ')" 0
+
 set +e
 "${REPOSITORY_ROOT}/ops/plan-summary.sh" foundation "${SCRIPT_DIR}/fixtures/plans/protected.json" >"${TEMP_DIR}/protected.out" 2>"${TEMP_DIR}/protected.err"
 PROTECTED_CODE=$?

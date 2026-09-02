@@ -23,8 +23,19 @@ if [ ! -f "$2" ]; then
     exit 66
 fi
 
-if ! jq -e 'type == "object" and (.resource_changes | type == "array")' "$2" >/dev/null; then
-    printf "Plan JSON must contain a resource_changes array.\n" >&2
+if ! jq -e '
+    type == "object" and
+    (
+      (.resource_changes | type) == "array" or
+      (
+        (.resource_changes | type) == "null" and
+        (.format_version | type) == "string" and
+        (.terraform_version | type) == "string" and
+        .errored == false
+      )
+    )
+' "$2" >/dev/null; then
+    printf "Plan JSON must describe resource changes or a valid no-change plan.\n" >&2
     exit 65
 fi
 
@@ -41,7 +52,7 @@ if ! jq -e '
         or . == ["delete"]
         or . == ["forget"];
 
-    all(.resource_changes[]; (.change.actions | supported_actions))
+    all((.resource_changes // [])[]; (.change.actions | supported_actions))
 ' "$2" >/dev/null; then
     printf "Plan contains an unsupported action combination.\n" >&2
     exit 65
@@ -71,7 +82,7 @@ jq -r '
         end;
 
     [
-      .resource_changes[] as $resource
+      (.resource_changes // [])[] as $resource
       | (
           if $resource.change.importing != null then
             {
@@ -106,7 +117,7 @@ DESTRUCTIVE_CHANGES="$(jq -r '
     # Every managed type is covered so adding a resource cannot weaken the
     # destructive-change gate by omission from an allowlist.
     [
-      .resource_changes[]
+      (.resource_changes // [])[]
       | select(.mode == "managed")
       | select(destructive_change)
       | {
