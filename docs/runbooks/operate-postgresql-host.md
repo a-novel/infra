@@ -84,9 +84,11 @@ the latest logical backups and both independent clean restores pass the
   numeric owner/backup Secret Manager version IDs. Compute reauthorizes the full member
   specification when the protected helper patches that map. Release IAM therefore grants coarse
   group update at project scope, VM and boot-disk prerequisites only for `agora-database-*`,
-  template reads only on the exact template, and Network User only on the production subnet. It
-  has no secret-payload, IAM, snapshot-mutation, VM/disk delete, start, or stop permission. Only
-  the fixed protected helper may use the coarse group update.
+  data-disk attachment only on `agora-data`, template reads only on the exact template, Network User
+  only on the production subnet, and the stateful internal-address operations that Compute checks
+  at project scope. It cannot mutate snapshots or external addresses and has no secret-payload, IAM,
+  VM/disk delete, start, or stop permission. Only the fixed protected helper may use the coarse group
+  update.
 
 Stop application traffic and investigate before continuing when any invariant fails. Never add a
 temporary external IP, public PostgreSQL firewall rule, NAT, proxy, or service-account key for
