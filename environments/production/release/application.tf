@@ -358,7 +358,7 @@ resource "google_cloud_run_v2_service" "json_keys" {
     content {
       type     = "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION"
       revision = var.application_release.json_keys.revision
-      percent  = 0
+      percent  = var.application_release.json_keys.active_revision == null ? 100 : 0
       tag      = var.application_release.rollout.candidate_tag
     }
   }
@@ -584,7 +584,7 @@ resource "google_cloud_run_v2_service" "authentication" {
     content {
       type     = "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION"
       revision = var.application_release.authentication.revision
-      percent  = 0
+      percent  = var.application_release.authentication.active_revision == null ? 100 : 0
       tag      = var.application_release.rollout.candidate_tag
     }
   }
