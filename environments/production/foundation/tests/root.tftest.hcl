@@ -538,6 +538,7 @@ run "builds_the_project_replacement_window" {
         "compute.instanceGroupManagers.get",
         "compute.instanceGroupManagers.update",
         "compute.instances.setMetadata",
+        "compute.instanceTemplates.useReadOnly",
         "compute.snapshots.list",
         "compute.zoneOperations.get",
       ]) &&
@@ -548,7 +549,7 @@ run "builds_the_project_replacement_window" {
         (!startswith(permission, "compute.autoscalers.") || permission == "compute.autoscalers.list") &&
         !startswith(permission, "compute.disks.") &&
         (!startswith(permission, "compute.instances.") || permission == "compute.instances.setMetadata") &&
-        !startswith(permission, "compute.instanceTemplates.") &&
+        (!startswith(permission, "compute.instanceTemplates.") || permission == "compute.instanceTemplates.useReadOnly") &&
         (!startswith(permission, "compute.snapshots.") || permission == "compute.snapshots.list")
       ]) &&
       local.release_application_project_roles == toset([
