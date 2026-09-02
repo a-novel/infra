@@ -659,6 +659,77 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
   }
 }
 
+run "routes_a_first_release_to_its_only_revisions" {
+  command = plan
+
+  variables {
+    database_releases = {
+      authentication = {
+        image                   = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-authentication/database@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        backup_password_version = 11
+      }
+      json_keys = {
+        image                   = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-json-keys/database@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        backup_password_version = 7
+      }
+    }
+    application_release = {
+      rollout = {
+        candidate_tag = "c-0123456789abcdef0123456789abcdef"
+        phase         = "candidate"
+      }
+      authentication = {
+        images = {
+          init       = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-authentication/jobs/init@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          migrations = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-authentication/jobs/migrations@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          rest       = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-authentication/rest@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        }
+        revision = "agora-authentication-rest-0123456789ab"
+        secrets = {
+          postgres_password_version    = 11
+          smtp_password_version        = 12
+          super_admin_password_version = 13
+        }
+        smtp = {
+          address       = "smtp.example.com:587"
+          sender_domain = "smtp.example.com"
+          sender_email  = "noreply@example.com"
+          sender_name   = "Agora"
+          username      = "smtp-login@example.com"
+        }
+        super_admin_email = "admin@example.com"
+      }
+      json_keys = {
+        images = {
+          grpc        = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-json-keys/grpc@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+          migrations  = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-json-keys/jobs/migrations@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+          rotate_keys = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-json-keys/jobs/rotatekeys@sha256:2222222222222222222222222222222222222222222222222222222222222222"
+        }
+        revision = "agora-json-keys-grpc-abcdef012345"
+        secrets = {
+          app_master_key_version    = 7
+          postgres_password_version = 8
+        }
+      }
+    }
+  }
+
+  assert {
+    condition = alltrue([
+      for service in [
+        google_cloud_run_v2_service.json_keys[0],
+        google_cloud_run_v2_service.authentication[0],
+        ] : (
+        length(service.traffic) == 1 &&
+        one(service.traffic).percent == 100 &&
+        one(service.traffic).revision == one(service.template).revision &&
+        one(service.traffic).tag == var.application_release.rollout.candidate_tag
+      )
+    ])
+    error_message = "A first release must route all traffic to its tagged candidate because no prior revision exists."
+  }
+}
+
 run "builds_restore_only_contracts_in_a_disposable_recovery_state" {
   command = plan
 
