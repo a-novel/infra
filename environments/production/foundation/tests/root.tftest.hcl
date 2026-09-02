@@ -12,6 +12,12 @@ mock_provider "google" {
     }
   }
 
+  mock_resource "google_compute_instance_template" {
+    defaults = {
+      name = "agora-database-test-template"
+    }
+  }
+
   mock_resource "google_artifact_registry_repository" {
     defaults = {
       registry_uri = "europe-west1-docker.pkg.dev/agora-production-test/agora-production"
@@ -537,21 +543,33 @@ run "builds_the_project_replacement_window" {
         "compute.autoscalers.list",
         "compute.instanceGroupManagers.get",
         "compute.instanceGroupManagers.update",
-        "compute.instances.setMetadata",
-        "compute.instanceTemplates.useReadOnly",
         "compute.snapshots.list",
         "compute.zoneOperations.get",
       ]) &&
       google_project_iam_member.database_release.member == "serviceAccount:infra-release@agora-management-test.iam.gserviceaccount.com" &&
-      one(google_project_iam_member.database_release.condition).expression == "resource.type != 'compute.googleapis.com/Instance' || resource.name.startsWith('projects/agora-production-test/zones/europe-west1-c/instances/agora-database-')" &&
-      alltrue([
-        for permission in google_project_iam_custom_role.database_release.permissions :
-        (!startswith(permission, "compute.autoscalers.") || permission == "compute.autoscalers.list") &&
-        !startswith(permission, "compute.disks.") &&
-        (!startswith(permission, "compute.instances.") || permission == "compute.instances.setMetadata") &&
-        (!startswith(permission, "compute.instanceTemplates.") || permission == "compute.instanceTemplates.useReadOnly") &&
-        (!startswith(permission, "compute.snapshots.") || permission == "compute.snapshots.list")
+      length(google_project_iam_member.database_release.condition) == 0 &&
+      google_project_iam_custom_role.database_release_member.permissions == toset([
+        "compute.disks.create",
+        "compute.instances.create",
+        "compute.instances.setLabels",
+        "compute.instances.setMetadata",
+        "compute.instances.setTags",
       ]) &&
+      google_project_iam_member.database_release_member.member == "serviceAccount:infra-release@agora-management-test.iam.gserviceaccount.com" &&
+      one(google_project_iam_member.database_release_member.condition).expression == "resource.type == 'compute.googleapis.com/Instance' && resource.name.startsWith('projects/agora-production-test/zones/europe-west1-c/instances/agora-database-') || resource.type == 'compute.googleapis.com/Disk' && resource.name.startsWith('projects/agora-production-test/zones/europe-west1-c/disks/agora-database-')" &&
+      google_project_iam_custom_role.database_release_template.permissions == toset([
+        "compute.instanceTemplates.get",
+        "compute.instanceTemplates.useReadOnly",
+      ]) &&
+      google_compute_instance_template_iam_member.database_release.project == "agora-production-test" &&
+      google_compute_instance_template_iam_member.database_release.name == "agora-database-test-template" &&
+      google_compute_instance_template_iam_member.database_release.role == google_project_iam_custom_role.database_release_template.name &&
+      google_compute_instance_template_iam_member.database_release.member == "serviceAccount:infra-release@agora-management-test.iam.gserviceaccount.com" &&
+      google_compute_subnetwork_iam_member.database_release.project == "agora-production-test" &&
+      google_compute_subnetwork_iam_member.database_release.region == "europe-west1" &&
+      google_compute_subnetwork_iam_member.database_release.subnetwork == "agora-production-europe-west1" &&
+      google_compute_subnetwork_iam_member.database_release.role == "roles/compute.networkUser" &&
+      google_compute_subnetwork_iam_member.database_release.member == "serviceAccount:infra-release@agora-management-test.iam.gserviceaccount.com" &&
       local.release_application_project_roles == toset([
         "roles/cloudscheduler.admin",
         "roles/cloudquotas.viewer",
@@ -1036,6 +1054,9 @@ run "limits_disposable_recovery_authority_to_the_replacement_project" {
       ]) &&
       google_project_iam_member.release_cloud_run_deployer.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
       google_project_iam_member.database_release.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
+      google_project_iam_member.database_release_member.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
+      google_compute_instance_template_iam_member.database_release.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
+      google_compute_subnetwork_iam_member.database_release.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
       google_artifact_registry_repository_iam_member.release_writer.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
       length(google_compute_network.default_adoption) == 0 &&
       length(google_project_iam_member.plan_viewer) == 0 &&

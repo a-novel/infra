@@ -81,11 +81,12 @@ the latest logical backups and both independent clean restores pass the
   receipts. Healthy containers retain the read-only bind sources for crash restart; failed or
   disabled convergence removes them, and reboot clears the memory-backed directory.
 - Release metadata contains only a full Git commit, two promoted Artifact Registry digests, and four
-  numeric owner/backup Secret Manager version IDs. Release IAM has no disk, template, network, IAM,
-  secret-payload, or direct instance-lifecycle permission. Its sole VM permission is `setMetadata`,
-  conditionally fenced to the generated `agora-database-*` member because Google requires it to
-  apply the group map. Group-manager update remains coarse enough to affect group lifecycle, so only
-  the fixed protected helper may use that identity.
+  numeric owner/backup Secret Manager version IDs. Compute reauthorizes the full member
+  specification when the protected helper patches that map. Release IAM therefore grants coarse
+  group update at project scope, VM and boot-disk prerequisites only for `agora-database-*`,
+  template reads only on the exact template, and Network User only on the production subnet. It
+  has no secret-payload, IAM, snapshot-mutation, VM/disk delete, start, or stop permission. Only
+  the fixed protected helper may use the coarse group update.
 
 Stop application traffic and investigate before continuing when any invariant fails. Never add a
 temporary external IP, public PostgreSQL firewall rule, NAT, proxy, or service-account key for

@@ -545,15 +545,10 @@ resource "google_service_account_iam_member" "database_operator_act_as" {
   member             = each.value
 }
 
-# Google exposes one coarse update permission for all-instances metadata and
-# broader MIG changes. Applying it to an existing member also requires one VM
-# permission, setMetadata; the conditional binding below fences that permission
-# to the generated database-name prefix. Compute revalidates the group's source
-# template when patching it, so the release identity also needs read-only use of
-# that template. The managed-group inspection command also lists attached
-# autoscalers, so it needs the read-only list permission. The fixed helper and
-# protected environment remain the controls around the
-# seven declared keys.
+# Compute authorizes an all-instances metadata patch against the group's full
+# member specification. Separate bindings keep the coarse group update at the
+# project, member checks on the generated VM and boot-disk prefix, template
+# reads on the exact template, and network use on the exact subnet.
 resource "google_project_iam_custom_role" "database_release" {
   project = google_project.workload.project_id
 
@@ -566,8 +561,6 @@ resource "google_project_iam_custom_role" "database_release" {
     "compute.autoscalers.list",
     "compute.instanceGroupManagers.get",
     "compute.instanceGroupManagers.update",
-    "compute.instances.setMetadata",
-    "compute.instanceTemplates.useReadOnly",
     "compute.snapshots.list",
     "compute.zoneOperations.get",
   ]
@@ -579,12 +572,71 @@ resource "google_project_iam_member" "database_release" {
   project = google_project.workload.project_id
   role    = google_project_iam_custom_role.database_release.name
   member  = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "release"]}"
+}
+
+resource "google_project_iam_custom_role" "database_release_member" {
+  project = google_project.workload.project_id
+
+  role_id     = "infraDatabaseReleaseMember"
+  title       = "Infra Database Release Member"
+  description = "Authorize the generated database VM and boot disk while applying group release metadata."
+  stage       = "GA"
+
+  permissions = [
+    "compute.disks.create",
+    "compute.instances.create",
+    "compute.instances.setLabels",
+    "compute.instances.setMetadata",
+    "compute.instances.setTags",
+  ]
+
+  depends_on = [google_project_service.workload["iam.googleapis.com"]]
+}
+
+resource "google_project_iam_member" "database_release_member" {
+  project = google_project.workload.project_id
+  role    = google_project_iam_custom_role.database_release_member.name
+  member  = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "release"]}"
 
   condition {
     title       = "DatabaseReleaseMemberOnly"
-    description = "Fence the sole VM permission to generated members of the fixed database group."
-    expression  = "resource.type != 'compute.googleapis.com/Instance' || resource.name.startsWith('projects/${google_project.workload.project_id}/zones/${var.database_zone}/instances/agora-database-')"
+    description = "Limit member authorization to generated database VMs and boot disks."
+    expression = join(" || ", [
+      "resource.type == 'compute.googleapis.com/Instance' && resource.name.startsWith('projects/${google_project.workload.project_id}/zones/${var.database_zone}/instances/agora-database-')",
+      "resource.type == 'compute.googleapis.com/Disk' && resource.name.startsWith('projects/${google_project.workload.project_id}/zones/${var.database_zone}/disks/agora-database-')",
+    ])
   }
+}
+
+resource "google_project_iam_custom_role" "database_release_template" {
+  project = google_project.workload.project_id
+
+  role_id     = "infraDatabaseReleaseTemplate"
+  title       = "Infra Database Release Template"
+  description = "Read the database instance template while applying group release metadata."
+  stage       = "GA"
+
+  permissions = [
+    "compute.instanceTemplates.get",
+    "compute.instanceTemplates.useReadOnly",
+  ]
+
+  depends_on = [google_project_service.workload["iam.googleapis.com"]]
+}
+
+resource "google_compute_instance_template_iam_member" "database_release" {
+  project = google_project.workload.project_id
+  name    = google_compute_instance_template.database.name
+  role    = google_project_iam_custom_role.database_release_template.name
+  member  = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "release"]}"
+}
+
+resource "google_compute_subnetwork_iam_member" "database_release" {
+  project    = google_project.workload.project_id
+  region     = var.region
+  subnetwork = google_compute_subnetwork.production.name
+  role       = "roles/compute.networkUser"
+  member     = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "release"]}"
 }
 
 # Secret payloads stay outside OpenTofu. These additive bindings expose only
