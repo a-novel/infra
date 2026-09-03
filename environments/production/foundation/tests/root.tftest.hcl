@@ -469,6 +469,10 @@ run "builds_the_project_replacement_window" {
       strcontains(google_compute_instance_template.database.metadata_startup_script, "NOBYPASSRLS CONNECTION LIMIT 2") &&
       strcontains(google_compute_instance_template.database.metadata_startup_script, "agora.database_image=$${image}") &&
       strcontains(google_compute_instance_template.database.metadata_startup_script, "log_min_error_statement=panic") &&
+      strcontains(google_compute_instance_template.database.metadata_startup_script, "--entrypoint stat") &&
+      strcontains(google_compute_instance_template.database.metadata_startup_script, "--format '%u:%g'") &&
+      strcontains(google_compute_instance_template.database.metadata_startup_script, "chown -- \"$${image_owner}\" \"$${data_directory}\"") &&
+      strcontains(google_compute_instance_template.database.metadata_startup_script, "docker logs --tail 20") &&
       !strcontains(google_compute_instance_template.database.metadata_startup_script, "\\gexec") &&
       !strcontains(google_compute_instance_template.database.metadata_startup_script, "--tty") &&
       strcontains(google_compute_instance_template.database.metadata_startup_script, "^[A-Za-z0-9_-]+$") &&
