@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Google Cloud implementation of the fixed release state machine. All mutable
-# values come from compile-release.mjs private files; command output is reduced
-# to stable status messages and non-secret execution identifiers in receipts.
+# values come from compile-release.mjs private files; the driver never reads or
+# prints secret payloads.
 # Usage: google-release-driver.sh <state-machine-step|rollback>
 
 # jq programs deliberately keep `$value` single-quoted for jq, not the shell.
@@ -69,20 +69,53 @@ update_operation() {
 
 run_job() {
     local job="$1"
+    local attempt=0
+    local authorization_attempts=43
+    local completed=false
+    local dispatch_error=""
     local execution=""
-    if ! execution="$(
-        gcloud run jobs execute "${job}" \
-            --project="${PROJECT_ID}" \
-            --region="${REGION}" \
-            --wait \
-            --quiet \
-            --format='value(metadata.name)' 2>/dev/null
-    )"; then
-        printf 'A required release job failed.\n' >&2
+    local poll_seconds=10
+
+    dispatch_error="$(mktemp "${RELEASE_DIRECTORY}/job-dispatch.XXXXXX")"
+    for ((attempt = 1; attempt <= authorization_attempts; attempt++)); do
+        if execution="$(
+            gcloud run jobs execute "${job}" \
+                --project="${PROJECT_ID}" \
+                --region="${REGION}" \
+                --wait \
+                --quiet \
+                --format='value(metadata.name)' 2>"${dispatch_error}"
+        )"; then
+            completed=true
+            break
+        fi
+        # An explicit run.jobs.run denial precedes execution and is safe to
+        # retry while the job's authorization tag propagates.
+        if ! grep -Eiq \
+            "run\.jobs\.run.*denied|PERMISSION_DENIED.*run\.jobs\.run|permission: run\.jobs\.run" \
+            "${dispatch_error}"; then
+            printf 'Cloud Run job %s failed:\n' "${job}" >&2
+            cat "${dispatch_error}" >&2
+            rm -f -- "${dispatch_error}"
+            return 70
+        fi
+        if [ "${attempt}" -eq 1 ]; then
+            printf 'Waiting for tag-based Cloud Run authorization on %s.\n' "${job}" >&2
+        fi
+        if [ "${attempt}" -lt "${authorization_attempts}" ]; then
+            sleep "${poll_seconds}"
+        fi
+    done
+    if [ "${completed}" != true ]; then
+        printf 'Cloud Run did not authorize %s within seven minutes.\n' "${job}" >&2
+        cat "${dispatch_error}" >&2
+        rm -f -- "${dispatch_error}"
         return 70
     fi
+    rm -f -- "${dispatch_error}"
+
     execution="${execution##*/}"
-    if ! [[ "${execution}" =~ ^[a-z][a-z0-9-]{0,62}$ ]]; then
+    if ! [[ "${execution}" =~ ^${job}-[a-z0-9]+$ ]]; then
         printf 'A required release job returned an invalid execution identity.\n' >&2
         return 70
     fi

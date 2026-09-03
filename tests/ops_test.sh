@@ -1115,6 +1115,107 @@ if ! grep -Fq ".currentDatabase as \$database" \
     exit 1
 fi
 
+# Only an explicit pre-execution tag authorization denial may retry.
+# Application failures stop after one Cloud Run execution.
+RELEASE_JOB_MOCK_BIN="${TEMP_DIR}/release-job-bin"
+RELEASE_JOB_DIRECTORY="${TEMP_DIR}/release-job"
+RELEASE_JOB_GCLOUD_LOG="${TEMP_DIR}/release-job-gcloud.log"
+RELEASE_JOB_SLEEP_LOG="${TEMP_DIR}/release-job-sleep.log"
+mkdir -p "${RELEASE_JOB_MOCK_BIN}" "${RELEASE_JOB_DIRECTORY}"
+ln -s "${SCRIPT_DIR}/fixtures/fake-release-job-gcloud.sh" \
+    "${RELEASE_JOB_MOCK_BIN}/gcloud"
+# shellcheck disable=SC2016
+printf '%s\n' \
+    '#!/bin/bash' \
+    'set -euo pipefail' \
+    'printf "%s\n" "$*" >>"${RELEASE_JOB_SLEEP_LOG}"' \
+    >"${RELEASE_JOB_MOCK_BIN}/sleep"
+chmod 0700 "${RELEASE_JOB_MOCK_BIN}/sleep"
+
+RELEASE_JOB_COMMIT=0123456789abcdef0123456789abcdef01234567
+jq -n --arg commit "${RELEASE_JOB_COMMIT}" '
+  {
+    commit: $commit,
+    runId: "456",
+    runAttempt: 1,
+    cloud: {
+      workloadProjectId: "agora-production-test",
+      region: "europe-west1",
+      databaseZone: "europe-west1-c"
+    }
+  }
+' >"${RELEASE_JOB_DIRECTORY}/release.json"
+
+reset_release_job_test() {
+    : >"${RELEASE_JOB_GCLOUD_LOG}"
+    : >"${RELEASE_JOB_SLEEP_LOG}"
+    jq -n '{executions: {jsonKeysMigrations: null}}' \
+        >"${RELEASE_JOB_DIRECTORY}/operations.json"
+}
+
+run_release_job_test() {
+    local denials="$1"
+    local execution_failed="$2"
+
+    PATH="${RELEASE_JOB_MOCK_BIN}:${PATH}" \
+        RELEASE_JOB_GCLOUD_LOG="${RELEASE_JOB_GCLOUD_LOG}" \
+        RELEASE_JOB_SLEEP_LOG="${RELEASE_JOB_SLEEP_LOG}" \
+        RELEASE_JOB_DENIALS="${denials}" \
+        RELEASE_JOB_EXECUTION_FAILED="${execution_failed}" \
+        RELEASE_DIRECTORY="${RELEASE_JOB_DIRECTORY}" \
+        STATE_BUCKET=agora-state-test \
+        RECEIPT_BUCKET=agora-receipts-test \
+        GITHUB_SHA="${RELEASE_JOB_COMMIT}" \
+        GITHUB_RUN_ID=456 \
+        GITHUB_RUN_ATTEMPT=1 \
+        "${REPOSITORY_ROOT}/ops/google-release-driver.sh" json-migrations
+}
+
+reset_release_job_test
+run_release_job_test 2 false \
+    >"${TEMP_DIR}/release-job-success.out" \
+    2>"${TEMP_DIR}/release-job-success.err"
+assert_equal "$(grep -Fc 'run jobs execute' "${RELEASE_JOB_GCLOUD_LOG}")" 3
+assert_equal "$(wc -l <"${RELEASE_JOB_SLEEP_LOG}" | tr -d ' ')" 2
+assert_equal "$(jq --raw-output '.executions.jsonKeysMigrations' \
+    "${RELEASE_JOB_DIRECTORY}/operations.json")" \
+    agora-json-keys-migrations-execution1
+grep -Fq -- '--wait' "${RELEASE_JOB_GCLOUD_LOG}"
+if grep -Fq -- '--async' "${RELEASE_JOB_GCLOUD_LOG}"; then
+    printf 'Release jobs must use the native wait operation.\n' >&2
+    exit 1
+fi
+grep -Fq 'Waiting for tag-based Cloud Run authorization' \
+    "${TEMP_DIR}/release-job-success.err"
+
+reset_release_job_test
+set +e
+run_release_job_test 99 false \
+    >"${TEMP_DIR}/release-job-denied.out" \
+    2>"${TEMP_DIR}/release-job-denied.err"
+RELEASE_JOB_DENIED_CODE=$?
+set -e
+assert_equal "${RELEASE_JOB_DENIED_CODE}" 70
+assert_equal "$(grep -Fc 'run jobs execute' "${RELEASE_JOB_GCLOUD_LOG}")" 43
+assert_equal "$(wc -l <"${RELEASE_JOB_SLEEP_LOG}" | tr -d ' ')" 42
+grep -Fq 'did not authorize agora-json-keys-migrations within seven minutes' \
+    "${TEMP_DIR}/release-job-denied.err"
+
+reset_release_job_test
+set +e
+run_release_job_test 0 true \
+    >"${TEMP_DIR}/release-job-execution-failed.out" \
+    2>"${TEMP_DIR}/release-job-execution-failed.err"
+RELEASE_JOB_EXECUTION_CODE=$?
+set -e
+assert_equal "${RELEASE_JOB_EXECUTION_CODE}" 70
+assert_equal "$(grep -Fc 'run jobs execute' "${RELEASE_JOB_GCLOUD_LOG}")" 1
+assert_equal "$(wc -l <"${RELEASE_JOB_SLEEP_LOG}" | tr -d ' ')" 0
+assert_equal "$(jq --raw-output '.executions.jsonKeysMigrations' \
+    "${RELEASE_JOB_DIRECTORY}/operations.json")" null
+grep -Fq 'mock execution failure: agora-json-keys-migrations-execution1' \
+    "${TEMP_DIR}/release-job-execution-failed.err"
+
 # Authentication initialization is a one-time observation gate, never an
 # automated invocation. Exercise durable-marker, absent, failed, stale, and
 # wrong-job outcomes with a zero-wait fake Cloud Run control plane.
