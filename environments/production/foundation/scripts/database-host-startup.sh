@@ -271,6 +271,27 @@ SQL
     fi
 }
 
+prepare_database_directory() {
+    local image="$1"
+    local data_directory="$2"
+    local image_owner=""
+
+    image_owner="$(docker run --rm \
+        --network none \
+        --read-only \
+        --entrypoint stat \
+        "${image}" \
+        --format '%u:%g' \
+        /var/lib/postgresql)"
+    if ! [[ "${image_owner}" =~ ^[1-9][0-9]*:[1-9][0-9]*$ ]]; then
+        printf 'error: database image has an invalid PostgreSQL data owner\n' >&2
+        return 1
+    fi
+
+    install -d -m 0700 "${data_directory}"
+    chown -- "${image_owner}" "${data_directory}"
+}
+
 start_database() {
     local key="$1"
     local image="$2"
@@ -286,7 +307,7 @@ start_database() {
     local health=""
     local running=""
 
-    install -d -m 0700 "${data_directory}"
+    prepare_database_directory "${image}" "${data_directory}"
 
     if docker container inspect "${container_name}" >/dev/null 2>&1; then
         docker stop --time 60 "${container_name}" >/dev/null
@@ -329,8 +350,19 @@ start_database() {
     until [ "${health}" = "healthy" ]; do
         running="$(docker inspect --format '{{.State.Running}}' "${container_name}")"
         health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' "${container_name}")"
-        if [ "${running}" != "true" ] || [ "${health}" = "unhealthy" ] || [ "${health}" = "missing" ] || [ "${elapsed}" -ge 120 ]; then
+        if [ "${running}" != "true" ]; then
+            printf 'error: %s exited before becoming healthy\n' "${container_name}" >&2
+            docker logs --tail 20 "${container_name}" >&2 || true
+            exit 1
+        fi
+        if [ "${health}" = "unhealthy" ] || [ "${health}" = "missing" ]; then
+            printf 'error: %s health status is %s\n' "${container_name}" "${health}" >&2
+            docker logs --tail 20 "${container_name}" >&2 || true
+            exit 1
+        fi
+        if [ "${elapsed}" -ge 120 ]; then
             printf 'error: %s did not become healthy within 120 seconds\n' "${container_name}" >&2
+            docker logs --tail 20 "${container_name}" >&2 || true
             exit 1
         fi
 
