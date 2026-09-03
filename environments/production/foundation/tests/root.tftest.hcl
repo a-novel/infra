@@ -622,12 +622,13 @@ run "builds_the_project_replacement_window" {
         "run.services.list",
         "run.services.listEffectiveTags",
         "run.services.listTagBindings",
+        "run.services.setIamPolicy",
         "run.services.update",
       ]) &&
       !contains(google_project_iam_custom_role.release_cloud_run_deployer.permissions, "run.jobs.run") &&
       !contains(google_project_iam_custom_role.release_cloud_run_deployer.permissions, "run.jobs.runWithOverrides") &&
       !contains(google_project_iam_custom_role.release_cloud_run_deployer.permissions, "run.jobs.setIamPolicy") &&
-      !contains(google_project_iam_custom_role.release_cloud_run_deployer.permissions, "run.services.setIamPolicy") &&
+      !contains(google_project_iam_custom_role.release_cloud_run_deployer.permissions, "run.services.getIamPolicy") &&
       google_project_iam_member.release_cloud_run_deployer.member == "serviceAccount:infra-release@agora-management-test.iam.gserviceaccount.com" &&
       length(google_service_account_iam_member.release_runtime_act_as) == 5 &&
       toset(keys(google_service_account_iam_member.release_runtime_act_as)) == toset([

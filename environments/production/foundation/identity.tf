@@ -419,14 +419,15 @@ resource "google_project_iam_member" "release_application" {
   member  = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "release"]}"
 }
 
-# The release identity can reconcile definitions and approved tags. It cannot
-# execute by role, override an execution, or read/change Cloud Run IAM policy.
+# Cloud Run requires service-policy write authority to disable the invoker
+# check on public services. The release identity cannot read service policies,
+# execute by role, or override an execution.
 resource "google_project_iam_custom_role" "release_cloud_run_deployer" {
   project = google_project.workload.project_id
 
   role_id     = "infraReleaseCloudRunDeployer"
   title       = "Infra Release Cloud Run Deployer"
-  description = "Manage release-owned Cloud Run definitions and approved invocation tags without execution or IAM-policy authority."
+  description = "Manage release-owned Cloud Run definitions, approved invocation tags, and public service access without execution authority."
   stage       = "GA"
 
   permissions = [
@@ -453,6 +454,7 @@ resource "google_project_iam_custom_role" "release_cloud_run_deployer" {
     "run.services.list",
     "run.services.listEffectiveTags",
     "run.services.listTagBindings",
+    "run.services.setIamPolicy",
     "run.services.update",
   ]
 
