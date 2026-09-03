@@ -735,6 +735,30 @@ printf '%s\n' \
     '        printf "{\"allInstancesConfig\":{\"properties\":{\"metadata\":{\"agora-authentication-database-image\":\"\",\"agora-authentication-postgres-backup-password-version\":\"0\",\"agora-authentication-postgres-password-version\":\"0\",\"agora-database-release-revision\":\"%s\",\"agora-json-keys-database-image\":\"\",\"agora-json-keys-postgres-backup-password-version\":\"0\",\"agora-json-keys-postgres-password-version\":\"0\"}}}}\n" "${current_revision}"' \
     '    fi' \
     'fi' \
+    'if [[ "$*" == *"instance-groups managed list-instances"* ]]; then' \
+    '    printf "agora-database-test\n"' \
+    'fi' \
+    'if [[ "$*" == *"instances get-guest-attributes"* ]]; then' \
+    '    if [[ "${READINESS_PERMISSION_ERROR:-false}" == "true" ]]; then' \
+    '        printf "PERMISSION_DENIED: compute.instances.getGuestAttributes\n" >&2' \
+    '        exit 1' \
+    '    fi' \
+    '    if [[ "${READINESS_ABSENT:-false}" == "true" ]]; then' \
+    '        printf "ERROR: Guest Attribute was not found.\n" >&2' \
+    '        exit 1' \
+    '    fi' \
+    '    guest_call_count="$(grep -Fxc get-guest-attributes "${GCLOUD_ARGUMENT_LOG}")"' \
+    '    if [[ "${guest_call_count}" == "1" ]]; then' \
+    '        guest_status="healthy:ffffffffffffffffffffffffffffffffffffffff:11111111-1111-1111-1111-111111111111"' \
+    '    elif [[ "${READINESS_FAILURE:-false}" == "true" ]]; then' \
+    '        guest_status="failed:0123456789abcdef0123456789abcdef01234567:22222222-2222-2222-2222-222222222222"' \
+    '    elif [[ "${READINESS_EXPECTED:-}" == "none" ]]; then' \
+    '        guest_status="idle:none:22222222-2222-2222-2222-222222222222"' \
+    '    else' \
+    '        guest_status="healthy:0123456789abcdef0123456789abcdef01234567:22222222-2222-2222-2222-222222222222"' \
+    '    fi' \
+    '    printf "{\"queryValue\":{\"items\":[{\"namespace\":\"agora\",\"key\":\"database-release\",\"value\":\"%s\"}]}}\n" "${guest_status}"' \
+    'fi' \
     'if [[ "$*" == *"compute snapshots list"* ]]; then' \
     '    if [[ -n "${SNAPSHOT_AGE_HOURS:-}" ]]; then snapshot_time="$(date -u --date="${SNAPSHOT_AGE_HOURS} hours ago" +%Y-%m-%dT%H:%M:%SZ)"; else snapshot_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; fi' \
     '    if [[ "${MANUAL_SNAPSHOT:-false}" == "true" ]]; then snapshot_auto_created=false; else snapshot_auto_created=true; fi' \
@@ -760,7 +784,7 @@ PATH="${MOCK_BIN}:${PATH}" GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
     17 \
     >"${TEMP_DIR}/database-release.out"
 
-assert_equal "$(grep -Fc 'CALL' "${GCLOUD_ARGUMENT_LOG}")" "7"
+assert_equal "$(grep -Fc 'CALL' "${GCLOUD_ARGUMENT_LOG}")" "11"
 grep -Fqx 'describe' "${GCLOUD_ARGUMENT_LOG}"
 grep -Fqx 'snapshots' "${GCLOUD_ARGUMENT_LOG}"
 grep -Fqx 'list' "${GCLOUD_ARGUMENT_LOG}"
@@ -777,7 +801,84 @@ grep -Fqx -- '--format=json' "${GCLOUD_ARGUMENT_LOG}"
 grep -Fqx -- '--all-instances' "${GCLOUD_ARGUMENT_LOG}"
 grep -Fqx -- '--minimal-action=restart' "${GCLOUD_ARGUMENT_LOG}"
 grep -Fqx -- '--most-disruptive-allowed-action=restart' "${GCLOUD_ARGUMENT_LOG}"
+assert_equal "$(grep -Fxc 'get-guest-attributes' "${GCLOUD_ARGUMENT_LOG}")" "2"
+grep -Fq 'Database host reported healthy release 0123456789abcdef0123456789abcdef01234567.' \
+    "${TEMP_DIR}/database-release.out"
 grep -Fqx -- "--metadata=agora-database-release-revision=0123456789abcdef0123456789abcdef01234567,agora-json-keys-database-image=${JSON_KEYS_IMAGE},agora-authentication-database-image=${AUTHENTICATION_IMAGE},agora-json-keys-postgres-password-version=7,agora-authentication-postgres-password-version=11,agora-json-keys-postgres-backup-password-version=13,agora-authentication-postgres-backup-password-version=17" "${GCLOUD_ARGUMENT_LOG}"
+
+# A new boot-specific failure stops the database stage before candidate
+# services can start against an unavailable PostgreSQL listener.
+: >"${GCLOUD_ARGUMENT_LOG}"
+set +e
+PATH="${MOCK_BIN}:${PATH}" GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
+    READINESS_FAILURE=true \
+    "${REPOSITORY_ROOT}/ops/deploy-database-release.sh" \
+    agora-production-test \
+    europe-west1-c \
+    0123456789abcdef0123456789abcdef01234567 \
+    "${JSON_KEYS_IMAGE}" \
+    "${AUTHENTICATION_IMAGE}" \
+    7 \
+    11 \
+    13 \
+    17 \
+    >"${TEMP_DIR}/failed-database-readiness.out" \
+    2>"${TEMP_DIR}/failed-database-readiness.err"
+FAILED_DATABASE_READINESS_CODE=$?
+set -e
+assert_equal "${FAILED_DATABASE_READINESS_CODE}" 70
+grep -Fq 'reported failed startup status' "${TEMP_DIR}/failed-database-readiness.err"
+grep -Fq 'did not report a healthy release' "${TEMP_DIR}/failed-database-readiness.err"
+
+# A missing status before the first instrumented boot is valid, but any real
+# provider or IAM failure remains distinct and fails closed.
+: >"${GCLOUD_ARGUMENT_LOG}"
+READINESS_ABSENT=true PATH="${MOCK_BIN}:${PATH}" \
+    GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
+    "${REPOSITORY_ROOT}/ops/database-host-readiness.sh" current \
+    agora-production-test europe-west1-c \
+    >"${TEMP_DIR}/absent-database-readiness.out"
+assert_equal "$(cat "${TEMP_DIR}/absent-database-readiness.out")" absent
+
+: >"${GCLOUD_ARGUMENT_LOG}"
+set +e
+READINESS_PERMISSION_ERROR=true PATH="${MOCK_BIN}:${PATH}" \
+    GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
+    "${REPOSITORY_ROOT}/ops/deploy-database-release.sh" \
+    agora-production-test \
+    europe-west1-c \
+    0123456789abcdef0123456789abcdef01234567 \
+    "${JSON_KEYS_IMAGE}" \
+    "${AUTHENTICATION_IMAGE}" \
+    7 \
+    11 \
+    13 \
+    17 \
+    >"${TEMP_DIR}/denied-database-readiness.out" \
+    2>"${TEMP_DIR}/denied-database-readiness.err"
+DENIED_DATABASE_READINESS_CODE=$?
+set -e
+assert_equal "${DENIED_DATABASE_READINESS_CODE}" 70
+grep -Fq 'PERMISSION_DENIED' "${TEMP_DIR}/denied-database-readiness.err"
+if grep -Eq '^(all-instances-config|update-instances)$' "${GCLOUD_ARGUMENT_LOG}"; then
+    printf 'Unreadable database readiness must fail before metadata mutation.\n' >&2
+    exit 1
+fi
+
+# Compensation also waits for a new boot to report the prior state. A null
+# receipt must result in an explicit idle signal rather than MIG stability.
+printf 'null\n' >"${TEMP_DIR}/empty-database-receipt.json"
+: >"${GCLOUD_ARGUMENT_LOG}"
+READINESS_EXPECTED=none PATH="${MOCK_BIN}:${PATH}" \
+    GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
+    "${REPOSITORY_ROOT}/ops/restore-database-release.sh" \
+    agora-production-test \
+    europe-west1-c \
+    "${TEMP_DIR}/empty-database-receipt.json" \
+    >"${TEMP_DIR}/database-rollback.out"
+assert_equal "$(grep -Fc 'CALL' "${GCLOUD_ARGUMENT_LOG}")" "7"
+grep -Fq 'Database host reported the idle rollback state.' \
+    "${TEMP_DIR}/database-rollback.out"
 
 # The first release has no source cluster to dump. A 25-hour daily snapshot is
 # accepted, and the gate returns before attempting a nonexistent backup job.

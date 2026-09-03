@@ -586,6 +586,7 @@ resource "google_project_iam_custom_role" "database_release_member" {
   permissions = [
     "compute.disks.create",
     "compute.instances.create",
+    "compute.instances.getGuestAttributes",
     "compute.instances.setLabels",
     "compute.instances.setMetadata",
     "compute.instances.setTags",
