@@ -478,7 +478,7 @@ resource "google_cloud_scheduler_job" "postgres_backup" {
     retry_count          = 1
     min_backoff_duration = "30s"
     max_backoff_duration = "60s"
-    max_doublings        = 0
+    max_doublings        = 5
   }
 
   http_target {
@@ -510,7 +510,7 @@ resource "google_cloud_scheduler_job" "postgres_restore" {
     retry_count          = 1
     min_backoff_duration = "30s"
     max_backoff_duration = "60s"
-    max_doublings        = 0
+    max_doublings        = 5
   }
 
   http_target {
@@ -542,7 +542,7 @@ resource "google_cloud_scheduler_job" "postgres_backup_monitor" {
     retry_count          = 1
     min_backoff_duration = "30s"
     max_backoff_duration = "60s"
-    max_doublings        = 0
+    max_doublings        = 5
   }
 
   http_target {

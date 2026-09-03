@@ -255,6 +255,7 @@ run "builds_the_two_database_recovery_contracts" {
       ]) == "268435456000" &&
       one(google_cloud_scheduler_job.postgres_backup_monitor[0].http_target).oauth_token[0].service_account_email == var.runtime_service_accounts.scheduler_invoker &&
       google_cloud_scheduler_job.postgres_backup_monitor[0].schedule == "5 * * * *" &&
+      one(google_cloud_scheduler_job.postgres_backup_monitor[0].retry_config).max_doublings == 5 &&
       google_cloud_scheduler_job.postgres_backup_monitor[0].paused == true
     )
     error_message = "The hourly read-only RPO and storage monitor must stay paused until application activation."
@@ -273,6 +274,7 @@ run "builds_the_two_database_recovery_contracts" {
         ) :
         schedule.paused == true &&
         schedule.time_zone == "Etc/UTC" &&
+        one(schedule.retry_config).max_doublings == 5 &&
         one(schedule.http_target).http_method == "POST" &&
         one(schedule.http_target).oauth_token[0].service_account_email == var.runtime_service_accounts.scheduler_invoker &&
         endswith(one(schedule.http_target).uri, ":run")
@@ -426,6 +428,7 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
       google_cloud_scheduler_job.json_keys_rotation[0].paused == false &&
       google_cloud_scheduler_job.json_keys_rotation[0].time_zone == "Etc/UTC" &&
       google_cloud_scheduler_job.json_keys_rotation[0].retry_config[0].retry_count == 1 &&
+      one(google_cloud_scheduler_job.json_keys_rotation[0].retry_config).max_doublings == 5 &&
       one(google_cloud_scheduler_job.json_keys_rotation[0].http_target).uri == "https://run.googleapis.com/v2/projects/agora-production-test/locations/europe-west1/jobs/agora-json-keys-rotatekeys:run" &&
       one(google_cloud_scheduler_job.json_keys_rotation[0].http_target).oauth_token[0].service_account_email == var.runtime_service_accounts.scheduler_invoker
     )
