@@ -109,6 +109,15 @@ else
         "${RELEASE_REVISION}"
 fi
 
+if ! DATABASE_STATUS_BEFORE="$(
+    "${SCRIPT_DIR}/database-host-readiness.sh" current \
+        "${WORKLOAD_PROJECT_ID}" \
+        "${DATABASE_ZONE}"
+)"; then
+    printf 'Database host readiness could not be inspected before restart.\n' >&2
+    exit 70
+fi
+
 # The group's OPPORTUNISTIC policy ensures allInstancesConfig acts only on new
 # members by itself. The second command is therefore mandatory and caps the
 # existing member's action at RESTART: a pending template or disk change that
@@ -145,4 +154,13 @@ if ! gcloud compute instance-groups managed wait-until "${DATABASE_GROUP}" \
     exit 70
 fi
 
-printf 'Database release metadata was applied; readiness still requires the protected health gate.\n'
+if ! "${SCRIPT_DIR}/database-host-readiness.sh" wait \
+    "${WORKLOAD_PROJECT_ID}" \
+    "${DATABASE_ZONE}" \
+    "${RELEASE_REVISION}" \
+    "${DATABASE_STATUS_BEFORE}"; then
+    printf 'The database host did not report a healthy release after restart.\n' >&2
+    exit 70
+fi
+
+printf 'Database release metadata was applied and the host is healthy.\n'

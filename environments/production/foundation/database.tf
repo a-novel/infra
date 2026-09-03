@@ -49,6 +49,14 @@ check "database_container_cpu_headroom" {
   }
 }
 
+resource "google_compute_project_metadata_item" "database_guest_attributes" {
+  project = google_project.workload.project_id
+  key     = "enable-guest-attributes"
+  value   = "TRUE"
+
+  depends_on = [google_project_service.workload["compute.googleapis.com"]]
+}
+
 resource "google_compute_disk" "database" {
   project = google_project.workload.project_id
   zone    = var.database_zone

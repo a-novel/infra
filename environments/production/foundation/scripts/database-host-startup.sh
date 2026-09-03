@@ -14,6 +14,8 @@ SECRETS_DIR="/run/agora/secrets"
 DOCKER_CONFIG_DIR="/run/agora/docker"
 DATABASE_BRIDGE_RANGE="172.31.254.0/29"
 TOKEN_CONFIG=""
+BOOT_ID=""
+READINESS_REVISION="invalid"
 SECRET_TEMP_FILES=()
 DATABASE_CONTAINERS=(
     agora-postgres-json-keys
@@ -64,6 +66,9 @@ handle_failure() {
     local status="${1:-$?}"
 
     trap - ERR
+    if [ -n "${BOOT_ID}" ]; then
+        publish_database_status failed || true
+    fi
     stop_database_containers
     # Healthy containers retain their read-only bind sources for crash
     # restart. A failed convergence has no reader and keeps no final payload.
@@ -80,6 +85,19 @@ metadata_request() {
         --max-time 10 \
         --header "Metadata-Flavor: Google" \
         "${METADATA_ROOT}/$1"
+}
+
+publish_database_status() {
+    curl --fail --silent --show-error \
+        --connect-timeout 2 \
+        --max-time 10 \
+        --retry 5 \
+        --retry-all-errors \
+        --header "Metadata-Flavor: Google" \
+        --request PUT \
+        --data-binary "$1:${READINESS_REVISION}:${BOOT_ID}" \
+        "${METADATA_ROOT}/instance/guest-attributes/agora/database-release" \
+        >/dev/null
 }
 
 attribute_get() {
@@ -373,6 +391,22 @@ start_database() {
     activate_database_credentials "${container_name}" "${database_user}" "${database_name}"
 }
 
+# The managed-group stable bit only covers Compute's restart operation. This
+# boot-specific status lets the release workflow wait for PostgreSQL itself.
+BOOT_ID="$(tr -d '\n' </proc/sys/kernel/random/boot_id)"
+if ! [[ "${BOOT_ID}" =~ ^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$ ]]; then
+    printf 'error: database host boot ID is invalid\n' >&2
+    exit 1
+fi
+
+RELEASE_REVISION="$(attribute_get agora-database-release-revision 2>/dev/null || true)"
+if [ -z "${RELEASE_REVISION}" ]; then
+    READINESS_REVISION="none"
+elif [[ "${RELEASE_REVISION}" =~ ^[a-f0-9]{40}$ ]]; then
+    READINESS_REVISION="${RELEASE_REVISION}"
+fi
+publish_database_status starting
+
 # ---- Preserved storage ----
 
 elapsed=0
@@ -418,12 +452,12 @@ resize2fs "${DATA_DEVICE}" >/dev/null
 
 # ---- Release contract ----
 
-RELEASE_REVISION="$(attribute_get agora-database-release-revision 2>/dev/null || true)"
 if [ -z "${RELEASE_REVISION}" ]; then
     # Foundation prepares and verifies storage but deliberately starts no
     # database until one complete release supplies all seven non-secret fields.
     stop_database_containers
     remove_database_secret_files
+    publish_database_status idle
     printf 'Database release metadata is absent; the private host remains idle.\n'
     exit 0
 fi
@@ -541,4 +575,5 @@ start_database \
     "${AUTHENTICATION_PASSWORD_FILE}" \
     "${AUTHENTICATION_BACKUP_PASSWORD_FILE}"
 
+publish_database_status healthy
 printf 'Database release %s is healthy.\n' "${RELEASE_REVISION}"

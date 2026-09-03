@@ -16,6 +16,7 @@ PROJECT_ID="$1"
 DATABASE_ZONE="$2"
 DATABASE_FILE="$3"
 DATABASE_GROUP="agora-database"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 if ! [[ "${PROJECT_ID}" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]] ||
     ! [[ "${DATABASE_ZONE}" =~ ^[a-z]+-[a-z]+[0-9]+-[a-z]$ ]] ||
@@ -65,6 +66,15 @@ else
     exit 65
 fi
 
+if ! DATABASE_STATUS_BEFORE="$(
+    "${SCRIPT_DIR}/database-host-readiness.sh" current \
+        "${PROJECT_ID}" \
+        "${DATABASE_ZONE}"
+)"; then
+    printf 'Database host readiness could not be inspected before rollback.\n' >&2
+    exit 70
+fi
+
 if ! gcloud compute instance-groups managed all-instances-config update "${DATABASE_GROUP}" \
     --project="${PROJECT_ID}" \
     --zone="${DATABASE_ZONE}" \
@@ -92,6 +102,21 @@ if ! gcloud compute instance-groups managed wait-until "${DATABASE_GROUP}" \
     --timeout=600 \
     --quiet >/dev/null 2>&1; then
     printf 'The database host did not become stable after rollback.\n' >&2
+    exit 70
+fi
+
+if [ -z "${RELEASE_REVISION}" ]; then
+    EXPECTED_DATABASE_STATUS="none"
+else
+    EXPECTED_DATABASE_STATUS="${RELEASE_REVISION}"
+fi
+
+if ! "${SCRIPT_DIR}/database-host-readiness.sh" wait \
+    "${PROJECT_ID}" \
+    "${DATABASE_ZONE}" \
+    "${EXPECTED_DATABASE_STATUS}" \
+    "${DATABASE_STATUS_BEFORE}"; then
+    printf 'The database host did not report the restored release after rollback.\n' >&2
     exit 70
 fi
 
