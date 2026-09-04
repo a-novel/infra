@@ -62,16 +62,15 @@ resolve_database_instance() {
 }
 
 read_guest_status() {
-    local response=""
     local status=""
 
     : >"${READINESS_ERROR_FILE}"
-    if ! response="$(
+    if ! status="$(
         gcloud compute instances get-guest-attributes "${DATABASE_INSTANCE}" \
             --project="$1" \
             --zone="$2" \
             --query-path="${GUEST_NAMESPACE}/${GUEST_KEY}" \
-            --format=json \
+            --format='value(value)' \
             2>"${READINESS_ERROR_FILE}"
     )"; then
         if grep -Fq 'Guest Attribute' "${READINESS_ERROR_FILE}" &&
@@ -85,18 +84,7 @@ read_guest_status() {
         exit 70
     fi
 
-    if ! status="$(
-        jq --exit-status --raw-output \
-            --arg namespace "${GUEST_NAMESPACE}" \
-            --arg key "${GUEST_KEY}" '
-              [
-                .queryValue.items[]?
-                | select(.namespace == $namespace and .key == $key)
-                | .value
-              ]
-              | if length == 1 then .[0] else error("unexpected guest status response") end
-            ' <<<"${response}"
-    )" || ! valid_status "${status}"; then
+    if ! valid_status "${status}"; then
         printf 'The database host readiness status is malformed.\n' >&2
         exit 70
     fi
@@ -104,8 +92,8 @@ read_guest_status() {
     GUEST_STATUS="${status}"
 }
 
-if ! command -v gcloud >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
-    printf 'Google Cloud CLI and jq are required by the protected deployment environment.\n' >&2
+if ! command -v gcloud >/dev/null 2>&1; then
+    printf 'Google Cloud CLI is required by the protected deployment environment.\n' >&2
     exit 69
 fi
 READINESS_ERROR_FILE="$(mktemp)"
