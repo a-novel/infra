@@ -323,7 +323,7 @@ resource "google_cloud_run_v2_service" "json_keys" {
         initial_delay_seconds = 0
         timeout_seconds       = 1
         period_seconds        = 3
-        failure_threshold     = 20
+        failure_threshold     = 80
 
         tcp_socket {
           port = 8080
@@ -533,7 +533,7 @@ resource "google_cloud_run_v2_service" "authentication" {
         initial_delay_seconds = 0
         timeout_seconds       = 1
         period_seconds        = 3
-        failure_threshold     = 20
+        failure_threshold     = 80
 
         http_get {
           path = "/v2/ping"
