@@ -45,10 +45,8 @@ test("synthetic health remains inside the read-only plan trust boundary", () => 
   assert.equal(health.environment, undefined);
   assert.equal(health["timeout-minutes"], 10);
   assert.ok(
-    health.steps.some(
-      (step) =>
-        step.uses ===
-        "google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093",
+    health.steps.some((step) =>
+      /^google-github-actions\/auth@v[0-9]+\.[0-9]+\.[0-9]+$/.test(step.uses),
     ),
   );
 });

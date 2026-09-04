@@ -23,19 +23,19 @@ jobs:
       contents: read
     steps:
       - name: Check out the repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
       - name: Install OpenTofu
-        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        uses: opentofu/setup-opentofu@v2.0.2
         with:
           tofu_version_file: .opentofu-version
           tofu_wrapper: false
           cache: true
 
       - name: Install TFLint
-        uses: terraform-linters/setup-tflint@6e1e0642c0289bd619021bf6b34e3c08ed1e005a # v6.3.0
+        uses: terraform-linters/setup-tflint@v6.3.0
         with:
           # renovate: datasource=github-releases depName=terraform-linters/tflint
           tflint_version: v0.64.0
@@ -44,10 +44,10 @@ jobs:
       # The operational policy tests execute the same receipt validator used by
       # protected releases, so they need the repository's pinned Node tooling.
       - name: Install pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: pnpm/action-setup@v6.0.10
 
       - name: Install Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@v7.0.0
         with:
           node-version-file: .node-version
           cache: pnpm
@@ -81,12 +81,12 @@ jobs:
       contents: read
     steps:
       - name: Check out the repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
       - name: Scan infrastructure and secrets
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        uses: aquasecurity/trivy-action@v0.36.0
         env:
           TRIVY_DISABLE_TELEMETRY: "true"
           TRIVY_INCLUDE_DEV_DEPS: "true"
@@ -110,16 +110,16 @@ jobs:
       contents: read
     steps:
       - name: Check out the repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
 
       - name: Install pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: pnpm/action-setup@v6.0.10
 
       - name: Install Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@v7.0.0
         with:
           node-version-file: .node-version
           cache: pnpm
@@ -176,7 +176,7 @@ jobs:
         run: ./ops/verify-release-images.sh "${RUNNER_TEMP}/release-preview/release.json"
 
       - name: Lint GitHub Actions syntax
-        uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2.2.0
+        uses: raven-actions/actionlint@v2.2.0
         with:
           # renovate: datasource=github-releases depName=rhysd/actionlint
           version: 1.7.12
