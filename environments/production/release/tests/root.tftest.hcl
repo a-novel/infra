@@ -548,6 +548,10 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
       }) &&
       length(one(one(google_cloud_run_v2_service.json_keys[0].template).containers).startup_probe) == 1 &&
       one(one(google_cloud_run_v2_service.json_keys[0].template).containers).startup_probe[0].tcp_socket[0].port == 8080 &&
+      one(one(google_cloud_run_v2_service.json_keys[0].template).containers).startup_probe[0].initial_delay_seconds == 0 &&
+      one(one(google_cloud_run_v2_service.json_keys[0].template).containers).startup_probe[0].timeout_seconds == 1 &&
+      one(one(google_cloud_run_v2_service.json_keys[0].template).containers).startup_probe[0].period_seconds == 3 &&
+      one(one(google_cloud_run_v2_service.json_keys[0].template).containers).startup_probe[0].failure_threshold == 80 &&
       length(one(one(google_cloud_run_v2_service.json_keys[0].template).containers).liveness_probe) == 0 &&
       one(one(google_cloud_run_v2_service.json_keys[0].template).vpc_access).egress == "ALL_TRAFFIC" &&
       toset(one(one(google_cloud_run_v2_service.json_keys[0].template).vpc_access).network_interfaces[0].tags) == toset(["agora-json-keys"]) &&
@@ -600,6 +604,10 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
         memory = "512Mi"
       }) &&
       one(one(google_cloud_run_v2_service.authentication[0].template).containers).startup_probe[0].http_get[0].path == "/v2/ping" &&
+      one(one(google_cloud_run_v2_service.authentication[0].template).containers).startup_probe[0].initial_delay_seconds == 0 &&
+      one(one(google_cloud_run_v2_service.authentication[0].template).containers).startup_probe[0].timeout_seconds == 1 &&
+      one(one(google_cloud_run_v2_service.authentication[0].template).containers).startup_probe[0].period_seconds == 3 &&
+      one(one(google_cloud_run_v2_service.authentication[0].template).containers).startup_probe[0].failure_threshold == 80 &&
       one(one(google_cloud_run_v2_service.authentication[0].template).containers).liveness_probe[0].http_get[0].path == "/v2/ping" &&
       one(one(google_cloud_run_v2_service.authentication[0].template).vpc_access).egress == "PRIVATE_RANGES_ONLY" &&
       toset(one(one(google_cloud_run_v2_service.authentication[0].template).vpc_access).network_interfaces[0].tags) == toset(["agora-authentication"]) &&
