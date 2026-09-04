@@ -730,6 +730,9 @@ printf '%s\n' \
     '        exit 1' \
     '    elif [[ "${INVALID_METADATA_SHAPE:-false}" == "true" ]]; then' \
     "        printf '%s\\n' '{\"allInstancesConfig\":{\"properties\":{\"metadata\":{\"unexpected-key\":\"value\"}}}}'" \
+    '    elif [[ -n "${RECOVERY_REVISION:-}" ]]; then' \
+    '        recovery_digest="$(printf "a%.0s" {1..64})"' \
+    '        printf "{\"allInstancesConfig\":{\"properties\":{\"metadata\":{\"agora-authentication-database-image\":\"europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-authentication/database@sha256:%s\",\"agora-authentication-postgres-backup-password-version\":\"17\",\"agora-authentication-postgres-password-version\":\"11\",\"agora-database-release-revision\":\"%s\",\"agora-json-keys-database-image\":\"europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-json-keys/database@sha256:%s\",\"agora-json-keys-postgres-backup-password-version\":\"13\",\"agora-json-keys-postgres-password-version\":\"7\"}}}}\n" "${recovery_digest}" "${RECOVERY_REVISION}" "${recovery_digest}"' \
     '    else' \
     '        if [[ "${INITIAL_DATABASE_RELEASE:-false}" == "true" ]]; then current_revision=""; else current_revision="ffffffffffffffffffffffffffffffffffffffff"; fi' \
     '        printf "{\"allInstancesConfig\":{\"properties\":{\"metadata\":{\"agora-authentication-database-image\":\"\",\"agora-authentication-postgres-backup-password-version\":\"0\",\"agora-authentication-postgres-password-version\":\"0\",\"agora-database-release-revision\":\"%s\",\"agora-json-keys-database-image\":\"\",\"agora-json-keys-postgres-backup-password-version\":\"0\",\"agora-json-keys-postgres-password-version\":\"0\"}}}}\n" "${current_revision}"' \
@@ -886,6 +889,90 @@ READINESS_EXPECTED=none PATH="${MOCK_BIN}:${PATH}" \
 assert_equal "$(grep -Fc 'CALL' "${GCLOUD_ARGUMENT_LOG}")" "7"
 grep -Fq 'Database host reported the idle rollback state.' \
     "${TEMP_DIR}/database-rollback.out"
+
+# An interrupted first launch is recoverable only while no receipt exists and
+# the complete live database metadata map identifies that failed revision.
+FIRST_LAUNCH_RECOVERY_DIR="${TEMP_DIR}/first-launch-recovery"
+FIRST_LAUNCH_RECOVERY_LOG="${TEMP_DIR}/first-launch-recovery.log"
+mkdir -p "${FIRST_LAUNCH_RECOVERY_DIR}"
+ln -s "${REPOSITORY_ROOT}/ops/recover-first-launch.sh" \
+    "${FIRST_LAUNCH_RECOVERY_DIR}/recover-first-launch.sh"
+# shellcheck disable=SC2016
+printf '%s\n' \
+    '#!/bin/bash' \
+    'if [ "$#" -ne 3 ] || [ "$1" != latest ] || [ "$2" != agora-receipts-test ]; then exit 64; fi' \
+    'printf "receipt\n" >>"${FIRST_LAUNCH_RECOVERY_LOG}"' \
+    'if [ "${RECOVERY_RECEIPT_PRESENT:-false}" = true ]; then exit 0; fi' \
+    'exit 4' \
+    >"${FIRST_LAUNCH_RECOVERY_DIR}/receipt-custody.sh"
+# shellcheck disable=SC2016
+printf '%s\n' \
+    '#!/bin/bash' \
+    'if [ "$#" -ne 3 ] || [ "$1" != agora-production-test ] || [ "$2" != europe-west1-c ]; then exit 64; fi' \
+    'grep -Fxq null "$3"' \
+    'printf "restore\n" >>"${FIRST_LAUNCH_RECOVERY_LOG}"' \
+    >"${FIRST_LAUNCH_RECOVERY_DIR}/restore-database-release.sh"
+chmod 0700 \
+    "${FIRST_LAUNCH_RECOVERY_DIR}/receipt-custody.sh" \
+    "${FIRST_LAUNCH_RECOVERY_DIR}/restore-database-release.sh"
+
+FAILED_FIRST_LAUNCH_REVISION="$(printf 'd%.0s' {1..40})"
+: >"${FIRST_LAUNCH_RECOVERY_LOG}"
+: >"${GCLOUD_ARGUMENT_LOG}"
+FIRST_LAUNCH_RECOVERY_OUTPUT="$(
+    PATH="${MOCK_BIN}:${PATH}" \
+        GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
+        FIRST_LAUNCH_RECOVERY_LOG="${FIRST_LAUNCH_RECOVERY_LOG}" \
+        RECOVERY_REVISION="${FAILED_FIRST_LAUNCH_REVISION}" \
+        "${FIRST_LAUNCH_RECOVERY_DIR}/recover-first-launch.sh" \
+            agora-receipts-test agora-production-test europe-west1-c \
+            "${FAILED_FIRST_LAUNCH_REVISION}"
+)"
+assert_equal "${FIRST_LAUNCH_RECOVERY_OUTPUT}" \
+    'Interrupted first-launch database metadata cleared.'
+assert_equal "$(paste -sd, "${FIRST_LAUNCH_RECOVERY_LOG}")" 'receipt,restore'
+assert_equal "$(grep -Fxc CALL "${GCLOUD_ARGUMENT_LOG}")" 1
+
+: >"${FIRST_LAUNCH_RECOVERY_LOG}"
+set +e
+PATH="${MOCK_BIN}:${PATH}" \
+    GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
+    FIRST_LAUNCH_RECOVERY_LOG="${FIRST_LAUNCH_RECOVERY_LOG}" \
+    RECOVERY_REVISION="$(printf 'e%.0s' {1..40})" \
+    "${FIRST_LAUNCH_RECOVERY_DIR}/recover-first-launch.sh" \
+        agora-receipts-test agora-production-test europe-west1-c \
+        "${FAILED_FIRST_LAUNCH_REVISION}" \
+        >"${TEMP_DIR}/first-launch-mismatch.out" \
+        2>"${TEMP_DIR}/first-launch-mismatch.err"
+FIRST_LAUNCH_MISMATCH_CODE=$?
+set -e
+assert_equal "${FIRST_LAUNCH_MISMATCH_CODE}" 70
+assert_equal "$(paste -sd, "${FIRST_LAUNCH_RECOVERY_LOG}")" receipt
+grep -Fq 'not the exact interrupted first-launch state' \
+    "${TEMP_DIR}/first-launch-mismatch.err"
+
+: >"${FIRST_LAUNCH_RECOVERY_LOG}"
+: >"${GCLOUD_ARGUMENT_LOG}"
+set +e
+PATH="${MOCK_BIN}:${PATH}" \
+    GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
+    FIRST_LAUNCH_RECOVERY_LOG="${FIRST_LAUNCH_RECOVERY_LOG}" \
+    RECOVERY_RECEIPT_PRESENT=true \
+    "${FIRST_LAUNCH_RECOVERY_DIR}/recover-first-launch.sh" \
+        agora-receipts-test agora-production-test europe-west1-c \
+        "${FAILED_FIRST_LAUNCH_REVISION}" \
+        >"${TEMP_DIR}/first-launch-receipt.out" \
+        2>"${TEMP_DIR}/first-launch-receipt.err"
+FIRST_LAUNCH_RECEIPT_CODE=$?
+set -e
+assert_equal "${FIRST_LAUNCH_RECEIPT_CODE}" 70
+assert_equal "$(paste -sd, "${FIRST_LAUNCH_RECOVERY_LOG}")" receipt
+grep -Fq 'successful release receipt exists' \
+    "${TEMP_DIR}/first-launch-receipt.err"
+if [ -s "${GCLOUD_ARGUMENT_LOG}" ]; then
+    printf 'First-launch recovery inspected live state despite an existing receipt.\n' >&2
+    exit 1
+fi
 
 # The first release has no source cluster to dump. A 25-hour daily snapshot is
 # accepted, and the gate returns before attempting a nonexistent backup job.
@@ -1708,6 +1795,24 @@ fi
 
 rm -f -- "${WORKFLOW_STATE}"
 : >"${WORKFLOW_CALLS}"
+FIRST_LAUNCH_RECOVERY_RUN_ID="$(
+    PATH="${WORKFLOW_MOCK_BIN}:${PATH}" \
+        FAKE_WORKFLOW_CALLS="${WORKFLOW_CALLS}" \
+        FAKE_WORKFLOW=release.yaml \
+        FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
+        FAKE_WORKFLOW_STATE="${WORKFLOW_STATE}" \
+        WORKFLOW_DISCOVERY_ATTEMPTS=1 \
+        WORKFLOW_DISCOVERY_INTERVAL_SECONDS=0 \
+        "${REPOSITORY_ROOT}/ops/run-workflow.sh" \
+            release recover-first-launch 33841730103 \
+            2>"${TEMP_DIR}/first-launch-recovery-workflow.err"
+)"
+assert_equal "${FIRST_LAUNCH_RECOVERY_RUN_ID}" 202
+grep -Fq 'workflow run release.yaml --repo a-novel/infra --ref master -f action=recover-first-launch -f failed_run_id=33841730103' \
+    "${WORKFLOW_CALLS}"
+
+rm -f -- "${WORKFLOW_STATE}"
+: >"${WORKFLOW_CALLS}"
 RECOVERY_RUN_REF="$(
     PATH="${WORKFLOW_MOCK_BIN}:${PATH}" \
         FAKE_WORKFLOW_CALLS="${WORKFLOW_CALLS}" \
@@ -1817,6 +1922,13 @@ set +e
 INVALID_WORKFLOW_INPUT_CODE=$?
 set -e
 assert_equal "${INVALID_WORKFLOW_INPUT_CODE}" 64
+
+set +e
+"${REPOSITORY_ROOT}/ops/run-workflow.sh" release recover-first-launch invalid \
+    >/dev/null 2>&1
+INVALID_FIRST_LAUNCH_RECOVERY_CODE=$?
+set -e
+assert_equal "${INVALID_FIRST_LAUNCH_RECOVERY_CODE}" 64
 
 set +e
 "${REPOSITORY_ROOT}/ops/run-workflow.sh" recovery restore-data \

@@ -13,6 +13,7 @@ Usage:
   $0 foundation apply <bootstrap|foundation> <plan-id>
   $0 release deploy [--no-wait]
   $0 release rollback <receipt-id>
+  $0 release recover-first-launch <failed-run-id>
   $0 recovery plan-workload <replacement-project-id> <receipt-id>
   $0 recovery apply-workload <replacement-project-id> <receipt-id> <plan-id>
   $0 recovery restore-data <replacement-project-id> <receipt-id> <json-keys-attempt> <authentication-attempt> <lost-write-window> <confirmation>
@@ -23,6 +24,10 @@ EOF
 
 is_run_attempt() {
     [[ "$1" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]
+}
+
+is_run_id() {
+    [[ "$1" =~ ^[1-9][0-9]*$ ]]
 }
 
 is_project_id() {
@@ -108,6 +113,12 @@ case "${SURFACE}" in
                     usage
                 fi
                 WORKFLOW_INPUTS=(-f action=rollback -f "target_receipt=$1")
+                ;;
+            recover-first-launch)
+                if [ "$#" -ne 1 ] || ! is_run_id "$1"; then
+                    usage
+                fi
+                WORKFLOW_INPUTS=(-f action=recover-first-launch -f "failed_run_id=$1")
                 ;;
             *) usage ;;
         esac

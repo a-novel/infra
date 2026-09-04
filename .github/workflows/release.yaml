@@ -8,12 +8,16 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: Deploy the reviewed manifest, or restore an exact prior receipt.
+        description: Deploy, roll back, or recover an interrupted first launch.
         required: true
         type: choice
-        options: [deploy, rollback]
+        options: [deploy, rollback, recover-first-launch]
       target_receipt:
         description: Rollback only; immutable run-id-attempt from the receipt inventory.
+        required: false
+        type: string
+      failed_run_id:
+        description: First-launch recovery only; failed release workflow run ID.
         required: false
         type: string
 
@@ -43,6 +47,7 @@ jobs:
     timeout-minutes: 360
     environment: production-release
     permissions:
+      actions: read
       attestations: read
       contents: read
       id-token: write
@@ -78,6 +83,35 @@ jobs:
           printf '%s' "${RELEASE_CONFIG}" >"${file}"
           jq --exit-status 'type == "object"' "${file}" >/dev/null
           printf 'file=%s\n' "${file}" >>"${GITHUB_OUTPUT}"
+
+      - name: Verify the failed first-launch run
+        if: env.RELEASE_ACTION == 'recover-first-launch'
+        id: failed-release
+        shell: bash
+        env:
+          FAILED_RUN_ID: ${{ inputs.failed_run_id }}
+          GH_TOKEN: ${{ github.token }}
+          TARGET_RECEIPT: ${{ inputs.target_receipt }}
+        run: |
+          set -euo pipefail
+          if ! [[ "${FAILED_RUN_ID}" =~ ^[1-9][0-9]*$ ]] || [ -n "${TARGET_RECEIPT}" ]; then
+            printf 'First-launch recovery requires only a numeric failed run ID.\n' >&2
+            exit 64
+          fi
+          umask 077
+          file="${RUNNER_TEMP}/failed-release-run.json"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${FAILED_RUN_ID}" >"${file}"
+          jq --exit-status --argjson run_id "${FAILED_RUN_ID}" '
+            .id == $run_id and
+            .path == ".github/workflows/release.yaml" and
+            .event == "workflow_dispatch" and
+            .head_branch == "master" and
+            .status == "completed" and
+            .conclusion == "failure" and
+            (.display_title | startswith("production deploy by @")) and
+            (.head_sha | test("^[a-f0-9]{40}$"))
+          ' "${file}" >/dev/null
+          printf 'revision=%s\n' "$(jq --raw-output '.head_sha' "${file}")" >>"${GITHUB_OUTPUT}"
 
       # Verification happens before Google credentials exist. Remote manifest
       # and config inspection never downloads layers or executes an entrypoint.
@@ -118,6 +152,7 @@ jobs:
           version: "581.0.0"
 
       - name: Install OpenTofu
+        if: env.RELEASE_ACTION != 'recover-first-launch'
         uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
         with:
           tofu_version_file: .opentofu-version
@@ -125,6 +160,7 @@ jobs:
           cache: true
 
       - name: Authenticate Docker to the regional registry
+        if: env.RELEASE_ACTION != 'recover-first-launch'
         shell: bash
         env:
           RELEASE_CONFIG_FILE: ${{ steps.config.outputs.file }}
@@ -134,6 +170,7 @@ jobs:
           gcloud auth configure-docker "${region}-docker.pkg.dev" --quiet >/dev/null 2>&1
 
       - name: Select the receipt-owned prior state
+        if: env.RELEASE_ACTION != 'recover-first-launch'
         id: prior
         shell: bash
         env:
@@ -170,6 +207,7 @@ jobs:
           fi
 
       - name: Compile exact candidate, active, and compensation inputs
+        if: env.RELEASE_ACTION != 'recover-first-launch'
         shell: bash
         env:
           GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
@@ -207,3 +245,16 @@ jobs:
           set -euo pipefail
           ./ops/google-release-driver.sh preflight
           ./ops/google-release-driver.sh rollback
+
+      - name: Recover the interrupted first launch
+        if: env.RELEASE_ACTION == 'recover-first-launch'
+        shell: bash
+        env:
+          FAILED_REVISION: ${{ steps.failed-release.outputs.revision }}
+          RECEIPT_BUCKET: ${{ vars.GCP_RECEIPT_BUCKET }}
+          RELEASE_CONFIG_FILE: ${{ steps.config.outputs.file }}
+        run: |
+          set -euo pipefail
+          project="$(jq --exit-status --raw-output '.workload_project_id | select(type == "string")' "${RELEASE_CONFIG_FILE}")"
+          zone="$(jq --exit-status --raw-output '.database_zone | select(type == "string")' "${RELEASE_CONFIG_FILE}")"
+          ./ops/recover-first-launch.sh "${RECEIPT_BUCKET}" "${project}" "${zone}" "${FAILED_REVISION}"
