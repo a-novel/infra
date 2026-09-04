@@ -121,9 +121,6 @@ resource "google_cloud_run_v2_job" "application" {
     component = each.value.component
     role      = each.value.role
   })
-  tags = {
-    (var.cloud_run_invocation_tags.key) = var.cloud_run_invocation_tags.values[each.value.invocation_class]
-  }
 
   template {
     task_count  = 1
@@ -187,6 +184,8 @@ resource "google_cloud_run_v2_job" "application" {
 # The shortest embedded key interval is 24 hours. An hourly idempotent check
 # keeps rotation lag below one hour without a resident worker.
 resource "google_cloud_scheduler_job" "json_keys_rotation" {
+  depends_on = [google_tags_location_tag_binding.application]
+
   count = var.application_release == null || var.recovery_mode ? 0 : 1
 
   project   = var.workload_project_id
@@ -231,9 +230,6 @@ resource "google_cloud_run_v2_service" "json_keys" {
   invoker_iam_disabled = false
   deletion_protection  = false
   labels               = merge(local.labels, { component = "json-keys", role = "grpc" })
-  tags = {
-    (var.cloud_run_invocation_tags.key) = var.cloud_run_invocation_tags.values.internal
-  }
 
   scaling {
     min_instance_count = 0
@@ -387,9 +383,6 @@ resource "google_cloud_run_v2_service" "authentication" {
   invoker_iam_disabled = var.recovery_mode ? false : true
   deletion_protection  = false
   labels               = merge(local.labels, { component = "authentication", role = "rest" })
-  tags = var.recovery_mode ? {
-    (var.cloud_run_invocation_tags.key) = var.cloud_run_invocation_tags.values.recovery
-  } : {}
 
   scaling {
     min_instance_count = 0

@@ -11,9 +11,6 @@ resource "google_cloud_run_v2_job" "postgres_backup" {
 
   deletion_protection = false
   labels              = merge(local.labels, { component = each.value.object_key, role = "backup" })
-  tags = {
-    (var.cloud_run_invocation_tags.key) = var.cloud_run_invocation_tags.values.scheduled
-  }
 
   template {
     task_count  = 1
@@ -149,9 +146,6 @@ resource "google_cloud_run_v2_job" "postgres_restore" {
 
   deletion_protection = false
   labels              = merge(local.labels, { component = each.value.object_key, role = "restore" })
-  tags = {
-    (var.cloud_run_invocation_tags.key) = var.cloud_run_invocation_tags.values.scheduled
-  }
 
   template {
     task_count  = 1
@@ -263,9 +257,6 @@ resource "google_cloud_run_v2_job" "postgres_recover" {
   launch_stage        = "BETA"
   deletion_protection = false
   labels              = merge(local.labels, { component = each.value.object_key, role = "recovery" })
-  tags = {
-    (var.cloud_run_invocation_tags.key) = var.cloud_run_invocation_tags.values.recovery
-  }
 
   template {
     task_count  = 1
@@ -390,9 +381,6 @@ resource "google_cloud_run_v2_job" "postgres_backup_monitor" {
 
   deletion_protection = false
   labels              = merge(local.labels, { component = "postgres", role = "backup-monitor" })
-  tags = {
-    (var.cloud_run_invocation_tags.key) = var.cloud_run_invocation_tags.values.scheduled
-  }
 
   template {
     task_count  = 1
@@ -463,6 +451,8 @@ resource "google_cloud_run_v2_job" "postgres_backup_monitor" {
 }
 
 resource "google_cloud_scheduler_job" "postgres_backup" {
+  depends_on = [google_tags_location_tag_binding.postgres_backup]
+
   for_each = var.recovery_mode ? {} : local.enabled_database_contracts
 
   project   = var.workload_project_id
@@ -495,6 +485,8 @@ resource "google_cloud_scheduler_job" "postgres_backup" {
 }
 
 resource "google_cloud_scheduler_job" "postgres_restore" {
+  depends_on = [google_tags_location_tag_binding.postgres_restore]
+
   for_each = var.recovery_mode ? {} : local.enabled_database_contracts
 
   project   = var.workload_project_id
@@ -527,6 +519,8 @@ resource "google_cloud_scheduler_job" "postgres_restore" {
 }
 
 resource "google_cloud_scheduler_job" "postgres_backup_monitor" {
+  depends_on = [google_tags_location_tag_binding.postgres_backup_monitor]
+
   count = length(local.enabled_database_contracts) == 0 || var.recovery_mode ? 0 : 1
 
   project   = var.workload_project_id

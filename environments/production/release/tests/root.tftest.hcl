@@ -56,7 +56,14 @@ run "keeps_recovery_disabled_before_the_database_release" {
       length(google_cloud_run_v2_job.application) == 0 &&
       length(google_cloud_scheduler_job.json_keys_rotation) == 0 &&
       length(google_cloud_run_v2_service.json_keys) == 0 &&
-      length(google_cloud_run_v2_service.authentication) == 0
+      length(google_cloud_run_v2_service.authentication) == 0 &&
+      length(google_tags_location_tag_binding.application) == 0 &&
+      length(google_tags_location_tag_binding.postgres_backup) == 0 &&
+      length(google_tags_location_tag_binding.postgres_restore) == 0 &&
+      length(google_tags_location_tag_binding.postgres_recover) == 0 &&
+      length(google_tags_location_tag_binding.postgres_backup_monitor) == 0 &&
+      length(google_tags_location_tag_binding.json_keys) == 0 &&
+      length(google_tags_location_tag_binding.authentication) == 0
     )
     error_message = "No recovery or application runtime may exist before its release contract is enabled."
   }
@@ -285,14 +292,19 @@ run "builds_the_two_database_recovery_contracts" {
 
   assert {
     condition = (
+      length(google_tags_location_tag_binding.postgres_backup) == 2 &&
+      length(google_tags_location_tag_binding.postgres_restore) == 2 &&
+      length(google_tags_location_tag_binding.postgres_backup_monitor) == 1 &&
+      toset([for binding in concat(values(google_tags_location_tag_binding.postgres_backup), values(google_tags_location_tag_binding.postgres_restore), google_tags_location_tag_binding.postgres_backup_monitor) : binding.parent]) == toset([
+        for job in concat(values(google_cloud_run_v2_job.postgres_backup), values(google_cloud_run_v2_job.postgres_restore), google_cloud_run_v2_job.postgres_backup_monitor) :
+        "//run.googleapis.com/projects/${var.workload_project_id}/locations/${var.region}/jobs/${job.name}"
+      ]) &&
       alltrue([
-        for job in concat(
-          values(google_cloud_run_v2_job.postgres_backup),
-          values(google_cloud_run_v2_job.postgres_restore),
-          google_cloud_run_v2_job.postgres_backup_monitor,
-          ) : job.tags == tomap({
-            (var.cloud_run_invocation_tags.key) = var.cloud_run_invocation_tags.values.scheduled
-        })
+        for binding in concat(
+          values(google_tags_location_tag_binding.postgres_backup),
+          values(google_tags_location_tag_binding.postgres_restore),
+          google_tags_location_tag_binding.postgres_backup_monitor,
+        ) : binding.tag_value == var.cloud_run_invocation_tags.values.scheduled && binding.location == var.region
       ])
     )
     error_message = "Every scheduled recovery-point job must carry the foundation-owned scheduled invocation tag."
@@ -385,37 +397,41 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
   assert {
     condition = {
       for key, job in google_cloud_run_v2_job.application : key => {
-        identity    = one(one(job.template).template).service_account
-        max_retries = one(one(job.template).template).max_retries
-        name        = job.name
-        timeout     = one(one(job.template).template).timeout
-        vpc_tag     = one(one(one(job.template).template).vpc_access).network_interfaces[0].tags[0]
-        invocation  = job.tags[var.cloud_run_invocation_tags.key]
+        binding_valid = (google_tags_location_tag_binding.application[key].parent == "//run.googleapis.com/projects/${var.workload_project_id}/locations/${var.region}/jobs/${job.name}" && google_tags_location_tag_binding.application[key].location == var.region)
+        identity      = one(one(job.template).template).service_account
+        max_retries   = one(one(job.template).template).max_retries
+        name          = job.name
+        timeout       = one(one(job.template).template).timeout
+        vpc_tag       = one(one(one(job.template).template).vpc_access).network_interfaces[0].tags[0]
+        invocation    = google_tags_location_tag_binding.application[key].tag_value
       }
       } == {
       authentication_migrations = {
-        identity    = var.runtime_service_accounts.authentication
-        max_retries = 0
-        name        = "agora-authentication-migrations"
-        timeout     = "600s"
-        vpc_tag     = "agora-authentication"
-        invocation  = var.cloud_run_invocation_tags.values.release
+        binding_valid = true
+        identity      = var.runtime_service_accounts.authentication
+        max_retries   = 0
+        name          = "agora-authentication-migrations"
+        timeout       = "600s"
+        vpc_tag       = "agora-authentication"
+        invocation    = var.cloud_run_invocation_tags.values.release
       }
       json_keys_migrations = {
-        identity    = var.runtime_service_accounts.json_keys
-        max_retries = 0
-        name        = "agora-json-keys-migrations"
-        timeout     = "600s"
-        vpc_tag     = "agora-json-keys"
-        invocation  = var.cloud_run_invocation_tags.values.release
+        binding_valid = true
+        identity      = var.runtime_service_accounts.json_keys
+        max_retries   = 0
+        name          = "agora-json-keys-migrations"
+        timeout       = "600s"
+        vpc_tag       = "agora-json-keys"
+        invocation    = var.cloud_run_invocation_tags.values.release
       }
       json_keys_rotate = {
-        identity    = var.runtime_service_accounts.json_keys
-        max_retries = 1
-        name        = "agora-json-keys-rotatekeys"
-        timeout     = "300s"
-        vpc_tag     = "agora-json-keys"
-        invocation  = var.cloud_run_invocation_tags.values.scheduled
+        binding_valid = true
+        identity      = var.runtime_service_accounts.json_keys
+        max_retries   = 1
+        name          = "agora-json-keys-rotatekeys"
+        timeout       = "300s"
+        vpc_tag       = "agora-json-keys"
+        invocation    = var.cloud_run_invocation_tags.values.scheduled
       }
     }
     error_message = "Every application job must retain its exact identity, retry, timeout, name, and database path."
@@ -527,9 +543,9 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
     condition = (
       length(google_cloud_run_v2_service.json_keys) == 1 &&
       google_cloud_run_v2_service.json_keys[0].ingress == "INGRESS_TRAFFIC_INTERNAL_ONLY" &&
-      google_cloud_run_v2_service.json_keys[0].tags == tomap({
-        (var.cloud_run_invocation_tags.key) = var.cloud_run_invocation_tags.values.internal
-      }) &&
+      google_tags_location_tag_binding.json_keys[0].tag_value == var.cloud_run_invocation_tags.values.internal &&
+      google_tags_location_tag_binding.json_keys[0].parent == "//run.googleapis.com/projects/${var.workload_project_id}/locations/${var.region}/services/${google_cloud_run_v2_service.json_keys[0].name}" &&
+      google_tags_location_tag_binding.json_keys[0].location == var.region &&
       !google_cloud_run_v2_service.json_keys[0].invoker_iam_disabled &&
       !google_cloud_run_v2_service.json_keys[0].deletion_protection &&
       one(google_cloud_run_v2_service.json_keys[0].scaling).min_instance_count == 0 &&
@@ -590,7 +606,7 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
       length(google_cloud_run_v2_service.authentication) == 1 &&
       google_cloud_run_v2_service.authentication[0].ingress == "INGRESS_TRAFFIC_ALL" &&
       google_cloud_run_v2_service.authentication[0].invoker_iam_disabled &&
-      length(google_cloud_run_v2_service.authentication[0].tags) == 0 &&
+      length(google_tags_location_tag_binding.authentication) == 0 &&
       !google_cloud_run_v2_service.authentication[0].deletion_protection &&
       one(google_cloud_run_v2_service.authentication[0].scaling).min_instance_count == 0 &&
       one(google_cloud_run_v2_service.authentication[0].scaling).max_instance_count == 3 &&
@@ -827,12 +843,12 @@ run "builds_restore_only_contracts_in_a_disposable_recovery_state" {
       length(google_cloud_run_v2_job.application) == 0 &&
       google_cloud_run_v2_service.authentication[0].ingress == "INGRESS_TRAFFIC_INTERNAL_ONLY" &&
       !google_cloud_run_v2_service.authentication[0].invoker_iam_disabled &&
-      google_cloud_run_v2_service.authentication[0].tags == tomap({
-        (var.cloud_run_invocation_tags.key) = var.cloud_run_invocation_tags.values.recovery
-      }) &&
-      google_cloud_run_v2_service.json_keys[0].tags == tomap({
-        (var.cloud_run_invocation_tags.key) = var.cloud_run_invocation_tags.values.internal
-      })
+      google_tags_location_tag_binding.authentication[0].tag_value == var.cloud_run_invocation_tags.values.recovery &&
+      google_tags_location_tag_binding.authentication[0].parent == "//run.googleapis.com/projects/${var.workload_project_id}/locations/${var.region}/services/${google_cloud_run_v2_service.authentication[0].name}" &&
+      google_tags_location_tag_binding.authentication[0].location == var.region &&
+      google_tags_location_tag_binding.json_keys[0].tag_value == var.cloud_run_invocation_tags.values.internal &&
+      google_tags_location_tag_binding.json_keys[0].parent == "//run.googleapis.com/projects/${var.workload_project_id}/locations/${var.region}/services/${google_cloud_run_v2_service.json_keys[0].name}" &&
+      google_tags_location_tag_binding.json_keys[0].location == var.region
     )
     error_message = "Disposable recovery must grant only recovery automation and keep schedules, initialization, and public ingress disabled."
   }
@@ -862,9 +878,9 @@ run "builds_restore_only_contracts_in_a_disposable_recovery_state" {
       })), 0, 8)}" &&
       one(one(job.template).template).service_account == var.runtime_service_accounts.restore &&
       one(one(job.template).template).max_retries == 0 &&
-      job.tags == tomap({
-        (var.cloud_run_invocation_tags.key) = var.cloud_run_invocation_tags.values.recovery
-      }) &&
+      google_tags_location_tag_binding.postgres_recover[key].tag_value == var.cloud_run_invocation_tags.values.recovery &&
+      google_tags_location_tag_binding.postgres_recover[key].parent == "//run.googleapis.com/projects/${var.workload_project_id}/locations/${var.region}/jobs/${job.name}" &&
+      google_tags_location_tag_binding.postgres_recover[key].location == var.region &&
       toset(one(one(one(job.template).template).vpc_access).network_interfaces[0].tags) == toset(["agora-restore"]) &&
       one([
         for environment in one(one(one(job.template).template).containers).env : environment.value
