@@ -5,6 +5,10 @@ resource "google_tags_location_tag_binding" "application" {
   parent    = "//run.googleapis.com/projects/${each.value.project}/locations/${each.value.location}/jobs/${each.value.name}"
   location  = each.value.location
   tag_value = var.cloud_run_invocation_tags.values[local.application_jobs[each.key].invocation_class]
+
+  lifecycle {
+    replace_triggered_by = [google_cloud_run_v2_job.application[each.key].uid]
+  }
 }
 
 resource "google_tags_location_tag_binding" "postgres_backup" {
@@ -13,6 +17,10 @@ resource "google_tags_location_tag_binding" "postgres_backup" {
   parent    = "//run.googleapis.com/projects/${each.value.project}/locations/${each.value.location}/jobs/${each.value.name}"
   location  = each.value.location
   tag_value = var.cloud_run_invocation_tags.values.scheduled
+
+  lifecycle {
+    replace_triggered_by = [google_cloud_run_v2_job.postgres_backup[each.key].uid]
+  }
 }
 
 resource "google_tags_location_tag_binding" "postgres_restore" {
@@ -21,6 +29,10 @@ resource "google_tags_location_tag_binding" "postgres_restore" {
   parent    = "//run.googleapis.com/projects/${each.value.project}/locations/${each.value.location}/jobs/${each.value.name}"
   location  = each.value.location
   tag_value = var.cloud_run_invocation_tags.values.scheduled
+
+  lifecycle {
+    replace_triggered_by = [google_cloud_run_v2_job.postgres_restore[each.key].uid]
+  }
 }
 
 resource "google_tags_location_tag_binding" "postgres_recover" {
@@ -29,6 +41,10 @@ resource "google_tags_location_tag_binding" "postgres_recover" {
   parent    = "//run.googleapis.com/projects/${each.value.project}/locations/${each.value.location}/jobs/${each.value.name}"
   location  = each.value.location
   tag_value = var.cloud_run_invocation_tags.values.recovery
+
+  lifecycle {
+    replace_triggered_by = [google_cloud_run_v2_job.postgres_recover[each.key].uid]
+  }
 }
 
 resource "google_tags_location_tag_binding" "postgres_backup_monitor" {
@@ -37,6 +53,10 @@ resource "google_tags_location_tag_binding" "postgres_backup_monitor" {
   parent    = "//run.googleapis.com/projects/${google_cloud_run_v2_job.postgres_backup_monitor[count.index].project}/locations/${google_cloud_run_v2_job.postgres_backup_monitor[count.index].location}/jobs/${google_cloud_run_v2_job.postgres_backup_monitor[count.index].name}"
   location  = google_cloud_run_v2_job.postgres_backup_monitor[count.index].location
   tag_value = var.cloud_run_invocation_tags.values.scheduled
+
+  lifecycle {
+    replace_triggered_by = [google_cloud_run_v2_job.postgres_backup_monitor[count.index].uid]
+  }
 }
 
 resource "google_tags_location_tag_binding" "json_keys" {
@@ -45,6 +65,10 @@ resource "google_tags_location_tag_binding" "json_keys" {
   parent    = "//run.googleapis.com/projects/${google_cloud_run_v2_service.json_keys[count.index].project}/locations/${google_cloud_run_v2_service.json_keys[count.index].location}/services/${google_cloud_run_v2_service.json_keys[count.index].name}"
   location  = google_cloud_run_v2_service.json_keys[count.index].location
   tag_value = var.cloud_run_invocation_tags.values.internal
+
+  lifecycle {
+    replace_triggered_by = [google_cloud_run_v2_service.json_keys[count.index].uid]
+  }
 }
 
 resource "google_tags_location_tag_binding" "authentication" {
@@ -53,4 +77,8 @@ resource "google_tags_location_tag_binding" "authentication" {
   parent    = "//run.googleapis.com/projects/${google_cloud_run_v2_service.authentication[count.index].project}/locations/${google_cloud_run_v2_service.authentication[count.index].location}/services/${google_cloud_run_v2_service.authentication[count.index].name}"
   location  = google_cloud_run_v2_service.authentication[count.index].location
   tag_value = var.cloud_run_invocation_tags.values.recovery
+
+  lifecycle {
+    replace_triggered_by = [google_cloud_run_v2_service.authentication[count.index].uid]
+  }
 }
