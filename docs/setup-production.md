@@ -13,6 +13,10 @@ rotate a secret, restore data, or handle an incident.
 - Keep secret payloads in the approved password manager and Secret Manager only. Never place them
   in `.envrc`, shell variables, command arguments, GitHub, OpenTofu, logs, or chat.
 - Keep `PRODUCTION_RELEASES_ENABLED=false` until step 6.
+- Project-scoped `gcloud` commands must select the project explicitly from `.envrc`; never rely on
+  the active CLI project. Project/IAM operations and `gs://` operations already name their exact
+  resource. Global login/discovery commands and the public `cos-cloud` image catalog are exceptions;
+  disaster recovery uses its explicitly selected source or replacement project.
 
 ## Start or resume
 
@@ -213,6 +217,16 @@ release from the same labeled merge:
 
 ### Run the human-only Authentication initializer
 
+Reload the reviewed project coordinates before using this section directly:
+
+```sh
+. ./.envrc
+./ops/verify-operator-env.sh
+```
+
+Never omit `--project` or `--region`, and decline any unexpected API-enable prompt.
+The initializer uses the workload project; its password references point to the management project.
+
 Grant the active operator temporary Tag Viewer access before collecting live tag IDs:
 
 ```zsh
@@ -239,23 +253,23 @@ unsetopt err_exit nounset xtrace
 REPOSITORY='a-novel/infra'
 MANAGEMENT_PROJECT_ID="$INFRA_MANAGEMENT_PROJECT_ID"
 WORKLOAD_PROJECT_ID="$INFRA_WORKLOAD_PROJECT_ID"
-DATABASE_ZONE="$(gcloud compute instance-groups managed list --project="$WORKLOAD_PROJECT_ID" --filter='name=agora-database' --format='value(zone.basename())')"
+DATABASE_ZONE="$(gcloud compute instance-groups managed list --project="$INFRA_WORKLOAD_PROJECT_ID" --filter='name=agora-database' --format='value(zone.basename())')"
 [[ "$DATABASE_ZONE" =~ ^[a-z]+-[a-z]+[0-9]+-[a-z]$ ]]
 REGION="${DATABASE_ZONE%-*}"
-DATABASE_INSTANCE_NAME="$(gcloud compute instance-groups managed list-instances agora-database --project="$WORKLOAD_PROJECT_ID" --zone="$DATABASE_ZONE" --format='value(instance.basename())' --limit=1)"
+DATABASE_INSTANCE_NAME="$(gcloud compute instance-groups managed list-instances agora-database --project="$INFRA_WORKLOAD_PROJECT_ID" --zone="$DATABASE_ZONE" --format='value(instance.basename())' --limit=1)"
 [[ "$DATABASE_INSTANCE_NAME" == agora-database-* ]]
-DATABASE_PRIVATE_IP="$(gcloud compute instances describe "$DATABASE_INSTANCE_NAME" --project="$WORKLOAD_PROJECT_ID" --zone="$DATABASE_ZONE" --format='value(networkInterfaces[0].networkIP)')"
+DATABASE_PRIVATE_IP="$(gcloud compute instances describe "$DATABASE_INSTANCE_NAME" --project="$INFRA_WORKLOAD_PROJECT_ID" --zone="$DATABASE_ZONE" --format='value(networkInterfaces[0].networkIP)')"
 [[ "$DATABASE_PRIVATE_IP" =~ ^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.) ]]
 AUTH_SUPER_ADMIN_EMAIL="$(gcloud config get-value account 2>/dev/null)"
-MANAGEMENT_PROJECT_NUMBER="$(gcloud projects describe "$MANAGEMENT_PROJECT_ID" --format='value(projectNumber)')"
+MANAGEMENT_PROJECT_NUMBER="$(gcloud projects describe "$INFRA_MANAGEMENT_PROJECT_ID" --format='value(projectNumber)')"
 [[ "$MANAGEMENT_PROJECT_NUMBER" =~ ^[0-9]+$ ]]
-WORKLOAD_PROJECT_NUMBER="$(gcloud projects describe "$WORKLOAD_PROJECT_ID" --format='value(projectNumber)')"
+WORKLOAD_PROJECT_NUMBER="$(gcloud projects describe "$INFRA_WORKLOAD_PROJECT_ID" --format='value(projectNumber)')"
 [[ "$WORKLOAD_PROJECT_NUMBER" =~ ^[0-9]+$ ]]
-INVOCATION_TAG_KEY="$(gcloud resource-manager tags keys list --parent="projects/${WORKLOAD_PROJECT_NUMBER}" --filter='shortName=agora-invocation' --format='value(name)')"
+INVOCATION_TAG_KEY="$(gcloud resource-manager tags keys list --project="$INFRA_WORKLOAD_PROJECT_ID" --parent="projects/${WORKLOAD_PROJECT_NUMBER}" --filter='shortName=agora-invocation' --format='value(name)')"
 [[ "$INVOCATION_TAG_KEY" =~ ^tagKeys/[0-9]+$ ]]
-INITIALIZER_TAG_VALUE="$(gcloud resource-manager tags values list --parent="$INVOCATION_TAG_KEY" --filter='shortName=initializer' --format='value(name)')"
+INITIALIZER_TAG_VALUE="$(gcloud resource-manager tags values list --project="$INFRA_WORKLOAD_PROJECT_ID" --parent="$INVOCATION_TAG_KEY" --filter='shortName=initializer' --format='value(name)')"
 sole_enabled_secret_version() {
-  gcloud secrets versions list "$1" --project="$MANAGEMENT_PROJECT_ID" --format=json \
+  gcloud secrets versions list "$1" --project="$INFRA_MANAGEMENT_PROJECT_ID" --format=json \
     | jq --raw-output '
         map(select(.state == "ENABLED"))
         | if length == 1 then .[0].name | split("/") | last
@@ -274,7 +288,7 @@ INIT_DIGEST="$(node --input-type=module -e 'import { readFile } from "node:fs/pr
 INIT_IMAGE="${REGION}-docker.pkg.dev/${WORKLOAD_PROJECT_ID}/agora-production/service-authentication/jobs/init@${INIT_DIGEST}"
 INIT_SERVICE_ACCOUNT="agora-auth-initializer@${WORKLOAD_PROJECT_ID}.iam.gserviceaccount.com"
 INIT_JOB_PARENT="//run.googleapis.com/projects/${WORKLOAD_PROJECT_ID}/locations/${REGION}/jobs/agora-authentication-init"
-gcloud artifacts docker images describe "$INIT_IMAGE" --project="$WORKLOAD_PROJECT_ID" --format='none'
+gcloud artifacts docker images describe "$INIT_IMAGE" --project="$INFRA_WORKLOAD_PROJECT_ID" --format='none'
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
@@ -285,7 +299,7 @@ retrying:
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-gcloud projects remove-iam-policy-binding "$WORKLOAD_PROJECT_ID" \
+gcloud projects remove-iam-policy-binding "$INFRA_WORKLOAD_PROJECT_ID" \
   --member="$OPERATOR_PRINCIPAL" \
   --role=roles/resourcemanager.tagViewer \
   --condition=None \
@@ -314,7 +328,7 @@ Immediately before creating the initializer, prove it is absent:
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-if gcloud run jobs describe agora-authentication-init --project="$WORKLOAD_PROJECT_ID" --region="$REGION" --format='none' 2>/dev/null; then
+if gcloud run jobs describe agora-authentication-init --project="$INFRA_WORKLOAD_PROJECT_ID" --region="$REGION" --format='none' 2>/dev/null; then
   printf 'STOP: the one-time initializer already exists; use the recovery rules below.\n' >&2
   return 1
 fi
@@ -328,7 +342,7 @@ Create the inert job without environment variables, secrets, commands, arguments
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 gcloud run jobs deploy agora-authentication-init \
-  --project="$WORKLOAD_PROJECT_ID" --region="$REGION" \
+  --project="$INFRA_WORKLOAD_PROJECT_ID" --region="$REGION" \
   --image="$INIT_IMAGE" --service-account="$INIT_SERVICE_ACCOUNT" \
   --tasks=1 --parallelism=1 --max-retries=1 --task-timeout=300s \
   --cpu=1 --memory=512Mi \
@@ -344,7 +358,7 @@ Verify the definition separately:
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-gcloud run jobs describe agora-authentication-init --project="$WORKLOAD_PROJECT_ID" --region="$REGION" --format=export
+gcloud run jobs describe agora-authentication-init --project="$INFRA_WORKLOAD_PROJECT_ID" --region="$REGION" --format=export
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
@@ -357,7 +371,7 @@ Attach the human-only tag before adding bootstrap configuration and prove it is 
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-gcloud resource-manager tags bindings create --tag-value="$INITIALIZER_TAG_VALUE" --parent="$INIT_JOB_PARENT" --location="$REGION"
+gcloud resource-manager tags bindings create --project="$INFRA_WORKLOAD_PROJECT_ID" --tag-value="$INITIALIZER_TAG_VALUE" --parent="$INIT_JOB_PARENT" --location="$REGION"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
@@ -367,7 +381,7 @@ Verify the sole direct tag separately:
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-gcloud resource-manager tags bindings list --parent="$INIT_JOB_PARENT" --location="$REGION" --format=json |
+gcloud resource-manager tags bindings list --project="$INFRA_WORKLOAD_PROJECT_ID" --parent="$INIT_JOB_PARENT" --location="$REGION" --format=json |
   jq --exit-status --arg expected "$INITIALIZER_TAG_VALUE" '([.[].tagValue] | sort) == ([$expected] | sort)'
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
@@ -380,7 +394,7 @@ Only now attach the exact email and secret versions; this update must not execut
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 gcloud run jobs update agora-authentication-init \
-  --project="$WORKLOAD_PROJECT_ID" --region="$REGION" \
+  --project="$INFRA_WORKLOAD_PROJECT_ID" --region="$REGION" \
   --image="$INIT_IMAGE" --service-account="$INIT_SERVICE_ACCOUNT" \
   --tasks=1 --parallelism=1 --max-retries=1 --task-timeout=300s \
   --cpu=1 --memory=512Mi \
@@ -397,20 +411,33 @@ Verify the tag again in a separate block:
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-gcloud resource-manager tags bindings list --parent="$INIT_JOB_PARENT" --location="$REGION" --format=json |
+gcloud resource-manager tags bindings list --project="$INFRA_WORKLOAD_PROJECT_ID" --parent="$INIT_JOB_PARENT" --location="$REGION" --format=json |
   jq --exit-status --arg expected "$INITIALIZER_TAG_VALUE" '([.[].tagValue] | sort) == ([$expected] | sort)'
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Expected: the update finishes without an execution and the tag check remains `true`. Execute the
-job exactly once with no overrides:
+Expected: the update finishes without an execution and the tag check remains `true`.
+Inspect the configured inputs (references only, never password payloads):
 
 ```zsh
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-gcloud run jobs execute agora-authentication-init --project="$WORKLOAD_PROJECT_ID" --region="$REGION" --wait
+gcloud run jobs describe agora-authentication-init --project="$INFRA_WORKLOAD_PROJECT_ID" --region="$REGION" --format=json | jq '{secretAliases: .spec.template.metadata.annotations["run.googleapis.com/secrets"], inputs: [.spec.template.spec.template.spec.containers[0].env[]? | {name, hasValue: ((.value // "") | length > 0), secretRef: .valueFrom.secretKeyRef} ]}'
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Require `hasValue: true` for `SUPER_ADMIN_EMAIL` and each `POSTGRES_*` connection setting.
+`POSTGRES_PASSWORD` and `SUPER_ADMIN_PASSWORD` must instead have `hasValue: false` and a
+`secretRef`. Resolve any generated aliases through
+`secretAliases`: they must name the management project's authentication PostgreSQL and super-admin
+secrets, with the numeric versions collected above. Missing email or super-admin password can make
+the initializer exit successfully without creating an account. Stop if any input is missing or wrong.
+
+Execute the job exactly once with no overrides:
+
+```sh
+gcloud run jobs execute agora-authentication-init --project="${INFRA_WORKLOAD_PROJECT_ID:?Load ./.envrc}" --region="${REGION:?Collect initializer coordinates first}" --wait
 ```
 
 Wait for the already-running release separately:
@@ -424,14 +451,16 @@ gh run watch "$RELEASE_RUN_ID" --repo "$REPOSITORY" --exit-status
 ```
 
 The workflow accepts only a successful execution created after its prompt and writes the create-only
-`production/initialization/complete.json` marker. After the release succeeds, delete the dormant
-privileged job while its initializer tag is still attached:
+`production/initialization/complete.json` marker. If a later smoke check fails, wait for rollback to
+finish: initialization is still complete. Do not rerun the initializer or remove its marker.
+After the workflow finishes (success or completed rollback), delete the dormant privileged job while
+its initializer tag is still attached:
 
 ```zsh
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-gcloud run jobs delete agora-authentication-init --project="$WORKLOAD_PROJECT_ID" --region="$REGION" --quiet
+gcloud run jobs delete agora-authentication-init --project="$INFRA_WORKLOAD_PROJECT_ID" --region="$REGION" --quiet
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
@@ -441,7 +470,7 @@ Verify deletion separately:
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-if gcloud run jobs describe agora-authentication-init --project="$WORKLOAD_PROJECT_ID" --region="$REGION" --format='none' 2>/dev/null; then
+if gcloud run jobs describe agora-authentication-init --project="$INFRA_WORKLOAD_PROJECT_ID" --region="$REGION" --format='none' 2>/dev/null; then
   printf 'STOP: the initializer still exists; keep its initializer tag and investigate.\n' >&2
   return 1
 fi
@@ -462,8 +491,9 @@ complete [SMTP delivery validation](./runbooks/configure-hosted-smtp.md#5-valida
 - If an untagged initializer contains bootstrap configuration, freeze production writers and treat
   it as an IAM incident. Preserve audit evidence, delete the job, and review its creators before
   retrying.
-- If an initializer-tagged job remains after compensation, keep the tag attached. Delete it before a
-  fresh dispatch, or execute it without overrides only after that fresh workflow reaches its prompt.
+- If an initializer-tagged job remains after compensation, keep the tag attached and delete it before
+  a fresh dispatch. If the initialization marker exists, the fresh release skips initialization;
+  otherwise, follow this section only when it reaches the initializer prompt.
 - If deletion fails after success, leave the initializer tag attached and resolve the control-plane
   error before the next release.
 
@@ -530,7 +560,7 @@ If the shell was restarted, copy the non-secret plan ID printed by the successfu
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 MANAGEMENT_PROJECT_ID="$INFRA_MANAGEMENT_PROJECT_ID"
-MANAGEMENT_PROJECT_NUMBER="$(gcloud projects describe "$MANAGEMENT_PROJECT_ID" --format='value(projectNumber)')"
+MANAGEMENT_PROJECT_NUMBER="$(gcloud projects describe "$INFRA_MANAGEMENT_PROJECT_ID" --format='value(projectNumber)')"
 BACKUP_BUCKET="${MANAGEMENT_PROJECT_ID}-${MANAGEMENT_PROJECT_NUMBER}-backups"
 gcloud storage buckets describe "gs://${BACKUP_BUCKET}" --format='yaml(name,retention_policy,soft_delete_policy,lifecycle_config)'
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'

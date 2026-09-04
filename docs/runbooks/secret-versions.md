@@ -122,7 +122,7 @@ unsetopt err_exit nounset xtrace
 : "${SECRET_ID:?Set SECRET_ID to one allowed secret ID}"
 ./ops/add-secret-version.sh "$SECRET_ID"
 gcloud secrets versions list "$SECRET_ID" \
-  --project="$MANAGEMENT_PROJECT_ID" \
+  --project="$INFRA_MANAGEMENT_PROJECT_ID" \
   --format='table(name.basename(),state,createTime)' \
   --sort-by='~createTime'
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
@@ -141,10 +141,10 @@ unsetopt err_exit nounset xtrace
 [[ "$OLD_VERSION_ID" =~ ^[1-9][0-9]*$ ]]
 test "$OLD_VERSION_ID" != "$VERSION_ID"
 test "$(gcloud secrets versions describe "$VERSION_ID" \
-  --secret="$SECRET_ID" --project="$MANAGEMENT_PROJECT_ID" \
+  --secret="$SECRET_ID" --project="$INFRA_MANAGEMENT_PROJECT_ID" \
   --format='value(state)')" = ENABLED
 gcloud secrets versions describe "$OLD_VERSION_ID" \
-  --secret="$SECRET_ID" --project="$MANAGEMENT_PROJECT_ID" \
+  --secret="$SECRET_ID" --project="$INFRA_MANAGEMENT_PROJECT_ID" \
   --format='yaml(name,state,createTime)'
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
@@ -157,7 +157,7 @@ setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 gcloud secrets versions disable "${OLD_VERSION_ID}" \
   --secret="${SECRET_ID}" \
-  --project="${MANAGEMENT_PROJECT_ID}" \
+  --project="$INFRA_MANAGEMENT_PROJECT_ID" \
   --quiet \
   --format='yaml(name,state)'
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
@@ -172,7 +172,7 @@ setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 gcloud secrets versions enable "${OLD_VERSION_ID}" \
   --secret="${SECRET_ID}" \
-  --project="${MANAGEMENT_PROJECT_ID}" \
+  --project="$INFRA_MANAGEMENT_PROJECT_ID" \
   --quiet \
   --format='yaml(name,state)'
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
@@ -192,7 +192,7 @@ setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 gcloud secrets versions describe "${OLD_VERSION_ID}" \
   --secret="${SECRET_ID}" \
-  --project="${MANAGEMENT_PROJECT_ID}" \
+  --project="$INFRA_MANAGEMENT_PROJECT_ID" \
   --format='yaml(name,state,createTime)'
 
 printf 'Type %s/%s to schedule destruction: ' "$SECRET_ID" "$OLD_VERSION_ID"
@@ -201,7 +201,7 @@ test "${CONFIRM_DESTROY}" = "${SECRET_ID}/${OLD_VERSION_ID}"
 
 gcloud secrets versions destroy "${OLD_VERSION_ID}" \
   --secret="${SECRET_ID}" \
-  --project="${MANAGEMENT_PROJECT_ID}" \
+  --project="$INFRA_MANAGEMENT_PROJECT_ID" \
   --quiet \
   --format='yaml(name,state,scheduledDestroyTime)'
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
@@ -228,7 +228,7 @@ setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 gcloud logging read \
   'protoPayload.serviceName="secretmanager.googleapis.com" AND protoPayload.resourceName:"/secrets/'"${SECRET_ID}"'"' \
-  --project="${MANAGEMENT_PROJECT_ID}" \
+  --project="$INFRA_MANAGEMENT_PROJECT_ID" \
   --limit=20 \
   --format='table(timestamp,protoPayload.methodName,protoPayload.authenticationInfo.principalEmail)'
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'

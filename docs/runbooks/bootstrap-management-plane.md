@@ -151,7 +151,7 @@ Check the selected management ID. Project IDs are global and cannot be changed l
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 MANAGEMENT_PROJECT_ID="$INFRA_MANAGEMENT_PROJECT_ID"
-! gcloud projects describe "${MANAGEMENT_PROJECT_ID}"
+! gcloud projects describe "$INFRA_MANAGEMENT_PROJECT_ID"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
@@ -182,7 +182,7 @@ Do not create an organization solely for this early deployment.
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-gcloud projects create "${MANAGEMENT_PROJECT_ID}" \
+gcloud projects create "$INFRA_MANAGEMENT_PROJECT_ID" \
   --name='Agora management'
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
@@ -210,7 +210,7 @@ setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 MANAGEMENT_FOLDER_ID='replace-with-folder-id'
 [[ "${MANAGEMENT_FOLDER_ID}" =~ ^[0-9]+$ ]]
-gcloud projects create "${MANAGEMENT_PROJECT_ID}" \
+gcloud projects create "$INFRA_MANAGEMENT_PROJECT_ID" \
   --name='Agora management' \
   --folder="${MANAGEMENT_FOLDER_ID}"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
@@ -224,7 +224,7 @@ setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 MANAGEMENT_ORGANIZATION_ID='replace-with-organization-id'
 [[ "${MANAGEMENT_ORGANIZATION_ID}" =~ ^[0-9]+$ ]]
-gcloud projects create "${MANAGEMENT_PROJECT_ID}" \
+gcloud projects create "$INFRA_MANAGEMENT_PROJECT_ID" \
   --name='Agora management' \
   --organization="${MANAGEMENT_ORGANIZATION_ID}"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
@@ -237,10 +237,10 @@ number and parent before linking billing:
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-MANAGEMENT_PROJECT_NUMBER="$(gcloud projects describe "${MANAGEMENT_PROJECT_ID}" --format='value(projectNumber)')"
+MANAGEMENT_PROJECT_NUMBER="$(gcloud projects describe "$INFRA_MANAGEMENT_PROJECT_ID" --format='value(projectNumber)')"
 [[ "${MANAGEMENT_PROJECT_NUMBER}" =~ ^[0-9]+$ ]]
 
-gcloud projects describe "${MANAGEMENT_PROJECT_ID}" \
+gcloud projects describe "$INFRA_MANAGEMENT_PROJECT_ID" \
   --format='yaml(projectId,projectNumber,name,parent)'
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
@@ -276,7 +276,7 @@ gcloud services enable \
   iam.googleapis.com \
   serviceusage.googleapis.com \
   storage.googleapis.com \
-  --project="${MANAGEMENT_PROJECT_ID}"
+  --project="$INFRA_MANAGEMENT_PROJECT_ID"
 
 gcloud auth application-default set-quota-project "${MANAGEMENT_PROJECT_ID}"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
@@ -295,7 +295,7 @@ given to automation and never stored in code.
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-gcloud projects add-iam-policy-binding "${MANAGEMENT_PROJECT_ID}" \
+gcloud projects add-iam-policy-binding "$INFRA_MANAGEMENT_PROJECT_ID" \
   --member="${OPERATOR_PRINCIPAL}" \
   --role='roles/owner' \
   --condition=None
@@ -319,7 +319,7 @@ for role in \
   roles/secretmanager.admin \
   roles/storage.admin
 do
-  gcloud projects add-iam-policy-binding "${MANAGEMENT_PROJECT_ID}" \
+  gcloud projects add-iam-policy-binding "$INFRA_MANAGEMENT_PROJECT_ID" \
     --member="${OPERATOR_PRINCIPAL}" \
     --role="${role}" \
     --condition=None >/dev/null
@@ -512,7 +512,7 @@ STATE_BUCKET="${MANAGEMENT_PROJECT_ID}-${MANAGEMENT_PROJECT_NUMBER}-tofu-state"
 ! gcloud storage buckets describe "gs://${STATE_BUCKET}"
 
 gcloud storage buckets create "gs://${STATE_BUCKET}" \
-  --project="${MANAGEMENT_PROJECT_ID}" \
+  --project="$INFRA_MANAGEMENT_PROJECT_ID" \
   --location=EU \
   --default-storage-class=STANDARD \
   --uniform-bucket-level-access \
@@ -686,12 +686,12 @@ Verify the metadata-only secrets and keyless identities:
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 gcloud secrets list \
-  --project="${MANAGEMENT_PROJECT_ID}" \
+  --project="$INFRA_MANAGEMENT_PROJECT_ID" \
   --format='value(name.basename())' \
   | sort
 
 gcloud iam service-accounts list \
-  --project="${MANAGEMENT_PROJECT_ID}" \
+  --project="$INFRA_MANAGEMENT_PROJECT_ID" \
   --filter='email~"^infra-(plan|foundation|release|recovery)@"' \
   --format='value(email)' \
   | sort
@@ -871,7 +871,7 @@ setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 for provider in github-plan github-foundation github-release github-recovery; do
   gcloud iam workload-identity-pools providers describe "${provider}" \
-    --project="${MANAGEMENT_PROJECT_ID}" \
+    --project="$INFRA_MANAGEMENT_PROJECT_ID" \
     --location=global \
     --workload-identity-pool=github-actions \
     --format=json \
@@ -893,7 +893,7 @@ provider names exactly its workflow and, for foundation/release/recovery, its ma
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 gcloud iam workload-identity-pools providers list \
-  --project="${MANAGEMENT_PROJECT_ID}" \
+  --project="$INFRA_MANAGEMENT_PROJECT_ID" \
   --location=global \
   --workload-identity-pool=github-actions \
   --format='table(name.basename(),attributeCondition)'
@@ -908,12 +908,12 @@ the four current accounts keeps this check fail-closed when another account is i
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 PROJECT_SERVICE_ACCOUNTS="$(gcloud iam service-accounts list \
-  --project="${MANAGEMENT_PROJECT_ID}" \
+  --project="$INFRA_MANAGEMENT_PROJECT_ID" \
   --format='value(email)')"
 [[ -n "$PROJECT_SERVICE_ACCOUNTS" ]]
 while IFS= read -r account_email; do
   USER_KEY_NAMES="$(gcloud iam service-accounts keys list \
-    --project="${MANAGEMENT_PROJECT_ID}" \
+    --project="$INFRA_MANAGEMENT_PROJECT_ID" \
     --iam-account="$account_email" \
     --managed-by=user \
     --format='value(name)')"
@@ -934,11 +934,11 @@ authority:
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-gcloud projects get-ancestors "${MANAGEMENT_PROJECT_ID}" \
+gcloud projects get-ancestors "$INFRA_MANAGEMENT_PROJECT_ID" \
   --format='table(type,id)'
 
 ORGANIZATION_ID="$(
-  gcloud projects get-ancestors "${MANAGEMENT_PROJECT_ID}" --format=json \
+  gcloud projects get-ancestors "$INFRA_MANAGEMENT_PROJECT_ID" --format=json \
     | jq -r '.[] | select(.type == "organization") | .id'
 )"
 MISSING_ORG_POLICY_COUNT=0
@@ -949,7 +949,7 @@ for constraint in \
   storage.publicAccessPrevention; do
   if gcloud resource-manager org-policies describe \
     "constraints/${constraint}" \
-    --project="${MANAGEMENT_PROJECT_ID}" \
+    --project="$INFRA_MANAGEMENT_PROJECT_ID" \
     --effective --format=json \
     | jq -e '.booleanPolicy.enforced == true' >/dev/null; then
     printf 'ENFORCED %s\n' "$constraint"
@@ -995,12 +995,12 @@ for constraint in \
   storage.publicAccessPrevention; do
   if ! gcloud resource-manager org-policies describe \
     "constraints/${constraint}" \
-    --project="${MANAGEMENT_PROJECT_ID}" \
+    --project="$INFRA_MANAGEMENT_PROJECT_ID" \
     --effective --format=json \
     | jq -e '.booleanPolicy.enforced == true' >/dev/null; then
     gcloud resource-manager org-policies enable-enforce \
       "$constraint" \
-      --project="${MANAGEMENT_PROJECT_ID}" \
+      --project="$INFRA_MANAGEMENT_PROJECT_ID" \
       || POLICY_UPDATE_EXIT=$?
   fi
 done
@@ -1034,7 +1034,7 @@ List the operator's current project roles before choosing the section 5 cleanup 
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-gcloud projects get-iam-policy "${MANAGEMENT_PROJECT_ID}" --format=json \
+gcloud projects get-iam-policy "$INFRA_MANAGEMENT_PROJECT_ID" --format=json \
 | jq -r --arg operator "${OPERATOR_PRINCIPAL}" '
     .bindings[]
     | select(.members | index($operator))
@@ -1053,7 +1053,7 @@ If `roles/owner` appears:
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-gcloud projects remove-iam-policy-binding "${MANAGEMENT_PROJECT_ID}" \
+gcloud projects remove-iam-policy-binding "$INFRA_MANAGEMENT_PROJECT_ID" \
   --member="${OPERATOR_PRINCIPAL}" \
   --role='roles/owner' \
   --condition=None
@@ -1067,7 +1067,7 @@ If both fallback data roles appear:
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 for role in roles/secretmanager.admin roles/storage.admin; do
-  gcloud projects remove-iam-policy-binding "${MANAGEMENT_PROJECT_ID}" \
+  gcloud projects remove-iam-policy-binding "$INFRA_MANAGEMENT_PROJECT_ID" \
     --member="${OPERATOR_PRINCIPAL}" \
     --role="${role}" \
     --condition=None >/dev/null
@@ -1081,7 +1081,7 @@ Verify neither the operator nor any service account has Owner or Editor:
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-gcloud projects get-iam-policy "${MANAGEMENT_PROJECT_ID}" --format=json \
+gcloud projects get-iam-policy "$INFRA_MANAGEMENT_PROJECT_ID" --format=json \
 | jq -e --arg operator "${OPERATOR_PRINCIPAL}" '
     [
       .bindings[]
@@ -1121,7 +1121,7 @@ setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 gcloud logging read \
   'resource.type="gcs_bucket" AND resource.labels.bucket_name="'"${STATE_BUCKET}"'" AND protoPayload.resourceName:"bootstrap/default.tflock"' \
-  --project="${MANAGEMENT_PROJECT_ID}" \
+  --project="$INFRA_MANAGEMENT_PROJECT_ID" \
   --limit=20 \
   --format='table(timestamp,protoPayload.methodName,protoPayload.authenticationInfo.principalEmail)'
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'

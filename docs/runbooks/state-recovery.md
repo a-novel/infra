@@ -415,7 +415,7 @@ setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 gcloud logging read \
   'resource.type="gcs_bucket" AND resource.labels.bucket_name="'"${STATE_BUCKET}"'" AND protoPayload.resourceName:"/'"${STATE_ROOT}"'/default.tfstate"' \
-  --project="${MANAGEMENT_PROJECT_ID}" \
+  --project="$INFRA_MANAGEMENT_PROJECT_ID" \
   --limit=30 \
   --format='table(timestamp,protoPayload.methodName,protoPayload.authenticationInfo.principalEmail)'
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'

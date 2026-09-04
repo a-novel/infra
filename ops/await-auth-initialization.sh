@@ -80,7 +80,7 @@ fi
 
 printf '\nAuthentication requires its one-time, human-only initialization.\n' >&2
 printf 'An approved initializer must first follow the two-phase setup in:\n' >&2
-printf 'docs/runbooks/deploy-production.md#first-launch-provision-and-run-the-human-only-initializer\n\n' >&2
+printf 'docs/setup-production.md#run-the-human-only-authentication-initializer\n\n' >&2
 printf 'After that setup, run exactly:\n\n' >&2
 printf 'gcloud run jobs execute %s --project=%s --region=%s --wait\n\n' \
     "${JOB_NAME}" "${PROJECT_ID}" "${REGION}" >&2
