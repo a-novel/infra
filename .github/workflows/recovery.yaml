@@ -61,17 +61,17 @@ jobs:
       pull-requests: read
     steps:
       - name: Check out the exact master commit
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
       - name: Install pnpm
         if: inputs.operation != 'cleanup-project'
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: pnpm/action-setup@v6.0.10
 
       - name: Install Node.js
         if: inputs.operation != 'cleanup-project'
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@v7.0.0
         with:
           node-version-file: .node-version
           cache: pnpm
@@ -95,7 +95,7 @@ jobs:
           printf 'file=%s\n' "${config}" >>"${GITHUB_OUTPUT}"
 
       - name: Authenticate as the recovery boundary
-        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        uses: google-github-actions/auth@v3.0.0
         with:
           workload_identity_provider: ${{ vars.GCP_RECOVERY_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_RECOVERY_SERVICE_ACCOUNT }}
@@ -103,13 +103,13 @@ jobs:
           export_environment_variables: true
 
       - name: Install the pinned Google Cloud CLI
-        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+        uses: google-github-actions/setup-gcloud@v3.0.1
         with:
           version: "581.0.0"
 
       - name: Install OpenTofu
         if: inputs.operation != 'cleanup-project'
-        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        uses: opentofu/setup-opentofu@v2.0.2
         with:
           tofu_version_file: .opentofu-version
           tofu_wrapper: false

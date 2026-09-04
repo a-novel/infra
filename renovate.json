@@ -5,10 +5,10 @@
   "ignoreUnstable": true,
   "packageRules": [
     {
-      "description": "Keep GitHub Actions immutable in public pull-request workflows.",
+      "description": "Keep GitHub Actions on complete stable SemVer tags.",
       "matchManagers": ["github-actions"],
       "matchPackageNames": ["!a-novel-kit/workflows"],
-      "pinDigests": true
+      "pinDigests": false
     },
     {
       "description": "Keep the shared workflow actions on one reviewed release tag.",
