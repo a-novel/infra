@@ -62,6 +62,7 @@ available without that repository check.
 
 ./ops/run-workflow.sh release deploy [--no-wait]
 ./ops/run-workflow.sh release rollback <receipt-id>
+./ops/run-workflow.sh release recover-first-launch <failed-run-id>
 
 ./ops/run-workflow.sh recovery plan-workload <replacement-project-id> <receipt-id>
 ./ops/run-workflow.sh recovery apply-workload <replacement-project-id> <receipt-id> <plan-id>
@@ -91,7 +92,7 @@ Actions security boundary.
 | Deletion authorization              | `verify-deletion-label.sh`, `delete-recovery-project.sh`                                                                                                                         |
 | Release compilation and promotion   | `compile-release.mjs`, `validate-image-update.mjs`, `verify-release-images.sh`, `promote-release-images.sh`, `preflight-release.sh`                                              |
 | Ordered release execution           | `release-orchestrator.sh`, `google-release-driver.sh`, `prepare-database-change.sh`, `deploy-database-release.sh`, `restore-database-release.sh`, `await-auth-initialization.sh` |
-| Recovery                            | `compile-recovery.mjs`, `verify-recovery-points.sh`, `promote-recovery-images.sh`                                                                                                |
+| Recovery                            | `recover-first-launch.sh`, `compile-recovery.mjs`, `verify-recovery-points.sh`, `promote-recovery-images.sh`                                                                     |
 | Health and root validation          | `check-authentication-health.sh`, `check-root.sh`, `lib/roots.sh`                                                                                                                |
 
 These scripts stay single-purpose because their inputs, permissions, and diagnostics differ. A lower

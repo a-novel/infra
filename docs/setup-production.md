@@ -194,6 +194,23 @@ printf 'Release run ID: %s\n' "$RELEASE_RUN_ID"
 Open the printed workflow URL. Continue only when it reports that migrations passed and it is waiting
 for Authentication initialization.
 
+If that first deploy instead stops after restarting the database and reports that automatic
+compensation also failed, do not launch another deploy. Use the `RELEASE_RUN_ID` printed above. If
+the shell was restarted, set this session-only variable to the numeric segment after
+`/actions/runs/` in that exact failed deploy URL; do not add it to `.envrc`. Recover once:
+
+```sh
+./ops/run-workflow.sh release recover-first-launch "$RELEASE_RUN_ID"
+```
+
+The command refuses to mutate anything if a successful receipt exists or the live seven-field
+database metadata map does not identify that failed commit. After it succeeds, retry the first
+release from the same labeled merge:
+
+```sh
+./ops/run-workflow.sh release deploy --no-wait
+```
+
 ### Run the human-only Authentication initializer
 
 Grant the active operator temporary Tag Viewer access before collecting live tag IDs:

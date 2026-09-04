@@ -14,6 +14,12 @@ const drift = parse(
     "utf8",
   ),
 );
+const release = parse(
+  await readFile(
+    path.join(repositoryRoot, ".github/workflows/release.yaml"),
+    "utf8",
+  ),
+);
 
 test("drift and synthetic health use distinct off-hour schedules", () => {
   assert.deepEqual(
@@ -58,4 +64,52 @@ test("synthetic health reads private foundation coordinates without logging a re
   assert.match(check.run, /config-custody\.sh fetch/);
   assert.match(check.run, /check-authentication-health\.sh/);
   assert.doesNotMatch(check.run, /\b(cat|tee)\b|set -x/);
+});
+
+test("first-launch recovery is explicit and narrowly privileged", () => {
+  const action = release.on.workflow_dispatch.inputs.action;
+  const failedRunId = release.on.workflow_dispatch.inputs.failed_run_id;
+  const job = release.jobs.release;
+
+  assert.deepEqual(action.options, [
+    "deploy",
+    "rollback",
+    "recover-first-launch",
+  ]);
+  assert.equal(failedRunId.required, false);
+  assert.deepEqual(job.permissions, {
+    actions: "read",
+    attestations: "read",
+    contents: "read",
+    "id-token": "write",
+    "pull-requests": "read",
+  });
+
+  const verify = job.steps.find(
+    (step) => step.name === "Verify the failed first-launch run",
+  );
+  assert.equal(verify.if, "env.RELEASE_ACTION == 'recover-first-launch'");
+  assert.match(verify.run, /actions\/runs\/\$\{FAILED_RUN_ID\}/);
+  assert.match(verify.run, /\.conclusion == "failure"/);
+  assert.match(verify.run, /production deploy by @/);
+
+  const recover = job.steps.find(
+    (step) => step.name === "Recover the interrupted first launch",
+  );
+  assert.equal(recover.if, "env.RELEASE_ACTION == 'recover-first-launch'");
+  assert.match(recover.run, /\.\/ops\/recover-first-launch\.sh/);
+  assert.doesNotMatch(recover.run, /all-instances-config|update-instances/);
+});
+
+test("first-launch recovery skips unrelated release tooling", () => {
+  const job = release.jobs.release;
+  for (const name of [
+    "Install OpenTofu",
+    "Authenticate Docker to the regional registry",
+    "Select the receipt-owned prior state",
+    "Compile exact candidate, active, and compensation inputs",
+  ]) {
+    const step = job.steps.find((candidate) => candidate.name === name);
+    assert.equal(step.if, "env.RELEASE_ACTION != 'recover-first-launch'");
+  }
 });
