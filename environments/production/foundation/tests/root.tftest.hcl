@@ -518,9 +518,7 @@ run "builds_the_project_replacement_window" {
       one(google_compute_instance_group_manager.database.update_policy).max_surge_fixed == 0 &&
       one(google_compute_instance_group_manager.database.update_policy).max_unavailable_fixed == 1 &&
       google_compute_instance_group_manager.database.wait_for_instances_status == "STABLE" &&
-      google_compute_project_metadata_item.database_guest_attributes.project == "agora-production-test" &&
-      google_compute_project_metadata_item.database_guest_attributes.key == "enable-guest-attributes" &&
-      google_compute_project_metadata_item.database_guest_attributes.value == "TRUE" &&
+      google_compute_instance_template.database.metadata["enable-guest-attributes"] == "TRUE" &&
       output.database_host.ports == local.database_ports
     )
     error_message = "The private stateful database host, preserved disk, or capacity defaults changed."
