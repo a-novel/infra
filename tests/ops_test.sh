@@ -757,7 +757,14 @@ printf '%s\n' \
     '    else' \
     '        guest_status="healthy:0123456789abcdef0123456789abcdef01234567:22222222-2222-2222-2222-222222222222"' \
     '    fi' \
-    '    printf "{\"queryValue\":{\"items\":[{\"namespace\":\"agora\",\"key\":\"database-release\",\"value\":\"%s\"}]}}\n" "${guest_status}"' \
+    '    if [[ "$*" == *"--format=json"* ]]; then' \
+    '        printf "[{\"namespace\":\"agora\",\"key\":\"database-release\",\"value\":\"%s\"}]\n" "${guest_status}"' \
+    '    elif [[ "$*" == *"--format=value(value)"* ]]; then' \
+    '        printf "%s\n" "${guest_status}"' \
+    '    else' \
+    '        printf "mock guest attribute format is unsupported\n" >&2' \
+    '        exit 1' \
+    '    fi' \
     'fi' \
     'if [[ "$*" == *"compute snapshots list"* ]]; then' \
     '    if [[ -n "${SNAPSHOT_AGE_HOURS:-}" ]]; then snapshot_time="$(date -u --date="${SNAPSHOT_AGE_HOURS} hours ago" +%Y-%m-%dT%H:%M:%SZ)"; else snapshot_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; fi' \
