@@ -434,6 +434,15 @@ resource "google_cloud_run_v2_service" "authentication" {
         value = "8080"
       }
 
+      dynamic "env" {
+        for_each = var.application_release.authentication.web_client_url == null ? [] : [var.application_release.authentication.web_client_url]
+
+        content {
+          name  = "PLATFORM_AUTH_URL"
+          value = env.value
+        }
+      }
+
       # Cloud Run sends SIGTERM ten seconds before termination. The shared
       # nine-second budget lets the HTTP server stop and detached mail sends
       # drain before the platform's fixed deadline.
