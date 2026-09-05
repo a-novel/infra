@@ -53,13 +53,13 @@ valid_marker() {
 }
 
 EXISTING_MARKER="${SCRATCH_DIRECTORY}/existing-initialization.json"
-if ! MARKER_LISTING="$(gcloud storage objects list "gs://${RECEIPT_BUCKET}/production/initialization/**" --uri 2>/dev/null)"; then
+if ! MARKER_LISTING="$(gcloud storage objects list "gs://${RECEIPT_BUCKET}/production/initialization/**" --format='value(name)' 2>/dev/null)"; then
     printf 'The Authentication initialization inventory could not be listed.\n' >&2
     exit 70
 fi
 MARKER_PRESENT=false
 while IFS= read -r object; do
-    if [ "${object}" = "${MARKER}" ]; then
+    if [ "gs://${RECEIPT_BUCKET}/${object}" = "${MARKER}" ]; then
         MARKER_PRESENT=true
     fi
 done <<<"${MARKER_LISTING}"

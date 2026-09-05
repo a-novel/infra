@@ -17,13 +17,19 @@ if [ "$1 $2 $3" = "storage objects list" ]; then
     PATTERN="$(local_path "${4%/**}")"
     if [ -d "${PATTERN}" ]; then
         while IFS= read -r object; do
-            printf 'gs://%s\n' "${object#"${ROOT}/"}"
+            relative="${object#"${ROOT}/"}"
+            case "${5:-}" in
+                '--format=value(name)') printf '%s\n' "${relative#*/}" ;;
+                --uri) printf 'https://storage.googleapis.com/storage/v1/b/%s/o/%s#123456\n' "${relative%%/*}" "${relative#*/}" ;;
+                *) exit 99 ;;
+            esac
         done < <(find "${PATTERN}" -type f | LC_ALL=C sort)
     fi
 elif [ "$1 $2" = "storage cp" ]; then
     SOURCE="$3"
     DESTINATION="$4"
     if [[ "${SOURCE}" == gs://* ]]; then
+        if [ "${FAKE_GCS_READ_FAILURE:-false}" = true ]; then exit 1; fi
         cp -- "$(local_path "${SOURCE}")" "${DESTINATION}"
     else
         TARGET="$(local_path "${DESTINATION}")"

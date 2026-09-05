@@ -61,12 +61,13 @@ case "${ACTION}" in
             printf 'Fetch accepts no workflow run identity.\n' >&2
             exit 64
         fi
-        if ! LISTING="$(gcloud storage objects list "${PREFIX}/**" --uri 2>/dev/null)"; then
+        if ! LISTING="$(gcloud storage objects list "${PREFIX}/**" --format='value(name)' 2>/dev/null)"; then
             printf 'The private configuration inventory could not be listed.\n' >&2
             exit 70
         fi
         URI=""
         while IFS= read -r OBJECT; do
+            OBJECT="gs://${BUCKET}/${OBJECT}"
             case "${OBJECT}" in
                 "${PREFIX}/"*)
                     NAME="${OBJECT##*/}"
