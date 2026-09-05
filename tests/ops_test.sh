@@ -1421,7 +1421,10 @@ printf '%s\n' \
     '#!/bin/bash' \
     'if [ "$1 $2 $3" = "storage objects list" ]; then' \
     '    if [ "${INIT_LIST_FAILURE:-false}" = true ]; then exit 1; fi' \
-    '    if [ "${INIT_EXISTING_MARKER:-false}" = true ]; then printf "%s\n" "gs://agora-receipts-test/production/initialization/complete.json"; fi' \
+    '    if [ "${INIT_EXISTING_MARKER:-false}" = true ]; then' \
+    '        if [ "$5" = "--format=value(name)" ]; then printf "%s\n" "production/initialization/complete.json";' \
+    '        else printf "%s\n" "https://storage.googleapis.com/storage/v1/b/agora-receipts-test/o/production/initialization/complete.json#123456"; fi' \
+    '    fi' \
     'elif [ "$1 $2" = "storage cp" ] && [[ "$3" == gs://* ]]; then' \
     '    if [ "${INIT_EXISTING_MARKER:-false}" != true ]; then exit 1; fi' \
     '    printf "%s\n" "${INIT_MARKER_JSON}" >"$4"' \

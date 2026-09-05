@@ -44,12 +44,13 @@ latest_uri() {
     # The object-list API scopes directly to the protected prefix. A successful
     # empty listing is the only condition that means first launch;
     # authentication and transport failures stop.
-    if ! listing="$(gcloud storage objects list "${RECEIPT_PREFIX}/**" --uri 2>/dev/null)"; then
+    if ! listing="$(gcloud storage objects list "${RECEIPT_PREFIX}/**" --format='value(name)' 2>/dev/null)"; then
         printf 'The release receipt inventory could not be listed.\n' >&2
         return 70
     fi
 
     while IFS= read -r object; do
+        object="gs://${BUCKET}/${object}"
         case "${object}" in
             "${RECEIPT_PREFIX}/"*)
                 name="${object##*/}"
