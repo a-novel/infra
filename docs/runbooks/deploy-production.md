@@ -308,6 +308,16 @@ host because Authentication uses it for the TLS server name. Initializer princip
 inputs, not a mutable release secret. The active Google account is the fast-path first super-admin;
 replace that assignment when the application administrator is another address.
 
+Load `PLATFORM_AUTH_URL` from the reviewed `.envrc`. It is the web client's HTTPS origin, not the
+Authentication API or SMTP host. Authentication appends `/ext/account/create`, `/ext/password/reset`,
+and `/ext/email/validate`. When upgrading an existing environment, repeat this configuration step
+with the already-selected secret versions; no password upload or initialization is needed. Updating
+`.envrc` alone does not update the protected `RELEASE_CONFIG_JSON`.
+
+```sh
+. ./.envrc
+```
+
 ```zsh
 () {
 setopt local_options err_return pipe_fail
@@ -317,6 +327,7 @@ unsetopt err_exit nounset xtrace
 [[ "$SMTP_USERNAME" =~ ^[^[:space:]]{1,320}$ ]]
 [[ "$SMTP_SENDER_EMAIL" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]
 test -n "$SMTP_SENDER_NAME"
+[[ "$PLATFORM_AUTH_URL" =~ ^https://[a-z0-9][a-z0-9.-]*\.[a-z0-9-]+(:[0-9]+)?$ ]]
 
 RELEASE_CONFIG_FILE="$(mktemp)"
 {
@@ -332,6 +343,7 @@ jq -n \
   --arg smtp "${SMTP_HOST}:587" --arg smtp_domain "$SMTP_HOST" \
   --arg smtp_username "$SMTP_USERNAME" --arg smtp_email "$SMTP_SENDER_EMAIL" \
   --arg smtp_name "$SMTP_SENDER_NAME" \
+  --arg web_client_url "$PLATFORM_AUTH_URL" \
   --argjson ap "$AUTH_POSTGRES_PASSWORD_VERSION" \
   --argjson ab "$AUTH_POSTGRES_BACKUP_PASSWORD_VERSION" \
   --argjson as "$AUTH_SMTP_PASSWORD_VERSION" \
@@ -352,6 +364,7 @@ jq -n \
     },
     authentication: {
       super_admin_email: $admin,
+      web_client_url: $web_client_url,
       smtp: {
         address: $smtp, sender_domain: $smtp_domain, username: $smtp_username,
         sender_email: $smtp_email, sender_name: $smtp_name

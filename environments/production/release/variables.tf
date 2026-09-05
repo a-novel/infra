@@ -173,6 +173,9 @@ variable "application_release" {
         username      = string
       })
       super_admin_email = string
+      # Older receipts predate this setting; rollback must retain their exact
+      # environment. The compiler requires an origin for every new release.
+      web_client_url = optional(string)
     })
     json_keys = object({
       active_revision = optional(string)
@@ -220,6 +223,14 @@ variable "application_release" {
       ))
     )
     error_message = "Rollout must name a private candidate tag, exact candidate revisions, and both active revisions before promotion."
+  }
+
+  validation {
+    condition = var.application_release == null ? true : (
+      var.application_release.authentication.web_client_url == null ? true :
+      can(regex("^https://[a-z0-9][a-z0-9.-]*\\.[a-z0-9-]+(:[0-9]+)?$", var.application_release.authentication.web_client_url))
+    )
+    error_message = "Authentication web_client_url must be an HTTPS origin without credentials, path, query, fragment, or trailing slash."
   }
 
   validation {
