@@ -344,22 +344,51 @@ case "${STEP}" in
     authentication-smoke)
         AUTH_REVISION="$(jq --raw-output '.revisions.authentication' "${RELEASE_FILE}")"
         CANDIDATE_TAG="$(jq --raw-output '.candidateTag' "${RELEASE_FILE}")"
+        if ! revision_ready "${AUTH_REVISION}"; then
+            printf 'Authentication smoke failed: candidate revision is not Ready.\n' >&2
+            exit 70
+        fi
+        if ! CANDIDATE_URL="$(authentication_url "${CANDIDATE_TAG}")" ||
+            ! [[ "${CANDIDATE_URL}" =~ ^https://[a-z0-9.-]+\.run\.app$ ]]; then
+            printf 'Authentication smoke failed: candidate URL could not be resolved.\n' >&2
+            exit 70
+        fi
         HEALTH_FILE="$(mktemp "${RELEASE_DIRECTORY}/health.XXXXXX")"
-        if ! revision_ready "${AUTH_REVISION}" ||
-            ! CANDIDATE_URL="$(authentication_url "${CANDIDATE_TAG}")" ||
-            ! [[ "${CANDIDATE_URL}" =~ ^https://[a-z0-9.-]+\.run\.app$ ]] ||
-            ! curl --fail --silent --show-error \
-                --connect-timeout 5 --max-time 15 \
-                "${CANDIDATE_URL}/v2/healthcheck" >"${HEALTH_FILE}" ||
-            ! jq --exit-status '
-                (keys | sort) == ["api:jsonKeys", "client:postgres", "client:smtp"] and
-                all(.[]; .status == "up")
-              ' "${HEALTH_FILE}" >/dev/null; then
-            rm -f -- "${HEALTH_FILE}"
-            printf 'The Authentication candidate smoke check failed.\n' >&2
+        trap 'rm -f -- "${HEALTH_FILE}"' EXIT
+        if ! HTTP_STATUS="$(curl --silent --proto '=https' --tlsv1.2 \
+            --connect-timeout 5 --max-time 15 --max-filesize 4096 \
+            --header 'Accept: application/json' \
+            --output "${HEALTH_FILE}" --write-out '%{http_code}' \
+            "${CANDIDATE_URL}/v2/healthcheck")"; then
+            printf 'Authentication smoke failed: HTTPS request failed or exceeded its limits.\n' >&2
+            exit 70
+        fi
+        if [ "${HTTP_STATUS}" != 200 ]; then
+            printf 'Authentication smoke failed: endpoint did not return HTTP 200.\n' >&2
+            exit 70
+        fi
+        if ! jq --slurp --exit-status '
+            length == 1 and (.[0] |
+                type == "object" and
+                keys == ["api:jsonKeys", "client:postgres", "client:smtp"] and
+                all(.[]; type == "object" and keys == ["status"] and
+                    (.status == "up" or .status == "down")))
+          ' "${HEALTH_FILE}" >/dev/null 2>&1; then
+            printf 'Authentication smoke failed: unexpected health response schema.\n' >&2
+            exit 70
+        fi
+        if ! jq --exit-status 'all(.[]; .status == "up")' "${HEALTH_FILE}" >/dev/null; then
+            # Emit only fixed component names and enum values, never response text.
+            jq --raw-output '
+                . as $health | ["api:jsonKeys", "client:postgres", "client:smtp"][]
+                | "Authentication health: " + . + "=" +
+                    (if $health[.].status == "up" then "up" else "down" end)
+              ' "${HEALTH_FILE}" >&2
+            printf 'Authentication smoke failed: a declared dependency is down.\n' >&2
             exit 70
         fi
         rm -f -- "${HEALTH_FILE}"
+        trap - EXIT
         update_operation '.health.authentication = $value' passed
         ;;
     json-traffic)

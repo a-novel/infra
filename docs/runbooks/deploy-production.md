@@ -156,7 +156,7 @@ active operator for this lookup:
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-gcloud projects add-iam-policy-binding "$WORKLOAD_PROJECT_ID" \
+gcloud projects add-iam-policy-binding "$INFRA_WORKLOAD_PROJECT_ID" \
   --member="$OPERATOR_PRINCIPAL" \
   --role=roles/resourcemanager.tagViewer \
   --condition=None \
@@ -175,36 +175,36 @@ unsetopt err_exit nounset xtrace
 [[ "$BACKUP_BUCKET_NAME" == "${MANAGEMENT_PROJECT_ID}-"*'-backups' ]]
 [[ "$RECEIPT_BUCKET_NAME" == "${MANAGEMENT_PROJECT_ID}-"*'-deployment-receipts' ]]
 
-DATABASE_ZONE="$(gcloud compute instance-groups managed list --project="$WORKLOAD_PROJECT_ID" --filter='name=agora-database' --format='value(zone.basename())')"
+DATABASE_ZONE="$(gcloud compute instance-groups managed list --project="$INFRA_WORKLOAD_PROJECT_ID" --filter='name=agora-database' --format='value(zone.basename())')"
 [[ "$DATABASE_ZONE" =~ ^[a-z]+-[a-z]+[0-9]+-[a-z]$ ]]
 REGION="${DATABASE_ZONE%-*}"
 
 DATABASE_INSTANCE_NAME="$(gcloud compute instance-groups managed list-instances agora-database \
-  --project="$WORKLOAD_PROJECT_ID" --zone="$DATABASE_ZONE" \
+  --project="$INFRA_WORKLOAD_PROJECT_ID" --zone="$DATABASE_ZONE" \
   --format='value(instance.basename())' --limit=1)"
 [[ "$DATABASE_INSTANCE_NAME" == agora-database-* ]]
 DATABASE_PRIVATE_IP="$(gcloud compute instances describe "$DATABASE_INSTANCE_NAME" \
-  --project="$WORKLOAD_PROJECT_ID" --zone="$DATABASE_ZONE" \
+  --project="$INFRA_WORKLOAD_PROJECT_ID" --zone="$DATABASE_ZONE" \
   --format='value(networkInterfaces[0].networkIP)')"
 [[ "$DATABASE_PRIVATE_IP" =~ ^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.) ]]
 
 NETWORK_ID="projects/${WORKLOAD_PROJECT_ID}/global/networks/agora-production"
 SUBNET_ID="projects/${WORKLOAD_PROJECT_ID}/regions/${REGION}/subnetworks/agora-production-${REGION}"
 gcloud compute networks describe agora-production \
-  --project="$WORKLOAD_PROJECT_ID" --format='yaml(name,autoCreateSubnetworks,routingConfig.routingMode)'
+  --project="$INFRA_WORKLOAD_PROJECT_ID" --format='yaml(name,autoCreateSubnetworks,routingConfig.routingMode)'
 gcloud compute networks subnets describe "agora-production-${REGION}" \
-  --project="$WORKLOAD_PROJECT_ID" --region="$REGION" \
+  --project="$INFRA_WORKLOAD_PROJECT_ID" --region="$REGION" \
   --format='yaml(name,network,ipCidrRange,privateIpGoogleAccess)'
 
-WORKLOAD_PROJECT_NUMBER="$(gcloud projects describe "$WORKLOAD_PROJECT_ID" \
+WORKLOAD_PROJECT_NUMBER="$(gcloud projects describe "$INFRA_WORKLOAD_PROJECT_ID" \
   --format='value(projectNumber)')"
-INVOCATION_TAG_KEY="$(gcloud resource-manager tags keys list \
+INVOCATION_TAG_KEY="$(gcloud resource-manager tags keys list --project="$INFRA_WORKLOAD_PROJECT_ID" \
   --parent="projects/${WORKLOAD_PROJECT_NUMBER}" \
   --filter='shortName=agora-invocation' --format='value(name)')"
 [[ "$INVOCATION_TAG_KEY" =~ ^tagKeys/[0-9]+$ ]]
 
 tag_value_id() {
-  gcloud resource-manager tags values list --parent="$INVOCATION_TAG_KEY" \
+  gcloud resource-manager tags values list --project="$INFRA_WORKLOAD_PROJECT_ID" --parent="$INVOCATION_TAG_KEY" \
     --filter="shortName=$1" --format='value(name)'
 }
 
@@ -232,7 +232,7 @@ retrying:
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-gcloud projects remove-iam-policy-binding "$WORKLOAD_PROJECT_ID" \
+gcloud projects remove-iam-policy-binding "$INFRA_WORKLOAD_PROJECT_ID" \
   --member="$OPERATOR_PRINCIPAL" \
   --role=roles/resourcemanager.tagViewer \
   --condition=None \
@@ -258,7 +258,7 @@ select_secret_version() {
 
   enabled_versions="$(
     gcloud secrets versions list "$secret_id" \
-      --project="$MANAGEMENT_PROJECT_ID" --format=json |
+      --project="$INFRA_MANAGEMENT_PROJECT_ID" --format=json |
       jq --raw-output '.[] | select(.state == "ENABLED") | .name | split("/") | last'
   )"
   version_count="$(printf '%s\n' "$enabled_versions" | grep -c . || true)"
@@ -268,7 +268,7 @@ select_secret_version() {
     1) selected_version="$enabled_versions" ;;
     *)
       gcloud secrets versions list "$secret_id" \
-        --project="$MANAGEMENT_PROJECT_ID" --format=json |
+        --project="$INFRA_MANAGEMENT_PROJECT_ID" --format=json |
         jq --raw-output '
           ["VERSION", "STATE", "CREATED"],
           (.[] | select(.state == "ENABLED") |
@@ -282,7 +282,7 @@ select_secret_version() {
 
   [[ "$selected_version" =~ ^[1-9][0-9]*$ ]]
   test "$(gcloud secrets versions describe "$selected_version" --secret="$secret_id" \
-    --project="$MANAGEMENT_PROJECT_ID" --format='value(state)')" = ENABLED
+    --project="$INFRA_MANAGEMENT_PROJECT_ID" --format='value(state)')" = ENABLED
   printf '%s' "$selected_version"
 }
 
@@ -461,9 +461,19 @@ gh run watch "$RELEASE_RUN_ID" --repo "$REPOSITORY" --exit-status
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Logs contain stable stages, sanitized OpenTofu counts, and execution IDs only—never configuration,
-plans, state, image inventories, paired secret/version inventories, or provider diagnostics. The
-private receipt binds the exact migration, rotation, backup, restore, monitor, and health-gate
+Logs contain stable stages, sanitized OpenTofu counts, execution IDs, and bounded smoke diagnostics—
+never configuration, plans, state, image inventories, paired secret/version inventories, or raw health
+responses. Authentication smoke reports readiness, URL, transport, HTTP, or schema failures; a valid
+unhealthy response prints only `api:jsonKeys`, `client:postgres`, and `client:smtp` as `up` or `down`.
+Preserve those lines and the run URL. Do not change credentials or retry initialization on a guess.
+HTTP 200 alone is not a healthy result: all three components must be `up`.
+
+If initialization completed before a later failure, wait for rollback to finish and follow
+[initializer cleanup](../setup-production.md#recover-a-partial-initializer-setup). Keep its completion
+marker. A rollback receipt is not evidence of a successful first launch; resume with a fresh reviewed
+release only after correcting the failure.
+
+The private receipt binds the exact migration, rotation, backup, restore, monitor, and health-gate
 evidence to the promoted revisions.
 
 ## 7. Verify deployment and rotation
@@ -476,16 +486,16 @@ gh run view "$RELEASE_RUN_ID" --repo "$REPOSITORY" \
   --json headSha,status,conclusion,url,jobs \
   --jq '{headSha,status,conclusion,url,jobs:[.jobs[] | {name,conclusion}]}'
 gcloud run services describe agora-json-keys-grpc \
-  --project="$WORKLOAD_PROJECT_ID" --region="$REGION" \
+  --project="$INFRA_WORKLOAD_PROJECT_ID" --region="$REGION" \
   --format='yaml(metadata.name,metadata.annotations,status.conditions,status.traffic)'
 gcloud run services describe agora-authentication-rest \
-  --project="$WORKLOAD_PROJECT_ID" --region="$REGION" \
+  --project="$INFRA_WORKLOAD_PROJECT_ID" --region="$REGION" \
   --format='yaml(metadata.name,status.conditions,status.traffic,status.url)'
 gcloud scheduler jobs describe agora-json-keys-rotation \
-  --project="$WORKLOAD_PROJECT_ID" --location="$REGION" \
+  --project="$INFRA_WORKLOAD_PROJECT_ID" --location="$REGION" \
   --format='yaml(name,state,schedule,timeZone,httpTarget.uri,httpTarget.oauthToken.serviceAccountEmail)'
 if gcloud run jobs describe agora-authentication-init \
-  --project="$WORKLOAD_PROJECT_ID" --region="$REGION" --format='none' 2>/dev/null; then
+  --project="$INFRA_WORKLOAD_PROJECT_ID" --region="$REGION" --format='none' 2>/dev/null; then
   printf 'STOP: the one-time initializer still exists.\n' >&2
   return 1
 fi
@@ -495,7 +505,7 @@ for tuple in \
   "jobs/agora-json-keys-rotatekeys $SCHEDULED_TAG_VALUE" \
   "services/agora-json-keys-grpc $INTERNAL_TAG_VALUE"; do
   read -r resource expected <<<"$tuple"
-  gcloud resource-manager tags bindings list \
+  gcloud resource-manager tags bindings list --project="$INFRA_WORKLOAD_PROJECT_ID" \
     --parent="//run.googleapis.com/projects/${WORKLOAD_PROJECT_ID}/locations/${REGION}/${resource}" \
     --location="$REGION" --format=json \
   | jq --exit-status --arg expected "$expected" \
@@ -530,14 +540,14 @@ gcloud logging read '
   (log_id("run.googleapis.com/stdout") OR
    log_id("run.googleapis.com/stderr") OR
    log_id("run.googleapis.com/requests"))
-' --project="$WORKLOAD_PROJECT_ID" --freshness=24h --limit=500 \
+' --project="$INFRA_WORKLOAD_PROJECT_ID" --freshness=24h --limit=500 \
   --format=json >"$LOG_AUDIT_FILE"
 
 SECRET_PATTERN_ARGUMENTS=()
 while IFS=' ' read -r secret version; do
   payload_file="${LOG_AUDIT_DIRECTORY}/${secret}"
   gcloud secrets versions access "$version" --secret="$secret" \
-    --project="$MANAGEMENT_PROJECT_ID" --out-file="$payload_file" \
+    --project="$INFRA_MANAGEMENT_PROJECT_ID" --out-file="$payload_file" \
     --quiet >/dev/null
   test -s "$payload_file"
   SECRET_PATTERN_ARGUMENTS+=(--file="$payload_file")

@@ -74,7 +74,7 @@ setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 [[ "$WORKLOAD_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
 
-gcloud monitoring policies list --project="$WORKLOAD_PROJECT_ID" \
+gcloud monitoring policies list --project="$INFRA_WORKLOAD_PROJECT_ID" \
   --filter='displayName:Agora' \
   --format='table(displayName,enabled,severity)'
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
@@ -141,7 +141,7 @@ First safe checks:
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 gcloud run services describe agora-authentication-rest \
-  --project="$WORKLOAD_PROJECT_ID" --region="$REGION" \
+  --project="$INFRA_WORKLOAD_PROJECT_ID" --region="$REGION" \
   --format='yaml(metadata.name,status.url,status.latestCreatedRevisionName,status.latestReadyRevisionName,status.traffic,status.conditions)'
 
 gcloud logging read '
@@ -149,7 +149,7 @@ gcloud logging read '
   resource.labels.service_name="agora-authentication-rest"
   log_id("run.googleapis.com/requests")
   severity>=WARNING
-' --project="$WORKLOAD_PROJECT_ID" --freshness=30m --limit=50 \
+' --project="$INFRA_WORKLOAD_PROJECT_ID" --freshness=30m --limit=50 \
   --format='table(timestamp,severity,resource.labels.revision_name,httpRequest.status,httpRequest.latency)'
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
@@ -164,7 +164,7 @@ setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 for service in agora-json-keys-grpc agora-authentication-rest; do
   gcloud run services describe "$service" \
-    --project="$WORKLOAD_PROJECT_ID" --region="$REGION" \
+    --project="$INFRA_WORKLOAD_PROJECT_ID" --region="$REGION" \
     --format='yaml(metadata.name,status.latestReadyRevisionName,status.traffic,status.conditions)'
 done
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
@@ -222,7 +222,7 @@ gcloud logging read '
   resource.labels.service_name="agora-authentication-rest"
   log_id("run.googleapis.com/requests")
   httpRequest.status>=500
-' --project="$WORKLOAD_PROJECT_ID" --freshness=30m --limit=100 \
+' --project="$INFRA_WORKLOAD_PROJECT_ID" --freshness=30m --limit=100 \
   --format='table(timestamp,resource.labels.revision_name,httpRequest.requestMethod,httpRequest.status,httpRequest.latency)'
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
@@ -249,12 +249,12 @@ for job in \
   agora-json-keys-rotatekeys \
   agora-authentication-migrations; do
   gcloud run jobs executions list --job="$job" \
-    --project="$WORKLOAD_PROJECT_ID" --region="$REGION" --limit=5 \
+    --project="$INFRA_WORKLOAD_PROJECT_ID" --region="$REGION" --limit=5 \
     --format='table(metadata.name,metadata.creationTimestamp,status.completionTime,status.conditions.type,status.conditions.status)'
 done
 
 gcloud scheduler jobs describe agora-json-keys-rotation \
-  --project="$WORKLOAD_PROJECT_ID" --location="$REGION" \
+  --project="$INFRA_WORKLOAD_PROJECT_ID" --location="$REGION" \
   --format='yaml(name,state,schedule,timeZone,lastAttemptTime,status)'
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
@@ -295,7 +295,7 @@ for job in \
   agora-postgres-restore-authentication \
   agora-postgres-backup-monitor; do
   gcloud run jobs executions list --job="$job" \
-    --project="$WORKLOAD_PROJECT_ID" --region="$REGION" --limit=5 \
+    --project="$INFRA_WORKLOAD_PROJECT_ID" --region="$REGION" --limit=5 \
     --format='table(metadata.name,metadata.creationTimestamp,status.completionTime,status.conditions.type,status.conditions.status)'
 done
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
@@ -359,7 +359,7 @@ code-managed email channels after foundation apply:
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-gcloud beta monitoring channels list --project="$WORKLOAD_PROJECT_ID" \
+gcloud beta monitoring channels list --project="$INFRA_WORKLOAD_PROJECT_ID" \
   --filter='displayName:("Agora production cost alerts" OR "Agora production operations alerts")' \
   --format='table(name,displayName,type,enabled,verificationStatus)'
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'

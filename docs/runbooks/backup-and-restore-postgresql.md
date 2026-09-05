@@ -35,7 +35,7 @@ REGION='europe-west1'
 
 MANAGEMENT_PROJECT_ID="$INFRA_MANAGEMENT_PROJECT_ID"
 WORKLOAD_PROJECT_ID="$INFRA_WORKLOAD_PROJECT_ID"
-MANAGEMENT_PROJECT_NUMBER="$(gcloud projects describe "$MANAGEMENT_PROJECT_ID" \
+MANAGEMENT_PROJECT_NUMBER="$(gcloud projects describe "$INFRA_MANAGEMENT_PROJECT_ID" \
   --format='value(projectNumber)')"
 BACKUP_BUCKET="${MANAGEMENT_PROJECT_ID}-${MANAGEMENT_PROJECT_NUMBER}-backups"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
@@ -199,13 +199,13 @@ Verify the jobs and schedules without exporting their full environment or embedd
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 gcloud run jobs list \
-  --project="${WORKLOAD_PROJECT_ID}" \
+  --project="$INFRA_WORKLOAD_PROJECT_ID" \
   --region="${REGION}" \
   --filter='metadata.name:agora-postgres-' \
   --format='table(metadata.name,metadata.labels.role)'
 
 gcloud scheduler jobs list \
-  --project="${WORKLOAD_PROJECT_ID}" \
+  --project="$INFRA_WORKLOAD_PROJECT_ID" \
   --location="${REGION}" \
   --filter='name:agora-postgres-' \
   --format='table(name.basename(),schedule,timeZone,state)'
@@ -229,7 +229,7 @@ for job in \
   agora-postgres-backup-json-keys \
   agora-postgres-backup-authentication; do
   gcloud run jobs execute "${job}" \
-    --project="${WORKLOAD_PROJECT_ID}" \
+    --project="$INFRA_WORKLOAD_PROJECT_ID" \
     --region="${REGION}" \
     --wait \
     --quiet \
@@ -280,7 +280,7 @@ for job in \
   agora-postgres-restore-json-keys \
   agora-postgres-restore-authentication; do
   gcloud run jobs execute "${job}" \
-    --project="${WORKLOAD_PROJECT_ID}" \
+    --project="$INFRA_WORKLOAD_PROJECT_ID" \
     --region="${REGION}" \
     --wait \
     --quiet \
@@ -343,7 +343,7 @@ hours old before traffic changes:
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 gcloud run jobs execute agora-postgres-backup-monitor \
-  --project="${WORKLOAD_PROJECT_ID}" \
+  --project="$INFRA_WORKLOAD_PROJECT_ID" \
   --region="${REGION}" \
   --wait \
   --quiet \
@@ -380,7 +380,7 @@ unsetopt err_exit nounset xtrace
 for account in agora-backup agora-restore agora-scheduler-invoker; do
   gcloud iam service-accounts keys list \
     --iam-account="${account}@${WORKLOAD_PROJECT_ID}.iam.gserviceaccount.com" \
-    --project="${WORKLOAD_PROJECT_ID}" \
+    --project="$INFRA_WORKLOAD_PROJECT_ID" \
     --managed-by=user \
     --format='value(name)'
 done
