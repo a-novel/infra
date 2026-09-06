@@ -109,17 +109,31 @@ test("candidate smoke accepts the exact healthy contract", async (t) => {
   assert.equal((await smoke(t)).status, 0);
 });
 
-for (const dependency of Object.keys(healthy)) {
-  test(`candidate smoke identifies ${dependency} without raw diagnostics`, async (t) => {
-    const body = JSON.stringify({
-      ...healthy,
-      [dependency]: { status: "down" },
+for (const http of ["200", "503"]) {
+  for (const dependency of Object.keys(healthy)) {
+    test(`candidate smoke identifies ${dependency} on HTTP ${http} without raw diagnostics`, async (t) => {
+      const body = JSON.stringify({
+        ...healthy,
+        [dependency]: { status: "down" },
+      });
+      const result = await smoke(t, { body, http });
+      assert.equal(result.status, 70);
+      for (const component of Object.keys(healthy)) {
+        assert.ok(
+          result.stderr.includes(
+            `${component}=${component === dependency ? "down" : "up"}`,
+          ),
+        );
+      }
     });
-    const result = await smoke(t, { body });
-    assert.equal(result.status, 70);
-    assert.ok(result.stderr.includes(`${dependency}=down`));
-  });
+  }
 }
+
+test("candidate smoke rejects HTTP 503 even with healthy dependency statuses", async (t) => {
+  const result = await smoke(t, { http: "503" });
+  assert.equal(result.status, 70);
+  assert.match(result.stderr, /endpoint returned HTTP 503/);
+});
 
 for (const body of [
   "",
@@ -139,9 +153,12 @@ for (const body of [
   }),
 ]) {
   test(`candidate smoke rejects malformed response ${body.slice(0, 20)}`, async (t) => {
-    const result = await smoke(t, { body });
-    assert.equal(result.status, 70);
-    assert.match(result.stderr, /unexpected health response schema/);
+    for (const http of ["200", "503"]) {
+      const result = await smoke(t, { body, http });
+      assert.equal(result.status, 70);
+      assert.match(result.stderr, /unexpected health response schema/);
+      assert.doesNotMatch(result.stderr, /Authentication health:/);
+    }
   });
 }
 
@@ -150,11 +167,12 @@ test("candidate smoke separates transport and HTTP failures", async (t) => {
   assert.equal(transport.status, 70);
   assert.match(transport.stderr, /HTTPS request failed/);
   const http = await smoke(t, {
-    http: "503",
+    http: "403",
     body: "fixture-private-response",
   });
   assert.equal(http.status, 70);
-  assert.match(http.stderr, /did not return HTTP 200/);
+  assert.match(http.stderr, /endpoint returned HTTP 403/);
+  assert.doesNotMatch(http.stderr, /Authentication health:/);
 });
 
 test("candidate smoke never requests an unresolved or unready candidate", async (t) => {
@@ -167,4 +185,10 @@ test("candidate smoke never requests an unresolved or unready candidate", async 
     assert.equal(result.status, 70);
     assert.equal(result.curlCalled, false);
   }
+});
+
+test("candidate smoke never prints an invalid HTTP status", async (t) => {
+  const result = await smoke(t, { http: "fixture-private-response" });
+  assert.equal(result.status, 70);
+  assert.match(result.stderr, /unexpected HTTP status/);
 });

@@ -364,8 +364,15 @@ case "${STEP}" in
             exit 70
         fi
         if [ "${HTTP_STATUS}" != 200 ]; then
-            printf 'Authentication smoke failed: endpoint did not return HTTP 200.\n' >&2
-            exit 70
+            if [[ "${HTTP_STATUS}" =~ ^[0-9]{3}$ ]]; then
+                printf 'Authentication smoke failed: endpoint returned HTTP %s.\n' "${HTTP_STATUS}" >&2
+            else
+                printf 'Authentication smoke failed: unexpected HTTP status.\n' >&2
+            fi
+            # A failed dependency returns 503 with the same bounded status schema.
+            if [ "${HTTP_STATUS}" != 503 ]; then
+                exit 70
+            fi
         fi
         if ! jq --slurp --exit-status '
             length == 1 and (.[0] |
@@ -385,6 +392,9 @@ case "${STEP}" in
                     (if $health[.].status == "up" then "up" else "down" end)
               ' "${HEALTH_FILE}" >&2
             printf 'Authentication smoke failed: a declared dependency is down.\n' >&2
+            exit 70
+        fi
+        if [ "${HTTP_STATUS}" != 200 ]; then
             exit 70
         fi
         rm -f -- "${HEALTH_FILE}"

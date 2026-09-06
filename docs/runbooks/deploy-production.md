@@ -476,8 +476,10 @@ gh run watch "$RELEASE_RUN_ID" --repo "$REPOSITORY" --exit-status
 
 Logs contain stable stages, sanitized OpenTofu counts, execution IDs, and bounded smoke diagnostics—
 never configuration, plans, state, image inventories, paired secret/version inventories, or raw health
-responses. Authentication smoke reports readiness, URL, transport, HTTP, or schema failures; a valid
-unhealthy response prints only `api:jsonKeys`, `client:postgres`, and `client:smtp` as `up` or `down`.
+responses. Authentication smoke reports readiness, URL, transport, HTTP, or schema failures. A valid
+unhealthy response, including HTTP 503, prints only `api:jsonKeys`, `client:postgres`, and
+`client:smtp` as `up` or `down`. HTTP 503 still fails the release even if its body reports all
+dependencies as healthy.
 Preserve those lines and the run URL. Do not change credentials or retry initialization on a guess.
 HTTP 200 alone is not a healthy result: all three components must be `up`.
 
