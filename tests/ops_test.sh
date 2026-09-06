@@ -498,6 +498,7 @@ assert_resource_gate_code() {
 }
 
 assert_resource_gate_code 0 docs no-run missing "${SAFE_ASSESSMENT}"
+assert_resource_gate_code 70 failed no-run missing "${SAFE_ASSESSMENT}"
 assert_resource_gate_code 77 image no-run missing "${SAFE_ASSESSMENT}"
 assert_resource_gate_code 77 image failed missing "${SAFE_ASSESSMENT}"
 assert_resource_gate_code 0 image success missing "${SAFE_ASSESSMENT}"
