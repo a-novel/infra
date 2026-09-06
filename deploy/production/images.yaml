@@ -6,36 +6,36 @@ components:
     images:
       database:
         repository: ghcr.io/a-novel/service-json-keys/database
-        tag: v2.5.3
-        digest: sha256:1c43b3579822a1968e26d0b0ee58185e707dac8be9f7ea2589eed553401cb392
+        tag: v2.5.5
+        digest: sha256:3231b0415755c7d96074836f83bd0d0e30da50ce36100cd1cfb08694f32ad238
       grpc:
         repository: ghcr.io/a-novel/service-json-keys/grpc
-        tag: v2.5.3
-        digest: sha256:1dec4f8b5dae6a0100d56bf96796f5917817cf83230510da7949ddef9979223a
+        tag: v2.5.5
+        digest: sha256:2590b20d07d1c32d2c7527af57d3abc4dc4a072ff1550dc35aac81c5f7e040a1
       jobs/migrations:
         repository: ghcr.io/a-novel/service-json-keys/jobs/migrations
-        tag: v2.5.3
-        digest: sha256:832c1b1b1315320a32990cb247f88b18ee142316aef45727836ad3eafa6ad17d
+        tag: v2.5.5
+        digest: sha256:6c6623b54c11b4cf53c4645112e95c2d0f9737394b37f85a276eb3dcf6f898d4
       jobs/rotatekeys:
         repository: ghcr.io/a-novel/service-json-keys/jobs/rotatekeys
-        tag: v2.5.3
-        digest: sha256:27d5504b9fc7abbecf606e294f79af1410f5bdd6ca4c195828b2d3ea0692242f
+        tag: v2.5.5
+        digest: sha256:47c13b8e4070419c554222362d2d87034925c8f352ddf02093937b7f89687214
   service-authentication:
     enabled: true
     images:
       database:
         repository: ghcr.io/a-novel/service-authentication/database
-        tag: v2.5.4
-        digest: sha256:cef20f847384fa82e548f0aa1df1f214befdcc0aca9c9115b81a734c2493d7b0
+        tag: v2.6.0
+        digest: sha256:73ce50c5953dce6dd7be12dd5ff9d6b29220bdb9d4dc9b7ad4ef5a4be14c33ce
       jobs/init:
         repository: ghcr.io/a-novel/service-authentication/jobs/init
-        tag: v2.5.4
-        digest: sha256:cdfee5d28cb467dfb4f0d6b29dd5628a2a764cdb58b5dd2cbe9fa44833644ae0
+        tag: v2.6.0
+        digest: sha256:f795aeb57f96d81246aece1c33ed53377df283f6436a1d05b6fb75ebe86a2a09
       jobs/migrations:
         repository: ghcr.io/a-novel/service-authentication/jobs/migrations
-        tag: v2.5.4
-        digest: sha256:8c7914dea46c55d1ce9edeba23a8348bf626c6632c8f8ce73adf7a56cf79d01c
+        tag: v2.6.0
+        digest: sha256:bf92649f6e5e6bad303780e617fc8dac82c6a0048a7c05acedc1832df2ff2c34
       rest:
         repository: ghcr.io/a-novel/service-authentication/rest
-        tag: v2.5.4
-        digest: sha256:eb8c5693b2cde4e47d8e4856c956c26c816ecde8fd83e9033cab064e392df272
+        tag: v2.6.0
+        digest: sha256:dea802950e33f0b7315d525aa2f409fa96299e7a1d2bc781e7c1ee5bc894c8dd
