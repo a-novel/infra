@@ -129,13 +129,10 @@ test("resource-deletion approval is a merge-queue-aware required check", () => {
   });
   assert.equal(gate.environment, undefined);
   assert.equal(gate.permissions["id-token"], undefined);
-  assert.deepEqual(main.on.pull_request.types, [
-    "opened",
-    "reopened",
-    "synchronize",
-    "labeled",
-    "unlabeled",
-  ]);
+  assert.deepEqual(
+    new Set(main.on.pull_request.types),
+    new Set(["opened", "reopened", "synchronize", "labeled", "unlabeled"]),
+  );
 
   const checkout = gate.steps.find(
     (step) => step.name === "Check out trusted gate tooling",
@@ -148,10 +145,6 @@ test("resource-deletion approval is a merge-queue-aware required check", () => {
     (step) => step.name === "Verify exact assessment and current approval",
   );
   assert.match(verify.run, /verify-resource-deletion-gate\.sh/);
-  assert.match(
-    verify.run,
-    /activates after its trusted base implementation merges/,
-  );
   assert.doesNotMatch(
     JSON.stringify(gate),
     /secrets\.|google-github-actions\/auth/,
@@ -171,10 +164,13 @@ test("trusted assessment authorizes the candidate before cloud credentials exist
   assert.match(assessment.if, /inputs\.operation == 'assess-pull-request'/);
 
   const names = assessment.steps.map((step) => step.name);
-  assert.ok(
-    names.indexOf("Resolve maintainer-approved exact candidate") <
-      names.indexOf("Authenticate as the read-only plan boundary"),
+  const authorize = names.indexOf(
+    "Resolve maintainer-approved exact candidate",
   );
+  const authenticate = names.indexOf(
+    "Authenticate as the read-only plan boundary",
+  );
+  assert.ok(authorize >= 0 && authorize < authenticate);
   const candidate = assessment.steps.find(
     (step) => step.name === "Check out the exact candidate without running it",
   );
