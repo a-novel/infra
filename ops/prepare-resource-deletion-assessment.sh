@@ -100,9 +100,20 @@ for root in "${ROOTS[@]}"; do
         exit 70
     fi
 
+    # First-launch compensation also publishes an empty, converged configuration.
+    # Only an active application makes the image-only graph shortcut safe.
+    if [ "${root}" = release ] &&
+        jq --exit-status '.application_release == null' "${config}" >/dev/null; then
+        FIRST_LAUNCH=true
+        APPROVAL_REQUIRED=true
+        printf 'Release has no active application; first-launch compensation requires approval.\n'
+    fi
+
     if [ "${root}" = release ] && [ "${RELEASE_MANIFEST}" = true ] &&
         [ "${RELEASE_ROOT}" = false ]; then
-        printf 'The established release image transition keeps the managed-resource graph.\n'
+        if [ "${FIRST_LAUNCH}" = false ]; then
+            printf 'The established release image transition keeps the managed-resource graph.\n'
+        fi
         continue
     fi
 
