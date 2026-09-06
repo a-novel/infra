@@ -2,12 +2,12 @@
 
 # Runs the only supported live OpenTofu plan/apply paths and never prints plan
 # values. Detailed plan codes remain 0 (clean), 1 (error), and 2 (changes).
-# Usage: tofu-gate.sh <plan|apply|converge|drift|output> <bootstrap|foundation|release> <state-bucket> [private-file]
+# Usage: tofu-gate.sh <plan|apply|assess|converge|drift|output> <bootstrap|foundation|release> <state-bucket> [private-file]
 
 set -euo pipefail
 
 if [ "$#" -lt 3 ] || [ "$#" -gt 4 ]; then
-    printf 'Usage: %s <plan|apply|converge|drift|output> <bootstrap|foundation|release> <state-bucket> [private-file]\n' "$0" >&2
+    printf 'Usage: %s <plan|apply|assess|converge|drift|output> <bootstrap|foundation|release> <state-bucket> [private-file]\n' "$0" >&2
     exit 64
 fi
 
@@ -17,6 +17,13 @@ STATE_BUCKET="$3"
 PLAN_FILE="${4:-}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPOSITORY_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+if [ -n "${TOFU_REPOSITORY_ROOT:-}" ]; then
+    if [[ "${TOFU_REPOSITORY_ROOT}" != /* ]] || [ ! -d "${TOFU_REPOSITORY_ROOT}" ]; then
+        printf 'The OpenTofu repository root is invalid.\n' >&2
+        exit 65
+    fi
+    REPOSITORY_ROOT="$(cd -- "${TOFU_REPOSITORY_ROOT}" && pwd)"
+fi
 # shellcheck source=ops/lib/roots.sh
 . "${SCRIPT_DIR}/lib/roots.sh"
 
@@ -29,14 +36,14 @@ case "${ACTION}" in
             exit 64
         fi
         ;;
-    converge | drift)
+    assess | converge | drift)
         if [ -n "${PLAN_FILE}" ]; then
             printf '%s does not accept a plan file.\n' "${ACTION}" >&2
             exit 64
         fi
         ;;
     *)
-        printf 'Unknown action. Expected plan, apply, converge, drift, or output.\n' >&2
+        printf 'Unknown action. Expected plan, apply, assess, converge, drift, or output.\n' >&2
         exit 64
         ;;
 esac
@@ -286,6 +293,8 @@ apply_plan() {
     local saved_plan="$1"
     local event_file="${TEMP_DIR}/apply-events.jsonl"
 
+    classify_plan "${saved_plan}" || return "$?"
+
     if tofu -chdir="${ROOT_DIR}" apply \
         -input=false \
         -json-into="${event_file}" \
@@ -322,6 +331,21 @@ case "${ACTION}" in
             exit 70
         fi
         chmod 600 "${PLAN_FILE}"
+        ;;
+    assess)
+        PLAN_CODE=0
+        if plan_changes "${TEMP_DIR}/assessment.tfplan" false; then
+            PLAN_CODE=0
+        else
+            PLAN_CODE=$?
+        fi
+        case "${PLAN_CODE}" in
+            0 | 2)
+                printf '%s candidate has no managed-resource deletion.\n' "${ROOT_NAME}"
+                ;;
+            3) exit 3 ;;
+            *) exit "${PLAN_CODE}" ;;
+        esac
         ;;
     converge | drift)
         if [ "${ACTION}" = 'converge' ]; then

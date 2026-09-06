@@ -7,6 +7,30 @@ on:
     # launch outage without another monitoring service or credential.
     - cron: "43 */3 * * *"
   workflow_dispatch:
+    inputs:
+      operation:
+        description: Inspect production drift or assess an exact pull request.
+        required: true
+        default: drift
+        type: choice
+        options: [drift, assess-pull-request]
+      pull_request:
+        description: Assessment only; pull request number.
+        required: false
+        type: string
+      head_sha:
+        description: Assessment only; exact candidate commit.
+        required: false
+        type: string
+      base_sha:
+        description: Assessment only; exact protected base commit.
+        required: false
+        type: string
+
+run-name: >-
+  ${{ inputs.operation == 'assess-pull-request' &&
+  format('resource-deletion assessment PR #{0} {1} onto {2}', inputs.pull_request, inputs.head_sha, inputs.base_sha) ||
+  'production drift' }}
 
 permissions: {}
 
@@ -22,7 +46,7 @@ jobs:
   inspect:
     if: >-
       github.ref == 'refs/heads/master' &&
-      (github.event_name == 'workflow_dispatch' ||
+      ((github.event_name == 'workflow_dispatch' && inputs.operation == 'drift') ||
       github.event.schedule == '17 5 * * *')
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -84,7 +108,7 @@ jobs:
     if: >-
       github.ref == 'refs/heads/master' &&
       vars.PRODUCTION_RELEASES_ENABLED == 'true' &&
-      (github.event_name == 'workflow_dispatch' ||
+      ((github.event_name == 'workflow_dispatch' && inputs.operation == 'drift') ||
       github.event.schedule == '43 */3 * * *')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -120,3 +144,92 @@ jobs:
           config="${RUNNER_TEMP}/foundation-health.tfvars.json"
           ./ops/config-custody.sh fetch "${STATE_BUCKET}" foundation "${config}"
           ./ops/check-authentication-health.sh "${config}"
+
+  assess-resource-deletion:
+    if: >-
+      github.ref == 'refs/heads/master' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.operation == 'assess-pull-request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      pull-requests: read
+    steps:
+      - name: Check out trusted assessment tooling
+        uses: actions/checkout@v7.0.1
+        with:
+          path: trusted
+          persist-credentials: false
+
+      # This check runs before credentials exist because the candidate plan can
+      # execute providers and external data sources.
+      - name: Resolve maintainer-approved exact candidate
+        id: target
+        shell: bash
+        env:
+          BASE_SHA: ${{ inputs.base_sha }}
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ inputs.head_sha }}
+          PULL_REQUEST: ${{ inputs.pull_request }}
+        run: |
+          set -euo pipefail
+          repository="$(./trusted/ops/resolve-resource-deletion-assessment.sh \
+            "${GITHUB_REPOSITORY}" "${PULL_REQUEST}" "${HEAD_SHA}" "${BASE_SHA}")"
+          printf 'repository=%s\n' "${repository}" >>"${GITHUB_OUTPUT}"
+
+      - name: Check out the exact candidate without running it
+        uses: actions/checkout@v7.0.1
+        with:
+          path: candidate
+          persist-credentials: false
+          repository: ${{ steps.target.outputs.repository }}
+          ref: ${{ inputs.head_sha }}
+
+      - name: Authenticate as the read-only plan boundary
+        uses: google-github-actions/auth@v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Install the pinned Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v3.0.1
+        with:
+          version: "581.0.0"
+
+      - name: Install OpenTofu
+        uses: opentofu/setup-opentofu@v2.0.2
+        with:
+          tofu_version_file: trusted/.opentofu-version
+          tofu_wrapper: false
+          cache: true
+
+      - name: Assess plans with current private inputs
+        shell: bash
+        env:
+          BASE_SHA: ${{ inputs.base_sha }}
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ inputs.head_sha }}
+          PULL_REQUEST: ${{ inputs.pull_request }}
+          STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
+        run: |
+          set -euo pipefail
+          umask 077
+          ./trusted/ops/prepare-resource-deletion-assessment.sh \
+            "${GITHUB_REPOSITORY}" "${PULL_REQUEST}" "${HEAD_SHA}" "${BASE_SHA}" \
+            "${GITHUB_WORKSPACE}/candidate" "${STATE_BUCKET}" \
+            "${RUNNER_TEMP}/resource-deletion/assessment.json"
+
+      # The artifact deliberately contains only the exact commit tuple and
+      # boolean verdict. Plans, state, and configuration stay on the runner.
+      - name: Publish the payload-free verdict
+        uses: actions/upload-artifact@v7
+        with:
+          name: resource-deletion-assessment-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/resource-deletion/assessment.json
+          if-no-files-found: error
+          retention-days: 7

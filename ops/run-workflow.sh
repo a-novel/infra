@@ -9,6 +9,7 @@ usage() {
     cat >&2 <<EOF
 Usage:
   $0 drift
+  $0 drift assess-pull-request <pull-request-number>
   $0 foundation plan <bootstrap|foundation>
   $0 foundation apply <bootstrap|foundation> <plan-id>
   $0 release deploy [--no-wait]
@@ -45,6 +46,7 @@ PLAN_ID=''
 PLAN_WORKFLOW=''
 PLAN_TITLE_PREFIX=''
 WORKFLOW_INPUTS=()
+ASSESSMENT_PR=''
 
 if [ "$#" -lt 1 ]; then
     usage
@@ -55,7 +57,11 @@ shift
 
 case "${SURFACE}" in
     drift)
-        if [ "$#" -ne 0 ]; then
+        if [ "$#" -eq 0 ]; then
+            WORKFLOW_INPUTS=(-f operation=drift)
+        elif [ "$#" -eq 2 ] && [ "$1" = assess-pull-request ] && is_run_id "$2"; then
+            ASSESSMENT_PR="$2"
+        else
             usage
         fi
         WORKFLOW='drift.yaml'
@@ -245,6 +251,29 @@ REMOTE_SHA="$(gh api "repos/${REPOSITORY}/commits/master" --jq .sha)"
 if [ "${REMOTE_SHA}" != "${EXPECTED_SHA}" ]; then
     printf 'Local master does not equal the required remote master commit.\n' >&2
     exit 65
+fi
+
+if [ -n "${ASSESSMENT_PR}" ]; then
+    PR_METADATA="$(gh api "repos/${REPOSITORY}/pulls/${ASSESSMENT_PR}")"
+    if ! jq --exit-status \
+        --arg repository "${REPOSITORY}" \
+        --arg base "${REMOTE_SHA}" '
+          .state == "open" and
+          .base.ref == "master" and
+          .base.repo.full_name == $repository and
+          .base.sha == $base and
+          (.head.sha | test("^[a-f0-9]{40}$"))
+        ' <<<"${PR_METADATA}" >/dev/null; then
+        printf 'The pull request is not open against the exact current master commit.\n' >&2
+        exit 65
+    fi
+    ASSESSMENT_HEAD="$(jq --raw-output '.head.sha' <<<"${PR_METADATA}")"
+    WORKFLOW_INPUTS=(
+        -f operation=assess-pull-request
+        -f "pull_request=${ASSESSMENT_PR}"
+        -f "head_sha=${ASSESSMENT_HEAD}"
+        -f "base_sha=${REMOTE_SHA}"
+    )
 fi
 
 # The workflows share one concurrency group. Refusing an active writer avoids

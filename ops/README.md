@@ -15,7 +15,7 @@ removes that temporary authority.
 | Command                                                    | Purpose                                                                                      | Cloud mutation                                                           |
 | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | [`verify-operator-env.sh`](./verify-operator-env.sh)       | Validate the operator-selected management and workload project IDs.                          | No                                                                       |
-| [`verify-repository-gate.sh`](./verify-repository-gate.sh) | Verify rulesets, required checks, environments, labels, and the disabled release switch.     | No                                                                       |
+| [`verify-repository-gate.sh`](./verify-repository-gate.sh) | Verify required-check sources, bypass actors, and the release switch.                        | No                                                                       |
 | [`bootstrap-plan.sh`](./bootstrap-plan.sh)                 | Create or consume the one local bootstrap plan with commit and checksum custody.             | `apply` only                                                             |
 | [`foundation.sh`](./foundation.sh)                         | Configure, provision, and deprivilege the workload foundation from a fresh shell.            | Only the named `configure`, `grant*`, `revoke*`, and `finish` operations |
 | [`foundation-audit.sh`](./foundation-audit.sh)             | Check additive IAM, key, secret, registry, and network boundaries OpenTofu cannot close.     | No                                                                       |
@@ -56,6 +56,7 @@ available without that repository check.
 
 ```text
 ./ops/run-workflow.sh drift
+./ops/run-workflow.sh drift assess-pull-request <pull-request-number>
 
 ./ops/run-workflow.sh foundation plan <bootstrap|foundation>
 ./ops/run-workflow.sh foundation apply <bootstrap|foundation> <plan-id>
@@ -76,24 +77,38 @@ unless that commit is the clean local and remote `master`. The private plan itse
 root-bound, hash-bound, one-use, and valid for 24 hours. Its creation already enforced the
 `allow-resource-deletion` decision for that commit.
 
+A pull-request assessment also requires clean local and remote `master`. It resolves the exact
+current head and base, then the protected workflow independently verifies that the dispatcher is a
+human maintainer before any cloud credential exists. Dispatch only after reviewing candidate
+OpenTofu code: planning can execute candidate providers and external data sources. The result is a
+payload-free verdict artifact; state, variable files, plans, and diagnostics never leave the
+protected runner. Reassess after either commit changes. If the verdict requires approval, a human
+maintainer must add and retain `allow-resource-deletion` until merge.
+
 Progress and approval URLs go to stderr. Stdout contains only the promised opaque run identifier, so
 another program can capture it without parsing logs. None of these commands prints workflow secrets,
 OpenTofu values, credentials, or authorization headers.
+
+`plan-summary.sh` enforces `lib/plan-policy.jq` during planning and again before saved-plan apply.
+Failed or unresolved checks and weakened protections return exit 65, independently of deletion
+approval. Exit 3 continues to mean a managed-resource deletion requiring maintainer approval.
+See the [pre-merge assessment policy](../README.md#assess-resource-deletion-impact-before-merge)
+for protected settings and coverage limits.
 
 ## Protected workflow internals
 
 Do not call these as ad-hoc operator shortcuts. Their stable paths are part of the reviewed GitHub
 Actions security boundary.
 
-| Boundary                            | Scripts                                                                                                                                                                          |
-| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Saved-plan creation and application | `tofu-gate.sh`, `create-reviewed-plan.sh`, `apply-reviewed-plan.sh`, `plan-custody.sh`, `plan-summary.sh`                                                                        |
-| Configuration and receipt custody   | `config-custody.sh`, `receipt-custody.sh`, `build-receipt.mjs`, `validate-receipt.mjs`                                                                                           |
-| Deletion authorization              | `verify-deletion-label.sh`, `delete-recovery-project.sh`                                                                                                                         |
-| Release compilation and promotion   | `compile-release.mjs`, `validate-image-update.mjs`, `verify-release-images.sh`, `promote-release-images.sh`, `preflight-release.sh`                                              |
-| Ordered release execution           | `release-orchestrator.sh`, `google-release-driver.sh`, `prepare-database-change.sh`, `deploy-database-release.sh`, `restore-database-release.sh`, `await-auth-initialization.sh` |
-| Recovery                            | `recover-first-launch.sh`, `compile-recovery.mjs`, `verify-recovery-points.sh`, `promote-recovery-images.sh`                                                                     |
-| Health and root validation          | `check-authentication-health.sh`, `check-root.sh`, `lib/roots.sh`                                                                                                                |
+| Boundary                            | Scripts                                                                                                                                                                                                           |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Saved-plan creation and application | `tofu-gate.sh`, `create-reviewed-plan.sh`, `apply-reviewed-plan.sh`, `plan-custody.sh`, `plan-summary.sh`                                                                                                         |
+| Configuration and receipt custody   | `config-custody.sh`, `receipt-custody.sh`, `build-receipt.mjs`, `validate-receipt.mjs`                                                                                                                            |
+| Deletion authorization              | `resource-deletion-impact.sh`, `resolve-resource-deletion-assessment.sh`, `prepare-resource-deletion-assessment.sh`, `verify-resource-deletion-gate.sh`, `verify-deletion-label.sh`, `delete-recovery-project.sh` |
+| Release compilation and promotion   | `compile-release.mjs`, `validate-image-update.mjs`, `verify-release-images.sh`, `promote-release-images.sh`, `preflight-release.sh`                                                                               |
+| Ordered release execution           | `release-orchestrator.sh`, `google-release-driver.sh`, `prepare-database-change.sh`, `deploy-database-release.sh`, `restore-database-release.sh`, `await-auth-initialization.sh`                                  |
+| Recovery                            | `recover-first-launch.sh`, `compile-recovery.mjs`, `verify-recovery-points.sh`, `promote-recovery-images.sh`                                                                                                      |
+| Health and root validation          | `check-authentication-health.sh`, `check-root.sh`, `lib/roots.sh`                                                                                                                                                 |
 
 These scripts stay single-purpose because their inputs, permissions, and diagnostics differ. A lower
 file count would not justify coupling state access, deployment authority, and recovery authority.

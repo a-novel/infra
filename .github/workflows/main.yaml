@@ -5,6 +5,8 @@ on:
     branches: ["**"]
     tags-ignore: ["**"]
   pull_request:
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+  merge_group:
 
 permissions: {}
 
@@ -16,6 +18,40 @@ env:
   TF_IN_AUTOMATION: "true"
 
 jobs:
+  resource-deletion-gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    steps:
+      # Only protected base-branch tooling may interpret the candidate's
+      # metadata or trusted assessment artifact.
+      - name: Check out trusted gate tooling
+        uses: actions/checkout@v7.0.1
+        with:
+          path: trusted
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || 'master' }}
+
+      - name: Verify exact assessment and current approval
+        shell: bash
+        env:
+          GATE_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          GATE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GATE_MERGE_HEAD_REF: ${{ github.event.merge_group.head_ref }}
+          GATE_PULL_REQUEST: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ ! -x ./trusted/ops/verify-resource-deletion-gate.sh ]; then
+            printf '%s\n' \
+              'The gate activates after its trusted base implementation merges.'
+            exit 0
+          fi
+          ./trusted/ops/verify-resource-deletion-gate.sh "${GITHUB_REPOSITORY}"
+
   validate-opentofu:
     runs-on: ubuntu-24.04
     timeout-minutes: 20

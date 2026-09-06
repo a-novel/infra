@@ -71,26 +71,67 @@ a-novel repo update
 a-novel repo update --dry-run
 ```
 
-Review the first dry run before approving the interactive update. It should add the three `main.yaml` job contexts to the `master` ruleset and set GitHub default Actions code scanning to `not-configured`; the required Zizmor audit replaces that overlapping check:
+Review the first dry run before approving the interactive update. It should add the four `main.yaml` job contexts to the `master` ruleset and set GitHub default Actions code scanning to `not-configured`; the required Zizmor audit replaces that overlapping check:
 
-| Required check        | Purpose                                                                                                        |
-| --------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `validate-opentofu`   | Format, initialize without a backend, validate, run mocked tests, lint HCL and exercise plan-policy fixtures.  |
-| `scan-infrastructure` | Fail on high or critical infrastructure, dependency, or secret findings from Trivy.                            |
-| `lint-repository`     | Validate workflows, formatting, the release transition, deterministic Renovate behavior, and image provenance. |
+| Required check           | Purpose                                                                                                        |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| `resource-deletion-gate` | Require an exact trusted plan verdict and current maintainer approval before a protected deletion can merge.   |
+| `validate-opentofu`      | Format, initialize without a backend, validate, run mocked tests, lint HCL and exercise plan-policy fixtures.  |
+| `scan-infrastructure`    | Fail on high or critical infrastructure, dependency, or secret findings from Trivy.                            |
+| `lint-repository`        | Validate workflows, formatting, the release transition, deterministic Renovate behavior, and image provenance. |
 
-`a-novel repo update --dry-run` renders the complete desired write set; it is not a live-state diff and therefore remains non-empty after reconciliation. On both dry runs, its header must list exactly `epic-freeze`, `lint-repository`, `merge-gate`, `scan-infrastructure`, and `validate-opentofu` as required checks.
+`a-novel repo update --dry-run` renders the complete desired write set; it is not a live-state diff and therefore remains non-empty after reconciliation. On both dry runs, its header must list exactly `epic-freeze`, `lint-repository`, `merge-gate`, `resource-deletion-gate`, `scan-infrastructure`, and `validate-opentofu` as required checks.
 
 Verify the live `master` ruleset independently after the update:
 
 ```bash
-gh api repos/a-novel/infra/rulesets \
-  --jq '.[] | select(.name == "master") | .id' \
-  | xargs -I{} gh api repos/a-novel/infra/rulesets/{} \
-    --jq '[.rules[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] | sort'
+./ops/verify-repository-gate.sh
 ```
 
-The result must be `["epic-freeze","lint-repository","merge-gate","scan-infrastructure","validate-opentofu"]`.
+The verifier requires `resource-deletion-gate` to come from the GitHub Actions App, with integration
+ID `15368`. It also requires the dependency App to be absent from the bypass list. Organization and
+repository administrators plus the narrowly scoped Agent and Publish Apps retain their deliberate
+emergency or release bypass; ordinary contributor and Renovate pull requests remain gated. A
+missing check, wrong source, broader bypass, or disabled ruleset fails the verifier.
+
+### Assess resource-deletion impact before merge
+
+A pull request that changes a production OpenTofu root, shared OpenTofu code or lock versions, or
+the production image manifest needs a verdict for its exact head and current `master` base. After
+reviewing the candidate and confirming that it is safe to execute as OpenTofu code, a human
+maintainer dispatches:
+
+```bash
+./ops/run-workflow.sh drift assess-pull-request <pull-request-number>
+```
+
+This dispatch is explicit authorization to plan that exact candidate, including a fork, with the
+read-only production plan identity. A candidate plan can execute providers and external data
+sources, so never dispatch it merely to discover what unreviewed code does. The workflow runs only
+trusted tooling from `master`, keeps state, configuration, diagnostics, and the raw plan private,
+and publishes only the head/base tuple and boolean approval verdict.
+
+A safe exact plan satisfies the gate without a label. A delete, replace, forget, deposed-object
+cleanup, or release without a prior converged input record requires `allow-resource-deletion`.
+The latest label action must be a human repository maintainer, and the label must still be present
+at merge. A new candidate commit, a moved base, a failed or expired assessment, or label removal
+blocks immediately; rerun the command for the new tuple. The same decision is reevaluated on the
+merge queue. Protected apply and post-merge verification retain their own deletion check.
+
+The shared [plan policy](./ops/lib/plan-policy.jq) also blocks failed or unresolved check assertions
+and updates that weaken existing protections. It preserves existing `deletion_protection`,
+`force_destroy`, and `deletion_policy` guards across resource types. For the configured Google
+resources it also protects bucket access, versioning and retention,
+secret destruction delays, preserved disks and IPs, snapshot policies, and scheduler cadence.
+Unknown protected values block the plan. Unrelated updates and longer numeric retention remain
+allowed. Cleanup-rule, schedule, and secret-delay changes require a separate review of the policy
+because the gate does not infer their safety from arbitrary expressions.
+
+These failures cannot be overridden with `allow-resource-deletion`. Saved plans are checked again
+immediately before apply. The policy covers declared plan checks and the listed settings, not
+arbitrary IAM changes or behavior inside scripts, migrations, and images. Ordinary PR CI exercises
+fixtures; a human must run the protected assessment after its tooling is available on `master`.
+Cloud permissions and irreversible retention locking are separate operator decisions.
 
 Confirm the duplicate default Actions analysis is disabled:
 

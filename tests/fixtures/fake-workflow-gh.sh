@@ -20,6 +20,21 @@ case "${1:-}" in
             repos/a-novel/infra/commits/master)
                 printf '%s\n' "${FAKE_REMOTE_WORKFLOW_SHA:-${COMMIT}}"
                 ;;
+            "repos/a-novel/infra/pulls/${FAKE_ASSESSMENT_PR:-93}")
+                jq -n \
+                    --arg sha "${FAKE_ASSESSMENT_HEAD:-$(printf 'a%.0s' {1..40})}" \
+                    --arg base "${FAKE_REMOTE_WORKFLOW_SHA:-${COMMIT}}" '
+                      {
+                        state: "open",
+                        base: {
+                          ref: "master",
+                          sha: $base,
+                          repo: {full_name: "a-novel/infra"}
+                        },
+                        head: {sha: $sha}
+                      }
+                    '
+                ;;
             'repos/a-novel/infra/actions/runs?branch=master&per_page=100')
                 if [ "${FAKE_ACTIVE_WORKFLOW:-false}" = true ]; then
                     printf '303\tproduction foundation\tfoundation plan bootstrap\twaiting\thttps://github.com/a-novel/infra/actions/runs/303\n'
