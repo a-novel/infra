@@ -28,7 +28,9 @@ Review the committed non-secret production defaults, then load them:
 ```
 
 For another environment, update `.envrc` through a pull request before step 1. It contains only
-stable IDs, placement, human principals, alert recipients, and SMTP metadata. Credentials and
+stable IDs, placement, human principals, alert recipients, SMTP metadata, and `PLATFORM_AUTH_URL`.
+That URL is the public web client's HTTPS origin (no path or trailing slash), from its hosting
+configuration; the reviewed production value is `https://www.agorastoryverse.com`. Credentials and
 payloads never belong there. With `direnv`, run `direnv allow` after reviewing a change.
 
 Before every resumed step:

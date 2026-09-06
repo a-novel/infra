@@ -19,6 +19,7 @@
   },
   "authentication": {
     "super_admin_email": "admin@example.com",
+    "web_client_url": "https://www.example.com",
     "smtp": {
       "address": "smtp.example.com:587",
       "sender_domain": "smtp.example.com",

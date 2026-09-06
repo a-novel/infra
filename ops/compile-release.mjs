@@ -63,8 +63,33 @@ function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function validateConfig(config) {
+function validateWebClientUrl(webClientUrl) {
+  const invalidWebClientUrl =
+    "authentication.web_client_url must be an HTTPS origin without credentials, path, query, fragment, or trailing slash";
+  let parsedWebClientUrl;
+  try {
+    parsedWebClientUrl = new URL(webClientUrl);
+  } catch {
+    fail(invalidWebClientUrl);
+  }
+  if (
+    typeof webClientUrl !== "string" ||
+    parsedWebClientUrl.protocol !== "https:" ||
+    parsedWebClientUrl.origin !== webClientUrl ||
+    !/^https:\/\/[a-z0-9][a-z0-9.-]*\.[a-z0-9-]+(?::[0-9]+)?$/.test(
+      webClientUrl,
+    )
+  ) {
+    fail(invalidWebClientUrl);
+  }
+}
+
+function validateConfig(config, action) {
   exactKeys(config, requiredConfigKeys, "release configuration");
+  // Rollback restores the receipt's environment, not the current email origin.
+  if (action !== "rollback") {
+    validateWebClientUrl(config.authentication?.web_client_url);
+  }
   exactKeys(
     config.secret_versions,
     requiredSecretVersions,
@@ -227,6 +252,7 @@ function applicationRelease(
       },
       smtp: config.authentication.smtp,
       super_admin_email: config.authentication.super_admin_email,
+      web_client_url: config.authentication.web_client_url,
     },
     json_keys: {
       ...(activeRevisions.jsonKeys
@@ -297,7 +323,7 @@ export async function compileRelease({
   validateFamilyVersions(manifest);
 
   const config = await loadJson(configPath, "release configuration");
-  validateConfig(config);
+  validateConfig(config, action);
 
   let previousReceipt = null;
   if (previousReceiptPath) {

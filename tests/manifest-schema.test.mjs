@@ -270,7 +270,7 @@ test("a compensated first release remains a valid empty rollback target", async 
   await rm(scratch, { recursive: true });
 });
 
-test("application-only releases preserve the database release identity", async () => {
+test("application-only releases preserve database identity and legacy rollback configuration", async () => {
   const scratch = await mkdtemp(path.join(repositoryRoot, ".release-test-"));
   const manifestPath = path.join(
     repositoryRoot,
@@ -289,6 +289,8 @@ test("application-only releases preserve the database release identity", async (
     runAttempt: 1,
     nonce: "first",
   });
+  // Simulate a receipt written before email origins were part of the contract.
+  delete first.activeTfvars.application_release.authentication.web_client_url;
   const receiptPath = path.join(scratch, "receipt.json");
   await writeFile(
     receiptPath,
@@ -332,6 +334,17 @@ test("application-only releases preserve the database release identity", async (
   });
   assert.deepEqual(unchanged.release.database, first.release.database);
   assert.deepEqual(unchanged.release.currentDatabase, first.release.database);
+  assert.equal(
+    Object.hasOwn(
+      unchanged.rollbackTfvars.application_release.authentication,
+      "web_client_url",
+    ),
+    false,
+  );
+  assert.equal(
+    unchanged.candidateTfvars.application_release.authentication.web_client_url,
+    "https://www.example.com",
+  );
 
   const changedConfig = JSON.parse(await readFile(configPath, "utf8"));
   changedConfig.secret_versions.json_keys_postgres_backup_password += 1;
@@ -434,6 +447,9 @@ test("manual rollback checks the latest database before restoring an older targe
     }),
   );
 
+  // Rollback must work even when protected configuration still predates the new origin field.
+  delete currentConfig.authentication.web_client_url;
+  await writeFile(currentConfigPath, JSON.stringify(currentConfig));
   const rollback = await compileRelease({
     manifestPath,
     configPath: currentConfigPath,

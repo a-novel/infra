@@ -227,6 +227,7 @@ test("operator-owned project coordinates stay explicit and repeatable", async ()
     "INFRA_OPERATIONS_ALERT_EMAIL",
     "INFRA_DATABASE_OPERATOR_PRINCIPALS",
     "INFRA_AUTH_INITIALIZER_PRINCIPALS",
+    "PLATFORM_AUTH_URL",
     "SMTP_HOST",
     "SMTP_USERNAME",
     "SMTP_SENDER_EMAIL",

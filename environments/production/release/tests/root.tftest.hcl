@@ -332,6 +332,7 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
       }
       authentication = {
         active_revision = "agora-authentication-rest-0123456789ab"
+        web_client_url  = "https://www.example.com"
         images = {
           init       = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-authentication/jobs/init@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
           migrations = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-authentication/jobs/migrations@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
@@ -653,6 +654,10 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
       ]).value == "9s" &&
       one([
         for environment in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env : environment
+        if environment.name == "PLATFORM_AUTH_URL"
+      ]).value == "https://www.example.com" &&
+      one([
+        for environment in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env : environment
         if environment.name == "SMTP_TIMEOUT"
       ]).value == "5s" &&
       one([
@@ -688,6 +693,15 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
 
 run "routes_a_first_release_to_its_only_revisions" {
   command = plan
+
+  # This fixture deliberately omits web_client_url, as pre-upgrade receipts do.
+  assert {
+    condition = length([
+      for environment in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env : environment
+      if environment.name == "PLATFORM_AUTH_URL"
+    ]) == 0
+    error_message = "Legacy receipts must retain their exact environment without a new URL default."
+  }
 
   variables {
     database_releases = {
