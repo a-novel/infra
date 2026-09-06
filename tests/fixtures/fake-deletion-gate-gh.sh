@@ -46,12 +46,22 @@ pull_request_json() {
 if [ "${1:-}" = api ]; then
     shift
     endpoint=''
+    slurp=false
+    query=''
     while [ "$#" -gt 0 ]; do
         case "$1" in
-            -H | --jq)
+            -H)
                 shift 2
                 ;;
-            --paginate | --slurp)
+            --jq)
+                query="$2"
+                shift 2
+                ;;
+            --slurp)
+                slurp=true
+                shift
+                ;;
+            --paginate)
                 shift
                 ;;
             repos/* | users/* | orgs/*)
@@ -63,6 +73,11 @@ if [ "${1:-}" = api ]; then
                 ;;
         esac
     done
+
+    if [ "${slurp}" = true ] && [ -n "${query}" ]; then
+        printf 'The --slurp option is not supported with --jq.\n' >&2
+        exit 1
+    fi
 
     case "${endpoint}" in
         users/*)
@@ -77,13 +92,18 @@ if [ "${1:-}" = api ]; then
             pull_request_json | jq '[.]'
             ;;
         "repos/a-novel/infra/pulls/${PULL_REQUEST}/files?per_page=100")
+            [ "${slurp}" = true ]
+            if [ "${FAKE_GATE_FILES:-image}" = failed ]; then
+                printf '%s\n' '[]'
+                exit 1
+            fi
             case "${FAKE_GATE_FILES:-image}" in
                 docs) jq -n '[{filename: "README.md"}]' ;;
                 foundation) jq -n '[{filename: "environments/production/foundation/main.tf"}]' ;;
                 image) jq -n '[{filename: "deploy/production/images.yaml"}]' ;;
                 shared) jq -n '[{filename: "modules/shared/main.tf"}]' ;;
                 *) exit 64 ;;
-            esac
+            esac | jq '[[], .]'
             ;;
         'repos/a-novel/infra/actions/workflows/drift.yaml/runs?branch=master&event=workflow_dispatch&per_page=100')
             if [ "${FAKE_GATE_RUN_MODE:-success}" = no-run ]; then
