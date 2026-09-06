@@ -1,6 +1,7 @@
 # Production cost worksheet
 
-Reviewed against Google Cloud and hosted Plunk public USD list prices on 2026-08-27. This is a
+Google Cloud public USD list prices were reviewed on 2026-08-27; Workspace SMTP assumptions
+were updated on 2026-09-06. This is a
 transparent planning model, not a quote or an invoice forecast. Google bills actual usage,
 aggregates some free tiers by
 billing account, converts non-USD invoices at its applicable rates, and can change prices. Recheck
@@ -56,9 +57,8 @@ Sources: [Cloud DNS pricing](https://cloud.google.com/dns/pricing),
 [VPC firewall pricing](https://cloud.google.com/firewall/pricing). The synthetic-check assumption
 uses [GitHub Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
 and [scheduled-workflow behavior](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule).
-External mail assumptions use
-[hosted Plunk pricing](https://www.useplunk.com/pricing) and its
-[billing/cap documentation](https://docs.useplunk.com/concepts/billing).
+External mail uses the existing Workspace subscription and its
+[SMTP relay service](https://knowledge.workspace.google.com/admin/gmail/advanced/route-outgoing-smtp-relay-messages-through-google).
 
 ## Launch formula
 
@@ -142,8 +142,9 @@ These usage-dependent or product decisions are not inside the ranges above:
 - tax, non-USD currency conversion, domains, and a custom edge;
 - internet data transfer and cross-region transfer beyond the scheduled logical-backup writes and
   monthly restore included above;
-- LLM/API usage or hosted SMTP/email provider charges. Hosted Plunk currently advertises no base fee
-  and USD 0.001 per paid email with no branding, but it is externally billed and price-variable;
+- LLM/API usage and the existing Google Workspace subscription. SMTP relay adds no per-message
+  charge or additional mailbox for the configured unregistered sender; any future paid
+  authentication mailbox adds its Workspace seat cost;
 - warm Cloud Run instances, paid load balancing, WAF, CDN, Cloud NAT, an egress proxy, or a VPC
   connector;
 - GitHub Actions runner charges if this repository becomes private or stops using standard hosted
@@ -159,9 +160,10 @@ provisioned.
 
 The 60-unit monthly production-infrastructure budget spans the management and workload projects,
 uses the billing account currency, alerts both human channels at current and forecasted
-50/75/90/100%, and is alert-only. The USD worksheet remains the planning comparison. Hosted Plunk
-has a separate operator-set transactional category cap because it is outside Google billing. Actual
-Google brakes are maximum Cloud Run instances, single-task jobs, regional
+50/75/90/100%, and is alert-only. The USD worksheet remains the planning comparison. Workspace
+relay has shared organization sending limits and abuse controls, documented in the
+[SMTP runbook](../runbooks/configure-hosted-smtp.md). Its subscription is separate from Cloud billing.
+Actual Google brakes are maximum Cloud Run instances, single-task jobs, regional
 Cloud Run CPU/memory quotas, the four-CPU Compute Engine quota, immutable image cleanup
 review, bounded log retention, backup lifecycle, and validated disk sizes. Quotas can prevent
 some scaling but cannot stop every billable API, transfer, storage, or compromised workload.

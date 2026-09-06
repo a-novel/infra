@@ -9,7 +9,7 @@ const repositoryRoot = path.resolve(testDirectory, "..");
 const runbookDirectory = path.join(repositoryRoot, "docs/runbooks");
 const stopHandler =
   "} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'";
-const directSessionAssignment = /^export SMTP_DKIM_CNAME_RECORDS='[^'\n]+'$/;
+const directSessionAssignment = /^export SMTP_DKIM_SELECTOR='[^'\n]+'$/;
 
 const runbookNames = (await readdir(runbookDirectory))
   .filter((name) => name.endsWith(".md"))
@@ -89,16 +89,13 @@ test("hosted SMTP operator inputs are parameterized", () => {
     "SMTP_USERNAME",
     "SMTP_SENDER_EMAIL",
     "SMTP_SENDER_NAME",
-    "SMTP_DKIM_CNAME_RECORDS",
+    "SMTP_DKIM_SELECTOR",
   ]) {
     assert.match(smtpRunbook, new RegExp(`\\b${variable}\\b`));
   }
 
-  assert.match(smtpRunbook, /^export SMTP_DKIM_CNAME_RECORDS='[^']+'$/m);
-  assert.doesNotMatch(
-    smtpRunbook,
-    /IFS=\s*read\s+-r\s+SMTP_DKIM_CNAME_RECORDS/,
-  );
+  assert.match(smtpRunbook, /^export SMTP_DKIM_SELECTOR='[^']+'$/m);
+  assert.doesNotMatch(smtpRunbook, /IFS=\s*read\s+-r\s+SMTP_DKIM_SELECTOR/);
 
   assert.doesNotMatch(
     smtpRunbook,

@@ -59,7 +59,7 @@ gh run list --repo a-novel/infra --branch master --limit 20 --json databaseId,wo
 |    1 | [Bootstrap the management plane](./runbooks/bootstrap-management-plane.md).                        | State, WIF, protected environments, secret containers, and audit controls pass; temporary bootstrap authority is removed.                               |
 |    2 | [Provision the workload foundation](./runbooks/provision-workload-foundation.md).                  | The workload project and both protected roots converge; the final audit passes; temporary access is removed.                                            |
 |    3 | [Inspect the PostgreSQL host and prepare OS Login](./runbooks/debug-postgresql-host.md).           | One private VM and preserved disk exist; the local EC key is ready; a bounded IAP login succeeds; no public path exists.                                |
-|    4 | [Configure and persist hosted SMTP](#4-configure-and-persist-the-smtp-contract).                   | The provider account, cost cap, privacy settings, domain, DKIM, SPF, DMARC, and non-secret contract pass.                                               |
+|    4 | [Configure and persist hosted SMTP](#4-configure-and-persist-the-smtp-contract).                   | The Workspace relay, app password, domain, DKIM, SPF, DMARC, and non-secret contract pass.                                                              |
 |    5 | [Create the initial payload versions](#5-create-the-initial-payload-versions).                     | All seven live containers have one selected enabled numeric version; no payload was printed.                                                            |
 |    6 | [Activate production](#6-activate-production).                                                     | The reviewed release succeeds, the initializer is deleted, traffic is healthy, recovery jobs pass, rotation is scheduled, and the receipt is immutable. |
 |    7 | [Lock backup retention](#7-lock-backup-retention).                                                 | The seven-day bucket retention policy is irreversibly locked through reviewed code.                                                                     |
@@ -76,13 +76,13 @@ long-lived non-secret values committed in `.envrc`:
 
 | Variable            | Value                                                              |
 | ------------------- | ------------------------------------------------------------------ |
-| `SMTP_HOST`         | The hostname in Plunk's SMTP `host` field, without scheme or port. |
-| `SMTP_USERNAME`     | Plunk's SMTP `username` field, not the secret key.                 |
+| `SMTP_HOST`         | `smtp-relay.gmail.com`, without scheme or port.                    |
+| `SMTP_USERNAME`     | The existing Workspace account that owns the app password.         |
 | `SMTP_SENDER_EMAIL` | The organization-controlled sender address on the verified domain. |
 | `SMTP_SENDER_NAME`  | The display name recipients should see.                            |
 
-`SMTP_DKIM_CNAME_RECORDS` is a one-run DNS input and stays in that runbook's shell. The Plunk `sk_`
-key is the SMTP password and remains in the password manager until step 5.
+`SMTP_DKIM_SELECTOR` is a one-run DNS input and stays in that runbook's shell. The Google app
+password remains in the password manager until step 5.
 
 ## 5. Create the initial payload versions
 
@@ -95,7 +95,7 @@ password manager; do not export them:
 | `production-authentication-postgres-backup-password` | A different random value with the same contract.                          |
 | `production-json-keys-postgres-password`             | A third different random value with the same contract.                    |
 | `production-json-keys-postgres-backup-password`      | A fourth different random value with the same contract.                   |
-| `production-authentication-smtp-sender-password`     | The exact Plunk `sk_` secret key, not its `pk_` public key.               |
+| `production-authentication-smtp-sender-password`     | The Google app password belonging to `SMTP_USERNAME`.                     |
 | `production-authentication-super-admin-password`     | A separate random 64-character password-manager value.                    |
 | `production-json-keys-app-master-key`                | Exactly 64 hexadecimal characters representing 32 random bytes.           |
 
