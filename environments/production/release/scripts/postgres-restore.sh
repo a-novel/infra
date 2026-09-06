@@ -16,6 +16,8 @@ POSTGRES_PID=""
 
 cleanup() {
     if [ -n "${POSTGRES_PID}" ] && kill -0 "${POSTGRES_PID}" 2>/dev/null; then
+        # Stop the entrypoint before it can launch another server during cleanup.
+        kill "${POSTGRES_PID}" 2>/dev/null || true
         gosu postgres pg_ctl --pgdata="${PGDATA}" --mode=fast --wait stop >/dev/null 2>&1 || true
         wait "${POSTGRES_PID}" 2>/dev/null || true
     fi
@@ -186,7 +188,10 @@ export POSTGRES_USER="${DATABASE_OWNER}"
 POSTGRES_PID="$!"
 
 READY_DEADLINE=$((SECONDS + 120))
-until pg_isready --host="${PGSOCKET}" --port=5432 --username="${DATABASE_OWNER}" --dbname="${DATABASE_NAME}" >/dev/null 2>&1; do
+# The entrypoint's temporary server accepts connections before initialization ends.
+# Only the final server replaces the entrypoint process and inherits its PID.
+until [ "$(head -n 1 "${PGDATA}/postmaster.pid" 2>/dev/null)" = "${POSTGRES_PID}" ] &&
+    pg_isready --host="${PGSOCKET}" --port=5432 --username="${DATABASE_OWNER}" --dbname="${DATABASE_NAME}" >/dev/null 2>&1; do
     if ! kill -0 "${POSTGRES_PID}" 2>/dev/null || [ "${SECONDS}" -ge "${READY_DEADLINE}" ]; then
         printf 'error: clean restore database did not become ready\n' >&2
         exit 1
