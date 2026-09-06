@@ -212,6 +212,7 @@ jobs:
         shell: bash
         env:
           BASE_SHA: ${{ inputs.base_sha }}
+          GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ inputs.head_sha }}
           PULL_REQUEST: ${{ inputs.pull_request }}
           STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}

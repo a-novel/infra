@@ -190,3 +190,15 @@ test("trusted assessment authorizes the candidate before cloud credentials exist
   assert.match(publish.with.path, /assessment\.json$/);
   assert.doesNotMatch(publish.with.path, /tfplan|tfvars|state/);
 });
+
+test("trusted assessment authenticates each GitHub metadata step", () => {
+  const assessment = drift.jobs["assess-resource-deletion"];
+
+  for (const name of [
+    "Resolve maintainer-approved exact candidate",
+    "Assess plans with current private inputs",
+  ]) {
+    const step = assessment.steps.find((candidate) => candidate.name === name);
+    assert.equal(step.env.GH_TOKEN, "${{ github.token }}", name);
+  }
+});
