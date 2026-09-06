@@ -127,8 +127,10 @@ The release configuration derives these runtime values from `.envrc`:
 | `SMTP_SENDER_EMAIL` / `SMTP_SENDER_NAME` | The sender from `.envrc`                                     |
 | `SMTP_SENDER_PASSWORD`                   | A numeric Secret Manager version containing the app password |
 
-`SMTP_SENDER_DOMAIN` is the SMTP authentication hostname. The sender's email domain is configured
-separately. The existing client enforces STARTTLS and verifies the server certificate.
+`SMTP_SENDER_DOMAIN` is the SMTP authentication hostname. Use Authentication v2.7.0 or later for
+Workspace: its SMTP client introduces itself with the domain in `SMTP_SENDER_EMAIL`, which fixes
+the relay's rejection of the default `localhost` greeting. The client uses STARTTLS and verifies
+the server certificate.
 
 After the configuration change is reviewed and merged, use a current `master` checkout and load
 `.envrc`. Add the app password to the existing secret container using the
