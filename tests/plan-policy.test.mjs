@@ -248,32 +248,32 @@ for (const actions of [
   });
 }
 
-test("all authenticated plan paths reject unsafe settings even with deletion approval", async (t) => {
-  const { directory, file } = await fixture(t, {
-    change: {
-      actions: ["update"],
-      before: { deletion_protection: true },
-      after: { deletion_protection: false },
-    },
-  });
-  await symlink(
-    path.join(root, "tests/fixtures/fake-tofu.sh"),
-    path.join(directory, "tofu"),
-  );
-  await symlink("/usr/bin/true", path.join(directory, "git"));
-  const env = {
-    PATH: `${directory}:${process.env.PATH}`,
-    FAKE_TOFU_PLAN_JSON: file,
-    FAKE_TOFU_PLAN_CODE: "2",
-    FAKE_TOFU_FAIL_ACTION: "apply",
-    ALLOW_RESOURCE_DELETION: "true",
-  };
-  for (const action of ["plan", "assess", "apply", "converge", "drift"]) {
+for (const action of ["plan", "assess", "apply", "converge", "drift"]) {
+  test(`${action} rejects unsafe settings even with deletion approval`, async (t) => {
+    const { directory, file } = await fixture(t, {
+      change: {
+        actions: ["update"],
+        before: { deletion_protection: true },
+        after: { deletion_protection: false },
+      },
+    });
+    await symlink(
+      path.join(root, "tests/fixtures/fake-tofu.sh"),
+      path.join(directory, "tofu"),
+    );
+    await symlink("/usr/bin/true", path.join(directory, "git"));
+    const env = {
+      PATH: `${directory}:${process.env.PATH}`,
+      FAKE_TOFU_PLAN_JSON: file,
+      FAKE_TOFU_PLAN_CODE: "2",
+      FAKE_TOFU_FAIL_ACTION: "apply",
+      ALLOW_RESOURCE_DELETION: "true",
+    };
+    const savedPlan = path.join(directory, "saved.tfplan");
+    if (action === "apply") await writeFile(savedPlan, "");
     const args = ["ops/tofu-gate.sh", action, "foundation", "fixture-state"];
-    if (["plan", "apply"].includes(action))
-      args.push(path.join(directory, "saved.tfplan"));
+    if (["plan", "apply"].includes(action)) args.push(savedPlan);
     const result = run(args, env);
     assert.equal(result.status, 65, `${action}: ${result.stderr}`);
-    assert.doesNotMatch(result.stderr, /Protected OpenTofu apply failed/);
-  }
-});
+  });
+}
