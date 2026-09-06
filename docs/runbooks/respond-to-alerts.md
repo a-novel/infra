@@ -173,7 +173,7 @@ done
 Do not curl or print the health response; the job already validated it privately. If JSON Keys is
 not Ready or its receipt target differs, use the whole-application rollback procedure. If both
 services are Ready, follow [Operate the private PostgreSQL host](./operate-postgresql-host.md) for
-private database reachability and [Configure hosted Plunk SMTP](./configure-hosted-smtp.md) for
+private database reachability and [Configure Google Workspace SMTP relay](./configure-hosted-smtp.md) for
 provider status, cap, credential, and domain checks. Never make JSON Keys public to debug it, add a
 NAT route, or enable unauthenticated invocation.
 
@@ -321,8 +321,8 @@ decide whether application availability or the monthly budget takes precedence. 
 database disk, backup bucket, state, receipts, or recovery evidence to reduce a bill.
 
 Follow [Production cost model](../costs/production.md) and reconcile any budget/configuration change
-through a protected foundation plan. Hosted Plunk usage is external to the Google budget; its
-separate category cap belongs to [Configure hosted Plunk SMTP](./configure-hosted-smtp.md).
+through a protected foundation plan. Workspace billing is separate from the Google Cloud budget; relay sending
+limits and delivery investigation belong to [Configure Google Workspace SMTP relay](./configure-hosted-smtp.md).
 
 ## GitHub release, drift, and validation failures
 

@@ -49,9 +49,9 @@ MANAGEMENT_PROJECT_ID="$INFRA_MANAGEMENT_PROJECT_ID"
   Both owner passwords and both backup passwords must be four distinct values.
 - For rotation, know every consumer and the currently pinned numeric version. Never configure a
   production consumer to use the mutable `latest` alias.
-- For the SMTP password, first complete the account, domain, privacy, billing-cap, and credential
-  steps in [Configure hosted Plunk SMTP](./configure-hosted-smtp.md). The password is the exact
-  provider-issued SMTP credential, not an API key invented from an example.
+- For the SMTP password, first complete the account, domain, relay, and credential
+  steps in [Configure Google Workspace SMTP relay](./configure-hosted-smtp.md). The password is the
+  app password issued to the Workspace account named by `SMTP_USERNAME`.
 
 The allowed IDs are:
 

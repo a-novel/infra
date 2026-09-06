@@ -213,13 +213,13 @@ modes, or an operator surface without improving the current two-service response
 new alerting product only when response coverage or on-call requirements exceed monitored email and
 native GitHub workflow notifications.
 
-Authentication mail uses hosted Plunk through standard authenticated STARTTLS SMTP. The external
-operator owns account security, no-branding billing, category cap, domain authentication, privacy,
-credential rotation, and exit. Code knows only host, port, username, sender fields, and one exact
-Secret Manager password version. Self-hosted Plunk remains portable because its source is public,
-but operating its application, PostgreSQL, Redis, storage, notifications, TLS endpoint, delivery
-provider, backups, and abuse controls is not proportionate at launch. The
-[SMTP runbook](./runbooks/configure-hosted-smtp.md) owns that manual boundary.
+Authentication mail uses Google Workspace SMTP relay through authenticated STARTTLS. An existing
+Workspace account authenticates the connection while an unregistered address in the verified domain
+supplies the sender name and email. The operator manages relay access, domain authentication,
+account limits, delivery logs, and app-password rotation through the
+[SMTP runbook](./runbooks/configure-hosted-smtp.md). Code consumes the standard SMTP host, port,
+username, sender fields, and one exact Secret Manager password version. Cloud Run uses managed
+public egress for this connection; the relay requires authentication and TLS without an IP allowlist.
 
 ## Disposable recovery cleanup
 

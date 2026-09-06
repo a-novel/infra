@@ -18,7 +18,7 @@ and [GitHub artifact attestations](https://docs.github.com/actions/how-tos/secur
 ## Operator context
 
 Load the published project coordinates and the non-secret SMTP parameters configured by
-[Configure hosted Plunk SMTP](./configure-hosted-smtp.md). Then paste the context block once before
+[Configure Google Workspace SMTP relay](./configure-hosted-smtp.md). Then paste the context block once before
 section 1:
 
 ```sh
@@ -302,7 +302,7 @@ receipt-owned version is disabled or destroyed.
 
 ## 4. Store the protected non-payload release configuration
 
-Complete [Configure hosted Plunk SMTP](./configure-hosted-smtp.md) first. The provider-neutral
+Complete [Configure Google Workspace SMTP relay](./configure-hosted-smtp.md) first. The provider-neutral
 runtime contract is authenticated STARTTLS submission on port 587; `sender_domain` repeats the SMTP
 host because Authentication uses it for the TLS server name. Initializer principals are foundation
 inputs, not a mutable release secret. The active Google account is the fast-path first super-admin;
@@ -535,7 +535,7 @@ newest receipt ends in the release `run-id-attempt`. Do not print a receipt: it 
 inventory even though it contains no payload secret.
 
 After completing the bounded delivery, bounce, and cap tests in
-[Configure hosted Plunk SMTP](./configure-hosted-smtp.md#5-validate-without-exposing-the-credential),
+[Configure Google Workspace SMTP relay](./configure-hosted-smtp.md#5-validate-without-exposing-the-credential),
 audit the current release's bounded application logs. This deliberately reads each exact deployed
 secret into a mode-`0700` scratch directory so it can prove the payload does not occur in logs; no
 payload reaches stdout, a process argument, GitHub, or OpenTofu:

@@ -198,9 +198,9 @@ the archive manifest only; `database_private_ip` remains the distinct empty repl
 `application_release` is null by default. When enabled, it requires both database releases, all six
 promoted job/service digests, the five exact positive secret versions consumed by those runtimes,
 SMTP host, username, and sender configuration fixed to STARTTLS submission port 587, and the first
-administrator's email. Secret values remain outside OpenTofu inputs and state. Hosted-provider
-account, domain, billing-cap, privacy, credential-rotation, and exit procedures live in
-[Configure hosted Plunk SMTP](../../../docs/runbooks/configure-hosted-smtp.md).
+administrator's email. Secret values remain outside OpenTofu inputs and state. Workspace
+account, domain, relay limits, credential-rotation, and provider-exit procedures live in
+[Configure Google Workspace SMTP relay](../../../docs/runbooks/configure-hosted-smtp.md).
 
 Outputs contain only job, schedule, and service names plus the two Cloud Run service URIs. They
 contain no secret version, credential, source manifest, bucket payload, SMTP value, or billing
