@@ -190,24 +190,17 @@ if [ ! -f "${ASSESSMENT_FILE}" ] ||
         --arg repository "${REPOSITORY}" \
         --argjson pull_request "${PULL_REQUEST}" \
         --arg head "${HEAD_SHA}" \
-        --arg base "${BASE_SHA}" \
-        --argjson roots "$(jq '.roots' <<<"${IMPACT}")" \
-        --argjson release_root "$(jq '.release_root' <<<"${IMPACT}")" \
-        --argjson release_manifest "$(jq '.release_manifest' <<<"${IMPACT}")" '
+        --arg base "${BASE_SHA}" '
       type == "object" and
       (keys | sort) == ([
         "approvalRequired", "baseSha", "firstLaunch", "headSha",
-        "pullRequest", "releaseManifest", "releaseRoot", "repository",
-        "roots", "schemaVersion"
+        "pullRequest", "repository", "schemaVersion"
       ] | sort) and
       .schemaVersion == 1 and
       .repository == $repository and
       .pullRequest == $pull_request and
       .headSha == $head and
       .baseSha == $base and
-      .roots == $roots and
-      .releaseRoot == $release_root and
-      .releaseManifest == $release_manifest and
       (.approvalRequired | type) == "boolean" and
       (.firstLaunch | type) == "boolean" and
       (.firstLaunch == false or .approvalRequired == true)
@@ -228,49 +221,4 @@ if ! jq --exit-status --arg label "${REQUIRED_LABEL}" '
     exit 77
 fi
 
-if ! TIMELINE="$(gh api --paginate --slurp \
-    -H 'Accept: application/vnd.github+json' \
-    "repos/${REPOSITORY}/issues/${PULL_REQUEST}/timeline" 2>/dev/null)"; then
-    printf 'Could not verify the current resource-deletion approval history.\n' >&2
-    exit 70
-fi
-if ! APPROVER="$(jq --exit-status --raw-output --arg label "${REQUIRED_LABEL}" '
-  reduce (
-    flatten
-    | sort_by(.created_at, .id)
-    | .[]
-  ) as $event (
-    {present: false, actor: null, via_app: null};
-    if $event.event == "labeled" and $event.label.name == $label then
-      {present: true, actor: $event.actor, via_app: $event.performed_via_github_app}
-    elif $event.event == "unlabeled" and $event.label.name == $label then
-      {present: false, actor: null, via_app: null}
-    else . end
-  )
-  | select(
-      .present and
-      .via_app == null and
-      .actor.type == "User" and
-      (.actor.login | type) == "string"
-    )
-  | .actor.login
-' <<<"${TIMELINE}" 2>/dev/null)"; then
-    printf 'A human maintainer must add the current resource-deletion label.\n' >&2
-    exit 77
-fi
-
-if ! PERMISSION="$(gh api \
-    "repos/${REPOSITORY}/collaborators/${APPROVER}/permission" \
-    --jq .permission 2>/dev/null)"; then
-    printf 'Could not verify that the resource-deletion approver is a maintainer.\n' >&2
-    exit 70
-fi
-case "${PERMISSION}" in
-    admin | maintain | write) ;;
-    *)
-        printf 'The resource-deletion label must be added by a repository maintainer.\n' >&2
-        exit 77
-        ;;
-esac
-
-printf 'Current maintainer resource-deletion approval verified for PR #%s.\n' "${PULL_REQUEST}"
+"${SCRIPT_DIR}/verify-deletion-label.sh" "${REPOSITORY}" "${PULL_REQUEST}"

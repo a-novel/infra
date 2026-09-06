@@ -89,6 +89,12 @@ Progress and approval URLs go to stderr. Stdout contains only the promised opaqu
 another program can capture it without parsing logs. None of these commands prints workflow secrets,
 OpenTofu values, credentials, or authorization headers.
 
+`plan-summary.sh` enforces `lib/plan-policy.jq` during planning and again before saved-plan apply.
+Failed or unresolved checks and weakened protections return exit 65, independently of deletion
+approval. Exit 3 continues to mean a managed-resource deletion requiring maintainer approval.
+See the [pre-merge assessment policy](../README.md#assess-resource-deletion-impact-before-merge)
+for protected settings and coverage limits.
+
 ## Protected workflow internals
 
 Do not call these as ad-hoc operator shortcuts. Their stable paths are part of the reviewed GitHub

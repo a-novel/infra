@@ -293,6 +293,8 @@ apply_plan() {
     local saved_plan="$1"
     local event_file="${TEMP_DIR}/apply-events.jsonl"
 
+    classify_plan "${saved_plan}" || return "$?"
+
     if tofu -chdir="${ROOT_DIR}" apply \
         -input=false \
         -json-into="${event_file}" \

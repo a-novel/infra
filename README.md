@@ -118,6 +118,21 @@ at merge. A new candidate commit, a moved base, a failed or expired assessment, 
 blocks immediately; rerun the command for the new tuple. The same decision is reevaluated on the
 merge queue. Protected apply and post-merge verification retain their own deletion check.
 
+The shared [plan policy](./ops/lib/plan-policy.jq) also blocks failed or unresolved check assertions
+and updates that weaken existing protections. It preserves existing `deletion_protection`,
+`force_destroy`, and `deletion_policy` guards across resource types. For the configured Google
+resources it also protects bucket access, versioning and retention,
+secret destruction delays, preserved disks and IPs, snapshot policies, and scheduler cadence.
+Unknown protected values block the plan. Unrelated updates and longer numeric retention remain
+allowed. Cleanup-rule, schedule, and secret-delay changes require a separate review of the policy
+because the gate does not infer their safety from arbitrary expressions.
+
+These failures cannot be overridden with `allow-resource-deletion`. Saved plans are checked again
+immediately before apply. The policy covers declared plan checks and the listed settings, not
+arbitrary IAM changes or behavior inside scripts, migrations, and images. Ordinary PR CI exercises
+fixtures; a human must run the protected assessment after its tooling is available on `master`.
+Cloud permissions and irreversible retention locking are separate operator decisions.
+
 Confirm the duplicate default Actions analysis is disabled:
 
 ```bash

@@ -444,10 +444,7 @@ write_deletion_assessment() {
             headSha: $head,
             baseSha: $base,
             approvalRequired: $approval,
-            firstLaunch: $first_launch,
-            releaseRoot: false,
-            releaseManifest: true,
-            roots: ["release"]
+            firstLaunch: $first_launch
           }
         ' >"${output}"
 }
@@ -560,8 +557,7 @@ PATH="${DELETION_GATE_BIN}:${PATH}" \
         "${FIRST_LAUNCH_ASSESSMENT}"
 jq --exit-status '
   .approvalRequired == true and
-  .firstLaunch == true and
-  .roots == ["release"]
+  .firstLaunch == true
 ' "${FIRST_LAUNCH_ASSESSMENT}" >/dev/null
 
 mkdir -p "${CANDIDATE_REPOSITORY}/environments/production/foundation"
@@ -593,8 +589,7 @@ PATH="${DELETION_GATE_BIN}:${PATH}" \
         2>"${TEMP_DIR}/destructive-assessment.err"
 jq --exit-status '
   .approvalRequired == true and
-  .firstLaunch == false and
-  .roots == ["foundation"]
+  .firstLaunch == false
 ' "${DESTRUCTIVE_PLAN_ASSESSMENT}" >/dev/null
 assert_absent "${TEMP_DIR}/destructive-assessment.out" google_compute_disk
 assert_absent "${TEMP_DIR}/destructive-assessment.err" google_compute_disk
@@ -627,6 +622,7 @@ FAILED_APPLY_PLAN="${TEMP_DIR}/failed-apply.tfplan"
 : >"${FAILED_APPLY_PLAN}"
 set +e
 PATH="${TOFU_GATE_BIN}:${PATH}" \
+    FAKE_TOFU_PLAN_JSON="${SCRIPT_DIR}/fixtures/plans/safe.json" \
     FAKE_TOFU_FAIL_ACTION=apply \
     FAKE_TOFU_DIAGNOSTICS="${SCRIPT_DIR}/fixtures/plan-diagnostics.jsonl" \
     "${REPOSITORY_ROOT}/ops/tofu-gate.sh" apply foundation agora-state-test \
@@ -697,7 +693,7 @@ chmod 0700 "${DELETION_MOCK_BIN}/gh"
 
 DELETION_COMMIT=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 PR_FIXTURE="[{\"number\":42,\"merged_at\":\"2026-08-25T12:00:00Z\",\"merge_commit_sha\":\"${DELETION_COMMIT}\",\"labels\":[]}]"
-PRE_MERGE_TIMELINE='[[{"id":1,"event":"labeled","created_at":"2026-08-25T11:00:00Z","label":{"name":"allow-resource-deletion"},"actor":{"login":"maintainer"}},{"id":2,"event":"merged","created_at":"2026-08-25T12:00:00Z"}]]'
+PRE_MERGE_TIMELINE='[[{"id":1,"event":"labeled","created_at":"2026-08-25T11:00:00Z","label":{"name":"allow-resource-deletion"},"actor":{"login":"maintainer","type":"User"}},{"id":2,"event":"merged","created_at":"2026-08-25T12:00:00Z"}]]'
 PATH="${DELETION_MOCK_BIN}:${PATH}" \
     PR_FIXTURE="${PR_FIXTURE}" \
     TIMELINE_FIXTURE="${PRE_MERGE_TIMELINE}" \
@@ -723,12 +719,14 @@ assert_deletion_gate_rejects() {
 }
 
 assert_deletion_gate_rejects \
-    '[[{"id":1,"event":"merged","created_at":"2026-08-25T12:00:00Z"},{"id":2,"event":"labeled","created_at":"2026-08-25T12:01:00Z","label":{"name":"allow-resource-deletion"},"actor":{"login":"maintainer"}}]]' \
+    '[[{"id":1,"event":"merged","created_at":"2026-08-25T12:00:00Z"},{"id":2,"event":"labeled","created_at":"2026-08-25T12:01:00Z","label":{"name":"allow-resource-deletion"},"actor":{"login":"maintainer","type":"User"}}]]' \
     write
 assert_deletion_gate_rejects \
-    '[[{"id":1,"event":"labeled","created_at":"2026-08-25T11:00:00Z","label":{"name":"allow-resource-deletion"},"actor":{"login":"maintainer"}},{"id":2,"event":"unlabeled","created_at":"2026-08-25T11:30:00Z","label":{"name":"allow-resource-deletion"},"actor":{"login":"maintainer"}},{"id":3,"event":"merged","created_at":"2026-08-25T12:00:00Z"}]]' \
+    '[[{"id":1,"event":"labeled","created_at":"2026-08-25T11:00:00Z","label":{"name":"allow-resource-deletion"},"actor":{"login":"maintainer","type":"User"}},{"id":2,"event":"unlabeled","created_at":"2026-08-25T11:30:00Z","label":{"name":"allow-resource-deletion"},"actor":{"login":"maintainer","type":"User"}},{"id":3,"event":"merged","created_at":"2026-08-25T12:00:00Z"}]]' \
     write
 assert_deletion_gate_rejects "${PRE_MERGE_TIMELINE}" triage
+assert_deletion_gate_rejects "$(jq '.[0][0].actor.type = "Bot"' <<<"${PRE_MERGE_TIMELINE}")" write
+assert_deletion_gate_rejects "$(jq '.[0][0].performed_via_github_app = {id: 123}' <<<"${PRE_MERGE_TIMELINE}")" write
 
 # Project cleanup is permitted only for the exact committed recovery target.
 # The mock records deletion without exposing project metadata in script output.

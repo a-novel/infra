@@ -2,6 +2,7 @@
 
 # Classifies an OpenTofu JSON plan without printing resource values or addresses.
 # Exit 3 means at least one managed resource would be deleted or forgotten.
+# Exit 65 rejects invalid plans, unresolved checks, or weakened protections.
 # Usage: ./ops/plan-summary.sh <bootstrap|foundation|release> <plan.json>
 
 set -euo pipefail
@@ -55,6 +56,11 @@ if ! jq -e '
     all((.resource_changes // [])[]; (.change.actions | supported_actions))
 ' "$2" >/dev/null; then
     printf "Plan contains an unsupported action combination.\n" >&2
+    exit 65
+fi
+
+if ! jq --exit-status -f "${SCRIPT_DIR}/lib/plan-policy.jq" "$2" >/dev/null 2>&1; then
+    printf 'Plan safety checks failed, remain unknown, or weaken protected settings.\n' >&2
     exit 65
 fi
 

@@ -136,10 +136,7 @@ jq -n \
     --arg head "${HEAD_SHA}" \
     --arg base "${BASE_SHA}" \
     --argjson approval_required "${APPROVAL_REQUIRED}" \
-    --argjson first_launch "${FIRST_LAUNCH}" \
-    --argjson release_root "${RELEASE_ROOT}" \
-    --argjson release_manifest "${RELEASE_MANIFEST}" \
-    --argjson roots "$(jq '.roots' <<<"${IMPACT}")" '
+    --argjson first_launch "${FIRST_LAUNCH}" '
       {
         schemaVersion: 1,
         repository: $repository,
@@ -147,10 +144,7 @@ jq -n \
         headSha: $head,
         baseSha: $base,
         approvalRequired: $approval_required,
-        firstLaunch: $first_launch,
-        releaseRoot: $release_root,
-        releaseManifest: $release_manifest,
-        roots: $roots
+        firstLaunch: $first_launch
       }
     ' >"${OUTPUT_FILE}"
 chmod 600 "${OUTPUT_FILE}"
