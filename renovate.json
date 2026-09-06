@@ -75,6 +75,11 @@
       "description": "Keep the OpenTofu binary and root constraints on one version.",
       "matchPackageNames": ["opentofu/opentofu"],
       "groupName": "OpenTofu"
+    },
+    {
+      "description": "Require human review for all infra updates, including the shared runner's automatic non-major updates.",
+      "matchJsonata": ["true"],
+      "automerge": false
     }
   ],
   "customManagers": [
@@ -105,7 +110,7 @@
       "description": "Update pinned workflow tool versions declared beside Renovate metadata.",
       "managerFilePatterns": ["/^\\.github/workflows/.*\\.ya?ml$/"],
       "matchStrings": [
-        "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>[^\\s]+)\\s+(?:version\\s*=|version:)\\s*[\"']?(?<currentValue>v?[0-9]+\\.[0-9]+\\.[0-9]+)[\"']?"
+        "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>[^\\s]+)\\s+(?:[a-z_]+_)?version\\s*[:=]\\s*[\"']?(?<currentValue>v?[0-9]+\\.[0-9]+\\.[0-9]+)[\"']?"
       ]
     },
     {
