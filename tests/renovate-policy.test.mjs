@@ -66,25 +66,80 @@ test("Renovate extracts each annotated tool version from the actual CI workflow"
   );
 });
 
-test("Renovate preserves review-only updates over inherited automerge rules", async () => {
-  for (const updateType of [
-    "major",
-    "minor",
-    "patch",
-    "pin",
-    "digest",
-    "lockFileMaintenance",
-  ]) {
-    const result = await applyPackageRules({
-      manager: "npm",
-      packageName:
-        updateType === "lockFileMaintenance" ? undefined : "future-dependency",
-      updateType,
-      packageRules: [
-        { matchUpdateTypes: [updateType], automerge: true },
-        ...config.packageRules,
+const nonMajorUpdates = [
+  "minor",
+  "patch",
+  "pin",
+  "digest",
+  "lockFileMaintenance",
+];
+const workflowFile = ".github/workflows/main.yaml";
+
+for (const [scope, automerge, dependencies] of [
+  [
+    "infrastructure",
+    false,
+    [
+      ["bootstrap/versions.tf", "terraform", "hashicorp/google"],
+      [
+        "environments/production/foundation/versions.tf",
+        "terraform",
+        "hashicorp/google",
       ],
-    });
-    assert.equal(result.automerge, false, updateType);
-  }
-});
+      [
+        "deploy/production/images.yaml",
+        "custom.regex",
+        "ghcr.io/a-novel/service-json-keys/database",
+      ],
+      [
+        "environments/production/release/variables.tf",
+        "custom.regex",
+        "alpine/curl",
+      ],
+      ...["tf", "tf.json", "tofu", "tofu.json"].map((extension) => [
+        `modules/future/main.${extension}`,
+        "terraform",
+        "future/provider",
+      ]),
+      [".opentofu-version", "custom.regex", "opentofu/opentofu"],
+      [".terraform.lock.hcl", "terraform", "future/provider"],
+    ],
+  ],
+  [
+    "CI and generic tooling",
+    true,
+    [
+      [workflowFile, "github-actions", "actions/checkout"],
+      [workflowFile, "github-actions", "a-novel-kit/workflows"],
+      [workflowFile, "custom.regex", "terraform-linters/tflint"],
+      [workflowFile, "custom.regex", "ghcr.io/zizmorcore/zizmor"],
+      ["package.json", "npm", "renovate"],
+      ["package.json", "npm", "pnpm"],
+      [".node-version", "nodenv", "node"],
+      ["pnpm-lock.yaml", "npm", undefined],
+    ],
+  ],
+]) {
+  test(`Renovate applies scoped automerge to ${scope}`, async () => {
+    for (const [packageFile, manager, packageName] of dependencies) {
+      for (const updateType of [...nonMajorUpdates, "major"]) {
+        const result = await applyPackageRules({
+          packageFile,
+          manager,
+          packageName,
+          updateType,
+          automerge: false,
+          packageRules: [
+            { matchUpdateTypes: nonMajorUpdates, automerge: true },
+            ...config.packageRules,
+          ],
+        });
+        assert.equal(
+          result.automerge,
+          automerge && updateType !== "major",
+          `${packageFile}: ${packageName} ${updateType}`,
+        );
+      }
+    }
+  });
+}

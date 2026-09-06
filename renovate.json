@@ -74,11 +74,21 @@
     {
       "description": "Keep the OpenTofu binary and root constraints on one version.",
       "matchPackageNames": ["opentofu/opentofu"],
-      "groupName": "OpenTofu"
+      "groupName": "OpenTofu",
+      "automerge": false
     },
     {
-      "description": "Require human review for all infra updates, including the shared runner's automatic non-major updates.",
-      "matchJsonata": ["true"],
+      "description": "Require review for production configuration and infrastructure definitions.",
+      "matchFileNames": [
+        "bootstrap/**",
+        "environments/production/**",
+        "deploy/production/**",
+        "**/*.tf",
+        "**/*.tf.json",
+        "**/*.tofu",
+        "**/*.tofu.json",
+        "**/.terraform.lock.hcl"
+      ],
       "automerge": false
     }
   ],
