@@ -498,6 +498,10 @@ assert_resource_gate_code() {
 }
 
 assert_resource_gate_code 0 docs no-run missing "${SAFE_ASSESSMENT}"
+assert_resource_gate_code 70 api-error no-run missing "${SAFE_ASSESSMENT}"
+assert_resource_gate_code 70 malformed no-run missing "${SAFE_ASSESSMENT}"
+assert_resource_gate_code 77 paginated-image no-run missing "${SAFE_ASSESSMENT}"
+assert_resource_gate_code 0 paginated-image success missing "${SAFE_ASSESSMENT}"
 assert_resource_gate_code 77 image no-run missing "${SAFE_ASSESSMENT}"
 assert_resource_gate_code 77 image failed missing "${SAFE_ASSESSMENT}"
 assert_resource_gate_code 0 image success missing "${SAFE_ASSESSMENT}"
@@ -546,19 +550,41 @@ git -C "${CANDIDATE_REPOSITORY}" -c user.name=fixture -c user.email=fixture@exam
     commit -q --allow-empty -m fixture
 CANDIDATE_HEAD="$(git -C "${CANDIDATE_REPOSITORY}" rev-parse HEAD)"
 FIRST_LAUNCH_ASSESSMENT="${TEMP_DIR}/first-launch-assessment.json"
-PATH="${DELETION_GATE_BIN}:${PATH}" \
-    FAKE_GATE_BASE="${DELETION_BASE}" \
-    FAKE_GATE_FILES=image \
-    FAKE_GATE_HEAD="${CANDIDATE_HEAD}" \
-    FAKE_GCS_ROOT="${TEMP_DIR}/empty-gcs" \
-    "${REPOSITORY_ROOT}/ops/prepare-resource-deletion-assessment.sh" \
-        a-novel/infra 93 "${CANDIDATE_HEAD}" "${DELETION_BASE}" \
-        "${CANDIDATE_REPOSITORY}" agora-state-test \
-        "${FIRST_LAUNCH_ASSESSMENT}"
-jq --exit-status '
-  .approvalRequired == true and
-  .firstLaunch == true
-' "${FIRST_LAUNCH_ASSESSMENT}" >/dev/null
+for files in image paginated-image; do
+    rm -f -- "${FIRST_LAUNCH_ASSESSMENT}"
+    PATH="${DELETION_GATE_BIN}:${PATH}" \
+        FAKE_GATE_BASE="${DELETION_BASE}" \
+        FAKE_GATE_FILES="${files}" \
+        FAKE_GATE_HEAD="${CANDIDATE_HEAD}" \
+        FAKE_GCS_ROOT="${TEMP_DIR}/empty-gcs" \
+        "${REPOSITORY_ROOT}/ops/prepare-resource-deletion-assessment.sh" \
+            a-novel/infra 93 "${CANDIDATE_HEAD}" "${DELETION_BASE}" \
+            "${CANDIDATE_REPOSITORY}" agora-state-test \
+            "${FIRST_LAUNCH_ASSESSMENT}"
+    jq --exit-status '
+      .approvalRequired == true and
+      .firstLaunch == true
+    ' "${FIRST_LAUNCH_ASSESSMENT}" >/dev/null
+done
+
+for files in api-error malformed; do
+    FAILED_INVENTORY_ASSESSMENT="${TEMP_DIR}/failed-${files}-assessment.json"
+    set +e
+    PATH="${DELETION_GATE_BIN}:${PATH}" \
+        FAKE_GATE_BASE="${DELETION_BASE}" \
+        FAKE_GATE_FILES="${files}" \
+        FAKE_GATE_HEAD="${CANDIDATE_HEAD}" \
+        FAKE_GCS_ROOT="${TEMP_DIR}/empty-gcs" \
+        "${REPOSITORY_ROOT}/ops/prepare-resource-deletion-assessment.sh" \
+            a-novel/infra 93 "${CANDIDATE_HEAD}" "${DELETION_BASE}" \
+            "${CANDIDATE_REPOSITORY}" agora-state-test \
+            "${FAILED_INVENTORY_ASSESSMENT}" \
+            >"${TEMP_DIR}/failed-inventory.out" 2>"${TEMP_DIR}/failed-inventory.err"
+    INVENTORY_CODE=$?
+    set -e
+    assert_equal "${INVENTORY_CODE}" 70
+    [ ! -e "${FAILED_INVENTORY_ASSESSMENT}" ]
+done
 
 mkdir -p "${CANDIDATE_REPOSITORY}/environments/production/foundation"
 printf '%s\n' '{}' \

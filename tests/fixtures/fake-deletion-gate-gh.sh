@@ -46,12 +46,22 @@ pull_request_json() {
 if [ "${1:-}" = api ]; then
     shift
     endpoint=''
+    slurp=false
+    output_filter=false
     while [ "$#" -gt 0 ]; do
         case "$1" in
-            -H | --jq)
+            -H)
                 shift 2
                 ;;
-            --paginate | --slurp)
+            --jq | --template)
+                output_filter=true
+                shift 2
+                ;;
+            --slurp)
+                slurp=true
+                shift
+                ;;
+            --paginate)
                 shift
                 ;;
             repos/* | users/* | orgs/*)
@@ -63,6 +73,11 @@ if [ "${1:-}" = api ]; then
                 ;;
         esac
     done
+
+    if [ "${slurp}" = true ] && [ "${output_filter}" = true ]; then
+        printf 'The --slurp option is not supported with --jq or --template.\n' >&2
+        exit 1
+    fi
 
     case "${endpoint}" in
         users/*)
@@ -78,12 +93,28 @@ if [ "${1:-}" = api ]; then
             ;;
         "repos/a-novel/infra/pulls/${PULL_REQUEST}/files?per_page=100")
             case "${FAKE_GATE_FILES:-image}" in
-                docs) jq -n '[{filename: "README.md"}]' ;;
-                foundation) jq -n '[{filename: "environments/production/foundation/main.tf"}]' ;;
-                image) jq -n '[{filename: "deploy/production/images.yaml"}]' ;;
-                shared) jq -n '[{filename: "modules/shared/main.tf"}]' ;;
+                docs) file_pages='[[{"filename":"README.md"}]]' ;;
+                foundation) file_pages='[[{"filename":"environments/production/foundation/main.tf"}]]' ;;
+                image) file_pages='[[{"filename":"deploy/production/images.yaml"}]]' ;;
+                shared) file_pages='[[{"filename":"modules/shared/main.tf"}]]' ;;
+                paginated-image)
+                    file_pages='[[{"filename":"README.md"}],[{"filename":"deploy/production/images.yaml"}]]'
+                    ;;
+                api-error)
+                    printf '%s\n' '[[{"filename":"README.md"}]]'
+                    exit 1
+                    ;;
+                malformed)
+                    printf '%s\n' 'invalid-json'
+                    exit 0
+                    ;;
                 *) exit 64 ;;
             esac
+            if [ "${slurp}" = true ]; then
+                printf '%s\n' "${file_pages}"
+            else
+                jq '.[]' <<<"${file_pages}"
+            fi
             ;;
         'repos/a-novel/infra/actions/workflows/drift.yaml/runs?branch=master&event=workflow_dispatch&per_page=100')
             if [ "${FAKE_GATE_RUN_MODE:-success}" = no-run ]; then

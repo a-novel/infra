@@ -112,8 +112,8 @@ cleanup() {
 trap cleanup INT TERM EXIT
 
 if ! gh api --paginate --slurp \
-    "repos/${REPOSITORY}/pulls/${PULL_REQUEST}/files?per_page=100" \
-    --jq 'flatten' >"${TEMP_DIR}/files.json" 2>/dev/null; then
+    "repos/${REPOSITORY}/pulls/${PULL_REQUEST}/files?per_page=100" 2>/dev/null |
+    jq 'flatten' >"${TEMP_DIR}/files.json" 2>/dev/null; then
     printf 'Could not inventory the pull-request files.\n' >&2
     exit 70
 fi
