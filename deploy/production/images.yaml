@@ -1,3 +1,5 @@
+# First-launch rollback requires allow-resource-deletion on the merging PR.
+# Keep approval in place until merge, including when retrying unchanged images.
 schemaVersion: 1
 postgresMajor: 18
 components:
