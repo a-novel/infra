@@ -8,6 +8,12 @@ import { parse } from "yaml";
 
 const testDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(testDirectory, "..");
+const main = parse(
+  await readFile(
+    path.join(repositoryRoot, ".github/workflows/main.yaml"),
+    "utf8",
+  ),
+);
 const drift = parse(
   await readFile(
     path.join(repositoryRoot, ".github/workflows/drift.yaml"),
@@ -110,4 +116,77 @@ test("first-launch recovery skips unrelated release tooling", () => {
     const step = job.steps.find((candidate) => candidate.name === name);
     assert.equal(step.if, "env.RELEASE_ACTION != 'recover-first-launch'");
   }
+});
+
+test("resource-deletion approval is a merge-queue-aware required check", () => {
+  const gate = main.jobs["resource-deletion-gate"];
+
+  assert.equal(main.on.merge_group, null);
+  assert.deepEqual(gate.permissions, {
+    actions: "read",
+    contents: "read",
+    "pull-requests": "read",
+  });
+  assert.equal(gate.environment, undefined);
+  assert.equal(gate.permissions["id-token"], undefined);
+  assert.deepEqual(main.on.pull_request.types, [
+    "opened",
+    "reopened",
+    "synchronize",
+    "labeled",
+    "unlabeled",
+  ]);
+
+  const checkout = gate.steps.find(
+    (step) => step.name === "Check out trusted gate tooling",
+  );
+  assert.match(checkout.with.ref, /pull_request\.base\.sha/);
+  assert.match(checkout.with.ref, /merge_group\.base_sha/);
+  assert.equal(checkout.with["persist-credentials"], false);
+
+  const verify = gate.steps.find(
+    (step) => step.name === "Verify exact assessment and current approval",
+  );
+  assert.match(verify.run, /verify-resource-deletion-gate\.sh/);
+  assert.match(
+    verify.run,
+    /activates after its trusted base implementation merges/,
+  );
+  assert.doesNotMatch(
+    JSON.stringify(gate),
+    /secrets\.|google-github-actions\/auth/,
+  );
+});
+
+test("trusted assessment authorizes the candidate before cloud credentials exist", () => {
+  const assessment = drift.jobs["assess-resource-deletion"];
+
+  assert.deepEqual(assessment.permissions, {
+    actions: "read",
+    contents: "read",
+    "id-token": "write",
+    "pull-requests": "read",
+  });
+  assert.equal(assessment.environment, undefined);
+  assert.match(assessment.if, /inputs\.operation == 'assess-pull-request'/);
+
+  const names = assessment.steps.map((step) => step.name);
+  assert.ok(
+    names.indexOf("Resolve maintainer-approved exact candidate") <
+      names.indexOf("Authenticate as the read-only plan boundary"),
+  );
+  const candidate = assessment.steps.find(
+    (step) => step.name === "Check out the exact candidate without running it",
+  );
+  assert.equal(candidate.with.ref, "${{ inputs.head_sha }}");
+  assert.equal(
+    candidate.with.repository,
+    "${{ steps.target.outputs.repository }}",
+  );
+
+  const publish = assessment.steps.find(
+    (step) => step.name === "Publish the payload-free verdict",
+  );
+  assert.match(publish.with.path, /assessment\.json$/);
+  assert.doesNotMatch(publish.with.path, /tfplan|tfvars|state/);
 });

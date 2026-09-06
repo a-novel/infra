@@ -387,8 +387,219 @@ assert_tofu_gate_code() {
 
 assert_tofu_gate_code plan "${SCRIPT_DIR}/fixtures/plans/safe.json" 2
 assert_tofu_gate_code plan "${SCRIPT_DIR}/fixtures/plans/protected.json" 3
+assert_tofu_gate_code assess "${SCRIPT_DIR}/fixtures/plans/safe.json" 0
+assert_tofu_gate_code assess "${SCRIPT_DIR}/fixtures/plans/protected.json" 3
 assert_tofu_gate_code drift "${SCRIPT_DIR}/fixtures/plans/safe.json" 2
 assert_tofu_gate_code drift "${SCRIPT_DIR}/fixtures/plans/protected.json" 2
+
+# Pull-request impact follows both current and previous filenames while
+# preserving the smallest production-root set that can change.
+jq -n '[{filename: "README.md"}]' >"${TEMP_DIR}/impact-docs.json"
+jq -n '[{filename: "environments/production/foundation/main.tf"}]' \
+    >"${TEMP_DIR}/impact-foundation.json"
+jq -n '[{filename: "deploy/production/images.yaml"}]' \
+    >"${TEMP_DIR}/impact-release.json"
+jq -n '[{filename: "docs/old.md", previous_filename: "bootstrap/main.tf"}]' \
+    >"${TEMP_DIR}/impact-renamed.json"
+jq -n '[{filename: "modules/shared/main.tf"}]' \
+    >"${TEMP_DIR}/impact-shared.json"
+
+assert_equal "$("${REPOSITORY_ROOT}/ops/resource-deletion-impact.sh" \
+    "${TEMP_DIR}/impact-docs.json" | jq --raw-output .required)" false
+assert_equal "$("${REPOSITORY_ROOT}/ops/resource-deletion-impact.sh" \
+    "${TEMP_DIR}/impact-foundation.json" | jq --compact-output .roots)" '["foundation"]'
+assert_equal "$("${REPOSITORY_ROOT}/ops/resource-deletion-impact.sh" \
+    "${TEMP_DIR}/impact-release.json" | jq --compact-output .roots)" '["release"]'
+assert_equal "$("${REPOSITORY_ROOT}/ops/resource-deletion-impact.sh" \
+    "${TEMP_DIR}/impact-renamed.json" | jq --compact-output .roots)" '["bootstrap"]'
+assert_equal "$("${REPOSITORY_ROOT}/ops/resource-deletion-impact.sh" \
+    "${TEMP_DIR}/impact-shared.json" | jq --compact-output .roots)" \
+    '["bootstrap","foundation","release"]'
+
+# The metadata-only merge gate fails closed unless exact protected evidence
+# exists, and replays the latest human label decision at evaluation time.
+DELETION_GATE_BIN="${TEMP_DIR}/deletion-gate-bin"
+mkdir -p "${DELETION_GATE_BIN}"
+ln -s "${SCRIPT_DIR}/fixtures/fake-deletion-gate-gh.sh" "${DELETION_GATE_BIN}/gh"
+ln -s "${SCRIPT_DIR}/fixtures/fake-tofu.sh" "${DELETION_GATE_BIN}/tofu"
+ln -s "${SCRIPT_DIR}/fixtures/fake-gcloud-storage.sh" "${DELETION_GATE_BIN}/gcloud"
+DELETION_HEAD=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+DELETION_BASE=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+DELETION_GROUP=cccccccccccccccccccccccccccccccccccccccc
+
+write_deletion_assessment() {
+    local approval="$1"
+    local first_launch="$2"
+    local base="$3"
+    local output="$4"
+    jq -n \
+        --arg head "${DELETION_HEAD}" \
+        --arg base "${base}" \
+        --argjson approval "${approval}" \
+        --argjson first_launch "${first_launch}" '
+          {
+            schemaVersion: 1,
+            repository: "a-novel/infra",
+            pullRequest: 93,
+            headSha: $head,
+            baseSha: $base,
+            approvalRequired: $approval,
+            firstLaunch: $first_launch,
+            releaseRoot: false,
+            releaseManifest: true,
+            roots: ["release"]
+          }
+        ' >"${output}"
+}
+
+SAFE_ASSESSMENT="${TEMP_DIR}/safe-assessment.json"
+DESTRUCTIVE_ASSESSMENT="${TEMP_DIR}/destructive-assessment.json"
+MISMATCHED_ASSESSMENT="${TEMP_DIR}/mismatched-assessment.json"
+write_deletion_assessment false false "${DELETION_BASE}" "${SAFE_ASSESSMENT}"
+write_deletion_assessment true false "${DELETION_BASE}" "${DESTRUCTIVE_ASSESSMENT}"
+write_deletion_assessment false false "${DELETION_GROUP}" "${MISMATCHED_ASSESSMENT}"
+
+assert_resource_gate_code() {
+    local expected="$1"
+    local files="$2"
+    local run_mode="$3"
+    local label_mode="$4"
+    local assessment="$5"
+    local event_name="${6:-pull_request}"
+    local permission="${7:-admin}"
+    local pull_request_head="${8:-${DELETION_HEAD}}"
+    local gate_head="${DELETION_HEAD}"
+    local check_sha="${DELETION_HEAD}"
+    local merge_ref=""
+    local code=0
+    if [ "${event_name}" = merge_group ]; then
+        gate_head=""
+        check_sha="${DELETION_GROUP}"
+        merge_ref='refs/heads/gh-readonly-queue/master/pr-93-deadbeef'
+    fi
+    set +e
+    PATH="${DELETION_GATE_BIN}:${PATH}" \
+        FAKE_GATE_ASSESSMENT_FILE="${assessment}" \
+        FAKE_GATE_BASE="${DELETION_BASE}" \
+        FAKE_GATE_FILES="${files}" \
+        FAKE_GATE_HEAD="${pull_request_head}" \
+        FAKE_GATE_LABEL_MODE="${label_mode}" \
+        FAKE_GATE_RUN_MODE="${run_mode}" \
+        GATE_BASE_SHA="${DELETION_BASE}" \
+        FAKE_GATE_PERMISSION="${permission}" \
+        GATE_HEAD_SHA="${gate_head}" \
+        GATE_MERGE_HEAD_REF="${merge_ref}" \
+        GATE_PULL_REQUEST=93 \
+        GITHUB_EVENT_NAME="${event_name}" \
+        GITHUB_REF=refs/pull/93/merge \
+        GITHUB_SHA="${check_sha}" \
+        "${REPOSITORY_ROOT}/ops/verify-resource-deletion-gate.sh" a-novel/infra \
+        >"${TEMP_DIR}/resource-gate.out" 2>"${TEMP_DIR}/resource-gate.err"
+    code=$?
+    set -e
+    assert_equal "${code}" "${expected}"
+}
+
+assert_resource_gate_code 0 docs no-run missing "${SAFE_ASSESSMENT}"
+assert_resource_gate_code 77 image no-run missing "${SAFE_ASSESSMENT}"
+assert_resource_gate_code 77 image failed missing "${SAFE_ASSESSMENT}"
+assert_resource_gate_code 0 image success missing "${SAFE_ASSESSMENT}"
+assert_resource_gate_code 77 image success missing "${DESTRUCTIVE_ASSESSMENT}"
+assert_resource_gate_code 0 image success approved "${DESTRUCTIVE_ASSESSMENT}"
+assert_resource_gate_code 77 image success bot "${DESTRUCTIVE_ASSESSMENT}"
+assert_resource_gate_code 77 image success approved "${MISMATCHED_ASSESSMENT}"
+assert_resource_gate_code 77 image success untrusted "${DESTRUCTIVE_ASSESSMENT}" pull_request read
+assert_resource_gate_code 77 image success missing "${SAFE_ASSESSMENT}" pull_request admin dddddddddddddddddddddddddddddddddddddddd
+assert_resource_gate_code 0 image success missing "${SAFE_ASSESSMENT}" merge_group
+
+# The trusted dispatcher check accepts human maintainers and fork candidates,
+# while a first release with no converged input record always needs approval.
+RESOLVED_FORK="$(
+    PATH="${DELETION_GATE_BIN}:${PATH}" \
+        FAKE_GATE_BASE="${DELETION_BASE}" \
+        FAKE_GATE_HEAD="${DELETION_HEAD}" \
+        FAKE_GATE_HEAD_REPOSITORY=contributor/infra \
+        GITHUB_ACTOR=maintainer \
+        GITHUB_REF=refs/heads/master \
+        GITHUB_SHA="${DELETION_BASE}" \
+        "${REPOSITORY_ROOT}/ops/resolve-resource-deletion-assessment.sh" \
+            a-novel/infra 93 "${DELETION_HEAD}" "${DELETION_BASE}"
+)"
+assert_equal "${RESOLVED_FORK}" contributor/infra
+
+set +e
+PATH="${DELETION_GATE_BIN}:${PATH}" \
+    FAKE_GATE_ACTOR_TYPE=Bot \
+    FAKE_GATE_BASE="${DELETION_BASE}" \
+    FAKE_GATE_HEAD="${DELETION_HEAD}" \
+    GITHUB_ACTOR=renovate \
+    GITHUB_REF=refs/heads/master \
+    GITHUB_SHA="${DELETION_BASE}" \
+    "${REPOSITORY_ROOT}/ops/resolve-resource-deletion-assessment.sh" \
+        a-novel/infra 93 "${DELETION_HEAD}" "${DELETION_BASE}" \
+        >/dev/null 2>&1
+BOT_ASSESSMENT_CODE=$?
+set -e
+assert_equal "${BOT_ASSESSMENT_CODE}" 77
+
+CANDIDATE_REPOSITORY="${TEMP_DIR}/candidate-infra"
+mkdir -p "${CANDIDATE_REPOSITORY}" "${TEMP_DIR}/empty-gcs"
+git -C "${CANDIDATE_REPOSITORY}" init -q -b master
+git -C "${CANDIDATE_REPOSITORY}" -c user.name=fixture -c user.email=fixture@example.invalid \
+    commit -q --allow-empty -m fixture
+CANDIDATE_HEAD="$(git -C "${CANDIDATE_REPOSITORY}" rev-parse HEAD)"
+FIRST_LAUNCH_ASSESSMENT="${TEMP_DIR}/first-launch-assessment.json"
+PATH="${DELETION_GATE_BIN}:${PATH}" \
+    FAKE_GATE_BASE="${DELETION_BASE}" \
+    FAKE_GATE_FILES=image \
+    FAKE_GATE_HEAD="${CANDIDATE_HEAD}" \
+    FAKE_GCS_ROOT="${TEMP_DIR}/empty-gcs" \
+    "${REPOSITORY_ROOT}/ops/prepare-resource-deletion-assessment.sh" \
+        a-novel/infra 93 "${CANDIDATE_HEAD}" "${DELETION_BASE}" \
+        "${CANDIDATE_REPOSITORY}" agora-state-test \
+        "${FIRST_LAUNCH_ASSESSMENT}"
+jq --exit-status '
+  .approvalRequired == true and
+  .firstLaunch == true and
+  .roots == ["release"]
+' "${FIRST_LAUNCH_ASSESSMENT}" >/dev/null
+
+mkdir -p "${CANDIDATE_REPOSITORY}/environments/production/foundation"
+printf '%s\n' '{}' \
+    >"${CANDIDATE_REPOSITORY}/environments/production/foundation/main.tf"
+git -C "${CANDIDATE_REPOSITORY}" add environments/production/foundation/main.tf
+git -C "${CANDIDATE_REPOSITORY}" -c user.name=fixture -c user.email=fixture@example.invalid \
+    commit -q -m foundation
+CANDIDATE_HEAD="$(git -C "${CANDIDATE_REPOSITORY}" rev-parse HEAD)"
+printf '%s\n' '{}' >"${TEMP_DIR}/foundation-current.json"
+PATH="${DELETION_GATE_BIN}:${PATH}" \
+    FAKE_GCS_ROOT="${TEMP_DIR}/empty-gcs" \
+    "${REPOSITORY_ROOT}/ops/config-custody.sh" publish \
+        agora-state-test foundation "${TEMP_DIR}/foundation-current.json" 1 1 \
+        >/dev/null
+DESTRUCTIVE_PLAN_ASSESSMENT="${TEMP_DIR}/destructive-plan-assessment.json"
+PATH="${DELETION_GATE_BIN}:${PATH}" \
+    FAKE_GATE_BASE="${DELETION_BASE}" \
+    FAKE_GATE_FILES=foundation \
+    FAKE_GATE_HEAD="${CANDIDATE_HEAD}" \
+    FAKE_GCS_ROOT="${TEMP_DIR}/empty-gcs" \
+    FAKE_TOFU_PLAN_CODE=2 \
+    FAKE_TOFU_PLAN_JSON="${SCRIPT_DIR}/fixtures/plans/protected.json" \
+    "${REPOSITORY_ROOT}/ops/prepare-resource-deletion-assessment.sh" \
+        a-novel/infra 93 "${CANDIDATE_HEAD}" "${DELETION_BASE}" \
+        "${CANDIDATE_REPOSITORY}" agora-state-test \
+        "${DESTRUCTIVE_PLAN_ASSESSMENT}" \
+        >"${TEMP_DIR}/destructive-assessment.out" \
+        2>"${TEMP_DIR}/destructive-assessment.err"
+jq --exit-status '
+  .approvalRequired == true and
+  .firstLaunch == false and
+  .roots == ["foundation"]
+' "${DESTRUCTIVE_PLAN_ASSESSMENT}" >/dev/null
+assert_absent "${TEMP_DIR}/destructive-assessment.out" google_compute_disk
+assert_absent "${TEMP_DIR}/destructive-assessment.err" google_compute_disk
+assert_absent "${TEMP_DIR}/destructive-assessment.out" fixture-project-id
+assert_absent "${TEMP_DIR}/destructive-assessment.err" fixture-project-id
 
 set +e
 PATH="${TOFU_GATE_BIN}:${PATH}" \
@@ -1774,6 +1985,27 @@ assert_equal "${PLAN_ID}" '202-3'
 grep -Fq 'Workflow run: https://github.com/a-novel/infra/actions/runs/202' \
     "${TEMP_DIR}/workflow.err"
 grep -Fq 'workflow run foundation.yaml --repo a-novel/infra --ref master -f operation=plan -f root=foundation' \
+    "${WORKFLOW_CALLS}"
+
+rm -f -- "${WORKFLOW_STATE}"
+: >"${WORKFLOW_CALLS}"
+ASSESSMENT_RUN_ID="$(
+    PATH="${WORKFLOW_MOCK_BIN}:${PATH}" \
+        FAKE_ASSESSMENT_HEAD="${DELETION_HEAD}" \
+        FAKE_ASSESSMENT_PR=93 \
+        FAKE_WORKFLOW_CALLS="${WORKFLOW_CALLS}" \
+        FAKE_WORKFLOW=drift.yaml \
+        FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
+        FAKE_WORKFLOW_STATE="${WORKFLOW_STATE}" \
+        WORKFLOW_DISCOVERY_ATTEMPTS=1 \
+        WORKFLOW_DISCOVERY_INTERVAL_SECONDS=0 \
+        "${REPOSITORY_ROOT}/ops/run-workflow.sh" \
+            drift assess-pull-request 93 \
+            2>"${TEMP_DIR}/assessment-workflow.err"
+)"
+assert_equal "${ASSESSMENT_RUN_ID}" 202
+grep -Fq \
+    "workflow run drift.yaml --repo a-novel/infra --ref master -f operation=assess-pull-request -f pull_request=93 -f head_sha=${DELETION_HEAD} -f base_sha=${WORKFLOW_SHA}" \
     "${WORKFLOW_CALLS}"
 
 rm -f -- "${WORKFLOW_STATE}"
