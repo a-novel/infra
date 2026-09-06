@@ -100,6 +100,7 @@ if [ "${1:-}" = api ]; then
             case "${FAKE_GATE_FILES:-image}" in
                 docs) jq -n '[{filename: "README.md"}]' ;;
                 foundation) jq -n '[{filename: "environments/production/foundation/main.tf"}]' ;;
+                release) jq -n '[{filename: "environments/production/release/main.tf"}]' ;;
                 image) jq -n '[{filename: "deploy/production/images.yaml"}]' ;;
                 shared) jq -n '[{filename: "modules/shared/main.tf"}]' ;;
                 *) exit 64 ;;
