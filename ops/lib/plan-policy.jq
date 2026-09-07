@@ -15,12 +15,19 @@ def keep($path; $protected):
 def preserve($path):
   known($path) and (.before | getpath($path)) == (.after | getpath($path));
 
+# Bucket retention uses decimal strings; soft-delete retention uses numbers.
+# Keep comparisons within jq's exact integer range.
+def seconds:
+  (if type == "string" and test("\\A[0-9]+\\z") then tonumber else . end)
+  | if type == "number" and . >= 0 and . <= 9007199254740991 and . == floor
+    then . else error("Invalid retention duration.") end;
+
 def minimum($path):
   (.before | getpath($path)) as $before
   | if $before == null then true else
       (.after | getpath($path)) as $after
       | known($path) and
-        ($after | type) == "number" and $after >= $before
+        ($after | seconds) >= ($before | seconds)
     end;
 
 def delete_rules:
