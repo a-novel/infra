@@ -31,8 +31,31 @@ def preserved_disks:
   [.disk[]? | select(.auto_delete == false) | {device_name, source, mode, auto_delete}]
   | sort_by(.device_name);
 
-def protections:
-  .type as $type | .change
+# Candidate reconciliation suspends scheduled work until activation or rollback.
+# The exception is bound to the saved plan's phase and exact release resources.
+def candidate_schedule_pause($plan):
+  {
+    "google_cloud_scheduler_job.json_keys_rotation[0]": "agora-json-keys-rotation",
+    "google_cloud_scheduler_job.postgres_backup[\"authentication\"]": "agora-postgres-backup-authentication",
+    "google_cloud_scheduler_job.postgres_backup[\"json_keys\"]": "agora-postgres-backup-json-keys",
+    "google_cloud_scheduler_job.postgres_restore[\"authentication\"]": "agora-postgres-restore-authentication",
+    "google_cloud_scheduler_job.postgres_restore[\"json_keys\"]": "agora-postgres-restore-json-keys",
+    "google_cloud_scheduler_job.postgres_backup_monitor[0]": "agora-postgres-backup-monitor"
+  }[.address] as $name
+  | $root_name == "release" and $name != null and
+    $plan.variables.application_release.value.rollout.phase == "candidate" and
+    $plan.variables.recovery_mode.value == false and
+    (.change | .actions == ["update"] and
+      preserve(["name"]) and preserve(["project"]) and preserve(["region"]) and
+      known(["paused"]) and .before.paused == false and .after.paused == true and
+      .after.name == $name and
+      (.after.project | type == "string" and length > 0) and
+      (.after.region | type == "string" and length > 0) and
+      .after.project == $plan.variables.workload_project_id.value and
+      .after.region == $plan.variables.region.value);
+
+def protections($plan):
+  . as $resource | .type as $type | .change
   | keep(["deletion_protection"]; true) and
     keep(["force_destroy"]; false) and
     keep(["deletion_policy"]; "PREVENT") and
@@ -62,9 +85,11 @@ def protections:
     elif $type == "google_compute_resource_policy" then
       preserve(["snapshot_schedule_policy"])
     elif $type == "google_cloud_scheduler_job" then
-      preserve(["schedule"]) and preserve(["time_zone"]) and keep(["paused"]; false)
+      preserve(["schedule"]) and preserve(["time_zone"]) and
+      (keep(["paused"]; false) or ($resource | candidate_schedule_pause($plan)))
     else true end);
 
+. as $plan |
 (.errored == null or .errored == false) and
 (.format_version | type == "string" and test("^1\\.[0-9]+$")) and
 ((if .checks == null then [] else .checks end) | type == "array" and
@@ -78,7 +103,7 @@ all((.resource_changes // [])[];
      elif .change.before == null and .change.actions == ["create"] then true
      else
        (.change.before | type) == "object" and
-       (.change.after | type) == "object" and protections
+       (.change.after | type) == "object" and protections($plan)
      end)
   )
 )

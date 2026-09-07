@@ -59,7 +59,8 @@ if ! jq -e '
     exit 65
 fi
 
-if ! jq --exit-status -f "${SCRIPT_DIR}/lib/plan-policy.jq" "$2" >/dev/null 2>&1; then
+if ! jq --exit-status --arg root_name "$1" \
+    -f "${SCRIPT_DIR}/lib/plan-policy.jq" "$2" >/dev/null 2>&1; then
     printf 'Plan safety checks failed, remain unknown, or weaken protected settings.\n' >&2
     exit 65
 fi
