@@ -80,7 +80,7 @@ jobs:
       # The operational policy tests execute the same receipt validator used by
       # protected releases, so they need the repository's pinned Node tooling.
       - name: Install pnpm
-        uses: pnpm/action-setup@v6.0.10
+        uses: pnpm/action-setup@v6.1.0
 
       - name: Install Node.js
         uses: actions/setup-node@v7.0.0
@@ -152,7 +152,7 @@ jobs:
           persist-credentials: false
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v6.0.10
+        uses: pnpm/action-setup@v6.1.0
 
       - name: Install Node.js
         uses: actions/setup-node@v7.0.0
