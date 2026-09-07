@@ -257,8 +257,8 @@ resubmitting; another signup request replaces the previous code.
 
 `202` means **accepted**, not delivered. Already-registered addresses also receive `202` but no
 signup email. The [Authentication API contract](https://github.com/a-novel/service-authentication/blob/master/openapi.yaml)
-documents this behavior. For an existing account's password-reset test, use the same block with
-`/v2/short-code/update-password` instead; never reset another person's account.
+documents this behavior. Choose an unused address/alias instead of editing the request or retrying
+against an existing account.
 
 ### Verify receipt and investigate failures
 
@@ -294,8 +294,7 @@ unset SMTP_TEST_EMAIL SMTP_TEST_STARTED_AT SMTP_AUDIT_MEMBER SMTP_AUDIT_EXPIRY S
 ```
 
 If the session is lost, access still expires after one hour; ask the administrator to remove the
-expired `smtp-read-check` bindings later. Then resume the deployment runbook's log audit or the
-next incomplete setup step.
+expired `smtp-read-check` bindings later. Then resume the next incomplete setup step.
 
 ## 6. Rotate Workspace credentials
 
@@ -304,3 +303,4 @@ app password and Secret Manager version available while any retained rollback re
 Only after that window, revoke the old app password in the account's App passwords page and disable
 its exact old version using [Secret versions](./secret-versions.md#rotate-through-a-controlled-rollout).
 Do not delete the shared secret container or rotate database credentials for this operation.
+
