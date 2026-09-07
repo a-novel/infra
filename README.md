@@ -118,6 +118,12 @@ at merge. A new candidate commit, a moved base, a failed or expired assessment, 
 blocks immediately; rerun the command for the new tuple. The same decision is reevaluated on the
 merge queue. Protected apply and post-merge verification retain their own deletion check.
 
+The deletion checks refresh automatically after an assessment completes or the approval label
+changes. Both push and pull-request checks are refreshed; active CI catches up when it finishes.
+Only the gate jobs rerun. A PR that changes `.github/workflows/main.yaml` requires manual gate
+refresh after reviewing that workflow. Assessment authorization, labels, and applies remain human
+operations.
+
 The shared [plan policy](./ops/lib/plan-policy.jq) also blocks failed or unresolved check assertions
 and updates that weaken existing protections. It preserves existing `deletion_protection`,
 `force_destroy`, and `deletion_policy` guards across resource types. For the configured Google

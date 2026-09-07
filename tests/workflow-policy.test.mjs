@@ -198,3 +198,77 @@ test("trusted assessment authenticates each GitHub metadata step", () => {
     assert.equal(step.env.GH_TOKEN, "${{ github.token }}", name);
   }
 });
+
+const refreshSource = await readFile(
+  path.join(repositoryRoot, ".github/workflows/refresh-deletion-gates.yaml"),
+  "utf8",
+);
+const refresh = parse(refreshSource);
+
+test("the refresh exception covers only the approved trigger warning", () => {
+  const ignores = [
+    ...refreshSource.matchAll(/#\s*zizmor:\s*ignore\[([^\]]+)\]/g),
+  ];
+  assert.deepEqual(
+    ignores.map((match) => match[1]),
+    ["dangerous-triggers"],
+  );
+  assert.match(refreshSource, /^on: # zizmor: ignore\[dangerous-triggers\]$/m);
+  assert.deepEqual(Object.keys(refresh.on), [
+    "pull_request_target",
+    "workflow_run",
+  ]);
+});
+
+test("gate refresh is cloud-blind and executes only trusted master tooling", () => {
+  const job = refresh.jobs.refresh;
+  assert.deepEqual(refresh.permissions, {});
+  assert.deepEqual(job.permissions, {
+    actions: "write",
+    contents: "read",
+    "pull-requests": "read",
+  });
+  assert.equal(job.environment, undefined);
+  assert.equal(job["timeout-minutes"], 5);
+  assert.equal(job.steps.length, 3);
+  assert.equal(job.steps.filter((step) => step.run).length, 1);
+  const checkout = job.steps.find((step) =>
+    step.uses?.startsWith("actions/checkout@"),
+  );
+  assert.equal(checkout.with.ref, "master");
+  assert.equal(checkout.with["persist-credentials"], false);
+  assert.doesNotMatch(
+    JSON.stringify(job),
+    /secrets\.|id-token|google-github-actions|download-artifact|upload-artifact|cache|pnpm install/,
+  );
+  const run = job.steps.find((step) => step.run);
+  assert.equal(run.env.GH_TOKEN, "${{ github.token }}");
+  assert.match(run.run, /node \.\/ops\/refresh-deletion-gates\.mjs/);
+  assert.doesNotMatch(run.run, /\$\{\{/);
+});
+
+test("refresh listens for label changes and CI completion without self-triggering", () => {
+  assert.deepEqual(refresh.on.pull_request_target, {
+    branches: ["master"],
+    types: ["labeled", "unlabeled"],
+  });
+  assert.deepEqual(refresh.on.workflow_run, {
+    workflows: ["main", "production drift"],
+    types: ["completed"],
+  });
+  assert.match(refresh.jobs.refresh.if, /allow-resource-deletion/);
+  assert.equal(refresh.on.workflow_dispatch, undefined);
+  assert.equal(refresh.on.schedule, undefined);
+});
+
+test("rerunning the deletion gate cannot start dependent jobs", () => {
+  for (const [name, job] of Object.entries(main.jobs)) {
+    assert.notEqual(job.name, "resource-deletion-gate");
+    const needs = Array.isArray(job.needs) ? job.needs : [job.needs];
+    assert.ok(!needs.includes("resource-deletion-gate"), name);
+    assert.ok(
+      !needs.some((need) => typeof need === "string" && need.includes("${{")),
+      name,
+    );
+  }
+});

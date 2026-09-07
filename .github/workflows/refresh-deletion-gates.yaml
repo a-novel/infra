@@ -1,0 +1,52 @@
+name: refresh deletion gates
+
+# These privileged events refresh checks using protected-master code and validated
+# GitHub metadata only. Candidate code, artifacts, caches, and cloud access are excluded.
+on: # zizmor: ignore[dangerous-triggers]
+  pull_request_target:
+    branches: [master]
+    types: [labeled, unlabeled]
+  workflow_run:
+    workflows: [main, production drift]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  refresh:
+    if: >-
+      (github.event_name == 'pull_request_target' &&
+       github.event.label.name == 'allow-resource-deletion') ||
+      (github.event_name == 'workflow_run' &&
+       ((github.event.workflow_run.path == '.github/workflows/drift.yaml' &&
+         github.event.workflow_run.event == 'workflow_dispatch' &&
+         github.event.workflow_run.head_branch == 'master') ||
+        (github.event.workflow_run.path == '.github/workflows/main.yaml' &&
+         github.event.workflow_run.head_branch != 'master' &&
+         (github.event.workflow_run.event == 'push' ||
+          github.event.workflow_run.event == 'pull_request'))))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Check out trusted refresh tooling
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: master
+          persist-credentials: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@v7.0.0
+        with:
+          node-version-file: .node-version
+
+      - name: Refresh current deletion gate jobs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          node ./ops/refresh-deletion-gates.mjs
