@@ -107,7 +107,7 @@ resource "google_storage_bucket" "backups" {
   # a separate, irreversible operator step after the first clean restore drill.
   retention_policy {
     retention_period = 604800
-    is_locked        = false
+    is_locked        = true
   }
 
   lifecycle_rule {
