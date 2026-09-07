@@ -13,6 +13,44 @@ on: # zizmor: ignore[dangerous-triggers]
 permissions: {}
 
 jobs:
+  assess-images:
+    if: >-
+      github.event_name == 'workflow_run' &&
+      ((github.event.workflow_run.path == '.github/workflows/main.yaml' &&
+        (github.event.workflow_run.event == 'push' ||
+         github.event.workflow_run.event == 'pull_request')) ||
+       (github.event.workflow_run.path == '.github/workflows/drift.yaml' &&
+        github.event.workflow_run.event == 'workflow_dispatch' &&
+        github.event.workflow_run.head_branch == 'master'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    concurrency:
+      group: image-assessment-request
+      cancel-in-progress: false
+    permissions:
+      actions: write
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Check out trusted assessment requester
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: master
+          persist-credentials: false
+
+      - name: Install the pinned Node.js runtime
+        uses: actions/setup-node@v7.0.0
+        with:
+          node-version-file: .node-version
+
+      - name: Request assessments for validated image updates
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          node ./ops/assess-image-updates.mjs dispatch
+
   refresh:
     if: >-
       (github.event_name == 'pull_request_target' &&

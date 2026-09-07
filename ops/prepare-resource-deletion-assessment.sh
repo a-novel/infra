@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# Builds a payload-free deletion verdict from trusted tooling and an exact candidate checkout.
-# Usage: prepare-resource-deletion-assessment.sh <repository> <pr> <head> <base> <candidate> <state-bucket> <output>
+# Builds a payload-free verdict from an exact candidate or a verified image-only transition.
+# Usage: prepare-resource-deletion-assessment.sh <repository> <pr> <head> <base> <candidate|--image-only> <state-bucket> <output>
 
 set -euo pipefail
 
 if [ "$#" -ne 7 ]; then
-    printf 'Usage: %s <repository> <pr> <head> <base> <candidate> <state-bucket> <output>\n' "$0" >&2
+    printf 'Usage: %s <repository> <pr> <head> <base> <candidate|--image-only> <state-bucket> <output>\n' "$0" >&2
     exit 64
 fi
 
@@ -24,23 +24,36 @@ if ! [[ "${REPOSITORY}" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] ||
     ! [[ "${HEAD_SHA}" =~ ^[a-f0-9]{40}$ ]] ||
     ! [[ "${BASE_SHA}" =~ ^[a-f0-9]{40}$ ]] ||
     ! [[ "${STATE_BUCKET}" =~ ^[a-z0-9][a-z0-9._-]{1,221}[a-z0-9]$ ]] ||
-    [[ "${CANDIDATE_ROOT}" != /* ]] || [ ! -d "${CANDIDATE_ROOT}" ]; then
+    { [ "${CANDIDATE_ROOT}" != --image-only ] &&
+        { [[ "${CANDIDATE_ROOT}" != /* ]] || [ ! -d "${CANDIDATE_ROOT}" ]; }; }; then
     printf 'The resource-deletion assessment input is invalid.\n' >&2
     exit 65
 fi
 
-for command_name in gh git jq tofu; do
+COMMANDS=(gh jq)
+if [ "${CANDIDATE_ROOT}" = --image-only ]; then
+    COMMANDS+=(node)
+else
+    COMMANDS+=(git tofu)
+fi
+for command_name in "${COMMANDS[@]}"; do
     if ! command -v "${command_name}" >/dev/null 2>&1; then
         printf '%s is required by the trusted assessment workflow.\n' "${command_name}" >&2
         exit 69
     fi
 done
 
-CANDIDATE_ROOT="$(cd -- "${CANDIDATE_ROOT}" && pwd)"
-if [ "$(git -C "${CANDIDATE_ROOT}" rev-parse HEAD)" != "${HEAD_SHA}" ] ||
-    [ -n "$(git -C "${CANDIDATE_ROOT}" status --porcelain)" ]; then
-    printf 'The candidate checkout differs from the exact assessed commit.\n' >&2
-    exit 65
+if [ "${CANDIDATE_ROOT}" = --image-only ]; then
+    GITHUB_REPOSITORY="${REPOSITORY}" PULL_REQUEST="${PULL_REQUEST}" \
+        HEAD_SHA="${HEAD_SHA}" BASE_SHA="${BASE_SHA}" \
+        node "${SCRIPT_DIR}/assess-image-updates.mjs" verify
+else
+    CANDIDATE_ROOT="$(cd -- "${CANDIDATE_ROOT}" && pwd)"
+    if [ "$(git -C "${CANDIDATE_ROOT}" rev-parse HEAD)" != "${HEAD_SHA}" ] ||
+        [ -n "$(git -C "${CANDIDATE_ROOT}" status --porcelain)" ]; then
+        printf 'The candidate checkout differs from the exact assessed commit.\n' >&2
+        exit 65
+    fi
 fi
 
 TEMP_DIR="$(mktemp -d)"
@@ -77,6 +90,12 @@ IMPACT="$("${SCRIPT_DIR}/resource-deletion-impact.sh" "${TEMP_DIR}/files.json")"
 RELEASE_ROOT="$(jq --raw-output '.release_root' <<<"${IMPACT}")"
 RELEASE_MANIFEST="$(jq --raw-output '.release_manifest' <<<"${IMPACT}")"
 mapfile -t ROOTS < <(jq --raw-output '.roots[]' <<<"${IMPACT}")
+if [ "${CANDIDATE_ROOT}" = --image-only ] &&
+    ! jq --exit-status '.roots == ["release"] and .release_manifest and (.release_root | not)' \
+        <<<"${IMPACT}" >/dev/null; then
+    printf 'An image-only assessment cannot execute a candidate plan.\n' >&2
+    exit 77
+fi
 APPROVAL_REQUIRED=false
 FIRST_LAUNCH=false
 

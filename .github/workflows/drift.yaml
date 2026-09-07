@@ -13,7 +13,7 @@ on:
         required: true
         default: drift
         type: choice
-        options: [drift, assess-pull-request]
+        options: [drift, assess-pull-request, assess-image-update]
       pull_request:
         description: Assessment only; pull request number.
         required: false
@@ -28,7 +28,7 @@ on:
         type: string
 
 run-name: >-
-  ${{ inputs.operation == 'assess-pull-request' &&
+  ${{ (inputs.operation == 'assess-pull-request' || inputs.operation == 'assess-image-update') &&
   format('resource-deletion assessment PR #{0} {1} onto {2}', inputs.pull_request, inputs.head_sha, inputs.base_sha) ||
   'production drift' }}
 
@@ -149,7 +149,7 @@ jobs:
     if: >-
       github.ref == 'refs/heads/master' &&
       github.event_name == 'workflow_dispatch' &&
-      inputs.operation == 'assess-pull-request'
+      (inputs.operation == 'assess-pull-request' || inputs.operation == 'assess-image-update')
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
@@ -164,9 +164,28 @@ jobs:
           path: trusted
           persist-credentials: false
 
+      - name: Install the pinned Node.js runtime
+        if: inputs.operation == 'assess-image-update'
+        uses: actions/setup-node@v7.0.0
+        with:
+          node-version-file: trusted/.node-version
+
+      - name: Authorize the exact image-only update
+        if: inputs.operation == 'assess-image-update'
+        shell: bash
+        env:
+          BASE_SHA: ${{ inputs.base_sha }}
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ inputs.head_sha }}
+          PULL_REQUEST: ${{ inputs.pull_request }}
+        run: |
+          set -euo pipefail
+          node ./trusted/ops/assess-image-updates.mjs verify
+
       # This check runs before credentials exist because the candidate plan can
       # execute providers and external data sources.
       - name: Resolve maintainer-approved exact candidate
+        if: inputs.operation == 'assess-pull-request'
         id: target
         shell: bash
         env:
@@ -181,6 +200,7 @@ jobs:
           printf 'repository=%s\n' "${repository}" >>"${GITHUB_OUTPUT}"
 
       - name: Check out the exact candidate without running it
+        if: inputs.operation == 'assess-pull-request'
         uses: actions/checkout@v7.0.1
         with:
           path: candidate
@@ -202,6 +222,7 @@ jobs:
           version: "581.0.0"
 
       - name: Install OpenTofu
+        if: inputs.operation == 'assess-pull-request'
         uses: opentofu/setup-opentofu@v2.0.2
         with:
           tofu_version_file: trusted/.opentofu-version
@@ -211,6 +232,7 @@ jobs:
       - name: Assess plans with current private inputs
         shell: bash
         env:
+          ASSESSMENT_OPERATION: ${{ inputs.operation }}
           BASE_SHA: ${{ inputs.base_sha }}
           GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ inputs.head_sha }}
@@ -219,9 +241,13 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
+          candidate="${GITHUB_WORKSPACE}/candidate"
+          if [ "${ASSESSMENT_OPERATION}" = assess-image-update ]; then
+            candidate=--image-only
+          fi
           ./trusted/ops/prepare-resource-deletion-assessment.sh \
             "${GITHUB_REPOSITORY}" "${PULL_REQUEST}" "${HEAD_SHA}" "${BASE_SHA}" \
-            "${GITHUB_WORKSPACE}/candidate" "${STATE_BUCKET}" \
+            "${candidate}" "${STATE_BUCKET}" \
             "${RUNNER_TEMP}/resource-deletion/assessment.json"
 
       # The artifact deliberately contains only the exact commit tuple and
