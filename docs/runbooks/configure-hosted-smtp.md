@@ -303,4 +303,3 @@ app password and Secret Manager version available while any retained rollback re
 Only after that window, revoke the old app password in the account's App passwords page and disable
 its exact old version using [Secret versions](./secret-versions.md#rotate-through-a-controlled-rollout).
 Do not delete the shared secret container or rotate database credentials for this operation.
-
