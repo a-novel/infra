@@ -199,12 +199,26 @@ test("trusted assessment authenticates each GitHub metadata step", () => {
   }
 });
 
-const refresh = parse(
-  await readFile(
-    path.join(repositoryRoot, ".github/workflows/refresh-deletion-gates.yaml"),
-    "utf8",
-  ),
+const refreshSource = await readFile(
+  path.join(repositoryRoot, ".github/workflows/refresh-deletion-gates.yaml"),
+  "utf8",
 );
+const refresh = parse(refreshSource);
+
+test("the refresh exception covers only the approved trigger warning", () => {
+  const ignores = [
+    ...refreshSource.matchAll(/#\s*zizmor:\s*ignore\[([^\]]+)\]/g),
+  ];
+  assert.deepEqual(
+    ignores.map((match) => match[1]),
+    ["dangerous-triggers"],
+  );
+  assert.match(refreshSource, /^on: # zizmor: ignore\[dangerous-triggers\]$/m);
+  assert.deepEqual(Object.keys(refresh.on), [
+    "pull_request_target",
+    "workflow_run",
+  ]);
+});
 
 test("gate refresh is cloud-blind and executes only trusted master tooling", () => {
   const job = refresh.jobs.refresh;
@@ -216,6 +230,8 @@ test("gate refresh is cloud-blind and executes only trusted master tooling", () 
   });
   assert.equal(job.environment, undefined);
   assert.equal(job["timeout-minutes"], 5);
+  assert.equal(job.steps.length, 3);
+  assert.equal(job.steps.filter((step) => step.run).length, 1);
   const checkout = job.steps.find((step) =>
     step.uses?.startsWith("actions/checkout@"),
   );

@@ -1,6 +1,8 @@
 name: refresh deletion gates
 
-on:
+# These privileged events refresh checks using protected-master code and validated
+# GitHub metadata only. Candidate code, artifacts, caches, and cloud access are excluded.
+on: # zizmor: ignore[dangerous-triggers]
   pull_request_target:
     branches: [master]
     types: [labeled, unlabeled]
