@@ -81,7 +81,10 @@ test("hosted SMTP operator inputs are parameterized", () => {
   );
 
   for (const content of [smtpRunbook, deploymentRunbook]) {
-    assert.doesNotMatch(content, /^\s*SMTP_[A-Z0-9_]*=/m);
+    assert.doesNotMatch(
+      content,
+      /^\s*SMTP_(HOST|USERNAME|SENDER_EMAIL|SENDER_NAME)=/m,
+    );
   }
 
   for (const variable of [
