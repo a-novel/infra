@@ -198,3 +198,61 @@ test("trusted assessment authenticates each GitHub metadata step", () => {
     assert.equal(step.env.GH_TOKEN, "${{ github.token }}", name);
   }
 });
+
+const refresh = parse(
+  await readFile(
+    path.join(repositoryRoot, ".github/workflows/refresh-deletion-gates.yaml"),
+    "utf8",
+  ),
+);
+
+test("gate refresh is cloud-blind and executes only trusted master tooling", () => {
+  const job = refresh.jobs.refresh;
+  assert.deepEqual(refresh.permissions, {});
+  assert.deepEqual(job.permissions, {
+    actions: "write",
+    contents: "read",
+    "pull-requests": "read",
+  });
+  assert.equal(job.environment, undefined);
+  assert.equal(job["timeout-minutes"], 5);
+  const checkout = job.steps.find((step) =>
+    step.uses?.startsWith("actions/checkout@"),
+  );
+  assert.equal(checkout.with.ref, "master");
+  assert.equal(checkout.with["persist-credentials"], false);
+  assert.doesNotMatch(
+    JSON.stringify(job),
+    /secrets\.|id-token|google-github-actions|download-artifact|upload-artifact|cache|pnpm install/,
+  );
+  const run = job.steps.find((step) => step.run);
+  assert.equal(run.env.GH_TOKEN, "${{ github.token }}");
+  assert.match(run.run, /node \.\/ops\/refresh-deletion-gates\.mjs/);
+  assert.doesNotMatch(run.run, /\$\{\{/);
+});
+
+test("refresh listens for label changes and CI completion without self-triggering", () => {
+  assert.deepEqual(refresh.on.pull_request_target, {
+    branches: ["master"],
+    types: ["labeled", "unlabeled"],
+  });
+  assert.deepEqual(refresh.on.workflow_run, {
+    workflows: ["main", "production drift"],
+    types: ["completed"],
+  });
+  assert.match(refresh.jobs.refresh.if, /allow-resource-deletion/);
+  assert.equal(refresh.on.workflow_dispatch, undefined);
+  assert.equal(refresh.on.schedule, undefined);
+});
+
+test("rerunning the deletion gate cannot start dependent jobs", () => {
+  for (const [name, job] of Object.entries(main.jobs)) {
+    assert.notEqual(job.name, "resource-deletion-gate");
+    const needs = Array.isArray(job.needs) ? job.needs : [job.needs];
+    assert.ok(!needs.includes("resource-deletion-gate"), name);
+    assert.ok(
+      !needs.some((need) => typeof need === "string" && need.includes("${{")),
+      name,
+    );
+  }
+});
