@@ -277,3 +277,200 @@ for (const action of ["plan", "assess", "apply", "converge", "drift"]) {
     assert.equal(result.status, 65, `${action}: ${result.stderr}`);
   });
 }
+
+const releaseSchedules = [
+  ["json_keys_rotation[0]", "agora-json-keys-rotation", "10 * * * *"],
+  [
+    'postgres_backup["authentication"]',
+    "agora-postgres-backup-authentication",
+    "45 */4 * * *",
+  ],
+  [
+    'postgres_backup["json_keys"]',
+    "agora-postgres-backup-json-keys",
+    "15 */4 * * *",
+  ],
+  [
+    'postgres_restore["authentication"]',
+    "agora-postgres-restore-authentication",
+    "45 3 1 * *",
+  ],
+  [
+    'postgres_restore["json_keys"]',
+    "agora-postgres-restore-json-keys",
+    "15 3 1 * *",
+  ],
+  ["postgres_backup_monitor[0]", "agora-postgres-backup-monitor", "5 * * * *"],
+];
+
+function releaseSchedule([address, name, schedule] = releaseSchedules[0]) {
+  const value = {
+    name,
+    project: "workload-project-prod",
+    region: "europe-west1",
+    schedule,
+    time_zone: "Etc/UTC",
+  };
+  return {
+    address: `google_cloud_scheduler_job.${address}`,
+    type: "google_cloud_scheduler_job",
+    change: {
+      actions: ["update"],
+      before: { ...value, paused: false },
+      after: { ...value, paused: true },
+      after_unknown: { last_attempt_time: true },
+    },
+  };
+}
+
+function candidateVariables() {
+  return {
+    application_release: { value: { rollout: { phase: "candidate" } } },
+    recovery_mode: { value: false },
+    workload_project_id: { value: "workload-project-prod" },
+    region: { value: "europe-west1" },
+    private_fixture: { value: privateValue },
+  };
+}
+
+for (const schedule of releaseSchedules) {
+  test(`release schedule ${schedule[1]} pauses for a candidate and resumes`, async (t) => {
+    for (const phase of ["candidate", "active", "rollback"]) {
+      const resource = releaseSchedule(schedule);
+      const variables = candidateVariables();
+      if (phase !== "candidate") {
+        variables.application_release.value.rollout.phase = "active";
+        resource.change.before.paused = true;
+        resource.change.after.paused = false;
+      }
+      const { file } = await fixture(t, resource, { variables });
+      const result = run(["ops/plan-summary.sh", "release", file]);
+      assert.equal(result.status, 0, `${phase}: ${result.stderr}`);
+      assert.doesNotMatch(
+        result.stdout + result.stderr,
+        new RegExp(privateValue),
+      );
+    }
+  });
+}
+
+const unsafeCandidateSchedules = {
+  "another scheduler": (resource) => {
+    resource.address = "google_cloud_scheduler_job.unrelated";
+  },
+  "a child module scheduler": (resource) => {
+    resource.address = `module.other.${resource.address}`;
+  },
+  "a different cloud job": (resource) => {
+    resource.change.before.name = resource.change.after.name = "another-job";
+  },
+  "a renamed job": (resource) => {
+    resource.change.after.name = "another-job";
+  },
+  "a different project": (resource) => {
+    resource.change.before.project = resource.change.after.project =
+      "other-project-prod";
+  },
+  "a changed project": (resource) => {
+    resource.change.after.project = "other-project-prod";
+  },
+  "a different region": (resource) => {
+    resource.change.before.region = resource.change.after.region =
+      "europe-west2";
+  },
+  "a changed cron": (resource) => {
+    resource.change.after.schedule = "0 0 * * *";
+  },
+  "a changed time zone": (resource) => {
+    resource.change.after.time_zone = "Europe/Paris";
+  },
+  "unknown pause state": (resource) => {
+    resource.change.after_unknown.paused = true;
+  },
+  "unknown identity": (resource) => {
+    resource.change.after_unknown.name = true;
+  },
+  "unknown project": (resource) => {
+    resource.change.after_unknown.project = true;
+  },
+  "unknown region": (resource) => {
+    resource.change.after_unknown.region = true;
+  },
+  "unknown schedule": (resource) => {
+    resource.change.after_unknown.schedule = true;
+  },
+  "unknown time zone": (resource) => {
+    resource.change.after_unknown.time_zone = true;
+  },
+  "unknown resource": (resource) => {
+    resource.change.after_unknown = true;
+  },
+  "missing pause state": (resource) => {
+    delete resource.change.after.paused;
+  },
+  replacement: (resource) => {
+    resource.change.actions = ["delete", "create"];
+  },
+  "weakened deletion protection": (resource) => {
+    resource.change.before.deletion_protection = true;
+    resource.change.after.deletion_protection = false;
+  },
+  "active rollout": (_, variables) => {
+    variables.application_release.value.rollout.phase = "active";
+  },
+  "unknown rollout phase": (_, variables) => {
+    variables.application_release.value.rollout.phase = "unknown";
+  },
+  "absent application": (_, variables) => {
+    variables.application_release.value = null;
+  },
+  "missing phase": (_, variables) => {
+    delete variables.application_release.value.rollout.phase;
+  },
+  "recovery state": (_, variables) => {
+    variables.recovery_mode.value = true;
+  },
+  "missing recovery mode": (_, variables) => {
+    delete variables.recovery_mode;
+  },
+  "missing project": (_, variables) => {
+    delete variables.workload_project_id;
+  },
+  "missing region": (_, variables) => {
+    delete variables.region;
+  },
+};
+
+for (const [name, mutate] of Object.entries(unsafeCandidateSchedules)) {
+  test(`candidate pause exception rejects ${name}`, async (t) => {
+    const resource = releaseSchedule();
+    const variables = candidateVariables();
+    mutate(resource, variables);
+    const { file } = await fixture(t, resource, { variables });
+    const result = run(["ops/plan-summary.sh", "release", file], {
+      ALLOW_RESOURCE_DELETION: "true",
+    });
+    assert.equal(result.status, 65, result.stderr);
+    assert.doesNotMatch(
+      result.stdout + result.stderr,
+      new RegExp(privateValue),
+    );
+  });
+}
+
+for (const rootName of ["bootstrap", "foundation"]) {
+  test(`candidate variables cannot authorize pauses in ${rootName}`, async (t) => {
+    const { file } = await fixture(t, releaseSchedule(), {
+      variables: candidateVariables(),
+    });
+    assert.equal(run(["ops/plan-summary.sh", rootName, file]).status, 65);
+  });
+}
+
+test("candidate pause still rejects unresolved plan checks", async (t) => {
+  const { file } = await fixture(t, releaseSchedule(), {
+    variables: candidateVariables(),
+    checks: [{ status: "unknown" }],
+  });
+  assert.equal(run(["ops/plan-summary.sh", "release", file]).status, 65);
+});
