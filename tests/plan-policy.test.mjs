@@ -51,8 +51,8 @@ function run(args, env = {}) {
 
 const cases = {
   google_storage_bucket: {
-    "retention_policy.0.retention_period": [604800, 86400],
-    retention_policy: [[{ retention_period: 604800 }], []],
+    "retention_policy.0.retention_period": ["604800", "86400"],
+    retention_policy: [[{ retention_period: "604800" }], []],
     "retention_policy.0.is_locked": [true, false],
     "versioning.0.enabled": [true, false],
     "soft_delete_policy.0.retention_duration_seconds": [604800, 0],
@@ -178,7 +178,7 @@ for (const after_unknown of [
   { retention_policy: [{ retention_period: true }] },
 ]) {
   test(`plan policy rejects unknown protected values ${JSON.stringify(after_unknown)}`, async (t) => {
-    const value = { retention_policy: [{ retention_period: 604800 }] };
+    const value = { retention_policy: [{ retention_period: "604800" }] };
     const { file } = await fixture(t, {
       type: "google_storage_bucket",
       change: {
@@ -200,11 +200,11 @@ test("safe updates and stronger retention pass with unrelated unknown values", a
       change: {
         actions: ["update"],
         before: {
-          retention_policy: [{ retention_period: 604800 }],
+          retention_policy: [{ retention_period: "604800" }],
           labels: { version: "old" },
         },
         after: {
-          retention_policy: [{ retention_period: 1209600 }],
+          retention_policy: [{ retention_period: "1209600" }],
           labels: { version: "new" },
         },
         after_unknown: { id: true },
@@ -214,6 +214,126 @@ test("safe updates and stronger retention pass with unrelated unknown values", a
   );
   assert.equal(run(["ops/plan-summary.sh", "bootstrap", file]).status, 0);
 });
+
+test("provider-shaped retention permits no-op and locking but rejects unlocking", async (t) => {
+  for (const [actions, beforeLock, afterLock, code] of [
+    [["no-op"], false, false, 0],
+    [["update"], false, true, 0],
+    [["update"], true, false, 65],
+  ]) {
+    const value = {
+      force_destroy: false,
+      public_access_prevention: "enforced",
+      uniform_bucket_level_access: true,
+      soft_delete_policy: [{ retention_duration_seconds: 0 }],
+      lifecycle_rule: deletionRule(14),
+    };
+    const { file } = await fixture(t, {
+      type: "google_storage_bucket",
+      change: {
+        actions,
+        before: {
+          ...value,
+          retention_policy: [
+            { retention_period: "604800", is_locked: beforeLock },
+          ],
+        },
+        after: {
+          ...value,
+          retention_policy: [
+            { retention_period: "604800", is_locked: afterLock },
+          ],
+        },
+      },
+    });
+    const result = run(["ops/plan-summary.sh", "bootstrap", file]);
+    assert.equal(result.status, code, result.stderr);
+    assert.doesNotMatch(
+      result.stdout + result.stderr,
+      /604800|fixture-private-plan-value/,
+    );
+  }
+});
+
+for (const field of [
+  "retention_policy.0.retention_period",
+  "soft_delete_policy.0.retention_duration_seconds",
+]) {
+  test(`retention comparison handles integer encodings for ${field}`, async (t) => {
+    for (const [before, after, code] of [
+      [604800, 604800, 0],
+      ["604800", 604800, 0],
+      [604800, "604800", 0],
+      ["604800", "1209600", 0],
+      ["604800", "86400", 65],
+      [604800, "86400", 65],
+      ["604800", 86400, 65],
+      [0, "0", 0],
+      ["0", 0, 0],
+      ["604800", null, 65],
+    ]) {
+      const { file } = await fixture(t, {
+        type: "google_storage_bucket",
+        change: {
+          actions: ["update"],
+          before: fieldValue(field, before),
+          after: fieldValue(field, after),
+        },
+      });
+      const result = run(["ops/plan-summary.sh", "bootstrap", file]);
+      assert.equal(
+        result.status,
+        code,
+        `${before} -> ${after}: ${result.stderr}`,
+      );
+    }
+  });
+
+  test(`retention comparison rejects malformed or imprecise ${field}`, async (t) => {
+    for (const value of [
+      true,
+      false,
+      [],
+      {},
+      "",
+      "604800s",
+      " 604800",
+      "604800\n",
+      "+604800",
+      "6.048e5",
+      "604800.0",
+      "-1",
+      -1,
+      0.5,
+      "9007199254740992",
+      9007199254740992,
+      privateValue,
+    ]) {
+      for (const side of ["before", "after"]) {
+        const change = {
+          actions: ["update"],
+          before: fieldValue(field, "604800"),
+          after: fieldValue(field, "604800"),
+        };
+        change[side] = fieldValue(field, value);
+        const { file } = await fixture(t, {
+          type: "google_storage_bucket",
+          change,
+        });
+        const result = run(["ops/plan-summary.sh", "bootstrap", file]);
+        assert.equal(
+          result.status,
+          65,
+          `${side}=${JSON.stringify(value)}: ${result.stderr}`,
+        );
+        assert.doesNotMatch(
+          result.stdout + result.stderr,
+          new RegExp(privateValue),
+        );
+      }
+    }
+  });
+}
 
 test("preserved disks permit unrelated computed fields and disk reordering", async (t) => {
   const boot = { device_name: "boot", auto_delete: true };
