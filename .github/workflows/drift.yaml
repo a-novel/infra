@@ -227,7 +227,7 @@ jobs:
       # The artifact deliberately contains only the exact commit tuple and
       # boolean verdict. Plans, state, and configuration stay on the runner.
       - name: Publish the payload-free verdict
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: resource-deletion-assessment-${{ github.run_attempt }}
           path: ${{ runner.temp }}/resource-deletion/assessment.json
