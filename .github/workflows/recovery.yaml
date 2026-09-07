@@ -67,7 +67,7 @@ jobs:
 
       - name: Install pnpm
         if: inputs.operation != 'cleanup-project'
-        uses: pnpm/action-setup@v6.0.10
+        uses: pnpm/action-setup@v6.1.0
 
       - name: Install Node.js
         if: inputs.operation != 'cleanup-project'
