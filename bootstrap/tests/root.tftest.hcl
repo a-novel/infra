@@ -122,7 +122,7 @@ run "builds_the_protected_management_plane" {
     condition = (
       google_storage_bucket.backups.public_access_prevention == "enforced" &&
       one(google_storage_bucket.backups.retention_policy).retention_period == "604800" &&
-      !one(google_storage_bucket.backups.retention_policy).is_locked &&
+      one(google_storage_bucket.backups.retention_policy).is_locked &&
       one(one(google_storage_bucket.backups.lifecycle_rule).condition).age == 14 &&
       google_storage_bucket.backups.soft_delete_policy[0].retention_duration_seconds == 0 &&
       !google_storage_bucket.backups.force_destroy &&
