@@ -8,20 +8,20 @@ components:
     images:
       database:
         repository: ghcr.io/a-novel/service-json-keys/database
-        tag: v2.5.5
-        digest: sha256:3231b0415755c7d96074836f83bd0d0e30da50ce36100cd1cfb08694f32ad238
+        tag: v2.6.0
+        digest: sha256:352d3a8ed7f9101588395d2c971fd6357c49475853c58ea5f61fb795cced15c8
       grpc:
         repository: ghcr.io/a-novel/service-json-keys/grpc
-        tag: v2.5.5
-        digest: sha256:2590b20d07d1c32d2c7527af57d3abc4dc4a072ff1550dc35aac81c5f7e040a1
+        tag: v2.6.0
+        digest: sha256:5d17049644a99eb96b3d542081ef49c437f0640b7cc095c517e9cfd68e47737e
       jobs/migrations:
         repository: ghcr.io/a-novel/service-json-keys/jobs/migrations
-        tag: v2.5.5
-        digest: sha256:6c6623b54c11b4cf53c4645112e95c2d0f9737394b37f85a276eb3dcf6f898d4
+        tag: v2.6.0
+        digest: sha256:31d334f8eeb55357b689c5af983896e22207a8b40aab14533ce18e226c6dd76b
       jobs/rotatekeys:
         repository: ghcr.io/a-novel/service-json-keys/jobs/rotatekeys
-        tag: v2.5.5
-        digest: sha256:47c13b8e4070419c554222362d2d87034925c8f352ddf02093937b7f89687214
+        tag: v2.6.0
+        digest: sha256:668bba488eedc7b1d9ca73a27945ae228167a815cb7e8b6f03cc99b394807217
   service-authentication:
     enabled: true
     images:
