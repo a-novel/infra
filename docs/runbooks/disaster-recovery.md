@@ -322,8 +322,7 @@ grant_secret_access production-json-keys-postgres-password "$JSON_RUNTIME"
 grant_secret_access production-authentication-postgres-password "$RESTORE_RUNTIME"
 grant_secret_access production-json-keys-postgres-password "$RESTORE_RUNTIME"
 
-gcloud storage buckets add-iam-policy-binding "gs://${BACKUP_BUCKET}" \
-  --member="$RESTORE_RUNTIME" --role=roles/storage.objectViewer --quiet >/dev/null
+gcloud storage buckets add-iam-policy-binding "gs://${BACKUP_BUCKET}" --member="$RESTORE_RUNTIME" --role=roles/storage.objectViewer --condition=None --quiet >/dev/null
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
@@ -368,10 +367,11 @@ for secret in \
     --filter="bindings.members=${RECOVERY_MEMBER}" --format='value(bindings.role)')"
 done
 
-test "$(gcloud storage buckets get-iam-policy "gs://${BACKUP_BUCKET}" \
-  --flatten='bindings[].members' \
-  --filter="bindings.members=${RESTORE_RUNTIME}" \
-  --format='value(bindings.role)')" = roles/storage.objectViewer
+gcloud storage buckets get-iam-policy "gs://${BACKUP_BUCKET}" --format=json |
+jq --exit-status --arg member "$RESTORE_RUNTIME" '
+[.bindings[]? | select((.members // []) | index($member)) | {role, condition}] ==
+[{role: "roles/storage.objectViewer", condition: null}]
+' >/dev/null
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
@@ -601,8 +601,7 @@ revoke_secret_access production-json-keys-postgres-password "$JSON_RUNTIME"
 revoke_secret_access production-authentication-postgres-password "$RESTORE_RUNTIME"
 revoke_secret_access production-json-keys-postgres-password "$RESTORE_RUNTIME"
 
-gcloud storage buckets remove-iam-policy-binding "gs://${BACKUP_BUCKET}" \
-  --member="$RESTORE_RUNTIME" --role=roles/storage.objectViewer --quiet >/dev/null
+gcloud storage buckets remove-iam-policy-binding "gs://${BACKUP_BUCKET}" --member="$RESTORE_RUNTIME" --role=roles/storage.objectViewer --condition=None --quiet >/dev/null
 
 for member in "$AUTH_RUNTIME" "$DATABASE_RUNTIME" "$JSON_RUNTIME" "$RESTORE_RUNTIME"; do
   for secret in \
@@ -618,9 +617,10 @@ for member in "$AUTH_RUNTIME" "$DATABASE_RUNTIME" "$JSON_RUNTIME" "$RESTORE_RUNT
       --filter="bindings.members=${member}" --format='value(bindings.role)')"
   done
 done
-test -z "$(gcloud storage buckets get-iam-policy "gs://${BACKUP_BUCKET}" \
-  --flatten='bindings[].members' --filter="bindings.members=${RESTORE_RUNTIME}" \
-  --format='value(bindings.role)')"
+gcloud storage buckets get-iam-policy "gs://${BACKUP_BUCKET}" --format=json |
+jq --exit-status --arg member "$RESTORE_RUNTIME" '
+[.bindings[]? | select((.members // []) | index($member))] | length == 0
+' >/dev/null
 unset AUTH_RUNTIME DATABASE_RUNTIME JSON_RUNTIME RESTORE_RUNTIME
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
