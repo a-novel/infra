@@ -62,6 +62,29 @@ fi
 if ! jq --exit-status --arg root_name "$1" \
     -f "${SCRIPT_DIR}/lib/plan-policy.jq" "$2" >/dev/null 2>&1; then
     printf 'Plan safety checks failed, remain unknown, or weaken protected settings.\n' >&2
+    # Only fixed categories may leave the private plan; instance keys and
+    # provider problem messages can contain payloads.
+    jq --raw-output '
+        def array_or_empty: if type == "array" then . else [] end;
+        [
+          (.checks | array_or_empty)[]
+          | . as $check
+          | ([.status] + [.instances | array_or_empty | .[] | .status])
+          | unique[] | select(. != "pass")
+          | {
+              status: (if IN("fail", "error", "unknown") then . else "invalid" end),
+              category: ({
+                "google_cloud_quotas_quota_preference.cost_cap": "REGIONAL_QUOTA_SELECTION",
+                "google_project.workload": "WORKLOAD_PROJECT_PARENT",
+                "check.database_zone_matches_region": "DATABASE_ZONE",
+                "check.database_container_memory_headroom": "DATABASE_MEMORY_HEADROOM",
+                "check.database_container_cpu_headroom": "DATABASE_CPU_HEADROOM"
+              }[$check.address.to_display] // "OTHER_CHECK")
+            }
+        ]
+        | group_by([.category, .status])[]
+        | "Blocked plan check: \(.[0].category) (\(.[0].status), \(length) checks)."
+    ' "$2" >&2 2>/dev/null || true
     exit 65
 fi
 

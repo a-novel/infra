@@ -56,87 +56,6 @@ mock_provider "google" {
     }
   }
 
-  mock_data "google_cloud_quotas_quota_infos" {
-    defaults = {
-      quota_infos = [
-        {
-          container_type             = "PROJECT"
-          dimensions                 = ["region"]
-          dimensions_infos           = []
-          is_concurrent              = true
-          is_fixed                   = false
-          is_precise                 = true
-          metric                     = "run.googleapis.com/cpu_allocation"
-          metric_display_name        = "CPU allocation"
-          metric_unit                = "milli-vCPU"
-          name                       = "services/run.googleapis.com/quotaInfos/CpuAllocPerProjectRegion"
-          quota_display_name         = "CPU allocation"
-          quota_id                   = "CpuAllocPerProjectRegion"
-          quota_increase_eligibility = []
-          refresh_interval           = "60s"
-          service                    = "run.googleapis.com"
-          service_request_quota_uri  = ""
-        },
-        {
-          container_type             = "PROJECT"
-          dimensions                 = ["region"]
-          dimensions_infos           = []
-          is_concurrent              = true
-          is_fixed                   = false
-          is_precise                 = true
-          metric                     = "run.googleapis.com/mem_allocation"
-          metric_display_name        = "Memory allocation"
-          metric_unit                = "By"
-          name                       = "services/run.googleapis.com/quotaInfos/MemAllocPerProjectRegion"
-          quota_display_name         = "Memory allocation"
-          quota_id                   = "MemAllocPerProjectRegion"
-          quota_increase_eligibility = []
-          refresh_interval           = "60s"
-          service                    = "run.googleapis.com"
-          service_request_quota_uri  = ""
-        },
-        # Google exposes zonal and regional Compute CPU records under the same
-        # metric. Only the regional record is valid for this preference.
-        {
-          container_type             = "PROJECT"
-          dimensions                 = ["zone"]
-          dimensions_infos           = []
-          is_concurrent              = true
-          is_fixed                   = false
-          is_precise                 = true
-          metric                     = "compute.googleapis.com/cpus"
-          metric_display_name        = "CPUs"
-          metric_unit                = "1"
-          name                       = "services/compute.googleapis.com/quotaInfos/CPUS-per-project-zone"
-          quota_display_name         = "CPUs"
-          quota_id                   = "CPUS-per-project-zone"
-          quota_increase_eligibility = []
-          refresh_interval           = "60s"
-          service                    = "compute.googleapis.com"
-          service_request_quota_uri  = ""
-        },
-        {
-          container_type             = "PROJECT"
-          dimensions                 = ["region"]
-          dimensions_infos           = []
-          is_concurrent              = true
-          is_fixed                   = false
-          is_precise                 = true
-          metric                     = "compute.googleapis.com/cpus"
-          metric_display_name        = "CPUs"
-          metric_unit                = "1"
-          name                       = "services/compute.googleapis.com/quotaInfos/CPUS-per-project-region"
-          quota_display_name         = "CPUs"
-          quota_id                   = "CPUS-per-project-region"
-          quota_increase_eligibility = []
-          refresh_interval           = "60s"
-          service                    = "compute.googleapis.com"
-          service_request_quota_uri  = ""
-        },
-      ]
-    }
-  }
-
   mock_data "google_compute_instance_group" {
     defaults = {
       instances = ["projects/agora-production-test/zones/europe-west1-c/instances/agora-database-abcd"]
@@ -842,10 +761,11 @@ run "builds_the_project_replacement_window" {
         preference.ignore_safety_checks == "QUOTA_DECREASE_PERCENTAGE_TOO_HIGH"
       ]) &&
       google_cloud_quotas_quota_preference.cost_cap["cloud_run_cpu"].service == "run.googleapis.com" &&
-      local.quota_preferences["cloud_run_cpu"].metric == "run.googleapis.com/cpu_allocation" &&
-      local.quota_preferences["cloud_run_memory"].metric == "run.googleapis.com/mem_allocation" &&
+      google_cloud_quotas_quota_preference.cost_cap["cloud_run_cpu"].quota_id == "CpuAllocPerProjectRegion" &&
+      google_cloud_quotas_quota_preference.cost_cap["cloud_run_memory"].quota_id == "MemAllocPerProjectRegion" &&
+      google_cloud_quotas_quota_preference.cost_cap["cloud_run_memory"].service == "run.googleapis.com" &&
       google_cloud_quotas_quota_preference.cost_cap["compute_cpu"].service == "compute.googleapis.com" &&
-      local.quota_preferences["compute_cpu"].metric == "compute.googleapis.com/cpus" &&
+      google_cloud_quotas_quota_preference.cost_cap["compute_cpu"].quota_id == "CPUS-per-project-region" &&
       google_cloud_quotas_quota_preference.cost_cap["cloud_run_cpu"].quota_config[0].preferred_value == "8000" &&
       google_cloud_quotas_quota_preference.cost_cap["cloud_run_memory"].quota_config[0].preferred_value == "17179869184" &&
       google_cloud_quotas_quota_preference.cost_cap["compute_cpu"].quota_config[0].preferred_value == "4"
@@ -1058,6 +978,25 @@ run "limits_disposable_recovery_authority_to_the_replacement_project" {
 
   variables {
     recovery_mode = true
+  }
+
+  assert {
+    condition = (
+      length(google_cloud_quotas_quota_preference.cost_cap) == 3 &&
+      google_cloud_quotas_quota_preference.cost_cap["cloud_run_cpu"].quota_id == "CpuAllocPerProjectRegion" &&
+      google_cloud_quotas_quota_preference.cost_cap["cloud_run_memory"].quota_id == "MemAllocPerProjectRegion" &&
+      google_cloud_quotas_quota_preference.cost_cap["compute_cpu"].quota_id == "CPUS-per-project-region" &&
+      google_cloud_quotas_quota_preference.cost_cap["cloud_run_cpu"].quota_config[0].preferred_value == "8000" &&
+      google_cloud_quotas_quota_preference.cost_cap["cloud_run_memory"].quota_config[0].preferred_value == "17179869184" &&
+      google_cloud_quotas_quota_preference.cost_cap["compute_cpu"].quota_config[0].preferred_value == "4" &&
+      alltrue([
+        for preference in values(google_cloud_quotas_quota_preference.cost_cap) :
+        preference.parent == "projects/agora-production-test" &&
+        preference.dimensions == tomap({ region = "europe-west1" }) &&
+        preference.ignore_safety_checks == "QUOTA_DECREASE_PERCENTAGE_TOO_HIGH"
+      ])
+    )
+    error_message = "Recovery must plan the same regional cost ceilings before the replacement APIs exist."
   }
 
   assert {
