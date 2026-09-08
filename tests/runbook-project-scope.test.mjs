@@ -11,6 +11,69 @@ const guides = [
     .map((name) => `docs/runbooks/${name}`),
 ];
 
+test("recovery bucket IAM commands select unconditional access and verify JSON policies", async () => {
+  const guide = await readFile(
+    new URL("docs/runbooks/disaster-recovery.md", root),
+    "utf8",
+  );
+  const mutations = [
+    ...guide.matchAll(
+      /^gcloud storage buckets (add|remove)-iam-policy-binding (.+)$/gm,
+    ),
+  ];
+  assert.equal(mutations.length, 2);
+  for (const [, , args] of mutations) {
+    assert.match(args, /--condition=None\b/);
+    assert.match(args, /--member="\$RESTORE_RUNTIME"/);
+    assert.match(args, /--role=roles\/storage\.objectViewer\b/);
+  }
+  const inspections = [
+    ...guide.matchAll(
+      /gcloud storage buckets get-iam-policy[^\n]+ --format=json \|\njq --exit-status --arg member "\$RESTORE_RUNTIME" '\n([^']+)'/g,
+    ),
+  ];
+  assert.equal(inspections.length, 2);
+  for (const [command] of inspections) assert.doesNotMatch(command, /--filter/);
+
+  const member =
+    "serviceAccount:agora-restore@agora-recovery-test.iam.gserviceaccount.com";
+  const reader = { role: "roles/storage.objectViewer", members: [member] };
+  const unrelated = {
+    role: "roles/storage.objectCreator",
+    members: [
+      "serviceAccount:backup@agora-production-test.iam.gserviceaccount.com",
+    ],
+    condition: {
+      title: "BackupsOnly",
+      expression: 'resource.name.startsWith("backups/")',
+    },
+  };
+  for (const [bindings, grantPasses, cleanupPasses] of [
+    [[unrelated, reader], true, false],
+    [[unrelated], false, true],
+    [[], false, true],
+    [[{ ...reader, condition: unrelated.condition }], false, false],
+    [[reader, { ...reader, role: "roles/storage.objectAdmin" }], false, false],
+    [[{ ...reader, members: [`${member}-different`] }], false, true],
+  ]) {
+    for (const [index, expected] of [grantPasses, cleanupPasses].entries()) {
+      const result = spawnSync(
+        "jq",
+        ["--exit-status", "--arg", "member", member, inspections[index][1]],
+        {
+          input: JSON.stringify({ bindings }),
+          encoding: "utf8",
+        },
+      );
+      assert.equal(
+        result.status,
+        expected ? 0 : 1,
+        result.stderr || JSON.stringify({ bindings, index }),
+      );
+    }
+  }
+});
+
 // Scan one command, preserving newlines inside quoted Logging filters. This is
 // deliberately not a shell evaluator: no documented command runs in this test.
 function commandAt(body, start) {
