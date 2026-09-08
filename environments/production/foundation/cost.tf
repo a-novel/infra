@@ -1,32 +1,22 @@
 locals {
+  # Regional quota IDs are service-defined and known before project creation.
+  # Planning must not query APIs that the same plan still needs to enable.
   quota_preferences = {
     cloud_run_cpu = {
-      service = "run.googleapis.com"
-      metric  = "run.googleapis.com/cpu_allocation"
-      value   = var.cloud_run_cpu_quota_millicpu
+      service  = "run.googleapis.com"
+      quota_id = "CpuAllocPerProjectRegion"
+      value    = var.cloud_run_cpu_quota_millicpu
     }
     cloud_run_memory = {
-      service = "run.googleapis.com"
-      metric  = "run.googleapis.com/mem_allocation"
-      value   = var.cloud_run_memory_quota_bytes
+      service  = "run.googleapis.com"
+      quota_id = "MemAllocPerProjectRegion"
+      value    = var.cloud_run_memory_quota_bytes
     }
     compute_cpu = {
-      service = "compute.googleapis.com"
-      metric  = "compute.googleapis.com/cpus"
-      value   = var.compute_cpu_quota
+      service  = "compute.googleapis.com"
+      quota_id = "CPUS-per-project-region"
+      value    = var.compute_cpu_quota
     }
-  }
-
-  # A metric can identify several quota IDs. Each cost cap requires one
-  # regional match in its declared service.
-  quota_id_candidates = {
-    for name, preference in local.quota_preferences : name => [
-      for quota in data.google_cloud_quotas_quota_infos.service[preference.service].quota_infos :
-      quota.quota_id
-      if quota.service == preference.service &&
-      quota.metric == preference.metric &&
-      toset(quota.dimensions) == toset(["region"])
-    ]
   }
 }
 
@@ -44,25 +34,12 @@ data "google_project" "management" {
   project_id = var.management_project_id
 }
 
-data "google_cloud_quotas_quota_infos" "service" {
-  for_each = toset(["compute.googleapis.com", "run.googleapis.com"])
-
-  parent  = "projects/${google_project.workload.project_id}"
-  service = each.value
-
-  depends_on = [google_project_service.workload]
-}
-
 resource "google_cloud_quotas_quota_preference" "cost_cap" {
   for_each = local.quota_preferences
 
-  parent  = "projects/${google_project.workload.project_id}"
-  service = each.value.service
-  quota_id = (
-    length(local.quota_id_candidates[each.key]) == 1
-    ? one(local.quota_id_candidates[each.key])
-    : "unavailable"
-  )
+  parent     = "projects/${google_project.workload.project_id}"
+  service    = each.value.service
+  quota_id   = each.value.quota_id
   dimensions = { region = var.region }
   # IAM grants on the foundation identity authorize the request. Google sends
   # quota-review follow-up to the monitored operator address.
@@ -77,14 +54,7 @@ resource "google_cloud_quotas_quota_preference" "cost_cap" {
     preferred_value = tostring(each.value.value)
   }
 
-  lifecycle {
-    precondition {
-      condition     = length(local.quota_id_candidates[each.key]) == 1
-      error_message = "Google Cloud must expose exactly one regional quota for metric ${each.value.metric} in service ${each.value.service}."
-    }
-  }
-
-  depends_on = [data.google_cloud_quotas_quota_infos.service]
+  depends_on = [google_project_service.workload]
 }
 
 resource "google_monitoring_notification_channel" "cost_email" {

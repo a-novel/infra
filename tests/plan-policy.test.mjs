@@ -149,6 +149,62 @@ for (const extra of [
   });
 }
 
+test("deferred first-project quota checks report a fixed category without leaking the plan", async (t) => {
+  const { file } = await fixture(
+    t,
+    {},
+    {
+      checks: [
+        {
+          address: {
+            kind: "resource",
+            to_display: "google_cloud_quotas_quota_preference.cost_cap",
+          },
+          status: "unknown",
+          instances: [
+            {
+              address: { to_display: privateValue, instance_key: privateValue },
+              status: "unknown",
+              problems: [{ message: privateValue }],
+            },
+          ],
+        },
+      ],
+    },
+  );
+  const result = run(["ops/plan-summary.sh", "foundation", file]);
+  assert.equal(result.status, 65);
+  assert.match(result.stderr, /REGIONAL_QUOTA_SELECTION \(unknown, 1 checks\)/);
+  assert.doesNotMatch(result.stdout + result.stderr, new RegExp(privateValue));
+});
+
+test("check diagnostics sanitize unrecognized identifiers and instance failures", async (t) => {
+  const { file } = await fixture(
+    t,
+    {},
+    {
+      checks: [
+        {
+          address: { kind: privateValue, to_display: privateValue },
+          status: "pass",
+          instances: [
+            { status: "fail", problems: [{ message: privateValue }] },
+          ],
+        },
+        {
+          address: { to_display: privateValue },
+          status: privateValue,
+        },
+      ],
+    },
+  );
+  const result = run(["ops/plan-summary.sh", "foundation", file]);
+  assert.equal(result.status, 65);
+  assert.match(result.stderr, /OTHER_CHECK \(fail, 1 checks\)/);
+  assert.match(result.stderr, /OTHER_CHECK \(invalid, 1 checks\)/);
+  assert.doesNotMatch(result.stdout + result.stderr, new RegExp(privateValue));
+});
+
 test("adding a cleanup rule requires policy review", async (t) => {
   const { file } = await fixture(t, {
     type: "google_storage_bucket",
