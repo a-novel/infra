@@ -251,6 +251,7 @@ async function main() {
   const versions = sourceTfvars.application_release;
   const preflight = {
     schemaVersion: 1,
+    action: "deploy",
     cloud: {
       managementProjectId: sourceTfvars.management_project_id,
       workloadProjectId: targetProject,
