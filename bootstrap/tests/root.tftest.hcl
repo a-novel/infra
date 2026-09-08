@@ -188,6 +188,10 @@ run "builds_the_protected_management_plane" {
   assert {
     condition = (
       length(google_storage_bucket_iam_member.automation_bucket_viewer) == 2 &&
+      alltrue([
+        for binding in values(google_storage_bucket_iam_member.automation_bucket_viewer) :
+        binding.bucket == google_storage_bucket.state.name && binding.role == "roles/storage.bucketViewer"
+      ]) &&
       !contains(google_project_iam_custom_role.secret_metadata.permissions, "resourcemanager.projects.list") &&
       toset(google_project_iam_custom_role.plan_metadata.permissions) == toset([
         "resourcemanager.projects.get",
@@ -237,6 +241,18 @@ run "builds_the_protected_management_plane" {
       google_storage_managed_folder_iam_member.recovery_receipt_creator.role == "roles/storage.objectCreator"
     )
     error_message = "Release and recovery receipt authority crossed its managed-folder boundary."
+  }
+
+  assert {
+    condition = (
+      google_storage_managed_folder_iam_member.recovery_receipt_readback.bucket == google_storage_bucket.receipts.name &&
+      google_storage_managed_folder_iam_member.recovery_receipt_readback.managed_folder == "recovery/" &&
+      google_storage_managed_folder_iam_member.recovery_receipt_readback.role == "roles/storage.objectViewer" &&
+      google_storage_managed_folder_iam_member.recovery_receipt_readback.member == "serviceAccount:${google_service_account.automation["recovery"].email}" &&
+      google_storage_managed_folder_iam_member.recovery_receipt_creator.bucket == google_storage_bucket.receipts.name &&
+      google_storage_managed_folder_iam_member.recovery_receipt_creator.member == "serviceAccount:${google_service_account.automation["recovery"].email}"
+    )
+    error_message = "Recovery receipt readback must stay read-only inside recovery/ on the receipt bucket for the recovery identity."
   }
 
   assert {

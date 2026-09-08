@@ -106,7 +106,7 @@ below pass; do not improvise a public endpoint during restore.
 
 - The management project, state bucket, backup bucket, receipt bucket, WIF providers, and secret
   containers are trusted and accessible.
-- Bootstrap has converged after the four exact nested recovery state/plan managed folders were added.
+- Bootstrap has converged with the current recovery state/plan and receipt managed-folder IAM.
 - `production-recovery` requires a reviewer, rejects administrator bypass, accepts protected branches
   only, and prevents self-review unless the bootstrap runbook's solo-maintainer exception is active.
 - At least one valid deployment receipt and one retained committed logical backup per database exist.
@@ -437,6 +437,39 @@ recovery jobs reuses a durable successful execution rather than applying the arc
 Record the exact successful run URL and `run-id-attempt` printed by the helper. Its final identity
 check already proves the workflow, commit, event, attempt, and successful conclusion without
 printing the private receipt.
+
+### Retry after receipt publication fails
+
+If the run reports `release is converged` before the final receipt upload fails, the restored data
+and internal services already exist. Keep the same replacement project, source receipt, both backup
+attempts, and lost-write acknowledgement. Keep project-creation and billing authority revoked.
+
+A `storage.objects.get` denial on `recovery/...json` requires bootstrap's recovery receipt readback
+grant: `roles/storage.objectViewer` on the receipt bucket's `recovery/` managed folder. Receipt writes
+retain `--if-generation-match=0`; this grant adds no overwrite or delete permission.
+
+The retry's staging plan removes the replacement's two internal services and their tag bindings,
+then the active plan recreates them. A maintainer must add `allow-resource-deletion` before merging
+the exact PR whose merge commit will run the retry, even when that PR's bootstrap change is additive.
+Review only replacement-scoped deletions; production remains untouched.
+
+After that PR merges, refresh `master` as in section 3 and reconcile bootstrap:
+
+```sh
+BOOTSTRAP_PLAN_ID="$(./ops/run-workflow.sh foundation plan bootstrap)"
+```
+
+Review the plan, then apply only that saved plan through `production-foundation`:
+
+```sh
+./ops/run-workflow.sh foundation apply bootstrap "${BOOTSTRAP_PLAN_ID:?}"
+```
+
+After the apply succeeds and IAM propagates, repeat section 5's dispatch with the unchanged
+selections. Matching recovery jobs reuse their retained successful executions. If that evidence is
+missing, stop and investigate before retrying against restored databases. Record the successful
+retry's new run reference; keep the original incident start and report any RPO/RTO target miss in
+section 6. Do not manufacture a receipt or refresh backup selections to hide a timing miss.
 
 ## 6. Verify functionality from the private replacement network
 

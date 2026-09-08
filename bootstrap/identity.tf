@@ -372,6 +372,14 @@ resource "google_storage_managed_folder_iam_member" "recovery_receipt_creator" {
   member         = "serviceAccount:${google_service_account.automation["recovery"].email}"
 }
 
+# Receipt uploads inspect destination metadata before the create-only write.
+resource "google_storage_managed_folder_iam_member" "recovery_receipt_readback" {
+  bucket         = google_storage_managed_folder.receipt["recovery"].bucket
+  managed_folder = google_storage_managed_folder.receipt["recovery"].name
+  role           = "roles/storage.objectViewer"
+  member         = "serviceAccount:${google_service_account.automation["recovery"].email}"
+}
+
 resource "google_project_iam_audit_config" "management" {
   for_each = local.audited_services
 
