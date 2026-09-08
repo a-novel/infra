@@ -561,6 +561,47 @@ jq --exit-status '
   .firstLaunch == true
 ' "${FIRST_LAUNCH_ASSESSMENT}" >/dev/null
 
+
+# The metadata-only path shares first-launch policy and never needs a candidate checkout or provider.
+IMAGE_ONLY_BIN="${TEMP_DIR}/image-only-bin"
+mkdir -p "${IMAGE_ONLY_BIN}"
+ln -s "${SCRIPT_DIR}/fixtures/fake-deletion-gate-gh.sh" "${IMAGE_ONLY_BIN}/gh"
+ln -s "${SCRIPT_DIR}/fixtures/fake-gcloud-storage.sh" "${IMAGE_ONLY_BIN}/gcloud"
+printf '%s\n' '#!/bin/bash' "[ \"\${2:-}\" = verify ] || exit 99" \
+    "exit \"\${FAKE_NODE_VERIFY_CODE:-0}\"" >"${IMAGE_ONLY_BIN}/node"
+printf '%s\n' '#!/bin/bash' 'exit 97' >"${IMAGE_ONLY_BIN}/tofu"
+chmod 0700 "${IMAGE_ONLY_BIN}/node" "${IMAGE_ONLY_BIN}/tofu"
+
+assert_image_only_assessment() {
+    local expected_code="$1"
+    local output="${TEMP_DIR}/automatic-assessment.json"
+    rm -f -- "${output}"
+    local code=0
+    PATH="${IMAGE_ONLY_BIN}:${PATH}" \
+        FAKE_GATE_BASE="${DELETION_BASE}" FAKE_GATE_HEAD="${DELETION_HEAD}" \
+        FAKE_GCS_ROOT="${TEMP_DIR}/image-only-gcs" \
+        "${REPOSITORY_ROOT}/ops/prepare-resource-deletion-assessment.sh" \
+            a-novel/infra 93 "${DELETION_HEAD}" "${DELETION_BASE}" --image-only \
+            agora-state-test "${output}" >"${TEMP_DIR}/automatic.out" 2>"${TEMP_DIR}/automatic.err" || code=$?
+    assert_equal "${code}" "${expected_code}"
+    if [ "${code}" -ne 0 ]; then
+        [ ! -e "${output}" ]
+    fi
+}
+FAKE_GATE_FILES=image assert_image_only_assessment 0
+jq -e '.firstLaunch and .approvalRequired' "${TEMP_DIR}/automatic-assessment.json" >/dev/null
+IMAGE_CONFIG_DIR="${TEMP_DIR}/image-only-gcs/agora-state-test/release/config"
+mkdir -p "${IMAGE_CONFIG_DIR}"
+printf '%s\n' '{"application_release":null}' >"${IMAGE_CONFIG_DIR}/00000000000000000001-00001.tfvars.json"
+FAKE_GATE_FILES=image assert_image_only_assessment 0
+jq -e '.firstLaunch and .approvalRequired' "${TEMP_DIR}/automatic-assessment.json" >/dev/null
+printf '%s\n' '{"application_release":{}}' >"${IMAGE_CONFIG_DIR}/00000000000000000001-00001.tfvars.json"
+FAKE_GATE_FILES=image assert_image_only_assessment 0
+jq -e '(.firstLaunch | not) and (.approvalRequired | not)' "${TEMP_DIR}/automatic-assessment.json" >/dev/null
+FAKE_GATE_FILES=foundation assert_image_only_assessment 77
+FAKE_GATE_FILES=image FAKE_GCS_LIST_FAILURE=true assert_image_only_assessment 70
+FAKE_GATE_FILES=image FAKE_NODE_VERIFY_CODE=77 assert_image_only_assessment 77
+
 mkdir -p "${CANDIDATE_REPOSITORY}/environments/production/foundation"
 printf '%s\n' '{}' \
     >"${CANDIDATE_REPOSITORY}/environments/production/foundation/main.tf"

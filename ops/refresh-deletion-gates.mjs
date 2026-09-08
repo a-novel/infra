@@ -239,13 +239,16 @@ export async function refreshDeletionGates(
   return refreshed;
 }
 
-function github(path, { paginate = false, method = "GET" } = {}) {
+/** Calls GitHub with bounded JSON responses and optional JSON request input. */
+export function github(path, { paginate = false, method = "GET", body } = {}) {
   const args = ["api", path, "--method", method];
   if (paginate) args.push("--paginate", "--slurp");
+  if (body !== undefined) args.push("--input", "-");
   try {
     const output = execFileSync("gh", args, {
       encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: [body === undefined ? "ignore" : "pipe", "pipe", "pipe"],
+      input: body === undefined ? undefined : JSON.stringify(body),
       maxBuffer: 16 * 1024 * 1024,
     });
     return output.trim() ? JSON.parse(output) : null;

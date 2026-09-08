@@ -97,9 +97,13 @@ missing check, wrong source, broader bypass, or disabled ruleset fails the verif
 ### Assess resource-deletion impact before merge
 
 A pull request that changes a production OpenTofu root, shared OpenTofu code or lock versions, or
-the production image manifest needs a verdict for its exact head and current `master` base. After
-reviewing the candidate and confirming that it is safe to execute as OpenTofu code, a human
-maintainer dispatches:
+the production image manifest needs a verdict for its exact head and current `master` base.
+Renovate tag/digest-only image updates are assessed automatically once the normal PR validation
+jobs pass. The automatic path reads current release metadata with trusted `master` code and never
+executes candidate code. Changes to image repositories, enabled components, or any other files need
+human assessment.
+
+For those changes, review the candidate OpenTofu code before authorizing its execution:
 
 ```bash
 ./ops/run-workflow.sh drift assess-pull-request <pull-request-number>
@@ -115,14 +119,15 @@ A safe exact plan satisfies the gate without a label. A delete, replace, forget,
 cleanup, or release without a prior converged input record requires `allow-resource-deletion`.
 The latest label action must be a human repository maintainer, and the label must still be present
 at merge. A new candidate commit, a moved base, a failed or expired assessment, or label removal
-blocks immediately; rerun the command for the new tuple. The same decision is reevaluated on the
-merge queue. Protected apply and post-merge verification retain their own deletion check.
+blocks immediately. Eligible image PRs are reassessed after CI completes on a new head or `master`;
+other changes require rerunning the command for the new tuple. Failed assessments require diagnosis
+and a manual retry. The same decision is reevaluated on the merge queue. Protected apply and post-merge verification retain their own deletion check.
 
 The deletion checks refresh automatically after an assessment completes or the approval label
 changes. Both push and pull-request checks are refreshed; active CI catches up when it finishes.
 Only the gate jobs rerun. A PR that changes `.github/workflows/main.yaml` requires manual gate
-refresh after reviewing that workflow. Assessment authorization, labels, and applies remain human
-operations.
+refresh after reviewing that workflow. Candidate-code assessment authorization, deletion labels,
+and foundation applies remain human operations.
 
 The shared [plan policy](./ops/lib/plan-policy.jq) also blocks failed or unresolved check assertions
 and updates that weaken existing protections. It preserves existing `deletion_protection`,
@@ -136,7 +141,7 @@ because the gate does not infer their safety from arbitrary expressions.
 These failures cannot be overridden with `allow-resource-deletion`. Saved plans are checked again
 immediately before apply. The policy covers declared plan checks and the listed settings, not
 arbitrary IAM changes or behavior inside scripts, migrations, and images. Ordinary PR CI exercises
-fixtures; a human must run the protected assessment after its tooling is available on `master`.
+fixtures; assessment tooling must already be available on protected `master`.
 Cloud permissions and irreversible retention locking are separate operator decisions.
 
 Confirm the duplicate default Actions analysis is disabled:

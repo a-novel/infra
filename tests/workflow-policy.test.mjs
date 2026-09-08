@@ -272,3 +272,58 @@ test("rerunning the deletion gate cannot start dependent jobs", () => {
     );
   }
 });
+
+test("automatic image assessments request only master drift without cloud access", () => {
+  const job = refresh.jobs["assess-images"];
+  assert.deepEqual(job.permissions, {
+    actions: "write",
+    contents: "read",
+    "pull-requests": "read",
+  });
+  assert.equal(job.steps.length, 3);
+  assert.equal(job.steps[0].with.ref, "master");
+  assert.equal(job.steps[0].with["persist-credentials"], false);
+  assert.match(job.if, /workflow_run/);
+  assert.match(job.steps[2].run, /assess-image-updates\.mjs dispatch/);
+  assert.doesNotMatch(
+    JSON.stringify(job),
+    /secrets\.|id-token|google-github-actions|artifact|cache|pnpm/,
+  );
+});
+
+test("automatic assessment cannot check out candidates or execute providers", () => {
+  const job = drift.jobs["assess-resource-deletion"];
+  assert.ok(
+    drift.on.workflow_dispatch.inputs.operation.options.includes(
+      "assess-image-update",
+    ),
+  );
+  assert.match(drift["run-name"], /assess-image-update/);
+  const authorize = job.steps.findIndex(
+    (step) => step.name === "Authorize the exact image-only update",
+  );
+  const auth = job.steps.findIndex((step) =>
+    step.uses?.startsWith("google-github-actions/auth@"),
+  );
+  assert.ok(authorize >= 0 && authorize < auth);
+  assert.equal(
+    job.steps[authorize].if,
+    "inputs.operation == 'assess-image-update'",
+  );
+  assert.equal(job.steps[authorize].env.GH_TOKEN, "${{ github.token }}");
+  for (const name of [
+    "Resolve maintainer-approved exact candidate",
+    "Check out the exact candidate without running it",
+    "Install OpenTofu",
+  ]) {
+    assert.equal(
+      job.steps.find((step) => step.name === name).if,
+      "inputs.operation == 'assess-pull-request'",
+    );
+  }
+  const assess = job.steps.find(
+    (step) => step.name === "Assess plans with current private inputs",
+  );
+  assert.match(assess.run, /candidate=--image-only/);
+  assert.doesNotMatch(assess.run, /\$\{\{/);
+});
