@@ -481,8 +481,9 @@ test("manual rollback checks the latest database before restoring an older targe
   await rm(scratch, { recursive: true });
 });
 
-test("recovery compilation keeps services absent until exact data restore", async () => {
+test("recovery compilation keeps services absent until exact data restore", async (t) => {
   const scratch = await mkdtemp(path.join(repositoryRoot, ".recovery-test-"));
+  t.after(() => rm(scratch, { recursive: true, force: true }));
   const releaseOutput = path.join(scratch, "source-release");
   const compiled = await compileRelease({
     manifestPath: path.join(
@@ -643,7 +644,76 @@ test("recovery compilation keeps services absent until exact data restore", asyn
     active.recovery_database_images.authentication,
     /\/agora-production-test\/agora-production\//,
   );
-  await rm(scratch, { recursive: true });
+
+  const secretCalls = compiled.release.cloud.secretVersions.map(
+    ([secret, version]) => [
+      "secrets",
+      "versions",
+      "describe",
+      String(version),
+      `--secret=${secret}`,
+      "--project=agora-management-test",
+      "--format=value(state)",
+    ],
+  );
+  const quotaCall = [
+    "quotas",
+    "preferences",
+    "list",
+    "--project=agora-recovery-test",
+    "--format=json",
+  ];
+  const quotas = [
+    ["run.googleapis.com", 8000],
+    ["run.googleapis.com", 17179869184],
+    ["compute.googleapis.com", 4],
+  ].map(([service, value]) => ({
+    service,
+    dimensions: { region: "europe-west1" },
+    quotaConfig: { preferredValue: String(value), grantedValue: String(value) },
+  }));
+  const responsesPath = path.join(scratch, "responses.json");
+  const callsPath = path.join(scratch, "calls.jsonl");
+  await writeFile(
+    responsesPath,
+    JSON.stringify([
+      ...secretCalls.map((args) => ({ args, stdout: "ENABLED\n" })),
+      { args: quotaCall, stdout: JSON.stringify(quotas) },
+    ]),
+  );
+  await writeFile(
+    path.join(scratch, "gcloud"),
+    `#!${process.execPath}
+import { appendFileSync, readFileSync } from "node:fs";
+const args = process.argv.slice(2);
+const responses = JSON.parse(readFileSync(process.env.RECOVERY_PREFLIGHT_RESPONSES, "utf8"));
+const response = responses.find((entry) => JSON.stringify(entry.args) === JSON.stringify(args));
+if (!response) process.exit(64);
+appendFileSync(process.env.RECOVERY_PREFLIGHT_CALLS, JSON.stringify(args) + "\\n");
+process.stdout.write(response.stdout);
+`,
+    { mode: 0o700 },
+  );
+  const { stdout } = await executeFile(
+    "bash",
+    [
+      path.join(repositoryRoot, "ops/preflight-release.sh"),
+      path.join(recoveryOutput, "preflight.json"),
+    ],
+    {
+      env: {
+        ...process.env,
+        PATH: `${scratch}${path.delimiter}${process.env.PATH}`,
+        RECOVERY_PREFLIGHT_RESPONSES: responsesPath,
+        RECOVERY_PREFLIGHT_CALLS: callsPath,
+      },
+    },
+  );
+  assert.match(stdout, /Live secret-version and quota preflight passed/);
+  assert.deepEqual(
+    (await readFile(callsPath, "utf8")).trim().split("\n").map(JSON.parse),
+    [...secretCalls, quotaCall],
+  );
 });
 
 test("a disabled component cannot retain deployable images", () => {
