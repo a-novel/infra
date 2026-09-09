@@ -1,4 +1,11 @@
 locals {
+  application_candidate = {
+    for service in ["json_keys", "authentication"] : service => (
+      var.application_release == null ? false :
+      var.application_release.rollout.phase == "candidate" && contains(var.application_release.rollout.services, service)
+    )
+  }
+
   application_images = var.application_release == null ? {} : {
     "service-authentication/jobs/init"       = var.application_release.authentication.images.init
     "service-authentication/jobs/migrations" = var.application_release.authentication.images.migrations
@@ -193,9 +200,8 @@ resource "google_cloud_scheduler_job" "json_keys_rotation" {
   name      = "agora-json-keys-rotation"
   schedule  = "10 * * * *"
   time_zone = "Etc/UTC"
-  # Candidate reconciliation pauses periodic writes until migrations, smoke
-  # checks, and both traffic shifts complete. Active/rollback inputs resume it.
-  paused = var.application_release.rollout.phase != "active"
+  # Authentication-only releases leave JSON Keys rotation running.
+  paused = local.application_candidate.json_keys
 
   attempt_deadline = "180s"
 
@@ -339,7 +345,7 @@ resource "google_cloud_run_v2_service" "json_keys" {
   }
 
   dynamic "traffic" {
-    for_each = var.application_release.rollout.phase == "candidate" && var.application_release.json_keys.active_revision != null ? [1] : []
+    for_each = local.application_candidate.json_keys && var.application_release.json_keys.active_revision != null ? [1] : []
 
     content {
       type     = "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION"
@@ -349,7 +355,7 @@ resource "google_cloud_run_v2_service" "json_keys" {
   }
 
   dynamic "traffic" {
-    for_each = var.application_release.rollout.phase == "candidate" ? [1] : []
+    for_each = local.application_candidate.json_keys ? [1] : []
 
     content {
       type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
@@ -359,7 +365,7 @@ resource "google_cloud_run_v2_service" "json_keys" {
   }
 
   dynamic "traffic" {
-    for_each = var.application_release.rollout.phase == "active" ? [1] : []
+    for_each = !local.application_candidate.json_keys ? [1] : []
 
     content {
       type     = var.recovery_mode ? "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST" : "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION"
@@ -570,7 +576,7 @@ resource "google_cloud_run_v2_service" "authentication" {
   }
 
   dynamic "traffic" {
-    for_each = var.application_release.rollout.phase == "candidate" && var.application_release.authentication.active_revision != null ? [1] : []
+    for_each = local.application_candidate.authentication && var.application_release.authentication.active_revision != null ? [1] : []
 
     content {
       type     = "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION"
@@ -580,7 +586,7 @@ resource "google_cloud_run_v2_service" "authentication" {
   }
 
   dynamic "traffic" {
-    for_each = var.application_release.rollout.phase == "candidate" ? [1] : []
+    for_each = local.application_candidate.authentication ? [1] : []
 
     content {
       type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
@@ -590,7 +596,7 @@ resource "google_cloud_run_v2_service" "authentication" {
   }
 
   dynamic "traffic" {
-    for_each = var.application_release.rollout.phase == "active" ? [1] : []
+    for_each = !local.application_candidate.authentication ? [1] : []
 
     content {
       type     = var.recovery_mode ? "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST" : "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION"

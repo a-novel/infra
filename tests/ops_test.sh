@@ -1495,12 +1495,14 @@ RELEASE_STEPS=(
     receipt
 )
 
+jq -n '{mode: "first-launch", services: ["json_keys", "authentication"]}' >"${TEMP_DIR}/release-scope.json"
+
 for failed_step in "${RELEASE_STEPS[@]}"; do
     RELEASE_TEST_LOG="${TEMP_DIR}/release-${failed_step}.log"
     set +e
     RELEASE_TEST_LOG="${RELEASE_TEST_LOG}" \
         RELEASE_TEST_FAIL_STEP="${failed_step}" \
-        "${REPOSITORY_ROOT}/ops/release-orchestrator.sh" "${RELEASE_DRIVER}" \
+        "${REPOSITORY_ROOT}/ops/release-orchestrator.sh" "${RELEASE_DRIVER}" "${TEMP_DIR}/release-scope.json" \
         >"${TEMP_DIR}/release-${failed_step}.out" \
         2>"${TEMP_DIR}/release-${failed_step}.err"
     RELEASE_CODE=$?
@@ -1519,7 +1521,7 @@ done
 
 RELEASE_TEST_LOG="${TEMP_DIR}/release-success.log"
 RELEASE_TEST_LOG="${RELEASE_TEST_LOG}" \
-    "${REPOSITORY_ROOT}/ops/release-orchestrator.sh" "${RELEASE_DRIVER}" \
+    "${REPOSITORY_ROOT}/ops/release-orchestrator.sh" "${RELEASE_DRIVER}" "${TEMP_DIR}/release-scope.json" \
     >"${TEMP_DIR}/release-success.out"
 assert_equal "$(paste -sd, "${RELEASE_TEST_LOG}")" \
     "$(IFS=,; printf '%s' "${RELEASE_STEPS[*]}")"

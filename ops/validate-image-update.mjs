@@ -3,7 +3,7 @@
 /**
  * Validate the transition between two reviewed production image manifests.
  * Schema validation owns each manifest; this script owns invariants that only
- * exist across a pull-request diff.
+ * exist across a pull-request diff or a receipt-owned deployment transition.
  */
 
 import { readFile } from "node:fs/promises";
@@ -39,19 +39,12 @@ function imageChanged(previous, next) {
   );
 }
 
-function major(tag) {
-  const match = /^v([0-9]+)\.[0-9]+\.[0-9]+$/.exec(tag ?? "");
-  return match ? Number(match[1]) : null;
-}
-
 /**
  * validateImageUpdate rejects partial service releases, mutable release tags,
- * and changes that combine a breaking service or PostgreSQL upgrade with a
- * second deployment concern.
+ * and combined routine service releases. It returns the changed families.
  */
 export function validateImageUpdate(previous, next) {
   const changedComponents = [];
-  const majorChanges = [];
 
   for (const [component, slots] of Object.entries(componentSlots)) {
     const previousComponent = previous.components[component];
@@ -83,13 +76,6 @@ export function validateImageUpdate(previous, next) {
       fail(`${component} must update its complete image family`);
     }
 
-    if (previousComponent.enabled && nextComponent.enabled) {
-      const previousMajor = major(previousComponent.images[slots[0]].tag);
-      const nextMajor = major(nextComponent.images[slots[0]].tag);
-      if (previousMajor !== null && nextMajor !== previousMajor) {
-        majorChanges.push(component);
-      }
-    }
     changedComponents.push(component);
   }
 
@@ -97,9 +83,15 @@ export function validateImageUpdate(previous, next) {
   if (postgresChanged && changedComponents.length > 0) {
     fail("a PostgreSQL major change must be reviewed separately");
   }
-  if (majorChanges.length > 0 && changedComponents.length > 1) {
-    fail("a service major change must be reviewed separately");
+  const firstLaunch = Object.values(previous.components).every(
+    (component) => !component.enabled,
+  );
+  if (!firstLaunch && changedComponents.length > 1) {
+    fail(
+      "service image families must be deployed separately; deploy the preceding family before merging another",
+    );
   }
+  return changedComponents;
 }
 
 async function readManifest(file) {

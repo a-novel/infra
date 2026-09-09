@@ -111,11 +111,33 @@ test("first-launch recovery skips unrelated release tooling", () => {
     "Install OpenTofu",
     "Authenticate Docker to the regional registry",
     "Select the receipt-owned prior state",
-    "Compile exact candidate, active, and compensation inputs",
+    "Resolve the exact manifest for a legacy receipt",
+    "Validate the deployed family transition and compile exact inputs",
   ]) {
     const step = job.steps.find((candidate) => candidate.name === name);
     assert.equal(step.if, "env.RELEASE_ACTION != 'recover-first-launch'");
   }
+});
+
+test("deployment checks the receipt-owned transition before any runtime mutation", () => {
+  const steps = release.jobs.release.steps;
+  const compile = steps.findIndex(
+    (step) =>
+      step.name ===
+      "Validate the deployed family transition and compile exact inputs",
+  );
+  const deploy = steps.findIndex(
+    (step) => step.name === "Deploy the selected service scope",
+  );
+  assert.ok(compile >= 0 && compile < deploy);
+  assert.match(steps[compile].run, /compile-release\.mjs/);
+  assert.equal(
+    steps[compile].env.PRIOR_RECEIPT,
+    "${{ steps.prior.outputs.argument }}",
+  );
+  assert.match(steps[deploy].run, /release\.json/);
+  assert.equal(release.concurrency.group, "production-infrastructure");
+  assert.equal(release.concurrency["cancel-in-progress"], false);
 });
 
 test("resource-deletion approval is a merge-queue-aware required check", () => {

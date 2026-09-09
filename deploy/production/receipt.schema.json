@@ -15,6 +15,7 @@
     "operations"
   ],
   "properties": {
+    "imageManifest": { "type": "object" },
     "schemaVersion": { "const": 1 },
     "kind": { "enum": ["deployment", "rollback"] },
     "createdAt": {

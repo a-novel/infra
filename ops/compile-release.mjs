@@ -11,9 +11,12 @@ import { createHash, randomBytes } from "node:crypto";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 
 import Ajv2020 from "ajv/dist/2020.js";
 import { parse } from "yaml";
+
+import { validateImageUpdate } from "./validate-image-update.mjs";
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDirectory, "..");
@@ -220,6 +223,37 @@ function imageAt(images, component, slot) {
   return image.promoted;
 }
 
+// Match all eight receipt-owned digests before trusting historical release tags.
+// A legacy rollback receipt can name the failed commit, so its source commit
+// alone is not proof of the active image inventory.
+function verifyReceiptManifest(config, manifest, receipt) {
+  const images = normalizeImages(config, manifest);
+  const application = receipt.activeTfvars.application_release;
+  const expected = {
+    "service-authentication": {
+      database: receipt.database.authenticationImage,
+      "jobs/init": application.authentication.images.init,
+      "jobs/migrations": application.authentication.images.migrations,
+      rest: application.authentication.images.rest,
+    },
+    "service-json-keys": {
+      database: receipt.database.jsonKeysImage,
+      grpc: application.json_keys.images.grpc,
+      "jobs/migrations": application.json_keys.images.migrations,
+      "jobs/rotatekeys": application.json_keys.images.rotate_keys,
+    },
+  };
+  if (
+    !images.every(
+      (image) => expected[image.component][image.slot] === image.promoted,
+    )
+  ) {
+    fail(
+      "prior image manifest does not match all eight receipt-owned images; inspect the receipt before retrying",
+    );
+  }
+}
+
 function applicationRelease(
   config,
   images,
@@ -289,6 +323,7 @@ export async function compileRelease({
   manifestPath,
   configPath,
   previousReceiptPath = null,
+  previousManifestPath = null,
   currentReceiptPath = previousReceiptPath,
   outputDirectory,
   commit,
@@ -362,6 +397,33 @@ export async function compileRelease({
   const images = normalizeImages(config, manifest);
   const baseTfvars = buildBaseTfvars(config);
   const previousActive = previousReceipt?.activeTfvars?.application_release;
+  let previousManifest = null;
+  if (previousActive) {
+    previousManifest =
+      previousReceipt.imageManifest ??
+      (previousManifestPath
+        ? parse(await readFile(previousManifestPath, "utf8"))
+        : null);
+    if (!ajv.compile(manifestSchema)(previousManifest)) {
+      fail(
+        "the prior receipt requires its exact image manifest; use the release workflow to resolve legacy receipts",
+      );
+    }
+    validateFamilyVersions(previousManifest);
+    verifyReceiptManifest(config, previousManifest, previousReceipt);
+  }
+  const changedComponents =
+    action === "deploy" && previousManifest
+      ? validateImageUpdate(previousManifest, manifest)
+      : [];
+  const services =
+    changedComponents.length === 1
+      ? [
+          changedComponents[0] === "service-json-keys"
+            ? "json_keys"
+            : "authentication",
+        ]
+      : ["json_keys", "authentication"];
   const previousRevisions = {
     authentication: previousActive?.authentication?.active_revision ?? null,
     jsonKeys: previousActive?.json_keys?.active_revision ?? null,
@@ -423,6 +485,49 @@ export async function compileRelease({
       revisions,
     ),
   };
+  for (const tfvars of [candidateTfvars, activeTfvars]) {
+    tfvars.application_release.rollout.services = services;
+  }
+  if (services.length === 1) {
+    // An image PR must not smuggle shared or other-service configuration into
+    // the selected rollout. Configuration-only maintenance remains explicit.
+    for (const [key, value] of Object.entries(baseTfvars)) {
+      if (!isDeepStrictEqual(value, previousReceipt.activeTfvars[key])) {
+        fail(
+          `shared ${key} changed alongside an image release; deploy configuration separately`,
+        );
+      }
+    }
+    const other = services[0] === "json_keys" ? "authentication" : "json_keys";
+    const {
+      revision: _revision,
+      active_revision: _active,
+      ...priorConfig
+    } = previousActive[other];
+    const {
+      revision: _candidate,
+      active_revision: _serving,
+      ...nextConfig
+    } = activeTfvars.application_release[other];
+    if (
+      !isDeepStrictEqual(priorConfig, nextConfig) ||
+      !isDeepStrictEqual(
+        databaseReleases[other],
+        previousReceipt.activeTfvars.database_releases[other],
+      )
+    ) {
+      fail(
+        `${other} configuration changed alongside another service's images; deploy configuration separately`,
+      );
+    }
+    const revisionKey = other === "json_keys" ? "jsonKeys" : "authentication";
+    revisions[revisionKey] = previousActive[other].revision;
+    for (const tfvars of [candidateTfvars, activeTfvars]) {
+      tfvars.application_release[other] = structuredClone(
+        previousActive[other],
+      );
+    }
+  }
   let rollbackTfvars;
   if (previousActive) {
     rollbackTfvars = structuredClone(previousReceipt.activeTfvars);
@@ -432,9 +537,14 @@ export async function compileRelease({
     rollbackTfvars.application_release.rollout = {
       candidate_tag: candidateTag,
       phase: "active",
+      services,
     };
-    rollbackTfvars.application_release.authentication.revision = `agora-authentication-rest-${sha256(`${seed}:rollback-auth`).slice(0, 12)}`;
-    rollbackTfvars.application_release.json_keys.revision = `agora-json-keys-grpc-${sha256(`${seed}:rollback-json`).slice(0, 12)}`;
+    if (services.includes("authentication")) {
+      rollbackTfvars.application_release.authentication.revision = `agora-authentication-rest-${sha256(`${seed}:rollback-auth`).slice(0, 12)}`;
+    }
+    if (services.includes("json_keys")) {
+      rollbackTfvars.application_release.json_keys.revision = `agora-json-keys-grpc-${sha256(`${seed}:rollback-json`).slice(0, 12)}`;
+    }
   } else {
     // A failed first deployment records successful compensation with no active
     // application. Preserve that empty state as the next rollback target.
@@ -516,6 +626,17 @@ export async function compileRelease({
   const release = {
     schemaVersion: 1,
     action,
+    services,
+    mode:
+      action === "rollback"
+        ? "rollback"
+        : !previousActive
+          ? "first-launch"
+          : changedComponents.length
+            ? "service"
+            : "maintenance",
+    imageManifest: manifest,
+    previousManifest,
     commit,
     runId,
     runAttempt,
@@ -570,6 +691,7 @@ async function main() {
     manifestPath,
     configPath,
     previousReceiptPath: receiptArgument === "-" ? null : receiptArgument,
+    previousManifestPath: process.env.PRIOR_IMAGE_MANIFEST || null,
     currentReceiptPath:
       process.env.CURRENT_RECEIPT === undefined
         ? receiptArgument === "-"

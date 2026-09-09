@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Google Cloud implementation of the fixed release state machine. All mutable
+# Google Cloud implementation of the selected release state machine. All mutable
 # values come from compile-release.mjs private files; the driver never reads or
 # prints secret payloads.
 # Usage: google-release-driver.sh <state-machine-step|rollback>
@@ -217,7 +217,7 @@ write_rollback_receipt() {
     local rollback_release="${RELEASE_DIRECTORY}/rollback-release.json"
     local rollback_operations="${RELEASE_DIRECTORY}/rollback-operations.json"
     local rollback_receipt="${RELEASE_DIRECTORY}/rollback-receipt.json"
-    jq '.database = .previousDatabase' "${RELEASE_FILE}" >"${rollback_release}"
+    jq '.database = .previousDatabase | .imageManifest = .previousManifest' "${RELEASE_FILE}" >"${rollback_release}"
     jq -n '
       {
         executions: {
@@ -427,10 +427,14 @@ case "${STEP}" in
     rollback)
         if jq --exit-status '.application_release != null' \
             "${RELEASE_DIRECTORY}/rollback.tfvars.json" >/dev/null; then
-            shift_traffic "${AUTHENTICATION_SERVICE}" \
-                "$(jq --raw-output '.application_release.authentication.active_revision' "${RELEASE_DIRECTORY}/rollback.tfvars.json")"
-            shift_traffic "${JSON_KEYS_SERVICE}" \
-                "$(jq --raw-output '.application_release.json_keys.active_revision' "${RELEASE_DIRECTORY}/rollback.tfvars.json")"
+            if jq --exit-status '.services | index("authentication") != null' "${RELEASE_FILE}" >/dev/null; then
+                shift_traffic "${AUTHENTICATION_SERVICE}" \
+                    "$(jq --raw-output '.application_release.authentication.active_revision' "${RELEASE_DIRECTORY}/rollback.tfvars.json")"
+            fi
+            if jq --exit-status '.services | index("json_keys") != null' "${RELEASE_FILE}" >/dev/null; then
+                shift_traffic "${JSON_KEYS_SERVICE}" \
+                    "$(jq --raw-output '.application_release.json_keys.active_revision' "${RELEASE_DIRECTORY}/rollback.tfvars.json")"
+            fi
         fi
         apply_tfvars "${RELEASE_DIRECTORY}/rollback.tfvars.json" 3
         "${SCRIPT_DIR}/config-custody.sh" publish \
@@ -439,9 +443,14 @@ case "${STEP}" in
         jq '.previousDatabase' "${RELEASE_FILE}" \
             >"${RELEASE_DIRECTORY}/previous-database.json"
         chmod 600 "${RELEASE_DIRECTORY}/previous-database.json"
-        "${SCRIPT_DIR}/restore-database-release.sh" \
-            "${PROJECT_ID}" "${DATABASE_ZONE}" \
-            "${RELEASE_DIRECTORY}/previous-database.json"
+        if ! jq --exit-status '
+            (.action == "deploy" and .database == .previousDatabase) or
+            (.action == "rollback" and .currentDatabase == .previousDatabase)
+        ' "${RELEASE_FILE}" >/dev/null; then
+            "${SCRIPT_DIR}/restore-database-release.sh" \
+                "${PROJECT_ID}" "${DATABASE_ZONE}" \
+                "${RELEASE_DIRECTORY}/previous-database.json"
+        fi
         write_rollback_receipt
         ;;
     *)
