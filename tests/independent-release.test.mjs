@@ -326,7 +326,7 @@ test("invalid scopes never enter the release driver", async (t) => {
   }
 });
 
-const commonStart = ["preflight", "promote", "database", "candidate"];
+const commonStart = ["preflight", "promote", "plan", "database", "candidate"];
 const serviceSteps = {
   json_keys: [
     "json-migrations",
@@ -380,7 +380,8 @@ for (const service of Object.keys(serviceSteps)) {
       const expected = failed
         ? steps.slice(0, steps.indexOf(failed) + 1)
         : steps;
-      if (failed && steps.indexOf(failed) >= 2) expected.push("rollback");
+      if (failed && steps.indexOf(failed) >= steps.indexOf("database"))
+        expected.push("rollback");
       assert.deepEqual(actual, expected);
     }
   });

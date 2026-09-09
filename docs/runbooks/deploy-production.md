@@ -47,6 +47,11 @@ AUTH_SUPER_ADMIN_EMAIL="${OPERATOR_PRINCIPAL#user:}"
 
 ## Guarantees and deliberate limits
 
+Foundation must be current before a release: it grants the JSON Keys runtime permission to invoke
+internal-tagged services for the private candidate smoke test. This does not grant access to
+Authentication secrets. When upgrading the rollout tooling, apply the reviewed foundation plan,
+then run unchanged-image release maintenance before merging the next service image update.
+
 Merge one complete service-family PR, wait for its successful deployment, then merge the next
 service PR in the order required by their compatibility contracts. The globally serialized workflow
 selects the changed family by comparing the manifest with the last successful receipt:
@@ -58,13 +63,15 @@ selects the changed family by comparing the manifest with the last successful re
 3. verify seven numeric secret versions, three fully granted quota preferences, a recent scheduled
    disk snapshot, and fresh logical backups for both databases;
 4. copy the exact digests into regional Artifact Registry and verify the destination digests;
-5. restart the shared PostgreSQL host only if its image or secret-version contract changed;
+5. check effective candidate, activation and compensation plans for changes outside the selected
+   family, then restart the shared PostgreSQL host only if its image or secret-version contract changed;
 6. pause the shared backup schedules and create the selected service's candidate at zero traffic;
 7. execute that service's migrations; JSON Keys releases also pause scheduled rotation and run
    rotation once after migration;
 8. execute both logical backups, restore both into clean disposable clusters, and run the backup
    monitor;
-9. verify the selected candidate, then move that service to 100%: JSON Keys must be Ready;
+9. verify the selected candidate, then move that service to 100%: JSON Keys must pass its application
+   health RPC from the private smoke job against the exact tagged revision;
    Authentication's `/v2/healthcheck` must pass against its database, SMTP and the currently active
    JSON Keys service;
 10. converge OpenTofu, resume paused schedules, and publish an immutable full-state receipt.
@@ -73,6 +80,10 @@ The other API retains its revision, environment, images and traffic. Authenticat
 leave JSON Keys rotation enabled. First launch provisions both services and seeds JSON Keys before
 checking Authentication. A manual deploy with unchanged images is configuration maintenance and
 reconciles both services; explicit rollback and disaster recovery also remain full-state operations.
+
+If the plan reports changes outside the selected service, deploy the pending configuration with the
+last successful image manifest first, then restore the intended one-family image update. Do not bypass
+the scope check. It also runs when applying saved plans and during activation and compensation.
 
 The databases still share one VM. Restarting it interrupts both database connections, and migrations
 may block concurrent queries according to their PostgreSQL locks. Backward-compatible, staged

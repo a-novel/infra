@@ -92,6 +92,14 @@ cloud_run_policy='{
         "title": "InternalCloudRunOnly",
         "expression": "resource.matchTagId(\"tagKeys/1\", \"tagValues/4\")"
       }
+    },
+    {
+      "role": "roles/run.servicesInvoker",
+      "members": ["serviceAccount:agora-json-keys@workload-project-prod.iam.gserviceaccount.com"],
+      "condition": {
+        "title": "JSONKeysInternalSmokeOnly",
+        "expression": "resource.matchTagId(\"tagKeys/1\", \"tagValues/4\")"
+      }
     }
   ]
 }'
@@ -149,6 +157,12 @@ case "$*" in
                     members: ["user:operator@example.com"]
                   }]
                 ' <<<"$cloud_run_policy"
+                ;;
+            missing-smoke-invoker)
+                jq --compact-output 'del(.bindings[] | select(.condition.title == "JSONKeysInternalSmokeOnly"))' <<<"$cloud_run_policy"
+                ;;
+            widened-smoke-invoker)
+                jq --compact-output '(.bindings[] | select(.condition.title == "JSONKeysInternalSmokeOnly").condition.expression) += " || true"' <<<"$cloud_run_policy"
                 ;;
             missing-operator-api-access)
                 jq --compact-output '

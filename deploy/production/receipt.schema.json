@@ -99,6 +99,7 @@
             "postgresBackupMonitor"
           ],
           "properties": {
+            "jsonKeysSmoke": { "$ref": "#/$defs/optionalExecution" },
             "jsonKeysMigrations": { "$ref": "#/$defs/optionalExecution" },
             "jsonKeysRotation": { "$ref": "#/$defs/optionalExecution" },
             "authenticationMigrations": { "$ref": "#/$defs/optionalExecution" },

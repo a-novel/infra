@@ -1480,6 +1480,7 @@ RELEASE_DRIVER="${SCRIPT_DIR}/fixtures/fake-release-driver.sh"
 RELEASE_STEPS=(
     preflight
     promote
+    plan
     database
     candidate
     json-migrations
@@ -1508,7 +1509,7 @@ for failed_step in "${RELEASE_STEPS[@]}"; do
     RELEASE_CODE=$?
     set -e
     assert_equal "${RELEASE_CODE}" "42"
-    if [ "${failed_step}" = preflight ] || [ "${failed_step}" = promote ]; then
+    if [ "${failed_step}" = preflight ] || [ "${failed_step}" = promote ] || [ "${failed_step}" = plan ]; then
         if grep -Fqx rollback "${RELEASE_TEST_LOG}"; then
             printf 'Read-only release failure unexpectedly requested rollback.\n' >&2
             exit 1
@@ -2406,6 +2407,12 @@ grep -Fq 'PASS Cloud Run service agent IAM' \
     "${TEMP_DIR}/foundation-audit-cloud-run-unexpected-run-role.out"
 grep -Fq 'FAIL conditional Cloud Run invocation IAM' \
     "${TEMP_DIR}/foundation-audit-cloud-run-unexpected-run-role.err"
+
+for mode in missing-smoke-invoker widened-smoke-invoker; do
+    assert_foundation_cloud_run_boundary "$mode" 70
+    grep -Fq 'FAIL conditional Cloud Run invocation IAM' \
+        "${TEMP_DIR}/foundation-audit-cloud-run-${mode}.err"
+done
 
 # The one local bootstrap apply uses an external binary plan plus non-secret
 # commit/checksum custody and consumes that review before mutation.

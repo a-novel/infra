@@ -156,8 +156,22 @@ Each candidate template has an immutable revision name and a short private tag. 
 reconciliation targets Cloud Run's latest revision because its named revision is created by that
 request; the prior receipt remains at 100%. Active reconciliation pins the receipt-owned revision.
 The `rollout.services` list selects candidate traffic; omitted lists in legacy receipts include both
-services. Unselected services retain their receipt-owned traffic and template. JSON Keys candidates
-must become Ready. Authentication's tagged candidate `/v2/healthcheck` proves PostgreSQL, SMTP and
+services. Unselected services retain their receipt-owned traffic and template. Effective plans for
+candidate, activation and compensation are inspected before the database restart; changes outside
+the selected family require a separate configuration maintenance deployment. All applies recheck
+that scope. Shared backup schedules may only pause/resume without changing their configuration.
+
+JSON Keys candidates must pass `anovel.jsonkeys.v2.StatusService/Status` before traffic promotion.
+The on-demand `agora-json-keys-smoke` job uses the selected gRPC image's existing `grpcurl`, private
+VPC routing and JSON Keys' own runtime identity with a foundation-owned, internal-tag-restricted
+invocation binding. Apply foundation before deploying this job. It mounts no
+secrets, has no scheduler, and does not redeploy Authentication. The driver verifies the fixed
+`candidate` tag resolves to the exact revision and matches the job's target; the release mutex
+serializes that tag. The metadata ID token uses the base service URL as its audience, and neither
+token nor RPC response is logged. Failure leaves the receipt's health status unpassed and starts
+compensation. Recovery omits this job and retains its separate private health verification.
+
+Authentication's tagged candidate `/v2/healthcheck` proves PostgreSQL, SMTP and
 the currently active private JSON Keys gRPC dependency before public traffic moves. On first launch
 the private service moves before the public edge because it has no external ingress.
 

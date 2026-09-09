@@ -42,6 +42,13 @@ variables {
   }
 }
 
+run "active_baseline" {
+  command = apply
+  variables {
+    application_release = jsondecode(file("../../../tests/fixtures/application-release.json"))
+  }
+}
+
 run "authentication_candidate_leaves_json_keys_active" {
   command = plan
   variables {
@@ -71,8 +78,22 @@ run "json_keys_candidate_leaves_authentication_active" {
   }
   assert {
     condition = (
+      length(google_cloud_run_v2_job.json_keys_smoke) == 1 &&
+      one(one(google_cloud_run_v2_job.json_keys_smoke[0].template).template).service_account == var.runtime_service_accounts.json_keys &&
+      one(one(google_cloud_run_v2_job.json_keys_smoke[0].template).template).max_retries == 0 &&
+      one(one(google_cloud_run_v2_job.json_keys_smoke[0].template).template).timeout == "90s" &&
+      one(one(google_cloud_run_v2_job.json_keys_smoke[0].template).template).vpc_access[0].egress == "ALL_TRAFFIC" &&
+      one(one(one(google_cloud_run_v2_job.json_keys_smoke[0].template).template).containers).image == var.application_release.json_keys.images.grpc &&
+      one(one(one(one(google_cloud_run_v2_job.json_keys_smoke[0].template).template).containers).command) == "/bin/sh" &&
+      alltrue([for env in one(one(one(google_cloud_run_v2_job.json_keys_smoke[0].template).template).containers).env : length(env.value_source) == 0]) &&
+      google_tags_location_tag_binding.json_keys_smoke[0].tag_value == var.cloud_run_invocation_tags.values.release
+    )
+    error_message = "The private smoke job must reuse the selected image and existing caller without secrets, retries or scheduler authority."
+  }
+  assert {
+    condition = (
       length(google_cloud_run_v2_service.json_keys[0].traffic) == 2 &&
-      one([for traffic in google_cloud_run_v2_service.json_keys[0].traffic : traffic if traffic.percent == 0]).tag == "c-0123456789abcdef" &&
+      one([for traffic in google_cloud_run_v2_service.json_keys[0].traffic : traffic if traffic.percent == 0]).tag == "candidate" &&
       one(google_cloud_run_v2_service.authentication[0].traffic).percent == 100 &&
       one(google_cloud_run_v2_service.authentication[0].traffic).revision == var.application_release.authentication.active_revision &&
       one(google_cloud_run_v2_service.authentication[0].template).revision == var.application_release.authentication.revision &&

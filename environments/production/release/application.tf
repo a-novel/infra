@@ -360,7 +360,8 @@ resource "google_cloud_run_v2_service" "json_keys" {
     content {
       type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
       percent = var.application_release.json_keys.active_revision == null ? 100 : 0
-      tag     = var.application_release.rollout.candidate_tag
+      # The release mutex protects this fixed tag; the driver verifies its revision.
+      tag = "candidate"
     }
   }
 

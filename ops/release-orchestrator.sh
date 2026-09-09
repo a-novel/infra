@@ -64,6 +64,7 @@ run_step() {
 for step in \
     preflight \
     promote \
+    plan \
     database \
     candidate \
     json-migrations \
