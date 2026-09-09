@@ -122,8 +122,8 @@ only after resource creation has been explicitly authorized.
   PostgreSQL backup, restore, or recovery-monitor execution and on three hours without a completed
   hourly monitor. A seventh policy alerts above a 10% Authentication 5xx ratio, and an eighth covers
   application-job failure or three hours without successful key rotation. The read-only drift
-  workflow makes one exact Authentication-and-dependencies check every three hours; keeping that
-  low-frequency check outside this root avoids continuously warming the instance-billed service.
+  workflow makes one exact Authentication-and-dependencies check every three hours. The release
+  root independently keeps one warm instance per production service.
   Container connection and resource measurements remain operator checks in the database-host
   runbook.
 

@@ -1,7 +1,6 @@
 # Authentication's dependency endpoint is checked every three hours by the
-# existing read-only drift workflow. A native uptime check cannot run less often
-# than every 15 minutes and could keep this instance-billed service continuously
-# allocated, so this root owns only provider-native operational metrics.
+# existing read-only drift workflow. This root owns provider-native operational
+# metrics; the release root owns the service's warm-instance configuration.
 resource "google_monitoring_alert_policy" "authentication_error_rate" {
   count = var.recovery_mode ? 0 : 1
 

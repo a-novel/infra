@@ -1,7 +1,7 @@
 # Production cost worksheet
 
 Google Cloud public USD list prices were reviewed on 2026-08-27; Workspace SMTP assumptions
-were updated on 2026-09-06. This is a
+were updated on 2026-09-06 and warm Cloud Run instance pricing on 2026-09-09. This is a
 transparent planning model, not a quote or an invoice forecast. Google bills actual usage,
 aggregates some free tiers by
 billing account, converts non-USD invoices at its applicable rates, and can change prices. Recheck
@@ -10,40 +10,40 @@ before the first apply and before any fixed-cost shape change.
 
 ## Cost profiles
 
-| Profile          | What exists                                                                                                                                                                                      | Expected USD/month before tax |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------: |
-| Foundation only  | Workload project, VPC/firewalls/routes, three private DNS zones, identities, registry, quotas, budget, bounded logs, one on-demand `e2-medium`, and its 20/50 GiB disks                          |               **about 31–40** |
-| Launch           | Foundation with its `e2-medium` running two PostgreSQL containers, plus four-hour backups/snapshots, two scale-to-zero services, and short jobs                                                  |                     **35–55** |
-| Capacity horizon | One `e2-standard-2`, four PostgreSQL containers, 150 GiB data disk, retained backups, two private gRPC services, three HTTP services, three to five jobs, and one to two scale-to-zero frontends |                    **85–125** |
+| Profile          | What exists                                                                                                                                                             | Expected USD/month before tax |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------: |
+| Foundation only  | Workload project, VPC/firewalls/routes, three private DNS zones, identities, registry, quotas, budget, bounded logs, one on-demand `e2-medium`, and its 20/50 GiB disks |               **about 31–40** |
+| Launch           | Foundation, daily disk snapshots, four-hour logical backups, two services with one warm instance each, and short jobs                                                   |                    **95–115** |
+| Capacity horizon | Larger database host/storage and additional services with one warm instance each                                                                                        |  **Reprice before expansion** |
 
 The foundation-only range is the cost of applying the code while both database components remain
 disabled. The VM stays on but idle, and no PostgreSQL container runs. Compute and provisioned disks
 are the fixed cost; three DNS zones add approximately USD 0.60/month. The launch row adds active
 database images, 14-day logical retention, daily snapshots, five scale-to-zero recovery jobs, four
-short application jobs, and two scale-to-zero services. No resource is currently applied, and this
-repository deploys nothing until a protected workflow is manually dispatched from `master`.
+short application jobs, and one warm instance for each of the two production services.
+Changes land through the protected foundation and release workflows.
 
 ## Current unit assumptions
 
-| Unit                                  | List-price assumption used                                                                                                                                    | Worksheet effect                                                                                                                                                                                                     |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Cloud DNS private zone                | USD 0.20/zone/month for the first 25 zones                                                                                                                    | Three zones = USD 0.60/month.                                                                                                                                                                                        |
-| Cloud DNS regular queries             | USD 0.40 per million for the first billion monthly queries                                                                                                    | Low launch traffic should remain well below USD 1/month.                                                                                                                                                             |
-| Artifact Registry storage             | First 0.5 GiB per billing account free; then about USD 0.10/GiB-month                                                                                         | Immutable images remain inexpensive; dry-run cleanup exposes growth before deletion is enabled.                                                                                                                      |
-| Compute Engine `e2-medium`            | Rounded on-demand `europe-west1` estimate of USD 25–30/month for one continuously running VM                                                                  | The one-member database group has target size one and no autoscaler, so this cost continues while the foundation exists.                                                                                             |
-| Balanced Persistent Disk              | About USD 0.10/GiB-month in `europe-west1`                                                                                                                    | 50 GiB is about USD 5/month; 150 GiB is about USD 15/month. Provisioned, not used, capacity is billed.                                                                                                               |
-| Standard Persistent Disk              | Rounded planning allowance of about USD 1/month for the 20 GiB replaceable COS boot disk                                                                      | Each live database VM has one boot disk. Managed replacement deletes the former boot disk after the new VM takes over.                                                                                               |
-| Same-region standard snapshots        | USD 0.000068493/GiB-hour for stored snapshot data                                                                                                             | The globally scoped snapshots store data in `europe-west1` as the inexpensive fast local-recovery layer; billing follows changed snapshot bytes.                                                                     |
-| EU multi-region Cloud Storage         | About USD 0.026/GiB-month, plus USD 0.02/GiB for each replicated write and for reads into `europe-west1`                                                      | The logical-backup formula below includes steady retention, scheduled writes, the monthly drill, and one backup/restore verification per release.                                                                    |
-| Cloud Run services                    | JSON Keys uses request-based CPU; Authentication uses instance-based CPU so detached mail can drain. Both set minimum `0`, maximum `3`, and concurrency `20`. | Both scale to zero. Authentication accrues CPU/memory while an instance remains allocated, even between requests. The three-hour synthetic check creates eight bounded wakes/day instead of continuously warming it. |
-| Cloud Run jobs                        | Instance-based billing while a task runs; Preview ephemeral disk is USD 0.000109589/GiB-hour in `europe-west1`                                                | Backup and restore use the supported 10 GiB minimum only while running. Short execution keeps disk cost negligible; duration remains measured.                                                                       |
-| Cloud Scheduler                       | USD 0.10/job/month, with three jobs free per billing account                                                                                                  | Five recovery schedules plus hourly key rotation add about USD 0.30/month when the billing account's free allowance is otherwise unused.                                                                             |
-| Cloud Monitoring                      | Native platform metrics and notification channels have no fixed launch charge within the stated allowances                                                    | Eight alert policies use only Google-provided metrics. Alert-policy pricing is announced no sooner than September 2027 and is tracked below.                                                                         |
-| GitHub Actions                        | Standard GitHub-hosted runners are free in this public repository                                                                                             | The existing drift workflow makes one synthetic health request every three hours and stores no artifact. Larger or self-hosted runners are not used.                                                                 |
-| Cloud Logging                         | First 50 GiB/project/month free; then USD 0.50/GiB ingested, including 30-day storage                                                                         | Thirty-day retention and the narrow successful-healthcheck exclusion aim to keep launch logging free without hiding failures.                                                                                        |
-| Secret Manager                        | Six active versions per billing account free; then USD 0.06/version-location/month; first 10,000 access operations free                                       | Seven initial active versions add roughly USD 0.06/month before access overage. Metadata-only containers cost nothing.                                                                                               |
-| VPC firewall rules                    | No charge                                                                                                                                                     | The custom VPC, routes, Private Google Access, and ordinary firewall rules have no fixed fee; network transfer can still be billed.                                                                                  |
-| Budget, quotas, IAM, service accounts | No fixed product charge                                                                                                                                       | They reduce risk but do not cap every source of spend.                                                                                                                                                               |
+| Unit                                  | List-price assumption used                                                                                                                                  | Worksheet effect                                                                                                                                     |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cloud DNS private zone                | USD 0.20/zone/month for the first 25 zones                                                                                                                  | Three zones = USD 0.60/month.                                                                                                                        |
+| Cloud DNS regular queries             | USD 0.40 per million for the first billion monthly queries                                                                                                  | Low launch traffic should remain well below USD 1/month.                                                                                             |
+| Artifact Registry storage             | First 0.5 GiB per billing account free; then about USD 0.10/GiB-month                                                                                       | Immutable images remain inexpensive; dry-run cleanup exposes growth before deletion is enabled.                                                      |
+| Compute Engine `e2-medium`            | Rounded on-demand `europe-west1` estimate of USD 25–30/month for one continuously running VM                                                                | The one-member database group has target size one and no autoscaler, so this cost continues while the foundation exists.                             |
+| Balanced Persistent Disk              | About USD 0.10/GiB-month in `europe-west1`                                                                                                                  | 50 GiB is about USD 5/month; 150 GiB is about USD 15/month. Provisioned, not used, capacity is billed.                                               |
+| Standard Persistent Disk              | Rounded planning allowance of about USD 1/month for the 20 GiB replaceable COS boot disk                                                                    | Each live database VM has one boot disk. Managed replacement deletes the former boot disk after the new VM takes over.                               |
+| Same-region standard snapshots        | USD 0.000068493/GiB-hour for stored snapshot data                                                                                                           | The globally scoped snapshots store data in `europe-west1` as the inexpensive fast local-recovery layer; billing follows changed snapshot bytes.     |
+| EU multi-region Cloud Storage         | About USD 0.026/GiB-month, plus USD 0.02/GiB for each replicated write and for reads into `europe-west1`                                                    | The logical-backup formula below includes steady retention, scheduled writes, the monthly drill, and one backup/restore verification per release.    |
+| Cloud Run services                    | JSON Keys uses request-based CPU; Authentication uses instance-based CPU so detached mail can drain. Production minimum `1`, maximum `3`, concurrency `20`. | About USD 59/month for the two warm instances before free tiers and traffic; recovery minimum stays `0`.                                             |
+| Cloud Run jobs                        | Instance-based billing while a task runs; Preview ephemeral disk is USD 0.000109589/GiB-hour in `europe-west1`                                              | Backup and restore use the supported 10 GiB minimum only while running. Short execution keeps disk cost negligible; duration remains measured.       |
+| Cloud Scheduler                       | USD 0.10/job/month, with three jobs free per billing account                                                                                                | Five recovery schedules plus hourly key rotation add about USD 0.30/month when the billing account's free allowance is otherwise unused.             |
+| Cloud Monitoring                      | Native platform metrics and notification channels have no fixed launch charge within the stated allowances                                                  | Eight alert policies use only Google-provided metrics. Alert-policy pricing is announced no sooner than September 2027 and is tracked below.         |
+| GitHub Actions                        | Standard GitHub-hosted runners are free in this public repository                                                                                           | The existing drift workflow makes one synthetic health request every three hours and stores no artifact. Larger or self-hosted runners are not used. |
+| Cloud Logging                         | First 50 GiB/project/month free; then USD 0.50/GiB ingested, including 30-day storage                                                                       | Thirty-day retention and the narrow successful-healthcheck exclusion aim to keep launch logging free without hiding failures.                        |
+| Secret Manager                        | Six active versions per billing account free; then USD 0.06/version-location/month; first 10,000 access operations free                                     | Seven initial active versions add roughly USD 0.06/month before access overage. Metadata-only containers cost nothing.                               |
+| VPC firewall rules                    | No charge                                                                                                                                                   | The custom VPC, routes, Private Google Access, and ordinary firewall rules have no fixed fee; network transfer can still be billed.                  |
+| Budget, quotas, IAM, service accounts | No fixed product charge                                                                                                                                     | They reduce risk but do not cap every source of spend.                                                                                               |
 
 Sources: [Cloud DNS pricing](https://cloud.google.com/dns/pricing),
 [Artifact Registry pricing](https://cloud.google.com/artifact-registry/pricing),
@@ -62,29 +62,34 @@ External mail uses the existing Workspace subscription and its
 
 ## Launch formula
 
-| Component                   | Planning assumption                                                                                                                           | USD/month |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | --------: |
-| Database compute            | One on-demand `e2-medium` running continuously in `europe-west1`                                                                              |     25–30 |
-| Persistent storage          | Preserved balanced data disk plus small boot disk                                                                                             |       5–7 |
-| Backups and snapshots       | Two small databases, at most 0.5 GiB combined per restore point, plus seven daily same-region snapshots                                       |       1–5 |
-| Cloud Run services and jobs | One request-billed and one instance-billed scale-to-zero service, plus short migrations, initialization, rotation, backup, and restore checks |       0–5 |
-| Registry and control plane  | DNS, small state/receipt/image storage, secrets, and bounded logs                                                                             |       1–4 |
-| **Expected total**          | Low traffic, no warm instance, no paid edge                                                                                                   | **35–55** |
+| Component                   | Planning assumption                                                                                     |  USD/month |
+| --------------------------- | ------------------------------------------------------------------------------------------------------- | ---------: |
+| Database compute            | One on-demand `e2-medium` running continuously in `europe-west1`                                        |      25–30 |
+| Persistent storage          | Preserved balanced data disk plus small boot disk                                                       |        5–7 |
+| Backups and snapshots       | Two small databases, at most 0.5 GiB combined per restore point, plus seven daily same-region snapshots |        1–5 |
+| Cloud Run services and jobs | Two warm instances plus short migrations, initialization, rotation, backup, and restore checks          |      60–65 |
+| Registry and control plane  | DNS, small state/receipt/image storage, secrets, and bounded logs                                       |        1–4 |
+| **Expected total**          | Low traffic, two warm instances, no paid edge                                                           | **95–115** |
 
 The database compute row is intentionally a rounded calculator assumption because Compute Engine
 prices vary by region, sustained-use eligibility, calendar hours, and pricing-model changes. The
 database-host change must refresh the exact calculator estimate before apply. The upper bound leaves
 room for snapshot churn and early operational logs without pretending those costs are fixed.
 
-The Cloud Run row includes the eight scheduled Authentication checks per day. Google can retain an
-instance-billed service for up to 15 idle minutes after a request, so those checks create at most
-about 60 allocated hours in a 30-day month before organic traffic. That fits inside the current
-240,000 vCPU-second instance-based free tier for one vCPU by itself, but Cloud Run free usage is
-aggregated by billing account and jobs or other services consume the same allowance. At current
-rounded rates, traffic that keeps one 1 vCPU/512 MiB Authentication instance allocated continuously
-can add approximately USD 45–55/month before allowances. That is a measured-usage trigger to revise
-the worksheet or move post-response mail onto a request-bound or queued application path; it is not
-included in the low-traffic launch range.
+The Cloud Run row includes one warm 1 vCPU/512 MiB instance for each production service. Using
+Tier 1 on-demand USD rates for `europe-west1` and a 30-day month, before free tiers:
+
+```text
+Authentication (instance billed): 2,592,000 × (0.000018 + 0.5 × 0.000002) = USD 49.25
+JSON Keys (request billed, idle):  2,592,000 × (0.0000025 + 0.5 × 0.0000025) = USD 9.72
+Combined warm baseline: USD 58.97/month
+```
+
+Active requests, startup time, extra autoscaled instances, and jobs add usage; free-tier credits
+are shared across the billing account. The minimum is set at service level so tagged candidate
+revisions do not each reserve an idle instance. Recovery drills retain minimum zero and jobs run
+only when invoked. Google can restart minimum instances, so this latency setting is not an uptime
+guarantee. See [minimum-instance behavior and billing](https://docs.cloud.google.com/run/docs/configuring/min-instances).
 
 Google has announced alert-policy pricing no sooner than September 2027. At the published
 USD 0.35 per metric reference, the current eleven references would add about USD 3.85/month plus
@@ -122,14 +127,18 @@ partial attempts and small manifests.
 
 ## Capacity-horizon formula
 
-| Component                   | Planning assumption                                                                                 |  USD/month |
-| --------------------------- | --------------------------------------------------------------------------------------------------- | ---------: |
-| Database compute            | One on-demand `e2-standard-2`                                                                       |      50–60 |
-| Persistent storage          | 150 GiB balanced data disk plus boot disk                                                           |      15–18 |
-| Backups and snapshots       | `84 ×` aggregate compressed current backup size, at most 3 GiB combined, plus same-region snapshots |      15–25 |
-| Cloud Run services and jobs | Six to seven mixed-billing scale-to-zero services plus short jobs                                   |       0–15 |
-| Registry and control plane  | State/receipts, registry, secrets, scheduler, private DNS, and bounded logs                         |        2–7 |
-| **Expected total**          | Low traffic, no warm instances                                                                      | **85–125** |
+| Component                   | Planning assumption                                                                                 |                    USD/month |
+| --------------------------- | --------------------------------------------------------------------------------------------------- | ---------------------------: |
+| Database compute            | One on-demand `e2-standard-2`                                                                       |                        50–60 |
+| Persistent storage          | 150 GiB balanced data disk plus boot disk                                                           |                        15–18 |
+| Backups and snapshots       | `84 ×` aggregate compressed current backup size, at most 3 GiB combined, plus same-region snapshots |                        15–25 |
+| Cloud Run services and jobs | One warm instance per future service plus short jobs                                                |          Reprice per service |
+| Registry and control plane  | State/receipts, registry, secrets, scheduler, private DNS, and bounded logs                         |                          2–7 |
+| **Expected total**          | Depends on the future service mix and billing modes                                                 | **Reprice before expansion** |
+
+The capacity horizon must be repriced before expansion: every additional production service needs
+its own warm-instance allowance, based on its CPU/memory and billing mode. Use the unit formula
+above; the service mix is not yet configured, so no total is quoted.
 
 The four PostgreSQL databases are four isolated containers on one host, not four billed database
 instances. The topology moves to `e2-standard-2` before database three. A later `e2-standard-4`
@@ -145,7 +154,7 @@ These usage-dependent or product decisions are not inside the ranges above:
 - LLM/API usage and the existing Google Workspace subscription. SMTP relay adds no per-message
   charge or additional mailbox for the configured unregistered sender; any future paid
   authentication mailbox adds its Workspace seat cost;
-- warm Cloud Run instances, paid load balancing, WAF, CDN, Cloud NAT, an egress proxy, or a VPC
+- additional autoscaled Cloud Run instances, paid load balancing, WAF, CDN, Cloud NAT, an egress proxy, or a VPC
   connector;
 - GitHub Actions runner charges if this repository becomes private or stops using standard hosted
   runners;
@@ -160,7 +169,10 @@ provisioned.
 
 The 60-unit monthly production-infrastructure budget spans the management and workload projects,
 uses the billing account currency, alerts both human channels at current and forecasted
-50/75/90/100%, and is alert-only. The USD worksheet remains the planning comparison. Workspace
+50/75/90/100%, and is alert-only. The warm-instance baseline can exceed this existing threshold
+once database and storage costs are included. Review the budget in the billing account currency
+before rollout; this configuration change does not raise it automatically.
+The USD worksheet remains the planning comparison. Workspace
 relay has shared organization sending limits and abuse controls, documented in the
 [SMTP runbook](../runbooks/configure-hosted-smtp.md). Its subscription is separate from Cloud billing.
 Actual Google brakes are maximum Cloud Run instances, single-task jobs, regional
