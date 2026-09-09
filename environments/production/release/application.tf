@@ -232,7 +232,7 @@ resource "google_cloud_run_v2_service" "json_keys" {
   labels               = merge(local.labels, { component = "json-keys", role = "grpc" })
 
   scaling {
-    min_instance_count = 0
+    min_instance_count = var.recovery_mode ? 0 : 1
     max_instance_count = 3
   }
 
@@ -385,7 +385,7 @@ resource "google_cloud_run_v2_service" "authentication" {
   labels               = merge(local.labels, { component = "authentication", role = "rest" })
 
   scaling {
-    min_instance_count = 0
+    min_instance_count = var.recovery_mode ? 0 : 1
     max_instance_count = 3
   }
 
@@ -444,8 +444,8 @@ resource "google_cloud_run_v2_service" "authentication" {
       }
 
       # Cloud Run sends SIGTERM ten seconds before termination. The shared
-      # nine-second budget lets the HTTP server stop and detached mail sends
-      # drain before the platform's fixed deadline.
+      # nine-second budget bounds the HTTP and accepted-mail drain. It cannot
+      # extend the platform grace period or make in-memory work durable.
       env {
         name  = "REST_TIMEOUT_SHUTDOWN"
         value = "9s"

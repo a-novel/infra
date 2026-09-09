@@ -549,7 +549,8 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
       google_tags_location_tag_binding.json_keys[0].location == var.region &&
       !google_cloud_run_v2_service.json_keys[0].invoker_iam_disabled &&
       !google_cloud_run_v2_service.json_keys[0].deletion_protection &&
-      one(google_cloud_run_v2_service.json_keys[0].scaling).min_instance_count == 0 &&
+      one(google_cloud_run_v2_service.json_keys[0].scaling).min_instance_count == 1 &&
+      length(one(google_cloud_run_v2_service.json_keys[0].template).scaling) == 0 &&
       one(google_cloud_run_v2_service.json_keys[0].scaling).max_instance_count == 3 &&
       one(google_cloud_run_v2_service.json_keys[0].template).service_account == var.runtime_service_accounts.json_keys &&
       one(google_cloud_run_v2_service.json_keys[0].template).timeout == "60s" &&
@@ -609,7 +610,8 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
       google_cloud_run_v2_service.authentication[0].invoker_iam_disabled &&
       length(google_tags_location_tag_binding.authentication) == 0 &&
       !google_cloud_run_v2_service.authentication[0].deletion_protection &&
-      one(google_cloud_run_v2_service.authentication[0].scaling).min_instance_count == 0 &&
+      one(google_cloud_run_v2_service.authentication[0].scaling).min_instance_count == 1 &&
+      length(one(google_cloud_run_v2_service.authentication[0].template).scaling) == 0 &&
       one(google_cloud_run_v2_service.authentication[0].scaling).max_instance_count == 3 &&
       one(google_cloud_run_v2_service.authentication[0].template).service_account == var.runtime_service_accounts.authentication &&
       one(google_cloud_run_v2_service.authentication[0].template).timeout == "60s" &&
@@ -631,7 +633,7 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
       one(google_cloud_run_v2_service.authentication[0].template).revision == var.application_release.authentication.revision &&
       one(google_cloud_run_v2_service.authentication[0].traffic).percent == 100
     )
-    error_message = "Authentication must remain public, scale to zero, drain background mail, and split private from managed public egress."
+    error_message = "Authentication must remain public, keep one service-level warm instance, drain background mail, and split private from managed public egress."
   }
 
   assert {
@@ -761,6 +763,9 @@ run "routes_a_first_release_to_its_only_revisions" {
         google_cloud_run_v2_service.json_keys[0],
         google_cloud_run_v2_service.authentication[0],
         ] : (
+        one(service.scaling).min_instance_count == 1 &&
+        one(service.scaling).max_instance_count == 3 &&
+        length(one(service.template).scaling) == 0 &&
         length(service.traffic) == 1 &&
         one(service.traffic).type == "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST" &&
         one(service.traffic).percent == 100 &&
@@ -873,13 +878,16 @@ run "builds_restore_only_contracts_in_a_disposable_recovery_state" {
         google_cloud_run_v2_service.json_keys[0],
         google_cloud_run_v2_service.authentication[0],
         ] : (
+        one(service.scaling).min_instance_count == 0 &&
+        one(service.scaling).max_instance_count == 3 &&
+        length(one(service.template).scaling) == 0 &&
         length(service.traffic) == 1 &&
         one(service.traffic).type == "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST" &&
         one(service.traffic).percent == 100 &&
         one(service.traffic).revision == null
       )
     ])
-    error_message = "Disposable recovery must route each newly created service to its latest revision."
+    error_message = "Disposable recovery must retain scale-to-zero services and route each newly created service to its latest revision."
   }
 
   assert {
