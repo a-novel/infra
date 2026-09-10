@@ -2,7 +2,7 @@ name: main
 
 on:
   push:
-    branches: ["**"]
+    branches: ["**", "!gh-readonly-queue/**"]
     tags-ignore: ["**"]
   pull_request:
     types: [opened, reopened, synchronize, labeled, unlabeled]

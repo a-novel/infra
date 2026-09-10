@@ -18,6 +18,13 @@
       "pinDigests": false
     },
     {
+      "description": "Resolve Aqua Security tags directly from Git because its organization IP allow list rejects authenticated GitHub GraphQL lookups.",
+      "matchPackageNames": ["aquasecurity/trivy", "aquasecurity/trivy-action"],
+      "overrideDatasource": "git-tags",
+      "overridePackageName": "https://github.com/{{{packageName}}}",
+      "versioning": "semver"
+    },
+    {
       "description": "Accept only complete stable SemVer image tags in the production manifest.",
       "matchDatasources": ["docker"],
       "matchFileNames": ["deploy/production/images.yaml"],
