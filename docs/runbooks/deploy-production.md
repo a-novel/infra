@@ -519,8 +519,11 @@ Logs contain stable stages, sanitized OpenTofu counts, execution IDs, and bounde
 never configuration, plans, state, image inventories, paired secret/version inventories, or raw health
 responses. Authentication smoke reports readiness, URL, transport, HTTP, or schema failures. A valid
 unhealthy response, including HTTP 503, prints only `api:jsonKeys`, `client:postgres`, and
-`client:smtp` as `up` or `down`. HTTP 503 still fails the release even if its body reports all
-dependencies as healthy.
+`client:smtp` as `up` or `down`. Only a valid HTTP 200 or 503 response declaring a dependency
+`down` is retried: at most three checks of the same candidate, five seconds apart. Each request
+retains its 15-second deadline and 4 KiB body limit. Persistent failures still trigger rollback;
+transport, authorization and schema failures stop immediately. HTTP 503 also fails immediately
+if its body reports all dependencies as healthy.
 Preserve those lines and the run URL. Do not change credentials or retry initialization on a guess.
 HTTP 200 alone is not a healthy result: all three components must be `up`.
 
