@@ -36,6 +36,7 @@ try {
     activeTfvars,
     database: release.database,
     operations,
+    ...(release.imageManifest ? { imageManifest: release.imageManifest } : {}),
   };
   await writeFile(outputPath, `${JSON.stringify(receipt, null, 2)}\n`, {
     mode: 0o600,

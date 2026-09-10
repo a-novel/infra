@@ -54,7 +54,8 @@ up to three. Jobs run only when invoked; disposable recovery services retain min
 runtimes remain absent while their release contract is disabled. The production manifest selects both reviewed launch families,
 but the protected release job remains disabled by a fail-safe repository switch until bootstrap and
 the operator runbook are complete. After launch, a protected manifest merge starts the same fixed
-release graph; manual dispatch remains for first activation, retry, and rollback. There is no load
+service-scoped release; manual dispatch remains for first activation, configuration maintenance,
+retry, and rollback. There is no load
 balancer, public IP, NAT, connector, proxy, or Kubernetes layer.
 
 ## Provider and resource references

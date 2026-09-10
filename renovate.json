@@ -48,6 +48,7 @@
       "matchFileNames": ["deploy/production/images.yaml"],
       "matchPackageNames": ["ghcr.io/a-novel/service-json-keys/**"],
       "groupName": "service-json-keys images",
+      "minimumGroupSize": 4,
       "groupSlug": "service-json-keys-images",
       "separateMajorMinor": true
     },
@@ -57,6 +58,7 @@
       "matchFileNames": ["deploy/production/images.yaml"],
       "matchPackageNames": ["ghcr.io/a-novel/service-authentication/**"],
       "groupName": "service-authentication images",
+      "minimumGroupSize": 4,
       "groupSlug": "service-authentication-images",
       "separateMajorMinor": true
     },

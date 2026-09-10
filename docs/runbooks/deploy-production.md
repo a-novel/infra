@@ -1,6 +1,6 @@
 # Deploy and roll back production
 
-Use this runbook for a reviewed release of JSON Keys and Authentication, or to restore the whole
+Use this runbook for a reviewed release of JSON Keys or Authentication, or to restore the whole
 application to one exact prior successful receipt. A protected merge that changes the production
 manifest starts deployment only while the repository release switch is true. An explicit retry and
 rollback use manual dispatch. A branch or pull request never receives Google credentials.
@@ -47,25 +47,52 @@ AUTH_SUPER_ADMIN_EMAIL="${OPERATOR_PRINCIPAL#user:}"
 
 ## Guarantees and deliberate limits
 
-One globally serialized workflow performs this fixed graph:
+Foundation must be current before a release: it grants the JSON Keys runtime permission to invoke
+internal-tagged services for the private candidate smoke test. This does not grant access to
+Authentication secrets. When upgrading the rollout tooling, apply the reviewed foundation plan,
+then run unchanged-image release maintenance before merging the next service image update.
+
+Merge one complete service-family PR, wait for its successful deployment, then merge the next
+service PR in the order required by their compatibility contracts. The globally serialized workflow
+selects the changed family by comparing the manifest with the last successful receipt:
 
 1. verify all eight GHCR images, exact digests, producer attestations, family SemVer, and PostgreSQL
    major before obtaining Google credentials;
-2. verify seven numeric secret versions, three fully granted quota preferences, a recent scheduled
+2. reject incomplete family transitions, changed digests behind existing tags, combined service
+   updates, or unrelated configuration changes before promotion or runtime mutation;
+3. verify seven numeric secret versions, three fully granted quota preferences, a recent scheduled
    disk snapshot, and fresh logical backups for both databases;
-3. copy the exact digests into regional Artifact Registry and verify the destination digests;
-4. restart the stateful PostgreSQL host with receipt-bound images and secret versions;
-5. pause all periodic release schedulers and create both service candidates at zero traffic;
-6. execute JSON Keys migrations, JSON Keys rotation, then Authentication migrations;
-7. execute both logical backups, restore both into clean disposable clusters, and run the backup
+4. copy the exact digests into regional Artifact Registry and verify the destination digests;
+5. check effective candidate, activation and compensation plans for changes outside the selected
+   family, then restart the shared PostgreSQL host only if its image or secret-version contract changed;
+6. pause the shared backup schedules and create the selected service's candidate at zero traffic;
+7. execute that service's migrations; JSON Keys releases also pause scheduled rotation and run
+   rotation once after migration;
+8. execute both logical backups, restore both into clean disposable clusters, and run the backup
    monitor;
-8. verify the private JSON Keys revision is Ready and move it to 100%;
-9. call Authentication's candidate `/v2/healthcheck`, which probes its database, SMTP, and the newly
-   active private JSON Keys gRPC dependency, then move Authentication to 100%;
-10. converge OpenTofu, resume periodic schedulers, and publish an immutable private receipt.
+9. verify the selected candidate, then move that service to 100%: JSON Keys must pass its application
+   health RPC from the private smoke job against the exact tagged revision;
+   Authentication's `/v2/healthcheck` must pass against its database, SMTP and the currently active
+   JSON Keys service;
+10. converge OpenTofu, resume paused schedules, and publish an immutable full-state receipt.
+
+The other API retains its revision, environment, images and traffic. Authentication-only releases
+leave JSON Keys rotation enabled. First launch provisions both services and seeds JSON Keys before
+checking Authentication. A manual deploy with unchanged images is configuration maintenance and
+reconciles both services; explicit rollback and disaster recovery also remain full-state operations.
+
+If the plan reports changes outside the selected service, deploy the pending configuration with the
+last successful image manifest first, then restore the intended one-family image update. Do not bypass
+the scope check. It also runs when applying saved plans and during activation and compensation.
+
+The databases still share one VM. Restarting it interrupts both database connections, and migrations
+may block concurrent queries according to their PostgreSQL locks. Backward-compatible, staged
+migrations remain a service responsibility; this workflow does not promise zero downtime or an atomic
+cross-service traffic switch.
 
 After the database rollout begins, any failure follows one compensation edge to the preceding receipt.
-It restores prior traffic, images, secret-version references, and database container metadata.
+It restores the selected API's prior traffic, images and secret-version references. Database metadata
+is restored with a host restart only if the database contract changed.
 Migrations and row data are intentionally not reversed because migrations must remain backward
 compatible. Data restore belongs to the backup or disaster-recovery runbook.
 
@@ -409,10 +436,22 @@ dedicated runtime identities.
 fills all slots with the exact GHCR repository, one complete stable
 `vMAJOR.MINOR.PATCH` shared by that family, and its exact `sha256:` digest. The schema rejects
 branches, prereleases, partial families, unknown slots, moving references, and PostgreSQL other than
-major 18. The required pull-request check also rejects a partial family, a digest mutation behind an
-unchanged tag, or a service/PostgreSQL major mixed with another concern. Renovate subsequently opens
-human-reviewed pull requests only for stable SemVer releases and groups each service family. Merging
-such a manifest pull request starts deployment automatically.
+major 18. Both the pull-request check and deployment compiler reject partial transitions, digest
+mutations behind unchanged tags, and combined service-family updates. Renovate waits for all four
+updates in each service group and never automerges. Its grouping can still contain inconsistent
+versions while publication is incomplete; the compiler and source-image verification reject those
+before deployment. Merging a valid family PR starts deployment automatically.
+
+Wait for its success receipt before merging another family. The shared infrastructure lock prevents
+overlapping applies, but it is not a release-order queue. If a failed or superseded run leaves two
+families pending relative to the receipt, deployment stops. Restore one family's manifest entries to
+their last successful values through a reviewed PR, deploy the other family, then reapply the deferred
+update. Do not bypass the guard or overwrite receipts.
+
+Receipts retain their exact image manifest. For older receipts, the workflow reads the manifest at
+the receipt's commit and checks all eight digests against the recorded active state. A mismatch
+(possible for an old rollback receipt) stops for inspection; it never treats an unverified baseline
+as a first launch.
 
 Before the first successful release, add `allow-resource-deletion` to every exact pull request whose
 merge commit will be deployed because compensation may delete resources created by a partial rollout.

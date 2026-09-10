@@ -34,7 +34,7 @@ Keep `PRODUCTION_RELEASES_ENABLED=false` until the launch step explicitly change
 The [architecture guide](./docs/architecture.md) explains the lifecycle and security model. The
 [release root contract](./environments/production/release/README.md#application-runtime-contract)
 defines the human-only Authentication initializer, scheduled JSON Keys rotation, runtime identities,
-fixed deployment order, compensation, and receipt boundaries.
+per-service rollout scope, compensation, and receipt boundaries.
 
 ### Review persistent operator inputs
 
@@ -268,7 +268,8 @@ Branch tags, SHA tags, partial SemVer, prereleases, standalone images, mismatche
 partial families, and undeclared future images fail validation. A deterministic local-registry dry
 run proves that Renovate ignores noisy references, groups all four images for one service, separates
 service and PostgreSQL majors, and surfaces a digest changed behind an existing tag for blocking
-review. Renovate never automerges.
+review. Renovate waits for four updates per service group and never automerges. Merge one family,
+wait for its deployment, then merge the next in the maintainer-chosen service order.
 
 The production manifest selects two reviewed stable launch families, but this code alone still
 creates nothing. Foundation seeds empty group-level release metadata and the host remains idle until
@@ -278,7 +279,10 @@ green human merge that changes the manifest starts the protected release workflo
 and explicit retries can be dispatched manually from `master`. Source GHCR attestations must come
 from each producer's `release.yaml` on `master` using a GitHub-hosted runner. That signer policy,
 exact tag-to-digest resolution, family SemVer agreement, PostgreSQL major, numeric secret versions,
-quota grants, and fresh backups all fail closed before traffic changes. The release receipt records
+quota grants, and fresh backups all fail closed before traffic changes. Deployment also compares the
+full family transition with the preceding receipt before runtime mutation, including after a forced
+merge. Only the changed service's candidate, migrations and traffic are advanced; shared database
+restarts and backup verification retain their existing scope. The release receipt records
 the exact promoted digests, secret-version identifiers, revisions, migration and rotation
 executions, five recovery-verification executions, first-launch initialization evidence, health
 gates, commit, and workflow run.

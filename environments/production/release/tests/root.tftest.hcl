@@ -54,6 +54,8 @@ run "keeps_recovery_disabled_before_the_database_release" {
       length(google_cloud_scheduler_job.postgres_restore) == 0 &&
       length(google_cloud_scheduler_job.postgres_backup_monitor) == 0 &&
       length(google_cloud_run_v2_job.application) == 0 &&
+      length(google_cloud_run_v2_job.json_keys_smoke) == 0 &&
+      length(google_tags_location_tag_binding.json_keys_smoke) == 0 &&
       length(google_cloud_scheduler_job.json_keys_rotation) == 0 &&
       length(google_cloud_run_v2_service.json_keys) == 0 &&
       length(google_cloud_run_v2_service.authentication) == 0 &&
@@ -770,7 +772,7 @@ run "routes_a_first_release_to_its_only_revisions" {
         one(service.traffic).type == "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST" &&
         one(service.traffic).percent == 100 &&
         one(service.traffic).revision == null &&
-        one(service.traffic).tag == var.application_release.rollout.candidate_tag
+        one(service.traffic).tag == (service.name == "agora-json-keys-grpc" ? "candidate" : var.application_release.rollout.candidate_tag)
       )
     ])
     error_message = "A first release must route all traffic to its tagged latest revision because no prior revision exists."

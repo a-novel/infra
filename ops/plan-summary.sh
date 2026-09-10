@@ -88,6 +88,13 @@ if ! jq --exit-status --arg root_name "$1" \
     exit 65
 fi
 
+if [ "$1" = release ] && [ -n "${RELEASE_PLAN_SERVICES:-}" ] && ! jq --exit-status \
+    --argjson expected_services "${RELEASE_PLAN_SERVICES}" \
+    -f "${SCRIPT_DIR}/lib/release-scope-policy.jq" "$2" >/dev/null 2>&1; then
+    printf 'Release plan changes resources outside the selected service; deploy configuration separately before updating images.\n' >&2
+    exit 65
+fi
+
 printf "action\tresource_type\tcount\tgeneration\n"
 # Import metadata is independent from the underlying action, so report it as a
 # separate row. An import with matching configuration would otherwise disappear

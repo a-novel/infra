@@ -595,6 +595,9 @@ run "builds_the_project_replacement_window" {
       google_project_iam_member.scheduler_cloud_run_invoker[0].role == "roles/run.jobsExecutor" &&
       google_project_iam_member.internal_cloud_run_invoker.role == "roles/run.servicesInvoker" &&
       google_project_iam_member.internal_cloud_run_invoker.member == "serviceAccount:${google_service_account.runtime["authentication"].email}" &&
+      google_project_iam_member.json_keys_smoke_invoker[0].role == "roles/run.servicesInvoker" &&
+      google_project_iam_member.json_keys_smoke_invoker[0].member == "serviceAccount:${google_service_account.runtime["json_keys"].email}" &&
+      one(google_project_iam_member.json_keys_smoke_invoker[0].condition).expression == "resource.matchTagId('${google_tags_tag_key.cloud_run_invocation.id}', '${google_tags_tag_value.cloud_run_invocation["internal"].id}')" &&
       length(google_project_iam_member.recovery_cloud_run_invoker) == 0 &&
       length(google_project_iam_member.recovery_smoke_cloud_run_invoker) == 0 &&
       one(values(google_project_iam_member.initializer_cloud_run_invoker)).role == "roles/run.jobsExecutor" &&
@@ -1041,6 +1044,7 @@ run "limits_disposable_recovery_authority_to_the_replacement_project" {
       length(google_tags_tag_value_iam_member.initializer_tag_user) == 0 &&
       length(google_project_iam_member.release_cloud_run_invoker) == 0 &&
       length(google_project_iam_member.scheduler_cloud_run_invoker) == 0 &&
+      length(google_project_iam_member.json_keys_smoke_invoker) == 0 &&
       length(google_project_iam_member.recovery_cloud_run_invoker) == 1 &&
       google_project_iam_member.recovery_cloud_run_invoker[0].role == "roles/run.jobsExecutor" &&
       length(google_project_iam_member.recovery_smoke_cloud_run_invoker) == 1 &&

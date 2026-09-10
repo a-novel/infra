@@ -46,9 +46,12 @@ the database host changes. After the new clusters pass health checks, the releas
 the recovery jobs to the new image digests. The server-reported startup marker rejects the opposite
 order.
 
-The protected deployment workflow follows the fixed database → JSON Keys migration and seed rotation
-→ Authentication migration → backup/clean-restore verification → private service → dependent health
-check → public service order and restores the prior receipt if a health gate fails. Authentication
+The protected workflow selects one changed image family against the previous receipt, then runs that
+service's migration, health and traffic sequence. JSON Keys also runs seed rotation. Backup and
+clean-restore verification cover both databases because they share one host. The other API retains
+its receipt-owned template and traffic. First launch and configuration-only maintenance reconcile
+both services; first launch seeds JSON Keys before checking Authentication. A failed rollout
+compensates from the prior receipt. Authentication
 initialization stays outside automation because it can reset the first administrator's password and
 role. On the first launch, promotion pauses after recovery verification while a named human creates
 an inert job, attaches the human-only tag, verifies it, adds the exact bootstrap configuration, and
@@ -56,9 +59,10 @@ runs the job without overrides. The workflow records that exact successful execu
 deletes the job. Later releases and every rollback omit initialization. Backward-compatible
 migrations remain applied; restoring database contents is a separate recovery operation.
 
-Candidate reconciliation pauses every Cloud Scheduler entry before migrations or application
-traffic changes. The final active reconciliation resumes them only after recovery verification,
-both smoke checks, and both traffic shifts pass; compensation restores the prior active pause state.
+Candidate reconciliation pauses shared backup schedules before migrations or application traffic
+changes. It pauses JSON Keys rotation only when JSON Keys is selected. The final active reconciliation
+resumes paused schedules after the selected health and traffic checks; compensation restores the
+prior active pause state.
 This prevents periodic work from running against a half-migrated release without deleting and
 recreating schedules.
 
@@ -66,19 +70,19 @@ recreating schedules.
 
 The root defines PostgreSQL backup, restore, freshness, and storage-monitoring jobs for JSON Keys and
 Authentication. Recovery resources are created only when `database_releases` enables both databases
-as one unit. When the optional atomic application contract is present, it also defines JSON Keys
+as one unit. When the optional full-state application contract is present, it also defines JSON Keys
 migration and rotation jobs, the Authentication migration job, the private JSON Keys gRPC service,
 and the public Authentication REST service. Foundation-owned tag conditions form the exact invoker
-allowlists. Key rotation runs once per deployment and every hour. The one-time Authentication
+allowlists. Key rotation runs once per JSON Keys deployment and every hour. The one-time Authentication
 initializer is deliberately absent from release state and is provisioned only by a named human
 during first launch. The application contract itself requires both database release contracts. Both
-components remain disabled in the production image manifest.
+components are enabled in the production image manifest.
 
 The protected release workflow is the root's only authenticated caller. It plans and applies only
 from the reviewed `master` commit through the `production-release` GitHub environment; pull requests
-and operator checkouts can validate but cannot authenticate or apply. Merging or validating this
-code creates no Cloud Run revision or execution, Storage object, scheduler entry, or other cloud
-resource. A maintainer must dispatch the workflow explicitly.
+and operator checkouts can validate but cannot authenticate or apply. With the production release
+switch enabled, merging an image-manifest update starts deployment automatically. Configuration-only
+maintenance and explicit retries use manual dispatch.
 
 ## Resource inventory
 
@@ -151,10 +155,25 @@ TLS SMTP on port 587 needs no connector, NAT, proxy, or load balancer.
 Each candidate template has an immutable revision name and a short private tag. Candidate
 reconciliation targets Cloud Run's latest revision because its named revision is created by that
 request; the prior receipt remains at 100%. Active reconciliation pins the receipt-owned revision.
-JSON Keys becomes Ready and moves first. Authentication's tagged candidate `/v2/healthcheck` then
-proves its PostgreSQL, SMTP, and newly active private JSON Keys gRPC dependencies before public
-traffic moves. On first launch the private service may move safely before the public edge because it
-has no external ingress.
+The `rollout.services` list selects candidate traffic; omitted lists in legacy receipts include both
+services. Unselected services retain their receipt-owned traffic and template. Effective plans for
+candidate, activation and compensation are inspected before the database restart; changes outside
+the selected family require a separate configuration maintenance deployment. All applies recheck
+that scope. Shared backup schedules may only pause/resume without changing their configuration.
+
+JSON Keys candidates must pass `anovel.jsonkeys.v2.StatusService/Status` before traffic promotion.
+The on-demand `agora-json-keys-smoke` job uses the selected gRPC image's existing `grpcurl`, private
+VPC routing and JSON Keys' own runtime identity with a foundation-owned, internal-tag-restricted
+invocation binding. Apply foundation before deploying this job. It mounts no
+secrets, has no scheduler, and does not redeploy Authentication. The driver verifies the fixed
+`candidate` tag resolves to the exact revision and matches the job's target; the release mutex
+serializes that tag. The metadata ID token uses the base service URL as its audience, and neither
+token nor RPC response is logged. Failure leaves the receipt's health status unpassed and starts
+compensation. Recovery omits this job and retains its separate private health verification.
+
+Authentication's tagged candidate `/v2/healthcheck` proves PostgreSQL, SMTP and
+the currently active private JSON Keys gRPC dependency before public traffic moves. On first launch
+the private service moves before the public edge because it has no external ingress.
 
 ## Backup and restore contract
 

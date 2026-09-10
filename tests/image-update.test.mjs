@@ -1,3 +1,5 @@
+import { validateImageUpdate } from "../ops/validate-image-update.mjs";
+
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -5,8 +7,6 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { parse } from "yaml";
-
-import { validateImageUpdate } from "../ops/validate-image-update.mjs";
 
 const testDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(testDirectory, "..");
@@ -74,17 +74,19 @@ test("complete service families may be enabled together for initial launch", () 
   assert.doesNotThrow(() => validateImageUpdate(previous, next));
 });
 
-test("a service major update remains separate from other service updates", () => {
-  const previous = copyStableManifest();
-  const next = copyStableManifest();
-  updateFamily(next, "service-json-keys", "v3.0.0", "3");
-  updateFamily(next, "service-authentication", "v1.3.0", "4");
+for (const tag of ["v2.6.0", "v3.0.0"]) {
+  test(`a ${tag} service update remains separate from other service updates`, () => {
+    const previous = copyStableManifest();
+    const next = copyStableManifest();
+    updateFamily(next, "service-json-keys", tag, "3");
+    updateFamily(next, "service-authentication", "v1.3.0", "4");
 
-  assert.throws(
-    () => validateImageUpdate(previous, next),
-    /service major change must be reviewed separately/,
-  );
-});
+    assert.throws(
+      () => validateImageUpdate(previous, next),
+      /service image families must be deployed separately/,
+    );
+  });
+}
 
 test("a PostgreSQL major update remains separate from service releases", () => {
   const previous = copyStableManifest();

@@ -11,6 +11,24 @@ await init();
 const read = (file) => readFile(new URL(`../${file}`, import.meta.url), "utf8");
 const config = JSON.parse(await read("renovate.json"));
 
+test("Renovate waits for four updates in each separate service image group", async () => {
+  for (const service of ["service-json-keys", "service-authentication"]) {
+    for (const updateType of ["patch", "minor", "major", "digest"]) {
+      const result = await applyPackageRules({
+        packageFile: "deploy/production/images.yaml",
+        manager: "custom.regex",
+        datasource: "docker",
+        packageName: `ghcr.io/a-novel/${service}/database`,
+        updateType,
+        packageRules: config.packageRules,
+      });
+      assert.equal(result.groupName, `${service} images`);
+      assert.equal(result.minimumGroupSize, 4);
+      assert.equal(result.automerge, false);
+    }
+  }
+});
+
 test("Renovate runs on a schedule or manual dispatch with no cloud authority", async () => {
   const workflow = parse(await read(".github/workflows/renovate.yaml"));
   assert.deepEqual(

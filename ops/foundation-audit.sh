@@ -310,6 +310,7 @@ audit_foundation() {
         --arg release "serviceAccount:infra-release@${MANAGEMENT_PROJECT_ID}.iam.gserviceaccount.com" \
         --arg scheduler "serviceAccount:agora-scheduler-invoker@${WORKLOAD_PROJECT_ID}.iam.gserviceaccount.com" \
         --arg authentication "serviceAccount:agora-authentication@${WORKLOAD_PROJECT_ID}.iam.gserviceaccount.com" \
+        --arg json_keys "serviceAccount:agora-json-keys@${WORKLOAD_PROJECT_ID}.iam.gserviceaccount.com" \
         --argjson initializers "$initializer_members" '
       [
         .bindings[]?
@@ -324,7 +325,7 @@ audit_foundation() {
             members: (.members | sort)
           }
       ] as $bindings
-      | ($bindings | length == 4) and
+      | ($bindings | length == 5) and
         all($bindings[]; .expression | contains("resource.matchTagId(")) and
         any($bindings[];
           .role == "roles/run.jobsExecutor" and
@@ -345,6 +346,12 @@ audit_foundation() {
           .role == "roles/run.servicesInvoker" and
           .title == "InternalCloudRunOnly" and
           .members == [$authentication]
+        ) and
+        any($bindings[];
+          .role == "roles/run.servicesInvoker" and
+          .title == "JSONKeysInternalSmokeOnly" and
+          .members == [$json_keys] and
+          .expression == ([$bindings[] | select(.title == "InternalCloudRunOnly") | .expression] | first)
         )
     ' <<<"$policy_json" >/dev/null; then
         fail 'conditional Cloud Run invocation IAM'

@@ -206,7 +206,24 @@ jobs:
             fi
           fi
 
-      - name: Compile exact candidate, active, and compensation inputs
+      - name: Resolve the exact manifest for a legacy receipt
+        if: env.RELEASE_ACTION != 'recover-first-launch'
+        id: prior-images
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRIOR_RECEIPT: ${{ steps.prior.outputs.argument }}
+        run: |
+          set -euo pipefail
+          umask 077
+          if [ "${PRIOR_RECEIPT}" != - ] && jq --exit-status '.activeTfvars.application_release != null and .imageManifest == null' "${PRIOR_RECEIPT}" >/dev/null; then
+            commit="$(jq --exit-status --raw-output '.source.commit | select(test("^[a-f0-9]{40}$"))' "${PRIOR_RECEIPT}")"
+            file="${RUNNER_TEMP}/prior-images.yaml"
+            gh api "repos/${GITHUB_REPOSITORY}/contents/deploy/production/images.yaml?ref=${commit}" --header 'Accept: application/vnd.github.raw+json' >"${file}"
+            printf 'file=%s\n' "${file}" >>"${GITHUB_OUTPUT}"
+          fi
+
+      - name: Validate the deployed family transition and compile exact inputs
         if: env.RELEASE_ACTION != 'recover-first-launch'
         shell: bash
         env:
@@ -215,6 +232,7 @@ jobs:
           GITHUB_SHA: ${{ github.sha }}
           CURRENT_RECEIPT: ${{ steps.prior.outputs.current }}
           PRIOR_RECEIPT: ${{ steps.prior.outputs.argument }}
+          PRIOR_IMAGE_MANIFEST: ${{ steps.prior-images.outputs.file }}
           RELEASE_CONFIG_FILE: ${{ steps.config.outputs.file }}
         run: |
           set -euo pipefail
@@ -223,7 +241,7 @@ jobs:
             deploy/production/images.yaml "${RELEASE_CONFIG_FILE}" \
             "${PRIOR_RECEIPT}" "${RUNNER_TEMP}/release"
 
-      - name: Execute the fixed release graph
+      - name: Deploy the selected service scope
         if: env.RELEASE_ACTION == 'deploy'
         shell: bash
         env:
@@ -231,7 +249,7 @@ jobs:
           RECEIPT_BUCKET: ${{ vars.GCP_RECEIPT_BUCKET }}
           RELEASE_DIRECTORY: ${{ runner.temp }}/release
           STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
-        run: ./ops/release-orchestrator.sh ./ops/google-release-driver.sh
+        run: ./ops/release-orchestrator.sh ./ops/google-release-driver.sh "${RELEASE_DIRECTORY}/release.json"
 
       - name: Restore the exact selected receipt
         if: env.RELEASE_ACTION == 'rollback'

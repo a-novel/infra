@@ -1,18 +1,29 @@
 #!/bin/bash
 
-# Execute the fixed production dependency graph. The driver contains provider
-# operations; this state machine contains only ordering and one compensation
-# edge, which makes every failure boundary cheap to test without cloud access.
-# Usage: release-orchestrator.sh <driver>
+# Execute the compiler-selected service rollout and compensate on failure.
+# First launch and configuration maintenance include both services; routine
+# image releases include exactly one, with no cross-service deployment order.
+# Usage: release-orchestrator.sh <driver> <compiled-release.json>
 
 set -euo pipefail
 
-if [ "$#" -ne 1 ] || [ ! -x "$1" ]; then
-    printf 'Usage: %s <executable-driver>\n' "$0" >&2
+if [ "$#" -ne 2 ] || [ ! -x "$1" ]; then
+    printf 'Usage: %s <executable-driver> <compiled-release.json>\n' "$0" >&2
     exit 64
 fi
 
 DRIVER="$1"
+RELEASE_FILE="$2"
+if ! jq --exit-status '
+    (.mode == "service" and (.services == ["json_keys"] or .services == ["authentication"])) or
+    ((.mode == "first-launch" or .mode == "maintenance") and .services == ["json_keys", "authentication"])
+' "${RELEASE_FILE}" >/dev/null; then
+    printf 'Compiled release scope is invalid.\n' >&2
+    exit 65
+fi
+JSON_SELECTED="$(jq '.services | index("json_keys") != null' "${RELEASE_FILE}")"
+AUTHENTICATION_SELECTED="$(jq '.services | index("authentication") != null' "${RELEASE_FILE}")"
+printf 'Deployment scope: %s\n' "$(jq -r '.mode + " (" + (.services | join(", ")) + ")"' "${RELEASE_FILE}")"
 MUTATED=false
 
 compensate() {
@@ -53,6 +64,7 @@ run_step() {
 for step in \
     preflight \
     promote \
+    plan \
     database \
     candidate \
     json-migrations \
@@ -66,6 +78,10 @@ for step in \
     authentication-traffic \
     active \
     receipt; do
+    case "${step}" in
+        json-*) [ "${JSON_SELECTED}" = true ] || continue ;;
+        authentication-*) [ "${AUTHENTICATION_SELECTED}" = true ] || continue ;;
+    esac
     run_step "${step}"
 done
 

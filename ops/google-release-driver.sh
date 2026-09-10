@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Google Cloud implementation of the fixed release state machine. All mutable
+# Google Cloud implementation of the selected release state machine. All mutable
 # values come from compile-release.mjs private files; the driver never reads or
 # prints secret payloads.
 # Usage: google-release-driver.sh <state-machine-step|rollback>
@@ -28,6 +28,10 @@ DATABASE_ZONE="$(jq --raw-output '.cloud.databaseZone' "${RELEASE_FILE}")"
 COMMIT="$(jq --raw-output '.commit' "${RELEASE_FILE}")"
 RUN_ID="$(jq --raw-output '.runId' "${RELEASE_FILE}")"
 RUN_ATTEMPT="$(jq --raw-output '.runAttempt' "${RELEASE_FILE}")"
+# Bind each plan and apply to this invocation's compiler-selected scope.
+# Other callers, such as PR assessment, inspect the full resource graph.
+RELEASE_PLAN_SERVICES="$(jq --compact-output '.services' "${RELEASE_FILE}")"
+export RELEASE_PLAN_SERVICES
 # These names are the fixed OpenTofu resource contract. Keep traffic and
 # candidate inspection aligned with application.tf rather than deriving names
 # from image-family keys.
@@ -217,7 +221,7 @@ write_rollback_receipt() {
     local rollback_release="${RELEASE_DIRECTORY}/rollback-release.json"
     local rollback_operations="${RELEASE_DIRECTORY}/rollback-operations.json"
     local rollback_receipt="${RELEASE_DIRECTORY}/rollback-receipt.json"
-    jq '.database = .previousDatabase' "${RELEASE_FILE}" >"${rollback_release}"
+    jq '.database = .previousDatabase | .imageManifest = .previousManifest' "${RELEASE_FILE}" >"${rollback_release}"
     jq -n '
       {
         executions: {
@@ -277,8 +281,26 @@ case "${STEP}" in
     promote)
         "${SCRIPT_DIR}/promote-release-images.sh" "${RELEASE_FILE}"
         ;;
+    plan)
+        # Reject effective HCL changes outside the selected service before the
+        # database restart. Preview later phases too; their plans are never applied.
+        if jq --exit-status '.mode == "service"' "${RELEASE_FILE}" >/dev/null; then
+            for phase in active rollback; do
+                code=0
+                TOFU_VAR_FILE="${RELEASE_DIRECTORY}/${phase}.tfvars.json" \
+                    "${SCRIPT_DIR}/tofu-gate.sh" assess release "${STATE_BUCKET}" || code=$?
+                case "${code}" in
+                    0 | 2 | 3) ;; # Deletion approval is checked on each actual saved plan.
+                    *) exit "${code}" ;;
+                esac
+            done
+        fi
+        "${SCRIPT_DIR}/create-reviewed-plan.sh" release "${STATE_BUCKET}" "${COMMIT}" \
+            "$(plan_id 1)" "${RELEASE_DIRECTORY}/candidate.tfvars.json"
+        ;;
     candidate)
-        apply_tfvars "${RELEASE_DIRECTORY}/candidate.tfvars.json" 1
+        "${SCRIPT_DIR}/apply-reviewed-plan.sh" release "${STATE_BUCKET}" "${COMMIT}" \
+            "$(plan_id 1)" "${RELEASE_DIRECTORY}/candidate.tfvars.json"
         ;;
     database)
         if jq --exit-status \
@@ -339,6 +361,32 @@ case "${STEP}" in
             printf 'The private JSON Keys candidate did not become Ready.\n' >&2
             exit 70
         fi
+        STATUS_FILE="$(mktemp "${RELEASE_DIRECTORY}/json-smoke.XXXXXX")"
+        JOB_FILE="$(mktemp "${RELEASE_DIRECTORY}/json-smoke-job.XXXXXX")"
+        trap 'rm -f -- "${STATUS_FILE}" "${JOB_FILE}"' EXIT
+        gcloud run services describe "${JSON_KEYS_SERVICE}" --project="${PROJECT_ID}" \
+            --region="${REGION}" --format=json >"${STATUS_FILE}"
+        gcloud run jobs describe agora-json-keys-smoke --project="${PROJECT_ID}" \
+            --region="${REGION}" --format=json >"${JOB_FILE}"
+        # The exact job must call this candidate, not the currently serving revision.
+        if ! jq --exit-status --arg revision "${JSON_REVISION}" --slurpfile job "${JOB_FILE}" \
+            --slurpfile release "${RELEASE_FILE}" '
+            .status as $status |
+            $job[0].spec.template.spec.template.spec as $spec |
+            $spec.containers as $containers |
+            ($containers[0].env | map({key: .name, value: .value}) | from_entries) as $env |
+            ($status.url | test("^https://[a-z0-9.-]+\\.run\\.app$")) and
+            any($status.traffic[]?; .tag == "candidate" and .revisionName == $revision and .url == $env.JSON_KEYS_CANDIDATE) and
+            $env.JSON_KEYS_AUDIENCE == $status.url and
+            $spec.serviceAccountName == ("agora-json-keys@" + $release[0].cloud.workloadProjectId + ".iam.gserviceaccount.com") and
+            ($containers | length == 1) and
+            $containers[0].image == ([$release[0].images[] | select(.component == "service-json-keys" and .slot == "grpc") | .promoted] | first)
+          ' "${STATUS_FILE}" >/dev/null 2>&1; then
+            printf 'JSON Keys smoke job does not match the exact private candidate.\n' >&2
+            exit 70
+        fi
+        EXECUTION="$(run_job agora-json-keys-smoke)"
+        update_operation '.executions.jsonKeysSmoke = $value' "${EXECUTION}"
         update_operation '.health.jsonKeys = $value' passed
         ;;
     authentication-smoke)
@@ -427,10 +475,14 @@ case "${STEP}" in
     rollback)
         if jq --exit-status '.application_release != null' \
             "${RELEASE_DIRECTORY}/rollback.tfvars.json" >/dev/null; then
-            shift_traffic "${AUTHENTICATION_SERVICE}" \
-                "$(jq --raw-output '.application_release.authentication.active_revision' "${RELEASE_DIRECTORY}/rollback.tfvars.json")"
-            shift_traffic "${JSON_KEYS_SERVICE}" \
-                "$(jq --raw-output '.application_release.json_keys.active_revision' "${RELEASE_DIRECTORY}/rollback.tfvars.json")"
+            if jq --exit-status '.services | index("authentication") != null' "${RELEASE_FILE}" >/dev/null; then
+                shift_traffic "${AUTHENTICATION_SERVICE}" \
+                    "$(jq --raw-output '.application_release.authentication.active_revision' "${RELEASE_DIRECTORY}/rollback.tfvars.json")"
+            fi
+            if jq --exit-status '.services | index("json_keys") != null' "${RELEASE_FILE}" >/dev/null; then
+                shift_traffic "${JSON_KEYS_SERVICE}" \
+                    "$(jq --raw-output '.application_release.json_keys.active_revision' "${RELEASE_DIRECTORY}/rollback.tfvars.json")"
+            fi
         fi
         apply_tfvars "${RELEASE_DIRECTORY}/rollback.tfvars.json" 3
         "${SCRIPT_DIR}/config-custody.sh" publish \
@@ -439,9 +491,14 @@ case "${STEP}" in
         jq '.previousDatabase' "${RELEASE_FILE}" \
             >"${RELEASE_DIRECTORY}/previous-database.json"
         chmod 600 "${RELEASE_DIRECTORY}/previous-database.json"
-        "${SCRIPT_DIR}/restore-database-release.sh" \
-            "${PROJECT_ID}" "${DATABASE_ZONE}" \
-            "${RELEASE_DIRECTORY}/previous-database.json"
+        if ! jq --exit-status '
+            (.action == "deploy" and .database == .previousDatabase) or
+            (.action == "rollback" and .currentDatabase == .previousDatabase)
+        ' "${RELEASE_FILE}" >/dev/null; then
+            "${SCRIPT_DIR}/restore-database-release.sh" \
+                "${PROJECT_ID}" "${DATABASE_ZONE}" \
+                "${RELEASE_DIRECTORY}/previous-database.json"
+        fi
         write_rollback_receipt
         ;;
     *)

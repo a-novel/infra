@@ -304,6 +304,7 @@ test("application-only releases preserve database identity and legacy rollback c
         manifestSha256: first.release.manifestSha256,
       },
       activeTfvars: first.activeTfvars,
+      imageManifest: first.release.imageManifest,
       database: first.release.database,
       operations: {
         executions: {
@@ -410,6 +411,7 @@ test("manual rollback checks the latest database before restoring an older targe
         manifestSha256: target.release.manifestSha256,
       },
       activeTfvars: target.activeTfvars,
+      imageManifest: target.release.imageManifest,
       database: target.release.database,
       operations,
     }),
@@ -442,6 +444,7 @@ test("manual rollback checks the latest database before restoring an older targe
         manifestSha256: current.release.manifestSha256,
       },
       activeTfvars: current.activeTfvars,
+      imageManifest: current.release.imageManifest,
       database: current.release.database,
       operations,
     }),
