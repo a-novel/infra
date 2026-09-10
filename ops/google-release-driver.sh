@@ -403,48 +403,58 @@ case "${STEP}" in
         fi
         HEALTH_FILE="$(mktemp "${RELEASE_DIRECTORY}/health.XXXXXX")"
         trap 'rm -f -- "${HEALTH_FILE}"' EXIT
-        if ! HTTP_STATUS="$(curl --silent --proto '=https' --tlsv1.2 \
-            --connect-timeout 5 --max-time 15 --max-filesize 4096 \
-            --header 'Accept: application/json' \
-            --output "${HEALTH_FILE}" --write-out '%{http_code}' \
-            "${CANDIDATE_URL}/v2/healthcheck")"; then
-            printf 'Authentication smoke failed: HTTPS request failed or exceeded its limits.\n' >&2
-            exit 70
-        fi
-        if [ "${HTTP_STATUS}" != 200 ]; then
-            if [[ "${HTTP_STATUS}" =~ ^[0-9]{3}$ ]]; then
-                printf 'Authentication smoke failed: endpoint returned HTTP %s.\n' "${HTTP_STATUS}" >&2
-            else
-                printf 'Authentication smoke failed: unexpected HTTP status.\n' >&2
-            fi
-            # A failed dependency returns 503 with the same bounded status schema.
-            if [ "${HTTP_STATUS}" != 503 ]; then
+        # A database restart can leave discarded connections in a live peer's
+        # pool. Retry only a validated dependency-down response from this exact
+        # candidate: at most 3 requests and 2 waits (55 seconds of network/wait time).
+        for ((HEALTH_ATTEMPT = 1; HEALTH_ATTEMPT <= 3; HEALTH_ATTEMPT++)); do
+            if ! HTTP_STATUS="$(curl --silent --proto '=https' --tlsv1.2 \
+                --connect-timeout 5 --max-time 15 --max-filesize 4096 \
+                --header 'Accept: application/json' \
+                --output "${HEALTH_FILE}" --write-out '%{http_code}' \
+                "${CANDIDATE_URL}/v2/healthcheck")"; then
+                printf 'Authentication smoke failed: HTTPS request failed or exceeded its limits.\n' >&2
                 exit 70
             fi
-        fi
-        if ! jq --slurp --exit-status '
-            length == 1 and (.[0] |
-                type == "object" and
-                keys == ["api:jsonKeys", "client:postgres", "client:smtp"] and
-                all(.[]; type == "object" and keys == ["status"] and
-                    (.status == "up" or .status == "down")))
-          ' "${HEALTH_FILE}" >/dev/null 2>&1; then
-            printf 'Authentication smoke failed: unexpected health response schema.\n' >&2
-            exit 70
-        fi
-        if ! jq --exit-status 'all(.[]; .status == "up")' "${HEALTH_FILE}" >/dev/null; then
+            if [ "${HTTP_STATUS}" != 200 ]; then
+                if [[ "${HTTP_STATUS}" =~ ^[0-9]{3}$ ]]; then
+                    printf 'Authentication smoke: endpoint returned HTTP %s.\n' "${HTTP_STATUS}" >&2
+                else
+                    printf 'Authentication smoke failed: unexpected HTTP status.\n' >&2
+                fi
+                # A failed dependency returns 503 with the same bounded status schema.
+                if [ "${HTTP_STATUS}" != 503 ]; then
+                    exit 70
+                fi
+            fi
+            if ! jq --slurp --exit-status '
+                length == 1 and (.[0] |
+                    type == "object" and
+                    keys == ["api:jsonKeys", "client:postgres", "client:smtp"] and
+                    all(.[]; type == "object" and keys == ["status"] and
+                        (.status == "up" or .status == "down")))
+              ' "${HEALTH_FILE}" >/dev/null 2>&1; then
+                printf 'Authentication smoke failed: unexpected health response schema.\n' >&2
+                exit 70
+            fi
+            if jq --exit-status 'all(.[]; .status == "up")' "${HEALTH_FILE}" >/dev/null; then
+                if [ "${HTTP_STATUS}" != 200 ]; then
+                    exit 70
+                fi
+                break
+            fi
             # Emit only fixed component names and enum values, never response text.
             jq --raw-output '
                 . as $health | ["api:jsonKeys", "client:postgres", "client:smtp"][]
                 | "Authentication health: " + . + "=" +
                     (if $health[.].status == "up" then "up" else "down" end)
               ' "${HEALTH_FILE}" >&2
-            printf 'Authentication smoke failed: a declared dependency is down.\n' >&2
-            exit 70
-        fi
-        if [ "${HTTP_STATUS}" != 200 ]; then
-            exit 70
-        fi
+            if [ "${HEALTH_ATTEMPT}" -eq 3 ]; then
+                printf 'Authentication smoke failed: a declared dependency is down after three checks.\n' >&2
+                exit 70
+            fi
+            printf 'Authentication dependency down; retrying the same candidate in five seconds (%s/3).\n' "${HEALTH_ATTEMPT}" >&2
+            sleep 5
+        done
         rm -f -- "${HEALTH_FILE}"
         trap - EXIT
         update_operation '.health.authentication = $value' passed

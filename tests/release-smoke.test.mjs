@@ -12,6 +12,10 @@ const healthy = {
   "client:postgres": { status: "up" },
   "client:smtp": { status: "up" },
 };
+const unavailable = {
+  ...healthy,
+  "api:jsonKeys": { status: "down" },
+};
 
 async function smoke(t, options = {}) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "infra-smoke-"));
@@ -55,11 +59,24 @@ if (args.slice(0, 3).join(' ') === 'run revisions describe') {
     `#!${process.execPath}
 const fs = require('node:fs');
 const args = process.argv.slice(2);
-if (!args.includes('--max-filesize') || !args.includes('4096') || !args.includes('=https')) process.exit(99);
-fs.writeFileSync(process.env.RELEASE_DIRECTORY + '/curl-called', 'yes');
-fs.writeFileSync(args[args.indexOf('--output') + 1], process.env.MOCK_BODY);
-if (process.env.MOCK_CURL_FAILURE === 'true') process.exit(28);
-process.stdout.write(process.env.MOCK_HTTP);
+for (const [flag, value] of [['--max-filesize', '4096'], ['--max-time', '15'], ['--connect-timeout', '5'], ['--proto', '=https']]) {
+  if (args[args.indexOf(flag) + 1] !== value) process.exit(99);
+}
+const callsFile = process.env.RELEASE_DIRECTORY + '/curl-calls';
+const calls = fs.existsSync(callsFile) ? fs.readFileSync(callsFile, 'utf8').trim().split('\\n').length : 0;
+fs.appendFileSync(callsFile, args.at(-1) + '\\n');
+const responses = JSON.parse(process.env.MOCK_RESPONSES);
+const response = responses[Math.min(calls, responses.length - 1)];
+fs.writeFileSync(args[args.indexOf('--output') + 1], response.body);
+if (response.curlFailure) process.exit(28);
+process.stdout.write(response.http);
+`,
+    { mode: 0o700 },
+  );
+  await writeFile(
+    path.join(directory, "sleep"),
+    `#!${process.execPath}
+require('node:fs').appendFileSync(process.env.RELEASE_DIRECTORY + '/sleep-calls', process.argv.slice(2).join(' ') + '\\n');
 `,
     { mode: 0o700 },
   );
@@ -80,9 +97,13 @@ process.stdout.write(process.env.MOCK_HTTP);
         MOCK_READY: options.ready ?? "True",
         MOCK_URL: options.url ?? "https://candidate.example.run.app",
         MOCK_LOOKUP_FAILURE: String(options.lookupFailure ?? false),
-        MOCK_CURL_FAILURE: String(options.curlFailure ?? false),
-        MOCK_BODY: options.body ?? JSON.stringify(healthy),
-        MOCK_HTTP: options.http ?? "200",
+        MOCK_RESPONSES: JSON.stringify(
+          (options.responses ?? [options]).map((response) => ({
+            curlFailure: response.curlFailure ?? false,
+            body: response.body ?? JSON.stringify(healthy),
+            http: response.http ?? "200",
+          })),
+        ),
       },
     },
   );
@@ -102,11 +123,32 @@ process.stdout.write(process.env.MOCK_HTTP);
     operations.health.authentication,
     result.status === 0 ? "passed" : "not-run",
   );
-  return { ...result, curlCalled: files.includes("curl-called") };
+  const calls = files.includes("curl-calls")
+    ? (await readFile(path.join(directory, "curl-calls"), "utf8"))
+        .trim()
+        .split("\n")
+    : [];
+  const sleeps = files.includes("sleep-calls")
+    ? (await readFile(path.join(directory, "sleep-calls"), "utf8"))
+        .trim()
+        .split("\n")
+    : [];
+  assert.ok(
+    calls.every(
+      (url) =>
+        url ===
+        `${options.url ?? "https://candidate.example.run.app"}/v2/healthcheck`,
+    ),
+  );
+  assert.ok(sleeps.every((seconds) => seconds === "5"));
+  assert.equal(sleeps.length, Math.max(0, calls.length - 1));
+  return { ...result, calls: calls.length };
 }
 
 test("candidate smoke accepts the exact healthy contract", async (t) => {
-  assert.equal((await smoke(t)).status, 0);
+  const result = await smoke(t);
+  assert.equal(result.status, 0);
+  assert.equal(result.calls, 1);
 });
 
 for (const http of ["200", "503"]) {
@@ -118,6 +160,7 @@ for (const http of ["200", "503"]) {
       });
       const result = await smoke(t, { body, http });
       assert.equal(result.status, 70);
+      assert.equal(result.calls, 3);
       for (const component of Object.keys(healthy)) {
         assert.ok(
           result.stderr.includes(
@@ -132,6 +175,7 @@ for (const http of ["200", "503"]) {
 test("candidate smoke rejects HTTP 503 even with healthy dependency statuses", async (t) => {
   const result = await smoke(t, { http: "503" });
   assert.equal(result.status, 70);
+  assert.equal(result.calls, 1);
   assert.match(result.stderr, /endpoint returned HTTP 503/);
 });
 
@@ -156,6 +200,7 @@ for (const body of [
     for (const http of ["200", "503"]) {
       const result = await smoke(t, { body, http });
       assert.equal(result.status, 70);
+      assert.equal(result.calls, 1);
       assert.match(result.stderr, /unexpected health response schema/);
       assert.doesNotMatch(result.stderr, /Authentication health:/);
     }
@@ -165,12 +210,14 @@ for (const body of [
 test("candidate smoke separates transport and HTTP failures", async (t) => {
   const transport = await smoke(t, { curlFailure: true });
   assert.equal(transport.status, 70);
+  assert.equal(transport.calls, 1);
   assert.match(transport.stderr, /HTTPS request failed/);
   const http = await smoke(t, {
     http: "403",
     body: "fixture-private-response",
   });
   assert.equal(http.status, 70);
+  assert.equal(http.calls, 1);
   assert.match(http.stderr, /endpoint returned HTTP 403/);
   assert.doesNotMatch(http.stderr, /Authentication health:/);
 });
@@ -183,12 +230,47 @@ test("candidate smoke never requests an unresolved or unready candidate", async 
   ]) {
     const result = await smoke(t, options);
     assert.equal(result.status, 70);
-    assert.equal(result.curlCalled, false);
+    assert.equal(result.calls, 0);
   }
 });
 
 test("candidate smoke never prints an invalid HTTP status", async (t) => {
   const result = await smoke(t, { http: "fixture-private-response" });
   assert.equal(result.status, 70);
+  assert.equal(result.calls, 1);
   assert.match(result.stderr, /unexpected HTTP status/);
+});
+
+for (const http of ["200", "503"]) {
+  for (const failures of [1, 2]) {
+    test(`candidate smoke recovers after ${failures} valid HTTP ${http} down responses`, async (t) => {
+      const result = await smoke(t, {
+        responses: [
+          ...Array(failures).fill({ http, body: JSON.stringify(unavailable) }),
+          {},
+        ],
+      });
+      assert.equal(result.status, 0);
+      assert.equal(result.calls, failures + 1);
+    });
+  }
+}
+
+test("candidate smoke stops retrying when a terminal failure follows a down response", async (t) => {
+  for (const terminal of [
+    { curlFailure: true },
+    { http: "403" },
+    { http: "503" },
+    { body: "fixture-private-response" },
+  ]) {
+    const result = await smoke(t, {
+      responses: [
+        { http: "503", body: JSON.stringify(unavailable) },
+        terminal,
+        {},
+      ],
+    });
+    assert.equal(result.status, 70);
+    assert.equal(result.calls, 2);
+  }
 });
