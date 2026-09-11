@@ -16,7 +16,7 @@ DRIVER="$1"
 RELEASE_FILE="$2"
 if ! jq --exit-status '
     (.mode == "service" and (.services == ["json_keys"] or .services == ["authentication"])) or
-    ((.mode == "first-launch" or .mode == "maintenance") and .services == ["json_keys", "authentication"])
+    ((.mode == "first-launch" or .mode == "maintenance" or .mode == "database-rebuild") and .services == ["json_keys", "authentication"])
 ' "${RELEASE_FILE}" >/dev/null; then
     printf 'Compiled release scope is invalid.\n' >&2
     exit 65
@@ -30,13 +30,17 @@ compensate() {
     local failed_step="$1"
     local failed_code="$2"
 
-    printf 'Release step %s failed; restoring the last successful receipt.\n' \
+    printf 'Release step %s failed; running the selected compensation path.\n' \
         "${failed_step}" >&2
     if ! "${DRIVER}" rollback; then
         printf 'Automatic compensation also failed; use the protected recovery runbook.\n' >&2
         exit 75
     fi
-    printf 'The prior serving state was restored; migrations and data were not reversed.\n' >&2
+    if jq -e '.mode == "database-rebuild"' "${RELEASE_FILE}" >/dev/null; then
+        printf 'Rebuild stopped with new disks retained; no rollback to the retired shared database was attempted.\n' >&2
+    else
+        printf 'The prior serving state was restored; migrations and data were not reversed.\n' >&2
+    fi
     exit "${failed_code}"
 }
 

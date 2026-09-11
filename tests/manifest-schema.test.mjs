@@ -553,7 +553,15 @@ test("recovery compilation keeps services absent until exact data restore", asyn
               "projects/agora-recovery-test/regions/europe-west1/subnetworks/agora-production-europe-west1",
           },
         },
-        database_host: { value: { private_ip: "10.20.0.8" } },
+        database_hosts: {
+          value: {
+            authentication: {
+              private_ip: "10.20.0.8",
+              data_disk: { id: "2001" },
+            },
+            json_keys: { private_ip: "10.20.0.9", data_disk: { id: "2002" } },
+          },
+        },
         cloud_run_invocation_tags: {
           value: {
             key: "tagKeys/300000000001",
@@ -629,7 +637,14 @@ test("recovery compilation keeps services absent until exact data restore", asyn
   assert.equal(active.recovery_mode, true);
   assert.equal(active.workload_project_id, "agora-recovery-test");
   assert.equal(active.recovery_source_project_id, "agora-production-test");
-  assert.equal(active.recovery_source_database_ip, "10.20.0.2");
+  assert.deepEqual(active.recovery_source_database_ips, {
+    authentication: "10.20.0.2",
+    json_keys: "10.20.0.3",
+  });
+  assert.deepEqual(active.database_hosts, {
+    authentication: { private_ip: "10.20.0.8", data_disk_id: "2001" },
+    json_keys: { private_ip: "10.20.0.9", data_disk_id: "2002" },
+  });
   assert.equal(
     active.application_release.authentication.secrets.postgres_password_version,
     receipt.database.authenticationPasswordVersion,

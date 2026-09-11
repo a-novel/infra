@@ -1,12 +1,12 @@
 #!/bin/bash
 
 # Reads or waits for the database host's non-secret startup status.
-# Usage: database-host-readiness.sh current <project> <zone>
-#        database-host-readiness.sh wait <project> <zone> <revision|none> <previous-status>
+# Usage: database-host-readiness.sh current <project> <zone> <service>
+#        database-host-readiness.sh wait <project> <zone> <service> <revision|none> <previous-status>
 
 set -euo pipefail
 
-DATABASE_GROUP="agora-database"
+DATABASE_GROUP=""
 GUEST_NAMESPACE="agora"
 GUEST_KEY="database-release"
 GUEST_STATUS=""
@@ -14,8 +14,8 @@ DATABASE_INSTANCE=""
 READINESS_ERROR_FILE=""
 
 usage() {
-    printf 'Usage: %s current <project> <zone>\n' "$0" >&2
-    printf '       %s wait <project> <zone> <revision|none> <previous-status>\n' "$0" >&2
+    printf 'Usage: %s current <project> <zone> <service>\n' "$0" >&2
+    printf '       %s wait <project> <zone> <service> <revision|none> <previous-status>\n' "$0" >&2
     exit 64
 }
 
@@ -53,7 +53,7 @@ resolve_database_instance() {
         exit 70
     fi
 
-    if ! [[ "${instance}" =~ ^agora-database-[a-z0-9]+$ ]] || [[ "${instance}" == *$'\n'* ]]; then
+    if ! [[ "${instance}" =~ ^${DATABASE_GROUP}-[a-z0-9]+$ ]] || [[ "${instance}" == *$'\n'* ]]; then
         printf 'The database group must contain exactly one generated host.\n' >&2
         exit 70
     fi
@@ -96,30 +96,34 @@ if ! command -v gcloud >/dev/null 2>&1; then
     printf 'Google Cloud CLI is required by the protected deployment environment.\n' >&2
     exit 69
 fi
+case "${4:-}" in
+    authentication|json-keys) DATABASE_GROUP="agora-database-$4" ;;
+    *) printf 'A database service (authentication or json-keys) is required.\n' >&2; exit 64 ;;
+esac
 READINESS_ERROR_FILE="$(mktemp)"
 
 case "${1:-}" in
     current)
-        [ "$#" -eq 3 ] || usage
+        [ "$#" -eq 4 ] || usage
         require_coordinates "$2" "$3"
         resolve_database_instance "$2" "$3"
         read_guest_status "$2" "$3"
         printf '%s\n' "${GUEST_STATUS}"
         ;;
     wait)
-        [ "$#" -eq 5 ] || usage
+        [ "$#" -eq 6 ] || usage
         require_coordinates "$2" "$3"
-        if ! [[ "$4" =~ ^([a-f0-9]{40}|none)$ ]] ||
-            { [ "$5" != absent ] && ! valid_status "$5"; }; then
+        if ! [[ "$5" =~ ^([a-f0-9]{40}|none)$ ]] ||
+            { [ "$6" != absent ] && ! valid_status "$6"; }; then
             printf 'Invalid database readiness expectation.\n' >&2
             exit 65
         fi
 
         resolve_database_instance "$2" "$3"
-        if [ "$4" = none ]; then
+        if [ "$5" = none ]; then
             expected_prefix="idle:none:"
         else
-            expected_prefix="healthy:$4:"
+            expected_prefix="healthy:$5:"
         fi
 
         last_reported_status=""
@@ -130,15 +134,15 @@ case "${1:-}" in
                 printf 'Database host readiness is %s.\n' "${GUEST_STATUS}" >&2
                 last_reported_status="${GUEST_STATUS}"
             fi
-            if [ "${GUEST_STATUS}" != "$5" ] && [[ "${GUEST_STATUS}" == failed:* ]]; then
+            if [ "${GUEST_STATUS}" != "$6" ] && [[ "${GUEST_STATUS}" == failed:* ]]; then
                 printf 'The database host reported failed startup status %s.\n' "${GUEST_STATUS}" >&2
                 exit 70
             fi
-            if [ "${GUEST_STATUS}" != "$5" ] && [[ "${GUEST_STATUS}" == "${expected_prefix}"* ]]; then
-                if [ "$4" = none ]; then
+            if [ "${GUEST_STATUS}" != "$6" ] && [[ "${GUEST_STATUS}" == "${expected_prefix}"* ]]; then
+                if [ "$5" = none ]; then
                     printf 'Database host reported the idle rollback state.\n'
                 else
-                    printf 'Database host reported healthy release %s.\n' "$4"
+                    printf 'Database host reported healthy release %s.\n' "$5"
                 fi
                 exit 0
             fi

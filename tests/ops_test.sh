@@ -975,6 +975,7 @@ printf '%s\n' \
     '#!/bin/bash' \
     'printf "CALL\\n" >> "${GCLOUD_ARGUMENT_LOG}"' \
     'printf "%s\\n" "$@" >> "${GCLOUD_ARGUMENT_LOG}"' \
+    'if [[ "$*" == *"compute disks describe"* ]]; then printf "1002\\n"; fi' \
     'if [[ "$*" == *"instance-groups managed describe"* ]]; then' \
     '    if [[ "${METADATA_DESCRIBE_ERROR:-false}" == "true" ]]; then' \
     '        printf "mock metadata describe denied\\n" >&2' \
@@ -983,14 +984,14 @@ printf '%s\n' \
     "        printf '%s\\n' '{\"allInstancesConfig\":{\"properties\":{\"metadata\":{\"unexpected-key\":\"value\"}}}}'" \
     '    elif [[ -n "${RECOVERY_REVISION:-}" ]]; then' \
     '        recovery_digest="$(printf "a%.0s" {1..64})"' \
-    '        printf "{\"allInstancesConfig\":{\"properties\":{\"metadata\":{\"agora-authentication-database-image\":\"europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-authentication/database@sha256:%s\",\"agora-authentication-postgres-backup-password-version\":\"17\",\"agora-authentication-postgres-password-version\":\"11\",\"agora-database-release-revision\":\"%s\",\"agora-json-keys-database-image\":\"europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-json-keys/database@sha256:%s\",\"agora-json-keys-postgres-backup-password-version\":\"13\",\"agora-json-keys-postgres-password-version\":\"7\"}}}}\n" "${recovery_digest}" "${RECOVERY_REVISION}" "${recovery_digest}"' \
+    '        jq -nc --arg revision "$RECOVERY_REVISION" --arg image "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-json-keys/database@sha256:$recovery_digest" '"'"'{allInstancesConfig:{properties:{metadata:{"agora-database-release-revision":$revision,"agora-json-keys-database-image":$image,"agora-json-keys-postgres-password-version":"7","agora-json-keys-postgres-backup-password-version":"13"}}}}'"'"'' \
     '    else' \
     '        if [[ "${INITIAL_DATABASE_RELEASE:-false}" == "true" ]]; then current_revision=""; else current_revision="ffffffffffffffffffffffffffffffffffffffff"; fi' \
-    '        printf "{\"allInstancesConfig\":{\"properties\":{\"metadata\":{\"agora-authentication-database-image\":\"\",\"agora-authentication-postgres-backup-password-version\":\"0\",\"agora-authentication-postgres-password-version\":\"0\",\"agora-database-release-revision\":\"%s\",\"agora-json-keys-database-image\":\"\",\"agora-json-keys-postgres-backup-password-version\":\"0\",\"agora-json-keys-postgres-password-version\":\"0\"}}}}\n" "${current_revision}"' \
+    '        jq -nc --arg revision "$current_revision" '"'"'{allInstancesConfig:{properties:{metadata:{"agora-database-release-revision":$revision,"agora-json-keys-database-image":"","agora-json-keys-postgres-password-version":"0","agora-json-keys-postgres-backup-password-version":"0"}}}}'"'"'' \
     '    fi' \
     'fi' \
     'if [[ "$*" == *"instance-groups managed list-instances"* ]]; then' \
-    '    printf "agora-database-test\n"' \
+    '    printf "agora-database-json-keys-test\n"' \
     'fi' \
     'if [[ "$*" == *"instances get-guest-attributes"* ]]; then' \
     '    if [[ "${READINESS_PERMISSION_ERROR:-false}" == "true" ]]; then' \
@@ -1023,7 +1024,7 @@ printf '%s\n' \
     'if [[ "$*" == *"compute snapshots list"* ]]; then' \
     '    if [[ -n "${SNAPSHOT_AGE_HOURS:-}" ]]; then snapshot_time="$(date -u --date="${SNAPSHOT_AGE_HOURS} hours ago" +%Y-%m-%dT%H:%M:%SZ)"; else snapshot_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; fi' \
     '    if [[ "${MANUAL_SNAPSHOT:-false}" == "true" ]]; then snapshot_auto_created=false; else snapshot_auto_created=true; fi' \
-    '    printf "[{\"name\":\"agora-scheduled-snapshot\",\"autoCreated\":%s,\"sourceDisk\":\"https://www.googleapis.com/compute/v1/projects/agora-production-test/zones/europe-west1-c/disks/agora-data\",\"status\":\"READY\",\"creationTimestamp\":\"%s\",\"storageLocations\":[\"europe-west1\"],\"labels\":{\"application\":\"agora\",\"environment\":\"production\",\"managed-by\":\"opentofu\",\"plane\":\"workload\",\"role\":\"database-snapshot\"}}]\n" "${snapshot_auto_created}" "${snapshot_time}"' \
+    '    printf "[{\"name\":\"agora-scheduled-snapshot\",\"autoCreated\":%s,\"sourceDisk\":\"https://www.googleapis.com/compute/v1/projects/agora-production-test/zones/europe-west1-c/disks/agora-data-json-keys\",\"sourceDiskId\":\"1002\",\"status\":\"READY\",\"creationTimestamp\":\"%s\",\"storageLocations\":[\"europe-west1\"],\"labels\":{\"application\":\"agora\",\"environment\":\"production\",\"managed-by\":\"opentofu\",\"plane\":\"workload\",\"role\":\"database-snapshot\",\"component\":\"json-keys\"}}]\n" "${snapshot_auto_created}" "${snapshot_time}"' \
     'fi' \
     >"${MOCK_BIN}/gcloud"
 chmod 0700 "${MOCK_BIN}/gcloud"
@@ -1036,22 +1037,23 @@ PATH="${MOCK_BIN}:${PATH}" GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
     "${REPOSITORY_ROOT}/ops/deploy-database-release.sh" \
     agora-production-test \
     europe-west1-c \
+    json-keys 1002 \
     0123456789abcdef0123456789abcdef01234567 \
     "${JSON_KEYS_IMAGE}" \
-    "${AUTHENTICATION_IMAGE}" \
     7 \
-    11 \
     13 \
-    17 \
     >"${TEMP_DIR}/database-release.out"
 
-assert_equal "$(grep -Fc 'CALL' "${GCLOUD_ARGUMENT_LOG}")" "11"
+assert_equal "$(grep -Fc 'CALL' "${GCLOUD_ARGUMENT_LOG}")" "12"
 grep -Fqx 'describe' "${GCLOUD_ARGUMENT_LOG}"
 grep -Fqx 'snapshots' "${GCLOUD_ARGUMENT_LOG}"
 grep -Fqx 'list' "${GCLOUD_ARGUMENT_LOG}"
-assert_equal "$(grep -Fc 'execute' "${GCLOUD_ARGUMENT_LOG}")" "2"
+assert_equal "$(grep -Fc 'execute' "${GCLOUD_ARGUMENT_LOG}")" "1"
 grep -Fqx 'agora-postgres-backup-json-keys' "${GCLOUD_ARGUMENT_LOG}"
-grep -Fqx 'agora-postgres-backup-authentication' "${GCLOUD_ARGUMENT_LOG}"
+if grep -Fqx 'agora-postgres-backup-authentication' "${GCLOUD_ARGUMENT_LOG}"; then
+    printf 'A JSON Keys release must not back up Authentication.\n' >&2
+    exit 1
+fi
 grep -Fqx -- '--wait' "${GCLOUD_ARGUMENT_LOG}"
 grep -Fqx 'all-instances-config' "${GCLOUD_ARGUMENT_LOG}"
 grep -Fqx 'update-instances' "${GCLOUD_ARGUMENT_LOG}"
@@ -1065,7 +1067,7 @@ grep -Fqx -- '--most-disruptive-allowed-action=restart' "${GCLOUD_ARGUMENT_LOG}"
 assert_equal "$(grep -Fxc 'get-guest-attributes' "${GCLOUD_ARGUMENT_LOG}")" "2"
 grep -Fq 'Database host reported healthy release 0123456789abcdef0123456789abcdef01234567.' \
     "${TEMP_DIR}/database-release.out"
-grep -Fqx -- "--metadata=agora-database-release-revision=0123456789abcdef0123456789abcdef01234567,agora-json-keys-database-image=${JSON_KEYS_IMAGE},agora-authentication-database-image=${AUTHENTICATION_IMAGE},agora-json-keys-postgres-password-version=7,agora-authentication-postgres-password-version=11,agora-json-keys-postgres-backup-password-version=13,agora-authentication-postgres-backup-password-version=17" "${GCLOUD_ARGUMENT_LOG}"
+grep -Fqx -- "--metadata=agora-database-release-revision=0123456789abcdef0123456789abcdef01234567,agora-json-keys-database-image=${JSON_KEYS_IMAGE},agora-json-keys-postgres-password-version=7,agora-json-keys-postgres-backup-password-version=13" "${GCLOUD_ARGUMENT_LOG}"
 
 # A new boot-specific failure stops the database stage before candidate
 # services can start against an unavailable PostgreSQL listener.
@@ -1076,13 +1078,11 @@ PATH="${MOCK_BIN}:${PATH}" GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
     "${REPOSITORY_ROOT}/ops/deploy-database-release.sh" \
     agora-production-test \
     europe-west1-c \
+    json-keys 1002 \
     0123456789abcdef0123456789abcdef01234567 \
     "${JSON_KEYS_IMAGE}" \
-    "${AUTHENTICATION_IMAGE}" \
     7 \
-    11 \
     13 \
-    17 \
     >"${TEMP_DIR}/failed-database-readiness.out" \
     2>"${TEMP_DIR}/failed-database-readiness.err"
 FAILED_DATABASE_READINESS_CODE=$?
@@ -1097,7 +1097,7 @@ grep -Fq 'did not report a healthy release' "${TEMP_DIR}/failed-database-readine
 READINESS_ABSENT=true PATH="${MOCK_BIN}:${PATH}" \
     GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
     "${REPOSITORY_ROOT}/ops/database-host-readiness.sh" current \
-    agora-production-test europe-west1-c \
+    agora-production-test europe-west1-c json-keys \
     >"${TEMP_DIR}/absent-database-readiness.out"
 assert_equal "$(cat "${TEMP_DIR}/absent-database-readiness.out")" absent
 
@@ -1108,13 +1108,11 @@ READINESS_PERMISSION_ERROR=true PATH="${MOCK_BIN}:${PATH}" \
     "${REPOSITORY_ROOT}/ops/deploy-database-release.sh" \
     agora-production-test \
     europe-west1-c \
+    json-keys 1002 \
     0123456789abcdef0123456789abcdef01234567 \
     "${JSON_KEYS_IMAGE}" \
-    "${AUTHENTICATION_IMAGE}" \
     7 \
-    11 \
     13 \
-    17 \
     >"${TEMP_DIR}/denied-database-readiness.out" \
     2>"${TEMP_DIR}/denied-database-readiness.err"
 DENIED_DATABASE_READINESS_CODE=$?
@@ -1135,9 +1133,10 @@ READINESS_EXPECTED=none PATH="${MOCK_BIN}:${PATH}" \
     "${REPOSITORY_ROOT}/ops/restore-database-release.sh" \
     agora-production-test \
     europe-west1-c \
+    json-keys 1002 \
     "${TEMP_DIR}/empty-database-receipt.json" \
     >"${TEMP_DIR}/database-rollback.out"
-assert_equal "$(grep -Fc 'CALL' "${GCLOUD_ARGUMENT_LOG}")" "7"
+assert_equal "$(grep -Fc 'CALL' "${GCLOUD_ARGUMENT_LOG}")" "8"
 grep -Fq 'Database host reported the idle rollback state.' \
     "${TEMP_DIR}/database-rollback.out"
 
@@ -1153,14 +1152,14 @@ printf '%s\n' \
     '#!/bin/bash' \
     'if [ "$#" -ne 3 ] || [ "$1" != latest ] || [ "$2" != agora-receipts-test ]; then exit 64; fi' \
     'printf "receipt\n" >>"${FIRST_LAUNCH_RECOVERY_LOG}"' \
-    'if [ "${RECOVERY_RECEIPT_PRESENT:-false}" = true ]; then exit 0; fi' \
+    'if [ "${RECOVERY_RECEIPT_PRESENT:-false}" = true ]; then printf "{}\\n" >"$3"; exit 0; fi' \
     'exit 4' \
     >"${FIRST_LAUNCH_RECOVERY_DIR}/receipt-custody.sh"
 # shellcheck disable=SC2016
 printf '%s\n' \
     '#!/bin/bash' \
-    'if [ "$#" -ne 3 ] || [ "$1" != agora-production-test ] || [ "$2" != europe-west1-c ]; then exit 64; fi' \
-    'grep -Fxq null "$3"' \
+    'if [ "$#" -ne 5 ] || [ "$1" != agora-production-test ] || [ "$2" != europe-west1-c ]; then exit 64; fi' \
+    'grep -Fxq null "$5"' \
     'printf "restore\n" >>"${FIRST_LAUNCH_RECOVERY_LOG}"' \
     >"${FIRST_LAUNCH_RECOVERY_DIR}/restore-database-release.sh"
 chmod 0700 \
@@ -1176,13 +1175,13 @@ FIRST_LAUNCH_RECOVERY_OUTPUT="$(
         FIRST_LAUNCH_RECOVERY_LOG="${FIRST_LAUNCH_RECOVERY_LOG}" \
         RECOVERY_REVISION="${FAILED_FIRST_LAUNCH_REVISION}" \
         "${FIRST_LAUNCH_RECOVERY_DIR}/recover-first-launch.sh" \
-            agora-receipts-test agora-production-test europe-west1-c \
+            agora-receipts-test agora-production-test europe-west1-c json-keys 1002 \
             "${FAILED_FIRST_LAUNCH_REVISION}"
 )"
 assert_equal "${FIRST_LAUNCH_RECOVERY_OUTPUT}" \
     'Interrupted first-launch database metadata cleared.'
 assert_equal "$(paste -sd, "${FIRST_LAUNCH_RECOVERY_LOG}")" 'receipt,restore'
-assert_equal "$(grep -Fxc CALL "${GCLOUD_ARGUMENT_LOG}")" 1
+assert_equal "$(grep -Fxc CALL "${GCLOUD_ARGUMENT_LOG}")" 2
 
 : >"${FIRST_LAUNCH_RECOVERY_LOG}"
 set +e
@@ -1191,7 +1190,7 @@ PATH="${MOCK_BIN}:${PATH}" \
     FIRST_LAUNCH_RECOVERY_LOG="${FIRST_LAUNCH_RECOVERY_LOG}" \
     RECOVERY_REVISION="$(printf 'e%.0s' {1..40})" \
     "${FIRST_LAUNCH_RECOVERY_DIR}/recover-first-launch.sh" \
-        agora-receipts-test agora-production-test europe-west1-c \
+        agora-receipts-test agora-production-test europe-west1-c json-keys 1002 \
         "${FAILED_FIRST_LAUNCH_REVISION}" \
         >"${TEMP_DIR}/first-launch-mismatch.out" \
         2>"${TEMP_DIR}/first-launch-mismatch.err"
@@ -1210,7 +1209,7 @@ PATH="${MOCK_BIN}:${PATH}" \
     FIRST_LAUNCH_RECOVERY_LOG="${FIRST_LAUNCH_RECOVERY_LOG}" \
     RECOVERY_RECEIPT_PRESENT=true \
     "${FIRST_LAUNCH_RECOVERY_DIR}/recover-first-launch.sh" \
-        agora-receipts-test agora-production-test europe-west1-c \
+        agora-receipts-test agora-production-test europe-west1-c json-keys 1002 \
         "${FAILED_FIRST_LAUNCH_REVISION}" \
         >"${TEMP_DIR}/first-launch-receipt.out" \
         2>"${TEMP_DIR}/first-launch-receipt.err"
@@ -1234,9 +1233,10 @@ PATH="${MOCK_BIN}:${PATH}" GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
     "${REPOSITORY_ROOT}/ops/prepare-database-change.sh" \
     agora-production-test \
     europe-west1-c \
+    json-keys 1002 \
     0123456789abcdef0123456789abcdef01234567 \
     >"${TEMP_DIR}/initial-database-gate.out"
-assert_equal "$(grep -Fc 'CALL' "${GCLOUD_ARGUMENT_LOG}")" "2"
+assert_equal "$(grep -Fc 'CALL' "${GCLOUD_ARGUMENT_LOG}")" "3"
 if grep -Fqx 'execute' "${GCLOUD_ARGUMENT_LOG}"; then
     printf "The empty first release must not attempt a logical backup.\n" >&2
     exit 1
@@ -1251,11 +1251,12 @@ PATH="${MOCK_BIN}:${PATH}" GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
     "${REPOSITORY_ROOT}/ops/prepare-database-change.sh" \
     agora-production-test \
     europe-west1-c \
+    json-keys 1002 \
     0123456789abcdef0123456789abcdef01234567 \
     "${INITIAL_DATABASE_PROOF}" \
     >"${TEMP_DIR}/initial-database-proof.out"
 jq --exit-status '
-  keys == ["checkedAt", "currentMetadataSha256", "project", "revision", "zone"] and
+  keys == ["checkedAt", "currentMetadataSha256", "dataDiskId", "project", "revision", "service", "zone"] and
   (.currentMetadataSha256 | test("^[a-f0-9]{64}$"))
 ' "${INITIAL_DATABASE_PROOF}" >/dev/null
 
@@ -1288,6 +1289,7 @@ jq -n --arg commit "${DRIVER_COMMIT}" '
   } as $database |
   {
     schemaVersion: 1,
+    services: ["json_keys"],
     action: "deploy",
     commit: $commit,
     runId: "123",
@@ -1297,6 +1299,7 @@ jq -n --arg commit "${DRIVER_COMMIT}" '
       workloadProjectId: "agora-production-test",
       region: "europe-west1",
       databaseZone: "europe-west1-c",
+      databaseHosts: {json_keys: {private_ip: "10.20.0.3", data_disk_id: "1002"}},
       secretVersions: [range(1; 8) | ["production-test-\(.)", 1]],
       quotaExpectations: {
         cloud_run_cpu_millicpu: 8000,
@@ -1322,7 +1325,7 @@ PATH="${DRIVER_MOCK_BIN}:${PATH}" \
     GITHUB_RUN_ATTEMPT=1 \
     "${REPOSITORY_ROOT}/ops/google-release-driver.sh" preflight \
     >"${TEMP_DIR}/driver-preflight.out"
-test -s "${DRIVER_RELEASE_DIRECTORY}/database-change-proof.json"
+test -s "${DRIVER_RELEASE_DIRECTORY}/database-change-json_keys.json"
 test -s "${DRIVER_RELEASE_DIRECTORY}/operations.json"
 
 : >"${GCLOUD_ARGUMENT_LOG}"
@@ -1332,6 +1335,7 @@ PATH="${MOCK_BIN}:${PATH}" GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
     "${REPOSITORY_ROOT}/ops/prepare-database-change.sh" \
     agora-production-test \
     europe-west1-c \
+    json-keys 1002 \
     0123456789abcdef0123456789abcdef01234567 \
     "${TEMP_DIR}/rejected-database-proof.json" \
     ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff \
@@ -1339,7 +1343,7 @@ PATH="${MOCK_BIN}:${PATH}" GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
 DATABASE_RECEIPT_DRIFT_CODE=$?
 set -e
 assert_equal "${DATABASE_RECEIPT_DRIFT_CODE}" 70
-assert_equal "$(grep -Fc 'CALL' "${GCLOUD_ARGUMENT_LOG}")" 1
+assert_equal "$(grep -Fc 'CALL' "${GCLOUD_ARGUMENT_LOG}")" 2
 if grep -Eq '^(snapshots|execute|all-instances-config|update-instances)$' \
     "${GCLOUD_ARGUMENT_LOG}"; then
     printf 'Receipt drift must fail before backup or database mutation.\n' >&2
@@ -1352,13 +1356,11 @@ PATH="${MOCK_BIN}:${PATH}" GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
     "${REPOSITORY_ROOT}/ops/deploy-database-release.sh" \
     agora-production-test \
     europe-west1-c \
+    json-keys 1002 \
     abbreviated \
     "${JSON_KEYS_IMAGE}" \
-    "${AUTHENTICATION_IMAGE}" \
     7 \
-    11 \
     13 \
-    17 \
     >"${TEMP_DIR}/invalid-database-release.out" \
     2>"${TEMP_DIR}/invalid-database-release.err"
 INVALID_DATABASE_RELEASE_CODE=$?
@@ -1376,19 +1378,17 @@ PATH="${MOCK_BIN}:${PATH}" GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
     "${REPOSITORY_ROOT}/ops/deploy-database-release.sh" \
     agora-production-test \
     europe-west1-c \
+    json-keys 1002 \
     0123456789abcdef0123456789abcdef01234567 \
     "${JSON_KEYS_IMAGE}" \
-    "${AUTHENTICATION_IMAGE}" \
     7 \
-    11 \
     13 \
-    17 \
     >"${TEMP_DIR}/invalid-database-metadata.out" \
     2>"${TEMP_DIR}/invalid-database-metadata.err"
 INVALID_DATABASE_METADATA_CODE=$?
 set -e
 assert_equal "${INVALID_DATABASE_METADATA_CODE}" "70"
-assert_equal "$(grep -Fc 'CALL' "${GCLOUD_ARGUMENT_LOG}")" "1"
+assert_equal "$(grep -Fc 'CALL' "${GCLOUD_ARGUMENT_LOG}")" "2"
 grep -Fq '"missing":' "${TEMP_DIR}/invalid-database-metadata.err"
 grep -Fq '"unexpected":["unexpected-key"]' "${TEMP_DIR}/invalid-database-metadata.err"
 if grep -Fq '"value"' "${TEMP_DIR}/invalid-database-metadata.err"; then
@@ -1409,13 +1409,14 @@ PATH="${MOCK_BIN}:${PATH}" GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
     "${REPOSITORY_ROOT}/ops/prepare-database-change.sh" \
     agora-production-test \
     europe-west1-c \
+    json-keys 1002 \
     0123456789abcdef0123456789abcdef01234567 \
     >"${TEMP_DIR}/inaccessible-database-metadata.out" \
     2>"${TEMP_DIR}/inaccessible-database-metadata.err"
 INACCESSIBLE_DATABASE_METADATA_CODE=$?
 set -e
 assert_equal "${INACCESSIBLE_DATABASE_METADATA_CODE}" "70"
-assert_equal "$(grep -Fc 'CALL' "${GCLOUD_ARGUMENT_LOG}")" "1"
+assert_equal "$(grep -Fc 'CALL' "${GCLOUD_ARGUMENT_LOG}")" "2"
 grep -Fq 'mock metadata describe denied' "${TEMP_DIR}/inaccessible-database-metadata.err"
 grep -Fq 'Database release metadata could not be inspected.' \
     "${TEMP_DIR}/inaccessible-database-metadata.err"
@@ -1433,19 +1434,17 @@ PATH="${MOCK_BIN}:${PATH}" GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
     "${REPOSITORY_ROOT}/ops/deploy-database-release.sh" \
     agora-production-test \
     europe-west1-c \
+    json-keys 1002 \
     0123456789abcdef0123456789abcdef01234567 \
     "${JSON_KEYS_IMAGE}" \
-    "${AUTHENTICATION_IMAGE}" \
     7 \
-    11 \
     13 \
-    17 \
     >"${TEMP_DIR}/stale-database-snapshot.out" \
     2>"${TEMP_DIR}/stale-database-snapshot.err"
 STALE_DATABASE_SNAPSHOT_CODE=$?
 set -e
 assert_equal "${STALE_DATABASE_SNAPSHOT_CODE}" "70"
-assert_equal "$(grep -Fc 'CALL' "${GCLOUD_ARGUMENT_LOG}")" "2"
+assert_equal "$(grep -Fc 'CALL' "${GCLOUD_ARGUMENT_LOG}")" "3"
 if grep -Eq '^(execute|all-instances-config|update-instances)$' "${GCLOUD_ARGUMENT_LOG}"; then
     printf "A stale snapshot must fail before backup or database mutation.\n" >&2
     exit 1
@@ -1461,13 +1460,14 @@ PATH="${MOCK_BIN}:${PATH}" GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
     "${REPOSITORY_ROOT}/ops/prepare-database-change.sh" \
     agora-production-test \
     europe-west1-c \
+    json-keys 1002 \
     0123456789abcdef0123456789abcdef01234567 \
     >"${TEMP_DIR}/manual-database-snapshot.out" \
     2>"${TEMP_DIR}/manual-database-snapshot.err"
 MANUAL_DATABASE_SNAPSHOT_CODE=$?
 set -e
 assert_equal "${MANUAL_DATABASE_SNAPSHOT_CODE}" "70"
-assert_equal "$(grep -Fc 'CALL' "${GCLOUD_ARGUMENT_LOG}")" "2"
+assert_equal "$(grep -Fc 'CALL' "${GCLOUD_ARGUMENT_LOG}")" "3"
 if grep -Eq '^(execute|all-instances-config|update-instances)$' "${GCLOUD_ARGUMENT_LOG}"; then
     printf "A manual snapshot must fail before backup or database mutation.\n" >&2
     exit 1
@@ -1531,10 +1531,6 @@ for release_job in \
     agora-json-keys-migrations \
     agora-json-keys-rotatekeys \
     agora-authentication-migrations \
-    agora-postgres-backup-json-keys \
-    agora-postgres-backup-authentication \
-    agora-postgres-restore-json-keys \
-    agora-postgres-restore-authentication \
     agora-postgres-backup-monitor; do
     if ! grep -Fq "run_job ${release_job}" \
         "${REPOSITORY_ROOT}/ops/google-release-driver.sh"; then
@@ -1676,8 +1672,8 @@ printf '%s\n' \
     'if [ "$1 $2 $3" = "storage objects list" ]; then' \
     '    if [ "${INIT_LIST_FAILURE:-false}" = true ]; then exit 1; fi' \
     '    if [ "${INIT_EXISTING_MARKER:-false}" = true ]; then' \
-    '        if [ "$5" = "--format=value(name)" ]; then printf "%s\n" "production/initialization/complete.json";' \
-    '        else printf "%s\n" "https://storage.googleapis.com/storage/v1/b/agora-receipts-test/o/production/initialization/complete.json#123456"; fi' \
+    '        if [ "$5" = "--format=value(name)" ]; then printf "%s\n" "production/initialization/1001/complete.json";' \
+    '        else printf "%s\n" "https://storage.googleapis.com/storage/v1/b/agora-receipts-test/o/production/initialization/1001/complete.json#123456"; fi' \
     '    fi' \
     'elif [ "$1 $2" = "storage cp" ] && [[ "$3" == gs://* ]]; then' \
     '    if [ "${INIT_EXISTING_MARKER:-false}" != true ]; then exit 1; fi' \
@@ -1692,7 +1688,7 @@ printf '%s\n' \
     >"${INIT_MOCK_BIN}/gcloud"
 chmod 0700 "${INIT_MOCK_BIN}/gcloud"
 
-INIT_MARKER_JSON='{"schemaVersion":1,"commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","execution":"agora-authentication-init-valid","completedAt":"2026-08-25T12:00:00Z"}'
+INIT_MARKER_JSON='{"schemaVersion":2,"project":"agora-production-test","dataDiskId":"1001","commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","execution":"agora-authentication-init-valid","completedAt":"2026-08-25T12:00:00Z"}'
 INIT_UPLOAD_LOG="${TEMP_DIR}/init-upload.log"
 PATH="${INIT_MOCK_BIN}:${PATH}" \
     INIT_EXISTING_MARKER=true \
@@ -1700,7 +1696,7 @@ PATH="${INIT_MOCK_BIN}:${PATH}" \
     INIT_UPLOAD_LOG="${INIT_UPLOAD_LOG}" \
     "${REPOSITORY_ROOT}/ops/await-auth-initialization.sh" \
     agora-production-test europe-west1 agora-receipts-test \
-    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 1001 \
     >"${TEMP_DIR}/init-existing.out"
 assert_equal "$(<"${TEMP_DIR}/init-existing.out")" agora-authentication-init-valid
 
@@ -1711,7 +1707,7 @@ PATH="${INIT_MOCK_BIN}:${PATH}" \
     INIT_UPLOAD_LOG="${INIT_UPLOAD_LOG}" \
     "${REPOSITORY_ROOT}/ops/await-auth-initialization.sh" \
     agora-production-test europe-west1 agora-receipts-test \
-    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 1001 \
     >/dev/null 2>&1
 INIT_LIST_FAILURE_CODE=$?
 set -e
@@ -1730,7 +1726,7 @@ run_failed_init_case() {
         INIT_UPLOAD_LOG="${INIT_UPLOAD_LOG}" \
         "${REPOSITORY_ROOT}/ops/await-auth-initialization.sh" \
         agora-production-test europe-west1 agora-receipts-test \
-        aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+        aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 1001 \
         >"${TEMP_DIR}/init-${label}.out" \
         2>"${TEMP_DIR}/init-${label}.err"
     code=$?
@@ -1752,7 +1748,7 @@ PATH="${INIT_MOCK_BIN}:${PATH}" \
     INIT_UPLOAD_LOG="${INIT_UPLOAD_LOG}" \
     "${REPOSITORY_ROOT}/ops/await-auth-initialization.sh" \
     agora-production-test europe-west1 agora-receipts-test \
-    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 1001 \
     >"${TEMP_DIR}/init-success.out" 2>"${TEMP_DIR}/init-success.err"
 assert_equal "$(<"${TEMP_DIR}/init-success.out")" agora-authentication-init-success
 assert_equal "$(grep -Fc uploaded "${INIT_UPLOAD_LOG}")" 1

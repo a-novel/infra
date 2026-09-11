@@ -12,6 +12,7 @@ import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
+import { isIPv4 } from "node:net";
 
 import Ajv2020 from "ajv/dist/2020.js";
 import { parse } from "yaml";
@@ -27,7 +28,7 @@ const requiredConfigKeys = [
   "region",
   "database_zone",
   "backup_bucket_name",
-  "database_private_ip",
+  "database_hosts",
   "network_id",
   "subnet_id",
   "cloud_run_invocation_tags",
@@ -118,6 +119,35 @@ function validateConfig(config, action) {
     fail("database_zone must belong to region");
   }
   exactKeys(
+    config.database_hosts,
+    ["authentication", "json_keys"],
+    "database hosts",
+  );
+  for (const [service, host] of Object.entries(config.database_hosts)) {
+    exactKeys(host, ["private_ip", "data_disk_id"], `${service} database host`);
+    if (
+      !isIPv4(host.private_ip) ||
+      !/^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(
+        host.private_ip,
+      ) ||
+      typeof host.data_disk_id !== "string" ||
+      !/^[1-9][0-9]*$/.test(host.data_disk_id)
+    ) {
+      fail(
+        `${service} requires a private IPv4 address and exact numeric data disk ID`,
+      );
+    }
+  }
+  if (
+    new Set(Object.values(config.database_hosts).map((host) => host.private_ip))
+      .size !== 2 ||
+    new Set(
+      Object.values(config.database_hosts).map((host) => host.data_disk_id),
+    ).size !== 2
+  ) {
+    fail("database hosts must use separate private addresses and data disks");
+  }
+  exactKeys(
     config.cloud_run_invocation_tags,
     ["key", "values"],
     "Cloud Run invocation tags",
@@ -179,7 +209,7 @@ function buildBaseTfvars(config) {
     workload_project_id: config.workload_project_id,
     region: config.region,
     backup_bucket_name: config.backup_bucket_name,
-    database_private_ip: config.database_private_ip,
+    database_hosts: config.database_hosts,
     network_id: config.network_id,
     subnet_id: config.subnet_id,
     cloud_run_invocation_tags: config.cloud_run_invocation_tags,
@@ -439,7 +469,54 @@ export async function compileRelease({
     authenticationBackupPasswordVersion:
       config.secret_versions.authentication_postgres_backup_password,
   };
-  const previousDatabase = previousReceipt?.database;
+  const legacyDatabase =
+    previousReceipt?.database && !previousReceipt.database.hosts;
+  const databaseRebuild = Boolean(legacyDatabase && action === "deploy");
+  if (databaseRebuild && changedComponents.length !== 0) {
+    fail(
+      "rebuild the legacy database topology separately from service image updates",
+    );
+  }
+  for (const receipt of [previousReceipt, currentReceipt]) {
+    if (!receipt?.database) continue;
+    if (!receipt.database.hosts) {
+      if (action === "rollback")
+        fail("rollback cannot target the retired shared database");
+      continue;
+    }
+    if (
+      !isDeepStrictEqual(
+        receipt.activeTfvars.database_hosts,
+        config.database_hosts,
+      )
+    ) {
+      fail(
+        "database disk identity or address differs from the receipt; use protected recovery, not in-place rollback",
+      );
+    }
+  }
+  const previousDatabase = databaseRebuild ? null : previousReceipt?.database;
+  const databaseHosts = Object.fromEntries(
+    Object.entries(config.database_hosts).map(([service, host]) => {
+      const prefix = service === "json_keys" ? "jsonKeys" : "authentication";
+      const previousHost = previousDatabase?.hosts?.[service];
+      const unchanged =
+        previousHost &&
+        ["Image", "PasswordVersion", "BackupPasswordVersion"].every(
+          (suffix) =>
+            previousDatabase[prefix + suffix] ===
+            databaseConfiguration[prefix + suffix],
+        );
+      return [
+        service,
+        {
+          privateIp: host.private_ip,
+          dataDiskId: host.data_disk_id,
+          releaseRevision: unchanged ? previousHost.releaseRevision : commit,
+        },
+      ];
+    }),
+  );
   const databaseUnchanged =
     previousDatabase !== null &&
     previousDatabase !== undefined &&
@@ -451,6 +528,7 @@ export async function compileRelease({
       ? previousDatabase.releaseRevision
       : commit,
     ...databaseConfiguration,
+    hosts: databaseHosts,
   };
   const databaseReleases = {
     authentication: {
@@ -555,6 +633,10 @@ export async function compileRelease({
     };
   }
 
+  if (databaseRebuild) {
+    rollbackTfvars = structuredClone(candidateTfvars);
+  }
+
   let checkedSecretVersions = [
     [
       "production-authentication-postgres-password",
@@ -630,11 +712,13 @@ export async function compileRelease({
     mode:
       action === "rollback"
         ? "rollback"
-        : !previousActive
-          ? "first-launch"
-          : changedComponents.length
-            ? "service"
-            : "maintenance",
+        : databaseRebuild
+          ? "database-rebuild"
+          : !previousActive
+            ? "first-launch"
+            : changedComponents.length
+              ? "service"
+              : "maintenance",
     imageManifest: manifest,
     previousManifest,
     commit,
@@ -647,6 +731,7 @@ export async function compileRelease({
       workloadProjectId: config.workload_project_id,
       region: config.region,
       databaseZone: config.database_zone,
+      databaseHosts: config.database_hosts,
       quotaExpectations: config.quota_expectations,
       secretVersions: checkedSecretVersions,
     },
@@ -654,8 +739,10 @@ export async function compileRelease({
     revisions,
     images,
     database,
-    currentDatabase: currentReceipt?.database ?? null,
-    previousDatabase: previousReceipt?.database ?? null,
+    currentDatabase: databaseRebuild
+      ? null
+      : (currentReceipt?.database ?? null),
+    previousDatabase: previousDatabase ?? null,
   };
 
   await mkdir(outputDirectory, { recursive: true, mode: 0o700 });

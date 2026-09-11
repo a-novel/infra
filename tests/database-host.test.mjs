@@ -42,10 +42,17 @@ case "$*" in
     printf '%s\\n' 'europe-west1-d'
     ;;
   "compute instance-groups managed list-instances "*)
-    printf '%s\\n' 'agora-database-test'
+    if [[ "$*" == *agora-database-json-keys* ]]; then
+      printf '%s\\n' 'agora-database-json-keys-test'
+    else
+      printf '%s\\n' 'agora-database-authentication-test'
+    fi
     ;;
   "compute instances describe "*"--format=value(networkInterfaces[0].networkIP)")
-    printf '%s\\n' '10.20.0.2'
+    if [[ "$*" == *agora-database-json-keys* ]]; then printf '%s\\n' '10.20.0.3'; else printf '%s\\n' '10.20.0.2'; fi
+    ;;
+  "compute disks describe "*"--format=value(id)")
+    if [[ "$*" == *agora-data-json-keys* ]]; then printf '%s\\n' '1002'; else printf '%s\\n' '1001'; fi
     ;;
   "compute instance-groups managed describe "*|"compute instances describe "*|"compute disks describe "*|"compute resource-policies describe "*|"compute snapshots list "*|"compute firewall-rules describe "*|"monitoring policies list "*)
     ;;
@@ -132,9 +139,13 @@ printf '%s\\n' 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFixture a-novel-database-op
   );
 
   await writeFile(gcloudLog, "");
-  await execFile(script, ["ssh", "--key-file", keyFile, "--ttl", "2h"], {
-    env: cloudEnvironment,
-  });
+  await execFile(
+    script,
+    ["ssh", "authentication", "--key-file", keyFile, "--ttl", "2h"],
+    {
+      env: cloudEnvironment,
+    },
+  );
   const sshLog = await readFile(gcloudLog, "utf8");
   assert.match(
     sshLog,
@@ -143,22 +154,26 @@ printf '%s\\n' 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFixture a-novel-database-op
   assert.match(
     sshLog,
     new RegExp(
-      `compute ssh agora-database-test --project=workload-project-prod --zone=europe-west1-d --ssh-key-file=${keyFile} --ssh-key-expire-after=2h --tunnel-through-iap`,
+      `compute ssh agora-database-authentication-test --project=workload-project-prod --zone=europe-west1-d --ssh-key-file=${keyFile} --ssh-key-expire-after=2h --tunnel-through-iap`,
     ),
   );
   assert.doesNotMatch(sshLog, /compute os-login/);
 
   await writeFile(gcloudLog, "");
-  await execFile(script, ["troubleshoot", "--key-file", keyFile], {
-    env: cloudEnvironment,
-  });
+  await execFile(
+    script,
+    ["troubleshoot", "authentication", "--key-file", keyFile],
+    {
+      env: cloudEnvironment,
+    },
+  );
   assert.match(
     await readFile(gcloudLog, "utf8"),
     /compute ssh .*--tunnel-through-iap --troubleshoot/,
   );
 
   await writeFile(gcloudLog, "");
-  const inspected = await execFile(script, ["inspect"], {
+  const inspected = await execFile(script, ["inspect", "authentication"], {
     env: cloudEnvironment,
   });
   assert.match(inspected.stdout, /PASS database host inspection\n$/);
@@ -166,5 +181,29 @@ printf '%s\\n' 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFixture a-novel-database-op
   assert.doesNotMatch(
     inspectionLog,
     /get-iam-policy|config get-value account|compute os-login/,
+  );
+  assert.match(inspectionLog, /labels.component=authentication/);
+
+  await writeFile(gcloudLog, "");
+  const coordinates = await execFile(script, ["coordinates"], {
+    env: cloudEnvironment,
+  });
+  assert.deepEqual(JSON.parse(coordinates.stdout), {
+    zone: "europe-west1-d",
+    hosts: {
+      authentication: { private_ip: "10.20.0.2", data_disk_id: "1001" },
+      json_keys: { private_ip: "10.20.0.3", data_disk_id: "1002" },
+    },
+  });
+  const coordinateCalls = await readFile(gcloudLog, "utf8");
+  assert.doesNotMatch(
+    coordinateCalls,
+    /ssh|add-iam|set-metadata|stop-instances/,
+  );
+  assert.ok(
+    coordinateCalls
+      .trim()
+      .split("\n")
+      .every((line) => line.includes("--project=workload-project-prod")),
   );
 });

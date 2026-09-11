@@ -131,7 +131,7 @@ variable "database_machine_type" {
 }
 
 variable "database_data_disk_size_gb" {
-  description = "Balanced Persistent Disk capacity shared by the isolated PostgreSQL data directories; increases are online, decreases are forbidden."
+  description = "SSD-backed data-disk capacity for each PostgreSQL host; increases are online, decreases are forbidden."
   type        = number
   default     = 50
 

@@ -78,7 +78,8 @@ if ! jq --exit-status --arg root_name "$1" \
                 "google_project.workload": "WORKLOAD_PROJECT_PARENT",
                 "check.database_zone_matches_region": "DATABASE_ZONE",
                 "check.database_container_memory_headroom": "DATABASE_MEMORY_HEADROOM",
-                "check.database_container_cpu_headroom": "DATABASE_CPU_HEADROOM"
+                "check.database_container_cpu_headroom": "DATABASE_CPU_HEADROOM",
+                "check.database_cpu_quota": "DATABASE_CPU_QUOTA"
               }[$check.address.to_display] // "OTHER_CHECK")
             }
         ]

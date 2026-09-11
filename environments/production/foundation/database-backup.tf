@@ -1,9 +1,11 @@
 # Compute Engine snapshots complement logical dumps: they are fast,
 # crash-consistent host recovery points, not a substitute for tested pg_restore.
 resource "google_compute_resource_policy" "database_snapshots" {
+  for_each = local.database_hosts
+
   project = google_project.workload.project_id
   region  = var.region
-  name    = "agora-database-daily-snapshots"
+  name    = "agora-${each.value.component}-daily-snapshots"
 
   snapshot_schedule_policy {
     schedule {
@@ -20,7 +22,7 @@ resource "google_compute_resource_policy" "database_snapshots" {
 
     snapshot_properties {
       guest_flush = false
-      labels      = merge(local.labels, { role = "database-snapshot" })
+      labels      = merge(local.labels, { role = "database-snapshot", component = each.value.component })
       # These remain globally scoped snapshots, but storing their data beside
       # the source disk avoids multi-region transfer cost. Logical backups in
       # the management project remain the regional-loss recovery layer.
@@ -32,8 +34,10 @@ resource "google_compute_resource_policy" "database_snapshots" {
 }
 
 resource "google_compute_disk_resource_policy_attachment" "database_snapshots" {
+  for_each = local.database_hosts
+
   project = google_project.workload.project_id
   zone    = var.database_zone
-  disk    = google_compute_disk.database.name
-  name    = google_compute_resource_policy.database_snapshots.name
+  disk    = google_compute_disk.database[each.key].name
+  name    = google_compute_resource_policy.database_snapshots[each.key].name
 }

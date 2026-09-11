@@ -43,21 +43,25 @@ output "cloud_run_invocation_tags" {
   }
 }
 
-output "database_host" {
-  description = "Private stateful PostgreSQL host identifiers for operator verification and recovery records."
+output "database_hosts" {
+  description = "Service-owned PostgreSQL hosts and disk incarnations for release and recovery."
   value = {
-    data_disk = {
-      name    = google_compute_disk.database.name
-      size_gb = google_compute_disk.database.size
-      type    = google_compute_disk.database.type
+    for service, host in local.database_hosts : service => {
+      data_disk = {
+        name    = google_compute_disk.database[service].name
+        id      = google_compute_disk.database[service].disk_id
+        size_gb = google_compute_disk.database[service].size
+        type    = google_compute_disk.database[service].type
+      }
+      instance_group_manager = google_compute_instance_group_manager.database[service].name
+      instance_name          = data.google_compute_instance.database[service].name
+      machine_type           = var.database_machine_type
+      port                   = host.port
+      private_ip             = one(data.google_compute_instance.database[service].network_interface).network_ip
+      service_account        = google_service_account.runtime[host.identity].email
+      snapshot_policy        = google_compute_resource_policy.database_snapshots[service].name
+      zone                   = var.database_zone
     }
-    instance_group_manager = google_compute_instance_group_manager.database.name
-    instance_name          = data.google_compute_instance.database.name
-    machine_type           = var.database_machine_type
-    ports                  = local.database_ports
-    private_ip             = one(data.google_compute_instance.database.network_interface).network_ip
-    snapshot_policy        = google_compute_resource_policy.database_snapshots.name
-    zone                   = var.database_zone
   }
 }
 

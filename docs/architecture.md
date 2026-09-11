@@ -78,28 +78,26 @@ identity and routine automation.
 
 ## Stateful database ownership
 
-The PostgreSQL host follows the stable infrastructure, mutable configuration pattern. Foundation
-owns everything whose accidental loss can destroy data or network identity: the balanced data disk,
-instance template, one-member stateful managed instance group, preserved private address, machine
-shape, startup code, firewall, IAM, and capacity alerts. A foundation apply creates the host in an
-idle state when no release metadata exists.
+Each PostgreSQL database has its own private host. Foundation owns each SSD-backed data disk,
+SSD-backed COS boot disk, immutable template, one-member stateful managed instance group,
+preserved private address, runtime identity, firewall boundary, and daily snapshot policy.
+A foundation apply creates both hosts idle; each VM can read only its own owner/backup passwords.
 
-Foundation seeds one group-level `allInstancesConfig` map containing an empty Git commit, two empty
-image references, and four zero owner/backup password-version identifiers. It ignores later drift
-only on that nested map. The protected release workflow derives all seven non-secret values from
-reviewed inputs and calls the tested
-[`deploy-database-release.sh`](../ops/deploy-database-release.sh) helper. The helper validates the
-exact project, repositories, digests, commit, zone, and positive version identifiers, then reads the
-existing map and requires exactly those seven keys. Before mutation, its shared recovery gate also
-requires a ready scheduled snapshot no older than 26 hours and—except for an empty first
-release—fresh logical backups of both databases. Only after those fail-closed checks does it invoke
-Google's supported all-instances update and apply it to the sole member with both the minimum and
-maximum action set to `RESTART`.
+Each group has four release metadata keys: one Git revision, one database image, and two numeric
+password versions. The release workflow validates that complete map, the exact data-disk ID,
+a READY automatic snapshot from that disk incarnation no older than 26 hours, and a fresh logical
+backup for the selected non-empty database. Its cached proof is bound to the host, disk,
+metadata hash and ten-minute window; metadata is checked again before mutation.
 
-The MIG update policy is `OPPORTUNISTIC`, so changing group metadata or a foundation template cannot
-act on the live member before the owning protected workflow states its disruption ceiling. Routine
-release uses `RESTART`; reviewed foundation maintenance uses `REPLACE` and `RECREATE`. The group has
-zero surge, so both are short single-host outages and neither creates a second disk writer.
+Routine release caps the selected existing member at `RESTART` and waits for a new boot's
+healthy signal. It does not restart the other database VM or run the other service's
+backup/restore jobs. Authentication can still be affected by JSON Keys dependency downtime;
+host isolation is not dependency-level high availability.
+
+The groups are `OPPORTUNISTIC` with zero surge. Applying a new foundation template target alone
+does not roll running members. Template-changing maintenance must first supply a reviewed,
+protected `REPLACE`/`RECREATE` step; the current foundation workflow does not implement that
+imperative rollout.
 
 This small imperative edge is deliberate. The Google provider's
 [`google_compute_per_instance_config` create path](https://github.com/hashicorp/terraform-provider-google/blob/v7.45.0/google/services/compute/resource_compute_per_instance_config.go)
@@ -128,11 +126,11 @@ release commit + image digests + secret version IDs
 ```
 
 This split keeps durable resource ownership in foundation while letting routine release converge
-both database containers through the fixed helper and supporting resource checks above. Google's
-group-manager update permission is coarser than the seven-field operation and can affect group
+the selected database container through the fixed helper and supporting resource checks above. Google's
+group-manager update permission is coarser than the four-field operation and can affect group
 lifecycle indirectly, so the fixed helper, resource-name condition, protected environment,
 committed manifest, audit log, health gate, and private receipt form the remaining controls. A
-compute rollback restores the prior foundation template. An application rollback runs the same
+compute rollback needs the reviewed maintenance replacement procedure, not just a template-target apply. An application rollback runs the same
 helper with the prior receipt. Neither rollback rewinds schema or data; that remains a separately
 approved restore.
 

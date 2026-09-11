@@ -192,7 +192,10 @@ test("release coordinate discovery uses bounded tag inspection access", () => {
   );
 
   for (const content of [deploymentRunbook, setupGuide.content]) {
-    assert.match(content, /--format='value\(instance\.basename\(\)\)'/);
+    assert.match(
+      content,
+      /--format='value\(instance\.basename\(\)\)'|\.\/ops\/database-host\.sh coordinates/,
+    );
     assert.doesNotMatch(content, /DATABASE_INSTANCE_URI/);
     assert.match(
       content,
@@ -341,7 +344,7 @@ test("Bash fences are limited to commands pasted inside remote COS hosts", () =>
     }
   }
 
-  assert.equal(bashBlocks.length, 5);
+  assert.equal(bashBlocks.length, 6);
   assert.equal(
     bashBlocks.filter(({ name }) => name === "operate-postgresql-host.md")
       .length,
@@ -349,7 +352,7 @@ test("Bash fences are limited to commands pasted inside remote COS hosts", () =>
   );
   assert.equal(
     bashBlocks.filter(({ name }) => name === "debug-postgresql-host.md").length,
-    3,
+    4,
   );
   assert.equal(
     bashBlocks.filter(({ name }) => name === "disaster-recovery.md").length,
@@ -361,7 +364,8 @@ test("Bash fences are limited to commands pasted inside remote COS hosts", () =>
         ((name === "operate-postgresql-host.md" ||
           name === "debug-postgresql-host.md") &&
           (body.startsWith("sudo docker") ||
-            body.startsWith("for container in agora-postgres-json-keys"))) ||
+            body.startsWith('for container in "agora-postgres-') ||
+            body.startsWith('DATABASE_SERVICE="$(curl'))) ||
         (name === "disaster-recovery.md" &&
           body.startsWith("RECOVERY_AUTH_URL=''")),
     ),

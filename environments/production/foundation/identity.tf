@@ -19,9 +19,13 @@ locals {
       account_id   = "agora-backup"
       display_name = "Agora PostgreSQL backup"
     }
-    database = {
-      account_id   = "agora-database-host"
-      display_name = "Agora PostgreSQL host"
+    authentication_database = {
+      account_id   = "agora-auth-database"
+      display_name = "Agora Authentication PostgreSQL host"
+    }
+    json_keys_database = {
+      account_id   = "agora-json-keys-database"
+      display_name = "Agora JSON Keys PostgreSQL host"
     }
     json_keys = {
       account_id   = "agora-json-keys"
@@ -118,6 +122,22 @@ locals {
     }
   }
 
+  database_runtime_project_bindings = {
+    for binding in setproduct(keys(local.database_hosts), local.database_runtime_project_roles) :
+    "${binding[0]}:${binding[1]}" => {
+      identity = local.database_hosts[binding[0]].identity
+      role     = binding[1]
+    }
+  }
+
+  database_operator_account_bindings = {
+    for binding in setproduct(keys(local.database_hosts), var.database_operator_principals) :
+    "${binding[0]}:${binding[1]}" => {
+      identity  = local.database_hosts[binding[0]].identity
+      principal = binding[1]
+    }
+  }
+
   runtime_secret_access = merge({
     "authentication:postgres-password" = {
       identity = "authentication"
@@ -128,19 +148,19 @@ locals {
       secret   = "production-authentication-smtp-sender-password"
     }
     "database:authentication-password" = {
-      identity = "database"
+      identity = "authentication_database"
       secret   = "production-authentication-postgres-password"
     }
     "database:authentication-backup-password" = {
-      identity = "database"
+      identity = "authentication_database"
       secret   = "production-authentication-postgres-backup-password"
     }
     "database:json-keys-password" = {
-      identity = "database"
+      identity = "json_keys_database"
       secret   = "production-json-keys-postgres-password"
     }
     "database:json-keys-backup-password" = {
-      identity = "database"
+      identity = "json_keys_database"
       secret   = "production-json-keys-postgres-backup-password"
     }
     "json-keys:app-master-key" = {
@@ -264,13 +284,17 @@ resource "google_service_account" "runtime" {
 }
 
 resource "google_service_account_iam_member" "foundation_database_act_as" {
-  service_account_id = google_service_account.runtime["database"].name
+  for_each = local.database_hosts
+
+  service_account_id = google_service_account.runtime[each.value.identity].name
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "foundation"]}"
 }
 
 resource "google_service_account_iam_member" "mig_database_act_as" {
-  service_account_id = google_service_account.runtime["database"].name
+  for_each = local.database_hosts
+
+  service_account_id = google_service_account.runtime[each.value.identity].name
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${google_project.workload.number}@cloudservices.gserviceaccount.com"
 }
@@ -380,7 +404,7 @@ resource "google_project_iam_member" "recovery_smoke_cloud_run_invoker" {
 
   project = google_project.workload.project_id
   role    = "roles/run.servicesInvoker"
-  member  = "serviceAccount:${google_service_account.runtime["database"].email}"
+  member  = "serviceAccount:${google_service_account.runtime["authentication_database"].email}"
 
   condition {
     title       = "RecoverySmokeCloudRunOnly"
@@ -507,11 +531,11 @@ resource "google_project_iam_member" "release_cloud_run_deployer" {
 }
 
 resource "google_project_iam_member" "database_runtime_observability" {
-  for_each = local.database_runtime_project_roles
+  for_each = local.database_runtime_project_bindings
 
   project = google_project.workload.project_id
-  role    = each.value
-  member  = "serviceAccount:${google_service_account.runtime["database"].email}"
+  role    = each.value.role
+  member  = "serviceAccount:${google_service_account.runtime[each.value.identity].email}"
 }
 
 resource "google_project_iam_member" "database_operator" {
@@ -540,11 +564,11 @@ resource "google_project_iam_member" "database_operator_iap" {
 # service account. This account-level grant is required for login and does not
 # grant token-minting authority.
 resource "google_service_account_iam_member" "database_operator_act_as" {
-  for_each = var.database_operator_principals
+  for_each = local.database_operator_account_bindings
 
-  service_account_id = google_service_account.runtime["database"].name
+  service_account_id = google_service_account.runtime[each.value.identity].name
   role               = "roles/iam.serviceAccountUser"
-  member             = each.value
+  member             = each.value.principal
 }
 
 # Compute authorizes an all-instances metadata patch against the group's full
@@ -619,6 +643,7 @@ resource "google_project_iam_custom_role" "database_release_data_disk" {
   stage       = "GA"
 
   permissions = [
+    "compute.disks.get",
     "compute.disks.use",
   ]
 
@@ -626,9 +651,11 @@ resource "google_project_iam_custom_role" "database_release_data_disk" {
 }
 
 resource "google_compute_disk_iam_member" "database_release" {
+  for_each = local.database_hosts
+
   project = google_project.workload.project_id
   zone    = var.database_zone
-  name    = google_compute_disk.database.name
+  name    = google_compute_disk.database[each.key].name
   role    = google_project_iam_custom_role.database_release_data_disk.name
   member  = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "release"]}"
 }
@@ -650,8 +677,10 @@ resource "google_project_iam_custom_role" "database_release_template" {
 }
 
 resource "google_compute_instance_template_iam_member" "database_release" {
+  for_each = local.database_hosts
+
   project = google_project.workload.project_id
-  name    = google_compute_instance_template.database.name
+  name    = google_compute_instance_template.database[each.key].name
   role    = google_project_iam_custom_role.database_release_template.name
   member  = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "release"]}"
 }

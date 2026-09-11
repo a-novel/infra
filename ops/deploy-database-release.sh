@@ -1,118 +1,93 @@
 #!/bin/bash
 
-# Applies the seven non-secret database release fields to the existing stateful
-# MIG and permits exactly one disruptive action: restart the current VM.
-# Usage: deploy-database-release.sh <project> <zone> <revision> <json-keys-image> <authentication-image> <json-keys-password-version> <authentication-password-version> <json-keys-backup-password-version> <authentication-backup-password-version>
+# Applies one service's pinned release metadata and restarts only its existing VM.
+# Usage: deploy-database-release.sh <project> <zone> <service> <data-disk-id> <revision> <image> <password-version> <backup-password-version>
 
 set -euo pipefail
 
-if [ "$#" -ne 9 ]; then
-    printf 'Usage: %s <project> <zone> <revision> <json-keys-image> <authentication-image> <json-keys-password-version> <authentication-password-version> <json-keys-backup-password-version> <authentication-backup-password-version>\n' "$0" >&2
+if [ "$#" -ne 8 ]; then
+    printf 'Usage: %s <project> <zone> <service> <data-disk-id> <revision> <image> <password-version> <backup-password-version>\n' "$0" >&2
     exit 64
 fi
 
 WORKLOAD_PROJECT_ID="$1"
 DATABASE_ZONE="$2"
-RELEASE_REVISION="$3"
-JSON_KEYS_IMAGE="$4"
-AUTHENTICATION_IMAGE="$5"
-JSON_KEYS_PASSWORD_VERSION="$6"
-AUTHENTICATION_PASSWORD_VERSION="$7"
-JSON_KEYS_BACKUP_PASSWORD_VERSION="$8"
-AUTHENTICATION_BACKUP_PASSWORD_VERSION="$9"
-DATABASE_GROUP="agora-database"
+DATABASE_SERVICE="$3"
+DATA_DISK_ID="$4"
+RELEASE_REVISION="$5"
+DATABASE_IMAGE="$6"
+PASSWORD_VERSION="$7"
+BACKUP_PASSWORD_VERSION="$8"
+DATABASE_GROUP="agora-database-${DATABASE_SERVICE}"
 DATABASE_REGION="${DATABASE_ZONE%-*}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
-require_positive_integer() {
-    if ! [[ "$2" =~ ^[1-9][0-9]*$ ]]; then
-        printf 'Invalid %s.\n' "$1" >&2
-        exit 65
-    fi
-}
-
-require_promoted_image() {
-    local label="$1"
-    local image="$2"
-    local repository="$3"
-    local prefix="${DATABASE_REGION}-docker.pkg.dev/${WORKLOAD_PROJECT_ID}/agora-production/${repository}@sha256:"
-    local digest=""
-
-    case "${image}" in
-        "${prefix}"*) digest="${image#"${prefix}"}" ;;
-        *)
-            printf 'Invalid promoted %s image.\n' "${label}" >&2
-            exit 65
-            ;;
-    esac
-
-    if ! [[ "${digest}" =~ ^[a-f0-9]{64}$ ]]; then
-        printf 'Invalid promoted %s image.\n' "${label}" >&2
-        exit 65
-    fi
-}
-
-if ! [[ "${WORKLOAD_PROJECT_ID}" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]; then
-    printf 'Invalid workload project ID.\n' >&2
+if ! [[ "${WORKLOAD_PROJECT_ID}" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]] ||
+    ! [[ "${DATABASE_ZONE}" =~ ^[a-z]+-[a-z]+[0-9]+-[a-z]$ ]] ||
+    ! [[ "${RELEASE_REVISION}" =~ ^[a-f0-9]{40}$ ]] ||
+    ! [[ "${DATA_DISK_ID}" =~ ^[1-9][0-9]*$ ]] ||
+    ! [[ "${PASSWORD_VERSION}" =~ ^[1-9][0-9]*$ ]] ||
+    ! [[ "${BACKUP_PASSWORD_VERSION}" =~ ^[1-9][0-9]*$ ]] ||
+    { [ "${DATABASE_SERVICE}" != authentication ] && [ "${DATABASE_SERVICE}" != json-keys ]; }; then
+    printf 'Invalid service database deployment input.\n' >&2
     exit 65
 fi
 
-if ! [[ "${DATABASE_ZONE}" =~ ^[a-z]+-[a-z]+[0-9]+-[a-z]$ ]]; then
-    printf 'Invalid database zone.\n' >&2
+IMAGE_PREFIX="${DATABASE_REGION}-docker.pkg.dev/${WORKLOAD_PROJECT_ID}/agora-production/service-${DATABASE_SERVICE}/database@sha256:"
+if [[ "${DATABASE_IMAGE}" != "${IMAGE_PREFIX}"* ]] ||
+    ! [[ "${DATABASE_IMAGE#"${IMAGE_PREFIX}"}" =~ ^[a-f0-9]{64}$ ]]; then
+    printf 'Invalid promoted database image.\n' >&2
     exit 65
 fi
 
-if ! [[ "${RELEASE_REVISION}" =~ ^[a-f0-9]{40}$ ]]; then
-    printf 'Invalid release revision.\n' >&2
-    exit 65
-fi
+for command_name in gcloud jq sha256sum; do
+    command -v "${command_name}" >/dev/null || { printf '%s is required.\n' "${command_name}" >&2; exit 69; }
+done
 
-require_positive_integer 'JSON Keys password version' "${JSON_KEYS_PASSWORD_VERSION}"
-require_positive_integer 'Authentication password version' "${AUTHENTICATION_PASSWORD_VERSION}"
-require_positive_integer 'JSON Keys backup password version' "${JSON_KEYS_BACKUP_PASSWORD_VERSION}"
-require_positive_integer 'Authentication backup password version' "${AUTHENTICATION_BACKUP_PASSWORD_VERSION}"
-require_promoted_image 'JSON Keys' "${JSON_KEYS_IMAGE}" 'service-json-keys/database'
-require_promoted_image 'Authentication' "${AUTHENTICATION_IMAGE}" 'service-authentication/database'
-
-if ! command -v gcloud >/dev/null 2>&1; then
-    printf 'Google Cloud CLI is required by the protected deployment environment.\n' >&2
-    exit 69
-fi
-
-# The protected orchestrator runs the shared gate before any mutation. Direct
-# operator use still runs it here. A proof is short-lived, exact, private local
-# workflow state; it is not an authorization credential.
+# A cached proof belongs to one exact host and remains valid for ten minutes.
 if [ -n "${DATABASE_CHANGE_PROOF:-}" ]; then
-    NOW_EPOCH="$(date -u +%s)"
     if ! jq --exit-status \
         --arg project "${WORKLOAD_PROJECT_ID}" \
         --arg zone "${DATABASE_ZONE}" \
+        --arg service "${DATABASE_SERVICE}" \
+        --arg disk_id "${DATA_DISK_ID}" \
         --arg revision "${RELEASE_REVISION}" \
-        --argjson now "${NOW_EPOCH}" '
+        --argjson now "$(date -u +%s)" '
           type == "object" and
-          keys == ["checkedAt", "currentMetadataSha256", "project", "revision", "zone"] and
-          .project == $project and
-          .zone == $zone and
-          .revision == $revision and
+          keys == ["checkedAt", "currentMetadataSha256", "dataDiskId", "project", "revision", "service", "zone"] and
+          .project == $project and .zone == $zone and .service == $service and
+          .dataDiskId == $disk_id and .revision == $revision and
           (.currentMetadataSha256 | test("^[a-f0-9]{64}$")) and
           (.checkedAt | type == "number") and
-          .checkedAt <= ($now + 30) and
-          .checkedAt >= ($now - 600)
+          .checkedAt <= ($now + 30) and .checkedAt >= ($now - 600)
         ' "${DATABASE_CHANGE_PROOF}" >/dev/null; then
         printf 'The database change preflight proof is invalid or stale.\n' >&2
         exit 70
     fi
+    LIVE_METADATA_HASH="$(
+        gcloud compute instance-groups managed describe "${DATABASE_GROUP}" \
+            --project="${WORKLOAD_PROJECT_ID}" --zone="${DATABASE_ZONE}" --format=json |
+            jq --join-output --compact-output --sort-keys '.allInstancesConfig.properties.metadata' |
+            sha256sum | cut -d ' ' -f 1
+    )"
+    if [ "${LIVE_METADATA_HASH}" != "$(jq -r '.currentMetadataSha256' "${DATABASE_CHANGE_PROOF}")" ]; then
+        printf 'Database metadata changed after the preflight proof.\n' >&2
+        exit 70
+    fi
 else
-    "${SCRIPT_DIR}/prepare-database-change.sh" \
-        "${WORKLOAD_PROJECT_ID}" \
-        "${DATABASE_ZONE}" \
-        "${RELEASE_REVISION}"
+    "${SCRIPT_DIR}/prepare-database-change.sh" "${WORKLOAD_PROJECT_ID}" "${DATABASE_ZONE}" "${DATABASE_SERVICE}" "${DATA_DISK_ID}" "${RELEASE_REVISION}"
+fi
+
+if [ "$(gcloud compute disks describe "agora-data-${DATABASE_SERVICE}" --project="${WORKLOAD_PROJECT_ID}" --zone="${DATABASE_ZONE}" --format='value(id)')" != "${DATA_DISK_ID}" ]; then
+    printf 'The database data disk changed after preflight.\n' >&2
+    exit 70
 fi
 
 if ! DATABASE_STATUS_BEFORE="$(
     "${SCRIPT_DIR}/database-host-readiness.sh" current \
         "${WORKLOAD_PROJECT_ID}" \
-        "${DATABASE_ZONE}"
+        "${DATABASE_ZONE}" \
+        "${DATABASE_SERVICE}"
 )"; then
     printf 'Database host readiness could not be inspected before restart.\n' >&2
     exit 70
@@ -125,7 +100,7 @@ fi
 if ! gcloud compute instance-groups managed all-instances-config update "${DATABASE_GROUP}" \
     --project="${WORKLOAD_PROJECT_ID}" \
     --zone="${DATABASE_ZONE}" \
-    --metadata="agora-database-release-revision=${RELEASE_REVISION},agora-json-keys-database-image=${JSON_KEYS_IMAGE},agora-authentication-database-image=${AUTHENTICATION_IMAGE},agora-json-keys-postgres-password-version=${JSON_KEYS_PASSWORD_VERSION},agora-authentication-postgres-password-version=${AUTHENTICATION_PASSWORD_VERSION},agora-json-keys-postgres-backup-password-version=${JSON_KEYS_BACKUP_PASSWORD_VERSION},agora-authentication-postgres-backup-password-version=${AUTHENTICATION_BACKUP_PASSWORD_VERSION}" \
+    --metadata="agora-database-release-revision=${RELEASE_REVISION},agora-${DATABASE_SERVICE}-database-image=${DATABASE_IMAGE},agora-${DATABASE_SERVICE}-postgres-password-version=${PASSWORD_VERSION},agora-${DATABASE_SERVICE}-postgres-backup-password-version=${BACKUP_PASSWORD_VERSION}" \
     --quiet >/dev/null 2>&1; then
     printf 'Database release metadata could not be updated.\n' >&2
     exit 70
@@ -157,6 +132,7 @@ fi
 if ! "${SCRIPT_DIR}/database-host-readiness.sh" wait \
     "${WORKLOAD_PROJECT_ID}" \
     "${DATABASE_ZONE}" \
+    "${DATABASE_SERVICE}" \
     "${RELEASE_REVISION}" \
     "${DATABASE_STATUS_BEFORE}"; then
     printf 'The database host did not report a healthy release after restart.\n' >&2

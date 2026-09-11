@@ -120,6 +120,14 @@ for (const [component, selected, other] of [
       f.first.activeTfvars.application_release[selected].revision,
     );
     assert.deepEqual(result.release.previousManifest, f.receipt.imageManifest);
+    assert.deepEqual(
+      result.release.database.hosts[other],
+      f.receipt.database.hosts[other],
+    );
+    assert.notEqual(
+      result.release.database.hosts[selected].releaseRevision,
+      f.receipt.database.hosts[selected].releaseRevision,
+    );
   });
 
   test(`${component} publication can reuse an unchanged database digest under its new version`, async (t) => {
@@ -180,6 +188,219 @@ test("legacy receipt migration requires a manifest matching all eight active dig
   });
   assert.deepEqual(result.release.services, ["json_keys"]);
 });
+
+test("shared-host retirement rebuilds on new disks without restoring the old addresses", async (t) => {
+  const f = await fixture(t);
+  delete f.receipt.database.hosts;
+  delete f.receipt.activeTfvars.database_hosts;
+  f.receipt.activeTfvars.database_private_ip = "10.20.0.99";
+  await writeFile(f.next.previousReceiptPath, JSON.stringify(f.receipt));
+  const result = await compileRelease(f.next);
+  assert.equal(result.release.mode, "database-rebuild");
+  assert.equal(result.release.previousDatabase, null);
+  assert.equal(result.release.currentDatabase, null);
+  assert.ok(result.candidateTfvars.application_release);
+  assert.deepEqual(
+    result.rollbackTfvars.database_hosts,
+    result.activeTfvars.database_hosts,
+  );
+  assert.ok(!JSON.stringify(result.rollbackTfvars).includes("10.20.0.99"));
+  await f.change("service-json-keys");
+  await assert.rejects(
+    compileRelease(f.next),
+    /rebuild the legacy database topology separately/,
+  );
+});
+
+test("rebuild compensation idles only mutated new hosts without applying or publishing rollback", async (t) => {
+  for (const mutated of [[], ["json_keys"], ["authentication", "json_keys"]]) {
+    const f = await fixture(t);
+    delete f.receipt.database.hosts;
+    delete f.receipt.activeTfvars.database_hosts;
+    f.receipt.activeTfvars.database_private_ip = "10.20.0.99";
+    await writeFile(f.next.previousReceiptPath, JSON.stringify(f.receipt));
+    const compiled = await compileRelease(f.next);
+    const driver = path.join(f.directory, "google-release-driver.sh");
+    await copyFile(path.join(root, "ops/google-release-driver.sh"), driver);
+    const log = path.join(f.directory, "restore-calls.jsonl");
+    await writeFile(log, "");
+    await writeFile(
+      path.join(f.directory, "restore-database-release.sh"),
+      `#!${process.execPath}
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+if (JSON.parse(fs.readFileSync(args[4])) !== null) process.exit(99);
+fs.appendFileSync(process.env.CALL_LOG, JSON.stringify(args.slice(0, 4)) + '\\n');
+`,
+      { mode: 0o700 },
+    );
+    // Any attempt to return traffic to old hosts or publish a success fails.
+    for (const helper of [
+      "gcloud",
+      "create-reviewed-plan.sh",
+      "apply-reviewed-plan.sh",
+      "config-custody.sh",
+      "receipt-custody.sh",
+      "build-receipt.mjs",
+    ]) {
+      await writeFile(path.join(f.directory, helper), "#!/bin/sh\nexit 99\n", {
+        mode: 0o700,
+      });
+    }
+    for (const service of mutated) {
+      await writeFile(
+        path.join(f.next.outputDirectory, "database-mutated-" + service),
+        "",
+      );
+    }
+    const result = spawnSync("bash", [driver, "rollback"], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${f.directory}:${process.env.PATH}`,
+        CALL_LOG: log,
+        RELEASE_DIRECTORY: f.next.outputDirectory,
+        STATE_BUCKET: "fixture-state",
+        RECEIPT_BUCKET: "fixture-receipts",
+        GITHUB_SHA: f.next.commit,
+        GITHUB_RUN_ID: f.next.runId,
+        GITHUB_RUN_ATTEMPT: "1",
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const calls = (await readFile(log, "utf8"))
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+    assert.deepEqual(
+      calls,
+      compiled.release.services
+        .filter((service) => mutated.includes(service))
+        .map((service) => [
+          "agora-production-test",
+          "europe-west1-c",
+          service.replaceAll("_", "-"),
+          compiled.release.cloud.databaseHosts[service].data_disk_id,
+        ]),
+    );
+    assert.ok(
+      !(await readdir(f.next.outputDirectory)).includes(
+        "rollback-receipt.json",
+      ),
+    );
+  }
+});
+
+test("established host coordinates cannot change through a routine deployment", async (t) => {
+  for (const field of ["private_ip", "data_disk_id"]) {
+    const f = await fixture(t);
+    const config = JSON.parse(await readFile(configPath, "utf8"));
+    config.database_hosts.authentication[field] =
+      field === "private_ip" ? "10.20.0.99" : "9999";
+    f.next.configPath = path.join(f.directory, "moved.json");
+    await writeFile(f.next.configPath, JSON.stringify(config));
+    await assert.rejects(compileRelease(f.next), /database|recovery/i);
+    assert.ok(!(await readdir(f.directory)).includes("next"));
+  }
+});
+
+test("database host inputs reject missing, shared, or public coordinates", async (t) => {
+  for (const invalid of ["missing", "ip", "disk", "public"]) {
+    const f = await fixture(t);
+    const config = JSON.parse(await readFile(configPath, "utf8"));
+    if (invalid === "missing") delete config.database_hosts.authentication;
+    if (invalid === "ip")
+      config.database_hosts.authentication.private_ip =
+        config.database_hosts.json_keys.private_ip;
+    if (invalid === "disk")
+      config.database_hosts.authentication.data_disk_id =
+        config.database_hosts.json_keys.data_disk_id;
+    if (invalid === "public")
+      config.database_hosts.authentication.private_ip = "8.8.8.8";
+    f.next.configPath = path.join(f.directory, "invalid.json");
+    await writeFile(f.next.configPath, JSON.stringify(config));
+    await assert.rejects(compileRelease(f.next));
+    assert.ok(!(await readdir(f.directory)).includes("next"));
+  }
+});
+
+for (const service of ["json_keys", "authentication"]) {
+  test(
+    service +
+      " release verifies only its own backup and restore, then the monitor",
+    async (t) => {
+      const f = await fixture(t);
+      await f.change("service-" + service.replaceAll("_", "-"));
+      await compileRelease(f.next);
+      const log = path.join(f.directory, "jobs.log");
+      await writeFile(
+        path.join(f.next.outputDirectory, "operations.json"),
+        JSON.stringify(f.receipt.operations),
+      );
+      await writeFile(
+        path.join(f.directory, "gcloud"),
+        "#!" +
+          process.execPath +
+          "\n" +
+          [
+            "const fs = require('node:fs');",
+            "const args = process.argv.slice(2);",
+            "if (args.slice(0, 3).join(' ') !== 'run jobs execute' || !args.includes('--project=agora-production-test') || !args.includes('--region=europe-west1') || !args.includes('--wait')) process.exit(99);",
+            "fs.appendFileSync(process.env.CALL_LOG, args[3] + '\\n');",
+            "process.stdout.write(args[3] + '-test');",
+          ].join("\n"),
+        { mode: 0o700 },
+      );
+      const result = spawnSync(
+        "bash",
+        [
+          path.join(root, "ops/google-release-driver.sh"),
+          "recovery-verification",
+        ],
+        {
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            PATH: f.directory + ":" + process.env.PATH,
+            CALL_LOG: log,
+            RELEASE_DIRECTORY: f.next.outputDirectory,
+            STATE_BUCKET: "fixture-state",
+            RECEIPT_BUCKET: "fixture-receipts",
+            GITHUB_SHA: f.next.commit,
+            GITHUB_RUN_ID: f.next.runId,
+            GITHUB_RUN_ATTEMPT: "1",
+          },
+        },
+      );
+      assert.equal(result.status, 0, result.stderr);
+      const slug = service.replaceAll("_", "-");
+      assert.deepEqual((await readFile(log, "utf8")).trim().split("\n"), [
+        "agora-postgres-backup-" + slug,
+        "agora-postgres-restore-" + slug,
+        "agora-postgres-backup-monitor",
+      ]);
+      const operations = JSON.parse(
+        await readFile(
+          path.join(f.next.outputDirectory, "operations.json"),
+          "utf8",
+        ),
+      );
+      const selected = service === "json_keys" ? "JsonKeys" : "Authentication";
+      const other = service === "json_keys" ? "Authentication" : "JsonKeys";
+      assert.equal(
+        operations.executions["postgresBackup" + selected],
+        "agora-postgres-backup-" + slug + "-test",
+      );
+      assert.equal(
+        operations.executions["postgresRestore" + selected],
+        "agora-postgres-restore-" + slug + "-test",
+      );
+      assert.equal(operations.executions["postgresBackup" + other], null);
+      assert.equal(operations.executions["postgresRestore" + other], null);
+    },
+  );
+}
 
 test("configuration-only maintenance remains a full-state operation", async (t) => {
   const f = await fixture(t);
@@ -248,6 +469,12 @@ if (args.slice(0, 3).join(' ') === 'run services describe') {
 } else if (args.slice(0, 3).join(' ') !== 'run services update-traffic') process.exit(99);
 `,
         { mode: 0o700 },
+      );
+      const selectedKey =
+        component === "service-json-keys" ? "json_keys" : "authentication";
+      await writeFile(
+        path.join(f.next.outputDirectory, "database-mutated-" + selectedKey),
+        "",
       );
       const result = spawnSync("bash", [driver, "rollback"], {
         encoding: "utf8",

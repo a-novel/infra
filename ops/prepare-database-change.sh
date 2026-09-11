@@ -1,29 +1,33 @@
 #!/bin/bash
 
-# Fails closed unless the scheduled disk snapshot is fresh and both current
-# databases have just published a validated logical backup. The initial empty
+# Fails closed unless the selected disk snapshot is fresh and its database
+# has just published a validated logical backup. The initial empty
 # host has no database contents to dump, so only its snapshot gate applies.
-# Usage: prepare-database-change.sh <project> <zone> <change-revision> [proof-file] [expected-current-metadata-sha256]
+# Usage: prepare-database-change.sh <project> <zone> <service> <data-disk-id> <change-revision> [proof-file] [expected-current-metadata-sha256]
 
 set -euo pipefail
 
-if [ "$#" -lt 3 ] || [ "$#" -gt 5 ]; then
-    printf 'Usage: %s <project> <zone> <change-revision> [proof-file] [expected-current-metadata-sha256]\n' "$0" >&2
+if [ "$#" -lt 5 ] || [ "$#" -gt 7 ]; then
+    printf 'Usage: %s <project> <zone> <service> <data-disk-id> <change-revision> [proof-file] [expected-current-metadata-sha256]\n' "$0" >&2
     exit 64
 fi
 
 WORKLOAD_PROJECT_ID="$1"
 DATABASE_ZONE="$2"
-CHANGE_REVISION="$3"
-PROOF_FILE="${4:-}"
-EXPECTED_CURRENT_METADATA_SHA256="${5:-}"
-DATABASE_GROUP="agora-database"
-DATABASE_DISK="agora-data"
+DATABASE_SERVICE="$3"
+DATA_DISK_ID="$4"
+CHANGE_REVISION="$5"
+PROOF_FILE="${6:-}"
+EXPECTED_CURRENT_METADATA_SHA256="${7:-}"
+DATABASE_GROUP="agora-database-${DATABASE_SERVICE}"
+DATABASE_DISK="agora-data-${DATABASE_SERVICE}"
 DATABASE_REGION="${DATABASE_ZONE%-*}"
 
 if ! [[ "${WORKLOAD_PROJECT_ID}" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]] ||
     ! [[ "${DATABASE_ZONE}" =~ ^[a-z]+-[a-z]+[0-9]+-[a-z]$ ]] ||
     ! [[ "${CHANGE_REVISION}" =~ ^[a-f0-9]{40}$ ]] ||
+    ! [[ "${DATA_DISK_ID}" =~ ^[1-9][0-9]*$ ]] ||
+    { [ "${DATABASE_SERVICE}" != authentication ] && [ "${DATABASE_SERVICE}" != json-keys ]; } ||
     { [ -n "${EXPECTED_CURRENT_METADATA_SHA256}" ] &&
         ! [[ "${EXPECTED_CURRENT_METADATA_SHA256}" =~ ^[a-f0-9]{64}$ ]]; }; then
     printf 'Invalid database change gate input.\n' >&2
@@ -48,15 +52,18 @@ fi
 # The exact map shape is the shared boundary between foundation and release.
 # Hash the complete prior map without printing it; images and secret-version
 # IDs never enter a public workflow log.
-EXPECTED_METADATA_KEYS='[
-  "agora-authentication-database-image",
-  "agora-authentication-postgres-backup-password-version",
-  "agora-authentication-postgres-password-version",
-  "agora-database-release-revision",
-  "agora-json-keys-database-image",
-  "agora-json-keys-postgres-backup-password-version",
-  "agora-json-keys-postgres-password-version"
-]'
+EXPECTED_METADATA_KEYS="$(jq -nc --arg service "${DATABASE_SERVICE}" '[
+  "agora-\($service)-database-image",
+  "agora-\($service)-postgres-backup-password-version",
+  "agora-\($service)-postgres-password-version",
+  "agora-database-release-revision"
+] | sort')"
+
+CURRENT_DATA_DISK_ID="$(gcloud compute disks describe "${DATABASE_DISK}" --project="${WORKLOAD_PROJECT_ID}" --zone="${DATABASE_ZONE}" --format='value(id)')"
+if [ "${CURRENT_DATA_DISK_ID}" != "${DATA_DISK_ID}" ]; then
+    printf 'The selected database disk differs from the protected release configuration.\n' >&2
+    exit 70
+fi
 
 if ! DATABASE_GROUP_JSON="$(
     gcloud compute instance-groups managed describe "${DATABASE_GROUP}" \
@@ -89,7 +96,7 @@ if ! CURRENT_METADATA="$(
             end
         ' <<<"${DATABASE_GROUP_JSON}"
 )"; then
-    printf 'Database release metadata shape differs from the reviewed seven-key contract.\n' >&2
+    printf 'Database release metadata shape differs from the reviewed four-key contract.\n' >&2
     exit 70
 fi
 unset DATABASE_GROUP_JSON EXPECTED_METADATA_KEYS
@@ -118,18 +125,22 @@ fi
 if ! SNAPSHOT_CREATED="$(
     gcloud compute snapshots list \
         --project="${WORKLOAD_PROJECT_ID}" \
-        --filter='labels.application=agora AND labels.environment=production AND labels.role=database-snapshot' \
+        --filter="labels.application=agora AND labels.environment=production AND labels.role=database-snapshot AND labels.component=${DATABASE_SERVICE}" \
         --sort-by='~creationTimestamp' \
         --limit=1 \
-        --format='json(name,autoCreated,sourceDisk,status,creationTimestamp,storageLocations,labels)' \
+        --format='json(name,autoCreated,sourceDisk,sourceDiskId,status,creationTimestamp,storageLocations,labels)' \
         2>/dev/null \
         | jq --exit-status --raw-output \
-            --arg source_suffix "/zones/${DATABASE_ZONE}/disks/${DATABASE_DISK}" \
+            --arg source_suffix "/projects/${WORKLOAD_PROJECT_ID}/zones/${DATABASE_ZONE}/disks/${DATABASE_DISK}" \
+            --arg disk_id "${DATA_DISK_ID}" \
+            --arg service "${DATABASE_SERVICE}" \
             --arg storage_location "${DATABASE_REGION}" '
                 if length == 1
                    and .[0].autoCreated == true
                    and .[0].status == "READY"
                    and (.[0].sourceDisk | endswith($source_suffix))
+                   and (.[0].sourceDiskId | tostring) == $disk_id
+                   and .[0].labels.component == $service
                    and .[0].labels.application == "agora"
                    and .[0].labels.environment == "production"
                    and .[0].labels["managed-by"] == "opentofu"
@@ -161,10 +172,12 @@ if [ -z "${CURRENT_RELEASE_REVISION}" ]; then
         jq -n \
             --arg project "${WORKLOAD_PROJECT_ID}" \
             --arg zone "${DATABASE_ZONE}" \
+            --arg service "${DATABASE_SERVICE}" \
+            --arg disk_id "${DATA_DISK_ID}" \
             --arg revision "${CHANGE_REVISION}" \
             --arg current_metadata_sha256 "${CURRENT_METADATA_SHA256}" \
             --argjson checked_at "$(date -u +%s)" \
-            '{project: $project, zone: $zone, revision: $revision, currentMetadataSha256: $current_metadata_sha256, checkedAt: $checked_at}' \
+            '{project: $project, zone: $zone, service: $service, dataDiskId: $disk_id, revision: $revision, currentMetadataSha256: $current_metadata_sha256, checkedAt: $checked_at}' \
             >"${PROOF_FILE}"
         chmod 600 "${PROOF_FILE}"
     fi
@@ -172,27 +185,27 @@ if [ -z "${CURRENT_RELEASE_REVISION}" ]; then
     exit 0
 fi
 
-for job in agora-postgres-backup-json-keys agora-postgres-backup-authentication; do
-    if ! gcloud run jobs execute "${job}" \
-        --project="${WORKLOAD_PROJECT_ID}" \
-        --region="${DATABASE_REGION}" \
-        --wait \
-        --quiet \
-        --format=none \
-        >/dev/null 2>&1; then
-        printf 'A required pre-change PostgreSQL backup failed.\n' >&2
-        exit 70
-    fi
-done
+if ! gcloud run jobs execute "agora-postgres-backup-${DATABASE_SERVICE}" \
+    --project="${WORKLOAD_PROJECT_ID}" \
+    --region="${DATABASE_REGION}" \
+    --wait \
+    --quiet \
+    --format=none \
+    >/dev/null 2>&1; then
+    printf 'A required pre-change PostgreSQL backup failed.\n' >&2
+    exit 70
+fi
 
 if [ -n "${PROOF_FILE}" ]; then
     jq -n \
         --arg project "${WORKLOAD_PROJECT_ID}" \
         --arg zone "${DATABASE_ZONE}" \
+        --arg service "${DATABASE_SERVICE}" \
+        --arg disk_id "${DATA_DISK_ID}" \
         --arg revision "${CHANGE_REVISION}" \
         --arg current_metadata_sha256 "${CURRENT_METADATA_SHA256}" \
         --argjson checked_at "$(date -u +%s)" \
-        '{project: $project, zone: $zone, revision: $revision, currentMetadataSha256: $current_metadata_sha256, checkedAt: $checked_at}' \
+        '{project: $project, zone: $zone, service: $service, dataDiskId: $disk_id, revision: $revision, currentMetadataSha256: $current_metadata_sha256, checkedAt: $checked_at}' \
         >"${PROOF_FILE}"
     chmod 600 "${PROOF_FILE}"
 fi

@@ -39,16 +39,40 @@ variable "backup_bucket_name" {
   }
 }
 
-variable "database_private_ip" {
-  description = "Preserved private address of the stateful PostgreSQL host."
-  type        = string
+variable "database_hosts" {
+  description = "Foundation-owned private addresses and immutable data-disk IDs, keyed by service."
+  type = map(object({
+    private_ip   = string
+    data_disk_id = string
+  }))
+  default = null
 
   validation {
-    condition = (
+    condition = var.database_hosts == null ? true : (
+      toset(keys(var.database_hosts)) == toset(["authentication", "json_keys"]) &&
+      length(distinct([for host in values(var.database_hosts) : host.private_ip])) == 2 &&
+      length(distinct([for host in values(var.database_hosts) : host.data_disk_id])) == 2 &&
+      alltrue([for host in values(var.database_hosts) :
+        can(cidrhost("${host.private_ip}/32", 0)) &&
+        can(regex("^(10\\.|192\\.168\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.)", host.private_ip)) &&
+        can(regex("^[1-9][0-9]*$", host.data_disk_id))
+      ])
+    )
+    error_message = "Each service requires a distinct private IPv4 host and its numeric data-disk ID."
+  }
+}
+
+variable "database_private_ip" {
+  description = "Legacy shared-host address, accepted only to assess the last converged pre-split inputs. New release compilation requires database_hosts."
+  type        = string
+  default     = null
+
+  validation {
+    condition = var.database_private_ip == null ? true : (
       can(cidrhost("${var.database_private_ip}/32", 0)) &&
       can(regex("^(10\\.|192\\.168\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.)", var.database_private_ip))
     )
-    error_message = "The database host must be a valid private IPv4 address."
+    error_message = "The legacy database address must be private IPv4."
   }
 }
 
@@ -278,18 +302,17 @@ variable "recovery_source_project_id" {
   }
 }
 
-variable "recovery_source_database_ip" {
-  description = "Original private database address recorded by the selected receipt; required only to validate recovery manifests."
-  type        = string
-  default     = null
-  nullable    = true
+variable "recovery_source_database_ips" {
+  description = "Receipt-owned source database addresses used to validate recovery manifests."
+  type        = map(string)
+  default     = {}
 
   validation {
-    condition = var.recovery_source_database_ip == null || (
-      can(cidrhost("${var.recovery_source_database_ip}/32", 0)) &&
-      can(regex("^(10\\.|192\\.168\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.)", var.recovery_source_database_ip))
-    )
-    error_message = "The recovery source database host must be null or a valid private IPv4 address."
+    condition = alltrue([for address in values(var.recovery_source_database_ips) :
+      can(cidrhost("${address}/32", 0)) &&
+      can(regex("^(10\\.|192\\.168\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.)", address))
+    ])
+    error_message = "Every recovery source address must be a valid private IPv4 address."
   }
 }
 

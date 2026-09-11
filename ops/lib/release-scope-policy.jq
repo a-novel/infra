@@ -18,16 +18,12 @@ def owned($service):
     "google_tags_location_tag_binding.json_keys_smoke[0]"
   ] else [] end);
 
-# Both databases share a VM. Pause/resume all backup schedules during its
-# rollout, without allowing changes to their targets, frequency or identity.
-def recovery_schedule_toggle($phase):
+# Pause only the selected service\'s backup schedules without changing their contract.
+def recovery_schedule_toggle($phase; $service):
   .address as $address |
   ([
-    "google_cloud_scheduler_job.postgres_backup[\"authentication\"]",
-    "google_cloud_scheduler_job.postgres_backup[\"json_keys\"]",
-    "google_cloud_scheduler_job.postgres_restore[\"authentication\"]",
-    "google_cloud_scheduler_job.postgres_restore[\"json_keys\"]",
-    "google_cloud_scheduler_job.postgres_backup_monitor[0]"
+    "google_cloud_scheduler_job.postgres_backup[\"\($service)\"]",
+    "google_cloud_scheduler_job.postgres_restore[\"\($service)\"]"
   ] | index($address)) != null and
   (.change |
     .actions == ["update"] and .importing == null and
@@ -48,7 +44,7 @@ elif $services == ["json_keys"] or $services == ["authentication"] then
       .mode == "managed" and .previous_address == null and (
         (.change.actions == ["no-op"] and .change.importing == null) or
         (.address as $address | ($owned | index($address)) != null) or
-        recovery_schedule_toggle($phase)
+        recovery_schedule_toggle($phase; $services[0])
       )
     ))
 else false end

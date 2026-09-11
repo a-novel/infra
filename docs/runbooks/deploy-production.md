@@ -64,11 +64,11 @@ selects the changed family by comparing the manifest with the last successful re
    disk snapshot, and fresh logical backups for both databases;
 4. copy the exact digests into regional Artifact Registry and verify the destination digests;
 5. check effective candidate, activation and compensation plans for changes outside the selected
-   family, then restart the shared PostgreSQL host only if its image or secret-version contract changed;
-6. pause the shared backup schedules and create the selected service's candidate at zero traffic;
+   family, then restart only that service's PostgreSQL host if its image or secret-version contract changed;
+6. pause that service's backup and restore schedules and create its candidate at zero traffic;
 7. execute that service's migrations; JSON Keys releases also pause scheduled rotation and run
    rotation once after migration;
-8. execute both logical backups, restore both into clean disposable clusters, and run the backup
+8. execute the selected database's logical backup, restore it into a clean disposable cluster, and run the backup
    monitor;
 9. verify the selected candidate, then move that service to 100%: JSON Keys must pass its application
    health RPC from the private smoke job against the exact tagged revision;
@@ -85,8 +85,9 @@ If the plan reports changes outside the selected service, deploy the pending con
 last successful image manifest first, then restore the intended one-family image update. Do not bypass
 the scope check. It also runs when applying saved plans and during activation and compensation.
 
-The databases still share one VM. Restarting it interrupts both database connections, and migrations
-may block concurrent queries according to their PostgreSQL locks. Backward-compatible, staged
+Each database has its own VM. Restarting one interrupts that database's connections; its consumers
+can still be affected, including Authentication while its JSON Keys dependency is unavailable.
+Migrations may block concurrent queries according to their PostgreSQL locks. Backward-compatible, staged
 migrations remain a service responsibility; this workflow does not promise zero downtime or an atomic
 cross-service traffic switch.
 
@@ -95,6 +96,10 @@ It restores the selected API's prior traffic, images and secret-version referenc
 is restored with a host restart only if the database contract changed.
 Migrations and row data are intentionally not reversed because migrations must remain backward
 compatible. Data restore belongs to the backup or disaster-recovery runbook.
+
+The one-time [pre-launch shared-host rebuild](../setup-production.md#rebuild-an-existing-shared-host-before-frontend-launch)
+is an exception: the deleted database is not a compensation target. On failure, only mutated new
+hosts are returned to idle, their disks are retained, and no successful rollback receipt is recorded.
 
 The Authentication initializer is never managed by the release root. Only configured human `user:`
 or `group:` principals receive its tag, dedicated service identity, narrow deployer role, registry
@@ -202,18 +207,10 @@ unsetopt err_exit nounset xtrace
 [[ "$BACKUP_BUCKET_NAME" == "${MANAGEMENT_PROJECT_ID}-"*'-backups' ]]
 [[ "$RECEIPT_BUCKET_NAME" == "${MANAGEMENT_PROJECT_ID}-"*'-deployment-receipts' ]]
 
-DATABASE_ZONE="$(gcloud compute instance-groups managed list --project="$INFRA_WORKLOAD_PROJECT_ID" --filter='name=agora-database' --format='value(zone.basename())')"
-[[ "$DATABASE_ZONE" =~ ^[a-z]+-[a-z]+[0-9]+-[a-z]$ ]]
+DATABASE_COORDINATES="$(./ops/database-host.sh coordinates)"
+DATABASE_ZONE="$(jq -er '.zone' <<<"$DATABASE_COORDINATES")"
+DATABASE_HOSTS_JSON="$(jq -ec '.hosts' <<<"$DATABASE_COORDINATES")"
 REGION="${DATABASE_ZONE%-*}"
-
-DATABASE_INSTANCE_NAME="$(gcloud compute instance-groups managed list-instances agora-database \
-  --project="$INFRA_WORKLOAD_PROJECT_ID" --zone="$DATABASE_ZONE" \
-  --format='value(instance.basename())' --limit=1)"
-[[ "$DATABASE_INSTANCE_NAME" == agora-database-* ]]
-DATABASE_PRIVATE_IP="$(gcloud compute instances describe "$DATABASE_INSTANCE_NAME" \
-  --project="$INFRA_WORKLOAD_PROJECT_ID" --zone="$DATABASE_ZONE" \
-  --format='value(networkInterfaces[0].networkIP)')"
-[[ "$DATABASE_PRIVATE_IP" =~ ^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.) ]]
 
 NETWORK_ID="projects/${WORKLOAD_PROJECT_ID}/global/networks/agora-production"
 SUBNET_ID="projects/${WORKLOAD_PROJECT_ID}/regions/${REGION}/subnetworks/agora-production-${REGION}"
@@ -247,7 +244,7 @@ done
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Expected safe result: one `agora-database-*` member with an RFC 1918 address, one custom-mode
+Expected safe result: one member per database, each with a different private address and data-disk ID, one custom-mode
 network, one `10.20.0.0/24` subnet with Private Google Access, and one permanent ID for each of the
 five invocation classes. Do not print instance metadata or OpenTofu outputs; either can include
 release configuration.
@@ -340,7 +337,7 @@ replace that assignment when the application administrator is another address.
 Load `PLATFORM_AUTH_URL` from the reviewed `.envrc`. It is the web client's HTTPS origin, not the
 Authentication API or SMTP host. Authentication appends `/ext/account/create`, `/ext/password/reset`,
 and `/ext/email/validate`. When upgrading an existing environment, repeat this configuration step
-with the already-selected secret versions; no password upload or initialization is needed. Updating
+with the already-selected secret versions; no password upload is needed. Rebuilding the Authentication data disk requires fresh human initialization. Updating
 `.envrc` alone does not update the protected `RELEASE_CONFIG_JSON`.
 
 ```sh
@@ -363,7 +360,7 @@ RELEASE_CONFIG_FILE="$(mktemp)"
 jq -n \
   --arg management "$MANAGEMENT_PROJECT_ID" --arg workload "$WORKLOAD_PROJECT_ID" \
   --arg region "$REGION" --arg zone "$DATABASE_ZONE" \
-  --arg backup "$BACKUP_BUCKET_NAME" --arg database_ip "$DATABASE_PRIVATE_IP" \
+  --arg backup "$BACKUP_BUCKET_NAME" --argjson database_hosts "$DATABASE_HOSTS_JSON" \
   --arg network "$NETWORK_ID" --arg subnet "$SUBNET_ID" \
   --arg invocation_key "$INVOCATION_TAG_KEY" \
   --arg initializer_tag "$INITIALIZER_TAG_VALUE" --arg internal_tag "$INTERNAL_TAG_VALUE" \
@@ -383,7 +380,7 @@ jq -n \
   '{
     management_project_id: $management, workload_project_id: $workload,
     region: $region, database_zone: $zone, backup_bucket_name: $backup,
-    database_private_ip: $database_ip, network_id: $network, subnet_id: $subnet,
+    database_hosts: $database_hosts, network_id: $network, subnet_id: $subnet,
     cloud_run_invocation_tags: {
       key: $invocation_key,
       values: {

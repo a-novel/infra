@@ -42,6 +42,14 @@ locals {
     }
   }
 
+  # Keep read-only assessment of the pre-split custody record possible before
+  # the new foundation addresses exist. Deployment compilation never emits the
+  # legacy input; new receipts always carry the two disk-bound host records.
+  database_private_ips = {
+    for service in keys(local.database_contracts) : service =>
+    var.database_hosts == null ? var.database_private_ip : var.database_hosts[service].private_ip
+  }
+
   enabled_database_contracts = {
     for key, release in var.database_releases : key => merge(
       local.database_contracts[key],
@@ -50,16 +58,23 @@ locals {
   }
 }
 
+check "database_host_contract" {
+  assert {
+    condition     = (var.database_hosts == null) != (var.database_private_ip == null)
+    error_message = "Provide either the isolated database hosts or the historical shared address, never both or neither."
+  }
+}
+
 check "recovery_is_disposable" {
   assert {
     condition = var.recovery_mode ? (
       var.recovery_source_project_id != null &&
-      var.recovery_source_database_ip != null &&
+      toset(keys(var.recovery_source_database_ips)) == toset(["authentication", "json_keys"]) &&
       var.recovery_source_project_id != var.workload_project_id &&
       length(var.database_releases) == 2
       ) : (
       var.recovery_source_project_id == null &&
-      var.recovery_source_database_ip == null &&
+      length(var.recovery_source_database_ips) == 0 &&
       length(var.recovery_database_images) == 0 &&
       length(var.recovery_backup_attempts) == 0 &&
       length(var.recovery_database_password_versions) == 0

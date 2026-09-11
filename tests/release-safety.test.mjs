@@ -101,12 +101,11 @@ test("effective plans reject unselected API templates, jobs, new resources and i
   }
 });
 
-test("selected resource changes and exact shared schedule toggles are allowed, not configuration changes", async (t) => {
+test("selected resource changes and selected schedule toggles are allowed, not configuration changes", async (t) => {
   const dir = await scratch(t);
-  const schedule =
-    'google_cloud_scheduler_job.postgres_backup["authentication"]';
+  const schedule = 'google_cloud_scheduler_job.postgres_backup["json_keys"]';
   const before = {
-    name: "agora-postgres-backup-authentication",
+    name: "agora-postgres-backup-json-keys",
     project: "fixture",
     region: "europe-west1",
     paused: false,

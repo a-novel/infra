@@ -7,10 +7,11 @@ set -euo pipefail
 usage() {
     cat >&2 <<EOF
 Usage:
-  $0 inspect
+  $0 coordinates
+  $0 inspect <authentication|json-keys>
   $0 key [--key-file <path>]
-  $0 ssh [--key-file <path>] [--ttl <duration>]
-  $0 troubleshoot [--key-file <path>] [--ttl <duration>]
+  $0 ssh <authentication|json-keys> [--key-file <path>] [--ttl <duration>]
+  $0 troubleshoot <authentication|json-keys> [--key-file <path>] [--ttl <duration>]
 EOF
     exit 64
 }
@@ -37,10 +38,14 @@ fi
 shift
 
 case "$COMMAND" in
-    inspect)
-        [ "$#" -eq 0 ] || usage
+    inspect | ssh | troubleshoot)
+        DATABASE_SERVICE="${1:-}"
+        case "$DATABASE_SERVICE" in authentication | json-keys) ;; *) usage ;; esac
+        shift
+        if [ "$COMMAND" = inspect ]; then [ "$#" -eq 0 ] || usage; fi
         ;;
-    key | ssh | troubleshoot) ;;
+    coordinates) [ "$#" -eq 0 ] || usage ;;
+    key) ;;
     *) usage ;;
 esac
 
@@ -79,9 +84,9 @@ fi
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 WORKLOAD_PROJECT_ID=''
-DATABASE_GROUP='agora-database'
-DATABASE_DISK='agora-data'
-DATABASE_SNAPSHOT_POLICY='agora-database-daily-snapshots'
+DATABASE_GROUP="agora-database-${DATABASE_SERVICE:-}"
+DATABASE_DISK="agora-data-${DATABASE_SERVICE:-}"
+DATABASE_SNAPSHOT_POLICY="agora-${DATABASE_SERVICE:-}-daily-snapshots"
 DATABASE_ZONE=''
 DATABASE_REGION=''
 DATABASE_INSTANCE=''
@@ -109,7 +114,7 @@ load_host() {
         --project="$WORKLOAD_PROJECT_ID" \
         --zone="$DATABASE_ZONE" \
         --format='value(instance.basename())')"
-    if ! [[ "$DATABASE_INSTANCE" =~ ^agora-database-[a-z0-9-]+$ ]]; then
+    if ! [[ "$DATABASE_INSTANCE" =~ ^${DATABASE_GROUP}-[a-z0-9]+$ ]]; then
         fail 'expected exactly one generated database instance'
     fi
 
@@ -168,12 +173,12 @@ inspect_host() {
         --project="$WORKLOAD_PROJECT_ID" --region="$DATABASE_REGION" \
         --format='yaml(name,region,snapshotSchedulePolicy)'
     gcloud compute snapshots list --project="$WORKLOAD_PROJECT_ID" \
-        --filter='labels.application=agora AND labels.environment=production AND labels.role=database-snapshot' \
+        --filter="labels.application=agora AND labels.environment=production AND labels.role=database-snapshot AND labels.component=${DATABASE_SERVICE}" \
         --sort-by='~creationTimestamp' --limit=1 \
         --format='table(name,autoCreated,status,creationTimestamp,sourceDisk.basename(),storageLocations,labels.role)'
 
     for rule in \
-        agora-allow-postgres-ingress \
+        agora-allow-${DATABASE_SERVICE}-postgres-ingress \
         agora-allow-json-keys-postgres-egress \
         agora-allow-authentication-postgres-egress \
         agora-allow-iap-ssh \
@@ -210,7 +215,26 @@ open_ssh() {
         "${extra_arguments[@]}"
 }
 
+coordinates() {
+    local hosts='{}' zone='' disk_id=''
+    load_cloud_context
+    require_command jq
+    for DATABASE_SERVICE in authentication json-keys; do
+        DATABASE_GROUP="agora-database-${DATABASE_SERVICE}"
+        load_host
+        if [ -n "$zone" ] && [ "$zone" != "$DATABASE_ZONE" ]; then
+            fail 'database hosts must use the same configured zone'
+        fi
+        zone="$DATABASE_ZONE"
+        disk_id="$(gcloud compute disks describe "agora-data-${DATABASE_SERVICE}" --project="$WORKLOAD_PROJECT_ID" --zone="$DATABASE_ZONE" --format='value(id)')"
+        [[ "$disk_id" =~ ^[1-9][0-9]*$ ]] || fail 'invalid database disk ID'
+        hosts="$(jq -c --arg service "${DATABASE_SERVICE//-/_}" --arg ip "$DATABASE_PRIVATE_IP" --arg disk "$disk_id" '. + {($service): {private_ip: $ip, data_disk_id: $disk}}' <<<"$hosts")"
+    done
+    jq -cn --arg zone "$zone" --argjson hosts "$hosts" '{zone: $zone, hosts: $hosts}'
+}
+
 case "$COMMAND" in
+    coordinates) coordinates ;;
     inspect) inspect_host ;;
     key) ensure_key ;;
     ssh | troubleshoot) open_ssh ;;

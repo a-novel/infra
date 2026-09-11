@@ -19,8 +19,14 @@ Google organization also needs OS Login External User from its own administrator
 
 ## Inspect the host
 
+Choose the database in your local session: `authentication` or `json-keys`. For example:
+
 ```sh
-./ops/database-host.sh inspect
+export DATABASE_SERVICE=authentication
+```
+
+```sh
+./ops/database-host.sh inspect "${DATABASE_SERVICE:?}"
 ```
 
 The command prints the private VM, preserved disk, snapshot policy, firewall rules, and alerts. It
@@ -50,14 +56,14 @@ The SSH command checks the local key, discovers the current host, uploads the pu
 for one hour, and connects:
 
 ```sh
-./ops/database-host.sh ssh
+./ops/database-host.sh ssh "${DATABASE_SERVICE:?}"
 ```
 
 Use the same `--key-file` option when reusing another pair. Repeat the SSH command to renew the
 one-hour key registration. If login fails, collect the bounded Google diagnostic:
 
 ```sh
-./ops/database-host.sh troubleshoot
+./ops/database-host.sh troubleshoot "${DATABASE_SERVICE:?}"
 ```
 
 The optional network-connectivity portion may report that Network Management API is disabled. Do
@@ -69,7 +75,11 @@ unfiltered `docker inspect`, or request a metadata access token.
 
 ## Run safe host checks
 
-Paste each line separately in the remote COS Bash session.
+Paste each line separately in the remote COS Bash session. Derive the service locally on that VM; your workstation environment is not forwarded:
+
+```bash
+DATABASE_SERVICE="$(curl -q --fail --silent --show-error --max-time 10 -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/attributes/agora-database-service)"
+```
 
 An idle pre-release host has no database containers:
 
@@ -79,23 +89,21 @@ sudo findmnt --noheadings --output SOURCE,TARGET,FSTYPE,OPTIONS /mnt/disks/agora
 sudo df --output=source,size,used,avail,pcent,target /mnt/disks/agora-data
 ```
 
-An enabled release has two healthy containers and two bounded bridges:
+An enabled release has one healthy container and one bounded bridge on the selected VM:
 
 ```bash
 sudo docker ps --filter 'name=agora-postgres-' --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Image}}'
-sudo docker network inspect agora-database-json-keys --format '{{.Name}} internal={{.Internal}} subnet={{range .IPAM.Config}}{{.Subnet}}{{end}}'
-sudo docker network inspect agora-database-authentication --format '{{.Name}} internal={{.Internal}} subnet={{range .IPAM.Config}}{{.Subnet}}{{end}}'
+sudo docker network inspect "agora-database-${DATABASE_SERVICE:?}" --format '{{.Name}} internal={{.Internal}} subnet={{range .IPAM.Config}}{{.Subnet}}{{end}}'
 sudo iptables -S AGORA-DATABASE-EGRESS
 sudo iptables -S AGORA-DATABASE-HOST
-sudo docker inspect agora-postgres-json-keys --format '{{.Name}} running={{.State.Running}} health={{.State.Health.Status}} restart={{.HostConfig.RestartPolicy.Name}} memory={{.HostConfig.Memory}} swap={{.HostConfig.MemorySwap}}'
-sudo docker inspect agora-postgres-authentication --format '{{.Name}} running={{.State.Running}} health={{.State.Health.Status}} restart={{.HostConfig.RestartPolicy.Name}} memory={{.HostConfig.Memory}} swap={{.HostConfig.MemorySwap}}'
+sudo docker inspect "agora-postgres-${DATABASE_SERVICE:?}" --format '{{.Name}} running={{.State.Running}} health={{.State.Health.Status}} restart={{.HostConfig.RestartPolicy.Name}} memory={{.HostConfig.Memory}} swap={{.HostConfig.MemorySwap}}'
 ```
 
-Prove both containers cannot resolve external names or reach metadata:
+After confirming the selected container is running, prove it cannot resolve external names or reach metadata:
 
 ```bash
-for container in agora-postgres-json-keys agora-postgres-authentication; do if sudo docker exec "$container" getent hosts example.com >/dev/null 2>&1; then printf 'STOP: %s resolved an external name.\n' "$container" >&2; false; else printf 'PASS %s external DNS denied.\n' "$container"; fi; done
-for container in agora-postgres-json-keys agora-postgres-authentication; do if sudo docker exec "$container" timeout 3 bash -c '</dev/tcp/169.254.169.254/80' >/dev/null 2>&1; then printf 'STOP: %s reached metadata.\n' "$container" >&2; false; else printf 'PASS %s metadata denied.\n' "$container"; fi; done
+for container in "agora-postgres-${DATABASE_SERVICE:?}"; do if sudo docker exec "$container" getent hosts example.com >/dev/null 2>&1; then printf 'STOP: %s resolved an external name.\n' "$container" >&2; false; else printf 'PASS %s external DNS denied.\n' "$container"; fi; done
+for container in "agora-postgres-${DATABASE_SERVICE:?}"; do if sudo docker exec "$container" timeout 3 bash -c '</dev/tcp/169.254.169.254/80' >/dev/null 2>&1; then printf 'STOP: %s reached metadata.\n' "$container" >&2; false; else printf 'PASS %s metadata denied.\n' "$container"; fi; done
 ```
 
 Exit the host when inspection is complete.
@@ -125,7 +133,7 @@ Review the sanitized counts, then apply that exact plan:
 ./ops/run-workflow.sh foundation apply foundation "$FOUNDATION_PLAN_ID"
 ```
 
-Have the new operator run `./ops/database-host.sh ssh` successfully. Remove the old principal in a second pull request, then repeat the configure, plan, verification, and apply commands.
+Have the new operator run `./ops/database-host.sh ssh authentication` successfully. Remove the old principal in a second pull request, then repeat the configure, plan, verification, and apply commands.
 
 For a group principal, Workspace group membership is the user roster; the repository still reviews
 which group receives the role. Never remove the last verified operator in the same plan that grants

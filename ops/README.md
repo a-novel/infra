@@ -46,10 +46,10 @@ available without that repository check.
 ### Database host operations
 
 ```text
-./ops/database-host.sh inspect
+./ops/database-host.sh inspect authentication
 ./ops/database-host.sh key
-./ops/database-host.sh ssh
-./ops/database-host.sh troubleshoot
+./ops/database-host.sh ssh authentication
+./ops/database-host.sh troubleshoot authentication
 ```
 
 ### Protected workflow operations

@@ -21,22 +21,20 @@ organization policies, and temporary-access removal remain explicit human bootst
 
 The foundation root now defines the replaceable workload project, required APIs, a custom VPC and
 subnet, explicit restricted Google routes, firewall policy, private DNS, deprivileged default service
-accounts, seven keyless runtime identities, exact management-secret access, an immutable registry, a
+accounts, eight keyless runtime identities, exact management-secret access, an immutable registry, a
 two-project production budget with current/forecast thresholds, separate cost and operations email
-channels, bounded logging, a preserved balanced disk, and a one-member stateful managed instance
-group for PostgreSQL. Its pinned COS template, startup/shutdown scripts, stateful private address,
+channels, bounded logging, and one private stateful managed instance group with its own SSD-backed
+boot/data disks per PostgreSQL database. Its pinned COS template, startup/shutdown scripts, stateful private address,
 operator access, release-metadata role, and eight alert policies have mocked
-security tests but have not been applied. The same root defines separate create-only backup and
-read-only restore identities, a daily seven-day `europe-west1` snapshot policy, and Cloud Scheduler
+security tests; live application is a separate protected operation. The same root defines separate create-only backup and
+read-only restore identities, a daily seven-day `europe-west1` snapshot policy per disk, and Cloud Scheduler
 API activation. Recovery mode omits production alert/budget resources and grants Project Deleter
 only inside the disposable project so reviewed cleanup cannot target production.
 
-Foundation seeds seven empty non-secret database release keys in the MIG's all-instances
-configuration and ignores later drift only on that field. A tested helper validates and patches those
-seven keys after rejecting any unexpected map shape, requires a scheduled snapshot and fresh logical
-backups, then caps the existing member's update at `RESTART`. The group is `OPPORTUNISTIC`, so no
-metadata or template change acts on the existing member before the owning workflow explicitly
-chooses `RESTART` or `REPLACE`.
+Foundation seeds four empty non-secret release keys in each group's all-instances configuration.
+The tested helper accepts only that complete service-specific map, checks the immutable disk ID,
+requires a fresh scheduled snapshot and logical backup for the selected database, then restarts
+only its member. Changing a template target never rolls the opportunistic group by itself.
 
 OpenTofu owns the thirteen workload APIs declared by the foundation root. Service Usage can also
 enable default services and dependencies, so the independent audit accepts only the reviewed
@@ -74,8 +72,8 @@ security model, operational limits, and recovery implications behind those argum
 | Artifact Registry                             | Foundation and release                       | Hold the regional copy of a verified GHCR digest and retain every image named by a recovery receipt.                                                                                                                                                                                     | [Container image names](https://cloud.google.com/artifact-registry/docs/docker/names) and [cleanup policies](https://cloud.google.com/artifact-registry/docs/repositories/cleanup-policy-overview)                                                                                                                                                                                                                                                                                                                                                                              |
 | Cloud Run services and jobs                   | Release                                      | Run independently configured HTTP/gRPC services with one warm instance each, plus on-demand migration, initialization, rotation, backup, and restore jobs.                                                                                                                               | [Cloud Run overview](https://cloud.google.com/run/docs/overview/what-is-cloud-run), [jobs](https://cloud.google.com/run/docs/create-jobs), and [end-to-end HTTP/2](https://cloud.google.com/run/docs/configuring/http2)                                                                                                                                                                                                                                                                                                                                                         |
 | Direct VPC egress                             | Foundation and release                       | Give Cloud Run revisions private addresses and apply workload-specific VPC firewall policy without a connector.                                                                                                                                                                          | [Direct VPC egress](https://cloud.google.com/run/docs/configuring/vpc-direct-vpc) and [private Cloud Run networking](https://cloud.google.com/run/docs/securing/private-networking)                                                                                                                                                                                                                                                                                                                                                                                             |
-| Compute Engine, stateful MIG, and Shielded VM | Foundation plus protected release deployment | Keep one named, private COS database VM replaceable while preserving its address and disk; update only seven group-level release fields during routine deployment.                                                                                                                       | [Stateful MIGs](https://cloud.google.com/compute/docs/instance-groups/configuring-stateful-migs), [all-instances configuration](https://cloud.google.com/compute/docs/instance-groups/set-mig-aic), [apply updates](https://cloud.google.com/compute/docs/instance-groups/rolling-out-updates-to-managed-instance-groups), [preserved state](https://cloud.google.com/compute/docs/instance-groups/preserved-state), [Container-Optimized OS](https://cloud.google.com/container-optimized-os/docs), and [Shielded VM](https://cloud.google.com/compute/docs/about-shielded-vm) |
-| Persistent Disk and snapshots                 | Foundation                                   | Keep database data independent from the replaceable VM and retain one globally scoped crash-consistent disk snapshot per day for seven days, with its data stored in the workload region.                                                                                                | [Persistent Disk](https://cloud.google.com/compute/docs/disks/persistent-disks), [stateful disks](https://cloud.google.com/compute/docs/instance-groups/configuring-stateful-migs), [snapshot schedules](https://cloud.google.com/compute/docs/disks/about-snapshot-schedules), [snapshot storage locations](https://cloud.google.com/compute/docs/disks/snapshots#storage_location), [snapshot practices](https://cloud.google.com/compute/docs/disks/snapshot-best-practices), and [snapshot pricing](https://cloud.google.com/compute/disks-image-pricing#disk)              |
+| Compute Engine, stateful MIG, and Shielded VM | Foundation plus protected release deployment | Keep one private COS VM per database, preserving its address and SSD disk; update only four selected group-level release fields during routine deployment.                                                                                                                               | [Stateful MIGs](https://cloud.google.com/compute/docs/instance-groups/configuring-stateful-migs), [all-instances configuration](https://cloud.google.com/compute/docs/instance-groups/set-mig-aic), [apply updates](https://cloud.google.com/compute/docs/instance-groups/rolling-out-updates-to-managed-instance-groups), [preserved state](https://cloud.google.com/compute/docs/instance-groups/preserved-state), [Container-Optimized OS](https://cloud.google.com/container-optimized-os/docs), and [Shielded VM](https://cloud.google.com/compute/docs/about-shielded-vm) |
+| Persistent Disk and snapshots                 | Foundation                                   | Keep database data independent from the replaceable VM and retain one globally scoped crash-consistent snapshot per disk per day for seven days, with its data stored in the workload region.                                                                                            | [Persistent Disk](https://cloud.google.com/compute/docs/disks/persistent-disks), [stateful disks](https://cloud.google.com/compute/docs/instance-groups/configuring-stateful-migs), [snapshot schedules](https://cloud.google.com/compute/docs/disks/about-snapshot-schedules), [snapshot storage locations](https://cloud.google.com/compute/docs/disks/snapshots#storage_location), [snapshot practices](https://cloud.google.com/compute/docs/disks/snapshot-best-practices), and [snapshot pricing](https://cloud.google.com/compute/disks-image-pricing#disk)              |
 | Cloud Scheduler                               | Release                                      | Start recurring key-rotation, backup, clean-restore, and recovery-monitor jobs without an always-running scheduler container.                                                                                                                                                            | [Cloud Scheduler overview](https://cloud.google.com/scheduler/docs/overview), [scheduled Cloud Run jobs](https://cloud.google.com/run/docs/execute/jobs-on-schedule), [authenticated HTTP targets](https://cloud.google.com/scheduler/docs/http-target-auth)                                                                                                                                                                                                                                                                                                                    |
 | Cloud Monitoring and Logging                  | Foundation                                   | Use native Cloud Run/Compute metrics, eight actionable policies, two human email channels, current/forecast budget thresholds, and bounded payload-free logs without another agent or controller. The existing GitHub drift workflow performs the low-frequency public dependency check. | [Alerting overview](https://cloud.google.com/monitoring/alerts), [Cloud Run metrics](https://cloud.google.com/monitoring/api/metrics_gcp_p_z#gcp-run), [notification channels](https://cloud.google.com/monitoring/support/notification-options), [Monitoring pricing](https://cloud.google.com/products/observability/pricing), [Cloud Logging overview](https://cloud.google.com/logging/docs/overview), and [scheduled workflows](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)                                 |
 
@@ -123,7 +121,7 @@ targeted firewall access, database credentials, and service-owned database roles
 The database host has no external IP, public load balancer, forwarding rule, public DNS record, or
 public firewall path. JSON Keys publishes only TCP `5432` and Authentication only TCP `5433` on
 the VM's stateful internal address. Ingress accepts the production subnet and targets only the
-database-host network tag. Approved revisions and jobs carry caller-specific tags: JSON Keys can
+service-specific database-host network tag. Approved revisions and jobs carry caller-specific tags: JSON Keys can
 egress only to `5432`, Authentication only to `5433`, and backup jobs to both. Restore jobs have no
 database egress route. Each database
 keeps its own cluster, data directory, credentials, and role boundary.
@@ -138,7 +136,7 @@ The foundation tests must prove that:
 
 - the VM network interface has no external access configuration;
 - no ingress rule permits `0.0.0.0/0` or `::/0` to a database target;
-- TCP `5432` and `5433` ingress target only the database host and accept only the production
+- TCP `5432` and `5433` ingress target only their respective service database host and accept only the production
   subnet;
 - private callers receive only their reviewed egress tag, database credential, and database role;
 - no external load-balancing or public DNS resource targets the host;
@@ -146,17 +144,15 @@ The foundation tests must prove that:
 - the one-member group has no autoscaler or health-based repair loop;
 - administrative TCP access uses OS Login through IAP and an explicit operator identity.
 
-The VM uses a named COS image with automatic in-place OS updates explicitly disabled. A reviewed
-foundation change creates a new immutable template and updates the group's target, but the
-`OPPORTUNISTIC` policy does not act on the member. The protected foundation workflow must then
-explicitly cap its rollout at `REPLACE` under the group's `RECREATE` policy: both containers stop,
-the single boot VM is recreated with the same name, disk, and address, and both databases converge.
-This has a planned outage. The workflow and operator runbook own application readiness and rollback
-because automatic repair could loop on a damaged stateful disk.
+Each VM uses a named COS image with automatic in-place updates disabled. The opportunistic group
+does not apply a new template to an existing member automatically. Before changing templates or
+machine shapes, implement and review the protected, bounded replacement step described in the
+[host runbook](./runbooks/operate-postgresql-host.md#change-cpu-memory-or-connection-capacity).
+A foundation target update alone does not prove replacement or application readiness.
 
-The two PostgreSQL containers use separate, fixed Docker bridge subnets. Port publishing needs a
+Each VM has one PostgreSQL container on its own fixed Docker bridge subnet. Port publishing needs a
 normal bridge; Docker's `--internal` mode would also block the required private inbound path. Two
-host firewall chains allow established replies and reject every connection initiated from either
+host firewall chains allow established replies and reject every connection initiated from its
 container subnet. A loopback-only DNS setting prevents Docker's embedded resolver from becoming a
 separate egress path. The containers therefore cannot call the peer database, host, metadata server,
 VPC workloads, Google APIs, or internet while approved clients can use the published private ports.

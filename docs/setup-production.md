@@ -185,7 +185,7 @@ test "$(gh variable get PRODUCTION_RELEASES_ENABLED --repo a-novel/infra)" = tru
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Wait for a `READY` `agora-data` scheduled snapshot no older than 26 hours. Then start the release
+Wait for a `READY` scheduled snapshot of each service data disk no older than 26 hours. Then start the release
 without blocking the shell; the workflow pauses for the human-only initializer:
 
 ```zsh
@@ -209,13 +209,156 @@ the shell was restarted, set this session-only variable to the numeric segment a
 ./ops/run-workflow.sh release recover-first-launch "$RELEASE_RUN_ID"
 ```
 
-The command refuses to mutate anything if a successful receipt exists or the live seven-field
-database metadata map does not identify that failed commit. After it succeeds, retry the first
+The command refuses to mutate anything if a successful isolated-host receipt exists or a live four-field
+database metadata map does not identify that failed commit (an already-idle host is a no-op). A legacy
+shared-host receipt is accepted only during the explicit rebuild below. After it succeeds, retry the first
 release from the same labeled merge:
 
 ```sh
 ./ops/run-workflow.sh release deploy --no-wait
 ```
+
+### Rebuild an existing shared host before frontend launch
+
+Use this section **only** for the approved pre-launch reset of the old `agora-database` group.
+It intentionally discards both old application databases. Do not use it after real client data
+or an availability requirement exists. The two new `e2-medium` VMs each use a 50 GiB data disk
+and a 20 GiB boot disk, all SSD-backed `pd-balanced`. Secrets and pinned versions, historical
+backups and receipts, management resources, and Cloud Run services remain in place.
+
+Before merging the topology PR, review the updated [cost worksheet](./costs/production.md),
+confirm the regional estimate and budget alert, and add `allow-resource-deletion` to that exact
+PR. Freeze other image updates until the rebuild succeeds. Disable automatic releases first:
+
+```sh
+gh variable set PRODUCTION_RELEASES_ENABLED --repo a-novel/infra --body false
+```
+
+Wait for existing release/foundation runs to finish. Do not overlap them with the reset:
+
+```sh
+gh run list --repo a-novel/infra --branch master --limit 20 --json workflowName,status,conclusion,url
+```
+
+After the reviewed labeled PR merges, refresh the checkout without starting a workflow:
+
+```sh
+git switch master
+git pull --ff-only
+. ./.envrc
+./ops/verify-operator-env.sh --github
+```
+
+#### Stop the old managed VM before creating two replacements
+
+The four-vCPU quota fits two new VMs, not those two plus the legacy VM. This is a one-time
+human maintenance exception: use the **managed group's** stop operation, not a plain
+`compute instances stop`, which can trigger automatic repair. Google documents the
+[managed stop operation and its permission](https://docs.cloud.google.com/compute/docs/reference/rest/v1/instanceGroupManagers/stopInstances).
+
+The normal database operator already has read access but cannot update the group. A project
+IAM administrator must run the grant below for that operator. The example derives the active
+account; if a different administrator performs the grant, set `LEGACY_OPERATOR` in that
+administrator's session to the `user:email` printed by the operator; an existing value is preserved.
+Reuse the same `LEGACY_GRANT_CONDITION` for removal. These are session-only values, not `.envrc` inputs.
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+LEGACY_OPERATOR="${LEGACY_OPERATOR:-user:$(gcloud config get-value account 2>/dev/null)}"
+[[ "$LEGACY_OPERATOR" =~ ^user:[^[:space:]@]+@[^[:space:]@]+$ ]]
+LEGACY_GRANT_CONDITION="expression=request.time < timestamp('$(date -u -d '+1 hour' +%Y-%m-%dT%H:%M:%SZ)'),title=PrelaunchDatabaseRetirement"
+printf 'Operator: %s\n' "$LEGACY_OPERATOR"
+gcloud projects add-iam-policy-binding "${INFRA_WORKLOAD_PROJECT_ID:?}" --member="$LEGACY_OPERATOR" --role="projects/${INFRA_WORKLOAD_PROJECT_ID}/roles/infraDatabaseRelease" --condition="$LEGACY_GRANT_CONDITION" --quiet
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+This reuses the existing narrow group-update role; it grants no secret access, VM creation,
+or project deletion. Allow IAM propagation before continuing. Stop only the generated member
+of the exact legacy group:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+test "$(gh variable get PRODUCTION_RELEASES_ENABLED --repo a-novel/infra)" = false
+LEGACY_DATABASE_INSTANCE="$(gcloud compute instance-groups managed list-instances agora-database --project="${INFRA_WORKLOAD_PROJECT_ID:?}" --zone="${INFRA_DATABASE_ZONE:?}" --format='value(instance.basename())')"
+[[ "$LEGACY_DATABASE_INSTANCE" =~ ^agora-database-[a-z0-9]+$ ]]
+if test "$(gcloud compute instances describe "$LEGACY_DATABASE_INSTANCE" --project="$INFRA_WORKLOAD_PROJECT_ID" --zone="$INFRA_DATABASE_ZONE" --format='value(status)')" != TERMINATED; then
+gcloud compute instance-groups managed stop-instances agora-database --instances="$LEGACY_DATABASE_INSTANCE" --project="$INFRA_WORKLOAD_PROJECT_ID" --zone="$INFRA_DATABASE_ZONE" --quiet
+fi
+gcloud compute instance-groups managed wait-until agora-database --project="$INFRA_WORKLOAD_PROJECT_ID" --zone="$INFRA_DATABASE_ZONE" --stable --timeout=600
+test "$(gcloud compute instances describe "$LEGACY_DATABASE_INSTANCE" --project="$INFRA_WORKLOAD_PROJECT_ID" --zone="$INFRA_DATABASE_ZONE" --format='value(status)')" = TERMINATED
+gcloud compute instance-groups managed describe agora-database --project="$INFRA_WORKLOAD_PROJECT_ID" --zone="$INFRA_DATABASE_ZONE" --format=json | jq -e '.targetSize == 0 and .targetStoppedSize == 1'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+The IAM administrator now removes the temporary binding, even if the stop failed:
+
+```sh
+gcloud projects remove-iam-policy-binding "${INFRA_WORKLOAD_PROJECT_ID:?}" --member="${LEGACY_OPERATOR:?}" --role="projects/${INFRA_WORKLOAD_PROJECT_ID}/roles/infraDatabaseRelease" --condition="${LEGACY_GRANT_CONDITION:?}" --quiet
+```
+
+Do not continue after a failed check. Once both replacement groups exist, this legacy stop
+section is no longer applicable; resume at inspection instead of trying to recreate the old group.
+
+#### Apply the reviewed topology and collect its real coordinates
+
+Create the plan **after** stopping the old member, so the saved state is current:
+
+```sh
+FOUNDATION_PLAN_ID="$(./ops/run-workflow.sh foundation plan foundation)"
+```
+
+Review the private plan: retire only the old shared group/template, data disk, snapshot
+policy and runtime identity/bindings; create the two service-owned equivalents. Reject
+deletion of a project, secret container, backup/receipt bucket, Cloud Run service, or unrelated
+resource. The old data disk is deleted by this plan, not detached for later reuse.
+Retained historical snapshots follow their existing expiry policy; they are not a
+rollback target for routine releases.
+
+```sh
+./ops/run-workflow.sh foundation apply foundation "${FOUNDATION_PLAN_ID:?}"
+./ops/database-host.sh inspect authentication
+./ops/database-host.sh inspect json-keys
+```
+
+Each host must be private and idle, with its own SSD data disk and daily snapshot policy.
+Wait for the first `READY` automatic snapshot of **each new disk incarnation**. Existing
+snapshots of the old shared disk do not qualify; the release preflight checks the numeric
+disk IDs and a maximum age of 26 hours. The daily cadence and retention are unchanged.
+
+Repeat [deployment sections 1–4](./runbooks/deploy-production.md).
+Section 2 now derives both private IPs and numeric data-disk IDs; section 4 stores
+`database_hosts` in `RELEASE_CONFIG_JSON`. Reuse all seven existing enabled numeric secret
+versions. Do not generate new passwords or a new JSON Keys master key for this reset.
+Do not alter either image family in the same deployment.
+
+#### Initialize and verify the rebuilt databases
+
+Keep the labeled merge as the exact launch commit, enable releases, and dispatch once:
+
+```sh
+gh variable set PRODUCTION_RELEASES_ENABLED --repo a-novel/infra --body true
+./ops/run-workflow.sh release deploy --no-wait
+```
+
+The compiler recognizes the historical shared-host receipt and selects `database-rebuild`.
+It starts the new clusters, runs migrations and JSON Keys rotation, and waits for the
+[human-only initializer](#run-the-human-only-authentication-initializer) below.
+Run that setup again using the new Authentication host; the previous completion marker is
+not proof that this new disk was initialized. The marker is now bound to the data-disk ID.
+
+A failed rebuild stops only the new hosts it changed and retains their disks and Cloud Run
+resources. It never reapplies the retired shared address or publishes a successful rollback
+receipt. Fix the reported cause and retry; if interrupted compensation failed, use the
+protected `release recover-first-launch` command above with that exact failed run ID.
+
+After success, complete [deployment verification](./runbooks/deploy-production.md#7-verify-deployment-and-rotation),
+the real application email test, both backup/clean-restore checks, and a new
+[disposable recovery drill](./runbooks/disaster-recovery.md). Keep the old receipts as
+historical evidence, not routine rollback targets. Only then unfreeze service image updates.
 
 ### Run the human-only Authentication initializer
 
@@ -255,10 +398,10 @@ unsetopt err_exit nounset xtrace
 REPOSITORY='a-novel/infra'
 MANAGEMENT_PROJECT_ID="$INFRA_MANAGEMENT_PROJECT_ID"
 WORKLOAD_PROJECT_ID="$INFRA_WORKLOAD_PROJECT_ID"
-DATABASE_ZONE="$(gcloud compute instance-groups managed list --project="$INFRA_WORKLOAD_PROJECT_ID" --filter='name=agora-database' --format='value(zone.basename())')"
+DATABASE_ZONE="$(gcloud compute instance-groups managed list --project="$INFRA_WORKLOAD_PROJECT_ID" --filter='name=agora-database-authentication' --format='value(zone.basename())')"
 [[ "$DATABASE_ZONE" =~ ^[a-z]+-[a-z]+[0-9]+-[a-z]$ ]]
 REGION="${DATABASE_ZONE%-*}"
-DATABASE_INSTANCE_NAME="$(gcloud compute instance-groups managed list-instances agora-database --project="$INFRA_WORKLOAD_PROJECT_ID" --zone="$DATABASE_ZONE" --format='value(instance.basename())' --limit=1)"
+DATABASE_INSTANCE_NAME="$(gcloud compute instance-groups managed list-instances agora-database-authentication --project="$INFRA_WORKLOAD_PROJECT_ID" --zone="$DATABASE_ZONE" --format='value(instance.basename())' --limit=1)"
 [[ "$DATABASE_INSTANCE_NAME" == agora-database-* ]]
 DATABASE_PRIVATE_IP="$(gcloud compute instances describe "$DATABASE_INSTANCE_NAME" --project="$INFRA_WORKLOAD_PROJECT_ID" --zone="$DATABASE_ZONE" --format='value(networkInterfaces[0].networkIP)')"
 [[ "$DATABASE_PRIVATE_IP" =~ ^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.) ]]
@@ -453,7 +596,7 @@ gh run watch "$RELEASE_RUN_ID" --repo "$REPOSITORY" --exit-status
 ```
 
 The workflow accepts only a successful execution created after its prompt and writes the create-only
-`production/initialization/complete.json` marker. If a later smoke check fails, wait for rollback to
+`production/initialization/<authentication-data-disk-id>/complete.json` marker. If a later smoke check fails, wait for rollback to
 finish: initialization is still complete. Do not rerun the initializer or remove its marker.
 After the workflow finishes (success or completed rollback), delete the dormant privileged job while
 its initializer tag is still attached:
@@ -504,7 +647,7 @@ Never create the initialization marker manually.
 ### Prove initial database recovery
 
 The first empty host has no source database to dump. The release still must validate a fresh
-foundation snapshot, activate both clusters together, run migrations, create both logical backups,
+foundation snapshot for each disk, activate both clusters, run migrations, create both logical backups,
 restore both into clean clusters, and run the backup monitor before traffic.
 
 Verify the private receipt records all five recovery execution names. Record the completion times,

@@ -1,75 +1,71 @@
 #!/bin/bash
 
-# Restore only the prior receipt's seven non-secret database metadata fields.
+# Restore only the prior receipt's selected host's non-secret database metadata fields.
 # A null prior release returns the first-launch host to its empty state. Data on
 # the preserved disk is never reversed or restored automatically.
-# Usage: restore-database-release.sh <project> <zone> <previous-database.json>
+# Usage: restore-database-release.sh <project> <zone> <service> <data-disk-id> <previous-database.json>
 
 set -euo pipefail
 
-if [ "$#" -ne 3 ]; then
-    printf 'Usage: %s <project> <zone> <previous-database.json>\n' "$0" >&2
+if [ "$#" -ne 5 ]; then
+    printf 'Usage: %s <project> <zone> <service> <data-disk-id> <previous-database.json>\n' "$0" >&2
     exit 64
 fi
 
 PROJECT_ID="$1"
 DATABASE_ZONE="$2"
-DATABASE_FILE="$3"
-DATABASE_GROUP="agora-database"
+DATABASE_SERVICE="$3"
+DATA_DISK_ID="$4"
+DATABASE_FILE="$5"
+DATABASE_GROUP="agora-database-${DATABASE_SERVICE}"
+SERVICE_KEY="${DATABASE_SERVICE//-/_}"
+DATABASE_REGION="${DATABASE_ZONE%-*}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 if ! [[ "${PROJECT_ID}" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]] ||
     ! [[ "${DATABASE_ZONE}" =~ ^[a-z]+-[a-z]+[0-9]+-[a-z]$ ]] ||
+    ! [[ "${DATA_DISK_ID}" =~ ^[1-9][0-9]*$ ]] ||
+    { [ "${DATABASE_SERVICE}" != authentication ] && [ "${DATABASE_SERVICE}" != json-keys ]; } ||
     [ ! -f "${DATABASE_FILE}" ]; then
     printf 'Invalid database rollback input.\n' >&2
     exit 65
 fi
 
-if jq --exit-status '. == null' "${DATABASE_FILE}" >/dev/null; then
-    RELEASE_REVISION=""
-    JSON_KEYS_IMAGE=""
-    AUTHENTICATION_IMAGE=""
-    JSON_KEYS_PASSWORD_VERSION=0
-    AUTHENTICATION_PASSWORD_VERSION=0
-    JSON_KEYS_BACKUP_PASSWORD_VERSION=0
-    AUTHENTICATION_BACKUP_PASSWORD_VERSION=0
-elif jq --exit-status '
-    type == "object" and
-    keys == [
-      "authenticationBackupPasswordVersion",
-      "authenticationImage",
-      "authenticationPasswordVersion",
-      "jsonKeysBackupPasswordVersion",
-      "jsonKeysImage",
-      "jsonKeysPasswordVersion",
-      "releaseRevision"
-    ] and
-    (.releaseRevision | test("^[a-f0-9]{40}$")) and
-    (.jsonKeysImage | test("/service-json-keys/database@sha256:[a-f0-9]{64}$")) and
-    (.authenticationImage | test("/service-authentication/database@sha256:[a-f0-9]{64}$")) and
-    all([
-      .jsonKeysPasswordVersion,
-      .authenticationPasswordVersion,
-      .jsonKeysBackupPasswordVersion,
-      .authenticationBackupPasswordVersion
-    ][]; type == "number" and . >= 1 and floor == .)
+if ! jq -e --arg service "${SERVICE_KEY}" --arg disk_id "${DATA_DISK_ID}" --arg prefix "${DATABASE_REGION}-docker.pkg.dev/${PROJECT_ID}/agora-production/service-${DATABASE_SERVICE}/database@sha256:" '
+    . == null or (
+      (if $service == "json_keys" then "jsonKeys" else "authentication" end) as $key |
+      .hosts[$service].dataDiskId == $disk_id and
+      (.hosts[$service].releaseRevision | test("^[a-f0-9]{40}$")) and
+      (.[$key + "Image"] | startswith($prefix)) and
+      (.[$key + "Image"] | ltrimstr($prefix) | test("^[a-f0-9]{64}$")) and
+      all([.[$key + "PasswordVersion"], .[$key + "BackupPasswordVersion"]][];
+        type == "number" and . >= 1 and floor == .)
+    )
 ' "${DATABASE_FILE}" >/dev/null; then
-    RELEASE_REVISION="$(jq --raw-output '.releaseRevision' "${DATABASE_FILE}")"
-    JSON_KEYS_IMAGE="$(jq --raw-output '.jsonKeysImage' "${DATABASE_FILE}")"
-    AUTHENTICATION_IMAGE="$(jq --raw-output '.authenticationImage' "${DATABASE_FILE}")"
-    JSON_KEYS_PASSWORD_VERSION="$(jq --raw-output '.jsonKeysPasswordVersion' "${DATABASE_FILE}")"
-    AUTHENTICATION_PASSWORD_VERSION="$(jq --raw-output '.authenticationPasswordVersion' "${DATABASE_FILE}")"
-    JSON_KEYS_BACKUP_PASSWORD_VERSION="$(jq --raw-output '.jsonKeysBackupPasswordVersion' "${DATABASE_FILE}")"
-    AUTHENTICATION_BACKUP_PASSWORD_VERSION="$(jq --raw-output '.authenticationBackupPasswordVersion' "${DATABASE_FILE}")"
-else
-    printf 'Previous database receipt is invalid.\n' >&2
+    printf 'Receipt does not identify this exact database disk and image family.\n' >&2
     exit 65
 fi
+if [ "$(gcloud compute disks describe "agora-data-${DATABASE_SERVICE}" --project="${PROJECT_ID}" --zone="${DATABASE_ZONE}" --format='value(id)')" != "${DATA_DISK_ID}" ]; then
+    printf 'Live database disk differs from the rollback target.\n' >&2
+    exit 70
+fi
+RELEASE_REVISION="$(jq -r --arg service "${SERVICE_KEY}" '.hosts[$service].releaseRevision // ""' "${DATABASE_FILE}")"
+METADATA_ARGUMENT="$(jq -r --arg service "${DATABASE_SERVICE}" --arg key "${SERVICE_KEY}" '
+    . as $database |
+    (if $key == "json_keys" then "jsonKeys" else "authentication" end) as $prefix |
+    {
+      "agora-database-release-revision": ($database.hosts[$key].releaseRevision // ""),
+      ("agora-\($service)-database-image"): ($database[$prefix + "Image"] // ""),
+      ("agora-\($service)-postgres-password-version"): (($database[$prefix + "PasswordVersion"] // 0) | tostring),
+      ("agora-\($service)-postgres-backup-password-version"): (($database[$prefix + "BackupPasswordVersion"] // 0) | tostring)
+    } | to_entries | map(.key + "=" + .value) | join(",")
+' "${DATABASE_FILE}")"
 
 if ! DATABASE_STATUS_BEFORE="$(
     "${SCRIPT_DIR}/database-host-readiness.sh" current \
         "${PROJECT_ID}" \
-        "${DATABASE_ZONE}"
+        "${DATABASE_ZONE}" \
+        "${DATABASE_SERVICE}"
 )"; then
     printf 'Database host readiness could not be inspected before rollback.\n' >&2
     exit 70
@@ -78,7 +74,7 @@ fi
 if ! gcloud compute instance-groups managed all-instances-config update "${DATABASE_GROUP}" \
     --project="${PROJECT_ID}" \
     --zone="${DATABASE_ZONE}" \
-    --metadata="agora-database-release-revision=${RELEASE_REVISION},agora-json-keys-database-image=${JSON_KEYS_IMAGE},agora-authentication-database-image=${AUTHENTICATION_IMAGE},agora-json-keys-postgres-password-version=${JSON_KEYS_PASSWORD_VERSION},agora-authentication-postgres-password-version=${AUTHENTICATION_PASSWORD_VERSION},agora-json-keys-postgres-backup-password-version=${JSON_KEYS_BACKUP_PASSWORD_VERSION},agora-authentication-postgres-backup-password-version=${AUTHENTICATION_BACKUP_PASSWORD_VERSION}" \
+    --metadata="${METADATA_ARGUMENT}" \
     --quiet >/dev/null 2>&1; then
     printf 'Prior database release metadata could not be restored.\n' >&2
     exit 70
@@ -114,6 +110,7 @@ fi
 if ! "${SCRIPT_DIR}/database-host-readiness.sh" wait \
     "${PROJECT_ID}" \
     "${DATABASE_ZONE}" \
+    "${DATABASE_SERVICE}" \
     "${EXPECTED_DATABASE_STATUS}" \
     "${DATABASE_STATUS_BEFORE}"; then
     printf 'The database host did not report the restored release after rollback.\n' >&2

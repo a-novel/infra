@@ -185,7 +185,8 @@ run "builds_the_project_replacement_window" {
       toset(google_compute_firewall.allow_restricted_google_apis.target_tags) == toset([
         "agora-authentication",
         "agora-backup",
-        "agora-database",
+        "agora-database-authentication",
+        "agora-database-json-keys",
         "agora-json-keys",
         "agora-restore",
       ]) &&
@@ -212,14 +213,14 @@ run "builds_the_project_replacement_window" {
         one(rule.allow).protocol == "tcp" &&
         toset(one(rule.allow).ports) == toset([tostring(local.database_egress_contracts[key].port)])
       ]) &&
-      google_compute_firewall.allow_postgres_ingress.direction == "INGRESS" &&
-      toset(google_compute_firewall.allow_postgres_ingress.source_ranges) == toset(["10.20.0.0/24"]) &&
-      toset(google_compute_firewall.allow_postgres_ingress.target_tags) == toset(["agora-database"]) &&
-      one(google_compute_firewall.allow_postgres_ingress.allow).protocol == "tcp" &&
-      toset(one(google_compute_firewall.allow_postgres_ingress.allow).ports) == toset(["5432", "5433"]) &&
+      google_compute_firewall.allow_postgres_ingress["authentication"].direction == "INGRESS" &&
+      toset(google_compute_firewall.allow_postgres_ingress["authentication"].source_ranges) == toset(["10.20.0.0/24"]) &&
+      toset(google_compute_firewall.allow_postgres_ingress["authentication"].target_tags) == toset(["agora-database-authentication"]) &&
+      one(google_compute_firewall.allow_postgres_ingress["authentication"].allow).protocol == "tcp" &&
+      toset(one(google_compute_firewall.allow_postgres_ingress["authentication"].allow).ports) == toset(["5433"]) &&
       google_compute_firewall.allow_iap_ssh.direction == "INGRESS" &&
       toset(google_compute_firewall.allow_iap_ssh.source_ranges) == toset(["35.235.240.0/20"]) &&
-      toset(google_compute_firewall.allow_iap_ssh.target_tags) == toset(["agora-database"]) &&
+      toset(google_compute_firewall.allow_iap_ssh.target_tags) == toset(["agora-database-authentication", "agora-database-json-keys"]) &&
       toset(one(google_compute_firewall.allow_iap_ssh.allow).ports) == toset(["22"])
     )
     error_message = "PostgreSQL must accept only per-database caller egress, private-subnet ingress, and SSH through IAP."
@@ -250,14 +251,15 @@ run "builds_the_project_replacement_window" {
     condition = (
       google_project_default_service_accounts.workload.project == "agora-production-test" &&
       google_project_default_service_accounts.workload.action == "DEPRIVILEGE" &&
-      length(google_service_account.runtime) == 7 &&
+      length(google_service_account.runtime) == 8 &&
       {
         for name, identity in local.runtime_identities : name => identity.account_id
         } == {
         authentication             = "agora-authentication"
         authentication_initializer = "agora-auth-initializer"
         backup                     = "agora-backup"
-        database                   = "agora-database-host"
+        authentication_database    = "agora-auth-database"
+        json_keys_database         = "agora-json-keys-database"
         json_keys                  = "agora-json-keys"
         restore                    = "agora-restore"
         scheduler_invoker          = "agora-scheduler-invoker"
@@ -285,19 +287,19 @@ run "builds_the_project_replacement_window" {
           secret   = "production-authentication-super-admin-password"
         }
         "database:authentication-password" = {
-          identity = "database"
+          identity = "authentication_database"
           secret   = "production-authentication-postgres-password"
         }
         "database:authentication-backup-password" = {
-          identity = "database"
+          identity = "authentication_database"
           secret   = "production-authentication-postgres-backup-password"
         }
         "database:json-keys-password" = {
-          identity = "database"
+          identity = "json_keys_database"
           secret   = "production-json-keys-postgres-password"
         }
         "database:json-keys-backup-password" = {
-          identity = "database"
+          identity = "json_keys_database"
           secret   = "production-json-keys-postgres-backup-password"
         }
         "backup:authentication-backup-password" = {
@@ -361,84 +363,81 @@ run "builds_the_project_replacement_window" {
 
   assert {
     condition = (
-      google_compute_disk.database.type == "pd-balanced" &&
-      google_compute_disk.database.size == 50 &&
-      google_compute_disk.database.physical_block_size_bytes == 4096 &&
-      google_compute_disk.database.deletion_policy == "DELETE" &&
-      google_compute_instance_template.database.machine_type == "e2-medium" &&
-      length(one(google_compute_instance_template.database.network_interface).access_config) == 0 &&
-      one(google_compute_instance_template.database.service_account).email == google_service_account.runtime["database"].email &&
-      toset(one(google_compute_instance_template.database.service_account).scopes) == toset(["cloud-platform"]) &&
-      one(google_compute_instance_template.database.shielded_instance_config).enable_secure_boot &&
-      one(google_compute_instance_template.database.shielded_instance_config).enable_vtpm &&
-      one(google_compute_instance_template.database.shielded_instance_config).enable_integrity_monitoring &&
-      google_compute_instance_template.database.metadata["enable-oslogin"] == "TRUE" &&
-      google_compute_instance_template.database.metadata["block-project-ssh-keys"] == "TRUE" &&
-      google_compute_instance_template.database.metadata["cos-update-strategy"] == "update_disabled" &&
-      google_compute_instance_template.database.metadata["serial-port-enable"] == "FALSE" &&
-      google_compute_instance_template.database.metadata["agora-database-data-disk-size-gb"] == "50" &&
-      !contains(keys(google_compute_instance_template.database.metadata), "agora-database-release-revision") &&
-      strcontains(google_compute_instance_template.database.metadata_startup_script, "POSTGRES_PASSWORD_FILE=") &&
-      !strcontains(google_compute_instance_template.database.metadata_startup_script, "POSTGRES_PASSWORD=") &&
-      strcontains(google_compute_instance_template.database.metadata_startup_script, "--auth-local=trust") &&
-      strcontains(google_compute_instance_template.database.metadata_startup_script, "pg_read_file('/run/agora-postgres-password')") &&
-      strcontains(google_compute_instance_template.database.metadata_startup_script, "pg_read_file('/run/agora-postgres-backup-password')") &&
-      strcontains(google_compute_instance_template.database.metadata_startup_script, "GRANT pg_read_all_data") &&
-      strcontains(google_compute_instance_template.database.metadata_startup_script, "database backup role has an undeclared membership") &&
-      strcontains(google_compute_instance_template.database.metadata_startup_script, "NOBYPASSRLS CONNECTION LIMIT 2") &&
-      strcontains(google_compute_instance_template.database.metadata_startup_script, "agora.database_image=$${image}") &&
-      strcontains(google_compute_instance_template.database.metadata_startup_script, "log_min_error_statement=panic") &&
-      strcontains(google_compute_instance_template.database.metadata_startup_script, "--entrypoint stat") &&
-      strcontains(google_compute_instance_template.database.metadata_startup_script, "--format '%u:%g'") &&
-      strcontains(google_compute_instance_template.database.metadata_startup_script, "chown -- \"$${image_owner}\" \"$${data_directory}\"") &&
-      strcontains(google_compute_instance_template.database.metadata_startup_script, "docker logs --tail 20") &&
-      strcontains(google_compute_instance_template.database.metadata_startup_script, "guest-attributes/agora/database-release") &&
-      strcontains(google_compute_instance_template.database.metadata_startup_script, "publish_database_status healthy") &&
-      strcontains(google_compute_instance_template.database.metadata_startup_script, "publish_database_status failed") &&
-      !strcontains(google_compute_instance_template.database.metadata_startup_script, "\\gexec") &&
-      !strcontains(google_compute_instance_template.database.metadata_startup_script, "--tty") &&
-      strcontains(google_compute_instance_template.database.metadata_startup_script, "^[A-Za-z0-9_-]+$") &&
-      strcontains(google_compute_instance_template.database.metadata_startup_script, "cmp -s") &&
-      strcontains(google_compute_instance_template.database.metadata_startup_script, "findmnt -n -o SOURCE") &&
-      strcontains(google_compute_instance_template.database.metadata_startup_script, "\"credHelpers\"") &&
-      !strcontains(google_compute_instance_template.database.metadata_startup_script, "HOME=") &&
-      strcontains(google_compute_instance_template.database.metadata_startup_script, "AGORA-DATABASE-EGRESS") &&
-      strcontains(google_compute_instance_template.database.metadata_startup_script, "--subnet") &&
-      strcontains(google_compute_instance_template.database.metadata_startup_script, "--dns 127.0.0.1") &&
-      !strcontains(google_compute_instance_template.database.metadata_startup_script, "--internal") &&
-      strcontains(google_compute_instance_template.database.metadata_startup_script, "--restart on-failure:5") &&
-      !strcontains(google_compute_instance_template.database.metadata_startup_script, "--restart unless-stopped") &&
-      length(google_compute_instance_template.database.disk) == 2 &&
+      google_compute_disk.database["authentication"].type == "pd-balanced" &&
+      google_compute_disk.database["authentication"].size == 50 &&
+      google_compute_disk.database["authentication"].physical_block_size_bytes == 4096 &&
+      google_compute_disk.database["authentication"].deletion_policy == "DELETE" &&
+      google_compute_instance_template.database["authentication"].machine_type == "e2-medium" &&
+      length(one(google_compute_instance_template.database["authentication"].network_interface).access_config) == 0 &&
+      one(google_compute_instance_template.database["authentication"].service_account).email == google_service_account.runtime["authentication_database"].email &&
+      toset(one(google_compute_instance_template.database["authentication"].service_account).scopes) == toset(["cloud-platform"]) &&
+      one(google_compute_instance_template.database["authentication"].shielded_instance_config).enable_secure_boot &&
+      one(google_compute_instance_template.database["authentication"].shielded_instance_config).enable_vtpm &&
+      one(google_compute_instance_template.database["authentication"].shielded_instance_config).enable_integrity_monitoring &&
+      google_compute_instance_template.database["authentication"].metadata["enable-oslogin"] == "TRUE" &&
+      google_compute_instance_template.database["authentication"].metadata["block-project-ssh-keys"] == "TRUE" &&
+      google_compute_instance_template.database["authentication"].metadata["cos-update-strategy"] == "update_disabled" &&
+      google_compute_instance_template.database["authentication"].metadata["serial-port-enable"] == "FALSE" &&
+      google_compute_instance_template.database["authentication"].metadata["agora-database-data-disk-size-gb"] == "50" &&
+      !contains(keys(google_compute_instance_template.database["authentication"].metadata), "agora-database-release-revision") &&
+      strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "POSTGRES_PASSWORD_FILE=") &&
+      !strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "POSTGRES_PASSWORD=") &&
+      strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "--auth-local=trust") &&
+      strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "pg_read_file('/run/agora-postgres-password')") &&
+      strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "pg_read_file('/run/agora-postgres-backup-password')") &&
+      strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "GRANT pg_read_all_data") &&
+      strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "database backup role has an undeclared membership") &&
+      strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "NOBYPASSRLS CONNECTION LIMIT 2") &&
+      strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "agora.database_image=$${image}") &&
+      strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "log_min_error_statement=panic") &&
+      strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "--entrypoint stat") &&
+      strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "--format '%u:%g'") &&
+      strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "chown -- \"$${image_owner}\" \"$${data_directory}\"") &&
+      strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "docker logs --tail 20") &&
+      strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "guest-attributes/agora/database-release") &&
+      strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "publish_database_status healthy") &&
+      strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "publish_database_status failed") &&
+      !strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "\\gexec") &&
+      !strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "--tty") &&
+      strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "^[A-Za-z0-9_-]+$") &&
+      strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "cmp -s") &&
+      strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "findmnt -n -o SOURCE") &&
+      strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "\"credHelpers\"") &&
+      !strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "HOME=") &&
+      strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "AGORA-DATABASE-EGRESS") &&
+      strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "--subnet") &&
+      strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "--dns 127.0.0.1") &&
+      !strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "--internal") &&
+      strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "--restart on-failure:5") &&
+      !strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "--restart unless-stopped") &&
+      length(google_compute_instance_template.database["authentication"].disk) == 2 &&
       one([
-        for disk in google_compute_instance_template.database.disk : disk
+        for disk in google_compute_instance_template.database["authentication"].disk : disk
         if disk.device_name == "agora-data"
       ]).auto_delete == false &&
       one([
-        for disk in google_compute_instance_template.database.disk : disk
+        for disk in google_compute_instance_template.database["authentication"].disk : disk
         if disk.device_name == "agora-data"
-      ]).source == google_compute_disk.database.name &&
-      google_compute_instance_group_manager.database.target_size == 1 &&
-      google_compute_instance_group_manager.database.deletion_policy == "DELETE" &&
-      one(google_compute_instance_group_manager.database.stateful_disk).device_name == "agora-data" &&
-      one(google_compute_instance_group_manager.database.stateful_disk).delete_rule == "NEVER" &&
-      one(google_compute_instance_group_manager.database.stateful_internal_ip).interface_name == "nic0" &&
-      one(google_compute_instance_group_manager.database.stateful_internal_ip).delete_rule == "NEVER" &&
-      one(google_compute_instance_group_manager.database.all_instances_config).metadata == tomap({
+      ]).source == google_compute_disk.database["authentication"].name &&
+      google_compute_instance_group_manager.database["authentication"].target_size == 1 &&
+      google_compute_instance_group_manager.database["authentication"].deletion_policy == "DELETE" &&
+      one(google_compute_instance_group_manager.database["authentication"].stateful_disk).device_name == "agora-data" &&
+      one(google_compute_instance_group_manager.database["authentication"].stateful_disk).delete_rule == "NEVER" &&
+      one(google_compute_instance_group_manager.database["authentication"].stateful_internal_ip).interface_name == "nic0" &&
+      one(google_compute_instance_group_manager.database["authentication"].stateful_internal_ip).delete_rule == "NEVER" &&
+      one(google_compute_instance_group_manager.database["authentication"].all_instances_config).metadata == tomap({
         agora-authentication-database-image                   = ""
         agora-authentication-postgres-backup-password-version = "0"
         agora-authentication-postgres-password-version        = "0"
         agora-database-release-revision                       = ""
-        agora-json-keys-database-image                        = ""
-        agora-json-keys-postgres-backup-password-version      = "0"
-        agora-json-keys-postgres-password-version             = "0"
       }) &&
-      one(google_compute_instance_group_manager.database.update_policy).type == "OPPORTUNISTIC" &&
-      one(google_compute_instance_group_manager.database.update_policy).replacement_method == "RECREATE" &&
-      one(google_compute_instance_group_manager.database.update_policy).max_surge_fixed == 0 &&
-      one(google_compute_instance_group_manager.database.update_policy).max_unavailable_fixed == 1 &&
-      google_compute_instance_group_manager.database.wait_for_instances_status == "STABLE" &&
-      google_compute_instance_template.database.metadata["enable-guest-attributes"] == "TRUE" &&
-      output.database_host.ports == local.database_ports
+      one(google_compute_instance_group_manager.database["authentication"].update_policy).type == "OPPORTUNISTIC" &&
+      one(google_compute_instance_group_manager.database["authentication"].update_policy).replacement_method == "RECREATE" &&
+      one(google_compute_instance_group_manager.database["authentication"].update_policy).max_surge_fixed == 0 &&
+      one(google_compute_instance_group_manager.database["authentication"].update_policy).max_unavailable_fixed == 1 &&
+      google_compute_instance_group_manager.database["authentication"].wait_for_instances_status == "STABLE" &&
+      google_compute_instance_template.database["authentication"].metadata["enable-guest-attributes"] == "TRUE" &&
+      { for service, host in output.database_hosts : service => host.port } == local.database_ports
     )
     error_message = "The private stateful database host, preserved disk, or capacity defaults changed."
   }
@@ -447,13 +446,13 @@ run "builds_the_project_replacement_window" {
     condition = (
       google_project_iam_member.mig_service_agent.role == "roles/compute.instanceGroupManagerServiceAgent" &&
       google_project_iam_member.mig_service_agent.member == "serviceAccount:987654321098@cloudservices.gserviceaccount.com" &&
-      google_service_account_iam_member.foundation_database_act_as.role == "roles/iam.serviceAccountUser" &&
-      google_service_account_iam_member.mig_database_act_as.member == "serviceAccount:987654321098@cloudservices.gserviceaccount.com" &&
+      google_service_account_iam_member.foundation_database_act_as["authentication"].role == "roles/iam.serviceAccountUser" &&
+      google_service_account_iam_member.mig_database_act_as["authentication"].member == "serviceAccount:987654321098@cloudservices.gserviceaccount.com" &&
       local.database_runtime_project_roles == toset([
         "roles/logging.logWriter",
         "roles/monitoring.metricWriter",
       ]) &&
-      length(google_project_iam_member.database_runtime_observability) == 2 &&
+      length(google_project_iam_member.database_runtime_observability) == 4 &&
       local.database_operator_project_roles == toset([
         "roles/compute.osAdminLogin",
         "roles/compute.viewer",
@@ -464,8 +463,8 @@ run "builds_the_project_replacement_window" {
       length(google_project_iam_member.database_operator) == 5 &&
       one(values(google_project_iam_member.database_operator_iap)).role == "roles/iap.tunnelResourceAccessor" &&
       one(one(values(google_project_iam_member.database_operator_iap)).condition).expression == "destination.port == 22" &&
-      one(values(google_service_account_iam_member.database_operator_act_as)).role == "roles/iam.serviceAccountUser" &&
-      one(values(google_service_account_iam_member.database_operator_act_as)).service_account_id == google_service_account.runtime["database"].name &&
+      google_service_account_iam_member.database_operator_act_as["authentication:group:infra-operators@example.com"].role == "roles/iam.serviceAccountUser" &&
+      google_service_account_iam_member.database_operator_act_as["authentication:group:infra-operators@example.com"].service_account_id == google_service_account.runtime["authentication_database"].name &&
       google_project_iam_custom_role.database_release.permissions == toset([
         "compute.autoscalers.list",
         "compute.instanceGroupManagers.get",
@@ -486,22 +485,23 @@ run "builds_the_project_replacement_window" {
       google_project_iam_member.database_release_member.member == "serviceAccount:infra-release@agora-management-test.iam.gserviceaccount.com" &&
       one(google_project_iam_member.database_release_member.condition).expression == "resource.type == 'compute.googleapis.com/Instance' && resource.name.startsWith('projects/agora-production-test/zones/europe-west1-c/instances/agora-database-') || resource.type == 'compute.googleapis.com/Disk' && resource.name.startsWith('projects/agora-production-test/zones/europe-west1-c/disks/agora-database-')" &&
       google_project_iam_custom_role.database_release_data_disk.permissions == toset([
+        "compute.disks.get",
         "compute.disks.use",
       ]) &&
-      google_compute_disk_iam_member.database_release.project == "agora-production-test" &&
-      google_compute_disk_iam_member.database_release.zone == "europe-west1-c" &&
-      google_compute_disk_iam_member.database_release.name == "agora-data" &&
-      google_compute_disk_iam_member.database_release.role == google_project_iam_custom_role.database_release_data_disk.name &&
-      length(google_compute_disk_iam_member.database_release.condition) == 0 &&
-      google_compute_disk_iam_member.database_release.member == "serviceAccount:infra-release@agora-management-test.iam.gserviceaccount.com" &&
+      google_compute_disk_iam_member.database_release["authentication"].project == "agora-production-test" &&
+      google_compute_disk_iam_member.database_release["authentication"].zone == "europe-west1-c" &&
+      google_compute_disk_iam_member.database_release["authentication"].name == "agora-data-authentication" &&
+      google_compute_disk_iam_member.database_release["authentication"].role == google_project_iam_custom_role.database_release_data_disk.name &&
+      length(google_compute_disk_iam_member.database_release["authentication"].condition) == 0 &&
+      google_compute_disk_iam_member.database_release["authentication"].member == "serviceAccount:infra-release@agora-management-test.iam.gserviceaccount.com" &&
       google_project_iam_custom_role.database_release_template.permissions == toset([
         "compute.instanceTemplates.get",
         "compute.instanceTemplates.useReadOnly",
       ]) &&
-      google_compute_instance_template_iam_member.database_release.project == "agora-production-test" &&
-      google_compute_instance_template_iam_member.database_release.name == "agora-database-test-template" &&
-      google_compute_instance_template_iam_member.database_release.role == google_project_iam_custom_role.database_release_template.name &&
-      google_compute_instance_template_iam_member.database_release.member == "serviceAccount:infra-release@agora-management-test.iam.gserviceaccount.com" &&
+      google_compute_instance_template_iam_member.database_release["authentication"].project == "agora-production-test" &&
+      google_compute_instance_template_iam_member.database_release["authentication"].name == "agora-database-test-template" &&
+      google_compute_instance_template_iam_member.database_release["authentication"].role == google_project_iam_custom_role.database_release_template.name &&
+      google_compute_instance_template_iam_member.database_release["authentication"].member == "serviceAccount:infra-release@agora-management-test.iam.gserviceaccount.com" &&
       google_project_iam_custom_role.database_release_address.permissions == toset([
         "compute.addresses.createInternal",
         "compute.addresses.deleteInternal",
@@ -653,14 +653,14 @@ run "builds_the_project_replacement_window" {
 
   assert {
     condition = (
-      google_compute_resource_policy.database_snapshots.region == "europe-west1" &&
-      one(google_compute_resource_policy.database_snapshots.snapshot_schedule_policy).schedule[0].daily_schedule[0].days_in_cycle == 1 &&
-      one(google_compute_resource_policy.database_snapshots.snapshot_schedule_policy).schedule[0].daily_schedule[0].start_time == "02:00" &&
-      one(google_compute_resource_policy.database_snapshots.snapshot_schedule_policy).retention_policy[0].max_retention_days == 7 &&
-      one(google_compute_resource_policy.database_snapshots.snapshot_schedule_policy).retention_policy[0].on_source_disk_delete == "KEEP_AUTO_SNAPSHOTS" &&
-      !one(google_compute_resource_policy.database_snapshots.snapshot_schedule_policy).snapshot_properties[0].guest_flush &&
-      toset(one(google_compute_resource_policy.database_snapshots.snapshot_schedule_policy).snapshot_properties[0].storage_locations) == toset(["europe-west1"]) &&
-      google_compute_disk_resource_policy_attachment.database_snapshots.disk == google_compute_disk.database.name &&
+      google_compute_resource_policy.database_snapshots["authentication"].region == "europe-west1" &&
+      one(google_compute_resource_policy.database_snapshots["authentication"].snapshot_schedule_policy).schedule[0].daily_schedule[0].days_in_cycle == 1 &&
+      one(google_compute_resource_policy.database_snapshots["authentication"].snapshot_schedule_policy).schedule[0].daily_schedule[0].start_time == "02:00" &&
+      one(google_compute_resource_policy.database_snapshots["authentication"].snapshot_schedule_policy).retention_policy[0].max_retention_days == 7 &&
+      one(google_compute_resource_policy.database_snapshots["authentication"].snapshot_schedule_policy).retention_policy[0].on_source_disk_delete == "KEEP_AUTO_SNAPSHOTS" &&
+      !one(google_compute_resource_policy.database_snapshots["authentication"].snapshot_schedule_policy).snapshot_properties[0].guest_flush &&
+      toset(one(google_compute_resource_policy.database_snapshots["authentication"].snapshot_schedule_policy).snapshot_properties[0].storage_locations) == toset(["europe-west1"]) &&
+      google_compute_disk_resource_policy_attachment.database_snapshots["authentication"].disk == google_compute_disk.database["authentication"].name &&
       google_monitoring_alert_policy.postgres_recovery_job_failure[0].severity == "CRITICAL" &&
       google_monitoring_alert_policy.postgres_recovery_job_failure[0].deletion_policy == "DELETE" &&
       toset(google_monitoring_alert_policy.postgres_recovery_job_failure[0].notification_channels) == toset([google_monitoring_notification_channel.operations_email[0].name]) &&
@@ -747,8 +747,8 @@ run "builds_the_project_replacement_window" {
       } &&
       google_artifact_registry_repository_iam_member.release_writer.role == "roles/artifactregistry.writer" &&
       google_artifact_registry_repository_iam_member.release_writer.member == "serviceAccount:infra-release@agora-management-test.iam.gserviceaccount.com" &&
-      google_artifact_registry_repository_iam_member.database_reader.role == "roles/artifactregistry.reader" &&
-      google_artifact_registry_repository_iam_member.database_reader.member == "serviceAccount:${google_service_account.runtime["database"].email}" &&
+      google_artifact_registry_repository_iam_member.database_reader["authentication"].role == "roles/artifactregistry.reader" &&
+      google_artifact_registry_repository_iam_member.database_reader["authentication"].member == "serviceAccount:${google_service_account.runtime["authentication_database"].email}" &&
       one(values(google_artifact_registry_repository_iam_member.authentication_initializer_reader)).member == "group:authentication-initializers@example.com"
     )
     error_message = "The immutable regional registry, dry-run cleanup policy, or write/read split changed."
@@ -821,6 +821,54 @@ run "builds_the_project_replacement_window" {
     )
     error_message = "Budget notification or bounded logging controls changed."
   }
+}
+
+run "isolates_both_databases_on_the_approved_ssd_hosts" {
+  command = plan
+
+  assert {
+    condition = alltrue([for service, host in local.database_hosts :
+      google_compute_disk.database[service].name == "agora-data-${host.component}" &&
+      google_compute_disk.database[service].size == 50 &&
+      google_compute_disk.database[service].type == "pd-balanced" &&
+      google_compute_instance_template.database[service].machine_type == "e2-medium" &&
+      one([for disk in google_compute_instance_template.database[service].disk : disk if disk.boot]).disk_type == "pd-balanced" &&
+      one([for disk in google_compute_instance_template.database[service].disk : disk if disk.boot]).disk_size_gb == 20 &&
+      one([for disk in google_compute_instance_template.database[service].disk : disk if !disk.boot]).source == google_compute_disk.database[service].name &&
+      google_compute_instance_template.database[service].metadata["agora-database-service"] == host.component &&
+      google_compute_instance_group_manager.database[service].name == "agora-database-${host.component}" &&
+      google_compute_instance_group_manager.database[service].target_size == 1 &&
+      toset(keys(one(google_compute_instance_group_manager.database[service].all_instances_config).metadata)) == toset([
+        "agora-database-release-revision", "agora-${host.component}-database-image",
+        "agora-${host.component}-postgres-password-version", "agora-${host.component}-postgres-backup-password-version"
+      ])
+    ])
+    error_message = "Both database hosts must own one independent SSD data disk, SSD boot disk, and service-only release metadata."
+  }
+
+  assert {
+    condition = (
+      google_service_account.runtime["authentication_database"].account_id == "agora-auth-database" &&
+      google_service_account.runtime["json_keys_database"].account_id == "agora-json-keys-database" &&
+      alltrue([for grant in values(local.runtime_secret_access) :
+        grant.identity != "authentication_database" || startswith(grant.secret, "production-authentication-postgres-")
+      ]) &&
+      alltrue([for grant in values(local.runtime_secret_access) :
+        grant.identity != "json_keys_database" || startswith(grant.secret, "production-json-keys-postgres-")
+      ])
+    )
+    error_message = "Database runtime identities must not share password access."
+  }
+}
+
+run "rejects_a_quota_too_small_for_both_hosts" {
+  command = plan
+
+  variables {
+    database_machine_type = "e2-standard-4"
+  }
+
+  expect_failures = [check.database_cpu_quota]
 }
 
 run "rejects_an_invalid_workload_project_id" {
@@ -928,7 +976,7 @@ run "rejects_database_memory_without_host_headroom" {
   command = plan
 
   variables {
-    database_container_memory_mb = 2048
+    database_container_memory_mb = 3584
   }
 
   expect_failures = [check.database_container_memory_headroom]
@@ -938,7 +986,7 @@ run "rejects_database_cpu_without_host_headroom" {
   command = plan
 
   variables {
-    database_container_cpu = 1
+    database_container_cpu = 1.75
   }
 
   expect_failures = [check.database_container_cpu_headroom]
@@ -1014,7 +1062,7 @@ run "limits_disposable_recovery_authority_to_the_replacement_project" {
       length(google_project_iam_member.recovery_project_deleter) == 1 &&
       google_project_iam_member.recovery_project_deleter[0].role == "roles/resourcemanager.projectDeleter" &&
       google_project_iam_member.recovery_project_deleter[0].member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
-      google_service_account_iam_member.foundation_database_act_as.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
+      google_service_account_iam_member.foundation_database_act_as["authentication"].member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
       alltrue([
         for binding in values(google_service_account_iam_member.release_runtime_act_as) :
         binding.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com"
@@ -1026,8 +1074,8 @@ run "limits_disposable_recovery_authority_to_the_replacement_project" {
       google_project_iam_member.release_cloud_run_deployer.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
       google_project_iam_member.database_release.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
       google_project_iam_member.database_release_member.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
-      google_compute_disk_iam_member.database_release.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
-      google_compute_instance_template_iam_member.database_release.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
+      google_compute_disk_iam_member.database_release["authentication"].member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
+      google_compute_instance_template_iam_member.database_release["authentication"].member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
       google_project_iam_member.database_release_address.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
       google_compute_subnetwork_iam_member.database_release.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
       google_artifact_registry_repository_iam_member.release_writer.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
