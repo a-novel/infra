@@ -43,19 +43,20 @@ authorize an operator to change a VM, group, disk, firewall, metadata, or secret
 
 ## Result and operating limits
 
-Foundation creates one always-on, single-zone `e2-medium` VM with no external IP. A stateful
-managed instance group preserves its generated name, private address, and 50 GiB balanced data disk.
-The 20 GiB COS boot disk is replaceable. The host stays idle while release metadata is absent.
+Foundation creates one private `e2-medium` VM per database. Each has its own single-member
+stateful group, private address, runtime identity, and 50 GiB `pd-balanced` data disk.
+The replaceable 20 GiB COS boot disk also uses SSD-backed `pd-balanced` storage. Each host
+stays idle until its own release metadata is configured.
 
-One enabled database release starts both clusters as one unit:
+Each host starts only its own PostgreSQL container:
 
 | Cluster        | Private host port | Database and role      | Preserved directory                    |
 | -------------- | ----------------: | ---------------------- | -------------------------------------- |
 | JSON Keys      |              5432 | `agora_json_keys`      | `/mnt/disks/agora-data/json-keys`      |
 | Authentication |              5433 | `agora_authentication` | `/mnt/disks/agora-data/authentication` |
 
-This shape minimizes fixed cost. It is not highly available: a template update, disk-growth reboot,
-host failure, or zone outage interrupts both databases. Managed replacement reuses the same disk, so
+Each database remains single-zone and is not highly available: its template update, disk-growth
+reboot, or host failure interrupts that database. A zone outage can interrupt both databases. Managed replacement reuses the same disk, so
 it does not repair corrupted data. The group therefore has no autoscaler or health-based autohealing
 loop.
 
@@ -68,23 +69,23 @@ the latest logical backups and both independent clean restores pass the
 ## Security invariants
 
 - The VM has one internal interface, no access configuration, and no public frontend or DNS record.
-- VPC ingress reaches only the database tag, from the production subnet, on TCP `5432` and `5433`.
+- VPC ingress reaches only the database tag, from the production subnet, on that database’s TCP port (`5432` or `5433`).
   Tagged caller egress, separate database credentials, and PostgreSQL roles complete authorization.
 - IAP is the only SSH path. OS Login disables project and instance metadata keys.
 - Each PostgreSQL container has its own fixed bridge subnet. The host firewall allows established
   replies and rejects every connection initiated by either container, including DNS, the peer
   cluster, host services, metadata, Google APIs, and internet destinations.
-- The database runtime identity reads only the four owner/backup password secrets and promoted image repository
+- The database runtime identity reads only its two owner/backup password secrets and promoted image repository
   and writes only logs and metrics.
 - Password payloads live in root-owned `/run` files. They never enter GitHub, OpenTofu input or
   state, instance metadata, Docker environment configuration, command arguments, serial output, or
   receipts. Healthy containers retain the read-only bind sources for crash restart; failed or
   disabled convergence removes them, and reboot clears the memory-backed directory.
-- Release metadata contains only a full Git commit, two promoted Artifact Registry digests, and four
+- Release metadata contains only a full Git commit, one promoted Artifact Registry digest, and two
   numeric owner/backup Secret Manager version IDs. Compute reauthorizes the full member
   specification when the protected helper patches that map. Release IAM therefore grants coarse
   group update at project scope, VM and boot-disk prerequisites only for `agora-database-*`,
-  data-disk attachment only on `agora-data`, template reads only on the exact template, Network User
+  data-disk read/attachment only on the two named service disks, template reads only on the exact template, Network User
   only on the production subnet, and the stateful internal-address operations that Compute checks
   at project scope. It cannot mutate snapshots or external addresses and has no secret-payload, IAM,
   VM/disk delete, start, or stop permission. Only the fixed protected helper may use the coarse group
@@ -119,7 +120,8 @@ debugging.
 ## Verify foundation state after apply
 
 ```sh
-./ops/database-host.sh inspect
+./ops/database-host.sh inspect authentication
+./ops/database-host.sh inspect json-keys
 ```
 
 The command derives the current zone and generated instance, then prints the group, VM, disk,
@@ -129,7 +131,7 @@ final foundation audit is the authoritative IAM check.
 Check these boundaries in its output:
 
 - one `RUNNING` VM with no external address, the database service account, shielded-VM controls,
-  stateful `nic0`, and preserved `agora-data`;
+  stateful `nic0`, and preserved service data disk;
 - one `READY` balanced disk, the daily seven-day snapshot policy, and a recent automatic snapshot;
 - only the reviewed PostgreSQL, IAP SSH, and deny-all egress firewall rules;
 - the five database capacity alerts and the critical recovery alert.
@@ -157,15 +159,14 @@ throughput, and latency.
 | Signal              | Review point                                                              | Required response                                                                                                                                                                 |
 | ------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Host CPU            | Above 70% for 10 minutes                                                  | Check queries, jobs, and connection pools. Move from shared-core `e2-medium` to `e2-standard-2` when representative load sustains the threshold or startup/recovery becomes slow. |
-| Host memory         | 70% warning, 85% critical                                                 | Compare both container RSS values. Reduce connection pools or per-query memory first; move to `e2-standard-2` before 85% is routine.                                              |
+| Host memory         | 70% warning, 85% critical                                                 | Compare the selected container's RSS with its host memory. Reduce connection pools or per-query memory first; move to `e2-standard-2` before 85% is routine.                      |
 | Data disk           | 70% warning, 85% critical                                                 | Plan backup-backed growth at 70%. At 85%, freeze optional writers and grow before resuming normal work.                                                                           |
 | Connections         | 70% of 50 per cluster                                                     | Reduce idle pool sizes and identify leaks. At 85%, protect capacity before raising `database_max_connections`; every extra connection consumes memory.                            |
-| Database count      | Before database three                                                     | Move to `e2-standard-2` first and remeasure memory, CPU, and recovery.                                                                                                            |
-| Later vertical step | `e2-standard-2` remains above 70% CPU or memory under representative load | Review the cost worksheet and use `e2-standard-4`; do not skip measurement or add another always-on host by default.                                                              |
+| Database count      | Before database three                                                     | Add a separately sized service-owned VM/disk and review regional CPU quota.                                                                                                       |
+| Later vertical step | `e2-standard-2` remains above 70% CPU or memory under representative load | Review the cost worksheet and use `e2-standard-4`; do not skip measurement; shared sizing inputs currently affect both database hosts.                                            |
 
-The two container CPU limits total 1.5 of the VM's two visible vCPUs and leave 0.5 outside their
-quotas. `e2-medium` is shared-core and provides one sustained vCPU with opportunistic burst, so the
-70% measurement gate matters. The two 1,536 MiB memory limits leave 1 GiB for COS and Docker.
+Each container is limited to 0.75 of its host's two visible vCPUs. `e2-medium` is shared-core and provides one sustained vCPU with opportunistic burst, so the
+70% measurement gate matters. Each 1,536 MiB container limit leaves 2.5 GiB for COS, Docker, and filesystem cache.
 
 ## Update the pinned COS image
 
@@ -185,10 +186,10 @@ supported in Google's COS release notes, then change only the `database_cos_imag
 exact returned `projects/cos-cloud/global/images/<name>` path. Never commit a mutable image family.
 
 Treat the resulting template change as the planned outage below: require the backup/restore gate,
-review one new template and the protected foundation step's explicit `REPLACE`/`RECREATE` rollout,
-preserve `agora-data` and `nic0`, and repeat the host, firewall, container, and private-client checks.
-If boot or database verification fails, revert the image-name commit and apply the prior template
-through the protected workflow.
+review the new templates and a separately reviewed, bounded replacement step. The existing
+foundation workflow applies template targets but does not roll the opportunistic groups. Do not
+apply a template-changing maintenance plan until its protected replacement step is implemented
+and reviewed. Preserve each service data disk and `nic0`, then repeat all host and client checks.
 
 ## Change CPU, memory, or connection capacity
 
@@ -201,22 +202,19 @@ Treat every machine or container-shape change as a planned outage:
 3. Change only reviewed inputs in the foundation root:
    `database_machine_type`, `database_container_cpu`,
    `database_container_memory_mb`, or `database_max_connections`.
-4. Review the branch checks. For a machine or template metadata change, the protected plan must
-   create one immutable template and update the same one-member group's target while retaining
-   `agora-data` and the stateful `nic0` address. After that exact plan applies, the protected
-   foundation step must invoke `update-instances` with both minimum and maximum action `REPLACE`
-   while the group policy keeps replacement method `RECREATE`; the opportunistic group never rolls
-   itself. The repository's
-   deliberate destructive-change label is required for the old template and boot VM replacement.
-5. Schedule a window for both databases. The shutdown script gives each container up to 60 seconds
-   and stops them in parallel.
-6. Approve only the saved plan from the merged commit. Verify both health checks, private ports,
-   disk mount, firewall chains, and capacity again before ending the window.
+4. These sizing inputs currently apply to both hosts. Review two new immutable templates, the
+   same singleton groups, and preservation of each data disk and stateful `nic0` address.
+5. The groups are opportunistic: applying new templates does not replace their running members.
+   Stop here unless the maintenance PR also supplies a reviewed protected replacement step,
+   bounded to each exact group with `REPLACE`/`RECREATE`. Routine releases permit only restarts.
+   Include the deletion label before merge when the plan requires it.
+6. Schedule downtime for the affected databases. Each VM stops its own container with a
+   60-second grace period. Verify disk mounts, firewall rules, health, and client connections after
+   the protected replacement before ending the window.
 
-If convergence fails, stop application traffic. Revert the capacity commit through a pull request
-and apply the previous template through the protected foundation workflow. The group recreates the
-boot VM with the same name, private address, and preserved data disk. Do not detach the disk, set the
-group template manually, or edit instance metadata with `gcloud`.
+If convergence fails, retain both disks and restore the previous template through the same reviewed
+maintenance procedure. Never delete a group or data disk to retry. A template-target apply alone is
+not evidence that a running VM adopted that template.
 
 ## Grow the data disk
 
@@ -225,10 +223,11 @@ Persistent Disk and EXT4 can grow but cannot shrink:
 1. Run the fresh scheduled-snapshot and logical-backup gate and require a current clean restore
    check.
 2. Measure current use and choose the next 10 GiB step. Keep the value from 50 through 1,000 GiB.
-3. Increase only `database_data_disk_size_gb` in a foundation pull request.
+3. Increase `database_data_disk_size_gb` in a foundation pull request; this currently grows both disks.
 4. Review the protected plan. The existing disk size must update in place. The size is also recorded
-   in immutable template metadata, so the plan creates a new template and replaces only the boot VM.
-   Reject any plan that replaces, deletes, detaches, or changes the type of `agora-data`.
+   in immutable template metadata, so the plan changes both template targets. Follow the protected replacement prerequisite above;
+   the foundation apply alone does not restart or replace the boot VMs.
+   Reject any plan that replaces, deletes, detaches, or changes the type of the service data disk.
 5. Approve the maintenance outage. On boot, the startup script mounts the same EXT4 filesystem and
    runs online `resize2fs`.
 6. Verify the declared block size and mounted filesystem size with the disk describe and `df`
@@ -238,8 +237,8 @@ A lower configured size must fail planning or provider validation. Never try to 
 or recreate the disk.
 
 A disk-type change is a separate migration, not an in-place edit. Its design must create a named
-snapshot after quiescing both databases, create a new disk from that snapshot in the same zone,
-attach it through reviewed foundation state, verify both clusters, and retain the source disk until
+snapshot after quiescing the affected database, create a new disk from that snapshot in the same zone,
+attach it through reviewed foundation state, verify that cluster, and retain the source disk until
 the rollback window closes. The current root deliberately hardcodes `pd-balanced` and blocks disk
 replacement, so that migration needs its own reviewed code and runbook before execution.
 
@@ -248,19 +247,19 @@ replacement, so that migration needs its own reviewed code and runbook before ex
 A release rollback changes container configuration, not data:
 
 1. Freeze new application deployment and retain the failed receipt and non-secret health evidence.
-2. Identify the last healthy release commit, both promoted digests, and all four numeric owner/backup
+2. Identify the last healthy release commit, the selected service's promoted digest, and its two numeric owner/backup
    password versions from its private receipt.
 3. Confirm the old and new images share PostgreSQL major 18. A major-version rollback requires a data
    migration or restore design and cannot use this procedure.
 4. Revert the manifest through a pull request and supply the prior release commit and all password
    versions to the protected release workflow. Its pre-change gate creates a fresh recovery point
    before rollback.
-5. Review one seven-key all-instances metadata update followed by `update-instances` with `RESTART`
+5. Review one four-key all-instances metadata update per changed database followed by `update-instances` with `RESTART`
    as both the minimum and most disruptive action. It must contain no foundation resource action.
 6. Approve the short outage, then repeat the host, container, and private-client checks.
 
-The startup script stops both containers when either image, secret, disk, or health convergence
-fails. Reapplying the previous metadata also reactivates the previous password values through the
+A host's startup script stops its own container if its image, secret, disk, or health convergence
+fails. It cannot stop the other host's container. Reapplying the previous metadata also reactivates the previous password values through the
 local socket. Backward-compatible migrations remain; the rollback does not change schema or restore
 data.
 
@@ -268,7 +267,7 @@ data.
 
 ### The host is running but idle unexpectedly
 
-Check whether both manifest components are enabled and whether the protected release receipt exists.
+Check whether the selected manifest component is enabled and whether the protected release receipt exists.
 Do not add metadata manually. A missing release is repaired by the protected release workflow; an
 intentional disabled manifest correctly leaves the host idle.
 
@@ -281,7 +280,7 @@ foundation plan or data-restore procedure.
 
 ### One database is unhealthy
 
-The boot failure handler stops both containers to avoid a partial release. Preserve only
+The boot failure handler stops only the affected host's container. Preserve only
 non-sensitive container status and recent error categories; never paste environment or unrestricted
 inspect output. Restore the prior release metadata when the images or password versions caused the
 failure. Use data restore only when storage or data is damaged.
@@ -293,7 +292,8 @@ through the protected workflow. Never delete the group or disk to retry.
 
 ### A password rollout broke clients
 
-Reapply the prior database password versions and prior DSN versions as one coordinated rollback.
+Reapply the prior password versions for the selected database and its clients as one coordinated
+rollback. DSNs are derived from the host, port, username, and password; there is no DSN secret.
 Disable the failed new versions only after all consumers are healthy on the prior values. Delayed
 destruction follows the secret-version runbook.
 

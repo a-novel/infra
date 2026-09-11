@@ -4,7 +4,10 @@
   "region": "europe-west1",
   "database_zone": "europe-west1-c",
   "backup_bucket_name": "agora-management-test-123456789012-backups",
-  "database_private_ip": "10.20.0.2",
+  "database_hosts": {
+    "authentication": { "private_ip": "10.20.0.2", "data_disk_id": "1001" },
+    "json_keys": { "private_ip": "10.20.0.3", "data_disk_id": "1002" }
+  },
   "network_id": "projects/agora-production-test/global/networks/agora-production",
   "subnet_id": "projects/agora-production-test/regions/europe-west1/subnetworks/agora-production-europe-west1",
   "cloud_run_invocation_tags": {

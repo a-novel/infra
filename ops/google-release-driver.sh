@@ -127,31 +127,17 @@ run_job() {
 }
 
 expected_database_metadata_sha256() {
-    jq --join-output --compact-output --sort-keys '
-      # Preflight compares live metadata with the latest successful state. A
-      # manual rollback can target an older, different database contract.
-      .currentDatabase as $database
-      | if $database == null then
-          {
-            "agora-authentication-database-image": "",
-            "agora-authentication-postgres-backup-password-version": "0",
-            "agora-authentication-postgres-password-version": "0",
-            "agora-database-release-revision": "",
-            "agora-json-keys-database-image": "",
-            "agora-json-keys-postgres-backup-password-version": "0",
-            "agora-json-keys-postgres-password-version": "0"
-          }
-        else
-          {
-            "agora-authentication-database-image": $database.authenticationImage,
-            "agora-authentication-postgres-backup-password-version": ($database.authenticationBackupPasswordVersion | tostring),
-            "agora-authentication-postgres-password-version": ($database.authenticationPasswordVersion | tostring),
-            "agora-database-release-revision": $database.releaseRevision,
-            "agora-json-keys-database-image": $database.jsonKeysImage,
-            "agora-json-keys-postgres-backup-password-version": ($database.jsonKeysBackupPasswordVersion | tostring),
-            "agora-json-keys-postgres-password-version": ($database.jsonKeysPasswordVersion | tostring)
-          }
-        end
+    local service="$1"
+    jq --join-output --compact-output --sort-keys --arg key "${service}" '
+      .currentDatabase as $database |
+      ($key | gsub("_"; "-")) as $service |
+      (if $key == "json_keys" then "jsonKeys" else "authentication" end) as $prefix |
+      {
+        "agora-database-release-revision": ($database.hosts[$key].releaseRevision // ""),
+        ("agora-\($service)-database-image"): ($database[$prefix + "Image"] // ""),
+        ("agora-\($service)-postgres-password-version"): (($database[$prefix + "PasswordVersion"] // 0) | tostring),
+        ("agora-\($service)-postgres-backup-password-version"): (($database[$prefix + "BackupPasswordVersion"] // 0) | tostring)
+      }
     ' "${RELEASE_FILE}" | sha256sum | cut -d ' ' -f 1
 }
 
@@ -255,11 +241,13 @@ case "${STEP}" in
                 "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}" "${COMMIT}" >/dev/null
         fi
         "${SCRIPT_DIR}/preflight-release.sh" "${RELEASE_FILE}"
-        EXPECTED_DATABASE_METADATA_SHA256="$(expected_database_metadata_sha256)"
-        "${SCRIPT_DIR}/prepare-database-change.sh" \
-            "${PROJECT_ID}" "${DATABASE_ZONE}" "${COMMIT}" \
-            "${RELEASE_DIRECTORY}/database-change-proof.json" \
-            "${EXPECTED_DATABASE_METADATA_SHA256}"
+        for service in $(jq -r '.services[]' "${RELEASE_FILE}"); do
+            disk_id="$(jq -r --arg service "${service}" '.cloud.databaseHosts[$service].data_disk_id' "${RELEASE_FILE}")"
+            expected="$(expected_database_metadata_sha256 "${service}")"
+            "${SCRIPT_DIR}/prepare-database-change.sh" "${PROJECT_ID}" "${DATABASE_ZONE}" \
+                "${service//_/-}" "${disk_id}" "${COMMIT}" \
+                "${RELEASE_DIRECTORY}/database-change-${service}.json" "${expected}"
+        done
         jq -n '
           {
             executions: {
@@ -303,26 +291,22 @@ case "${STEP}" in
             "$(plan_id 1)" "${RELEASE_DIRECTORY}/candidate.tfvars.json"
         ;;
     database)
-        if jq --exit-status \
-            '.previousDatabase != null and .database == .previousDatabase' \
-            "${RELEASE_FILE}" >/dev/null; then
-            printf 'Database release metadata is unchanged; restart skipped.\n'
-            exit 0
-        fi
-        mapfile -t database < <(
-            jq --raw-output '.database | [
-              .releaseRevision,
-              .jsonKeysImage,
-              .authenticationImage,
-              (.jsonKeysPasswordVersion | tostring),
-              (.authenticationPasswordVersion | tostring),
-              (.jsonKeysBackupPasswordVersion | tostring),
-              (.authenticationBackupPasswordVersion | tostring)
-            ][]' "${RELEASE_FILE}"
-        )
-        DATABASE_CHANGE_PROOF="${RELEASE_DIRECTORY}/database-change-proof.json" \
-            "${SCRIPT_DIR}/deploy-database-release.sh" \
-            "${PROJECT_ID}" "${DATABASE_ZONE}" "${database[@]}"
+        for service in $(jq -r '.services[]' "${RELEASE_FILE}"); do
+            if jq -e --arg service "${service}" '.currentDatabase.hosts[$service] == .database.hosts[$service]' "${RELEASE_FILE}" >/dev/null; then
+                printf '%s database is unchanged; restart skipped.\n' "${service}"
+                continue
+            fi
+            mapfile -t database < <(jq -r --arg service "${service}" '
+                .database as $database |
+                (if $service == "json_keys" then "jsonKeys" else "authentication" end) as $prefix |
+                [$database.hosts[$service].dataDiskId, $database.hosts[$service].releaseRevision,
+                 $database[$prefix + "Image"], ($database[$prefix + "PasswordVersion"] | tostring),
+                 ($database[$prefix + "BackupPasswordVersion"] | tostring)][]' "${RELEASE_FILE}")
+            # Record before the first write, including partially failed restarts.
+            touch "${RELEASE_DIRECTORY}/database-mutated-${service}"
+            DATABASE_CHANGE_PROOF="${RELEASE_DIRECTORY}/database-change-${service}.json" \
+                "${SCRIPT_DIR}/deploy-database-release.sh" "${PROJECT_ID}" "${DATABASE_ZONE}" "${service//_/-}" "${database[@]}"
+        done
         ;;
     json-migrations)
         EXECUTION="$(run_job agora-json-keys-migrations)"
@@ -337,21 +321,21 @@ case "${STEP}" in
         update_operation '.executions.authenticationMigrations = $value' "${EXECUTION}"
         ;;
     recovery-verification)
-        EXECUTION="$(run_job agora-postgres-backup-json-keys)"
-        update_operation '.executions.postgresBackupJsonKeys = $value' "${EXECUTION}"
-        EXECUTION="$(run_job agora-postgres-backup-authentication)"
-        update_operation '.executions.postgresBackupAuthentication = $value' "${EXECUTION}"
-        EXECUTION="$(run_job agora-postgres-restore-json-keys)"
-        update_operation '.executions.postgresRestoreJsonKeys = $value' "${EXECUTION}"
-        EXECUTION="$(run_job agora-postgres-restore-authentication)"
-        update_operation '.executions.postgresRestoreAuthentication = $value' "${EXECUTION}"
+        for service in $(jq -r '.services[]' "${RELEASE_FILE}"); do
+            case "${service}" in json_keys) operation=JsonKeys ;; authentication) operation=Authentication ;; esac
+            EXECUTION="$(run_job "agora-postgres-backup-${service//_/-}")"
+            update_operation ".executions.postgresBackup${operation} = \$value" "${EXECUTION}"
+            EXECUTION="$(run_job "agora-postgres-restore-${service//_/-}")"
+            update_operation ".executions.postgresRestore${operation} = \$value" "${EXECUTION}"
+        done
         EXECUTION="$(run_job agora-postgres-backup-monitor)"
         update_operation '.executions.postgresBackupMonitor = $value' "${EXECUTION}"
         ;;
     authentication-initialization)
         EXECUTION="$(
             "${SCRIPT_DIR}/await-auth-initialization.sh" \
-                "${PROJECT_ID}" "${REGION}" "${RECEIPT_BUCKET}" "${COMMIT}"
+                "${PROJECT_ID}" "${REGION}" "${RECEIPT_BUCKET}" "${COMMIT}" \
+                "$(jq -r '.cloud.databaseHosts.authentication.data_disk_id' "${RELEASE_FILE}")"
         )"
         update_operation '.initialization = $value' "${EXECUTION}"
         ;;
@@ -483,6 +467,18 @@ case "${STEP}" in
             "${RECEIPT_BUCKET}" "${RECEIPT_FILE}" "${RUN_ID}" "${RUN_ATTEMPT}"
         ;;
     rollback)
+        if jq -e '.mode == "database-rebuild"' "${RELEASE_FILE}" >/dev/null; then
+            # A deleted shared database is not a valid compensation target.
+            # Stop only the new hosts, keep their disks and Cloud Run resources,
+            # and do not publish a fictitious successful rollback receipt.
+            printf 'null\n' >"${RELEASE_DIRECTORY}/empty-database.json"
+            for service in $(jq -r '.services[]' "${RELEASE_FILE}"); do
+                [ -f "${RELEASE_DIRECTORY}/database-mutated-${service}" ] || continue
+                disk_id="$(jq -r --arg service "${service}" '.cloud.databaseHosts[$service].data_disk_id' "${RELEASE_FILE}")"
+                "${SCRIPT_DIR}/restore-database-release.sh" "${PROJECT_ID}" "${DATABASE_ZONE}" "${service//_/-}" "${disk_id}" "${RELEASE_DIRECTORY}/empty-database.json"
+            done
+            exit 0
+        fi
         if jq --exit-status '.application_release != null' \
             "${RELEASE_DIRECTORY}/rollback.tfvars.json" >/dev/null; then
             if jq --exit-status '.services | index("authentication") != null' "${RELEASE_FILE}" >/dev/null; then
@@ -501,14 +497,16 @@ case "${STEP}" in
         jq '.previousDatabase' "${RELEASE_FILE}" \
             >"${RELEASE_DIRECTORY}/previous-database.json"
         chmod 600 "${RELEASE_DIRECTORY}/previous-database.json"
-        if ! jq --exit-status '
-            (.action == "deploy" and .database == .previousDatabase) or
-            (.action == "rollback" and .currentDatabase == .previousDatabase)
-        ' "${RELEASE_FILE}" >/dev/null; then
-            "${SCRIPT_DIR}/restore-database-release.sh" \
-                "${PROJECT_ID}" "${DATABASE_ZONE}" \
-                "${RELEASE_DIRECTORY}/previous-database.json"
-        fi
+        for service in $(jq -r '.services[]' "${RELEASE_FILE}"); do
+            if jq -e --arg service "${service}" '
+                if .action == "rollback" then .currentDatabase.hosts[$service] == .previousDatabase.hosts[$service]
+                else .database.hosts[$service] == .previousDatabase.hosts[$service] end
+            ' "${RELEASE_FILE}" >/dev/null; then continue; fi
+            if [ "$(jq -r '.action' "${RELEASE_FILE}")" != rollback ] &&
+                [ ! -f "${RELEASE_DIRECTORY}/database-mutated-${service}" ]; then continue; fi
+            disk_id="$(jq -r --arg service "${service}" '.cloud.databaseHosts[$service].data_disk_id' "${RELEASE_FILE}")"
+            "${SCRIPT_DIR}/restore-database-release.sh" "${PROJECT_ID}" "${DATABASE_ZONE}" "${service//_/-}" "${disk_id}" "${RELEASE_DIRECTORY}/previous-database.json"
+        done
         write_rollback_receipt
         ;;
     *)

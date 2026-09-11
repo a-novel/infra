@@ -290,8 +290,11 @@ jobs:
         run: |
           set -euo pipefail
           zone="$(jq --raw-output '.database_zone' "${RECOVERY_DIRECTORY}/foundation.tfvars.json")"
-          ./ops/restore-database-release.sh "${REPLACEMENT_PROJECT_ID}" "${zone}" \
-            "${RECOVERY_DIRECTORY}/database.json"
+          for service in authentication json_keys; do
+            disk_id="$(jq -r --arg service "${service}" '.hosts[$service].dataDiskId' "${RECOVERY_DIRECTORY}/database.json")"
+            ./ops/restore-database-release.sh "${REPLACEMENT_PROJECT_ID}" "${zone}" "${service//_/-}" "${disk_id}" \
+              "${RECOVERY_DIRECTORY}/database.json"
+          done
 
           export TOFU_STATE_SUFFIX="recovery/${REPLACEMENT_PROJECT_ID}"
           outputs="${RECOVERY_DIRECTORY}/release-outputs.json"

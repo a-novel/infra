@@ -10,9 +10,12 @@ variables {
   management_project_id = "agora-management-test"
   workload_project_id   = "agora-production-test"
   backup_bucket_name    = "agora-management-test-123456789012-backups"
-  database_private_ip   = "10.20.0.5"
-  network_id            = "projects/agora-production-test/global/networks/agora-production"
-  subnet_id             = "projects/agora-production-test/regions/europe-west1/subnetworks/agora-production-europe-west1"
+  database_hosts = {
+    authentication = { private_ip = "10.20.0.5", data_disk_id = "1001" }
+    json_keys      = { private_ip = "10.20.0.6", data_disk_id = "1002" }
+  }
+  network_id = "projects/agora-production-test/global/networks/agora-production"
+  subnet_id  = "projects/agora-production-test/regions/europe-west1/subnetworks/agora-production-europe-west1"
   cloud_run_invocation_tags = {
     key = "tagKeys/100000000001"
     values = {

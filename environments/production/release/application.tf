@@ -19,7 +19,7 @@ locals {
   # tags, container egress controls, and database credentials form this boundary.
   application_database_environment = {
     for key, contract in local.database_contracts : key => {
-      POSTGRES_HOST        = var.database_private_ip
+      POSTGRES_HOST        = local.database_private_ips[key]
       POSTGRES_PORT        = tostring(contract.port)
       POSTGRES_USER        = contract.owner
       POSTGRES_DATABASE    = contract.database_name

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Prepares the preserved disk and converges the two pinned PostgreSQL containers on every boot.
+# Prepares the service-owned disk and converges its pinned PostgreSQL container on every boot.
 # Release metadata contains only immutable image references and numeric secret-version identifiers.
 
 set -euo pipefail
@@ -12,22 +12,20 @@ DATA_DEVICE="/dev/disk/by-id/google-agora-data"
 DATA_MOUNT="/mnt/disks/agora-data"
 SECRETS_DIR="/run/agora/secrets"
 DOCKER_CONFIG_DIR="/run/agora/docker"
-DATABASE_BRIDGE_RANGE="172.31.254.0/29"
+DATABASE_BRIDGE_RANGE="172.31.254.0/30"
 TOKEN_CONFIG=""
 BOOT_ID=""
 READINESS_REVISION="invalid"
 SECRET_TEMP_FILES=()
-DATABASE_CONTAINERS=(
-    agora-postgres-json-keys
-    agora-postgres-authentication
-)
+DATABASE_COMPONENT=""
+DATABASE_CONTAINERS=()
 
 remove_database_secret_files() {
-    rm -f -- \
-        "${SECRETS_DIR}/json-keys-postgres-password" \
-        "${SECRETS_DIR}/json-keys-postgres-backup-password" \
-        "${SECRETS_DIR}/authentication-postgres-password" \
-        "${SECRETS_DIR}/authentication-postgres-backup-password"
+    if [ -n "${DATABASE_COMPONENT}" ]; then
+        rm -f -- \
+            "${SECRETS_DIR}/${DATABASE_COMPONENT}-postgres-password" \
+            "${SECRETS_DIR}/${DATABASE_COMPONENT}-postgres-backup-password"
+    fi
 }
 
 cleanup() {
@@ -73,7 +71,7 @@ handle_failure() {
     # Healthy containers retain their read-only bind sources for crash
     # restart. A failed convergence has no reader and keeps no final payload.
     remove_database_secret_files
-    printf 'error: database convergence failed; both database containers are stopped\n' >&2
+    printf 'error: database convergence failed; the database container is stopped\n' >&2
     exit "${status}"
 }
 trap handle_failure ERR
@@ -391,6 +389,14 @@ start_database() {
     activate_database_credentials "${container_name}" "${database_user}" "${database_name}"
 }
 
+DATABASE_COMPONENT="$(attribute_get agora-database-service)"
+case "${DATABASE_COMPONENT}" in
+    json-keys) DATABASE_PORT=5432; DATABASE_NAME=agora_json_keys ;;
+    authentication) DATABASE_PORT=5433; DATABASE_NAME=agora_authentication ;;
+    *) printf 'error: unsupported database service\n' >&2; exit 65 ;;
+esac
+DATABASE_CONTAINERS=("agora-postgres-${DATABASE_COMPONENT}")
+
 # The managed-group stable bit only covers Compute's restart operation. This
 # boot-specific status lets the release workflow wait for PostgreSQL itself.
 BOOT_ID="$(tr -d '\n' </proc/sys/kernel/random/boot_id)"
@@ -454,7 +460,7 @@ resize2fs "${DATA_DEVICE}" >/dev/null
 
 if [ -z "${RELEASE_REVISION}" ]; then
     # Foundation prepares and verifies storage but deliberately starts no
-    # database until one complete release supplies all seven non-secret fields.
+    # database until its release supplies all four non-secret fields.
     stop_database_containers
     remove_database_secret_files
     publish_database_status idle
@@ -474,22 +480,16 @@ DATABASE_IP="$(metadata_request instance/network-interfaces/0/ip)"
 CONTAINER_CPU="$(attribute_get agora-database-container-cpu)"
 CONTAINER_MEMORY_MB="$(attribute_get agora-database-container-memory-mb)"
 MAX_CONNECTIONS="$(attribute_get agora-database-max-connections)"
-JSON_KEYS_IMAGE="$(attribute_get agora-json-keys-database-image)"
-AUTHENTICATION_IMAGE="$(attribute_get agora-authentication-database-image)"
-JSON_KEYS_PASSWORD_VERSION="$(attribute_get agora-json-keys-postgres-password-version)"
-AUTHENTICATION_PASSWORD_VERSION="$(attribute_get agora-authentication-postgres-password-version)"
-JSON_KEYS_BACKUP_PASSWORD_VERSION="$(attribute_get agora-json-keys-postgres-backup-password-version)"
-AUTHENTICATION_BACKUP_PASSWORD_VERSION="$(attribute_get agora-authentication-postgres-backup-password-version)"
+DATABASE_IMAGE="$(attribute_get "agora-${DATABASE_COMPONENT}-database-image")"
+PASSWORD_VERSION="$(attribute_get "agora-${DATABASE_COMPONENT}-postgres-password-version")"
+BACKUP_PASSWORD_VERSION="$(attribute_get "agora-${DATABASE_COMPONENT}-postgres-backup-password-version")"
 
 require_cpu "${CONTAINER_CPU}"
 require_numeric "container memory" "${CONTAINER_MEMORY_MB}"
 require_numeric "maximum connections" "${MAX_CONNECTIONS}"
-require_numeric "JSON Keys password version" "${JSON_KEYS_PASSWORD_VERSION}"
-require_numeric "Authentication password version" "${AUTHENTICATION_PASSWORD_VERSION}"
-require_numeric "JSON Keys backup password version" "${JSON_KEYS_BACKUP_PASSWORD_VERSION}"
-require_numeric "Authentication backup password version" "${AUTHENTICATION_BACKUP_PASSWORD_VERSION}"
-require_promoted_image "${JSON_KEYS_IMAGE}" "service-json-keys/database"
-require_promoted_image "${AUTHENTICATION_IMAGE}" "service-authentication/database"
+require_numeric "owner password version" "${PASSWORD_VERSION}"
+require_numeric "backup password version" "${BACKUP_PASSWORD_VERSION}"
+require_promoted_image "${DATABASE_IMAGE}" "service-${DATABASE_COMPONENT}/database"
 
 # ---- Host-only credentials and images ----
 
@@ -508,35 +508,14 @@ TOKEN_CONFIG="$(mktemp /run/agora/secret-manager-curl.XXXXXX)"
 printf 'header = "Authorization: Bearer %s"\n' "${ACCESS_TOKEN}" > "${TOKEN_CONFIG}"
 unset ACCESS_TOKEN
 
-JSON_KEYS_PASSWORD_FILE="${SECRETS_DIR}/json-keys-postgres-password"
-AUTHENTICATION_PASSWORD_FILE="${SECRETS_DIR}/authentication-postgres-password"
-JSON_KEYS_BACKUP_PASSWORD_FILE="${SECRETS_DIR}/json-keys-postgres-backup-password"
-AUTHENTICATION_BACKUP_PASSWORD_FILE="${SECRETS_DIR}/authentication-postgres-backup-password"
+PASSWORD_FILE="${SECRETS_DIR}/${DATABASE_COMPONENT}-postgres-password"
+BACKUP_PASSWORD_FILE="${SECRETS_DIR}/${DATABASE_COMPONENT}-postgres-backup-password"
 
-fetch_secret \
-    production-json-keys-postgres-password \
-    "${JSON_KEYS_PASSWORD_VERSION}" \
-    "${JSON_KEYS_PASSWORD_FILE}"
-fetch_secret \
-    production-authentication-postgres-password \
-    "${AUTHENTICATION_PASSWORD_VERSION}" \
-    "${AUTHENTICATION_PASSWORD_FILE}"
-fetch_secret \
-    production-json-keys-postgres-backup-password \
-    "${JSON_KEYS_BACKUP_PASSWORD_VERSION}" \
-    "${JSON_KEYS_BACKUP_PASSWORD_FILE}"
-fetch_secret \
-    production-authentication-postgres-backup-password \
-    "${AUTHENTICATION_BACKUP_PASSWORD_VERSION}" \
-    "${AUTHENTICATION_BACKUP_PASSWORD_FILE}"
+fetch_secret "production-${DATABASE_COMPONENT}-postgres-password" "${PASSWORD_VERSION}" "${PASSWORD_FILE}"
+fetch_secret "production-${DATABASE_COMPONENT}-postgres-backup-password" "${BACKUP_PASSWORD_VERSION}" "${BACKUP_PASSWORD_FILE}"
 
-if cmp -s "${JSON_KEYS_PASSWORD_FILE}" "${AUTHENTICATION_PASSWORD_FILE}" ||
-    cmp -s "${JSON_KEYS_PASSWORD_FILE}" "${JSON_KEYS_BACKUP_PASSWORD_FILE}" ||
-    cmp -s "${JSON_KEYS_PASSWORD_FILE}" "${AUTHENTICATION_BACKUP_PASSWORD_FILE}" ||
-    cmp -s "${AUTHENTICATION_PASSWORD_FILE}" "${JSON_KEYS_BACKUP_PASSWORD_FILE}" ||
-    cmp -s "${AUTHENTICATION_PASSWORD_FILE}" "${AUTHENTICATION_BACKUP_PASSWORD_FILE}" ||
-    cmp -s "${JSON_KEYS_BACKUP_PASSWORD_FILE}" "${AUTHENTICATION_BACKUP_PASSWORD_FILE}"; then
-    printf 'error: all database owner and backup passwords must be distinct\n' >&2
+if cmp -s "${PASSWORD_FILE}" "${BACKUP_PASSWORD_FILE}"; then
+    printf 'error: database owner and backup passwords must be distinct\n' >&2
     exit 1
 fi
 
@@ -546,34 +525,23 @@ fi
 printf '{"credHelpers":{"%s":"gcr"}}\n' "${REGISTRY_HOST}" > "${DOCKER_CONFIG_DIR}/config.json"
 chmod 0600 "${DOCKER_CONFIG_DIR}/config.json"
 export DOCKER_CONFIG="${DOCKER_CONFIG_DIR}"
-docker pull --quiet "${JSON_KEYS_IMAGE}" >/dev/null
-docker pull --quiet "${AUTHENTICATION_IMAGE}" >/dev/null
+docker pull --quiet "${DATABASE_IMAGE}" >/dev/null
 
-# Each cluster receives one container address. Separate bridges prevent direct
-# peer traffic; the host firewall supplies inbound-only VPC reachability.
+# Container-originated connections remain denied, including metadata and peer access.
 remove_database_containers
-ensure_database_network agora-database-json-keys 172.31.254.0/30
-ensure_database_network agora-database-authentication 172.31.254.4/30
+ensure_database_network "agora-database-${DATABASE_COMPONENT}" "${DATABASE_BRIDGE_RANGE}"
 configure_database_firewall
 
 # ---- Database convergence ----
 
 start_database \
-    json-keys \
-    "${JSON_KEYS_IMAGE}" \
-    5432 \
-    agora_json_keys \
-    agora_json_keys \
-    "${JSON_KEYS_PASSWORD_FILE}" \
-    "${JSON_KEYS_BACKUP_PASSWORD_FILE}"
-start_database \
-    authentication \
-    "${AUTHENTICATION_IMAGE}" \
-    5433 \
-    agora_authentication \
-    agora_authentication \
-    "${AUTHENTICATION_PASSWORD_FILE}" \
-    "${AUTHENTICATION_BACKUP_PASSWORD_FILE}"
+    "${DATABASE_COMPONENT}" \
+    "${DATABASE_IMAGE}" \
+    "${DATABASE_PORT}" \
+    "${DATABASE_NAME}" \
+    "${DATABASE_NAME}" \
+    "${PASSWORD_FILE}" \
+    "${BACKUP_PASSWORD_FILE}"
 
 publish_database_status healthy
 printf 'Database release %s is healthy.\n' "${RELEASE_REVISION}"

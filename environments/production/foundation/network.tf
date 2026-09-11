@@ -2,11 +2,12 @@ locals {
   network_name = "agora-production"
 
   network_tags = {
-    authentication = "agora-authentication"
-    backup         = "agora-backup"
-    database       = "agora-database"
-    json_keys      = "agora-json-keys"
-    restore        = "agora-restore"
+    authentication          = "agora-authentication"
+    backup                  = "agora-backup"
+    authentication_database = "agora-database-authentication"
+    json_keys_database      = "agora-database-json-keys"
+    json_keys               = "agora-json-keys"
+    restore                 = "agora-restore"
   }
 
   database_egress_contracts = {
@@ -135,18 +136,20 @@ resource "google_compute_firewall" "deny_other_egress" {
 }
 
 resource "google_compute_firewall" "allow_postgres_ingress" {
+  for_each = local.database_hosts
+
   project = google_project.workload.project_id
-  name    = "agora-allow-postgres-ingress"
+  name    = "agora-allow-${each.value.component}-postgres-ingress"
   network = google_compute_network.production.name
 
   direction     = "INGRESS"
   priority      = 800
   source_ranges = [var.subnet_cidr]
-  target_tags   = [local.network_tags.database]
+  target_tags   = [local.network_tags[each.value.identity]]
 
   allow {
     protocol = "tcp"
-    ports    = ["5432", "5433"]
+    ports    = [tostring(each.value.port)]
   }
 }
 
@@ -158,7 +161,7 @@ resource "google_compute_firewall" "allow_iap_ssh" {
   direction     = "INGRESS"
   priority      = 810
   source_ranges = ["35.235.240.0/20"]
-  target_tags   = [local.network_tags.database]
+  target_tags   = sort([for host in values(local.database_hosts) : local.network_tags[host.identity]])
 
   allow {
     protocol = "tcp"

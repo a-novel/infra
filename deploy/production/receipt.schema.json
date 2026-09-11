@@ -60,6 +60,15 @@
             "authenticationBackupPasswordVersion"
           ],
           "properties": {
+            "hosts": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["authentication", "json_keys"],
+              "properties": {
+                "authentication": { "$ref": "#/$defs/databaseHost" },
+                "json_keys": { "$ref": "#/$defs/databaseHost" }
+              }
+            },
             "releaseRevision": {
               "type": "string",
               "pattern": "^[a-f0-9]{40}$"
@@ -136,6 +145,16 @@
     }
   },
   "$defs": {
+    "databaseHost": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["privateIp", "dataDiskId", "releaseRevision"],
+      "properties": {
+        "privateIp": { "type": "string", "pattern": "^[0-9.]+$" },
+        "dataDiskId": { "type": "string", "pattern": "^[1-9][0-9]*$" },
+        "releaseRevision": { "type": "string", "pattern": "^[a-f0-9]{40}$" }
+      }
+    },
     "execution": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]{0,62}$"

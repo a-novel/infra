@@ -73,7 +73,7 @@ Cloud Scheduler authenticates with `agora-scheduler-invoker`; that account recei
 native Cloud Run completion metric therefore remains authoritative: one condition detects failed
 executions and another detects three hours without a completed hourly monitor.
 
-The foundation root also attaches `agora-database-daily-snapshots` to the preserved `agora-data`
+The foundation root also attaches a service-specific daily snapshot policy to each preserved `agora-data-authentication` / `agora-data-json-keys`
 disk. The schedule stores snapshots in `europe-west1` for inexpensive fast local recovery and keeps
 them after source-disk deletion. Portable logical backups remain in the management project's EU
 multi-region bucket for regional-loss recovery.

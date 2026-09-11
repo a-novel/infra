@@ -275,4 +275,7 @@ jobs:
           set -euo pipefail
           project="$(jq --exit-status --raw-output '.workload_project_id | select(type == "string")' "${RELEASE_CONFIG_FILE}")"
           zone="$(jq --exit-status --raw-output '.database_zone | select(type == "string")' "${RELEASE_CONFIG_FILE}")"
-          ./ops/recover-first-launch.sh "${RECEIPT_BUCKET}" "${project}" "${zone}" "${FAILED_REVISION}"
+          for service in json_keys authentication; do
+            disk_id="$(jq --exit-status --raw-output --arg service "${service}" '.database_hosts[$service].data_disk_id | select(type == "string")' "${RELEASE_CONFIG_FILE}")"
+            ./ops/recover-first-launch.sh "${RECEIPT_BUCKET}" "${project}" "${zone}" "${service//_/-}" "${disk_id}" "${FAILED_REVISION}"
+          done

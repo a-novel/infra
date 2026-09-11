@@ -10,9 +10,12 @@ variables {
   management_project_id = "agora-management-test"
   workload_project_id   = "agora-production-test"
   backup_bucket_name    = "agora-management-test-123456789012-backups"
-  database_private_ip   = "10.20.0.5"
-  network_id            = "projects/agora-production-test/global/networks/agora-production"
-  subnet_id             = "projects/agora-production-test/regions/europe-west1/subnetworks/agora-production-europe-west1"
+  database_hosts = {
+    authentication = { private_ip = "10.20.0.5", data_disk_id = "1001" }
+    json_keys      = { private_ip = "10.20.0.6", data_disk_id = "1002" }
+  }
+  network_id = "projects/agora-production-test/global/networks/agora-production"
+  subnet_id  = "projects/agora-production-test/regions/europe-west1/subnetworks/agora-production-europe-west1"
   cloud_run_invocation_tags = {
     key = "tagKeys/100000000001"
     values = {
@@ -30,6 +33,30 @@ variables {
     restore           = "agora-restore@agora-production-test.iam.gserviceaccount.com"
     scheduler_invoker = "agora-scheduler-invoker@agora-production-test.iam.gserviceaccount.com"
   }
+}
+
+run "assesses_historical_shared_host_inputs_before_new_coordinates_exist" {
+  command = plan
+
+  variables {
+    database_hosts      = null
+    database_private_ip = "10.20.0.5"
+  }
+
+  assert {
+    condition     = local.database_private_ips.authentication == "10.20.0.5" && local.database_private_ips.json_keys == "10.20.0.5"
+    error_message = "The existing private custody record must remain readable for pre-merge assessment."
+  }
+}
+
+run "rejects_ambiguous_database_topology_inputs" {
+  command = plan
+
+  variables {
+    database_private_ip = "10.20.0.5"
+  }
+
+  expect_failures = [check.database_host_contract]
 }
 
 run "keeps_recovery_disabled_before_the_database_release" {
@@ -241,7 +268,7 @@ run "builds_the_two_database_recovery_contracts" {
       one([
         for environment in one(one(one(job.template).template).containers).env : environment.value
         if environment.name == "DATABASE_HOST"
-      ]) == var.database_private_ip &&
+      ]) == var.database_hosts[key].private_ip &&
       one([
         for environment in one(one(one(job.template).template).containers).env : environment.value
         if environment.name == "DATABASE_PORT"
@@ -510,7 +537,7 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
           POSTGRES_TLS_ENABLED = "false"
         }
         json_keys = {
-          POSTGRES_HOST        = "10.20.0.5"
+          POSTGRES_HOST        = "10.20.0.6"
           POSTGRES_PORT        = "5432"
           POSTGRES_USER        = "agora_json_keys"
           POSTGRES_DATABASE    = "agora_json_keys"
@@ -783,9 +810,9 @@ run "builds_restore_only_contracts_in_a_disposable_recovery_state" {
   command = plan
 
   variables {
-    recovery_mode               = true
-    recovery_source_database_ip = "10.30.0.2"
-    recovery_source_project_id  = "agora-source-test"
+    recovery_mode                = true
+    recovery_source_database_ips = { authentication = "10.30.0.2", json_keys = "10.30.0.3" }
+    recovery_source_project_id   = "agora-source-test"
     recovery_backup_attempts = {
       authentication = "1750000000-agora-auth-backup-0"
       json_keys      = "1750000000-agora-json-backup-0"
@@ -913,7 +940,7 @@ run "builds_restore_only_contracts_in_a_disposable_recovery_state" {
       one([
         for environment in one(one(one(job.template).template).containers).env : environment.value
         if environment.name == "SOURCE_DATABASE_HOST"
-      ]) == var.recovery_source_database_ip &&
+      ]) == var.recovery_source_database_ips[key] &&
       one([
         for volume in one(one(job.template).template).volumes : volume
         if volume.name == "database-password"

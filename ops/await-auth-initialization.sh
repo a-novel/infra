@@ -4,12 +4,12 @@
 # initializer. On first launch this gate waits for a named operator to provision
 # the human-only job through the runbook and run it once, then creates a single
 # immutable completion marker in the private receipt bucket.
-# Usage: await-auth-initialization.sh <project> <region> <receipt-bucket> <commit>
+# Usage: await-auth-initialization.sh <project> <region> <receipt-bucket> <commit> <data-disk-id>
 
 set -euo pipefail
 
-if [ "$#" -ne 4 ]; then
-    printf 'Usage: %s <project> <region> <receipt-bucket> <commit>\n' "$0" >&2
+if [ "$#" -ne 5 ]; then
+    printf 'Usage: %s <project> <region> <receipt-bucket> <commit> <data-disk-id>\n' "$0" >&2
     exit 64
 fi
 
@@ -17,8 +17,9 @@ PROJECT_ID="$1"
 REGION="$2"
 RECEIPT_BUCKET="$3"
 COMMIT="$4"
+DATA_DISK_ID="$5"
 JOB_NAME="agora-authentication-init"
-MARKER="gs://${RECEIPT_BUCKET}/production/initialization/complete.json"
+MARKER="gs://${RECEIPT_BUCKET}/production/initialization/${DATA_DISK_ID}/complete.json"
 POLL_SECONDS="${INITIALIZATION_POLL_SECONDS:-20}"
 MAX_POLLS="${INITIALIZATION_MAX_POLLS:-90}"
 STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -27,6 +28,7 @@ trap 'rm -rf -- "${SCRATCH_DIRECTORY}"' EXIT
 
 if ! [[ "${PROJECT_ID}" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]] ||
     ! [[ "${REGION}" =~ ^[a-z]+-[a-z]+[0-9]+$ ]] ||
+    ! [[ "${DATA_DISK_ID}" =~ ^[1-9][0-9]*$ ]] ||
     ! [[ "${COMMIT}" =~ ^[a-f0-9]{40}$ ]] ||
     ! [[ "${POLL_SECONDS}" =~ ^[0-9]+$ ]] ||
     ! [[ "${MAX_POLLS}" =~ ^[1-9][0-9]*$ ]]; then
@@ -42,10 +44,10 @@ for command_name in gcloud jq; do
 done
 
 valid_marker() {
-    jq --exit-status '
+    jq --exit-status --arg project "${PROJECT_ID}" --arg disk_id "${DATA_DISK_ID}" '
         type == "object" and
-        keys == ["commit", "completedAt", "execution", "schemaVersion"] and
-        .schemaVersion == 1 and
+        keys == ["commit", "completedAt", "dataDiskId", "execution", "project", "schemaVersion"] and
+        .schemaVersion == 2 and .project == $project and .dataDiskId == $disk_id and
         (.commit | test("^[a-f0-9]{40}$")) and
         (.execution | test("^agora-authentication-init-[a-z0-9]+$")) and
         (.completedAt | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"))
@@ -111,10 +113,12 @@ for ((attempt = 1; attempt <= MAX_POLLS; attempt++)); do
         if [ -n "${EXECUTION}" ] && [[ "${EXECUTION}" =~ ^agora-authentication-init-[a-z0-9]+$ ]]; then
             MARKER_FILE="${SCRATCH_DIRECTORY}/initialization.json"
             jq -n \
+                --arg project "${PROJECT_ID}" \
+                --arg disk_id "${DATA_DISK_ID}" \
                 --arg commit "${COMMIT}" \
                 --arg execution "${EXECUTION}" \
                 --arg completed_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-                '{schemaVersion: 1, commit: $commit, execution: $execution, completedAt: $completed_at}' \
+                '{schemaVersion: 2, project: $project, dataDiskId: $disk_id, commit: $commit, execution: $execution, completedAt: $completed_at}' \
                 >"${MARKER_FILE}"
             chmod 600 "${MARKER_FILE}"
             if ! gcloud storage cp "${MARKER_FILE}" "${MARKER}" \

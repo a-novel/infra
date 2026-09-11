@@ -301,7 +301,8 @@ cross-project payload contract. These are the only surviving-resource IAM mutati
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 AUTH_RUNTIME="serviceAccount:agora-authentication@${REPLACEMENT_PROJECT_ID}.iam.gserviceaccount.com"
-DATABASE_RUNTIME="serviceAccount:agora-database-host@${REPLACEMENT_PROJECT_ID}.iam.gserviceaccount.com"
+AUTH_DATABASE_RUNTIME="serviceAccount:agora-auth-database@${REPLACEMENT_PROJECT_ID}.iam.gserviceaccount.com"
+JSON_DATABASE_RUNTIME="serviceAccount:agora-json-keys-database@${REPLACEMENT_PROJECT_ID}.iam.gserviceaccount.com"
 JSON_RUNTIME="serviceAccount:agora-json-keys@${REPLACEMENT_PROJECT_ID}.iam.gserviceaccount.com"
 RESTORE_RUNTIME="serviceAccount:agora-restore@${REPLACEMENT_PROJECT_ID}.iam.gserviceaccount.com"
 
@@ -313,10 +314,10 @@ grant_secret_access() {
 
 grant_secret_access production-authentication-postgres-password "$AUTH_RUNTIME"
 grant_secret_access production-authentication-smtp-sender-password "$AUTH_RUNTIME"
-grant_secret_access production-authentication-postgres-password "$DATABASE_RUNTIME"
-grant_secret_access production-authentication-postgres-backup-password "$DATABASE_RUNTIME"
-grant_secret_access production-json-keys-postgres-password "$DATABASE_RUNTIME"
-grant_secret_access production-json-keys-postgres-backup-password "$DATABASE_RUNTIME"
+grant_secret_access production-authentication-postgres-password "$AUTH_DATABASE_RUNTIME"
+grant_secret_access production-authentication-postgres-backup-password "$AUTH_DATABASE_RUNTIME"
+grant_secret_access production-json-keys-postgres-password "$JSON_DATABASE_RUNTIME"
+grant_secret_access production-json-keys-postgres-backup-password "$JSON_DATABASE_RUNTIME"
 grant_secret_access production-json-keys-app-master-key "$JSON_RUNTIME"
 grant_secret_access production-json-keys-postgres-password "$JSON_RUNTIME"
 grant_secret_access production-authentication-postgres-password "$RESTORE_RUNTIME"
@@ -339,10 +340,10 @@ unsetopt err_exit nounset xtrace
 for tuple in \
   "production-authentication-postgres-password ${AUTH_RUNTIME}" \
   "production-authentication-smtp-sender-password ${AUTH_RUNTIME}" \
-  "production-authentication-postgres-password ${DATABASE_RUNTIME}" \
-  "production-authentication-postgres-backup-password ${DATABASE_RUNTIME}" \
-  "production-json-keys-postgres-password ${DATABASE_RUNTIME}" \
-  "production-json-keys-postgres-backup-password ${DATABASE_RUNTIME}" \
+  "production-authentication-postgres-password ${AUTH_DATABASE_RUNTIME}" \
+  "production-authentication-postgres-backup-password ${AUTH_DATABASE_RUNTIME}" \
+  "production-json-keys-postgres-password ${JSON_DATABASE_RUNTIME}" \
+  "production-json-keys-postgres-backup-password ${JSON_DATABASE_RUNTIME}" \
   "production-json-keys-app-master-key ${JSON_RUNTIME}" \
   "production-json-keys-postgres-password ${JSON_RUNTIME}" \
   "production-authentication-postgres-password ${RESTORE_RUNTIME}" \
@@ -501,7 +502,7 @@ added. Connect through IAP as a configured database operator:
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-DATABASE_INSTANCE_URI="$(gcloud compute instance-groups managed list-instances agora-database \
+DATABASE_INSTANCE_URI="$(gcloud compute instance-groups managed list-instances agora-database-authentication \
   --project="$REPLACEMENT_PROJECT_ID" --zone="$DATABASE_ZONE" \
   --format='value(instance)' --limit=1)"
 DATABASE_INSTANCE_NAME="${DATABASE_INSTANCE_URI##*/}"
@@ -625,10 +626,10 @@ revoke_secret_access() {
 
 revoke_secret_access production-authentication-postgres-password "$AUTH_RUNTIME"
 revoke_secret_access production-authentication-smtp-sender-password "$AUTH_RUNTIME"
-revoke_secret_access production-authentication-postgres-password "$DATABASE_RUNTIME"
-revoke_secret_access production-authentication-postgres-backup-password "$DATABASE_RUNTIME"
-revoke_secret_access production-json-keys-postgres-password "$DATABASE_RUNTIME"
-revoke_secret_access production-json-keys-postgres-backup-password "$DATABASE_RUNTIME"
+revoke_secret_access production-authentication-postgres-password "$AUTH_DATABASE_RUNTIME"
+revoke_secret_access production-authentication-postgres-backup-password "$AUTH_DATABASE_RUNTIME"
+revoke_secret_access production-json-keys-postgres-password "$JSON_DATABASE_RUNTIME"
+revoke_secret_access production-json-keys-postgres-backup-password "$JSON_DATABASE_RUNTIME"
 revoke_secret_access production-json-keys-app-master-key "$JSON_RUNTIME"
 revoke_secret_access production-json-keys-postgres-password "$JSON_RUNTIME"
 revoke_secret_access production-authentication-postgres-password "$RESTORE_RUNTIME"
@@ -636,7 +637,7 @@ revoke_secret_access production-json-keys-postgres-password "$RESTORE_RUNTIME"
 
 gcloud storage buckets remove-iam-policy-binding "gs://${BACKUP_BUCKET}" --member="$RESTORE_RUNTIME" --role=roles/storage.objectViewer --condition=None --quiet >/dev/null
 
-for member in "$AUTH_RUNTIME" "$DATABASE_RUNTIME" "$JSON_RUNTIME" "$RESTORE_RUNTIME"; do
+for member in "$AUTH_RUNTIME" "$AUTH_DATABASE_RUNTIME" "$JSON_DATABASE_RUNTIME" "$JSON_RUNTIME" "$RESTORE_RUNTIME"; do
   for secret in \
     production-authentication-postgres-password \
     production-authentication-postgres-backup-password \
@@ -654,7 +655,7 @@ gcloud storage buckets get-iam-policy "gs://${BACKUP_BUCKET}" --format=json |
 jq --exit-status --arg member "$RESTORE_RUNTIME" '
 [.bindings[]? | select((.members // []) | index($member))] | length == 0
 ' >/dev/null
-unset AUTH_RUNTIME DATABASE_RUNTIME JSON_RUNTIME RESTORE_RUNTIME
+unset AUTH_RUNTIME AUTH_DATABASE_RUNTIME JSON_DATABASE_RUNTIME JSON_RUNTIME RESTORE_RUNTIME
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 

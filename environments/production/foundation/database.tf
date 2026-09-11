@@ -20,6 +20,14 @@ locals {
     json_keys      = 5432
     authentication = 5433
   }
+
+  database_hosts = {
+    for service, port in local.database_ports : service => {
+      component = replace(service, "_", "-")
+      port      = port
+      identity  = "${service}_database"
+    }
+  }
 }
 
 check "database_zone_matches_region" {
@@ -32,7 +40,7 @@ check "database_zone_matches_region" {
 check "database_container_memory_headroom" {
   assert {
     condition = (
-      (var.database_container_memory_mb * length(local.database_ports)) <=
+      var.database_container_memory_mb <=
       (local.database_machine_profiles[var.database_machine_type].memory_mb - 1024)
     )
     error_message = "Database container limits must leave at least 1 GiB of host memory."
@@ -42,24 +50,33 @@ check "database_container_memory_headroom" {
 check "database_container_cpu_headroom" {
   assert {
     condition = (
-      (var.database_container_cpu * length(local.database_ports)) <=
+      var.database_container_cpu <=
       (local.database_machine_profiles[var.database_machine_type].vcpu - 0.5)
     )
     error_message = "Database container limits must leave at least 0.5 vCPU for the host."
   }
 }
 
+check "database_cpu_quota" {
+  assert {
+    condition     = var.compute_cpu_quota >= length(local.database_hosts) * local.database_machine_profiles[var.database_machine_type].vcpu
+    error_message = "The regional Compute CPU quota must fit both database VMs."
+  }
+}
+
 resource "google_compute_disk" "database" {
+  for_each = local.database_hosts
+
   project = google_project.workload.project_id
   zone    = var.database_zone
-  name    = local.database_device_name
+  name    = "agora-data-${each.value.component}"
 
   type                      = "pd-balanced"
   size                      = var.database_data_disk_size_gb
   physical_block_size_bytes = 4096
-  description               = "Preserved data for the production PostgreSQL containers."
+  description               = "Preserved PostgreSQL data for ${each.value.component}."
 
-  labels = merge(local.labels, { role = "database-data" })
+  labels = merge(local.labels, { role = "database-data", component = each.value.component })
 
   deletion_policy = "DELETE"
 
@@ -67,19 +84,23 @@ resource "google_compute_disk" "database" {
 }
 
 resource "google_compute_instance_template" "database" {
+  for_each = local.database_hosts
+
   project     = google_project.workload.project_id
   region      = var.region
-  name_prefix = "agora-database-"
+  name_prefix = "agora-database-${each.value.component}-"
 
   description          = "Immutable Container-Optimized OS template for the production PostgreSQL host."
   instance_description = "One-member private PostgreSQL data plane."
   machine_type         = var.database_machine_type
   can_ip_forward       = false
 
-  tags   = [local.network_tags.database]
-  labels = merge(local.labels, { role = "database" })
+  tags   = [local.network_tags[each.value.identity]]
+  labels = merge(local.labels, { role = "database", component = each.value.component })
 
   metadata = {
+    agora-database-service             = each.value.component
+    agora-database-data-disk-id        = google_compute_disk.database[each.key].disk_id
     agora-database-container-cpu       = tostring(var.database_container_cpu)
     agora-database-container-memory-mb = tostring(var.database_container_memory_mb)
     agora-database-data-disk-size-gb   = tostring(var.database_data_disk_size_gb)
@@ -104,7 +125,7 @@ resource "google_compute_instance_template" "database" {
     boot         = true
     device_name  = "agora-boot"
     disk_size_gb = 20
-    disk_type    = "pd-standard"
+    disk_type    = "pd-balanced"
     source_image = var.database_cos_image
   }
 
@@ -116,7 +137,7 @@ resource "google_compute_instance_template" "database" {
     device_name = local.database_device_name
     mode        = "READ_WRITE"
     # Global instance templates resolve an existing zonal disk by name.
-    source = google_compute_disk.database.name
+    source = google_compute_disk.database[each.key].name
   }
 
   network_interface {
@@ -131,7 +152,7 @@ resource "google_compute_instance_template" "database" {
   }
 
   service_account {
-    email  = google_service_account.runtime["database"].email
+    email  = google_service_account.runtime[each.value.identity].email
     scopes = ["cloud-platform"]
   }
 
@@ -153,17 +174,19 @@ resource "google_compute_instance_template" "database" {
 }
 
 resource "google_compute_instance_group_manager" "database" {
+  for_each = local.database_hosts
+
   project = google_project.workload.project_id
   zone    = var.database_zone
-  name    = "agora-database"
+  name    = "agora-database-${each.value.component}"
 
   description        = "Fixed-size stateful group for the production PostgreSQL host."
-  base_instance_name = "agora-database"
+  base_instance_name = "agora-database-${each.value.component}"
   target_size        = 1
 
   version {
     name              = "primary"
-    instance_template = google_compute_instance_template.database.self_link_unique
+    instance_template = google_compute_instance_template.database[each.key].self_link_unique
   }
 
   stateful_disk {
@@ -176,19 +199,16 @@ resource "google_compute_instance_group_manager" "database" {
     delete_rule    = "NEVER"
   }
 
-  # Foundation seeds the seven non-secret deployment keys, then deliberately
+  # Foundation seeds the four non-secret deployment keys, then deliberately
   # leaves this one field to the protected release workflow. The Google
   # provider's per-instance-config resource creates a new MIG member on its
   # first apply, so it cannot safely attach metadata to this existing member.
   all_instances_config {
     metadata = {
-      agora-authentication-database-image                   = ""
-      agora-authentication-postgres-backup-password-version = "0"
-      agora-authentication-postgres-password-version        = "0"
-      agora-database-release-revision                       = ""
-      agora-json-keys-database-image                        = ""
-      agora-json-keys-postgres-backup-password-version      = "0"
-      agora-json-keys-postgres-password-version             = "0"
+      "agora-${each.value.component}-database-image"                   = ""
+      "agora-${each.value.component}-postgres-backup-password-version" = "0"
+      "agora-${each.value.component}-postgres-password-version"        = "0"
+      agora-database-release-revision                                  = ""
     }
   }
 
@@ -216,17 +236,21 @@ resource "google_compute_instance_group_manager" "database" {
 
 # The generated instance name and live address are operator-facing outputs.
 data "google_compute_instance_group" "database" {
+  for_each = local.database_hosts
+
   project = google_project.workload.project_id
   zone    = var.database_zone
-  name    = google_compute_instance_group_manager.database.name
+  name    = google_compute_instance_group_manager.database[each.key].name
 
   depends_on = [google_compute_instance_group_manager.database]
 }
 
 data "google_compute_instance" "database" {
+  for_each = local.database_hosts
+
   project = google_project.workload.project_id
   zone    = var.database_zone
-  name    = basename(one(data.google_compute_instance_group.database.instances))
+  name    = basename(one(data.google_compute_instance_group.database[each.key].instances))
 
   depends_on = [data.google_compute_instance_group.database]
 }

@@ -16,9 +16,11 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const bucket = "custody-test";
-const markerName = "production/initialization/complete.json";
+const markerName = "production/initialization/1001/complete.json";
 const marker = {
-  schemaVersion: 1,
+  schemaVersion: 2,
+  project: "workload-test",
+  dataDiskId: "1001",
   commit: "a".repeat(40),
   execution: "agora-authentication-init-previous",
   completedAt: "2026-09-04T22:58:33Z",
@@ -63,6 +65,7 @@ const initializerArgs = [
   "europe-west1",
   bucket,
   "b".repeat(40),
+  "1001",
 ];
 
 test("initialization reuses an existing marker from an earlier commit without a live job", async (t) => {
@@ -81,6 +84,36 @@ test("only the exact completion marker bypasses the human initialization gate", 
   assert.equal(result.status, 70);
   assert.match(result.stderr, /one-time, human-only initialization/);
 });
+
+test("a legacy shared-disk marker cannot skip initialization on a fresh disk", async (t) => {
+  const store = await custody(t);
+  await store.put(
+    "production/initialization/complete.json",
+    JSON.stringify({ ...marker, schemaVersion: 1 }),
+  );
+  const result = store.run("await-auth-initialization.sh", initializerArgs);
+  assert.equal(result.status, 70);
+  assert.match(result.stderr, /one-time, human-only initialization/);
+});
+
+for (const field of ["project", "dataDiskId"]) {
+  test(
+    "initialization rejects a marker bound to the wrong " + field,
+    async (t) => {
+      const store = await custody(t);
+      await store.put(
+        markerName,
+        JSON.stringify({
+          ...marker,
+          [field]: field === "project" ? "other-project" : "9999",
+        }),
+      );
+      const result = store.run("await-auth-initialization.sh", initializerArgs);
+      assert.equal(result.status, 70);
+      assert.match(result.stderr, /marker is invalid/);
+    },
+  );
+}
 
 test("an invalid initialization marker stops without requesting reinitialization", async (t) => {
   const store = await custody(t);

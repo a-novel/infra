@@ -31,7 +31,7 @@ resource "google_cloud_run_v2_job" "postgres_backup" {
         dynamic "env" {
           for_each = {
             BACKUP_ROLE         = each.value.backup_role
-            DATABASE_HOST       = var.database_private_ip
+            DATABASE_HOST       = local.database_private_ips[each.key]
             DATABASE_IMAGE      = each.value.image
             DATABASE_KEY        = each.value.object_key
             DATABASE_NAME       = each.value.database_name
@@ -166,7 +166,7 @@ resource "google_cloud_run_v2_job" "postgres_restore" {
         dynamic "env" {
           for_each = {
             BACKUP_ROLE         = each.value.backup_role
-            DATABASE_HOST       = var.database_private_ip
+            DATABASE_HOST       = local.database_private_ips[each.key]
             DATABASE_IMAGE      = each.value.image
             DATABASE_KEY        = each.value.object_key
             DATABASE_NAME       = each.value.database_name
@@ -280,7 +280,7 @@ resource "google_cloud_run_v2_job" "postgres_recover" {
         dynamic "env" {
           for_each = {
             BACKUP_ROLE          = each.value.backup_role
-            DATABASE_HOST        = var.database_private_ip
+            DATABASE_HOST        = local.database_private_ips[each.key]
             DATABASE_IMAGE       = var.recovery_database_images[each.key]
             DATABASE_KEY         = each.value.object_key
             DATABASE_NAME        = each.value.database_name
@@ -290,7 +290,7 @@ resource "google_cloud_run_v2_job" "postgres_recover" {
             RECOVERY_ATTEMPT     = var.recovery_backup_attempts[each.key]
             RECOVERY_PROJECT_ID  = var.workload_project_id
             RECOVERY_TARGET      = "true"
-            SOURCE_DATABASE_HOST = var.recovery_source_database_ip
+            SOURCE_DATABASE_HOST = var.recovery_source_database_ips[each.key]
             SOURCE_PROJECT_ID    = var.recovery_source_project_id
           }
 
@@ -460,7 +460,7 @@ resource "google_cloud_scheduler_job" "postgres_backup" {
   name      = "agora-postgres-backup-${each.value.object_key}"
   schedule  = each.value.backup_cron
   time_zone = "Etc/UTC"
-  paused    = try(var.application_release.rollout.phase, null) != "active"
+  paused    = var.application_release == null || local.application_candidate[each.key]
 
   attempt_deadline = "180s"
 
@@ -494,7 +494,7 @@ resource "google_cloud_scheduler_job" "postgres_restore" {
   name      = "agora-postgres-restore-${each.value.object_key}"
   schedule  = each.value.restore_cron
   time_zone = "Etc/UTC"
-  paused    = try(var.application_release.rollout.phase, null) != "active"
+  paused    = var.application_release == null || local.application_candidate[each.key]
 
   attempt_deadline = "180s"
 
@@ -528,7 +528,7 @@ resource "google_cloud_scheduler_job" "postgres_backup_monitor" {
   name      = "agora-postgres-backup-monitor"
   schedule  = "5 * * * *"
   time_zone = "Etc/UTC"
-  paused    = try(var.application_release.rollout.phase, null) != "active"
+  paused    = var.application_release == null ? true : alltrue(values(local.application_candidate))
 
   attempt_deadline = "180s"
 

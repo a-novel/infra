@@ -156,7 +156,7 @@ async function main() {
   );
   const outputProject = outputValue(outputs, "workload_project_id");
   const network = outputValue(outputs, "network");
-  const databaseHost = outputValue(outputs, "database_host");
+  const databaseHosts = outputValue(outputs, "database_hosts");
   const cloudRunInvocationTags = outputValue(
     outputs,
     "cloud_run_invocation_tags",
@@ -172,14 +172,29 @@ async function main() {
     targetProject,
   );
   transformed.workload_project_id = targetProject;
-  transformed.database_private_ip = databaseHost.private_ip;
+  transformed.database_hosts = Object.fromEntries(
+    ["authentication", "json_keys"].map((service) => [
+      service,
+      {
+        private_ip: databaseHosts[service].private_ip,
+        data_disk_id: String(databaseHosts[service].data_disk.id),
+      },
+    ]),
+  );
+  delete transformed.database_private_ip;
   transformed.network_id = network.network_id;
   transformed.subnet_id = network.subnet_id;
   transformed.cloud_run_invocation_tags = cloudRunInvocationTags;
   transformed.runtime_service_accounts = runtimeAccounts(targetProject);
   transformed.recovery_mode = true;
   transformed.recovery_source_project_id = sourceProject;
-  transformed.recovery_source_database_ip = sourceTfvars.database_private_ip;
+  transformed.recovery_source_database_ips = Object.fromEntries(
+    ["authentication", "json_keys"].map((service) => [
+      service,
+      sourceTfvars.database_hosts?.[service]?.private_ip ??
+        sourceTfvars.database_private_ip,
+    ]),
+  );
   transformed.recovery_database_images = {
     authentication: receipt.database.authenticationImage,
     json_keys: receipt.database.jsonKeysImage,
@@ -244,6 +259,16 @@ async function main() {
 
   const database = {
     ...receipt.database,
+    hosts: Object.fromEntries(
+      Object.entries(transformed.database_hosts).map(([service, host]) => [
+        service,
+        {
+          privateIp: host.private_ip,
+          dataDiskId: host.data_disk_id,
+          releaseRevision: process.env.GITHUB_SHA,
+        },
+      ]),
+    ),
     authenticationImage: transformed.database_releases.authentication.image,
     jsonKeysImage: transformed.database_releases.json_keys.image,
     releaseRevision: process.env.GITHUB_SHA,

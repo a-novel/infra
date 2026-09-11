@@ -24,22 +24,21 @@ managed-resource delete, replacement, and state-forget action unless the protect
 the deliberate deletion label was added by a maintainer and present when the exact PR merged. The
 manual workflow rechecks that historical evidence during both plan and apply.
 
-Routine database deployment is one tested imperative edge. The
-[`deploy-database-release.sh`](../../../ops/deploy-database-release.sh) helper updates exactly seven
-non-secret values on the existing foundation-owned managed instance group: commit revision, two
-database image digests, two owner-password version numbers, and two backup-password version numbers.
-It rejects any missing or extra field, caps the live member action at `RESTART`, and waits for the
-group to become stable. An application-only release retains the preceding database revision and
-skips this restart entirely.
+Routine database deployment updates four non-secret metadata values on the selected service's
+existing managed instance group: its revision, image digest, owner-password version, and
+backup-password version. The helper verifies the unique data-disk ID, caps the member action at
+`RESTART`, and waits for a new healthy boot. Application-only releases skip the restart.
 
-Before a database image change or migration, the shared
-[`prepare-database-change.sh`](../../../ops/prepare-database-change.sh) gate requires a ready
-foundation-scheduled snapshot no older than 26 hours and synchronously creates both logical
-backups. The empty first database release is the sole logical-backup exception because no cluster
-exists yet; it still requires the snapshot. A private SHA-256 proof also requires all seven live MIG
-metadata fields to match the latest immutable receipt, preventing a missing receipt or manual drift
-from being treated as first launch or silently overwritten. Release can list snapshot metadata but
-cannot create or delete snapshots.
+New release configuration requires `database_hosts`: one private IP and immutable numeric disk ID
+per service. The root temporarily accepts the historical `database_private_ip` input only so the
+read-only pre-merge deletion assessment can inspect the last converged shared-host state before
+the new hosts exist. The deployment compiler rejects that legacy input for new deployments and
+binds new receipts to both disk IDs. It also rejects rollback to the retired shared-host topology.
+
+Before an image change or migration, the selected host must have a foundation-scheduled snapshot
+no older than 26 hours, tied to the same disk ID. The preflight then creates that service's logical
+backup and compares its live metadata with the immutable receipt. An empty first release still
+requires the snapshot but has no logical data to dump. Release cannot create or delete snapshots.
 
 For later image changes, the gate runs against the still-deployed source-image backup jobs before
 the database host changes. After the new clusters pass health checks, the release root reconciles
@@ -48,7 +47,7 @@ order.
 
 The protected workflow selects one changed image family against the previous receipt, then runs that
 service's migration, health and traffic sequence. JSON Keys also runs seed rotation. Backup and
-clean-restore verification cover both databases because they share one host. The other API retains
+clean-restore verification cover the selected database. The other API retains
 its receipt-owned template and traffic. First launch and configuration-only maintenance reconcile
 both services; first launch seeds JSON Keys before checking Authentication. A failed rollout
 compensates from the prior receipt. Authentication
@@ -59,7 +58,7 @@ runs the job without overrides. The workflow records that exact successful execu
 deletes the job. Later releases and every rollback omit initialization. Backward-compatible
 migrations remain applied; restoring database contents is a separate recovery operation.
 
-Candidate reconciliation pauses shared backup schedules before migrations or application traffic
+Candidate reconciliation pauses only the selected service’s backup and restore schedules before migrations or application traffic
 changes. It pauses JSON Keys rotation only when JSON Keys is selected. The final active reconciliation
 resumes paused schedules after the selected health and traffic checks; compensation restores the
 prior active pause state.
@@ -207,7 +206,7 @@ Required inputs are:
 
 - stable management and workload project IDs;
 - the bootstrap-owned backup bucket name;
-- production region, full foundation network/subnet IDs, and the database's private address;
+- production region, full foundation network/subnet IDs, and each database's private address and unique data-disk ID;
 - exact foundation-owned Authentication, JSON Keys, backup, restore, and scheduler service-account
   emails;
 - the five exact foundation-owned `cloud_run_invocation_tags` permanent IDs;
@@ -220,7 +219,7 @@ Artifact Registry repository in the selected project and region.
 Recovery-only inputs are generated by `compile-recovery.mjs` and are rejected in production state.
 They bind the source project, the receipt-owned source database private address and image digests,
 both exact backup attempts, and both numeric owner-password versions. The source address validates
-the archive manifest only; `database_private_ip` remains the distinct empty replacement target.
+the archive manifest only; `database_hosts` remains the distinct empty replacement target.
 
 `application_release` is null by default. When enabled, it requires both database releases, all six
 promoted job/service digests, the five exact positive secret versions consumed by those runtimes,

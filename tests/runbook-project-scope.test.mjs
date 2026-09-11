@@ -110,7 +110,7 @@ test("operator gcloud commands select explicit projects or exact resources", asy
         )
           continue;
         if (
-          /^gcloud projects \S+ "\$\{?(?:INFRA_MANAGEMENT_PROJECT_ID|INFRA_WORKLOAD_PROJECT_ID|MANAGEMENT_PROJECT_ID|WORKLOAD_PROJECT_ID|SOURCE_PROJECT_ID|REPLACEMENT_PROJECT_ID)\}?"/.test(
+          /^gcloud projects \S+ "\$\{?(?:INFRA_MANAGEMENT_PROJECT_ID|INFRA_WORKLOAD_PROJECT_ID|MANAGEMENT_PROJECT_ID|WORKLOAD_PROJECT_ID|SOURCE_PROJECT_ID|REPLACEMENT_PROJECT_ID)(?::\?[^}]*)?\}?"/.test(
             command,
           )
         )
@@ -126,7 +126,7 @@ test("operator gcloud commands select explicit projects or exact resources", asy
         }
         assert.match(
           command,
-          /--project=(?:"\$\{?[A-Z_]+(?::\?[^}]+)?\}?"|cos-cloud\b)/,
+          /--project=(?:"\$\{?[A-Z_]+(?::\?[^}]*)?\}?"|cos-cloud\b)/,
           `${name}: ${command}`,
         );
       }

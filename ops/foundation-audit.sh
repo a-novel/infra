@@ -401,14 +401,17 @@ audit_foundation() {
             fail 'no public Secret Manager principals'
         fi
         case "$secret_name" in
-            production-authentication-postgres-backup-password | production-json-keys-postgres-backup-password)
-                expected_secret_services='["agora-backup", "agora-database-host"]'
+            production-authentication-postgres-backup-password)
+                expected_secret_services='["agora-auth-database", "agora-backup"]'
+                ;;
+            production-json-keys-postgres-backup-password)
+                expected_secret_services='["agora-backup", "agora-json-keys-database"]'
                 ;;
             production-authentication-postgres-password)
-                expected_secret_services='["agora-auth-initializer", "agora-authentication", "agora-database-host"]'
+                expected_secret_services='["agora-auth-database", "agora-auth-initializer", "agora-authentication"]'
                 ;;
             production-json-keys-postgres-password)
-                expected_secret_services='["agora-database-host", "agora-json-keys"]'
+                expected_secret_services='["agora-json-keys", "agora-json-keys-database"]'
                 ;;
             production-authentication-smtp-sender-password)
                 expected_secret_services='["agora-authentication"]'
@@ -518,7 +521,8 @@ audit_foundation() {
         "agora-allow-authentication-postgres-egress",
         "agora-allow-iap-ssh",
         "agora-allow-json-keys-postgres-egress",
-        "agora-allow-postgres-ingress",
+        "agora-allow-authentication-postgres-ingress",
+        "agora-allow-json-keys-postgres-ingress",
         "agora-allow-restricted-google-apis",
         "agora-deny-other-vpc-egress"
       ] | sort)) and
@@ -530,16 +534,19 @@ audit_foundation() {
         ((.targetTags // []) | length == 0) and
         .denied == [{IPProtocol: "all"}]
       ) and
-      any($rules[];
-        .name == "agora-allow-postgres-ingress" and
-        .sourceRanges == [$subnet] and
-        .targetTags == ["agora-database"] and
-        .direction == "INGRESS"
+      all(["authentication", "json-keys"][]; . as $service |
+        any($rules[];
+          .name == ("agora-allow-" + $service + "-postgres-ingress") and
+          .sourceRanges == [$subnet] and
+          .targetTags == ["agora-database-" + $service] and
+          .allowed == [{IPProtocol: "tcp", ports: [(if $service == "authentication" then "5433" else "5432" end)]}] and
+          .direction == "INGRESS"
+        )
       ) and
       any($rules[];
         .name == "agora-allow-iap-ssh" and
         .sourceRanges == ["35.235.240.0/20"] and
-        .targetTags == ["agora-database"] and
+        .targetTags == ["agora-database-authentication", "agora-database-json-keys"] and
         .direction == "INGRESS"
       ) and
       all($rules[];
@@ -597,7 +604,8 @@ audit_foundation() {
     if ! jq --exit-status \
         --arg release "serviceAccount:infra-release@${MANAGEMENT_PROJECT_ID}.iam.gserviceaccount.com" \
         --arg recovery "serviceAccount:infra-recovery@${MANAGEMENT_PROJECT_ID}.iam.gserviceaccount.com" \
-        --arg database "serviceAccount:agora-database-host@${WORKLOAD_PROJECT_ID}.iam.gserviceaccount.com" \
+        --arg auth_database "serviceAccount:agora-auth-database@${WORKLOAD_PROJECT_ID}.iam.gserviceaccount.com" \
+        --arg json_database "serviceAccount:agora-json-keys-database@${WORKLOAD_PROJECT_ID}.iam.gserviceaccount.com" \
         --argjson initializers "$initializer_members" '
       all(.bindings[]?.members[]?;
         . != "allUsers" and . != "allAuthenticatedUsers"
@@ -611,7 +619,7 @@ audit_foundation() {
         .bindings[]?
         | select(.role == "roles/artifactregistry.reader")
         | .members[]?
-      ] | sort) == (($initializers + [$recovery, $database]) | sort) and
+      ] | sort) == (($initializers + [$recovery, $auth_database, $json_database]) | sort) and
       all(.bindings[]?;
         .role == "roles/artifactregistry.reader" or
         .role == "roles/artifactregistry.writer"
