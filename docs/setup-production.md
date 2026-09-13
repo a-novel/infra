@@ -58,7 +58,7 @@ gh run list --repo a-novel/infra --branch master --limit 20 --json databaseId,wo
 |    0 | Run [Start or resume](#start-or-resume).                                                           | Clean current `master`; repository gate passes.                                                                                                         |
 |    1 | [Bootstrap the management plane](./runbooks/bootstrap-management-plane.md).                        | State, WIF, protected environments, secret containers, and audit controls pass; temporary bootstrap authority is removed.                               |
 |    2 | [Provision the workload foundation](./runbooks/provision-workload-foundation.md).                  | The workload project and both protected roots converge; the final audit passes; temporary access is removed.                                            |
-|    3 | [Inspect the PostgreSQL host and prepare OS Login](./runbooks/debug-postgresql-host.md).           | One private VM and preserved disk exist; the local EC key is ready; a bounded IAP login succeeds; no public path exists.                                |
+|    3 | [Inspect the PostgreSQL hosts and prepare OS Login](./runbooks/debug-postgresql-host.md).          | Each database has its own private VM and preserved SSD disk; the local EC key is ready; bounded IAP logins succeed; no public path exists.              |
 |    4 | [Configure and persist hosted SMTP](#4-configure-and-persist-the-smtp-contract).                   | The Workspace relay, app password, domain, DKIM, SPF, DMARC, and non-secret contract pass.                                                              |
 |    5 | [Create the initial payload versions](#5-create-the-initial-payload-versions).                     | All seven live containers have one selected enabled numeric version; no payload was printed.                                                            |
 |    6 | [Activate production](#6-activate-production).                                                     | The reviewed release succeeds, the initializer is deleted, traffic is healthy, recovery jobs pass, rotation is scheduled, and the receipt is immutable. |
@@ -228,7 +228,11 @@ backups and receipts, management resources, and Cloud Run services remain in pla
 
 Before merging the topology PR, review the updated [cost worksheet](./costs/production.md),
 confirm the regional estimate and budget alert, and add `allow-resource-deletion` to that exact
-PR. Freeze other image updates until the rebuild succeeds. Disable automatic releases first:
+PR. Pause all other merges, including tooling-only Renovate updates, until the rebuild release
+succeeds. Both the foundation plan/apply and the release check deletion approval on their exact
+merge commit. If `master` advances, prepare a follow-up PR describing the remaining rebuild and
+add the label before merging it. Adding a label after merge cannot authorize deletion.
+Disable automatic releases first:
 
 ```sh
 gh variable set PRODUCTION_RELEASES_ENABLED --repo a-novel/infra --body false
@@ -248,6 +252,26 @@ git pull --ff-only
 . ./.envrc
 ./ops/verify-operator-env.sh --github
 ```
+
+Check approval before requesting temporary access or starting downtime. Keep `REBUILD_COMMIT`
+in this session through the rebuild; it does not belong in `.envrc`:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+test -z "$(git status --porcelain)"
+test "$(git branch --show-current)" = master
+REBUILD_COMMIT="$(git rev-parse HEAD)"
+test "$REBUILD_COMMIT" = "$(gh api repos/a-novel/infra/commits/master --jq .sha)"
+./ops/verify-deletion-label.sh a-novel/infra "$REBUILD_COMMIT"
+test "$(gh variable get PRODUCTION_RELEASES_ENABLED --repo a-novel/infra)" = false
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+If this check fails, keep the shared VM running and resolve approval first. A clean CI result on
+a docs-only follow-up is not deletion approval: a human maintainer still adds
+`allow-resource-deletion` before that PR merges.
 
 #### Stop the old managed VM before creating two replacements
 
@@ -270,18 +294,65 @@ LEGACY_OPERATOR="${LEGACY_OPERATOR:-user:$(gcloud config get-value account 2>/de
 [[ "$LEGACY_OPERATOR" =~ ^user:[^[:space:]@]+@[^[:space:]@]+$ ]]
 LEGACY_GRANT_CONDITION="expression=request.time < timestamp('$(date -u -d '+1 hour' +%Y-%m-%dT%H:%M:%SZ)'),title=PrelaunchDatabaseRetirement"
 printf 'Operator: %s\n' "$LEGACY_OPERATOR"
-gcloud projects add-iam-policy-binding "${INFRA_WORKLOAD_PROJECT_ID:?}" --member="$LEGACY_OPERATOR" --role="projects/${INFRA_WORKLOAD_PROJECT_ID}/roles/infraDatabaseRelease" --condition="$LEGACY_GRANT_CONDITION" --quiet
+for role in "projects/${INFRA_WORKLOAD_PROJECT_ID:?}/roles/infraDatabaseRelease" roles/cloudscheduler.admin roles/run.viewer; do
+gcloud projects add-iam-policy-binding "$INFRA_WORKLOAD_PROJECT_ID" --member="$LEGACY_OPERATOR" --role="$role" --condition="$LEGACY_GRANT_CONDITION" --quiet
+done
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-This reuses the existing narrow group-update role; it grants no secret access, VM creation,
-or project deletion. Allow IAM propagation before continuing. Stop only the generated member
-of the exact legacy group:
+The existing group-update role permits the managed stop. Cloud Run Viewer permits execution
+inspection. [Scheduler Admin](https://docs.cloud.google.com/iam/docs/roles-permissions/cloudscheduler)
+permits pausing schedules; Scheduler Viewer and Job Runner do not. Scheduler Admin also permits
+creating, changing, and deleting schedules: use it only for the named pause operations below and
+remove it immediately afterward. These one-hour grants do not grant secret access, VM creation,
+or project deletion. Allow IAM propagation before continuing. If any grant fails, remove the
+grants already added before retrying; retain the exact condition used for each attempt.
+
+Pause only the six production schedules. This block accepts an already-paused schedule on retry.
+If it fails partway, leave the VM running and finish pausing before continuing:
 
 ```zsh
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
+test "${REBUILD_COMMIT:?Verify the labeled merge first}" = "$(gh api repos/a-novel/infra/commits/master --jq .sha)"
+test "$(gh variable get PRODUCTION_RELEASES_ENABLED --repo a-novel/infra)" = false
+REBUILD_SCHEDULER_JOBS=(agora-postgres-backup-authentication agora-postgres-backup-json-keys agora-postgres-backup-monitor agora-postgres-restore-authentication agora-postgres-restore-json-keys agora-json-keys-rotation)
+for job in "${REBUILD_SCHEDULER_JOBS[@]}"; do
+case "$(gcloud scheduler jobs describe "$job" --project="${INFRA_WORKLOAD_PROJECT_ID:?}" --location="${INFRA_REGION:?}" --format='value(state)')" in
+ENABLED) gcloud scheduler jobs pause "$job" --project="$INFRA_WORKLOAD_PROJECT_ID" --location="$INFRA_REGION" --quiet ;;
+PAUSED) ;;
+*) print -u2 "STOP: cannot confirm the state of $job."; return 1 ;;
+esac
+done
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Pausing a schedule does not cancel an existing execution. Repeat the following read-only block
+until it passes, without cancelling running backups or rotation. If the session was lost, repeat
+the pause block first to recover `REBUILD_SCHEDULER_JOBS` and verify the current schedule states:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+test "${#REBUILD_SCHEDULER_JOBS[@]}" -eq 6
+for job in "${REBUILD_SCHEDULER_JOBS[@]}"; do
+test "$(gcloud scheduler jobs describe "$job" --project="${INFRA_WORKLOAD_PROJECT_ID:?}" --location="${INFRA_REGION:?}" --format='value(state)')" = PAUSED
+done
+gcloud run jobs executions list --project="$INFRA_WORKLOAD_PROJECT_ID" --region="$INFRA_REGION" --format=json | jq -e 'map(select((.status.completionTime // "") == "")) | if length == 0 then true else error("Wait for executions: " + (map(.metadata.name) | join(", "))) end'
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
+```
+
+Keep these schedules paused through the rebuild. Missing-success alerts can fire during this
+approved maintenance window; do not disable the alert policies. Once the drain check passes,
+stop only the generated member of the exact legacy group:
+
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+test "${REBUILD_COMMIT:?Verify the labeled merge first}" = "$(gh api repos/a-novel/infra/commits/master --jq .sha)"
 test "$(gh variable get PRODUCTION_RELEASES_ENABLED --repo a-novel/infra)" = false
 LEGACY_DATABASE_INSTANCE="$(gcloud compute instance-groups managed list-instances agora-database --project="${INFRA_WORKLOAD_PROJECT_ID:?}" --zone="${INFRA_DATABASE_ZONE:?}" --format='value(instance.basename())')"
 [[ "$LEGACY_DATABASE_INSTANCE" =~ ^agora-database-[a-z0-9]+$ ]]
@@ -294,10 +365,21 @@ gcloud compute instance-groups managed describe agora-database --project="$INFRA
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-The IAM administrator now removes the temporary binding, even if the stop failed:
+The IAM administrator now removes the temporary grants, even if the stop failed, using the
+original `LEGACY_GRANT_CONDITION`; do not generate a new expiry for cleanup. The loop attempts
+every removal even if one fails. An absent binding needs no removal; investigate any other error
+before continuing. These removals leave the schedules paused:
 
-```sh
-gcloud projects remove-iam-policy-binding "${INFRA_WORKLOAD_PROJECT_ID:?}" --member="${LEGACY_OPERATOR:?}" --role="projects/${INFRA_WORKLOAD_PROJECT_ID}/roles/infraDatabaseRelease" --condition="${LEGACY_GRANT_CONDITION:?}" --quiet
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+local cleanup_failed=0
+for role in "projects/${INFRA_WORKLOAD_PROJECT_ID:?}/roles/infraDatabaseRelease" roles/cloudscheduler.admin roles/run.viewer; do
+gcloud projects remove-iam-policy-binding "$INFRA_WORKLOAD_PROJECT_ID" --member="${LEGACY_OPERATOR:?}" --role="$role" --condition="${LEGACY_GRANT_CONDITION:?}" --quiet || cleanup_failed=1
+done
+test "$cleanup_failed" -eq 0
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Do not continue after a failed check. Once both replacement groups exist, this legacy stop
@@ -307,8 +389,14 @@ section is no longer applicable; resume at inspection instead of trying to recre
 
 Create the plan **after** stopping the old member, so the saved state is current:
 
-```sh
+```zsh
+() {
+setopt local_options err_return pipe_fail
+unsetopt err_exit nounset xtrace
+test "${REBUILD_COMMIT:?Verify the labeled merge first}" = "$(git rev-parse HEAD)"
+test "$REBUILD_COMMIT" = "$(gh api repos/a-novel/infra/commits/master --jq .sha)"
 FOUNDATION_PLAN_ID="$(./ops/run-workflow.sh foundation plan foundation)"
+} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
 Review the private plan: retire only the old shared group/template, data disk, snapshot
@@ -355,10 +443,16 @@ resources. It never reapplies the retired shared address or publishes a successf
 receipt. Fix the reported cause and retry; if interrupted compensation failed, use the
 protected `release recover-first-launch` command above with that exact failed run ID.
 
-After success, complete [deployment verification](./runbooks/deploy-production.md#7-verify-deployment-and-rotation),
+The successful release restores the six schedules through its active configuration. Verify that
+all six are `ENABLED` during [deployment verification](./runbooks/deploy-production.md#7-verify-deployment-and-rotation);
+do not resume them manually while the rebuild is incomplete. If the maintenance is abandoned
+before stopping the shared VM, a Scheduler administrator may resume only these six schedules
+after confirming the old services and databases are healthy and no rebuild is running.
+
+After success, complete deployment verification,
 the real application email test, both backup/clean-restore checks, and a new
 [disposable recovery drill](./runbooks/disaster-recovery.md). Keep the old receipts as
-historical evidence, not routine rollback targets. Only then unfreeze service image updates.
+historical evidence, not routine rollback targets. Only then unfreeze other merges.
 
 ### Run the human-only Authentication initializer
 
@@ -721,7 +815,7 @@ review evidence belong in Git.
 | --------------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | Management bootstrap audit passes and temporary authority is removed. | Step 2.                                                                |
 | Foundation final audit passes and temporary access is removed.        | Step 3.                                                                |
-| Idle private host and disk pass inspection.                           | Step 4.                                                                |
+| Both idle private database hosts and SSD disks pass inspection.       | Step 4.                                                                |
 | SMTP domain and contract pass; no secret versions exist.              | Step 5.                                                                |
 | All seven numeric versions exist; no release configuration exists.    | Step 6, deploy sections 1–4.                                           |
 | Release is waiting for initialization.                                | [Run the initializer](#run-the-human-only-authentication-initializer). |
