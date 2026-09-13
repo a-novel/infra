@@ -86,6 +86,8 @@ resource "google_compute_route" "restricted_google_apis" {
 }
 
 resource "google_compute_firewall" "allow_restricted_google_apis" {
+  depends_on = [google_project_iam_member.foundation_firewall]
+
   project = google_project.workload.project_id
   name    = "agora-allow-restricted-google-apis"
   network = google_compute_network.production.name
@@ -102,6 +104,8 @@ resource "google_compute_firewall" "allow_restricted_google_apis" {
 }
 
 resource "google_compute_firewall" "allow_postgres_egress" {
+  depends_on = [google_project_iam_member.foundation_firewall]
+
   for_each = local.database_egress_contracts
 
   project = google_project.workload.project_id
@@ -120,6 +124,8 @@ resource "google_compute_firewall" "allow_postgres_egress" {
 }
 
 resource "google_compute_firewall" "deny_other_egress" {
+  depends_on = [google_project_iam_member.foundation_firewall]
+
   project = google_project.workload.project_id
   name    = "agora-deny-other-vpc-egress"
   network = google_compute_network.production.name
@@ -136,6 +142,8 @@ resource "google_compute_firewall" "deny_other_egress" {
 }
 
 resource "google_compute_firewall" "allow_postgres_ingress" {
+  depends_on = [google_project_iam_member.foundation_firewall]
+
   for_each = local.database_hosts
 
   project = google_project.workload.project_id
@@ -154,6 +162,8 @@ resource "google_compute_firewall" "allow_postgres_ingress" {
 }
 
 resource "google_compute_firewall" "allow_iap_ssh" {
+  depends_on = [google_project_iam_member.foundation_firewall]
+
   project = google_project.workload.project_id
   name    = "agora-allow-iap-ssh"
   network = google_compute_network.production.name

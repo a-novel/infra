@@ -242,6 +242,10 @@ Record only workflow URLs, opaque plan IDs/checksums, the project number, timest
 
 ## Resume after a stop
 
+For `compute.firewalls.create`, `.update`, or `.delete` permission failures, follow
+[Repair foundation firewall access](./repair-foundation-firewall-access.md) before creating
+another plan. An interrupted apply can leave working VMs with incomplete firewall rules.
+
 | Last result                              | Resume                                                                                         |
 | ---------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | Temporary grants complete                | Step 2.                                                                                        |
