@@ -13,12 +13,12 @@
   "devDependencies": {
     "ajv": "8.20.0",
     "prettier": "3.9.6",
-    "renovate": "44.77.0",
+    "renovate": "44.79.2",
     "yaml": "2.9.0"
   },
-  "packageManager": "pnpm@12.4.0",
+  "packageManager": "pnpm@12.4.1",
   "engines": {
     "node": "24.21.0",
-    "pnpm": "12.4.0"
+    "pnpm": "12.4.1"
   }
 }
