@@ -122,6 +122,38 @@ If the session was lost, find the `FoundationFirewallRepair` binding in the work
 policy; its role name and expiry identify the cleanup targets. Do not remove unrelated bindings or
 delete the permanent `infraFoundationFirewall` role.
 
+## 5. Resume the pre-launch database rebuild
+
+After convergence and temporary-access cleanup, continue the approved
+[pre-launch rebuild](../setup-production.md#rebuild-an-existing-shared-host-before-frontend-launch)
+from the existing dedicated hosts. The legacy shared-host stop and retirement steps are complete.
+A documentation-only approval follow-up does not require another foundation apply.
+
+Reload the operator session and inspect each host's payload-free startup status:
+
+```sh
+. ./.envrc
+./ops/verify-operator-env.sh
+./ops/database-host-readiness.sh current "${INFRA_WORKLOAD_PROJECT_ID:?}" "${INFRA_DATABASE_ZONE:?}" authentication
+./ops/database-host-readiness.sh current "${INFRA_WORKLOAD_PROJECT_ID:?}" "${INFRA_DATABASE_ZONE:?}" json-keys
+```
+
+Both statuses must start with `idle:none:`. Require a `READY` automatic snapshot of each current
+data-disk ID within the 26-hour window before launching the rebuild. An earlier readiness or
+snapshot check is historical evidence; verify it again when resuming.
+
+Keep `PRODUCTION_RELEASES_ENABLED=false` and the six schedules paused while repeating the
+[deployment operator context and sections 1–4](./deploy-production.md#operator-context).
+Section 2 derives both hosts and data-disk IDs; section 4 stores `database_hosts` in
+`RELEASE_CONFIG_JSON`. Reuse the existing secret versions and image families.
+
+Hold all other merges, including automatic Renovate merges, through the rebuild. If `master`
+advanced, merge a follow-up describing the remaining rebuild with `allow-resource-deletion`
+already present. The label must belong to that exact merge before the controlled release starts.
+Resume at [initialize and verify the rebuilt databases](../setup-production.md#initialize-and-verify-the-rebuilt-databases)
+only after these checks. Authentication still needs its human-only initializer on the new disk;
+the successful release restores the schedules.
+
 ## References
 
 - [Compute Engine IAM roles](https://docs.cloud.google.com/compute/docs/access/iam)
