@@ -173,6 +173,7 @@ if (joined.startsWith('storage objects list ')) {
 } else if (joined.startsWith('compute instance-groups managed list-instances ')) {
   out(host.vm.name);
 } else if (joined.startsWith('compute instances describe ')) {
+  if (state.scenario === 'vm-read-denied') { process.stderr.write('PERMISSION_DENIED: compute.instances.get\\n'); fail(); }
   out(host.vm);
 } else if (joined.startsWith('compute disks describe ')) {
   out(host.diskId);
@@ -257,6 +258,63 @@ function mutations(state) {
     (args) => args.includes("update") || args.includes("update-instances"),
   );
 }
+
+test("denied VM inspection stops before backup, restart or compensation", async (t) => {
+  const f = await fixture(t, "vm-read-denied");
+  const result = await f.run();
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /PERMISSION_DENIED: compute\.instances\.get/);
+  assert.deepEqual(mutations(result.state), []);
+  assert.equal(result.state.restarts, 0);
+  assert.equal(
+    result.state.calls.filter((args) => args.includes("execute")).length,
+    0,
+  );
+});
+
+test("documented SQL probe feeds one noninteractive session through Docker stdin", async (t) => {
+  const doc = await readFile(
+    path.join(root, "docs/runbooks/operate-postgresql-host.md"),
+    "utf8",
+  );
+  const probe = [...doc.matchAll(/```bash\n([\s\S]*?)\n```/g)]
+    .map((match) => match[1])
+    .find((body) => body.includes("\\watch"));
+  assert.ok(probe);
+  assert.ok(!probe.includes("\n"));
+  const dir = await mkdtemp(path.join(os.tmpdir(), "infra-isolation-probe-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await writeFile(
+    path.join(dir, "sudo"),
+    `#!${process.execPath}\nconst fs = require('node:fs');\nprocess.stdout.write(JSON.stringify({args: process.argv.slice(2), input: fs.readFileSync(0, 'utf8')}));\n`,
+    { mode: 0o700 },
+  );
+  const result = spawnSync("bash", ["-c", probe], {
+    encoding: "utf8",
+    timeout: 10000,
+    env: { ...process.env, PATH: `${dir}:${process.env.PATH}` },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const { args, input } = JSON.parse(result.stdout);
+  assert.deepEqual(args, [
+    "docker",
+    "exec",
+    "-i",
+    "--user",
+    "postgres",
+    "agora-postgres-json-keys",
+    "psql",
+    "--no-psqlrc",
+    "--no-password",
+    "--set=ON_ERROR_STOP=on",
+    "--username=agora_json_keys",
+    "--dbname=agora_json_keys",
+  ]);
+  assert.equal(
+    input,
+    "SELECT pg_backend_pid() AS connection_pid, pg_postmaster_start_time() AT TIME ZONE 'UTC' AS database_started_utc, clock_timestamp() AT TIME ZONE 'UTC' AS checked_utc;\n\\watch interval=2 count=3600\n",
+  );
+});
 
 test("drill reuses real preflight/restart/rollback helpers and leaves the peer intact", async (t) => {
   const f = await fixture(t);

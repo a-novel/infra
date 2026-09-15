@@ -146,8 +146,11 @@ one bounded restart with a temporary release revision, then another restoring th
 Both use the same image, disk, address, and numeric password versions. No SQL migration or data
 rollback runs. JSON Keys must keep its host and one uninterrupted SQL connection throughout.
 
-Merge the reviewed drill code first. Merging does not start the drill, require a foundation apply,
-or change Renovate. Use the existing database operator permissions above, a repository account
+Merge the reviewed drill code first. The applied foundation must include `compute.instances.get`
+in the release identity's database-member role, restricted to the generated database VMs.
+If that permission is missing, follow the [protected foundation plan/apply procedure](./provision-workload-foundation.md)
+before the drill. Merging alone does not apply IAM, start the drill, or change Renovate.
+Use the database operator permissions above, a repository account
 allowed to dispatch releases, and the normal `production-release` environment approval. The workflow
 reuses release IAM; it gets no SSH access or secret-payload access.
 
@@ -193,12 +196,13 @@ Load `.envrc` in that terminal, then connect through IAP:
 On the JSON Keys VM, run this one read-only command and leave it running:
 
 ```bash
-sudo docker exec --user postgres agora-postgres-json-keys psql --no-psqlrc --no-password --set=ON_ERROR_STOP=on --username=agora_json_keys --dbname=agora_json_keys --command="SELECT pg_backend_pid() AS connection_pid, pg_postmaster_start_time() AT TIME ZONE 'UTC' AS database_started_utc, clock_timestamp() AT TIME ZONE 'UTC' AS checked_utc;" --command='\watch interval=2 count=3600'
+printf '%s\n' "SELECT pg_backend_pid() AS connection_pid, pg_postmaster_start_time() AT TIME ZONE 'UTC' AS database_started_utc, clock_timestamp() AT TIME ZONE 'UTC' AS checked_utc;" '\watch interval=2 count=3600' | sudo docker exec -i --user postgres agora-postgres-json-keys psql --no-psqlrc --no-password --set=ON_ERROR_STOP=on --username=agora_json_keys --dbname=agora_json_keys
 ```
 
 It checks the same connection every two seconds for at most two hours. This noninteractive `psql`
 invocation fails on a lost connection instead of silently reconnecting. It uses the container's local
-socket without reading a password or printing application rows. Record the initial connection PID,
+socket without reading a password or printing application rows. Standard input retains the SQL query
+for `\watch`; keep Docker's `-i` and the pipe. Record the initial connection PID,
 database start time, and UTC timestamp. Do not restart the probe to conceal a gap.
 
 ### 3. Dispatch the protected drill from the first terminal
