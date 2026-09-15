@@ -42,6 +42,20 @@ STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 restore_authentication() {
     RESTORE_ATTEMPTED=true
+    # A failed write may have landed, but cleanup must not overwrite unrelated
+    # image/password drift or a revision written by another operation.
+    if ! gcloud compute instance-groups managed describe agora-database-authentication --project="$PROJECT" --zone="$ZONE" --format=json >"$SCRATCH/restore-group.json" ||
+        ! jq -e --argjson expected "$AUTH_METADATA" --arg revision "$GITHUB_SHA" --arg operation "$OPERATION" '
+          .allInstancesConfig.properties.metadata as $actual |
+          ($actual | del(.["agora-database-release-revision"])) == ($expected | del(.["agora-database-release-revision"])) and
+          ($actual["agora-database-release-revision"] | test("^[a-f0-9]{40}$")) and
+          ($operation == "restore" or
+            $actual["agora-database-release-revision"] == $expected["agora-database-release-revision"] or
+            $actual["agora-database-release-revision"] == $revision)
+        ' "$SCRATCH/restore-group.json" >/dev/null; then
+        printf 'STOP: restoration refuses unexpected live metadata; investigate before retrying.\n' >&2
+        return 70
+    fi
     "${SCRIPT_DIR}/restore-database-release.sh" "$PROJECT" "$ZONE" authentication "$AUTH_DISK" "$SCRATCH/database.json" || return
     RESTORED=true
     MUTATED=false

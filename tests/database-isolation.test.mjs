@@ -187,6 +187,8 @@ if (joined.startsWith('storage objects list ')) {
 } else if (joined.startsWith('compute instance-groups managed all-instances-config update ')) {
   if (service !== 'authentication') throw Error('peer mutation');
   host.metadata = Object.fromEntries(args.find(a => a.startsWith('--metadata=')).slice(11).split(',').map(s => [s.slice(0, s.indexOf('=')), s.slice(s.indexOf('=') + 1)]));
+  if (state.scenario === 'external-image-drift') { host.metadata['agora-authentication-database-image'] += 'unexpected'; fail(); }
+  if (state.scenario === 'external-revision-drift') { host.metadata['agora-database-release-revision'] = 'c'.repeat(40); fail(); }
   if (state.scenario === 'partial-write' && host.metadata['agora-database-release-revision'] !== '${original}') fail();
   if (state.scenario === 'rollback-failure' && host.metadata['agora-database-release-revision'] === '${original}') fail();
   save();
@@ -354,6 +356,21 @@ test("restore-only recovers an interrupted revision without another drill or bac
     0,
   );
 });
+
+for (const scenario of ["external-image-drift", "external-revision-drift"]) {
+  test(`cleanup preserves unexpected ${scenario} for investigation`, async (t) => {
+    const f = await fixture(t, scenario);
+    const result = await f.run();
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /restoration refuses unexpected live metadata/);
+    assert.equal(mutations(result.state).length, 1);
+    assert.equal(result.state.restarts, 0);
+    assert.match(
+      await readFile(path.join(f.dir, "summary.md"), "utf8"),
+      /Authentication restored: false/,
+    );
+  });
+}
 
 test("restore-only refuses changed image metadata", async (t) => {
   const f = await fixture(t, "interrupted");
