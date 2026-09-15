@@ -477,6 +477,7 @@ run "builds_the_project_replacement_window" {
       google_project_iam_custom_role.database_release_member.permissions == toset([
         "compute.disks.create",
         "compute.instances.create",
+        "compute.instances.get",
         "compute.instances.getGuestAttributes",
         "compute.instances.setLabels",
         "compute.instances.setMetadata",

@@ -366,6 +366,12 @@ test("Bash fences are limited to commands pasted inside remote COS hosts", () =>
           (body.startsWith("sudo docker") ||
             body.startsWith('for container in "agora-postgres-') ||
             body.startsWith('DATABASE_SERVICE="$(curl'))) ||
+        (name === "operate-postgresql-host.md" &&
+          body.startsWith("printf '%s\\n' \"SELECT pg_backend_pid()") &&
+          body.includes(
+            " | sudo docker exec -i --user postgres agora-postgres-json-keys psql ",
+          ) &&
+          !body.includes("\n")) ||
         (name === "disaster-recovery.md" &&
           body.startsWith("RECOVERY_AUTH_URL=''")),
     ),
