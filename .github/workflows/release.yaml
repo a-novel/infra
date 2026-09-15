@@ -8,16 +8,25 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: Deploy, roll back, or recover an interrupted first launch.
+        description: Deploy, roll back, recover first launch, or exercise database isolation.
         required: true
         type: choice
-        options: [deploy, rollback, recover-first-launch]
+        options:
+          - deploy
+          - rollback
+          - recover-first-launch
+          - drill-database-isolation
+          - restore-database-isolation
       target_receipt:
-        description: Rollback only; immutable run-id-attempt from the receipt inventory.
+        description: Rollback or isolation; immutable run-id-attempt from the receipt inventory.
         required: false
         type: string
       failed_run_id:
         description: First-launch recovery only; failed release workflow run ID.
+        required: false
+        type: string
+      confirm_isolation:
+        description: Isolation only; DRILL authentication or RESTORE authentication.
         required: false
         type: string
 
@@ -40,7 +49,8 @@ jobs:
     # unprotected environment merely by merging its first image manifest.
     if: >-
       github.ref == 'refs/heads/master' &&
-      vars.PRODUCTION_RELEASES_ENABLED == 'true'
+      vars.PRODUCTION_RELEASES_ENABLED == 'true' &&
+      !endsWith(inputs.action, '-database-isolation')
     runs-on: ubuntu-24.04
     # Sequential database safety checks and clean restores each keep their own
     # bounded timeout; the workflow ceiling must not cancel a valid slow run.
@@ -279,3 +289,81 @@ jobs:
             disk_id="$(jq --exit-status --raw-output --arg service "${service}" '.database_hosts[$service].data_disk_id | select(type == "string")' "${RELEASE_CONFIG_FILE}")"
             ./ops/recover-first-launch.sh "${RECEIPT_BUCKET}" "${project}" "${zone}" "${service//_/-}" "${disk_id}" "${FAILED_REVISION}"
           done
+
+  database-isolation:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/master' &&
+      (inputs.action == 'drill-database-isolation' || inputs.action == 'restore-database-isolation') &&
+      (vars.PRODUCTION_RELEASES_ENABLED == 'true' || inputs.action == 'restore-database-isolation')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    environment: production-release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out the exact master commit
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate the manual isolation request
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_RECEIPT: ${{ inputs.target_receipt }}
+          CONFIRMATION: ${{ inputs.confirm_isolation }}
+          FAILED_RUN_ID: ${{ inputs.failed_run_id }}
+        run: |
+          set -euo pipefail
+          [[ "${TARGET_RECEIPT}" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]
+          [ -z "${FAILED_RUN_ID}" ]
+          case "${RELEASE_ACTION}" in
+            drill-database-isolation) [ "${CONFIRMATION}" = 'DRILL authentication' ] ;;
+            restore-database-isolation) [ "${CONFIRMATION}" = 'RESTORE authentication' ] ;;
+            *) exit 64 ;;
+          esac
+          [ "$(gh api "repos/${GITHUB_REPOSITORY}/commits/master" --jq .sha)" = "${GITHUB_SHA}" ]
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6.1.0
+
+      - name: Install Node.js
+        uses: actions/setup-node@v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install reviewed release tooling
+        shell: bash
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Authenticate as the release boundary
+        uses: google-github-actions/auth@v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_RELEASE_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_RELEASE_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Install the pinned Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v3.0.1
+        with:
+          version: "581.0.0"
+
+      - name: Exercise or restore Authentication database isolation
+        shell: bash
+        env:
+          RELEASE_CONFIG: ${{ secrets.RELEASE_CONFIG_JSON }}
+          RECEIPT_BUCKET: ${{ vars.GCP_RECEIPT_BUCKET }}
+          TARGET_RECEIPT: ${{ inputs.target_receipt }}
+          CONFIRMATION: ${{ inputs.confirm_isolation }}
+        run: |
+          set -euo pipefail
+          umask 077
+          file="${RUNNER_TEMP}/isolation-config.json"
+          trap 'rm -f -- "${file}"' EXIT
+          printf '%s' "${RELEASE_CONFIG}" >"${file}"
+          unset RELEASE_CONFIG
+          ./ops/drill-database-isolation.sh "${RELEASE_ACTION%%-*}" "${TARGET_RECEIPT}" "${CONFIRMATION}" "${file}"

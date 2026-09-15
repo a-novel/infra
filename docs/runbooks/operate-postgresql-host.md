@@ -1,7 +1,7 @@
 # Operate the private PostgreSQL host
 
-This runbook verifies and maintains the one-member stateful managed instance group that runs the
-JSON Keys and Authentication PostgreSQL images. It covers private isolation, capacity, controlled
+This runbook verifies and maintains the separate one-member stateful managed instance groups for
+JSON Keys and Authentication PostgreSQL. It covers private isolation, capacity, controlled
 replacement, disk growth, and rollback.
 
 Every Google Cloud command in this document is for a named human operator. Agents never run
@@ -138,6 +138,126 @@ Check these boundaries in its output:
 
 Use the [debug runbook](./debug-postgresql-host.md) for the reusable Ed25519 key, IAP connection,
 safe one-line host checks, and reviewed operator access changes.
+
+## Drill Authentication restart and rollback isolation
+
+This is a manual maintenance drill, not a deployment. Authentication has two database interruptions:
+one bounded restart with a temporary release revision, then another restoring the receipt revision.
+Both use the same image, disk, address, and numeric password versions. No SQL migration or data
+rollback runs. JSON Keys must keep its host and one uninterrupted SQL connection throughout.
+
+Merge the reviewed drill code first. Merging does not start the drill, require a foundation apply,
+or change Renovate. Use the existing database operator permissions above, a repository account
+allowed to dispatch releases, and the normal `production-release` environment approval. The workflow
+reuses release IAM; it gets no SSH access or secret-payload access.
+
+### 1. Select the receipt in your local terminal
+
+Refresh the clean checkout, then load the operator context above:
+
+```sh
+git switch master && git pull --ff-only && . ./.envrc && ./ops/verify-operator-env.sh --github
+```
+
+Select the latest successful production receipt. Inventory requires `storage.objects.list` on the
+receipt bucket; it does not read the receipt payload. Run each line separately and stop on any error:
+
+```sh
+unset TARGET_RECEIPT RECEIPT_NAME
+RECEIPT_BUCKET="$(gh variable get GCP_RECEIPT_BUCKET --repo a-novel/infra)" && [[ "$RECEIPT_BUCKET" == "${INFRA_MANAGEMENT_PROJECT_ID:?}-"*'-deployment-receipts' ]]
+RECEIPT_NAME="$(gcloud storage objects list "gs://${RECEIPT_BUCKET:?}/production/success/*.json" --project="${INFRA_MANAGEMENT_PROJECT_ID:?}" --raw --sort-by='~name' --limit=1 --format='value(name)')"
+TARGET_RECEIPT="$(printf '%s\n' "${RECEIPT_NAME:?}" | jq -Rer 'capture("^production/success/(?<run>[0-9]{20})-(?<attempt>[0-9]{5})[.]json$") | [.run, .attempt] | map(sub("^0+"; "")) | join("-") | select(test("^[1-9][0-9]*-[1-9][0-9]*$"))')" && printf 'Isolation receipt: %s\n' "$TARGET_RECEIPT"
+```
+
+If listing is denied, a bucket IAM administrator can grant temporary read-only inspection in this
+same local session, then repeat the selection block. Do not grant project-wide Storage Admin:
+
+```sh
+ISOLATION_READER="user:$(gcloud config get-value account 2>/dev/null)"
+ISOLATION_READ_CONDITION="expression=request.time < timestamp('$(date -u -d '+2 hours' +%Y-%m-%dT%H:%M:%SZ)'),title=DatabaseIsolationInspection"
+gcloud storage buckets add-iam-policy-binding "gs://${RECEIPT_BUCKET:?}" --project="${INFRA_MANAGEMENT_PROJECT_ID:?}" --member="${ISOLATION_READER:?}" --role=roles/storage.objectViewer --condition="${ISOLATION_READ_CONDITION:?}" --quiet >/dev/null
+```
+
+The workflow refuses a stale receipt, unshipped image/database changes, unhealthy or drifting hosts,
+pending templates, disabled pinned secrets, unreconciled quotas, a missing recent daily snapshot,
+or a failed fresh Authentication backup. Resolve a preflight failure separately; do not loosen it.
+
+### 2. Hold a JSON Keys connection in a second terminal
+
+Load `.envrc` in that terminal, then connect through IAP:
+
+```sh
+. ./.envrc && ./ops/database-host.sh ssh json-keys
+```
+
+On the JSON Keys VM, run this one read-only command and leave it running:
+
+```bash
+sudo docker exec --user postgres agora-postgres-json-keys psql --no-psqlrc --no-password --set=ON_ERROR_STOP=on --username=agora_json_keys --dbname=agora_json_keys --command="SELECT pg_backend_pid() AS connection_pid, pg_postmaster_start_time() AT TIME ZONE 'UTC' AS database_started_utc, clock_timestamp() AT TIME ZONE 'UTC' AS checked_utc;" --command='\watch interval=2 count=3600'
+```
+
+It checks the same connection every two seconds for at most two hours. This noninteractive `psql`
+invocation fails on a lost connection instead of silently reconnecting. It uses the container's local
+socket without reading a password or printing application rows. Record the initial connection PID,
+database start time, and UTC timestamp. Do not restart the probe to conceal a gap.
+
+### 3. Dispatch the protected drill from the first terminal
+
+```sh
+./ops/run-workflow.sh release drill-database-isolation "${TARGET_RECEIPT:?}" 'DRILL authentication'
+```
+
+Approve the normal release environment when requested. No production workflow may already be active;
+the dispatcher refuses that case. Global infrastructure concurrency serializes the drill with later
+releases, foundation, and recovery. If `master` advanced while approval was pending, the job refuses
+to mutate: refresh and review the new state before trying again. Do not pause Renovate automation.
+
+The workflow reuses the production pre-change, restart, and rollback helpers. It compares the peer's
+VM ID, start time, disks, address, template, metadata, and guest boot status before and after each
+phase. It never changes images, credentials, services, schedules, IAM, or production receipts.
+Authentication is automatically restored after a handled failure, but the drill stays failed.
+
+### 4. Accept evidence, then remove temporary inspection access
+
+Require a successful workflow summary with both `Authentication restored: true` and
+`JSON Keys host unchanged: true`. The SQL probe must cover the summary's entire start-to-finish
+interval, with no error or gap and the same connection PID and database start time. Stop the probe
+with Ctrl-C only after that interval; if it exits early, the continuity claim has not passed.
+
+This proves local PostgreSQL connection continuity and unchanged peer-host identity. It does not
+claim that every Cloud Run connection pool or private-network request was observed. Repeat the
+[application health check](./configure-hosted-smtp.md#discover-the-deployed-service-and-check-health) and inspect
+both hosts before accepting the maintenance window:
+
+```sh
+./ops/database-host.sh inspect authentication
+./ops/database-host.sh inspect json-keys
+```
+
+Record the run URL, receipt ID, timestamps, stable probe identifiers, and final health results in the
+[isolation acceptance task](https://github.com/a-novel/infra/issues/156). Workflow success alone is
+not SQL continuity evidence. If temporary bucket access was granted above, remove that exact binding:
+
+```sh
+gcloud storage buckets remove-iam-policy-binding "gs://${RECEIPT_BUCKET:?}" --project="${INFRA_MANAGEMENT_PROJECT_ID:?}" --member="${ISOLATION_READER:?}" --role=roles/storage.objectViewer --condition="${ISOLATION_READ_CONDITION:?}" --quiet >/dev/null
+```
+
+### Interrupted runner or failed restoration
+
+A runner killed before its cleanup trap finishes can leave Authentication on the temporary revision.
+Do not start another drill. Wait for the running operation to finish and inspect the hosts. From a
+clean current `master`, use the same selected receipt and the protected restore-only path:
+
+```sh
+./ops/run-workflow.sh release restore-database-isolation "${TARGET_RECEIPT:?}" 'RESTORE authentication'
+```
+
+Restore-only restarts Authentication once, without another drill or backup gate. It remains available
+when the release launch switch is false. It still requires the latest receipt, stable host/disk
+identity, an unchanged healthy peer, and unchanged image/password metadata; only Authentication's
+release revision may differ. A newer Renovate manifest does not prevent restoring the receipt's
+unchanged database metadata. Changed runtime credentials, disk identity, or a newer successful
+receipt require separate investigation. Restoration does not retroactively pass a failed drill.
 
 ## Measure capacity
 

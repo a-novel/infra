@@ -344,11 +344,11 @@ test("Bash fences are limited to commands pasted inside remote COS hosts", () =>
     }
   }
 
-  assert.equal(bashBlocks.length, 6);
+  assert.equal(bashBlocks.length, 7);
   assert.equal(
     bashBlocks.filter(({ name }) => name === "operate-postgresql-host.md")
       .length,
-    1,
+    2,
   );
   assert.equal(
     bashBlocks.filter(({ name }) => name === "debug-postgresql-host.md").length,

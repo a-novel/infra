@@ -15,6 +15,8 @@ Usage:
   $0 release deploy [--no-wait]
   $0 release rollback <receipt-id>
   $0 release recover-first-launch <failed-run-id>
+  $0 release drill-database-isolation <receipt-id> 'DRILL authentication'
+  $0 release restore-database-isolation <receipt-id> 'RESTORE authentication'
   $0 recovery plan-workload <replacement-project-id> <receipt-id>
   $0 recovery apply-workload <replacement-project-id> <receipt-id> <plan-id>
   $0 recovery restore-data <replacement-project-id> <receipt-id> <json-keys-attempt> <authentication-attempt> <lost-write-window> <confirmation>
@@ -125,6 +127,17 @@ case "${SURFACE}" in
                     usage
                 fi
                 WORKFLOW_INPUTS=(-f action=recover-first-launch -f "failed_run_id=$1")
+                ;;
+            drill-database-isolation | restore-database-isolation)
+                if [ "$#" -ne 2 ] || ! is_run_attempt "$1"; then
+                    usage
+                fi
+                if [ "$OPERATION" = drill-database-isolation ]; then
+                    [ "$2" = 'DRILL authentication' ] || usage
+                else
+                    [ "$2" = 'RESTORE authentication' ] || usage
+                fi
+                WORKFLOW_INPUTS=(-f "action=${OPERATION}" -f "target_receipt=$1" -f "confirm_isolation=$2")
                 ;;
             *) usage ;;
         esac

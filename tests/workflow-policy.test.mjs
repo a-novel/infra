@@ -79,6 +79,8 @@ test("first-launch recovery is explicit and narrowly privileged", () => {
     "deploy",
     "rollback",
     "recover-first-launch",
+    "drill-database-isolation",
+    "restore-database-isolation",
   ]);
   assert.equal(failedRunId.required, false);
   assert.deepEqual(job.permissions, {

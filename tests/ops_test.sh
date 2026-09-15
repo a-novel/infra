@@ -2085,6 +2085,34 @@ assert_equal "${FIRST_LAUNCH_RECOVERY_RUN_ID}" 202
 grep -Fq 'workflow run release.yaml --repo a-novel/infra --ref master -f action=recover-first-launch -f failed_run_id=33841730103' \
     "${WORKFLOW_CALLS}"
 
+for operation in drill restore; do
+    rm -f -- "${WORKFLOW_STATE}"
+    : >"${WORKFLOW_CALLS}"
+    ISOLATION_RUN_ID="$(
+        PATH="${WORKFLOW_MOCK_BIN}:${PATH}" \
+            FAKE_WORKFLOW_CALLS="${WORKFLOW_CALLS}" \
+            FAKE_WORKFLOW=release.yaml \
+            FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
+            FAKE_WORKFLOW_STATE="${WORKFLOW_STATE}" \
+            WORKFLOW_DISCOVERY_ATTEMPTS=1 \
+            WORKFLOW_DISCOVERY_INTERVAL_SECONDS=0 \
+            "${REPOSITORY_ROOT}/ops/run-workflow.sh" \
+                release "${operation}-database-isolation" 123-1 "${operation^^} authentication" \
+                2>"${TEMP_DIR}/isolation-workflow.err"
+    )"
+    assert_equal "${ISOLATION_RUN_ID}" 202
+    grep -Fq "workflow run release.yaml --repo a-novel/infra --ref master -f action=${operation}-database-isolation -f target_receipt=123-1 -f confirm_isolation=${operation^^} authentication" \
+        "${WORKFLOW_CALLS}"
+    : >"${WORKFLOW_CALLS}"
+    if PATH="${WORKFLOW_MOCK_BIN}:${PATH}" FAKE_WORKFLOW_CALLS="${WORKFLOW_CALLS}" \
+        "${REPOSITORY_ROOT}/ops/run-workflow.sh" release "${operation}-database-isolation" 123-1 'DRILL json-keys' \
+        >"${TEMP_DIR}/invalid-isolation.out" 2>"${TEMP_DIR}/invalid-isolation.err"; then
+        printf 'Isolation dispatch accepted the wrong confirmation.\n' >&2
+        exit 1
+    fi
+    test ! -s "${WORKFLOW_CALLS}"
+done
+
 rm -f -- "${WORKFLOW_STATE}"
 : >"${WORKFLOW_CALLS}"
 RECOVERY_RUN_REF="$(
