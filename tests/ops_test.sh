@@ -1999,245 +1999,7 @@ PATH="${STORAGE_MOCK_BIN}:${PATH}" \
 grep -Fq 'Immutable production release receipt published.' \
     "${TEMP_DIR}/receipt-300.out"
 
-# Protected workflow dispatch must resolve exactly the newly created master run,
-# wait for it, and emit only the identifier requested by the operator.
-WORKFLOW_MOCK_BIN="${TEMP_DIR}/workflow-bin"
-mkdir -p "${WORKFLOW_MOCK_BIN}"
-ln -s "${SCRIPT_DIR}/fixtures/fake-workflow-gh.sh" "${WORKFLOW_MOCK_BIN}/gh"
-ln -s "${SCRIPT_DIR}/fixtures/fake-workflow-git.sh" "${WORKFLOW_MOCK_BIN}/git"
-WORKFLOW_STATE="${TEMP_DIR}/workflow-state"
-WORKFLOW_CALLS="${TEMP_DIR}/workflow-calls"
-WORKFLOW_SHA='1234567890abcdef1234567890abcdef12345678'
-
-PLAN_ID="$(
-    PATH="${WORKFLOW_MOCK_BIN}:${PATH}" \
-        FAKE_WORKFLOW_CALLS="${WORKFLOW_CALLS}" \
-        FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
-        FAKE_WORKFLOW_STATE="${WORKFLOW_STATE}" \
-        WORKFLOW_DISCOVERY_ATTEMPTS=1 \
-        WORKFLOW_DISCOVERY_INTERVAL_SECONDS=0 \
-        "${REPOSITORY_ROOT}/ops/run-workflow.sh" \
-            foundation plan foundation \
-            2>"${TEMP_DIR}/workflow.err"
-)"
-assert_equal "${PLAN_ID}" '202-3'
-grep -Fq 'Workflow run: https://github.com/a-novel/infra/actions/runs/202' \
-    "${TEMP_DIR}/workflow.err"
-grep -Fq 'workflow run foundation.yaml --repo a-novel/infra --ref master -f operation=plan -f root=foundation' \
-    "${WORKFLOW_CALLS}"
-
-rm -f -- "${WORKFLOW_STATE}"
-: >"${WORKFLOW_CALLS}"
-ASSESSMENT_RUN_ID="$(
-    PATH="${WORKFLOW_MOCK_BIN}:${PATH}" \
-        FAKE_ASSESSMENT_HEAD="${DELETION_HEAD}" \
-        FAKE_ASSESSMENT_PR=93 \
-        FAKE_WORKFLOW_CALLS="${WORKFLOW_CALLS}" \
-        FAKE_WORKFLOW=drift.yaml \
-        FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
-        FAKE_WORKFLOW_STATE="${WORKFLOW_STATE}" \
-        WORKFLOW_DISCOVERY_ATTEMPTS=1 \
-        WORKFLOW_DISCOVERY_INTERVAL_SECONDS=0 \
-        "${REPOSITORY_ROOT}/ops/run-workflow.sh" \
-            drift assess-pull-request 93 \
-            2>"${TEMP_DIR}/assessment-workflow.err"
-)"
-assert_equal "${ASSESSMENT_RUN_ID}" 202
-grep -Fq \
-    "workflow run drift.yaml --repo a-novel/infra --ref master -f operation=assess-pull-request -f pull_request=93 -f head_sha=${DELETION_HEAD} -f base_sha=${WORKFLOW_SHA}" \
-    "${WORKFLOW_CALLS}"
-
-rm -f -- "${WORKFLOW_STATE}"
-: >"${WORKFLOW_CALLS}"
-DETACHED_RUN_ID="$(
-    PATH="${WORKFLOW_MOCK_BIN}:${PATH}" \
-        FAKE_WORKFLOW_CALLS="${WORKFLOW_CALLS}" \
-        FAKE_WORKFLOW=release.yaml \
-        FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
-        FAKE_WORKFLOW_STATE="${WORKFLOW_STATE}" \
-        WORKFLOW_DISCOVERY_ATTEMPTS=1 \
-        WORKFLOW_DISCOVERY_INTERVAL_SECONDS=0 \
-        "${REPOSITORY_ROOT}/ops/run-workflow.sh" \
-            release deploy --no-wait \
-            2>"${TEMP_DIR}/detached-workflow.err"
-)"
-assert_equal "${DETACHED_RUN_ID}" 202
-if grep -Fq 'run watch' "${WORKFLOW_CALLS}"; then
-    printf 'A detached workflow dispatch unexpectedly started a watcher.\n' >&2
-    exit 1
-fi
-
-rm -f -- "${WORKFLOW_STATE}"
-: >"${WORKFLOW_CALLS}"
-FIRST_LAUNCH_RECOVERY_RUN_ID="$(
-    PATH="${WORKFLOW_MOCK_BIN}:${PATH}" \
-        FAKE_WORKFLOW_CALLS="${WORKFLOW_CALLS}" \
-        FAKE_WORKFLOW=release.yaml \
-        FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
-        FAKE_WORKFLOW_STATE="${WORKFLOW_STATE}" \
-        WORKFLOW_DISCOVERY_ATTEMPTS=1 \
-        WORKFLOW_DISCOVERY_INTERVAL_SECONDS=0 \
-        "${REPOSITORY_ROOT}/ops/run-workflow.sh" \
-            release recover-first-launch 33841730103 \
-            2>"${TEMP_DIR}/first-launch-recovery-workflow.err"
-)"
-assert_equal "${FIRST_LAUNCH_RECOVERY_RUN_ID}" 202
-grep -Fq 'workflow run release.yaml --repo a-novel/infra --ref master -f action=recover-first-launch -f failed_run_id=33841730103' \
-    "${WORKFLOW_CALLS}"
-
-for operation in drill restore; do
-    rm -f -- "${WORKFLOW_STATE}"
-    : >"${WORKFLOW_CALLS}"
-    ISOLATION_RUN_ID="$(
-        PATH="${WORKFLOW_MOCK_BIN}:${PATH}" \
-            FAKE_WORKFLOW_CALLS="${WORKFLOW_CALLS}" \
-            FAKE_WORKFLOW=release.yaml \
-            FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
-            FAKE_WORKFLOW_STATE="${WORKFLOW_STATE}" \
-            WORKFLOW_DISCOVERY_ATTEMPTS=1 \
-            WORKFLOW_DISCOVERY_INTERVAL_SECONDS=0 \
-            "${REPOSITORY_ROOT}/ops/run-workflow.sh" \
-                release "${operation}-database-isolation" 123-1 "${operation^^} authentication" \
-                2>"${TEMP_DIR}/isolation-workflow.err"
-    )"
-    assert_equal "${ISOLATION_RUN_ID}" 202
-    grep -Fq "workflow run release.yaml --repo a-novel/infra --ref master -f action=${operation}-database-isolation -f target_receipt=123-1 -f confirm_isolation=${operation^^} authentication" \
-        "${WORKFLOW_CALLS}"
-    : >"${WORKFLOW_CALLS}"
-    if PATH="${WORKFLOW_MOCK_BIN}:${PATH}" FAKE_WORKFLOW_CALLS="${WORKFLOW_CALLS}" \
-        "${REPOSITORY_ROOT}/ops/run-workflow.sh" release "${operation}-database-isolation" 123-1 'DRILL json-keys' \
-        >"${TEMP_DIR}/invalid-isolation.out" 2>"${TEMP_DIR}/invalid-isolation.err"; then
-        printf 'Isolation dispatch accepted the wrong confirmation.\n' >&2
-        exit 1
-    fi
-    test ! -s "${WORKFLOW_CALLS}"
-done
-
-rm -f -- "${WORKFLOW_STATE}"
-: >"${WORKFLOW_CALLS}"
-RECOVERY_RUN_REF="$(
-    PATH="${WORKFLOW_MOCK_BIN}:${PATH}" \
-        FAKE_WORKFLOW_CALLS="${WORKFLOW_CALLS}" \
-        FAKE_WORKFLOW=recovery.yaml \
-        FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
-        FAKE_WORKFLOW_STATE="${WORKFLOW_STATE}" \
-        WORKFLOW_DISCOVERY_ATTEMPTS=1 \
-        WORKFLOW_DISCOVERY_INTERVAL_SECONDS=0 \
-        "${REPOSITORY_ROOT}/ops/run-workflow.sh" recovery restore-data \
-            recovery-project-prod 202-3 \
-            100-json-1 101-authentication-1 \
-            'no known lost writes' 'RESTORE recovery-project-prod' \
-            2>"${TEMP_DIR}/recovery-workflow.err"
-)"
-assert_equal "${RECOVERY_RUN_REF}" 202-3
-grep -Fq 'workflow run recovery.yaml --repo a-novel/infra --ref master -f operation=restore-data -f replacement_project_id=recovery-project-prod -f target_receipt=202-3' \
-    "${WORKFLOW_CALLS}"
-grep -Fq -- '-f json_keys_attempt=100-json-1 -f authentication_attempt=101-authentication-1' \
-    "${WORKFLOW_CALLS}"
-grep -Fq -- '-f lost_write_window=no known lost writes -f confirm=RESTORE recovery-project-prod' \
-    "${WORKFLOW_CALLS}"
-
-rm -f -- "${WORKFLOW_STATE}"
-: >"${WORKFLOW_CALLS}"
-APPLY_RUN_ID="$(
-    PATH="${WORKFLOW_MOCK_BIN}:${PATH}" \
-        FAKE_WORKFLOW_CALLS="${WORKFLOW_CALLS}" \
-        FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
-        FAKE_WORKFLOW_STATE="${WORKFLOW_STATE}" \
-        WORKFLOW_DISCOVERY_ATTEMPTS=1 \
-        WORKFLOW_DISCOVERY_INTERVAL_SECONDS=0 \
-        "${REPOSITORY_ROOT}/ops/run-workflow.sh" \
-            foundation apply foundation 202-3 \
-            2>"${TEMP_DIR}/apply-workflow.err"
-)"
-assert_equal "${APPLY_RUN_ID}" 202
-grep -Fq \
-    'workflow run foundation.yaml --repo a-novel/infra --ref master -f operation=apply -f root=foundation -f plan_id=202-3' \
-    "${WORKFLOW_CALLS}"
-
-rm -f -- "${WORKFLOW_STATE}"
-: >"${WORKFLOW_CALLS}"
 set +e
-PATH="${WORKFLOW_MOCK_BIN}:${PATH}" \
-    FAKE_PLAN_WORKFLOW_SHA='0000000000000000000000000000000000000000' \
-    FAKE_WORKFLOW_CALLS="${WORKFLOW_CALLS}" \
-    FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
-    FAKE_WORKFLOW_STATE="${WORKFLOW_STATE}" \
-    "${REPOSITORY_ROOT}/ops/run-workflow.sh" \
-        foundation apply foundation 202-3 \
-        >"${TEMP_DIR}/stale-plan.out" 2>"${TEMP_DIR}/stale-plan.err"
-STALE_PLAN_CODE=$?
-set -e
-assert_equal "${STALE_PLAN_CODE}" 65
-grep -Fq 'selected plan commit is no longer the local master commit' \
-    "${TEMP_DIR}/stale-plan.err"
-if grep -Fq 'workflow run' "${WORKFLOW_CALLS}"; then
-    printf 'A stale reviewed plan unexpectedly dispatched a workflow.\n' >&2
-    exit 1
-fi
-
-rm -f -- "${WORKFLOW_STATE}"
-: >"${WORKFLOW_CALLS}"
-set +e
-PATH="${WORKFLOW_MOCK_BIN}:${PATH}" \
-    FAKE_PLAN_DISPLAY_TITLE='foundation apply foundation by @operator' \
-    FAKE_WORKFLOW_CALLS="${WORKFLOW_CALLS}" \
-    FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
-    FAKE_WORKFLOW_STATE="${WORKFLOW_STATE}" \
-    "${REPOSITORY_ROOT}/ops/run-workflow.sh" \
-        foundation apply foundation 202-3 \
-        >"${TEMP_DIR}/wrong-plan-kind.out" 2>"${TEMP_DIR}/wrong-plan-kind.err"
-WRONG_PLAN_KIND_CODE=$?
-set -e
-assert_equal "${WRONG_PLAN_KIND_CODE}" 65
-grep -Fq 'not a successful matching workflow attempt' \
-    "${TEMP_DIR}/wrong-plan-kind.err"
-if grep -Fq 'workflow run' "${WORKFLOW_CALLS}"; then
-    printf 'A non-plan workflow attempt unexpectedly dispatched apply.\n' >&2
-    exit 1
-fi
-
-rm -f -- "${WORKFLOW_STATE}"
-: >"${WORKFLOW_CALLS}"
-set +e
-PATH="${WORKFLOW_MOCK_BIN}:${PATH}" \
-    FAKE_ACTIVE_WORKFLOW=true \
-    FAKE_WORKFLOW_CALLS="${WORKFLOW_CALLS}" \
-    FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
-    FAKE_WORKFLOW_STATE="${WORKFLOW_STATE}" \
-    "${REPOSITORY_ROOT}/ops/run-workflow.sh" \
-        foundation apply foundation 202-3 \
-        >"${TEMP_DIR}/active-workflow.out" 2>"${TEMP_DIR}/active-workflow.err"
-ACTIVE_WORKFLOW_CODE=$?
-set -e
-assert_equal "${ACTIVE_WORKFLOW_CODE}" 75
-grep -Fq 'Another production infrastructure run is active' \
-    "${TEMP_DIR}/active-workflow.err"
-if grep -Fq 'workflow run' "${WORKFLOW_CALLS}"; then
-    printf 'An active production workflow did not block dispatch.\n' >&2
-    exit 1
-fi
-
-set +e
-"${REPOSITORY_ROOT}/ops/run-workflow.sh" foundation plan \
-    >/dev/null 2>&1
-INVALID_WORKFLOW_INPUT_CODE=$?
-set -e
-assert_equal "${INVALID_WORKFLOW_INPUT_CODE}" 64
-
-set +e
-"${REPOSITORY_ROOT}/ops/run-workflow.sh" release recover-first-launch invalid \
-    >/dev/null 2>&1
-INVALID_FIRST_LAUNCH_RECOVERY_CODE=$?
-set -e
-assert_equal "${INVALID_FIRST_LAUNCH_RECOVERY_CODE}" 64
-
-set +e
-"${REPOSITORY_ROOT}/ops/run-workflow.sh" recovery restore-data \
-    recovery-project-prod 202-3 \
-    100-json-1 101-authentication-1 'no known lost writes' \
-    'RESTORE wrong-project' >/dev/null 2>&1
-INVALID_RECOVERY_CONFIRMATION_CODE=$?
 INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \
     INFRA_WORKLOAD_PROJECT_ID=INVALID \
     "${REPOSITORY_ROOT}/ops/foundation.sh" configure >/dev/null 2>&1
@@ -2247,12 +2009,12 @@ INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \
     "${REPOSITORY_ROOT}/ops/foundation-audit.sh" >/dev/null 2>&1
 INVALID_FOUNDATION_AUDIT_PROJECT_CODE=$?
 set -e
-assert_equal "${INVALID_RECOVERY_CONFIRMATION_CODE}" 64
 assert_equal "${INVALID_FOUNDATION_PROJECT_CODE}" 64
 assert_equal "${INVALID_FOUNDATION_AUDIT_PROJECT_CODE}" 64
 
 # Foundation configuration derives every coordinate in a fresh process, writes
 # only the protected JSON document, and keeps billing/human metadata off stdout.
+WORKFLOW_SHA='1234567890abcdef1234567890abcdef12345678'
 FOUNDATION_MOCK_BIN="${TEMP_DIR}/foundation-bin"
 FOUNDATION_CALLS="${TEMP_DIR}/foundation-calls"
 FOUNDATION_SECRETS="${TEMP_DIR}/foundation-secrets"
@@ -2443,7 +2205,6 @@ done
 BOOTSTRAP_MOCK_BIN="${TEMP_DIR}/bootstrap-bin"
 BOOTSTRAP_PLAN="${TEMP_DIR}/bootstrap-plan.tfplan"
 BOOTSTRAP_CALLS="${TEMP_DIR}/bootstrap-calls"
-BOOTSTRAP_STATE="${TEMP_DIR}/bootstrap-workflow-state"
 mkdir -p "${BOOTSTRAP_MOCK_BIN}"
 ln -s "${SCRIPT_DIR}/fixtures/fake-foundation-gcloud.sh" "${BOOTSTRAP_MOCK_BIN}/gcloud"
 ln -s "${SCRIPT_DIR}/fixtures/fake-workflow-gh.sh" "${BOOTSTRAP_MOCK_BIN}/gh"
@@ -2455,7 +2216,6 @@ PATH="${BOOTSTRAP_MOCK_BIN}:${PATH}" \
     FAKE_FOUNDATION_CALLS="${BOOTSTRAP_CALLS}" \
     FAKE_WORKFLOW_CALLS="${BOOTSTRAP_CALLS}" \
     FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
-    FAKE_WORKFLOW_STATE="${BOOTSTRAP_STATE}" \
     FAKE_TOFU_PLAN_CODE=2 \
     FAKE_TOFU_PLAN_JSON="${SCRIPT_DIR}/fixtures/plans/safe.json" \
     INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \
@@ -2480,7 +2240,6 @@ PATH="${BOOTSTRAP_MOCK_BIN}:${PATH}" \
     FAKE_FOUNDATION_CALLS="${BOOTSTRAP_CALLS}" \
     FAKE_WORKFLOW_CALLS="${BOOTSTRAP_CALLS}" \
     FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
-    FAKE_WORKFLOW_STATE="${BOOTSTRAP_STATE}" \
     FAKE_TOFU_PLAN_CODE=0 \
     FAKE_TOFU_PLAN_JSON="${SCRIPT_DIR}/fixtures/plans/safe.json" \
     INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \

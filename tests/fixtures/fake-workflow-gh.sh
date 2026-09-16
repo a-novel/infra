@@ -5,13 +5,12 @@
 set -euo pipefail
 
 CALLS_FILE="${FAKE_WORKFLOW_CALLS:?FAKE_WORKFLOW_CALLS is required}"
-STATE_FILE="${FAKE_WORKFLOW_STATE:?FAKE_WORKFLOW_STATE is required}"
 WORKFLOW="${FAKE_WORKFLOW:-foundation.yaml}"
 RUN_ID="${FAKE_WORKFLOW_RUN_ID:-202}"
 RUN_ATTEMPT="${FAKE_WORKFLOW_RUN_ATTEMPT:-3}"
 COMMIT="${FAKE_WORKFLOW_SHA:?FAKE_WORKFLOW_SHA is required}"
 
-printf '%s\n' "$*" >>"${CALLS_FILE}"
+jq --compact-output --null-input --args '$ARGS.positional' -- "$@" >>"${CALLS_FILE}"
 
 case "${1:-}" in
     api)
@@ -40,64 +39,51 @@ case "${1:-}" in
                     printf '303\tproduction foundation\tfoundation plan bootstrap\twaiting\thttps://github.com/a-novel/infra/actions/runs/303\n'
                 fi
                 ;;
-            "repos/a-novel/infra/actions/runs/${RUN_ID}")
+            "repos/a-novel/infra/actions/workflows/${WORKFLOW}/dispatches")
+                if [ "${FAKE_DISPATCH_FAILURE:-false}" = true ]; then exit 1; fi
+                if [ "${FAKE_DISPATCH_RESPONSE+x}" ]; then
+                    printf '%s\n' "${FAKE_DISPATCH_RESPONSE}"
+                else
+                    jq -n --argjson id "${RUN_ID}" '{
+                      workflow_run_id: $id,
+                      run_url: ("https://api.github.com/repos/a-novel/infra/actions/runs/" + ($id | tostring)),
+                      html_url: ("https://github.com/a-novel/infra/actions/runs/" + ($id | tostring))
+                    }'
+                fi
+                ;;
+            "repos/a-novel/infra/actions/runs/${RUN_ID}" | repos/a-novel/infra/actions/runs/101)
+                override='{}'
+                if [ "${endpoint##*/}" = 101 ]; then
+                    override="${FAKE_PLAN_OVERRIDE:-${override}}"
+                elif [ "${FAKE_RUN_READ_FAILURE:-false}" = true ]; then
+                    exit 1
+                else
+                    override="${FAKE_RUN_OVERRIDE:-${override}}"
+                fi
                 jq -n \
-                    --arg sha "${FAKE_PLAN_WORKFLOW_SHA:-${COMMIT}}" \
-                    --arg path ".github/workflows/${FAKE_PLAN_WORKFLOW:-${WORKFLOW}}" \
-                    --arg title "${FAKE_PLAN_DISPLAY_TITLE:-foundation plan foundation by @operator}" \
+                    --arg sha "${COMMIT}" \
+                    --arg path ".github/workflows/${WORKFLOW}" \
+                    --argjson id "${endpoint##*/}" \
+                    --argjson override "${override}" \
                     --argjson attempt "${RUN_ATTEMPT}" '
                       {
+                        id: $id,
                         head_sha: $sha,
+                        head_branch: "master",
                         path: $path,
-                        display_title: $title,
+                        display_title: "foundation plan foundation by @operator",
                         event: "workflow_dispatch",
                         status: "completed",
                         conclusion: "success",
                         run_attempt: $attempt
-                      }
+                      } + $override
                     '
                 ;;
             *) exit 64 ;;
         esac
         ;;
-    workflow)
-        [ "${2:-}" = run ]
-        [ "${3:-}" = "${WORKFLOW}" ]
-        touch "${STATE_FILE}"
-        printf 'Created mock workflow dispatch.\n'
-        ;;
     run)
         case "${2:-}" in
-            list)
-                if [[ "$*" == *'--json databaseId --jq [.[].databaseId]'* ]]; then
-                    printf '[101]\n'
-                elif [[ "$*" == *'--json databaseId,headSha,status,url'* ]]; then
-                    if [ -f "${STATE_FILE}" ]; then
-                        jq -n \
-                            --arg sha "${COMMIT}" \
-                            --argjson run_id "${RUN_ID}" '
-                              [
-                                {
-                                  databaseId: $run_id,
-                                  headSha: $sha,
-                                  status: "queued",
-                                  url: ("https://github.com/a-novel/infra/actions/runs/" + ($run_id | tostring))
-                                },
-                                {
-                                  databaseId: 101,
-                                  headSha: ("0" * 40),
-                                  status: "completed",
-                                  url: "https://github.com/a-novel/infra/actions/runs/101"
-                                }
-                              ]
-                            '
-                    else
-                        printf '[]\n'
-                    fi
-                else
-                    exit 64
-                fi
-                ;;
             watch)
                 [ "${3:-}" = "${RUN_ID}" ]
                 if [ "${FAKE_WORKFLOW_WATCH_FAILURE:-false}" = true ]; then
