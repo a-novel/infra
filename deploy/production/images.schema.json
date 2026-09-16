@@ -101,16 +101,40 @@
       "required": ["database", "grpc", "jobs/migrations", "jobs/rotatekeys"],
       "properties": {
         "database": {
-          "$ref": "#/$defs/jsonKeysDatabaseImage"
+          "$ref": "#/$defs/image",
+          "type": "object",
+          "properties": {
+            "repository": {
+              "const": "ghcr.io/a-novel/service-json-keys/database"
+            }
+          }
         },
         "grpc": {
-          "$ref": "#/$defs/jsonKeysGrpcImage"
+          "$ref": "#/$defs/image",
+          "type": "object",
+          "properties": {
+            "repository": {
+              "const": "ghcr.io/a-novel/service-json-keys/grpc"
+            }
+          }
         },
         "jobs/migrations": {
-          "$ref": "#/$defs/jsonKeysMigrationsImage"
+          "$ref": "#/$defs/image",
+          "type": "object",
+          "properties": {
+            "repository": {
+              "const": "ghcr.io/a-novel/service-json-keys/jobs/migrations"
+            }
+          }
         },
         "jobs/rotatekeys": {
-          "$ref": "#/$defs/jsonKeysRotateKeysImage"
+          "$ref": "#/$defs/image",
+          "type": "object",
+          "properties": {
+            "repository": {
+              "const": "ghcr.io/a-novel/service-json-keys/jobs/rotatekeys"
+            }
+          }
         }
       }
     },
@@ -120,16 +144,40 @@
       "required": ["database", "jobs/init", "jobs/migrations", "rest"],
       "properties": {
         "database": {
-          "$ref": "#/$defs/authenticationDatabaseImage"
+          "$ref": "#/$defs/image",
+          "type": "object",
+          "properties": {
+            "repository": {
+              "const": "ghcr.io/a-novel/service-authentication/database"
+            }
+          }
         },
         "jobs/init": {
-          "$ref": "#/$defs/authenticationInitImage"
+          "$ref": "#/$defs/image",
+          "type": "object",
+          "properties": {
+            "repository": {
+              "const": "ghcr.io/a-novel/service-authentication/jobs/init"
+            }
+          }
         },
         "jobs/migrations": {
-          "$ref": "#/$defs/authenticationMigrationsImage"
+          "$ref": "#/$defs/image",
+          "type": "object",
+          "properties": {
+            "repository": {
+              "const": "ghcr.io/a-novel/service-authentication/jobs/migrations"
+            }
+          }
         },
         "rest": {
-          "$ref": "#/$defs/authenticationRestImage"
+          "$ref": "#/$defs/image",
+          "type": "object",
+          "properties": {
+            "repository": {
+              "const": "ghcr.io/a-novel/service-authentication/rest"
+            }
+          }
         }
       }
     },
@@ -154,110 +202,6 @@
           "pattern": "^sha256:[a-f0-9]{64}$"
         }
       }
-    },
-    "jsonKeysDatabaseImage": {
-      "allOf": [
-        { "$ref": "#/$defs/image" },
-        {
-          "type": "object",
-          "properties": {
-            "repository": {
-              "const": "ghcr.io/a-novel/service-json-keys/database"
-            }
-          }
-        }
-      ]
-    },
-    "jsonKeysGrpcImage": {
-      "allOf": [
-        { "$ref": "#/$defs/image" },
-        {
-          "type": "object",
-          "properties": {
-            "repository": {
-              "const": "ghcr.io/a-novel/service-json-keys/grpc"
-            }
-          }
-        }
-      ]
-    },
-    "jsonKeysMigrationsImage": {
-      "allOf": [
-        { "$ref": "#/$defs/image" },
-        {
-          "type": "object",
-          "properties": {
-            "repository": {
-              "const": "ghcr.io/a-novel/service-json-keys/jobs/migrations"
-            }
-          }
-        }
-      ]
-    },
-    "jsonKeysRotateKeysImage": {
-      "allOf": [
-        { "$ref": "#/$defs/image" },
-        {
-          "type": "object",
-          "properties": {
-            "repository": {
-              "const": "ghcr.io/a-novel/service-json-keys/jobs/rotatekeys"
-            }
-          }
-        }
-      ]
-    },
-    "authenticationDatabaseImage": {
-      "allOf": [
-        { "$ref": "#/$defs/image" },
-        {
-          "type": "object",
-          "properties": {
-            "repository": {
-              "const": "ghcr.io/a-novel/service-authentication/database"
-            }
-          }
-        }
-      ]
-    },
-    "authenticationInitImage": {
-      "allOf": [
-        { "$ref": "#/$defs/image" },
-        {
-          "type": "object",
-          "properties": {
-            "repository": {
-              "const": "ghcr.io/a-novel/service-authentication/jobs/init"
-            }
-          }
-        }
-      ]
-    },
-    "authenticationMigrationsImage": {
-      "allOf": [
-        { "$ref": "#/$defs/image" },
-        {
-          "type": "object",
-          "properties": {
-            "repository": {
-              "const": "ghcr.io/a-novel/service-authentication/jobs/migrations"
-            }
-          }
-        }
-      ]
-    },
-    "authenticationRestImage": {
-      "allOf": [
-        { "$ref": "#/$defs/image" },
-        {
-          "type": "object",
-          "properties": {
-            "repository": {
-              "const": "ghcr.io/a-novel/service-authentication/rest"
-            }
-          }
-        }
-      ]
     }
   }
 }

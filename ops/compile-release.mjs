@@ -22,45 +22,8 @@ import { validateImageUpdate } from "./validate-image-update.mjs";
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDirectory, "..");
 
-const requiredConfigKeys = [
-  "management_project_id",
-  "workload_project_id",
-  "region",
-  "database_zone",
-  "backup_bucket_name",
-  "database_hosts",
-  "network_id",
-  "subnet_id",
-  "cloud_run_invocation_tags",
-  "authentication",
-  "quota_expectations",
-  "secret_versions",
-];
-
-const requiredSecretVersions = [
-  "authentication_postgres_password",
-  "authentication_postgres_backup_password",
-  "authentication_smtp_password",
-  "authentication_super_admin_password",
-  "json_keys_postgres_password",
-  "json_keys_postgres_backup_password",
-  "json_keys_app_master_key",
-];
-
 function fail(message) {
   throw new Error(message);
-}
-
-function exactKeys(value, expected, label) {
-  if (
-    value === null ||
-    typeof value !== "object" ||
-    Array.isArray(value) ||
-    JSON.stringify(Object.keys(value).sort()) !==
-      JSON.stringify([...expected].sort())
-  ) {
-    fail(`${label} has an unexpected shape`);
-  }
 }
 
 function sha256(value) {
@@ -88,55 +51,13 @@ function validateWebClientUrl(webClientUrl) {
   }
 }
 
-function validateConfig(config, action) {
-  exactKeys(config, requiredConfigKeys, "release configuration");
+function validateConfigPolicy(config, action) {
   // Rollback restores the receipt's environment, not the current email origin.
   if (action !== "rollback") {
     validateWebClientUrl(config.authentication?.web_client_url);
   }
-  exactKeys(
-    config.secret_versions,
-    requiredSecretVersions,
-    "secret-version configuration",
-  );
-
-  for (const key of requiredSecretVersions) {
-    if (
-      !Number.isInteger(config.secret_versions[key]) ||
-      config.secret_versions[key] < 1
-    ) {
-      fail(`secret_versions.${key} must be a positive integer`);
-    }
-  }
-
-  if (!/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(config.workload_project_id)) {
-    fail("workload_project_id is invalid");
-  }
-  if (!/^[a-z]+-[a-z]+[0-9]+$/.test(config.region)) {
-    fail("region is invalid");
-  }
   if (config.database_zone.slice(0, -2) !== config.region) {
     fail("database_zone must belong to region");
-  }
-  exactKeys(
-    config.database_hosts,
-    ["authentication", "json_keys"],
-    "database hosts",
-  );
-  for (const [service, host] of Object.entries(config.database_hosts)) {
-    exactKeys(host, ["private_ip", "data_disk_id"], `${service} database host`);
-    if (
-      !isIPv4(host.private_ip) ||
-      !/^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(
-        host.private_ip,
-      ) ||
-      typeof host.data_disk_id !== "string" ||
-      !/^[1-9][0-9]*$/.test(host.data_disk_id)
-    ) {
-      fail(
-        `${service} requires a private IPv4 address and exact numeric data disk ID`,
-      );
-    }
   }
   if (
     new Set(Object.values(config.database_hosts).map((host) => host.private_ip))
@@ -146,36 +67,6 @@ function validateConfig(config, action) {
     ).size !== 2
   ) {
     fail("database hosts must use separate private addresses and data disks");
-  }
-  exactKeys(
-    config.cloud_run_invocation_tags,
-    ["key", "values"],
-    "Cloud Run invocation tags",
-  );
-  exactKeys(
-    config.cloud_run_invocation_tags.values,
-    ["initializer", "internal", "recovery", "release", "scheduled"],
-    "Cloud Run invocation tag values",
-  );
-  if (
-    !/^tagKeys\/[0-9]+$/.test(config.cloud_run_invocation_tags.key) ||
-    !Object.values(config.cloud_run_invocation_tags.values).every((value) =>
-      /^tagValues\/[0-9]+$/.test(value),
-    )
-  ) {
-    fail("Cloud Run invocation tags must use permanent numeric IDs");
-  }
-  exactKeys(
-    config.quota_expectations,
-    ["cloud_run_cpu_millicpu", "cloud_run_memory_bytes", "compute_cpu"],
-    "quota expectations",
-  );
-  if (
-    !Object.values(config.quota_expectations).every(
-      (value) => Number.isInteger(value) && value > 0,
-    )
-  ) {
-    fail("quota expectations must be positive integers");
   }
 }
 
@@ -388,7 +279,20 @@ export async function compileRelease({
   validateFamilyVersions(manifest);
 
   const config = await loadJson(configPath, "release configuration");
-  validateConfig(config, action);
+  const configSchema = parse(
+    await readFile(
+      path.join(repositoryRoot, "deploy/production/release-config.schema.yaml"),
+      "utf8",
+    ),
+  );
+  const validateConfig = ajv.addFormat("ipv4", isIPv4).compile(configSchema);
+  if (!validateConfig(config)) {
+    // Schema locations are public; rejected values and property names are private.
+    fail(
+      `release configuration is invalid at ${validateConfig.errors[0].schemaPath}`,
+    );
+  }
+  validateConfigPolicy(config, action);
 
   let previousReceipt = null;
   if (previousReceiptPath) {
