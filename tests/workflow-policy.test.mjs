@@ -27,7 +27,7 @@ const release = parse(
   ),
 );
 
-test("operational jobs share the cache-free runtime-only install tested in CI", async () => {
+test("operational jobs build reviewed Go tooling before protected inputs or credentials", async () => {
   const recovery = parse(
     await readFile(
       path.join(repositoryRoot, ".github/workflows/recovery.yaml"),
@@ -35,24 +35,37 @@ test("operational jobs share the cache-free runtime-only install tested in CI", 
     ),
   );
   for (const job of [
-    main.jobs["validate-opentofu"],
     release.jobs.release,
     release.jobs["database-isolation"],
     recovery.jobs.recover,
   ]) {
-    const installs = job.steps.filter((step) =>
-      step.run?.includes("pnpm install"),
+    const build = job.steps.findIndex(
+      (step) => step.uses === "./.github/actions/setup-infra",
     );
-    assert.deepEqual(
-      installs.map((step) => step.run),
-      ["pnpm install --prod --frozen-lockfile --ignore-scripts"],
+    const protectedInput = job.steps.findIndex((step) =>
+      /secrets\.|google-github-actions\/auth/.test(JSON.stringify(step)),
     );
-    const node = job.steps.find((step) =>
-      step.uses?.startsWith("actions/setup-node@"),
-    );
-    assert.equal(node.with.cache, undefined);
-    assert.equal(node.with["package-manager-cache"], false);
+    assert.ok(build >= 0 && build < protectedInput);
+    assert.doesNotMatch(JSON.stringify(job), /setup-node|pnpm|go run|go build/);
   }
+  const build = parse(
+    await readFile(
+      path.join(repositoryRoot, ".github/actions/setup-infra/action.yaml"),
+      "utf8",
+    ),
+  );
+  assert.equal(build.runs.steps[0].with.cache, false);
+  assert.match(build.runs.steps[1].run, /go build -mod=readonly/);
+  assert.doesNotMatch(JSON.stringify(build), /secrets\.|vars\.|cache: true/);
+  assert.ok(
+    main.jobs["lint-repository"].steps.some(
+      (step) => step.uses === "./.github/actions/setup-infra",
+    ),
+  );
+  assert.doesNotMatch(
+    JSON.stringify(main.jobs["validate-opentofu"]),
+    /pnpm|setup-node/,
+  );
 });
 
 test("drift and synthetic health use distinct off-hour schedules", () => {
@@ -160,7 +173,7 @@ test("deployment checks the receipt-owned transition before any runtime mutation
     (step) => step.name === "Deploy the selected service scope",
   );
   assert.ok(compile >= 0 && compile < deploy);
-  assert.match(steps[compile].run, /compile-release\.mjs/);
+  assert.match(steps[compile].run, /infra compile-release/);
   assert.equal(
     steps[compile].env.PRIOR_RECEIPT,
     "${{ steps.prior.outputs.argument }}",

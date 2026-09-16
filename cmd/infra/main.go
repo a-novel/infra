@@ -1,4 +1,4 @@
-// Command infra validates operator intent for private database access and protected workflows.
+// Command infra validates operator intent and compiles private deployment inputs.
 package main
 
 import (
@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/a-novel/infra/internal/operator"
+	"github.com/a-novel/infra/internal/release"
 	"github.com/a-novel/infra/internal/workflow"
 )
 
@@ -27,6 +28,9 @@ func main() {
 	if len(os.Args) > 1 && (os.Args[1] == "database" || os.Args[1] == "verify-env") {
 		syscall.Umask(0o077)
 		code = operator.Run(ctx, os.Args[1:], os.Getenv, execute, os.Stdout, os.Stderr)
+	} else if len(os.Args) > 1 && (os.Args[1] == "compile-release" || os.Args[1] == "compile-recovery" || os.Args[1] == "validate-images" || os.Args[1] == "receipt") {
+		syscall.Umask(0o077)
+		code = release.Run(os.Args[1:], os.Getenv, os.Stdout, os.Stderr)
 	} else {
 		code = workflow.Run(ctx, os.Args[1:], execute, os.Stdout, os.Stderr)
 	}

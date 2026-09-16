@@ -20,7 +20,6 @@ FILE="$3"
 IDENTIFIER="${4:-}"
 RUN_ID="${4:-}"
 RUN_ATTEMPT="${5:-}"
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 RECEIPT_PREFIX="gs://${BUCKET}/production/success"
 
 if ! [[ "${BUCKET}" =~ ^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$ ]]; then
@@ -28,7 +27,7 @@ if ! [[ "${BUCKET}" =~ ^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$ ]]; then
     exit 65
 fi
 
-for command_name in gcloud jq sha256sum; do
+for command_name in gcloud jq sha256sum infra; do
     if ! command -v "${command_name}" >/dev/null 2>&1; then
         printf '%s is required by the protected receipt workflow.\n' "${command_name}" >&2
         exit 69
@@ -88,7 +87,7 @@ case "${ACTION}" in
             exit 70
         fi
         chmod 600 "${FILE}"
-        "${SCRIPT_DIR}/validate-receipt.mjs" "${FILE}"
+        infra receipt validate "${FILE}"
         ;;
     fetch)
         if [ "$#" -ne 4 ] || ! [[ "${IDENTIFIER}" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]; then
@@ -107,7 +106,7 @@ case "${ACTION}" in
             exit 70
         fi
         chmod 600 "${FILE}"
-        "${SCRIPT_DIR}/validate-receipt.mjs" "${FILE}"
+        infra receipt validate "${FILE}"
         ;;
     publish)
         if [ "$#" -ne 5 ] || ! [[ "${RUN_ID}" =~ ^[1-9][0-9]*$ ]] ||
@@ -115,7 +114,7 @@ case "${ACTION}" in
             printf 'Publish requires a valid GitHub run ID and attempt.\n' >&2
             exit 64
         fi
-        "${SCRIPT_DIR}/validate-receipt.mjs" "${FILE}"
+        infra receipt validate "${FILE}"
         if ! jq --exit-status \
             --arg run_id "${RUN_ID}" \
             --argjson run_attempt "${RUN_ATTEMPT}" \

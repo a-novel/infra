@@ -108,7 +108,7 @@ if [ "$OPERATION" = restore ]; then
     MANIFEST="$SCRATCH/images.json"
 fi
 RELEASE_ACTION=deploy CURRENT_RECEIPT="$SCRATCH/receipt.json" \
-    "${SCRIPT_DIR}/compile-release.mjs" "$MANIFEST" "$CONFIG_FILE" "$SCRATCH/receipt.json" "$SCRATCH/compiled"
+    infra compile-release "$MANIFEST" "$CONFIG_FILE" "$SCRATCH/receipt.json" "$SCRATCH/compiled"
 RELEASE_FILE="$SCRATCH/compiled/release.json"
 jq -e '
   .action == "deploy" and .mode == "maintenance" and

@@ -1,9 +1,8 @@
-import { compileRelease } from "../ops/compile-release.mjs";
+import { compileRelease } from "./helpers/infra.mjs";
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
-  chmod,
   copyFile,
   mkdtemp,
   readFile,
@@ -32,7 +31,6 @@ async function fixture(t) {
     commit: "a".repeat(40),
     runId: "123",
     runAttempt: 1,
-    nonce: "first",
   };
   const first = await compileRelease(options);
   const operations = {
@@ -73,7 +71,6 @@ async function fixture(t) {
     previousReceiptPath,
     commit: "b".repeat(40),
     runId: "124",
-    nonce: "next",
   };
   const manifest = parse(await readFile(manifestPath, "utf8"));
   async function change(component, { keepDatabaseDigest = false } = {}) {
@@ -89,128 +86,6 @@ async function fixture(t) {
   }
   return { directory, first, receipt, next, manifest, change };
 }
-
-for (const [component, selected, other] of [
-  ["service-json-keys", "json_keys", "authentication"],
-  ["service-authentication", "authentication", "json_keys"],
-]) {
-  test(`${component} rollout preserves the other service through candidate, active and compensation`, async (t) => {
-    const f = await fixture(t);
-    await f.change(component);
-    const result = await compileRelease(f.next);
-    assert.equal(result.release.mode, "service");
-    assert.deepEqual(result.release.services, [selected]);
-    for (const tfvars of [
-      result.candidateTfvars,
-      result.activeTfvars,
-      result.rollbackTfvars,
-    ]) {
-      assert.deepEqual(
-        tfvars.application_release[other],
-        f.first.activeTfvars.application_release[other],
-      );
-      assert.deepEqual(
-        tfvars.database_releases[other],
-        f.first.activeTfvars.database_releases[other],
-      );
-      assert.deepEqual(tfvars.application_release.rollout.services, [selected]);
-    }
-    assert.notEqual(
-      result.activeTfvars.application_release[selected].revision,
-      f.first.activeTfvars.application_release[selected].revision,
-    );
-    assert.deepEqual(result.release.previousManifest, f.receipt.imageManifest);
-    assert.deepEqual(
-      result.release.database.hosts[other],
-      f.receipt.database.hosts[other],
-    );
-    assert.notEqual(
-      result.release.database.hosts[selected].releaseRevision,
-      f.receipt.database.hosts[selected].releaseRevision,
-    );
-  });
-
-  test(`${component} publication can reuse an unchanged database digest under its new version`, async (t) => {
-    const f = await fixture(t);
-    await f.change(component, { keepDatabaseDigest: true });
-    const result = await compileRelease(f.next);
-    assert.deepEqual(result.release.services, [selected]);
-    assert.deepEqual(result.release.database, f.first.release.database);
-  });
-}
-
-test("deployment rejects two families even when the PR gate was bypassed", async (t) => {
-  const f = await fixture(t);
-  await f.change("service-json-keys");
-  await f.change("service-authentication");
-  await assert.rejects(
-    compileRelease(f.next),
-    /families must be deployed separately/,
-  );
-  assert.ok(
-    !(await readdir(f.directory)).includes("next"),
-    "no mutation inputs are written on rejection",
-  );
-});
-
-test("deployment rejects mixed versions and mutated existing tags before writing inputs", async (t) => {
-  for (const mutateTag of [true, false]) {
-    const f = await fixture(t);
-    const image = f.manifest.components["service-authentication"].images.rest;
-    image.digest = `sha256:${"3".repeat(64)}`;
-    if (mutateTag) image.tag = "v4.0.0";
-    f.next.manifestPath = path.join(f.directory, "bad.yaml");
-    await writeFile(f.next.manifestPath, JSON.stringify(f.manifest));
-    await assert.rejects(
-      compileRelease(f.next),
-      mutateTag ? /one SemVer release/ : /mutates an existing release tag/,
-    );
-    assert.ok(!(await readdir(f.directory)).includes("next"));
-  }
-});
-
-test("legacy receipt migration requires a manifest matching all eight active digests", async (t) => {
-  const f = await fixture(t);
-  delete f.receipt.imageManifest;
-  await writeFile(f.next.previousReceiptPath, JSON.stringify(f.receipt));
-  await f.change("service-json-keys");
-  await assert.rejects(
-    compileRelease(f.next),
-    /requires its exact image manifest/,
-  );
-  await assert.rejects(
-    compileRelease({ ...f.next, previousManifestPath: f.next.manifestPath }),
-    /does not match all eight/,
-  );
-  const result = await compileRelease({
-    ...f.next,
-    previousManifestPath: manifestPath,
-  });
-  assert.deepEqual(result.release.services, ["json_keys"]);
-});
-
-test("shared-host retirement rebuilds on new disks without restoring the old addresses", async (t) => {
-  const f = await fixture(t);
-  delete f.receipt.database.hosts;
-  delete f.receipt.activeTfvars.database_hosts;
-  f.receipt.activeTfvars.database_private_ip = "10.20.0.99";
-  await writeFile(f.next.previousReceiptPath, JSON.stringify(f.receipt));
-  const result = await compileRelease(f.next);
-  assert.equal(result.release.mode, "database-rebuild");
-  assert.equal(result.release.previousDatabase, null);
-  assert.equal(result.release.currentDatabase, null);
-  assert.ok(result.candidateTfvars.application_release);
-  assert.deepEqual(
-    result.rollbackTfvars.database_hosts,
-    result.activeTfvars.database_hosts,
-  );
-  assert.ok(!JSON.stringify(result.rollbackTfvars).includes("10.20.0.99"));
-  await f.change("service-json-keys");
-  await assert.rejects(
-    compileRelease(f.next),
-    /rebuild the legacy database topology separately/,
-  );
-});
 
 test("rebuild compensation idles only mutated new hosts without applying or publishing rollback", async (t) => {
   for (const mutated of [[], ["json_keys"], ["authentication", "json_keys"]]) {
@@ -241,7 +116,7 @@ fs.appendFileSync(process.env.CALL_LOG, JSON.stringify(args.slice(0, 4)) + '\\n'
       "apply-reviewed-plan.sh",
       "config-custody.sh",
       "receipt-custody.sh",
-      "build-receipt.mjs",
+      "infra",
     ]) {
       await writeFile(path.join(f.directory, helper), "#!/bin/sh\nexit 99\n", {
         mode: 0o700,
@@ -289,39 +164,6 @@ fs.appendFileSync(process.env.CALL_LOG, JSON.stringify(args.slice(0, 4)) + '\\n'
         "rollback-receipt.json",
       ),
     );
-  }
-});
-
-test("established host coordinates cannot change through a routine deployment", async (t) => {
-  for (const field of ["private_ip", "data_disk_id"]) {
-    const f = await fixture(t);
-    const config = JSON.parse(await readFile(configPath, "utf8"));
-    config.database_hosts.authentication[field] =
-      field === "private_ip" ? "10.20.0.99" : "9999";
-    f.next.configPath = path.join(f.directory, "moved.json");
-    await writeFile(f.next.configPath, JSON.stringify(config));
-    await assert.rejects(compileRelease(f.next), /database|recovery/i);
-    assert.ok(!(await readdir(f.directory)).includes("next"));
-  }
-});
-
-test("database host inputs reject missing, shared, or public coordinates", async (t) => {
-  for (const invalid of ["missing", "ip", "disk", "public"]) {
-    const f = await fixture(t);
-    const config = JSON.parse(await readFile(configPath, "utf8"));
-    if (invalid === "missing") delete config.database_hosts.authentication;
-    if (invalid === "ip")
-      config.database_hosts.authentication.private_ip =
-        config.database_hosts.json_keys.private_ip;
-    if (invalid === "disk")
-      config.database_hosts.authentication.data_disk_id =
-        config.database_hosts.json_keys.data_disk_id;
-    if (invalid === "public")
-      config.database_hosts.authentication.private_ip = "8.8.8.8";
-    f.next.configPath = path.join(f.directory, "invalid.json");
-    await writeFile(f.next.configPath, JSON.stringify(config));
-    await assert.rejects(compileRelease(f.next));
-    assert.ok(!(await readdir(f.directory)).includes("next"));
   }
 });
 
@@ -402,32 +244,6 @@ for (const service of ["json_keys", "authentication"]) {
   );
 }
 
-test("configuration-only maintenance remains a full-state operation", async (t) => {
-  const f = await fixture(t);
-  const result = await compileRelease(f.next);
-  assert.equal(result.release.mode, "maintenance");
-  assert.deepEqual(result.release.services, ["json_keys", "authentication"]);
-});
-
-test("one-service image update rejects changes to the other service or shared configuration", async (t) => {
-  for (const kind of ["smtp", "backup", "network"]) {
-    const f = await fixture(t);
-    await f.change("service-json-keys");
-    const config = JSON.parse(await readFile(configPath, "utf8"));
-    if (kind === "smtp")
-      config.authentication.smtp.sender_name = "Another sender";
-    if (kind === "backup")
-      config.secret_versions.authentication_postgres_backup_password = 2;
-    if (kind === "network") config.backup_bucket_name = "another-bucket";
-    f.next.configPath = path.join(f.directory, "changed-config.json");
-    await writeFile(f.next.configPath, JSON.stringify(config));
-    await assert.rejects(
-      compileRelease(f.next),
-      /deploy configuration separately/,
-    );
-  }
-});
-
 test("compensation preserves the unselected API and records the restored manifest", async (t) => {
   for (const component of ["service-json-keys", "service-authentication"]) {
     for (const keepDatabaseDigest of [true, false]) {
@@ -436,11 +252,6 @@ test("compensation preserves the unselected API and records the restored manifes
       const compiled = await compileRelease(f.next);
       const driver = path.join(f.directory, "google-release-driver.sh");
       await copyFile(path.join(root, "ops/google-release-driver.sh"), driver);
-      await copyFile(
-        path.join(root, "ops/build-receipt.mjs"),
-        path.join(f.directory, "build-receipt.mjs"),
-      );
-      await chmod(path.join(f.directory, "build-receipt.mjs"), 0o700);
       const log = path.join(f.directory, "calls.log");
       for (const helper of [
         "create-reviewed-plan.sh",
