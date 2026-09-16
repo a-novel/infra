@@ -76,7 +76,7 @@ fi
 shift
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-"${SCRIPT_DIR}/verify-operator-env.sh" >/dev/null
+go -C "${SCRIPT_DIR}/.." run ./cmd/infra verify-env >/dev/null
 WORKLOAD_PROJECT_ID="$INFRA_WORKLOAD_PROJECT_ID"
 MANAGEMENT_PROJECT_ID="$INFRA_MANAGEMENT_PROJECT_ID"
 WORKLOAD_PROJECT_NAME='Agora production'

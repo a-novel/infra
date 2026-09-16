@@ -21,7 +21,7 @@ session:
 
 ```sh
 . ./.envrc
-./ops/verify-operator-env.sh --github
+go run ./cmd/infra verify-env --github
 ```
 
 Paste this block once before adding or rotating a version:

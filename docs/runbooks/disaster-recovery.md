@@ -23,7 +23,7 @@ host uses that host's Bash session. Load the published production coordinates fi
 
 ```sh
 . ./.envrc
-./ops/verify-operator-env.sh --github
+go run ./cmd/infra verify-env --github
 ```
 
 Paste this block once before section 1. Incident-specific selections remain in their owning step.

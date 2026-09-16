@@ -29,7 +29,7 @@ it before running later blocks in the existing configured zsh session:
 
 ```sh
 . ./.envrc
-./ops/verify-operator-env.sh
+go run ./cmd/infra verify-env
 ```
 
 The verifier must print `PASS operator project coordinates`. Paste this block once before section 1

@@ -23,7 +23,7 @@ section 1:
 
 ```sh
 . ./.envrc
-./ops/verify-operator-env.sh --github
+go run ./cmd/infra verify-env --github
 ```
 
 ```zsh
@@ -207,7 +207,7 @@ unsetopt err_exit nounset xtrace
 [[ "$BACKUP_BUCKET_NAME" == "${MANAGEMENT_PROJECT_ID}-"*'-backups' ]]
 [[ "$RECEIPT_BUCKET_NAME" == "${MANAGEMENT_PROJECT_ID}-"*'-deployment-receipts' ]]
 
-DATABASE_COORDINATES="$(./ops/database-host.sh coordinates)"
+DATABASE_COORDINATES="$(go run ./cmd/infra database coordinates)"
 DATABASE_ZONE="$(jq -er '.zone' <<<"$DATABASE_COORDINATES")"
 DATABASE_HOSTS_JSON="$(jq -ec '.hosts' <<<"$DATABASE_COORDINATES")"
 REGION="${DATABASE_ZONE%-*}"

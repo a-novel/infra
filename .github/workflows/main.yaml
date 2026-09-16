@@ -107,10 +107,6 @@ jobs:
             ./ops/check-root.sh "$root"
           done
 
-      - name: Test the root and plan policies
-        shell: bash
-        run: ./tests/ops_test.sh
-
       - name: Lint shell scripts
         uses: a-novel-kit/workflows/generic-actions/lint-shell@v1.30.1
         with:
@@ -197,6 +193,10 @@ jobs:
       - name: Test operator workflow boundaries without credentials
         shell: bash
         run: go test -race ./...
+
+      - name: Test the root, plan, and operator caller policies
+        shell: bash
+        run: ./tests/ops_test.sh
 
       - name: Validate the production image transition
         if: github.event_name == 'pull_request'

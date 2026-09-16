@@ -10,7 +10,7 @@ Run from the repository root:
 
 ```sh
 . ./.envrc
-./ops/verify-operator-env.sh --github
+go run ./cmd/infra verify-env --github
 ```
 
 The active Google account must receive the access configured by
@@ -26,7 +26,7 @@ export DATABASE_SERVICE=authentication
 ```
 
 ```sh
-./ops/database-host.sh inspect "${DATABASE_SERVICE:?}"
+go run ./cmd/infra database inspect "${DATABASE_SERVICE:?}"
 ```
 
 The command prints the private VM, preserved disk, snapshot policy, firewall rules, and alerts. It
@@ -38,13 +38,13 @@ The default is `$HOME/.ssh/a-novel-gcp-ed25519`. When neither half exists, the c
 new Ed25519 pair. Set a passphrase when prompted. Ed25519 is an elliptic-curve key.
 
 ```sh
-./ops/database-host.sh key
+go run ./cmd/infra database key
 ```
 
 To reuse an existing Ed25519 or ECDSA pair, pass its private path:
 
 ```sh
-./ops/database-host.sh key --key-file "$HOME/.ssh/id_ed25519"
+go run ./cmd/infra database key --key-file "$HOME/.ssh/id_ed25519"
 ```
 
 Both the private file and `<path>.pub` must exist. A half-existing or non-EC pair fails closed. This
@@ -56,14 +56,14 @@ The SSH command checks the local key, discovers the current host, uploads the pu
 for one hour, and connects:
 
 ```sh
-./ops/database-host.sh ssh "${DATABASE_SERVICE:?}"
+go run ./cmd/infra database ssh "${DATABASE_SERVICE:?}"
 ```
 
 Use the same `--key-file` option when reusing another pair. Repeat the SSH command to renew the
 one-hour key registration. If login fails, collect the bounded Google diagnostic:
 
 ```sh
-./ops/database-host.sh troubleshoot "${DATABASE_SERVICE:?}"
+go run ./cmd/infra database troubleshoot "${DATABASE_SERVICE:?}"
 ```
 
 The optional network-connectivity portion may report that Network Management API is disabled. Do
@@ -133,7 +133,7 @@ Review the sanitized counts, then apply that exact plan:
 go run ./cmd/infra foundation apply foundation "$FOUNDATION_PLAN_ID"
 ```
 
-Have the new operator run `./ops/database-host.sh ssh authentication` successfully. Remove the old principal in a second pull request, then repeat the configure, plan, verification, and apply commands.
+Have the new operator run `go run ./cmd/infra database ssh authentication` successfully. Remove the old principal in a second pull request, then repeat the configure, plan, verification, and apply commands.
 
 For a group principal, Workspace group membership is the user roster; the repository still reviews
 which group receives the role. Never remove the last verified operator in the same plan that grants

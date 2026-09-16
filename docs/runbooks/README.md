@@ -31,7 +31,7 @@ repository and verify its gate:
 
 ```sh
 . ./.envrc
-./ops/verify-operator-env.sh --github
+go run ./cmd/infra verify-env --github
 git switch master
 git pull --ff-only
 git status --short
