@@ -74,12 +74,12 @@ jobs:
         uses: actions/setup-node@v7.0.0
         with:
           node-version-file: .node-version
-          cache: pnpm
+          package-manager-cache: false
 
       - name: Install reviewed recovery tooling
         if: inputs.operation != 'cleanup-project'
         shell: bash
-        run: pnpm install --frozen-lockfile --ignore-scripts
+        run: pnpm install --prod --frozen-lockfile --ignore-scripts
 
       - name: Materialize the protected foundation inputs
         id: foundation

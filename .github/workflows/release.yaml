@@ -75,11 +75,11 @@ jobs:
         uses: actions/setup-node@v7.0.0
         with:
           node-version-file: .node-version
-          cache: pnpm
+          package-manager-cache: false
 
       - name: Install reviewed release tooling
         shell: bash
-        run: pnpm install --frozen-lockfile --ignore-scripts
+        run: pnpm install --prod --frozen-lockfile --ignore-scripts
 
       - name: Materialize protected non-payload configuration
         id: config
@@ -333,11 +333,11 @@ jobs:
         uses: actions/setup-node@v7.0.0
         with:
           node-version-file: .node-version
-          cache: pnpm
+          package-manager-cache: false
 
       - name: Install reviewed release tooling
         shell: bash
-        run: pnpm install --frozen-lockfile --ignore-scripts
+        run: pnpm install --prod --frozen-lockfile --ignore-scripts
 
       - name: Authenticate as the release boundary
         uses: google-github-actions/auth@v3.0.0

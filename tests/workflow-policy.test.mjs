@@ -27,6 +27,34 @@ const release = parse(
   ),
 );
 
+test("operational jobs share the cache-free runtime-only install tested in CI", async () => {
+  const recovery = parse(
+    await readFile(
+      path.join(repositoryRoot, ".github/workflows/recovery.yaml"),
+      "utf8",
+    ),
+  );
+  for (const job of [
+    main.jobs["validate-opentofu"],
+    release.jobs.release,
+    release.jobs["database-isolation"],
+    recovery.jobs.recover,
+  ]) {
+    const installs = job.steps.filter((step) =>
+      step.run?.includes("pnpm install"),
+    );
+    assert.deepEqual(
+      installs.map((step) => step.run),
+      ["pnpm install --prod --frozen-lockfile --ignore-scripts"],
+    );
+    const node = job.steps.find((step) =>
+      step.uses?.startsWith("actions/setup-node@"),
+    );
+    assert.equal(node.with.cache, undefined);
+    assert.equal(node.with["package-manager-cache"], false);
+  }
+});
+
 test("drift and synthetic health use distinct off-hour schedules", () => {
   assert.deepEqual(
     drift.on.schedule.map(({ cron }) => cron),
