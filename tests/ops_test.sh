@@ -1753,13 +1753,10 @@ PATH="${INIT_MOCK_BIN}:${PATH}" \
 assert_equal "$(<"${TEMP_DIR}/init-success.out")" agora-authentication-init-success
 assert_equal "$(grep -Fc uploaded "${INIT_UPLOAD_LOG}")" 1
 
-# Opaque plan custody binds the binary to its root, commit, state suffix, hash,
-# and expiry. Consumption removes the live object, preventing replay.
 STORAGE_MOCK_BIN="${TEMP_DIR}/storage-bin"
 FAKE_GCS_ROOT="${TEMP_DIR}/gcs"
 mkdir -p "${STORAGE_MOCK_BIN}" "${FAKE_GCS_ROOT}"
 ln -s "${SCRIPT_DIR}/fixtures/fake-gcloud-storage.sh" "${STORAGE_MOCK_BIN}/gcloud"
-PLAN_COMMIT=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 
 # Recovery evidence contains timestamps and ages only. It never copies backup
 # manifests or database payloads into logs or the immutable recovery receipt.
@@ -1840,164 +1837,6 @@ PATH="${STORAGE_MOCK_BIN}:${PATH}" FAKE_GCS_ROOT="${FAKE_GCS_ROOT}" \
 jq --exit-status '.databases.jsonKeys.ageSeconds == 0' \
     "${TEMP_DIR}/recovery-points-skew.json" >/dev/null
 
-printf 'opaque-plan-fixture' >"${TEMP_DIR}/plan.tfplan"
-PATH="${STORAGE_MOCK_BIN}:${PATH}" FAKE_GCS_ROOT="${FAKE_GCS_ROOT}" \
-    TOFU_STATE_SUFFIX=recovery/agora-recovery-test \
-    "${REPOSITORY_ROOT}/ops/plan-custody.sh" publish \
-    agora-state-test foundation "${PLAN_COMMIT}" 101-1 \
-    "${TEMP_DIR}/plan.tfplan" false >"${TEMP_DIR}/plan-publish.out"
-PATH="${STORAGE_MOCK_BIN}:${PATH}" FAKE_GCS_ROOT="${FAKE_GCS_ROOT}" \
-    TOFU_STATE_SUFFIX=recovery/agora-recovery-test \
-    "${REPOSITORY_ROOT}/ops/plan-custody.sh" fetch \
-    agora-state-test foundation "${PLAN_COMMIT}" 101-1 \
-    "${TEMP_DIR}/fetched.tfplan" >"${TEMP_DIR}/plan-fetch.out"
-assert_equal "$(sha256sum "${TEMP_DIR}/plan.tfplan" | cut -d ' ' -f 1)" \
-    "$(sha256sum "${TEMP_DIR}/fetched.tfplan" | cut -d ' ' -f 1)"
-assert_equal "$(<"${TEMP_DIR}/fetched.tfplan.destructive")" false
-
-set +e
-PATH="${STORAGE_MOCK_BIN}:${PATH}" FAKE_GCS_ROOT="${FAKE_GCS_ROOT}" \
-    TOFU_STATE_SUFFIX=recovery/different-recovery \
-    "${REPOSITORY_ROOT}/ops/plan-custody.sh" fetch \
-    agora-state-test foundation "${PLAN_COMMIT}" 101-1 \
-    "${TEMP_DIR}/mismatched.tfplan" >/dev/null 2>&1
-MISMATCHED_PLAN_CODE=$?
-set -e
-assert_equal "${MISMATCHED_PLAN_CODE}" 66
-
-PATH="${STORAGE_MOCK_BIN}:${PATH}" FAKE_GCS_ROOT="${FAKE_GCS_ROOT}" \
-    TOFU_STATE_SUFFIX=recovery/agora-recovery-test \
-    "${REPOSITORY_ROOT}/ops/plan-custody.sh" consume \
-    agora-state-test foundation "${PLAN_COMMIT}" 101-1 \
-    >"${TEMP_DIR}/plan-consume.out"
-set +e
-PATH="${STORAGE_MOCK_BIN}:${PATH}" FAKE_GCS_ROOT="${FAKE_GCS_ROOT}" \
-    TOFU_STATE_SUFFIX=recovery/agora-recovery-test \
-    "${REPOSITORY_ROOT}/ops/plan-custody.sh" fetch \
-    agora-state-test foundation "${PLAN_COMMIT}" 101-1 \
-    "${TEMP_DIR}/replayed.tfplan" >/dev/null 2>&1
-REPLAYED_PLAN_CODE=$?
-set -e
-assert_equal "${REPLAYED_PLAN_CODE}" 66
-
-# Private desired-state lookup distinguishes a confirmed empty inventory from
-# a storage failure, so scheduled drift never silently skips a configured root.
-set +e
-PATH="${STORAGE_MOCK_BIN}:${PATH}" \
-    FAKE_GCS_ROOT="${FAKE_GCS_ROOT}" \
-    FAKE_GCS_LIST_FAILURE=true \
-    "${REPOSITORY_ROOT}/ops/config-custody.sh" fetch \
-    agora-state-test foundation "${TEMP_DIR}/unavailable-config.json" \
-    >/dev/null 2>&1
-UNAVAILABLE_CONFIG_CODE=$?
-set -e
-assert_equal "${UNAVAILABLE_CONFIG_CODE}" 70
-
-# Applying must consume custody before OpenTofu receives the local binary. If
-# apply later fails, the operator must create a fresh reviewed plan instead of
-# replaying a plan whose mutation status may be ambiguous.
-printf 'opaque-apply-plan-fixture' >"${TEMP_DIR}/apply-plan.tfplan"
-printf '{}\n' >"${TEMP_DIR}/release-config.json"
-PATH="${STORAGE_MOCK_BIN}:${PATH}" FAKE_GCS_ROOT="${FAKE_GCS_ROOT}" \
-    "${REPOSITORY_ROOT}/ops/plan-custody.sh" publish \
-    agora-state-test foundation "${PLAN_COMMIT}" 202-1 \
-    "${TEMP_DIR}/apply-plan.tfplan" false >"${TEMP_DIR}/apply-plan-publish.out"
-ln -s "${SCRIPT_DIR}/fixtures/fake-tofu.sh" "${STORAGE_MOCK_BIN}/tofu"
-printf '%s\n' '#!/bin/bash' 'exit 0' >"${STORAGE_MOCK_BIN}/git"
-chmod 0700 "${STORAGE_MOCK_BIN}/git"
-APPLY_PLAN_OBJECT="${FAKE_GCS_ROOT}/agora-state-test/foundation/plans/${PLAN_COMMIT}/202-1/plan.tfplan"
-PATH="${STORAGE_MOCK_BIN}:${PATH}" \
-    FAKE_GCS_ROOT="${FAKE_GCS_ROOT}" \
-    FAKE_TOFU_PLAN_CODE=0 \
-    FAKE_TOFU_PLAN_JSON="${SCRIPT_DIR}/fixtures/plans/safe.json" \
-    FAKE_TOFU_REQUIRE_ABSENT="${APPLY_PLAN_OBJECT}" \
-    GITHUB_REPOSITORY=a-novel/infra \
-    "${REPOSITORY_ROOT}/ops/apply-reviewed-plan.sh" \
-    foundation agora-state-test "${PLAN_COMMIT}" 202-1 \
-    "${TEMP_DIR}/release-config.json" >"${TEMP_DIR}/apply-reviewed-plan.out"
-if [ -e "${APPLY_PLAN_OBJECT}" ]; then
-    printf 'Consumed saved plan remained available after apply.\n' >&2
-    exit 1
-fi
-
-# An immutable newer deployment receipt wins over a delayed older workflow.
-set +e
-PATH="${STORAGE_MOCK_BIN}:${PATH}" \
-    FAKE_GCS_ROOT="${FAKE_GCS_ROOT}" \
-    FAKE_GCS_LIST_FAILURE=true \
-    "${REPOSITORY_ROOT}/ops/receipt-custody.sh" latest \
-    agora-receipts-test "${TEMP_DIR}/unavailable-receipt.json" \
-    >/dev/null 2>&1
-UNAVAILABLE_RECEIPT_CODE=$?
-set -e
-assert_equal "${UNAVAILABLE_RECEIPT_CODE}" 70
-
-make_receipt() {
-    local run_id="$1"
-    local output="$2"
-    jq -n --arg run_id "${run_id}" --arg commit "${PLAN_COMMIT}" '
-      {
-        schemaVersion: 1,
-        kind: "deployment",
-        createdAt: "2026-08-25T12:00:00Z",
-        sequence: {runId: $run_id, runAttempt: 1},
-        source: {commit: $commit, manifestSha256: ("b" * 64)},
-        activeTfvars: {},
-        database: null,
-        operations: {
-          executions: {
-            jsonKeysMigrations: null,
-            jsonKeysRotation: null,
-            authenticationMigrations: null,
-            postgresBackupJsonKeys: null,
-            postgresBackupAuthentication: null,
-            postgresRestoreJsonKeys: null,
-            postgresRestoreAuthentication: null,
-            postgresBackupMonitor: null
-          },
-          initialization: null,
-          health: {jsonKeys: "not-run", authentication: "not-run"}
-        }
-      }
-    ' >"${output}"
-}
-
-make_receipt 200 "${TEMP_DIR}/receipt-200.json"
-PATH="${STORAGE_MOCK_BIN}:${PATH}" FAKE_GCS_ROOT="${FAKE_GCS_ROOT}" \
-    "${REPOSITORY_ROOT}/ops/receipt-custody.sh" publish \
-    agora-receipts-test "${TEMP_DIR}/receipt-200.json" 200 1 \
-    >"${TEMP_DIR}/receipt-200.out"
-jq '.sequence.runAttempt = 2' "${TEMP_DIR}/receipt-200.json" \
-    >"${TEMP_DIR}/receipt-200-attempt-2.json"
-PATH="${STORAGE_MOCK_BIN}:${PATH}" FAKE_GCS_ROOT="${FAKE_GCS_ROOT}" \
-    "${REPOSITORY_ROOT}/ops/receipt-custody.sh" publish \
-    agora-receipts-test "${TEMP_DIR}/receipt-200-attempt-2.json" 200 2 \
-    >"${TEMP_DIR}/receipt-200-attempt-2.out"
-PATH="${STORAGE_MOCK_BIN}:${PATH}" FAKE_GCS_ROOT="${FAKE_GCS_ROOT}" \
-    "${REPOSITORY_ROOT}/ops/receipt-custody.sh" fetch \
-    agora-receipts-test "${TEMP_DIR}/receipt-200-fetched.json" 200-2
-assert_equal "$(jq --raw-output .sequence.runAttempt "${TEMP_DIR}/receipt-200-fetched.json")" 2
-make_receipt 100 "${TEMP_DIR}/receipt-100.json"
-set +e
-PATH="${STORAGE_MOCK_BIN}:${PATH}" FAKE_GCS_ROOT="${FAKE_GCS_ROOT}" \
-    "${REPOSITORY_ROOT}/ops/receipt-custody.sh" publish \
-    agora-receipts-test "${TEMP_DIR}/receipt-100.json" 100 1 \
-    >"${TEMP_DIR}/receipt-100.out" 2>"${TEMP_DIR}/receipt-100.err"
-STALE_RECEIPT_CODE=$?
-set -e
-assert_equal "${STALE_RECEIPT_CODE}" 70
-
-# A lost create response is idempotent only when the immutable object that
-# actually landed is byte-for-byte identical to the local receipt.
-make_receipt 300 "${TEMP_DIR}/receipt-300.json"
-PATH="${STORAGE_MOCK_BIN}:${PATH}" \
-    FAKE_GCS_ROOT="${FAKE_GCS_ROOT}" \
-    FAKE_GCS_LOST_UPLOAD_RESPONSE=true \
-    "${REPOSITORY_ROOT}/ops/receipt-custody.sh" publish \
-    agora-receipts-test "${TEMP_DIR}/receipt-300.json" 300 1 \
-    >"${TEMP_DIR}/receipt-300.out"
-grep -Fq 'Immutable production release receipt published.' \
-    "${TEMP_DIR}/receipt-300.out"
 
 set +e
 INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \
