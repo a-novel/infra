@@ -35,6 +35,7 @@ async function custody(t) {
   );
   const output = path.join(directory, "output.json");
   return {
+    directory,
     output,
     async put(name, value) {
       const target = path.join(directory, "gcs", bucket, name);
@@ -51,6 +52,8 @@ async function custody(t) {
           FAKE_GCS_ROOT: path.join(directory, "gcs"),
           FAKE_GCS_LIST_FAILURE: "false",
           FAKE_GCS_READ_FAILURE: "false",
+          FAKE_GCS_LOST_UPLOAD_RESPONSE: "false",
+          TOFU_STATE_SUFFIX: "",
           INITIALIZATION_MAX_POLLS: "1",
           INITIALIZATION_POLL_SECONDS: "0",
           ...env,
@@ -165,6 +168,146 @@ function receipt(runId, runAttempt) {
     },
   };
 }
+
+const planCommit = "a".repeat(40);
+const planId = "101-1";
+const planIdentity = [bucket, "foundation", planCommit, planId];
+
+test("saved plans preserve private content and cannot cross recovery namespaces or replay after consumption", async (t) => {
+  const store = await custody(t);
+  const content = Buffer.from("opaque\0plan\xff", "latin1");
+  await writeFile(store.output, content);
+  const run = (action, args = [], suffix = "recovery/agora-recovery-test") =>
+    store.run("plan-custody.sh", [action, ...planIdentity, ...args], {
+      TOFU_STATE_SUFFIX: suffix,
+    });
+  assert.equal(run("publish", [store.output, "false"]).status, 0);
+  const fetched = `${store.output}.fetched`;
+  assert.equal(
+    run("fetch", [fetched], "recovery/different-recovery").status,
+    66,
+  );
+  const result = run("fetch", [fetched]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(await readFile(fetched), content);
+  assert.equal(
+    (await readFile(`${fetched}.destructive`, "utf8")).trim(),
+    "false",
+  );
+  for (const file of [fetched, `${fetched}.destructive`])
+    assert.equal((await stat(file)).mode & 0o777, 0o600);
+  assert.equal(run("consume").status, 0);
+  assert.equal(run("fetch", [fetched]).status, 66);
+});
+
+for (const fails of [false, true]) {
+  test(`a ${fails ? "failed" : "successful"} apply consumes the saved plan before mutation and prevents replay`, async (t) => {
+    const store = await custody(t);
+    await writeFile(store.output, "opaque-plan");
+    assert.equal(
+      store.run("plan-custody.sh", [
+        "publish",
+        ...planIdentity,
+        store.output,
+        "false",
+      ]).status,
+      0,
+    );
+    await symlink(
+      path.join(root, "tests/fixtures/fake-tofu.sh"),
+      path.join(store.directory, "tofu"),
+    );
+    await writeFile(
+      path.join(store.directory, "git"),
+      "#!/bin/bash\nexit 0\n",
+      { mode: 0o700 },
+    );
+    const config = path.join(store.directory, "config.json");
+    await writeFile(config, "{}");
+    const remotePlan = path.join(
+      store.directory,
+      "gcs",
+      bucket,
+      "foundation/plans",
+      planCommit,
+      planId,
+      "plan.tfplan",
+    );
+    const result = store.run(
+      "apply-reviewed-plan.sh",
+      ["foundation", bucket, planCommit, planId, config],
+      {
+        FAKE_TOFU_PLAN_CODE: "0",
+        FAKE_TOFU_PLAN_JSON: path.join(root, "tests/fixtures/plans/safe.json"),
+        FAKE_TOFU_REQUIRE_ABSENT: remotePlan,
+        FAKE_TOFU_FAIL_ACTION: fails ? "apply" : "",
+        GITHUB_REPOSITORY: "a-novel/infra",
+      },
+    );
+    assert.equal(result.status, fails ? 1 : 0, result.stderr);
+    if (fails) assert.match(result.stderr, /Protected OpenTofu apply failed/);
+    assert.doesNotMatch(
+      result.stdout + result.stderr,
+      /fixture-sensitive-diagnostic/,
+    );
+    await assert.rejects(stat(remotePlan), { code: "ENOENT" });
+    assert.equal(
+      store.run("plan-custody.sh", ["fetch", ...planIdentity, store.output])
+        .status,
+      66,
+    );
+  });
+}
+
+test("receipt publication accepts newer attempts and refuses delayed older runs or attempts", async (t) => {
+  const store = await custody(t);
+  for (const [run, attempt, status] of [
+    ["200", 1, 0],
+    ["200", 2, 0],
+    ["100", 1, 70],
+    ["200", 1, 70],
+  ]) {
+    await writeFile(store.output, JSON.stringify(receipt(run, attempt)));
+    const result = store.run("receipt-custody.sh", [
+      "publish",
+      bucket,
+      store.output,
+      run,
+      String(attempt),
+    ]);
+    assert.equal(result.status, status, result.stderr);
+  }
+  const result = store.run("receipt-custody.sh", [
+    "fetch",
+    bucket,
+    store.output,
+    "200-2",
+  ]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(
+    JSON.parse(await readFile(store.output, "utf8")),
+    receipt("200", 2),
+  );
+});
+
+test("a lost receipt upload response accepts identical bytes but rejects a conflicting immutable receipt", async (t) => {
+  const store = await custody(t);
+  const original = JSON.stringify(receipt("300", 1));
+  const args = ["publish", bucket, store.output, "300", "1"];
+  await writeFile(store.output, original);
+  const result = store.run("receipt-custody.sh", args, {
+    FAKE_GCS_LOST_UPLOAD_RESPONSE: "true",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  await writeFile(store.output, `${original}\n`);
+  assert.equal(store.run("receipt-custody.sh", args).status, 70);
+  assert.equal(
+    store.run("receipt-custody.sh", ["fetch", bucket, store.output, "300-1"])
+      .status,
+    0,
+  );
+  assert.equal(await readFile(store.output, "utf8"), original);
+});
 
 for (const kind of ["config", "receipt"]) {
   const script = `${kind}-custody.sh`;
