@@ -96,6 +96,10 @@ Progress and approval URLs go to stderr. Stdout contains only the promised opaqu
 another program can capture it without parsing logs. None of these commands prints workflow secrets,
 OpenTofu values, credentials, or authorization headers.
 
+The launcher uses GitHub's dispatch response to identify its run and verifies the exact commit before
+returning or watching it. If dispatch cannot be confirmed, inspect the repository's Actions page before
+retrying: the request may already have created a run. The launcher never resends an uncertain dispatch.
+
 `plan-summary.sh` enforces `lib/plan-policy.jq` during planning and again before saved-plan apply.
 Failed or unresolved checks and weakened protections return exit 65, independently of deletion
 approval. Exit 3 continues to mean a managed-resource deletion requiring maintainer approval.

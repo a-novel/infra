@@ -60,7 +60,7 @@ shift
 case "${SURFACE}" in
     drift)
         if [ "$#" -eq 0 ]; then
-            WORKFLOW_INPUTS=(-f operation=drift)
+            WORKFLOW_INPUTS=(-f 'inputs[operation]=drift')
         elif [ "$#" -eq 2 ] && [ "$1" = assess-pull-request ] && is_run_id "$2"; then
             ASSESSMENT_PR="$2"
         else
@@ -93,12 +93,12 @@ case "${SURFACE}" in
                 PLAN_ID="$1"
                 PLAN_WORKFLOW='foundation.yaml'
                 PLAN_TITLE_PREFIX="foundation plan ${ROOT_NAME} by @"
-                WORKFLOW_INPUTS+=(-f "plan_id=${PLAN_ID}")
+                WORKFLOW_INPUTS+=(-f "inputs[plan_id]=${PLAN_ID}")
                 ;;
             *) usage ;;
         esac
         WORKFLOW='foundation.yaml'
-        WORKFLOW_INPUTS=(-f "operation=${OPERATION}" -f "root=${ROOT_NAME}" "${WORKFLOW_INPUTS[@]}")
+        WORKFLOW_INPUTS=(-f "inputs[operation]=${OPERATION}" -f "inputs[root]=${ROOT_NAME}" "${WORKFLOW_INPUTS[@]}")
         ;;
     release)
         if [ "$#" -lt 1 ]; then
@@ -114,19 +114,19 @@ case "${SURFACE}" in
                 if [ "${1:-}" = '--no-wait' ]; then
                     WAIT_FOR_COMPLETION=false
                 fi
-                WORKFLOW_INPUTS=(-f action=deploy)
+                WORKFLOW_INPUTS=(-f 'inputs[action]=deploy')
                 ;;
             rollback)
                 if [ "$#" -ne 1 ] || ! is_run_attempt "$1"; then
                     usage
                 fi
-                WORKFLOW_INPUTS=(-f action=rollback -f "target_receipt=$1")
+                WORKFLOW_INPUTS=(-f 'inputs[action]=rollback' -f "inputs[target_receipt]=$1")
                 ;;
             recover-first-launch)
                 if [ "$#" -ne 1 ] || ! is_run_id "$1"; then
                     usage
                 fi
-                WORKFLOW_INPUTS=(-f action=recover-first-launch -f "failed_run_id=$1")
+                WORKFLOW_INPUTS=(-f 'inputs[action]=recover-first-launch' -f "inputs[failed_run_id]=$1")
                 ;;
             drill-database-isolation | restore-database-isolation)
                 if [ "$#" -ne 2 ] || ! is_run_attempt "$1"; then
@@ -137,7 +137,7 @@ case "${SURFACE}" in
                 else
                     [ "$2" = 'RESTORE authentication' ] || usage
                 fi
-                WORKFLOW_INPUTS=(-f "action=${OPERATION}" -f "target_receipt=$1" -f "confirm_isolation=$2")
+                WORKFLOW_INPUTS=(-f "inputs[action]=${OPERATION}" -f "inputs[target_receipt]=$1" -f "inputs[confirm_isolation]=$2")
                 ;;
             *) usage ;;
         esac
@@ -169,7 +169,7 @@ case "${SURFACE}" in
                 PLAN_ID="$1"
                 PLAN_WORKFLOW='recovery.yaml'
                 PLAN_TITLE_PREFIX="recovery plan-workload ${REPLACEMENT_PROJECT_ID} by @"
-                WORKFLOW_INPUTS+=(-f "plan_id=${PLAN_ID}")
+                WORKFLOW_INPUTS+=(-f "inputs[plan_id]=${PLAN_ID}")
                 ;;
             restore-data)
                 if [ "$#" -ne 4 ] || ! is_backup_attempt "$1" || ! is_backup_attempt "$2" || \
@@ -179,24 +179,24 @@ case "${SURFACE}" in
                 fi
                 OUTPUT_KIND='run-id-attempt'
                 WORKFLOW_INPUTS+=(
-                    -f "json_keys_attempt=$1"
-                    -f "authentication_attempt=$2"
-                    -f "lost_write_window=$3"
-                    -f "confirm=$4"
+                    -f "inputs[json_keys_attempt]=$1"
+                    -f "inputs[authentication_attempt]=$2"
+                    -f "inputs[lost_write_window]=$3"
+                    -f "inputs[confirm]=$4"
                 )
                 ;;
             cleanup-project)
                 if [ "$#" -ne 1 ] || [ "$1" != "DELETE ${REPLACEMENT_PROJECT_ID}" ]; then
                     usage
                 fi
-                WORKFLOW_INPUTS+=(-f "confirm=$1")
+                WORKFLOW_INPUTS+=(-f "inputs[confirm]=$1")
                 ;;
             *) usage ;;
         esac
         WORKFLOW_INPUTS=(
-            -f "operation=${OPERATION}"
-            -f "replacement_project_id=${REPLACEMENT_PROJECT_ID}"
-            -f "target_receipt=${TARGET_RECEIPT}"
+            -f "inputs[operation]=${OPERATION}"
+            -f "inputs[replacement_project_id]=${REPLACEMENT_PROJECT_ID}"
+            -f "inputs[target_receipt]=${TARGET_RECEIPT}"
             "${WORKFLOW_INPUTS[@]}"
         )
         ;;
@@ -213,14 +213,6 @@ done
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPOSITORY_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 REPOSITORY='a-novel/infra'
-DISCOVERY_ATTEMPTS="${WORKFLOW_DISCOVERY_ATTEMPTS:-30}"
-DISCOVERY_INTERVAL_SECONDS="${WORKFLOW_DISCOVERY_INTERVAL_SECONDS:-1}"
-
-if ! [[ "${DISCOVERY_ATTEMPTS}" =~ ^[1-9][0-9]*$ ]] ||
-    ! [[ "${DISCOVERY_INTERVAL_SECONDS}" =~ ^[0-9]+$ ]]; then
-    printf 'Workflow discovery settings must be non-negative integers with at least one attempt.\n' >&2
-    exit 64
-fi
 
 if [ "$(git -C "${REPOSITORY_ROOT}" branch --show-current)" != master ]; then
     printf 'Run protected workflows only from the local master branch.\n' >&2
@@ -282,10 +274,10 @@ if [ -n "${ASSESSMENT_PR}" ]; then
     fi
     ASSESSMENT_HEAD="$(jq --raw-output '.head.sha' <<<"${PR_METADATA}")"
     WORKFLOW_INPUTS=(
-        -f operation=assess-pull-request
-        -f "pull_request=${ASSESSMENT_PR}"
-        -f "head_sha=${ASSESSMENT_HEAD}"
-        -f "base_sha=${REMOTE_SHA}"
+        -f 'inputs[operation]=assess-pull-request'
+        -f "inputs[pull_request]=${ASSESSMENT_PR}"
+        -f "inputs[head_sha]=${ASSESSMENT_HEAD}"
+        -f "inputs[base_sha]=${REMOTE_SHA}"
     )
 fi
 
@@ -309,66 +301,36 @@ if [ -n "${ACTIVE_RUNS}" ]; then
     exit 75
 fi
 
-BEFORE_RUN_IDS="$(gh run list \
-    --repo "${REPOSITORY}" \
-    --workflow "${WORKFLOW}" \
-    --branch master \
-    --event workflow_dispatch \
-    --limit 100 \
-    --json databaseId \
-    --jq '[.[].databaseId]')"
-
 printf 'Dispatching %s from master at %s.\n' "${WORKFLOW}" "${EXPECTED_SHA}" >&2
-gh workflow run "${WORKFLOW}" \
-    --repo "${REPOSITORY}" \
-    --ref master \
-    "${WORKFLOW_INPUTS[@]}" >&2
+if ! RUN="$(gh api "repos/${REPOSITORY}/actions/workflows/${WORKFLOW}/dispatches" \
+    --method POST -H 'X-GitHub-Api-Version: 2026-03-10' \
+    -f ref=master "${WORKFLOW_INPUTS[@]}")" ||
+    ! jq --exit-status --slurp --arg repository "${REPOSITORY}" '
+      length == 1 and (.[0] |
+        (.workflow_run_id | type == "number" and . > 0 and . == floor and . <= 9007199254740991) and
+        .html_url == ("https://github.com/" + $repository + "/actions/runs/" + (.workflow_run_id | tostring)))
+    ' <<<"${RUN}" >/dev/null 2>&1; then
+    printf 'Workflow dispatch could not be confirmed; a run may already exist. Inspect https://github.com/%s/actions before retrying.\n' "${REPOSITORY}" >&2
+    exit 70
+fi
 
-RUN=''
-for ((attempt = 1; attempt <= DISCOVERY_ATTEMPTS; attempt++)); do
-    CANDIDATES="$(gh run list \
-        --repo "${REPOSITORY}" \
-        --workflow "${WORKFLOW}" \
-        --branch master \
-        --event workflow_dispatch \
-        --limit 100 \
-        --json databaseId,headSha,status,url)"
-    MATCHES="$(jq --compact-output \
-        --arg expected_sha "${EXPECTED_SHA}" \
-        --argjson before "${BEFORE_RUN_IDS}" '
-          [
-            .[] as $run
-            | select($run.headSha == $expected_sha)
-            | select(($before | index($run.databaseId)) == null)
-            | $run
-          ]
-        ' <<<"${CANDIDATES}")"
-    MATCH_COUNT="$(jq 'length' <<<"${MATCHES}")"
-    if [ "${MATCH_COUNT}" -gt 1 ]; then
-        printf 'Several new matching workflow runs appeared; refusing to guess.\n' >&2
+RUN_ID="$(jq --raw-output '.workflow_run_id' <<<"${RUN}")"
+RUN_URL="$(jq --raw-output '.html_url' <<<"${RUN}")"
+
+# The dispatch identifies the run; its metadata proves the branch did not move.
+read_run_metadata() {
+    if ! RUN_METADATA="$(gh api "repos/${REPOSITORY}/actions/runs/${RUN_ID}")" ||
+        ! jq --exit-status --argjson id "${RUN_ID}" \
+            --arg sha "${EXPECTED_SHA}" --arg path ".github/workflows/${WORKFLOW}" '
+              .id == $id and .head_sha == $sha and .path == $path and
+              .event == "workflow_dispatch" and .head_branch == "master"
+            ' <<<"${RUN_METADATA}" >/dev/null 2>&1; then
+        printf 'The workflow identity could not be verified. Inspect %s before retrying.\n' "${RUN_URL}" >&2
         exit 70
     fi
-    if [ "${MATCH_COUNT}" -eq 1 ]; then
-        RUN="$(jq --compact-output '.[0]' <<<"${MATCHES}")"
-        break
-    fi
-    if [ "${attempt}" -lt "${DISCOVERY_ATTEMPTS}" ]; then
-        sleep "${DISCOVERY_INTERVAL_SECONDS}"
-    fi
-done
+}
 
-if [ -z "${RUN}" ]; then
-    printf 'The dispatched workflow run did not become visible in time.\n' >&2
-    exit 70
-fi
-
-RUN_ID="$(jq --raw-output '.databaseId' <<<"${RUN}")"
-RUN_URL="$(jq --raw-output '.url' <<<"${RUN}")"
-if ! [[ "${RUN_ID}" =~ ^[1-9][0-9]*$ ]] || ! [[ "${RUN_URL}" =~ ^https://github\.com/a-novel/infra/actions/runs/[1-9][0-9]*$ ]]; then
-    printf 'GitHub returned invalid workflow run metadata.\n' >&2
-    exit 70
-fi
-
+read_run_metadata
 printf 'Workflow run: %s\n' "${RUN_URL}" >&2
 if [ "${WAIT_FOR_COMPLETION}" = false ]; then
     printf '%s\n' "${RUN_ID}"
@@ -377,17 +339,11 @@ fi
 
 gh run watch "${RUN_ID}" --repo "${REPOSITORY}" --exit-status >&2
 
-RUN_METADATA="$(gh api "repos/${REPOSITORY}/actions/runs/${RUN_ID}")"
-EXPECTED_PATH=".github/workflows/${WORKFLOW}"
-if ! jq --exit-status \
-    --arg expected_sha "${EXPECTED_SHA}" \
-    --arg expected_path "${EXPECTED_PATH}" '
-      .head_sha == $expected_sha and
-      .path == $expected_path and
-      .event == "workflow_dispatch" and
+read_run_metadata
+if ! jq --exit-status '
       .status == "completed" and
       .conclusion == "success" and
-      (.run_attempt | type == "number" and . >= 1)
+      (.run_attempt | type == "number" and . >= 1 and . == floor)
     ' <<<"${RUN_METADATA}" >/dev/null; then
     printf 'The workflow did not finish successfully with the expected identity.\n' >&2
     exit 70
