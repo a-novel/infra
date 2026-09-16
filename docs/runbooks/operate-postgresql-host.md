@@ -13,7 +13,7 @@ Load the committed operator defaults before every local command:
 
 ```sh
 . ./.envrc
-./ops/verify-operator-env.sh --github
+go run ./cmd/infra verify-env --github
 ```
 
 Host discovery, inspection, and SSH are stateless commands documented in
@@ -120,8 +120,8 @@ debugging.
 ## Verify foundation state after apply
 
 ```sh
-./ops/database-host.sh inspect authentication
-./ops/database-host.sh inspect json-keys
+go run ./cmd/infra database inspect authentication
+go run ./cmd/infra database inspect json-keys
 ```
 
 The command derives the current zone and generated instance, then prints the group, VM, disk,
@@ -159,7 +159,7 @@ reuses release IAM; it gets no SSH access or secret-payload access.
 Refresh the clean checkout, then load the operator context above:
 
 ```sh
-git switch master && git pull --ff-only && . ./.envrc && ./ops/verify-operator-env.sh --github
+git switch master && git pull --ff-only && . ./.envrc && go run ./cmd/infra verify-env --github
 ```
 
 Select the latest successful production receipt. Inventory requires `storage.objects.list` on the
@@ -190,7 +190,7 @@ or a failed fresh Authentication backup. Resolve a preflight failure separately;
 Load `.envrc` in that terminal, then connect through IAP:
 
 ```sh
-. ./.envrc && ./ops/database-host.sh ssh json-keys
+. ./.envrc && go run ./cmd/infra database ssh json-keys
 ```
 
 On the JSON Keys VM, run this one read-only command and leave it running:
@@ -234,8 +234,8 @@ claim that every Cloud Run connection pool or private-network request was observ
 both hosts before accepting the maintenance window:
 
 ```sh
-./ops/database-host.sh inspect authentication
-./ops/database-host.sh inspect json-keys
+go run ./cmd/infra database inspect authentication
+go run ./cmd/infra database inspect json-keys
 ```
 
 Record the run URL, receipt ID, timestamps, stable probe identifiers, and final health results in the

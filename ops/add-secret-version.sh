@@ -49,7 +49,7 @@ for command_name in gh gcloud; do
 done
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-"${SCRIPT_DIR}/verify-operator-env.sh" >/dev/null
+go -C "${SCRIPT_DIR}/.." run ./cmd/infra verify-env >/dev/null
 MANAGEMENT_PROJECT_ID="$INFRA_MANAGEMENT_PROJECT_ID"
 PUBLISHED_MANAGEMENT_PROJECT_ID="$(gh variable get GCP_MANAGEMENT_PROJECT_ID \
     --repo a-novel/infra)"

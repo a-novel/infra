@@ -26,7 +26,7 @@ case "$ACTION" in
     *) usage ;;
 esac
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-"${SCRIPT_DIR}/verify-operator-env.sh" >/dev/null
+go -C "${SCRIPT_DIR}/.." run ./cmd/infra verify-env >/dev/null
 MANAGEMENT_PROJECT_ID="$INFRA_MANAGEMENT_PROJECT_ID"
 if [[ "$PLAN_FILE" != /* ]] || [[ "$PLAN_FILE" == */ ]]; then
     fail 'The private bootstrap plan path must be an absolute file path.' 64

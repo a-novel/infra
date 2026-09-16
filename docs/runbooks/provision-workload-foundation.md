@@ -15,7 +15,7 @@ Run from the repository root with `gh`, `gcloud`, and `jq` authenticated:
 
 ```sh
 . ./.envrc
-./ops/verify-operator-env.sh
+go run ./cmd/infra verify-env
 
 git switch master
 git pull --ff-only

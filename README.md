@@ -26,7 +26,8 @@ Complete the repository-only subsections below, then follow
 [production operations index](./docs/runbooks/README.md) for deployments, rotations, recovery, and
 incidents.
 
-Protected workflow commands use `go run ./cmd/infra` from the repository root. Install the Go
+Project verification, database access, and protected workflow commands use `go run ./cmd/infra`
+from the repository root. Install the Go
 version declared in `go.mod`; the [operator command reference](./ops/README.md) covers prerequisites
 and failure handling.
 
@@ -49,7 +50,7 @@ operator contract.
 
 ```sh
 . ./.envrc
-./ops/verify-operator-env.sh
+go run ./cmd/infra verify-env
 ```
 
 The verifier prints `PASS operator project coordinates`. Credentials, tokens, secret payloads, plan
@@ -234,7 +235,7 @@ The three names form a security allowlist. Add a root only when a new lifecycle 
 | `deploy/production/images.yaml`           | Enabled components plus stable SemVer image tags and exact digests.            |
 | `deploy/production/recovery-cleanup.json` | Inactive-by-default exact authorization for one disposable recovery deletion.  |
 | [`ops/`](./ops/README.md)                 | Human operator commands and protected workflow internals.                      |
-| `cmd/infra/`, `internal/workflow/`        | Go operator launcher and its credential-free boundary tests.                   |
+| `cmd/infra/`, `internal/`                 | Go operator commands and their credential-free boundary tests.                 |
 | `tests/`                                  | Mocked OpenTofu, manifest, Renovate, allowlist, and sanitized plan fixtures.   |
 | `docs/architecture.md`                    | Lifecycle, authority, state, delivery, and portability decisions.              |
 | `docs/google-cloud.md`                    | Provider resource map, trust boundaries, and official Google Cloud references. |

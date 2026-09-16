@@ -26,7 +26,7 @@ Run from the repository root, in one operator session:
 git switch master
 git pull --ff-only
 . ./.envrc
-./ops/verify-operator-env.sh
+go run ./cmd/infra verify-env
 gh variable get PRODUCTION_RELEASES_ENABLED --repo a-novel/infra
 ```
 
@@ -133,7 +133,7 @@ Reload the operator session and inspect each host's payload-free startup status:
 
 ```sh
 . ./.envrc
-./ops/verify-operator-env.sh
+go run ./cmd/infra verify-env
 ./ops/database-host-readiness.sh current "${INFRA_WORKLOAD_PROJECT_ID:?}" "${INFRA_DATABASE_ZONE:?}" authentication
 ./ops/database-host-readiness.sh current "${INFRA_WORKLOAD_PROJECT_ID:?}" "${INFRA_DATABASE_ZONE:?}" json-keys
 ```

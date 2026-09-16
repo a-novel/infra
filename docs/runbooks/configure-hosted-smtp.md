@@ -11,7 +11,7 @@ Required tools: `gcloud`, `gh`, `jq`, `curl`, `dig`, `openssl`, GNU `date`, and 
 
 ```sh
 . ./.envrc
-./ops/verify-operator-env.sh --github
+go run ./cmd/infra verify-env --github
 ```
 
 Keep these long-term, non-secret inputs in the reviewed `.envrc`; change them through a PR.

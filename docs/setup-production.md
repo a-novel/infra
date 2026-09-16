@@ -27,7 +27,7 @@ Review the committed non-secret production defaults, then load them:
 
 ```sh
 . ./.envrc
-./ops/verify-operator-env.sh
+go run ./cmd/infra verify-env
 ```
 
 For another environment, update `.envrc` through a pull request before step 1. It contains only
@@ -40,7 +40,7 @@ Before every resumed step:
 
 ```sh
 . ./.envrc
-./ops/verify-operator-env.sh --github
+go run ./cmd/infra verify-env --github
 git switch master
 git pull --ff-only
 git status --short
@@ -253,7 +253,7 @@ After the reviewed labeled PR merges, refresh the checkout without starting a wo
 git switch master
 git pull --ff-only
 . ./.envrc
-./ops/verify-operator-env.sh --github
+go run ./cmd/infra verify-env --github
 ```
 
 Check approval before requesting temporary access or starting downtime. Keep `REBUILD_COMMIT`
@@ -411,8 +411,8 @@ rollback target for routine releases.
 
 ```sh
 go run ./cmd/infra foundation apply foundation "${FOUNDATION_PLAN_ID:?}"
-./ops/database-host.sh inspect authentication
-./ops/database-host.sh inspect json-keys
+go run ./cmd/infra database inspect authentication
+go run ./cmd/infra database inspect json-keys
 ```
 
 Each host must be private and idle, with its own SSD data disk and daily snapshot policy.
@@ -463,7 +463,7 @@ Reload the reviewed project coordinates before using this section directly:
 
 ```sh
 . ./.envrc
-./ops/verify-operator-env.sh
+go run ./cmd/infra verify-env
 ```
 
 Never omit `--project` or `--region`, and decline any unexpected API-enable prompt.

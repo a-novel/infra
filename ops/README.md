@@ -14,17 +14,19 @@ removes that temporary authority.
 
 | Command                                                    | Purpose                                                                                      | Cloud mutation                                                           |
 | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| [`verify-operator-env.sh`](./verify-operator-env.sh)       | Validate the operator-selected management and workload project IDs.                          | No                                                                       |
+| [`go run ./cmd/infra verify-env`](../cmd/infra/)           | Validate the operator-selected management and workload project IDs.                          | No                                                                       |
 | [`verify-repository-gate.sh`](./verify-repository-gate.sh) | Verify required-check sources, bypass actors, and the release switch.                        | No                                                                       |
 | [`bootstrap-plan.sh`](./bootstrap-plan.sh)                 | Create or consume the one local bootstrap plan with commit and checksum custody.             | `apply` only                                                             |
 | [`foundation.sh`](./foundation.sh)                         | Configure, provision, and deprivilege the workload foundation from a fresh shell.            | Only the named `configure`, `grant*`, `revoke*`, and `finish` operations |
 | [`foundation-audit.sh`](./foundation-audit.sh)             | Check additive IAM, key, secret, registry, and network boundaries OpenTofu cannot close.     | No                                                                       |
 | [`go run ./cmd/infra`](../cmd/infra/)                      | Dispatch one semantic protected plan, apply, deploy, rollback, drift, or recovery operation. | Only inside the selected protected workflow                              |
-| [`database-host.sh`](./database-host.sh)                   | Inspect the database host, prepare a local EC key, or connect through IAP.                   | OS Login public-key upload during `ssh` and `troubleshoot`               |
+| [`go run ./cmd/infra database`](../cmd/infra/)             | Inspect the database host, prepare a local EC key, or connect through IAP.                   | OS Login public-key upload during `ssh` and `troubleshoot`               |
 | [`add-secret-version.sh`](./add-secret-version.sh)         | Add one Secret Manager version from hidden terminal input without echoing the payload.       | Yes                                                                      |
 
 Run these from the repository root in zsh or Bash; do not source the shell scripts.
-The workflow launcher requires the Go version in `go.mod`, Git, and an authenticated GitHub CLI.
+The Go commands and shell callers of `verify-env` require the Go version in `go.mod`.
+Workflow dispatch also needs Git and an authenticated GitHub CLI. Database access needs Google
+Cloud CLI and OpenSSH; `database key` needs only OpenSSH and does not contact Google Cloud.
 `go run` builds the current checkout through Go's build cache and returns nonzero on failure;
 stop on any nonzero status. The compiled command and shell scripts use these diagnostic codes:
 `64` means invalid operator input, `65` means a rejected
@@ -35,7 +37,7 @@ Source the committed non-secret operator defaults once in each shell:
 
 ```sh
 . ./.envrc
-./ops/verify-operator-env.sh
+go run ./cmd/infra verify-env
 ```
 
 Add `--github` after bootstrap or foundation has published coordinates. It compares every published
@@ -49,11 +51,16 @@ available without that repository check.
 ### Database host operations
 
 ```text
-./ops/database-host.sh inspect authentication
-./ops/database-host.sh key
-./ops/database-host.sh ssh authentication
-./ops/database-host.sh troubleshoot authentication
+go run ./cmd/infra database inspect authentication
+go run ./cmd/infra database key
+go run ./cmd/infra database ssh authentication
+go run ./cmd/infra database troubleshoot authentication
+go run ./cmd/infra database coordinates
 ```
+
+`coordinates` prints one JSON object after both service-owned hosts and their disk IDs pass validation.
+An error returns nonzero without printing partial coordinates. SSH defaults to a one-hour public-key
+registration; use `--ttl <duration>` to select a positive duration in seconds, minutes, hours, or days.
 
 ### Protected workflow operations
 

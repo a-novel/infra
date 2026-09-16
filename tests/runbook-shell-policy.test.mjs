@@ -126,12 +126,16 @@ test("workflow commands keep restartable repository-state boundaries", () => {
       if (body.includes("git pull --ff-only")) {
         assert.doesNotMatch(
           body,
-          /MASTER_SHA=|go run \.\/cmd\/infra/,
+          /MASTER_SHA=|go run \.\/cmd\/infra (?:drift|foundation|release|recovery)\b/,
           `${name} combines repository refresh with commit collection or workflow invocation`,
         );
       }
 
-      if (body.includes("go run ./cmd/infra")) {
+      if (
+        /go run \.\/cmd\/infra (?:drift|foundation|release|recovery)\b/.test(
+          body,
+        )
+      ) {
         workflowInvocationBlockCount += 1;
         assert.doesNotMatch(
           body,
@@ -183,7 +187,7 @@ test("database host operations are one-line restartable commands", () => {
   for (const operation of ["inspect", "key", "ssh", "troubleshoot"]) {
     assert.match(
       debugRunbook,
-      new RegExp(`^\\./ops/database-host\\.sh ${operation}(?: |$)`, "m"),
+      new RegExp(`^go run \\./cmd/infra database ${operation}(?: |$)`, "m"),
     );
   }
   assert.doesNotMatch(debugRunbook, /^gcloud compute ssh /m);
@@ -197,7 +201,7 @@ test("release coordinate discovery uses bounded tag inspection access", () => {
   for (const content of [deploymentRunbook, setupGuide.content]) {
     assert.match(
       content,
-      /--format='value\(instance\.basename\(\)\)'|\.\/ops\/database-host\.sh coordinates/,
+      /--format='value\(instance\.basename\(\)\)'|go run \.\/cmd\/infra database coordinates/,
     );
     assert.doesNotMatch(content, /DATABASE_INSTANCE_URI/);
     assert.match(
@@ -254,14 +258,14 @@ test("operator-owned project coordinates stay explicit and repeatable", async ()
   );
 
   const coordinateRunbooks = new Map([
-    ["README.md", "./ops/verify-operator-env.sh --github"],
+    ["README.md", "go run ./cmd/infra verify-env --github"],
     ["backup-and-restore-postgresql.md", "--github"],
-    ["bootstrap-management-plane.md", "./ops/verify-operator-env.sh\n"],
+    ["bootstrap-management-plane.md", "go run ./cmd/infra verify-env\n"],
     ["debug-postgresql-host.md", "--github"],
     ["deploy-production.md", "--github"],
     ["disaster-recovery.md", "--github"],
     ["operate-postgresql-host.md", "--github"],
-    ["provision-workload-foundation.md", "./ops/verify-operator-env.sh\n"],
+    ["provision-workload-foundation.md", "go run ./cmd/infra verify-env\n"],
     ["respond-to-alerts.md", "--github"],
     ["secret-versions.md", "--github"],
     ["state-recovery.md", "--github"],
@@ -279,7 +283,7 @@ test("operator-owned project coordinates stay explicit and repeatable", async ()
 
   assert.ok(setupGuide.content.includes(". ./.envrc"));
   assert.ok(
-    setupGuide.content.includes("./ops/verify-operator-env.sh --github"),
+    setupGuide.content.includes("go run ./cmd/infra verify-env --github"),
   );
 
   const operatorSources = [

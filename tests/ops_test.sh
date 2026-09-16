@@ -38,90 +38,6 @@ cleanup() {
 }
 trap cleanup INT EXIT
 
-OPERATOR_MOCK_BIN="${TEMP_DIR}/operator-bin"
-mkdir -p "${OPERATOR_MOCK_BIN}"
-ln -s "${SCRIPT_DIR}/fixtures/fake-operator-gh.sh" "${OPERATOR_MOCK_BIN}/gh"
-
-set +e
-env -u INFRA_MANAGEMENT_PROJECT_ID -u INFRA_WORKLOAD_PROJECT_ID \
-    "${REPOSITORY_ROOT}/ops/verify-operator-env.sh" \
-    >"${TEMP_DIR}/operator-missing.out" 2>"${TEMP_DIR}/operator-missing.err"
-MISSING_OPERATOR_ENV_CODE=$?
-set -e
-assert_equal "${MISSING_OPERATOR_ENV_CODE}" 64
-grep -Fq 'INFRA_MANAGEMENT_PROJECT_ID is missing or invalid' \
-    "${TEMP_DIR}/operator-missing.err"
-
-set +e
-INFRA_MANAGEMENT_PROJECT_ID=INVALID \
-    INFRA_WORKLOAD_PROJECT_ID=workload-project-prod \
-    "${REPOSITORY_ROOT}/ops/verify-operator-env.sh" \
-    >"${TEMP_DIR}/operator-malformed.out" 2>"${TEMP_DIR}/operator-malformed.err"
-MALFORMED_OPERATOR_ENV_CODE=$?
-set -e
-assert_equal "${MALFORMED_OPERATOR_ENV_CODE}" 64
-grep -Fq 'INFRA_MANAGEMENT_PROJECT_ID is missing or invalid' \
-    "${TEMP_DIR}/operator-malformed.err"
-
-set +e
-INFRA_MANAGEMENT_PROJECT_ID=replace-with-management-project-id \
-    INFRA_WORKLOAD_PROJECT_ID=replace-with-workload-project-id \
-    "${REPOSITORY_ROOT}/ops/verify-operator-env.sh" \
-    >"${TEMP_DIR}/operator-placeholder.out" 2>"${TEMP_DIR}/operator-placeholder.err"
-PLACEHOLDER_OPERATOR_ENV_CODE=$?
-set -e
-assert_equal "${PLACEHOLDER_OPERATOR_ENV_CODE}" 64
-grep -Fq 'INFRA_MANAGEMENT_PROJECT_ID is missing or invalid' \
-    "${TEMP_DIR}/operator-placeholder.err"
-
-OPERATOR_OUTPUT="$(
-    INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \
-        INFRA_WORKLOAD_PROJECT_ID=workload-project-prod \
-        "${REPOSITORY_ROOT}/ops/verify-operator-env.sh"
-)"
-assert_equal "${OPERATOR_OUTPUT}" 'PASS operator project coordinates'
-
-set +e
-INFRA_MANAGEMENT_PROJECT_ID=workload-project-prod \
-    INFRA_WORKLOAD_PROJECT_ID=workload-project-prod \
-    "${REPOSITORY_ROOT}/ops/verify-operator-env.sh" \
-    >"${TEMP_DIR}/operator-equal.out" 2>"${TEMP_DIR}/operator-equal.err"
-EQUAL_OPERATOR_ENV_CODE=$?
-set -e
-assert_equal "${EQUAL_OPERATOR_ENV_CODE}" 64
-grep -Fq 'management and workload project IDs must differ' \
-    "${TEMP_DIR}/operator-equal.err"
-
-PUBLISHED_OPERATOR_OUTPUT="$(
-    PATH="${OPERATOR_MOCK_BIN}:${PATH}" \
-        INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \
-        INFRA_WORKLOAD_PROJECT_ID=workload-project-prod \
-        "${REPOSITORY_ROOT}/ops/verify-operator-env.sh" --github
-)"
-assert_equal "${PUBLISHED_OPERATOR_OUTPUT}" 'PASS published project coordinates'
-
-UNPUBLISHED_OPERATOR_OUTPUT="$(
-    PATH="${OPERATOR_MOCK_BIN}:${PATH}" \
-        FAKE_OPERATOR_GITHUB_MODE=unpublished \
-        INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \
-        INFRA_WORKLOAD_PROJECT_ID=workload-project-prod \
-        "${REPOSITORY_ROOT}/ops/verify-operator-env.sh" --github
-)"
-assert_equal "${UNPUBLISHED_OPERATOR_OUTPUT}" 'PASS published project coordinates'
-
-set +e
-PATH="${OPERATOR_MOCK_BIN}:${PATH}" \
-    FAKE_OPERATOR_GITHUB_MODE=mismatch \
-    INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \
-    INFRA_WORKLOAD_PROJECT_ID=workload-project-prod \
-    "${REPOSITORY_ROOT}/ops/verify-operator-env.sh" --github \
-    >"${TEMP_DIR}/operator-mismatch.out" 2>"${TEMP_DIR}/operator-mismatch.err"
-MISMATCHED_OPERATOR_ENV_CODE=$?
-set -e
-assert_equal "${MISMATCHED_OPERATOR_ENV_CODE}" 65
-grep -Fq 'does not match the published GitHub coordinate' \
-    "${TEMP_DIR}/operator-mismatch.err"
-
 SECRET_MOCK_BIN="${TEMP_DIR}/secret-bin"
 mkdir -p "${SECRET_MOCK_BIN}"
 printf '%s\n' \
@@ -1848,8 +1764,8 @@ INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \
     "${REPOSITORY_ROOT}/ops/foundation-audit.sh" >/dev/null 2>&1
 INVALID_FOUNDATION_AUDIT_PROJECT_CODE=$?
 set -e
-assert_equal "${INVALID_FOUNDATION_PROJECT_CODE}" 64
-assert_equal "${INVALID_FOUNDATION_AUDIT_PROJECT_CODE}" 64
+[ "${INVALID_FOUNDATION_PROJECT_CODE}" -ne 0 ]
+[ "${INVALID_FOUNDATION_AUDIT_PROJECT_CODE}" -ne 0 ]
 
 # Foundation configuration derives every coordinate in a fresh process, writes
 # only the protected JSON document, and keeps billing/human metadata off stdout.
