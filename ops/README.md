@@ -107,6 +107,11 @@ for protected settings and coverage limits.
 Do not call these as ad-hoc operator shortcuts. Their stable paths are part of the reviewed GitHub
 Actions security boundary.
 
+Operational jobs install only runtime dependencies with `pnpm install --prod --frozen-lockfile --ignore-scripts`.
+They do not restore the shared development package cache. The OpenTofu validation job tests that
+install with public release and recovery fixtures. Repository lint and Renovate tests use the full
+development install.
+
 | Boundary                            | Scripts                                                                                                                                                                                                                                       |
 | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Saved-plan creation and application | `tofu-gate.sh`, `create-reviewed-plan.sh`, `apply-reviewed-plan.sh`, `plan-custody.sh`, `plan-summary.sh`                                                                                                                                     |
