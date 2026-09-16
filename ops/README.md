@@ -6,7 +6,7 @@ path easy to resume without weakening plan custody, deletion authorization, or s
 
 This surface follows Google's guidance to [save and approve a plan before apply](https://cloud.google.com/docs/terraform/best-practices/operations)
 and to [limit custom provisioning scripts](https://cloud.google.com/docs/terraform/best-practices/general-style-structure).
-The scripts validate and route operator intent; OpenTofu remains the resource owner. Direct
+The commands validate and route operator intent; OpenTofu remains the resource owner. Direct
 mutations are limited to prerequisites OpenTofu cannot grant to itself, and each owning runbook
 removes that temporary authority.
 
@@ -19,14 +19,17 @@ removes that temporary authority.
 | [`bootstrap-plan.sh`](./bootstrap-plan.sh)                 | Create or consume the one local bootstrap plan with commit and checksum custody.             | `apply` only                                                             |
 | [`foundation.sh`](./foundation.sh)                         | Configure, provision, and deprivilege the workload foundation from a fresh shell.            | Only the named `configure`, `grant*`, `revoke*`, and `finish` operations |
 | [`foundation-audit.sh`](./foundation-audit.sh)             | Check additive IAM, key, secret, registry, and network boundaries OpenTofu cannot close.     | No                                                                       |
-| [`run-workflow.sh`](./run-workflow.sh)                     | Dispatch one semantic protected plan, apply, deploy, rollback, drift, or recovery operation. | Only inside the selected protected workflow                              |
+| [`go run ./cmd/infra`](../cmd/infra/)                      | Dispatch one semantic protected plan, apply, deploy, rollback, drift, or recovery operation. | Only inside the selected protected workflow                              |
 | [`database-host.sh`](./database-host.sh)                   | Inspect the database host, prepare a local EC key, or connect through IAP.                   | OS Login public-key upload during `ssh` and `troubleshoot`               |
 | [`add-secret-version.sh`](./add-secret-version.sh)         | Add one Secret Manager version from hidden terminal input without echoing the payload.       | Yes                                                                      |
 
-Run these from the repository root. They use Bash internally and work from an existing zsh or Bash
-session; do not source them. Exit code `64` means invalid operator input, `65` means a rejected
-repository or identity boundary, `69` means a missing command, `70` means a remote result could
-not be proven, and `75` means another production workflow is active.
+Run these from the repository root in zsh or Bash; do not source the shell scripts.
+The workflow launcher requires the Go version in `go.mod`, Git, and an authenticated GitHub CLI.
+`go run` builds the current checkout through Go's build cache and returns nonzero on failure;
+stop on any nonzero status. The compiled command and shell scripts use these diagnostic codes:
+`64` means invalid operator input, `65` means a rejected
+repository or identity boundary, `70` means a remote result could not be proven, and `75` means
+another production workflow is active. The shell scripts also use `69` for a missing command.
 
 Source the committed non-secret operator defaults once in each shell:
 
@@ -55,20 +58,22 @@ available without that repository check.
 ### Protected workflow operations
 
 ```text
-./ops/run-workflow.sh drift
-./ops/run-workflow.sh drift assess-pull-request <pull-request-number>
+go run ./cmd/infra drift
+go run ./cmd/infra drift assess-pull-request <pull-request-number>
 
-./ops/run-workflow.sh foundation plan <bootstrap|foundation>
-./ops/run-workflow.sh foundation apply <bootstrap|foundation> <plan-id>
+go run ./cmd/infra foundation plan <bootstrap|foundation>
+go run ./cmd/infra foundation apply <bootstrap|foundation> <plan-id>
 
-./ops/run-workflow.sh release deploy [--no-wait]
-./ops/run-workflow.sh release rollback <receipt-id>
-./ops/run-workflow.sh release recover-first-launch <failed-run-id>
+go run ./cmd/infra release deploy [--no-wait]
+go run ./cmd/infra release rollback <receipt-id>
+go run ./cmd/infra release recover-first-launch <failed-run-id>
+go run ./cmd/infra release drill-database-isolation <receipt-id> 'DRILL authentication'
+go run ./cmd/infra release restore-database-isolation <receipt-id> 'RESTORE authentication'
 
-./ops/run-workflow.sh recovery plan-workload <replacement-project-id> <receipt-id>
-./ops/run-workflow.sh recovery apply-workload <replacement-project-id> <receipt-id> <plan-id>
-./ops/run-workflow.sh recovery restore-data <replacement-project-id> <receipt-id> <json-attempt> <auth-attempt> <lost-window> <confirmation>
-./ops/run-workflow.sh recovery cleanup-project <replacement-project-id> <receipt-id> <confirmation>
+go run ./cmd/infra recovery plan-workload <replacement-project-id> <receipt-id>
+go run ./cmd/infra recovery apply-workload <replacement-project-id> <receipt-id> <plan-id>
+go run ./cmd/infra recovery restore-data <replacement-project-id> <receipt-id> <json-attempt> <auth-attempt> <lost-window> <confirmation>
+go run ./cmd/infra recovery cleanup-project <replacement-project-id> <receipt-id> <confirmation>
 ```
 
 A plan ID and a receipt ID both use `run-id-attempt` syntax. Plan/apply remains two explicit

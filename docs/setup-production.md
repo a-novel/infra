@@ -20,6 +20,9 @@ rotate a secret, restore data, or handle an incident.
 
 ## Start or resume
 
+The [operator command reference](../ops/README.md) lists prerequisites, including the Go version
+in `go.mod` for protected workflow commands.
+
 Review the committed non-secret production defaults, then load them:
 
 ```sh
@@ -192,7 +195,7 @@ without blocking the shell; the workflow pauses for the human-only initializer:
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-RELEASE_RUN_ID="$(./ops/run-workflow.sh release deploy --no-wait)"
+RELEASE_RUN_ID="$(go run ./cmd/infra release deploy --no-wait)"
 printf 'Release run ID: %s\n' "$RELEASE_RUN_ID"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
@@ -206,7 +209,7 @@ the shell was restarted, set this session-only variable to the numeric segment a
 `/actions/runs/` in that exact failed deploy URL; do not add it to `.envrc`. Recover once:
 
 ```sh
-./ops/run-workflow.sh release recover-first-launch "$RELEASE_RUN_ID"
+go run ./cmd/infra release recover-first-launch "$RELEASE_RUN_ID"
 ```
 
 The command refuses to mutate anything if a successful isolated-host receipt exists or a live four-field
@@ -215,7 +218,7 @@ shared-host receipt is accepted only during the explicit rebuild below. After it
 release from the same labeled merge:
 
 ```sh
-./ops/run-workflow.sh release deploy --no-wait
+go run ./cmd/infra release deploy --no-wait
 ```
 
 ### Rebuild an existing shared host before frontend launch
@@ -395,7 +398,7 @@ setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 test "${REBUILD_COMMIT:?Verify the labeled merge first}" = "$(git rev-parse HEAD)"
 test "$REBUILD_COMMIT" = "$(gh api repos/a-novel/infra/commits/master --jq .sha)"
-FOUNDATION_PLAN_ID="$(./ops/run-workflow.sh foundation plan foundation)"
+FOUNDATION_PLAN_ID="$(go run ./cmd/infra foundation plan foundation)"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
@@ -407,7 +410,7 @@ Retained historical snapshots follow their existing expiry policy; they are not 
 rollback target for routine releases.
 
 ```sh
-./ops/run-workflow.sh foundation apply foundation "${FOUNDATION_PLAN_ID:?}"
+go run ./cmd/infra foundation apply foundation "${FOUNDATION_PLAN_ID:?}"
 ./ops/database-host.sh inspect authentication
 ./ops/database-host.sh inspect json-keys
 ```
@@ -429,7 +432,7 @@ Keep the labeled merge as the exact launch commit, enable releases, and dispatch
 
 ```sh
 gh variable set PRODUCTION_RELEASES_ENABLED --repo a-novel/infra --body true
-./ops/run-workflow.sh release deploy --no-wait
+go run ./cmd/infra release deploy --no-wait
 ```
 
 The compiler recognizes the historical shared-host receipt and selects `database-rebuild`.
@@ -775,7 +778,7 @@ Create the protected bootstrap plan in a separate block:
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-RETENTION_PLAN_ID="$(./ops/run-workflow.sh foundation plan bootstrap)"
+RETENTION_PLAN_ID="$(go run ./cmd/infra foundation plan bootstrap)"
 printf 'Retention plan ID: %s\n' "$RETENTION_PLAN_ID"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
@@ -787,7 +790,7 @@ Review that exact plan, then apply only its printed ID:
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 [[ "$RETENTION_PLAN_ID" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]
-./ops/run-workflow.sh foundation apply bootstrap "$RETENTION_PLAN_ID"
+go run ./cmd/infra foundation apply bootstrap "$RETENTION_PLAN_ID"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 

@@ -6,12 +6,13 @@ Platform setup and day-to-day workspace commands live in the [developer onboardi
 
 ## Validate a change
 
-Install the pinned Node tooling once, then run the checks that cover the files you changed:
+Use the Go version declared in `go.mod` and install the pinned Node tooling, then run the checks
+that cover the files you changed:
 
 ```bash
 pnpm install --frozen-lockfile
 pnpm lint
-pnpm test
+a-novel test -y
 
 ./ops/check-root.sh bootstrap
 ./ops/check-root.sh foundation
@@ -20,6 +21,10 @@ pnpm test
 ```
 
 The root checker never configures a backend. Its OpenTofu tests mock the Google provider and require no Google credentials.
+
+The operator launcher's Go tests inject the Git/GitHub command boundary; they never dispatch a
+workflow. `pnpm lint` checks both languages. Go formatting and linting use the isolated
+`golangci-lint.mod`; the operator command itself depends only on the standard library.
 
 ---
 

@@ -196,7 +196,7 @@ Dispatch the read-only check:
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-./ops/run-workflow.sh drift
+go run ./cmd/infra drift
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 

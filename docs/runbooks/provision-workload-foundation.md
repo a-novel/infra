@@ -79,13 +79,13 @@ API.
 ## 3. Reconcile the management bootstrap
 
 ```sh
-./ops/run-workflow.sh foundation plan bootstrap
+go run ./cmd/infra foundation plan bootstrap
 ```
 
 Review the sanitized counts. If the plan has changes, apply its exact printed ID:
 
 ```sh
-./ops/run-workflow.sh foundation apply bootstrap 1234567890-1
+go run ./cmd/infra foundation apply bootstrap 1234567890-1
 ```
 
 Skip the apply when the plan has no changes. Never infer, edit, or reuse a plan ID.
@@ -93,7 +93,7 @@ Skip the apply when the plan has no changes. Never infer, edit, or reuse a plan 
 ## 4. Apply the workload foundation
 
 ```sh
-./ops/run-workflow.sh foundation plan foundation
+go run ./cmd/infra foundation plan foundation
 ```
 
 Review the sanitized counts. Stop for any unexpected deletion, replacement, state-forget, public
@@ -104,7 +104,7 @@ service-account key. A deletion or replacement requires a fresh plan from a PR m
 Apply only the printed ID:
 
 ```sh
-./ops/run-workflow.sh foundation apply foundation 1234567890-1
+go run ./cmd/infra foundation apply foundation 1234567890-1
 ```
 
 Success includes a zero-change convergence plan. Do not repeat a successful apply.

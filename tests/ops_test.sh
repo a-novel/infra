@@ -1860,14 +1860,14 @@ FOUNDATION_SECRETS="${TEMP_DIR}/foundation-secrets"
 mkdir -p "${FOUNDATION_MOCK_BIN}"
 ln -s "${SCRIPT_DIR}/fixtures/fake-foundation-gh.sh" "${FOUNDATION_MOCK_BIN}/gh"
 ln -s "${SCRIPT_DIR}/fixtures/fake-foundation-gcloud.sh" "${FOUNDATION_MOCK_BIN}/gcloud"
-ln -s "${SCRIPT_DIR}/fixtures/fake-workflow-git.sh" "${FOUNDATION_MOCK_BIN}/git"
+ln -s "${SCRIPT_DIR}/fixtures/fake-operator-git.sh" "${FOUNDATION_MOCK_BIN}/git"
 : >"${FOUNDATION_CALLS}"
 : >"${FOUNDATION_SECRETS}"
 FOUNDATION_OUTPUT="$(
     PATH="${FOUNDATION_MOCK_BIN}:${PATH}" \
         FAKE_FOUNDATION_CALLS="${FOUNDATION_CALLS}" \
         FAKE_FOUNDATION_SECRETS="${FOUNDATION_SECRETS}" \
-        FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
+        FAKE_GIT_SHA="${WORKFLOW_SHA}" \
         INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \
         INFRA_WORKLOAD_PROJECT_ID=workload-project-prod \
         INFRA_REGION=europe-west1 \
@@ -1902,7 +1902,7 @@ PATH="${FOUNDATION_MOCK_BIN}:${PATH}" \
     FAKE_FOUNDATION_CALLS="${FOUNDATION_CALLS}" \
     FAKE_FOUNDATION_SECRETS="${FOUNDATION_SECRETS}" \
     FAKE_GIT_DIRTY=true \
-    FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
+    FAKE_GIT_SHA="${WORKFLOW_SHA}" \
     INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \
     INFRA_WORKLOAD_PROJECT_ID=workload-project-prod \
     "${REPOSITORY_ROOT}/ops/foundation.sh" configure \
@@ -1921,7 +1921,7 @@ FOUNDATION_AUDIT_ACCESS_OUTPUT="$(
     PATH="${FOUNDATION_MOCK_BIN}:${PATH}" \
         FAKE_FOUNDATION_CALLS="${FOUNDATION_CALLS}" \
         FAKE_FOUNDATION_SECRETS="${FOUNDATION_SECRETS}" \
-        FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
+        FAKE_GIT_SHA="${WORKFLOW_SHA}" \
         INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \
         INFRA_WORKLOAD_PROJECT_ID=workload-project-prod \
         "${REPOSITORY_ROOT}/ops/foundation.sh" grant-audit-access
@@ -2046,15 +2046,15 @@ BOOTSTRAP_PLAN="${TEMP_DIR}/bootstrap-plan.tfplan"
 BOOTSTRAP_CALLS="${TEMP_DIR}/bootstrap-calls"
 mkdir -p "${BOOTSTRAP_MOCK_BIN}"
 ln -s "${SCRIPT_DIR}/fixtures/fake-foundation-gcloud.sh" "${BOOTSTRAP_MOCK_BIN}/gcloud"
-ln -s "${SCRIPT_DIR}/fixtures/fake-workflow-gh.sh" "${BOOTSTRAP_MOCK_BIN}/gh"
-ln -s "${SCRIPT_DIR}/fixtures/fake-workflow-git.sh" "${BOOTSTRAP_MOCK_BIN}/git"
+ln -s "${SCRIPT_DIR}/fixtures/fake-foundation-gh.sh" "${BOOTSTRAP_MOCK_BIN}/gh"
+ln -s "${SCRIPT_DIR}/fixtures/fake-operator-git.sh" "${BOOTSTRAP_MOCK_BIN}/git"
 ln -s "${SCRIPT_DIR}/fixtures/fake-tofu.sh" "${BOOTSTRAP_MOCK_BIN}/tofu"
 : >"${BOOTSTRAP_CALLS}"
 set +e
 PATH="${BOOTSTRAP_MOCK_BIN}:${PATH}" \
     FAKE_FOUNDATION_CALLS="${BOOTSTRAP_CALLS}" \
-    FAKE_WORKFLOW_CALLS="${BOOTSTRAP_CALLS}" \
-    FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
+    FAKE_FOUNDATION_SECRETS="${FOUNDATION_SECRETS}" \
+    FAKE_GIT_SHA="${WORKFLOW_SHA}" \
     FAKE_TOFU_PLAN_CODE=2 \
     FAKE_TOFU_PLAN_JSON="${SCRIPT_DIR}/fixtures/plans/safe.json" \
     INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \
@@ -2077,8 +2077,8 @@ jq --exit-status \
 
 PATH="${BOOTSTRAP_MOCK_BIN}:${PATH}" \
     FAKE_FOUNDATION_CALLS="${BOOTSTRAP_CALLS}" \
-    FAKE_WORKFLOW_CALLS="${BOOTSTRAP_CALLS}" \
-    FAKE_WORKFLOW_SHA="${WORKFLOW_SHA}" \
+    FAKE_FOUNDATION_SECRETS="${FOUNDATION_SECRETS}" \
+    FAKE_GIT_SHA="${WORKFLOW_SHA}" \
     FAKE_TOFU_PLAN_CODE=0 \
     FAKE_TOFU_PLAN_JSON="${SCRIPT_DIR}/fixtures/plans/safe.json" \
     INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \

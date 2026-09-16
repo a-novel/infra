@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Provides a clean exact master checkout for ops/run-workflow.sh tests.
+# Supplies a clean checkout for foundation configuration and bootstrap custody tests.
 
 set -euo pipefail
 
@@ -14,7 +14,7 @@ case "$*" in
         fi
         ;;
     *' rev-parse HEAD')
-        printf '%s\n' "${FAKE_WORKFLOW_SHA:?FAKE_WORKFLOW_SHA is required}"
+        printf '%s\n' "${FAKE_GIT_SHA:?FAKE_GIT_SHA is required}"
         ;;
     *) exit 64 ;;
 esac

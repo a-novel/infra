@@ -4,8 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "format": "prettier --no-config --no-editorconfig --write .",
-    "lint": "pnpm lint:stylecheck && pnpm lint:renovate",
+    "format": "pnpm format:go && pnpm format:js",
+    "format:go": "go tool -modfile=golangci-lint.mod golangci-lint fmt",
+    "format:js": "prettier --no-config --no-editorconfig --write .",
+    "lint": "pnpm lint:go && pnpm lint:js",
+    "lint:go": "go tool -modfile=golangci-lint.mod golangci-lint run ./...",
+    "lint:js": "pnpm lint:stylecheck && pnpm lint:renovate",
     "lint:renovate": "renovate-config-validator --strict",
     "lint:stylecheck": "prettier --no-config --no-editorconfig --check .",
     "test": "node --test tests/*.test.mjs"

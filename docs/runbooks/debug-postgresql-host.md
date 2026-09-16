@@ -124,13 +124,13 @@ git switch master
 git pull --ff-only
 . ./.envrc
 ./ops/foundation.sh configure
-FOUNDATION_PLAN_ID="$(./ops/run-workflow.sh foundation plan foundation)"
+FOUNDATION_PLAN_ID="$(go run ./cmd/infra foundation plan foundation)"
 ```
 
 Review the sanitized counts, then apply that exact plan:
 
 ```sh
-./ops/run-workflow.sh foundation apply foundation "$FOUNDATION_PLAN_ID"
+go run ./cmd/infra foundation apply foundation "$FOUNDATION_PLAN_ID"
 ```
 
 Have the new operator run `./ops/database-host.sh ssh authentication` successfully. Remove the old principal in a second pull request, then repeat the configure, plan, verification, and apply commands.

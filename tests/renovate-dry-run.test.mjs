@@ -179,11 +179,16 @@ async function runRenovateFixture() {
     const config = JSON.parse(
       await readFile(path.join(repositoryRoot, "renovate.json"), "utf8"),
     );
-    config.enabledManagers = ["custom.regex"];
-    config.includePaths = ["deploy/production/images.yaml", workflowFile];
+    const modules = ["go.mod", "golangci-lint.mod"];
+    config.enabledManagers = ["custom.regex", "gomod"];
+    config.includePaths = [
+      "deploy/production/images.yaml",
+      workflowFile,
+      ...modules,
+    ];
     // Tool annotations are extracted without contacting their release hosts.
     config.packageRules.push({
-      matchFileNames: [workflowFile],
+      matchFileNames: [workflowFile, ...modules],
       enabled: false,
     });
     config.fetchChangeLogs = "off";
@@ -210,6 +215,12 @@ async function runRenovateFixture() {
       mkdir(path.join(scratch, "runtime/cache"), { recursive: true }),
     ]);
     await Promise.all([
+      ...modules.map(async (file) =>
+        writeFile(
+          path.join(scratch, file),
+          await readFile(path.join(repositoryRoot, file)),
+        ),
+      ),
       writeFile(path.join(scratch, workflowFile), workflow),
       writeFile(
         path.join(scratch, "renovate.json"),
@@ -223,9 +234,13 @@ async function runRenovateFixture() {
     await executeFile("git", ["init", "--quiet", "--initial-branch=master"], {
       cwd: scratch,
     });
-    await executeFile("git", ["add", "renovate.json", "deploy", ".github"], {
-      cwd: scratch,
-    });
+    await executeFile(
+      "git",
+      ["add", "renovate.json", "deploy", ".github", ...modules],
+      {
+        cwd: scratch,
+      },
+    );
     await executeFile(
       "git",
       [
@@ -290,6 +305,20 @@ test("Renovate CLI extracts CI tools and groups stable image lookups", async () 
     (record) => record.msg === "packageFiles with updates",
   );
   assert.ok(packageRecord, "Renovate must report the fixture updates");
+
+  for (const [file, dependency] of [
+    ["go.mod", "github.com/stretchr/testify"],
+    ["golangci-lint.mod", "github.com/golangci/golangci-lint/v2"],
+  ]) {
+    const module = packageRecord.config.gomod.find(
+      (entry) => entry.packageFile === file,
+    );
+    assert.ok(
+      module?.deps.some((entry) => entry.depName === dependency),
+      `CLI must extract ${dependency} from ${file}`,
+    );
+    assert.ok(module.deps.every((entry) => entry.updates.length === 0));
+  }
 
   const dependencies = packageRecord.config.regex.flatMap(
     (packageFile) => packageFile.deps,
