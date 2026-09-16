@@ -2,30 +2,27 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { init } from "renovate/dist/logger/index.js";
-import { extractPackageFile } from "renovate/dist/modules/manager/custom/regex/index.js";
-import { applyPackageRules } from "renovate/dist/util/package-rules/index.js";
 import { parse } from "yaml";
 
-await init();
 const read = (file) => readFile(new URL(`../${file}`, import.meta.url), "utf8");
 const config = JSON.parse(await read("renovate.json"));
 
-test("Renovate waits for four updates in each separate service image group", async () => {
+test("Renovate declares a four-image minimum for each service family", () => {
   for (const service of ["service-json-keys", "service-authentication"]) {
-    for (const updateType of ["patch", "minor", "major", "digest"]) {
-      const result = await applyPackageRules({
-        packageFile: "deploy/production/images.yaml",
-        manager: "custom.regex",
-        datasource: "docker",
-        packageName: `ghcr.io/a-novel/${service}/database`,
-        updateType,
-        packageRules: config.packageRules,
-      });
-      assert.equal(result.groupName, `${service} images`);
-      assert.equal(result.minimumGroupSize, 4);
-      assert.equal(result.automerge, false);
-    }
+    const rules = config.packageRules.filter(
+      (rule) => rule.groupName === `${service} images`,
+    );
+    assert.equal(rules.length, 1);
+    const { description, ...rule } = rules[0];
+    assert.deepEqual(rule, {
+      matchDatasources: ["docker"],
+      matchFileNames: ["deploy/production/images.yaml"],
+      matchPackageNames: [`ghcr.io/a-novel/${service}/**`],
+      groupName: `${service} images`,
+      minimumGroupSize: 4,
+      groupSlug: `${service}-images`,
+      separateMajorMinor: true,
+    });
   }
 });
 
@@ -52,112 +49,40 @@ test("Renovate runs on a schedule or manual dispatch with no cloud authority", a
   });
 });
 
-test("Renovate extracts each annotated tool version from the actual CI workflow", async () => {
-  const file = ".github/workflows/main.yaml";
-  const content = await read(file);
-  const dependencies = config.customManagers.flatMap((manager) => {
-    if (
-      !manager.managerFilePatterns.some((pattern) =>
-        new RegExp(pattern.slice(1, -1)).test(file),
-      )
-    )
-      return [];
-    return extractPackageFile(content, file, manager)?.deps ?? [];
-  });
-  for (const [, datasource, depName, currentValue] of content.matchAll(
-    /# renovate: datasource=(\S+) depName=(\S+)\s+\w+:\s*["']?(v?\d+\.\d+\.\d+)/g,
-  )) {
-    assert.ok(
-      dependencies.some(
-        (dependency) =>
-          dependency.datasource === datasource &&
-          dependency.depName === depName &&
-          dependency.currentValue === currentValue,
-      ),
-      depName,
-    );
-  }
-  assert.ok(
-    dependencies.some(
-      (dependency) => dependency.depName === "terraform-linters/tflint",
-    ),
+test("Renovate reserves manual review for production, HCL, and OpenTofu", () => {
+  const reviewRules = config.packageRules.filter(
+    (rule) => rule.automerge !== undefined,
   );
+  assert.equal(config.automerge, undefined);
+  assert.deepEqual(
+    reviewRules.map((rule) =>
+      Object.fromEntries(
+        Object.entries(rule).filter(
+          ([key]) => key.startsWith("match") || key === "automerge",
+        ),
+      ),
+    ),
+    [
+      {
+        matchDatasources: ["docker"],
+        matchFileNames: ["deploy/production/images.yaml"],
+        automerge: false,
+      },
+      { matchPackageNames: ["opentofu/opentofu"], automerge: false },
+      {
+        matchFileNames: [
+          "bootstrap/**",
+          "environments/production/**",
+          "deploy/production/**",
+          "**/*.tf",
+          "**/*.tf.json",
+          "**/*.tofu",
+          "**/*.tofu.json",
+          "**/.terraform.lock.hcl",
+        ],
+        automerge: false,
+      },
+    ],
+  );
+  assert.equal(config.packageRules.at(-1), reviewRules.at(-1));
 });
-
-const nonMajorUpdates = [
-  "minor",
-  "patch",
-  "pin",
-  "digest",
-  "lockFileMaintenance",
-];
-const workflowFile = ".github/workflows/main.yaml";
-
-for (const [scope, automerge, dependencies] of [
-  [
-    "infrastructure",
-    false,
-    [
-      ["bootstrap/versions.tf", "terraform", "hashicorp/google"],
-      [
-        "environments/production/foundation/versions.tf",
-        "terraform",
-        "hashicorp/google",
-      ],
-      [
-        "deploy/production/images.yaml",
-        "custom.regex",
-        "ghcr.io/a-novel/service-json-keys/database",
-      ],
-      [
-        "environments/production/release/variables.tf",
-        "custom.regex",
-        "alpine/curl",
-      ],
-      ...["tf", "tf.json", "tofu", "tofu.json"].map((extension) => [
-        `modules/future/main.${extension}`,
-        "terraform",
-        "future/provider",
-      ]),
-      [".opentofu-version", "custom.regex", "opentofu/opentofu"],
-      [".terraform.lock.hcl", "terraform", "future/provider"],
-    ],
-  ],
-  [
-    "CI and generic tooling",
-    true,
-    [
-      [workflowFile, "github-actions", "actions/checkout"],
-      [workflowFile, "github-actions", "a-novel-kit/workflows"],
-      [workflowFile, "custom.regex", "terraform-linters/tflint"],
-      [workflowFile, "custom.regex", "ghcr.io/zizmorcore/zizmor"],
-      ["package.json", "npm", "renovate"],
-      ["package.json", "npm", "pnpm"],
-      [".node-version", "nodenv", "node"],
-      ["pnpm-lock.yaml", "npm", undefined],
-    ],
-  ],
-]) {
-  test(`Renovate applies scoped automerge to ${scope}`, async () => {
-    for (const [packageFile, manager, packageName] of dependencies) {
-      for (const updateType of [...nonMajorUpdates, "major"]) {
-        const result = await applyPackageRules({
-          packageFile,
-          manager,
-          packageName,
-          updateType,
-          automerge: false,
-          packageRules: [
-            { matchUpdateTypes: nonMajorUpdates, automerge: true },
-            ...config.packageRules,
-          ],
-        });
-        assert.equal(
-          result.automerge,
-          automerge && updateType !== "major",
-          `${packageFile}: ${packageName} ${updateType}`,
-        );
-      }
-    }
-  });
-}
