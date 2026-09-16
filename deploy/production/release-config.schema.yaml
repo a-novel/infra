@@ -1,0 +1,104 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: https://github.com/a-novel/infra/deploy/production/release-config.schema.yaml
+title: Agora protected non-payload release configuration
+type: object
+additionalProperties: false
+required:
+  - management_project_id
+  - workload_project_id
+  - region
+  - database_zone
+  - backup_bucket_name
+  - database_hosts
+  - network_id
+  - subnet_id
+  - cloud_run_invocation_tags
+  - authentication
+  - quota_expectations
+  - secret_versions
+properties:
+  # Resource-specific constraints remain in the owning OpenTofu root.
+  management_project_id: true
+  workload_project_id:
+    type: string
+    pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+  region:
+    type: string
+    pattern: "^[a-z]+-[a-z]+[0-9]+$"
+  database_zone: { type: string }
+  backup_bucket_name: true
+  network_id: true
+  subnet_id: true
+  # Rollback uses the receipt's mail configuration. The compiler checks the
+  # current HTTPS origin only for a new deployment.
+  authentication: true
+  database_hosts:
+    type: object
+    additionalProperties: false
+    required: [authentication, json_keys]
+    properties:
+      authentication: { $ref: "#/$defs/databaseHost" }
+      json_keys: { $ref: "#/$defs/databaseHost" }
+  cloud_run_invocation_tags:
+    type: object
+    additionalProperties: false
+    required: [key, values]
+    properties:
+      key:
+        type: string
+        pattern: "^tagKeys/[0-9]+$"
+      values:
+        type: object
+        additionalProperties: false
+        required: [initializer, internal, recovery, release, scheduled]
+        properties:
+          initializer: { $ref: "#/$defs/tagValue" }
+          internal: { $ref: "#/$defs/tagValue" }
+          recovery: { $ref: "#/$defs/tagValue" }
+          release: { $ref: "#/$defs/tagValue" }
+          scheduled: { $ref: "#/$defs/tagValue" }
+  quota_expectations:
+    type: object
+    additionalProperties: false
+    required: [cloud_run_cpu_millicpu, cloud_run_memory_bytes, compute_cpu]
+    properties:
+      cloud_run_cpu_millicpu: { $ref: "#/$defs/positiveInteger" }
+      cloud_run_memory_bytes: { $ref: "#/$defs/positiveInteger" }
+      compute_cpu: { $ref: "#/$defs/positiveInteger" }
+  secret_versions:
+    type: object
+    additionalProperties: false
+    required:
+      - authentication_postgres_password
+      - authentication_postgres_backup_password
+      - authentication_smtp_password
+      - authentication_super_admin_password
+      - json_keys_postgres_password
+      - json_keys_postgres_backup_password
+      - json_keys_app_master_key
+    properties:
+      authentication_postgres_password: { $ref: "#/$defs/positiveInteger" }
+      authentication_postgres_backup_password:
+        { $ref: "#/$defs/positiveInteger" }
+      authentication_smtp_password: { $ref: "#/$defs/positiveInteger" }
+      authentication_super_admin_password: { $ref: "#/$defs/positiveInteger" }
+      json_keys_postgres_password: { $ref: "#/$defs/positiveInteger" }
+      json_keys_postgres_backup_password: { $ref: "#/$defs/positiveInteger" }
+      json_keys_app_master_key: { $ref: "#/$defs/positiveInteger" }
+$defs:
+  positiveInteger: { type: integer, minimum: 1 }
+  tagValue:
+    type: string
+    pattern: "^tagValues/[0-9]+$"
+  databaseHost:
+    type: object
+    additionalProperties: false
+    required: [private_ip, data_disk_id]
+    properties:
+      private_ip:
+        type: string
+        format: ipv4
+        pattern: '^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)'
+      data_disk_id:
+        type: string
+        pattern: "^[1-9][0-9]*$"
