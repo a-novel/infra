@@ -146,7 +146,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build reviewed infra tooling
-        uses: ./.github/actions/setup-infra
+        uses: $/.github/actions/setup-infra
 
       - name: Validate repository configuration
         shell: bash

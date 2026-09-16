@@ -69,7 +69,7 @@ jobs:
           persist-credentials: false
 
       - name: Build reviewed release tooling
-        uses: ./.github/actions/setup-infra
+        uses: $/.github/actions/setup-infra
 
       - name: Materialize protected non-payload configuration
         id: config
@@ -317,7 +317,7 @@ jobs:
           [ "$(gh api "repos/${GITHUB_REPOSITORY}/commits/master" --jq .sha)" = "${GITHUB_SHA}" ]
 
       - name: Build reviewed release tooling
-        uses: ./.github/actions/setup-infra
+        uses: $/.github/actions/setup-infra
 
       - name: Authenticate as the release boundary
         uses: google-github-actions/auth@v3.0.0

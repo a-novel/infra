@@ -67,7 +67,7 @@ jobs:
 
       - name: Build reviewed recovery tooling
         if: inputs.operation != 'cleanup-project'
-        uses: ./.github/actions/setup-infra
+        uses: $/.github/actions/setup-infra
 
       - name: Materialize the protected foundation inputs
         id: foundation

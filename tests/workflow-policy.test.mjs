@@ -40,7 +40,7 @@ test("operational jobs build reviewed Go tooling before protected inputs or cred
     recovery.jobs.recover,
   ]) {
     const build = job.steps.findIndex(
-      (step) => step.uses === "./.github/actions/setup-infra",
+      (step) => step.uses === "$/.github/actions/setup-infra",
     );
     const protectedInput = job.steps.findIndex((step) =>
       /secrets\.|google-github-actions\/auth/.test(JSON.stringify(step)),
@@ -59,7 +59,7 @@ test("operational jobs build reviewed Go tooling before protected inputs or cred
   assert.doesNotMatch(JSON.stringify(build), /secrets\.|vars\.|cache: true/);
   assert.ok(
     main.jobs["lint-repository"].steps.some(
-      (step) => step.uses === "./.github/actions/setup-infra",
+      (step) => step.uses === "$/.github/actions/setup-infra",
     ),
   );
   assert.doesNotMatch(
