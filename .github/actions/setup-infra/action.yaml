@@ -1,0 +1,17 @@
+name: Build reviewed infra tooling
+description: Build the checkout's operational command before protected inputs or cloud credentials exist.
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@v7.0.0
+      with:
+        go-version-file: go.mod
+        cache: false
+    - name: Build the operational command
+      shell: bash
+      run: |
+        set -euo pipefail
+        directory="${RUNNER_TEMP}/infra-bin"
+        mkdir -p "${directory}"
+        go build -mod=readonly -o "${directory}/infra" ./cmd/infra
+        printf '%s\n' "${directory}" >>"${GITHUB_PATH}"

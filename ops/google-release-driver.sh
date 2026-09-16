@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Google Cloud implementation of the selected release state machine. All mutable
-# values come from compile-release.mjs private files; the driver never reads or
+# values come from the private compiled inputs; the driver never reads or
 # prints secret payloads.
 # Usage: google-release-driver.sh <state-machine-step|rollback>
 
@@ -225,7 +225,7 @@ write_rollback_receipt() {
       }
     ' >"${rollback_operations}"
     chmod 600 "${rollback_release}" "${rollback_operations}"
-    "${SCRIPT_DIR}/build-receipt.mjs" rollback \
+    infra receipt build rollback \
         "${rollback_release}" "${RELEASE_DIRECTORY}/rollback.tfvars.json" \
         "${rollback_operations}" "${rollback_receipt}"
     "${SCRIPT_DIR}/receipt-custody.sh" publish \
@@ -460,7 +460,7 @@ case "${STEP}" in
     receipt)
         RECEIPT_FILE="${RELEASE_DIRECTORY}/receipt.json"
         "${SCRIPT_DIR}/promote-release-images.sh" "${RELEASE_FILE}" "${RUN_ID}"
-        "${SCRIPT_DIR}/build-receipt.mjs" deployment \
+        infra receipt build deployment \
             "${RELEASE_FILE}" "${RELEASE_DIRECTORY}/active.tfvars.json" \
             "${OPERATIONS_FILE}" "${RECEIPT_FILE}"
         "${SCRIPT_DIR}/receipt-custody.sh" publish \

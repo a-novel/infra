@@ -123,19 +123,20 @@ for protected settings and coverage limits.
 Do not call these as ad-hoc operator shortcuts. Their stable paths are part of the reviewed GitHub
 Actions security boundary.
 
-Operational jobs install only runtime dependencies with `pnpm install --prod --frozen-lockfile --ignore-scripts`.
-They do not restore the shared development package cache. The OpenTofu validation job tests that
-install with public release and recovery fixtures. Repository lint and Renovate tests use the full
-development install.
+Release, recovery, and database-isolation jobs build `infra` from the reviewed checkout before
+materializing protected inputs or obtaining cloud credentials. The shared build action disables
+cache restoration; the resulting binary embeds the unchanged schemas and needs no Node packages.
+Use `go run ./cmd/infra <command>` for local fixture debugging. Repository lint, remaining shell
+integration tests, and Renovate validation still use development-only Node dependencies.
 
 | Boundary                            | Scripts                                                                                                                                                                                                                                       |
 | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Saved-plan creation and application | `tofu-gate.sh`, `create-reviewed-plan.sh`, `apply-reviewed-plan.sh`, `plan-custody.sh`, `plan-summary.sh`                                                                                                                                     |
-| Configuration and receipt custody   | `config-custody.sh`, `receipt-custody.sh`, `build-receipt.mjs`, `validate-receipt.mjs`                                                                                                                                                        |
+| Configuration and receipt custody   | `config-custody.sh`, `receipt-custody.sh`, `infra receipt build`, `infra receipt validate`                                                                                                                                                    |
 | Deletion authorization              | `assess-image-updates.mjs`, `resource-deletion-impact.sh`, `resolve-resource-deletion-assessment.sh`, `prepare-resource-deletion-assessment.sh`, `verify-resource-deletion-gate.sh`, `verify-deletion-label.sh`, `delete-recovery-project.sh` |
-| Release compilation and promotion   | `compile-release.mjs`, `validate-image-update.mjs`, `verify-release-images.sh`, `promote-release-images.sh`, `preflight-release.sh`                                                                                                           |
+| Release compilation and promotion   | `infra compile-release`, `infra validate-images`, `verify-release-images.sh`, `promote-release-images.sh`, `preflight-release.sh`                                                                                                             |
 | Ordered release execution           | `release-orchestrator.sh`, `google-release-driver.sh`, `prepare-database-change.sh`, `deploy-database-release.sh`, `restore-database-release.sh`, `await-auth-initialization.sh`                                                              |
-| Recovery                            | `recover-first-launch.sh`, `compile-recovery.mjs`, `verify-recovery-points.sh`, `promote-recovery-images.sh`                                                                                                                                  |
+| Recovery                            | `recover-first-launch.sh`, `infra compile-recovery`, `verify-recovery-points.sh`, `promote-recovery-images.sh`                                                                                                                                |
 | Health and root validation          | `check-authentication-health.sh`, `check-root.sh`, `lib/roots.sh`                                                                                                                                                                             |
 
 These scripts stay single-purpose because their inputs, permissions, and diagnostics differ. A lower

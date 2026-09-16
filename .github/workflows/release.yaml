@@ -68,18 +68,8 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v6.1.0
-
-      - name: Install Node.js
-        uses: actions/setup-node@v7.0.0
-        with:
-          node-version-file: .node-version
-          package-manager-cache: false
-
-      - name: Install reviewed release tooling
-        shell: bash
-        run: pnpm install --prod --frozen-lockfile --ignore-scripts
+      - name: Build reviewed release tooling
+        uses: $/.github/actions/setup-infra
 
       - name: Materialize protected non-payload configuration
         id: config
@@ -137,7 +127,7 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
-          ./ops/compile-release.mjs \
+          infra compile-release \
             deploy/production/images.yaml "${RELEASE_CONFIG_FILE}" - \
             "${RUNNER_TEMP}/source-verification"
 
@@ -247,7 +237,7 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
-          ./ops/compile-release.mjs \
+          infra compile-release \
             deploy/production/images.yaml "${RELEASE_CONFIG_FILE}" \
             "${PRIOR_RECEIPT}" "${RUNNER_TEMP}/release"
 
@@ -326,18 +316,8 @@ jobs:
           esac
           [ "$(gh api "repos/${GITHUB_REPOSITORY}/commits/master" --jq .sha)" = "${GITHUB_SHA}" ]
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v6.1.0
-
-      - name: Install Node.js
-        uses: actions/setup-node@v7.0.0
-        with:
-          node-version-file: .node-version
-          package-manager-cache: false
-
-      - name: Install reviewed release tooling
-        shell: bash
-        run: pnpm install --prod --frozen-lockfile --ignore-scripts
+      - name: Build reviewed release tooling
+        uses: $/.github/actions/setup-infra
 
       - name: Authenticate as the release boundary
         uses: google-github-actions/auth@v3.0.0

@@ -65,21 +65,9 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install pnpm
+      - name: Build reviewed recovery tooling
         if: inputs.operation != 'cleanup-project'
-        uses: pnpm/action-setup@v6.1.0
-
-      - name: Install Node.js
-        if: inputs.operation != 'cleanup-project'
-        uses: actions/setup-node@v7.0.0
-        with:
-          node-version-file: .node-version
-          package-manager-cache: false
-
-      - name: Install reviewed recovery tooling
-        if: inputs.operation != 'cleanup-project'
-        shell: bash
-        run: pnpm install --prod --frozen-lockfile --ignore-scripts
+        uses: $/.github/actions/setup-infra
 
       - name: Materialize the protected foundation inputs
         id: foundation
@@ -142,7 +130,7 @@ jobs:
           set -euo pipefail
           umask 077
           output="${RUNNER_TEMP}/recovery"
-          ./ops/compile-recovery.mjs \
+          infra compile-recovery \
             "${FOUNDATION_CONFIG_FILE}" "${RECEIPT_FILE}" - "${REPLACEMENT_PROJECT_ID}" \
             placeholder placeholder foundation "${output}"
           printf 'directory=%s\n' "${output}" >>"${GITHUB_OUTPUT}"
@@ -245,7 +233,7 @@ jobs:
           export TOFU_STATE_SUFFIX="recovery/${REPLACEMENT_PROJECT_ID}"
           outputs="${RECOVERY_DIRECTORY}/foundation-outputs.json"
           ./ops/tofu-gate.sh output foundation "${STATE_BUCKET}" "${outputs}"
-          ./ops/compile-recovery.mjs \
+          infra compile-recovery \
             "${FOUNDATION_CONFIG_FILE}" "${RECEIPT_FILE}" "${outputs}" \
             "${REPLACEMENT_PROJECT_ID}" "${JSON_KEYS_ATTEMPT}" \
             "${AUTHENTICATION_ATTEMPT}" release "${RECOVERY_DIRECTORY}"
