@@ -176,16 +176,21 @@ test("release compilation emits candidate, active, and rollback inputs", async (
   );
   assertCloudRunCandidateTag(result.release.candidateTag);
   assert.equal(result.activeTfvars.application_release.rollout.phase, "active");
+  for (const service of ["authentication", "json_keys"]) {
+    assert.equal(
+      result.candidateTfvars.application_release[service].active_revision,
+      undefined,
+    );
+    assert.equal(
+      result.activeTfvars.application_release[service].active_revision,
+      result.activeTfvars.application_release[service].revision,
+    );
+    assert.notEqual(
+      result.candidateTfvars.application_release[service].secrets,
+      result.activeTfvars.application_release[service].secrets,
+    );
+  }
   assert.equal(result.rollbackTfvars.application_release, null);
-  assert.deepEqual(result.release.cloud.secretVersions, [
-    ["production-authentication-postgres-password", 1],
-    ["production-authentication-postgres-backup-password", 1],
-    ["production-authentication-smtp-sender-password", 1],
-    ["production-authentication-super-admin-password", 1],
-    ["production-json-keys-app-master-key", 1],
-    ["production-json-keys-postgres-password", 1],
-    ["production-json-keys-postgres-backup-password", 1],
-  ]);
   assert.deepEqual(
     result.activeTfvars.application_release.authentication.secrets,
     {
@@ -251,7 +256,7 @@ test("a compensated first release remains a valid empty rollback target", async 
     }),
   );
 
-  const next = await compileRelease({
+  const nextOptions = {
     manifestPath: path.join(
       repositoryRoot,
       "tests/fixtures/manifests/valid.yaml",
@@ -263,10 +268,13 @@ test("a compensated first release remains a valid empty rollback target", async 
     runId: "124",
     runAttempt: 1,
     nonce: "next",
-  });
+  };
+  const next = await compileRelease(nextOptions);
 
   assert.equal(next.rollbackTfvars.application_release, null);
   assert.deepEqual(next.rollbackTfvars.database_releases, {});
+  const rollback = await compileRelease({ ...nextOptions, action: "rollback" });
+  assert.deepEqual(rollback.release.cloud.secretVersions, []);
   await rm(scratch, { recursive: true });
 });
 
@@ -371,10 +379,23 @@ test("manual rollback checks the latest database before restoring an older targe
     repositoryRoot,
     "tests/fixtures/manifests/valid.yaml",
   );
-  const configPath = path.join(
-    repositoryRoot,
-    "tests/fixtures/release-config.json",
+  const configPath = path.join(scratch, "target-config.json");
+  const targetConfig = JSON.parse(
+    await readFile(
+      path.join(repositoryRoot, "tests/fixtures/release-config.json"),
+      "utf8",
+    ),
   );
+  targetConfig.secret_versions = {
+    authentication_postgres_password: 11,
+    authentication_postgres_backup_password: 13,
+    authentication_smtp_password: 17,
+    authentication_super_admin_password: 19,
+    json_keys_app_master_key: 23,
+    json_keys_postgres_password: 29,
+    json_keys_postgres_backup_password: 31,
+  };
+  await writeFile(configPath, JSON.stringify(targetConfig));
   const target = await compileRelease({
     manifestPath,
     configPath,
@@ -418,7 +439,9 @@ test("manual rollback checks the latest database before restoring an older targe
   );
 
   const currentConfig = JSON.parse(await readFile(configPath, "utf8"));
-  currentConfig.secret_versions.json_keys_postgres_password = 2;
+  for (const name of Object.keys(currentConfig.secret_versions)) {
+    currentConfig.secret_versions[name] += 100;
+  }
   const currentConfigPath = path.join(scratch, "current-config.json");
   await writeFile(currentConfigPath, JSON.stringify(currentConfig));
   const current = await compileRelease({
@@ -473,14 +496,25 @@ test("manual rollback checks the latest database before restoring an older targe
     target.activeTfvars.database_releases,
   );
   assert.deepEqual(rollback.release.cloud.secretVersions, [
-    ["production-authentication-postgres-password", 1],
-    ["production-authentication-postgres-backup-password", 1],
-    ["production-authentication-smtp-sender-password", 1],
-    ["production-authentication-super-admin-password", 1],
-    ["production-json-keys-app-master-key", 1],
-    ["production-json-keys-postgres-password", 1],
-    ["production-json-keys-postgres-backup-password", 1],
+    ["production-authentication-postgres-password", 11],
+    ["production-authentication-postgres-backup-password", 13],
+    ["production-authentication-smtp-sender-password", 17],
+    ["production-authentication-super-admin-password", 19],
+    ["production-json-keys-app-master-key", 23],
+    ["production-json-keys-postgres-password", 29],
+    ["production-json-keys-postgres-backup-password", 31],
   ]);
+  assert.deepEqual(
+    target.release.cloud.secretVersions,
+    rollback.release.cloud.secretVersions,
+  );
+  assert.deepEqual(
+    current.release.cloud.secretVersions,
+    rollback.release.cloud.secretVersions.map(([name, version]) => [
+      name,
+      version + 100,
+    ]),
+  );
   await rm(scratch, { recursive: true });
 });
 

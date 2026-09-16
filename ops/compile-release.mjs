@@ -175,20 +175,12 @@ function verifyReceiptManifest(config, manifest, receipt) {
   }
 }
 
-function applicationRelease(
-  config,
-  images,
-  rollout,
-  revisions,
-  activeRevisions,
-) {
+function applicationRelease(config, images, candidateTag, revisions) {
   const versions = config.secret_versions;
   return {
-    rollout: { candidate_tag: rollout.candidateTag, phase: rollout.phase },
+    rollout: { candidate_tag: candidateTag, phase: "active" },
     authentication: {
-      ...(activeRevisions.authentication
-        ? { active_revision: activeRevisions.authentication }
-        : {}),
+      active_revision: revisions.authentication,
       images: {
         init: imageAt(images, "service-authentication", "jobs/init"),
         migrations: imageAt(
@@ -210,9 +202,7 @@ function applicationRelease(
       web_client_url: config.authentication.web_client_url,
     },
     json_keys: {
-      ...(activeRevisions.jsonKeys
-        ? { active_revision: activeRevisions.jsonKeys }
-        : {}),
+      active_revision: revisions.jsonKeys,
       images: {
         grpc: imageAt(images, "service-json-keys", "grpc"),
         migrations: imageAt(images, "service-json-keys", "jobs/migrations"),
@@ -445,28 +435,28 @@ export async function compileRelease({
     },
   };
 
-  const candidateTfvars = {
-    ...baseTfvars,
-    database_releases: databaseReleases,
-    application_release: applicationRelease(
-      config,
-      images,
-      { candidateTag, phase: "candidate" },
-      revisions,
-      previousRevisions,
-    ),
-  };
   const activeTfvars = {
     ...baseTfvars,
     database_releases: databaseReleases,
     application_release: applicationRelease(
       config,
       images,
-      { candidateTag, phase: "active" },
-      revisions,
+      candidateTag,
       revisions,
     ),
   };
+  const candidateTfvars = structuredClone(activeTfvars);
+  candidateTfvars.application_release.rollout.phase = "candidate";
+  for (const [service, revision] of [
+    ["authentication", previousRevisions.authentication],
+    ["json_keys", previousRevisions.jsonKeys],
+  ]) {
+    if (revision) {
+      candidateTfvars.application_release[service].active_revision = revision;
+    } else {
+      delete candidateTfvars.application_release[service].active_revision;
+    }
+  }
   for (const tfvars of [candidateTfvars, activeTfvars]) {
     tfvars.application_release.rollout.services = services;
   }
@@ -541,73 +531,45 @@ export async function compileRelease({
     rollbackTfvars = structuredClone(candidateTfvars);
   }
 
-  let checkedSecretVersions = [
-    [
-      "production-authentication-postgres-password",
-      config.secret_versions.authentication_postgres_password,
-    ],
-    [
-      "production-authentication-postgres-backup-password",
-      config.secret_versions.authentication_postgres_backup_password,
-    ],
-    [
-      "production-authentication-smtp-sender-password",
-      config.secret_versions.authentication_smtp_password,
-    ],
-    [
-      "production-authentication-super-admin-password",
-      config.secret_versions.authentication_super_admin_password,
-    ],
-    [
-      "production-json-keys-app-master-key",
-      config.secret_versions.json_keys_app_master_key,
-    ],
-    [
-      "production-json-keys-postgres-password",
-      config.secret_versions.json_keys_postgres_password,
-    ],
-    [
-      "production-json-keys-postgres-backup-password",
-      config.secret_versions.json_keys_postgres_backup_password,
-    ],
-  ];
-  if (action === "rollback") {
-    const targetApplication = rollbackTfvars.application_release;
-    const targetDatabase = previousReceipt.database;
-    checkedSecretVersions = targetApplication
-      ? [
-          [
-            "production-authentication-postgres-password",
-            targetApplication.authentication.secrets.postgres_password_version,
-          ],
-          [
-            "production-authentication-postgres-backup-password",
-            targetDatabase.authenticationBackupPasswordVersion,
-          ],
-          [
-            "production-authentication-smtp-sender-password",
-            targetApplication.authentication.secrets.smtp_password_version,
-          ],
-          [
-            "production-authentication-super-admin-password",
-            targetApplication.authentication.secrets
-              .super_admin_password_version,
-          ],
-          [
-            "production-json-keys-app-master-key",
-            targetApplication.json_keys.secrets.app_master_key_version,
-          ],
-          [
-            "production-json-keys-postgres-password",
-            targetApplication.json_keys.secrets.postgres_password_version,
-          ],
-          [
-            "production-json-keys-postgres-backup-password",
-            targetDatabase.jsonKeysBackupPasswordVersion,
-          ],
-        ]
-      : [];
-  }
+  // Preflight follows the configuration being deployed, including receipt-owned
+  // versions during rollback and an empty application after first-launch failure.
+  const targetApplication = (
+    action === "rollback" ? rollbackTfvars : activeTfvars
+  ).application_release;
+  const targetDatabase =
+    action === "rollback" ? previousReceipt.database : database;
+  const checkedSecretVersions = targetApplication
+    ? [
+        [
+          "production-authentication-postgres-password",
+          targetApplication.authentication.secrets.postgres_password_version,
+        ],
+        [
+          "production-authentication-postgres-backup-password",
+          targetDatabase.authenticationBackupPasswordVersion,
+        ],
+        [
+          "production-authentication-smtp-sender-password",
+          targetApplication.authentication.secrets.smtp_password_version,
+        ],
+        [
+          "production-authentication-super-admin-password",
+          targetApplication.authentication.secrets.super_admin_password_version,
+        ],
+        [
+          "production-json-keys-app-master-key",
+          targetApplication.json_keys.secrets.app_master_key_version,
+        ],
+        [
+          "production-json-keys-postgres-password",
+          targetApplication.json_keys.secrets.postgres_password_version,
+        ],
+        [
+          "production-json-keys-postgres-backup-password",
+          targetDatabase.jsonKeysBackupPasswordVersion,
+        ],
+      ]
+    : [];
 
   const release = {
     schemaVersion: 1,
