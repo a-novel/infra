@@ -77,7 +77,7 @@ Failed applies consume their saved plans and may already have changed resources.
 failed apply or reuse its plan ID. This command captures the new ID without editing an example:
 
 ```sh
-FOUNDATION_PLAN_ID="$(./ops/run-workflow.sh foundation plan foundation)"
+FOUNDATION_PLAN_ID="$(go run ./cmd/infra foundation plan foundation)"
 ```
 
 Review the private plan before continuing. For an interrupted database split, expect the narrow
@@ -85,7 +85,7 @@ managed role/binding and remaining firewall changes. Stop for unexpected VM, dis
 or service replacements. Leave the new hosts and preserved SSDs in place.
 
 ```sh
-./ops/run-workflow.sh foundation apply foundation "${FOUNDATION_PLAN_ID:?}"
+go run ./cmd/infra foundation apply foundation "${FOUNDATION_PLAN_ID:?}"
 ```
 
 Approve the protected environment when prompted. Success includes the zero-change convergence

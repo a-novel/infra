@@ -3,6 +3,9 @@
   "extends": [":semanticCommits"],
   "rangeStrategy": "pin",
   "ignoreUnstable": true,
+  "gomod": {
+    "managerFilePatterns": ["/^golangci-lint\\.mod$/"]
+  },
   "packageRules": [
     {
       "description": "Keep GitHub Actions on complete stable SemVer tags.",
@@ -85,6 +88,19 @@
       "matchPackageNames": ["opentofu/opentofu"],
       "groupName": "OpenTofu",
       "automerge": false
+    },
+    {
+      "description": "Refresh the operator module with the native Go manager.",
+      "matchManagers": ["gomod"],
+      "matchFileNames": ["go.mod"],
+      "postUpdateOptions": ["gomodTidy"]
+    },
+    {
+      "description": "Resolve only declared tools in the isolated linter module, on separate branches from runtime dependencies.",
+      "matchManagers": ["gomod"],
+      "matchFileNames": ["golangci-lint.mod"],
+      "additionalBranchPrefix": "golangci-lint-",
+      "goGetDirs": ["tool"]
     },
     {
       "description": "Require review for production configuration and infrastructure definitions.",

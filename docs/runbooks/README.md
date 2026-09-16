@@ -21,6 +21,7 @@ one-time [production setup guide](../setup-production.md) instead.
 The human command map is [`ops/README.md`](../../ops/README.md). Architecture belongs in
 [`docs/architecture.md`](../architecture.md), and Google-specific resource details belong in
 [`docs/google-cloud.md`](../google-cloud.md).
+Install the Go version in `go.mod` before using the protected workflow launcher, `go run ./cmd/infra`.
 
 ## Start an operation
 

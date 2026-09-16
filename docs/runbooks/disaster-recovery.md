@@ -271,7 +271,7 @@ Create the disposable-foundation plan:
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-./ops/run-workflow.sh recovery plan-workload \
+go run ./cmd/infra recovery plan-workload \
   "$REPLACEMENT_PROJECT_ID" "$TARGET_RECEIPT"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
@@ -283,7 +283,7 @@ Review the sanitized counts. They may target only state suffix
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-./ops/run-workflow.sh recovery apply-workload \
+go run ./cmd/infra recovery apply-workload \
   "$REPLACEMENT_PROJECT_ID" "$TARGET_RECEIPT" 1234567890-1
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
@@ -417,7 +417,7 @@ Dispatch data restore and application recovery:
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-RECOVERY_RUN_REF="$(./ops/run-workflow.sh recovery restore-data \
+RECOVERY_RUN_REF="$(go run ./cmd/infra recovery restore-data \
   "$REPLACEMENT_PROJECT_ID" "$TARGET_RECEIPT" \
   "$JSON_KEYS_ATTEMPT" "$AUTHENTICATION_ATTEMPT" \
   "$LOST_WRITE_WINDOW" "RESTORE ${REPLACEMENT_PROJECT_ID}")"
@@ -457,13 +457,13 @@ Review only replacement-scoped deletions; production remains untouched.
 After that PR merges, refresh `master` as in section 3 and reconcile bootstrap:
 
 ```sh
-BOOTSTRAP_PLAN_ID="$(./ops/run-workflow.sh foundation plan bootstrap)"
+BOOTSTRAP_PLAN_ID="$(go run ./cmd/infra foundation plan bootstrap)"
 ```
 
 Review the plan, then apply only that saved plan through `production-foundation`:
 
 ```sh
-./ops/run-workflow.sh foundation apply bootstrap "${BOOTSTRAP_PLAN_ID:?}"
+go run ./cmd/infra foundation apply bootstrap "${BOOTSTRAP_PLAN_ID:?}"
 ```
 
 After the apply succeeds and IAM propagates, repeat section 5's dispatch with the unchanged
@@ -758,7 +758,7 @@ Dispatch cleanup for the committed target:
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-./ops/run-workflow.sh recovery cleanup-project \
+go run ./cmd/infra recovery cleanup-project \
   "$REPLACEMENT_PROJECT_ID" "$TARGET_RECEIPT" \
   "DELETE ${REPLACEMENT_PROJECT_ID}"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'

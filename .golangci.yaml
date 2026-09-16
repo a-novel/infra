@@ -1,0 +1,20 @@
+version: "2"
+
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - gofumpt
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - localmodule
+
+linters:
+  default: standard
+  enable:
+    - errorlint
+    - testifylint
+    - tparallel

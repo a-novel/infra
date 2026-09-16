@@ -467,7 +467,7 @@ production infrastructure run:
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-RELEASE_RUN_ID="$(./ops/run-workflow.sh release deploy)"
+RELEASE_RUN_ID="$(go run ./cmd/infra release deploy)"
 printf 'Release run ID: %s\n' "$RELEASE_RUN_ID"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
@@ -693,7 +693,7 @@ Dispatch the rollback:
 () {
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
-./ops/run-workflow.sh release rollback "$TARGET_RECEIPT"
+go run ./cmd/infra release rollback "$TARGET_RECEIPT"
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 

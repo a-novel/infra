@@ -208,7 +208,7 @@ database start time, and UTC timestamp. Do not restart the probe to conceal a ga
 ### 3. Dispatch the protected drill from the first terminal
 
 ```sh
-./ops/run-workflow.sh release drill-database-isolation "${TARGET_RECEIPT:?}" 'DRILL authentication'
+go run ./cmd/infra release drill-database-isolation "${TARGET_RECEIPT:?}" 'DRILL authentication'
 ```
 
 Approve the normal release environment when requested. No production workflow may already be active;
@@ -253,7 +253,7 @@ Do not start another drill. Wait for the running operation to finish and inspect
 clean current `master`, use the same selected receipt and the protected restore-only path:
 
 ```sh
-./ops/run-workflow.sh release restore-database-isolation "${TARGET_RECEIPT:?}" 'RESTORE authentication'
+go run ./cmd/infra release restore-database-isolation "${TARGET_RECEIPT:?}" 'RESTORE authentication'
 ```
 
 Restore-only restarts Authentication once, without another drill or backup gate. It remains available

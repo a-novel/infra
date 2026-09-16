@@ -126,12 +126,12 @@ test("workflow commands keep restartable repository-state boundaries", () => {
       if (body.includes("git pull --ff-only")) {
         assert.doesNotMatch(
           body,
-          /MASTER_SHA=|\.\/ops\/run-workflow\.sh/,
+          /MASTER_SHA=|go run \.\/cmd\/infra/,
           `${name} combines repository refresh with commit collection or workflow invocation`,
         );
       }
 
-      if (body.includes("./ops/run-workflow.sh")) {
+      if (body.includes("go run ./cmd/infra")) {
         workflowInvocationBlockCount += 1;
         assert.doesNotMatch(
           body,
@@ -158,10 +158,13 @@ test("delegated setup procedures use stateless operator commands", () => {
   const allRunbooks = runbooks.map(({ content }) => content).join("\n");
   assert.doesNotMatch(
     allRunbooks,
-    /run-workflow\.sh\s+(drift|foundation|release|recovery)\.yaml/,
+    /go run \.\/cmd\/infra\s+(drift|foundation|release|recovery)\.yaml/,
   );
-  assert.doesNotMatch(allRunbooks, /run-workflow\.sh[\s\\\n]+.*operation=/);
-  assert.match(allRunbooks, /run-workflow\.sh foundation plan foundation/);
+  assert.doesNotMatch(
+    allRunbooks,
+    /go run \.\/cmd\/infra[\s\\\n]+.*operation=/,
+  );
+  assert.match(allRunbooks, /go run \.\/cmd\/infra foundation plan foundation/);
   assert.match(allRunbooks, /foundation\.sh configure/);
   assert.match(allRunbooks, /foundation-audit\.sh/);
 });

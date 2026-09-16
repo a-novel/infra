@@ -26,6 +26,10 @@ Complete the repository-only subsections below, then follow
 [production operations index](./docs/runbooks/README.md) for deployments, rotations, recovery, and
 incidents.
 
+Protected workflow commands use `go run ./cmd/infra` from the repository root. Install the Go
+version declared in `go.mod`; the [operator command reference](./ops/README.md) covers prerequisites
+and failure handling.
+
 Pull requests and branch pushes are cloud-blind and never deploy. The one-time management bootstrap
 is the only local apply and requires an explicitly authorized human. Every later cloud change runs
 from reviewed `master` through its protected workflow; agents never run `gcloud` or `tofu apply`.
@@ -106,7 +110,7 @@ human assessment.
 For those changes, review the candidate OpenTofu code before authorizing its execution:
 
 ```bash
-./ops/run-workflow.sh drift assess-pull-request <pull-request-number>
+go run ./cmd/infra drift assess-pull-request <pull-request-number>
 ```
 
 This dispatch is explicit authorization to plan that exact candidate, including a fork, with the
@@ -206,7 +210,7 @@ pnpm install --frozen-lockfile
 
 ./tests/ops_test.sh
 pnpm lint
-pnpm test
+a-novel test -y
 ```
 
 `check-root.sh` accepts only `bootstrap`, `foundation`, or `release`. It initializes with `-backend=false` and runs mocked tests, so this local path does not authenticate to or query Google Cloud.
@@ -230,6 +234,7 @@ The three names form a security allowlist. Add a root only when a new lifecycle 
 | `deploy/production/images.yaml`           | Enabled components plus stable SemVer image tags and exact digests.            |
 | `deploy/production/recovery-cleanup.json` | Inactive-by-default exact authorization for one disposable recovery deletion.  |
 | [`ops/`](./ops/README.md)                 | Human operator commands and protected workflow internals.                      |
+| `cmd/infra/`, `internal/workflow/`        | Go operator launcher and its credential-free boundary tests.                   |
 | `tests/`                                  | Mocked OpenTofu, manifest, Renovate, allowlist, and sanitized plan fixtures.   |
 | `docs/architecture.md`                    | Lifecycle, authority, state, delivery, and portability decisions.              |
 | `docs/google-cloud.md`                    | Provider resource map, trust boundaries, and official Google Cloud references. |
