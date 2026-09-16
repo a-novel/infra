@@ -15,6 +15,11 @@ const executeFile = promisify(execFile);
 const testDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(testDirectory, "..");
 const renovateBinary = path.join(repositoryRoot, "node_modules/.bin/renovate");
+const workflowFile = ".github/workflows/main.yaml";
+const workflow = await readFile(
+  path.join(repositoryRoot, workflowFile),
+  "utf8",
+);
 
 const slots = {
   "service-json-keys": [
@@ -175,7 +180,12 @@ async function runRenovateFixture() {
       await readFile(path.join(repositoryRoot, "renovate.json"), "utf8"),
     );
     config.enabledManagers = ["custom.regex"];
-    config.includePaths = ["deploy/production/images.yaml"];
+    config.includePaths = ["deploy/production/images.yaml", workflowFile];
+    // Tool annotations are extracted without contacting their release hosts.
+    config.packageRules.push({
+      matchFileNames: [workflowFile],
+      enabled: false,
+    });
     config.fetchChangeLogs = "off";
     config.onboarding = false;
     config.requireConfig = "required";
@@ -195,10 +205,12 @@ async function runRenovateFixture() {
 
     await Promise.all([
       mkdir(path.join(scratch, "deploy/production"), { recursive: true }),
+      mkdir(path.join(scratch, ".github/workflows"), { recursive: true }),
       mkdir(path.join(scratch, "runtime/base"), { recursive: true }),
       mkdir(path.join(scratch, "runtime/cache"), { recursive: true }),
     ]);
     await Promise.all([
+      writeFile(path.join(scratch, workflowFile), workflow),
       writeFile(
         path.join(scratch, "renovate.json"),
         `${JSON.stringify(config, null, 2)}\n`,
@@ -211,7 +223,7 @@ async function runRenovateFixture() {
     await executeFile("git", ["init", "--quiet", "--initial-branch=master"], {
       cwd: scratch,
     });
-    await executeFile("git", ["add", "renovate.json", "deploy"], {
+    await executeFile("git", ["add", "renovate.json", "deploy", ".github"], {
       cwd: scratch,
     });
     await executeFile(
@@ -272,7 +284,7 @@ async function runRenovateFixture() {
   }
 }
 
-test("Renovate dry-run groups complete stable releases and ignores noisy tags", async () => {
+test("Renovate CLI extracts CI tools and groups stable image lookups", async () => {
   const records = await runRenovateFixture();
   const packageRecord = records.find(
     (record) => record.msg === "packageFiles with updates",
@@ -282,6 +294,25 @@ test("Renovate dry-run groups complete stable releases and ignores noisy tags", 
   const dependencies = packageRecord.config.regex.flatMap(
     (packageFile) => packageFile.deps,
   );
+  const annotations = [
+    ...workflow.matchAll(
+      /# renovate: datasource=(\S+) depName=(\S+)\s+\w+:\s*["']?(v?\d+\.\d+\.\d+)/g,
+    ),
+  ];
+  assert.ok(annotations.length > 0, "CI tools must have update annotations");
+  for (const [, datasource, depName, currentValue] of annotations) {
+    assert.ok(
+      dependencies.some(
+        (dependency) =>
+          dependency.datasource === datasource &&
+          dependency.depName === depName &&
+          dependency.currentValue === currentValue &&
+          dependency.updates.length === 0,
+      ),
+      `CLI must extract ${depName} with updates disabled`,
+    );
+  }
+  // Local lookup resolves candidates; it does not create branches or enforce PR size.
   const updates = dependencies.flatMap((dependency) =>
     dependency.updates.map((update) => ({
       dependency: dependency.depName,
