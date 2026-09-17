@@ -26,6 +26,9 @@ func fixtureCommand(name string, args []string) (int, error) {
 	if os.Getenv("RESTORE_SCENARIO") != "" {
 		return restoreCommand(name, args)
 	}
+	if os.Getenv("SMTP_SCENARIO") != "" {
+		return smtpCommand(name, args)
+	}
 	switch name {
 	case "infra":
 		if len(args) > 0 && args[0] == "custody" {

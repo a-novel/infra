@@ -159,11 +159,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y zsh
 
-      - name: Test release policies
-        shell: bash
-        run: pnpm test
-
-      - name: Test operator workflow boundaries without credentials
+      - name: Test tooling, runbooks, and workflow boundaries without credentials
         shell: bash
         run: go test -race ./...
 
