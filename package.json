@@ -16,7 +16,7 @@
   },
   "devDependencies": {
     "prettier": "3.9.6",
-    "renovate": "44.83.0",
+    "renovate": "44.86.0",
     "yaml": "2.9.1"
   },
   "packageManager": "pnpm@12.4.2",
