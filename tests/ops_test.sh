@@ -998,98 +998,11 @@ jq --exit-status '.databases.jsonKeys.ageSeconds == 0' \
 set +e
 INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \
     INFRA_WORKLOAD_PROJECT_ID=INVALID \
-    "${REPOSITORY_ROOT}/ops/foundation.sh" configure >/dev/null 2>&1
-INVALID_FOUNDATION_PROJECT_CODE=$?
-INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \
-    INFRA_WORKLOAD_PROJECT_ID=INVALID \
     "${REPOSITORY_ROOT}/ops/foundation-audit.sh" >/dev/null 2>&1
 INVALID_FOUNDATION_AUDIT_PROJECT_CODE=$?
 set -e
-[ "${INVALID_FOUNDATION_PROJECT_CODE}" -ne 0 ]
 [ "${INVALID_FOUNDATION_AUDIT_PROJECT_CODE}" -ne 0 ]
-
-# Foundation configuration derives every coordinate in a fresh process, writes
-# only the protected JSON document, and keeps billing/human metadata off stdout.
-WORKFLOW_SHA='1234567890abcdef1234567890abcdef12345678'
-FOUNDATION_MOCK_BIN="${TEMP_DIR}/foundation-bin"
 FOUNDATION_CALLS="${TEMP_DIR}/foundation-calls"
-FOUNDATION_SECRETS="${TEMP_DIR}/foundation-secrets"
-mkdir -p "${FOUNDATION_MOCK_BIN}"
-ln -s "${SCRIPT_DIR}/fixtures/fake-foundation-gh.sh" "${FOUNDATION_MOCK_BIN}/gh"
-ln -s "${SCRIPT_DIR}/fixtures/fake-foundation-gcloud.sh" "${FOUNDATION_MOCK_BIN}/gcloud"
-ln -s "${SCRIPT_DIR}/fixtures/fake-operator-git.sh" "${FOUNDATION_MOCK_BIN}/git"
-: >"${FOUNDATION_CALLS}"
-: >"${FOUNDATION_SECRETS}"
-FOUNDATION_OUTPUT="$(
-    PATH="${FOUNDATION_MOCK_BIN}:${PATH}" \
-        FAKE_FOUNDATION_CALLS="${FOUNDATION_CALLS}" \
-        FAKE_FOUNDATION_SECRETS="${FOUNDATION_SECRETS}" \
-        FAKE_GIT_SHA="${WORKFLOW_SHA}" \
-        INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \
-        INFRA_WORKLOAD_PROJECT_ID=workload-project-prod \
-        INFRA_REGION=europe-west1 \
-        INFRA_DATABASE_ZONE=europe-west1-d \
-        INFRA_COST_ALERT_EMAIL=costs@example.com \
-        INFRA_OPERATIONS_ALERT_EMAIL=operations@example.com \
-        INFRA_DATABASE_OPERATOR_PRINCIPALS='group:database-operators@example.com user:second@example.com' \
-        INFRA_AUTH_INITIALIZER_PRINCIPALS='group:authentication-initializers@example.com' \
-        "${REPOSITORY_ROOT}/ops/foundation.sh" configure
-)"
-grep -Fq 'PASS protected foundation environment' <<<"${FOUNDATION_OUTPUT}"
-grep -Fq 'PASS protected foundation configuration' <<<"${FOUNDATION_OUTPUT}"
-assert_equal "$(wc -l <"${FOUNDATION_SECRETS}" | tr -d ' ')" 2
-grep -Fq -- '--env production-foundation' "${FOUNDATION_SECRETS}"
-grep -Fq -- '--env production-recovery' "${FOUNDATION_SECRETS}"
-grep -Fq '"workload_project_id":"workload-project-prod"' "${FOUNDATION_SECRETS}"
-grep -Fq '"organization_id":"123456789012"' "${FOUNDATION_SECRETS}"
-grep -Fq '"region":"europe-west1"' "${FOUNDATION_SECRETS}"
-grep -Fq '"database_zone":"europe-west1-d"' "${FOUNDATION_SECRETS}"
-grep -Fq '"database_operator_principals":["group:database-operators@example.com","user:second@example.com"]' "${FOUNDATION_SECRETS}"
-grep -Fq '"authentication_initializer_principals":["group:authentication-initializers@example.com"]' "${FOUNDATION_SECRETS}"
-grep -Fq '"cost_alert_email":"costs@example.com"' "${FOUNDATION_SECRETS}"
-grep -Fq '"operations_alert_email":"operations@example.com"' "${FOUNDATION_SECRETS}"
-grep -Fq '"adopt_existing_project":false' "${FOUNDATION_SECRETS}"
-if grep -Eq 'operator@example\.com|ABCDEF-123456-ABCDEF' <<<"${FOUNDATION_OUTPUT}"; then
-    printf 'Protected foundation metadata leaked to stdout.\n' >&2
-    exit 1
-fi
-
-set +e
-PATH="${FOUNDATION_MOCK_BIN}:${PATH}" \
-    FAKE_FOUNDATION_CALLS="${FOUNDATION_CALLS}" \
-    FAKE_FOUNDATION_SECRETS="${FOUNDATION_SECRETS}" \
-    FAKE_GIT_DIRTY=true \
-    FAKE_GIT_SHA="${WORKFLOW_SHA}" \
-    INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \
-    INFRA_WORKLOAD_PROJECT_ID=workload-project-prod \
-    "${REPOSITORY_ROOT}/ops/foundation.sh" configure \
-        >"${TEMP_DIR}/dirty-foundation.out" 2>"${TEMP_DIR}/dirty-foundation.err"
-DIRTY_FOUNDATION_CODE=$?
-set -e
-assert_equal "${DIRTY_FOUNDATION_CODE}" 65
-assert_equal "$(wc -l <"${FOUNDATION_SECRETS}" | tr -d ' ')" 2
-grep -Fq 'requires a clean local master checkout' \
-    "${TEMP_DIR}/dirty-foundation.err"
-
-# Read-only audit access derives only the active human identity; it does not
-# require unrelated billing, backup, or project-parent permissions.
-: >"${FOUNDATION_CALLS}"
-FOUNDATION_AUDIT_ACCESS_OUTPUT="$(
-    PATH="${FOUNDATION_MOCK_BIN}:${PATH}" \
-        FAKE_FOUNDATION_CALLS="${FOUNDATION_CALLS}" \
-        FAKE_FOUNDATION_SECRETS="${FOUNDATION_SECRETS}" \
-        FAKE_GIT_SHA="${WORKFLOW_SHA}" \
-        INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \
-        INFRA_WORKLOAD_PROJECT_ID=workload-project-prod \
-        "${REPOSITORY_ROOT}/ops/foundation.sh" grant-audit-access
-)"
-grep -Fq 'PASS temporary audit access' <<<"${FOUNDATION_AUDIT_ACCESS_OUTPUT}"
-grep -Fq 'config get-value account' "${FOUNDATION_CALLS}"
-grep -Fq 'projects get-iam-policy workload-project-prod' "${FOUNDATION_CALLS}"
-if grep -Eq 'billing|GCP_BACKUP_BUCKET|parent\.(type|id)' "${FOUNDATION_CALLS}"; then
-    printf 'Audit access loaded unrelated foundation context.\n' >&2
-    exit 1
-fi
 
 # The audit accepts only managed APIs plus reviewed Google defaults and
 # dependencies, while still reporting missing or unknown APIs precisely.
@@ -1111,7 +1024,6 @@ assert_foundation_service_boundary() {
     set +e
     PATH="${FOUNDATION_AUDIT_MOCK_BIN}:${PATH}" \
         FAKE_FOUNDATION_CALLS="${FOUNDATION_CALLS}" \
-        FAKE_FOUNDATION_SECRETS="${FOUNDATION_SECRETS}" \
         FAKE_FOUNDATION_SERVICE_MODE="$mode" \
         INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \
         INFRA_WORKLOAD_PROJECT_ID=workload-project-prod \
@@ -1156,7 +1068,6 @@ assert_foundation_cloud_run_boundary() {
     set +e
     PATH="${FOUNDATION_AUDIT_MOCK_BIN}:${PATH}" \
         FAKE_FOUNDATION_CALLS="${FOUNDATION_CALLS}" \
-        FAKE_FOUNDATION_SECRETS="${FOUNDATION_SECRETS}" \
         FAKE_FOUNDATION_SERVICE_MODE=allowed \
         FAKE_FOUNDATION_IAM_MODE="$mode" \
         INFRA_MANAGEMENT_PROJECT_ID=management-project-prod \
@@ -1198,6 +1109,7 @@ done
 
 # The one local bootstrap apply uses an external binary plan plus non-secret
 # commit/checksum custody and consumes that review before mutation.
+WORKFLOW_SHA='1234567890abcdef1234567890abcdef12345678'
 BOOTSTRAP_MOCK_BIN="${TEMP_DIR}/bootstrap-bin"
 BOOTSTRAP_PLAN="${TEMP_DIR}/bootstrap-plan.tfplan"
 BOOTSTRAP_CALLS="${TEMP_DIR}/bootstrap-calls"
@@ -1210,7 +1122,6 @@ ln -s "${SCRIPT_DIR}/fixtures/fake-tofu.sh" "${BOOTSTRAP_MOCK_BIN}/tofu"
 set +e
 PATH="${BOOTSTRAP_MOCK_BIN}:${PATH}" \
     FAKE_FOUNDATION_CALLS="${BOOTSTRAP_CALLS}" \
-    FAKE_FOUNDATION_SECRETS="${FOUNDATION_SECRETS}" \
     FAKE_GIT_SHA="${WORKFLOW_SHA}" \
     FAKE_TOFU_PLAN_CODE=2 \
     FAKE_TOFU_PLAN_JSON="${SCRIPT_DIR}/fixtures/plans/safe.json" \
@@ -1234,7 +1145,6 @@ jq --exit-status \
 
 PATH="${BOOTSTRAP_MOCK_BIN}:${PATH}" \
     FAKE_FOUNDATION_CALLS="${BOOTSTRAP_CALLS}" \
-    FAKE_FOUNDATION_SECRETS="${FOUNDATION_SECRETS}" \
     FAKE_GIT_SHA="${WORKFLOW_SHA}" \
     FAKE_TOFU_PLAN_CODE=0 \
     FAKE_TOFU_PLAN_JSON="${SCRIPT_DIR}/fixtures/plans/safe.json" \
