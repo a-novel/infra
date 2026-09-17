@@ -32,7 +32,7 @@ fi
 
 COMMANDS=(gh jq)
 if [ "${CANDIDATE_ROOT}" = --image-only ]; then
-    COMMANDS+=(node)
+    COMMANDS+=(infra)
 else
     COMMANDS+=(git tofu)
 fi
@@ -46,7 +46,7 @@ done
 if [ "${CANDIDATE_ROOT}" = --image-only ]; then
     GITHUB_REPOSITORY="${REPOSITORY}" PULL_REQUEST="${PULL_REQUEST}" \
         HEAD_SHA="${HEAD_SHA}" BASE_SHA="${BASE_SHA}" \
-        node "${SCRIPT_DIR}/assess-image-updates.mjs" verify
+        infra assess-images verify
 else
     CANDIDATE_ROOT="$(cd -- "${CANDIDATE_ROOT}" && pwd)"
     if [ "$(git -C "${CANDIDATE_ROOT}" rev-parse HEAD)" != "${HEAD_SHA}" ] ||

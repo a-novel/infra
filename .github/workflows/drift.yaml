@@ -164,11 +164,11 @@ jobs:
           path: trusted
           persist-credentials: false
 
-      - name: Install the pinned Node.js runtime
+      - name: Build reviewed infra tooling
         if: inputs.operation == 'assess-image-update'
-        uses: actions/setup-node@v7.0.0
+        uses: $/.github/actions/setup-infra
         with:
-          node-version-file: trusted/.node-version
+          working_directory: trusted
 
       - name: Authorize the exact image-only update
         if: inputs.operation == 'assess-image-update'
@@ -180,7 +180,7 @@ jobs:
           PULL_REQUEST: ${{ inputs.pull_request }}
         run: |
           set -euo pipefail
-          node ./trusted/ops/assess-image-updates.mjs verify
+          infra assess-images verify
 
       # This check runs before credentials exist because the candidate plan can
       # execute providers and external data sources.

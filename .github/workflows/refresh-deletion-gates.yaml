@@ -38,10 +38,8 @@ jobs:
           ref: master
           persist-credentials: false
 
-      - name: Install the pinned Node.js runtime
-        uses: actions/setup-node@v7.0.0
-        with:
-          node-version-file: .node-version
+      - name: Build reviewed infra tooling
+        uses: $/.github/actions/setup-infra
 
       - name: Request assessments for validated image updates
         shell: bash
@@ -49,7 +47,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          node ./ops/assess-image-updates.mjs dispatch
+          infra assess-images dispatch
 
   refresh:
     if: >-
@@ -76,10 +74,8 @@ jobs:
           ref: master
           persist-credentials: false
 
-      - name: Install Node.js
-        uses: actions/setup-node@v7.0.0
-        with:
-          node-version-file: .node-version
+      - name: Build reviewed infra tooling
+        uses: $/.github/actions/setup-infra
 
       - name: Refresh current deletion gate jobs
         shell: bash
@@ -87,4 +83,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          node ./ops/refresh-deletion-gates.mjs
+          infra refresh-deletion-gates
