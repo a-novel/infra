@@ -128,8 +128,12 @@ materializing protected inputs or obtaining cloud credentials. The shared build 
 cache restoration; the resulting binary embeds the unchanged schemas and needs no Node packages.
 Cloud-blind gate automation also uses `infra` and the authenticated GitHub CLI: `assess-images
 dispatch`, `assess-images verify`, and `refresh-deletion-gates`. It cannot grant deletion approval.
-Use `go run ./cmd/infra <command>` for local fixture debugging. Repository lint, remaining shell
-integration tests, and Renovate validation still use development-only Node dependencies.
+Use `go run ./cmd/infra <command>` for local fixture debugging. Tests are Go plus the remaining
+shell integration suite. Node runs third-party Renovate and Prettier only; the repository contains
+no authored JavaScript. Install development dependencies with `pnpm install --frozen-lockfile` before
+running `a-novel test -y`: the Go suite exercises the pinned Renovate CLI against a local registry.
+That lookup checks extraction and update candidates; it does not create PRs or prove minimum group
+size enforcement. Separate policy and deployment-time image-family tests cover those boundaries.
 
 | Boundary                            | Scripts                                                                                                                                                                                                                                                                  |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
