@@ -124,7 +124,8 @@ func TestSelectedCompensation(t *testing.T) {
 					{Name: "infra", Args: []string{"custody", "config", "publish", "fixture-state", "release", rollback, "124", "13"}},
 				}
 				if database {
-					calls = append(calls, invocation{Name: "restore-database-release.sh", Args: []string{
+					calls = append(calls, invocation{Name: "infra", Args: []string{
+						"database-release", "restore",
 						"agora-production-test", "europe-west1-c", strings.ReplaceAll(service, "_", "-"),
 						nested(f.config, "database_hosts", service)["data_disk_id"].(string),
 						filepath.Join(f.files[3], "previous-database.json"),
@@ -167,7 +168,8 @@ func TestRebuildCompensation(t *testing.T) {
 					continue
 				}
 				writeJSON(t, filepath.Join(f.files[3], "database-mutated-"+service), true)
-				calls = append(calls, invocation{Name: "restore-database-release.sh", Args: []string{
+				calls = append(calls, invocation{Name: "infra", Args: []string{
+					"database-release", "restore",
 					"agora-production-test", "europe-west1-c", strings.ReplaceAll(service, "_", "-"),
 					nested(f.config, "database_hosts", service)["data_disk_id"].(string),
 					filepath.Join(f.files[3], "empty-database.json"),

@@ -280,7 +280,7 @@ jobs:
           zone="$(jq --raw-output '.database_zone' "${RECOVERY_DIRECTORY}/foundation.tfvars.json")"
           for service in authentication json_keys; do
             disk_id="$(jq -r --arg service "${service}" '.hosts[$service].dataDiskId' "${RECOVERY_DIRECTORY}/database.json")"
-            ./ops/restore-database-release.sh "${REPLACEMENT_PROJECT_ID}" "${zone}" "${service//_/-}" "${disk_id}" \
+            infra database-release restore "${REPLACEMENT_PROJECT_ID}" "${zone}" "${service//_/-}" "${disk_id}" \
               "${RECOVERY_DIRECTORY}/database.json"
           done
 

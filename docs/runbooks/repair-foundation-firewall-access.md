@@ -134,8 +134,8 @@ Reload the operator session and inspect each host's payload-free startup status:
 ```sh
 . ./.envrc
 go run ./cmd/infra verify-env
-./ops/database-host-readiness.sh current "${INFRA_WORKLOAD_PROJECT_ID:?}" "${INFRA_DATABASE_ZONE:?}" authentication
-./ops/database-host-readiness.sh current "${INFRA_WORKLOAD_PROJECT_ID:?}" "${INFRA_DATABASE_ZONE:?}" json-keys
+go run ./cmd/infra database-release current "${INFRA_WORKLOAD_PROJECT_ID:?}" "${INFRA_DATABASE_ZONE:?}" authentication
+go run ./cmd/infra database-release current "${INFRA_WORKLOAD_PROJECT_ID:?}" "${INFRA_DATABASE_ZONE:?}" json-keys
 ```
 
 Both statuses must start with `idle:none:`. Require a `READY` automatic snapshot of each current

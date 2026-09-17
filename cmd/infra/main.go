@@ -12,6 +12,7 @@ import (
 
 	"github.com/a-novel/infra/internal/automation"
 	"github.com/a-novel/infra/internal/custody"
+	"github.com/a-novel/infra/internal/database"
 	"github.com/a-novel/infra/internal/health"
 	"github.com/a-novel/infra/internal/isolation"
 	"github.com/a-novel/infra/internal/operator"
@@ -31,9 +32,13 @@ func main() {
 	}
 	quiet := func(ctx context.Context, output io.Writer, name string, args ...string) error {
 		command := exec.CommandContext(ctx, name, args...)
-		command.Stdout = output
 		command.Env = append(os.Environ(), "CLOUDSDK_CORE_DISABLE_PROMPTS=1")
-		return command.Run()
+		data, err := command.Output()
+		if err != nil {
+			return err
+		}
+		_, err = output.Write(data)
+		return err
 	}
 	var code int
 	if len(os.Args) > 1 && os.Args[1] == "database-isolation" {
@@ -49,6 +54,9 @@ func main() {
 		}
 		syscall.Umask(0o077)
 		code = isolation.Run(ctx, os.Args[2:], os.Getenv, execute, os.Stdout, os.Stderr)
+	} else if len(os.Args) > 1 && os.Args[1] == "database-release" {
+		syscall.Umask(0o077)
+		code = database.Run(ctx, os.Args[2:], os.Getenv, quiet, os.Stdout, os.Stderr)
 	} else if len(os.Args) > 1 && os.Args[1] == "custody" {
 		code = custody.Run(ctx, os.Args[2:], os.Getenv, quiet, os.Stdout, os.Stderr)
 	} else if len(os.Args) > 1 && os.Args[1] == "check-health" {
