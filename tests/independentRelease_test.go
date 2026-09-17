@@ -84,7 +84,7 @@ func TestSelectedRecoveryJobs(t *testing.T) {
 				if kind == "monitor" {
 					job, key = "agora-postgres-backup-monitor", "postgresBackupMonitor"
 				}
-				calls = append(calls, invocation{"gcloud", []string{"run", "jobs", "execute", job, "--project=agora-production-test", "--region=europe-west1", "--wait", "--quiet", "--format=value(metadata.name)"}, job + "-test"})
+				calls = append(calls, invocation{Name: "gcloud", Args: []string{"run", "jobs", "execute", job, "--project=agora-production-test", "--region=europe-west1", "--wait", "--quiet", "--format=value(metadata.name)"}, Output: job + "-test"})
 				nested(operations, "executions")[key] = job + "-test"
 			}
 			f.driver(t, "recovery-verification", calls)
@@ -112,23 +112,23 @@ func TestSelectedCompensation(t *testing.T) {
 				revision := nested(tfvars, "application_release", service)["active_revision"].(string)
 				traffic := object{"status": object{"traffic": []any{object{"revisionName": revision, "percent": 100}}}}
 				calls := []invocation{
-					{"gcloud", []string{"run", "services", "update-traffic", api, "--project=agora-production-test", "--region=europe-west1", "--to-revisions=" + revision + "=100", "--quiet"}, ""},
-					{"gcloud", []string{"run", "services", "describe", api, "--project=agora-production-test", "--region=europe-west1", "--format=json"}, jsonText(t, traffic)},
-					{"create-reviewed-plan.sh", []string{"release", "fixture-state", f.identity.Commit, "124-13", rollback}, ""},
-					{"apply-reviewed-plan.sh", []string{"release", "fixture-state", f.identity.Commit, "124-13", rollback}, ""},
-					{"config-custody.sh", []string{"publish", "fixture-state", "release", rollback, "124", "13"}, ""},
+					{Name: "gcloud", Args: []string{"run", "services", "update-traffic", api, "--project=agora-production-test", "--region=europe-west1", "--to-revisions=" + revision + "=100", "--quiet"}},
+					{Name: "gcloud", Args: []string{"run", "services", "describe", api, "--project=agora-production-test", "--region=europe-west1", "--format=json"}, Output: jsonText(t, traffic)},
+					{Name: "create-reviewed-plan.sh", Args: []string{"release", "fixture-state", f.identity.Commit, "124-13", rollback}},
+					{Name: "apply-reviewed-plan.sh", Args: []string{"release", "fixture-state", f.identity.Commit, "124-13", rollback}},
+					{Name: "config-custody.sh", Args: []string{"publish", "fixture-state", "release", rollback, "124", "13"}},
 				}
 				if database {
-					calls = append(calls, invocation{"restore-database-release.sh", []string{
+					calls = append(calls, invocation{Name: "restore-database-release.sh", Args: []string{
 						"agora-production-test", "europe-west1-c", strings.ReplaceAll(service, "_", "-"),
 						nested(f.config, "database_hosts", service)["data_disk_id"].(string),
 						filepath.Join(f.files[3], "previous-database.json"),
-					}, ""})
+					}})
 				}
 				receiptPath := filepath.Join(f.files[3], "rollback-receipt.json")
 				calls = append(calls,
-					invocation{"infra", []string{"receipt", "build", "rollback", filepath.Join(f.files[3], "rollback-release.json"), rollback, filepath.Join(f.files[3], "rollback-operations.json"), receiptPath}, ""},
-					invocation{"receipt-custody.sh", []string{"publish", "fixture-receipts", receiptPath, "124", "1"}, ""},
+					invocation{Name: "infra", Args: []string{"receipt", "build", "rollback", filepath.Join(f.files[3], "rollback-release.json"), rollback, filepath.Join(f.files[3], "rollback-operations.json"), receiptPath}},
+					invocation{Name: "receipt-custody.sh", Args: []string{"publish", "fixture-receipts", receiptPath, "124", "1"}},
 				)
 				f.driver(t, "rollback", calls)
 				receipt := readJSON(t, receiptPath)
@@ -162,11 +162,11 @@ func TestRebuildCompensation(t *testing.T) {
 					continue
 				}
 				writeJSON(t, filepath.Join(f.files[3], "database-mutated-"+service), true)
-				calls = append(calls, invocation{"restore-database-release.sh", []string{
+				calls = append(calls, invocation{Name: "restore-database-release.sh", Args: []string{
 					"agora-production-test", "europe-west1-c", strings.ReplaceAll(service, "_", "-"),
 					nested(f.config, "database_hosts", service)["data_disk_id"].(string),
 					filepath.Join(f.files[3], "empty-database.json"),
-				}, ""})
+				}})
 			}
 			f.driver(t, "rollback", calls)
 			require.JSONEq(t, "null", read(t, filepath.Join(f.files[3], "empty-database.json")))

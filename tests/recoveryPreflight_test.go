@@ -37,14 +37,14 @@ func TestRecoveryPreflight(t *testing.T) {
 	var calls []invocation
 	for _, pin := range nested(readJSON(t, filepath.Join(f.dir, "first/release.json")), "cloud")["secretVersions"].([]any) {
 		pair := pin.([]any)
-		calls = append(calls, invocation{"gcloud", []string{"secrets", "versions", "describe", fmt.Sprint(pair[1]), "--secret=" + pair[0].(string), "--project=agora-management-test", "--format=value(state)"}, "ENABLED\n"})
+		calls = append(calls, invocation{Name: "gcloud", Args: []string{"secrets", "versions", "describe", fmt.Sprint(pair[1]), "--secret=" + pair[0].(string), "--project=agora-management-test", "--format=value(state)"}, Output: "ENABLED\n"})
 	}
 	require.Len(t, calls, 7)
 	var quotas []object
 	for _, quota := range []struct{ service, value string }{{"run.googleapis.com", "8000"}, {"run.googleapis.com", "17179869184"}, {"compute.googleapis.com", "4"}} {
 		quotas = append(quotas, object{"service": quota.service, "dimensions": object{"region": "europe-west1"}, "quotaConfig": object{"preferredValue": quota.value, "grantedValue": quota.value}})
 	}
-	calls = append(calls, invocation{"gcloud", []string{"quotas", "preferences", "list", "--project=agora-recovery-test", "--format=json"}, jsonText(t, quotas)})
+	calls = append(calls, invocation{Name: "gcloud", Args: []string{"quotas", "preferences", "list", "--project=agora-recovery-test", "--format=json"}, Output: jsonText(t, quotas)})
 	f.command(t, "gcloud")
 	f.expect(t, calls)
 	code, out := f.script(t, "preflight-release", filepath.Join(recovered, "preflight.json"))
