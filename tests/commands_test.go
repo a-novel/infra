@@ -1,18 +1,24 @@
 package tests_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/a-novel/infra/internal/release"
 )
 
-// fixtureCommand implements only the calls made by candidate/probe tests.
+// fixtureCommand implements only the calls expected by these integration tests.
 // An unexpected invocation leaves a marker checked by the parent, even if the
 // production script masks its exit code as an expected deployment failure.
 func fixtureCommand(name string, args []string) (int, error) {
+	if sequence := os.Getenv("INFRA_TEST_SEQUENCE"); sequence != "" {
+		return expectedCommand(sequence, name, args)
+	}
 	switch name {
 	case "tofu-gate.sh", "create-reviewed-plan.sh", "apply-reviewed-plan.sh":
 		if os.Getenv("RELEASE_PLAN_SERVICES") != `["json_keys"]` {
@@ -79,6 +85,34 @@ func fixtureCommand(name string, args []string) (int, error) {
 		return 99, fmt.Errorf("unexpected fixture command: %s", name)
 	}
 	return 0, nil
+}
+
+// expectedCommand consumes exact calls in order; receipt construction uses the
+// real Go entry point so compensation artifacts remain compiler-validated.
+func expectedCommand(path, name string, args []string) (int, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 99, err
+	}
+	var calls []invocation
+	if err = json.Unmarshal(data, &calls); err != nil {
+		return 99, err
+	}
+	if len(calls) == 0 || calls[0].Name != name || !slices.Equal(calls[0].Args, args) {
+		return 99, fmt.Errorf("unexpected invocation: %s %v; remaining: %v", name, args, calls)
+	}
+	remaining, err := json.Marshal(calls[1:])
+	if err != nil {
+		return 99, err
+	}
+	if err = os.WriteFile(path, remaining, 0o600); err != nil {
+		return 99, err
+	}
+	if name == "infra" {
+		return release.Run(args, os.Getenv, os.Stdout, os.Stderr), nil
+	}
+	_, err = fmt.Fprint(os.Stdout, calls[0].Output)
+	return 0, err
 }
 
 func record(line string) error {
