@@ -38,6 +38,7 @@ test("operational jobs build reviewed Go tooling before protected inputs or cred
     release.jobs.release,
     release.jobs["database-isolation"],
     recovery.jobs.recover,
+    drift.jobs.health,
   ]) {
     const build = job.steps.findIndex(
       (step) => step.uses === "$/.github/actions/setup-infra",
@@ -107,7 +108,7 @@ test("synthetic health reads private foundation coordinates without logging a re
     STATE_BUCKET: "${{ vars.GCP_STATE_BUCKET }}",
   });
   assert.match(check.run, /config-custody\.sh fetch/);
-  assert.match(check.run, /check-authentication-health\.sh/);
+  assert.match(check.run, /infra check-health deployed/);
   assert.doesNotMatch(check.run, /\b(cat|tee)\b|set -x/);
 });
 

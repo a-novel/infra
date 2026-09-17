@@ -123,7 +123,7 @@ for protected settings and coverage limits.
 Do not call these as ad-hoc operator shortcuts. Their stable paths are part of the reviewed GitHub
 Actions security boundary.
 
-Release, recovery, database-isolation, and image-assessment jobs build `infra` from the reviewed checkout before
+Release, recovery, database-isolation, health, and image-assessment jobs build `infra` from the reviewed checkout before
 materializing protected inputs or obtaining cloud credentials. The shared build action disables
 cache restoration; the resulting binary embeds the unchanged schemas and needs no Node packages.
 Cloud-blind gate automation also uses `infra` and the authenticated GitHub CLI: `assess-images
@@ -139,7 +139,7 @@ integration tests, and Renovate validation still use development-only Node depen
 | Release compilation and promotion   | `infra compile-release`, `infra validate-images`, `verify-release-images.sh`, `promote-release-images.sh`, `preflight-release.sh`                                                                                                                                        |
 | Ordered release execution           | `release-orchestrator.sh`, `google-release-driver.sh`, `prepare-database-change.sh`, `deploy-database-release.sh`, `restore-database-release.sh`, `await-auth-initialization.sh`                                                                                         |
 | Recovery                            | `recover-first-launch.sh`, `infra compile-recovery`, `verify-recovery-points.sh`, `promote-recovery-images.sh`                                                                                                                                                           |
-| Health and root validation          | `check-authentication-health.sh`, `check-root.sh`, `lib/roots.sh`                                                                                                                                                                                                        |
+| Health and root validation          | `infra check-health`, `check-root.sh`, `lib/roots.sh`                                                                                                                                                                                                                    |
 
 These scripts stay single-purpose because their inputs, permissions, and diagnostics differ. A lower
 file count would not justify coupling state access, deployment authority, and recovery authority.

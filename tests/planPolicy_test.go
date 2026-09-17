@@ -46,6 +46,35 @@ func (f *sandbox) summary(t *testing.T, root string, value object, expected int)
 	return out
 }
 
+func TestPlanSummary(t *testing.T) {
+	t.Parallel()
+	for _, testCase := range []struct {
+		fixture string
+		code    int
+		rows    []string
+	}{
+		{"safe", 0, []string{"create\tgoogle_cloud_run_v2_job\t1\tcurrent", "import\tgoogle_project\t1\tcurrent", "update\tgoogle_cloud_run_v2_service\t1\tcurrent"}},
+		{"no-changes", 0, []string{"action\tresource_type\tcount\tgeneration"}},
+		{"protected", 3, []string{"delete\tgoogle_project\t1\tdeposed", "forget\tgoogle_secret_manager_secret\t1\tcurrent", "replace\tgoogle_compute_disk\t1\tcurrent"}},
+		{"unsupported", 65, []string{"unsupported action combination"}},
+	} {
+		t.Run(testCase.fixture, func(t *testing.T) {
+			t.Parallel()
+			f := setup(t)
+			code, output := f.script(t, "plan-summary", "foundation", filepath.Join(f.root, "tests/fixtures/plans", testCase.fixture+".json"))
+			expectCode(t, testCase.code, code, output)
+			for _, row := range testCase.rows {
+				require.Contains(t, output, row)
+			}
+			require.NotContains(t, output, "fixture-")
+			require.NotContains(t, output, "no-op\t")
+			if testCase.fixture == "no-changes" {
+				require.Equal(t, testCase.rows[0]+"\n", output)
+			}
+		})
+	}
+}
+
 func TestPlanProtections(t *testing.T) {
 	t.Parallel()
 	for _, rule := range fixtureYAML[[]struct {

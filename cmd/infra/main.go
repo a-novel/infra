@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/a-novel/infra/internal/automation"
+	"github.com/a-novel/infra/internal/health"
 	"github.com/a-novel/infra/internal/operator"
 	"github.com/a-novel/infra/internal/release"
 	"github.com/a-novel/infra/internal/workflow"
@@ -25,13 +26,15 @@ func main() {
 		}
 		return command.Run()
 	}
+	quiet := func(ctx context.Context, output io.Writer, name string, args ...string) error {
+		command := exec.CommandContext(ctx, name, args...)
+		command.Stdout = output
+		return command.Run()
+	}
 	var code int
-	if len(os.Args) > 1 && (os.Args[1] == "assess-images" || os.Args[1] == "refresh-deletion-gates") {
-		quiet := func(ctx context.Context, output io.Writer, name string, args ...string) error {
-			command := exec.CommandContext(ctx, name, args...)
-			command.Stdout = output
-			return command.Run()
-		}
+	if len(os.Args) > 1 && os.Args[1] == "check-health" {
+		code = health.Run(ctx, os.Args[2:], quiet, nil, os.Stdout, os.Stderr)
+	} else if len(os.Args) > 1 && (os.Args[1] == "assess-images" || os.Args[1] == "refresh-deletion-gates") {
 		code = automation.Run(ctx, os.Args[1:], os.Getenv, quiet, os.Stdout, os.Stderr)
 	} else if len(os.Args) > 1 && (os.Args[1] == "database" || os.Args[1] == "verify-env") {
 		syscall.Umask(0o077)
