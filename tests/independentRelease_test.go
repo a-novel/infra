@@ -11,11 +11,12 @@ import (
 	"github.com/a-novel/infra/internal/release"
 )
 
-func TestSelectedReleaseGraph(t *testing.T) {
+func TestReleaseGraph(t *testing.T) {
 	t.Parallel()
 	for service, selected := range map[string][]string{
 		"json_keys":      {"json-migrations", "json-rotation", "recovery-verification", "json-smoke", "json-traffic"},
 		"authentication": {"authentication-migrations", "recovery-verification", "authentication-initialization", "authentication-smoke", "authentication-traffic"},
+		"first-launch":   {"json-migrations", "json-rotation", "authentication-migrations", "recovery-verification", "authentication-initialization", "json-smoke", "json-traffic", "authentication-smoke", "authentication-traffic"},
 	} {
 		steps := append([]string{"preflight", "promote", "plan", "database", "candidate"}, selected...)
 		steps = append(steps, "active", "receipt")
@@ -28,7 +29,11 @@ func TestSelectedReleaseGraph(t *testing.T) {
 				t.Parallel()
 				f := setup(t)
 				input := filepath.Join(f.dir, "release.json")
-				writeJSON(t, input, object{"mode": "service", "services": []string{service}})
+				scope := object{"mode": "service", "services": []string{service}}
+				if service == "first-launch" {
+					scope = object{"mode": "first-launch", "services": []string{"json_keys", "authentication"}}
+				}
+				writeJSON(t, input, scope)
 				f.env["RELEASE_TEST_LOG"], f.env["RELEASE_TEST_FAIL_STEP"] = filepath.Join(f.dir, "calls"), failure
 				code, out := f.script(t, "release-orchestrator", filepath.Join(f.root, "tests/fixtures/fake-release-driver.sh"), input)
 				expected, status := steps, 0

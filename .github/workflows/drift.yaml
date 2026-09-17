@@ -121,6 +121,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Build reviewed infra tooling
+        uses: $/.github/actions/setup-infra
+
       - name: Authenticate as the read-only plan boundary
         uses: google-github-actions/auth@v3.0.0
         with:
@@ -143,7 +146,7 @@ jobs:
           umask 077
           config="${RUNNER_TEMP}/foundation-health.tfvars.json"
           ./ops/config-custody.sh fetch "${STATE_BUCKET}" foundation "${config}"
-          ./ops/check-authentication-health.sh "${config}"
+          infra check-health deployed "${config}"
 
   assess-resource-deletion:
     if: >-

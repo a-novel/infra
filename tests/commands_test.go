@@ -93,13 +93,6 @@ func fixtureCommand(name string, args []string) (int, error) {
 // expectedCommand consumes exact calls in order; receipt construction uses the
 // real Go entry point so compensation artifacts remain compiler-validated.
 func expectedCommand(path, name string, args []string) (int, error) {
-	outputFile := ""
-	if name == "curl" {
-		if len(args) != 17 || args[12] != "--output" || filepath.Dir(args[13]) != os.Getenv("RELEASE_DIRECTORY") || !strings.HasPrefix(filepath.Base(args[13]), "health.") {
-			return 99, fmt.Errorf("unexpected health response destination: %v", args)
-		}
-		outputFile, args[13] = args[13], "<health-file>"
-	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return 99, err
@@ -118,13 +111,8 @@ func expectedCommand(path, name string, args []string) (int, error) {
 	if err = os.WriteFile(path, remaining, 0o600); err != nil {
 		return 99, err
 	}
-	if name == "infra" {
+	if name == "infra" && len(args) > 0 && args[0] == "receipt" {
 		return release.Run(args, os.Getenv, os.Stdout, os.Stderr), nil
-	}
-	if outputFile != "" {
-		if err = os.WriteFile(outputFile, []byte(calls[0].Body), 0o600); err != nil {
-			return 99, err
-		}
 	}
 	_, err = fmt.Fprint(os.Stdout, calls[0].Output)
 	return calls[0].Code, err
