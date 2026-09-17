@@ -248,7 +248,7 @@ gcloud storage buckets remove-iam-policy-binding "gs://${RECEIPT_BUCKET:?}" --pr
 
 ### Interrupted runner or failed restoration
 
-A runner killed before its cleanup trap finishes can leave Authentication on the temporary revision.
+A runner killed before compensation finishes can leave Authentication on the temporary revision.
 Do not start another drill. Wait for the running operation to finish and inspect the hosts. From a
 clean current `master`, use the same selected receipt and the protected restore-only path:
 
