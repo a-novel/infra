@@ -346,4 +346,4 @@ jobs:
           trap 'rm -f -- "${file}"' EXIT
           printf '%s' "${RELEASE_CONFIG}" >"${file}"
           unset RELEASE_CONFIG
-          ./ops/drill-database-isolation.sh "${RELEASE_ACTION%%-*}" "${TARGET_RECEIPT}" "${CONFIRMATION}" "${file}"
+          infra database-isolation "${RELEASE_ACTION%%-*}" "${TARGET_RECEIPT}" "${CONFIRMATION}" "${file}"
