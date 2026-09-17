@@ -1,0 +1,50 @@
+- type: google_storage_bucket
+  fields:
+    retention_policy.0.retention_period: ["604800", "86400"]
+    retention_policy: [[{ retention_period: "604800" }], []]
+    retention_policy.0.is_locked: [true, false]
+    versioning.0.enabled: [true, false]
+    soft_delete_policy.0.retention_duration_seconds: [604800, 0]
+    lifecycle_rule:
+      - [{ action: [{ type: Delete }], condition: [{ age: 14 }] }]
+      - [{ action: [{ type: Delete }], condition: [{ age: 1 }] }]
+    public_access_prevention: [enforced, inherited]
+    uniform_bucket_level_access: [true, false]
+- type: google_secret_manager_secret
+  fields:
+    version_destroy_ttl: [2592000s, 0s]
+- type: google_compute_instance_template
+  fields:
+    disk:
+      - [
+          {
+            device_name: data,
+            source: data,
+            mode: READ_WRITE,
+            auto_delete: false,
+          },
+        ]
+      - [
+          {
+            device_name: data,
+            source: data,
+            mode: READ_WRITE,
+            auto_delete: true,
+          },
+        ]
+- type: google_compute_instance_group_manager
+  fields:
+    stateful_disk: [[{ device_name: data, delete_rule: NEVER }], []]
+- type: google_compute_resource_policy
+  fields:
+    snapshot_schedule_policy.0.retention_policy.0.max_retention_days: [7, 1]
+- type: google_cloud_scheduler_job
+  fields:
+    paused: [false, true]
+    schedule: ["0 */4 * * *", "0 0 * * *"]
+    time_zone: [UTC, Europe/Paris]
+- type: future_resource
+  fields:
+    deletion_protection: [true, false]
+    force_destroy: [false, true]
+    deletion_policy: [PREVENT, DELETE]
