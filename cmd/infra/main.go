@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/a-novel/infra/internal/automation"
+	"github.com/a-novel/infra/internal/custody"
 	"github.com/a-novel/infra/internal/health"
 	"github.com/a-novel/infra/internal/operator"
 	"github.com/a-novel/infra/internal/release"
@@ -29,10 +30,13 @@ func main() {
 	quiet := func(ctx context.Context, output io.Writer, name string, args ...string) error {
 		command := exec.CommandContext(ctx, name, args...)
 		command.Stdout = output
+		command.Env = append(os.Environ(), "CLOUDSDK_CORE_DISABLE_PROMPTS=1")
 		return command.Run()
 	}
 	var code int
-	if len(os.Args) > 1 && os.Args[1] == "check-health" {
+	if len(os.Args) > 1 && os.Args[1] == "custody" {
+		code = custody.Run(ctx, os.Args[2:], os.Getenv, quiet, os.Stdout, os.Stderr)
+	} else if len(os.Args) > 1 && os.Args[1] == "check-health" {
 		code = health.Run(ctx, os.Args[2:], quiet, nil, os.Stdout, os.Stderr)
 	} else if len(os.Args) > 1 && (os.Args[1] == "assess-images" || os.Args[1] == "refresh-deletion-gates") {
 		code = automation.Run(ctx, os.Args[1:], os.Getenv, quiet, os.Stdout, os.Stderr)

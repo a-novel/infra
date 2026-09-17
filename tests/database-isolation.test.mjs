@@ -71,7 +71,6 @@ async function fixture(t, scenario = "success") {
   await writeFile(receiptFile, JSON.stringify(receipt));
   for (const file of [
     "drill-database-isolation.sh",
-    "receipt-custody.sh",
     "prepare-database-change.sh",
     "deploy-database-release.sh",
     "restore-database-release.sh",
@@ -501,7 +500,7 @@ test("isolation job is manual, release-locked, and has no apply or SSH authority
   );
   assert.doesNotMatch(
     JSON.stringify(job),
-    /tofu|compute ssh|add-iam|receipt-custody.sh.*publish/,
+    /tofu|compute ssh|add-iam|infra custody receipt publish/,
   );
   const guard = job.steps.findIndex(
     (step) => step.name === "Validate the manual isolation request",

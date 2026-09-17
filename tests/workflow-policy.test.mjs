@@ -28,6 +28,12 @@ const release = parse(
 );
 
 test("operational jobs build reviewed Go tooling before protected inputs or credentials", async () => {
+  const foundation = parse(
+    await readFile(
+      path.join(repositoryRoot, ".github/workflows/foundation.yaml"),
+      "utf8",
+    ),
+  );
   const recovery = parse(
     await readFile(
       path.join(repositoryRoot, ".github/workflows/recovery.yaml"),
@@ -39,6 +45,9 @@ test("operational jobs build reviewed Go tooling before protected inputs or cred
     release.jobs["database-isolation"],
     recovery.jobs.recover,
     drift.jobs.health,
+    drift.jobs.inspect,
+    drift.jobs["assess-resource-deletion"],
+    foundation.jobs.execute,
   ]) {
     const build = job.steps.findIndex(
       (step) => step.uses === "$/.github/actions/setup-infra",
@@ -107,7 +116,7 @@ test("synthetic health reads private foundation coordinates without logging a re
   assert.deepEqual(check.env, {
     STATE_BUCKET: "${{ vars.GCP_STATE_BUCKET }}",
   });
-  assert.match(check.run, /config-custody\.sh fetch/);
+  assert.match(check.run, /infra custody config fetch/);
   assert.match(check.run, /infra check-health deployed/);
   assert.doesNotMatch(check.run, /\b(cat|tee)\b|set -x/);
 });

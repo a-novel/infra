@@ -23,7 +23,7 @@ PLAN_FILE="$(mktemp)"
 trap 'rm -f -- "${PLAN_FILE}" "${PLAN_FILE}.destructive"' EXIT
 chmod 600 "${PLAN_FILE}"
 
-"${SCRIPT_DIR}/plan-custody.sh" fetch \
+infra custody plan fetch \
     "${STATE_BUCKET}" "${ROOT_NAME}" "${COMMIT}" "${PLAN_ID}" "${PLAN_FILE}"
 
 ALLOW_RESOURCE_DELETION=false
@@ -33,7 +33,7 @@ if [ "$(<"${PLAN_FILE}.destructive")" = true ]; then
     ALLOW_RESOURCE_DELETION=true
 fi
 
-"${SCRIPT_DIR}/plan-custody.sh" consume \
+infra custody plan consume \
     "${STATE_BUCKET}" "${ROOT_NAME}" "${COMMIT}" "${PLAN_ID}"
 
 ALLOW_RESOURCE_DELETION="${ALLOW_RESOURCE_DELETION}" \

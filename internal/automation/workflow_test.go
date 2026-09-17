@@ -80,7 +80,7 @@ func TestWorkflowBoundaries(t *testing.T) {
 	for i, s := range steps {
 		if s.Uses == "$/.github/actions/setup-infra" {
 			build = i
-			require.Equal(t, "inputs.operation == 'assess-image-update'", s.If)
+			require.Empty(t, s.If)
 			require.Equal(t, "trusted", s.With["working_directory"])
 		}
 		if strings.Contains(s.Run, "infra assess-images verify") {

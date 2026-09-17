@@ -114,7 +114,7 @@ jobs:
           set -euo pipefail
           umask 077
           file="${RUNNER_TEMP}/target-receipt.json"
-          ./ops/receipt-custody.sh fetch \
+          infra custody receipt fetch \
             "${RECEIPT_BUCKET}" "${file}" "${TARGET_RECEIPT}"
           printf 'file=%s\n' "${file}" >>"${GITHUB_OUTPUT}"
 

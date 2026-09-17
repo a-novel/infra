@@ -44,6 +44,7 @@ func TestDeletionAssessment(t *testing.T) {
 			head, base := strings.TrimSpace(out), strings.Repeat("b", 40)
 			f.fake(t, "gh", "fake-deletion-gate-gh.sh")
 			f.fake(t, "gcloud", "fake-gcloud-storage.sh")
+			f.command(t, "infra")
 			f.fake(t, "tofu", "fake-tofu.sh")
 			storage := filepath.Join(f.dir, "storage")
 			if testCase.config != nil {

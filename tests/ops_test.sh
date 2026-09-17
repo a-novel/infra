@@ -349,8 +349,10 @@ mkdir -p "${IMAGE_ONLY_BIN}"
 ln -s "${SCRIPT_DIR}/fixtures/fake-deletion-gate-gh.sh" "${IMAGE_ONLY_BIN}/gh"
 ln -s "${SCRIPT_DIR}/fixtures/fake-gcloud-storage.sh" "${IMAGE_ONLY_BIN}/gcloud"
 # shellcheck disable=SC2016
-printf '%s\n' '#!/bin/bash' '[ "$*" = "assess-images verify" ] || exit 99' \
-    'exit "${FAKE_INFRA_VERIFY_CODE:-0}"' >"${IMAGE_ONLY_BIN}/infra"
+printf '%s\n' '#!/bin/bash' \
+    'if [ "$*" = "assess-images verify" ]; then exit "${FAKE_INFRA_VERIFY_CODE:-0}"; fi' \
+    '[ "$1 $2" = "custody config" ] || exit 99' \
+    'exec "${REAL_INFRA}" "$@"' >"${IMAGE_ONLY_BIN}/infra"
 printf '%s\n' '#!/bin/bash' 'exit 97' >"${IMAGE_ONLY_BIN}/tofu"
 chmod 0700 "${IMAGE_ONLY_BIN}/infra" "${IMAGE_ONLY_BIN}/tofu"
 
@@ -358,8 +360,10 @@ assert_image_only_assessment() {
     local expected_code="$1"
     local output="${TEMP_DIR}/automatic-assessment.json"
     rm -f -- "${output}"
-    local code=0
+    local code=0 real_infra
+    real_infra="$(command -v infra)"
     PATH="${IMAGE_ONLY_BIN}:${PATH}" \
+        REAL_INFRA="${real_infra}" \
         FAKE_GATE_BASE="${DELETION_BASE}" FAKE_GATE_HEAD="${DELETION_HEAD}" \
         FAKE_GCS_ROOT="${TEMP_DIR}/image-only-gcs" \
         "${REPOSITORY_ROOT}/ops/prepare-resource-deletion-assessment.sh" \
@@ -394,7 +398,7 @@ CANDIDATE_HEAD="$(git -C "${CANDIDATE_REPOSITORY}" rev-parse HEAD)"
 printf '%s\n' '{}' >"${TEMP_DIR}/foundation-current.json"
 PATH="${DELETION_GATE_BIN}:${PATH}" \
     FAKE_GCS_ROOT="${TEMP_DIR}/empty-gcs" \
-    "${REPOSITORY_ROOT}/ops/config-custody.sh" publish \
+    infra custody config publish \
         agora-state-test foundation "${TEMP_DIR}/foundation-current.json" 1 1 \
         >/dev/null
 DESTRUCTIVE_PLAN_ASSESSMENT="${TEMP_DIR}/destructive-plan-assessment.json"
@@ -932,11 +936,11 @@ ln -s "${REPOSITORY_ROOT}/ops/recover-first-launch.sh" \
 # shellcheck disable=SC2016
 printf '%s\n' \
     '#!/bin/bash' \
-    'if [ "$#" -ne 3 ] || [ "$1" != latest ] || [ "$2" != agora-receipts-test ]; then exit 64; fi' \
+    'if [ "$#" -ne 5 ] || [ "$1 $2 $3 $4" != "custody receipt latest agora-receipts-test" ]; then exit 64; fi' \
     'printf "receipt\n" >>"${FIRST_LAUNCH_RECOVERY_LOG}"' \
-    'if [ "${RECOVERY_RECEIPT_PRESENT:-false}" = true ]; then printf "{}\\n" >"$3"; exit 0; fi' \
+    'if [ "${RECOVERY_RECEIPT_PRESENT:-false}" = true ]; then printf "{}\\n" >"$5"; exit 0; fi' \
     'exit 4' \
-    >"${FIRST_LAUNCH_RECOVERY_DIR}/receipt-custody.sh"
+    >"${FIRST_LAUNCH_RECOVERY_DIR}/infra"
 # shellcheck disable=SC2016
 printf '%s\n' \
     '#!/bin/bash' \
@@ -945,14 +949,14 @@ printf '%s\n' \
     'printf "restore\n" >>"${FIRST_LAUNCH_RECOVERY_LOG}"' \
     >"${FIRST_LAUNCH_RECOVERY_DIR}/restore-database-release.sh"
 chmod 0700 \
-    "${FIRST_LAUNCH_RECOVERY_DIR}/receipt-custody.sh" \
+    "${FIRST_LAUNCH_RECOVERY_DIR}/infra" \
     "${FIRST_LAUNCH_RECOVERY_DIR}/restore-database-release.sh"
 
 FAILED_FIRST_LAUNCH_REVISION="$(printf 'd%.0s' {1..40})"
 : >"${FIRST_LAUNCH_RECOVERY_LOG}"
 : >"${GCLOUD_ARGUMENT_LOG}"
 FIRST_LAUNCH_RECOVERY_OUTPUT="$(
-    PATH="${MOCK_BIN}:${PATH}" \
+    PATH="${FIRST_LAUNCH_RECOVERY_DIR}:${MOCK_BIN}:${PATH}" \
         GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
         FIRST_LAUNCH_RECOVERY_LOG="${FIRST_LAUNCH_RECOVERY_LOG}" \
         RECOVERY_REVISION="${FAILED_FIRST_LAUNCH_REVISION}" \
@@ -967,7 +971,7 @@ assert_equal "$(grep -Fxc CALL "${GCLOUD_ARGUMENT_LOG}")" 2
 
 : >"${FIRST_LAUNCH_RECOVERY_LOG}"
 set +e
-PATH="${MOCK_BIN}:${PATH}" \
+PATH="${FIRST_LAUNCH_RECOVERY_DIR}:${MOCK_BIN}:${PATH}" \
     GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
     FIRST_LAUNCH_RECOVERY_LOG="${FIRST_LAUNCH_RECOVERY_LOG}" \
     RECOVERY_REVISION="$(printf 'e%.0s' {1..40})" \
@@ -986,7 +990,7 @@ grep -Fq 'not the exact interrupted first-launch state' \
 : >"${FIRST_LAUNCH_RECOVERY_LOG}"
 : >"${GCLOUD_ARGUMENT_LOG}"
 set +e
-PATH="${MOCK_BIN}:${PATH}" \
+PATH="${FIRST_LAUNCH_RECOVERY_DIR}:${MOCK_BIN}:${PATH}" \
     GCLOUD_ARGUMENT_LOG="${GCLOUD_ARGUMENT_LOG}" \
     FIRST_LAUNCH_RECOVERY_LOG="${FIRST_LAUNCH_RECOVERY_LOG}" \
     RECOVERY_RECEIPT_PRESENT=true \
@@ -1365,22 +1369,15 @@ grep -Fq 'mock execution failure: agora-json-keys-migrations-execution1' \
     "${TEMP_DIR}/release-job-execution-failed.err"
 
 # Authentication initialization is a one-time observation gate, never an
-# automated invocation. Exercise durable-marker, absent, failed, stale, and
-# wrong-job outcomes with a zero-wait fake Cloud Run control plane.
+# automated invocation. Exercise absent, failed, stale, and wrong-job executions
+# with a zero-wait fake Cloud Run control plane; Go tests cover stored markers.
 INIT_MOCK_BIN="${TEMP_DIR}/init-bin"
 mkdir -p "${INIT_MOCK_BIN}"
 # shellcheck disable=SC2016
 printf '%s\n' \
     '#!/bin/bash' \
     'if [ "$1 $2 $3" = "storage objects list" ]; then' \
-    '    if [ "${INIT_LIST_FAILURE:-false}" = true ]; then exit 1; fi' \
-    '    if [ "${INIT_EXISTING_MARKER:-false}" = true ]; then' \
-    '        if [ "$5" = "--format=value(name)" ]; then printf "%s\n" "production/initialization/1001/complete.json";' \
-    '        else printf "%s\n" "https://storage.googleapis.com/storage/v1/b/agora-receipts-test/o/production/initialization/1001/complete.json#123456"; fi' \
-    '    fi' \
-    'elif [ "$1 $2" = "storage cp" ] && [[ "$3" == gs://* ]]; then' \
-    '    if [ "${INIT_EXISTING_MARKER:-false}" != true ]; then exit 1; fi' \
-    '    printf "%s\n" "${INIT_MARKER_JSON}" >"$4"' \
+    '    exit 0' \
     'elif [ "$1 $2 $3 $4" = "run jobs executions list" ]; then' \
     '    printf "%s\n" "${INIT_EXECUTIONS_JSON:-[]}"' \
     'elif [ "$1 $2" = "storage cp" ] && [[ "$4" == gs://* ]]; then' \
@@ -1391,30 +1388,7 @@ printf '%s\n' \
     >"${INIT_MOCK_BIN}/gcloud"
 chmod 0700 "${INIT_MOCK_BIN}/gcloud"
 
-INIT_MARKER_JSON='{"schemaVersion":2,"project":"agora-production-test","dataDiskId":"1001","commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","execution":"agora-authentication-init-valid","completedAt":"2026-08-25T12:00:00Z"}'
 INIT_UPLOAD_LOG="${TEMP_DIR}/init-upload.log"
-PATH="${INIT_MOCK_BIN}:${PATH}" \
-    INIT_EXISTING_MARKER=true \
-    INIT_MARKER_JSON="${INIT_MARKER_JSON}" \
-    INIT_UPLOAD_LOG="${INIT_UPLOAD_LOG}" \
-    "${REPOSITORY_ROOT}/ops/await-auth-initialization.sh" \
-    agora-production-test europe-west1 agora-receipts-test \
-    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 1001 \
-    >"${TEMP_DIR}/init-existing.out"
-assert_equal "$(<"${TEMP_DIR}/init-existing.out")" agora-authentication-init-valid
-
-set +e
-PATH="${INIT_MOCK_BIN}:${PATH}" \
-    INIT_LIST_FAILURE=true \
-    INIT_MARKER_JSON="${INIT_MARKER_JSON}" \
-    INIT_UPLOAD_LOG="${INIT_UPLOAD_LOG}" \
-    "${REPOSITORY_ROOT}/ops/await-auth-initialization.sh" \
-    agora-production-test europe-west1 agora-receipts-test \
-    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 1001 \
-    >/dev/null 2>&1
-INIT_LIST_FAILURE_CODE=$?
-set -e
-assert_equal "${INIT_LIST_FAILURE_CODE}" 70
 
 run_failed_init_case() {
     local label="$1"
@@ -1425,7 +1399,6 @@ run_failed_init_case() {
         INITIALIZATION_MAX_POLLS=1 \
         INITIALIZATION_POLL_SECONDS=0 \
         INIT_EXECUTIONS_JSON="${executions}" \
-        INIT_MARKER_JSON="${INIT_MARKER_JSON}" \
         INIT_UPLOAD_LOG="${INIT_UPLOAD_LOG}" \
         "${REPOSITORY_ROOT}/ops/await-auth-initialization.sh" \
         agora-production-test europe-west1 agora-receipts-test \
@@ -1447,7 +1420,6 @@ PATH="${INIT_MOCK_BIN}:${PATH}" \
     INITIALIZATION_MAX_POLLS=1 \
     INITIALIZATION_POLL_SECONDS=0 \
     INIT_EXECUTIONS_JSON='[{"metadata":{"name":"agora-authentication-init-success","creationTimestamp":"9999-01-01T00:00:00Z"},"status":{"conditions":[{"type":"Completed","status":"True"}]}}]' \
-    INIT_MARKER_JSON="${INIT_MARKER_JSON}" \
     INIT_UPLOAD_LOG="${INIT_UPLOAD_LOG}" \
     "${REPOSITORY_ROOT}/ops/await-auth-initialization.sh" \
     agora-production-test europe-west1 agora-receipts-test \

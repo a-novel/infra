@@ -30,10 +30,8 @@ if ! [[ "${REPOSITORY}" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] ||
     exit 65
 fi
 
-COMMANDS=(gh jq)
-if [ "${CANDIDATE_ROOT}" = --image-only ]; then
-    COMMANDS+=(infra)
-else
+COMMANDS=(gh jq infra)
+if [ "${CANDIDATE_ROOT}" != --image-only ]; then
     COMMANDS+=(git tofu)
 fi
 for command_name in "${COMMANDS[@]}"; do
@@ -102,7 +100,7 @@ FIRST_LAUNCH=false
 for root in "${ROOTS[@]}"; do
     config="${TEMP_DIR}/${root}.tfvars.json"
     config_code=0
-    if "${SCRIPT_DIR}/config-custody.sh" fetch \
+    if infra custody config fetch \
         "${STATE_BUCKET}" "${root}" "${config}"; then
         config_code=0
     else

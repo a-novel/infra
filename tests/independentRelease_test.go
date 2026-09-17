@@ -121,7 +121,7 @@ func TestSelectedCompensation(t *testing.T) {
 					{Name: "gcloud", Args: []string{"run", "services", "describe", api, "--project=agora-production-test", "--region=europe-west1", "--format=json"}, Output: jsonText(t, traffic)},
 					{Name: "create-reviewed-plan.sh", Args: []string{"release", "fixture-state", f.identity.Commit, "124-13", rollback}},
 					{Name: "apply-reviewed-plan.sh", Args: []string{"release", "fixture-state", f.identity.Commit, "124-13", rollback}},
-					{Name: "config-custody.sh", Args: []string{"publish", "fixture-state", "release", rollback, "124", "13"}},
+					{Name: "infra", Args: []string{"custody", "config", "publish", "fixture-state", "release", rollback, "124", "13"}},
 				}
 				if database {
 					calls = append(calls, invocation{Name: "restore-database-release.sh", Args: []string{
@@ -133,7 +133,7 @@ func TestSelectedCompensation(t *testing.T) {
 				receiptPath := filepath.Join(f.files[3], "rollback-receipt.json")
 				calls = append(calls,
 					invocation{Name: "infra", Args: []string{"receipt", "build", "rollback", filepath.Join(f.files[3], "rollback-release.json"), rollback, filepath.Join(f.files[3], "rollback-operations.json"), receiptPath}},
-					invocation{Name: "receipt-custody.sh", Args: []string{"publish", "fixture-receipts", receiptPath, "124", "1"}},
+					invocation{Name: "infra", Args: []string{"custody", "receipt", "publish", "fixture-receipts", receiptPath, "124", "1"}},
 				)
 				f.driver(t, "rollback", calls)
 				receipt := readJSON(t, receiptPath)

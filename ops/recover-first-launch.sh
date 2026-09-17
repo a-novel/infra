@@ -55,7 +55,7 @@ RECEIPT_FILE="$(mktemp)"
 EMPTY_DATABASE_FILE="$(mktemp)"
 chmod 600 "$RECEIPT_FILE" "$EMPTY_DATABASE_FILE"
 
-if "$SCRIPT_DIR/receipt-custody.sh" latest \
+if infra custody receipt latest \
     "$RECEIPT_BUCKET" "$RECEIPT_FILE" >/dev/null; then
     if ! jq -e --arg project "$PROJECT_ID" '
         .activeTfvars.workload_project_id == $project and
