@@ -1,0 +1,43 @@
+release:
+  cloud:
+    workloadProjectId: fixture-project
+    region: europe-west1
+    databaseZone: europe-west1-d
+  commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  runId: "123"
+  runAttempt: 1
+  mode: service
+  services: [json_keys]
+  revisions:
+    jsonKeys: agora-json-keys-grpc-new
+  images:
+    - component: service-json-keys
+      slot: grpc
+      promoted: &image europe-west1-docker.pkg.dev/fixture-project/agora-production/service-json-keys/grpc@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+operations:
+  executions: {}
+  health:
+    jsonKeys: not-run
+revisions:
+  status:
+    conditions: [{ type: Ready, status: "True" }]
+services:
+  status:
+    url: &audience https://agora-json-keys-grpc-fixture-ew.a.run.app
+    traffic:
+      - tag: candidate
+        revisionName: agora-json-keys-grpc-new
+        url: &candidate https://candidate---agora-json-keys-grpc-fixture-ew.a.run.app
+        percent: 0
+jobs:
+  spec:
+    template:
+      spec:
+        template:
+          spec:
+            serviceAccountName: agora-json-keys@fixture-project.iam.gserviceaccount.com
+            containers:
+              - image: *image
+                env:
+                  - { name: JSON_KEYS_AUDIENCE, value: *audience }
+                  - { name: JSON_KEYS_CANDIDATE, value: *candidate }
