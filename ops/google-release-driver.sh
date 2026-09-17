@@ -224,7 +224,7 @@ write_rollback_receipt() {
     infra receipt build rollback \
         "${rollback_release}" "${RELEASE_DIRECTORY}/rollback.tfvars.json" \
         "${rollback_operations}" "${rollback_receipt}"
-    "${SCRIPT_DIR}/receipt-custody.sh" publish \
+    infra custody receipt publish \
         "${RECEIPT_BUCKET}" "${rollback_receipt}" "${RUN_ID}" "${RUN_ATTEMPT}"
 }
 
@@ -394,7 +394,7 @@ case "${STEP}" in
         ;;
     active)
         apply_tfvars "${RELEASE_DIRECTORY}/active.tfvars.json" 2
-        "${SCRIPT_DIR}/config-custody.sh" publish \
+        infra custody config publish \
             "${STATE_BUCKET}" release "${RELEASE_DIRECTORY}/active.tfvars.json" \
             "${RUN_ID}" "$((RUN_ATTEMPT * 10 + 2))"
         ;;
@@ -404,7 +404,7 @@ case "${STEP}" in
         infra receipt build deployment \
             "${RELEASE_FILE}" "${RELEASE_DIRECTORY}/active.tfvars.json" \
             "${OPERATIONS_FILE}" "${RECEIPT_FILE}"
-        "${SCRIPT_DIR}/receipt-custody.sh" publish \
+        infra custody receipt publish \
             "${RECEIPT_BUCKET}" "${RECEIPT_FILE}" "${RUN_ID}" "${RUN_ATTEMPT}"
         ;;
     rollback)
@@ -432,7 +432,7 @@ case "${STEP}" in
             fi
         fi
         apply_tfvars "${RELEASE_DIRECTORY}/rollback.tfvars.json" 3
-        "${SCRIPT_DIR}/config-custody.sh" publish \
+        infra custody config publish \
             "${STATE_BUCKET}" release "${RELEASE_DIRECTORY}/rollback.tfvars.json" \
             "${RUN_ID}" "$((RUN_ATTEMPT * 10 + 3))"
         jq '.previousDatabase' "${RELEASE_FILE}" \

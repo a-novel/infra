@@ -1,14 +1,18 @@
 package tests_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/a-novel/infra/internal/custody"
 	"github.com/a-novel/infra/internal/release"
 )
 
@@ -23,6 +27,15 @@ func fixtureCommand(name string, args []string) (int, error) {
 		return restoreCommand(name, args)
 	}
 	switch name {
+	case "infra":
+		if len(args) > 0 && args[0] == "custody" {
+			return custody.Run(context.Background(), args[1:], os.Getenv, func(ctx context.Context, output io.Writer, name string, args ...string) error {
+				command := exec.CommandContext(ctx, name, args...)
+				command.Stdout = output
+				return command.Run()
+			}, os.Stdout, os.Stderr), nil
+		}
+		return 99, fmt.Errorf("unexpected infra command")
 	case "tofu-gate.sh", "create-reviewed-plan.sh", "apply-reviewed-plan.sh":
 		if os.Getenv("RELEASE_PLAN_SERVICES") != `["json_keys"]` {
 			return 99, fmt.Errorf("unexpected plan scope")

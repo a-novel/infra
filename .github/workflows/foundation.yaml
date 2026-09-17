@@ -46,6 +46,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Build reviewed infra tooling
+        uses: $/.github/actions/setup-infra
+
       - name: Authenticate as the foundation boundary
         uses: google-github-actions/auth@v3.0.0
         with:
@@ -119,6 +122,6 @@ jobs:
           ./ops/apply-reviewed-plan.sh \
             "${ROOT_NAME}" "${STATE_BUCKET}" "${GITHUB_SHA}" \
             "${PLAN_ID}" "${TFVARS_FILE}"
-          ./ops/config-custody.sh publish \
+          infra custody config publish \
             "${STATE_BUCKET}" "${ROOT_NAME}" "${TFVARS_FILE}" \
             "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}"

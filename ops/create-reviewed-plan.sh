@@ -43,6 +43,6 @@ if [ "${PLAN_CODE}" -ne 0 ] && [ "${PLAN_CODE}" -ne 2 ]; then
     exit "${PLAN_CODE}"
 fi
 
-"${SCRIPT_DIR}/plan-custody.sh" publish \
+infra custody plan publish \
     "${STATE_BUCKET}" "${ROOT_NAME}" "${COMMIT}" "${PLAN_ID}" \
     "${PLAN_FILE}" "${DESTRUCTIVE}"

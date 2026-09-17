@@ -88,7 +88,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 check_latest_receipt() {
-    "${SCRIPT_DIR}/receipt-custody.sh" latest "$RECEIPT_BUCKET" "$SCRATCH/latest.json" || return
+    infra custody receipt latest "$RECEIPT_BUCKET" "$SCRATCH/latest.json" || return
     jq -e --arg target "$TARGET_RECEIPT" '
       ([.sequence.runId, (.sequence.runAttempt | tostring)] | join("-")) == $target and
       .activeTfvars.application_release != null and .database.hosts != null

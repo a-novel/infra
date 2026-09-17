@@ -1,6 +1,6 @@
 # Remove after actionlint ships https://github.com/rhysd/actionlint/issues/711.
 # This exact self-repository reference is supported by GitHub and checked by zizmor.
 paths:
-  .github/workflows/{drift,main,recovery,refresh-deletion-gates,release}.yaml:
+  .github/workflows/{drift,foundation,main,recovery,refresh-deletion-gates,release}.yaml:
     ignore:
       - '^specifying action "\$/\.github/actions/setup-infra" in invalid format because ref is missing\.'

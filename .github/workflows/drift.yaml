@@ -59,6 +59,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Build reviewed infra tooling
+        uses: $/.github/actions/setup-infra
+
       - name: Authenticate as the read-only plan boundary
         uses: google-github-actions/auth@v3.0.0
         with:
@@ -91,7 +94,7 @@ jobs:
           for root in bootstrap foundation release; do
             file="${RUNNER_TEMP}/${root}.tfvars.json"
             set +e
-            ./ops/config-custody.sh fetch "${STATE_BUCKET}" "${root}" "${file}"
+            infra custody config fetch "${STATE_BUCKET}" "${root}" "${file}"
             code=$?
             set -e
             if [ "${code}" -eq 4 ]; then
@@ -145,7 +148,7 @@ jobs:
           set -euo pipefail
           umask 077
           config="${RUNNER_TEMP}/foundation-health.tfvars.json"
-          ./ops/config-custody.sh fetch "${STATE_BUCKET}" foundation "${config}"
+          infra custody config fetch "${STATE_BUCKET}" foundation "${config}"
           infra check-health deployed "${config}"
 
   assess-resource-deletion:
@@ -168,7 +171,6 @@ jobs:
           persist-credentials: false
 
       - name: Build reviewed infra tooling
-        if: inputs.operation == 'assess-image-update'
         uses: $/.github/actions/setup-infra
         with:
           working_directory: trusted
