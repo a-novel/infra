@@ -483,10 +483,11 @@ IMAGE_ONLY_BIN="${TEMP_DIR}/image-only-bin"
 mkdir -p "${IMAGE_ONLY_BIN}"
 ln -s "${SCRIPT_DIR}/fixtures/fake-deletion-gate-gh.sh" "${IMAGE_ONLY_BIN}/gh"
 ln -s "${SCRIPT_DIR}/fixtures/fake-gcloud-storage.sh" "${IMAGE_ONLY_BIN}/gcloud"
-printf '%s\n' '#!/bin/bash' "[ \"\${2:-}\" = verify ] || exit 99" \
-    "exit \"\${FAKE_NODE_VERIFY_CODE:-0}\"" >"${IMAGE_ONLY_BIN}/node"
+# shellcheck disable=SC2016
+printf '%s\n' '#!/bin/bash' '[ "$*" = "assess-images verify" ] || exit 99' \
+    'exit "${FAKE_INFRA_VERIFY_CODE:-0}"' >"${IMAGE_ONLY_BIN}/infra"
 printf '%s\n' '#!/bin/bash' 'exit 97' >"${IMAGE_ONLY_BIN}/tofu"
-chmod 0700 "${IMAGE_ONLY_BIN}/node" "${IMAGE_ONLY_BIN}/tofu"
+chmod 0700 "${IMAGE_ONLY_BIN}/infra" "${IMAGE_ONLY_BIN}/tofu"
 
 assert_image_only_assessment() {
     local expected_code="$1"
@@ -516,7 +517,7 @@ FAKE_GATE_FILES=image assert_image_only_assessment 0
 jq -e '(.firstLaunch | not) and (.approvalRequired | not)' "${TEMP_DIR}/automatic-assessment.json" >/dev/null
 FAKE_GATE_FILES=foundation assert_image_only_assessment 77
 FAKE_GATE_FILES=image FAKE_GCS_LIST_FAILURE=true assert_image_only_assessment 70
-FAKE_GATE_FILES=image FAKE_NODE_VERIFY_CODE=77 assert_image_only_assessment 77
+FAKE_GATE_FILES=image FAKE_INFRA_VERIFY_CODE=77 assert_image_only_assessment 77
 
 mkdir -p "${CANDIDATE_REPOSITORY}/environments/production/foundation"
 printf '%s\n' '{}' \

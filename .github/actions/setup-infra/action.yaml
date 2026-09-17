@@ -1,14 +1,19 @@
 name: Build reviewed infra tooling
 description: Build the checkout's operational command before protected inputs or cloud credentials exist.
+inputs:
+  working_directory:
+    description: Directory containing the reviewed checkout.
+    default: .
 runs:
   using: composite
   steps:
     - uses: actions/setup-go@v7.0.0
       with:
-        go-version-file: go.mod
+        go-version-file: ${{ inputs.working_directory }}/go.mod
         cache: false
     - name: Build the operational command
       shell: bash
+      working-directory: ${{ inputs.working_directory }}
       run: |
         set -euo pipefail
         directory="${RUNNER_TEMP}/infra-bin"
