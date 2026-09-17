@@ -69,7 +69,8 @@ func (f *sandbox) run(t *testing.T, name string, args ...string) (int, string) {
 	}
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, ctx.Err(), "command timed out: %s", out)
-	require.NoFileExists(t, filepath.Join(f.dir, "unexpected"), "unexpected fake command: %s", out)
+	unexpected, unexpectedErr := os.ReadFile(filepath.Join(f.dir, "unexpected"))
+	require.ErrorIs(t, unexpectedErr, os.ErrNotExist, "unexpected fake command: %s\n%s", unexpected, out)
 	code := 0
 	if err != nil {
 		var exit *exec.ExitError
