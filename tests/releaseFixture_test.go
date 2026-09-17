@@ -98,6 +98,8 @@ type invocation struct {
 	Name   string
 	Args   []string
 	Output string `json:",omitempty"`
+	Code   int    `json:",omitempty"`
+	Body   string `json:",omitempty"`
 }
 
 func (f *sandbox) expect(t *testing.T, calls []invocation) {
