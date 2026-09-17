@@ -240,7 +240,7 @@ case "${STEP}" in
         for service in $(jq -r '.services[]' "${RELEASE_FILE}"); do
             disk_id="$(jq -r --arg service "${service}" '.cloud.databaseHosts[$service].data_disk_id' "${RELEASE_FILE}")"
             expected="$(expected_database_metadata_sha256 "${service}")"
-            "${SCRIPT_DIR}/prepare-database-change.sh" "${PROJECT_ID}" "${DATABASE_ZONE}" \
+            infra database-release prepare "${PROJECT_ID}" "${DATABASE_ZONE}" \
                 "${service//_/-}" "${disk_id}" "${COMMIT}" \
                 "${RELEASE_DIRECTORY}/database-change-${service}.json" "${expected}"
         done
@@ -301,7 +301,7 @@ case "${STEP}" in
             # Record before the first write, including partially failed restarts.
             touch "${RELEASE_DIRECTORY}/database-mutated-${service}"
             DATABASE_CHANGE_PROOF="${RELEASE_DIRECTORY}/database-change-${service}.json" \
-                "${SCRIPT_DIR}/deploy-database-release.sh" "${PROJECT_ID}" "${DATABASE_ZONE}" "${service//_/-}" "${database[@]}"
+                infra database-release deploy "${PROJECT_ID}" "${DATABASE_ZONE}" "${service//_/-}" "${database[@]}"
         done
         ;;
     json-migrations)
@@ -416,7 +416,7 @@ case "${STEP}" in
             for service in $(jq -r '.services[]' "${RELEASE_FILE}"); do
                 [ -f "${RELEASE_DIRECTORY}/database-mutated-${service}" ] || continue
                 disk_id="$(jq -r --arg service "${service}" '.cloud.databaseHosts[$service].data_disk_id' "${RELEASE_FILE}")"
-                "${SCRIPT_DIR}/restore-database-release.sh" "${PROJECT_ID}" "${DATABASE_ZONE}" "${service//_/-}" "${disk_id}" "${RELEASE_DIRECTORY}/empty-database.json"
+                infra database-release restore "${PROJECT_ID}" "${DATABASE_ZONE}" "${service//_/-}" "${disk_id}" "${RELEASE_DIRECTORY}/empty-database.json"
             done
             exit 0
         fi
@@ -446,7 +446,7 @@ case "${STEP}" in
             if [ "$(jq -r '.action' "${RELEASE_FILE}")" != rollback ] &&
                 [ ! -f "${RELEASE_DIRECTORY}/database-mutated-${service}" ]; then continue; fi
             disk_id="$(jq -r --arg service "${service}" '.cloud.databaseHosts[$service].data_disk_id' "${RELEASE_FILE}")"
-            "${SCRIPT_DIR}/restore-database-release.sh" "${PROJECT_ID}" "${DATABASE_ZONE}" "${service//_/-}" "${disk_id}" "${RELEASE_DIRECTORY}/previous-database.json"
+            infra database-release restore "${PROJECT_ID}" "${DATABASE_ZONE}" "${service//_/-}" "${disk_id}" "${RELEASE_DIRECTORY}/previous-database.json"
         done
         write_rollback_receipt
         ;;

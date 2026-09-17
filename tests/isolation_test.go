@@ -155,6 +155,10 @@ func (c *isolationCloud) execute(ctx context.Context, out io.Writer, name string
 	require.NoError(t, ctx.Err(), "compensation must have an uncancelled context")
 	fail := errors.New(privateValue)
 	var value any
+	if name == "infra" {
+		require.Equal(t, "database-release", args[0])
+		name, args = args[1], args[2:]
+	}
 	switch name {
 	case "gcloud":
 		require.GreaterOrEqual(t, len(args), 3)
@@ -196,9 +200,9 @@ func (c *isolationCloud) execute(ctx context.Context, out io.Writer, name string
 				t.Fatalf("unexpected cloud call: %v", args)
 			}
 		}
-	case "./ops/database-host-readiness.sh":
-		require.Equal(t, []string{"current", c.config["workload_project_id"].(string), c.config["database_zone"].(string)}, args[:3])
-		_, err := fmt.Fprintln(out, c.hosts[args[3]]["guest"])
+	case "current":
+		require.Equal(t, []string{c.config["workload_project_id"].(string), c.config["database_zone"].(string)}, args[:2])
+		_, err := fmt.Fprintln(out, c.hosts[args[2]]["guest"])
 		return err
 	case "./ops/preflight-release.sh":
 		require.Equal(t, "maintenance", readJSON(t, args[0])["mode"])
@@ -206,7 +210,7 @@ func (c *isolationCloud) execute(ctx context.Context, out io.Writer, name string
 			return fail
 		}
 		return nil
-	case "./ops/prepare-database-change.sh":
+	case "prepare":
 		require.Len(t, args, 7)
 		c.scope(args)
 		require.Equal(t, c.identity.Commit, args[4])
@@ -220,14 +224,14 @@ func (c *isolationCloud) execute(ctx context.Context, out io.Writer, name string
 		}
 		return nil
 	case "env":
-		require.Len(t, args, 10)
+		require.Len(t, args, 12)
 		require.Equal(t, "DATABASE_CHANGE_PROOF="+c.proof, args[0])
 		require.NotEmpty(t, c.proof)
-		require.Equal(t, "./ops/deploy-database-release.sh", args[1])
-		c.scope(args[2:])
-		require.Equal(t, c.identity.Commit, args[6])
+		require.Equal(t, []string{"infra", "database-release", "deploy"}, args[1:4])
+		c.scope(args[4:])
+		require.Equal(t, c.identity.Commit, args[8])
 		for index, key := range []string{"authenticationImage", "authenticationPasswordVersion", "authenticationBackupPasswordVersion"} {
-			require.Equal(t, fmt.Sprint(nested(c.receipt, "database")[key]), args[7+index])
+			require.Equal(t, fmt.Sprint(nested(c.receipt, "database")[key]), args[9+index])
 		}
 		c.mutations++
 		c.metadata("authentication")[isolationRevision] = c.identity.Commit
@@ -247,7 +251,7 @@ func (c *isolationCloud) execute(ctx context.Context, out io.Writer, name string
 			c.vm("json-keys")["lastStartTimestamp"] = "changed"
 		}
 		return nil
-	case "./ops/restore-database-release.sh":
+	case "restore":
 		require.Len(t, args, 5)
 		c.scope(args)
 		require.Equal(t, nested(c.receipt, "database"), readJSON(t, args[4]))

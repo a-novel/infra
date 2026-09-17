@@ -312,8 +312,8 @@ On failure, do not retry blindly. Classify the fixed error category in private l
 
 ## Pre-change recovery gate
 
-`ops/prepare-database-change.sh` is mandatory before every database image update and every migration.
-It is called automatically by `ops/deploy-database-release.sh`. A migration workflow must call it
+`infra database-release prepare` is mandatory before every database image update and every migration.
+It is called automatically by `infra database-release deploy`. A migration workflow must call it
 before the migration job and must not duplicate its checks.
 
 For an existing cluster, run the gate while the deployed backup jobs still use the current source

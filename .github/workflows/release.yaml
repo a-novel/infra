@@ -277,7 +277,7 @@ jobs:
           zone="$(jq --exit-status --raw-output '.database_zone | select(type == "string")' "${RELEASE_CONFIG_FILE}")"
           for service in json_keys authentication; do
             disk_id="$(jq --exit-status --raw-output --arg service "${service}" '.database_hosts[$service].data_disk_id | select(type == "string")' "${RELEASE_CONFIG_FILE}")"
-            ./ops/recover-first-launch.sh "${RECEIPT_BUCKET}" "${project}" "${zone}" "${service//_/-}" "${disk_id}" "${FAILED_REVISION}"
+            infra database-release recover-first-launch "${project}" "${zone}" "${service//_/-}" "${disk_id}" "${FAILED_REVISION}" "${RECEIPT_BUCKET}"
           done
 
   database-isolation:

@@ -137,8 +137,8 @@ integration tests, and Renovate validation still use development-only Node depen
 | Configuration and receipt custody   | `infra custody config`, `infra custody receipt`, `infra receipt build`, `infra receipt validate`                                                                                                                                                                         |
 | Deletion authorization              | `infra assess-images`, `infra refresh-deletion-gates`, `resource-deletion-impact.sh`, `resolve-resource-deletion-assessment.sh`, `prepare-resource-deletion-assessment.sh`, `verify-resource-deletion-gate.sh`, `verify-deletion-label.sh`, `delete-recovery-project.sh` |
 | Release compilation and promotion   | `infra compile-release`, `infra validate-images`, `verify-release-images.sh`, `promote-release-images.sh`, `preflight-release.sh`                                                                                                                                        |
-| Ordered release execution           | `release-orchestrator.sh`, `google-release-driver.sh`, `infra database-isolation`, `prepare-database-change.sh`, `deploy-database-release.sh`, `restore-database-release.sh`, `await-auth-initialization.sh`                                                             |
-| Recovery                            | `recover-first-launch.sh`, `infra compile-recovery`, `verify-recovery-points.sh`, `promote-recovery-images.sh`                                                                                                                                                           |
+| Ordered release execution           | `release-orchestrator.sh`, `google-release-driver.sh`, `infra database-isolation`, `infra database-release`, `await-auth-initialization.sh`                                                                                                                              |
+| Recovery                            | `infra compile-recovery`, `verify-recovery-points.sh`, `promote-recovery-images.sh`                                                                                                                                                                                      |
 | Health and root validation          | `infra check-health`, `check-root.sh`, `lib/roots.sh`                                                                                                                                                                                                                    |
 
 `infra custody` shares private file handling and the official `gcloud storage` client across
@@ -146,6 +146,24 @@ configuration, receipts, and plans. It validates downloads before publishing own
 and uses generation preconditions for immutable uploads. Plans remain commit-bound, time-limited,
 and consumed before apply; receipt retries require identical stored bytes. Only a successful empty
 inventory returns exit 4; denied or malformed inventories fail closed.
+
+`infra database-release` consolidates preparation, bounded restart, restoration, and new-boot
+readiness for one service-owned host. Its protected command forms are:
+
+```text
+infra database-release current <project> <zone> <service>
+infra database-release wait <project> <zone> <service> <revision|none> <previous-status>
+infra database-release prepare <project> <zone> <service> <disk-id> <revision> [proof-file] [expected-metadata-sha256]
+infra database-release deploy <project> <zone> <service> <disk-id> <revision> <image> <password-version> <backup-password-version>
+infra database-release restore <project> <zone> <service> <disk-id> <database-json>
+infra database-release recover-first-launch <project> <zone> <service> <disk-id> <failed-revision> <receipt-bucket>
+```
+
+`service` is `authentication` or `json-keys`. Deploy prepares a fresh backup boundary unless
+`DATABASE_CHANGE_PROOF` selects an exact, unexpired local proof; live metadata and disk identity
+are checked before restart. Restore consumes the receipt's database object (`null` means idle).
+First-launch recovery only clears the exact failed revision when no service-owned success receipt
+exists; it never reruns initialization. The release coordinator owns compensation after failures.
 
 ## Change rules
 

@@ -154,7 +154,7 @@ test("first-launch recovery is explicit and narrowly privileged", () => {
     (step) => step.name === "Recover the interrupted first launch",
   );
   assert.equal(recover.if, "env.RELEASE_ACTION == 'recover-first-launch'");
-  assert.match(recover.run, /\.\/ops\/recover-first-launch\.sh/);
+  assert.match(recover.run, /infra database-release recover-first-launch/);
   assert.doesNotMatch(recover.run, /all-instances-config|update-instances/);
 });
 

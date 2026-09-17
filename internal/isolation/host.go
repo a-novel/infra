@@ -124,7 +124,7 @@ func (d *drill) inspect(ctx context.Context, service string) (s snapshot, err er
 	if matched != 1 {
 		return s, errors.New("expected one preserved data disk")
 	}
-	guest, err := d.command(ctx, "./ops/database-host-readiness.sh", "current", d.project, d.zone, service)
+	guest, err := d.command(ctx, "infra", "database-release", "current", d.project, d.zone, service)
 	if err != nil {
 		return s, err
 	}

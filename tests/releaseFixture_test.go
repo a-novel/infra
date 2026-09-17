@@ -83,7 +83,7 @@ func (f *releaseFixture) change(service string, database bool) {
 func (f *releaseFixture) driver(t *testing.T, step string, calls []invocation) {
 	t.Helper()
 	require.NoError(t, os.WriteFile(filepath.Join(f.dir, "driver.sh"), []byte(read(t, filepath.Join(f.root, "ops/google-release-driver.sh"))), 0o600))
-	for _, name := range []string{"gcloud", "infra", "create-reviewed-plan.sh", "apply-reviewed-plan.sh", "restore-database-release.sh"} {
+	for _, name := range []string{"gcloud", "infra", "create-reviewed-plan.sh", "apply-reviewed-plan.sh", "preflight-release.sh"} {
 		f.command(t, name)
 	}
 	f.env["RELEASE_DIRECTORY"], f.env["STATE_BUCKET"], f.env["RECEIPT_BUCKET"] = f.files[3], "fixture-state", "fixture-receipts"

@@ -165,7 +165,9 @@ func (d *drill) run(ctx context.Context, config string) error {
 		if err != nil {
 			return errors.New("cannot bind drill metadata")
 		}
-		if _, err = d.command(ctx, "./ops/prepare-database-change.sh", append(args, d.revision, filepath.Join(d.scratch, "proof.json"), fmt.Sprintf("%x", sha256.Sum256(metadata)))...); err != nil {
+		prepare := append([]string{"database-release", "prepare"}, args...)
+		prepare = append(prepare, d.revision, filepath.Join(d.scratch, "proof.json"), fmt.Sprintf("%x", sha256.Sum256(metadata)))
+		if _, err = d.command(ctx, "infra", prepare...); err != nil {
 			return err
 		}
 	} else if !sameConfiguration(auth.Metadata, expected) {
@@ -179,7 +181,7 @@ func (d *drill) run(ctx context.Context, config string) error {
 	}
 	if d.operation == "drill" {
 		d.mutated = true // A failed provider response may still have changed live metadata.
-		command := append([]string{"DATABASE_CHANGE_PROOF=" + filepath.Join(d.scratch, "proof.json"), "./ops/deploy-database-release.sh"}, args...)
+		command := append([]string{"DATABASE_CHANGE_PROOF=" + filepath.Join(d.scratch, "proof.json"), "infra", "database-release", "deploy"}, args...)
 		command = append(command, d.revision, text(d.database, "authenticationImage"), text(d.database, "authenticationPasswordVersion"), text(d.database, "authenticationBackupPasswordVersion"))
 		if _, err = d.command(ctx, "env", command...); err != nil {
 			return errors.New("authentication restart failed")
@@ -217,7 +219,7 @@ func (d *drill) restore(ctx context.Context) error {
 	if err != nil || !sameConfiguration(actual, expected) || (d.operation != "restore" && text(actual, revisionKey) != text(expected, revisionKey) && text(actual, revisionKey) != d.revision) {
 		return errors.New("restoration refuses unexpected live metadata")
 	}
-	if _, err = d.command(ctx, "./ops/restore-database-release.sh", d.project, d.zone, "authentication", d.disk, filepath.Join(d.scratch, "database.json")); err != nil {
+	if _, err = d.command(ctx, "infra", "database-release", "restore", d.project, d.zone, "authentication", d.disk, filepath.Join(d.scratch, "database.json")); err != nil {
 		return err
 	}
 	d.restored, d.mutated = true, false
