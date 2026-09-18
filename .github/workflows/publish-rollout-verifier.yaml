@@ -40,7 +40,7 @@ jobs:
           persist-credentials: false
 
       - name: Build and scan the verifier
-        uses: ./.github/actions/build-rollout-verifier
+        uses: $/.github/actions/build-rollout-verifier
 
       - name: Keep only the scanned image for publication
         id: archive

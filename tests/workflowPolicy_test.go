@@ -71,12 +71,12 @@ func TestVerifierArtifact(t *testing.T) {
 		require.NoError(t, err)
 		require.NotRegexp(t, `checkout@|google-github-actions|secrets\.|build-push-action|docker (build|run)|go run|go build`, string(encoded))
 		for _, steps := range [][]workflowStep{build.Steps, loadWorkflow(t, "workflows/main.yaml").Jobs["scan-infrastructure"].Steps} {
-			stepIndex(t, steps, "./.github/actions/build-rollout-verifier")
+			stepIndex(t, steps, "$/.github/actions/build-rollout-verifier")
 		}
 		for _, pair := range [][2]string{{"actions/download-artifact@", "docker load"}, {"docker load", "docker/login-action@"}, {"docker/login-action@", "docker push"}, {"docker push", "actions/attest@"}, {"actions/attest@", "GITHUB_STEP_SUMMARY"}} {
 			require.Less(t, stepIndex(t, publish.Steps, pair[0]), stepIndex(t, publish.Steps, pair[1]))
 		}
-		require.Less(t, stepIndex(t, build.Steps, "./.github/actions/build-rollout-verifier"), stepIndex(t, build.Steps, "actions/upload-artifact@"))
+		require.Less(t, stepIndex(t, build.Steps, "$/.github/actions/build-rollout-verifier"), stepIndex(t, build.Steps, "actions/upload-artifact@"))
 		require.Less(t, stepIndex(t, action, "docker/build-push-action@"), stepIndex(t, action, "aquasecurity/trivy-action@"))
 	})
 }
