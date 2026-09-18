@@ -166,6 +166,13 @@ provisioned.
 
 ## Controls and update rule
 
+Opt-in service-project shells add project/API/IAM controls, bounded logs, and Shared VPC attachments.
+They create no VM, disk, Cloud Run instance, NAT, connector, or load balancer. The existing budget
+includes their project numbers without changing its amount or thresholds. Project separation does
+not multiply billing-account free tiers. Reprice the actual service resources and any temporary
+migration overlap before activating a workload in a new project; the current launch estimate remains
+the existing two-service deployment. See [Shared VPC pricing](https://cloud.google.com/vpc/docs/shared-vpc#pricing).
+
 The 60-unit monthly production-infrastructure budget spans the management and workload projects,
 uses the billing account currency, alerts both human channels at current and forecasted
 50/75/90/100%, and is alert-only. The warm-instance baseline can exceed this existing threshold

@@ -93,8 +93,153 @@ variables {
   ]
 }
 
+run "protected_project_shell" {
+  command = plan
+
+  module {
+    source = "../../../modules/workload-project"
+  }
+
+  variables {
+    project_id                 = "agora-json-keys-test"
+    labels                     = { service = "json-keys", environment = "test" }
+    foundation_service_account = "infra-foundation@agora-management-test.iam.gserviceaccount.com"
+    plan_service_account       = "infra-plan@agora-management-test.iam.gserviceaccount.com"
+  }
+
+  assert {
+    condition = (
+      google_project.service.deletion_policy == "PREVENT" &&
+      !google_project.service.auto_create_network &&
+      google_project.service.labels.service == "json-keys" &&
+      google_project.service.org_id == "123456789012" &&
+      google_project_default_service_accounts.service.action == "DEPRIVILEGE" &&
+      google_logging_project_bucket_config.default.retention_days == 30 &&
+      google_logging_project_bucket_config.default.deletion_policy == "PREVENT"
+    )
+    error_message = "Project shells must protect deletion, remove the default network/roles, and bound logs."
+  }
+
+  assert {
+    condition = alltrue([
+      for api in google_project_service.api :
+      api.project == "agora-json-keys-test" && !api.disable_on_destroy && !api.disable_dependent_services
+    ])
+    error_message = "API ownership must stay inside the service project and preserve recovery availability."
+  }
+
+  assert {
+    condition = (
+      alltrue([for binding in google_project_iam_member.foundation :
+        binding.project == "agora-json-keys-test" &&
+        binding.member == "serviceAccount:${var.foundation_service_account}"
+      ]) &&
+      google_project_iam_member.plan.member == "serviceAccount:${var.plan_service_account}" &&
+      google_project_iam_member.plan.role == "roles/viewer" &&
+      toset(google_project_iam_custom_role.metadata.permissions) == toset([
+        "iam.serviceAccounts.list", "resourcemanager.projects.get", "resourcemanager.projects.update",
+      ])
+    )
+    error_message = "Project maintenance belongs to foundation and assessment remains read-only."
+  }
+}
+
+run "reject_parentless_service_project" {
+  command = plan
+  module {
+    source = "../../../modules/workload-project"
+  }
+  variables {
+    project_id                 = "agora-json-keys-test"
+    organization_id            = null
+    labels                     = { service = "json-keys", environment = "test" }
+    foundation_service_account = "infra-foundation@agora-management-test.iam.gserviceaccount.com"
+    plan_service_account       = "infra-plan@agora-management-test.iam.gserviceaccount.com"
+  }
+  expect_failures = [google_project.service]
+}
+
+run "two_service_projects_share_only_the_host" {
+  command = plan
+
+  variables {
+    service_projects = {
+      json-keys      = "agora-json-keys-test"
+      authentication = "agora-authentication-test"
+    }
+  }
+
+  override_resource {
+    target = module.service_project.google_project.service
+    values = { number = "111111111111" }
+  }
+
+  assert {
+    condition = (
+      length(module.service_project) == 2 &&
+      google_compute_shared_vpc_host_project.production[0].deletion_policy == "PREVENT" &&
+      alltrue([for service, attachment in google_compute_shared_vpc_service_project.service :
+        attachment.host_project == "agora-production-test" &&
+        attachment.service_project == var.service_projects[service]
+      ]) &&
+      output.service_projects["json-keys"].project_id == "agora-json-keys-test" &&
+      output.service_projects["authentication"].project_id == "agora-authentication-test"
+    )
+    error_message = "Each service needs its own project attached to the foundation-owned host."
+  }
+
+  assert {
+    condition = toset(google_billing_budget.workload[0].budget_filter[0].projects) == toset([
+      "projects/123456789012", "projects/987654321098", "projects/111111111111",
+    ])
+    error_message = "The existing budget must include every project without duplicating the budget."
+  }
+}
+
+run "reject_duplicate_project_owners" {
+  command = plan
+  variables {
+    service_projects = { json-keys = "agora-shared-test", authentication = "agora-shared-test" }
+  }
+  expect_failures = [var.service_projects]
+}
+
+run "reject_management_project_adoption" {
+  command = plan
+  variables {
+    service_projects = { json-keys = "agora-management-test" }
+  }
+  expect_failures = [var.service_projects]
+}
+
+run "reject_legacy_project_adoption" {
+  command = plan
+  variables {
+    service_projects = { json-keys = "agora-production-test" }
+  }
+  expect_failures = [var.service_projects]
+}
+
+run "reject_recovery_fleet_provisioning" {
+  command = plan
+  variables {
+    recovery_mode    = true
+    service_projects = { json-keys = "agora-json-keys-test" }
+  }
+  expect_failures = [var.service_projects]
+}
+
 run "builds_the_project_replacement_window" {
   command = plan
+
+  assert {
+    condition = (
+      length(module.service_project) == 0 &&
+      length(google_compute_shared_vpc_host_project.production) == 0 &&
+      length(google_compute_shared_vpc_service_project.service) == 0
+    )
+    error_message = "Existing inputs must not create service projects or enable Shared VPC."
+  }
 
   assert {
     condition = (
