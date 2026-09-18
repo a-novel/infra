@@ -84,6 +84,8 @@ jobs:
           for root in bootstrap foundation release; do
             ./ops/check-root.sh "$root"
           done
+          tofu fmt -check -recursive modules
+          tflint --chdir=modules/cloud-run-rollout --config="${GITHUB_WORKSPACE}/.tflint.hcl" --format=compact
 
       - name: Lint shell scripts
         uses: a-novel-kit/workflows/generic-actions/lint-shell@v1.30.1
