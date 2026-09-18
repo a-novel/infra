@@ -29,6 +29,22 @@ variable "folder_id" {
 variable "labels" {
   description = "Foundation labels, including the owning service and environment."
   type        = map(string)
+
+  validation {
+    condition = (
+      can(regex("^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$", var.labels.service)) &&
+      can(regex("^[a-z][a-z0-9-]{0,15}$", var.labels.environment))
+    )
+    error_message = "Provide a valid service label and a 1-16 character environment label for the release trust boundary."
+  }
+}
+
+variable "management" {
+  description = "Bootstrap-owned management project coordinates; no remote state access is required."
+  type = object({
+    project_id     = string
+    project_number = string
+  })
 }
 
 variable "foundation_service_account" {

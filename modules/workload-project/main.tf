@@ -26,12 +26,14 @@ resource "google_project_service" "api" {
     "cloudscheduler.googleapis.com",
     "compute.googleapis.com",
     "iam.googleapis.com",
+    "iamcredentials.googleapis.com",
     "iap.googleapis.com",
     "logging.googleapis.com",
     "monitoring.googleapis.com",
     "oslogin.googleapis.com",
     "run.googleapis.com",
     "serviceusage.googleapis.com",
+    "sts.googleapis.com",
   ])
 
   project                    = google_project.service.project_id
@@ -53,6 +55,7 @@ resource "google_project_iam_member" "foundation" {
   for_each = toset([
     "roles/compute.networkAdmin",
     "roles/iam.roleAdmin",
+    "roles/iam.serviceAccountAdmin",
     "roles/logging.configWriter",
     "roles/resourcemanager.projectIamAdmin",
     "roles/serviceusage.serviceUsageAdmin",

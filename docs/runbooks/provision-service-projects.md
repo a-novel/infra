@@ -1,6 +1,7 @@
 # Service-project onboarding boundary
 
-Service projects are opt-in project shells. Production still runs in the existing workload project.
+Service projects are opt-in project shells with separate release identities and private storage
+folders. Production still runs in the existing workload project, under the existing release identity.
 Keep `INFRA_SERVICE_PROJECTS='{}'` in `.envrc` until a separately reviewed onboarding change supplies
 the exact project IDs, temporary provisioning permissions, verification, and access-removal
 commands. Merging the project module is not authorization to create a project or move a workload.
@@ -48,7 +49,8 @@ remain supported.
 
 - The [project module](../../modules/workload-project/README.md) creates protected project shells,
   enables APIs, deprivileges default accounts, grants foundation maintenance and plan inspection,
-  and bounds default logs.
+  and bounds default logs. Each service also gets a keyless release account, an exact federation
+  provider, and managed folders for its state and receipts in the management buckets.
 - Foundation enables the existing workload project as a Shared VPC host and attaches each shell.
   It owns the VPC, subnet, routes, firewall rules, and DNS. Both host and attachment have deletion
   guards. No Network User grant or Google service-agent subnet grant is added.
@@ -57,10 +59,15 @@ remain supported.
 
 An attachment is not a network-security proof. Service-specific subnet permissions, firewall and
 egress policy, Cloud Run internal routing, and application authentication must be reviewed before
-deploying a service. Current deployers receive no new-project grants. Management secrets, backups,
-receipts, and state retain their existing owners.
+deploying a service. Current deployers receive no new-project grants. New release accounts can write
+only their own state and create/read their own receipts; they cannot yet deploy a workload. Legacy
+state, receipts, secrets, and backups retain their existing owners and paths.
 
 ## First activation prerequisites
+
+Before the first apply creates federation, create each exact `<environment>-<service>-release`
+GitHub environment with required reviewers, protected-branch restriction, and admin bypass disabled.
+An environment name in a token does not prove those protections exist.
 
 The onboarding PR must record the exact operator commands and successful sanitized results for:
 
@@ -70,11 +77,24 @@ The onboarding PR must record the exact operator commands and successful sanitiz
 2. Publishing the reviewed selection with the command above. Do not replace the complete protected
    configuration with a map-only document or reuse the synthetic project IDs.
 3. The existing separate reviewed plan and apply runs. Inspect project creation, API/IAM changes,
-   Shared VPC attachment, and budget scope; stop for workload changes or legacy resource replacement.
+   Shared VPC attachment, release identity/folder grants, and budget scope; stop for workload changes
+   or legacy resource replacement.
 4. Verifying exact project parents/billing, no default VPC, enabled APIs, zero user-managed keys,
    effective organization policies, deprivileged default accounts, host attachment, and budget scope.
 5. Removing temporary Owner/project-creation/billing/Shared VPC grants and verifying that the
    standing maintenance identity can still produce a zero-change plan.
+
+Before a service workflow uses the new identity, its separate rollout must also:
+
+- Recheck the environment protections and bind the reviewed workflow to the published `release`
+  coordinates; never let an arbitrary workflow input choose a privileged identity.
+- Verify both permitted operations and denials: own-state read/write/locking, own-receipt
+  create/read, denied receipt overwrite/delete, and denied peer/legacy state, secret, and runtime
+  access. Review inherited IAM too. Check that a wrong repository, ref, workflow, or environment
+  cannot federate; mocked tests cannot establish these live results.
+- Select saved-plan storage/expiry and publish only the versioned coordinates, not foundation
+  state. Preserve private plan custody, exact-commit approval, and a single writer during the
+  transfer; a separate folder is not itself a migration or rollback plan.
 
 Use the existing foundation workflow; do not apply this module from a local terminal. After an
 interruption, inspect actual project ownership and the saved state before retrying. Do not import,

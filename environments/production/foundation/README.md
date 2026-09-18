@@ -22,7 +22,9 @@ Optional service-owned project shells are declared by `service_projects` (defaul
 the reusable [workload-project module](../../../modules/workload-project/README.md), attach to this
 root's existing network through Shared VPC, and join the existing budget. These new projects and
 the Shared VPC host/attachments retain deletion guards independently of the legacy replacement
-window above. No workload or service-deployer authority moves with this change. Follow the
+window above. Foundation also prepares each service's release identity and isolated state/receipt
+folders in the management plane; it grants no runtime authority and changes no active workflow.
+No existing workload or deployment authority moves with this change. Follow the
 [service-project onboarding boundary](../../../docs/runbooks/provision-service-projects.md) before activation.
 
 The protected foundation identity uses the `foundation/` object boundary in the management state
@@ -136,7 +138,8 @@ only after resource creation has been explicitly authorized.
 
 ## Resource inventory
 
-`module.service_project` owns each opt-in project's shell; its
+`module.service_project` owns each opt-in project's shell, release identity, federation provider,
+and state/receipt folder grants; its
 [module inventory](../../../modules/workload-project/README.md#ownership) lists the resources.
 `google_compute_shared_vpc_host_project.production` enables the existing workload project as the
 network host only when the map is nonempty. `google_compute_shared_vpc_service_project.service`
