@@ -33,6 +33,10 @@ workflows apply accepted desired state and a scheduled read-only drift check det
 This is a GitOps-style delivery model, not strict OpenGitOps conformance: no continuously pulling
 controller currently reconciles the platform.
 
+The [service-owned Cloud Deploy pilot](../modules/cloud-run-rollout/README.md) is inactive. It
+declares a future API rollout owner without changing any production root, service, or workflow.
+The ownership descriptions below still describe the active production path.
+
 ## Vocabulary
 
 | Term                 | Meaning here                                                                                                     |
