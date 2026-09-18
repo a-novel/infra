@@ -1,0 +1,35 @@
+name: Build and scan the rollout verifier
+description: Export one credential-free linux/amd64 verifier image for CI inspection or protected publication.
+runs:
+  using: composite
+  steps:
+    - uses: docker/setup-buildx-action@v4.4.1
+
+    - name: Build the verifier without publishing
+      uses: docker/build-push-action@v7.4.0
+      env:
+        DOCKER_BUILD_RECORD_UPLOAD: "false"
+      with:
+        context: .
+        file: builds/rollout-verifier.Dockerfile
+        platforms: linux/amd64
+        tags: rollout-verifier:build
+        outputs: type=docker,dest=${{ runner.temp }}/rollout-verifier.tar
+        push: false
+        provenance: false
+        pull: true
+
+    - name: Scan the exact verifier archive
+      uses: aquasecurity/trivy-action@v0.36.0
+      env:
+        TRIVY_DISABLE_TELEMETRY: "true"
+      with:
+        input: ${{ runner.temp }}/rollout-verifier.tar
+        scanners: vuln,secret
+        severity: HIGH,CRITICAL
+        exit-code: "1"
+        format: table
+        hide-progress: true
+        cache: false
+        # renovate: datasource=github-releases depName=aquasecurity/trivy
+        version: v0.74.0

@@ -77,8 +77,9 @@ There is still **no production caller or live provisioning**. API/service-agent 
 attachment and firewall rules remain activation prerequisites, not implicit permissions added here.
 
 `builds/rollout-verifier.Dockerfile` builds one unprivileged image from the reviewed Go module. Local
-`a-novel build --type=podman -y` does not publish it. Publication must attest the exact source, scan the
-image, promote it into the service project's registry and pin the same digest in the worker and probe.
+`a-novel build --type=podman -y` does not publish it. The [artifact workflow](../../../docs/runbooks/publish-rollout-verifier.md)
+builds, scans and separately publishes an attested GHCR digest when a maintainer enables and approves
+publication. Promotion into the service registry and the same worker/probe digest pin remain separately approved.
 Dependency downloads belong in that unprivileged build, never in a credentialed verification task.
 
 Before activation, prove actual SDK resource-name/image/network normalization, candidate/stable routing,

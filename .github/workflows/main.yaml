@@ -95,7 +95,7 @@ jobs:
 
   scan-infrastructure:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
     permissions:
       contents: read
     steps:
@@ -120,6 +120,9 @@ jobs:
           cache: false
           # renovate: datasource=github-releases depName=aquasecurity/trivy
           version: v0.74.0
+
+      - name: Build and scan the rollout verifier without credentials
+        uses: $/.github/actions/build-rollout-verifier
 
   lint-repository:
     runs-on: ubuntu-24.04

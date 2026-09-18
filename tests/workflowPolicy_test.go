@@ -20,8 +20,65 @@ type workflow struct {
 type workflowJob struct {
 	If          string
 	Environment any
+	Needs       any
+	Outputs     map[string]string
 	Permissions map[string]string
 	Steps       []workflowStep
+}
+
+func TestVerifierArtifact(t *testing.T) {
+	t.Parallel()
+	publication := loadWorkflow(t, "workflows/publish-rollout-verifier.yaml")
+	build, publish := publication.Jobs["build"], publication.Jobs["publish"]
+	action := loadWorkflow(t, "actions/build-rollout-verifier/action.yaml").Runs.Steps
+	image := action[stepIndex(t, action, "docker/build-push-action@")]
+	scan := action[stepIndex(t, action, "aquasecurity/trivy-action@")]
+	upload := build.Steps[stepIndex(t, build.Steps, "actions/upload-artifact@")]
+	download := publish.Steps[stepIndex(t, publish.Steps, "actions/download-artifact@")]
+	attest := publish.Steps[stepIndex(t, publish.Steps, "actions/attest@")]
+	for _, testCase := range []struct {
+		name           string
+		actual, expect any
+	}{
+		{"ManualOnly", len(publication.On), 1},
+		{"PublicationOffByDefault", nested(publication.On, "workflow_dispatch", "inputs", "publish")["default"], false},
+		{"NoInheritedAuthority", publication.Permissions, map[string]string{}},
+		{"ReadOnlyBuild", build.Permissions, map[string]string{"contents": "read"}},
+		{"Approval", publish.Environment, "rollout-artifacts"},
+		{"PublishAuthority", publish.Permissions, map[string]string{"contents": "read", "packages": "write", "attestations": "write", "id-token": "write"}},
+		{"SameRunArtifact", publish.Needs, "build"},
+		{"ExactArtifactOutput", build.Outputs, map[string]string{"artifact_id": "${{ steps.archive.outputs.artifact-id }}"}},
+		{"ExactArtifactInput", download.With, object{"artifact-ids": "${{ needs.build.outputs.artifact_id || '0' }}", "path": "${{ runner.temp }}", "merge-multiple": true, "digest-mismatch": "error"}},
+		{"OnlyImageArchive", upload.With["path"], "${{ runner.temp }}/rollout-verifier.tar"},
+		{"MissingArchiveFails", upload.With["if-no-files-found"], "error"},
+		{"NoBuildPush", image.With["push"], false},
+		{"SinglePlatform", image.With["platforms"], "linux/amd64"},
+		{"ScannedArchive", image.With["outputs"], "type=docker,dest=" + scan.With["input"].(string)},
+		{"BlockingScan", []any{scan.With["scanners"], scan.With["severity"], scan.With["exit-code"]}, []any{"vuln,secret", "HIGH,CRITICAL", "1"}},
+		{"AttestedDigest", attest.With, object{"subject-name": "ghcr.io/a-novel/infra/rollout-verifier", "subject-digest": "${{ steps.publish.outputs.digest }}", "push-to-registry": true, "create-storage-record": false}},
+		{"NoCancellation", publication.Concurrency["cancel-in-progress"], false},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, testCase.expect, testCase.actual)
+		})
+	}
+	t.Run("TrustBoundary", func(t *testing.T) {
+		t.Parallel()
+		require.Contains(t, publish.If, "inputs.publish && vars.ROLLOUT_VERIFIER_PUBLICATION_ENABLED == 'true'")
+		require.Contains(t, publish.If, "github.repository == 'a-novel/infra' && github.ref == 'refs/heads/master'")
+		encoded, err := json.Marshal(publish)
+		require.NoError(t, err)
+		require.NotRegexp(t, `checkout@|google-github-actions|secrets\.|build-push-action|docker (build|run)|go run|go build`, string(encoded))
+		for _, steps := range [][]workflowStep{build.Steps, loadWorkflow(t, "workflows/main.yaml").Jobs["scan-infrastructure"].Steps} {
+			stepIndex(t, steps, "$/.github/actions/build-rollout-verifier")
+		}
+		for _, pair := range [][2]string{{"actions/download-artifact@", "docker load"}, {"docker load", "docker/login-action@"}, {"docker/login-action@", "docker push"}, {"docker push", "actions/attest@"}, {"actions/attest@", "GITHUB_STEP_SUMMARY"}} {
+			require.Less(t, stepIndex(t, publish.Steps, pair[0]), stepIndex(t, publish.Steps, pair[1]))
+		}
+		require.Less(t, stepIndex(t, build.Steps, "$/.github/actions/build-rollout-verifier"), stepIndex(t, build.Steps, "actions/upload-artifact@"))
+		require.Less(t, stepIndex(t, action, "docker/build-push-action@"), stepIndex(t, action, "aquasecurity/trivy-action@"))
+	})
 }
 
 type workflowStep struct {

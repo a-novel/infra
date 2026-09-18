@@ -1,6 +1,6 @@
 # Remove after actionlint ships https://github.com/rhysd/actionlint/issues/711.
-# This exact self-repository reference is supported by GitHub and checked by zizmor.
+# GitHub and zizmor validate this same-repository form; remote-action ref errors remain visible.
 paths:
-  .github/workflows/{drift,foundation,main,recovery,refresh-deletion-gates,release}.yaml:
+  .github/workflows/*.yaml:
     ignore:
-      - '^specifying action "\$/\.github/actions/setup-infra" in invalid format because ref is missing\.'
+      - '^specifying action "\$/\.github/actions/[a-z0-9/-]+" in invalid format because ref is missing\.'
