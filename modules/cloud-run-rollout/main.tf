@@ -62,9 +62,13 @@ resource "google_clouddeploy_delivery_pipeline" "service" {
                 container {
                   image = var.verification_image
                   env = {
-                    EXPECTED_PROJECT_ID = var.project_id
-                    EXPECTED_REGION     = var.region
-                    EXPECTED_SERVICE    = var.name
+                    EXPECTED_PROJECT_ID     = var.project_id
+                    EXPECTED_REGION         = var.region
+                    EXPECTED_SERVICE        = var.name
+                    EXPECTED_PROBE_ACCOUNT  = var.probe.service_account
+                    EXPECTED_VERIFIER_IMAGE = var.verification_image
+                    EXPECTED_PROBE_NETWORK  = var.probe.network
+                    EXPECTED_PROBE_SUBNET   = var.probe.subnetwork
                   }
                 }
               }

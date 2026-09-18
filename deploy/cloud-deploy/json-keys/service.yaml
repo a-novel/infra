@@ -1,0 +1,74 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: agora-json-keys-grpc
+  namespace: pilot-unconfigured # from-param: ${projectId}
+  labels:
+    component: json-keys
+    role: grpc
+  annotations:
+    run.googleapis.com/ingress: internal
+    run.googleapis.com/invoker-iam-disabled: "false"
+    run.googleapis.com/minScale: "1"
+    run.googleapis.com/maxScale: "3"
+spec:
+  # Cloud Deploy owns revision names and traffic for every phase.
+  template:
+    metadata:
+      annotations:
+        run.googleapis.com/execution-environment: gen2
+        run.googleapis.com/cpu-throttling: "true"
+        run.googleapis.com/startup-cpu-boost: "false"
+        run.googleapis.com/vpc-access-egress: all-traffic
+        run.googleapis.com/network-interfaces: '[{"network":"unconfigured","subnetwork":"unconfigured","tags":["agora-json-keys"]}]' # from-param: [{"network":"${network}","subnetwork":"${subnetwork}","tags":["agora-json-keys"]}]
+        run.googleapis.com/secrets: unconfigured # from-param: master-key:projects/${managementProjectNumber}/secrets/production-json-keys-app-master-key,postgres-password:projects/${managementProjectNumber}/secrets/production-json-keys-postgres-password
+    spec:
+      serviceAccountName: unconfigured # from-param: ${runtimeServiceAccount}
+      timeoutSeconds: 60
+      containerConcurrency: 20
+      containers:
+        - name: grpc
+          # The release's buildArtifacts replaces this alias with its promoted digest.
+          image: service-json-keys
+          ports:
+            - name: h2c
+              containerPort: 8080
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          startupProbe:
+            tcpSocket:
+              port: 8080
+            periodSeconds: 3
+            timeoutSeconds: 1
+            failureThreshold: 80
+          env:
+            - name: GCLOUD_PROJECT_ID
+              value: pilot-unconfigured # from-param: ${projectId}
+            - name: GRPC_PORT
+              value: "8080"
+            - name: POSTGRES_HOST
+              value: unconfigured # from-param: ${databasePrivateIP}
+            - name: POSTGRES_PORT
+              value: "5432"
+            - name: POSTGRES_USER
+              value: agora_json_keys
+            - name: POSTGRES_DATABASE
+              value: agora_json_keys
+            - name: POSTGRES_TLS_ENABLED
+              value: "false"
+            - name: POSTGRES_MAX_IDLE_CONNS
+              value: "10"
+            - name: POSTGRES_MAX_OPEN_CONNS
+              value: "20"
+            - name: APP_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: master-key
+                  key: "0" # from-param: ${masterKeyVersion}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-password
+                  key: "0" # from-param: ${postgresPasswordVersion}

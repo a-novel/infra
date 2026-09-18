@@ -26,8 +26,8 @@ variable "name" {
   nullable    = false
 
   validation {
-    condition     = can(regex("^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$", var.name))
-    error_message = "Use a valid lowercase 1-63 character Cloud Run service name."
+    condition     = can(regex("^[a-z]([a-z0-9-]{0,54}[a-z0-9])?$", var.name))
+    error_message = "Use a lowercase 1-56 character service name, leaving space for the probe job suffix."
   }
 }
 
@@ -72,5 +72,25 @@ variable "verification_image" {
       var.verification_image,
     ))
     error_message = "Pin the reviewed verifier by SHA-256 digest in the selected project's regional Artifact Registry."
+  }
+}
+
+variable "probe" {
+  description = "Pre-provisioned invoker-only identity and private network for the health probe; the module grants no IAM or firewall access."
+  type = object({
+    service_account = string
+    network         = string
+    subnetwork      = string
+  })
+  nullable = false
+
+  validation {
+    condition = (
+      can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]@${var.project_id}\\.iam\\.gserviceaccount\\.com$", var.probe.service_account)) &&
+      !contains(values(var.execution_service_accounts), var.probe.service_account) &&
+      can(regex("^projects/${var.project_id}/global/networks/[a-z][a-z0-9-]+$", var.probe.network)) &&
+      can(regex("^projects/${var.project_id}/regions/${var.region}/subnetworks/[a-z][a-z0-9-]+$", var.probe.subnetwork))
+    )
+    error_message = "Use a distinct same-project probe identity and the selected project's regional private network."
   }
 }

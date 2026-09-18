@@ -1,0 +1,61 @@
+release:
+  name: projects/123456/locations/europe-west1/deliveryPipelines/agora-json-keys-grpc/releases/release-1
+  renderState: SUCCEEDED
+  buildArtifacts:
+    - image: service-json-keys
+      tag: europe-west1-docker.pkg.dev/agora-json-keys-test/agora-production/service-json-keys/grpc@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+rollout:
+  name: projects/123456/locations/europe-west1/deliveryPipelines/agora-json-keys-grpc/releases/release-1/rollouts/rollout-1
+  targetId: agora-json-keys-grpc
+  state: IN_PROGRESS
+  metadata:
+    cloudRun:
+      service: projects/123456/locations/europe-west1/services/agora-json-keys-grpc
+      revision: agora-json-keys-grpc-new
+jobRun:
+  name: projects/123456/locations/europe-west1/deliveryPipelines/agora-json-keys-grpc/releases/release-1/rollouts/rollout-1/jobRuns/verify-1
+  phaseId: canary-0
+  state: IN_PROGRESS
+  verifyJobRun: {}
+service:
+  name: projects/123456/locations/europe-west1/services/agora-json-keys-grpc
+  generation: "2"
+  observedGeneration: "2"
+  ingress: INGRESS_TRAFFIC_INTERNAL_ONLY
+  terminalCondition:
+    state: CONDITION_SUCCEEDED
+  uri: https://agora-json-keys-grpc-example-ew.a.run.app
+  trafficStatuses:
+    - revision: agora-json-keys-grpc-old
+      percent: 100
+    - revision: agora-json-keys-grpc-new
+      tag: candidate
+      uri: https://candidate---agora-json-keys-grpc-example-ew.a.run.app
+revision:
+  name: projects/123456/locations/europe-west1/services/agora-json-keys-grpc/revisions/agora-json-keys-grpc-new
+  service: projects/123456/locations/europe-west1/services/agora-json-keys-grpc
+  conditions:
+    - type: Ready
+      state: CONDITION_SUCCEEDED
+  containers:
+    - image: europe-west1-docker.pkg.dev/agora-json-keys-test/agora-production/service-json-keys/grpc@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+job:
+  name: projects/123456/locations/europe-west1/jobs/agora-json-keys-grpc-verify
+  etag: fixture-etag
+  template:
+    taskCount: 1
+    parallelism: 1
+    template:
+      serviceAccount: rollout-probe@agora-json-keys-test.iam.gserviceaccount.com
+      timeout: 90s
+      maxRetries: 0
+      containers:
+        - name: probe
+          image: europe-west1-docker.pkg.dev/agora-json-keys-test/agora-production/verify@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          args: [probe]
+      vpcAccess:
+        egress: ALL_TRAFFIC
+        networkInterfaces:
+          - network: projects/agora-json-keys-test/global/networks/agora-json-keys
+            subnetwork: projects/agora-json-keys-test/regions/europe-west1/subnetworks/agora-json-keys
+            tags: [agora-rollout-probe]
