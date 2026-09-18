@@ -10,6 +10,9 @@ variables {
   }
   artifact_bucket    = "agora-json-keys-test-deploy-artifacts"
   verification_image = "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-production/verify@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  notification_channels = [
+    "projects/agora-json-keys-test/notificationChannels/123456789",
+  ]
   probe = {
     service_account = "rollout-probe@agora-json-keys-test.iam.gserviceaccount.com"
     network         = "projects/agora-network-test/global/networks/agora-production"
@@ -105,6 +108,94 @@ run "inactive_service_rollout" {
     )
     error_message = "The single-attempt private probe must use a dedicated identity, API-only network tag, and no secrets."
   }
+}
+
+run "native_rollout_alerts" {
+  command = plan
+  module { source = "../../../modules/cloud-run-rollout" }
+
+  assert {
+    condition = alltrue([for policy in google_monitoring_alert_policy.rollout :
+      {
+        project    = policy.project
+        enabled    = policy.enabled
+        channels   = toset(policy.notification_channels)
+        combiner   = policy.combiner
+        conditions = length(policy.conditions)
+        rate_limit = policy.alert_strategy[0].notification_rate_limit[0].period
+        auto_close = policy.alert_strategy[0].auto_close
+        prompts    = policy.alert_strategy[0].notification_prompts
+        } == {
+        project    = "agora-json-keys-test"
+        enabled    = true
+        channels   = toset(["projects/agora-json-keys-test/notificationChannels/123456789"])
+        combiner   = "OR"
+        conditions = 1
+        rate_limit = "300s"
+        auto_close = "604800s"
+        prompts    = tolist(["OPENED"])
+      }
+    ])
+    error_message = "Native alerts need operations delivery, bounded notifications, and no misleading recovery notifications."
+  }
+
+  assert {
+    condition = alltrue([for key, policy in google_monitoring_alert_policy.rollout :
+      slice(split("\n", policy.conditions[0].condition_matched_log[0].filter), 0, 4) == tolist([
+        "logName=\"projects/agora-json-keys-test/logs/clouddeploy.googleapis.com%2F${key == "render_failed" ? "release_render" : "rollout_update"}\"",
+        "resource.type=\"clouddeploy.googleapis.com/DeliveryPipeline\"",
+        "resource.labels.pipeline_id=\"agora-json-keys-grpc\"",
+        "resource.labels.location=\"europe-west1\"",
+      ]) &&
+      policy.conditions[0].condition_matched_log[0].label_extractors == tomap(merge(
+        { release = "EXTRACT(jsonPayload.release)" },
+        key == "render_failed" ? {} : { rollout = "EXTRACT(jsonPayload.rollout)" },
+      ))
+    ])
+    error_message = "Scope alerts to the exact pipeline, region and project; extract identities without log message payloads."
+  }
+
+  assert {
+    condition = { for key, policy in google_monitoring_alert_policy.rollout : key => {
+      predicates = slice(
+        split("\n", policy.conditions[0].condition_matched_log[0].filter), 4,
+        length(split("\n", policy.conditions[0].condition_matched_log[0].filter)),
+      )
+      severity = policy.severity
+      } } == {
+      render_failed = {
+        predicates = tolist(["jsonPayload.releaseRenderState=\"FAILED\""])
+        severity   = "ERROR"
+      }
+      rollout_failed = {
+        predicates = tolist(["jsonPayload.rolloutUpdateType=(\"FAILED\" OR \"CANCELLED\" OR \"HALTED\" OR \"REJECTED\")"])
+        severity   = "ERROR"
+      }
+      approval_required = {
+        predicates = tolist(["jsonPayload.rolloutUpdateType=\"APPROVAL_REQUIRED\""])
+        severity   = "WARNING"
+      }
+      advance_required = {
+        predicates = tolist(["jsonPayload.rolloutUpdateType=\"ADVANCE_REQUIRED\""])
+        severity   = "WARNING"
+      }
+    }
+    error_message = "Keep failures distinct from expected approval and advancement events, using Google's platform log fields."
+  }
+}
+
+run "reject_missing_operations_channel" {
+  command = plan
+  module { source = "../../../modules/cloud-run-rollout" }
+  variables { notification_channels = [] }
+  expect_failures = [var.notification_channels]
+}
+
+run "reject_peer_operations_channel" {
+  command = plan
+  module { source = "../../../modules/cloud-run-rollout" }
+  variables { notification_channels = ["projects/agora-authentication-test/notificationChannels/123456789"] }
+  expect_failures = [var.notification_channels]
 }
 
 run "reject_peer_execution_identity" {
