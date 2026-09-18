@@ -17,6 +17,7 @@ import (
 	"github.com/a-novel/infra/internal/isolation"
 	"github.com/a-novel/infra/internal/operator"
 	"github.com/a-novel/infra/internal/release"
+	"github.com/a-novel/infra/internal/rollout"
 	"github.com/a-novel/infra/internal/workflow"
 )
 
@@ -59,6 +60,8 @@ func main() {
 		code = database.Run(ctx, os.Args[2:], os.Getenv, quiet, os.Stdout, os.Stderr)
 	} else if len(os.Args) > 1 && os.Args[1] == "custody" {
 		code = custody.Run(ctx, os.Args[2:], os.Getenv, quiet, os.Stdout, os.Stderr)
+	} else if len(os.Args) > 1 && os.Args[1] == "observe-rollout" {
+		code = rollout.RunObserver(ctx, os.Args[2:], os.Stdout, os.Stderr)
 	} else if len(os.Args) > 1 && os.Args[1] == "check-health" {
 		code = health.Run(ctx, os.Args[2:], quiet, nil, os.Stdout, os.Stderr)
 	} else if len(os.Args) > 1 && (os.Args[1] == "assess-images" || os.Args[1] == "refresh-deletion-gates") {

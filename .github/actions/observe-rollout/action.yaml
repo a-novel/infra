@@ -1,0 +1,23 @@
+name: Observe an exact Cloud Deploy rollout
+description: Report deployment and verification completion using a prebuilt infra command and read-only Cloud Deploy credentials.
+inputs:
+  rollout:
+    description: Exact rollout resource name using its numeric project; never a latest selector.
+    required: true
+  timeout:
+    description: Observation deadline within the caller job timeout, at most 30m.
+    default: 10m
+runs:
+  using: composite
+  steps:
+    - name: Observe deployment and verification
+      shell: bash
+      env:
+        OBSERVE_ROLLOUT: ${{ inputs.rollout }}
+        OBSERVE_TIMEOUT: ${{ inputs.timeout }}
+      run: |
+        set -euo pipefail
+        if ! infra observe-rollout --timeout "${OBSERVE_TIMEOUT}" --summary "${GITHUB_STEP_SUMMARY}" "${OBSERVE_ROLLOUT}"; then
+          printf '::error::Rollout completion was not confirmed. Inspect the step summary; do not resubmit or replay migrations.\n'
+          exit 1
+        fi
