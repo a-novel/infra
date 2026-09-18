@@ -34,15 +34,8 @@ func (client cloud) submit(ctx context.Context, request *deploypb.CreateReleaseR
 	if err != nil {
 		return errors.New("release submission uncertain; intent retained")
 	}
-	prefix := client.scope.location() + "/operations/"
-	if !strings.HasPrefix(operation.Name(), prefix) || !validOperationID(strings.TrimPrefix(operation.Name(), prefix)) {
-		return errors.New("release returned an unexpected operation identity; intent retained")
-	}
-	// Keep a log breadcrumb even if private operation recording fails. The immutable
-	// record is still mandatory before waiting; console output cannot replace it.
-	_, _ = fmt.Fprintf(output, "Operation: %s\n", operation.Name())
-	if err := client.create(ctx, strings.TrimSuffix(name, ".json")+".operation.json", &longrunningpb.Operation{Name: operation.Name()}); err != nil {
-		return errors.New("operation recording uncertain; release may already exist")
+	if err := client.recordOperation(ctx, name, operation.Name(), output); err != nil {
+		return err
 	}
 	release, err := operation.Wait(ctx)
 	if err != nil {
@@ -51,33 +44,66 @@ func (client cloud) submit(ctx context.Context, request *deploypb.CreateReleaseR
 	return report(output, request, release)
 }
 
+func (client cloud) recordOperation(ctx context.Context, intent, operation string, output io.Writer) error {
+	prefix := client.scope.location() + "/operations/"
+	if !strings.HasPrefix(operation, prefix) || !validOperationID(strings.TrimPrefix(operation, prefix)) {
+		return errors.New("unexpected operation identity; intent retained")
+	}
+	// Keep a log breadcrumb even if private operation recording fails. The immutable
+	// record is still mandatory before waiting; console output cannot replace it.
+	_, _ = fmt.Fprintf(output, "Operation: %s\n", operation)
+	if err := client.create(ctx, strings.TrimSuffix(intent, ".json")+".operation.json", &longrunningpb.Operation{Name: operation}); err != nil {
+		return errors.New("operation recording uncertain; cloud request may already be accepted")
+	}
+	return nil
+}
+
 func validOperationID(id string) bool {
 	// Cloud Deploy operation IDs need not be UUIDs, but never contain path separators.
 	return id != "" && len(id) <= 256 && strings.Trim(id, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_") == ""
 }
 
 func (client cloud) reconcile(ctx context.Context, id string, output io.Writer) error {
-	response, err := client.storage.Objects.Get(client.scope.ReceiptBucket, client.scope.intentName(id)).Context(ctx).Download()
-	if err != nil {
-		return errors.New("exact private intent unavailable; do not resubmit")
-	}
-	defer func() { _ = response.Body.Close() }()
-	data, err := io.ReadAll(io.LimitReader(response.Body, maxRequestBytes+1))
-	if err != nil {
-		return errors.New("cannot read exact private intent")
-	}
-	request, err := client.scope.request(data)
+	request, release, err := client.readRelease(ctx, id)
 	if err != nil {
 		return err
 	}
+	return report(output, request, release)
+}
+
+func (client cloud) read(ctx context.Context, name string) ([]byte, error) {
+	response, err := client.storage.Objects.Get(client.scope.ReceiptBucket, name).Context(ctx).Download()
+	if err != nil {
+		return nil, errors.New("exact private intent unavailable; do not resubmit")
+	}
+	defer func() { _ = response.Body.Close() }()
+	data, err := io.ReadAll(io.LimitReader(response.Body, maxRequestBytes+1))
+	if err != nil || len(data) > maxRequestBytes {
+		return nil, errors.New("cannot read bounded private intent")
+	}
+	return data, nil
+}
+
+func (client cloud) readRelease(ctx context.Context, id string) (*deploypb.CreateReleaseRequest, *deploypb.Release, error) {
+	data, err := client.read(ctx, client.scope.intentName(id))
+	if err != nil {
+		return nil, nil, err
+	}
+	request, err := client.scope.request(data)
+	if err != nil {
+		return nil, nil, err
+	}
 	if request.ReleaseId != id {
-		return errors.New("stored intent does not match the selected release")
+		return nil, nil, errors.New("stored intent does not match the selected release")
 	}
 	release, err := client.deploy.GetRelease(ctx, &deploypb.GetReleaseRequest{Name: request.Release.Name})
 	if err != nil {
-		return errors.New("exact release unavailable; absence does not authorize resubmission")
+		return nil, nil, errors.New("exact release unavailable; absence does not authorize resubmission")
 	}
-	return report(output, request, release)
+	if !proto.Equal(request.Release, submittedFields(release)) {
+		return nil, nil, errors.New("native release conflicts with the reserved request")
+	}
+	return request, release, nil
 }
 
 func (client cloud) create(ctx context.Context, name string, message proto.Message) error {
@@ -115,6 +141,6 @@ func report(output io.Writer, request *deploypb.CreateReleaseRequest, release *d
 	default:
 		return errors.New("release render state is not established")
 	}
-	_, err := fmt.Fprintf(output, "Release %s: %s. No rollout submitted; deployment and durable success receipt remain pending.\n", request.ReleaseId, status)
+	_, err := fmt.Fprintf(output, "Release %s: %s. This check does not establish deployment or durable success receipt completion.\n", request.ReleaseId, status)
 	return err
 }

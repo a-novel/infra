@@ -84,3 +84,17 @@ func upload(t *testing.T, request *http.Request) (*storage.Object, []byte) {
 	}
 	return object, data
 }
+
+func completeRollout(t *testing.T, value *deploypb.Rollout) {
+	t.Helper()
+	value.ApprovalState, value.State = deploypb.Rollout_APPROVED, deploypb.Rollout_SUCCEEDED
+	for _, id := range []string{"canary-0", "stable"} {
+		value.Phases = append(value.Phases, &deploypb.Phase{
+			Id: id, State: deploypb.Phase_SUCCEEDED,
+			Jobs: &deploypb.Phase_DeploymentJobs{DeploymentJobs: &deploypb.DeploymentJobs{
+				DeployJob: &deploypb.Job{State: deploypb.Job_SUCCEEDED},
+				VerifyJob: &deploypb.Job{State: deploypb.Job_SUCCEEDED},
+			}},
+		})
+	}
+}

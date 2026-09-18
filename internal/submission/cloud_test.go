@@ -200,7 +200,7 @@ func TestCloud(t *testing.T) {
 			require.Equal(t, beforeWrites, afterWrites, "reconciliation must never write")
 			require.Equal(t, testCase.want, got, "reconcile output: %s", &output)
 			if got.reconcile == 0 {
-				require.Contains(t, output.String(), "No rollout submitted; deployment and durable success receipt remain pending.")
+				require.Contains(t, output.String(), "This check does not establish deployment or durable success receipt completion.")
 			}
 		})
 	}

@@ -1,5 +1,3 @@
-// Package submission persists render-only Cloud Deploy intent before dispatch.
-// Recovery reads the exact identity; it never resends a request or starts a rollout.
 package submission
 
 import (
@@ -14,7 +12,10 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const maxRequestBytes = 64 << 10
+const (
+	maxRequestBytes = 64 << 10
+	pilotTarget     = "agora-json-keys-grpc"
+)
 
 var (
 	projectPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{4,28}[a-z0-9]$`)
@@ -57,7 +58,7 @@ func (scope scope) location() string {
 }
 
 func (scope scope) parent() string {
-	return scope.location() + "/deliveryPipelines/agora-json-keys-grpc"
+	return scope.location() + "/deliveryPipelines/" + pilotTarget
 }
 
 func (scope scope) prefix() string { return "services/" + scope.ProjectID + "/production/" }
@@ -67,14 +68,14 @@ func (scope scope) intentName(id string) string {
 }
 
 func (scope scope) request(data []byte) (*deploypb.CreateReleaseRequest, error) {
-	request := new(deploypb.CreateReleaseRequest)
+	request := &deploypb.CreateReleaseRequest{}
 	if len(data) > maxRequestBytes || protojson.Unmarshal(data, request) != nil {
 		return nil, errors.New("expected a bounded native CreateReleaseRequest JSON document")
 	}
 	if request.Parent != scope.parent() || !releasePattern.MatchString(request.ReleaseId) {
 		return nil, errors.New("release must belong to the selected JSON Keys pipeline")
 	}
-	if !uuidPattern.MatchString(request.RequestId) || request.RequestId == "00000000-0000-0000-0000-000000000000" {
+	if !validRequestID(request.RequestId) {
 		return nil, errors.New("requestId must be a nonzero lowercase UUID")
 	}
 	release := request.GetRelease()
@@ -108,6 +109,10 @@ func (scope scope) request(data []byte) (*deploypb.CreateReleaseRequest, error) 
 		return nil, err
 	}
 	return request, nil
+}
+
+func validRequestID(id string) bool {
+	return uuidPattern.MatchString(id) && id != "00000000-0000-0000-0000-000000000000"
 }
 
 func (scope scope) parameters(parameters map[string]string) error {
