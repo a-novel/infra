@@ -19,7 +19,7 @@ env:
 
 jobs:
   resource-deletion-gate:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       actions: read
@@ -53,7 +53,7 @@ jobs:
           ./trusted/ops/verify-resource-deletion-gate.sh "${GITHUB_REPOSITORY}"
 
   validate-opentofu:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     permissions:
       contents: read
@@ -92,7 +92,7 @@ jobs:
           version: "0.11.0"
 
   scan-infrastructure:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -120,7 +120,7 @@ jobs:
           version: v0.74.0
 
   lint-repository:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     permissions:
       attestations: read

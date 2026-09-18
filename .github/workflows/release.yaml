@@ -51,7 +51,7 @@ jobs:
       github.ref == 'refs/heads/master' &&
       vars.PRODUCTION_RELEASES_ENABLED == 'true' &&
       !endsWith(inputs.action, '-database-isolation')
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # Sequential database safety checks and clean restores each keep their own
     # bounded timeout; the workflow ceiling must not cancel a valid slow run.
     timeout-minutes: 360
@@ -286,7 +286,7 @@ jobs:
       github.ref == 'refs/heads/master' &&
       (inputs.action == 'drill-database-isolation' || inputs.action == 'restore-database-isolation') &&
       (vars.PRODUCTION_RELEASES_ENABLED == 'true' || inputs.action == 'restore-database-isolation')
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 90
     environment: production-release
     permissions:
