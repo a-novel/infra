@@ -9,7 +9,7 @@ resource "google_cloud_run_v2_job" "probe" {
     parallelism = 1
 
     template {
-      service_account       = var.probe.service_account
+      service_account       = google_service_account.execution["probe"].email
       execution_environment = "EXECUTION_ENVIRONMENT_GEN2"
       timeout               = "90s"
       max_retries           = 0

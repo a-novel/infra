@@ -1,22 +1,27 @@
-mock_provider "google" {}
+mock_provider "google" {
+  mock_data "google_project" { defaults = { number = "123456789012" } }
+  mock_resource "google_service_account" {
+    defaults = {
+      email = "mock-account@agora-json-keys-test.iam.gserviceaccount.com"
+      name  = "projects/agora-json-keys-test/serviceAccounts/mock-account@agora-json-keys-test.iam.gserviceaccount.com"
+    }
+  }
+}
 
 variables {
-  project_id = "agora-json-keys-test"
-  region     = "europe-west1"
-  name       = "agora-json-keys-grpc"
-  execution_service_accounts = {
-    deploy = "rollout-deploy@agora-json-keys-test.iam.gserviceaccount.com"
-    verify = "rollout-verify@agora-json-keys-test.iam.gserviceaccount.com"
-  }
-  artifact_bucket    = "agora-json-keys-test-deploy-artifacts"
-  verification_image = "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-production/verify@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  project_id              = "agora-json-keys-test"
+  region                  = "europe-west1"
+  name                    = "agora-json-keys-grpc"
+  runtime_service_account = "agora-json-keys@agora-json-keys-test.iam.gserviceaccount.com"
+  artifact_bucket         = "agora-json-keys-test-deploy-artifacts"
+  receipt_bucket          = "agora-management-test-deployment-receipts"
+  verification_image      = "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-tooling/verify@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   notification_channels = [
     "projects/agora-json-keys-test/notificationChannels/123456789",
   ]
   probe = {
-    service_account = "rollout-probe@agora-json-keys-test.iam.gserviceaccount.com"
-    network         = "projects/agora-network-test/global/networks/agora-production"
-    subnetwork      = "projects/agora-network-test/regions/europe-west1/subnetworks/agora-production-europe-west1"
+    network    = "projects/agora-network-test/global/networks/agora-production"
+    subnetwork = "projects/agora-network-test/regions/europe-west1/subnetworks/agora-production-europe-west1"
   }
 }
 
@@ -62,7 +67,7 @@ run "inactive_service_rollout" {
             EXPECTED_PROJECT_ID     = var.project_id
             EXPECTED_REGION         = var.region
             EXPECTED_SERVICE        = var.name
-            EXPECTED_PROBE_ACCOUNT  = var.probe.service_account
+            EXPECTED_PROBE_ACCOUNT  = google_service_account.execution["probe"].email
             EXPECTED_VERIFIER_IMAGE = var.verification_image
             EXPECTED_PROBE_NETWORK  = var.probe.network
             EXPECTED_PROBE_SUBNET   = var.probe.subnetwork
@@ -80,8 +85,8 @@ run "inactive_service_rollout" {
         config.artifact_storage == "gs://${var.artifact_bucket}/cloud-deploy/${var.project_id}/${var.name}" &&
         config.execution_timeout == "600s" && !config.verbose &&
         (contains(config.usages, "VERIFY") ?
-          toset(config.usages) == toset(["VERIFY"]) && config.service_account == var.execution_service_accounts.verify :
-          toset(config.usages) == toset(["RENDER", "DEPLOY"]) && config.service_account == var.execution_service_accounts.deploy
+          toset(config.usages) == toset(["VERIFY"]) && config.service_account == google_service_account.execution["verify"].email :
+          toset(config.usages) == toset(["RENDER", "DEPLOY"]) && config.service_account == google_service_account.execution["deploy"].email
         )
       ])
     )
@@ -96,7 +101,7 @@ run "inactive_service_rollout" {
       google_cloud_run_v2_job.probe.template[0].task_count == 1 &&
       google_cloud_run_v2_job.probe.template[0].parallelism == 1 &&
       alltrue([for task in google_cloud_run_v2_job.probe.template[0].template :
-        task.service_account == var.probe.service_account && task.max_retries == 0 && task.timeout == "90s" &&
+        task.service_account == google_service_account.execution["probe"].email && task.max_retries == 0 && task.timeout == "90s" &&
         length(task.volumes) == 0 && length(task.containers) == 1 &&
         task.containers[0].image == var.verification_image &&
         task.containers[0].args == tolist(["probe"]) && length(task.containers[0].env) == 0 &&
@@ -107,6 +112,140 @@ run "inactive_service_rollout" {
       ])
     )
     error_message = "The single-attempt private probe must use a dedicated identity, API-only network tag, and no secrets."
+  }
+}
+
+run "execution_authority" {
+  command = plan
+  module { source = "../../../modules/cloud-run-rollout" }
+
+  assert {
+    condition = { for key, role in google_project_iam_custom_role.execution : key => role.permissions } == {
+      submit = toset([
+        "clouddeploy.config.get", "clouddeploy.deliveryPipelines.get", "clouddeploy.jobRuns.get",
+        "clouddeploy.operations.get", "clouddeploy.releases.create", "clouddeploy.releases.get",
+        "clouddeploy.rollouts.create", "clouddeploy.rollouts.get", "clouddeploy.targets.get",
+      ])
+      deploy = toset([
+        "clouddeploy.config.get", "logging.logEntries.create", "run.operations.get", "run.revisions.get",
+        "run.services.create", "run.services.get", "run.services.update",
+      ])
+      verify = toset([
+        "clouddeploy.config.get", "clouddeploy.jobRuns.get", "clouddeploy.releases.get", "clouddeploy.rollouts.get",
+        "logging.logEntries.create", "run.operations.get", "run.revisions.get", "run.services.get",
+      ])
+      probe = toset(["run.routes.invoke"])
+    }
+    error_message = "Keep project permissions separate: submit, deploy, read-only verification, and API-only invocation."
+  }
+
+  assert {
+    condition = (
+      { for key, account in google_service_account.execution : key => [account.project, account.account_id] } == {
+        deploy = [var.project_id, "rollout-deploy"]
+        verify = [var.project_id, "rollout-verify"]
+        probe  = [var.project_id, "rollout-probe"]
+      } &&
+      alltrue([for key, binding in google_project_iam_member.execution :
+        binding.project == var.project_id &&
+        binding.role == google_project_iam_custom_role.execution[key].name &&
+        binding.member == "serviceAccount:${key == "submit" ? "infra-release@${var.project_id}.iam.gserviceaccount.com" : google_service_account.execution[key].email}"
+      ])
+    )
+    error_message = "Create distinct service-project identities and bind each project role only to its owner."
+  }
+
+  assert {
+    condition = (
+      toset(keys(google_service_account_iam_member.submit_execution)) == toset(["deploy", "verify"]) &&
+      alltrue([for key, binding in google_service_account_iam_member.submit_execution :
+        binding.service_account_id == google_service_account.execution[key].name &&
+        binding.member == "serviceAccount:infra-release@${var.project_id}.iam.gserviceaccount.com" &&
+        binding.role == "roles/iam.serviceAccountUser"
+      ]) &&
+      [google_service_account_iam_member.deploy_runtime.service_account_id,
+        google_service_account_iam_member.deploy_runtime.member,
+        google_service_account_iam_member.deploy_runtime.role] == [
+        "projects/${var.project_id}/serviceAccounts/${var.runtime_service_account}",
+        "serviceAccount:${google_service_account.execution["deploy"].email}", "roles/iam.serviceAccountUser",
+      ]
+    )
+    error_message = "Only the submitter may attach execution accounts; only the deploy worker may attach the application account."
+  }
+
+  assert {
+    condition = (
+      google_project_iam_custom_role.probe_execution.permissions == toset(["run.jobs.get", "run.jobs.run", "run.jobs.runWithOverrides"]) &&
+      [google_cloud_run_v2_job_iam_member.probe_execution.project,
+        google_cloud_run_v2_job_iam_member.probe_execution.location,
+        google_cloud_run_v2_job_iam_member.probe_execution.name,
+        google_cloud_run_v2_job_iam_member.probe_execution.role,
+        google_cloud_run_v2_job_iam_member.probe_execution.member] == [
+        var.project_id, var.region, google_cloud_run_v2_job.probe.name,
+        google_project_iam_custom_role.probe_execution.name, "serviceAccount:${google_service_account.execution["verify"].email}",
+      ]
+    )
+    error_message = "Grant job execution with overrides to the verifier on the exact probe, never project-wide."
+  }
+
+  assert {
+    condition = { for key, binding in google_artifact_registry_repository_iam_member.execution : key => [
+      binding.project, binding.location, binding.repository, binding.role, binding.member,
+      ] } == {
+      deploy = [var.project_id, var.region, "agora-production", "roles/artifactregistry.reader", "serviceAccount:${google_service_account.execution["deploy"].email}"]
+      verify = [var.project_id, var.region, "agora-tooling", "roles/artifactregistry.reader", "serviceAccount:${google_service_account.execution["verify"].email}"]
+    }
+    error_message = "Keep image access read-only on the application and verifier repositories, not the project."
+  }
+}
+
+run "private_artifact_storage" {
+  command = plan
+  module { source = "../../../modules/cloud-run-rollout" }
+
+  assert {
+    condition = {
+      project       = google_storage_bucket.artifacts.project
+      name          = google_storage_bucket.artifacts.name
+      location      = google_storage_bucket.artifacts.location
+      uniform       = google_storage_bucket.artifacts.uniform_bucket_level_access
+      public_access = google_storage_bucket.artifacts.public_access_prevention
+      force_destroy = google_storage_bucket.artifacts.force_destroy
+      versioning    = google_storage_bucket.artifacts.versioning[0].enabled
+      soft_delete   = google_storage_bucket.artifacts.soft_delete_policy[0].retention_duration_seconds
+      expiry_rules  = length(google_storage_bucket.artifacts.lifecycle_rule)
+      } == {
+      project    = var.project_id, name = var.artifact_bucket, location = var.region,
+      uniform    = true, public_access = "enforced", force_destroy = false,
+      versioning = true, soft_delete = 604800, expiry_rules = 0,
+    }
+    error_message = "Retain private service-project artifacts without automatic expiry or destructive bucket cleanup."
+  }
+
+  assert {
+    condition = { for key, binding in google_storage_bucket_iam_member.artifacts : key => [binding.bucket, binding.role, binding.member] } == {
+      deploy_creator = [var.artifact_bucket, "roles/storage.objectCreator", "serviceAccount:${google_service_account.execution["deploy"].email}"]
+      deploy_reader  = [var.artifact_bucket, "roles/storage.objectViewer", "serviceAccount:${google_service_account.execution["deploy"].email}"]
+      verify_creator = [var.artifact_bucket, "roles/storage.objectCreator", "serviceAccount:${google_service_account.execution["verify"].email}"]
+      verify_reader  = [var.artifact_bucket, "roles/storage.objectViewer", "serviceAccount:${google_service_account.execution["verify"].email}"]
+    }
+    error_message = "Execution workers may create/read artifact objects but cannot overwrite/delete them or write receipts."
+  }
+
+  assert {
+    condition = (
+      google_storage_managed_folder.source.bucket == var.receipt_bucket &&
+      google_storage_managed_folder.source.name == "services/${var.project_id}/production/sources/" &&
+      !google_storage_managed_folder.source.force_destroy &&
+      google_storage_managed_folder.source.deletion_policy == "PREVENT" &&
+      { for key, binding in google_storage_managed_folder_iam_member.source : key => [
+        binding.bucket, binding.managed_folder, binding.role, binding.member,
+        ] } == {
+        deploy        = [var.receipt_bucket, "services/${var.project_id}/production/sources/", "roles/storage.objectViewer", "serviceAccount:${google_service_account.execution["deploy"].email}"]
+        service_agent = [var.receipt_bucket, "services/${var.project_id}/production/sources/", "roles/storage.objectViewer", "serviceAccount:service-123456789012@gcp-sa-clouddeploy.iam.gserviceaccount.com"]
+      }
+    )
+    error_message = "Only render/deploy and the service's Cloud Deploy agent may read the retained source folder, not sibling receipts."
   }
 }
 
@@ -198,28 +337,22 @@ run "reject_peer_operations_channel" {
   expect_failures = [var.notification_channels]
 }
 
-run "reject_peer_execution_identity" {
+run "reject_peer_application_identity" {
   command = plan
   module { source = "../../../modules/cloud-run-rollout" }
   variables {
-    execution_service_accounts = {
-      deploy = "rollout-deploy@agora-authentication-test.iam.gserviceaccount.com"
-      verify = "rollout-verify@agora-json-keys-test.iam.gserviceaccount.com"
-    }
+    runtime_service_account = "agora-authentication@agora-authentication-test.iam.gserviceaccount.com"
   }
-  expect_failures = [var.execution_service_accounts]
+  expect_failures = [var.runtime_service_account]
 }
 
-run "reject_shared_execution_identity" {
+run "reject_privileged_application_identity" {
   command = plan
   module { source = "../../../modules/cloud-run-rollout" }
   variables {
-    execution_service_accounts = {
-      deploy = "rollout-deploy@agora-json-keys-test.iam.gserviceaccount.com"
-      verify = "rollout-deploy@agora-json-keys-test.iam.gserviceaccount.com"
-    }
+    runtime_service_account = "rollout-deploy@agora-json-keys-test.iam.gserviceaccount.com"
   }
-  expect_failures = [var.execution_service_accounts]
+  expect_failures = [var.runtime_service_account]
 }
 
 run "reject_floating_verifier" {
@@ -249,17 +382,13 @@ run "reject_region_pattern_injection" {
   expect_failures = [var.region]
 }
 
-run "reject_privileged_probe_identity" {
+run "reject_artifacts_in_receipt_bucket" {
   command = plan
   module { source = "../../../modules/cloud-run-rollout" }
   variables {
-    probe = {
-      service_account = "rollout-deploy@agora-json-keys-test.iam.gserviceaccount.com"
-      network         = "projects/agora-json-keys-test/global/networks/agora-json-keys"
-      subnetwork      = "projects/agora-json-keys-test/regions/europe-west1/subnetworks/agora-json-keys"
-    }
+    artifact_bucket = "agora-management-test-deployment-receipts"
   }
-  expect_failures = [var.probe]
+  expect_failures = [var.receipt_bucket]
 }
 
 run "reject_mismatched_probe_network" {
@@ -267,9 +396,8 @@ run "reject_mismatched_probe_network" {
   module { source = "../../../modules/cloud-run-rollout" }
   variables {
     probe = {
-      service_account = "rollout-probe@agora-json-keys-test.iam.gserviceaccount.com"
-      network         = "projects/agora-authentication-test/global/networks/agora-authentication"
-      subnetwork      = "projects/agora-json-keys-test/regions/europe-west1/subnetworks/agora-json-keys"
+      network    = "projects/agora-authentication-test/global/networks/agora-authentication"
+      subnetwork = "projects/agora-json-keys-test/regions/europe-west1/subnetworks/agora-json-keys"
     }
   }
   expect_failures = [var.probe]

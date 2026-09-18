@@ -31,33 +31,44 @@ variable "name" {
   }
 }
 
-variable "execution_service_accounts" {
-  description = "Pre-provisioned, distinct same-project accounts for render/deploy and verification; this module grants no IAM."
-  type = object({
-    deploy = string
-    verify = string
-  })
-  nullable = false
+variable "runtime_service_account" {
+  description = "Existing application identity the deploy worker may attach; owned by the service foundation."
+  type        = string
+  nullable    = false
 
   validation {
     condition = (
-      var.execution_service_accounts.deploy != var.execution_service_accounts.verify &&
-      alltrue([for account in values(var.execution_service_accounts) :
-        can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]@${var.project_id}\\.iam\\.gserviceaccount\\.com$", account))
-      ])
+      can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]@${var.project_id}\\.iam\\.gserviceaccount\\.com$", var.runtime_service_account)) &&
+      !contains([for name in ["infra-release", "rollout-deploy", "rollout-verify", "rollout-probe"] :
+        "${name}@${var.project_id}.iam.gserviceaccount.com"
+      ], var.runtime_service_account)
     )
-    error_message = "Use distinct deploy and verify service accounts from the selected service project."
+    error_message = "Use an application identity in this service project, distinct from release and rollout identities."
   }
 }
 
 variable "artifact_bucket" {
-  description = "Existing private artifact bucket name (no gs://); access must be scoped to this module's service prefix."
+  description = "Globally unique name for the private service-project bucket this module creates for rollout artifacts."
   type        = string
   nullable    = false
 
   validation {
     condition     = can(regex("^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$", var.artifact_bucket))
     error_message = "Use a 3-63 character bucket name containing lowercase letters, digits, and hyphens."
+  }
+}
+
+variable "receipt_bucket" {
+  description = "Existing private management receipt bucket with uniform access and the workload-project-owned service prefix."
+  type        = string
+  nullable    = false
+
+  validation {
+    condition = (
+      can(regex("^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$", var.receipt_bucket)) &&
+      var.receipt_bucket != var.artifact_bucket
+    )
+    error_message = "Use a valid management receipt bucket distinct from the rollout artifact bucket."
   }
 }
 
@@ -92,21 +103,18 @@ variable "verification_image" {
 }
 
 variable "probe" {
-  description = "Same-service invoker-only identity and foundation-owned network/subnet coordinates, including Shared VPC; no IAM or firewall access is granted."
+  description = "Foundation-owned network/subnet coordinates, including Shared VPC; routing and firewall access remain foundation prerequisites."
   type = object({
-    service_account = string
-    network         = string
-    subnetwork      = string
+    network    = string
+    subnetwork = string
   })
   nullable = false
 
   validation {
     condition = (
-      can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]@${var.project_id}\\.iam\\.gserviceaccount\\.com$", var.probe.service_account)) &&
-      !contains(values(var.execution_service_accounts), var.probe.service_account) &&
       can(regex("^projects/[a-z][a-z0-9-]{4,28}[a-z0-9]/global/networks/[a-z][a-z0-9-]+$", var.probe.network)) &&
       can(regex("^projects/${try(split("/", var.probe.network)[1], "")}/regions/${var.region}/subnetworks/[a-z][a-z0-9-]+$", var.probe.subnetwork))
     )
-    error_message = "Use a distinct same-service identity and an exact network/subnet pair in one approved host project and target region."
+    error_message = "Use an exact network/subnet pair in one approved host project and target region."
   }
 }

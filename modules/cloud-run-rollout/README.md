@@ -1,7 +1,8 @@
 # Cloud Run rollout boundary (inactive pilot)
 
-This module declares one Cloud Deploy delivery pipeline, its Cloud Run target and probe, and native
-operations alerts for one service project. **No production root calls it. The pipeline is suspended in code**, not behind an input
+This module declares one Cloud Deploy delivery pipeline, its Cloud Run target and probe, execution
+identities, private artifact storage, and native operations alerts for one service project.
+**No production root calls it. The pipeline is suspended in code**, not behind an input
 switch. It cannot deploy an API until a separately reviewed activation change completes the gates
 below. The existing production release path remains the only active writer.
 
@@ -9,7 +10,8 @@ The maintainer approved this code-only pilot in [#183](https://github.com/a-nove
 [#240](https://github.com/a-novel/infra/issues/240) introduced the boundary;
 [#242](https://github.com/a-novel/infra/issues/242) adds the
 [JSON Keys manifest and private verifier](../../deploy/cloud-deploy/json-keys/README.md).
-Artifact publication, submission workflow, IAM provisioning and live proof remain separate work.
+The source publisher and submission commands are code-only too. Publication, production wiring,
+provisioning and live proof remain separate work.
 
 `notification_channels` must contain existing operations channels in this service project.
 The [native alert runbook](../../docs/runbooks/observe-rollout.md#native-operations-alerts) covers
@@ -42,12 +44,48 @@ The [first deployment can skip the canary](https://docs.cloud.google.com/deploy/
 Bootstrap therefore needs separate approval and evidence; this configuration alone is not a
 zero-traffic first-launch guarantee. Routine submission must require a known compatible predecessor.
 
-The two execution accounts are explicit, distinct, and in the service project. `RENDER`/`DEPLOY`
-cannot silently fall back to the default Compute account, and `VERIFY` does not use the deploy
-account. Executions have a ten-minute limit and a service-specific artifact prefix. This module
-grants no permissions and creates no identities, buckets, APIs, application workloads, or releases.
-It declares one secret-free probe job with a third, distinct runtime identity.
-Name validation does not prove bucket privacy, effective IAM, or artifact provenance.
+`RENDER`/`DEPLOY` uses the module-owned `rollout-deploy` account, `VERIFY` uses `rollout-verify`,
+and the secret-free probe job uses `rollout-probe`. None falls back to the default Compute account.
+Executions have a ten-minute limit and a service-specific artifact prefix. The module declares no
+APIs, application service, application runtime identity, release, or production workflow.
+
+## Execution authority and storage
+
+The existing [service release identity](../workload-project/README.md),
+`infra-release@PROJECT.iam.gserviceaccount.com`, submits releases. `runtime_service_account` is the
+separately owned application identity. This module adds only the following grants:
+
+| Identity                          | Granted authority                                                                                                                                                                                                                           |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Submitter                         | Create/read native releases and rollouts, inspect their records, attach deploy/verify accounts. No approve, advance, retry, ignore, cancel, rollback or pipeline-update permission.                                                         |
+| Deploy                            | Render and update API specifications/traffic in this service project; attach only the selected app runtime. Read app images and source, create/read artifacts, write execution logs. No job execution or IAM changes.                       |
+| Verify                            | Read Cloud Deploy and Run evidence; execute **the exact probe job** with overrides and wait for its operation. Read verifier images, create/read artifacts and write logs. No API/job updates, migration execution or direct secret access. |
+| Probe                             | `run.routes.invoke` in this service project. No job execution, database, secret or storage grants.                                                                                                                                          |
+| Google Cloud Deploy service agent | Read the selected service's source folder in the management bucket. Its Google-managed project role remains a provisioning prerequisite.                                                                                                    |
+
+The [predefined Cloud Deploy roles](https://docs.cloud.google.com/deploy/docs/iam-roles-permissions)
+mix submission with operational recovery powers; Cloud Run Developer also permits job execution.
+Small custom permission sets keep those responsibilities separate. Standard service-account,
+repository-reader and storage roles are bound to the exact resources where they fit. The runner's
+storage permissions are bucket-scoped, not granted through a project-wide runner role.
+
+API deployment and invocation are **project-wide**, deliberately relying on one workload per project.
+They are not narrowed to a service name by a purported Cloud Run `resource.name` IAM condition.
+The reviewed manifest and verifier additionally enforce the expected service. The deployer can run
+code as the application identity: `actAs` therefore gives indirect access to that application's
+permissions. Source review, the protected target and image provenance remain essential.
+
+`artifact_bucket` names a new private bucket owned by this module in the service project. It uses
+uniform access, public-access prevention, versioning and seven-day soft delete. Execution workers
+may create/read objects, not overwrite/delete them. There is no age-based expiry: retained releases
+must keep their render/rollout artifacts until an explicitly reviewed retirement.
+
+`receipt_bucket` is the existing management bucket. The module owns only its nested
+`services/PROJECT/production/sources/` managed folder, with read-only access for render/deploy and
+the selected project's Cloud Deploy agent. The parent and the submitter's create/read access remain
+owned by `workload-project`; workers get no sibling intent/receipt access. Bucket, folder and identity
+deletion are protected. These additive grants do not remove inherited permissions: inspect effective
+IAM and test denied peer, secret, receipt-write and non-probe job access before activation.
 
 ## Required verifier contract
 
@@ -102,11 +140,14 @@ and completion-evidence implementation; this table is a contract, not live proof
 1. Review the service manifest and verifier together, starting with JSON Keys. Preserve internal
    ingress, one warm instance, resource limits, immutable images, numeric secret references, and
    private database routing. No peer configuration or credentials may be required to release it.
-2. Provision explicit execution/runtime identities, required APIs, protected artifact storage, and
-   narrow service-scoped grants through reviewed HCL. Provision and verify the native operations
-   channels and platform-log routing. Separate release submission, target approval,
-   deployment, verification, and migration execution. The routine identity must not bypass failed
-   verification with `ignoreJob` or update the pipeline. Check effective inherited access too.
+2. Provision this module only through a separately approved foundation change. First enable Cloud
+   Deploy, Cloud Build, Run, Artifact Registry, Storage, IAM and Monitoring APIs; establish the Google
+   service agents and their documented roles, existing `agora-production`/verifier registries,
+   application runtime, release identity, management receipt folder and operations channels. The
+   foundation needs resource/IAM administration and permission to attach the probe identity.
+   Grant the required Shared VPC subnet attachment and API-only probe egress separately; test private
+   routing, effective IAM, platform-log routing and notification delivery. Target approval,
+   advancement/recovery and migration authority remain separate from these execution grants.
 3. Review saved source/destination state, inventory, and a reversible one-writer handoff under #187.
    These are new service projects: state import alone cannot move existing cross-project workloads.
    Preserve retained backups and receipts; leave unrelated Renovate automation unchanged.

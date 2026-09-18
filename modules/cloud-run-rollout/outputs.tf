@@ -5,3 +5,8 @@ output "rollout" {
     target   = google_clouddeploy_target.service.id
   }
 }
+
+output "execution_service_accounts" {
+  description = "Module-owned deploy, verify and probe identities for ownership inventory and effective-IAM verification."
+  value       = { for name, account in google_service_account.execution : name => account.email }
+}

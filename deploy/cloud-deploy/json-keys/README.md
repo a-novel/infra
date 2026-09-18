@@ -64,17 +64,17 @@ not another long-running service. It scales to zero between probes and uses 1 CP
 It has no durable data, env credentials or volumes. Deletion is guarded; recreation from the reviewed
 definition is its recovery path. Verification incurs ordinary job/build/log usage when executed.
 
-| Identity | Required boundary before activation                                                                                                                                                                                                             |
-| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Deploy   | Own-service deployment plus approved runtime impersonation; no probe execution or migrations.                                                                                                                                                   |
-| Verify   | Cloud Deploy record reads, Run service/revision reads, and `run.jobs.get`, `run.jobs.run`, `run.jobs.runWithOverrides`, `run.operations.get` for the probe/operation. No job updates, phase advancement, ignore-job authority or secret access. |
-| Probe    | Invocation of this service only. No database, Secret Manager, artifact-write or peer-service grants.                                                                                                                                            |
-
-Grants must be scoped at the narrowest supported resource boundary and checked for inherited access.
+The module owns deploy, verifier and probe identities, with the
+[execution grants and artifact storage](../../../modules/cloud-run-rollout/README.md#execution-authority-and-storage)
+declared in HCL. Application runtime and release submission identities remain separately owned.
+API deployment/invocation is project-scoped; this must be a JSON Keys-only workload project.
+Probe execution is job-scoped, and the probe has no direct database, secret or storage access.
+Effective inherited access still needs inspection and negative live tests.
 The network/subnet pair comes from the foundation-owned Shared VPC host, not a duplicate service VPC.
 The dedicated `agora-rollout-probe` network tag needs only restricted Google API HTTPS egress and the
 matching private DNS/Google Access path; it must not inherit the application's PostgreSQL allowance.
-This slice **does not provision** those identities, grants, firewall rules or APIs.
+There is still **no production caller or live provisioning**. API/service-agent setup, Shared VPC
+attachment and firewall rules remain activation prerequisites, not implicit permissions added here.
 
 `builds/rollout-verifier.Dockerfile` builds one unprivileged image from the reviewed Go module. Local
 `a-novel build --type=podman -y` does not publish it. Publication must attest the exact source, scan the
