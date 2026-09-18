@@ -18,6 +18,7 @@ import (
 
 func TestRequest(t *testing.T) {
 	t.Parallel()
+	sourceDirectory := sourceCheckout(t)
 	for _, testCase := range []struct {
 		name   string
 		change func(*deploypb.CreateReleaseRequest)
@@ -54,6 +55,7 @@ func TestRequest(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 			request := fixture(t)
+			bindSource(t, request, sourceDirectory)
 			testCase.change(request)
 			path := filepath.Join(t.TempDir(), "request.json")
 			require.NoError(t, os.WriteFile(path, wire(t, request), 0o600))
@@ -63,7 +65,7 @@ func TestRequest(t *testing.T) {
 			}))
 			defer server.Close()
 			var output bytes.Buffer
-			code := submission.Run(t.Context(), arguments(t, "submit-release", path), &output, &output,
+			code := submission.Run(t.Context(), arguments(t, "submit-release", path, sourceDirectory), &output, &output,
 				option.WithEndpoint(server.URL), option.WithoutAuthentication())
 			require.Equal(t, 1, code)
 			require.NotContains(t, output.String(), "private-input")

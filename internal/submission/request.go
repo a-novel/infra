@@ -93,7 +93,7 @@ func (scope scope) request(data []byte) (*deploypb.CreateReleaseRequest, error) 
 	if len(annotations) != 2 || annotations["request-id"] != request.RequestId || !commitPattern.MatchString(annotations["source-commit"]) {
 		return nil, errors.New("release annotations must bind the request UUID and exact source commit")
 	}
-	source := "gs://" + scope.ReceiptBucket + "/" + scope.prefix() + "sources/" + annotations["source-commit"] + ".tar.gz"
+	source := "gs://" + scope.ReceiptBucket + "/" + scope.sourceName(request)
 	if release.SkaffoldConfigUri != source || release.SkaffoldConfigPath != "skaffold.yaml" || !versionPattern.MatchString(release.SkaffoldVersion) {
 		return nil, errors.New("release must use its commit-addressed source archive and a pinned Skaffold version")
 	}

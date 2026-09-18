@@ -13,7 +13,9 @@ Complete image-family and provenance checks still precede submission; verificati
 Its private create-only intent prevents redispatch of the same release identity after interruption.
 The [rollout handoff](../../../docs/runbooks/submit-release.md#submit-the-approval-gated-rollout)
 reserves one approval-gated rollout for that release and reconciles it read-only after interruption.
-There is no production caller yet: trusted packaging, parameter authorization, service locking,
+The [source publisher](../../../docs/runbooks/submit-release.md#publish-the-reviewed-source) binds
+the archive to those two committed files; submission checks it before reserving intent.
+There is no production caller yet: source authorization/retention, parameter authorization, service locking,
 bootstrap/predecessor checks and the final success receipt remain activation gates.
 
 [Cloud Deploy parameters](https://docs.cloud.google.com/deploy/docs/parameters) replace the marked

@@ -111,14 +111,20 @@ func (client cloud) create(ctx context.Context, name string, message proto.Messa
 	if err != nil {
 		return errors.New("cannot encode private submission record")
 	}
+	return client.upload(ctx, name, data, "application/json")
+}
+
+// upload never replaces a live object. Record callers require its acknowledgement;
+// source publication may instead establish identical immutable contents by reading.
+func (client cloud) upload(ctx context.Context, name string, data []byte, contentType string) error {
 	object, err := client.storage.Objects.Insert(client.scope.ReceiptBucket, &storage.Object{Name: name}).
-		Media(bytes.NewReader(data), googleapi.ContentType("application/json"), googleapi.ChunkSize(0)).
+		Media(bytes.NewReader(data), googleapi.ContentType(contentType), googleapi.ChunkSize(0)).
 		IfGenerationMatch(0).Context(ctx).Do()
 	if err != nil {
-		return errors.New("cannot confirm create-only submission record")
+		return errors.New("cannot confirm create-only private object")
 	}
 	if object.Name != name || object.Bucket != client.scope.ReceiptBucket || object.Generation <= 0 {
-		return errors.New("unexpected submission record identity")
+		return errors.New("unexpected private object identity")
 	}
 	return nil
 }
