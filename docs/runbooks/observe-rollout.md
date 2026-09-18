@@ -83,7 +83,7 @@ verified rollout; neither an email nor the absence of one is deployment success 
 These are event notifications. Separate policies prevent routine approval requests from sharing a
 notification throttle with rollout failures. Each policy allows at most one notification every five
 minutes; repeated events can be suppressed. Release/rollout labels distinguish incidents, but native
-[incident and notification limits](https://docs.cloud.google.com/monitoring/alerts/manage-alerts-logs)
+[incident and notification limits](https://docs.cloud.google.com/logging/docs/alerting/log-based-incidents)
 still apply. Pending work receives no periodic reminder without another matching event. Incidents
 auto-close after seven days of silence, and only opening notifications are enabled. A closed incident
 does not establish recovery or approval.
