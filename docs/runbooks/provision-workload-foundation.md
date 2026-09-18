@@ -11,7 +11,7 @@ Stop if another production infrastructure workflow is active. Keep
 
 ## Prerequisites
 
-Run from the repository root with `gh`, `gcloud`, and `jq` authenticated:
+Run from the repository root with the Go version in `go.mod`, authenticated `gh` and `gcloud`, and `jq`:
 
 ```sh
 . ./.envrc
@@ -32,25 +32,25 @@ the production release switch is disabled.
 Use the management project's parent:
 
 ```sh
-./ops/foundation.sh grant
+go run ./cmd/infra foundation-setup grant
 ```
 
 Use a specific folder only when the workload project belongs there:
 
 ```sh
-./ops/foundation.sh grant --folder-id 123456789012
+go run ./cmd/infra foundation-setup grant --folder-id 123456789012
 ```
 
 For a parentless project:
 
 ```sh
-./ops/foundation.sh grant --standalone --adopt-existing-project
+go run ./cmd/infra foundation-setup grant --standalone --adopt-existing-project
 ```
 
 Add `--adopt-existing-project` to the organization or folder command when the workload project
 already exists. Reuse the same parent option in steps 2 and 7.
 
-Expected: `PASS temporary foundation access`. Stop on an ambiguous permission error; do not guess
+Expected: `PASS foundation grant`. Stop on an ambiguous permission error; do not guess
 whether a project ID is available.
 
 ## 2. Publish the protected configuration
@@ -58,7 +58,7 @@ whether a project ID is available.
 Region, database zone, alert recipients, and authorized humans come from the reviewed `.envrc`:
 
 ```sh
-./ops/foundation.sh configure
+go run ./cmd/infra foundation-setup configure
 ```
 
 Change a stable value in `.envrc` through a pull request, then reload it before this command. Reuse
@@ -68,8 +68,7 @@ project.
 Expected:
 
 ```text
-PASS protected foundation environment
-PASS protected foundation configuration
+PASS foundation configure
 ```
 
 In **Settings > Environments > production-foundation**, confirm **Prevent administrators from
@@ -117,7 +116,7 @@ two-PR adoption and deletion path; never import or delete it locally.
 Grant temporary read access:
 
 ```sh
-./ops/foundation.sh grant-audit-access
+go run ./cmd/infra foundation-setup grant-audit-access
 ```
 
 After IAM propagation:
@@ -129,11 +128,11 @@ After IAM propagation:
 Always remove the grant, including after failure:
 
 ```sh
-./ops/foundation.sh revoke-audit-access
+go run ./cmd/infra foundation-setup revoke-audit-access
 ```
 
 Expected: every audit line begins with `PASS`; cleanup prints
-`PASS temporary audit access removed`. On `PERMISSION_DENIED`, wait and rerun only the audit.
+`PASS foundation revoke-audit-access`. On `PERMISSION_DENIED`, wait and rerun only the audit.
 Do not grant a broader role.
 
 The audit checks project and billing identity, managed APIs, IAM and service-account keys, Secret
@@ -220,7 +219,7 @@ Continue only after both roots converge, step 5 passes, the step 6 decision is r
 preserved disk, and no running database container.
 
 ```sh
-./ops/foundation.sh finish
+go run ./cmd/infra foundation-setup finish
 ```
 
 Use the same explicit parent option as steps 1-2. The command removes temporary Owner, Billing
@@ -229,9 +228,9 @@ Account User, and Project Creator access, then publishes the workload project ID
 Run the final audit:
 
 ```sh
-./ops/foundation.sh grant-audit-access
+go run ./cmd/infra foundation-setup grant-audit-access
 ./ops/foundation-audit.sh --final
-./ops/foundation.sh revoke-audit-access
+go run ./cmd/infra foundation-setup revoke-audit-access
 ```
 
 Expected: every audit check passes and `GCP_WORKLOAD_PROJECT_ID` matches

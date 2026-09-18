@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Audits unmanaged and additive workload-foundation security boundaries. It
-# stays separate from foundation.sh so review-only access cannot reach a
+# stays separate from foundation-setup so review-only access cannot reach a
 # mutation branch by selecting the wrong subcommand.
 
 set -euo pipefail

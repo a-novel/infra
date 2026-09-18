@@ -123,7 +123,7 @@ Add the new principal to `.envrc` in a pull request and merge it. Then publish a
 git switch master
 git pull --ff-only
 . ./.envrc
-./ops/foundation.sh configure
+go run ./cmd/infra foundation-setup configure
 FOUNDATION_PLAN_ID="$(go run ./cmd/infra foundation plan foundation)"
 ```
 

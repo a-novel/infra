@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Supplies a clean checkout for foundation configuration and bootstrap custody tests.
+# Supplies a clean checkout for bootstrap custody tests.
 
 set -euo pipefail
 
