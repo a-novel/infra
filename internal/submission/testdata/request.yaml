@@ -1,0 +1,23 @@
+parent: projects/123456/locations/europe-west1/deliveryPipelines/agora-json-keys-grpc
+releaseId: release-1
+requestId: 11111111-2222-4333-8444-555555555555
+release:
+  name: projects/123456/locations/europe-west1/deliveryPipelines/agora-json-keys-grpc/releases/release-1
+  annotations:
+    request-id: 11111111-2222-4333-8444-555555555555
+    source-commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  skaffoldConfigUri: gs://management-123-deployment-receipts/services/agora-json-keys-test/production/sources/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.tar.gz
+  skaffoldConfigPath: skaffold.yaml
+  skaffoldVersion: 2.17.1
+  buildArtifacts:
+    - image: service-json-keys
+      tag: europe-west1-docker.pkg.dev/agora-json-keys-test/agora-production/service-json-keys/grpc@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  deployParameters:
+    projectId: agora-json-keys-test
+    network: projects/agora-host-test/global/networks/agora-production
+    subnetwork: projects/agora-host-test/regions/europe-west1/subnetworks/agora-production
+    runtimeServiceAccount: agora-json-keys@agora-json-keys-test.iam.gserviceaccount.com
+    databasePrivateIP: 10.20.0.3
+    managementProjectNumber: "654321"
+    masterKeyVersion: "2"
+    postgresPasswordVersion: "3"
