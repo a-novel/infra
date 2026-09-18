@@ -80,5 +80,6 @@ serialization through the probe and receipt, since reading before/after is not a
 [#189](https://github.com/a-novel/infra/issues/189) retains the GitHub Actions completion-tracking contract:
 observe exact rollout/verification outcomes and durable receipt completion, not merely submission.
 The [read-only observer](../../../docs/runbooks/observe-rollout.md) and repo-local action report those
-native outcomes. No production workflow calls them; receipt integration and independent alerts remain
-activation prerequisites.
+native outcomes. No production workflow calls them. The rollout module also declares
+[native operations alerts](../../../docs/runbooks/observe-rollout.md#native-operations-alerts);
+live notification delivery, receipt integration and interruption proof remain activation prerequisites.

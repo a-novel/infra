@@ -55,8 +55,54 @@ same prebuilt command and identity:
 infra observe-rollout --timeout=10m "${CLOUD_DEPLOY_ROLLOUT_NAME:?}"
 ```
 
-A missing GitHub summary or a lost runner provides no cloud failure evidence. Independent native
-alerts through the operations channel, receipt reconciliation and live interruption proof remain
-activation requirements in [#189](https://github.com/a-novel/infra/issues/189).
+A missing GitHub summary or a lost runner provides no cloud failure evidence. Native alert delivery,
+receipt reconciliation and live interruption proof remain activation requirements in
+[#189](https://github.com/a-novel/infra/issues/189).
 
 State meanings follow the [Cloud Deploy rollout API](https://docs.cloud.google.com/deploy/docs/api/reference/rest/v1/projects.locations.deliveryPipelines.releases.rollouts).
+
+## Native operations alerts
+
+The inactive rollout module declares four Cloud Monitoring policies. After separately approved
+provisioning, Cloud Deploy's platform logs trigger them without a GitHub runner or another watcher.
+Each policy matches one project, region, and pipeline and uses the service project's existing
+operations channels. The declaration currently sends no production notifications.
+
+| Event                                         | Notification | Response                                                                                                  |
+| --------------------------------------------- | ------------ | --------------------------------------------------------------------------------------------------------- |
+| Rendering failed                              | Error        | Inspect the release's rendering error.                                                                    |
+| Rollout failed, canceled, halted, or rejected | Error        | Inspect the exact rollout phase and actual serving traffic. Stable verification can fail after promotion. |
+| Approval required                             | Warning      | Review the release and its prerequisites before approving it.                                             |
+| Phase advancement required                    | Warning      | Review successful candidate verification before advancing to stable.                                      |
+
+Use the release and rollout identifiers in the incident, not the most recent release in the console.
+For an authorized inspection, re-observe that exact rollout using the command above. Alerts grant
+no approval, retry, traffic change, or migration authority. Complete receipt reconciliation after a
+verified rollout; neither an email nor the absence of one is deployment success evidence.
+
+These are event notifications. Separate policies prevent routine approval requests from sharing a
+notification throttle with rollout failures. Each policy allows at most one notification every five
+minutes; repeated events can be suppressed. Release/rollout labels distinguish incidents, but native
+[incident and notification limits](https://docs.cloud.google.com/monitoring/alerts/manage-alerts-logs)
+still apply. Pending work receives no periodic reminder without another matching event. Incidents
+auto-close after seven days of silence, and only opening notifications are enabled. A closed incident
+does not establish recovery or approval.
+
+Before activating the pilot, the operator must verify that:
+
+1. Logging and Monitoring are enabled, the foundation can manage log-based policies, and the selected
+   operations channels are enabled and deliver to the intended recipients. A channel in the legacy
+   workload project is not a channel in the new service project; provision the latter through its
+   reviewed foundation configuration.
+2. Project log routing retains both `clouddeploy.googleapis.com/release_render` and
+   `clouddeploy.googleapis.com/rollout_update`. Excluded logs cannot trigger these policies. Filters
+   match native event fields, not severity: a failed render can be logged at `INFO`.
+3. An approved isolated drill produces each notification, including a deployment failure after its
+   GitHub observer is stopped. Capture the exact release/rollout, phase, incident and receipt evidence.
+   Confirm that peer-pipeline events do not alert this service. Local provider tests cannot prove delivery.
+
+The policies adapt [Google's Cloud Deploy alert templates](https://github.com/GoogleCloudPlatform/monitoring-dashboard-samples/tree/master/alerts/google-cloud-deploy)
+using the pinned provider. Their authored text and extracted labels contain identifiers and fixed
+recovery guidance, without copying the platform log's free-form message. Cloud Monitoring owns incident
+presentation and delivery. They cover native rollout events, not missing receipts or ambiguous migration
+outcomes; those retain their separate completion/reconciliation gates.

@@ -61,6 +61,22 @@ variable "artifact_bucket" {
   }
 }
 
+variable "notification_channels" {
+  description = "Existing operations channels in this service project, using project-ID resource names; delivery must be verified before activation."
+  type        = set(string)
+  nullable    = false
+
+  validation {
+    condition = (
+      length(var.notification_channels) > 0 && length(var.notification_channels) <= 16 &&
+      alltrue([for channel in var.notification_channels :
+        can(regex("^projects/${var.project_id}/notificationChannels/[1-9][0-9]*$", channel))
+      ])
+    )
+    error_message = "Supply 1-16 existing operations channels using projects/<this-project-id>/notificationChannels/<numeric-id>."
+  }
+}
+
 variable "verification_image" {
   description = "Reviewed verifier with its own entrypoint, promoted to this project's regional registry and pinned by digest. See README for its required contract."
   type        = string

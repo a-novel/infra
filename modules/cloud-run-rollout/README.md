@@ -1,7 +1,7 @@
 # Cloud Run rollout boundary (inactive pilot)
 
-This module declares one Cloud Deploy delivery pipeline and one Cloud Run target for one service
-project. **No production root calls it. The pipeline is suspended in code**, not behind an input
+This module declares one Cloud Deploy delivery pipeline, its Cloud Run target and probe, and native
+operations alerts for one service project. **No production root calls it. The pipeline is suspended in code**, not behind an input
 switch. It cannot deploy an API until a separately reviewed activation change completes the gates
 below. The existing production release path remains the only active writer.
 
@@ -10,6 +10,11 @@ The maintainer approved this code-only pilot in [#183](https://github.com/a-nove
 [#242](https://github.com/a-novel/infra/issues/242) adds the
 [JSON Keys manifest and private verifier](../../deploy/cloud-deploy/json-keys/README.md).
 Artifact publication, submission workflow, IAM provisioning and live proof remain separate work.
+
+`notification_channels` must contain existing operations channels in this service project.
+The [native alert runbook](../../docs/runbooks/observe-rollout.md#native-operations-alerts) covers
+failure, interruption, approval and advancement events, delivery limits and activation checks.
+Cloud Monitoring owns notification delivery independently of GitHub; no custom watcher is required.
 
 ## One owner per responsibility
 
@@ -98,7 +103,8 @@ and completion-evidence implementation; this table is a contract, not live proof
    ingress, one warm instance, resource limits, immutable images, numeric secret references, and
    private database routing. No peer configuration or credentials may be required to release it.
 2. Provision explicit execution/runtime identities, required APIs, protected artifact storage, and
-   narrow service-scoped grants through reviewed HCL. Separate release submission, target approval,
+   narrow service-scoped grants through reviewed HCL. Provision and verify the native operations
+   channels and platform-log routing. Separate release submission, target approval,
    deployment, verification, and migration execution. The routine identity must not bypass failed
    verification with `ignoreJob` or update the pipeline. Check effective inherited access too.
 3. Review saved source/destination state, inventory, and a reversible one-writer handoff under #187.
