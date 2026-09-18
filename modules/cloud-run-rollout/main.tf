@@ -16,8 +16,8 @@ resource "google_clouddeploy_target" "service" {
     }
     content {
       usages            = execution_configs.value
-      service_account   = var.execution_service_accounts[execution_configs.key]
-      artifact_storage  = "gs://${var.artifact_bucket}/cloud-deploy/${var.project_id}/${var.name}"
+      service_account   = local.workers[execution_configs.key]
+      artifact_storage  = "gs://${google_storage_bucket.artifacts.name}/cloud-deploy/${var.project_id}/${var.name}"
       execution_timeout = "600s"
       verbose           = false
     }
@@ -65,7 +65,7 @@ resource "google_clouddeploy_delivery_pipeline" "service" {
                     EXPECTED_PROJECT_ID     = var.project_id
                     EXPECTED_REGION         = var.region
                     EXPECTED_SERVICE        = var.name
-                    EXPECTED_PROBE_ACCOUNT  = var.probe.service_account
+                    EXPECTED_PROBE_ACCOUNT  = google_service_account.execution["probe"].email
                     EXPECTED_VERIFIER_IMAGE = var.verification_image
                     EXPECTED_PROBE_NETWORK  = var.probe.network
                     EXPECTED_PROBE_SUBNET   = var.probe.subnetwork
