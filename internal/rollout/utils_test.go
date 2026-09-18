@@ -42,3 +42,17 @@ func fixture(t *testing.T) (rollout.Config, rollout.Snapshot, *runpb.Job) {
 		ProbeSubnet:  job.Template.Template.VpcAccess.NetworkInterfaces[0].Subnetwork,
 	}, state, job
 }
+
+func completeRollout(t *testing.T, value *deploypb.Rollout) {
+	t.Helper()
+	value.State, value.ApprovalState = deploypb.Rollout_SUCCEEDED, deploypb.Rollout_APPROVED
+	for _, name := range []string{"canary-0", "stable"} {
+		value.Phases = append(value.Phases, &deploypb.Phase{
+			Id: name, State: deploypb.Phase_SUCCEEDED,
+			Jobs: &deploypb.Phase_DeploymentJobs{DeploymentJobs: &deploypb.DeploymentJobs{
+				DeployJob: &deploypb.Job{Id: "deploy", State: deploypb.Job_SUCCEEDED, JobType: &deploypb.Job_DeployJob{DeployJob: &deploypb.DeployJob{}}},
+				VerifyJob: &deploypb.Job{Id: "verify", State: deploypb.Job_SUCCEEDED, JobType: &deploypb.Job_VerifyJob{VerifyJob: &deploypb.VerifyJob{}}},
+			}},
+		})
+	}
+}

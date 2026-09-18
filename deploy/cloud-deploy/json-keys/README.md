@@ -79,3 +79,6 @@ negative IAM/network cases and interruption handling in the approved pilot. Keep
 serialization through the probe and receipt, since reading before/after is not a distributed lock.
 [#189](https://github.com/a-novel/infra/issues/189) retains the GitHub Actions completion-tracking contract:
 observe exact rollout/verification outcomes and durable receipt completion, not merely submission.
+The [read-only observer](../../../docs/runbooks/observe-rollout.md) and repo-local action report those
+native outcomes. No production workflow calls them; receipt integration and independent alerts remain
+activation prerequisites.
