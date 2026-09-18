@@ -6,10 +6,13 @@ own both its specification and traffic after the separately reviewed one-writer 
 
 ## Native release inputs
 
-`skaffold.yaml` renders `service.yaml` without builds or hooks. The future submitter supplies exactly
+`skaffold.yaml` renders `service.yaml` without builds or hooks. The [render-only submitter](../../../docs/runbooks/submit-release.md) accepts exactly
 one `buildArtifacts` entry named `service-json-keys`, pointing to the promoted API digest in
 `REGION-docker.pkg.dev/PROJECT/agora-production/service-json-keys/grpc@sha256:…`.
 Complete image-family and provenance checks still precede submission; verification does not replace them.
+Its private create-only intent prevents redispatch of the same release identity after interruption.
+There is no production caller yet: trusted packaging, parameter authorization, service locking,
+rollout creation and the final success receipt remain separate activation gates.
 
 [Cloud Deploy parameters](https://docs.cloud.google.com/deploy/docs/parameters) replace the marked
 fields without a custom renderer:
