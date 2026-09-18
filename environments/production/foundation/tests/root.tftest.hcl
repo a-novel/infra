@@ -93,7 +93,7 @@ variables {
   ]
 }
 
-run "protected_project_shell" {
+run "protected_service_project" {
   command = plan
 
   module {
@@ -105,6 +105,7 @@ run "protected_project_shell" {
     labels                     = { service = "json-keys", environment = "test" }
     foundation_service_account = "infra-foundation@agora-management-test.iam.gserviceaccount.com"
     plan_service_account       = "infra-plan@agora-management-test.iam.gserviceaccount.com"
+    management                 = { project_id = "agora-management-test", project_number = "123456789012" }
   }
 
   assert {
@@ -142,6 +143,60 @@ run "protected_project_shell" {
     )
     error_message = "Project maintenance belongs to foundation and assessment remains read-only."
   }
+
+  assert {
+    condition = (
+      google_service_account.release.project == "agora-json-keys-test" &&
+      google_service_account.release.account_id == "infra-release" &&
+      google_iam_workload_identity_pool_provider.release.project == "agora-management-test" &&
+      google_iam_workload_identity_pool_provider.release.workload_identity_pool_id == "github-actions" &&
+      google_iam_workload_identity_pool_provider.release.workload_identity_pool_provider_id == "r-agora-json-keys-test" &&
+      google_iam_workload_identity_pool_provider.release.attribute_condition == join(" && ", [
+        "assertion.repository_owner_id == '131281268'",
+        "assertion.repository_id == '1344262359'",
+        "assertion.ref == 'refs/heads/master'",
+        "assertion.workflow_ref == 'a-novel/infra/.github/workflows/release.yaml@refs/heads/master'",
+        "assertion.environment == 'test-json-keys-release'",
+      ]) &&
+      google_iam_workload_identity_pool_provider.release.attribute_mapping == tomap({
+        "google.subject"            = "assertion.repository_id + ':' + assertion.environment"
+        "attribute.service_release" = "'agora-json-keys-test'"
+      }) &&
+      google_iam_workload_identity_pool_provider.release.oidc[0].issuer_uri == "https://token.actions.githubusercontent.com" &&
+      google_iam_workload_identity_pool_provider.release.oidc[0].allowed_audiences == null &&
+      google_iam_workload_identity_pool_provider.release.deletion_policy == "PREVENT" &&
+      google_service_account_iam_member.release_federation.service_account_id == google_service_account.release.name &&
+      google_service_account_iam_member.release_federation.role == "roles/iam.workloadIdentityUser" &&
+      google_service_account_iam_member.release_federation.member == "principalSet://iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/github-actions/attribute.service_release/agora-json-keys-test"
+    )
+    error_message = "Release federation must bind the exact trusted workflow and service environment to only its account."
+  }
+
+  assert {
+    condition = (
+      google_storage_managed_folder.release["state"].bucket == "agora-management-test-123456789012-tofu-state" &&
+      google_storage_managed_folder.release["state"].name == "services/agora-json-keys-test/release/" &&
+      google_storage_managed_folder.release["receipts"].bucket == "agora-management-test-123456789012-deployment-receipts" &&
+      google_storage_managed_folder.release["receipts"].name == "services/agora-json-keys-test/production/" &&
+      alltrue([for folder in google_storage_managed_folder.release : folder.deletion_policy == "PREVENT" && !folder.force_destroy]) &&
+      { for key, binding in google_storage_managed_folder_iam_member.release : key => binding.role } == {
+        state_writer = "roles/storage.objectAdmin", receipt_creator = "roles/storage.objectCreator", receipt_reader = "roles/storage.objectViewer"
+      } &&
+      alltrue([for key, binding in google_storage_managed_folder_iam_member.release :
+        binding.member == "serviceAccount:${google_service_account.release.email}" &&
+        binding.bucket == google_storage_managed_folder.release[key == "state_writer" ? "state" : "receipts"].bucket &&
+        binding.managed_folder == google_storage_managed_folder.release[key == "state_writer" ? "state" : "receipts"].name
+      ]) &&
+      google_storage_bucket_iam_member.release_metadata.bucket == google_storage_managed_folder.release["state"].bucket &&
+      google_storage_bucket_iam_member.release_metadata.member == "serviceAccount:${google_service_account.release.email}" &&
+      google_storage_bucket_iam_member.release_metadata.role == "roles/storage.bucketViewer" &&
+      google_storage_managed_folder_iam_member.plan.bucket == google_storage_managed_folder.release["state"].bucket &&
+      google_storage_managed_folder_iam_member.plan.managed_folder == google_storage_managed_folder.release["state"].name &&
+      google_storage_managed_folder_iam_member.plan.role == "roles/storage.objectViewer" &&
+      google_storage_managed_folder_iam_member.plan.member == "serviceAccount:${var.plan_service_account}"
+    )
+    error_message = "State writes and immutable receipt creation/readback must remain inside the selected service's protected folders; planning is read-only."
+  }
 }
 
 run "reject_parentless_service_project" {
@@ -155,6 +210,7 @@ run "reject_parentless_service_project" {
     labels                     = { service = "json-keys", environment = "test" }
     foundation_service_account = "infra-foundation@agora-management-test.iam.gserviceaccount.com"
     plan_service_account       = "infra-plan@agora-management-test.iam.gserviceaccount.com"
+    management                 = { project_id = "agora-management-test", project_number = "123456789012" }
   }
   expect_failures = [google_project.service]
 }
@@ -172,6 +228,16 @@ run "two_service_projects_share_only_the_host" {
   override_resource {
     target = module.service_project.google_project.service
     values = { number = "111111111111" }
+  }
+
+  assert {
+    condition = alltrue([for service, project in var.service_projects :
+      output.service_projects[service].release.schema_version == 1 &&
+      output.service_projects[service].release.environment == "production-${service}-release" &&
+      output.service_projects[service].release.state.prefix == "services/${project}/release/" &&
+      output.service_projects[service].release.receipts.prefix == "services/${project}/production/"
+    ])
+    error_message = "Each service must publish its own environment and disjoint storage coordinates."
   }
 
   assert {

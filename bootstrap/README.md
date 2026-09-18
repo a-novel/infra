@@ -60,6 +60,14 @@ The workflow filenames are part of the cloud trust policy before the workflows e
 a security migration: update and apply the provider condition under foundation approval, land the
 new workflow, verify authentication, and only then remove the old path.
 
+These four providers and the pool remain bootstrap-owned. Opt-in
+[service projects](../modules/workload-project/README.md#release-boundary) add foundation-owned
+providers within that pool, project-local release accounts, and disjoint `services/<project-id>/`
+state/receipt folders in the existing buckets. Their service-specific environments and constant
+principal mappings cannot satisfy the legacy bindings. Bootstrap does not adopt these child
+resources, and current release/recovery paths remain unchanged. Foundation's bucket and federation
+administration remains an explicit high-trust exception to service isolation.
+
 The plan identity deliberately keeps Storage Object Viewer instead of a write-capable backend role.
 Its authenticated drift workflow must use `tofu plan -lock=false` and share a root-specific GitHub
 concurrency group with every writer. That serialization makes the read-only exception safe without

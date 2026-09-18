@@ -22,7 +22,7 @@ variable "service_projects" {
 
 module "service_project" {
   source   = "../../../modules/workload-project"
-  for_each = var.service_projects
+  for_each = var.recovery_mode ? {} : var.service_projects
 
   project_id                 = each.value
   billing_account_id         = var.billing_account_id
@@ -31,10 +31,14 @@ module "service_project" {
   labels                     = merge(local.labels, { service = each.key })
   foundation_service_account = local.automation_service_accounts.foundation
   plan_service_account       = local.automation_service_accounts.plan
+  management = {
+    project_id     = var.management_project_id
+    project_number = data.google_project.management[0].number
+  }
 }
 
 resource "google_compute_shared_vpc_host_project" "production" {
-  count = length(var.service_projects) == 0 ? 0 : 1
+  count = length(module.service_project) == 0 ? 0 : 1
 
   project         = google_project.workload.project_id
   deletion_policy = "PREVENT"
@@ -61,12 +65,13 @@ resource "google_compute_shared_vpc_service_project" "service" {
 }
 
 output "service_projects" {
-  description = "Project coordinates only; attachment grants no subnet or application access."
+  description = "Project and release-boundary coordinates; no subnet or application authority is granted."
   value = {
     for service, project in module.service_project : service => {
       project_id     = project.project_id
       project_number = project.project_number
       host_project   = google_compute_shared_vpc_service_project.service[service].host_project
+      release        = project.release
     }
   }
 }
