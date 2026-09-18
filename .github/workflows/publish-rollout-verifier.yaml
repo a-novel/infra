@@ -1,0 +1,114 @@
+name: publish rollout verifier
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the scanned image after environment approval (otherwise build and scan only)
+        type: boolean
+        default: false
+
+run-name: rollout verifier ${{ inputs.publish && 'publish' || 'build only' }} at ${{ github.sha }}
+
+permissions: {}
+
+concurrency:
+  group: rollout-verifier-publication
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      artifact_id: ${{ steps.archive.outputs.artifact-id }}
+    steps:
+      - name: Reject an unapproved publication context
+        if: >-
+          github.repository != 'a-novel/infra' || github.ref != 'refs/heads/master' ||
+          (inputs.publish && vars.ROLLOUT_VERIFIER_PUBLICATION_ENABLED != 'true')
+        shell: bash
+        run: |
+          printf '::error::Use a reviewed master commit. Publication also requires its explicit repository opt-in; see docs/runbooks/publish-rollout-verifier.md.\n'
+          exit 1
+
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Build and scan the verifier
+        uses: ./.github/actions/build-rollout-verifier
+
+      - name: Keep only the scanned image for publication
+        id: archive
+        if: inputs.publish
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: rollout-verifier-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rollout-verifier.tar
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  publish:
+    needs: build
+    if: >-
+      inputs.publish && vars.ROLLOUT_VERIFIER_PUBLICATION_ENABLED == 'true' &&
+      github.repository == 'a-novel/infra' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: rollout-artifacts
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    env:
+      IMAGE: ghcr.io/a-novel/infra/rollout-verifier:sha-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact_id || '0' }}
+          path: ${{ runner.temp }}
+          merge-multiple: true
+          digest-mismatch: error
+
+      - name: Load the verified archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker load --input "${RUNNER_TEMP}/rollout-verifier.tar"
+          docker tag rollout-verifier:build "${IMAGE}"
+
+      - uses: docker/login-action@v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Push the scanned image without rebuilding
+        id: publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker push "${IMAGE}"
+          reference="$(docker image inspect --format '{{index .RepoDigests 0}}' "${IMAGE}")"
+          printf 'digest=%s\n' "${reference##*@}" >>"${GITHUB_OUTPUT}"
+
+      - name: Attest the published digest
+        uses: actions/attest@v4.2.2
+        with:
+          subject-name: ghcr.io/a-novel/infra/rollout-verifier
+          subject-digest: ${{ steps.publish.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Report the attested artifact
+        shell: bash
+        env:
+          DIGEST: ${{ steps.publish.outputs.digest }}
+        run: |
+          printf 'Verifier artifact: `ghcr.io/a-novel/infra/rollout-verifier@%s`\n\nSource: `%s`\n\nVerify provenance before promotion. This run does not deploy or approve a rollout.\n' "${DIGEST}" "${GITHUB_SHA}" >>"${GITHUB_STEP_SUMMARY}"

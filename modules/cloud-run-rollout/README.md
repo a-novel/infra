@@ -92,8 +92,10 @@ IAM and test denied peer, secret, receipt-write and non-probe job access before 
 `verification_image` is a required digest-pinned container in the selected project's regional
 Artifact Registry. Its own entrypoint is the verifier; the module injects no shell or command text.
 [`cmd/rollout-verifier`](../../cmd/rollout-verifier) implements the verifier and its private probe.
-The image is **not published by this slice**; reviewed provenance and a promoted digest remain
-activation prerequisites. A dummy successful container would defeat the gate.
+The [artifact publication workflow](../../docs/runbooks/publish-rollout-verifier.md) builds and scans
+the image; publication requires a separate opt-in and approval. Verified provenance and promotion
+into the selected project's registry remain activation prerequisites. A dummy successful container
+would defeat the gate.
 
 The verifier must:
 
