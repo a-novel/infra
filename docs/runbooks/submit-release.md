@@ -18,7 +18,7 @@ and project-number relationship must come from the reviewed foundation contract.
 The input is Google's native
 [`CreateReleaseRequest`](https://docs.cloud.google.com/deploy/docs/api/reference/rest/v1/projects.locations.deliveryPipelines.releases/create)
 JSON, limited to 64 KiB. The [test fixture](../../internal/submission/testdata/request.yaml) illustrates
-its fields in readable YAML; it is not a production configuration. The future trusted packager must
+its fields in readable YAML; it is not a production configuration. The future trusted input producer must
 emit JSON, not run a shell templating pipeline inside a credentialed job.
 
 | Field                                                   | Accepted contract                                                                                                                                                                                                                                              |
@@ -33,7 +33,45 @@ emit JSON, not run a shell templating pipeline inside a credentialed job.
 
 Unknown fields, output-only fields, policy overrides and `validateOnly` are rejected. No credentials
 or secret payloads belong in this record. Parameter syntax does **not** prove enabled secret versions,
-image provenance, ownership of the database IP, or the contents/immutability of the source archive.
+image provenance or ownership of the database IP. Source contents are checked separately below;
+their continuing immutability depends on IAM and retention.
+
+## Publish the reviewed source
+
+After separate live approval and completion of the [activation gates](#before-live-use), publish the
+source using the same native request that will be submitted:
+
+```sh
+infra publish-release-source \
+  --project-id="${SERVICE_PROJECT_ID:?}" --project-number="${SERVICE_PROJECT_NUMBER:?}" \
+  --region="${REGION:?}" --receipt-bucket="${RECEIPT_BUCKET:?}" \
+  --source-dir="${TRUSTED_CHECKOUT:?}" "${PRIVATE_REQUEST_FILE:?}"
+```
+
+The protected caller must select the reviewed infra checkout and build its binary before protected
+inputs or credentials exist. Its `HEAD` must equal the request's exact `source-commit`. Matching a
+commit is **not** proof of review or repository authorization; the caller must establish those.
+
+Only the committed `deploy/cloud-deploy/json-keys/skaffold.yaml` and `service.yaml` enter the archive,
+at its root. The packager reads raw Git objects with replacement refs and lazy fetching disabled;
+it never uses working-tree files, archive attributes, checkout filters or hooks. Each entry must be
+a non-executable regular file, nonempty and at most 16 KiB. Local edits, untracked files and local
+credential/request files are excluded. Go's standard tar/gzip writers produce deterministic bytes;
+Cloud Deploy/Skaffold still owns rendering and parameter/image substitution.
+
+The existing Storage client uploads to the request's commit-addressed source URI with
+[`ifGenerationMatch=0`](https://docs.cloud.google.com/storage/docs/request-preconditions), then reads
+that exact object back and compares its bytes. No archive is overwritten or extracted locally.
+An already-present identical archive, including one whose upload acknowledgement was lost, is
+successful publication. Missing/unreadable data or conflicting bytes stop. Retrying **source
+publication** is safe under the required no-delete/retention policy; it cannot submit a release.
+This does **not** change the no-replay rule for deployment intent or migrations.
+
+Use the same reviewed tooling/commit for publication and submission. The source URI is not
+generation-pinned by this request contract: publisher permissions must exclude overwrite/delete,
+and lifecycle rules must preserve the object while any release can refer to it. The submission
+read-back is not a lock against a privileged writer. Keep the archive private and grant the renderer
+read access only to the selected source prefix.
 
 ## Submission contract
 
@@ -43,18 +81,19 @@ After separate live approval and completion of the gates below, the invocation w
 infra submit-release \
   --project-id="${SERVICE_PROJECT_ID:?}" --project-number="${SERVICE_PROJECT_NUMBER:?}" \
   --region="${REGION:?}" --receipt-bucket="${RECEIPT_BUCKET:?}" \
-  --timeout=10m "${PRIVATE_REQUEST_FILE:?}"
+  --source-dir="${TRUSTED_CHECKOUT:?}" --timeout=10m "${PRIVATE_REQUEST_FILE:?}"
 ```
 
 Build the reviewed binary before protected inputs or cloud credentials are present. These variables
 come from the selected service's reviewed contract, not the legacy shared production project.
 
-The command first creates
+The command rebuilds the exact committed archive and compares the stored source **before any intent
+reservation or Cloud Deploy call**. Source mismatch stops without submitting anything. It then creates
 `services/PROJECT_ID/production/submissions/RELEASE_ID.json` in the private receipt bucket with
 [`ifGenerationMatch=0`](https://docs.cloud.google.com/storage/docs/request-preconditions).
 Only an acknowledged, new object permits **one** `CreateRelease` call. An existing object is a stop,
 even if its contents match. An uncertain storage response also stops before Cloud Deploy is called.
-There is no "read identical bytes, then resend" path.
+There is no "read identical intent, then resend" path.
 
 The returned operation name is stored separately as `RELEASE_ID.operation.json`, also create-only,
 before waiting through the official client. Cancellation stops local observation, not the cloud
@@ -78,8 +117,9 @@ infra reconcile-release \
 
 This path only reads the exact private intent and exact Cloud Deploy release. It compares the
 submitted fields, ignoring native timestamps/render results, and reports current rendering state.
-It does not list resources, choose the latest release, use the operation record to resend, or write
-anything. It remains usable if the create response or operation-record acknowledgement was lost.
+It does not need the local source checkout, list resources, choose the latest release, use the
+operation record to resend, or write anything. It remains usable if the create response or
+operation-record acknowledgement was lost. It reports the native render state, not source provenance.
 
 | Evidence                             | Action                                                                                                                                       |
 | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -150,9 +190,10 @@ The remaining work in [#189](https://github.com/a-novel/infra/issues/189) and
 
 - A trusted caller that validates the complete image family/provenance and binds parameters to the
   selected foundation and exact enabled secret metadata.
-- Reviewed archive publication with create-only storage and provenance. The source-commit filename
-  alone does not prove its contents. Keep source/intent/operation objects private, non-overwritable
-  and non-deletable by submitters; lifecycle must not discard them while an identity can be reused.
+- A protected caller authorizing the source checkout and applying the publication/submission checks
+  above. Byte equality establishes content binding, not review authorization. Keep source, intent and
+  operation objects private, non-overwritable and non-deletable by submitters; lifecycle must not
+  discard them while an identity can be reused.
   Cloud Deploy's renderer needs read access to the exact source prefix, not receipt-write access.
 - Same-service exclusion before mutations, including migrations, through rollout and receipt
   completion. A reservation prevents duplicate creation of **one ID**; it is not a service lock.

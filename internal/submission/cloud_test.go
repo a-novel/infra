@@ -27,6 +27,7 @@ import (
 
 func TestCloud(t *testing.T) {
 	t.Parallel()
+	sourceDirectory := sourceCheckout(t)
 	type result struct {
 		submit                      []int
 		reconcile, creates, records int
@@ -52,10 +53,13 @@ func TestCloud(t *testing.T) {
 		{"NativeConflict", "conflict", false, deploypb.Release_SUCCEEDED, result{[]int{1}, 1, 1, 2}},
 		{"Abandoned", "abandoned", false, deploypb.Release_SUCCEEDED, result{[]int{1}, 1, 1, 2}},
 		{"StoredIdentityConflict", "stored-conflict", false, deploypb.Release_SUCCEEDED, result{[]int{0}, 1, 1, 2}},
+		{"SourceMissing", "source-missing", false, deploypb.Release_SUCCEEDED, result{[]int{1}, 1, 0, 0}},
+		{"SourceConflict", "source-conflict", false, deploypb.Release_SUCCEEDED, result{[]int{1}, 1, 0, 0}},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 			request := fixture(t)
+			sourceName := bindSource(t, request, sourceDirectory)
 			path := filepath.Join(t.TempDir(), "request.json")
 			require.NoError(t, os.WriteFile(path, wire(t, request), 0o600))
 			ctx, cancel := context.WithCancel(t.Context())
@@ -63,6 +67,7 @@ func TestCloud(t *testing.T) {
 			var mutex sync.Mutex
 			objects := map[string][]byte{}
 			var native *deploypb.Release
+			var source []byte
 			creates, writes := 0, 0
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				mutex.Lock()
@@ -70,11 +75,17 @@ func TestCloud(t *testing.T) {
 				w.Header().Set("Content-Type", "application/json")
 				switch {
 				case r.Method == http.MethodPost && r.URL.Path == "/upload/storage/v1/b/"+bucket+"/o":
-					writes++
 					metadata, data := upload(t, r)
 					if r.URL.Query().Get("ifGenerationMatch") != "0" {
 						t.Error("upload did not require an absent object")
 					}
+					if metadata.Name == sourceName {
+						source = data
+						metadata.Bucket, metadata.Generation = bucket, 1
+						_ = json.NewEncoder(w).Encode(metadata)
+						return
+					}
+					writes++
 					if _, exists := objects[metadata.Name]; exists {
 						http.Error(w, "already reserved", http.StatusPreconditionFailed)
 						return
@@ -149,6 +160,12 @@ func TestCloud(t *testing.T) {
 					} else {
 						http.NotFound(w, r)
 					}
+				case r.Method == http.MethodGet && r.URL.Path == "/b/"+bucket+"/o/"+sourceName:
+					if source == nil {
+						http.NotFound(w, r)
+					} else {
+						_, _ = w.Write(source)
+					}
 				case r.Method == http.MethodGet && r.URL.Path == "/v1/"+request.Release.Name:
 					if native != nil {
 						_, _ = w.Write(wire(t, native))
@@ -162,6 +179,16 @@ func TestCloud(t *testing.T) {
 			}))
 			defer server.Close()
 			options := []option.ClientOption{option.WithEndpoint(server.URL), option.WithoutAuthentication()}
+			var publication bytes.Buffer
+			require.Zero(t, submission.Run(ctx, arguments(t, "publish-release-source", path, sourceDirectory), &publication, &publication, options...), "%s", &publication)
+			mutex.Lock()
+			switch testCase.failure {
+			case "source-missing":
+				source = nil
+			case "source-conflict":
+				source = []byte("unexpected-source")
+			}
+			mutex.Unlock()
 			attempts := 1
 			if testCase.concurrent {
 				attempts = 2
@@ -170,7 +197,7 @@ func TestCloud(t *testing.T) {
 			for range cap(codes) {
 				go func() {
 					var output bytes.Buffer
-					code := submission.Run(ctx, arguments(t, "submit-release", path), &output, &output, options...)
+					code := submission.Run(ctx, arguments(t, "submit-release", path, sourceDirectory), &output, &output, options...)
 					if strings.Contains(output.String(), "private-provider-detail") {
 						t.Error("provider detail leaked")
 					}

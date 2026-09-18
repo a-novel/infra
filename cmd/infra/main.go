@@ -64,7 +64,7 @@ func main() {
 		code = custody.Run(ctx, os.Args[2:], os.Getenv, quiet, os.Stdout, os.Stderr)
 	} else if len(os.Args) > 1 && os.Args[1] == "observe-rollout" {
 		code = rollout.RunObserver(ctx, os.Args[2:], os.Stdout, os.Stderr)
-	} else if len(os.Args) > 1 && slices.Contains([]string{"submit-release", "reconcile-release", "submit-rollout", "reconcile-rollout"}, os.Args[1]) {
+	} else if len(os.Args) > 1 && slices.Contains([]string{"publish-release-source", "submit-release", "reconcile-release", "submit-rollout", "reconcile-rollout"}, os.Args[1]) {
 		code = submission.Run(ctx, os.Args[1:], os.Stdout, os.Stderr)
 	} else if len(os.Args) > 1 && os.Args[1] == "check-health" {
 		code = health.Run(ctx, os.Args[2:], quiet, nil, os.Stdout, os.Stderr)
