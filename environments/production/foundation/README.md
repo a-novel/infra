@@ -18,6 +18,13 @@ health check, while scale-to-zero jobs remain release resources.
 
 ## State and authority
 
+Optional service-owned project shells are declared by `service_projects` (default `{}`). They use
+the reusable [workload-project module](../../../modules/workload-project/README.md), attach to this
+root's existing network through Shared VPC, and join the existing budget. These new projects and
+the Shared VPC host/attachments retain deletion guards independently of the legacy replacement
+window above. No workload or service-deployer authority moves with this change. Follow the
+[service-project onboarding boundary](../../../docs/runbooks/provision-service-projects.md) before activation.
+
 The protected foundation identity uses the `foundation/` object boundary in the management state
 bucket and requires human approval for every apply. It is the deliberate high-trust identity that
 maintains both this root and post-bootstrap management-plane configuration. It can administer IAM
@@ -128,6 +135,17 @@ only after resource creation has been explicitly authorized.
   runbook.
 
 ## Resource inventory
+
+`module.service_project` owns each opt-in project's shell; its
+[module inventory](../../../modules/workload-project/README.md#ownership) lists the resources.
+`google_compute_shared_vpc_host_project.production` enables the existing workload project as the
+network host only when the map is nonempty. `google_compute_shared_vpc_service_project.service`
+attaches each shell without granting subnet use. Both have `prevent_destroy`; the host also has
+provider `PREVENT`. The existing budget adds each project's number. Shared VPC adds no network
+appliance; traffic and later workloads retain their product usage charges. See the
+[host resource](https://registry.terraform.io/providers/hashicorp/google/8.2.0/docs/resources/compute_shared_vpc_host_project),
+[attachment resource](https://registry.terraform.io/providers/hashicorp/google/8.2.0/docs/resources/compute_shared_vpc_service_project),
+and [Shared VPC overview](https://cloud.google.com/vpc/docs/shared-vpc).
 
 The provider is pinned in [`versions.tf`](./versions.tf). Rows group repeated resources that share a
 single boundary; their `for_each` keys are part of the reviewed configuration and mocked tests.
