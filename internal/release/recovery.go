@@ -73,8 +73,24 @@ func (compiler *Compiler) CompileRecovery(args []string, identity Identity) erro
 			return errors.New("recovery foundation configuration does not match the source receipt")
 		}
 	}
+	if projects, exists := config["service_projects"]; exists {
+		values, ok := projects.(object)
+		if !ok {
+			return errors.New("source service projects are invalid")
+		}
+		for _, value := range values {
+			project, ok := value.(string)
+			if !ok || !projectPattern.MatchString(project) {
+				return errors.New("source service project ID is invalid")
+			}
+			if project == target {
+				return errors.New("recovery target is a configured production service project")
+			}
+		}
+	}
 	foundation := clone(config)
 	foundation["workload_project_id"], foundation["workload_project_name"], foundation["recovery_mode"] = target, "Agora recovery", true
+	foundation["service_projects"] = object{}
 	outputs := map[string]any{"foundation.tfvars.json": foundation}
 	if phase == "foundation" {
 		return writeOutputs(args[7], outputs)

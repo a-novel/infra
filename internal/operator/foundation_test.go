@@ -32,7 +32,7 @@ type foundationFixture struct {
 
 func foundationCase() *foundationFixture {
 	return &foundationFixture{
-		env: map[string]string{"INFRA_MANAGEMENT_PROJECT_ID": "management-project-prod", "INFRA_WORKLOAD_PROJECT_ID": "workload-project-prod", "INFRA_REGION": "europe-west1", "INFRA_DATABASE_ZONE": "europe-west1-d"},
+		env: map[string]string{"INFRA_MANAGEMENT_PROJECT_ID": "management-project-prod", "INFRA_WORKLOAD_PROJECT_ID": "workload-project-prod", "INFRA_SERVICE_PROJECTS": "{}", "INFRA_REGION": "europe-west1", "INFRA_DATABASE_ZONE": "europe-west1-d"},
 		replies: map[string][]string{
 			"git branch --show-current": {"master"}, "git status --porcelain": {""},
 			"git rev-parse HEAD": {strings.Repeat("a", 40)}, "gh api repos/a-novel/infra/commits/master --jq .sha": {strings.Repeat("a", 40)},
@@ -145,7 +145,48 @@ func TestFoundation(t *testing.T) {
 		require.Equal(t, writes, f.mutations)
 		require.Len(t, f.secrets, 2)
 		require.Equal(t, f.secrets[0], f.secrets[1])
-		require.JSONEq(t, `{"management_project_id":"management-project-prod","workload_project_id":"workload-project-prod","workload_project_name":"Agora production","backup_bucket_name":"fixture-backups","billing_account_id":"ABCDEF-123456-ABCDEF","organization_id":"123","folder_id":null,"region":"europe-west1","database_zone":"europe-west1-d","subnet_cidr":"10.20.0.0/24","adopt_existing_project":false,"database_operator_principals":["group:db@example.com","user:second@example.com"],"authentication_initializer_principals":["user:init@example.com"],"cost_alert_email":"private@example.com","operations_alert_email":"private@example.com"}`, string(f.secrets[0]))
+		require.JSONEq(t, `{"management_project_id":"management-project-prod","workload_project_id":"workload-project-prod","service_projects":{},"workload_project_name":"Agora production","backup_bucket_name":"fixture-backups","billing_account_id":"ABCDEF-123456-ABCDEF","organization_id":"123","folder_id":null,"region":"europe-west1","database_zone":"europe-west1-d","subnet_cidr":"10.20.0.0/24","adopt_existing_project":false,"database_operator_principals":["group:db@example.com","user:second@example.com"],"authentication_initializer_principals":["user:init@example.com"],"cost_alert_email":"private@example.com","operations_alert_email":"private@example.com"}`, string(f.secrets[0]))
+	})
+	t.Run("ServiceProjects", func(t *testing.T) {
+		t.Parallel()
+		for _, tc := range []struct {
+			name, env, flag string
+			valid           bool
+		}{
+			{"Environment", `{"json-keys":"json-keys-project-prod"}`, "", true},
+			{"Explicit", "invalid", `{"authentication":"authentication-prod"}`, true},
+			{"Missing", "", "", false},
+			{"Malformed", "private-invalid-json", "", false},
+			{"Null", "null", "", false},
+			{"Array", "[]", "", false},
+			{"NonString", `{"json-keys":123}`, "", false},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+				f := foundationCase()
+				f.configuration()
+				f.env["INFRA_SERVICE_PROJECTS"] = tc.env
+				args := []string{"configure"}
+				expected := tc.env
+				if tc.flag != "" {
+					args = append(args, "--service-projects", tc.flag)
+					expected = tc.flag
+				}
+				code, out := f.run(t, args...)
+				require.NotContains(t, out, "private-invalid-json")
+				if !tc.valid {
+					require.Equal(t, 64, code)
+					require.Empty(t, f.calls)
+					return
+				}
+				require.Zero(t, code, out)
+				require.Len(t, f.secrets, 2)
+				require.Equal(t, f.secrets[0], f.secrets[1])
+				var config map[string]json.RawMessage
+				require.NoError(t, json.Unmarshal(f.secrets[0], &config))
+				require.JSONEq(t, expected, string(config["service_projects"]))
+			})
+		}
 	})
 	t.Run("CleanupActualParent", func(t *testing.T) {
 		t.Parallel()
