@@ -5,9 +5,11 @@ project. **No production root calls it. The pipeline is suspended in code**, not
 switch. It cannot deploy an API until a separately reviewed activation change completes the gates
 below. The existing production release path remains the only active writer.
 
-The maintainer approved this code-only pilot in [#183](https://github.com/a-novel/infra/issues/183);
-[#240](https://github.com/a-novel/infra/issues/240) tracks this first boundary. It is not a completed
-private health probe, service manifest, deployment workflow, or live rollout.
+The maintainer approved this code-only pilot in [#183](https://github.com/a-novel/infra/issues/183).
+[#240](https://github.com/a-novel/infra/issues/240) introduced the boundary;
+[#242](https://github.com/a-novel/infra/issues/242) adds the
+[JSON Keys manifest and private verifier](../../deploy/cloud-deploy/json-keys/README.md).
+Artifact publication, submission workflow, IAM provisioning and live proof remain separate work.
 
 ## One owner per responsibility
 
@@ -21,7 +23,7 @@ private health probe, service manifest, deployment workflow, or live rollout.
 
 Cloud Deploy takes over **the service specification as well as traffic**. Keeping a service resource
 in OpenTofu and merely ignoring its traffic field would still leave two competing specification
-writers. The future raw Cloud Run manifest must omit `traffic`; use native Skaffold image substitution
+writers. The raw Cloud Run manifest omits `traffic`; use native Skaffold image substitution
 and Cloud Deploy parameters for non-secret coordinates, not another bespoke renderer.
 
 ## Rollout policy
@@ -38,15 +40,17 @@ zero-traffic first-launch guarantee. Routine submission must require a known com
 The two execution accounts are explicit, distinct, and in the service project. `RENDER`/`DEPLOY`
 cannot silently fall back to the default Compute account, and `VERIFY` does not use the deploy
 account. Executions have a ten-minute limit and a service-specific artifact prefix. This module
-grants no permissions and creates no identities, buckets, APIs, runtime workloads, or releases.
+grants no permissions and creates no identities, buckets, APIs, application workloads, or releases.
+It declares one secret-free probe job with a third, distinct runtime identity.
 Name validation does not prove bucket privacy, effective IAM, or artifact provenance.
 
 ## Required verifier contract
 
 `verification_image` is a required digest-pinned container in the selected project's regional
 Artifact Registry. Its own entrypoint is the verifier; the module injects no shell or command text.
-The image is **not implemented or published by this slice**. A dummy successful container would
-defeat the gate; reviewing and testing its implementation is an activation prerequisite.
+[`cmd/rollout-verifier`](../../cmd/rollout-verifier) implements the verifier and its private probe.
+The image is **not published by this slice**; reviewed provenance and a promoted digest remain
+activation prerequisites. A dummy successful container would defeat the gate.
 
 The verifier must:
 
@@ -63,11 +67,11 @@ The verifier must:
   private data. Verification may be retried, so it must not mutate application state.
 
 [Cloud Run verification runs in Cloud Build](https://docs.cloud.google.com/deploy/docs/verify-deployment),
-not in the service's VPC. The planned bridge is an exact private Cloud Run probe job with an
+not in the service's VPC. The bridge is an exact private Cloud Run probe job with an
 invoker-only runtime identity and an explicit execution record. It must not reuse the existing
-JSON Keys smoke job's secret-reading application identity. Default-pool connectivity, the bridge's
-permissions, execution overrides, revision binding, and absence of peer/secret access still need
-implementation and tests. Adding a private build pool instead would be a separate cost/network decision.
+JSON Keys smoke job's secret-reading application identity. Local tests cover execution overrides and
+revision binding. Effective permissions, network reachability, and denied peer/secret access need
+live proof. Adding a private build pool instead would be a separate cost/network decision.
 
 ## Failure ownership
 
@@ -117,12 +121,13 @@ capabilities and redundant tests when both services are handed off; do not wrap 
 
 Database lifecycle, image-family/provenance policy, migration ambiguity, backup compatibility,
 human-only initialization, and durable recovery receipts remain necessary. Existing formats stay
-supported for retained recovery points. This first slice adds declarative configuration and native
-tests; **it removes no active coordinator yet** and makes no net-size-reduction claim.
+supported for retained recovery points. The inactive pilot adds declarative configuration and a
+verification adapter; **it removes no active coordinator yet** and makes no net-size-reduction claim.
 
-The existing foundation test job runs six provider-mocked cases for this standalone module, using
-the root's pinned provider. CI also checks module formatting and lint. No tests contact Google Cloud;
-they establish configuration and input boundaries, not live IAM, probe routing, or rollout behavior.
+The existing foundation test job runs provider-mocked cases for this standalone module, using the
+root's pinned provider. Go tests cover the safety contract and exercise the official clients against
+a local HTTP server. CI also checks formatting and lint. No tests contact Google Cloud; they establish
+configuration and input boundaries, not live IAM, probe routing, or rollout behavior.
 
 Google's current [pricing](https://cloud.google.com/deploy/pricing) has no management fee for a
 single-target pipeline. Cloud Build, storage, logs, and application resources remain billable.

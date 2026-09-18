@@ -26,8 +26,8 @@ variable "name" {
   nullable    = false
 
   validation {
-    condition     = can(regex("^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$", var.name))
-    error_message = "Use a valid lowercase 1-63 character Cloud Run service name."
+    condition     = can(regex("^[a-z]([a-z0-9-]{0,54}[a-z0-9])?$", var.name))
+    error_message = "Use a lowercase 1-56 character service name, leaving space for the probe job suffix."
   }
 }
 
@@ -72,5 +72,25 @@ variable "verification_image" {
       var.verification_image,
     ))
     error_message = "Pin the reviewed verifier by SHA-256 digest in the selected project's regional Artifact Registry."
+  }
+}
+
+variable "probe" {
+  description = "Same-service invoker-only identity and foundation-owned network/subnet coordinates, including Shared VPC; no IAM or firewall access is granted."
+  type = object({
+    service_account = string
+    network         = string
+    subnetwork      = string
+  })
+  nullable = false
+
+  validation {
+    condition = (
+      can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]@${var.project_id}\\.iam\\.gserviceaccount\\.com$", var.probe.service_account)) &&
+      !contains(values(var.execution_service_accounts), var.probe.service_account) &&
+      can(regex("^projects/[a-z][a-z0-9-]{4,28}[a-z0-9]/global/networks/[a-z][a-z0-9-]+$", var.probe.network)) &&
+      can(regex("^projects/${try(split("/", var.probe.network)[1], "")}/regions/${var.region}/subnetworks/[a-z][a-z0-9-]+$", var.probe.subnetwork))
+    )
+    error_message = "Use a distinct same-service identity and an exact network/subnet pair in one approved host project and target region."
   }
 }

@@ -10,6 +10,11 @@ variables {
   }
   artifact_bucket    = "agora-json-keys-test-deploy-artifacts"
   verification_image = "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-production/verify@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  probe = {
+    service_account = "rollout-probe@agora-json-keys-test.iam.gserviceaccount.com"
+    network         = "projects/agora-network-test/global/networks/agora-production"
+    subnetwork      = "projects/agora-network-test/regions/europe-west1/subnetworks/agora-production-europe-west1"
+  }
 }
 
 run "inactive_service_rollout" {
@@ -51,9 +56,13 @@ run "inactive_service_rollout" {
         alltrue([for task in stage.strategy[0].canary[0].canary_deployment[0].verify_config[0].tasks :
           task.container[0].image == var.verification_image &&
           task.container[0].env == tomap({
-            EXPECTED_PROJECT_ID = var.project_id
-            EXPECTED_REGION     = var.region
-            EXPECTED_SERVICE    = var.name
+            EXPECTED_PROJECT_ID     = var.project_id
+            EXPECTED_REGION         = var.region
+            EXPECTED_SERVICE        = var.name
+            EXPECTED_PROBE_ACCOUNT  = var.probe.service_account
+            EXPECTED_VERIFIER_IMAGE = var.verification_image
+            EXPECTED_PROBE_NETWORK  = var.probe.network
+            EXPECTED_PROBE_SUBNET   = var.probe.subnetwork
           })
         ])
       ])
@@ -74,6 +83,27 @@ run "inactive_service_rollout" {
       ])
     )
     error_message = "Use separate bounded execution environments with explicit identities and service-scoped artifacts."
+  }
+
+  assert {
+    condition = (
+      google_cloud_run_v2_job.probe.project == var.project_id &&
+      google_cloud_run_v2_job.probe.location == var.region &&
+      google_cloud_run_v2_job.probe.deletion_protection &&
+      google_cloud_run_v2_job.probe.template[0].task_count == 1 &&
+      google_cloud_run_v2_job.probe.template[0].parallelism == 1 &&
+      alltrue([for task in google_cloud_run_v2_job.probe.template[0].template :
+        task.service_account == var.probe.service_account && task.max_retries == 0 && task.timeout == "90s" &&
+        length(task.volumes) == 0 && length(task.containers) == 1 &&
+        task.containers[0].image == var.verification_image &&
+        task.containers[0].args == tolist(["probe"]) && length(task.containers[0].env) == 0 &&
+        task.vpc_access[0].egress == "ALL_TRAFFIC" &&
+        task.vpc_access[0].network_interfaces[0].network == var.probe.network &&
+        task.vpc_access[0].network_interfaces[0].subnetwork == var.probe.subnetwork &&
+        task.vpc_access[0].network_interfaces[0].tags == tolist(["agora-rollout-probe"])
+      ])
+    )
+    error_message = "The single-attempt private probe must use a dedicated identity, API-only network tag, and no secrets."
   }
 }
 
@@ -126,4 +156,30 @@ run "reject_region_pattern_injection" {
     region = "europe-west1|.*"
   }
   expect_failures = [var.region]
+}
+
+run "reject_privileged_probe_identity" {
+  command = plan
+  module { source = "../../../modules/cloud-run-rollout" }
+  variables {
+    probe = {
+      service_account = "rollout-deploy@agora-json-keys-test.iam.gserviceaccount.com"
+      network         = "projects/agora-json-keys-test/global/networks/agora-json-keys"
+      subnetwork      = "projects/agora-json-keys-test/regions/europe-west1/subnetworks/agora-json-keys"
+    }
+  }
+  expect_failures = [var.probe]
+}
+
+run "reject_mismatched_probe_network" {
+  command = plan
+  module { source = "../../../modules/cloud-run-rollout" }
+  variables {
+    probe = {
+      service_account = "rollout-probe@agora-json-keys-test.iam.gserviceaccount.com"
+      network         = "projects/agora-authentication-test/global/networks/agora-authentication"
+      subnetwork      = "projects/agora-json-keys-test/regions/europe-west1/subnetworks/agora-json-keys"
+    }
+  }
+  expect_failures = [var.probe]
 }
