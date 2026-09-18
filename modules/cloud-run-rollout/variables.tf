@@ -76,7 +76,7 @@ variable "verification_image" {
 }
 
 variable "probe" {
-  description = "Pre-provisioned invoker-only identity and private network for the health probe; the module grants no IAM or firewall access."
+  description = "Same-service invoker-only identity and foundation-owned network/subnet coordinates, including Shared VPC; no IAM or firewall access is granted."
   type = object({
     service_account = string
     network         = string
@@ -88,9 +88,9 @@ variable "probe" {
     condition = (
       can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]@${var.project_id}\\.iam\\.gserviceaccount\\.com$", var.probe.service_account)) &&
       !contains(values(var.execution_service_accounts), var.probe.service_account) &&
-      can(regex("^projects/${var.project_id}/global/networks/[a-z][a-z0-9-]+$", var.probe.network)) &&
-      can(regex("^projects/${var.project_id}/regions/${var.region}/subnetworks/[a-z][a-z0-9-]+$", var.probe.subnetwork))
+      can(regex("^projects/[a-z][a-z0-9-]{4,28}[a-z0-9]/global/networks/[a-z][a-z0-9-]+$", var.probe.network)) &&
+      can(regex("^projects/${try(split("/", var.probe.network)[1], "")}/regions/${var.region}/subnetworks/[a-z][a-z0-9-]+$", var.probe.subnetwork))
     )
-    error_message = "Use a distinct same-project probe identity and the selected project's regional private network."
+    error_message = "Use a distinct same-service identity and an exact network/subnet pair in one approved host project and target region."
   }
 }

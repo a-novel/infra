@@ -12,8 +12,8 @@ variables {
   verification_image = "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-production/verify@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   probe = {
     service_account = "rollout-probe@agora-json-keys-test.iam.gserviceaccount.com"
-    network         = "projects/agora-json-keys-test/global/networks/agora-json-keys"
-    subnetwork      = "projects/agora-json-keys-test/regions/europe-west1/subnetworks/agora-json-keys"
+    network         = "projects/agora-network-test/global/networks/agora-production"
+    subnetwork      = "projects/agora-network-test/regions/europe-west1/subnetworks/agora-production-europe-west1"
   }
 }
 
@@ -171,7 +171,7 @@ run "reject_privileged_probe_identity" {
   expect_failures = [var.probe]
 }
 
-run "reject_peer_probe_network" {
+run "reject_mismatched_probe_network" {
   command = plan
   module { source = "../../../modules/cloud-run-rollout" }
   variables {

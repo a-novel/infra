@@ -22,6 +22,7 @@ func TestFromEnv(t *testing.T) {
 		{name: "Error/PathTraversal", key: "CLOUD_DEPLOY_RELEASE", value: "../other"},
 		{name: "Error/FloatingVerifier", key: "EXPECTED_VERIFIER_IMAGE", value: "verifier:latest"},
 		{name: "Error/PeerProbe", key: "EXPECTED_PROBE_ACCOUNT", value: "runtime@peer.iam.gserviceaccount.com"},
+		{name: "Error/MismatchedNetworkHost", key: "EXPECTED_PROBE_SUBNET", value: "projects/agora-json-keys-test/regions/europe-west1/subnetworks/agora-production"},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()

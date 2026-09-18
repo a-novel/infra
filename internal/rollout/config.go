@@ -12,7 +12,8 @@ var (
 	projectPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{4,28}[a-z0-9]$`)
 	regionPattern  = regexp.MustCompile(`^[a-z]+-[a-z]+[1-9][0-9]*$`)
 	numberPattern  = regexp.MustCompile(`^[1-9][0-9]*$`)
-	digestPattern  = regexp.MustCompile(`^[a-z0-9/-]+@sha256:[a-f0-9]{64}$`)
+	digestPattern  = regexp.MustCompile(`^[a-z0-9/_-]+@sha256:[a-f0-9]{64}$`)
+	networkPattern = regexp.MustCompile(`^projects/([a-z][a-z0-9-]{4,28}[a-z0-9])/global/networks/[a-z][a-z0-9-]+$`)
 )
 
 // Config binds one verification to the fixed target and platform-provided job run.
@@ -49,10 +50,14 @@ func FromEnv(env func(string) string) (Config, error) {
 		}
 	}
 	account := regexp.MustCompile(`^[a-z][a-z0-9-]{4,28}[a-z0-9]@` + regexp.QuoteMeta(config.ProjectID) + `\.iam\.gserviceaccount\.com$`)
+	network := networkPattern.FindStringSubmatch(config.ProbeNetwork)
 	if !account.MatchString(config.ProbeAccount) || !config.image(config.VerifierImage, "") ||
-		!strings.HasPrefix(config.ProbeNetwork, "projects/"+config.ProjectID+"/global/networks/") ||
-		!strings.HasPrefix(config.ProbeSubnet, "projects/"+config.ProjectID+"/regions/"+config.Region+"/subnetworks/") {
+		len(network) != 2 {
 		return Config{}, errors.New("invalid probe identity or verifier digest")
+	}
+	subnet := regexp.MustCompile(`^projects/` + regexp.QuoteMeta(network[1]) + `/regions/` + regexp.QuoteMeta(config.Region) + `/subnetworks/[a-z][a-z0-9-]+$`)
+	if !subnet.MatchString(config.ProbeSubnet) {
+		return Config{}, errors.New("probe network and subnet must share the reviewed host project and target region")
 	}
 	return config, nil
 }
@@ -86,5 +91,5 @@ func (config Config) image(image, repositoryPath string) bool {
 	if repositoryPath != "" {
 		prefix += "agora-production/" + repositoryPath
 	}
-	return len(image) > len(prefix) && image[:len(prefix)] == prefix && digestPattern.MatchString(image[len(config.Region+"-docker.pkg.dev/"):])
+	return strings.HasPrefix(image, prefix) && digestPattern.MatchString(image[len(config.Region+"-docker.pkg.dev/"):])
 }

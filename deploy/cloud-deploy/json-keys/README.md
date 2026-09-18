@@ -64,6 +64,7 @@ definition is its recovery path. Verification incurs ordinary job/build/log usag
 | Probe    | Invocation of this service only. No database, Secret Manager, artifact-write or peer-service grants.                                                                                                                                            |
 
 Grants must be scoped at the narrowest supported resource boundary and checked for inherited access.
+The network/subnet pair comes from the foundation-owned Shared VPC host, not a duplicate service VPC.
 The dedicated `agora-rollout-probe` network tag needs only restricted Google API HTTPS egress and the
 matching private DNS/Google Access path; it must not inherit the application's PostgreSQL allowance.
 This slice **does not provision** those identities, grants, firewall rules or APIs.

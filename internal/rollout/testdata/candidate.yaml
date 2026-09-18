@@ -56,6 +56,6 @@ job:
       vpcAccess:
         egress: ALL_TRAFFIC
         networkInterfaces:
-          - network: projects/agora-json-keys-test/global/networks/agora-json-keys
-            subnetwork: projects/agora-json-keys-test/regions/europe-west1/subnetworks/agora-json-keys
+          - network: projects/agora-network-test/global/networks/agora-production
+            subnetwork: projects/agora-network-test/regions/europe-west1/subnetworks/agora-production-europe-west1
             tags: [agora-rollout-probe]
