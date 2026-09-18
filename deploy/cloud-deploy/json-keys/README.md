@@ -11,8 +11,10 @@ one `buildArtifacts` entry named `service-json-keys`, pointing to the promoted A
 `REGION-docker.pkg.dev/PROJECT/agora-production/service-json-keys/grpc@sha256:…`.
 Complete image-family and provenance checks still precede submission; verification does not replace them.
 Its private create-only intent prevents redispatch of the same release identity after interruption.
+The [rollout handoff](../../../docs/runbooks/submit-release.md#submit-the-approval-gated-rollout)
+reserves one approval-gated rollout for that release and reconciles it read-only after interruption.
 There is no production caller yet: trusted packaging, parameter authorization, service locking,
-rollout creation and the final success receipt remain separate activation gates.
+bootstrap/predecessor checks and the final success receipt remain activation gates.
 
 [Cloud Deploy parameters](https://docs.cloud.google.com/deploy/docs/parameters) replace the marked
 fields without a custom renderer:

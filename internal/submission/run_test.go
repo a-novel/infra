@@ -43,3 +43,37 @@ func TestRun(t *testing.T) {
 		})
 	}
 }
+
+func TestRolloutArguments(t *testing.T) {
+	t.Parallel()
+	for _, testCase := range []struct {
+		name, command, argument string
+	}{
+		{"NoUUID", "submit-rollout", ""},
+		{"ZeroUUID", "submit-rollout", "--request-id=00000000-0000-0000-0000-000000000000"},
+		{"InvalidUUID", "submit-rollout", "--request-id=private-input"},
+		{"ReconcileHasNoUUID", "reconcile-rollout", "--request-id=22222222-2222-4222-8222-222222222222"},
+		{"NoPhaseOverride", "submit-rollout", "--starting-phase=stable"},
+		{"NoTargetOverride", "submit-rollout", "--target=peer"},
+		{"NoRolloutOverride", "submit-rollout", "--rollout-id=other"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				t.Error("invalid rollout arguments reached a cloud client")
+				w.WriteHeader(http.StatusForbidden)
+			}))
+			defer server.Close()
+			args := arguments(t, testCase.command, testCase.argument)
+			if testCase.argument == "" {
+				args[len(args)-1] = "release-1"
+			} else {
+				args = append(args, "release-1")
+			}
+			var output bytes.Buffer
+			code := submission.Run(t.Context(), args, &output, &output, option.WithEndpoint(server.URL), option.WithoutAuthentication())
+			require.Equal(t, 1, code)
+			require.NotContains(t, output.String(), "private-input")
+		})
+	}
+}

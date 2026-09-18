@@ -4,9 +4,10 @@
 the [activation gates](#before-live-use); do not grant permissions or replace the existing release
 workflow just to try them.
 
-This adapter owns one handoff: preserve the exact request, then ask Cloud Deploy to create and render
-that release. Google's clients own authentication, API decoding and operation waiting. Cloud Deploy
-owns rendering; this adapter has no rollout, migration, traffic, rollback or deletion operation.
+The release command preserves the exact request before asking Cloud Deploy to render it. A separate
+rollout command hands that rendered release to an approval-required target. Google's clients own
+authentication, API decoding and operation waiting. Cloud Deploy owns rollout execution; these
+commands cannot approve, advance, retry jobs, migrate, roll back or delete resources.
 
 ## The private request
 
@@ -93,6 +94,55 @@ does not use that window as a retry loop: a persisted intent never authorizes a 
 Do not delete the reservation or invent a new UUID/release ID to recover an uncertain request.
 A crash after reserving intent but before dispatch intentionally requires operator reconciliation.
 
+## Submit the approval-gated rollout
+
+After the activation gates below are satisfied, select the same release and a new nonzero lowercase
+request UUID, distinct from the release-create UUID:
+
+```sh
+infra submit-rollout \
+  --project-id="${SERVICE_PROJECT_ID:?}" --project-number="${SERVICE_PROJECT_NUMBER:?}" \
+  --region="${REGION:?}" --receipt-bucket="${RECEIPT_BUCKET:?}" \
+  --request-id="${ROLLOUT_REQUEST_ID:?}" --timeout=10m "${RELEASE_ID:?}"
+```
+
+The command requires the native release to match its private intent and finish rendering. Both its
+target snapshot and the current target must require approval, identify the same target UID, and
+point to the selected project's Cloud Run location. These reads are preflight checks, not a lock
+against privileged target changes; configuration ownership and IAM must enforce that boundary.
+
+The native request fixes the rollout ID to `production`, the target to `agora-json-keys-grpc` and the
+starting phase to `canary-0`. It binds the native release UID and request UUID. There are no target,
+phase or policy-override flags. The request is reserved once as
+`services/PROJECT_ID/production/submissions/RELEASE_ID.rollout.json`; the operation name follows in
+`RELEASE_ID.rollout.operation.json`. Both use the same create-only rule as release submission.
+Changing the request UUID cannot bypass an existing reservation.
+
+This normally returns **nonzero with `action-required (approval)`**. The rollout exists, but deployment
+is incomplete. Do not rerun submission to clear that result. Approval remains a separate human action,
+and stable-phase advancement follows successful candidate verification. Before approval, the live
+procedure must establish the compatible predecessor and same-service exclusion described below.
+Cloud Deploy can skip the candidate phase on first launch; bootstrap needs separate review.
+
+## Reconcile the rollout
+
+```sh
+infra reconcile-rollout \
+  --project-id="${SERVICE_PROJECT_ID:?}" --project-number="${SERVICE_PROJECT_NUMBER:?}" \
+  --region="${REGION:?}" --receipt-bucket="${RECEIPT_BUCKET:?}" \
+  "${RELEASE_ID:?}"
+```
+
+This reads the release intent, release, rollout intent and exact `production` rollout. It validates
+their binding, including the native release UID, then uses the [observer's completion checks](observe-rollout.md).
+It remains usable after a lost create response or operation-record acknowledgement. Missing records,
+identity conflicts and unknown outcomes stop without resubmitting or modifying anything.
+
+Approval, phase advancement, progress, failure and interrupted observation return nonzero.
+Zero means both candidate and stable deployment/verification succeeded; the final durable recovery
+receipt is still a separate completion obligation. For bounded continuous tracking after approval,
+the existing `infra observe-rollout` command accepts the exact resource name printed here.
+
 ## Before live use
 
 The remaining work in [#189](https://github.com/a-novel/infra/issues/189) and
@@ -106,8 +156,10 @@ The remaining work in [#189](https://github.com/a-novel/infra/issues/189) and
   Cloud Deploy's renderer needs read access to the exact source prefix, not receipt-write access.
 - Same-service exclusion before mutations, including migrations, through rollout and receipt
   completion. A reservation prevents duplicate creation of **one ID**; it is not a service lock.
-- A separate exact rollout-create handoff, the existing [native observer](observe-rollout.md),
-  final durable recovery receipt, and migration interruption handling. Rendering is not final success.
+- A trusted workflow connecting submission to the [native observer](observe-rollout.md), final
+  durable recovery receipt, and migration interruption handling. Rendering is not final success.
+- A known compatible predecessor for routine releases, with separate bootstrap handling. Approval
+  and advancement must retain same-service exclusion and cannot bypass failed verification.
 - Least-privilege identities, the one-writer OpenTofu/Cloud Deploy handoff, and a human-approved
   interruption drill that verifies actual API normalization, IAM and receipt recovery.
 
