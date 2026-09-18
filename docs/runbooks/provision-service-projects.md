@@ -1,31 +1,48 @@
 # Service-project onboarding boundary
 
 Service projects are opt-in project shells. Production still runs in the existing workload project.
-Keep `service_projects = {}` until a separately reviewed onboarding change supplies the exact project
-IDs, temporary provisioning permissions, configuration publication, verification, and access-removal
+Keep `INFRA_SERVICE_PROJECTS='{}'` in `.envrc` until a separately reviewed onboarding change supplies
+the exact project IDs, temporary provisioning permissions, verification, and access-removal
 commands. Merging the project module is not authorization to create a project or move a workload.
 
 ## Review the configuration
 
-The protected foundation input accepts a service-name-to-project-ID map. For example, these synthetic
-test values create two project shells:
+The reviewed `.envrc` declares a JSON object mapping service names to project IDs. For example, these
+synthetic values select two project shells:
 
-```hcl
-service_projects = {
-  json-keys      = "agora-json-keys-test"
-  authentication = "agora-authentication-test"
-}
+```sh
+export INFRA_SERVICE_PROJECTS='{"json-keys":"agora-json-keys-test","authentication":"agora-authentication-test"}'
 ```
 
 Use one entry per independently operated service and environment, not per image, job, or revision.
 Project IDs must differ from each other, management, and the existing workload project. A production
-service project requires the same organization/folder parent as the foundation. Recovery input must
-omit the map or set it to `{}`; the root rejects a nonempty map in recovery mode.
+service project requires the same organization/folder parent as the foundation. OpenTofu validates
+these constraints before apply.
 
-The existing protected foundation workflow already passes the complete private input to OpenTofu.
-Its plan/apply custody and serialization remain unchanged. The initial `foundation-setup configure`
-helper still generates the legacy input shape: service onboarding must extend that publication path
-before activation, so rerunning configuration cannot silently discard the selected map.
+After the selection is reviewed and configuration publication is authorized, run from clean, current
+`master` as the human operator:
+
+```sh
+. ./.envrc
+go run ./cmd/infra foundation-setup configure
+```
+
+Reuse the existing project-parent and adoption options from the
+[workload foundation setup](./provision-workload-foundation.md#2-publish-the-protected-configuration).
+This publishes the complete source configuration to both protected environments. An explicit
+`--service-projects '{"json-keys":"agora-json-keys-test"}'` overrides the environment for that call;
+keep the durable selection in `.envrc` so later publications preserve it. An unset or malformed
+selection fails before any external command. Use `{}` explicitly when no service projects exist.
+
+Continue only after `PASS foundation configure`. The two environment writes are separate operations;
+if either fails, resolve the failure and rerun the same reviewed configuration before any workflow.
+Publication changes no cloud resource. The existing protected foundation plan/apply path consumes
+the complete private configuration with its existing custody and serialization.
+
+Recovery retains the source project map only to reject a production service project as a replacement
+target. Its compiler always writes `service_projects = {}` into the disposable foundation inputs;
+the root also rejects a nonempty map in recovery mode. Older source configurations without the map
+remain supported.
 
 ## What the plan will own
 
@@ -50,8 +67,8 @@ The onboarding PR must record the exact operator commands and successful sanitiz
 1. Project Creator and billing-link authority for the protected foundation identity, plus temporary
    Shared VPC administration at the appropriate parent. All projects must belong to the same
    organization. Inherited default-account and service-account-key policies must be enforced.
-2. Publishing and preserving the selected map in protected foundation inputs while keeping recovery
-   inputs empty. Do not replace a complete protected configuration with the example above.
+2. Publishing the reviewed selection with the command above. Do not replace the complete protected
+   configuration with a map-only document or reuse the synthetic project IDs.
 3. The existing separate reviewed plan and apply runs. Inspect project creation, API/IAM changes,
    Shared VPC attachment, and budget scope; stop for workload changes or legacy resource replacement.
 4. Verifying exact project parents/billing, no default VPC, enabled APIs, zero user-managed keys,

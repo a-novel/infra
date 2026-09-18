@@ -11,7 +11,7 @@ import (
 
 func TestCompilerRecovery(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"Release", "Foundation", "LegacyHost", "CustomQuotas", "SourceTarget", "ManagementTarget", "WrongSource", "WrongOutputProject", "MissingOutput", "BadAttempt", "ForeignImage", "DuplicateImage"} {
+	for _, name := range []string{"Release", "Foundation", "ServiceProjects", "FoundationServiceProjects", "ServiceProjectTarget", "InvalidServiceProjects", "InvalidServiceProjectID", "LegacyHost", "CustomQuotas", "SourceTarget", "ManagementTarget", "WrongSource", "WrongOutputProject", "MissingOutput", "BadAttempt", "ForeignImage", "DuplicateImage"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			fixture := setup(t)
@@ -33,6 +33,22 @@ func TestCompilerRecovery(t *testing.T) {
 			switch name {
 			case "Foundation":
 				files[6] = "foundation"
+			case "ServiceProjects", "FoundationServiceProjects", "ServiceProjectTarget":
+				config["service_projects"] = object{"json-keys": "json-keys-project-prod", "authentication": "authentication-prod"}
+				if name == "FoundationServiceProjects" {
+					files[6] = "foundation"
+				}
+				if name == "ServiceProjectTarget" {
+					files[3] = "json-keys-project-prod"
+					files[6] = "foundation"
+					invalid = true
+				}
+			case "InvalidServiceProjects":
+				config["service_projects"] = []any{"json-keys-project-prod"}
+				invalid = true
+			case "InvalidServiceProjectID":
+				config["service_projects"] = object{"json-keys": nil}
+				invalid = true
 			case "LegacyHost":
 				delete(section(fixture.receipt, "activeTfvars"), "database_hosts")
 				section(fixture.receipt, "activeTfvars")["database_private_ip"] = "10.20.0.99"
@@ -77,7 +93,8 @@ func TestCompilerRecovery(t *testing.T) {
 			foundation := result(t, fixture, "foundation.tfvars.json")
 			require.Equal(t, "agora-recovery-test", foundation["workload_project_id"])
 			require.Equal(t, true, foundation["recovery_mode"])
-			if name == "Foundation" {
+			require.Equal(t, object{}, foundation["service_projects"])
+			if files[6] == "foundation" {
 				require.NoFileExists(t, filepath.Join(files[7], "active.tfvars.json"))
 				return
 			}
