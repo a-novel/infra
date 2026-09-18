@@ -8,7 +8,7 @@ COPY cmd/rollout-verifier ./cmd/rollout-verifier
 COPY internal/rollout ./internal/rollout
 RUN go build -ldflags="-s -w" -trimpath -o /rollout-verifier ./cmd/rollout-verifier
 
-FROM docker.io/library/alpine:3.24.1
+FROM docker.io/library/alpine:3.24.2
 COPY --from=builder /rollout-verifier /rollout-verifier
 USER 65532:65532
 ENTRYPOINT ["/rollout-verifier"]
