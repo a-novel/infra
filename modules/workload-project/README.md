@@ -14,7 +14,8 @@ Its empty `service_projects` map leaves the current deployment unchanged. See th
 | Resource                                                                                                                                           | Contract                                                                                                                                                                                               |
 | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `google_project.service`                                                                                                                           | One explicit project ID, exactly one organization/folder parent, no default VPC, provider deletion prevention and `prevent_destroy`.                                                                   |
-| `google_project_service.api`                                                                                                                       | Foundation owns the fourteen declared APIs, including IAM Credentials and STS; removing an entry leaves the API enabled for retained workloads and recovery.                                           |
+| `google_project_service.api`                                                                                                                       | Foundation owns the declared APIs, including Cloud Build, Cloud Deploy and Storage; removing an entry leaves the API enabled for retained workloads and recovery.                                      |
+| `google_project_service_identity.agent` and `google_project_iam_member.service_agent`                                                              | Create the Google-managed Run, Build and Deploy agents and bind each documented service-agent role in its own project.                                                                                 |
 | `google_project_default_service_accounts.service`                                                                                                  | Deprivilege default accounts after API activation. This is a creation-time repair; effective organization policies prevent future automatic grants and user-managed keys.                              |
 | `google_project_iam_member.foundation`, `.metadata`, and `google_project_iam_custom_role.metadata`                                                 | Project and service-account maintenance for the protected foundation identity. This is privileged IAM administration, not a service deployment role.                                                   |
 | `google_project_iam_member.plan`                                                                                                                   | Metadata assessment by the existing read-only plan identity. No payload access is declared.                                                                                                            |
@@ -23,12 +24,20 @@ Its empty `service_projects` map leaves the current deployment unchanged. See th
 | `google_storage_managed_folder.release` and `.release` IAM members                                                                                 | Protected state and receipt folders in the existing management buckets. The matching release account can write state and create/read receipts, but cannot replace or delete receipts.                  |
 | `google_storage_bucket_iam_member.release_metadata` and `google_storage_managed_folder_iam_member.plan`                                            | Release reads state-bucket metadata only; the existing plan identity gains read-only access to the selected service's state folder. Neither grant permits bucket administration.                       |
 
-The caller owns Shared VPC attachment and budget scope. Attachment grants no subnet use, secret
-access, service invocation, or deployment permission. The module creates no workloads, runtime
+The caller owns Shared VPC attachment, Cloud Run agent subnet access, and budget scope. These grants
+provide network attachment, not secret access or application invocation. The module creates no workloads, runtime
 identities, keys, secret versions, registry, bucket, NAT, connector, or load balancer. Outputs contain
 the project ID/number and a versioned `release` object with only the identity, provider, environment,
-and storage coordinates. Publish that small contract when activating a service; do not give a
+and storage coordinates, plus Google-managed IAM members for foundation wiring. Publish the release
+contract when activating a service; do not give a
 consumer access to foundation's state.
+
+API activation does not guarantee that a service agent already exists. The official `google-beta`
+provider creates these identities before their role bindings; every other resource uses `google`.
+Foundation pins both providers to the same version and Renovate groups their updates. The service
+identity resource's delete operation is a no-op: it cannot remove a Google agent. Role bindings still
+have their own lifecycle. Default Compute/Build execution accounts stay deprivileged; the rollout
+module selects dedicated execution identities. No primitive Owner or Editor grant is added here.
 
 ## Release boundary
 
@@ -62,6 +71,7 @@ gate must remain active; a deletion label alone does not override them. Project 
 the creator Owner, which the human operator must remove after verifying the maintenance grants.
 
 Provider references: [project](https://registry.terraform.io/providers/hashicorp/google/8.2.0/docs/resources/google_project),
+[service identity](https://registry.terraform.io/providers/hashicorp/google-beta/8.2.0/docs/resources/project_service_identity),
 [APIs](https://registry.terraform.io/providers/hashicorp/google/8.2.0/docs/resources/google_project_service),
 [default accounts](https://registry.terraform.io/providers/hashicorp/google/8.2.0/docs/resources/google_project_default_service_accounts),
 [project IAM](https://registry.terraform.io/providers/hashicorp/google/8.2.0/docs/resources/google_project_iam),
@@ -69,6 +79,7 @@ Provider references: [project](https://registry.terraform.io/providers/hashicorp
 and [log bucket](https://registry.terraform.io/providers/hashicorp/google/8.2.0/docs/resources/logging_project_bucket_config).
 Product references: [project creation](https://cloud.google.com/resource-manager/docs/creating-managing-projects),
 [Shared VPC](https://cloud.google.com/vpc/docs/shared-vpc),
+[service agents](https://docs.cloud.google.com/iam/docs/service-agents),
 [service-account security](https://cloud.google.com/iam/docs/best-practices-for-managing-service-account-keys),
 [log retention](https://cloud.google.com/logging/docs/buckets),
 [managed-folder inheritance](https://cloud.google.com/storage/docs/managed-folders),

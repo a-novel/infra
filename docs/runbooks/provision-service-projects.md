@@ -49,16 +49,19 @@ remain supported.
 
 - The [project module](../../modules/workload-project/README.md) creates protected project shells,
   enables APIs, deprivileges default accounts, grants foundation maintenance and plan inspection,
-  and bounds default logs. Each service also gets a keyless release account, an exact federation
+  creates the Google-managed Run/Build/Deploy agents with their documented roles, and bounds default
+  logs. Each service also gets a keyless release account, an exact federation
   provider, and managed folders for its state and receipts in the management buckets.
 - Foundation enables the existing workload project as a Shared VPC host and attaches each shell.
   It owns the VPC, subnet, routes, firewall rules, and DNS. Both host and attachment have deletion
-  guards. No Network User grant or Google service-agent subnet grant is added.
+  guards. Only the Cloud Run agent receives host Network Viewer and Network User on the exact
+  production subnet. The secret-free rollout probe tag joins the existing restricted Google HTTPS
+  allow; it gains no database egress.
 - The existing production budget includes the new project numbers. Its amount, thresholds, and
   notification channels remain unchanged. No paid runtime or network appliance is provisioned.
 
-An attachment is not a network-security proof. Service-specific subnet permissions, firewall and
-egress policy, Cloud Run internal routing, and application authentication must be reviewed before
+An attachment is not a network-security proof. Effective subnet permissions, firewall and
+egress policy, Cloud Run internal routing, and application authentication must be verified before
 deploying a service. Current deployers receive no new-project grants. New release accounts can write
 only their own state and create/read their own receipts; they cannot yet deploy a workload. Legacy
 state, receipts, secrets, and backups retain their existing owners and paths.
@@ -81,6 +84,9 @@ The onboarding PR must record the exact operator commands and successful sanitiz
    or legacy resource replacement.
 4. Verifying exact project parents/billing, no default VPC, enabled APIs, zero user-managed keys,
    effective organization policies, deprivileged default accounts, host attachment, and budget scope.
+   Verify all three Google agents have their matching project role, only the Cloud Run agent has
+   the host/subnet grants, and no host-wide Network User or primitive role is inherited. Test probe
+   HTTPS reachability and denied database access once the separately approved probe exists.
 5. Removing temporary Owner/project-creation/billing/Shared VPC grants and verifying that the
    standing maintenance identity can still produce a zero-change plan.
 

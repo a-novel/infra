@@ -21,6 +21,8 @@ resource "google_project" "service" {
 resource "google_project_service" "api" {
   for_each = toset([
     "artifactregistry.googleapis.com",
+    "cloudbuild.googleapis.com",
+    "clouddeploy.googleapis.com",
     "cloudquotas.googleapis.com",
     "cloudresourcemanager.googleapis.com",
     "cloudscheduler.googleapis.com",
@@ -33,6 +35,7 @@ resource "google_project_service" "api" {
     "oslogin.googleapis.com",
     "run.googleapis.com",
     "serviceusage.googleapis.com",
+    "storage.googleapis.com",
     "sts.googleapis.com",
   ])
 

@@ -8,6 +8,11 @@ output "project_number" {
   value       = google_project.service.number
 }
 
+output "service_agents" {
+  description = "Google-managed IAM members after their project service-agent roles are established."
+  value       = { for service, binding in google_project_iam_member.service_agent : service => binding.member }
+}
+
 output "release" {
   description = "Versioned release identity and storage coordinates for publication without sharing foundation state."
   value = {
