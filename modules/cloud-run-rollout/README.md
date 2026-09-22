@@ -145,8 +145,10 @@ and completion-evidence implementation; this table is a contract, not live proof
 2. Provision this module only through a separately approved foundation change, after the
    [service-project foundation](../workload-project/README.md) establishes its APIs, Google agents
    and their roles, release identity and management receipt folder. The caller must order this module
-   after that foundation and its host subnet grants. Establish the `agora-production`/verifier
-   registries, application runtime and operations channels. The
+   after that foundation and its host subnet grants. The separately composed
+   [service foundation](../service-foundation) supplies `agora-production`/`agora-tooling`, the
+   application runtime and operations channel. Promote and verify the reviewed verifier digest before
+   creating the probe; application release has no writer grant on `agora-tooling`. The
    foundation needs resource/IAM administration and permission to attach the probe identity.
    Verify the host-owned Shared VPC grants and API-only probe egress; test private
    routing, effective IAM, platform-log routing and notification delivery. Target approval,

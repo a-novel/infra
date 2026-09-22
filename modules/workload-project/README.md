@@ -32,6 +32,10 @@ and storage coordinates, plus Google-managed IAM members for foundation wiring. 
 contract when activating a service; do not give a
 consumer access to foundation's state.
 
+The protected foundation account also receives repository and notification-channel administration
+inside this project, for the separately composed [application prerequisites](../service-foundation).
+No application prerequisite is instantiated by this module.
+
 API activation does not guarantee that a service agent already exists. The official `google-beta`
 provider creates these identities before their role bindings; every other resource uses `google`.
 Foundation pins both providers to the same version and Renovate groups their updates. The service

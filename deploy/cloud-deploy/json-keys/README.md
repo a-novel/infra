@@ -75,6 +75,9 @@ The dedicated `agora-rollout-probe` network tag needs only restricted Google API
 matching private DNS/Google Access path; it must not inherit the application's PostgreSQL allowance.
 There is still **no production caller or live provisioning**. API/service-agent setup, Shared VPC
 attachment and firewall rules remain activation prerequisites, not implicit permissions added here.
+The inactive [service foundation](../../../modules/service-foundation) declares the application
+identity, its two exact secret-container grants, separate application/verifier repositories and an
+operations email channel. Its published coordinates feed the rollout module without peer state.
 
 `builds/rollout-verifier.Dockerfile` builds one unprivileged image from the reviewed Go module. Local
 `a-novel build --type=podman -y` does not publish it. The [artifact workflow](../../../docs/runbooks/publish-rollout-verifier.md)
