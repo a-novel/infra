@@ -137,9 +137,10 @@ run "protected_service_project" {
 
   assert {
     condition = { for service, binding in google_project_iam_member.service_agent : service => binding.role } == {
-      "cloudbuild.googleapis.com"  = "roles/cloudbuild.serviceAgent"
-      "clouddeploy.googleapis.com" = "roles/clouddeploy.serviceAgent"
-      "run.googleapis.com"         = "roles/run.serviceAgent"
+      "cloudbuild.googleapis.com"     = "roles/cloudbuild.serviceAgent"
+      "clouddeploy.googleapis.com"    = "roles/clouddeploy.serviceAgent"
+      "cloudscheduler.googleapis.com" = "roles/cloudscheduler.serviceAgent"
+      "run.googleapis.com"            = "roles/run.serviceAgent"
     }
     error_message = "Grant the documented platform roles only to the matching Google service agents."
   }
