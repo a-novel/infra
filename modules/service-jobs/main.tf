@@ -1,0 +1,90 @@
+locals {
+  job_contracts = {
+    migrations = {
+      timeout = "600s"
+      retries = 0
+      secrets = { POSTGRES_PASSWORD = "postgres-password" }
+    }
+    rotatekeys = {
+      timeout = "300s"
+      retries = 1
+      secrets = { POSTGRES_PASSWORD = "postgres-password", APP_MASTER_KEY = "app-master-key" }
+    }
+  }
+  jobs = { for role, contract in local.job_contracts : role => contract
+    if role == "migrations" || var.runtime.service == "json-keys"
+  }
+  required_secrets = toset(flatten([for job in values(local.jobs) : values(job.secrets)]))
+  database_user    = "agora_${replace(var.runtime.service, "-", "_")}"
+}
+
+resource "google_cloud_run_v2_job" "application" {
+  for_each = local.jobs
+
+  project             = var.runtime.project_id
+  location            = var.runtime.region
+  name                = "agora-${var.runtime.service}-${each.key}"
+  deletion_protection = true
+  labels              = { environment = "production", component = var.runtime.service, role = each.key }
+
+  template {
+    task_count  = 1
+    parallelism = 1
+
+    template {
+      service_account       = var.runtime.service_account
+      execution_environment = "EXECUTION_ENVIRONMENT_GEN2"
+      timeout               = each.value.timeout
+      max_retries           = each.value.retries
+
+      containers {
+        name  = each.key
+        image = lookup(var.images, each.key, "")
+
+        dynamic "env" {
+          for_each = {
+            POSTGRES_HOST        = var.database_private_ip
+            POSTGRES_PORT        = var.runtime.service == "json-keys" ? "5432" : "5433"
+            POSTGRES_USER        = local.database_user
+            POSTGRES_DATABASE    = local.database_user
+            POSTGRES_TLS_ENABLED = "false"
+          }
+          content {
+            name  = env.key
+            value = env.value
+          }
+        }
+
+        dynamic "env" {
+          for_each = each.value.secrets
+          content {
+            name = env.key
+            value_source {
+              secret_key_ref {
+                secret  = "projects/${var.management_project_id}/secrets/production-${var.runtime.service}-${env.value}"
+                version = tostring(lookup(var.secret_versions, env.value, 0))
+              }
+            }
+          }
+        }
+
+        resources {
+          limits = { cpu = "1", memory = "512Mi" }
+        }
+      }
+
+      vpc_access {
+        egress = "ALL_TRAFFIC"
+        network_interfaces {
+          network    = var.network.network
+          subnetwork = var.network.subnetwork
+          tags       = ["agora-${var.runtime.service}"]
+        }
+      }
+    }
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
