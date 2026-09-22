@@ -105,13 +105,15 @@ minutes to appear; these windows are not an exact wall-clock detection guarantee
 
 Before activation, seed a successful rotation and observe its metric **after installing or modifying
 the policy**. Google's absence condition cannot establish health or detect a never-observed series.
+It also excludes resources marked terminated/deleted; it is not a job-deletion or resource-inventory
+alarm. Keep the protected job lifecycle and drift checks as separate safeguards.
 Verify completion, gap detection and channel delivery in the separately approved pilot. Policy silence,
 incident closure and scheduler HTTP success are not proof of application recovery. A completed job
 also does not prove that a new key was needed or published.
 
 The [workload project](../workload-project) grants protected foundation `roles/monitoring.alertPolicyEditor`;
 it already owns channel administration. Release, application, scheduler and Cloud Deploy identities
-receive no monitoring-write grant. Keep current production alerts until the explicit one-writer
+receive no alert/channel-administration grant here. Keep current production alerts until the explicit one-writer
 handoff. Deleting this policy removes monitoring, not jobs or evidence; the provider permits deletion
 through the reviewed plan gate. Recovery omits this entire module.
 
