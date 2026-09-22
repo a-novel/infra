@@ -13,12 +13,12 @@
     "lint:stylecheck": "prettier --no-config --no-editorconfig --check ."
   },
   "devDependencies": {
-    "prettier": "3.9.6",
-    "renovate": "44.93.4"
+    "prettier": "3.9.8",
+    "renovate": "44.103.2"
   },
-  "packageManager": "pnpm@12.4.2",
+  "packageManager": "pnpm@12.5.1",
   "engines": {
     "node": "24.21.0",
-    "pnpm": "12.4.2"
+    "pnpm": "12.5.1"
   }
 }
