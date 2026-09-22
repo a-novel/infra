@@ -1,0 +1,27 @@
+variable "runtime" {
+  description = "Selected service-foundation runtime output; protected foundation authorizes these coordinates and the existing jobs."
+  type = object({
+    schema_version  = number
+    project_id      = string
+    service         = string
+    region          = string
+    service_account = string
+  })
+  nullable = false
+
+  validation {
+    condition     = var.runtime.schema_version == 1 && contains(["json-keys", "authentication"], var.runtime.service)
+    error_message = "Use a version-1 JSON Keys or Authentication runtime contract."
+  }
+  validation {
+    condition = (
+      can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", var.runtime.project_id)) &&
+      can(regex("^[a-z]+-[a-z]+[1-9][0-9]*$", var.runtime.region))
+    )
+    error_message = "Use a valid service project ID and Google Cloud region."
+  }
+  validation {
+    condition     = var.runtime.service_account == "agora-${var.runtime.service}@${var.runtime.project_id}.iam.gserviceaccount.com"
+    error_message = "Attach only this service's application identity in its own project."
+  }
+}
