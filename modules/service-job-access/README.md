@@ -1,6 +1,6 @@
 # Service application job access
 
-Protected foundation owns these additive IAM grants for existing [application jobs](../service-jobs).
+Protected foundation owns access to existing [application jobs](../service-jobs) and their schedules.
 The module consumes the [service foundation's](../service-foundation) versioned `runtime` contract.
 It derives fixed job names and the project-local `infra-release` principal; callers cannot supply
 another principal or extend the job set. **Code only: no production root calls this module.**
@@ -41,10 +41,54 @@ probe/peer updates, creation/deletion, overrides, cancellation, IAM writes and a
 runtime. Additive IAM members preserve other grants; these declarations cannot prove effective denial.
 Use same-service exclusion for configuration, migrations and rollout. Reconcile an uncertain execution
 against native operation/execution records before any retry. Migration dispatch remains outside
-Cloud Deploy retry hooks; scheduled rotation needs its own reviewed invocation and pause/drain policy.
+Cloud Deploy retry hooks.
 
-Native mocked-provider plan tests cover both service scopes and rejected runtime contracts. They
+## Rotation schedule
+
+JSON Keys alone declares these foundation-owned resources:
+
+| Resource                                         | Contract                                                                                                             |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `google_service_account.rotation[0]`             | Keyless `agora-json-keys-scheduler` identity in the service project; deletion blocked by `prevent_destroy`.          |
+| `google_cloud_scheduler_job.rotation[0]`         | Fixed hourly `agora-json-keys-rotation`, hard-paused, with provider deletion prevention and `prevent_destroy`.       |
+| `google_cloud_run_v2_job_iam_member.rotation[0]` | Run Invoker on the exact `agora-json-keys-rotatekeys` job; removing the additive grant revokes this invocation path. |
+
+The schedule sends an empty JSON body to the selected project's regional RunJob API with OAuth.
+Its identity receives no job-update, migration, secret, runtime-attachment or token-minting grant.
+The [workload project](../workload-project) declares the Google Scheduler service agent and its
+documented role to mint that OAuth token. The job still runs as the application identity.
+Protected bootstrap needs Scheduler administration and `actAs` on the scheduling identity, in
+addition to its existing job-IAM maintenance authority. Routine release receives none of these grants.
+
+The [pinned provider](https://github.com/hashicorp/terraform-provider-google/blob/v8.2.0/google/services/cloudscheduler/resource_cloud_scheduler_job.go)
+creates an enabled schedule and then pauses it. The invoker grant depends on that completed operation:
+a fresh identity has no target access during creation or a failed pause. Check inherited grants before
+provisioning. This ordering does not prove the absence of a delayed, in-flight dispatch; first
+activation still reconciles native attempts and executions. Replacement with an already-authorized identity requires an explicit revoke/reconcile
+procedure; the dependency cannot retract existing authority. Deletion guards prevent routine replacement.
+
+The request has zero configured transport retries. Scheduler still provides
+[at-least-once delivery](https://docs.cloud.google.com/scheduler/docs/overview); rotation must tolerate
+duplicate executions. RunJob returns an operation before the application finishes. A successful
+schedule dispatch proves neither successful rotation nor exclusive execution. Keep completion monitoring
+on Cloud Run executions. This scheduling pattern must not be used for migrations.
+
+There is no activation input or ignored `paused` field. Keep the schedule paused until the
+[onboarding gates](../../docs/runbooks/provision-service-projects.md#service-scheduling-activation)
+are met. Pausing dispatch does not stop accepted Cloud Run executions. Same-service exclusion must
+cover pause, dispatch reconciliation, execution drain, job updates, migrations, rollout and safe resume.
+An unknown outcome stays paused for operator reconciliation; resuming must not be unconditional cleanup.
+
+A provisioned schedule has [Scheduler charges](https://cloud.google.com/scheduler/pricing) even while
+paused. Actual executions incur Cloud Run and logging costs. This inactive module adds none today.
+Disposable recovery must omit this module; restoring data must not start production rotation.
+The current production schedule and its IAM remain with the existing release/foundation owners.
+
+Native mocked-provider plan tests cover both service scopes, scheduling and rejected runtime contracts. They
 prove configuration only; live permissions and job execution still need a separately approved pilot.
 References: [Cloud Run roles](https://docs.cloud.google.com/run/docs/reference/iam/roles),
 [job IAM](https://github.com/hashicorp/terraform-provider-google/blob/v8.2.0/website/docs/r/cloud_run_v2_job_iam.html.markdown),
-[operation resources](https://docs.cloud.google.com/run/docs/reference/rest/v2/projects.locations.operations/get).
+[operation resources](https://docs.cloud.google.com/run/docs/reference/rest/v2/projects.locations.operations/get),
+[Scheduler resource](https://github.com/hashicorp/terraform-provider-google/blob/v8.2.0/website/docs/r/cloud_scheduler_job.html.markdown),
+[service account resource](https://github.com/hashicorp/terraform-provider-google/blob/v8.2.0/website/docs/r/google_service_account.html.markdown),
+[authenticated scheduling](https://docs.cloud.google.com/scheduler/docs/http-target-auth).

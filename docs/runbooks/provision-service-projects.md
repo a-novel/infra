@@ -49,7 +49,7 @@ remain supported.
 
 - The [project module](../../modules/workload-project/README.md) creates protected project shells,
   enables APIs, deprivileges default accounts, grants foundation maintenance and plan inspection,
-  creates the Google-managed Run/Build/Deploy agents with their documented roles, and bounds default
+  creates the Google-managed Run/Build/Deploy/Scheduler agents with their documented roles, and bounds default
   logs. Each service also gets a keyless release account, an exact federation
   provider, and managed folders for its state and receipts in the management buckets.
 - Foundation enables the existing workload project as a Shared VPC host and attaches each shell.
@@ -84,7 +84,7 @@ The onboarding PR must record the exact operator commands and successful sanitiz
    or legacy resource replacement.
 4. Verifying exact project parents/billing, no default VPC, enabled APIs, zero user-managed keys,
    effective organization policies, deprivileged default accounts, host attachment, and budget scope.
-   Verify all three Google agents have their matching project role, only the Cloud Run agent has
+   Verify all declared Google agents have their matching project role, only the Cloud Run agent has
    the host/subnet grants, and no host-wide Network User or primitive role is inherited. Test probe
    HTTPS reachability and denied database access once the separately approved probe exists.
 5. Removing temporary Owner/project-creation/billing/Shared VPC grants and verifying that the
@@ -111,6 +111,29 @@ Moving the first service requires a separate ownership-transfer plan covering it
 registry, runtime, database, secrets, backups, retained receipts, and health/rollback evidence. The
 shared foundation remains privileged, and release concurrency stays serialized until those service
 boundaries have been verified.
+
+## Service scheduling activation
+
+The inactive [job-access module](../../modules/service-job-access) keeps JSON Keys rotation paused.
+There is no command to activate it in this runbook yet. Its first protected apply requires the
+existing rotation job, the declared Scheduler service agent/role, Scheduler administration and
+`actAs` on the fresh scheduling identity. Verify that identity has no inherited invocation grants
+before creation; its exact-job grant is applied only after the provider has paused the schedule.
+
+The separate activation PR must supply a one-writer state handoff and human-run verification of:
+
+- The exact paused schedule, hourly UTC cadence, empty OAuth request and zero dispatch retries.
+- Own-rotation invocation and denied migration, peer, probe, override and secret access; no keys or
+  unexpected inherited IAM on the scheduling identity.
+- Same-service exclusion spanning paused-dispatch verification, reconciliation of accepted requests
+  and draining Cloud Run executions before updating jobs or running migrations. Scheduler HTTP
+  success and pause are not application completion evidence.
+- Successful rotation observed through native Cloud Run execution records, failure notification,
+  and safe resume after an approved healthy release. An interrupted or ambiguous release stays paused.
+
+Keep schedules absent from disposable recovery. Recreating a schedule with an existing identity
+requires revoking invocation and reconciling accepted executions before creation; fresh-resource
+dependency ordering is insufficient for that case. No current production schedule changes here.
 
 References: [Shared VPC provisioning](https://cloud.google.com/vpc/docs/provisioning-shared-vpc),
 [project provisioning](./provision-workload-foundation.md), and

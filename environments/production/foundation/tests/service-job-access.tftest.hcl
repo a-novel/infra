@@ -1,4 +1,8 @@
-mock_provider "google" {}
+mock_provider "google" {
+  mock_resource "google_service_account" {
+    defaults = { email = "agora-json-keys-scheduler@agora-json-keys-test.iam.gserviceaccount.com" }
+  }
+}
 
 variables {
   runtime = {
@@ -65,6 +69,59 @@ run "json_keys_job_authority" {
     ]
     error_message = "Attach only this service's application runtime, without token-minting authority."
   }
+
+  assert {
+    condition = [for account in google_service_account.rotation : [account.project, account.account_id]] == [
+      [var.runtime.project_id, "agora-json-keys-scheduler"],
+    ]
+    error_message = "Only JSON Keys needs the dedicated, same-project scheduler identity."
+  }
+  assert {
+    condition = [for grant in google_cloud_run_v2_job_iam_member.rotation : [grant.project, grant.location, grant.name, grant.role, grant.member]] == [[
+      var.runtime.project_id, var.runtime.region, "agora-json-keys-rotatekeys", "roles/run.invoker",
+      "serviceAccount:agora-json-keys-scheduler@agora-json-keys-test.iam.gserviceaccount.com",
+    ]]
+    error_message = "Scheduled invocation must be bound only to the selected rotation job."
+  }
+  assert {
+    condition = jsonencode([for schedule in google_cloud_scheduler_job.rotation : {
+      project        = schedule.project
+      region         = schedule.region
+      name           = schedule.name
+      cadence        = schedule.schedule
+      zone           = schedule.time_zone
+      paused         = schedule.paused
+      deadline       = schedule.attempt_deadline
+      deletion       = schedule.deletion_policy
+      retries        = schedule.retry_config[0].retry_count
+      retry_duration = schedule.retry_config[0].max_retry_duration
+      method         = schedule.http_target[0].http_method
+      uri            = schedule.http_target[0].uri
+      headers        = schedule.http_target[0].headers
+      body           = base64decode(schedule.http_target[0].body)
+      oauth          = schedule.http_target[0].oauth_token[0]
+      }]) == jsonencode([{
+      project        = var.runtime.project_id
+      region         = var.runtime.region
+      name           = "agora-json-keys-rotation"
+      cadence        = "10 * * * *"
+      zone           = "Etc/UTC"
+      paused         = true
+      deadline       = "180s"
+      deletion       = "PREVENT"
+      retries        = 0
+      retry_duration = "0s"
+      method         = "POST"
+      uri            = "https://run.googleapis.com/v2/projects/agora-json-keys-test/locations/europe-west1/jobs/agora-json-keys-rotatekeys:run"
+      headers        = { "Content-Type" = "application/json" }
+      body           = "{}"
+      oauth = {
+        service_account_email = "agora-json-keys-scheduler@agora-json-keys-test.iam.gserviceaccount.com"
+        scope                 = "https://www.googleapis.com/auth/cloud-platform"
+      }
+    }])
+    error_message = "Keep the exact hourly OAuth request paused, with no overrides or dispatch retries."
+  }
 }
 
 run "authentication_has_only_migrations" {
@@ -93,6 +150,11 @@ run "authentication_has_only_migrations" {
     condition = (google_service_account_iam_member.attach_runtime.service_account_id ==
     "projects/agora-authentication-test/serviceAccounts/agora-authentication@agora-authentication-test.iam.gserviceaccount.com")
     error_message = "Authentication cannot attach the JSON Keys runtime."
+  }
+  assert {
+    condition = (length(google_service_account.rotation) == 0 &&
+    length(google_cloud_scheduler_job.rotation) == 0 && length(google_cloud_run_v2_job_iam_member.rotation) == 0)
+    error_message = "Authentication must have no rotation identity, schedule or scheduled invocation grant."
   }
 }
 

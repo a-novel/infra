@@ -39,8 +39,9 @@ network and IAM denial, including peer database access, before activation.
 The separate [job-access module](../service-job-access) supplies exact-job update/invocation and
 runtime-attachment grants from protected foundation state. Bootstrap must create the jobs before
 installing those grants; routine release cannot create or delete them. Keep IAM out of release state.
-Migration execution remains outside Cloud Deploy retry hooks. Rotation scheduling needs a separate
-invocation identity, paused activation and a reviewed pause/drain/resume procedure before deployment.
+Migration execution remains outside Cloud Deploy retry hooks. The job-access module also owns
+JSON Keys' separate scheduling identity and hard-paused schedule. Activation needs the reviewed
+pause/drain/resume procedure before deployment.
 Neither project-wide invoker grants nor the legacy fleet invocation tags are copied here.
 
 The `jobs` output records the declared names, resource UIDs and images. It is configuration, not
