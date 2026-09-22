@@ -161,6 +161,9 @@ run "protected_service_project" {
         binding.project == "agora-json-keys-test" &&
         binding.member == "serviceAccount:${var.foundation_service_account}"
       ]) &&
+      alltrue([for role in ["roles/artifactregistry.admin", "roles/monitoring.notificationChannelEditor"] :
+        google_project_iam_member.foundation[role].role == role
+      ]) &&
       google_project_iam_member.plan.member == "serviceAccount:${var.plan_service_account}" &&
       google_project_iam_member.plan.role == "roles/viewer" &&
       toset(google_project_iam_custom_role.metadata.permissions) == toset([
