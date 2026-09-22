@@ -8,6 +8,13 @@
   },
   "packageRules": [
     {
+      "description": "Review the stable Google provider and service-agent beta provider together.",
+      "matchManagers": ["terraform"],
+      "matchPackageNames": ["hashicorp/google", "hashicorp/google-beta"],
+      "groupName": "Google providers",
+      "automerge": false
+    },
+    {
       "description": "Keep GitHub Actions on complete stable SemVer tags.",
       "matchManagers": ["github-actions"],
       "matchPackageNames": ["!a-novel-kit/workflows"],

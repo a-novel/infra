@@ -61,7 +61,7 @@ separately owned application identity. This module adds only the following grant
 | Deploy                            | Render and update API specifications/traffic in this service project; attach only the selected app runtime. Read app images and source, create/read artifacts, write execution logs. No job execution or IAM changes.                       |
 | Verify                            | Read Cloud Deploy and Run evidence; execute **the exact probe job** with overrides and wait for its operation. Read verifier images, create/read artifacts and write logs. No API/job updates, migration execution or direct secret access. |
 | Probe                             | `run.routes.invoke` in this service project. No job execution, database, secret or storage grants.                                                                                                                                          |
-| Google Cloud Deploy service agent | Read the selected service's source folder in the management bucket. Its Google-managed project role remains a provisioning prerequisite.                                                                                                    |
+| Google Cloud Deploy service agent | Read the selected service's source folder in the management bucket. Its identity and Google-managed project role belong to `workload-project`.                                                                                              |
 
 The [predefined Cloud Deploy roles](https://docs.cloud.google.com/deploy/docs/iam-roles-permissions)
 mix submission with operational recovery powers; Cloud Run Developer also permits job execution.
@@ -142,12 +142,13 @@ and completion-evidence implementation; this table is a contract, not live proof
 1. Review the service manifest and verifier together, starting with JSON Keys. Preserve internal
    ingress, one warm instance, resource limits, immutable images, numeric secret references, and
    private database routing. No peer configuration or credentials may be required to release it.
-2. Provision this module only through a separately approved foundation change. First enable Cloud
-   Deploy, Cloud Build, Run, Artifact Registry, Storage, IAM and Monitoring APIs; establish the Google
-   service agents and their documented roles, existing `agora-production`/verifier registries,
-   application runtime, release identity, management receipt folder and operations channels. The
+2. Provision this module only through a separately approved foundation change, after the
+   [service-project foundation](../workload-project/README.md) establishes its APIs, Google agents
+   and their roles, release identity and management receipt folder. The caller must order this module
+   after that foundation and its host subnet grants. Establish the `agora-production`/verifier
+   registries, application runtime and operations channels. The
    foundation needs resource/IAM administration and permission to attach the probe identity.
-   Grant the required Shared VPC subnet attachment and API-only probe egress separately; test private
+   Verify the host-owned Shared VPC grants and API-only probe egress; test private
    routing, effective IAM, platform-log routing and notification delivery. Target approval,
    advancement/recovery and migration authority remain separate from these execution grants.
 3. Review saved source/destination state, inventory, and a reversible one-writer handoff under #187.

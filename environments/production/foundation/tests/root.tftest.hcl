@@ -1,3 +1,9 @@
+mock_provider "google-beta" {
+  mock_resource "google_project_service_identity" {
+    defaults = { member = "serviceAccount:service-111111111111@serverless-robot-prod.iam.gserviceaccount.com" }
+  }
+}
+
 mock_provider "google" {
   mock_resource "google_project" {
     defaults = {
@@ -127,6 +133,26 @@ run "protected_service_project" {
       api.project == "agora-json-keys-test" && !api.disable_on_destroy && !api.disable_dependent_services
     ])
     error_message = "API ownership must stay inside the service project and preserve recovery availability."
+  }
+
+  assert {
+    condition = { for service, binding in google_project_iam_member.service_agent : service => binding.role } == {
+      "cloudbuild.googleapis.com"  = "roles/cloudbuild.serviceAgent"
+      "clouddeploy.googleapis.com" = "roles/clouddeploy.serviceAgent"
+      "run.googleapis.com"         = "roles/run.serviceAgent"
+    }
+    error_message = "Grant the documented platform roles only to the matching Google service agents."
+  }
+
+  assert {
+    condition = alltrue([for service, agent in google_project_service_identity.agent :
+      agent.project == var.project_id && agent.service == service &&
+      google_project_service.api[service].service == service &&
+      google_project_iam_member.service_agent[service].project == var.project_id &&
+      google_project_iam_member.service_agent[service].member == agent.member &&
+      output.service_agents[service] == agent.member
+    ]) && google_project_service.api["storage.googleapis.com"].service == "storage.googleapis.com"
+    error_message = "Enable the APIs and bind their returned identities inside the selected project."
   }
 
   assert {
@@ -260,6 +286,35 @@ run "two_service_projects_share_only_the_host" {
     ])
     error_message = "The existing budget must include every project without duplicating the budget."
   }
+
+  assert {
+    condition = { for service, binding in google_project_iam_member.service_run_network_viewer : service => [
+      binding.project, binding.role, binding.member,
+      ] } == { for service, project in module.service_project : service => [
+      var.workload_project_id, "roles/compute.networkViewer", project.service_agents["run.googleapis.com"],
+    ] }
+    error_message = "Only each Cloud Run agent receives host network visibility."
+  }
+
+  assert {
+    condition = { for service, binding in google_compute_subnetwork_iam_member.service_run : service => [
+      binding.project, binding.region, binding.subnetwork, binding.role, binding.member,
+      ] } == { for service, project in module.service_project : service => [
+      var.workload_project_id, var.region, google_compute_subnetwork.production.name,
+      "roles/compute.networkUser", project.service_agents["run.googleapis.com"],
+    ] }
+    error_message = "Cloud Run agent network use must be limited to the exact foundation subnet."
+  }
+
+  assert {
+    condition = (
+      contains(google_compute_firewall.allow_restricted_google_apis.target_tags, "agora-rollout-probe") &&
+      google_compute_firewall.allow_restricted_google_apis.destination_ranges == local.restricted_google_api_ranges &&
+      alltrue([for rule in google_compute_firewall.allow_restricted_google_apis.allow : rule.protocol == "tcp" && rule.ports == tolist(["443"])]) &&
+      alltrue([for rule in google_compute_firewall.allow_postgres_egress : !contains(rule.target_tags, "agora-rollout-probe")])
+    )
+    error_message = "The rollout probe can reach Google HTTPS destinations but gains no PostgreSQL egress."
+  }
 }
 
 run "reject_duplicate_project_owners" {
@@ -302,7 +357,10 @@ run "builds_the_project_replacement_window" {
     condition = (
       length(module.service_project) == 0 &&
       length(google_compute_shared_vpc_host_project.production) == 0 &&
-      length(google_compute_shared_vpc_service_project.service) == 0
+      length(google_compute_shared_vpc_service_project.service) == 0 &&
+      length(google_project_iam_member.service_run_network_viewer) == 0 &&
+      length(google_compute_subnetwork_iam_member.service_run) == 0 &&
+      !contains(google_compute_firewall.allow_restricted_google_apis.target_tags, "agora-rollout-probe")
     )
     error_message = "Existing inputs must not create service projects or enable Shared VPC."
   }
