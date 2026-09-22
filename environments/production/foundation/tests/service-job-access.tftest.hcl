@@ -6,11 +6,12 @@ mock_provider "google" {
 
 variables {
   runtime = {
-    schema_version  = 1
-    project_id      = "agora-json-keys-test"
-    service         = "json-keys"
-    region          = "europe-west1"
-    service_account = "agora-json-keys@agora-json-keys-test.iam.gserviceaccount.com"
+    schema_version        = 1
+    project_id            = "agora-json-keys-test"
+    service               = "json-keys"
+    region                = "europe-west1"
+    service_account       = "agora-json-keys@agora-json-keys-test.iam.gserviceaccount.com"
+    notification_channels = ["projects/agora-json-keys-test/notificationChannels/123"]
   }
 }
 
@@ -122,6 +123,53 @@ run "json_keys_job_authority" {
     }])
     error_message = "Keep the exact hourly OAuth request paused, with no overrides or dispatch retries."
   }
+
+  assert {
+    condition = [google_monitoring_alert_policy.jobs.project, google_monitoring_alert_policy.jobs.severity,
+      google_monitoring_alert_policy.jobs.combiner, tostring(google_monitoring_alert_policy.jobs.enabled)] == [
+      "agora-json-keys-test", "ERROR", "OR", "true",
+    ] && toset(google_monitoring_alert_policy.jobs.notification_channels) == toset(["projects/agora-json-keys-test/notificationChannels/123"])
+    error_message = "Deliver enabled service-job incidents only to this project's operations channel."
+  }
+  assert {
+    condition = jsonencode({ for condition in google_monitoring_alert_policy.jobs.conditions : condition.display_name => {
+      thresholds = [for rule in condition.condition_threshold : {
+        filter      = rule.filter, comparison = rule.comparison, value = rule.threshold_value, duration = rule.duration
+        missing     = rule.evaluation_missing_data
+        aggregation = [for a in rule.aggregations : [a.alignment_period, a.per_series_aligner]]
+        trigger     = rule.trigger[0].count
+      }]
+      absent = [for rule in condition.condition_absent : {
+        filter      = rule.filter, duration = rule.duration, trigger = rule.trigger[0].count
+        aggregation = [for a in rule.aggregations : [a.alignment_period, a.per_series_aligner]]
+      }]
+      } }) == jsonencode({
+      "Application job execution unsuccessful" = {
+        thresholds = [{
+          filter      = "resource.type=\"cloud_run_job\" AND resource.labels.project_id=\"agora-json-keys-test\" AND resource.labels.location=\"europe-west1\" AND metric.type=\"run.googleapis.com/job/completed_execution_count\" AND metric.labels.result!=\"succeeded\" AND (resource.labels.job_name=\"agora-json-keys-migrations\" OR resource.labels.job_name=\"agora-json-keys-rotatekeys\")"
+          comparison  = "COMPARISON_GT", value = 0, duration = "0s", missing = null
+          aggregation = [["300s", "ALIGN_SUM"]], trigger = 1
+        }]
+        absent = []
+      }
+      "No successful rotation in three hours" = {
+        thresholds = [{
+          filter      = "resource.type=\"cloud_run_job\" AND resource.labels.project_id=\"agora-json-keys-test\" AND resource.labels.location=\"europe-west1\" AND metric.type=\"run.googleapis.com/job/completed_execution_count\" AND resource.labels.job_name=\"agora-json-keys-rotatekeys\" AND metric.labels.result=\"succeeded\""
+          comparison  = "COMPARISON_LT", value = 1, duration = "60s", missing = "EVALUATION_MISSING_DATA_INACTIVE"
+          aggregation = [["10800s", "ALIGN_SUM"]], trigger = 1
+        }]
+        absent = []
+      }
+      "Rotation success telemetry absent for three hours" = {
+        thresholds = []
+        absent = [{
+          filter   = "resource.type=\"cloud_run_job\" AND resource.labels.project_id=\"agora-json-keys-test\" AND resource.labels.location=\"europe-west1\" AND metric.type=\"run.googleapis.com/job/completed_execution_count\" AND resource.labels.job_name=\"agora-json-keys-rotatekeys\" AND metric.labels.result=\"succeeded\""
+          duration = "10800s", aggregation = [["300s", "ALIGN_SUM"]], trigger = 1
+        }]
+      }
+    })
+    error_message = "Monitor exact own-job failures and both observed-zero and missing rotation successes; never treat one minute without a sample as a three-hour gap."
+  }
 }
 
 run "authentication_has_only_migrations" {
@@ -129,11 +177,12 @@ run "authentication_has_only_migrations" {
   module { source = "../../../modules/service-job-access" }
   variables {
     runtime = {
-      schema_version  = 1
-      project_id      = "agora-authentication-test"
-      service         = "authentication"
-      region          = "europe-west4"
-      service_account = "agora-authentication@agora-authentication-test.iam.gserviceaccount.com"
+      schema_version        = 1
+      project_id            = "agora-authentication-test"
+      service               = "authentication"
+      region                = "europe-west4"
+      service_account       = "agora-authentication@agora-authentication-test.iam.gserviceaccount.com"
+      notification_channels = ["projects/agora-authentication-test/notificationChannels/456"]
     }
   }
 
@@ -156,6 +205,12 @@ run "authentication_has_only_migrations" {
     length(google_cloud_scheduler_job.rotation) == 0 && length(google_cloud_run_v2_job_iam_member.rotation) == 0)
     error_message = "Authentication must have no rotation identity, schedule or scheduled invocation grant."
   }
+  assert {
+    condition = [for condition in google_monitoring_alert_policy.jobs.conditions : condition.condition_threshold[0].filter] == [
+      "resource.type=\"cloud_run_job\" AND resource.labels.project_id=\"agora-authentication-test\" AND resource.labels.location=\"europe-west4\" AND metric.type=\"run.googleapis.com/job/completed_execution_count\" AND metric.labels.result!=\"succeeded\" AND (resource.labels.job_name=\"agora-authentication-migrations\")",
+    ] && toset(google_monitoring_alert_policy.jobs.notification_channels) == toset(["projects/agora-authentication-test/notificationChannels/456"])
+    error_message = "Authentication monitors only its migrations and never waits for JSON Keys rotation."
+  }
 }
 
 run "reject_peer_runtime" {
@@ -163,8 +218,9 @@ run "reject_peer_runtime" {
   module { source = "../../../modules/service-job-access" }
   variables {
     runtime = {
-      schema_version  = 1, project_id = "agora-json-keys-test", service = "json-keys", region = "europe-west1"
-      service_account = "agora-json-keys@another-project.iam.gserviceaccount.com"
+      schema_version        = 1, project_id = "agora-json-keys-test", service = "json-keys", region = "europe-west1"
+      service_account       = "agora-json-keys@another-project.iam.gserviceaccount.com"
+      notification_channels = ["projects/agora-json-keys-test/notificationChannels/123"]
     }
   }
   expect_failures = [var.runtime]
@@ -175,8 +231,9 @@ run "reject_unknown_service" {
   module { source = "../../../modules/service-job-access" }
   variables {
     runtime = {
-      schema_version  = 1, project_id = "agora-json-keys-test", service = "genai", region = "europe-west1"
-      service_account = "agora-genai@agora-json-keys-test.iam.gserviceaccount.com"
+      schema_version        = 1, project_id = "agora-json-keys-test", service = "genai", region = "europe-west1"
+      service_account       = "agora-genai@agora-json-keys-test.iam.gserviceaccount.com"
+      notification_channels = ["projects/agora-json-keys-test/notificationChannels/123"]
     }
   }
   expect_failures = [var.runtime]
@@ -187,8 +244,9 @@ run "reject_unknown_contract" {
   module { source = "../../../modules/service-job-access" }
   variables {
     runtime = {
-      schema_version  = 2, project_id = "agora-json-keys-test", service = "json-keys", region = "europe-west1"
-      service_account = "agora-json-keys@agora-json-keys-test.iam.gserviceaccount.com"
+      schema_version        = 2, project_id = "agora-json-keys-test", service = "json-keys", region = "europe-west1"
+      service_account       = "agora-json-keys@agora-json-keys-test.iam.gserviceaccount.com"
+      notification_channels = ["projects/agora-json-keys-test/notificationChannels/123"]
     }
   }
   expect_failures = [var.runtime]
@@ -199,8 +257,9 @@ run "reject_zone_as_region" {
   module { source = "../../../modules/service-job-access" }
   variables {
     runtime = {
-      schema_version  = 1, project_id = "agora-json-keys-test", service = "json-keys", region = "europe-west1-d"
-      service_account = "agora-json-keys@agora-json-keys-test.iam.gserviceaccount.com"
+      schema_version        = 1, project_id = "agora-json-keys-test", service = "json-keys", region = "europe-west1-d"
+      service_account       = "agora-json-keys@agora-json-keys-test.iam.gserviceaccount.com"
+      notification_channels = ["projects/agora-json-keys-test/notificationChannels/123"]
     }
   }
   expect_failures = [var.runtime]
@@ -211,8 +270,35 @@ run "reject_project_resource_path" {
   module { source = "../../../modules/service-job-access" }
   variables {
     runtime = {
-      schema_version  = 1, project_id = "projects/agora-json-keys-test", service = "json-keys", region = "europe-west1"
-      service_account = "agora-json-keys@projects/agora-json-keys-test.iam.gserviceaccount.com"
+      schema_version        = 1, project_id = "projects/agora-json-keys-test", service = "json-keys", region = "europe-west1"
+      service_account       = "agora-json-keys@projects/agora-json-keys-test.iam.gserviceaccount.com"
+      notification_channels = ["projects/agora-json-keys-test/notificationChannels/123"]
+    }
+  }
+  expect_failures = [var.runtime]
+}
+
+run "reject_peer_channel" {
+  command = plan
+  module { source = "../../../modules/service-job-access" }
+  variables {
+    runtime = {
+      schema_version        = 1, project_id = "agora-json-keys-test", service = "json-keys", region = "europe-west1"
+      service_account       = "agora-json-keys@agora-json-keys-test.iam.gserviceaccount.com"
+      notification_channels = ["projects/agora-authentication-test/notificationChannels/123"]
+    }
+  }
+  expect_failures = [var.runtime]
+}
+
+run "reject_unmonitored_jobs" {
+  command = plan
+  module { source = "../../../modules/service-job-access" }
+  variables {
+    runtime = {
+      schema_version        = 1, project_id = "agora-json-keys-test", service = "json-keys", region = "europe-west1"
+      service_account       = "agora-json-keys@agora-json-keys-test.iam.gserviceaccount.com"
+      notification_channels = []
     }
   }
   expect_failures = [var.runtime]

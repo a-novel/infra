@@ -61,6 +61,7 @@ resource "google_project_iam_member" "foundation" {
     "roles/iam.roleAdmin",
     "roles/iam.serviceAccountAdmin",
     "roles/logging.configWriter",
+    "roles/monitoring.alertPolicyEditor",
     "roles/monitoring.notificationChannelEditor",
     "roles/resourcemanager.projectIamAdmin",
     "roles/serviceusage.serviceUsageAdmin",

@@ -265,6 +265,30 @@ has a recent successful execution. The job is idempotent and evaluates hourly wi
 minimum rotation interval. Do not execute with overrides, edit the schedule manually, or run the
 Authentication initializer: that initializer is one-time, human-only, and never scheduled.
 
+### Service-owned job pilot
+
+The inactive [service job module](../../modules/service-job-access#completion-monitoring) declares
+`Agora <service> application jobs unhealthy` in the selected service project, routed to its operations
+channel. This is **not** the current combined production policy above. Do not use the legacy project
+coordinates to investigate a future service-project incident.
+
+First verify the incident's project, region and exact job against the published service contract.
+Inspect only native execution names, start/completion times and status, then the associated release
+and schedule-attempt metadata. The policy covers unsuccessful completions, and for JSON Keys both
+three hours of zero successes and three hours of absent success samples. A success series must first
+be observed after policy installation/modification; a never-seen metric is an onboarding blocker, not
+an all-clear. Allow for metric ingestion and evaluation delay.
+
+For migrations, keep same-service deployment exclusion and reconcile any uncertain operation before
+retrying. For rotation, distinguish rejected dispatch, accepted but unfinished execution, failed
+execution, and successful execution whose metric has not arrived. Do not replay work or resume a
+paused schedule just because an incident closed or disappeared. Require the exact successful native
+execution, fresh success metric and intended notification delivery as recovery evidence. This policy
+does not replace separate backup/recovery monitoring or Cloud Deploy rollout alerts.
+
+Activation and notification drills remain human-approved under the
+[service scheduling gates](./provision-service-projects.md#service-scheduling-activation).
+
 ## Database capacity
 
 **Signals:** `Agora database CPU above 70%`, memory above 70%/85%, or disk above 70%/85%. Warning

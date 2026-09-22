@@ -128,8 +128,14 @@ The separate activation PR must supply a one-writer state handoff and human-run 
 - Same-service exclusion spanning paused-dispatch verification, reconciliation of accepted requests
   and draining Cloud Run executions before updating jobs or running migrations. Scheduler HTTP
   success and pause are not application completion evidence.
-- Successful rotation observed through native Cloud Run execution records, failure notification,
-  and safe resume after an approved healthy release. An interrupted or ambiguous release stays paused.
+- Successful rotation observed through native Cloud Run execution records and its success metric after
+  installing/modifying the service policy. No prior metric history means absence monitoring is not ready.
+- Exact-project/region/job alert filters, verified project-local operations channels, and a controlled
+  pilot showing failure and three-hour success-gap notification (including observed zeros versus absent
+  samples). Quiet alerts and Scheduler HTTP success are not completion evidence. Keep the current
+  production policy until that handoff is verified; protected foundation is the sole alert writer.
+- Safe resume after an approved healthy release. An interrupted or ambiguous release stays paused;
+  a long maintenance pause requires a separately authorized, time-bounded alert snooze.
 
 Keep schedules absent from disposable recovery. Recreating a schedule with an existing identity
 requires revoking invocation and reconciling accepted executions before creation; fresh-resource
