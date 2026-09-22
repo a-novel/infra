@@ -58,6 +58,9 @@ Publish the versioned `runtime` output without granting readers access to founda
 (`runtime_service_account` for the account); its repository URLs identify promotion destinations.
 The output waits for runtime-secret and application-publisher grants. The caller must separately order
 Cloud Deploy after Shared VPC attachment and host-owned subnet/firewall grants.
+The inactive [service-jobs module](../service-jobs) consumes the same `runtime` contract for
+migrations and, for JSON Keys, rotation. It declares specifications only; job-writer and execution
+authority remain separate foundation work, not implicit grants to the API rollout workers.
 
 The executor needs repository and notification-channel administration in the service project;
 `workload-project` grants those to the existing protected foundation account. Service-account

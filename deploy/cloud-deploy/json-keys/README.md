@@ -78,6 +78,10 @@ attachment and firewall rules remain activation prerequisites, not implicit perm
 The inactive [service foundation](../../../modules/service-foundation) declares the application
 identity, its two exact secret-container grants, separate application/verifier repositories and an
 operations email channel. Its published coordinates feed the rollout module without peer state.
+The inactive [service-jobs module](../../../modules/service-jobs) declares JSON Keys migrations and
+rotation using only its own database, images and secret-version references. It does not dispatch jobs
+or create a schedule. Execution authority, migration reconciliation and rotation pause/drain/resume
+remain separate activation gates; neither job becomes a Cloud Deploy retry hook.
 
 `builds/rollout-verifier.Dockerfile` builds one unprivileged image from the reviewed Go module. Local
 `a-novel build --type=podman -y` does not publish it. The [artifact workflow](../../../docs/runbooks/publish-rollout-verifier.md)
