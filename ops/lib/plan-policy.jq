@@ -34,6 +34,28 @@ def delete_rules:
   [.lifecycle_rule[]? | select(any(.action[]; .type == "Delete"))]
   | sort_by(tojson);
 
+# Conditions are intersected by Cloud Storage. These selectors exclude state,
+# locks and configuration even if the provider supplies additional conditions.
+def service_plan_expiration:
+  (.action | length) == 1 and .action[0].type == "Delete" and
+  (.condition | length) == 1 and
+  (.condition[0] | .age == 2 and .matches_prefix == ["services/"] and
+    (.matches_suffix | sort) == ["/plan.metadata.json", "/plan.tfplan"]);
+
+# Only bootstrap may add this rule to its existing state bucket. Every existing
+# Delete rule must retain its JSON value, including this one in subsequent plans.
+def add_service_plan_expiration($plan):
+  $plan.variables.management_project_id.value as $project
+  | $root_name == "bootstrap" and .address == "google_storage_bucket.state" and
+    ($project | type == "string" and test("\\A[a-z][a-z0-9-]{4,28}[a-z0-9]\\z")) and
+    (.change | (.before | delete_rules) as $before | (.after | delete_rules) as $after
+      | ($after - $before) as $added
+      | .actions == ["update"] and preserve(["project"]) and preserve(["name"]) and
+      .after.project == $project and
+      (.after.name | test("\\A" + $project + "-[1-9][0-9]*-tofu-state\\z")) and
+      ($before - $after) == [] and ($after | length) == ($before | length) + 1 and
+      ($added | length) == 1 and ($added[0] | service_plan_expiration));
+
 def preserved_disks:
   [.disk[]? | select(.auto_delete == false) | {device_name, source, mode, auto_delete}]
   | sort_by(.device_name);
@@ -75,7 +97,8 @@ def protections($plan):
       minimum(["retention_policy", 0, "retention_period"]) and
       minimum(["soft_delete_policy", 0, "retention_duration_seconds"]) and
       known(["lifecycle_rule"]) and
-      ((.before | delete_rules) == (.after | delete_rules))
+      (((.before | delete_rules) == (.after | delete_rules)) or
+        ($resource | add_service_plan_expiration($plan)))
     elif $type == "google_secret_manager_secret" then
       # The provider uses duration strings, so preserve the reviewed delay exactly.
       preserve(["version_destroy_ttl"])

@@ -248,3 +248,104 @@ func TestPlanChanges(t *testing.T) {
 		setup(t).summary(t, "foundation", value, 0)
 	})
 }
+
+func TestPlanServiceExpiration(t *testing.T) {
+	t.Parallel()
+	for _, testCase := range []struct {
+		name, root string
+		mutate     func(plan, condition object)
+		code       int
+	}{
+		{"Success", "bootstrap", nil, 0},
+		{"Success/AdditionalRestriction", "bootstrap", func(_ object, condition object) { condition["with_state"] = "LIVE" }, 0},
+		{"Success/UnchangedRules", "bootstrap", func(p, _ object) {
+			change := nested(resource(p), "change")
+			change["before"] = change["after"]
+		}, 0},
+		{"Error/FoundationRoot", "foundation", nil, 65},
+		{"Error/ServiceReleaseRoot", "service-release", nil, 65},
+		{"Error/OtherAddress", "bootstrap", func(p, _ object) { resource(p)["address"] = "google_storage_bucket.backups" }, 65},
+		{"Error/OtherBucket", "bootstrap", func(p, _ object) {
+			for _, side := range []string{"before", "after"} {
+				nested(resource(p), "change", side)["name"] = "agora-management-test-123456789012-backups"
+			}
+		}, 65},
+		{"Error/OtherProject", "bootstrap", func(p, _ object) {
+			for _, side := range []string{"before", "after"} {
+				nested(resource(p), "change", side)["project"] = "agora-peer-test"
+			}
+		}, 65},
+		{"Error/MissingRegistration", "bootstrap", func(p, _ object) { delete(p, "variables") }, 65},
+		{"Error/RenamedBucket", "bootstrap", func(p, _ object) {
+			nested(resource(p), "change", "after")["name"] = "agora-management-test-999999999999-tofu-state"
+		}, 65},
+		{"Error/ReplacedBucket", "bootstrap", func(p, _ object) {
+			nested(resource(p), "change")["actions"] = []string{"delete", "create"}
+		}, 65},
+		{"Error/UnknownBucket", "bootstrap", func(p, _ object) {
+			nested(resource(p), "change")["after_unknown"] = object{"name": true}
+		}, 65},
+		{"Error/UnknownRule", "bootstrap", func(p, _ object) {
+			nested(resource(p), "change")["after_unknown"] = object{"lifecycle_rule": true}
+		}, 65},
+		{"Error/PrematureExpiry", "bootstrap", func(_ object, condition object) { condition["age"] = 1 }, 65},
+		{"Error/MissingPrefix", "bootstrap", func(_ object, condition object) { delete(condition, "matches_prefix") }, 65},
+		{"Error/BroadPrefix", "bootstrap", func(_ object, condition object) { condition["matches_prefix"] = []string{"services/", ""} }, 65},
+		{"Error/MissingSuffix", "bootstrap", func(_ object, condition object) { delete(condition, "matches_suffix") }, 65},
+		{"Error/BroadSuffix", "bootstrap", func(_ object, condition object) { condition["matches_suffix"] = []string{"/plan.tfplan", ".json"} }, 65},
+		{"Error/RemovedRule", "bootstrap", func(p, _ object) {
+			after := nested(resource(p), "change", "after")
+			after["lifecycle_rule"] = after["lifecycle_rule"].([]any)[1:]
+		}, 65},
+		{"Error/ChangedRule", "bootstrap", func(p, _ object) {
+			after := nested(resource(p), "change", "after")
+			rule := after["lifecycle_rule"].([]any)[0].(object)
+			rule["condition"] = []any{object{"days_since_noncurrent_time": 89, "num_newer_versions": 50}}
+		}, 65},
+		{"Error/WithdrawCleanup", "bootstrap", func(p, _ object) {
+			change := nested(resource(p), "change")
+			change["before"], change["after"] = change["after"], change["before"]
+		}, 65},
+		{"Error/ExtraRule", "bootstrap", func(p, _ object) {
+			after := nested(resource(p), "change", "after")
+			after["lifecycle_rule"] = append(after["lifecycle_rule"].([]any), fieldValue("action.0.type", "Delete"))
+		}, 65},
+		{"Error/WeakenedVersioning", "bootstrap", func(p, _ object) {
+			nested(resource(p), "change", "after")["versioning"] = []any{object{"enabled": false}}
+		}, 65},
+		{"Error/WeakenedSoftDelete", "bootstrap", func(p, _ object) {
+			nested(resource(p), "change", "after")["soft_delete_policy"] = []any{object{"retention_duration_seconds": 0}}
+		}, 65},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			bucket := func() object {
+				return object{
+					"name": "agora-management-test-123456789012-tofu-state", "project": "agora-management-test",
+					"versioning":         []any{object{"enabled": true}},
+					"soft_delete_policy": []any{object{"retention_duration_seconds": 604800}},
+					"lifecycle_rule": []any{object{
+						"action":    []any{object{"type": "Delete"}},
+						"condition": []any{object{"days_since_noncurrent_time": 90, "num_newer_versions": 50}},
+					}},
+				}
+			}
+			condition := object{
+				"age": 2, "matches_prefix": []string{"services/"},
+				"matches_suffix": []string{"/plan.tfplan", "/plan.metadata.json"},
+				"with_state":     "ANY", "send_age_if_zero": false,
+			}
+			before, after := bucket(), bucket()
+			after["lifecycle_rule"] = append(after["lifecycle_rule"].([]any), object{
+				"action": []any{object{"type": "Delete", "storage_class": ""}}, "condition": []any{condition},
+			})
+			value := plan("google_storage_bucket", before, after)
+			resource(value)["address"] = "google_storage_bucket.state"
+			value["variables"] = object{"management_project_id": object{"value": "agora-management-test"}}
+			if testCase.mutate != nil {
+				testCase.mutate(value, condition)
+			}
+			setup(t).summary(t, testCase.root, value, testCase.code)
+		})
+	}
+}

@@ -66,10 +66,10 @@ must block mutation. The provider owns state locking; custody is neither deploym
 a same-service execution lock. The future protected caller must authorize the inputs and recheck
 deletion approval, then consume, apply and verify convergence under that broader exclusion.
 
-Metadata enforces the 24-hour apply deadline. Abandoned service-plan objects have no automatic cleanup;
-bucket retention and the plan policy remain unchanged. Before enabling the writer, review and apply a
-native lifecycle rule that expires only plan artifacts, with a corresponding reviewed policy change
-and tests excluding state/configuration. This prerequisite is tracked in [#187](https://github.com/a-novel/infra/issues/187).
+Metadata enforces the 24-hour apply deadline. Abandoned service-plan objects have no automatic cleanup.
+The [plan policy](../../ops/README.md#protected-workflow-operations) permits one narrowly scoped native
+expiration rule; its declaration, exclusion tests and protected bootstrap apply remain prerequisites
+before writer activation. This is tracked in [#306](https://github.com/a-novel/infra/issues/306).
 No workflow calls this storage path or enables service job planning/application yet; backend mutation
 guards remain closed.
 
