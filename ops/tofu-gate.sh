@@ -54,13 +54,16 @@ if ! [[ "${STATE_BUCKET}" =~ ^[a-z0-9][a-z0-9._-]{1,221}[a-z0-9]$ ]]; then
 fi
 
 STATE_PREFIX="${ROOT_NAME}"
-if [ "${ROOT_NAME}" = service-foundation ]; then
+if [[ "${ROOT_NAME}" = service-* ]]; then
+    if [ "${ROOT_NAME}" = service-release ] && [ "${ACTION}" != assess ] && [ "${ACTION}" != drift ]; then
+        printf 'Service release is inspection-only; no writer is enabled.\n' >&2
+        exit 77
+    fi
     infra foundation-inputs check "${TOFU_VAR_FILE:?}" "${STATE_BUCKET}" "${TOFU_STATE_SUFFIX:?}"
     if [ "${TF_WORKSPACE:-default}" != default ] || [ -n "${!TF_CLI_ARGS*}" ]; then
-        printf 'Service foundation requires the default workspace and explicit CLI arguments.\n' >&2
+        printf 'Service roots require the default workspace and explicit CLI arguments.\n' >&2
         exit 65
     fi
-    STATE_PREFIX="foundation/${TOFU_STATE_SUFFIX}"
 elif [ -n "${TOFU_STATE_SUFFIX:-}" ]; then
     if ! [[ "${TOFU_STATE_SUFFIX}" =~ ^recovery/[a-z0-9][a-z0-9-]{0,62}$ ]]; then
         printf 'Invalid recovery state suffix.\n' >&2
@@ -94,7 +97,7 @@ cleanup() {
 }
 trap cleanup INT TERM EXIT
 
-if [ "${ROOT_NAME}" = service-foundation ] || [ -z "${TF_DATA_DIR:-}" ]; then
+if [[ "${ROOT_NAME}" = service-* ]] || [ -z "${TF_DATA_DIR:-}" ]; then
     export TF_DATA_DIR="${TEMP_DIR}/tofu-data"
 fi
 
@@ -115,7 +118,7 @@ run_quietly() {
 }
 
 initialize_root() {
-    if [ "${ROOT_NAME}" = service-foundation ]; then
+    if [[ "${ROOT_NAME}" = service-* ]]; then
         run_quietly "${TEMP_DIR}/init.log" "backend initialization" \
             tofu -chdir="${ROOT_DIR}" init -reconfigure -input=false -no-color -lockfile=readonly "${VAR_ARGS[@]}"
         return

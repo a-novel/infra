@@ -27,9 +27,10 @@ type store struct {
 }
 
 var (
-	bucketPattern   = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$`)
-	rootPattern     = regexp.MustCompile(`^(bootstrap|foundation|release|service-foundation)$`)
-	sequencePattern = regexp.MustCompile(`^[1-9][0-9]{0,19}-[1-9][0-9]{0,4}$`)
+	bucketPattern       = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$`)
+	rootPattern         = regexp.MustCompile(`^(bootstrap|foundation|release|service-foundation)$`)
+	serviceScopePattern = regexp.MustCompile(`^services/[a-z][a-z0-9-]{4,28}[a-z0-9]$`)
+	sequencePattern     = regexp.MustCompile(`^[1-9][0-9]{0,19}-[1-9][0-9]{0,4}$`)
 )
 
 // Run handles config, receipt, and plan custody. Exit 4 means a successfully

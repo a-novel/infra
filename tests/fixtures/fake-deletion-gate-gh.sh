@@ -101,6 +101,7 @@ if [ "${1:-}" = api ]; then
                 docs) jq -n '[{filename: "README.md"}]' ;;
                 foundation) jq -n '[{filename: "environments/production/foundation/main.tf"}]' ;;
                 service) jq -n '[{filename: "environments/service-foundation/main.tf"}]' ;;
+                service-release) jq -n '[{filename: "environments/service-release/main.tf"}]' ;;
                 release) jq -n '[{filename: "environments/production/release/main.tf"}]' ;;
                 image) jq -n '[{filename: "deploy/production/images.yaml"}]' ;;
                 shared) jq -n '[{filename: "modules/shared/main.tf"}]' ;;

@@ -16,16 +16,21 @@ import (
 func (storage store) document(kind, action string, args []string, stateSuffix string) error {
 	prefix, suffix := "gs://"+storage.bucket+"/production/success", ".json"
 	if kind == "config" {
-		if len(args) == 0 || !rootPattern.MatchString(args[0]) {
+		if len(args) == 0 || (!rootPattern.MatchString(args[0]) && args[0] != "service-release") {
 			return failure{65, "Invalid configuration root."}
 		}
 		prefix, suffix = "gs://"+storage.bucket+"/"+args[0]+"/config", ".tfvars.json"
-		if args[0] == "service-foundation" {
-			root, err := planRoot(args[0], stateSuffix)
-			if err != nil {
-				return err
+		if args[0] == "service-foundation" || args[0] == "service-release" {
+			if !serviceScopePattern.MatchString(stateSuffix) {
+				return failure{65, "Invalid private custody scope."}
 			}
-			prefix = "gs://" + storage.bucket + "/" + root + "/" + stateSuffix + "/config"
+			prefix = "gs://" + storage.bucket + "/foundation/" + stateSuffix + "/config"
+			if args[0] == "service-release" {
+				if action != "fetch" {
+					return failure{65, "Service release configuration is inspection-only."}
+				}
+				prefix = "gs://" + storage.bucket + "/" + stateSuffix + "/release/config"
+			}
 		}
 		args = args[1:]
 		if action == "fetch" {

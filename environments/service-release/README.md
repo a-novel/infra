@@ -8,8 +8,8 @@ OpenTofu validates its checksum and service scope against independently approved
 coordinates, promoted image digests and numeric secret versions remain separate inputs. Neither this
 root nor its future caller needs foundation-state access.
 
-**Code only:** no deployment workflow or live root allowlist selects this directory. Applying a job
-specification does not run it. The root creates no API, initializer, scheduler, identity or IAM grant.
+**Code only:** trusted assessment and drift can inspect this root; deployment callers remain disabled.
+Applying a job specification does not run it. The root creates no API, initializer, scheduler, identity or IAM grant.
 Cloud Deploy owns API specifications and traffic; protected foundation owns databases, IAM, schedules
 and alerts. Existing production resources and state stay unchanged.
 
@@ -26,6 +26,24 @@ protected caller must authorize inputs against the published coordinates before 
 fresh working directory, and prohibit backend overrides. Keep credentials in the approved federation
 environment. [GCS locking](https://opentofu.org/docs/language/settings/backends/gcs/) covers OpenTofu
 operations; migrations and Cloud Deploy still require the broader same-service exclusion.
+
+## Read-only assessment and drift
+
+The existing inspector selects projects from the last converged shared-foundation registration.
+It inventories native managed-folder metadata under `services/`, then reads objects only within each
+registered `services/PROJECT/release/` folder. The plan identity's existing folder-scoped access is
+sufficient; no bucket-wide object grant is required. Missing or unregistered folders stop inspection.
+
+A confirmed empty folder is skipped. Initialized state requires its matching converged inputs at
+`services/PROJECT/release/config/RUN-ATTEMPT.tfvars.json`, using the existing zero-padded sequence format.
+Missing inputs, inputs without state, unexpected workspaces/locks and denied reads stop inspection.
+The trusted coordinate guard validates each backend against registration before initialization with
+fresh local metadata. Writer enable flags do not exempt existing state from assessment or drift.
+
+Service-root changes and shared-module changes use the existing exact-candidate approval and private
+plan policy. Public verdicts contain no state, plan or configuration values. `tofu-gate` permits only
+`assess` and `drift` for this root; configuration custody permits only `fetch`. Its writer, private-plan
+custody and protected input publication remain separate activation prerequisites.
 
 ## Approved foundation handoff
 

@@ -9,8 +9,8 @@ import (
 	"strings"
 )
 
-// FoundationInputs selects protected configuration before authentication. Check
-// revalidates the service/backend binding before each OpenTofu initialization.
+// FoundationInputs selects protected foundation configuration before authentication.
+// Check revalidates either service root's backend binding before initialization.
 // Neither operation reads cloud state or prints configuration values.
 func FoundationInputs(args []string, getenv func(string) string, stdout, stderr io.Writer) int {
 	err := foundationInputs(args, getenv, stdout)
@@ -21,10 +21,10 @@ func FoundationInputs(args []string, getenv func(string) string, stdout, stderr 
 	return 0
 }
 
-// ServiceFoundationScopes returns backend scopes and their service names from
+// ServiceScopes returns backend scopes and their service names from
 // the converged FOUNDATION_CONFIG registration, never from candidate code.
 // Older registrations without service_projects describe an empty fleet.
-func ServiceFoundationScopes(getenv func(string) string, bucket string) (map[string]string, error) {
+func ServiceScopes(getenv func(string) string, bucket string) (map[string]string, error) {
 	var registration map[string]json.RawMessage
 	if json.Unmarshal([]byte(getenv("FOUNDATION_CONFIG")), &registration) != nil || registration == nil {
 		return nil, errors.New("invalid foundation registration")

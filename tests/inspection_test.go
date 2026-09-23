@@ -11,101 +11,150 @@ import (
 
 func TestServiceInspection(t *testing.T) {
 	t.Parallel()
-	for _, testCase := range []struct {
-		name, mutation, mode string
-		code, plans          int
-		approval             bool
-	}{
-		{"UnregisteredEmpty", "unregistered", "assess", 0, 0, false},
-		{"RegisteredEmpty", "empty", "assess", 0, 0, false},
-		{"OneInitialized", "", "assess", 0, 1, false},
-		{"BothInitialized", "both", "assess", 0, 2, false},
-		{"StateWithoutConfig", "no-config", "assess", 70, 0, false},
-		{"ConfigWithoutState", "no-state", "assess", 70, 0, false},
-		{"UnregisteredState", "orphan", "assess", 70, 0, false},
-		{"UnexpectedWorkspace", "workspace", "assess", 70, 0, false},
-		{"MismatchedProject", "project", "assess", 70, 0, false},
-		{"MismatchedRegion", "region", "assess", 70, 0, false},
-		{"DuplicateRegistration", "duplicate", "assess", 70, 0, false},
-		{"NullRegistration", "null", "assess", 70, 0, false},
-		{"ListDenied", "list-denied", "assess", 70, 0, false},
-		{"ReadDenied", "read-denied", "assess", 70, 0, false},
-		{"Deletion", "deletion", "assess", 0, 1, true},
-		{"PlanFailure", "plan-failure", "assess", 70, 1, false},
-		{"DriftFleet", "both", "drift", 0, 3, false},
-		{"DriftChanges", "deletion", "drift", 2, 1, false},
-	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			t.Parallel()
-			f := inspectionFixture(t)
-			bucket := "agora-management-test-123-tofu-state"
-			storage := filepath.Join(f.env["FAKE_GCS_ROOT"], bucket, "foundation")
-			projects := object{"json-keys": "agora-json-keys-test", "authentication": "agora-authentication-test"}
-			registration := object{"service_projects": projects, "management_project_id": "agora-management-test", "workload_project_id": "agora-legacy-test", "region": "europe-west1"}
-			services := []string{"json-keys"}
-			switch testCase.mutation {
-			case "unregistered":
-				delete(registration, "service_projects")
-				fallthrough
-			case "empty":
-				services = nil
-			case "both":
-				services = append(services, "authentication")
-			case "duplicate":
-				projects["authentication"] = projects["json-keys"]
-			case "null":
-				registration["service_projects"] = nil
-			case "orphan":
-				writeJSON(t, filepath.Join(storage, "services/agora-peer-test/default.tfstate"), object{})
-			case "workspace":
-				writeJSON(t, filepath.Join(storage, "services/agora-json-keys-test/other.tfstate"), object{})
-			case "list-denied", "read-denied":
-				f.env["FAKE_GCS_"+strings.ToUpper(strings.TrimSuffix(testCase.mutation, "-denied"))+"_FAILURE"] = "true"
-			case "deletion":
-				f.env["FAKE_TOFU_PLAN_JSON"] = filepath.Join(f.root, "tests/fixtures/plans/protected.json")
-				f.env["FAKE_TOFU_PLAN_CODE"] = "2"
-			case "plan-failure":
-				f.env["FAKE_TOFU_FAIL_ACTION"] = "plan"
+	for _, root := range []string{"service-foundation", "service-release"} {
+		for _, testCase := range []struct {
+			name, mutation, mode string
+			code, plans          int
+			approval             bool
+		}{
+			{"UnregisteredEmpty", "unregistered", "assess", 0, 0, false},
+			{"RegisteredEmpty", "empty", "assess", 0, 0, false},
+			{"OneInitialized", "", "assess", 0, 1, false},
+			{"BothInitialized", "both", "assess", 0, 2, false},
+			{"StateWithoutConfig", "no-config", "assess", 70, 0, false},
+			{"ConfigWithoutState", "no-state", "assess", 70, 0, false},
+			{"UnregisteredState", "orphan", "assess", 70, 0, false},
+			{"UnexpectedWorkspace", "workspace", "assess", 70, 0, false},
+			{"LockedState", "lock", "assess", 70, 0, false},
+			{"MismatchedProject", "project", "assess", 70, 0, false},
+			{"MismatchedRegion", "region", "assess", 70, 0, false},
+			{"DuplicateRegistration", "duplicate", "assess", 70, 0, false},
+			{"NullRegistration", "null", "assess", 70, 0, false},
+			{"ListDenied", "list-denied", "assess", 70, 0, false},
+			{"ReadDenied", "read-denied", "assess", 70, 0, false},
+			{"FolderListDenied", "folder-denied", "assess", 70, 0, false},
+			{"MissingFolder", "folder-missing", "assess", 70, 0, false},
+			{"UnknownFolder", "folder-unknown", "assess", 70, 0, false},
+			{"DuplicateFolder", "folder-duplicate", "assess", 70, 0, false},
+			{"FolderObjectsDenied", "folder-objects-denied", "assess", 70, 0, false},
+			{"Deletion", "deletion", "assess", 0, 1, true},
+			{"PlanFailure", "plan-failure", "assess", 70, 1, false},
+			{"DriftFleet", "both", "drift", 0, 3, false},
+			{"DriftBothRoots", "mixed", "drift", 0, 3, false},
+			{"DriftChanges", "deletion", "drift", 2, 2, false},
+		} {
+			if root == "service-foundation" && strings.HasPrefix(testCase.mutation, "folder-") {
+				continue
 			}
-			writeJSON(t, filepath.Join(storage, "config/00000000000000000001-00001.tfvars.json"), registration)
-			for _, service := range services {
-				project := "agora-" + service + "-test"
-				directory := filepath.Join(storage, "services", project)
-				config := object{"service": service, "project_id": project, "management_project_id": "agora-management-test", "region": "europe-west1", "state_bucket": bucket, "private": privateValue}
-				if testCase.mutation == "project" {
-					config["project_id"] = "agora-peer-test"
+			t.Run(root+"/"+testCase.name, func(t *testing.T) {
+				t.Parallel()
+				f := inspectionFixture(t)
+				bucket := "agora-management-test-123-tofu-state"
+				storage := filepath.Join(f.env["FAKE_GCS_ROOT"], bucket)
+				prefix, suffix := "foundation", ""
+				if root == "service-release" {
+					prefix, suffix, f.env["FAKE_GATE_FILES"] = "", "release", root
 				}
-				if testCase.mutation == "region" {
-					config["region"] = "us-central1"
+				f.env["FAKE_TOFU_ONLY_ROOT"] = filepath.Join(f.dir, "environments", root)
+				if testCase.mode == "drift" {
+					f.env["FAKE_TOFU_ONLY_ROOT"] = filepath.Join(f.root, "environments", root)
 				}
-				if testCase.mutation != "no-state" {
-					writeJSON(t, filepath.Join(directory, "default.tfstate"), object{})
+				projects := object{"json-keys": "agora-json-keys-test", "authentication": "agora-authentication-test"}
+				registration := object{"service_projects": projects, "management_project_id": "agora-management-test", "workload_project_id": "agora-legacy-test", "region": "europe-west1"}
+				services := []string{"json-keys"}
+				switch testCase.mutation {
+				case "unregistered":
+					delete(registration, "service_projects")
+					f.env["FAKE_GCS_MANAGED_FOLDERS"] = ""
+					fallthrough
+				case "empty":
+					services = nil
+				case "both":
+					services = append(services, "authentication")
+				case "duplicate":
+					projects["authentication"] = projects["json-keys"]
+				case "null":
+					registration["service_projects"] = nil
+				case "orphan":
+					writeJSON(t, filepath.Join(storage, prefix, "services/agora-peer-test", suffix, "default.tfstate"), object{})
+					f.env["FAKE_GCS_MANAGED_FOLDERS"] += "\nservices/agora-peer-test/release/"
+				case "workspace", "lock":
+					name := "other.tfstate"
+					if testCase.mutation == "lock" {
+						name = "default.tflock"
+					}
+					writeJSON(t, filepath.Join(storage, prefix, "services/agora-json-keys-test", suffix, name), object{})
+				case "folder-denied":
+					f.env["FAKE_GCS_FOLDERS_FAILURE"] = "true"
+				case "folder-missing":
+					f.env["FAKE_GCS_MANAGED_FOLDERS"] = "services/agora-json-keys-test/release/"
+				case "folder-unknown":
+					f.env["FAKE_GCS_MANAGED_FOLDERS"] += "\nservices/agora-json-keys-test/unknown/"
+				case "folder-duplicate":
+					f.env["FAKE_GCS_MANAGED_FOLDERS"] += "\nservices/agora-json-keys-test/release/"
+				case "folder-objects-denied":
+					f.env["FAKE_GCS_SERVICE_LIST_FAILURE"] = "true"
+				case "list-denied", "read-denied":
+					f.env["FAKE_GCS_"+strings.ToUpper(strings.TrimSuffix(testCase.mutation, "-denied"))+"_FAILURE"] = "true"
+				case "deletion":
+					f.env["FAKE_TOFU_PLAN_JSON"] = filepath.Join(f.root, "tests/fixtures/plans/protected.json")
+					f.env["FAKE_TOFU_PLAN_CODE"] = "2"
+				case "plan-failure":
+					f.env["FAKE_TOFU_FAIL_ACTION"] = "plan"
 				}
-				if testCase.mutation != "no-config" {
-					writeJSON(t, filepath.Join(directory, "config/00000000000000000001-00001.tfvars.json"), config)
+				writeJSON(t, filepath.Join(storage, "foundation/config/00000000000000000001-00001.tfvars.json"), registration)
+				for _, service := range services {
+					project := "agora-" + service + "-test"
+					directory := filepath.Join(storage, prefix, "services", project, suffix)
+					config := object{"service": service, "project_id": project, "management_project_id": "agora-management-test", "region": "europe-west1", "state_bucket": bucket, "private": privateValue}
+					if testCase.mutation == "project" {
+						config["project_id"] = "agora-peer-test"
+					}
+					if testCase.mutation == "region" {
+						config["region"] = "us-central1"
+					}
+					if testCase.mutation != "no-state" {
+						writeJSON(t, filepath.Join(directory, "default.tfstate"), object{})
+					}
+					if testCase.mutation != "no-config" {
+						writeJSON(t, filepath.Join(directory, "config/00000000000000000001-00001.tfvars.json"), config)
+					}
+					if testCase.mutation == "mixed" {
+						other := filepath.Join(storage, "services", project, "release")
+						if root == "service-release" {
+							other = filepath.Join(storage, "foundation/services", project)
+						}
+						writeJSON(t, filepath.Join(other, "default.tfstate"), object{})
+						writeJSON(t, filepath.Join(other, "config/00000000000000000001-00001.tfvars.json"), config)
+					}
 				}
-			}
-			output := filepath.Join(f.dir, "assessment.json")
-			args := []string{"inspect", "assess", "a-novel/infra", "93", f.env["FAKE_GATE_HEAD"], f.env["FAKE_GATE_BASE"], f.dir, bucket, output}
-			if testCase.mode == "drift" {
-				args = []string{"inspect", "drift", bucket}
-			}
-			code, out := f.run(t, "infra", args...)
-			expectCode(t, testCase.code, code, out)
-			calls, err := os.ReadFile(f.env["FAKE_TOFU_CALLS"])
-			if err != nil {
-				require.ErrorIs(t, err, os.ErrNotExist)
-			}
-			require.Equal(t, testCase.plans, strings.Count(string(calls), " plan "), string(calls))
-			if code == 0 && testCase.mode == "assess" {
-				result := readJSON(t, output)
-				require.Equal(t, []any{testCase.approval, false}, []any{result["approvalRequired"], result["firstLaunch"]})
-			} else {
-				require.NoFileExists(t, output)
-			}
-			require.NotContains(t, string(calls)+out, privateValue)
-			require.NotContains(t, string(calls), " apply ")
-		})
+				output := filepath.Join(f.dir, "assessment.json")
+				args := []string{"inspect", "assess", "a-novel/infra", "93", f.env["FAKE_GATE_HEAD"], f.env["FAKE_GATE_BASE"], f.dir, bucket, output}
+				if testCase.mode == "drift" {
+					args = []string{"inspect", "drift", bucket}
+				}
+				code, out := f.run(t, "infra", args...)
+				expectCode(t, testCase.code, code, out)
+				calls, err := os.ReadFile(f.env["FAKE_TOFU_CALLS"])
+				if err != nil {
+					require.ErrorIs(t, err, os.ErrNotExist)
+				}
+				require.Equal(t, testCase.plans, strings.Count(string(calls), " plan "), string(calls))
+				if code == 0 && testCase.mode == "assess" {
+					result := readJSON(t, output)
+					require.Equal(t, []any{testCase.approval, false}, []any{result["approvalRequired"], result["firstLaunch"]})
+				} else {
+					require.NoFileExists(t, output)
+				}
+				require.NotContains(t, string(calls)+out, privateValue)
+				require.NotContains(t, string(calls), " apply ")
+				if testCase.plans > 0 {
+					require.Contains(t, string(calls), "/environments/"+root+" plan ")
+					require.NotContains(t, string(calls), "-lock=true")
+				}
+				require.NotContains(t, read(t, f.env["FAKE_GCS_CALLS"]), "storage objects list gs://"+bucket+"/services/**")
+			})
+		}
 	}
 }
 
@@ -166,6 +215,9 @@ func inspectionFixture(t *testing.T) *sandbox {
 	f.env["FAKE_GATE_FILES"], f.env["FAKE_GCS_ROOT"] = "service", filepath.Join(f.dir, "storage")
 	f.env["FAKE_TOFU_PLAN_CODE"], f.env["FAKE_TOFU_PLAN_JSON"] = "0", filepath.Join(f.root, "tests/fixtures/plans/no-changes.json")
 	f.env["FAKE_TOFU_CALLS"] = filepath.Join(f.dir, "tofu-calls")
+	f.env["FAKE_TOFU_CLEAN_PLAN_JSON"] = filepath.Join(f.root, "tests/fixtures/plans/no-changes.json")
+	f.env["FAKE_GCS_CALLS"] = filepath.Join(f.dir, "storage-calls")
+	f.env["FAKE_GCS_MANAGED_FOLDERS"] = "services/agora-json-keys-test/release/\nservices/agora-authentication-test/release/"
 	f.env["MANAGEMENT_PROJECT_ID"], f.env["SERVICE_FOUNDATIONS_ENABLED"] = "agora-management-test", "false"
 	f.env["TOFU_STATE_SUFFIX"], f.env["FOUNDATION_CONFIG"] = "recovery/agora-peer-test", `{"service_projects":{"json-keys":"agora-peer-test"}}`
 	return f
