@@ -132,9 +132,15 @@ resource or state address is moved by this definition.
 
 This code path reuses the existing foundation environment, identity, global execution lock and
 saved-plan policy. Keep `SERVICE_FOUNDATIONS_ENABLED` unset until the separately reviewed onboarding
-PR authorizes live provisioning. That activation must also extend trusted deletion assessment and
-scheduled drift to initialized service roots; current fleet assessment still covers the legacy roots.
-No service configuration or activation flag is installed by merging this code.
+PR authorizes live provisioning. No service configuration or activation flag is installed by merging
+this code. Trusted deletion assessment and scheduled drift inspect initialized service roots even
+when the writer enable flag is unset; verify that coverage during approved activation.
+
+Inspection selects service/project scopes from the last converged shared-foundation registration,
+not candidate code. An entirely empty scope is explicitly skipped. Existing state without matching
+converged inputs, inputs without state, unregistered state and denied inventory reads fail inspection.
+The same project, region, management and backend checks run before any service backend is initialized.
+Assessment publishes only the existing commit tuple and boolean verdict, never private inputs or plans.
 
 The operator supplies `SERVICE_FOUNDATIONS_JSON` in `production-foundation`: an object keyed by
 `json-keys` or `authentication`, containing that root's native tfvars. For example, this is a synthetic

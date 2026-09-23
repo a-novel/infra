@@ -21,6 +21,38 @@ func FoundationInputs(args []string, getenv func(string) string, stdout, stderr 
 	return 0
 }
 
+// ServiceFoundationScopes returns backend scopes and their service names from
+// the converged FOUNDATION_CONFIG registration, never from candidate code.
+// Older registrations without service_projects describe an empty fleet.
+func ServiceFoundationScopes(getenv func(string) string, bucket string) (map[string]string, error) {
+	var registration map[string]json.RawMessage
+	if json.Unmarshal([]byte(getenv("FOUNDATION_CONFIG")), &registration) != nil || registration == nil {
+		return nil, errors.New("invalid foundation registration")
+	}
+	projects := map[string]string{}
+	if data, exists := registration["service_projects"]; exists {
+		if json.Unmarshal(data, &projects) != nil || projects == nil {
+			return nil, errors.New("invalid service registration")
+		}
+	}
+	scopes := make(map[string]string, len(projects))
+	for service, project := range projects {
+		data, err := json.Marshal(map[string]any{
+			"service": service, "project_id": project, "state_bucket": bucket,
+			"management_project_id": registration["management_project_id"], "region": registration["region"],
+		})
+		if err != nil {
+			return nil, err
+		}
+		scope, err := serviceFoundationScope(data, getenv, bucket)
+		if err != nil {
+			return nil, err
+		}
+		scopes[scope] = service
+	}
+	return scopes, nil
+}
+
 func foundationInputs(args []string, getenv func(string) string, stdout io.Writer) error {
 	invalid := errors.New("invalid protected foundation inputs")
 	if len(args) != 4 {

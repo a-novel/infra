@@ -24,7 +24,7 @@ func TestDeletionAssessment(t *testing.T) {
 		{"OmittedApplication", object{"database_releases": object{}}, "image", "", true, 0},
 		{"Established", object{"application_release": object{"rollout": object{"phase": "active"}}}, "image", "", false, 0},
 		{"CleanPlan", object{"application_release": nil}, "release", "", true, 0},
-		{"FailedPlan", object{"application_release": nil}, "release", "plan", true, 1},
+		{"FailedPlan", object{"application_release": nil}, "release", "plan", true, 70},
 		{"ListFailure", object{"application_release": nil}, "image", "FAKE_GCS_LIST_FAILURE", true, 70},
 		{"ReadFailure", object{"application_release": nil}, "image", "FAKE_GCS_READ_FAILURE", true, 70},
 	} {
@@ -60,7 +60,7 @@ func TestDeletionAssessment(t *testing.T) {
 				f.env[testCase.failure] = "true"
 			}
 			output := filepath.Join(f.dir, "assessment.json")
-			code, out = f.script(t, "prepare-resource-deletion-assessment", "a-novel/infra", "93", head, base, candidate, "agora-state-test", output)
+			code, out = f.run(t, "infra", "inspect", "assess", "a-novel/infra", "93", head, base, candidate, "agora-state-test", output)
 			expectCode(t, testCase.code, code, out)
 			if code != 0 {
 				require.NoFileExists(t, output)
@@ -74,7 +74,7 @@ func TestDeletionAssessment(t *testing.T) {
 				require.NotContains(t, out, "established release")
 			}
 			if testCase.files == "release" {
-				require.Contains(t, out, "release candidate assessment completed")
+				require.Contains(t, out, "release assess completed")
 			}
 		})
 	}

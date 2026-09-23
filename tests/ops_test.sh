@@ -185,9 +185,11 @@ README.md||[false,[]]
 environments/production/foundation/main.tf||[true,["foundation"]]
 deploy/production/images.yaml||[true,["release"]]
 docs/old.md|bootstrap/main.tf|[true,["bootstrap"]]
-modules/shared/main.tf||[true,["bootstrap","foundation","release"]]
-assets/database-host/startup.sh||[true,["foundation"]]
-docs/old.md|assets/database-host/shutdown.sh|[true,["foundation"]]
+modules/shared/main.tf||[true,["bootstrap","foundation","release","service-foundation"]]
+assets/database-host/startup.sh||[true,["foundation","service-foundation"]]
+docs/old.md|assets/database-host/shutdown.sh|[true,["foundation","service-foundation"]]
+environments/service-foundation/main.tf||[true,["service-foundation"]]
+docs/old.md|environments/service-foundation/main.tf|[true,["service-foundation"]]
 CASES
 
 # The metadata-only merge gate fails closed unless exact protected evidence
@@ -314,108 +316,6 @@ BOT_ASSESSMENT_CODE=$?
 set -e
 assert_equal "${BOT_ASSESSMENT_CODE}" 77
 
-CANDIDATE_REPOSITORY="${TEMP_DIR}/candidate-infra"
-mkdir -p "${CANDIDATE_REPOSITORY}" "${TEMP_DIR}/empty-gcs"
-git -C "${CANDIDATE_REPOSITORY}" init -q -b master
-git -C "${CANDIDATE_REPOSITORY}" -c user.name=fixture -c user.email=fixture@example.invalid \
-    commit -q --allow-empty -m fixture
-CANDIDATE_HEAD="$(git -C "${CANDIDATE_REPOSITORY}" rev-parse HEAD)"
-FIRST_LAUNCH_ASSESSMENT="${TEMP_DIR}/first-launch-assessment.json"
-PATH="${DELETION_GATE_BIN}:${PATH}" \
-    FAKE_GATE_BASE="${DELETION_BASE}" \
-    FAKE_GATE_FILES=image \
-    FAKE_GATE_HEAD="${CANDIDATE_HEAD}" \
-    FAKE_GCS_ROOT="${TEMP_DIR}/empty-gcs" \
-    "${REPOSITORY_ROOT}/ops/prepare-resource-deletion-assessment.sh" \
-        a-novel/infra 93 "${CANDIDATE_HEAD}" "${DELETION_BASE}" \
-        "${CANDIDATE_REPOSITORY}" agora-state-test \
-        "${FIRST_LAUNCH_ASSESSMENT}"
-jq --exit-status '
-  .approvalRequired == true and
-  .firstLaunch == true
-' "${FIRST_LAUNCH_ASSESSMENT}" >/dev/null
-
-
-# The metadata-only path shares first-launch policy and never needs a candidate checkout or provider.
-IMAGE_ONLY_BIN="${TEMP_DIR}/image-only-bin"
-mkdir -p "${IMAGE_ONLY_BIN}"
-ln -s "${SCRIPT_DIR}/fixtures/fake-deletion-gate-gh.sh" "${IMAGE_ONLY_BIN}/gh"
-ln -s "${SCRIPT_DIR}/fixtures/fake-gcloud-storage.sh" "${IMAGE_ONLY_BIN}/gcloud"
-# shellcheck disable=SC2016
-printf '%s\n' '#!/bin/bash' \
-    'if [ "$*" = "assess-images verify" ]; then exit "${FAKE_INFRA_VERIFY_CODE:-0}"; fi' \
-    '[ "$1 $2" = "custody config" ] || exit 99' \
-    'exec "${REAL_INFRA}" "$@"' >"${IMAGE_ONLY_BIN}/infra"
-printf '%s\n' '#!/bin/bash' 'exit 97' >"${IMAGE_ONLY_BIN}/tofu"
-chmod 0700 "${IMAGE_ONLY_BIN}/infra" "${IMAGE_ONLY_BIN}/tofu"
-
-assert_image_only_assessment() {
-    local expected_code="$1"
-    local output="${TEMP_DIR}/automatic-assessment.json"
-    rm -f -- "${output}"
-    local code=0 real_infra
-    real_infra="$(command -v infra)"
-    PATH="${IMAGE_ONLY_BIN}:${PATH}" \
-        REAL_INFRA="${real_infra}" \
-        FAKE_GATE_BASE="${DELETION_BASE}" FAKE_GATE_HEAD="${DELETION_HEAD}" \
-        FAKE_GCS_ROOT="${TEMP_DIR}/image-only-gcs" \
-        "${REPOSITORY_ROOT}/ops/prepare-resource-deletion-assessment.sh" \
-            a-novel/infra 93 "${DELETION_HEAD}" "${DELETION_BASE}" --image-only \
-            agora-state-test "${output}" >"${TEMP_DIR}/automatic.out" 2>"${TEMP_DIR}/automatic.err" || code=$?
-    assert_equal "${code}" "${expected_code}"
-    if [ "${code}" -ne 0 ]; then
-        [ ! -e "${output}" ]
-    fi
-}
-FAKE_GATE_FILES=image assert_image_only_assessment 0
-jq -e '.firstLaunch and .approvalRequired' "${TEMP_DIR}/automatic-assessment.json" >/dev/null
-IMAGE_CONFIG_DIR="${TEMP_DIR}/image-only-gcs/agora-state-test/release/config"
-mkdir -p "${IMAGE_CONFIG_DIR}"
-printf '%s\n' '{"application_release":null}' >"${IMAGE_CONFIG_DIR}/00000000000000000001-00001.tfvars.json"
-FAKE_GATE_FILES=image assert_image_only_assessment 0
-jq -e '.firstLaunch and .approvalRequired' "${TEMP_DIR}/automatic-assessment.json" >/dev/null
-printf '%s\n' '{"application_release":{}}' >"${IMAGE_CONFIG_DIR}/00000000000000000001-00001.tfvars.json"
-FAKE_GATE_FILES=image assert_image_only_assessment 0
-jq -e '(.firstLaunch | not) and (.approvalRequired | not)' "${TEMP_DIR}/automatic-assessment.json" >/dev/null
-FAKE_GATE_FILES=foundation assert_image_only_assessment 77
-FAKE_GATE_FILES=image FAKE_GCS_LIST_FAILURE=true assert_image_only_assessment 70
-FAKE_GATE_FILES=image FAKE_INFRA_VERIFY_CODE=77 assert_image_only_assessment 77
-
-mkdir -p "${CANDIDATE_REPOSITORY}/environments/production/foundation"
-printf '%s\n' '{}' \
-    >"${CANDIDATE_REPOSITORY}/environments/production/foundation/main.tf"
-git -C "${CANDIDATE_REPOSITORY}" add environments/production/foundation/main.tf
-git -C "${CANDIDATE_REPOSITORY}" -c user.name=fixture -c user.email=fixture@example.invalid \
-    commit -q -m foundation
-CANDIDATE_HEAD="$(git -C "${CANDIDATE_REPOSITORY}" rev-parse HEAD)"
-printf '%s\n' '{}' >"${TEMP_DIR}/foundation-current.json"
-PATH="${DELETION_GATE_BIN}:${PATH}" \
-    FAKE_GCS_ROOT="${TEMP_DIR}/empty-gcs" \
-    infra custody config publish \
-        agora-state-test foundation "${TEMP_DIR}/foundation-current.json" 1 1 \
-        >/dev/null
-DESTRUCTIVE_PLAN_ASSESSMENT="${TEMP_DIR}/destructive-plan-assessment.json"
-PATH="${DELETION_GATE_BIN}:${PATH}" \
-    FAKE_GATE_BASE="${DELETION_BASE}" \
-    FAKE_GATE_FILES=foundation \
-    FAKE_GATE_HEAD="${CANDIDATE_HEAD}" \
-    FAKE_GCS_ROOT="${TEMP_DIR}/empty-gcs" \
-    FAKE_TOFU_PLAN_CODE=2 \
-    FAKE_TOFU_PLAN_JSON="${SCRIPT_DIR}/fixtures/plans/protected.json" \
-    "${REPOSITORY_ROOT}/ops/prepare-resource-deletion-assessment.sh" \
-        a-novel/infra 93 "${CANDIDATE_HEAD}" "${DELETION_BASE}" \
-        "${CANDIDATE_REPOSITORY}" agora-state-test \
-        "${DESTRUCTIVE_PLAN_ASSESSMENT}" \
-        >"${TEMP_DIR}/destructive-assessment.out" \
-        2>"${TEMP_DIR}/destructive-assessment.err"
-jq --exit-status '
-  .approvalRequired == true and
-  .firstLaunch == false
-' "${DESTRUCTIVE_PLAN_ASSESSMENT}" >/dev/null
-assert_absent "${TEMP_DIR}/destructive-assessment.out" google_compute_disk
-assert_absent "${TEMP_DIR}/destructive-assessment.err" google_compute_disk
-assert_absent "${TEMP_DIR}/destructive-assessment.out" fixture-project-id
-assert_absent "${TEMP_DIR}/destructive-assessment.err" fixture-project-id
 
 set +e
 PATH="${TOFU_GATE_BIN}:${PATH}" \
