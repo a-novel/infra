@@ -20,7 +20,10 @@ There is no production caller yet: source authorization/retention, parameter aut
 bootstrap/predecessor checks and the final success receipt remain activation gates.
 
 [Cloud Deploy parameters](https://docs.cloud.google.com/deploy/docs/parameters) replace the marked
-fields without a custom renderer:
+fields without a custom renderer. The inactive
+[service-release root](../../../environments/service-release#native-api-request) derives the native
+request from its job inputs and approved foundation document, so callers do not maintain a second
+parameter map:
 
 | Parameter                                     | Source / constraint                                                    |
 | --------------------------------------------- | ---------------------------------------------------------------------- |
