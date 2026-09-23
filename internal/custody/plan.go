@@ -29,11 +29,11 @@ func (storage store) plan(action string, args []string, suffix string) error {
 	if count == 0 || len(args) != count || (len(args) > 3 && args[3] == "") {
 		return failure{64, "Invalid plan custody arguments."}
 	}
-	if !rootPattern.MatchString(args[0]) || !regexp.MustCompile(`^[a-f0-9]{40}$`).MatchString(args[1]) ||
-		!sequencePattern.MatchString(args[2]) || (suffix != "" && !regexp.MustCompile(`^recovery/[a-z0-9][a-z0-9-]{0,62}$`).MatchString(suffix)) {
+	root, err := planRoot(args[0], suffix)
+	if err != nil || !regexp.MustCompile(`^[a-f0-9]{40}$`).MatchString(args[1]) || !sequencePattern.MatchString(args[2]) {
 		return failure{65, "Invalid plan custody scope."}
 	}
-	prefix := "gs://" + storage.bucket + "/" + args[0] + "/plans/"
+	prefix := "gs://" + storage.bucket + "/" + root + "/plans/"
 	if suffix != "" {
 		prefix += suffix + "/"
 	}
@@ -92,4 +92,17 @@ func (storage store) plan(action string, args []string, suffix string) error {
 		return writePrivate(args[3], data)
 	}
 	return nil
+}
+
+// planRoot keeps service custody beneath foundation's existing expiry and IAM
+// boundary. The metadata retains the distinct root and exact project suffix.
+func planRoot(root, suffix string) (string, error) {
+	if root == "service-foundation" {
+		if regexp.MustCompile(`^services/[a-z][a-z0-9-]{4,28}[a-z0-9]$`).MatchString(suffix) {
+			return "foundation", nil
+		}
+	} else if rootPattern.MatchString(root) && (suffix == "" || regexp.MustCompile(`^recovery/[a-z0-9][a-z0-9-]{0,62}$`).MatchString(suffix)) {
+		return root, nil
+	}
+	return "", failure{65, "Invalid private custody scope."}
 }

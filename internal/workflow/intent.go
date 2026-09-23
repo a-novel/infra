@@ -3,6 +3,7 @@ package workflow
 import (
 	"errors"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -13,6 +14,8 @@ const usage = `usage: go run ./cmd/infra
   drift assess-pull-request <pull-request-number>
   foundation plan <bootstrap|foundation>
   foundation apply <bootstrap|foundation> <plan-id>
+  foundation plan service-foundation <json-keys|authentication>
+  foundation apply service-foundation <json-keys|authentication> <plan-id>
   release deploy [--no-wait]
   release rollback <receipt-id>
   release recover-first-launch <failed-run-id>
@@ -57,16 +60,25 @@ func parse(args []string) (intent, error) {
 			return i, invalid
 		}
 	case "foundation":
-		if len(args) < 2 || (args[1] != "bootstrap" && args[1] != "foundation") {
+		if len(args) < 2 || !slices.Contains([]string{"bootstrap", "foundation", "service-foundation"}, args[1]) {
 			return i, invalid
 		}
 		i.input("operation", args[0])
 		i.input("root", args[1])
+		scope := args[1]
+		if args[1] == "service-foundation" {
+			if len(args) < 3 || !slices.Contains([]string{"json-keys", "authentication"}, args[2]) {
+				return i, invalid
+			}
+			i.input("service", args[2])
+			scope += "/" + args[2]
+			args = slices.Concat(args[:2], args[3:])
+		}
 		switch {
 		case args[0] == "plan" && len(args) == 2:
 			i.attempt = true
 		case args[0] == "apply" && len(args) == 3 && matches(attemptID, args[2]):
-			i.planID, i.planPrefix = args[2], "foundation plan "+args[1]+" by @"
+			i.planID, i.planPrefix = args[2], "foundation plan "+scope+" by @"
 			i.input("plan_id", i.planID)
 		default:
 			return i, invalid

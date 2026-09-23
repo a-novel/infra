@@ -9,16 +9,22 @@ on:
         type: choice
         options: [plan, apply]
       root:
-        description: Stable management bootstrap or replaceable workload foundation.
+        description: Management, shared workload or one registered service foundation.
         required: true
         type: choice
-        options: [bootstrap, foundation]
+        options: [bootstrap, foundation, service-foundation]
+      service:
+        description: Required for service-foundation; leave none for legacy roots.
+        required: true
+        default: none
+        type: choice
+        options: [none, json-keys, authentication]
       plan_id:
         description: Required only for apply; use the run-id-attempt printed by plan.
         required: false
         type: string
 
-run-name: "foundation ${{ inputs.operation }} ${{ inputs.root }} by @${{ github.actor }}"
+run-name: "foundation ${{ inputs.operation }} ${{ inputs.root }}${{ inputs.service != 'none' && inputs.service != '' && format('/{0}', inputs.service) || '' }} by @${{ github.actor }}"
 
 permissions: {}
 
@@ -49,6 +55,23 @@ jobs:
       - name: Build reviewed infra tooling
         uses: $/.github/actions/setup-infra
 
+      - name: Select and authorize the protected inputs
+        id: inputs
+        shell: bash
+        env:
+          BOOTSTRAP_CONFIG: ${{ secrets.BOOTSTRAP_TFVARS_JSON }}
+          FOUNDATION_CONFIG: ${{ secrets.FOUNDATION_TFVARS_JSON }}
+          SERVICE_FOUNDATION_CONFIG: ${{ secrets.SERVICE_FOUNDATIONS_JSON }}
+          SERVICE_FOUNDATIONS_ENABLED: ${{ vars.SERVICE_FOUNDATIONS_ENABLED }}
+          MANAGEMENT_PROJECT_ID: ${{ vars.GCP_MANAGEMENT_PROJECT_ID }}
+          STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
+          SELECTED_ROOT: ${{ inputs.root }}
+          SELECTED_SERVICE: ${{ inputs.service }}
+        run: |
+          set -euo pipefail
+          infra foundation-inputs prepare "${SELECTED_ROOT}" "${SELECTED_SERVICE}" \
+            "${RUNNER_TEMP}/selected.tfvars.json" >>"${GITHUB_OUTPUT}"
+
       - name: Authenticate as the foundation boundary
         uses: google-github-actions/auth@v3.0.0
         with:
@@ -69,25 +92,6 @@ jobs:
           tofu_wrapper: false
           cache: true
 
-      - name: Materialize the protected root inputs
-        id: inputs
-        shell: bash
-        env:
-          BOOTSTRAP_CONFIG: ${{ secrets.BOOTSTRAP_TFVARS_JSON }}
-          FOUNDATION_CONFIG: ${{ secrets.FOUNDATION_TFVARS_JSON }}
-          SELECTED_ROOT: ${{ inputs.root }}
-        run: |
-          set -euo pipefail
-          umask 077
-          file="${RUNNER_TEMP}/selected.tfvars.json"
-          if [ "${SELECTED_ROOT}" = bootstrap ]; then
-            printf '%s' "${BOOTSTRAP_CONFIG}" >"${file}"
-          else
-            printf '%s' "${FOUNDATION_CONFIG}" >"${file}"
-          fi
-          jq --exit-status 'type == "object"' "${file}" >/dev/null
-          printf 'file=%s\n' "${file}" >>"${GITHUB_OUTPUT}"
-
       - name: Create the exact private plan
         if: inputs.operation == 'plan'
         shell: bash
@@ -96,6 +100,9 @@ jobs:
           ROOT_NAME: ${{ inputs.root }}
           STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
           TFVARS_FILE: ${{ steps.inputs.outputs.file }}
+          TOFU_STATE_SUFFIX: ${{ steps.inputs.outputs.state_suffix }}
+          FOUNDATION_CONFIG: ${{ secrets.FOUNDATION_TFVARS_JSON }}
+          MANAGEMENT_PROJECT_ID: ${{ vars.GCP_MANAGEMENT_PROJECT_ID }}
         run: |
           set -euo pipefail
           plan_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
@@ -113,6 +120,9 @@ jobs:
           ROOT_NAME: ${{ inputs.root }}
           STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
           TFVARS_FILE: ${{ steps.inputs.outputs.file }}
+          TOFU_STATE_SUFFIX: ${{ steps.inputs.outputs.state_suffix }}
+          FOUNDATION_CONFIG: ${{ secrets.FOUNDATION_TFVARS_JSON }}
+          MANAGEMENT_PROJECT_ID: ${{ vars.GCP_MANAGEMENT_PROJECT_ID }}
         run: |
           set -euo pipefail
           if ! [[ "${PLAN_ID}" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]; then

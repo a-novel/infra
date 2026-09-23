@@ -117,8 +117,9 @@ boundaries have been verified.
 
 The inactive [service foundation root](../../environments/service-foundation) composes the runtime,
 rollout control plane and application-job access using those published project coordinates. Its
-bootstrap sequence keeps prerequisites separate from activation. Neither that root nor the
-service release root is on the live workflow allowlist; this runbook does not authorize applying them.
+bootstrap sequence keeps prerequisites separate from activation. Its protected planning path below
+is disabled by default; the service release root still has no live workflow caller. This runbook does
+not authorize provisioning either root.
 
 Its optional [database host](../../environments/service-foundation#optional-idle-database-host) also
 requires a separately approved provisioning step: dedicated runtime/secret access, idle boot evidence,
@@ -126,6 +127,73 @@ exact network rules, backups and safe maintenance ownership. Compute Instance Ad
 protected foundation in that project, not routine release. Keeping the host idle does not eliminate its
 VM/disk/snapshot cost; leaving `database = null` creates none of those resources. No existing production
 resource or state address is moved by this definition.
+
+## Protected service-foundation plans
+
+This code path reuses the existing foundation environment, identity, global execution lock and
+saved-plan policy. Keep `SERVICE_FOUNDATIONS_ENABLED` unset until the separately reviewed onboarding
+PR authorizes live provisioning. That activation must also extend trusted deletion assessment and
+scheduled drift to initialized service roots; current fleet assessment still covers the legacy roots.
+No service configuration or activation flag is installed by merging this code.
+
+The operator supplies `SERVICE_FOUNDATIONS_JSON` in `production-foundation`: an object keyed by
+`json-keys` or `authentication`, containing that root's native tfvars. For example, this is a synthetic
+runtime-only entry; use reviewed real coordinates before publication:
+
+```json
+{
+  "json-keys": {
+    "service": "json-keys",
+    "project_id": "agora-json-keys-test",
+    "management_project_id": "agora-management-test",
+    "state_bucket": "agora-management-test-123-tofu-state",
+    "region": "europe-west1",
+    "operations_alert_email": "operations@example.invalid"
+  }
+}
+```
+
+Keep payloads out of this document. Optional database/rollout/job-access inputs follow the
+[root's bootstrap sequence](../../environments/service-foundation#bootstrap-sequence). The selected
+service/project must match `FOUNDATION_TFVARS_JSON.service_projects`; management and region must
+match the same protected document. Management and bucket must also match the published repository
+coordinates. Missing or mismatched inputs stop before authentication and are checked again before
+backend initialization. Root HCL owns resource validation; this selection does not prove cloud
+prerequisites or effective IAM.
+
+After authorization, publish the reviewed private document from outside the checkout, preserving
+existing service entries:
+
+```sh
+gh secret set SERVICE_FOUNDATIONS_JSON --repo a-novel/infra --env production-foundation <"${SERVICE_FOUNDATIONS_FILE:?}"
+```
+
+After the activation prerequisites are met and the enable flag is explicitly approved, use clean,
+current `master`:
+
+```sh
+SERVICE_FOUNDATION_PLAN_ID="$(go run ./cmd/infra foundation plan service-foundation json-keys)"
+```
+
+Inspect the sanitized plan, approve required deletion on its exact merged PR, and apply the selected
+unexpired plan in a separate protected run:
+
+```sh
+go run ./cmd/infra foundation apply service-foundation json-keys "${SERVICE_FOUNDATION_PLAN_ID:?}"
+```
+
+Replace `json-keys` with `authentication` for that service. Do not pass project IDs, backend overrides
+or alternate workspaces. The root uses a fresh backend working directory and native GCS locking.
+State is `foundation/services/PROJECT/default.tfstate`; converged configuration is recorded under
+`foundation/services/PROJECT/config/`. Opaque plans remain under the existing 24-hour expiry prefix,
+`foundation/plans/services/PROJECT/COMMIT/PLAN-ID/`, with distinct root/project metadata and checksum.
+Other services and recovery cannot reuse that scope. No storage IAM changes are introduced.
+
+Apply consumes the exact saved plan before mutation, then requires convergence before publishing
+configuration. If it fails or is interrupted, inspect the actual resources and state before creating
+a fresh plan. Never replay a consumed plan or assume a failed run made no changes. This path does
+not transfer an existing resource owner, start PostgreSQL, run a migration or activate Cloud Deploy.
+Consumers still need approved versioned output publication; do not grant them foundation-state access.
 
 ## Service scheduling activation
 

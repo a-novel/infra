@@ -4,6 +4,10 @@
 
 set -euo pipefail
 
+if [ -n "${FAKE_TOFU_CALLS:-}" ]; then
+    printf '%s\n' "$*" >>"${FAKE_TOFU_CALLS}"
+fi
+
 if [[ "${1:-}" == -chdir=* ]]; then
     shift
 fi

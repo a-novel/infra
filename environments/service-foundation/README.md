@@ -2,8 +2,9 @@
 
 This protected root assembles one service's runtime prerequisites, Cloud Deploy control plane and
 application-job access. It supports JSON Keys and Authentication; the rollout verifier currently
-supports JSON Keys only. **No live workflow or root allowlist selects this directory.** Production
-and retained recovery evidence remain unchanged.
+supports JSON Keys only. The manual foundation workflow can select this root after separately approved
+configuration and activation. **It fails before authentication unless `SERVICE_FOUNDATIONS_ENABLED=true`.**
+Production and retained recovery evidence remain unchanged.
 
 ## Owners and state
 
@@ -78,7 +79,7 @@ and host-network grants remain separate bootstrap prerequisites.
 An existing pilot owner requires a private state backup and explicit removal/import map before this
 root adopts its resources. Import cannot move a legacy workload into another project. Keep the old
 writer until its separate workload cutover is verified. Database activation/backups, protected input publication
-and workflow callers, same-service exclusion, receipt completion and live failure drills remain
+for consumers, same-service exclusion, receipt completion and live failure drills remain
 unfinished activation work. The active coordinator is retained until its replacement is proven.
 
 ## Optional idle database host
@@ -119,7 +120,8 @@ and container network paths, exact secret/image access, image provenance, applic
 restore evidence. The current host firewall still addresses the legacy database IPs; approving the new
 IP rules and proving peer denial belongs to the separate network/cutover change. Do not route an API to
 this idle host. Operator IAP/OS Login access, backup jobs, resource monitoring and interrupted database
-maintenance remain activation work. There is deliberately no live apply command for this root yet.
+maintenance remain activation work. The [protected planning path](../../docs/runbooks/provision-service-projects.md#protected-service-foundation-plans)
+requires separate live authorization.
 
 The maintained [Google VM module v15.3.0](https://github.com/terraform-google-modules/terraform-google-vm/blob/v15.3.0/modules/instance_template/versions.tf)
 requires providers below v8, incompatible with this repository's v8.2.0 pin. Native resources retain

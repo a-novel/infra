@@ -14,6 +14,7 @@ import (
 
 	"github.com/a-novel/infra/internal/custody"
 	"github.com/a-novel/infra/internal/release"
+	infraworkflow "github.com/a-novel/infra/internal/workflow"
 )
 
 // fixtureCommand implements only the calls expected by these integration tests.
@@ -31,6 +32,9 @@ func fixtureCommand(name string, args []string) (int, error) {
 	}
 	switch name {
 	case "infra":
+		if len(args) > 0 && args[0] == "foundation-inputs" {
+			return infraworkflow.FoundationInputs(args[1:], os.Getenv, os.Stdout, os.Stderr), nil
+		}
 		if len(args) > 0 && args[0] == "custody" {
 			return custody.Run(context.Background(), args[1:], os.Getenv, func(ctx context.Context, output io.Writer, name string, args ...string) error {
 				command := exec.CommandContext(ctx, name, args...)
