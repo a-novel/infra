@@ -32,8 +32,10 @@ and storage coordinates, plus Google-managed IAM members for foundation wiring. 
 contract when activating a service; do not give a
 consumer access to foundation's state.
 
-The protected foundation account also receives repository and notification-channel administration
-inside this project, for the separately composed [application prerequisites](../service-foundation).
+The protected foundation account also receives repository, notification-channel and alert-policy administration
+inside this project, for the separately composed [application prerequisites](../service-foundation) and
+[job monitoring](../service-job-access). Google's `roles/monitoring.alertPolicyEditor` grants policy
+maintenance only to this protected account; routine release does not administer its own monitoring.
 No application prerequisite is instantiated by this module.
 
 API activation does not guarantee that a service agent already exists. The official `google-beta`

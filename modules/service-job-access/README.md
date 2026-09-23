@@ -1,6 +1,6 @@
 # Service application job access
 
-Protected foundation owns access to existing [application jobs](../service-jobs) and their schedules.
+Protected foundation owns access to existing [application jobs](../service-jobs), schedules and alerts.
 The module consumes the [service foundation's](../service-foundation) versioned `runtime` contract.
 It derives fixed job names and the project-local `infra-release` principal; callers cannot supply
 another principal or extend the job set. **Code only: no production root calls this module.**
@@ -84,7 +84,52 @@ paused. Actual executions incur Cloud Run and logging costs. This inactive modul
 Disposable recovery must omit this module; restoring data must not start production rotation.
 The current production schedule and its IAM remain with the existing release/foundation owners.
 
-Native mocked-provider plan tests cover both service scopes, scheduling and rejected runtime contracts. They
+## Completion monitoring
+
+`google_monitoring_alert_policy.jobs` belongs to protected foundation in the selected service project.
+It uses the existing Cloud Run `job/completed_execution_count` metric, with exact project, region and
+job-name filters. No initializer, rollout probe, peer job, custom metric or polling runtime is included.
+The version-1 runtime contract already publishes operations channels; this consumer requires at least
+one and rejects channels outside the selected project.
+
+| Native condition          | Meaning                                                                                                                    |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Unsuccessful completion   | A non-success result for an owned application job in a five-minute sum; no additional retest delay.                        |
+| JSON Keys success count   | Fewer than one success in the rolling three-hour sum, sustained for one minute. Missing data is inactive.                  |
+| JSON Keys success absence | No success samples for three hours after the series has been observed. This covers silence instead of zero-valued samples. |
+
+The two gap conditions are deliberately separate: zero is data, absence is not. Treating missing data
+as a threshold violation would use the retest duration, not the three-hour rolling window, and could
+page between hourly executions. Google's metric is sampled every minute and can take another two
+minutes to appear; these windows are not an exact wall-clock detection guarantee.
+
+Before activation, seed a successful rotation and observe its metric **after installing or modifying
+the policy**. Google's absence condition cannot establish health or detect a never-observed series.
+It also excludes resources marked terminated/deleted; it is not a job-deletion or resource-inventory
+alarm. Keep the protected job lifecycle and drift checks as separate safeguards.
+Verify completion, gap detection and channel delivery in the separately approved pilot. Policy silence,
+incident closure and scheduler HTTP success are not proof of application recovery. A completed job
+also does not prove that a new key was needed or published.
+
+The [workload project](../workload-project) grants protected foundation `roles/monitoring.alertPolicyEditor`;
+it already owns channel administration. Release, application, scheduler and Cloud Deploy identities
+receive no alert/channel-administration grant here. Keep current production alerts until the explicit one-writer
+handoff. Deleting this policy removes monitoring, not jobs or evidence; the provider permits deletion
+through the reviewed plan gate. Recovery omits this entire module.
+
+Pausing rotation does not disable alerts. Long planned maintenance needs a separately authorized,
+time-bounded snooze, not automatic policy suppression or unconditional schedule resume. Follow the
+[service job response](../../docs/runbooks/respond-to-alerts.md#service-owned-job-pilot) before retrying.
+
+There is no extra compute allocation. Native Google metric ingestion is non-chargeable; policy/query
+costs follow [Observability pricing](https://cloud.google.com/products/observability/pricing). The inactive
+module creates no billable resource today. References: [Cloud Run metric](https://docs.cloud.google.com/monitoring/api/metrics_gcp_p_z#run),
+[absence prerequisites](https://docs.cloud.google.com/monitoring/alerts/metric-absence),
+[alignment and missing data](https://docs.cloud.google.com/monitoring/alerts/concepts-indepth),
+[policy resource](https://github.com/hashicorp/terraform-provider-google/blob/v8.2.0/website/docs/r/monitoring_alert_policy.html.markdown),
+[Monitoring roles](https://docs.cloud.google.com/iam/docs/roles-permissions/monitoring).
+
+Native mocked-provider plan tests cover both service scopes, scheduling, alert conditions and rejected runtime contracts. They
 prove configuration only; live permissions and job execution still need a separately approved pilot.
 References: [Cloud Run roles](https://docs.cloud.google.com/run/docs/reference/iam/roles),
 [job IAM](https://github.com/hashicorp/terraform-provider-google/blob/v8.2.0/website/docs/r/cloud_run_v2_job_iam.html.markdown),
