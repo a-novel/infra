@@ -68,16 +68,18 @@ func foundationInputs(args []string, getenv func(string) string, stdout io.Write
 		if err != nil {
 			return err
 		}
-		var selected struct{ Service string }
-		if json.Unmarshal(data, &selected) != nil || selected.Service != service {
-			return invalid
-		}
 	default:
 		return invalid
 	}
 	var config map[string]json.RawMessage
 	if json.Unmarshal(data, &config) != nil || config == nil {
 		return invalid
+	}
+	if root == "service-foundation" {
+		var declared string
+		if json.Unmarshal(config["service"], &declared) != nil || declared != service {
+			return invalid
+		}
 	}
 	// A fresh destination prevents stale private inputs or symlink replacement.
 	output, err := os.OpenFile(file, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
@@ -95,20 +97,14 @@ func foundationInputs(args []string, getenv func(string) string, stdout io.Write
 func serviceFoundationScope(data []byte, getenv func(string) string, bucket string) (string, error) {
 	invalid := errors.New("service foundation coordinates do not match protected registration")
 	var selected struct {
-		Project    string `json:"project_id"`
-		Management string `json:"management_project_id"`
-		Region     string `json:"region"`
-		Bucket     string `json:"state_bucket"`
-		Service    string `json:"service"`
+		Project, Management, Region, Bucket, Service string
 	}
 	var registered struct {
-		Projects   map[string]string `json:"service_projects"`
-		Management string            `json:"management_project_id"`
-		Workload   string            `json:"workload_project_id"`
-		Region     string            `json:"region"`
+		Projects                     map[string]string
+		Management, Workload, Region string
 	}
-	var fields map[string]json.RawMessage
-	if json.Unmarshal(data, &fields) != nil || json.Unmarshal([]byte(getenv("FOUNDATION_CONFIG")), &registered) != nil {
+	var fields, registration map[string]json.RawMessage
+	if json.Unmarshal(data, &fields) != nil || json.Unmarshal([]byte(getenv("FOUNDATION_CONFIG")), &registration) != nil {
 		return "", invalid
 	}
 	// OpenTofu variable names are case-sensitive, unlike JSON struct decoding.
@@ -120,6 +116,14 @@ func serviceFoundationScope(data []byte, getenv func(string) string, bucket stri
 			return "", invalid
 		}
 	}
+	for name, target := range map[string]any{
+		"service_projects": &registered.Projects, "management_project_id": &registered.Management,
+		"workload_project_id": &registered.Workload, "region": &registered.Region,
+	} {
+		if json.Unmarshal(registration[name], target) != nil {
+			return "", invalid
+		}
+	}
 	if selected.Service != "json-keys" && selected.Service != "authentication" {
 		return "", invalid
 	}
@@ -127,7 +131,10 @@ func serviceFoundationScope(data []byte, getenv func(string) string, bucket stri
 		return "", invalid
 	}
 	if selected.Management != getenv("MANAGEMENT_PROJECT_ID") || selected.Management != registered.Management ||
-		!matches(`[a-z][a-z0-9-]{4,28}[a-z0-9]`, selected.Management) || selected.Project == selected.Management || selected.Project == registered.Workload {
+		!matches(`[a-z][a-z0-9-]{4,28}[a-z0-9]`, selected.Management) || selected.Project == selected.Management {
+		return "", invalid
+	}
+	if !matches(`[a-z][a-z0-9-]{4,28}[a-z0-9]`, registered.Workload) || selected.Project == registered.Workload {
 		return "", invalid
 	}
 	if selected.Region != registered.Region || !matches(`[a-z]+-[a-z]+[1-9][0-9]*`, selected.Region) ||

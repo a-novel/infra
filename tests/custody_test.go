@@ -211,7 +211,7 @@ func TestCustodyPlanApply(t *testing.T) {
 			writeJSON(t, config, object{})
 			if testCase.root == "service-foundation" {
 				f.env["MANAGEMENT_PROJECT_ID"] = "agora-management-test"
-				f.env["FOUNDATION_CONFIG"] = `{"management_project_id":"agora-management-test","region":"europe-west1","service_projects":{"json-keys":"agora-json-keys-test"}}`
+				f.env["FOUNDATION_CONFIG"] = `{"management_project_id":"agora-management-test","workload_project_id":"agora-production-test","region":"europe-west1","service_projects":{"json-keys":"agora-json-keys-test"}}`
 				writeJSON(t, config, object{
 					"project_id": "agora-json-keys-test", "management_project_id": "agora-management-test",
 					"region": "europe-west1", "state_bucket": args[0], "service": "json-keys",
@@ -287,7 +287,7 @@ func TestServiceFoundationBackend(t *testing.T) {
 				"project_id": "agora-json-keys-test", "management_project_id": "agora-management-test",
 				"region": "europe-west1", "state_bucket": bucket, "service": "json-keys",
 			})
-			f.env["FOUNDATION_CONFIG"] = `{"management_project_id":"agora-management-test","region":"europe-west1","service_projects":{"json-keys":"agora-json-keys-test"}}`
+			f.env["FOUNDATION_CONFIG"] = `{"management_project_id":"agora-management-test","workload_project_id":"agora-production-test","region":"europe-west1","service_projects":{"json-keys":"agora-json-keys-test"}}`
 			f.env["MANAGEMENT_PROJECT_ID"], f.env["TOFU_STATE_SUFFIX"] = "agora-management-test", "services/agora-json-keys-test"
 			f.env["TOFU_VAR_FILE"], f.env["FAKE_TOFU_CALLS"] = config, calls
 			f.env["FAKE_TOFU_PLAN_JSON"], f.env["FAKE_TOFU_PLAN_CODE"] = filepath.Join(f.root, "tests/fixtures/plans/safe.json"), "2"
