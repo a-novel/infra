@@ -31,6 +31,11 @@ run "json_keys_jobs" {
   }
 
   assert {
+    condition     = output.release_request == null
+    error_message = "The API request must remain absent unless explicitly configured."
+  }
+
+  assert {
     condition = { for role, job in google_cloud_run_v2_job.application : role => {
       project     = job.project
       region      = job.location
@@ -115,6 +120,7 @@ run "authentication_jobs" {
 
   assert {
     condition = (
+      output.release_request == null &&
       toset(keys(google_cloud_run_v2_job.application)) == toset(["migrations"]) &&
       google_cloud_run_v2_job.application["migrations"].template[0].template[0].service_account == "agora-authentication@agora-authentication-test.iam.gserviceaccount.com" &&
       { for env in google_cloud_run_v2_job.application["migrations"].template[0].template[0].containers[0].env : env.name =>
@@ -293,4 +299,109 @@ run "reject_latest_generation" {
     foundation_json = run.documents.cases.json_keys.foundation_json
   }
   expect_failures = [var.foundation]
+}
+
+run "native_request" {
+  command = plan
+  variables {
+    foundation      = run.documents.cases.rollout.foundation
+    foundation_json = run.documents.cases.rollout.foundation_json
+    rollout         = run.documents.rollout_input
+  }
+
+  assert {
+    # The same fixture passes through the actual Go/SDK submission boundary.
+    condition     = jsonencode(output.release_request) == jsonencode(yamldecode(file("../../internal/submission/testdata/request.yaml")))
+    error_message = "HCL must produce the existing native request contract with the same database, runtime, network and secret pins as the jobs."
+  }
+}
+
+run "numeric_foundation_names" {
+  command = plan
+  variables {
+    foundation      = run.documents.cases.numeric_rollout.foundation
+    foundation_json = run.documents.cases.numeric_rollout.foundation_json
+    rollout         = run.documents.rollout_input
+  }
+
+  assert {
+    condition     = jsonencode(output.release_request) == jsonencode(yamldecode(file("../../internal/submission/testdata/request.yaml")))
+    error_message = "Authorized project-ID and numeric foundation resource names must produce the same numeric SDK request."
+  }
+}
+
+run "reject_absent_rollout" {
+  command = plan
+  variables {
+    foundation      = run.documents.cases.json_keys.foundation
+    foundation_json = run.documents.cases.json_keys.foundation_json
+    rollout         = run.documents.rollout_input
+  }
+  expect_failures = [var.rollout]
+}
+
+run "reject_peer_pipeline" {
+  command = plan
+  variables {
+    foundation      = run.documents.cases.peer_pipeline.foundation
+    foundation_json = run.documents.cases.peer_pipeline.foundation_json
+    rollout         = run.documents.rollout_input
+  }
+  expect_failures = [var.rollout]
+}
+
+run "reject_peer_target" {
+  command = plan
+  variables {
+    foundation      = run.documents.cases.peer_target.foundation
+    foundation_json = run.documents.cases.peer_target.foundation_json
+    rollout         = run.documents.rollout_input
+  }
+  expect_failures = [var.rollout]
+}
+
+run "reject_peer_api_image" {
+  command = plan
+  variables {
+    foundation      = run.documents.cases.rollout.foundation
+    foundation_json = run.documents.cases.rollout.foundation_json
+    rollout         = merge(run.documents.rollout_input, { image = replace(run.documents.rollout_input.image, "agora-json-keys-test", "agora-peer-test") })
+  }
+  expect_failures = [var.rollout]
+}
+
+run "reject_mutable_api_image" {
+  command = plan
+  variables {
+    foundation      = run.documents.cases.rollout.foundation
+    foundation_json = run.documents.cases.rollout.foundation_json
+    rollout         = merge(run.documents.rollout_input, { image = "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-production/service-json-keys/grpc:latest" })
+  }
+  expect_failures = [var.rollout]
+}
+
+run "reject_zero_request_id" {
+  command = plan
+  variables {
+    foundation      = run.documents.cases.rollout.foundation
+    foundation_json = run.documents.cases.rollout.foundation_json
+    rollout         = merge(run.documents.rollout_input, { request_id = "00000000-0000-0000-0000-000000000000" })
+  }
+  expect_failures = [var.rollout]
+}
+
+run "reject_authentication_api" {
+  command = plan
+  variables {
+    project_id      = "agora-authentication-test"
+    service         = "authentication"
+    foundation      = run.documents.cases.authentication_rollout.foundation
+    foundation_json = run.documents.cases.authentication_rollout.foundation_json
+    images = {
+      migrations = "europe-west1-docker.pkg.dev/agora-authentication-test/agora-production/service-authentication/jobs/migrations@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    }
+    secret_versions = { postgres-password = 31 }
+    rollout         = merge(run.documents.rollout_input, { image = replace(run.documents.rollout_input.image, "agora-json-keys-test", "agora-authentication-test") })
+  }
+  expect_failures = [var.rollout]
 }
