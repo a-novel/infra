@@ -91,8 +91,8 @@ run "builds_the_protected_management_plane" {
         } : anytrue([
           for rule in google_storage_bucket.state.lifecycle_rule : try(
             one(rule.action).type == "Delete" && one(rule.condition).age == 2 &&
-            anytrue([for prefix in one(rule.condition).matches_prefix : startswith(name, prefix)]) &&
-            anytrue([for suffix in one(rule.condition).matches_suffix : endswith(name, suffix)]),
+            anytrue([for prefix in coalescelist(one(rule.condition).matches_prefix, [""]) : startswith(name, prefix)]) &&
+            anytrue([for suffix in coalescelist(one(rule.condition).matches_suffix, [""]) : endswith(name, suffix)]),
             false,
           )
       ]) == expires
