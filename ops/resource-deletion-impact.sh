@@ -37,6 +37,8 @@ jq --compact-output '
           test("(^|/)[^/]+\\.(tf|tf\\.json|tofu|tofu\\.json)$") and
           (startswith("bootstrap/") or
            startswith("environments/production/foundation/") or
+           startswith("environments/service-foundation/") or
+           startswith("environments/service-release/") or
            startswith("environments/production/release/") | not)
         )
       )
@@ -47,6 +49,9 @@ jq --compact-output '
         any($paths[];
           startswith("bootstrap/") or
           startswith("environments/production/foundation/") or
+          startswith("environments/service-foundation/") or
+          startswith("environments/service-release/") or
+          startswith("assets/database-host/") or
           startswith("environments/production/release/") or
           . == "deploy/production/images.yaml"
         )
@@ -58,15 +63,23 @@ jq --compact-output '
       release_manifest: any($paths[]; . == "deploy/production/images.yaml"),
       roots: (
         if $all_roots then
-          ["bootstrap", "foundation", "release"]
+          ["bootstrap", "foundation", "release", "service-foundation", "service-release"]
         else
           [
             if any($paths[]; startswith("bootstrap/")) then "bootstrap" else empty end,
-            if any($paths[]; startswith("environments/production/foundation/")) then "foundation" else empty end,
+            if any($paths[];
+              startswith("environments/production/foundation/") or
+              startswith("assets/database-host/")
+            ) then "foundation" else empty end,
             if any($paths[];
               startswith("environments/production/release/") or
               . == "deploy/production/images.yaml"
-            ) then "release" else empty end
+            ) then "release" else empty end,
+            if any($paths[];
+              startswith("environments/service-foundation/") or
+              startswith("assets/database-host/")
+            ) then "service-foundation" else empty end,
+            if any($paths[]; startswith("environments/service-release/")) then "service-release" else empty end
           ]
         end
       )

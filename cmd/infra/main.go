@@ -15,6 +15,7 @@ import (
 	"github.com/a-novel/infra/internal/custody"
 	"github.com/a-novel/infra/internal/database"
 	"github.com/a-novel/infra/internal/health"
+	"github.com/a-novel/infra/internal/inspection"
 	"github.com/a-novel/infra/internal/isolation"
 	"github.com/a-novel/infra/internal/operator"
 	"github.com/a-novel/infra/internal/release"
@@ -44,7 +45,20 @@ func main() {
 		return err
 	}
 	var code int
-	if len(os.Args) > 1 && os.Args[1] == "database-isolation" {
+	if len(os.Args) > 1 && os.Args[1] == "inspect" {
+		syscall.Umask(0o077)
+		code = inspection.Run(ctx, os.Args[2:], os.Getenv, func(ctx context.Context, env []string, name string, args ...string) ([]byte, error) {
+			command := exec.CommandContext(ctx, name, args...)
+			command.Env = append(os.Environ(), append(env, "CLOUDSDK_CORE_DISABLE_PROMPTS=1")...)
+			// A cancelled plan must not leave a provider process running behind it.
+			command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+			command.Cancel = func() error { return syscall.Kill(-command.Process.Pid, syscall.SIGKILL) }
+			command.WaitDelay = 5 * time.Second
+			return command.Output()
+		}, os.Stdout, os.Stderr)
+	} else if len(os.Args) > 1 && os.Args[1] == "foundation-inputs" {
+		code = workflow.FoundationInputs(os.Args[2:], os.Getenv, os.Stdout, os.Stderr)
+	} else if len(os.Args) > 1 && os.Args[1] == "database-isolation" {
 		// Stop the helper's entire local process group before attempting compensation.
 		execute := func(ctx context.Context, output io.Writer, name string, args ...string) error {
 			command := exec.CommandContext(ctx, name, args...)

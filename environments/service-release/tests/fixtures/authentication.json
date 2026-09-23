@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "runtime": {
+    "schema_version": 1,
+    "project_id": "agora-authentication-test",
+    "service": "authentication",
+    "region": "europe-west1",
+    "service_account": "agora-authentication@agora-authentication-test.iam.gserviceaccount.com"
+  },
+  "database": {
+    "schema_version": 1,
+    "project_id": "agora-authentication-test",
+    "service": "authentication",
+    "zone": "europe-west1-d",
+    "port": 5433,
+    "private_ip": "10.20.0.6"
+  },
+  "rollout": null
+}

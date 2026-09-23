@@ -9,13 +9,14 @@ mock_provider "google" {
 }
 
 variables {
-  project_id              = "agora-json-keys-test"
-  region                  = "europe-west1"
-  name                    = "agora-json-keys-grpc"
-  runtime_service_account = "agora-json-keys@agora-json-keys-test.iam.gserviceaccount.com"
-  artifact_bucket         = "agora-json-keys-test-deploy-artifacts"
-  receipt_bucket          = "agora-management-test-deployment-receipts"
-  verification_image      = "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-tooling/verify@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  foundation_service_account = "infra-foundation@agora-management-test.iam.gserviceaccount.com"
+  project_id                 = "agora-json-keys-test"
+  region                     = "europe-west1"
+  name                       = "agora-json-keys-grpc"
+  runtime_service_account    = "agora-json-keys@agora-json-keys-test.iam.gserviceaccount.com"
+  artifact_bucket            = "agora-json-keys-test-deploy-artifacts"
+  receipt_bucket             = "agora-management-test-deployment-receipts"
+  verification_image         = "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-tooling/verify@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   notification_channels = [
     "projects/agora-json-keys-test/notificationChannels/123456789",
   ]
@@ -29,7 +30,7 @@ run "inactive_service_rollout" {
   command = plan
 
   module {
-    source = "../../../modules/cloud-run-rollout"
+    source = "../../modules/cloud-run-rollout"
   }
 
   assert {
@@ -117,7 +118,7 @@ run "inactive_service_rollout" {
 
 run "execution_authority" {
   command = plan
-  module { source = "../../../modules/cloud-run-rollout" }
+  module { source = "../../modules/cloud-run-rollout" }
 
   assert {
     condition = { for key, role in google_project_iam_custom_role.execution : key => role.permissions } == {
@@ -170,7 +171,17 @@ run "execution_authority" {
         "serviceAccount:${google_service_account.execution["deploy"].email}", "roles/iam.serviceAccountUser",
       ]
     )
-    error_message = "Only the submitter may attach execution accounts; only the deploy worker may attach the application account."
+    error_message = "Routine submission attaches deploy/verify accounts; the deploy worker attaches the application account."
+  }
+
+  assert {
+    condition = { for key, grant in google_service_account_iam_member.foundation_execution : key => [
+      grant.service_account_id, grant.role, grant.member,
+      ] } == { for key in ["deploy", "verify", "probe"] : key => [
+      google_service_account.execution[key].name, "roles/iam.serviceAccountUser",
+      "serviceAccount:${var.foundation_service_account}",
+    ] }
+    error_message = "Provisioning may attach the exact rollout identities without project-wide attachment or token minting."
   }
 
   assert {
@@ -199,9 +210,16 @@ run "execution_authority" {
   }
 }
 
+run "reject_release_as_foundation" {
+  command = plan
+  module { source = "../../modules/cloud-run-rollout" }
+  variables { foundation_service_account = "infra-release@agora-json-keys-test.iam.gserviceaccount.com" }
+  expect_failures = [var.foundation_service_account]
+}
+
 run "private_artifact_storage" {
   command = plan
-  module { source = "../../../modules/cloud-run-rollout" }
+  module { source = "../../modules/cloud-run-rollout" }
 
   assert {
     condition = {
@@ -251,7 +269,7 @@ run "private_artifact_storage" {
 
 run "native_rollout_alerts" {
   command = plan
-  module { source = "../../../modules/cloud-run-rollout" }
+  module { source = "../../modules/cloud-run-rollout" }
 
   assert {
     condition = alltrue([for policy in google_monitoring_alert_policy.rollout :
@@ -325,21 +343,21 @@ run "native_rollout_alerts" {
 
 run "reject_missing_operations_channel" {
   command = plan
-  module { source = "../../../modules/cloud-run-rollout" }
+  module { source = "../../modules/cloud-run-rollout" }
   variables { notification_channels = [] }
   expect_failures = [var.notification_channels]
 }
 
 run "reject_peer_operations_channel" {
   command = plan
-  module { source = "../../../modules/cloud-run-rollout" }
+  module { source = "../../modules/cloud-run-rollout" }
   variables { notification_channels = ["projects/agora-authentication-test/notificationChannels/123456789"] }
   expect_failures = [var.notification_channels]
 }
 
 run "reject_peer_application_identity" {
   command = plan
-  module { source = "../../../modules/cloud-run-rollout" }
+  module { source = "../../modules/cloud-run-rollout" }
   variables {
     runtime_service_account = "agora-authentication@agora-authentication-test.iam.gserviceaccount.com"
   }
@@ -348,7 +366,7 @@ run "reject_peer_application_identity" {
 
 run "reject_privileged_application_identity" {
   command = plan
-  module { source = "../../../modules/cloud-run-rollout" }
+  module { source = "../../modules/cloud-run-rollout" }
   variables {
     runtime_service_account = "rollout-deploy@agora-json-keys-test.iam.gserviceaccount.com"
   }
@@ -357,7 +375,7 @@ run "reject_privileged_application_identity" {
 
 run "reject_floating_verifier" {
   command = plan
-  module { source = "../../../modules/cloud-run-rollout" }
+  module { source = "../../modules/cloud-run-rollout" }
   variables {
     verification_image = "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-production/verify:latest"
   }
@@ -366,7 +384,7 @@ run "reject_floating_verifier" {
 
 run "reject_peer_verifier" {
   command = plan
-  module { source = "../../../modules/cloud-run-rollout" }
+  module { source = "../../modules/cloud-run-rollout" }
   variables {
     verification_image = "europe-west1-docker.pkg.dev/agora-authentication-test/agora-production/verify@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   }
@@ -375,7 +393,7 @@ run "reject_peer_verifier" {
 
 run "reject_region_pattern_injection" {
   command = plan
-  module { source = "../../../modules/cloud-run-rollout" }
+  module { source = "../../modules/cloud-run-rollout" }
   variables {
     region = "europe-west1|.*"
   }
@@ -384,7 +402,7 @@ run "reject_region_pattern_injection" {
 
 run "reject_artifacts_in_receipt_bucket" {
   command = plan
-  module { source = "../../../modules/cloud-run-rollout" }
+  module { source = "../../modules/cloud-run-rollout" }
   variables {
     artifact_bucket = "agora-management-test-deployment-receipts"
   }
@@ -393,7 +411,7 @@ run "reject_artifacts_in_receipt_bucket" {
 
 run "reject_mismatched_probe_network" {
   command = plan
-  module { source = "../../../modules/cloud-run-rollout" }
+  module { source = "../../modules/cloud-run-rollout" }
   variables {
     probe = {
       network    = "projects/agora-authentication-test/global/networks/agora-authentication"

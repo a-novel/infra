@@ -2,12 +2,12 @@
 
 # Runs the only supported live OpenTofu plan/apply paths and never prints plan
 # values. Detailed plan codes remain 0 (clean), 1 (error), and 2 (changes).
-# Usage: tofu-gate.sh <plan|apply|assess|converge|drift|output> <bootstrap|foundation|release> <state-bucket> [private-file]
+# Usage: tofu-gate.sh <plan|apply|assess|converge|drift|output> <root> <state-bucket> [private-file]
 
 set -euo pipefail
 
 if [ "$#" -lt 3 ] || [ "$#" -gt 4 ]; then
-    printf 'Usage: %s <plan|apply|assess|converge|drift|output> <bootstrap|foundation|release> <state-bucket> [private-file]\n' "$0" >&2
+    printf 'Usage: %s <plan|apply|assess|converge|drift|output> <root> <state-bucket> [private-file]\n' "$0" >&2
     exit 64
 fi
 
@@ -54,7 +54,17 @@ if ! [[ "${STATE_BUCKET}" =~ ^[a-z0-9][a-z0-9._-]{1,221}[a-z0-9]$ ]]; then
 fi
 
 STATE_PREFIX="${ROOT_NAME}"
-if [ -n "${TOFU_STATE_SUFFIX:-}" ]; then
+if [[ "${ROOT_NAME}" = service-* ]]; then
+    if [ "${ROOT_NAME}" = service-release ] && [ "${ACTION}" != assess ] && [ "${ACTION}" != drift ]; then
+        printf 'Service release is inspection-only; no writer is enabled.\n' >&2
+        exit 77
+    fi
+    infra foundation-inputs check "${TOFU_VAR_FILE:?}" "${STATE_BUCKET}" "${TOFU_STATE_SUFFIX:?}"
+    if [ "${TF_WORKSPACE:-default}" != default ] || [ -n "${!TF_CLI_ARGS*}" ]; then
+        printf 'Service roots require the default workspace and explicit CLI arguments.\n' >&2
+        exit 65
+    fi
+elif [ -n "${TOFU_STATE_SUFFIX:-}" ]; then
     if ! [[ "${TOFU_STATE_SUFFIX}" =~ ^recovery/[a-z0-9][a-z0-9-]{0,62}$ ]]; then
         printf 'Invalid recovery state suffix.\n' >&2
         exit 65
@@ -87,7 +97,7 @@ cleanup() {
 }
 trap cleanup INT TERM EXIT
 
-if [ -z "${TF_DATA_DIR:-}" ]; then
+if [[ "${ROOT_NAME}" = service-* ]] || [ -z "${TF_DATA_DIR:-}" ]; then
     export TF_DATA_DIR="${TEMP_DIR}/tofu-data"
 fi
 
@@ -108,6 +118,11 @@ run_quietly() {
 }
 
 initialize_root() {
+    if [[ "${ROOT_NAME}" = service-* ]]; then
+        run_quietly "${TEMP_DIR}/init.log" "backend initialization" \
+            tofu -chdir="${ROOT_DIR}" init -reconfigure -input=false -no-color -lockfile=readonly "${VAR_ARGS[@]}"
+        return
+    fi
     run_quietly "${TEMP_DIR}/init.log" "backend initialization" \
         tofu -chdir="${ROOT_DIR}" init \
         -reconfigure \

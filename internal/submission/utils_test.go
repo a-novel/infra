@@ -24,7 +24,7 @@ import (
 var requestFixture []byte
 
 const (
-	bucket        = "management-123-deployment-receipts"
+	bucket        = "agora-management-test-123456789012-deployment-receipts"
 	intent        = "services/agora-json-keys-test/production/submissions/release-1.json"
 	operationName = "projects/123456/locations/europe-west1/operations/create-1"
 )

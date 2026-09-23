@@ -64,8 +64,47 @@ resource "google_compute_shared_vpc_service_project" "service" {
   depends_on = [module.service_project]
 }
 
+resource "google_project_iam_member" "service_run_network_viewer" {
+  for_each = module.service_project
+
+  project = google_compute_shared_vpc_service_project.service[each.key].host_project
+  role    = "roles/compute.networkViewer"
+  member  = each.value.service_agents["run.googleapis.com"]
+}
+
+resource "google_compute_subnetwork_iam_member" "service_run" {
+  for_each = module.service_project
+
+  project    = google_compute_shared_vpc_service_project.service[each.key].host_project
+  region     = var.region
+  subnetwork = google_compute_subnetwork.production.name
+  role       = "roles/compute.networkUser"
+  member     = each.value.service_agents["run.googleapis.com"]
+}
+
+resource "google_compute_subnetwork_iam_member" "service_mig" {
+  for_each = module.service_project
+
+  project    = google_compute_shared_vpc_service_project.service[each.key].host_project
+  region     = var.region
+  subnetwork = google_compute_subnetwork.production.name
+  role       = "roles/compute.networkUser"
+  member     = "serviceAccount:${each.value.project_number}@cloudservices.gserviceaccount.com"
+}
+
+# The caller creating the template/group also needs the exact shared subnet.
+resource "google_compute_subnetwork_iam_member" "service_foundation" {
+  count = length(module.service_project) == 0 ? 0 : 1
+
+  project    = google_compute_shared_vpc_host_project.production[0].project
+  region     = var.region
+  subnetwork = google_compute_subnetwork.production.name
+  role       = "roles/compute.networkUser"
+  member     = "serviceAccount:${local.automation_service_accounts.foundation}"
+}
+
 output "service_projects" {
-  description = "Project and release-boundary coordinates; no subnet or application authority is granted."
+  description = "Project and release-boundary coordinates; Cloud Run agents can attach only the foundation subnet."
   value = {
     for service, project in module.service_project : service => {
       project_id     = project.project_id

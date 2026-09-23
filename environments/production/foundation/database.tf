@@ -115,10 +115,10 @@ resource "google_compute_instance_template" "database" {
     google-logging-enabled             = "true"
     google-monitoring-enabled          = "true"
     serial-port-enable                 = "FALSE"
-    shutdown-script                    = file("${path.module}/scripts/database-host-shutdown.sh")
+    shutdown-script                    = file("${path.module}/../../../assets/database-host/shutdown.sh")
   }
 
-  metadata_startup_script = file("${path.module}/scripts/database-host-startup.sh")
+  metadata_startup_script = file("${path.module}/../../../assets/database-host/startup.sh")
 
   disk {
     auto_delete  = true

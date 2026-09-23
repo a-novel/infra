@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "runtime": {
+    "schema_version": 1,
+    "project_id": "agora-json-keys-test",
+    "service": "json-keys",
+    "region": "europe-west1",
+    "service_account": "agora-json-keys@agora-json-keys-test.iam.gserviceaccount.com"
+  },
+  "database": {
+    "schema_version": 1,
+    "project_id": "agora-json-keys-test",
+    "service": "json-keys",
+    "zone": "europe-west1-d",
+    "port": 5432,
+    "private_ip": "10.20.0.5"
+  },
+  "rollout": null
+}

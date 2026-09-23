@@ -49,16 +49,20 @@ remain supported.
 
 - The [project module](../../modules/workload-project/README.md) creates protected project shells,
   enables APIs, deprivileges default accounts, grants foundation maintenance and plan inspection,
-  and bounds default logs. Each service also gets a keyless release account, an exact federation
+  creates the Google-managed Run/Build/Deploy/Scheduler/Compute agents with their documented roles, and bounds default
+  logs. Each service also gets a keyless release account, an exact federation
   provider, and managed folders for its state and receipts in the management buckets.
 - Foundation enables the existing workload project as a Shared VPC host and attaches each shell.
   It owns the VPC, subnet, routes, firewall rules, and DNS. Both host and attachment have deletion
-  guards. No Network User grant or Google service-agent subnet grant is added.
+  guards. The Cloud Run agent receives host Network Viewer; Cloud Run, the Google APIs MIG agent
+  and protected foundation receive Network User on the exact production subnet. The MIG agent gets
+  its documented instance-management role only in its service project. The secret-free rollout probe tag joins the existing restricted Google HTTPS
+  allow; it gains no database egress.
 - The existing production budget includes the new project numbers. Its amount, thresholds, and
   notification channels remain unchanged. No paid runtime or network appliance is provisioned.
 
-An attachment is not a network-security proof. Service-specific subnet permissions, firewall and
-egress policy, Cloud Run internal routing, and application authentication must be reviewed before
+An attachment is not a network-security proof. Effective subnet permissions, firewall and
+egress policy, Cloud Run internal routing, and application authentication must be verified before
 deploying a service. Current deployers receive no new-project grants. New release accounts can write
 only their own state and create/read their own receipts; they cannot yet deploy a workload. Legacy
 state, receipts, secrets, and backups retain their existing owners and paths.
@@ -81,6 +85,11 @@ The onboarding PR must record the exact operator commands and successful sanitiz
    or legacy resource replacement.
 4. Verifying exact project parents/billing, no default VPC, enabled APIs, zero user-managed keys,
    effective organization policies, deprivileged default accounts, host attachment, and budget scope.
+   Verify all declared Google agents have their matching project role, only the Cloud Run agent has
+   host Network Viewer, and the declared Cloud Run/MIG/foundation principals have exact-subnet use.
+   Check no host-wide Network User or primitive role is inherited, including Editor on the Google APIs
+   MIG agent (separate from default execution-account deprivileging). Test probe
+   HTTPS reachability and denied database access once the separately approved probe exists.
 5. Removing temporary Owner/project-creation/billing/Shared VPC grants and verifying that the
    standing maintenance identity can still produce a zero-change plan.
 
@@ -92,7 +101,7 @@ Before a service workflow uses the new identity, its separate rollout must also:
   create/read, denied receipt overwrite/delete, and denied peer/legacy state, secret, and runtime
   access. Review inherited IAM too. Check that a wrong repository, ref, workflow, or environment
   cannot federate; mocked tests cannot establish these live results.
-- Select saved-plan storage/expiry and publish only the versioned coordinates, not foundation
+- Select saved-plan storage/expiry and approve only versioned coordinate references, not foundation
   state. Preserve private plan custody, exact-commit approval, and a single writer during the
   transfer; a separate folder is not itself a migration or rollback plan.
 
@@ -105,6 +114,132 @@ Moving the first service requires a separate ownership-transfer plan covering it
 registry, runtime, database, secrets, backups, retained receipts, and health/rollback evidence. The
 shared foundation remains privileged, and release concurrency stays serialized until those service
 boundaries have been verified.
+
+The inactive [service foundation root](../../environments/service-foundation) composes the runtime,
+rollout control plane and application-job access using those published project coordinates. Its
+bootstrap sequence keeps prerequisites separate from activation. Its protected planning path below
+is disabled by default; the service release root still has no live workflow caller. This runbook does
+not authorize provisioning either root.
+
+Its optional [database host](../../environments/service-foundation#optional-idle-database-host) also
+requires a separately approved provisioning step: dedicated runtime/secret access, idle boot evidence,
+exact network rules, backups and safe maintenance ownership. Compute Instance Admin belongs only to
+protected foundation in that project, not routine release. Keeping the host idle does not eliminate its
+VM/disk/snapshot cost; leaving `database = null` creates none of those resources. No existing production
+resource or state address is moved by this definition.
+
+## Protected service-foundation plans
+
+This code path reuses the existing foundation environment, identity, global execution lock and
+saved-plan policy. Keep `SERVICE_FOUNDATIONS_ENABLED` unset until the separately reviewed onboarding
+PR authorizes live provisioning. No service configuration or activation flag is installed by merging
+this code. Trusted deletion assessment and scheduled drift inspect initialized service roots even
+when the writer enable flag is unset; verify that coverage during approved activation.
+
+Inspection selects service/project scopes from the last converged shared-foundation registration,
+not candidate code. An entirely empty scope is explicitly skipped. Existing state without matching
+converged inputs, inputs without state, unregistered state and denied inventory reads fail inspection.
+The same project, region, management and backend checks run before any service backend is initialized.
+Assessment publishes only the existing commit tuple and boolean verdict, never private inputs or plans.
+
+The operator supplies `SERVICE_FOUNDATIONS_JSON` in `production-foundation`: an object keyed by
+`json-keys` or `authentication`, containing that root's native tfvars. For example, this is a synthetic
+runtime-only entry; use reviewed real coordinates before publication:
+
+```json
+{
+  "json-keys": {
+    "service": "json-keys",
+    "project_id": "agora-json-keys-test",
+    "management_project_id": "agora-management-test",
+    "state_bucket": "agora-management-test-123-tofu-state",
+    "region": "europe-west1",
+    "operations_alert_email": "operations@example.invalid"
+  }
+}
+```
+
+Keep payloads out of this document. Optional database/rollout/job-access inputs follow the
+[root's bootstrap sequence](../../environments/service-foundation#bootstrap-sequence). The selected
+service/project must match `FOUNDATION_TFVARS_JSON.service_projects`; management and region must
+match the same protected document. Management and bucket must also match the published repository
+coordinates. Missing or mismatched inputs stop before authentication and are checked again before
+backend initialization. Root HCL owns resource validation; this selection does not prove cloud
+prerequisites or effective IAM.
+
+After authorization, publish the reviewed private document from outside the checkout, preserving
+existing service entries:
+
+```sh
+gh secret set SERVICE_FOUNDATIONS_JSON --repo a-novel/infra --env production-foundation <"${SERVICE_FOUNDATIONS_FILE:?}"
+```
+
+After the activation prerequisites are met and the enable flag is explicitly approved, use clean,
+current `master`:
+
+```sh
+SERVICE_FOUNDATION_PLAN_ID="$(go run ./cmd/infra foundation plan service-foundation json-keys)"
+```
+
+Inspect the sanitized plan, approve required deletion on its exact merged PR, and apply the selected
+unexpired plan in a separate protected run:
+
+```sh
+go run ./cmd/infra foundation apply service-foundation json-keys "${SERVICE_FOUNDATION_PLAN_ID:?}"
+```
+
+Replace `json-keys` with `authentication` for that service. Do not pass project IDs, backend overrides
+or alternate workspaces. The root uses a fresh backend working directory and native GCS locking.
+State is `foundation/services/PROJECT/default.tfstate`; converged configuration is recorded under
+`foundation/services/PROJECT/config/`. Opaque plans remain under the existing 24-hour expiry prefix,
+`foundation/plans/services/PROJECT/COMMIT/PLAN-ID/`, with distinct root/project metadata and checksum.
+Other services and recovery cannot reuse that scope. No storage IAM changes are introduced.
+
+Apply consumes the exact saved plan before mutation, then requires convergence before publishing
+configuration. If it fails or is interrupted, inspect the actual resources and state before creating
+a fresh plan. Never replay a consumed plan or assume a failed run made no changes. This path does
+not transfer an existing resource owner, start PostgreSQL, run a migration or activate Cloud Deploy.
+The root also publishes [content-addressed coordinates](../../environments/service-foundation#published-coordinates)
+using the native storage provider. Only its service's release account gets read access to the
+coordinate folder; its foundation state stays private. Record the `coordinates` output from the
+successful protected apply through an approved protected-input change before connecting any consumer.
+Pin its bucket, object, generation and SHA-256; do not select the newest object automatically.
+A document left by a failed or interrupted apply is not usable approval evidence. Retain referenced
+versions and verify inherited IAM before activation. The inactive [service-release root](../../environments/service-release#approved-foundation-handoff)
+can validate this reference and its downloaded JSON, but no live consumer or automatic reference
+publication to a GitHub environment is enabled here.
+
+## Service scheduling activation
+
+The inactive [job-access module](../../modules/service-job-access) keeps JSON Keys rotation paused.
+There is no command to activate it in this runbook yet. Its first protected apply requires the
+existing rotation job, the declared Scheduler service agent/role, Scheduler administration and
+`actAs` on the fresh scheduling identity. Verify that identity has no inherited invocation grants
+before creation; its exact-job grant is applied only after the provider has paused the schedule.
+Those configuration and attachment grants are declared by the project and job-access modules.
+Verify their effective permissions and propagation during approved provisioning. Schedule resume
+and dispatch remain outside the protected executor's control-plane role.
+
+The separate activation PR must supply a one-writer state handoff and human-run verification of:
+
+- The exact paused schedule, hourly UTC cadence, empty OAuth request and zero dispatch retries.
+- Own-rotation invocation and denied migration, peer, probe, override and secret access; no keys or
+  unexpected inherited IAM on the scheduling identity.
+- Same-service exclusion spanning paused-dispatch verification, reconciliation of accepted requests
+  and draining Cloud Run executions before updating jobs or running migrations. Scheduler HTTP
+  success and pause are not application completion evidence.
+- Successful rotation observed through native Cloud Run execution records and its success metric after
+  installing/modifying the service policy. No prior metric history means absence monitoring is not ready.
+- Exact-project/region/job alert filters, verified project-local operations channels, and a controlled
+  pilot showing failure and three-hour success-gap notification (including observed zeros versus absent
+  samples). Quiet alerts and Scheduler HTTP success are not completion evidence. Keep the current
+  production policy until that handoff is verified; protected foundation is the sole alert writer.
+- Safe resume after an approved healthy release. An interrupted or ambiguous release stays paused;
+  a long maintenance pause requires a separately authorized, time-bounded alert snooze.
+
+Keep schedules absent from disposable recovery. Recreating a schedule with an existing identity
+requires revoking invocation and reconciling accepted executions before creation; fresh-resource
+dependency ordering is insufficient for that case. No current production schedule changes here.
 
 References: [Shared VPC provisioning](https://cloud.google.com/vpc/docs/provisioning-shared-vpc),
 [project provisioning](./provision-workload-foundation.md), and

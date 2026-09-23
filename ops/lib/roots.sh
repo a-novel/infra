@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Maps the three reviewed root names to fixed repository paths.
+# Maps reviewed root names to fixed repository paths.
 
 set -e
 
@@ -20,8 +20,11 @@ resolve_root() {
         release)
             printf "%s/environments/production/release\n" "$1"
             ;;
+        service-foundation | service-release)
+            printf "%s/environments/%s\n" "$1" "$2"
+            ;;
         *)
-            printf "Unknown root. Expected bootstrap, foundation, or release.\n" >&2
+            printf "Unknown root. Expected bootstrap, foundation, release, service-foundation, or service-release.\n" >&2
             return 64
             ;;
     esac

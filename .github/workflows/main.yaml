@@ -85,7 +85,19 @@ jobs:
             ./ops/check-root.sh "$root"
           done
           tofu fmt -check -recursive modules
-          tflint --chdir=modules/cloud-run-rollout --config="${GITHUB_WORKSPACE}/.tflint.hcl" --format=compact
+          tflint --recursive --chdir=modules --config="${GITHUB_WORKSPACE}/.tflint.hcl" --format=compact
+
+      - name: Validate inactive service roots without backends
+        shell: bash
+        run: |
+          set -euo pipefail
+          for root in environments/service-foundation environments/service-release; do
+            tofu -chdir="$root" fmt -check -recursive -diff
+            tofu -chdir="$root" init -backend=false -input=false -lockfile=readonly -no-color
+            tofu -chdir="$root" validate -no-color
+            tofu -chdir="$root" test -no-color
+            tflint --chdir="$root" --config="${GITHUB_WORKSPACE}/.tflint.hcl" --format=compact
+          done
 
       - name: Lint shell scripts
         uses: a-novel-kit/workflows/generic-actions/lint-shell@v1.30.2

@@ -2,7 +2,8 @@
 
 This module declares one Cloud Deploy delivery pipeline, its Cloud Run target and probe, execution
 identities, private artifact storage, and native operations alerts for one service project.
-**No production root calls it. The pipeline is suspended in code**, not behind an input
+The inactive [service foundation root](../../environments/service-foundation) composes it after
+verifier promotion. **No live workflow selects that root. The pipeline is suspended in code**, not behind an input
 switch. It cannot deploy an API until a separately reviewed activation change completes the gates
 below. The existing production release path remains the only active writer.
 
@@ -23,7 +24,7 @@ Cloud Monitoring owns notification delivery independently of GitHub; no custom w
 | Owner after the approved handoff         | Responsibility                                                                                                                             |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | Protected OpenTofu foundation            | Project, APIs, IAM, network, database hosts, private artifact storage, this pipeline and target.                                           |
-| Service-specific OpenTofu release        | Supporting jobs and schedules; no Cloud Run API service resource or traffic writer.                                                        |
+| Service-specific OpenTofu release        | Application job specifications; protected foundation owns their IAM, schedules and alerts. No API service or traffic writer.               |
 | Cloud Deploy + reviewed service manifest | The complete API service specification, revisions, tagged candidate, traffic, verification phases, and rollout records.                    |
 | Selected-service release submission      | Complete image-family/provenance checks, explicit database/migration prerequisites, immutable release identity, durable recovery evidence. |
 | Human-approved bootstrap/recovery        | Initial deployment, uncertain migration reconciliation, data restore, and exceptional ownership changes.                                   |
@@ -61,7 +62,11 @@ separately owned application identity. This module adds only the following grant
 | Deploy                            | Render and update API specifications/traffic in this service project; attach only the selected app runtime. Read app images and source, create/read artifacts, write execution logs. No job execution or IAM changes.                       |
 | Verify                            | Read Cloud Deploy and Run evidence; execute **the exact probe job** with overrides and wait for its operation. Read verifier images, create/read artifacts and write logs. No API/job updates, migration execution or direct secret access. |
 | Probe                             | `run.routes.invoke` in this service project. No job execution, database, secret or storage grants.                                                                                                                                          |
-| Google Cloud Deploy service agent | Read the selected service's source folder in the management bucket. Its Google-managed project role remains a provisioning prerequisite.                                                                                                    |
+| Google Cloud Deploy service agent | Read the selected service's source folder in the management bucket. Its identity and Google-managed project role belong to `workload-project`.                                                                                              |
+
+`foundation_service_account` receives Service Account User on the module's three exact execution
+identities before target/probe creation. The owning root supplies its protected executor; its project
+configuration authority comes from [workload-project](../workload-project#protected-provisioning-authority).
 
 The [predefined Cloud Deploy roles](https://docs.cloud.google.com/deploy/docs/iam-roles-permissions)
 mix submission with operational recovery powers; Cloud Run Developer also permits job execution.
@@ -142,12 +147,15 @@ and completion-evidence implementation; this table is a contract, not live proof
 1. Review the service manifest and verifier together, starting with JSON Keys. Preserve internal
    ingress, one warm instance, resource limits, immutable images, numeric secret references, and
    private database routing. No peer configuration or credentials may be required to release it.
-2. Provision this module only through a separately approved foundation change. First enable Cloud
-   Deploy, Cloud Build, Run, Artifact Registry, Storage, IAM and Monitoring APIs; establish the Google
-   service agents and their documented roles, existing `agora-production`/verifier registries,
-   application runtime, release identity, management receipt folder and operations channels. The
-   foundation needs resource/IAM administration and permission to attach the probe identity.
-   Grant the required Shared VPC subnet attachment and API-only probe egress separately; test private
+2. Provision this module only through a separately approved foundation change, after the
+   [service-project foundation](../workload-project/README.md) establishes its APIs, Google agents
+   and their roles, release identity and management receipt folder. The caller must order this module
+   after that foundation and its host subnet grants. The
+   [service foundation](../../environments/service-foundation) supplies `agora-production`/`agora-tooling`, the
+   application runtime and operations channel. Promote and verify the reviewed verifier digest before
+   creating the probe; application release has no writer grant on `agora-tooling`. The
+   foundation's declared resource/IAM and exact identity-attachment grants must be effective first.
+   Verify the host-owned Shared VPC grants and API-only probe egress; test private
    routing, effective IAM, platform-log routing and notification delivery. Target approval,
    advancement/recovery and migration authority remain separate from these execution grants.
 3. Review saved source/destination state, inventory, and a reversible one-writer handoff under #187.
@@ -173,7 +181,7 @@ human-only initialization, and durable recovery receipts remain necessary. Exist
 supported for retained recovery points. The inactive pilot adds declarative configuration and a
 verification adapter; **it removes no active coordinator yet** and makes no net-size-reduction claim.
 
-The existing foundation test job runs provider-mocked cases for this standalone module, using the
+The service foundation's cloud-blind validation runs provider-mocked cases for this module, using the
 root's pinned provider. Go tests cover the safety contract and exercise the official clients against
 a local HTTP server. CI also checks formatting and lint. No tests contact Google Cloud; they establish
 configuration and input boundaries, not live IAM, probe routing, or rollout behavior.

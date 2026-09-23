@@ -21,6 +21,8 @@ resource "google_project" "service" {
 resource "google_project_service" "api" {
   for_each = toset([
     "artifactregistry.googleapis.com",
+    "cloudbuild.googleapis.com",
+    "clouddeploy.googleapis.com",
     "cloudquotas.googleapis.com",
     "cloudresourcemanager.googleapis.com",
     "cloudscheduler.googleapis.com",
@@ -33,6 +35,7 @@ resource "google_project_service" "api" {
     "oslogin.googleapis.com",
     "run.googleapis.com",
     "serviceusage.googleapis.com",
+    "storage.googleapis.com",
     "sts.googleapis.com",
   ])
 
@@ -53,10 +56,14 @@ resource "google_project_default_service_accounts" "service" {
 # operator to remove that temporary grant after verifying convergence.
 resource "google_project_iam_member" "foundation" {
   for_each = toset([
+    "roles/artifactregistry.admin",
+    "roles/compute.instanceAdmin.v1",
     "roles/compute.networkAdmin",
     "roles/iam.roleAdmin",
     "roles/iam.serviceAccountAdmin",
     "roles/logging.configWriter",
+    "roles/monitoring.alertPolicyEditor",
+    "roles/monitoring.notificationChannelEditor",
     "roles/resourcemanager.projectIamAdmin",
     "roles/serviceusage.serviceUsageAdmin",
   ])
