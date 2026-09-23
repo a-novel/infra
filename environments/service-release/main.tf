@@ -1,3 +1,8 @@
+provider "google" {
+  project = var.runtime.project_id
+  region  = var.runtime.region
+}
+
 locals {
   job_contracts = {
     migrations = {
@@ -86,5 +91,10 @@ resource "google_cloud_run_v2_job" "application" {
 
   lifecycle {
     prevent_destroy = true
+
+    precondition {
+      condition     = terraform.workspace == "default"
+      error_message = "Use the selected service's default workspace; another workspace could claim the same jobs."
+    }
   }
 }

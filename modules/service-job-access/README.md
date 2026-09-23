@@ -1,6 +1,6 @@
 # Service application job access
 
-Protected foundation owns access to existing [application jobs](../service-jobs), schedules and alerts.
+Protected foundation owns access to existing [application jobs](../../environments/service-release), schedules and alerts.
 The module consumes the [service foundation's](../service-foundation) versioned `runtime` contract.
 It derives fixed job names and the project-local `infra-release` principal; callers cannot supply
 another principal or extend the job set. **Code only: no production root calls this module.**
@@ -30,8 +30,9 @@ The protected executor needs custom-role administration in the service project, 
 the exact jobs and runtime, and the separately approved permissions to create those initial jobs.
 These grants do not add bootstrap authority to routine release.
 
-Keep this module in protected foundation state. Transfer only job specifications to service release
-state with saved private state, reconciliation and a reviewed one-writer procedure. Routine release
+Keep this module in protected foundation state. Bootstrap job specifications directly in the
+service release root's destination state; an existing pilot owner requires a separately reviewed
+state transfer with private backup and reconciliation. Routine release
 must not apply foundation. If a job is missing, routine creation fails; reconcile it under protected
 bootstrap authority. Existing registry, state and receipt access comes from the other service modules.
 Shared VPC attachment and host-owned network-use permissions remain separate activation prerequisites.

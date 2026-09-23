@@ -1,3 +1,14 @@
+variable "state_bucket" {
+  description = "Management state bucket from the protected workload-project release coordinates; no credentials belong in this value."
+  type        = string
+  nullable    = false
+
+  validation {
+    condition     = length(var.state_bucket) <= 63 && can(regex("^${var.management_project_id}-[1-9][0-9]*-tofu-state$", var.state_bucket))
+    error_message = "Use the management project's published state bucket."
+  }
+}
+
 variable "runtime" {
   description = "Selected service-foundation runtime output; the caller authorizes these coordinates before applying."
   type = object({
