@@ -47,6 +47,7 @@ jq --compact-output '
         any($paths[];
           startswith("bootstrap/") or
           startswith("environments/production/foundation/") or
+          startswith("assets/database-host/") or
           startswith("environments/production/release/") or
           . == "deploy/production/images.yaml"
         )
@@ -62,7 +63,10 @@ jq --compact-output '
         else
           [
             if any($paths[]; startswith("bootstrap/")) then "bootstrap" else empty end,
-            if any($paths[]; startswith("environments/production/foundation/")) then "foundation" else empty end,
+            if any($paths[];
+              startswith("environments/production/foundation/") or
+              startswith("assets/database-host/")
+            ) then "foundation" else empty end,
             if any($paths[];
               startswith("environments/production/release/") or
               . == "deploy/production/images.yaml"

@@ -82,6 +82,27 @@ resource "google_compute_subnetwork_iam_member" "service_run" {
   member     = each.value.service_agents["run.googleapis.com"]
 }
 
+resource "google_compute_subnetwork_iam_member" "service_mig" {
+  for_each = module.service_project
+
+  project    = google_compute_shared_vpc_service_project.service[each.key].host_project
+  region     = var.region
+  subnetwork = google_compute_subnetwork.production.name
+  role       = "roles/compute.networkUser"
+  member     = "serviceAccount:${each.value.project_number}@cloudservices.gserviceaccount.com"
+}
+
+# The caller creating the template/group also needs the exact shared subnet.
+resource "google_compute_subnetwork_iam_member" "service_foundation" {
+  count = length(module.service_project) == 0 ? 0 : 1
+
+  project    = google_compute_shared_vpc_host_project.production[0].project
+  region     = var.region
+  subnetwork = google_compute_subnetwork.production.name
+  role       = "roles/compute.networkUser"
+  member     = "serviceAccount:${local.automation_service_accounts.foundation}"
+}
+
 output "service_projects" {
   description = "Project and release-boundary coordinates; Cloud Run agents can attach only the foundation subnet."
   value = {

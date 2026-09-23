@@ -49,13 +49,14 @@ remain supported.
 
 - The [project module](../../modules/workload-project/README.md) creates protected project shells,
   enables APIs, deprivileges default accounts, grants foundation maintenance and plan inspection,
-  creates the Google-managed Run/Build/Deploy/Scheduler agents with their documented roles, and bounds default
+  creates the Google-managed Run/Build/Deploy/Scheduler/Compute agents with their documented roles, and bounds default
   logs. Each service also gets a keyless release account, an exact federation
   provider, and managed folders for its state and receipts in the management buckets.
 - Foundation enables the existing workload project as a Shared VPC host and attaches each shell.
   It owns the VPC, subnet, routes, firewall rules, and DNS. Both host and attachment have deletion
-  guards. Only the Cloud Run agent receives host Network Viewer and Network User on the exact
-  production subnet. The secret-free rollout probe tag joins the existing restricted Google HTTPS
+  guards. The Cloud Run agent receives host Network Viewer; Cloud Run, the Google APIs MIG agent
+  and protected foundation receive Network User on the exact production subnet. The MIG agent gets
+  its documented instance-management role only in its service project. The secret-free rollout probe tag joins the existing restricted Google HTTPS
   allow; it gains no database egress.
 - The existing production budget includes the new project numbers. Its amount, thresholds, and
   notification channels remain unchanged. No paid runtime or network appliance is provisioned.
@@ -85,7 +86,9 @@ The onboarding PR must record the exact operator commands and successful sanitiz
 4. Verifying exact project parents/billing, no default VPC, enabled APIs, zero user-managed keys,
    effective organization policies, deprivileged default accounts, host attachment, and budget scope.
    Verify all declared Google agents have their matching project role, only the Cloud Run agent has
-   the host/subnet grants, and no host-wide Network User or primitive role is inherited. Test probe
+   host Network Viewer, and the declared Cloud Run/MIG/foundation principals have exact-subnet use.
+   Check no host-wide Network User or primitive role is inherited, including Editor on the Google APIs
+   MIG agent (separate from default execution-account deprivileging). Test probe
    HTTPS reachability and denied database access once the separately approved probe exists.
 5. Removing temporary Owner/project-creation/billing/Shared VPC grants and verifying that the
    standing maintenance identity can still produce a zero-change plan.
@@ -116,6 +119,13 @@ The inactive [service foundation root](../../environments/service-foundation) co
 rollout control plane and application-job access using those published project coordinates. Its
 bootstrap sequence keeps prerequisites separate from activation. Neither that root nor the
 service release root is on the live workflow allowlist; this runbook does not authorize applying them.
+
+Its optional [database host](../../environments/service-foundation#optional-idle-database-host) also
+requires a separately approved provisioning step: dedicated runtime/secret access, idle boot evidence,
+exact network rules, backups and safe maintenance ownership. Compute Instance Admin belongs only to
+protected foundation in that project, not routine release. Keeping the host idle does not eliminate its
+VM/disk/snapshot cost; leaving `database = null` creates none of those resources. No existing production
+resource or state address is moved by this definition.
 
 ## Service scheduling activation
 
