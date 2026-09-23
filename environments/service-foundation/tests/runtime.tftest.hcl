@@ -33,6 +33,16 @@ run "isolated_application_assets" {
   }
 
   assert {
+    condition = [google_service_account_iam_member.foundation_runtime.service_account_id,
+      google_service_account_iam_member.foundation_runtime.role,
+      google_service_account_iam_member.foundation_runtime.member] == [
+      google_service_account.runtime.name, "roles/iam.serviceAccountUser",
+      "serviceAccount:infra-foundation@agora-management-test.iam.gserviceaccount.com",
+    ]
+    error_message = "Protected bootstrap may attach only the owned application identity."
+  }
+
+  assert {
     condition = { for secret, binding in google_secret_manager_secret_iam_member.runtime : secret => [binding.project, binding.role, binding.member] } == {
       for secret in ["production-json-keys-postgres-password", "production-json-keys-app-master-key"] : secret =>
       [var.management_project_id, "roles/secretmanager.secretAccessor", "serviceAccount:${google_service_account.runtime.email}"]
@@ -110,7 +120,10 @@ run "authentication_runtime_contract" {
 
   override_resource {
     target = google_service_account.runtime
-    values = { email = "agora-authentication@agora-authentication-test.iam.gserviceaccount.com" }
+    values = {
+      email = "agora-authentication@agora-authentication-test.iam.gserviceaccount.com"
+      name  = "projects/agora-authentication-test/serviceAccounts/agora-authentication@agora-authentication-test.iam.gserviceaccount.com"
+    }
   }
 
   assert {
@@ -127,6 +140,12 @@ run "authentication_runtime_contract" {
   assert {
     condition     = length(module.rollout) == 0 && output.runtime.service_account == "agora-authentication@agora-authentication-test.iam.gserviceaccount.com"
     error_message = "Authentication can manage its bootstrapped migration access without selecting the JSON Keys pilot."
+  }
+
+  assert {
+    condition = (google_service_account_iam_member.foundation_runtime.service_account_id ==
+    "projects/agora-authentication-test/serviceAccounts/agora-authentication@agora-authentication-test.iam.gserviceaccount.com")
+    error_message = "Authentication bootstrap must attach its own runtime account."
   }
 }
 

@@ -16,7 +16,11 @@ locals {
 output "runtime" {
   description = "Versioned non-payload coordinates for release callers; publish these without sharing state."
   value       = local.runtime
-  depends_on  = [google_secret_manager_secret_iam_member.runtime, google_artifact_registry_repository_iam_member.release]
+  depends_on = [
+    google_secret_manager_secret_iam_member.runtime,
+    google_artifact_registry_repository_iam_member.release,
+    google_service_account_iam_member.foundation_runtime,
+  ]
 }
 
 output "rollout" {

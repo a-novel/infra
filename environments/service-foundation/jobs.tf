@@ -9,5 +9,6 @@ module "job_access" {
   source = "../../modules/service-job-access"
   count  = var.manage_job_access ? 1 : 0
 
-  runtime = local.runtime
+  runtime                    = local.runtime
+  foundation_service_account = local.foundation_service_account
 }

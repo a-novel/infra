@@ -1,10 +1,14 @@
 mock_provider "google" {
   mock_resource "google_service_account" {
-    defaults = { email = "agora-json-keys-scheduler@agora-json-keys-test.iam.gserviceaccount.com" }
+    defaults = {
+      email = "agora-json-keys-scheduler@agora-json-keys-test.iam.gserviceaccount.com"
+      name  = "projects/agora-json-keys-test/serviceAccounts/agora-json-keys-scheduler@agora-json-keys-test.iam.gserviceaccount.com"
+    }
   }
 }
 
 variables {
+  foundation_service_account = "infra-foundation@agora-management-test.iam.gserviceaccount.com"
   runtime = {
     schema_version        = 1
     project_id            = "agora-json-keys-test"
@@ -76,6 +80,15 @@ run "json_keys_job_authority" {
       [var.runtime.project_id, "agora-json-keys-scheduler"],
     ]
     error_message = "Only JSON Keys needs the dedicated, same-project scheduler identity."
+  }
+
+  assert {
+    condition = [for grant in google_service_account_iam_member.foundation_rotation : [
+      grant.service_account_id, grant.role, grant.member,
+      ]] == [[google_service_account.rotation[0].name, "roles/iam.serviceAccountUser",
+      "serviceAccount:${var.foundation_service_account}",
+    ]]
+    error_message = "Protected provisioning may attach only the fresh scheduler identity."
   }
   assert {
     condition = [for grant in google_cloud_run_v2_job_iam_member.rotation : [grant.project, grant.location, grant.name, grant.role, grant.member]] == [[
@@ -202,7 +215,8 @@ run "authentication_has_only_migrations" {
   }
   assert {
     condition = (length(google_service_account.rotation) == 0 &&
-    length(google_cloud_scheduler_job.rotation) == 0 && length(google_cloud_run_v2_job_iam_member.rotation) == 0)
+      length(google_cloud_scheduler_job.rotation) == 0 && length(google_cloud_run_v2_job_iam_member.rotation) == 0 &&
+    length(google_service_account_iam_member.foundation_rotation) == 0)
     error_message = "Authentication must have no rotation identity, schedule or scheduled invocation grant."
   }
   assert {
@@ -224,6 +238,13 @@ run "reject_peer_runtime" {
     }
   }
   expect_failures = [var.runtime]
+}
+
+run "reject_release_as_foundation" {
+  command = plan
+  module { source = "../../modules/service-job-access" }
+  variables { foundation_service_account = "infra-release@agora-json-keys-test.iam.gserviceaccount.com" }
+  expect_failures = [var.foundation_service_account]
 }
 
 run "reject_unknown_service" {

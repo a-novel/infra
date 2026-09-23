@@ -64,6 +64,10 @@ separately owned application identity. This module adds only the following grant
 | Probe                             | `run.routes.invoke` in this service project. No job execution, database, secret or storage grants.                                                                                                                                          |
 | Google Cloud Deploy service agent | Read the selected service's source folder in the management bucket. Its identity and Google-managed project role belong to `workload-project`.                                                                                              |
 
+`foundation_service_account` receives Service Account User on the module's three exact execution
+identities before target/probe creation. The owning root supplies its protected executor; its project
+configuration authority comes from [workload-project](../workload-project#protected-provisioning-authority).
+
 The [predefined Cloud Deploy roles](https://docs.cloud.google.com/deploy/docs/iam-roles-permissions)
 mix submission with operational recovery powers; Cloud Run Developer also permits job execution.
 Small custom permission sets keep those responsibilities separate. Standard service-account,
@@ -150,7 +154,7 @@ and completion-evidence implementation; this table is a contract, not live proof
    [service foundation](../../environments/service-foundation) supplies `agora-production`/`agora-tooling`, the
    application runtime and operations channel. Promote and verify the reviewed verifier digest before
    creating the probe; application release has no writer grant on `agora-tooling`. The
-   foundation needs resource/IAM administration and permission to attach the probe identity.
+   foundation's declared resource/IAM and exact identity-attachment grants must be effective first.
    Verify the host-owned Shared VPC grants and API-only probe egress; test private
    routing, effective IAM, platform-log routing and notification delivery. Target approval,
    advancement/recovery and migration authority remain separate from these execution grants.

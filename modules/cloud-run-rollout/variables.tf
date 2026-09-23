@@ -9,6 +9,17 @@ variable "project_id" {
   }
 }
 
+variable "foundation_service_account" {
+  description = "Approved shared-foundation executor that attaches the exact rollout identities during provisioning."
+  type        = string
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^infra-foundation@[a-z][a-z0-9-]{4,28}[a-z0-9]\\.iam\\.gserviceaccount\\.com$", var.foundation_service_account))
+    error_message = "Use the protected infra-foundation service account from the approved management project."
+  }
+}
+
 variable "region" {
   description = "Region shared by the delivery pipeline, target, and Cloud Run service."
   type        = string

@@ -227,6 +227,41 @@ run "protected_service_project" {
     )
     error_message = "State writes and immutable receipt creation/readback must remain inside the selected service's protected folders; planning is read-only."
   }
+
+  assert {
+    condition = google_project_iam_custom_role.foundation_control_plane.permissions == toset(flatten([
+      for resource, actions in {
+        "clouddeploy.deliveryPipelines" = ["create", "delete", "get", "update"]
+        "clouddeploy.targets"           = ["create", "delete", "get", "update"]
+        "clouddeploy.operations"        = ["get"]
+        "cloudscheduler.jobs"           = ["create", "delete", "fullView", "get", "pause", "update"]
+        "run.jobs"                      = ["create", "delete", "get", "getIamPolicy", "setIamPolicy", "update"]
+        "run.operations"                = ["get"]
+        "storage.buckets"               = ["create", "delete", "get", "getIamPolicy", "setIamPolicy", "update"]
+      } : [for action in actions : "${resource}.${action}"]
+    ]))
+    error_message = "Provisioning must not add dispatch, promotion, API mutation, schedule resume, payload or token-minting permissions."
+  }
+
+  assert {
+    condition = google_project_iam_custom_role.plan_policy.permissions == toset([
+      "artifactregistry.repositories.getIamPolicy", "iam.roles.get", "iam.serviceAccounts.getIamPolicy",
+      "resourcemanager.projects.getIamPolicy", "run.jobs.getIamPolicy", "storage.buckets.getIamPolicy",
+    ])
+    error_message = "Assessment needs policy refresh without payload access, identity attachment or mutation."
+  }
+
+  assert {
+    condition = alltrue([for entry in [
+      { role = google_project_iam_custom_role.foundation_control_plane, grant = google_project_iam_member.foundation_control_plane, account = var.foundation_service_account },
+      { role = google_project_iam_custom_role.plan_policy, grant = google_project_iam_member.plan_policy, account = var.plan_service_account },
+      ] : entry.role.project == var.project_id &&
+      [entry.grant.project, entry.grant.role, entry.grant.member] == [
+        var.project_id, entry.role.name, "serviceAccount:${entry.account}",
+      ]
+    ])
+    error_message = "Bind administration and policy reading only to their protected owners in the selected project."
+  }
 }
 
 run "reject_parentless_service_project" {

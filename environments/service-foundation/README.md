@@ -41,7 +41,8 @@ must promote and verify the tooling digest. No verifier writer is granted here.
 Publish the version-1 `runtime` output to approved consumers without sharing foundation state.
 The same object supplies the child modules' identity and operations channel; callers cannot override
 those with a peer's coordinates. Its output waits for runtime-secret and application-publisher grants.
-Channel creation still needs a delivery test.
+Channel creation still needs a delivery test. Protected foundation receives identity attachment on
+the exact application account for approved job bootstrap.
 
 ## Bootstrap sequence
 
@@ -67,10 +68,12 @@ inputs; dropping it is resource removal, subject to its lifecycle guards and del
 
 Steps 2 and 3 consume different prerequisites and can be reviewed independently. OpenTofu composes
 the dependency graph; there is no setup script, `-target` bootstrap or automatic existence discovery.
-The existing protected foundation account has repository, identity and monitoring administration from
-`workload-project`. Its rollout/Run job administration, scheduler administration and exact identity
-attachment permissions still require the reviewed executor setup; this root does not grant itself
-those powers. Management secret-IAM maintenance and bucket access are separate prerequisites too.
+The [workload project](../../modules/workload-project#protected-provisioning-authority) declares the
+protected executor's project permissions and the plan reader's policy access. This root derives the
+executor as `infra-foundation@MANAGEMENT_PROJECT.iam.gserviceaccount.com`; child modules grant attachment
+on their exact identities before creating targets, probes or schedules. Check that this is the same
+executor used by shared foundation. Management secret-IAM maintenance, state/receipt bucket access
+and host-network grants remain separate bootstrap prerequisites.
 
 An existing pilot owner requires a private state backup and explicit removal/import map before this
 root adopts its resources. Import cannot move a legacy workload into another project. Keep the old

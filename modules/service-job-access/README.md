@@ -59,8 +59,9 @@ The schedule sends an empty JSON body to the selected project's regional RunJob 
 Its identity receives no job-update, migration, secret, runtime-attachment or token-minting grant.
 The [workload project](../workload-project) declares the Google Scheduler service agent and its
 documented role to mint that OAuth token. The job still runs as the application identity.
-Protected bootstrap needs Scheduler administration and `actAs` on the scheduling identity, in
-addition to its existing job-IAM maintenance authority. Routine release receives none of these grants.
+The [workload project](../workload-project#protected-provisioning-authority) declares protected Scheduler
+configuration and job-IAM authority. This module grants `foundation_service_account` attachment on
+the exact rotation identity before creating its schedule. Routine release receives none of these grants.
 
 The [pinned provider](https://github.com/hashicorp/terraform-provider-google/blob/v8.2.0/google/services/cloudscheduler/resource_cloud_scheduler_job.go)
 creates an enabled schedule and then pauses it. The invoker grant depends on that completed operation:
