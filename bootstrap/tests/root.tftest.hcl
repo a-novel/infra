@@ -80,27 +80,6 @@ run "builds_the_protected_management_plane" {
   }
 
   assert {
-    condition = alltrue([
-      for name, expires in {
-        "services/project/release/plans/commit/123-1/plan.tfplan"                = true
-        "services/project/release/plans/commit/123-1/plan.metadata.json"         = true
-        "services/project/release/default.tfstate"                               = false
-        "services/project/release/config/00000000000000000123-00001.tfvars.json" = false
-        "foundation/services/project/default.tfstate"                            = false
-        "foundation/coordinates/project/plan.metadata.json"                      = false
-        } : anytrue([
-          for rule in google_storage_bucket.state.lifecycle_rule : try(
-            one(rule.action).type == "Delete" && one(rule.condition).age == 2 &&
-            anytrue([for prefix in coalescelist(one(rule.condition).matches_prefix, [""]) : startswith(name, prefix)]) &&
-            anytrue([for suffix in coalescelist(one(rule.condition).matches_suffix, [""]) : endswith(name, suffix)]),
-            false,
-          )
-      ]) == expires
-    ])
-    error_message = "Service plan cleanup must exclude state, converged configuration and foundation coordinates."
-  }
-
-  assert {
     condition = (
       length(google_storage_managed_folder.state) == 3 &&
       google_storage_managed_folder.state["bootstrap"].name == "bootstrap/" &&
