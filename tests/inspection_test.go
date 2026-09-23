@@ -26,6 +26,11 @@ func TestServiceInspection(t *testing.T) {
 			{"UnregisteredState", "orphan", "assess", 70, 0, false},
 			{"UnexpectedWorkspace", "workspace", "assess", 70, 0, false},
 			{"LockedState", "lock", "assess", 70, 0, false},
+			{"PlanWithState", "artifact", "assess", 0, 1, false},
+			{"PlanWithoutState", "artifact-only", "assess", 0, 0, false},
+			{"UnknownPlanObject", "artifact-unknown", "assess", 70, 0, false},
+			{"InvalidPlanCommit", "artifact-commit", "assess", 70, 0, false},
+			{"InvalidPlanSequence", "artifact-sequence", "assess", 70, 0, false},
 			{"MismatchedProject", "project", "assess", 70, 0, false},
 			{"MismatchedRegion", "region", "assess", 70, 0, false},
 			{"DuplicateRegistration", "duplicate", "assess", 70, 0, false},
@@ -43,7 +48,8 @@ func TestServiceInspection(t *testing.T) {
 			{"DriftBothRoots", "mixed", "drift", 0, 3, false},
 			{"DriftChanges", "deletion", "drift", 2, 2, false},
 		} {
-			if root == "service-foundation" && strings.HasPrefix(testCase.mutation, "folder-") {
+			releaseOnly := strings.HasPrefix(testCase.mutation, "folder-") || strings.HasPrefix(testCase.mutation, "artifact")
+			if root == "service-foundation" && releaseOnly {
 				continue
 			}
 			t.Run(root+"/"+testCase.name, func(t *testing.T) {
@@ -84,6 +90,21 @@ func TestServiceInspection(t *testing.T) {
 						name = "default.tflock"
 					}
 					writeJSON(t, filepath.Join(storage, prefix, "services/agora-json-keys-test", suffix, name), object{})
+				case "artifact", "artifact-only", "artifact-unknown", "artifact-commit", "artifact-sequence":
+					commit, sequence, filename := strings.Repeat("a", 40), "123-1", "plan.tfplan"
+					switch testCase.mutation {
+					case "artifact-only":
+						services = nil
+					case "artifact-unknown":
+						filename = "default.tflock"
+					case "artifact-commit":
+						commit = "latest"
+					case "artifact-sequence":
+						sequence = "0-1"
+					}
+					for _, name := range []string{filename, "plan.metadata.json"} {
+						writeJSON(t, filepath.Join(storage, "services/agora-json-keys-test/release/plans", commit, sequence, name), object{})
+					}
 				case "folder-denied":
 					f.env["FAKE_GCS_FOLDERS_FAILURE"] = "true"
 				case "folder-missing":

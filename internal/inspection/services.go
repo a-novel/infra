@@ -6,11 +6,14 @@ import (
 	"io"
 	"maps"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 
 	"github.com/a-novel/infra/internal/workflow"
 )
+
+var servicePlanObject = regexp.MustCompile(`^plans/[a-f0-9]{40}/[1-9][0-9]{0,19}-[1-9][0-9]{0,4}/(plan\.tfplan|plan\.metadata\.json)$`)
 
 func (i inspector) services(ctx context.Context, mode, root string, result *verdict) error {
 	file, code := i.config(ctx, "foundation", "")
@@ -105,6 +108,9 @@ func (i inspector) serviceStates(ctx context.Context, root string, scopes map[st
 			object := parts[2]
 			if root == "service-release" {
 				object = strings.TrimPrefix(object, "release/")
+				if servicePlanObject.MatchString(object) {
+					continue
+				}
 			}
 			if object != "default.tfstate" && !strings.HasPrefix(object, "config/") {
 				return nil, failure{70, "Unexpected workspace or lock in service state."}

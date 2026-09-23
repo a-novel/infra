@@ -42,8 +42,36 @@ fresh local metadata. Writer enable flags do not exempt existing state from asse
 
 Service-root changes and shared-module changes use the existing exact-candidate approval and private
 plan policy. Public verdicts contain no state, plan or configuration values. `tofu-gate` permits only
-`assess` and `drift` for this root; configuration custody permits only `fetch`. Its writer, private-plan
-custody and protected input publication remain separate activation prerequisites.
+`assess` and `drift` for this root; configuration custody permits only `fetch`. Its writer and protected
+input publication remain separate activation prerequisites.
+
+## Private plan custody
+
+The existing `infra custody plan` command supports this root inside its existing managed folder:
+`services/PROJECT/release/plans/COMMIT/RUN-ATTEMPT/`. Each plan has `plan.tfplan` and
+`plan.metadata.json`; there is no extra storage grant or second plan implementation. Inspection ignores
+only these exact artifact names beneath valid commit/sequence paths. Plans alone do not establish state.
+
+For `service-release`, `publish` and `fetch` require the private tfvars filename as their **last** argument,
+after the existing arguments (`publish`: bucket, root, commit, plan ID, plan file, destructive marker;
+`fetch`: bucket, root, commit, plan ID, destination). Both bind the exact input bytes by SHA-256.
+Changing even formatting requires a new plan. Missing or different inputs stop before the opaque plan
+is downloaded. Root/project/commit/sequence, checksum, deletion marker and the 24-hour expiry retain
+their existing checks. Legacy plan paths and metadata remain compatible.
+
+Publication is create-only. A lost upload acknowledgement or partial publication stops; inspect the
+exact objects rather than overwriting or assuming no upload occurred. `consume` retains its existing
+arguments and removes the selected pair before any future apply. A failed or ambiguous consumption
+must block mutation. The provider owns state locking; custody is neither deployment authorization nor
+a same-service execution lock. The future protected caller must authorize the inputs and recheck
+deletion approval, then consume, apply and verify convergence under that broader exclusion.
+
+Metadata enforces the 24-hour apply deadline. Abandoned service-plan objects have no automatic cleanup;
+bucket retention and the plan policy remain unchanged. Before enabling the writer, review and apply a
+native lifecycle rule that expires only plan artifacts, with a corresponding reviewed policy change
+and tests excluding state/configuration. This prerequisite is tracked in [#187](https://github.com/a-novel/infra/issues/187).
+No workflow calls this storage path or enables service job planning/application yet; backend mutation
+guards remain closed.
 
 ## Approved foundation handoff
 
