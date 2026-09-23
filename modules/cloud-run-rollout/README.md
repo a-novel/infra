@@ -23,7 +23,7 @@ Cloud Monitoring owns notification delivery independently of GitHub; no custom w
 | Owner after the approved handoff         | Responsibility                                                                                                                             |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | Protected OpenTofu foundation            | Project, APIs, IAM, network, database hosts, private artifact storage, this pipeline and target.                                           |
-| Service-specific OpenTofu release        | Supporting jobs and schedules; no Cloud Run API service resource or traffic writer.                                                        |
+| Service-specific OpenTofu release        | Application job specifications; protected foundation owns their IAM, schedules and alerts. No API service or traffic writer.               |
 | Cloud Deploy + reviewed service manifest | The complete API service specification, revisions, tagged candidate, traffic, verification phases, and rollout records.                    |
 | Selected-service release submission      | Complete image-family/provenance checks, explicit database/migration prerequisites, immutable release identity, durable recovery evidence. |
 | Human-approved bootstrap/recovery        | Initial deployment, uncertain migration reconciliation, data restore, and exceptional ownership changes.                                   |

@@ -1,6 +1,7 @@
 mock_provider "google" {}
 
 variables {
+  state_bucket = "agora-management-test-123456789012-tofu-state"
   runtime = {
     schema_version  = 1
     project_id      = "agora-json-keys-test"
@@ -23,7 +24,6 @@ variables {
 
 run "json_keys_jobs" {
   command = plan
-  module { source = "../../../modules/service-jobs" }
 
   assert {
     condition = { for role, job in google_cloud_run_v2_job.application : role => {
@@ -97,7 +97,6 @@ run "json_keys_jobs" {
 
 run "authentication_jobs" {
   command = plan
-  module { source = "../../../modules/service-jobs" }
   variables {
     runtime = {
       schema_version  = 1
@@ -133,7 +132,6 @@ run "authentication_jobs" {
 
 run "reject_initializer" {
   command = plan
-  module { source = "../../../modules/service-jobs" }
   variables {
     images = {
       migrations = "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-production/service-json-keys/jobs/migrations@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -146,7 +144,6 @@ run "reject_initializer" {
 
 run "reject_missing_rotation" {
   command = plan
-  module { source = "../../../modules/service-jobs" }
   variables {
     images = {
       migrations = "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-production/service-json-keys/jobs/migrations@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -157,7 +154,6 @@ run "reject_missing_rotation" {
 
 run "reject_peer_image" {
   command = plan
-  module { source = "../../../modules/service-jobs" }
   variables {
     images = {
       migrations = "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-production/service-authentication/jobs/migrations@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -169,7 +165,6 @@ run "reject_peer_image" {
 
 run "reject_mutable_image" {
   command = plan
-  module { source = "../../../modules/service-jobs" }
   variables {
     images = {
       migrations = "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-production/service-json-keys/jobs/migrations:latest"
@@ -181,7 +176,6 @@ run "reject_mutable_image" {
 
 run "reject_peer_runtime" {
   command = plan
-  module { source = "../../../modules/service-jobs" }
   variables {
     runtime = {
       schema_version  = 1
@@ -196,21 +190,24 @@ run "reject_peer_runtime" {
 
 run "reject_extra_secret" {
   command = plan
-  module { source = "../../../modules/service-jobs" }
   variables { secret_versions = { postgres-password = 17, app-master-key = 29, super-admin-password = 1 } }
   expect_failures = [var.secret_versions]
 }
 
 run "reject_non_integer_secret_version" {
   command = plan
-  module { source = "../../../modules/service-jobs" }
   variables { secret_versions = { postgres-password = 1.5, app-master-key = 29 } }
   expect_failures = [var.secret_versions]
 }
 
 run "reject_public_database" {
   command = plan
-  module { source = "../../../modules/service-jobs" }
   variables { database_private_ip = "8.8.8.8" }
   expect_failures = [var.database_private_ip]
+}
+
+run "reject_foreign_state_bucket" {
+  command = plan
+  variables { state_bucket = "agora-peer-test-123456789012-tofu-state" }
+  expect_failures = [var.state_bucket]
 }

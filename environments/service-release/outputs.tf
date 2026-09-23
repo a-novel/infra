@@ -1,5 +1,5 @@
 output "jobs" {
-  description = "Versioned job identities and configured images; execution must inspect the live template and record its own operation."
+  description = "Selected-service job identities and configured images; execution must inspect the live template and record its own operation."
   value = {
     schema_version = 1
     project_id     = var.runtime.project_id

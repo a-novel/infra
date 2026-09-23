@@ -78,7 +78,7 @@ attachment and firewall rules remain activation prerequisites, not implicit perm
 The inactive [service foundation](../../../modules/service-foundation) declares the application
 identity, its two exact secret-container grants, separate application/verifier repositories and an
 operations email channel. Its published coordinates feed the rollout module without peer state.
-The inactive [service-jobs module](../../../modules/service-jobs) declares JSON Keys migrations and
+The inactive [service release root](../../../environments/service-release) declares JSON Keys migrations and
 rotation using only its own database, images and secret-version references. It does not dispatch jobs
 or create a schedule. Execution authority, migration reconciliation and rotation pause/drain/resume
 remain separate activation gates; neither job becomes a Cloud Deploy retry hook.
