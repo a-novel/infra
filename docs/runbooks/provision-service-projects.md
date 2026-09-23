@@ -205,8 +205,9 @@ coordinate folder; its foundation state stays private. Record the `coordinates` 
 successful protected apply through an approved protected-input change before connecting any consumer.
 Pin its bucket, object, generation and SHA-256; do not select the newest object automatically.
 A document left by a failed or interrupted apply is not usable approval evidence. Retain referenced
-versions and verify inherited IAM before activation. No consumer or automatic reference publication
-to a GitHub environment is enabled here.
+versions and verify inherited IAM before activation. The inactive [service-release root](../../environments/service-release#approved-foundation-handoff)
+can validate this reference and its downloaded JSON, but no live consumer or automatic reference
+publication to a GitHub environment is enabled here.
 
 ## Service scheduling activation
 

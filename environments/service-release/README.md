@@ -1,14 +1,11 @@
 # Single-service release root (inactive)
 
 This root owns one service's Cloud Run job specifications. JSON Keys has migrations and rotation;
-Authentication has migrations. The shared resource pattern takes the
-[service foundation's](../service-foundation) versioned `runtime` output, one approved private
-database address, Shared VPC coordinates, promoted job digests and numeric secret versions.
-Foundation publishes its runtime and optional database/rollout outputs in a
-[content-addressed document](../service-foundation#published-coordinates). The future caller must use
-an explicitly approved reference, verify its scope/generation/checksum, and require independent
-database readiness evidence. The document's presence does not approve a release or a partially
-completed foundation apply. This root does not read that document or foundation state itself.
+Authentication has migrations. The shared resource pattern derives the application identity and
+database endpoint from the [foundation's published document](../service-foundation#published-coordinates).
+OpenTofu validates its checksum and service scope against independently approved inputs. Shared VPC
+coordinates, promoted job digests and numeric secret versions remain separate inputs. Neither this
+root nor its future caller needs foundation-state access.
 
 **Code only:** no deployment workflow or live root allowlist selects this directory. Applying a job
 specification does not run it. The root creates no API, initializer, scheduler, identity or IAM grant.
@@ -19,7 +16,7 @@ and alerts. Existing production resources and state stay unchanged.
 
 The [workload project](../../modules/workload-project) publishes the service's release identity and
 `release.state` coordinates. Set `state_bucket` to that published bucket; the native GCS backend
-derives `services/PROJECT/release/` from `runtime.project_id`. Only the default workspace is accepted,
+derives `services/PROJECT/release/` from `project_id`. Only the default workspace is accepted,
 so its state object is `services/PROJECT/release/default.tfstate`. The provider uses that same project
 and region. Inputs contain numeric secret versions and approved coordinates, never payloads.
 
@@ -28,6 +25,42 @@ protected caller must authorize inputs against the published coordinates before 
 fresh working directory, and prohibit backend overrides. Keep credentials in the approved federation
 environment. [GCS locking](https://opentofu.org/docs/language/settings/backends/gcs/) covers OpenTofu
 operations; migrations and Cloud Deploy still require the broader same-service exclusion.
+
+## Approved foundation handoff
+
+The inactive root accepts three independently authorized selectors: `project_id`, `service` and
+`region`. Its `foundation` input is the exact version-1 reference returned by foundation: `bucket`,
+`object`, `generation` and `sha256`. `foundation_json` is that object's original JSON text, not a
+reconstructed subset. The earlier standalone `runtime` and `database_private_ip` inputs are removed;
+no live caller used this root.
+
+The future protected caller must:
+
+1. Authorize the selectors, backend and reference against protected registration before initialization.
+   Approve the reference only after the whole protected foundation apply and convergence succeed.
+2. Fetch that exact object generation using the existing Google CLI or SDK. Native
+   [generation-qualified object names](https://docs.cloud.google.com/storage/docs/using-versioned-objects)
+   use `gs://BUCKET/OBJECT#GENERATION`; quote the full name. Do not list/select the newest object, omit
+   the generation or fall back after a failed read.
+3. Pass the original JSON text as `foundation_json`, without pretty-printing, trimming or re-encoding it.
+   HCL verifies the approved checksum, reference namespace, document/runtime/database versions, exact
+   service scope, runtime identity and private database endpoint. It requires a database contract;
+   foundation snapshots taken before database provisioning are rejected. Optional rollout fields are
+   not consumed by this job root.
+4. Preserve the approved reference and inputs with the private saved plan, then use the existing
+   convergence, deletion-approval and same-service exclusion boundaries. A saved plan owns its captured
+   values; changing the input document requires a new reviewed plan, not an apply-time substitution.
+
+HCL verifies received content, not a cloud download it did not perform. A generation string alone
+does not prove where those bytes came from; reference approval and exact retrieval remain caller
+obligations. The [pinned provider's content data source](https://github.com/hashicorp/terraform-provider-google/blob/v8.2.0/google/services/storage/data_source_storage_bucket_object_content.go)
+does not support generation selection, so the root does not use it for this handoff. No custom
+downloader or new dependency is introduced.
+
+Coordinates describe configuration, not database health, firewall reachability or migration history.
+Require separate readiness evidence, verify effective IAM, and retain every referenced object generation
+through the lifetime of its consumers. A document left by an interrupted foundation apply is not approval.
+The live caller and protected-input publication remain unconnected.
 
 | Root resource address                               | Owner and lifecycle                                                                   |
 | --------------------------------------------------- | ------------------------------------------------------------------------------------- |
@@ -91,8 +124,10 @@ another project uses its own approved restored-data path, not these production m
 ## Cloud-blind validation
 
 The existing CI validation job runs this root directly with the committed provider lock and no
-backend initialization. Its plan-only tests mock the only provider, including both service contracts
-and safety-sensitive invalid inputs:
+backend initialization. All resource tests are provider-mocked plans, covering both service contracts
+and safety-sensitive invalid inputs. One provider-free, resource-free fixture module evaluates a small
+document table; invalid documents receive matching hashes so contract rejection cannot be masked by a
+checksum failure:
 
 ```sh
 tofu -chdir=environments/service-release init -backend=false -input=false -lockfile=readonly

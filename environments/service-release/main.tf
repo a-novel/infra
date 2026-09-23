@@ -1,6 +1,6 @@
 provider "google" {
-  project = var.runtime.project_id
-  region  = var.runtime.region
+  project = var.project_id
+  region  = var.region
 }
 
 locals {
@@ -17,27 +17,27 @@ locals {
     }
   }
   jobs = { for role, contract in local.job_contracts : role => contract
-    if role == "migrations" || var.runtime.service == "json-keys"
+    if role == "migrations" || var.service == "json-keys"
   }
   required_secrets = toset(flatten([for job in values(local.jobs) : values(job.secrets)]))
-  database_user    = "agora_${replace(var.runtime.service, "-", "_")}"
+  database_user    = "agora_${replace(var.service, "-", "_")}"
 }
 
 resource "google_cloud_run_v2_job" "application" {
   for_each = local.jobs
 
-  project             = var.runtime.project_id
-  location            = var.runtime.region
-  name                = "agora-${var.runtime.service}-${each.key}"
+  project             = var.project_id
+  location            = var.region
+  name                = "agora-${var.service}-${each.key}"
   deletion_protection = true
-  labels              = { environment = "production", component = var.runtime.service, role = each.key }
+  labels              = { environment = "production", component = var.service, role = each.key }
 
   template {
     task_count  = 1
     parallelism = 1
 
     template {
-      service_account       = var.runtime.service_account
+      service_account       = try(local.coordinates.runtime.service_account, "")
       execution_environment = "EXECUTION_ENVIRONMENT_GEN2"
       timeout               = each.value.timeout
       max_retries           = each.value.retries
@@ -48,8 +48,8 @@ resource "google_cloud_run_v2_job" "application" {
 
         dynamic "env" {
           for_each = {
-            POSTGRES_HOST        = var.database_private_ip
-            POSTGRES_PORT        = var.runtime.service == "json-keys" ? "5432" : "5433"
+            POSTGRES_HOST        = try(local.coordinates.database.private_ip, "")
+            POSTGRES_PORT        = try(tostring(local.coordinates.database.port), "")
             POSTGRES_USER        = local.database_user
             POSTGRES_DATABASE    = local.database_user
             POSTGRES_TLS_ENABLED = "false"
@@ -66,7 +66,7 @@ resource "google_cloud_run_v2_job" "application" {
             name = env.key
             value_source {
               secret_key_ref {
-                secret  = "projects/${var.management_project_id}/secrets/production-${var.runtime.service}-${env.value}"
+                secret  = "projects/${var.management_project_id}/secrets/production-${var.service}-${env.value}"
                 version = tostring(lookup(var.secret_versions, env.value, 0))
               }
             }
@@ -83,7 +83,7 @@ resource "google_cloud_run_v2_job" "application" {
         network_interfaces {
           network    = var.network.network
           subnetwork = var.network.subnetwork
-          tags       = ["agora-${var.runtime.service}"]
+          tags       = ["agora-${var.service}"]
         }
       }
     }

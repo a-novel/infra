@@ -4,7 +4,7 @@ terraform {
 
   backend "gcs" {
     bucket = var.state_bucket
-    prefix = "services/${var.runtime.project_id}/release/"
+    prefix = "services/${var.project_id}/release/"
   }
 
   required_providers {
