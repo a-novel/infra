@@ -3,7 +3,9 @@
 This protected root assembles one service's runtime prerequisites, Cloud Deploy control plane and
 application-job access. It supports JSON Keys and Authentication; the rollout verifier currently
 supports JSON Keys only. The manual foundation workflow can select this root after separately approved
-configuration and activation. **It fails before authentication unless `SERVICE_FOUNDATIONS_ENABLED=true`.**
+configuration and activation. **Plan/apply fails before authentication unless `SERVICE_FOUNDATIONS_ENABLED=true`.**
+Read-only drift and trusted PR assessment still cover initialized scopes while that writer flag is off,
+using the last converged shared-foundation registration and each scope's private configuration.
 Production and retained recovery evidence remain unchanged.
 
 ## Owners and state

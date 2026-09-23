@@ -94,7 +94,7 @@ func TestWorkflowBoundaries(t *testing.T) {
 		if s.With["path"] == "candidate" || strings.HasPrefix(s.Uses, "opentofu/") || strings.Contains(s.Run, "resolve-resource-deletion-assessment.sh") {
 			require.Equal(t, "inputs.operation == 'assess-pull-request'", s.If)
 		}
-		if strings.Contains(s.Run, "prepare-resource-deletion-assessment.sh") {
+		if strings.Contains(s.Run, "infra inspect assess") {
 			require.Contains(t, s.Run, "candidate=--image-only")
 			require.NotContains(t, s.Run, "${{")
 		}

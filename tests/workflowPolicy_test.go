@@ -83,6 +83,7 @@ func TestVerifierArtifact(t *testing.T) {
 
 type workflowStep struct {
 	Name, Uses, Run, If string
+	WorkingDirectory    string `yaml:"working-directory"`
 	With                object
 	Env                 map[string]string
 }
@@ -197,8 +198,18 @@ func TestWorkflowBoundaries(t *testing.T) {
 	require.Equal(t, 1, candidates)
 	verdict := assessment.Steps[stepIndex(t, assessment.Steps, "actions/upload-artifact@")]
 	require.Equal(t, "${{ runner.temp }}/resource-deletion/assessment.json", verdict.With["path"])
-	prepare := assessment.Steps[stepIndex(t, assessment.Steps, "prepare-resource-deletion-assessment.sh")]
+	prepare := assessment.Steps[stepIndex(t, assessment.Steps, "infra inspect assess")]
 	require.Equal(t, "${{ github.token }}", prepare.Env["GH_TOKEN"])
+	for _, testCase := range []struct {
+		name             string
+		actual, expected any
+	}{
+		{"TrustedAssessmentDirectory", prepare.WorkingDirectory, "trusted"},
+		{"AssessmentManagement", prepare.Env["MANAGEMENT_PROJECT_ID"], "${{ vars.GCP_MANAGEMENT_PROJECT_ID }}"},
+		{"DriftManagement", drift.Jobs["inspect"].Steps[stepIndex(t, drift.Jobs["inspect"].Steps, "infra inspect drift")].Env["MANAGEMENT_PROJECT_ID"], "${{ vars.GCP_MANAGEMENT_PROJECT_ID }}"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) { require.Equal(t, testCase.expected, testCase.actual) })
+	}
 
 	health := drift.Jobs["health"]
 	require.Contains(t, health.If, "vars.PRODUCTION_RELEASES_ENABLED == 'true'")
