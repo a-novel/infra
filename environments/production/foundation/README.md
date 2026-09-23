@@ -23,7 +23,8 @@ the reusable [workload-project module](../../../modules/workload-project/README.
 root's existing network through Shared VPC, and join the existing budget. These new projects and
 the Shared VPC host/attachments retain deletion guards independently of the legacy replacement
 window above. Foundation also prepares each service's release identity and isolated state/receipt
-folders in the management plane; it grants no runtime authority and changes no active workflow.
+folders in the management plane, creates the Google-managed rollout agents, and grants the Cloud Run
+agent access to the exact foundation subnet. Application authority and active workflows are unchanged.
 No existing workload or deployment authority moves with this change. Follow the
 [service-project onboarding boundary](../../../docs/runbooks/provision-service-projects.md) before activation.
 
@@ -143,14 +144,23 @@ and state/receipt folder grants; its
 [module inventory](../../../modules/workload-project/README.md#ownership) lists the resources.
 `google_compute_shared_vpc_host_project.production` enables the existing workload project as the
 network host only when the map is nonempty. `google_compute_shared_vpc_service_project.service`
-attaches each shell without granting subnet use. Both have `prevent_destroy`; the host also has
+attaches each shell. Both have `prevent_destroy`; the host also has
 provider `PREVENT`. The existing budget adds each project's number. Shared VPC adds no network
 appliance; traffic and later workloads retain their product usage charges. See the
 [host resource](https://registry.terraform.io/providers/hashicorp/google/8.2.0/docs/resources/compute_shared_vpc_host_project),
 [attachment resource](https://registry.terraform.io/providers/hashicorp/google/8.2.0/docs/resources/compute_shared_vpc_service_project),
 and [Shared VPC overview](https://cloud.google.com/vpc/docs/shared-vpc).
 
-The provider is pinned in [`versions.tf`](./versions.tf). Rows group repeated resources that share a
+`google_project_iam_member.service_run_network_viewer` grants each service project's Cloud Run agent
+network visibility in the host; `google_compute_subnetwork_iam_member.service_run` limits Network User
+to the production subnet. With service projects selected, the existing restricted-API rule also permits
+the secret-free `agora-rollout-probe` tag on HTTPS. It gains no PostgreSQL egress; the VPC-wide deny
+still applies. Empty-map and recovery plans add none of these grants or probe access. Live verification
+must test [Shared VPC Direct VPC access](https://docs.cloud.google.com/run/docs/configuring/shared-vpc-direct-vpc)
+and denied database reachability before activation.
+
+Both Google providers are pinned in [`versions.tf`](./versions.tf); only service-agent creation uses
+`google-beta`. Rows group repeated resources that share a
 single boundary; their `for_each` keys are part of the reviewed configuration and mocked tests.
 
 `google_project_iam_custom_role.foundation_firewall` and

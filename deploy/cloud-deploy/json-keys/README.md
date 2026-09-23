@@ -1,7 +1,8 @@
 # JSON Keys private verification pilot
 
-**Code only.** No production root calls the [rollout module](../../../modules/cloud-run-rollout),
-and its pipeline stays suspended. Do not apply this service manifest directly: Cloud Deploy must
+**Code only.** The inactive [service foundation](../../../environments/service-foundation) composes the
+[rollout module](../../../modules/cloud-run-rollout); no live workflow selects it and its pipeline stays
+suspended. Do not apply this service manifest directly: Cloud Deploy must
 own both its specification and traffic after the separately reviewed one-writer handoff.
 
 ## Native release inputs
@@ -19,7 +20,10 @@ There is no production caller yet: source authorization/retention, parameter aut
 bootstrap/predecessor checks and the final success receipt remain activation gates.
 
 [Cloud Deploy parameters](https://docs.cloud.google.com/deploy/docs/parameters) replace the marked
-fields without a custom renderer:
+fields without a custom renderer. The inactive
+[service-release root](../../../environments/service-release#native-api-request) derives the native
+request from its job inputs and approved foundation document, so callers do not maintain a second
+parameter map:
 
 | Parameter                                     | Source / constraint                                                    |
 | --------------------------------------------- | ---------------------------------------------------------------------- |
@@ -75,6 +79,13 @@ The dedicated `agora-rollout-probe` network tag needs only restricted Google API
 matching private DNS/Google Access path; it must not inherit the application's PostgreSQL allowance.
 There is still **no production caller or live provisioning**. API/service-agent setup, Shared VPC
 attachment and firewall rules remain activation prerequisites, not implicit permissions added here.
+The inactive [service foundation](../../../environments/service-foundation) declares the application
+identity, its two exact secret-container grants, separate application/verifier repositories and an
+operations email channel. Its published coordinates feed the rollout module without peer state.
+The inactive [service release root](../../../environments/service-release) declares JSON Keys migrations and
+rotation using only its own database, images and secret-version references. It does not dispatch jobs
+or create a schedule. Execution authority, migration reconciliation and rotation pause/drain/resume
+remain separate activation gates; neither job becomes a Cloud Deploy retry hook.
 
 `builds/rollout-verifier.Dockerfile` builds one unprivileged image from the reviewed Go module. Local
 `a-novel build --type=podman -y` does not publish it. The [artifact workflow](../../../docs/runbooks/publish-rollout-verifier.md)

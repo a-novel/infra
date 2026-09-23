@@ -87,25 +87,9 @@ jobs:
       - name: Compare every initialized root with its current private inputs
         shell: bash
         env:
+          MANAGEMENT_PROJECT_ID: ${{ vars.GCP_MANAGEMENT_PROJECT_ID }}
           STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
-        run: |
-          set -euo pipefail
-          umask 077
-          for root in bootstrap foundation release; do
-            file="${RUNNER_TEMP}/${root}.tfvars.json"
-            set +e
-            infra custody config fetch "${STATE_BUCKET}" "${root}" "${file}"
-            code=$?
-            set -e
-            if [ "${code}" -eq 4 ]; then
-              printf '%s has not been initialized; drift check skipped.\n' "${root}"
-              continue
-            elif [ "${code}" -ne 0 ]; then
-              exit "${code}"
-            fi
-            TOFU_VAR_FILE="${file}" \
-              ./ops/tofu-gate.sh drift "${root}" "${STATE_BUCKET}"
-          done
+        run: infra inspect drift "${STATE_BUCKET}"
 
   health:
     if: >-
@@ -236,11 +220,13 @@ jobs:
 
       - name: Assess plans with current private inputs
         shell: bash
+        working-directory: trusted
         env:
           ASSESSMENT_OPERATION: ${{ inputs.operation }}
           BASE_SHA: ${{ inputs.base_sha }}
           GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ inputs.head_sha }}
+          MANAGEMENT_PROJECT_ID: ${{ vars.GCP_MANAGEMENT_PROJECT_ID }}
           PULL_REQUEST: ${{ inputs.pull_request }}
           STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
         run: |
@@ -250,7 +236,7 @@ jobs:
           if [ "${ASSESSMENT_OPERATION}" = assess-image-update ]; then
             candidate=--image-only
           fi
-          ./trusted/ops/prepare-resource-deletion-assessment.sh \
+          infra inspect assess \
             "${GITHUB_REPOSITORY}" "${PULL_REQUEST}" "${HEAD_SHA}" "${BASE_SHA}" \
             "${candidate}" "${STATE_BUCKET}" \
             "${RUNNER_TEMP}/resource-deletion/assessment.json"

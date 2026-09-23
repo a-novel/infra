@@ -1,4 +1,6 @@
 resource "google_cloud_run_v2_job" "probe" {
+  depends_on = [google_service_account_iam_member.foundation_execution]
+
   project             = var.project_id
   location            = var.region
   name                = "${var.name}-verify"

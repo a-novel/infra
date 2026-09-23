@@ -1,3 +1,9 @@
+mock_provider "google-beta" {
+  mock_resource "google_project_service_identity" {
+    defaults = { member = "serviceAccount:service-111111111111@serverless-robot-prod.iam.gserviceaccount.com" }
+  }
+}
+
 mock_provider "google" {
   mock_resource "google_project" {
     defaults = {
@@ -130,10 +136,42 @@ run "protected_service_project" {
   }
 
   assert {
+    condition = { for service, binding in google_project_iam_member.service_agent : service => binding.role } == {
+      "cloudbuild.googleapis.com"     = "roles/cloudbuild.serviceAgent"
+      "clouddeploy.googleapis.com"    = "roles/clouddeploy.serviceAgent"
+      "cloudscheduler.googleapis.com" = "roles/cloudscheduler.serviceAgent"
+      "compute.googleapis.com"        = "roles/compute.serviceAgent"
+      "run.googleapis.com"            = "roles/run.serviceAgent"
+    }
+    error_message = "Grant the documented platform roles only to the matching Google service agents."
+  }
+
+  assert {
+    condition = [google_project_iam_member.mig_agent.project, google_project_iam_member.mig_agent.role, google_project_iam_member.mig_agent.member] == [
+      var.project_id, "roles/compute.instanceGroupManagerServiceAgent", "serviceAccount:${google_project.service.number}@cloudservices.gserviceaccount.com",
+    ] && google_project_iam_member.foundation["roles/compute.instanceAdmin.v1"].role == "roles/compute.instanceAdmin.v1"
+    error_message = "Only protected foundation and Google's MIG agent provision database instances."
+  }
+
+  assert {
+    condition = alltrue([for service, agent in google_project_service_identity.agent :
+      agent.project == var.project_id && agent.service == service &&
+      google_project_service.api[service].service == service &&
+      google_project_iam_member.service_agent[service].project == var.project_id &&
+      google_project_iam_member.service_agent[service].member == agent.member &&
+      output.service_agents[service] == agent.member
+    ]) && google_project_service.api["storage.googleapis.com"].service == "storage.googleapis.com"
+    error_message = "Enable the APIs and bind their returned identities inside the selected project."
+  }
+
+  assert {
     condition = (
       alltrue([for binding in google_project_iam_member.foundation :
         binding.project == "agora-json-keys-test" &&
         binding.member == "serviceAccount:${var.foundation_service_account}"
+      ]) &&
+      alltrue([for role in ["roles/artifactregistry.admin", "roles/monitoring.notificationChannelEditor", "roles/monitoring.alertPolicyEditor"] :
+        google_project_iam_member.foundation[role].role == role
       ]) &&
       google_project_iam_member.plan.member == "serviceAccount:${var.plan_service_account}" &&
       google_project_iam_member.plan.role == "roles/viewer" &&
@@ -196,6 +234,41 @@ run "protected_service_project" {
       google_storage_managed_folder_iam_member.plan.member == "serviceAccount:${var.plan_service_account}"
     )
     error_message = "State writes and immutable receipt creation/readback must remain inside the selected service's protected folders; planning is read-only."
+  }
+
+  assert {
+    condition = google_project_iam_custom_role.foundation_control_plane.permissions == toset(flatten([
+      for resource, actions in {
+        "clouddeploy.deliveryPipelines" = ["create", "delete", "get", "update"]
+        "clouddeploy.targets"           = ["create", "delete", "get", "update"]
+        "clouddeploy.operations"        = ["get"]
+        "cloudscheduler.jobs"           = ["create", "delete", "fullView", "get", "pause", "update"]
+        "run.jobs"                      = ["create", "delete", "get", "getIamPolicy", "setIamPolicy", "update"]
+        "run.operations"                = ["get"]
+        "storage.buckets"               = ["create", "delete", "get", "getIamPolicy", "setIamPolicy", "update"]
+      } : [for action in actions : "${resource}.${action}"]
+    ]))
+    error_message = "Provisioning must not add dispatch, promotion, API mutation, schedule resume, payload or token-minting permissions."
+  }
+
+  assert {
+    condition = google_project_iam_custom_role.plan_policy.permissions == toset([
+      "artifactregistry.repositories.getIamPolicy", "iam.roles.get", "iam.serviceAccounts.getIamPolicy",
+      "resourcemanager.projects.getIamPolicy", "run.jobs.getIamPolicy", "storage.buckets.getIamPolicy",
+    ])
+    error_message = "Assessment needs policy refresh without payload access, identity attachment or mutation."
+  }
+
+  assert {
+    condition = alltrue([for entry in [
+      { role = google_project_iam_custom_role.foundation_control_plane, grant = google_project_iam_member.foundation_control_plane, account = var.foundation_service_account },
+      { role = google_project_iam_custom_role.plan_policy, grant = google_project_iam_member.plan_policy, account = var.plan_service_account },
+      ] : entry.role.project == var.project_id &&
+      [entry.grant.project, entry.grant.role, entry.grant.member] == [
+        var.project_id, entry.role.name, "serviceAccount:${entry.account}",
+      ]
+    ])
+    error_message = "Bind administration and policy reading only to their protected owners in the selected project."
   }
 }
 
@@ -260,6 +333,56 @@ run "two_service_projects_share_only_the_host" {
     ])
     error_message = "The existing budget must include every project without duplicating the budget."
   }
+
+  assert {
+    condition = { for service, binding in google_project_iam_member.service_run_network_viewer : service => [
+      binding.project, binding.role, binding.member,
+      ] } == { for service, project in module.service_project : service => [
+      var.workload_project_id, "roles/compute.networkViewer", project.service_agents["run.googleapis.com"],
+    ] }
+    error_message = "Only each Cloud Run agent receives host network visibility."
+  }
+
+  assert {
+    condition = { for service, binding in google_compute_subnetwork_iam_member.service_run : service => [
+      binding.project, binding.region, binding.subnetwork, binding.role, binding.member,
+      ] } == { for service, project in module.service_project : service => [
+      var.workload_project_id, var.region, google_compute_subnetwork.production.name,
+      "roles/compute.networkUser", project.service_agents["run.googleapis.com"],
+    ] }
+    error_message = "Cloud Run agent network use must be limited to the exact foundation subnet."
+  }
+
+  assert {
+    condition = { for service, binding in google_compute_subnetwork_iam_member.service_mig : service => [
+      binding.project, binding.region, binding.subnetwork, binding.role, binding.member,
+      ] } == { for service, project in module.service_project : service => [
+      var.workload_project_id, var.region, google_compute_subnetwork.production.name,
+      "roles/compute.networkUser", "serviceAccount:${project.project_number}@cloudservices.gserviceaccount.com",
+    ] }
+    error_message = "MIGs use only the shared subnet; database runtimes receive no host network grant."
+  }
+
+  assert {
+    condition = [google_compute_subnetwork_iam_member.service_foundation[0].project,
+      google_compute_subnetwork_iam_member.service_foundation[0].subnetwork,
+      google_compute_subnetwork_iam_member.service_foundation[0].role,
+      google_compute_subnetwork_iam_member.service_foundation[0].member] == [
+      var.workload_project_id, google_compute_subnetwork.production.name,
+      "roles/compute.networkUser", "serviceAccount:infra-foundation@${var.management_project_id}.iam.gserviceaccount.com",
+    ]
+    error_message = "The protected caller needs exact-subnet use before template/group creation."
+  }
+
+  assert {
+    condition = (
+      contains(google_compute_firewall.allow_restricted_google_apis.target_tags, "agora-rollout-probe") &&
+      google_compute_firewall.allow_restricted_google_apis.destination_ranges == local.restricted_google_api_ranges &&
+      alltrue([for rule in google_compute_firewall.allow_restricted_google_apis.allow : rule.protocol == "tcp" && rule.ports == tolist(["443"])]) &&
+      alltrue([for rule in google_compute_firewall.allow_postgres_egress : !contains(rule.target_tags, "agora-rollout-probe")])
+    )
+    error_message = "The rollout probe can reach Google HTTPS destinations but gains no PostgreSQL egress."
+  }
 }
 
 run "reject_duplicate_project_owners" {
@@ -302,7 +425,12 @@ run "builds_the_project_replacement_window" {
     condition = (
       length(module.service_project) == 0 &&
       length(google_compute_shared_vpc_host_project.production) == 0 &&
-      length(google_compute_shared_vpc_service_project.service) == 0
+      length(google_compute_shared_vpc_service_project.service) == 0 &&
+      length(google_project_iam_member.service_run_network_viewer) == 0 &&
+      length(google_compute_subnetwork_iam_member.service_run) == 0 &&
+      length(google_compute_subnetwork_iam_member.service_mig) == 0 &&
+      length(google_compute_subnetwork_iam_member.service_foundation) == 0 &&
+      !contains(google_compute_firewall.allow_restricted_google_apis.target_tags, "agora-rollout-probe")
     )
     error_message = "Existing inputs must not create service projects or enable Shared VPC."
   }

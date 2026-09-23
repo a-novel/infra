@@ -1,3 +1,5 @@
+mock_provider "google-beta" {}
+
 mock_provider "google" {
   mock_resource "google_service_account" {
     defaults = {

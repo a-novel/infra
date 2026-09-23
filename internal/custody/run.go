@@ -27,9 +27,10 @@ type store struct {
 }
 
 var (
-	bucketPattern   = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$`)
-	rootPattern     = regexp.MustCompile(`^(bootstrap|foundation|release)$`)
-	sequencePattern = regexp.MustCompile(`^[1-9][0-9]{0,19}-[1-9][0-9]{0,4}$`)
+	bucketPattern       = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$`)
+	rootPattern         = regexp.MustCompile(`^(bootstrap|foundation|release|service-foundation)$`)
+	serviceScopePattern = regexp.MustCompile(`^services/[a-z][a-z0-9-]{4,28}[a-z0-9]$`)
+	sequencePattern     = regexp.MustCompile(`^[1-9][0-9]{0,19}-[1-9][0-9]{0,4}$`)
 )
 
 // Run handles config, receipt, and plan custody. Exit 4 means a successfully
@@ -65,7 +66,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, execute
 	storage := store{ctx, execute, args[2], directory}
 	switch args[0] {
 	case "config", "receipt":
-		return storage.document(args[0], args[1], args[3:])
+		return storage.document(args[0], args[1], args[3:], getenv("TOFU_STATE_SUFFIX"))
 	case "plan":
 		return storage.plan(args[1], args[3:], getenv("TOFU_STATE_SUFFIX"))
 	default:

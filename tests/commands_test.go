@@ -13,7 +13,9 @@ import (
 	"strings"
 
 	"github.com/a-novel/infra/internal/custody"
+	"github.com/a-novel/infra/internal/inspection"
 	"github.com/a-novel/infra/internal/release"
+	infraworkflow "github.com/a-novel/infra/internal/workflow"
 )
 
 // fixtureCommand implements only the calls expected by these integration tests.
@@ -30,7 +32,35 @@ func fixtureCommand(name string, args []string) (int, error) {
 		return smtpCommand(name, args)
 	}
 	switch name {
+	case "git":
+		if len(args) == 4 && args[0] == "-C" {
+			switch strings.Join(args[2:], " ") {
+			case "rev-parse HEAD":
+				_, err := fmt.Fprintln(os.Stdout, os.Getenv("FAKE_GATE_HEAD"))
+				return 0, err
+			case "status --porcelain":
+				_, err := fmt.Fprint(os.Stdout, os.Getenv("FAKE_GIT_DIRTY"))
+				return 0, err
+			}
+		}
+		return 99, fmt.Errorf("unexpected inspection git command")
 	case "infra":
+		if len(args) > 0 && args[0] == "inspect" {
+			return inspection.Run(context.Background(), args[1:], os.Getenv, func(ctx context.Context, env []string, name string, args ...string) ([]byte, error) {
+				command := exec.CommandContext(ctx, name, args...)
+				command.Env = append(os.Environ(), env...)
+				return command.Output()
+			}, os.Stdout, os.Stderr), nil
+		}
+		if slices.Equal(args, []string{"assess-images", "verify"}) {
+			if os.Getenv("GITHUB_REPOSITORY") != "a-novel/infra" || os.Getenv("HEAD_SHA") != os.Getenv("FAKE_GATE_HEAD") {
+				return 99, fmt.Errorf("unexpected image authorization tuple")
+			}
+			return strconv.Atoi(os.Getenv("FAKE_IMAGE_AUTH_CODE"))
+		}
+		if len(args) > 0 && args[0] == "foundation-inputs" {
+			return infraworkflow.FoundationInputs(args[1:], os.Getenv, os.Stdout, os.Stderr), nil
+		}
 		if len(args) > 0 && args[0] == "custody" {
 			return custody.Run(context.Background(), args[1:], os.Getenv, func(ctx context.Context, output io.Writer, name string, args ...string) error {
 				command := exec.CommandContext(ctx, name, args...)
