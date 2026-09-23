@@ -101,7 +101,7 @@ Before a service workflow uses the new identity, its separate rollout must also:
   create/read, denied receipt overwrite/delete, and denied peer/legacy state, secret, and runtime
   access. Review inherited IAM too. Check that a wrong repository, ref, workflow, or environment
   cannot federate; mocked tests cannot establish these live results.
-- Select saved-plan storage/expiry and publish only the versioned coordinates, not foundation
+- Select saved-plan storage/expiry and approve only versioned coordinate references, not foundation
   state. Preserve private plan custody, exact-commit approval, and a single writer during the
   transfer; a separate folder is not itself a migration or rollback plan.
 
@@ -199,7 +199,14 @@ Apply consumes the exact saved plan before mutation, then requires convergence b
 configuration. If it fails or is interrupted, inspect the actual resources and state before creating
 a fresh plan. Never replay a consumed plan or assume a failed run made no changes. This path does
 not transfer an existing resource owner, start PostgreSQL, run a migration or activate Cloud Deploy.
-Consumers still need approved versioned output publication; do not grant them foundation-state access.
+The root also publishes [content-addressed coordinates](../../environments/service-foundation#published-coordinates)
+using the native storage provider. Only its service's release account gets read access to the
+coordinate folder; its foundation state stays private. Record the `coordinates` output from the
+successful protected apply through an approved protected-input change before connecting any consumer.
+Pin its bucket, object, generation and SHA-256; do not select the newest object automatically.
+A document left by a failed or interrupted apply is not usable approval evidence. Retain referenced
+versions and verify inherited IAM before activation. No consumer or automatic reference publication
+to a GitHub environment is enabled here.
 
 ## Service scheduling activation
 

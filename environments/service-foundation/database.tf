@@ -201,9 +201,8 @@ data "google_compute_instance" "database" {
   self_link = one(data.google_compute_instance_group.database[each.key].instances)
 }
 
-output "database" {
-  description = "Versioned idle-host coordinates; STABLE is not PostgreSQL health or activation evidence."
-  value = var.database == null ? null : {
+locals {
+  database_coordinates = var.database == null ? null : {
     schema_version  = 1
     project_id      = var.project_id
     service         = var.service
@@ -215,6 +214,11 @@ output "database" {
     private_ip      = data.google_compute_instance.database["host"].network_interface[0].network_ip
     port            = local.database_port
   }
+}
+
+output "database" {
+  description = "Versioned idle-host coordinates; STABLE is not PostgreSQL health or activation evidence."
+  value       = local.database_coordinates
   depends_on = [
     google_secret_manager_secret_iam_member.database,
     google_artifact_registry_repository_iam_member.database,

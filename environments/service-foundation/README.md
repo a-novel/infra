@@ -41,11 +41,43 @@ backup or initializer credentials. Numeric enabled-version selection remains rel
 guards and no age-based cleanup; recovery can read retained images. A separately approved publisher
 must promote and verify the tooling digest. No verifier writer is granted here.
 
-Publish the version-1 `runtime` output to approved consumers without sharing foundation state.
-The same object supplies the child modules' identity and operations channel; callers cannot override
-those with a peer's coordinates. Its output waits for runtime-secret and application-publisher grants.
+The version-1 `runtime` output supplies the published document and the child modules' identity and
+operations channel; callers cannot override those with a peer's coordinates. Its output waits for
+runtime-secret and application-publisher grants.
 Channel creation still needs a delivery test. Protected foundation receives identity attachment on
 the exact application account for approved job bootstrap.
+
+## Published coordinates
+
+`coordinates.tf` publishes one JSON document in the management state bucket at
+`foundation/coordinates/PROJECT/SHA256.json`. Its version-1 envelope contains only the existing
+`runtime`, optional `database` and optional `rollout` outputs. It excludes private inputs, secret
+versions/payloads and peer state. Database coordinates describe an **idle** host; rollout coordinates
+identify a **suspended** pipeline. These are configuration snapshots, not readiness evidence.
+
+The selected project's release account gets Object Viewer on that exact managed folder. It gains no
+foundation-state access or write permission. The foundation administrator and plan reader retain their
+existing parent grants. Check inherited IAM before activation; managed-folder grants are additive.
+
+The `coordinates` output is the reference: schema version, bucket, object name, native generation and
+SHA-256 of the serialized bytes. A consumer must receive this reference through reviewed protected
+configuration after the whole apply, convergence and private-configuration publication succeed. It
+must verify the approved scope, generation and checksum. Never discover a version by listing objects
+or treating the newest generation as approved; an object can survive a later apply failure. No routine
+release caller or automatic approval is enabled by this root.
+
+The native provider replaces the managed object when its content-derived name changes and uses
+`ABANDON` to retain the previous document. The managed-folder deletion guard remains in force. Keep
+every referenced document through its consumers' and recovery evidence's lifetime. Foundation can
+still overwrite objects; content addressing requires consumer checksum verification. Returning to
+older content can create a new generation at its old name, so preserve the approved native generation
+and inspect bucket version-retention rules. A failed or interrupted publication requires a new reviewed
+plan and state reconciliation; it does not authorize retrying a deployment or migration.
+
+This uses OpenTofu's [explicit publication pattern](https://opentofu.org/docs/language/state/remote-state-data/)
+and the pinned provider's [object lifecycle](https://github.com/hashicorp/terraform-provider-google/blob/v8.2.0/website/docs/r/storage_bucket_object.html.markdown).
+Project/federation and host-network coordinates remain separately protected inputs. No state reader,
+custom publisher or mutable latest pointer is introduced.
 
 ## Bootstrap sequence
 
@@ -80,8 +112,8 @@ and host-network grants remain separate bootstrap prerequisites.
 
 An existing pilot owner requires a private state backup and explicit removal/import map before this
 root adopts its resources. Import cannot move a legacy workload into another project. Keep the old
-writer until its separate workload cutover is verified. Database activation/backups, protected input publication
-for consumers, same-service exclusion, receipt completion and live failure drills remain
+writer until its separate workload cutover is verified. Database activation/backups, approved coordinate
+references for consumers, same-service exclusion, receipt completion and live failure drills remain
 unfinished activation work. The active coordinator is retained until its replacement is proven.
 
 ## Optional idle database host
@@ -116,8 +148,8 @@ paired with an external metadata writer. Future activation must explicitly repla
 contract with one reviewed owner and safe maintenance/reconciliation behavior, not bypass it with drift.
 No routine release host mutation or automatic migration is granted here.
 
-Publish the version-1 `database` output without granting state access. A stable MIG and private IP are
-only provisioning evidence. Before activation, verify the boot-bound `idle` status, allowed/denied host
+The published document includes the version-1 `database` output without granting state access. A stable
+MIG and private IP are only provisioning evidence. Before activation, verify the boot-bound `idle` status, allowed/denied host
 and container network paths, exact secret/image access, image provenance, application health and backup/
 restore evidence. The current host firewall still addresses the legacy database IPs; approving the new
 IP rules and proving peer denial belongs to the separate network/cutover change. Do not route an API to
@@ -134,7 +166,8 @@ without weakening upstream constraints or adding a controller. Runtime/backup re
 
 The existing validation job checks both inactive service roots with pinned providers and disabled
 backends. Plan-only tests mock every provider, preserve the modules' security cases and exercise their
-composition with each service. These tests do not prove effective cloud permissions or live health.
+composition with each service. These tests contact no cloud API and do not prove effective cloud
+permissions, publication delivery or live health.
 
 ```sh
 tofu -chdir=environments/service-foundation init -backend=false -input=false -lockfile=readonly
