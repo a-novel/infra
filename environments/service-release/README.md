@@ -2,7 +2,7 @@
 
 This root owns one service's Cloud Run job specifications. JSON Keys has migrations and rotation;
 Authentication has migrations. The shared resource pattern takes the
-[service foundation's](../../modules/service-foundation) versioned `runtime` output, one approved private
+[service foundation's](../service-foundation) versioned `runtime` output, one approved private
 database address, Shared VPC coordinates, promoted job digests and numeric secret versions.
 
 **Code only:** no deployment workflow or live root allowlist selects this directory. Applying a job

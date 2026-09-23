@@ -1,3 +1,14 @@
+variable "state_bucket" {
+  description = "Published management state bucket; the protected caller authorizes it before backend initialization."
+  type        = string
+  nullable    = false
+
+  validation {
+    condition     = length(var.state_bucket) <= 63 && can(regex("^${var.management_project_id}-[1-9][0-9]*-tofu-state$", var.state_bucket))
+    error_message = "Use the management project's published state bucket."
+  }
+}
+
 variable "project_id" {
   description = "Existing project dedicated to this production service. Apply workload-project prerequisites first."
   type        = string

@@ -1,6 +1,9 @@
 mock_provider "google" {
   mock_resource "google_service_account" {
-    defaults = { email = "application@agora-json-keys-test.iam.gserviceaccount.com" }
+    defaults = {
+      email = "agora-json-keys@agora-json-keys-test.iam.gserviceaccount.com"
+      name  = "projects/agora-json-keys-test/serviceAccounts/agora-json-keys@agora-json-keys-test.iam.gserviceaccount.com"
+    }
   }
   mock_resource "google_monitoring_notification_channel" {
     defaults = { name = "projects/123456789012/notificationChannels/123456789" }
@@ -8,6 +11,7 @@ mock_provider "google" {
 }
 
 variables {
+  state_bucket           = "agora-management-test-123456789012-tofu-state"
   project_id             = "agora-json-keys-test"
   service                = "json-keys"
   management_project_id  = "agora-management-test"
@@ -17,7 +21,11 @@ variables {
 
 run "isolated_application_assets" {
   command = plan
-  module { source = "../../../modules/service-foundation" }
+
+  assert {
+    condition     = length(module.rollout) == 0 && output.rollout == null
+    error_message = "The default foundation must not provision the rollout pilot before bootstrap."
+  }
 
   assert {
     condition     = [google_service_account.runtime.project, google_service_account.runtime.account_id] == [var.project_id, "agora-json-keys"]
@@ -94,10 +102,15 @@ run "isolated_application_assets" {
 
 run "authentication_runtime_contract" {
   command = plan
-  module { source = "../../../modules/service-foundation" }
   variables {
-    project_id = "agora-authentication-test"
-    service    = "authentication"
+    project_id        = "agora-authentication-test"
+    service           = "authentication"
+    manage_job_access = true
+  }
+
+  override_resource {
+    target = google_service_account.runtime
+    values = { email = "agora-authentication@agora-authentication-test.iam.gserviceaccount.com" }
   }
 
   assert {
@@ -110,18 +123,69 @@ run "authentication_runtime_contract" {
     )
     error_message = "Authentication must not receive the initializer password, backup credentials or JSON Keys secrets."
   }
+
+  assert {
+    condition     = length(module.rollout) == 0 && output.runtime.service_account == "agora-authentication@agora-authentication-test.iam.gserviceaccount.com"
+    error_message = "Authentication can manage its bootstrapped migration access without selecting the JSON Keys pilot."
+  }
+}
+
+run "json_keys_composition" {
+  command = plan
+  variables {
+    manage_job_access = true
+    rollout = {
+      verification_image = "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-tooling/verify@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      network            = "projects/agora-network-test/global/networks/agora-production"
+      subnetwork         = "projects/agora-network-test/regions/europe-west1/subnetworks/agora-production-europe-west1"
+    }
+  }
+
+  assert {
+    condition     = length(module.rollout) == 1 && output.rollout != null
+    error_message = "The protected owner must publish the configured pilot's native rollout coordinates."
+  }
+}
+
+run "reject_authentication_pilot" {
+  command = plan
+  variables {
+    service = "authentication"
+    rollout = {
+      verification_image = "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-tooling/verify@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      network            = "projects/agora-network-test/global/networks/agora-production"
+      subnetwork         = "projects/agora-network-test/regions/europe-west1/subnetworks/agora-production-europe-west1"
+    }
+  }
+  expect_failures = [var.rollout]
+}
+
+run "reject_application_owned_verifier" {
+  command = plan
+  variables {
+    rollout = {
+      verification_image = "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-production/verify@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      network            = "projects/agora-network-test/global/networks/agora-production"
+      subnetwork         = "projects/agora-network-test/regions/europe-west1/subnetworks/agora-production-europe-west1"
+    }
+  }
+  expect_failures = [var.rollout]
+}
+
+run "reject_foreign_state_bucket" {
+  command = plan
+  variables { state_bucket = "another-management-123456789012-tofu-state" }
+  expect_failures = [var.state_bucket]
 }
 
 run "reject_unknown_runtime_contract" {
   command = plan
-  module { source = "../../../modules/service-foundation" }
   variables { service = "unknown" }
   expect_failures = [var.service]
 }
 
 run "reject_management_as_workload" {
   command = plan
-  module { source = "../../../modules/service-foundation" }
   variables { project_id = "agora-management-test" }
   expect_failures = [var.management_project_id]
 }

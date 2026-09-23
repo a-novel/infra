@@ -112,6 +112,11 @@ registry, runtime, database, secrets, backups, retained receipts, and health/rol
 shared foundation remains privileged, and release concurrency stays serialized until those service
 boundaries have been verified.
 
+The inactive [service foundation root](../../environments/service-foundation) composes the runtime,
+rollout control plane and application-job access using those published project coordinates. Its
+bootstrap sequence keeps prerequisites separate from activation. Neither that root nor the
+service release root is on the live workflow allowlist; this runbook does not authorize applying them.
+
 ## Service scheduling activation
 
 The inactive [job-access module](../../modules/service-job-access) keeps JSON Keys rotation paused.

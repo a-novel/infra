@@ -87,16 +87,17 @@ jobs:
           tofu fmt -check -recursive modules
           tflint --recursive --chdir=modules --config="${GITHUB_WORKSPACE}/.tflint.hcl" --format=compact
 
-      - name: Validate the inactive service release root without a backend
+      - name: Validate inactive service roots without backends
         shell: bash
-        working-directory: environments/service-release
         run: |
           set -euo pipefail
-          tofu fmt -check -diff
-          tofu init -backend=false -input=false -lockfile=readonly -no-color
-          tofu validate -no-color
-          tofu test -no-color
-          tflint --config="${GITHUB_WORKSPACE}/.tflint.hcl" --format=compact
+          for root in environments/service-foundation environments/service-release; do
+            tofu -chdir="$root" fmt -check -recursive -diff
+            tofu -chdir="$root" init -backend=false -input=false -lockfile=readonly -no-color
+            tofu -chdir="$root" validate -no-color
+            tofu -chdir="$root" test -no-color
+            tflint --chdir="$root" --config="${GITHUB_WORKSPACE}/.tflint.hcl" --format=compact
+          done
 
       - name: Lint shell scripts
         uses: a-novel-kit/workflows/generic-actions/lint-shell@v1.30.2
