@@ -94,8 +94,8 @@ func (i inspector) assess(ctx context.Context, args []string) error {
 		return failure{77, "An image-only assessment cannot execute a candidate plan."}
 	}
 	for _, root := range impact.Roots {
-		if root == "service-foundation" {
-			if err := i.services(ctx, "assess", &v); err != nil {
+		if root == "service-foundation" || root == "service-release" {
+			if err := i.services(ctx, "assess", root, &v); err != nil {
 				return err
 			}
 			continue

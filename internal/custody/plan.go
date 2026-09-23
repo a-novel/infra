@@ -98,7 +98,7 @@ func (storage store) plan(action string, args []string, suffix string) error {
 // boundary. The metadata retains the distinct root and exact project suffix.
 func planRoot(root, suffix string) (string, error) {
 	if root == "service-foundation" {
-		if regexp.MustCompile(`^services/[a-z][a-z0-9-]{4,28}[a-z0-9]$`).MatchString(suffix) {
+		if serviceScopePattern.MatchString(suffix) {
 			return "foundation", nil
 		}
 	} else if rootPattern.MatchString(root) && (suffix == "" || regexp.MustCompile(`^recovery/[a-z0-9][a-z0-9-]{0,62}$`).MatchString(suffix)) {

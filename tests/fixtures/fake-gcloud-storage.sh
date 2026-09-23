@@ -5,14 +5,27 @@
 set -euo pipefail
 
 ROOT="${FAKE_GCS_ROOT:?}"
+if [ -n "${FAKE_GCS_CALLS:-}" ]; then
+    printf '%s\n' "$*" >>"${FAKE_GCS_CALLS}"
+fi
 
 local_path() {
     printf '%s/%s\n' "${ROOT}" "${1#gs://}"
 }
 
-if [ "$1 $2 $3" = "storage objects list" ]; then
+if [ "$1 $2 $3" = "storage managed-folders list" ]; then
+    [ "${FAKE_GCS_FOLDERS_FAILURE:-false}" != true ]
+    [ "$5 $6" = '--raw --format=value(name)' ]
+    printf '%s\n' "${FAKE_GCS_MANAGED_FOLDERS:-}"
+elif [ "$1 $2 $3" = "storage objects list" ]; then
     if [ "${FAKE_GCS_LIST_FAILURE:-false}" = true ]; then
         exit 1
+    fi
+    OBJECT_PATTERN="${4#gs://}"
+    OBJECT_PATTERN="${OBJECT_PATTERN#*/}"
+    if [[ "${OBJECT_PATTERN}" == services/* ]]; then
+        [ "${FAKE_GCS_SERVICE_LIST_FAILURE:-false}" != true ]
+        [[ "${OBJECT_PATTERN}" == services/agora-*-test/release/** ]] || exit 99
     fi
     PATTERN="$(local_path "${4%/**}")"
     if [ -d "${PATTERN}" ]; then
