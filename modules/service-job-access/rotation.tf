@@ -13,6 +13,8 @@ resource "google_service_account" "rotation" {
 resource "google_cloud_scheduler_job" "rotation" {
   count = var.runtime.service == "json-keys" ? 1 : 0
 
+  depends_on = [google_service_account_iam_member.foundation_rotation]
+
   project          = var.runtime.project_id
   region           = var.runtime.region
   name             = "agora-json-keys-rotation"
@@ -43,6 +45,14 @@ resource "google_cloud_scheduler_job" "rotation" {
   lifecycle {
     prevent_destroy = true
   }
+}
+
+resource "google_service_account_iam_member" "foundation_rotation" {
+  count = var.runtime.service == "json-keys" ? 1 : 0
+
+  service_account_id = google_service_account.rotation[0].name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${var.foundation_service_account}"
 }
 
 resource "google_cloud_run_v2_job_iam_member" "rotation" {

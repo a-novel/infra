@@ -124,6 +124,9 @@ There is no command to activate it in this runbook yet. Its first protected appl
 existing rotation job, the declared Scheduler service agent/role, Scheduler administration and
 `actAs` on the fresh scheduling identity. Verify that identity has no inherited invocation grants
 before creation; its exact-job grant is applied only after the provider has paused the schedule.
+Those configuration and attachment grants are declared by the project and job-access modules.
+Verify their effective permissions and propagation during approved provisioning. Schedule resume
+and dispatch remain outside the protected executor's control-plane role.
 
 The separate activation PR must supply a one-writer state handoff and human-run verification of:
 

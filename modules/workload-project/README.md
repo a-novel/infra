@@ -45,6 +45,31 @@ identity resource's delete operation is a no-op: it cannot remove a Google agent
 have their own lifecycle. Default Compute/Build execution accounts stay deprivileged; the rollout
 module selects dedicated execution identities. No primitive Owner or Editor grant is added here.
 
+## Protected provisioning authority
+
+`foundation.tf` declares configuration permissions for the inactive service foundation. Only the
+protected foundation account receives its control-plane role. Cloud Deploy pipeline/target management,
+Cloud Run job specifications/IAM, paused Scheduler configuration and artifact-bucket metadata/IAM stay
+with that administrator. The role adds no direct job execution, rollout submission/approval, schedule
+resume, API service writes, object payload access or token minting.
+
+The existing Viewer grant is supplemented with policy reads for the plan account. Resource metadata
+and IAM-policy inspection are separate permissions; both are required for a complete refresh.
+
+Resource owners grant `roles/iam.serviceAccountUser` on the exact identities they create. The service
+foundation uses the management project's `infra-foundation` account and establishes these grants before
+identity attachment. No project-wide Service Account User or Token Creator grant is added.
+
+Foundation already administers project IAM and can change these grants. The narrow role is an explicit
+operating contract, not protection against a compromised administrator. Protected inputs, reviewed
+plans and live allowed/denied checks remain essential. The current empty service-project map creates
+none of these grants; live provisioning and workload bootstrap need separate approval.
+
+References: [Cloud Deploy permissions](https://docs.cloud.google.com/deploy/docs/iam-roles-permissions),
+[Run permissions](https://docs.cloud.google.com/run/docs/reference/iam/permissions),
+[Scheduler permissions](https://docs.cloud.google.com/iam/docs/roles-permissions/cloudscheduler), and
+[Storage permissions](https://docs.cloud.google.com/storage/docs/access-control/iam-permissions).
+
 ## Release boundary
 
 The provider `r-<project-id>` trusts immutable repository/owner IDs, `refs/heads/master`, the exact

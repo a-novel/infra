@@ -1,3 +1,14 @@
+variable "foundation_service_account" {
+  description = "Approved shared-foundation executor that attaches the exact scheduling identity during provisioning."
+  type        = string
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^infra-foundation@[a-z][a-z0-9-]{4,28}[a-z0-9]\\.iam\\.gserviceaccount\\.com$", var.foundation_service_account))
+    error_message = "Use the protected infra-foundation service account from the approved management project."
+  }
+}
+
 variable "runtime" {
   description = "Selected service-foundation runtime output; protected foundation authorizes these coordinates and the existing jobs."
   type = object({

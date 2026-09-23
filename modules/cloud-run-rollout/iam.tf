@@ -83,6 +83,14 @@ resource "google_service_account_iam_member" "submit_execution" {
   member             = "serviceAccount:${local.submitter}"
 }
 
+resource "google_service_account_iam_member" "foundation_execution" {
+  for_each = google_service_account.execution
+
+  service_account_id = each.value.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${var.foundation_service_account}"
+}
+
 resource "google_service_account_iam_member" "deploy_runtime" {
   service_account_id = "projects/${var.project_id}/serviceAccounts/${var.runtime_service_account}"
   role               = "roles/iam.serviceAccountUser"

@@ -9,13 +9,14 @@ mock_provider "google" {
 }
 
 variables {
-  project_id              = "agora-json-keys-test"
-  region                  = "europe-west1"
-  name                    = "agora-json-keys-grpc"
-  runtime_service_account = "agora-json-keys@agora-json-keys-test.iam.gserviceaccount.com"
-  artifact_bucket         = "agora-json-keys-test-deploy-artifacts"
-  receipt_bucket          = "agora-management-test-deployment-receipts"
-  verification_image      = "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-tooling/verify@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  foundation_service_account = "infra-foundation@agora-management-test.iam.gserviceaccount.com"
+  project_id                 = "agora-json-keys-test"
+  region                     = "europe-west1"
+  name                       = "agora-json-keys-grpc"
+  runtime_service_account    = "agora-json-keys@agora-json-keys-test.iam.gserviceaccount.com"
+  artifact_bucket            = "agora-json-keys-test-deploy-artifacts"
+  receipt_bucket             = "agora-management-test-deployment-receipts"
+  verification_image         = "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-tooling/verify@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   notification_channels = [
     "projects/agora-json-keys-test/notificationChannels/123456789",
   ]
@@ -170,7 +171,17 @@ run "execution_authority" {
         "serviceAccount:${google_service_account.execution["deploy"].email}", "roles/iam.serviceAccountUser",
       ]
     )
-    error_message = "Only the submitter may attach execution accounts; only the deploy worker may attach the application account."
+    error_message = "Routine submission attaches deploy/verify accounts; the deploy worker attaches the application account."
+  }
+
+  assert {
+    condition = { for key, grant in google_service_account_iam_member.foundation_execution : key => [
+      grant.service_account_id, grant.role, grant.member,
+      ] } == { for key in ["deploy", "verify", "probe"] : key => [
+      google_service_account.execution[key].name, "roles/iam.serviceAccountUser",
+      "serviceAccount:${var.foundation_service_account}",
+    ] }
+    error_message = "Provisioning may attach the exact rollout identities without project-wide attachment or token minting."
   }
 
   assert {
@@ -197,6 +208,13 @@ run "execution_authority" {
     }
     error_message = "Keep image access read-only on the application and verifier repositories, not the project."
   }
+}
+
+run "reject_release_as_foundation" {
+  command = plan
+  module { source = "../../modules/cloud-run-rollout" }
+  variables { foundation_service_account = "infra-release@agora-json-keys-test.iam.gserviceaccount.com" }
+  expect_failures = [var.foundation_service_account]
 }
 
 run "private_artifact_storage" {

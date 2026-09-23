@@ -4,6 +4,7 @@ provider "google" {
 }
 
 locals {
+  foundation_service_account = "infra-foundation@${var.management_project_id}.iam.gserviceaccount.com"
   runtime_secrets = {
     json-keys      = toset(["production-json-keys-postgres-password", "production-json-keys-app-master-key"])
     authentication = toset(["production-authentication-postgres-password", "production-authentication-smtp-sender-password"])
@@ -23,6 +24,12 @@ resource "google_service_account" "runtime" {
       error_message = "Service foundation owns one default-workspace state per project."
     }
   }
+}
+
+resource "google_service_account_iam_member" "foundation_runtime" {
+  service_account_id = google_service_account.runtime.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${local.foundation_service_account}"
 }
 
 # Payloads and numeric version selection belong to the operator and release contract.
