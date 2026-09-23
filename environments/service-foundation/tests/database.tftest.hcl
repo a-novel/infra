@@ -133,6 +133,12 @@ run "json_keys_private_idle_host" {
     ]
     error_message = "Publish minimal selected-host coordinates, not peer state or credentials."
   }
+  assert {
+    condition = [local.coordinates.database.project_id, local.coordinates.database.service, local.coordinates.database.port] == [
+      var.project_id, "json-keys", 5432,
+    ]
+    error_message = "The published contract must include its own optional host; the provider resolves its private IP during apply."
+  }
 }
 
 run "authentication_uses_its_own_contract" {

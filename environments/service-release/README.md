@@ -4,6 +4,11 @@ This root owns one service's Cloud Run job specifications. JSON Keys has migrati
 Authentication has migrations. The shared resource pattern takes the
 [service foundation's](../service-foundation) versioned `runtime` output, one approved private
 database address, Shared VPC coordinates, promoted job digests and numeric secret versions.
+Foundation publishes its runtime and optional database/rollout outputs in a
+[content-addressed document](../service-foundation#published-coordinates). The future caller must use
+an explicitly approved reference, verify its scope/generation/checksum, and require independent
+database readiness evidence. The document's presence does not approve a release or a partially
+completed foundation apply. This root does not read that document or foundation state itself.
 
 **Code only:** no deployment workflow or live root allowlist selects this directory. Applying a job
 specification does not run it. The root creates no API, initializer, scheduler, identity or IAM grant.

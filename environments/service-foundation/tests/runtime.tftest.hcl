@@ -108,6 +108,44 @@ run "isolated_application_assets" {
     }
     error_message = "Publish only the selected service's runtime, registry and operations coordinates."
   }
+
+  assert {
+    condition = {
+      bucket  = google_storage_managed_folder.coordinates.bucket
+      prefix  = google_storage_managed_folder.coordinates.name
+      destroy = google_storage_managed_folder.coordinates.force_destroy
+      policy  = google_storage_managed_folder.coordinates.deletion_policy
+      reader = [google_storage_managed_folder_iam_member.coordinate_reader.bucket,
+        google_storage_managed_folder_iam_member.coordinate_reader.managed_folder,
+        google_storage_managed_folder_iam_member.coordinate_reader.role,
+      google_storage_managed_folder_iam_member.coordinate_reader.member]
+      } == {
+      bucket = var.state_bucket, prefix = "foundation/coordinates/agora-json-keys-test/", destroy = false, policy = "PREVENT"
+      reader = [var.state_bucket, "foundation/coordinates/agora-json-keys-test/", "roles/storage.objectViewer",
+      "serviceAccount:infra-release@agora-json-keys-test.iam.gserviceaccount.com"]
+    }
+    error_message = "Only the selected release may read its protected coordinate folder, outside state and release-writable paths."
+  }
+
+  assert {
+    condition = google_storage_bucket_object.coordinates.content == jsonencode({
+      schema_version = 1, runtime = output.runtime, database = null, rollout = null,
+      }) && [google_storage_bucket_object.coordinates.deletion_policy,
+      google_storage_bucket_object.coordinates.content_type,
+    google_storage_bucket_object.coordinates.cache_control] == ["ABANDON", "application/json", "private, no-store"]
+    error_message = "Publish only the versioned contract and retain superseded snapshots without exposing private inputs."
+  }
+
+  assert {
+    condition = output.coordinates == {
+      schema_version = 1
+      bucket         = var.state_bucket
+      object         = "foundation/coordinates/agora-json-keys-test/${sha256(google_storage_bucket_object.coordinates.content)}.json"
+      generation     = google_storage_bucket_object.coordinates.generation
+      sha256         = sha256(google_storage_bucket_object.coordinates.content)
+    }
+    error_message = "The approved reference must bind exact serialized bytes, project namespace and native generation."
+  }
 }
 
 run "authentication_runtime_contract" {
@@ -147,6 +185,15 @@ run "authentication_runtime_contract" {
     "projects/agora-authentication-test/serviceAccounts/agora-authentication@agora-authentication-test.iam.gserviceaccount.com")
     error_message = "Authentication bootstrap must attach its own runtime account."
   }
+
+  assert {
+    condition = google_storage_bucket_object.coordinates.content == jsonencode({
+      schema_version = 1, runtime = output.runtime, database = null, rollout = null,
+      }) && [google_storage_managed_folder.coordinates.name, google_storage_managed_folder_iam_member.coordinate_reader.member] == [
+      "foundation/coordinates/agora-authentication-test/", "serviceAccount:infra-release@agora-authentication-test.iam.gserviceaccount.com",
+    ]
+    error_message = "Authentication's reader and publication must not reuse JSON Keys coordinates."
+  }
 }
 
 run "json_keys_composition" {
@@ -163,6 +210,13 @@ run "json_keys_composition" {
   assert {
     condition     = length(module.rollout) == 1 && output.rollout != null
     error_message = "The protected owner must publish the configured pilot's native rollout coordinates."
+  }
+
+  assert {
+    condition = google_storage_bucket_object.coordinates.content == jsonencode({
+      schema_version = 1, runtime = output.runtime, database = null, rollout = output.rollout,
+    })
+    error_message = "Publish the configured native rollout coordinates without claiming that the pipeline is active."
   }
 }
 
