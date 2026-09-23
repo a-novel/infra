@@ -57,6 +57,7 @@ resource "google_project_default_service_accounts" "service" {
 resource "google_project_iam_member" "foundation" {
   for_each = toset([
     "roles/artifactregistry.admin",
+    "roles/compute.instanceAdmin.v1",
     "roles/compute.networkAdmin",
     "roles/iam.roleAdmin",
     "roles/iam.serviceAccountAdmin",

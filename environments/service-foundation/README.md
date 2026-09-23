@@ -7,12 +7,12 @@ and retained recovery evidence remain unchanged.
 
 ## Owners and state
 
-| Owner                                                                    | Resources                                                                                                                              |
-| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Shared foundation and [workload project](../../modules/workload-project) | Projects, APIs, Google agents, release identity, storage namespaces, Shared VPC and host network policy.                               |
-| This root                                                                | Application identity, runtime-secret grants, repositories, operations channel, and the optionally composed rollout/job-access modules. |
-| [Service release](../service-release)                                    | Application job specifications, bootstrapped directly in their destination state.                                                      |
-| Cloud Deploy                                                             | API specification, revisions and traffic after an approved handoff.                                                                    |
+| Owner                                                                    | Resources                                                                                                                    |
+| ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| Shared foundation and [workload project](../../modules/workload-project) | Projects, APIs, Google agents, release identity, storage namespaces, Shared VPC and host network policy.                     |
+| This root                                                                | Application assets, optional private database host/storage/identity, and the optionally composed rollout/job-access modules. |
+| [Service release](../service-release)                                    | Application job specifications, bootstrapped directly in their destination state.                                            |
+| Cloud Deploy                                                             | API specification, revisions and traffic after an approved handoff.                                                          |
 
 The native backend uses the published management `state_bucket` and
 `foundation/services/PROJECT/default.tfstate`. Only the default workspace is accepted. The existing
@@ -51,7 +51,7 @@ bootstrap, execute a job or activate the pilot. Keep each enabled configuration 
 inputs; dropping it is resource removal, subject to its lifecycle guards and deletion review.
 
 1. Establish the service project, agents, host network grants and approved foundation executor.
-   Apply this root with `rollout = null` and `manage_job_access = false` to create runtime prerequisites.
+   Apply this root with `database = null`, `rollout = null` and `manage_job_access = false` to create runtime prerequisites.
 2. After reviewed verifier promotion, supply `rollout` with `verification_image`, `network` and
    `subnetwork`. The root derives the fixed JSON Keys API name, service-local artifact bucket and
    management receipt bucket. The image must belong to this project's separate tooling repository.
@@ -77,9 +77,54 @@ and host-network grants remain separate bootstrap prerequisites.
 
 An existing pilot owner requires a private state backup and explicit removal/import map before this
 root adopts its resources. Import cannot move a legacy workload into another project. Keep the old
-writer until its separate workload cutover is verified. Databases/backups, protected input publication
+writer until its separate workload cutover is verified. Database activation/backups, protected input publication
 and workflow callers, same-service exclusion, receipt completion and live failure drills remain
 unfinished activation work. The active coordinator is retained until its replacement is proven.
+
+## Optional idle database host
+
+`database.tf`, `database-access.tf` and `database-snapshots.tf` directly own one private host in the
+selected project; there is no fleet map or wrapper module. An explicit `database` object supplies the
+approved zone, canonical subnet ID and pinned COS image. Defaults retain the reviewed small profile:
+e2-medium (4 GiB host RAM), 50 GiB **pd-balanced SSD**, 0.75 container vCPU, 1,536 MiB container memory
+and 50 PostgreSQL connections. Validation reserves at least 1 GiB/0.5 vCPU for COS. Larger reviewed e2
+profiles are available without changing the service's storage owner. Backend/project/subnet authorization
+and available regional quota still require protected preflight; syntax checks do not provide either.
+
+The zonal stateful MIG has exactly one member, a preserved data disk and internal IP, no external IP,
+Shielded VM and OS Login. Template changes are opportunistic: applying foundation does not roll the
+running member. A crash/recreation can still interrupt this singleton database; neither preserved state
+nor a warm API provides database HA. Disk and group deletion are guarded, and the disk is never an
+auto-deleted attachment. Daily regional crash-consistent snapshots retain seven days; they do not replace
+the management-plane logical backups or a tested restore.
+
+The dedicated `agora-database` identity gets only its service's PostgreSQL owner and backup credentials,
+application repository Reader, and log/metric writers. It has no peer, SMTP, master-key, initializer or
+backup-object grant. Foundation and the project's Google APIs MIG agent may attach this exact identity.
+The project owner supplies Compute Instance Admin only to protected foundation and the documented roles
+to Google's Compute/MIG agents. Shared foundation supplies exact-subnet Network User to the caller and
+MIG agent; the VM runtime gets no network-administration role. Verify inherited authority separately.
+
+Both foundation paths use the same [host assets](../../assets/database-host), relocated without changing
+their bytes. The current production templates, resource addresses and backup/receipt formats are unchanged.
+Unlike the legacy coordinator, this root owns its **idle** group metadata without `ignore_changes`: no
+image, credential versions or release revision are selected. It must not adopt an active group or be
+paired with an external metadata writer. Future activation must explicitly replace this idle-only
+contract with one reviewed owner and safe maintenance/reconciliation behavior, not bypass it with drift.
+No routine release host mutation or automatic migration is granted here.
+
+Publish the version-1 `database` output without granting state access. A stable MIG and private IP are
+only provisioning evidence. Before activation, verify the boot-bound `idle` status, allowed/denied host
+and container network paths, exact secret/image access, image provenance, application health and backup/
+restore evidence. The current host firewall still addresses the legacy database IPs; approving the new
+IP rules and proving peer denial belongs to the separate network/cutover change. Do not route an API to
+this idle host. Operator IAP/OS Login access, backup jobs, resource monitoring and interrupted database
+maintenance remain activation work. There is deliberately no live apply command for this root yet.
+
+The maintained [Google VM module v15.3.0](https://github.com/terraform-google-modules/terraform-google-vm/blob/v15.3.0/modules/instance_template/versions.tf)
+requires providers below v8, incompatible with this repository's v8.2.0 pin. Native resources retain
+[stateful MIG](https://docs.cloud.google.com/compute/docs/instance-groups/how-stateful-migs-work) behavior
+without weakening upstream constraints or adding a controller. Runtime/backup replacement remains #190.
 
 ## Cloud-blind validation
 

@@ -15,7 +15,7 @@ Its empty `service_projects` map leaves the current deployment unchanged. See th
 | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `google_project.service`                                                                                                                           | One explicit project ID, exactly one organization/folder parent, no default VPC, provider deletion prevention and `prevent_destroy`.                                                                   |
 | `google_project_service.api`                                                                                                                       | Foundation owns the declared APIs, including Cloud Build, Cloud Deploy and Storage; removing an entry leaves the API enabled for retained workloads and recovery.                                      |
-| `google_project_service_identity.agent` and `google_project_iam_member.service_agent`                                                              | Create the Google-managed Run, Build, Deploy and Scheduler agents and bind each documented service-agent role in its own project.                                                                      |
+| `google_project_service_identity.agent` and `google_project_iam_member.service_agent`                                                              | Create the Google-managed Run, Build, Deploy, Scheduler and Compute agents with their documented project roles.                                                                                        |
 | `google_project_default_service_accounts.service`                                                                                                  | Deprivilege default accounts after API activation. This is a creation-time repair; effective organization policies prevent future automatic grants and user-managed keys.                              |
 | `google_project_iam_member.foundation`, `.metadata`, and `google_project_iam_custom_role.metadata`                                                 | Project and service-account maintenance for the protected foundation identity. This is privileged IAM administration, not a service deployment role.                                                   |
 | `google_project_iam_member.plan`                                                                                                                   | Metadata assessment by the existing read-only plan identity. No payload access is declared.                                                                                                            |
@@ -24,7 +24,7 @@ Its empty `service_projects` map leaves the current deployment unchanged. See th
 | `google_storage_managed_folder.release` and `.release` IAM members                                                                                 | Protected state and receipt folders in the existing management buckets. The matching release account can write state and create/read receipts, but cannot replace or delete receipts.                  |
 | `google_storage_bucket_iam_member.release_metadata` and `google_storage_managed_folder_iam_member.plan`                                            | Release reads state-bucket metadata only; the existing plan identity gains read-only access to the selected service's state folder. Neither grant permits bucket administration.                       |
 
-The caller owns Shared VPC attachment, Cloud Run agent subnet access, and budget scope. These grants
+The caller owns Shared VPC attachment, exact-subnet access for Cloud Run/MIG agents and foundation, and budget scope. These grants
 provide network attachment, not secret access or application invocation. The module creates no workloads, runtime
 identities, keys, secret versions, registry, bucket, NAT, connector, or load balancer. Outputs contain
 the project ID/number and a versioned `release` object with only the identity, provider, environment,
@@ -45,6 +45,13 @@ identity resource's delete operation is a no-op: it cannot remove a Google agent
 have their own lifecycle. Default Compute/Build execution accounts stay deprivileged; the rollout
 module selects dedicated execution identities. No primitive Owner or Editor grant is added here.
 
+`google_project_iam_member.mig_agent` gives the project's Google APIs agent
+(`PROJECT_NUMBER@cloudservices.gserviceaccount.com`) the documented Instance Group Manager Service
+Agent role. It is distinct from the Compute Engine service agent and the database runtime account.
+The service foundation grants exact host-account attachment; shared foundation grants exact-subnet use.
+Check inherited/default Editor grants on the Google APIs agent explicitly: default execution-account
+deprivileging does not establish that this separate agent has only its declared role.
+
 ## Protected provisioning authority
 
 `foundation.tf` declares configuration permissions for the inactive service foundation. Only the
@@ -64,6 +71,12 @@ Foundation already administers project IAM and can change these grants. The narr
 operating contract, not protection against a compromised administrator. Protected inputs, reviewed
 plans and live allowed/denied checks remain essential. The current empty service-project map creates
 none of these grants; live provisioning and workload bootstrap need separate approval.
+
+Compute Instance Admin is also declared for protected foundation, scoped to this service project,
+to provision the optional idle database host, disk, templates and snapshots. It is not a configuration-only
+role: it can manage instances. Routine release receives none of this authority. Restrict attachment to
+the exact host identity and retain private saved plans/deletion protection. Google's MIG agent also
+needs Shared VPC subnet use; see [Shared VPC provisioning](https://docs.cloud.google.com/vpc/docs/provisioning-shared-vpc#sa-as-spa).
 
 References: [Cloud Deploy permissions](https://docs.cloud.google.com/deploy/docs/iam-roles-permissions),
 [Run permissions](https://docs.cloud.google.com/run/docs/reference/iam/permissions),

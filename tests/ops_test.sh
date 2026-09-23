@@ -175,27 +175,20 @@ assert_tofu_gate_code drift "${SCRIPT_DIR}/fixtures/plans/protected.json" 2
 
 # Pull-request impact follows both current and previous filenames while
 # preserving the smallest production-root set that can change.
-jq -n '[{filename: "README.md"}]' >"${TEMP_DIR}/impact-docs.json"
-jq -n '[{filename: "environments/production/foundation/main.tf"}]' \
-    >"${TEMP_DIR}/impact-foundation.json"
-jq -n '[{filename: "deploy/production/images.yaml"}]' \
-    >"${TEMP_DIR}/impact-release.json"
-jq -n '[{filename: "docs/old.md", previous_filename: "bootstrap/main.tf"}]' \
-    >"${TEMP_DIR}/impact-renamed.json"
-jq -n '[{filename: "modules/shared/main.tf"}]' \
-    >"${TEMP_DIR}/impact-shared.json"
-
-assert_equal "$("${REPOSITORY_ROOT}/ops/resource-deletion-impact.sh" \
-    "${TEMP_DIR}/impact-docs.json" | jq --raw-output .required)" false
-assert_equal "$("${REPOSITORY_ROOT}/ops/resource-deletion-impact.sh" \
-    "${TEMP_DIR}/impact-foundation.json" | jq --compact-output .roots)" '["foundation"]'
-assert_equal "$("${REPOSITORY_ROOT}/ops/resource-deletion-impact.sh" \
-    "${TEMP_DIR}/impact-release.json" | jq --compact-output .roots)" '["release"]'
-assert_equal "$("${REPOSITORY_ROOT}/ops/resource-deletion-impact.sh" \
-    "${TEMP_DIR}/impact-renamed.json" | jq --compact-output .roots)" '["bootstrap"]'
-assert_equal "$("${REPOSITORY_ROOT}/ops/resource-deletion-impact.sh" \
-    "${TEMP_DIR}/impact-shared.json" | jq --compact-output .roots)" \
-    '["bootstrap","foundation","release"]'
+while IFS='|' read -r filename previous_filename expected; do
+    jq -n --arg filename "${filename}" --arg previous "${previous_filename}" \
+        '[{filename: $filename, previous_filename: $previous}]' >"${TEMP_DIR}/impact.json"
+    assert_equal "$("${REPOSITORY_ROOT}/ops/resource-deletion-impact.sh" \
+        "${TEMP_DIR}/impact.json" | jq -c '[.required, .roots]')" "${expected}"
+done <<'CASES'
+README.md||[false,[]]
+environments/production/foundation/main.tf||[true,["foundation"]]
+deploy/production/images.yaml||[true,["release"]]
+docs/old.md|bootstrap/main.tf|[true,["bootstrap"]]
+modules/shared/main.tf||[true,["bootstrap","foundation","release"]]
+assets/database-host/startup.sh||[true,["foundation"]]
+docs/old.md|assets/database-host/shutdown.sh|[true,["foundation"]]
+CASES
 
 # The metadata-only merge gate fails closed unless exact protected evidence
 # exists, and replays the latest human label decision at evaluation time.

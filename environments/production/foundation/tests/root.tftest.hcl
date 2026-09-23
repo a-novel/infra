@@ -140,9 +140,17 @@ run "protected_service_project" {
       "cloudbuild.googleapis.com"     = "roles/cloudbuild.serviceAgent"
       "clouddeploy.googleapis.com"    = "roles/clouddeploy.serviceAgent"
       "cloudscheduler.googleapis.com" = "roles/cloudscheduler.serviceAgent"
+      "compute.googleapis.com"        = "roles/compute.serviceAgent"
       "run.googleapis.com"            = "roles/run.serviceAgent"
     }
     error_message = "Grant the documented platform roles only to the matching Google service agents."
+  }
+
+  assert {
+    condition = [google_project_iam_member.mig_agent.project, google_project_iam_member.mig_agent.role, google_project_iam_member.mig_agent.member] == [
+      var.project_id, "roles/compute.instanceGroupManagerServiceAgent", "serviceAccount:${google_project.service.number}@cloudservices.gserviceaccount.com",
+    ] && google_project_iam_member.foundation["roles/compute.instanceAdmin.v1"].role == "roles/compute.instanceAdmin.v1"
+    error_message = "Only protected foundation and Google's MIG agent provision database instances."
   }
 
   assert {
@@ -346,6 +354,27 @@ run "two_service_projects_share_only_the_host" {
   }
 
   assert {
+    condition = { for service, binding in google_compute_subnetwork_iam_member.service_mig : service => [
+      binding.project, binding.region, binding.subnetwork, binding.role, binding.member,
+      ] } == { for service, project in module.service_project : service => [
+      var.workload_project_id, var.region, google_compute_subnetwork.production.name,
+      "roles/compute.networkUser", "serviceAccount:${project.project_number}@cloudservices.gserviceaccount.com",
+    ] }
+    error_message = "MIGs use only the shared subnet; database runtimes receive no host network grant."
+  }
+
+  assert {
+    condition = [google_compute_subnetwork_iam_member.service_foundation[0].project,
+      google_compute_subnetwork_iam_member.service_foundation[0].subnetwork,
+      google_compute_subnetwork_iam_member.service_foundation[0].role,
+      google_compute_subnetwork_iam_member.service_foundation[0].member] == [
+      var.workload_project_id, google_compute_subnetwork.production.name,
+      "roles/compute.networkUser", "serviceAccount:infra-foundation@${var.management_project_id}.iam.gserviceaccount.com",
+    ]
+    error_message = "The protected caller needs exact-subnet use before template/group creation."
+  }
+
+  assert {
     condition = (
       contains(google_compute_firewall.allow_restricted_google_apis.target_tags, "agora-rollout-probe") &&
       google_compute_firewall.allow_restricted_google_apis.destination_ranges == local.restricted_google_api_ranges &&
@@ -399,6 +428,8 @@ run "builds_the_project_replacement_window" {
       length(google_compute_shared_vpc_service_project.service) == 0 &&
       length(google_project_iam_member.service_run_network_viewer) == 0 &&
       length(google_compute_subnetwork_iam_member.service_run) == 0 &&
+      length(google_compute_subnetwork_iam_member.service_mig) == 0 &&
+      length(google_compute_subnetwork_iam_member.service_foundation) == 0 &&
       !contains(google_compute_firewall.allow_restricted_google_apis.target_tags, "agora-rollout-probe")
     )
     error_message = "Existing inputs must not create service projects or enable Shared VPC."
