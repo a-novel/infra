@@ -57,6 +57,19 @@ resource "google_storage_bucket" "state" {
     }
   }
 
+  lifecycle_rule {
+    action {
+      type = "Delete"
+    }
+
+    # Both selectors are required: state and converged inputs share the prefix.
+    condition {
+      age            = 2
+      matches_prefix = ["services/"]
+      matches_suffix = ["/plan.tfplan", "/plan.metadata.json"]
+    }
+  }
+
   lifecycle {
     prevent_destroy = true
   }

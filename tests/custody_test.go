@@ -125,9 +125,17 @@ func planFixture(t *testing.T, root, suffix string) (*sandbox, []string, string)
 	plan := filepath.Join(f.dir, "reviewed.tfplan")
 	require.NoError(t, os.WriteFile(plan, []byte(privateValue+"\x00\xff"), 0o600))
 	args := []string{"agora-management-test-123-tofu-state", root, strings.Repeat("a", 40), "123-1", plan}
-	f.custody(t, 0, append(append([]string{"plan", "publish"}, args...), "false")...)
 	remote := filepath.Join(f.env["FAKE_GCS_ROOT"], args[0], "foundation", "plans", suffix, args[2], args[3])
-	return f, args, remote
+	meta := filepath.Join(remote, "metadata.json")
+	publish := append(append([]string{"plan", "publish"}, args...), "false")
+	if root == "service-release" {
+		config := filepath.Join(f.dir, "inputs.json")
+		writeJSON(t, config, object{"project_id": "agora-json-keys-test", "private": privateValue})
+		args, publish = append(args, config), append(publish, config)
+		meta = filepath.Join(f.env["FAKE_GCS_ROOT"], args[0], suffix, "release/plans", args[2], args[3], "plan.metadata.json")
+	}
+	f.custody(t, 0, publish...)
+	return f, args, meta
 }
 
 func TestCustodyPlanIntegrity(t *testing.T) {
@@ -138,6 +146,7 @@ func TestCustodyPlanIntegrity(t *testing.T) {
 		tamper bool
 	}{
 		{"WrongCommit", func(meta object) { meta["commit"] = strings.Repeat("b", 40) }, false},
+		{"WrongRoot", func(meta object) { meta["root"] = "bootstrap" }, false},
 		{"WrongNamespace", func(meta object) { meta["stateSuffix"] = "" }, false},
 		{"Expired", func(meta object) {
 			meta["createdEpoch"] = time.Now().Unix() - 90000
@@ -151,20 +160,22 @@ func TestCustodyPlanIntegrity(t *testing.T) {
 		{"MissingApproval", func(meta object) { delete(meta, "destructive") }, false},
 		{"HashMismatch", func(object) {}, true},
 	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			t.Parallel()
-			f, args, remote := planFixture(t, "foundation", "recovery/agora-recovery-test")
-			meta := readJSON(t, filepath.Join(remote, "metadata.json"))
-			testCase.change(meta)
-			writeJSON(t, filepath.Join(remote, "metadata.json"), meta)
-			if testCase.tamper {
-				writeJSON(t, filepath.Join(remote, "plan.tfplan"), privateValue)
-			}
-			args[4] = filepath.Join(f.dir, "download.tfplan")
-			f.custody(t, 77, append([]string{"plan", "fetch"}, args...)...)
-			require.NoFileExists(t, args[4])
-			require.NoFileExists(t, args[4]+".destructive")
-		})
+		for _, root := range []string{"service-foundation", "service-release"} {
+			t.Run(root+"/"+testCase.name, func(t *testing.T) {
+				t.Parallel()
+				f, args, metadataFile := planFixture(t, root, "services/agora-json-keys-test")
+				meta := readJSON(t, metadataFile)
+				testCase.change(meta)
+				writeJSON(t, metadataFile, meta)
+				if testCase.tamper {
+					writeJSON(t, filepath.Join(filepath.Dir(metadataFile), "plan.tfplan"), privateValue)
+				}
+				args[4] = filepath.Join(f.dir, "download.tfplan")
+				f.custody(t, 77, append([]string{"plan", "fetch"}, args...)...)
+				require.NoFileExists(t, args[4])
+				require.NoFileExists(t, args[4]+".destructive")
+			})
+		}
 	}
 }
 
@@ -181,7 +192,8 @@ func TestCustodyPlanApply(t *testing.T) {
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
-			f, args, remote := planFixture(t, testCase.root, testCase.suffix)
+			f, args, metadataFile := planFixture(t, testCase.root, testCase.suffix)
+			remote := filepath.Dir(metadataFile)
 			f.custody(t, 70, append(append([]string{"plan", "publish"}, args...), "false")...)
 			f.env["TOFU_STATE_SUFFIX"] = strings.Replace(testCase.suffix, "agora-", "peer-", 1)
 			f.custody(t, 66, append([]string{"plan", "fetch"}, args...)...)
@@ -238,7 +250,7 @@ func TestCustodyServiceScope(t *testing.T) {
 		{"Recovery", "service-foundation", "recovery/agora-json-keys-test", 65},
 		{"Legacy", "foundation", "services/agora-json-keys-test", 65},
 		{"Traversal", "service-foundation", "services/../foundation", 65},
-		{"ReleasePlanDisabled", "service-release", "services/agora-json-keys-test", 65},
+		{"ReleaseNeedsInputs", "service-release", "services/agora-json-keys-test", 64},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
@@ -270,6 +282,83 @@ func TestCustodyServiceScope(t *testing.T) {
 			f.custody(t, 65, "config", "fetch", "fixture-bucket", root, output)
 		})
 	}
+}
+
+func TestCustodyServicePlan(t *testing.T) {
+	t.Parallel()
+	for _, testCase := range []struct {
+		name string
+		code int
+	}{
+		{"Exact", 0},
+		{"ChangedInputs", 77},
+		{"MissingInputBinding", 77},
+		{"UnreadableInputs", 64},
+		{"InvalidInputs", 64},
+		{"MissingInputsArgument", 64},
+		{"PeerScope", 66},
+		{"WrongAttempt", 66},
+		{"ReadDenied", 66},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			f, args, metadataFile := planFixture(t, "service-release", "services/agora-json-keys-test")
+			f.env["FAKE_GCS_CALLS"] = filepath.Join(f.dir, "storage-calls")
+			args[4] = filepath.Join(f.dir, "download.tfplan")
+			switch testCase.name {
+			case "ChangedInputs":
+				writeJSON(t, args[5], object{"project_id": "agora-json-keys-test", "private": privateValue, "changed": true})
+			case "MissingInputBinding":
+				meta := readJSON(t, metadataFile)
+				delete(meta, "inputsSha256")
+				writeJSON(t, metadataFile, meta)
+			case "UnreadableInputs":
+				args[5] = filepath.Join(f.dir, "missing.json")
+			case "InvalidInputs":
+				writeJSON(t, args[5], nil)
+			case "MissingInputsArgument":
+				args = args[:5]
+			case "PeerScope":
+				f.env["TOFU_STATE_SUFFIX"] = "services/agora-authentication-test"
+			case "WrongAttempt":
+				args[3] = "123-2"
+			case "ReadDenied":
+				f.env["FAKE_GCS_READ_FAILURE"] = "true"
+			}
+			f.custody(t, testCase.code, append([]string{"plan", "fetch"}, args...)...)
+			if testCase.code != 0 {
+				require.NoFileExists(t, args[4])
+				if testCase.code == 64 {
+					require.NoFileExists(t, f.env["FAKE_GCS_CALLS"])
+				} else {
+					require.NotContains(t, read(t, f.env["FAKE_GCS_CALLS"]), "/plan.tfplan", "reject before downloading the opaque plan")
+				}
+				return
+			}
+			require.Equal(t, privateValue+"\x00\xff", read(t, args[4]))
+			f.custody(t, 0, append([]string{"plan", "consume"}, args[:4]...)...)
+			f.custody(t, 66, append([]string{"plan", "fetch"}, args...)...)
+			require.NoFileExists(t, metadataFile)
+			require.NoFileExists(t, filepath.Join(filepath.Dir(metadataFile), "plan.tfplan"))
+		})
+	}
+}
+
+func TestCustodyPlanLostUpload(t *testing.T) {
+	t.Parallel()
+	f, args, metadataFile := planFixture(t, "service-release", "services/agora-json-keys-test")
+	args[3] = "124-1"
+	metadataFile = strings.Replace(metadataFile, "/123-1/", "/124-1/", 1)
+	f.env["FAKE_GCS_LOST_UPLOAD_RESPONSE"] = "true"
+	publish := append(append([]string{"plan", "publish"}, args[:5]...), "false", args[5])
+	f.custody(t, 70, publish...)
+	require.FileExists(t, filepath.Join(filepath.Dir(metadataFile), "plan.tfplan"))
+	require.NoFileExists(t, metadataFile)
+	delete(f.env, "FAKE_GCS_LOST_UPLOAD_RESPONSE")
+	f.custody(t, 70, publish...)
+	args[4] = filepath.Join(f.dir, "download.tfplan")
+	f.custody(t, 66, append([]string{"plan", "fetch"}, args...)...)
+	require.NoFileExists(t, args[4])
 }
 
 func TestServiceBackend(t *testing.T) {

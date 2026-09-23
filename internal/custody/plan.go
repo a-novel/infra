@@ -9,6 +9,7 @@ import (
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -19,6 +20,7 @@ type metadata struct {
 	PlanID        string  `json:"planId"`
 	StateSuffix   *string `json:"stateSuffix"`
 	SHA256        string  `json:"sha256"`
+	InputsSHA256  string  `json:"inputsSha256,omitempty"`
 	CreatedEpoch  int64   `json:"createdEpoch"`
 	ExpiresEpoch  int64   `json:"expiresEpoch"`
 	Destructive   *bool   `json:"destructive"`
@@ -26,19 +28,32 @@ type metadata struct {
 
 func (storage store) plan(action string, args []string, suffix string) error {
 	count := map[string]int{"publish": 5, "fetch": 4, "consume": 3}[action]
-	if count == 0 || len(args) != count || (len(args) > 3 && args[3] == "") {
+	expected := count
+	service := len(args) > 0 && args[0] == "service-release"
+	if service && action != "consume" {
+		expected++
+	}
+	if count == 0 || len(args) != expected || (len(args) > 3 && args[3] == "") {
 		return failure{64, "Invalid plan custody arguments."}
 	}
-	root, err := planRoot(args[0], suffix)
+	namespace, err := planPrefix(args[0], suffix)
 	if err != nil || !regexp.MustCompile(`^[a-f0-9]{40}$`).MatchString(args[1]) || !sequencePattern.MatchString(args[2]) {
 		return failure{65, "Invalid plan custody scope."}
 	}
-	prefix := "gs://" + storage.bucket + "/" + root + "/plans/"
-	if suffix != "" {
-		prefix += suffix + "/"
-	}
-	prefix += args[1] + "/" + args[2] + "/"
+	prefix := "gs://" + storage.bucket + "/" + namespace + "/" + args[1] + "/" + args[2] + "/"
 	planURI, metadataURI := prefix+"plan.tfplan", prefix+"metadata.json"
+	inputsHash := ""
+	if service {
+		metadataURI = prefix + "plan.metadata.json"
+		if action != "consume" {
+			data, readErr := os.ReadFile(args[count])
+			var config map[string]json.RawMessage
+			if readErr != nil || json.Unmarshal(data, &config) != nil || config == nil {
+				return failure{64, "Service plan custody requires readable JSON object inputs."}
+			}
+			inputsHash = fmt.Sprintf("%x", sha256.Sum256(data))
+		}
+	}
 	now := time.Now().Unix()
 	switch action {
 	case "consume":
@@ -54,7 +69,11 @@ func (storage store) plan(action string, args []string, suffix string) error {
 			return failure{64, "Publish requires a readable plan file."}
 		}
 		destructive := args[4] == "true"
-		meta := metadata{1, args[0], args[1], args[2], &suffix, fmt.Sprintf("%x", sha256.Sum256(data)), now, now + 86400, &destructive}
+		meta := metadata{
+			SchemaVersion: 1, Root: args[0], Commit: args[1], PlanID: args[2], StateSuffix: &suffix,
+			SHA256: fmt.Sprintf("%x", sha256.Sum256(data)), InputsSHA256: inputsHash,
+			CreatedEpoch: now, ExpiresEpoch: now + 86400, Destructive: &destructive,
+		}
 		encoded, err := json.Marshal(meta)
 		if err != nil {
 			return err
@@ -79,6 +98,9 @@ func (storage store) plan(action string, args []string, suffix string) error {
 			meta.Destructive == nil || meta.CreatedEpoch > now+300 || meta.ExpiresEpoch != meta.CreatedEpoch+86400 || now >= meta.ExpiresEpoch {
 			return failure{77, "Reviewed plan is stale or does not match this commit and root."}
 		}
+		if meta.InputsSHA256 != inputsHash {
+			return failure{77, "Reviewed plan inputs do not match the selected configuration."}
+		}
 		data, err := storage.download(planURI)
 		if err != nil {
 			return failure{66, "Reviewed opaque plan is unavailable."}
@@ -94,15 +116,17 @@ func (storage store) plan(action string, args []string, suffix string) error {
 	return nil
 }
 
-// planRoot keeps service custody beneath foundation's existing expiry and IAM
-// boundary. The metadata retains the distinct root and exact project suffix.
-func planRoot(root, suffix string) (string, error) {
-	if root == "service-foundation" {
+// planPrefix keeps plans within their writer's existing storage boundary.
+func planPrefix(root, suffix string) (string, error) {
+	if root == "service-foundation" || root == "service-release" {
 		if serviceScopePattern.MatchString(suffix) {
-			return "foundation", nil
+			if root == "service-release" {
+				return suffix + "/release/plans", nil
+			}
+			return "foundation/plans/" + suffix, nil
 		}
 	} else if rootPattern.MatchString(root) && (suffix == "" || regexp.MustCompile(`^recovery/[a-z0-9][a-z0-9-]{0,62}$`).MatchString(suffix)) {
-		return root, nil
+		return strings.TrimSuffix(root+"/plans/"+suffix, "/"), nil
 	}
 	return "", failure{65, "Invalid private custody scope."}
 }
