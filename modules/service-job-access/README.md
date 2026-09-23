@@ -1,9 +1,10 @@
 # Service application job access
 
 Protected foundation owns access to existing [application jobs](../../environments/service-release), schedules and alerts.
-The module consumes the [service foundation's](../service-foundation) versioned `runtime` contract.
+The module consumes the [service foundation's](../../environments/service-foundation) versioned `runtime` contract.
 It derives fixed job names and the project-local `infra-release` principal; callers cannot supply
-another principal or extend the job set. **Code only: no production root calls this module.**
+another principal or extend the job set. The inactive foundation root composes it after explicit job
+bootstrap opt-in. **No live workflow calls that root.**
 
 | Grant                                   | Scope                                                                   |
 | --------------------------------------- | ----------------------------------------------------------------------- |

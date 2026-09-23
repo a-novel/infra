@@ -1,3 +1,8 @@
+provider "google" {
+  project = var.project_id
+  region  = var.region
+}
+
 locals {
   runtime_secrets = {
     json-keys      = toset(["production-json-keys-postgres-password", "production-json-keys-app-master-key"])
@@ -12,6 +17,11 @@ resource "google_service_account" "runtime" {
 
   lifecycle {
     prevent_destroy = true
+
+    precondition {
+      condition     = terraform.workspace == "default"
+      error_message = "Service foundation owns one default-workspace state per project."
+    }
   }
 }
 

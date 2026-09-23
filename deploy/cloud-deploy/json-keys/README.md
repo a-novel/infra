@@ -1,7 +1,8 @@
 # JSON Keys private verification pilot
 
-**Code only.** No production root calls the [rollout module](../../../modules/cloud-run-rollout),
-and its pipeline stays suspended. Do not apply this service manifest directly: Cloud Deploy must
+**Code only.** The inactive [service foundation](../../../environments/service-foundation) composes the
+[rollout module](../../../modules/cloud-run-rollout); no live workflow selects it and its pipeline stays
+suspended. Do not apply this service manifest directly: Cloud Deploy must
 own both its specification and traffic after the separately reviewed one-writer handoff.
 
 ## Native release inputs
@@ -75,7 +76,7 @@ The dedicated `agora-rollout-probe` network tag needs only restricted Google API
 matching private DNS/Google Access path; it must not inherit the application's PostgreSQL allowance.
 There is still **no production caller or live provisioning**. API/service-agent setup, Shared VPC
 attachment and firewall rules remain activation prerequisites, not implicit permissions added here.
-The inactive [service foundation](../../../modules/service-foundation) declares the application
+The inactive [service foundation](../../../environments/service-foundation) declares the application
 identity, its two exact secret-container grants, separate application/verifier repositories and an
 operations email channel. Its published coordinates feed the rollout module without peer state.
 The inactive [service release root](../../../environments/service-release) declares JSON Keys migrations and

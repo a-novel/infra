@@ -29,7 +29,7 @@ run "inactive_service_rollout" {
   command = plan
 
   module {
-    source = "../../../modules/cloud-run-rollout"
+    source = "../../modules/cloud-run-rollout"
   }
 
   assert {
@@ -117,7 +117,7 @@ run "inactive_service_rollout" {
 
 run "execution_authority" {
   command = plan
-  module { source = "../../../modules/cloud-run-rollout" }
+  module { source = "../../modules/cloud-run-rollout" }
 
   assert {
     condition = { for key, role in google_project_iam_custom_role.execution : key => role.permissions } == {
@@ -201,7 +201,7 @@ run "execution_authority" {
 
 run "private_artifact_storage" {
   command = plan
-  module { source = "../../../modules/cloud-run-rollout" }
+  module { source = "../../modules/cloud-run-rollout" }
 
   assert {
     condition = {
@@ -251,7 +251,7 @@ run "private_artifact_storage" {
 
 run "native_rollout_alerts" {
   command = plan
-  module { source = "../../../modules/cloud-run-rollout" }
+  module { source = "../../modules/cloud-run-rollout" }
 
   assert {
     condition = alltrue([for policy in google_monitoring_alert_policy.rollout :
@@ -325,21 +325,21 @@ run "native_rollout_alerts" {
 
 run "reject_missing_operations_channel" {
   command = plan
-  module { source = "../../../modules/cloud-run-rollout" }
+  module { source = "../../modules/cloud-run-rollout" }
   variables { notification_channels = [] }
   expect_failures = [var.notification_channels]
 }
 
 run "reject_peer_operations_channel" {
   command = plan
-  module { source = "../../../modules/cloud-run-rollout" }
+  module { source = "../../modules/cloud-run-rollout" }
   variables { notification_channels = ["projects/agora-authentication-test/notificationChannels/123456789"] }
   expect_failures = [var.notification_channels]
 }
 
 run "reject_peer_application_identity" {
   command = plan
-  module { source = "../../../modules/cloud-run-rollout" }
+  module { source = "../../modules/cloud-run-rollout" }
   variables {
     runtime_service_account = "agora-authentication@agora-authentication-test.iam.gserviceaccount.com"
   }
@@ -348,7 +348,7 @@ run "reject_peer_application_identity" {
 
 run "reject_privileged_application_identity" {
   command = plan
-  module { source = "../../../modules/cloud-run-rollout" }
+  module { source = "../../modules/cloud-run-rollout" }
   variables {
     runtime_service_account = "rollout-deploy@agora-json-keys-test.iam.gserviceaccount.com"
   }
@@ -357,7 +357,7 @@ run "reject_privileged_application_identity" {
 
 run "reject_floating_verifier" {
   command = plan
-  module { source = "../../../modules/cloud-run-rollout" }
+  module { source = "../../modules/cloud-run-rollout" }
   variables {
     verification_image = "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-production/verify:latest"
   }
@@ -366,7 +366,7 @@ run "reject_floating_verifier" {
 
 run "reject_peer_verifier" {
   command = plan
-  module { source = "../../../modules/cloud-run-rollout" }
+  module { source = "../../modules/cloud-run-rollout" }
   variables {
     verification_image = "europe-west1-docker.pkg.dev/agora-authentication-test/agora-production/verify@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   }
@@ -375,7 +375,7 @@ run "reject_peer_verifier" {
 
 run "reject_region_pattern_injection" {
   command = plan
-  module { source = "../../../modules/cloud-run-rollout" }
+  module { source = "../../modules/cloud-run-rollout" }
   variables {
     region = "europe-west1|.*"
   }
@@ -384,7 +384,7 @@ run "reject_region_pattern_injection" {
 
 run "reject_artifacts_in_receipt_bucket" {
   command = plan
-  module { source = "../../../modules/cloud-run-rollout" }
+  module { source = "../../modules/cloud-run-rollout" }
   variables {
     artifact_bucket = "agora-management-test-deployment-receipts"
   }
@@ -393,7 +393,7 @@ run "reject_artifacts_in_receipt_bucket" {
 
 run "reject_mismatched_probe_network" {
   command = plan
-  module { source = "../../../modules/cloud-run-rollout" }
+  module { source = "../../modules/cloud-run-rollout" }
   variables {
     probe = {
       network    = "projects/agora-authentication-test/global/networks/agora-authentication"

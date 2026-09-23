@@ -17,7 +17,7 @@ variables {
 
 run "json_keys_job_authority" {
   command = plan
-  module { source = "../../../modules/service-job-access" }
+  module { source = "../../modules/service-job-access" }
 
   override_resource {
     target = google_project_iam_custom_role.job_update
@@ -174,7 +174,7 @@ run "json_keys_job_authority" {
 
 run "authentication_has_only_migrations" {
   command = plan
-  module { source = "../../../modules/service-job-access" }
+  module { source = "../../modules/service-job-access" }
   variables {
     runtime = {
       schema_version        = 1
@@ -215,7 +215,7 @@ run "authentication_has_only_migrations" {
 
 run "reject_peer_runtime" {
   command = plan
-  module { source = "../../../modules/service-job-access" }
+  module { source = "../../modules/service-job-access" }
   variables {
     runtime = {
       schema_version        = 1, project_id = "agora-json-keys-test", service = "json-keys", region = "europe-west1"
@@ -228,7 +228,7 @@ run "reject_peer_runtime" {
 
 run "reject_unknown_service" {
   command = plan
-  module { source = "../../../modules/service-job-access" }
+  module { source = "../../modules/service-job-access" }
   variables {
     runtime = {
       schema_version        = 1, project_id = "agora-json-keys-test", service = "genai", region = "europe-west1"
@@ -241,7 +241,7 @@ run "reject_unknown_service" {
 
 run "reject_unknown_contract" {
   command = plan
-  module { source = "../../../modules/service-job-access" }
+  module { source = "../../modules/service-job-access" }
   variables {
     runtime = {
       schema_version        = 2, project_id = "agora-json-keys-test", service = "json-keys", region = "europe-west1"
@@ -254,7 +254,7 @@ run "reject_unknown_contract" {
 
 run "reject_zone_as_region" {
   command = plan
-  module { source = "../../../modules/service-job-access" }
+  module { source = "../../modules/service-job-access" }
   variables {
     runtime = {
       schema_version        = 1, project_id = "agora-json-keys-test", service = "json-keys", region = "europe-west1-d"
@@ -267,7 +267,7 @@ run "reject_zone_as_region" {
 
 run "reject_project_resource_path" {
   command = plan
-  module { source = "../../../modules/service-job-access" }
+  module { source = "../../modules/service-job-access" }
   variables {
     runtime = {
       schema_version        = 1, project_id = "projects/agora-json-keys-test", service = "json-keys", region = "europe-west1"
@@ -280,7 +280,7 @@ run "reject_project_resource_path" {
 
 run "reject_peer_channel" {
   command = plan
-  module { source = "../../../modules/service-job-access" }
+  module { source = "../../modules/service-job-access" }
   variables {
     runtime = {
       schema_version        = 1, project_id = "agora-json-keys-test", service = "json-keys", region = "europe-west1"
@@ -293,7 +293,7 @@ run "reject_peer_channel" {
 
 run "reject_unmonitored_jobs" {
   command = plan
-  module { source = "../../../modules/service-job-access" }
+  module { source = "../../modules/service-job-access" }
   variables {
     runtime = {
       schema_version        = 1, project_id = "agora-json-keys-test", service = "json-keys", region = "europe-west1"

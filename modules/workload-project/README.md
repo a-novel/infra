@@ -33,7 +33,7 @@ contract when activating a service; do not give a
 consumer access to foundation's state.
 
 The protected foundation account also receives repository, notification-channel and alert-policy administration
-inside this project, for the separately composed [application prerequisites](../service-foundation) and
+inside this project, for the inactive [service foundation](../../environments/service-foundation) and
 [job monitoring](../service-job-access). Google's `roles/monitoring.alertPolicyEditor` grants policy
 maintenance only to this protected account; routine release does not administer its own monitoring.
 No application prerequisite is instantiated by this module.

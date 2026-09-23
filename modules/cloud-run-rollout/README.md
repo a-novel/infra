@@ -2,7 +2,8 @@
 
 This module declares one Cloud Deploy delivery pipeline, its Cloud Run target and probe, execution
 identities, private artifact storage, and native operations alerts for one service project.
-**No production root calls it. The pipeline is suspended in code**, not behind an input
+The inactive [service foundation root](../../environments/service-foundation) composes it after
+verifier promotion. **No live workflow selects that root. The pipeline is suspended in code**, not behind an input
 switch. It cannot deploy an API until a separately reviewed activation change completes the gates
 below. The existing production release path remains the only active writer.
 
@@ -145,8 +146,8 @@ and completion-evidence implementation; this table is a contract, not live proof
 2. Provision this module only through a separately approved foundation change, after the
    [service-project foundation](../workload-project/README.md) establishes its APIs, Google agents
    and their roles, release identity and management receipt folder. The caller must order this module
-   after that foundation and its host subnet grants. The separately composed
-   [service foundation](../service-foundation) supplies `agora-production`/`agora-tooling`, the
+   after that foundation and its host subnet grants. The
+   [service foundation](../../environments/service-foundation) supplies `agora-production`/`agora-tooling`, the
    application runtime and operations channel. Promote and verify the reviewed verifier digest before
    creating the probe; application release has no writer grant on `agora-tooling`. The
    foundation needs resource/IAM administration and permission to attach the probe identity.
@@ -176,7 +177,7 @@ human-only initialization, and durable recovery receipts remain necessary. Exist
 supported for retained recovery points. The inactive pilot adds declarative configuration and a
 verification adapter; **it removes no active coordinator yet** and makes no net-size-reduction claim.
 
-The existing foundation test job runs provider-mocked cases for this standalone module, using the
+The service foundation's cloud-blind validation runs provider-mocked cases for this module, using the
 root's pinned provider. Go tests cover the safety contract and exercise the official clients against
 a local HTTP server. CI also checks formatting and lint. No tests contact Google Cloud; they establish
 configuration and input boundaries, not live IAM, probe routing, or rollout behavior.
