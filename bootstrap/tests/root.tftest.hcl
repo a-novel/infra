@@ -322,6 +322,51 @@ run "builds_the_protected_management_plane" {
   }
 }
 
+run "expires_only_plan_artifacts_after_two_days" {
+  command = plan
+
+  assert {
+    condition = length([
+      for rule in google_storage_bucket.state.lifecycle_rule : rule
+      if one(rule.action).type == "Delete" && try(
+        one(rule.condition).age == 2 &&
+        one(rule.condition).matches_prefix == tolist(["services/"]) &&
+        toset(one(rule.condition).matches_suffix) == toset(["/plan.tfplan", "/plan.metadata.json"]) &&
+        one(rule.condition).with_state == "ANY",
+        false,
+      )
+    ]) == 1
+    error_message = "Service plans need one exact two-day expiration rule."
+  }
+
+  assert {
+    condition = alltrue([
+      for object, expires in {
+        "services/json-project/release/plans/commit/1-1/plan.tfplan"        = true
+        "services/json-project/release/plans/commit/1-1/plan.metadata.json" = true
+        "services/auth-project/release/plans/commit/2-1/plan.tfplan"        = true
+        "bootstrap/plans/commit/1-1/plan.tfplan"                            = true
+        "services/json-project/release/default.tfstate"                     = false
+        "services/json-project/release/default.tflock"                      = false
+        "services/json-project/release/config/1-1.tfvars.json"              = false
+        "services/json-project/release/plans/commit/1-1/plan.tfplan.extra"  = false
+        "foundation/coordinates/json-project/checksum.json"                 = false
+        "foundation/coordinates/json-project/plan.metadata.json"            = false
+        "services-unrelated/plan.tfplan"                                    = false
+        } : anytrue([
+          for rule in google_storage_bucket.state.lifecycle_rule : try(
+            one(rule.action).type == "Delete" && one(rule.condition).age == 2 &&
+            anytrue([for prefix in one(rule.condition).matches_prefix : startswith(object, prefix)]) &&
+            (one(rule.condition).matches_suffix == null ? true :
+            anytrue([for suffix in one(rule.condition).matches_suffix : endswith(object, suffix)])),
+            false,
+          )
+      ]) == expires
+    ])
+    error_message = "Two-day expiration must match plans while excluding state, locks and configuration."
+  }
+}
+
 run "rejects_an_invalid_project_id" {
   command = plan
 

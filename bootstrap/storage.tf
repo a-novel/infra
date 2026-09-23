@@ -57,6 +57,20 @@ resource "google_storage_bucket" "state" {
     }
   }
 
+  lifecycle_rule {
+    action {
+      type = "Delete"
+    }
+
+    # Plans share the service state folder; both name selectors must match.
+    condition {
+      age            = 2
+      matches_prefix = ["services/"]
+      matches_suffix = ["/plan.tfplan", "/plan.metadata.json"]
+      with_state     = "ANY"
+    }
+  }
+
   lifecycle {
     prevent_destroy = true
   }

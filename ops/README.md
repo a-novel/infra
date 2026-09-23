@@ -129,9 +129,9 @@ with age 2 days, prefix `services/`, and exactly the suffixes `/plan.tfplan` and
 Its project/name and every existing Delete rule must remain unchanged, and all other protections still
 apply. [Cloud Storage intersects these conditions](https://docs.cloud.google.com/storage/docs/lifecycle#lifecycle_configuration),
 excluding state, locks and configuration. Missing, broader or unknown selectors are rejected.
-The policy permits the addition; bootstrap does not declare it yet. Land the policy before proposing
-the native rule: trusted assessments execute policy from `master`. Applying that rule remains a
-protected human-approved operation, tracked in [#306](https://github.com/a-novel/infra/issues/306).
+Bootstrap declares this [native rule](../bootstrap/README.md#plan-artifact-expiration).
+Its protected apply and live verification remain separate human-approved operations before the
+service-job writer can be activated. Trusted assessments execute policy from `master`.
 
 ## Protected workflow internals
 

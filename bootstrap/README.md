@@ -42,6 +42,24 @@ behavior a maintainer must understand; ordinary OpenTofu language behavior is no
 | `google_secret_manager_secret.application`                                                         | Creates seven protected application secret containers, including distinct owner and read-only backup credentials for both PostgreSQL clusters. Payload versions are supplied through stdin by an authorized operator and never enter configuration, state, GitHub secrets, plans, or logs.                                                               | Deletion protection, provider deletion prevention, OpenTofu `prevent_destroy`, and a 30-day delayed version-destruction window apply. Secret versions and access operations are billable; empty metadata containers are negligible.                                                                                                                                                               | [Provider resource](https://registry.terraform.io/providers/hashicorp/google/7.45.0/docs/resources/secret_manager_secret), [Secret Manager best practices](https://cloud.google.com/secret-manager/docs/best-practices), [pricing](https://cloud.google.com/secret-manager/pricing)                                                                                                                                                                                |
 | `google_project_iam_audit_config.management`                                                       | Enables Admin Read, Data Read, and Data Write audit records for Storage, Secret Manager, IAM, and STS so state-lock, payload-access, and token-exchange activity can be investigated. IAM's policy also covers IAM Credentials, which Google does not allow as a separate service-level audit configuration.                                             | Audit configuration is protected from destructive plans. Data Access log ingestion and retention can be billable, but the scope is limited to four security-critical service configurations instead of `allServices`.                                                                                                                                                                             | [Provider resource](https://registry.terraform.io/providers/hashicorp/google/7.45.0/docs/resources/google_project_iam_audit_config), [Cloud Audit Logs](https://cloud.google.com/logging/docs/audit), [IAM Credentials audit logs](https://cloud.google.com/iam/docs/audit-logging/audit-logging-iamcreds), [Logging pricing](https://cloud.google.com/logging/pricing)                                                                                            |
 
+## Plan artifact expiration
+
+The state bucket declares two-day expiration under `bootstrap/plans/`, `foundation/plans/` and
+`release/plans/`, and for objects under `services/` ending in `/plan.tfplan` or `/plan.metadata.json`.
+The service prefix and suffix must both match; state, locks, private inputs and foundation coordinates
+are excluded. Their existing version-retention rule remains unchanged.
+
+[Cloud Storage lifecycle](https://docs.cloud.google.com/storage/docs/lifecycle) acts asynchronously.
+In this versioned bucket it first makes a live plan noncurrent, then deletes that version; seven-day
+soft delete still permits recovery. Custody metadata independently enforces the exact 24-hour apply
+deadline, including for restored objects. Storage cleanup never authorizes applying a plan.
+
+Declaring the rule does not install it. Before activating the service-job writer, an operator must
+use the [protected bootstrap plan/apply](../ops/README.md#protected-workflow-operations) and verify
+the bucket's lifecycle selectors, versioning and soft delete through the
+[storage inspection](../docs/runbooks/bootstrap-management-plane.md#9-verify-resources).
+Removing or broadening this rule requires another policy review.
+
 ## Automation trust boundaries
 
 All providers trust GitHub issuer `https://token.actions.githubusercontent.com`, organization ID
