@@ -1,14 +1,15 @@
 # Single-service release root (inactive)
 
-This root owns one service's Cloud Run job specifications. JSON Keys has migrations and rotation;
-Authentication has migrations. The shared resource pattern derives the application identity and
+This root owns one service's Cloud Run job specifications and can output its native API release request.
+JSON Keys has migrations and rotation; Authentication has migrations.
+The shared resource pattern derives the application identity and
 database endpoint from the [foundation's published document](../service-foundation#published-coordinates).
 OpenTofu validates its checksum and service scope against independently approved inputs. Shared VPC
-coordinates, promoted job digests and numeric secret versions remain separate inputs. Neither this
+coordinates, promoted image digests and numeric secret versions remain separate inputs. Neither this
 root nor its future caller needs foundation-state access.
 
-**Code only:** no deployment workflow or live root allowlist selects this directory. Applying a job
-specification does not run it. The root creates no API, initializer, scheduler, identity or IAM grant.
+**Code only:** trusted assessment and drift can inspect this root; deployment callers remain disabled.
+Applying a job specification does not run it. The root creates no API, initializer, scheduler, identity or IAM grant.
 Cloud Deploy owns API specifications and traffic; protected foundation owns databases, IAM, schedules
 and alerts. Existing production resources and state stay unchanged.
 
@@ -25,6 +26,24 @@ protected caller must authorize inputs against the published coordinates before 
 fresh working directory, and prohibit backend overrides. Keep credentials in the approved federation
 environment. [GCS locking](https://opentofu.org/docs/language/settings/backends/gcs/) covers OpenTofu
 operations; migrations and Cloud Deploy still require the broader same-service exclusion.
+
+## Read-only assessment and drift
+
+The existing inspector selects projects from the last converged shared-foundation registration.
+It inventories native managed-folder metadata under `services/`, then reads objects only within each
+registered `services/PROJECT/release/` folder. The plan identity's existing folder-scoped access is
+sufficient; no bucket-wide object grant is required. Missing or unregistered folders stop inspection.
+
+A confirmed empty folder is skipped. Initialized state requires its matching converged inputs at
+`services/PROJECT/release/config/RUN-ATTEMPT.tfvars.json`, using the existing zero-padded sequence format.
+Missing inputs, inputs without state, unexpected workspaces/locks and denied reads stop inspection.
+The trusted coordinate guard validates each backend against registration before initialization with
+fresh local metadata. Writer enable flags do not exempt existing state from assessment or drift.
+
+Service-root changes and shared-module changes use the existing exact-candidate approval and private
+plan policy. Public verdicts contain no state, plan or configuration values. `tofu-gate` permits only
+`assess` and `drift` for this root; configuration custody permits only `fetch`. Its writer, private-plan
+custody and protected input publication remain separate activation prerequisites.
 
 ## Approved foundation handoff
 
@@ -45,8 +64,8 @@ The future protected caller must:
 3. Pass the original JSON text as `foundation_json`, without pretty-printing, trimming or re-encoding it.
    HCL verifies the approved checksum, reference namespace, document/runtime/database versions, exact
    service scope, runtime identity and private database endpoint. It requires a database contract;
-   foundation snapshots taken before database provisioning are rejected. Optional rollout fields are
-   not consumed by this job root.
+   foundation snapshots taken before database provisioning are rejected. Configuring the optional API
+   request also requires the document's exact JSON Keys pipeline and target.
 4. Preserve the approved reference and inputs with the private saved plan, then use the existing
    convergence, deletion-approval and same-service exclusion boundaries. A saved plan owns its captured
    values; changing the input document requires a new reviewed plan, not an apply-time substitution.
@@ -72,6 +91,34 @@ subsequent executions, not already-running tasks. The inactive root allocates no
 activated, job execution and logging incur costs. Its version-1 `jobs` output contains names, UIDs and
 images, not execution or health evidence. Dispatchers must inspect live definitions and retain native
 operation/execution identities.
+
+## Native API request
+
+`rollout` defaults to `null`, leaving both service job contracts unchanged. Opting in requires
+`project_number`, `image`, `release_id`, `request_id`, `source_commit` and `skaffold_version`.
+Only JSON Keys is supported. The image must be its promoted gRPC digest; release/source/Skaffold pins
+must satisfy the [native submitter contract](../../docs/runbooks/submit-release.md#the-private-request).
+Choose and retain the release ID and UUID before planning, never with `uuid()`, `timestamp()` or a
+retry-time replacement. Independently authorize the numeric service project and its ID relationship.
+
+The approved foundation document must name this project's exact regional `agora-json-keys-grpc`
+pipeline and target. Google project-ID and numeric resource names are accepted only within that
+authorized pair; the output uses the numeric name required by the SDK boundary. Deployment parameters
+reuse the jobs' database, application identity, network and secret pins. The management project number
+and receipt bucket derive from the already validated `MANAGEMENT_ID-NUMBER-tofu-state` convention,
+not a second copied parameter map. No API resource, renderer, provisioner or submission is added.
+
+The sensitive `release_request` output is a native `CreateReleaseRequest` object. After separately
+approved activation, the trusted caller can export it with `tofu output -json release_request` to a
+private file and pass that file unchanged to the existing source publisher and submitter. JSON output
+reveals sensitive values; keep the file, saved plan and state private and out of public logs. The caller
+must select the exact reviewed configuration/state, not read the newest output during a concurrent release.
+
+This object describes configuration, not persisted submission intent, successful job execution or
+approval. Complete-family/provenance and enabled-version checks, database/migration readiness,
+same-service exclusion and the native submission reservation remain separate gates. A failed or
+ambiguous submission never authorizes regenerating IDs or replaying migrations. There is still no
+live caller; Authentication API support and production ownership transfer remain separate work.
 
 ## Bootstrap before routine release
 
@@ -135,7 +182,9 @@ tofu -chdir=environments/service-release validate
 tofu -chdir=environments/service-release test
 ```
 
-They provide no live IAM, database readiness or migration-recovery proof. The
+The API output is compared as a whole to the same native request fixture exercised by the Go/SDK
+submission tests. There is no second expected parameter map or test-only compiler. These tests
+provide no live IAM, database readiness or migration-recovery proof. The
 [pinned provider resource](https://github.com/hashicorp/terraform-provider-google/blob/v8.2.0/website/docs/r/cloud_run_v2_job.html.markdown)
 owns configuration convergence. OpenTofu's [backend variables](https://opentofu.org/docs/language/settings/backends/configuration/#variables-and-locals)
 bind the state prefix directly to the selected project without a backend-file generator.

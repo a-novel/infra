@@ -18,8 +18,11 @@ and project-number relationship must come from the reviewed foundation contract.
 The input is Google's native
 [`CreateReleaseRequest`](https://docs.cloud.google.com/deploy/docs/api/reference/rest/v1/projects.locations.deliveryPipelines.releases/create)
 JSON, limited to 64 KiB. The [test fixture](../../internal/submission/testdata/request.yaml) illustrates
-its fields in readable YAML; it is not a production configuration. The future trusted input producer must
-emit JSON, not run a shell templating pipeline inside a credentialed job.
+its fields in readable YAML; it is not a production configuration. The inactive
+[service-release root](../../environments/service-release#native-api-request) now produces this native
+object from the same approved foundation and inputs as the jobs. Its sensitive `release_request`
+output exports directly as JSON, without a shell template or Go renderer. Live caller integration
+remains unconnected; configuration output does not reserve intent or authorize submission.
 
 | Field                                                   | Accepted contract                                                                                                                                                                                                                                              |
 | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

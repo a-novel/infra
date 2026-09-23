@@ -185,11 +185,14 @@ README.md||[false,[]]
 environments/production/foundation/main.tf||[true,["foundation"]]
 deploy/production/images.yaml||[true,["release"]]
 docs/old.md|bootstrap/main.tf|[true,["bootstrap"]]
-modules/shared/main.tf||[true,["bootstrap","foundation","release","service-foundation"]]
+modules/shared/main.tf||[true,["bootstrap","foundation","release","service-foundation","service-release"]]
 assets/database-host/startup.sh||[true,["foundation","service-foundation"]]
 docs/old.md|assets/database-host/shutdown.sh|[true,["foundation","service-foundation"]]
 environments/service-foundation/main.tf||[true,["service-foundation"]]
 docs/old.md|environments/service-foundation/main.tf|[true,["service-foundation"]]
+environments/service-release/jobs.tf||[true,["service-release"]]
+environments/service-release/README.md||[true,["service-release"]]
+docs/old.md|environments/service-release/jobs.tf|[true,["service-release"]]
 CASES
 
 # The metadata-only merge gate fails closed unless exact protected evidence

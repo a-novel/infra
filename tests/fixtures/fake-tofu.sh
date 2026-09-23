@@ -7,6 +7,11 @@ set -euo pipefail
 if [ -n "${FAKE_TOFU_CALLS:-}" ]; then
     printf '%s\n' "$*" >>"${FAKE_TOFU_CALLS}"
 fi
+if [ -n "${FAKE_TOFU_ONLY_ROOT:-}" ] && [ "${1:-}" != "-chdir=${FAKE_TOFU_ONLY_ROOT}" ]; then
+    unset FAKE_TOFU_FAIL_ACTION
+    FAKE_TOFU_PLAN_CODE=0
+    FAKE_TOFU_PLAN_JSON="${FAKE_TOFU_CLEAN_PLAN_JSON:?}"
+fi
 
 if [[ "${1:-}" == -chdir=* ]]; then
     shift

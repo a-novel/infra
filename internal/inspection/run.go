@@ -94,7 +94,12 @@ func run(ctx context.Context, args []string, getenv func(string) string, execute
 			return err
 		}
 	}
-	return i.services(ctx, "drift", nil)
+	for _, root := range []string{"service-foundation", "service-release"} {
+		if err := i.services(ctx, "drift", root, nil); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (i inspector) assessOrDrift(ctx context.Context, mode, root, file string, env []string, result *verdict) error {

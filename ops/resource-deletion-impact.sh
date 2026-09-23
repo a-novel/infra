@@ -38,6 +38,7 @@ jq --compact-output '
           (startswith("bootstrap/") or
            startswith("environments/production/foundation/") or
            startswith("environments/service-foundation/") or
+           startswith("environments/service-release/") or
            startswith("environments/production/release/") | not)
         )
       )
@@ -49,6 +50,7 @@ jq --compact-output '
           startswith("bootstrap/") or
           startswith("environments/production/foundation/") or
           startswith("environments/service-foundation/") or
+          startswith("environments/service-release/") or
           startswith("assets/database-host/") or
           startswith("environments/production/release/") or
           . == "deploy/production/images.yaml"
@@ -61,7 +63,7 @@ jq --compact-output '
       release_manifest: any($paths[]; . == "deploy/production/images.yaml"),
       roots: (
         if $all_roots then
-          ["bootstrap", "foundation", "release", "service-foundation"]
+          ["bootstrap", "foundation", "release", "service-foundation", "service-release"]
         else
           [
             if any($paths[]; startswith("bootstrap/")) then "bootstrap" else empty end,
@@ -76,7 +78,8 @@ jq --compact-output '
             if any($paths[];
               startswith("environments/service-foundation/") or
               startswith("assets/database-host/")
-            ) then "service-foundation" else empty end
+            ) then "service-foundation" else empty end,
+            if any($paths[]; startswith("environments/service-release/")) then "service-release" else empty end
           ]
         end
       )
