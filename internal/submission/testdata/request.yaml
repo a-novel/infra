@@ -6,7 +6,7 @@ release:
   annotations:
     request-id: 11111111-2222-4333-8444-555555555555
     source-commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-  skaffoldConfigUri: gs://management-123-deployment-receipts/services/agora-json-keys-test/production/sources/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.tar.gz
+  skaffoldConfigUri: gs://agora-management-test-123456789012-deployment-receipts/services/agora-json-keys-test/production/sources/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.tar.gz
   skaffoldConfigPath: skaffold.yaml
   skaffoldVersion: 2.17.1
   buildArtifacts:
@@ -14,10 +14,10 @@ release:
       tag: europe-west1-docker.pkg.dev/agora-json-keys-test/agora-production/service-json-keys/grpc@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
   deployParameters:
     projectId: agora-json-keys-test
-    network: projects/agora-host-test/global/networks/agora-production
-    subnetwork: projects/agora-host-test/regions/europe-west1/subnetworks/agora-production
+    network: projects/agora-network-test/global/networks/agora-production
+    subnetwork: projects/agora-network-test/regions/europe-west1/subnetworks/agora-production-europe-west1
     runtimeServiceAccount: agora-json-keys@agora-json-keys-test.iam.gserviceaccount.com
-    databasePrivateIP: 10.20.0.3
-    managementProjectNumber: "654321"
-    masterKeyVersion: "2"
-    postgresPasswordVersion: "3"
+    databasePrivateIP: 10.20.0.5
+    managementProjectNumber: "123456789012"
+    masterKeyVersion: "29"
+    postgresPasswordVersion: "17"
