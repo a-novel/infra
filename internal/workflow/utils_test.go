@@ -68,7 +68,11 @@ func invoke(t *testing.T, args []string, overrides map[string]string, failAt str
 			title := "foundation plan foundation by @operator"
 			switch args[0] {
 			case "foundation":
-				title = "foundation plan " + args[2] + " by @operator"
+				scope := args[2]
+				if scope == "service-foundation" {
+					scope += "/" + args[3]
+				}
+				title = "foundation plan " + scope + " by @operator"
 			case "recovery":
 				title = "recovery plan-workload " + args[2] + " by @operator"
 			}

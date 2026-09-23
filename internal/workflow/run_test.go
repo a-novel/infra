@@ -18,6 +18,8 @@ func TestRun(t *testing.T) {
 		{[]string{"drift", "assess-pull-request", "93"}, []string{"operation=assess-pull-request", "pull_request=93", "head_sha=" + head, "base_sha=" + sha}, "202"},
 		{[]string{"foundation", "plan", "bootstrap"}, []string{"operation=plan", "root=bootstrap"}, "202-3"},
 		{[]string{"foundation", "plan", "foundation"}, []string{"operation=plan", "root=foundation"}, "202-3"},
+		{[]string{"foundation", "plan", "service-foundation", "json-keys"}, []string{"operation=plan", "root=service-foundation", "service=json-keys"}, "202-3"},
+		{[]string{"foundation", "apply", "service-foundation", "authentication", "101-3"}, []string{"operation=apply", "root=service-foundation", "service=authentication", "plan_id=101-3"}, "202"},
 		{[]string{"foundation", "apply", "bootstrap", "101-3"}, []string{"operation=apply", "root=bootstrap", "plan_id=101-3"}, "202"},
 		{[]string{"foundation", "apply", "foundation", "101-3"}, []string{"operation=apply", "root=foundation", "plan_id=101-3"}, "202"},
 		{[]string{"release", "deploy"}, []string{"action=deploy"}, "202"},
@@ -63,6 +65,9 @@ func TestRunInvalidIntent(t *testing.T) {
 		{"foundation", "plan"},
 		{"foundation", "plan", "release"},
 		{"foundation", "apply", "foundation", "01-3"},
+		{"foundation", "plan", "service-foundation"},
+		{"foundation", "plan", "service-foundation", "peer"},
+		{"foundation", "apply", "service-foundation", "json-keys", "01-3"},
 		{"release", "deploy", "--force"},
 		{"release", "recover-first-launch", "invalid"},
 		{"release", "rollback", "101-0"},
@@ -133,6 +138,14 @@ func TestRunCommandFailure(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRunServicePlanIdentity(t *testing.T) {
+	t.Parallel()
+	r := invoke(t, []string{"foundation", "apply", "service-foundation", "json-keys", "101-3"},
+		map[string]string{"plan.patch": `{"display_title":"foundation plan service-foundation/authentication by @operator"}`}, "")
+	require.Equal(t, 65, r.code)
+	require.Empty(t, r.dispatches)
 }
 
 func TestRunUncertainDispatch(t *testing.T) {

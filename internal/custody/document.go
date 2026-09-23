@@ -13,13 +13,20 @@ import (
 	"github.com/a-novel/infra/internal/release"
 )
 
-func (storage store) document(kind, action string, args []string) error {
+func (storage store) document(kind, action string, args []string, stateSuffix string) error {
 	prefix, suffix := "gs://"+storage.bucket+"/production/success", ".json"
 	if kind == "config" {
 		if len(args) == 0 || !rootPattern.MatchString(args[0]) {
 			return failure{65, "Invalid configuration root."}
 		}
 		prefix, suffix = "gs://"+storage.bucket+"/"+args[0]+"/config", ".tfvars.json"
+		if args[0] == "service-foundation" {
+			root, err := planRoot(args[0], stateSuffix)
+			if err != nil {
+				return err
+			}
+			prefix = "gs://" + storage.bucket + "/" + root + "/" + stateSuffix + "/config"
+		}
 		args = args[1:]
 		if action == "fetch" {
 			action = "latest"

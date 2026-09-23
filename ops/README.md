@@ -70,6 +70,8 @@ go run ./cmd/infra drift assess-pull-request <pull-request-number>
 
 go run ./cmd/infra foundation plan <bootstrap|foundation>
 go run ./cmd/infra foundation apply <bootstrap|foundation> <plan-id>
+go run ./cmd/infra foundation plan service-foundation <json-keys|authentication>
+go run ./cmd/infra foundation apply service-foundation <json-keys|authentication> <plan-id>
 
 go run ./cmd/infra release deploy [--no-wait]
 go run ./cmd/infra release rollback <receipt-id>
@@ -88,6 +90,10 @@ commands: apply queries the selected plan attempt, derives its reviewed commit, 
 unless that commit is the clean local and remote `master`. The private plan itself remains
 root-bound, hash-bound, one-use, and valid for 24 hours. Its creation already enforced the
 `allow-resource-deletion` decision for that commit.
+
+Service-foundation selection additionally binds the registered project and private backend scope.
+It is disabled until separate activation approval; follow the
+[service provisioning boundary](../docs/runbooks/provision-service-projects.md#protected-service-foundation-plans).
 
 Renovate PRs that only change image tags and digests are assessed automatically after the normal
 PR validation jobs pass. Completion of `master` CI also checks open image PRs against the new base.

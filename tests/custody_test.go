@@ -117,16 +117,16 @@ func TestCustodyReceiptRetry(t *testing.T) {
 	}
 }
 
-func planFixture(t *testing.T) (*sandbox, []string, string) {
+func planFixture(t *testing.T, root, suffix string) (*sandbox, []string, string) {
 	t.Helper()
 	f := setup(t)
 	storageFixture(t, f)
-	f.env["TOFU_STATE_SUFFIX"] = "recovery/agora-recovery-test"
+	f.env["TOFU_STATE_SUFFIX"] = suffix
 	plan := filepath.Join(f.dir, "reviewed.tfplan")
 	require.NoError(t, os.WriteFile(plan, []byte(privateValue+"\x00\xff"), 0o600))
-	args := []string{"fixture-bucket", "foundation", strings.Repeat("a", 40), "123-1", plan}
+	args := []string{"agora-management-test-123-tofu-state", root, strings.Repeat("a", 40), "123-1", plan}
 	f.custody(t, 0, append(append([]string{"plan", "publish"}, args...), "false")...)
-	remote := filepath.Join(f.env["FAKE_GCS_ROOT"], args[0], args[1], "plans", f.env["TOFU_STATE_SUFFIX"], args[2], args[3])
+	remote := filepath.Join(f.env["FAKE_GCS_ROOT"], args[0], "foundation", "plans", suffix, args[2], args[3])
 	return f, args, remote
 }
 
@@ -153,7 +153,7 @@ func TestCustodyPlanIntegrity(t *testing.T) {
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
-			f, args, remote := planFixture(t)
+			f, args, remote := planFixture(t, "foundation", "recovery/agora-recovery-test")
 			meta := readJSON(t, filepath.Join(remote, "metadata.json"))
 			testCase.change(meta)
 			writeJSON(t, filepath.Join(remote, "metadata.json"), meta)
@@ -170,18 +170,22 @@ func TestCustodyPlanIntegrity(t *testing.T) {
 
 func TestCustodyPlanApply(t *testing.T) {
 	t.Parallel()
-	for _, failed := range []bool{false, true} {
-		name := "Success"
-		if failed {
-			name = "Error/Apply"
-		}
-		t.Run(name, func(t *testing.T) {
+	for _, testCase := range []struct {
+		name, root, suffix string
+		failed             bool
+	}{
+		{"Recovery", "foundation", "recovery/agora-recovery-test", false},
+		{"RecoveryFailure", "foundation", "recovery/agora-recovery-test", true},
+		{"Service", "service-foundation", "services/agora-json-keys-test", false},
+		{"ServiceFailure", "service-foundation", "services/agora-json-keys-test", true},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
-			f, args, remote := planFixture(t)
+			f, args, remote := planFixture(t, testCase.root, testCase.suffix)
 			f.custody(t, 70, append(append([]string{"plan", "publish"}, args...), "false")...)
-			f.env["TOFU_STATE_SUFFIX"] = "recovery/another-project"
+			f.env["TOFU_STATE_SUFFIX"] = strings.Replace(testCase.suffix, "agora-", "peer-", 1)
 			f.custody(t, 66, append([]string{"plan", "fetch"}, args...)...)
-			f.env["TOFU_STATE_SUFFIX"] = "recovery/agora-recovery-test"
+			f.env["TOFU_STATE_SUFFIX"] = testCase.suffix
 			f.custody(t, 0, append([]string{"plan", "fetch"}, args...)...)
 			require.Equal(t, privateValue+"\x00\xff", read(t, args[4]))
 			require.Equal(t, "false\n", read(t, args[4]+".destructive"))
@@ -200,16 +204,104 @@ func TestCustodyPlanApply(t *testing.T) {
 			f.env["FAKE_TOFU_REQUIRE_ABSENT"] = filepath.Join(remote, "plan.tfplan")
 			f.env["FAKE_TOFU_PLAN_JSON"], f.env["FAKE_TOFU_PLAN_CODE"] = filepath.Join(f.root, "tests/fixtures/plans/safe.json"), "0"
 			expected := 0
-			if failed {
+			if testCase.failed {
 				f.env["FAKE_TOFU_FAIL_ACTION"], expected = "apply", 1
 			}
 			config := filepath.Join(f.dir, "config.json")
 			writeJSON(t, config, object{})
+			if testCase.root == "service-foundation" {
+				f.env["MANAGEMENT_PROJECT_ID"] = "agora-management-test"
+				f.env["FOUNDATION_CONFIG"] = `{"management_project_id":"agora-management-test","workload_project_id":"agora-production-test","region":"europe-west1","service_projects":{"json-keys":"agora-json-keys-test"}}`
+				writeJSON(t, config, object{
+					"project_id": "agora-json-keys-test", "management_project_id": "agora-management-test",
+					"region": "europe-west1", "state_bucket": args[0], "service": "json-keys",
+				})
+			}
 			code, out := f.script(t, "apply-reviewed-plan", args[1], args[0], args[2], args[3], config)
 			expectCode(t, expected, code, out)
 			require.NotContains(t, out, "fixture-sensitive-diagnostic")
 			require.NoFileExists(t, filepath.Join(remote, "plan.tfplan"))
 			f.custody(t, 66, append([]string{"plan", "fetch"}, args...)...)
+		})
+	}
+}
+
+func TestCustodyServiceScope(t *testing.T) {
+	t.Parallel()
+	for _, testCase := range []struct {
+		name, root, suffix string
+		code               int
+	}{
+		{"Exact", "service-foundation", "services/agora-json-keys-test", 0},
+		{"Peer", "service-foundation", "services/agora-authentication-test", 66},
+		{"MissingScope", "service-foundation", "", 65},
+		{"Recovery", "service-foundation", "recovery/agora-json-keys-test", 65},
+		{"Legacy", "foundation", "services/agora-json-keys-test", 65},
+		{"Traversal", "service-foundation", "services/../foundation", 65},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			f, args, _ := planFixture(t, "service-foundation", "services/agora-json-keys-test")
+			args[1], f.env["TOFU_STATE_SUFFIX"] = testCase.root, testCase.suffix
+			f.custody(t, testCase.code, append([]string{"plan", "fetch"}, args...)...)
+		})
+	}
+	t.Run("Configuration", func(t *testing.T) {
+		t.Parallel()
+		f := setup(t)
+		storageFixture(t, f)
+		f.env["TOFU_STATE_SUFFIX"] = "services/agora-json-keys-test"
+		input, output := filepath.Join(f.dir, "config.json"), filepath.Join(f.dir, "download.json")
+		writeJSON(t, input, object{"project_id": "agora-json-keys-test"})
+		f.custody(t, 0, "config", "publish", "fixture-bucket", "service-foundation", input, "123", "1")
+		f.custody(t, 0, "config", "fetch", "fixture-bucket", "service-foundation", output)
+		require.Equal(t, read(t, input), read(t, output))
+		f.env["TOFU_STATE_SUFFIX"] = "services/agora-authentication-test"
+		f.custody(t, 4, "config", "fetch", "fixture-bucket", "service-foundation", output)
+		f.custody(t, 4, "config", "fetch", "fixture-bucket", "foundation", output)
+	})
+}
+
+func TestServiceFoundationBackend(t *testing.T) {
+	t.Parallel()
+	for _, testCase := range []struct {
+		name, variable, value string
+		code                  int
+	}{
+		{name: "NativeBackend"},
+		{name: "PeerScope", variable: "TOFU_STATE_SUFFIX", value: "services/agora-peer-test", code: 65},
+		{name: "WorkspaceOverride", variable: "TF_WORKSPACE", value: "peer", code: 65},
+		{name: "CLIOverride", variable: "TF_CLI_ARGS_init", value: "-backend-config=prefix=peer", code: 65},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			f := setup(t)
+			f.command(t, "infra")
+			f.fake(t, "tofu", "fake-tofu.sh")
+			stub, err := exec.LookPath("true")
+			require.NoError(t, err)
+			f.link(t, "git", stub)
+			bucket := "agora-management-test-123-tofu-state"
+			config, calls := filepath.Join(f.dir, "config.json"), filepath.Join(f.dir, "tofu-calls")
+			writeJSON(t, config, object{
+				"project_id": "agora-json-keys-test", "management_project_id": "agora-management-test",
+				"region": "europe-west1", "state_bucket": bucket, "service": "json-keys",
+			})
+			f.env["FOUNDATION_CONFIG"] = `{"management_project_id":"agora-management-test","workload_project_id":"agora-production-test","region":"europe-west1","service_projects":{"json-keys":"agora-json-keys-test"}}`
+			f.env["MANAGEMENT_PROJECT_ID"], f.env["TOFU_STATE_SUFFIX"] = "agora-management-test", "services/agora-json-keys-test"
+			f.env["TOFU_VAR_FILE"], f.env["FAKE_TOFU_CALLS"] = config, calls
+			f.env["FAKE_TOFU_PLAN_JSON"], f.env["FAKE_TOFU_PLAN_CODE"] = filepath.Join(f.root, "tests/fixtures/plans/safe.json"), "2"
+			if testCase.variable != "" {
+				f.env[testCase.variable] = testCase.value
+			}
+			code, out := f.script(t, "tofu-gate", "assess", "service-foundation", bucket)
+			expectCode(t, testCase.code, code, out)
+			if testCase.code != 0 {
+				require.NoFileExists(t, calls, "invalid scope must fail before initialization")
+				return
+			}
+			require.Contains(t, read(t, calls), " init -reconfigure -input=false -no-color -lockfile=readonly -var-file="+config+"\n")
+			require.NotContains(t, read(t, calls), "-backend-config")
 		})
 	}
 }

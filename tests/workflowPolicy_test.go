@@ -134,6 +134,10 @@ func TestWorkflowCredentials(t *testing.T) {
 	require.Equal(t, false, build[0].With["cache"])
 	require.Contains(t, build[1].Run, "go build -mod=readonly")
 	stepIndex(t, loadWorkflow(t, "workflows/main.yaml").Jobs["lint-repository"].Steps, "$/.github/actions/setup-infra")
+	foundation := loadWorkflow(t, "workflows/foundation.yaml").Jobs["execute"].Steps
+	selection := stepIndex(t, foundation, "infra foundation-inputs prepare")
+	require.Less(t, selection, stepIndex(t, foundation, "google-github-actions/auth@"))
+	require.Equal(t, "${{ vars.SERVICE_FOUNDATIONS_ENABLED }}", foundation[selection].Env["SERVICE_FOUNDATIONS_ENABLED"])
 }
 
 func TestWorkflowBoundaries(t *testing.T) {
