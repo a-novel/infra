@@ -250,6 +250,9 @@ the existing `infra observe-rollout` command accepts the exact resource name pri
 
 ## Before live use
 
+The proposed [service-operation contract](../service-operations.md) maps the remaining caller and
+ownership work end to end. Its persistent guard and completion protocol are not implemented yet.
+
 The remaining work in [#189](https://github.com/a-novel/infra/issues/189) and
 [#187](https://github.com/a-novel/infra/issues/187) must establish:
 
