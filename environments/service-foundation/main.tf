@@ -9,6 +9,10 @@ locals {
     json-keys      = toset(["production-json-keys-postgres-password", "production-json-keys-app-master-key"])
     authentication = toset(["production-authentication-postgres-password", "production-authentication-smtp-sender-password"])
   }
+  job_secrets = {
+    json-keys      = local.runtime_secrets.json-keys
+    authentication = toset(["production-authentication-postgres-password"])
+  }
 }
 
 resource "google_service_account" "runtime" {
@@ -40,6 +44,15 @@ resource "google_secret_manager_secret_iam_member" "runtime" {
   secret_id = each.key
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.runtime.email}"
+}
+
+resource "google_secret_manager_secret_iam_member" "foundation_job_metadata" {
+  for_each = lookup(local.job_secrets, var.service, toset([]))
+
+  project   = var.management_project_id
+  secret_id = each.key
+  role      = "roles/secretmanager.viewer"
+  member    = "serviceAccount:${local.foundation_service_account}"
 }
 
 resource "google_artifact_registry_repository" "images" {

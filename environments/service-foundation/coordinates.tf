@@ -39,6 +39,7 @@ resource "google_storage_bucket_object" "coordinates" {
   depends_on = [
     google_storage_managed_folder_iam_member.coordinate_reader,
     google_secret_manager_secret_iam_member.runtime,
+    google_secret_manager_secret_iam_member.foundation_job_metadata,
     google_artifact_registry_repository_iam_member.release,
     google_artifact_registry_repository_iam_member.recovery,
     google_service_account_iam_member.foundation_runtime,
