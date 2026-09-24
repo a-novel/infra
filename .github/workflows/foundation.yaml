@@ -4,10 +4,10 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Create a 24-hour plan, or apply one exact prior plan ID.
+        description: Create a 24-hour plan, apply an exact prior plan, or promote one service's images.
         required: true
         type: choice
-        options: [plan, apply]
+        options: [plan, apply, promote-images]
       root:
         description: Management, shared workload, service foundation or create-only service jobs.
         required: true
@@ -66,6 +66,9 @@ jobs:
           SERVICE_FOUNDATIONS_ENABLED: ${{ vars.SERVICE_FOUNDATIONS_ENABLED }}
           SERVICE_JOB_BOOTSTRAP_CONFIG: ${{ secrets.SERVICE_JOB_BOOTSTRAPS_JSON }}
           SERVICE_JOB_BOOTSTRAP_ENABLED: ${{ vars.SERVICE_JOB_BOOTSTRAP_ENABLED }}
+          SERVICE_IMAGE_PROMOTION_ENABLED: ${{ vars.SERVICE_IMAGE_PROMOTION_ENABLED }}
+          FOUNDATION_OPERATION: ${{ inputs.operation }}
+          FOUNDATION_PLAN_ID: ${{ inputs.plan_id }}
           MANAGEMENT_PROJECT_ID: ${{ vars.GCP_MANAGEMENT_PROJECT_ID }}
           STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
           SELECTED_ROOT: ${{ inputs.root }}
@@ -91,20 +94,29 @@ jobs:
           create_credentials_file: true
           export_environment_variables: true
 
+      - name: Promote only the selected service image family
+        if: inputs.operation == 'promote-images'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SELECTED_FILE: ${{ steps.inputs.outputs.file }}
+        run: infra promote service deploy/production/images.yaml "${SELECTED_FILE}"
+
       - name: Install the pinned Google Cloud CLI
+        if: inputs.operation == 'plan' || inputs.operation == 'apply'
         uses: google-github-actions/setup-gcloud@v3.0.1
         with:
           version: "581.0.0"
 
       - name: Verify the selected job secret versions
-        if: inputs.root == 'service-release'
+        if: inputs.root == 'service-release' && inputs.operation != 'promote-images'
         shell: bash
         env:
           SELECTED_FILE: ${{ steps.inputs.outputs.file }}
         run: infra preflight service-secrets "${SELECTED_FILE}"
 
       - name: Bind the approved foundation generation
-        if: inputs.root == 'service-release'
+        if: inputs.root == 'service-release' && inputs.operation != 'promote-images'
         id: coordinates
         shell: bash
         env:
@@ -126,6 +138,7 @@ jobs:
             "${RUNNER_TEMP}/service-jobs.tfvars.json" >>"${GITHUB_OUTPUT}"
 
       - name: Install OpenTofu
+        if: inputs.operation == 'plan' || inputs.operation == 'apply'
         uses: opentofu/setup-opentofu@v2.0.2
         with:
           tofu_version_file: .opentofu-version

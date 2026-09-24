@@ -249,12 +249,9 @@ initializer, SMTP, backup or peer secret is read. Failure stops before plan crea
 These checks are point-in-time evidence; they do not promote images, prove runtime access or prevent
 later cloud rejection.
 
-The explicit `infra promote service <manifest> <selected-service.tfvars.json>` artifact command can
-fulfil the image-copy prerequisite using these same native inputs. It verifies the selected complete
-family and copies all four images by digest, without querying the peer. It is not called by bootstrap
-plans, applies or trusted assessments; publisher identity, destination readiness, immutable-tag policy
-and live use still require the separate onboarding approval. See the
-[promotion boundary](../../ops/README.md#protected-workflow-internals).
+If the images are not yet present, complete the separately approved
+[image-publication operation](#protected-service-image-publication) first. Neither plan nor apply
+copies images.
 
 The workflow then downloads only the approved foundation generation and embeds its original bytes;
 a denied read or mismatched checksum stops. HCL verifies the runtime/database contract. After the
@@ -289,6 +286,39 @@ After success, disable bootstrap, verify the jobs without executing them, and in
 through the separate service-foundation plan. Prove a zero-change plan with the routine identity and
 complete the interruption/IAM-denial checks before connecting routine release. Migration execution,
 rotation activation, Cloud Deploy submission and workload cutover remain separately approved work.
+
+## Protected service image publication
+
+This explicit bootstrap operation copies only the selected service's complete four-image family.
+It reuses the protected foundation workflow, environment approval, identity and global concurrency;
+it does not create a new publisher or grant permissions. The existing foundation administrator owns
+the service repositories. Routine release remains the responsibility of the service-local publisher.
+
+Keep `SERVICE_IMAGE_PROMOTION_ENABLED` unset until separate onboarding approval confirms the
+registered destination repository exists, immutable tags and retention are effective, and the
+foundation identity can write there. Prepare the same reviewed `SERVICE_JOB_BOOTSTRAPS_JSON` entry
+described above, including the exact approved foundation reference. Image publication does not need
+`SERVICE_JOB_BOOTSTRAP_ENABLED`; that flag does not authorize image writes either.
+
+After those prerequisites and explicit enable-flag approval, run from clean, current `master`:
+
+```sh
+go run ./cmd/infra foundation promote-images service-release json-keys
+```
+
+Use `authentication` for that service. Do not provide a plan ID. Registration, operation and
+complete-family checks run before Google authentication; `infra promote service` then rechecks
+source provenance and digests before copying. It confirms every destination digest and never queries
+the peer registry. See the [promotion boundary](../../ops/README.md#protected-workflow-internals).
+
+A successful run proves image copying only. This path installs neither Google CLI nor OpenTofu,
+downloads no foundation coordinates, reads no secret versions, creates or consumes no plans and
+publishes no configuration or deployment receipt. It runs no job, migration or rollout. Disable the
+image-publication flag after bootstrap; job creation still needs its own approval and flag.
+
+If interrupted or failed, retain the copied artifacts and inspect the exact destination digests before
+an explicitly approved retry. A partial copy is not atomic; never delete images or repoint conflicting
+tags to unblock it. No automatic retry or cleanup is added.
 
 ## Service scheduling activation
 

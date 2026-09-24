@@ -38,6 +38,11 @@ func TestFoundationInputs(t *testing.T) {
 		{name: "DuplicateProject", variable: "FOUNDATION_CONFIG", value: `{"management_project_id":"agora-management-test","workload_project_id":"agora-production-test","region":"europe-west1","service_projects":{"json-keys":"agora-json-keys-test","authentication":"agora-json-keys-test"}}`},
 		{name: "LegacyServiceChoice", root: "foundation", service: "json-keys"},
 		{name: "UnknownRoot", root: "release"},
+		{name: "MissingOperation", variable: "FOUNDATION_OPERATION"},
+		{name: "UnknownOperation", variable: "FOUNDATION_OPERATION", value: "destroy"},
+		{name: "WrongPromotionRoot", variable: "FOUNDATION_OPERATION", value: "promote-images"},
+		{name: "UnexpectedPlanID", variable: "FOUNDATION_PLAN_ID", value: "123-1"},
+		{name: "MissingApplyPlan", variable: "FOUNDATION_OPERATION", value: "apply"},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
@@ -62,6 +67,7 @@ func TestFoundationInputs(t *testing.T) {
 			data, err := json.Marshal(map[string]any{service: selected})
 			require.NoError(t, err)
 			env := map[string]string{
+				"FOUNDATION_OPERATION":        "plan",
 				"SERVICE_FOUNDATIONS_ENABLED": "true",
 				"BOOTSTRAP_CONFIG":            `{}`, "MANAGEMENT_PROJECT_ID": "agora-management-test", "STATE_BUCKET": bucket,
 				"FOUNDATION_CONFIG":         `{"management_project_id":"agora-management-test","workload_project_id":"agora-production-test","region":"europe-west1","service_projects":{"json-keys":"agora-json-keys-test","authentication":"agora-authentication-test"}}`,
