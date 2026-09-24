@@ -44,7 +44,7 @@ if [ "${PLAN_CODE}" -ne 0 ] && [ "${PLAN_CODE}" -ne 2 ]; then
 fi
 
 INPUT_ARGS=()
-if [ "${ROOT_NAME}" = service-release ]; then
+if [[ "${ROOT_NAME}" = service-* ]]; then
     INPUT_ARGS+=("${TOFU_VAR_FILE}")
 fi
 infra custody plan publish \

@@ -35,8 +35,9 @@ controller currently reconciles the platform.
 
 The [service-owned Cloud Deploy pilot](../modules/cloud-run-rollout/README.md) is inactive. It
 declares a future API rollout owner without changing any production root, service, or workflow.
-The proposed [service-operation contract](./service-operations.md) covers admission, ownership and
-interruption recovery across the whole deployment path; it is not implemented protection yet.
+The [service-operation contract](./service-operations.md) covers admission, ownership and interruption
+recovery across the whole deployment path. Guarded service-root apply is implemented; native callers,
+scheduled work and protected recovery are not yet enrolled, so end-to-end exclusion remains a gate.
 The ownership descriptions below still describe the active production path.
 
 ## Vocabulary

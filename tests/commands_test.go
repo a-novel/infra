@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 
+	"google.golang.org/api/option"
+
 	"github.com/a-novel/infra/internal/custody"
 	"github.com/a-novel/infra/internal/inspection"
 	"github.com/a-novel/infra/internal/release"
@@ -62,11 +64,15 @@ func fixtureCommand(name string, args []string) (int, error) {
 			return infraworkflow.FoundationInputs(args[1:], os.Getenv, os.Stdout, os.Stderr), nil
 		}
 		if len(args) > 0 && args[0] == "custody" {
+			var options []option.ClientOption
+			if endpoint := os.Getenv("TEST_STORAGE_ENDPOINT"); endpoint != "" {
+				options = []option.ClientOption{option.WithEndpoint(endpoint), option.WithoutAuthentication()}
+			}
 			return custody.Run(context.Background(), args[1:], os.Getenv, func(ctx context.Context, output io.Writer, name string, args ...string) error {
 				command := exec.CommandContext(ctx, name, args...)
 				command.Stdout = output
 				return command.Run()
-			}, os.Stdout, os.Stderr), nil
+			}, os.Stdout, os.Stderr, options...), nil
 		}
 		return 99, fmt.Errorf("unexpected infra command")
 	case "tofu-gate.sh", "create-reviewed-plan.sh", "apply-reviewed-plan.sh":

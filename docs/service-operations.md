@@ -1,6 +1,6 @@
 # Service-operation contract
 
-**Proposed design for the inactive service-owned pilot, not a production guarantee.**
+**Contract for the inactive service-owned pilot, not a production guarantee.**
 This contract advances [interrupted-release recovery](https://github.com/a-novel/infra/issues/189)
 and [ownership transfer](https://github.com/a-novel/infra/issues/187). Implementation and live
 activation remain separate review gates.
@@ -18,6 +18,33 @@ An **operation** is one reviewed change to one service, including the work neede
 known state. A **guard** admits that operation and blocks another. A **request intent** prevents replay
 of one mutation. Native **execution evidence** establishes what actually happened. None substitutes
 for the others, and successful rendering is not a completed deployment.
+
+### Implemented: service-root apply
+
+The protected foundation workflow uses `infra custody plan apply` for both `service-foundation`
+and create-only `service-release` bootstrap. It validates registration, activation and workflow
+identity, snapshots the private inputs, and verifies their exact hash against the saved plan.
+It then acquires the shared service guard before consuming the plan, applying it and checking
+zero-change convergence. Neither root can publish configuration through the standalone
+`infra custody config publish` command.
+
+On success, the same process creates the converged configuration in its existing namespace,
+then an immutable completion object at `services/PROJECT/production/operations/GENERATION.json`
+in the receipt bucket. The record binds the reviewed plan/input hashes, workflow run/attempt,
+acknowledged guard generation and configuration generation. **This proves apply convergence,
+not application health or a completed release/recovery.** Only then may the process delete its
+exact live guard generation. These writes use the existing foundation bucket authority.
+
+Any failed or uncertain step after admission leaves the service blocked. A lost delete response
+also returns non-success even if removal committed; inspect the exact completion and generation,
+not just the workflow status. Cancellation stops local child processes but cannot recall accepted
+cloud operations. There is no unlock, takeover, expiry or automatic retry command. Read-only
+assessment/drift refuses either service root while a guard is present, including before first state.
+
+This is the first enrolled writer, **not end-to-end service exclusion**. Native submissions,
+scheduled work, shared-root changes and protected recovery still need the boundaries below.
+Both pilot activation flags remain off by default; legacy production retains its existing global
+serialization and configuration/receipt owners. Do not activate competing writers on this basis.
 
 ## One owner for each responsibility
 
@@ -46,8 +73,8 @@ Application compensation never restores an old database backup or reverses concu
 | [Cloud Deploy](https://docs.cloud.google.com/deploy/docs/architecture)                                                                  | Native rollout execution and recovery      | It does not own foundation changes, external migrations or our recovery receipt. |
 | Immutable release/request intents                                                                                                       | One-shot dispatch and later reconciliation | Another release ID can reserve different intents for the same service.           |
 
-The proposed addition is **one persistent guard object per service**, using the existing official
-Storage client. Its proposed location is `services/PROJECT_ID/release/operation.json` in the state
+The admission primitive is **one persistent guard object per service**, using the existing official
+Storage client. Its location is `services/PROJECT_ID/release/operation.json` in the state
 bucket, inside the service's existing release-state namespace. It is not a receipt, Terraform state
 or renewable lease. No new database, queue, coordination platform or expiry worker is needed.
 

@@ -177,16 +177,22 @@ jobs:
           TOFU_STATE_SUFFIX: ${{ steps.inputs.outputs.state_suffix }}
           FOUNDATION_CONFIG: ${{ secrets.FOUNDATION_TFVARS_JSON }}
           MANAGEMENT_PROJECT_ID: ${{ vars.GCP_MANAGEMENT_PROJECT_ID }}
+          SERVICE_FOUNDATIONS_ENABLED: ${{ vars.SERVICE_FOUNDATIONS_ENABLED }}
           SERVICE_JOB_BOOTSTRAP_ENABLED: ${{ vars.SERVICE_JOB_BOOTSTRAP_ENABLED }}
         run: |
           set -euo pipefail
-          if ! [[ "${PLAN_ID}" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]; then
-            printf 'Apply requires the exact run-id-attempt printed by plan.\n' >&2
-            exit 64
-          fi
-          ./ops/apply-reviewed-plan.sh \
-            "${ROOT_NAME}" "${STATE_BUCKET}" "${GITHUB_SHA}" \
+          infra custody plan apply \
+            "${STATE_BUCKET}" "${ROOT_NAME}" "${GITHUB_SHA}" \
             "${PLAN_ID}" "${TFVARS_FILE}"
+
+      - name: Publish converged legacy configuration
+        if: inputs.operation == 'apply' && (inputs.root == 'bootstrap' || inputs.root == 'foundation')
+        shell: bash
+        env:
+          ROOT_NAME: ${{ inputs.root }}
+          STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
+          TFVARS_FILE: ${{ steps.inputs.outputs.file }}
+        run: |
           infra custody config publish \
             "${STATE_BUCKET}" "${ROOT_NAME}" "${TFVARS_FILE}" \
             "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}"

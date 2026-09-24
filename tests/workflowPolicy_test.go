@@ -178,17 +178,18 @@ func TestServiceBootstrapBoundary(t *testing.T) {
 		{"preflight service-secrets", "inputs.root == 'service-release' && inputs.operation != 'promote-images'"},
 		{"foundation-inputs bind", "inputs.root == 'service-release' && inputs.operation != 'promote-images'"},
 		{"create-reviewed-plan.sh", "inputs.operation == 'plan'"},
-		{"apply-reviewed-plan.sh", "inputs.operation == 'apply'"},
+		{"infra custody plan apply", "inputs.operation == 'apply'"},
+		{"infra custody config publish", "inputs.operation == 'apply' && (inputs.root == 'bootstrap' || inputs.root == 'foundation')"},
 	} {
 		t.Run("ExcludePublication/"+testCase.step, func(t *testing.T) {
 			t.Parallel()
 			require.Equal(t, testCase.condition, job.Steps[stepIndex(t, job.Steps, testCase.step)].If)
 		})
 	}
-	for _, match := range []string{"infra foundation-inputs prepare", "infra foundation-inputs bind", "./ops/create-reviewed-plan.sh", "./ops/apply-reviewed-plan.sh"} {
+	for _, match := range []string{"infra foundation-inputs prepare", "infra foundation-inputs bind", "./ops/create-reviewed-plan.sh", "infra custody plan apply"} {
 		step := job.Steps[stepIndex(t, job.Steps, match)]
 		require.Equal(t, "${{ vars.SERVICE_JOB_BOOTSTRAP_ENABLED }}", step.Env["SERVICE_JOB_BOOTSTRAP_ENABLED"])
-		if strings.Contains(match, "reviewed-plan.sh") {
+		if strings.Contains(match, "reviewed-plan.sh") || match == "infra custody plan apply" {
 			require.Equal(t, "${{ steps.coordinates.outputs.file || steps.inputs.outputs.file }}", step.Env["TFVARS_FILE"])
 		}
 	}
@@ -225,7 +226,7 @@ func TestPrerequisiteBoundary(t *testing.T) {
 		{"setup-gcloud@", "preflight service-secrets"},
 		{"preflight service-secrets", "foundation-inputs bind"},
 		{"foundation-inputs bind", "create-reviewed-plan.sh"},
-		{"foundation-inputs bind", "apply-reviewed-plan.sh"},
+		{"foundation-inputs bind", "infra custody plan apply"},
 	} {
 		t.Run("Order/"+pair[0]+"/"+pair[1], func(t *testing.T) {
 			t.Parallel()

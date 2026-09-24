@@ -37,6 +37,13 @@ func (i inspector) services(ctx context.Context, mode, root string, result *verd
 	if err != nil {
 		return failure{70, "Service registration does not match the protected management coordinates."}
 	}
+	if root == "service-foundation" {
+		// Both roots share admission in the release namespace. A held guard also
+		// blocks foundation assessment, including before its first state exists.
+		if _, err := i.serviceStates(ctx, "service-release", scopes); err != nil {
+			return err
+		}
+	}
 	states, err := i.serviceStates(ctx, root, scopes)
 	if err != nil {
 		return err
@@ -108,6 +115,9 @@ func (i inspector) serviceStates(ctx context.Context, root string, scopes map[st
 			object := parts[2]
 			if root == "service-release" {
 				object = strings.TrimPrefix(object, "release/")
+				if object == "operation.json" {
+					return nil, failure{70, "A service operation is held; reconcile it before assessment or further mutation."}
+				}
 				if servicePlanObject.MatchString(object) {
 					continue
 				}

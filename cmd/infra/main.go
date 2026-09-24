@@ -38,6 +38,10 @@ func main() {
 	quiet := func(ctx context.Context, output io.Writer, name string, args ...string) error {
 		command := exec.CommandContext(ctx, name, args...)
 		command.Env = append(os.Environ(), "CLOUDSDK_CORE_DISABLE_PROMPTS=1")
+		// A cancelled local apply must not leave its shell or provider running.
+		command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		command.Cancel = func() error { return syscall.Kill(-command.Process.Pid, syscall.SIGKILL) }
+		command.WaitDelay = 5 * time.Second
 		data, err := command.Output()
 		if err != nil {
 			return err

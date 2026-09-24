@@ -171,11 +171,16 @@ size enforcement. Separate policy and deployment-time image-family tests cover t
 | Recovery                            | `infra compile-recovery`, `verify-recovery-points.sh`, `infra promote recovery`                                                                                                                                               |
 | Health and root validation          | `infra check-health`, `check-root.sh`, `lib/roots.sh`                                                                                                                                                                         |
 
-`infra custody` shares private file handling and the official `gcloud storage` client across
+`infra custody` shares private file handling and official Google storage clients across
 configuration, receipts, and plans. It validates downloads before publishing owner-only local files
 and uses generation preconditions for immutable uploads. Plans remain commit-bound, time-limited,
 and consumed before apply; receipt retries require identical stored bytes. Only a successful empty
 inventory returns exit 4; denied or malformed inventories fail closed.
+
+`infra custody plan apply` replaces the apply coordinator shell logic. For the inactive service roots,
+it owns [admission through configuration and completion](../docs/service-operations.md#implemented-service-root-apply)
+using the existing Storage Go client; the remaining shell entrypoint only forwards legacy callers.
+Failures never automatically release a service guard. Legacy configuration/receipt owners are unchanged.
 
 `infra preflight images <compiled-release.json>` verifies all eight legacy source images.
 The protected job-bootstrap workflow uses `infra preflight service-images <manifest> <tfvars>`

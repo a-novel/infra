@@ -6,6 +6,9 @@ supports JSON Keys only. The manual foundation workflow can select this root aft
 configuration and activation. **Plan/apply fails before authentication unless `SERVICE_FOUNDATIONS_ENABLED=true`.**
 Read-only drift and trusted PR assessment still cover initialized scopes while that writer flag is off,
 using the last converged shared-foundation registration and each scope's private configuration.
+The [guarded apply path](../../docs/service-operations.md#implemented-service-root-apply) binds the exact
+plan inputs and holds service admission through convergence and completion publication. A held guard
+also stops read-only assessment; standalone service configuration publication is refused.
 Production and retained recovery evidence remain unchanged.
 
 ## Owners and state
