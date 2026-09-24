@@ -1,4 +1,4 @@
-package preflight
+package artifact
 
 import (
 	"encoding/json/v2"
@@ -65,8 +65,7 @@ func (inputs serviceInputs) bindImages(images []release.SourceImage) error {
 	}
 	expected := map[string]string{}
 	for _, image := range images {
-		expected[image.Slot] = inputs.Region + "-docker.pkg.dev/" + inputs.Project + "/agora-production/" +
-			strings.TrimPrefix(image.Repository, "ghcr.io/a-novel/") + "@" + image.Digest
+		expected[image.Slot] = inputs.destination(image) + "@" + image.Digest
 	}
 	invalid := errors.New("job or API image is outside the selected family")
 	if len(inputs.Images) != len(roles) {
@@ -81,4 +80,9 @@ func (inputs serviceInputs) bindImages(images []release.SourceImage) error {
 		return invalid
 	}
 	return nil
+}
+
+func (inputs serviceInputs) destination(image release.SourceImage) string {
+	return inputs.Region + "-docker.pkg.dev/" + inputs.Project + "/agora-production/" +
+		strings.TrimPrefix(image.Repository, "ghcr.io/a-novel/")
 }

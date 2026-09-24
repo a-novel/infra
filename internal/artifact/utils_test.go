@@ -1,4 +1,4 @@
-package preflight_test
+package artifact_test
 
 import (
 	"bytes"
@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
 
-	"github.com/a-novel/infra/internal/preflight"
+	"github.com/a-novel/infra/internal/artifact"
 	"github.com/a-novel/infra/internal/release"
 )
 
@@ -102,13 +102,28 @@ func imageCalls(manifest object, service string) []call {
 			producer := "a-novel/service-" + family.service
 			calls = append(calls,
 				call{"gh", []string{"attestation", "verify", "oci://" + repository + "@" + digest, "--repo", producer, "--signer-workflow", producer + "/.github/workflows/release.yaml", "--source-ref", "refs/heads/master", "--deny-self-hosted-runners"}, "private-diagnostic", false},
-				call{"docker", []string{"buildx", "imagetools", "inspect", repository + ":" + image["tag"].(string), "--format", "{{json .Manifest}}"}, `{"digest":"` + digest + `"}`, false})
-			if slot == "database" {
-				calls = append(calls, call{"docker", []string{"buildx", "imagetools", "inspect", repository + "@" + digest, "--format", "{{json .Image}}"}, `{"config":{"Env":["PG_MAJOR=18"]}}`, false})
-			}
+				call{"registry", []string{repository + ":" + image["tag"].(string), digest, slot}, "", false})
 		}
 	}
 	return calls
+}
+
+type testRegistry struct {
+	execute func(context.Context, io.Writer, string, ...string) error
+}
+
+func (registry testRegistry) Verify(ctx context.Context, image release.SourceImage) error {
+	if err := registry.execute(ctx, io.Discard, "registry", image.Repository+":"+image.Tag, image.Digest, image.Slot); err != nil {
+		return errors.New("image evidence unavailable")
+	}
+	return nil
+}
+
+func (registry testRegistry) Copy(ctx context.Context, source, tag string) error {
+	if err := registry.execute(ctx, io.Discard, "copy", source, tag); err != nil {
+		return errors.New("image copy is unconfirmed")
+	}
+	return nil
 }
 
 // checkCalls never starts a process. Exact expected arguments exclude peer reads,
@@ -122,7 +137,9 @@ func checkCalls(t *testing.T, args []string, calls []call, code int) {
 		count++
 		require.Equal(t, append([]string{expected.name}, expected.args...), append([]string{name}, args...))
 		_, bounded := ctx.Deadline()
-		require.True(t, bounded)
+		if name != "copy" {
+			require.True(t, bounded)
+		}
 		if expected.fail {
 			return errors.New("private-diagnostic")
 		}
@@ -130,7 +147,13 @@ func checkCalls(t *testing.T, args []string, calls []call, code int) {
 		return err
 	}
 	var output bytes.Buffer
-	require.Equal(t, code, preflight.Run(t.Context(), args, execute, &output, &output), output.String())
+	var got int
+	if len(args) > 0 && args[0] == "promote" {
+		got = artifact.Promote(t.Context(), args[1:], execute, testRegistry{execute: execute}, &output, &output)
+	} else {
+		got = artifact.Run(t.Context(), args, execute, testRegistry{execute: execute}, &output, &output)
+	}
+	require.Equal(t, code, got, output.String())
 	require.Equal(t, len(calls), count)
 	require.NotContains(t, output.String(), "private-diagnostic")
 }
