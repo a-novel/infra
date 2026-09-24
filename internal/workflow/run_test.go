@@ -20,6 +20,8 @@ func TestRun(t *testing.T) {
 		{[]string{"foundation", "plan", "foundation"}, []string{"operation=plan", "root=foundation"}, "202-3"},
 		{[]string{"foundation", "plan", "service-foundation", "json-keys"}, []string{"operation=plan", "root=service-foundation", "service=json-keys"}, "202-3"},
 		{[]string{"foundation", "apply", "service-foundation", "authentication", "101-3"}, []string{"operation=apply", "root=service-foundation", "service=authentication", "plan_id=101-3"}, "202"},
+		{[]string{"foundation", "plan", "service-release", "json-keys"}, []string{"operation=plan", "root=service-release", "service=json-keys"}, "202-3"},
+		{[]string{"foundation", "apply", "service-release", "authentication", "101-3"}, []string{"operation=apply", "root=service-release", "service=authentication", "plan_id=101-3"}, "202"},
 		{[]string{"foundation", "apply", "bootstrap", "101-3"}, []string{"operation=apply", "root=bootstrap", "plan_id=101-3"}, "202"},
 		{[]string{"foundation", "apply", "foundation", "101-3"}, []string{"operation=apply", "root=foundation", "plan_id=101-3"}, "202"},
 		{[]string{"release", "deploy"}, []string{"action=deploy"}, "202"},
@@ -142,10 +144,15 @@ func TestRunCommandFailure(t *testing.T) {
 
 func TestRunServicePlanIdentity(t *testing.T) {
 	t.Parallel()
-	r := invoke(t, []string{"foundation", "apply", "service-foundation", "json-keys", "101-3"},
-		map[string]string{"plan.patch": `{"display_title":"foundation plan service-foundation/authentication by @operator"}`}, "")
-	require.Equal(t, 65, r.code)
-	require.Empty(t, r.dispatches)
+	for _, scope := range []string{"service-foundation/json-keys", "service-release/authentication"} {
+		t.Run(scope, func(t *testing.T) {
+			t.Parallel()
+			r := invoke(t, []string{"foundation", "apply", "service-release", "json-keys", "101-3"},
+				map[string]string{"plan.patch": `{"display_title":"foundation plan ` + scope + ` by @operator"}`}, "")
+			require.Equal(t, 65, r.code)
+			require.Empty(t, r.dispatches)
+		})
+	}
 }
 
 func TestRunUncertainDispatch(t *testing.T) {

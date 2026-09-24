@@ -118,7 +118,7 @@ boundaries have been verified.
 The inactive [service foundation root](../../environments/service-foundation) composes the runtime,
 rollout control plane and application-job access using those published project coordinates. Its
 bootstrap sequence keeps prerequisites separate from activation. Its protected planning path below
-is disabled by default; the service release root still has no live workflow caller. This runbook does
+is disabled by default, as is the separate job bootstrap below. This runbook does
 not authorize provisioning either root.
 
 Its optional [database host](../../environments/service-foundation#optional-idle-database-host) also
@@ -206,8 +206,67 @@ successful protected apply through an approved protected-input change before con
 Pin its bucket, object, generation and SHA-256; do not select the newest object automatically.
 A document left by a failed or interrupted apply is not usable approval evidence. Retain referenced
 versions and verify inherited IAM before activation. The inactive [service-release root](../../environments/service-release#approved-foundation-handoff)
-can validate this reference and its downloaded JSON, but no live consumer or automatic reference
-publication to a GitHub environment is enabled here.
+validates this reference and its downloaded JSON. Approving the reference remains a human decision;
+the job bootstrap below does not discover or approve it automatically.
+
+## Protected service-job bootstrap
+
+This path creates missing application jobs in the selected service's release state. It reuses the
+protected foundation workflow and identity, global concurrency, native GCS locking and private
+24-hour plan custody. It runs no job, changes no traffic and grants no IAM access. Keep
+`SERVICE_JOB_BOOTSTRAP_ENABLED` unset until a separate onboarding PR authorizes activation.
+
+Before activation, verify the completed project/runtime/database/network prerequisites, exact image
+family and provenance, enabled secret versions and effective foundation attachment/creation access.
+Apply and verify the native [plan-expiration policy](../../bootstrap/README.md#plan-artifact-expiration).
+Keep rotation absent or paused, reconcile accepted executions and retain the sole-writer boundary.
+The bootstrap flag grants no Google permissions; no new role is installed by this path.
+
+Prepare `SERVICE_JOB_BOOTSTRAPS_JSON` for `production-foundation`, keyed by `json-keys` or
+`authentication`, like the service-foundation map above. Each entry contains the
+[release root's native inputs](../../environments/service-release#inputs-and-execution-boundary),
+including its independently approved service/project/region/backend, network, promoted job digests,
+numeric secret versions and exact `foundation` reference. Omit `foundation_json` and leave `rollout`
+unset. Preserve other service entries. After separate authorization, publish the reviewed private file:
+
+```sh
+gh secret set SERVICE_JOB_BOOTSTRAPS_JSON --repo a-novel/infra --env production-foundation <"${SERVICE_JOB_BOOTSTRAPS_FILE:?}"
+```
+
+The workflow checks registration and reference scope before authentication. It then downloads only
+the approved generation and embeds its original bytes; a denied read or mismatched checksum stops.
+HCL verifies the runtime/database contract. After the onboarding PR's prerequisites and explicit flag
+approval, use clean, current `master`:
+
+```sh
+SERVICE_JOB_PLAN_ID="$(go run ./cmd/infra foundation plan service-release json-keys)"
+```
+
+Review the sanitized plan. Only creates and no-ops for the selected service's migrations job and,
+for JSON Keys, rotation job are permitted. Existing-job updates, imports, moves, replacements,
+deletions and unrelated resources fail even with `allow-resource-deletion`. Apply the exact plan
+in a separate protected run:
+
+```sh
+go run ./cmd/infra foundation apply service-release json-keys "${SERVICE_JOB_PLAN_ID:?}"
+```
+
+Use `authentication` for that service. The plan binds root/project/commit/run and the exact hydrated
+input bytes; changed inputs require a new plan. Apply consumes it before mutation. Only a converged
+apply publishes `services/PROJECT/release/config/RUN-ATTEMPT.tfvars.json` for assessment and drift.
+Private plans use `services/PROJECT/release/plans/COMMIT/PLAN-ID/`; state remains in that root's
+native backend. No public artifact contains these values.
+
+After failure or interruption, preserve state and inspect actual job UIDs and accepted operations.
+A failed apply can leave some jobs created; an absent config record does not mean nothing happened.
+Resolve any ambiguous ownership, then create a fresh reviewed plan to finish only the missing jobs.
+Never replay a consumed plan, automatically import a conflicting job or delete it to unblock bootstrap.
+Assessment stops on state without converged inputs until reconciliation finishes.
+
+After success, disable bootstrap, verify the jobs without executing them, and install exact-job access
+through the separate service-foundation plan. Prove a zero-change plan with the routine identity and
+complete the interruption/IAM-denial checks before connecting routine release. Migration execution,
+rotation activation, Cloud Deploy submission and workload cutover remain separately approved work.
 
 ## Service scheduling activation
 

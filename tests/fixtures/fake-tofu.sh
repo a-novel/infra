@@ -17,6 +17,11 @@ if [[ "${1:-}" == -chdir=* ]]; then
     shift
 fi
 
+if [ -n "${FAKE_TOFU_APPLIED:-}" ] && [ -e "${FAKE_TOFU_APPLIED}" ]; then
+    FAKE_TOFU_PLAN_CODE=0
+    FAKE_TOFU_PLAN_JSON="${FAKE_TOFU_CLEAN_PLAN_JSON:?}"
+fi
+
 if [ "${FAKE_TOFU_FAIL_ACTION:-}" = "${1:-}" ] &&
     [ "${1:-}" != plan ] && [ "${1:-}" != apply ]; then
     printf 'fixture-sensitive-diagnostic\n' >&2
@@ -37,6 +42,9 @@ case "${1:-}" in
             [ -e "${FAKE_TOFU_REQUIRE_ABSENT}" ]; then
             printf 'Saved plan was still replayable when apply began.\n' >&2
             exit 77
+        fi
+        if [ -n "${FAKE_TOFU_APPLIED:-}" ]; then
+            : >"${FAKE_TOFU_APPLIED}"
         fi
         if [ "${FAKE_TOFU_FAIL_ACTION:-}" = apply ]; then
             if [ -n "${FAKE_TOFU_DIAGNOSTICS:-}" ] && [ -n "${event_file}" ]; then

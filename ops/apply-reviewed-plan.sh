@@ -23,8 +23,16 @@ PLAN_FILE="$(mktemp)"
 trap 'rm -f -- "${PLAN_FILE}" "${PLAN_FILE}.destructive"' EXIT
 chmod 600 "${PLAN_FILE}"
 
+INPUT_ARGS=()
+if [ "${ROOT_NAME}" = service-release ]; then
+    if [ "${SERVICE_JOB_BOOTSTRAP_ENABLED:-false}" != true ]; then
+        printf 'Service job bootstrap requires separate activation approval.\n' >&2
+        exit 77
+    fi
+    INPUT_ARGS+=("${TOFU_VAR_FILE}")
+fi
 infra custody plan fetch \
-    "${STATE_BUCKET}" "${ROOT_NAME}" "${COMMIT}" "${PLAN_ID}" "${PLAN_FILE}"
+    "${STATE_BUCKET}" "${ROOT_NAME}" "${COMMIT}" "${PLAN_ID}" "${PLAN_FILE}" "${INPUT_ARGS[@]}"
 
 ALLOW_RESOURCE_DELETION=false
 if [ "$(<"${PLAN_FILE}.destructive")" = true ]; then

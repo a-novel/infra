@@ -69,7 +69,7 @@ func invoke(t *testing.T, args []string, overrides map[string]string, failAt str
 			switch args[0] {
 			case "foundation":
 				scope := args[2]
-				if scope == "service-foundation" {
+				if strings.HasPrefix(scope, "service-") {
 					scope += "/" + args[3]
 				}
 				title = "foundation plan " + scope + " by @operator"

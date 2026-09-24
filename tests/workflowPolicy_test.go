@@ -141,6 +141,44 @@ func TestWorkflowCredentials(t *testing.T) {
 	require.Equal(t, "${{ vars.SERVICE_FOUNDATIONS_ENABLED }}", foundation[selection].Env["SERVICE_FOUNDATIONS_ENABLED"])
 }
 
+func TestJobBootstrapBoundary(t *testing.T) {
+	t.Parallel()
+	foundation := loadWorkflow(t, "workflows/foundation.yaml")
+	job := foundation.Jobs["execute"]
+	selectIndex := stepIndex(t, job.Steps, "infra foundation-inputs prepare")
+	bindIndex := stepIndex(t, job.Steps, "infra foundation-inputs bind")
+	bind := job.Steps[bindIndex]
+	for _, testCase := range []struct {
+		name           string
+		actual, expect any
+	}{
+		{"ManualOnly", len(foundation.On), 1},
+		{"Approval", job.Environment, "production-foundation"},
+		{"MasterOnly", job.If, "github.ref == 'refs/heads/master'"},
+		{"Serialization", foundation.Concurrency, object{"group": "production-infrastructure", "cancel-in-progress": false}},
+		{"ProtectedInputs", job.Steps[selectIndex].Env["SERVICE_JOB_BOOTSTRAP_CONFIG"], "${{ secrets.SERVICE_JOB_BOOTSTRAPS_JSON }}"},
+		{"ApprovedGeneration", bind.Env["FOUNDATION_URI"], "${{ steps.inputs.outputs.foundation_uri }}"},
+		{"SelectedInputs", bind.Env["SELECTED_FILE"], "${{ steps.inputs.outputs.file }}"},
+		{"BootstrapOnly", bind.If, "inputs.root == 'service-release'"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, testCase.expect, testCase.actual)
+		})
+	}
+	for _, match := range []string{"infra foundation-inputs prepare", "infra foundation-inputs bind", "./ops/create-reviewed-plan.sh", "./ops/apply-reviewed-plan.sh"} {
+		step := job.Steps[stepIndex(t, job.Steps, match)]
+		require.Equal(t, "${{ vars.SERVICE_JOB_BOOTSTRAP_ENABLED }}", step.Env["SERVICE_JOB_BOOTSTRAP_ENABLED"])
+		if strings.Contains(match, "reviewed-plan.sh") {
+			require.Equal(t, "${{ steps.coordinates.outputs.file || steps.inputs.outputs.file }}", step.Env["TFVARS_FILE"])
+		}
+	}
+	require.Less(t, selectIndex, stepIndex(t, job.Steps, "google-github-actions/auth@"))
+	require.Less(t, stepIndex(t, job.Steps, "setup-gcloud@"), bindIndex)
+	require.Less(t, bindIndex, stepIndex(t, job.Steps, "./ops/create-reviewed-plan.sh"))
+	require.Contains(t, bind.Run, `gcloud storage cp "${FOUNDATION_URI}" "${coordinates}" --quiet >/dev/null 2>&1`)
+}
+
 func TestWorkflowBoundaries(t *testing.T) {
 	t.Parallel()
 	main := loadWorkflow(t, "workflows/main.yaml")

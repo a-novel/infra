@@ -54,10 +54,14 @@ if ! [[ "${STATE_BUCKET}" =~ ^[a-z0-9][a-z0-9._-]{1,221}[a-z0-9]$ ]]; then
 fi
 
 STATE_PREFIX="${ROOT_NAME}"
+JOB_BOOTSTRAP=false
 if [[ "${ROOT_NAME}" = service-* ]]; then
     if [ "${ROOT_NAME}" = service-release ] && [ "${ACTION}" != assess ] && [ "${ACTION}" != drift ]; then
-        printf 'Service release is inspection-only; no writer is enabled.\n' >&2
-        exit 77
+        if [ "${SERVICE_JOB_BOOTSTRAP_ENABLED:-false}" != true ] || [ "${ACTION}" = output ]; then
+            printf 'Service release requires separately approved job bootstrap; routine writes remain disabled.\n' >&2
+            exit 77
+        fi
+        JOB_BOOTSTRAP=true
     fi
     infra foundation-inputs check "${TOFU_VAR_FILE:?}" "${STATE_BUCKET}" "${TOFU_STATE_SUFFIX:?}"
     if [ "${TF_WORKSPACE:-default}" != default ] || [ -n "${!TF_CLI_ARGS*}" ]; then
@@ -149,7 +153,7 @@ classify_plan() {
         return 1
     fi
 
-    if "${SCRIPT_DIR}/plan-summary.sh" "${ROOT_NAME}" "${json_plan}"; then
+    if SERVICE_JOB_BOOTSTRAP="${JOB_BOOTSTRAP}" "${SCRIPT_DIR}/plan-summary.sh" "${ROOT_NAME}" "${json_plan}"; then
         summary_code=0
     else
         summary_code=$?

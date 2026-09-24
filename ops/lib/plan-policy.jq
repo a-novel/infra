@@ -119,7 +119,29 @@ def protections($plan):
       (keep(["paused"]; false) or ($resource | candidate_schedule_pause($plan)))
     else true end);
 
+# Bootstrap creates jobs in their final state. Existing jobs belong to routine
+# release; imports and address moves require separately reviewed reconciliation.
+def service_job_bootstrap:
+  .variables.project_id.value as $project | .variables.service.value as $service |
+  .variables.region.value as $region |
+  (if $service == "json-keys" then ["migrations", "rotatekeys"]
+   elif $service == "authentication" then ["migrations"] else [] end) as $roles |
+  ($roles | length > 0) and $ENV.TOFU_STATE_SUFFIX == "services/" + $project and
+  all((.resource_changes // [])[];
+    .mode == "managed" and .type == "google_cloud_run_v2_job" and
+    (.index as $role | $roles | index($role) != null) and
+    .address == "google_cloud_run_v2_job.application[" + (.index | tojson) + "]" and
+    .previous_address == null and .deposed == null and .change.importing == null and
+    (.change.actions == ["create"] or .change.actions == ["no-op"]) and
+    .change.after.name == "agora-" + $service + "-" + .index and
+    (.change | . as $change | .after.project == $project and .after.location == $region and
+      .after.deletion_protection == true and
+      all(["project", "location", "name", "deletion_protection"][];
+        . as $field | $change | known([$field])))
+  );
+
 . as $plan |
+($root_name != "service-release" or $ENV.SERVICE_JOB_BOOTSTRAP != "true" or service_job_bootstrap) and
 (.errored == null or .errored == false) and
 (.format_version | type == "string" and test("^1\\.[0-9]+$")) and
 ((if .checks == null then [] else .checks end) | type == "array" and
