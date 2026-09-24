@@ -5,12 +5,13 @@ go 1.27.1
 require (
 	cloud.google.com/go/deploy v1.33.0
 	cloud.google.com/go/longrunning v1.2.0
-	cloud.google.com/go/run v1.22.0
+	cloud.google.com/go/run v1.23.0
 	github.com/google/go-containerregistry v0.22.1
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/stretchr/testify v1.12.1
 	go.yaml.in/yaml/v3 v3.0.5
 	google.golang.org/api v0.298.0
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260819154853-08b0e4226688
 	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12
 )
@@ -50,6 +51,5 @@ require (
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/genproto v0.0.0-20260715232425-e75dac1f907d // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260715232425-e75dac1f907d // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260819154853-08b0e4226688 // indirect
 	gotest.tools/v3 v3.5.2 // indirect
 )
