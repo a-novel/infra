@@ -5,9 +5,10 @@ the [activation gates](#before-live-use); do not grant permissions or replace th
 workflow just to try them.
 
 The release command preserves the exact request before asking Cloud Deploy to render it. A separate
-rollout command hands that rendered release to an approval-required target. Google's clients own
-authentication, API decoding and operation waiting. Cloud Deploy owns rollout execution; these
-commands cannot approve, advance, retry jobs, migrate, roll back or delete resources.
+rollout command hands that rendered release to an approval-required target after its migration succeeds.
+Google's clients own authentication, API decoding and operation waiting. Cloud Deploy owns rollout execution; these
+commands cannot approve, advance, retry jobs, roll back or delete resources. Migration dispatch is
+explicit and remains outside Cloud Deploy hooks.
 
 ## The private request
 
@@ -137,6 +138,65 @@ does not use that window as a retry loop: a persisted intent never authorizes a 
 Do not delete the reservation or invent a new UUID/release ID to recover an uncertain request.
 A crash after reserving intent but before dispatch intentionally requires operator reconciliation.
 
+## Run the exact migration once
+
+**Inactive pilot: complete the activation gates before live use.** After the selected job configuration
+has converged and the release has rendered, retain the reviewed job UID and promoted migrations
+digest from the service-release root's `jobs.definitions.migrations` output. The caller must first
+validate the complete image family, exact job configuration and enabled secret metadata, acquire
+service-wide exclusion, and pause/drain competing scheduled work.
+
+```sh
+infra submit-migration \
+  --project-id="${SERVICE_PROJECT_ID:?}" --project-number="${SERVICE_PROJECT_NUMBER:?}" \
+  --region="${REGION:?}" --receipt-bucket="${RECEIPT_BUCKET:?}" \
+  --job-uid="${MIGRATION_JOB_UID:?}" --image="${MIGRATION_IMAGE:?}" \
+  --timeout=15m "${RELEASE_ID:?}"
+```
+
+Only the selected project's `agora-json-keys-migrations` job is accepted. It must be ready at the
+reviewed UID/image, use the release's runtime account and the image's entrypoint, and have one task,
+explicit zero retries and the root's 600-second task timeout. The private intent binds the native
+release UID and observed job snapshot. UID/image checks do not replace the caller's configuration
+and provenance approval; snapshotting a job does not make an unreviewed configuration safe.
+
+The command reserves `RELEASE_ID.migration.json` under the same private submissions prefix.
+Only a confirmed new reservation permits one native
+[`RunJob`](https://docs.cloud.google.com/run/docs/reference/rest/v2/projects.locations.jobs/run)
+request, with the observed etag and **no overrides**. The pinned client does not retry that request.
+An existing intent always stops, including after a lost storage acknowledgement.
+
+The returned operation and any available execution identity are stored in
+`RELEASE_ID.migration.operation.json` before waiting. Completion must identify the exact job and
+acknowledged execution, preserve its task configuration, and report one successful task with no
+failure, cancellation or retry. The native successful execution is retained create-only in
+`RELEASE_ID.migration.execution.json`; identical read-back establishes publication even after a
+lost write acknowledgement. Zero exit status confirms this migration evidence, not rollout completion.
+
+## Reconcile a migration interruption
+
+```sh
+infra reconcile-migration \
+  --project-id="${SERVICE_PROJECT_ID:?}" --project-number="${SERVICE_PROJECT_NUMBER:?}" \
+  --region="${REGION:?}" --receipt-bucket="${RECEIPT_BUCKET:?}" \
+  --timeout=15m "${RELEASE_ID:?}"
+```
+
+This reads the reserved job/release binding and reconnects to the **recorded operation** through
+Google's bounded waiter. It never executes, updates or cancels a job. Unlike release/rollout
+reconciliation, it may publish the immutable successful-execution record. That requires scoped
+create/read permission on private evidence, but no job-execution permission.
+
+Lost dispatch responses without a saved operation, unavailable/expired operations, failed executions
+and conflicting evidence require manual audit. Cloud Run has no caller request-ID field for `RunJob`.
+Do not select the latest execution, erase intent, change release IDs or rerun migrations to recover.
+A timeout stops local waiting, not a cloud execution. Reconciliation does not inspect the job's latest
+configuration: it compares the exact operation result against the immutable pre-dispatch snapshot.
+
+Retain all three records with the release. A completed execution record can gate rollout submission
+without querying an old operation; a missing record cannot be reconstructed after native evidence
+expires. No automatic database backup restore or schema rollback is performed.
+
 ## Submit the approval-gated rollout
 
 After the activation gates below are satisfied, select the same release and a new nonzero lowercase
@@ -149,8 +209,10 @@ infra submit-rollout \
   --request-id="${ROLLOUT_REQUEST_ID:?}" --timeout=10m "${RELEASE_ID:?}"
 ```
 
-The command requires the native release to match its private intent and finish rendering. Both its
-target snapshot and the current target must require approval, identify the same target UID, and
+The command requires the native release to match its private intent and finish rendering. It validates
+the three migration records and their successful execution before reserving rollout intent. Missing,
+failed or mismatched migration evidence stops without creating a rollout. Both its target snapshot
+and the current target must require approval, identify the same target UID, and
 point to the selected project's Cloud Run location. These reads are preflight checks, not a lock
 against privileged target changes; configuration ownership and IAM must enforce that boundary.
 
@@ -200,6 +262,8 @@ The remaining work in [#189](https://github.com/a-novel/infra/issues/189) and
   Cloud Deploy's renderer needs read access to the exact source prefix, not receipt-write access.
 - Same-service exclusion before mutations, including migrations, through rollout and receipt
   completion. A reservation prevents duplicate creation of **one ID**; it is not a service lock.
+  Pausing/draining scheduled mutations and keeping the selected job configuration under one owner
+  remain caller obligations. No migration command is connected to production CI in this slice.
 - A trusted workflow connecting submission to the [native observer](observe-rollout.md), final
   durable recovery receipt, and migration interruption handling. Rendering is not final success.
 - A known compatible predecessor for routine releases, with separate bootstrap handling. Approval
