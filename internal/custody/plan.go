@@ -35,7 +35,7 @@ func (storage store) plan(action string, args []string, suffix string) error {
 		return failure{64, "Invalid plan custody arguments."}
 	}
 	namespace, err := planPrefix(args[0], suffix)
-	if err != nil || !regexp.MustCompile(`^[a-f0-9]{40}$`).MatchString(args[1]) || !sequencePattern.MatchString(args[2]) {
+	if err != nil || !commitPattern.MatchString(args[1]) || !sequencePattern.MatchString(args[2]) {
 		return failure{65, "Invalid plan custody scope."}
 	}
 	prefix := "gs://" + storage.bucket + "/" + namespace + "/" + args[1] + "/" + args[2] + "/"

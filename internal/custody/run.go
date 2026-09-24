@@ -33,14 +33,19 @@ var (
 	rootPattern         = regexp.MustCompile(`^(bootstrap|foundation|release|service-foundation)$`)
 	serviceScopePattern = regexp.MustCompile(`^services/[a-z][a-z0-9-]{4,28}[a-z0-9]$`)
 	sequencePattern     = regexp.MustCompile(`^[1-9][0-9]{0,19}-[1-9][0-9]{0,4}$`)
+	commitPattern       = regexp.MustCompile(`^[a-f0-9]{40}$`)
 )
 
-// Run handles config, receipt, and plan custody. Exit 4 means a successfully
+// Run handles private custody and read-only operation inspection. Exit 4 means a successfully
 // listed empty inventory, never an authentication or transport failure.
 func Run(ctx context.Context, args []string, getenv func(string) string, execute func(context.Context, io.Writer, string, ...string) error, stdout, stderr io.Writer, options ...option.ClientOption) int {
 	err := run(ctx, args, getenv, execute, stdout, options)
 	if err == nil {
-		_, err = fmt.Fprintln(stdout, "Private custody operation completed.")
+		message := "Private custody operation completed."
+		if len(args) > 0 && args[0] == "operation" {
+			message = "Read-only inspection completed; no operation was changed."
+		}
+		_, err = fmt.Fprintln(stdout, message)
 	}
 	if err == nil {
 		return 0
@@ -55,7 +60,7 @@ func Run(ctx context.Context, args []string, getenv func(string) string, execute
 
 func run(ctx context.Context, args []string, getenv func(string) string, execute func(context.Context, io.Writer, string, ...string) error, output io.Writer, options []option.ClientOption) error {
 	if len(args) < 3 {
-		return failure{64, "Usage: infra custody <config|receipt|plan> <action> <bucket> ..."}
+		return failure{64, "Usage: infra custody <config|receipt|plan|operation> <action> <bucket> ..."}
 	}
 	if !bucketPattern.MatchString(args[2]) {
 		return failure{65, "Invalid private storage bucket."}
@@ -67,6 +72,11 @@ func run(ctx context.Context, args []string, getenv func(string) string, execute
 	defer func() { _ = os.RemoveAll(directory) }() // Best-effort private scratch cleanup.
 	storage := store{ctx, execute, args[2], directory}
 	switch args[0] {
+	case "operation":
+		if args[1] != "inspect" {
+			return failure{64, "Service operations support read-only inspection only."}
+		}
+		return storage.inspectOperation(args[3:], getenv, output, options)
 	case "config", "receipt":
 		if args[0] == "config" && args[1] == "publish" && len(args) > 3 &&
 			(args[3] == "service-foundation" || args[3] == "service-release") {

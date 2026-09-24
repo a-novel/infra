@@ -164,7 +164,7 @@ size enforcement. Separate policy and deployment-time image-family tests cover t
 | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Saved-plan creation and application | `tofu-gate.sh`, `create-reviewed-plan.sh`, `apply-reviewed-plan.sh`, `infra custody plan`, `plan-summary.sh`                                                                                                                  |
 | Configuration and receipt custody   | `infra custody config`, `infra custody receipt`, `infra receipt build`, `infra receipt validate`                                                                                                                              |
-| Read-only inspection                | `infra inspect drift`, `infra inspect assess` (legacy and registered service foundations; private inputs, payload-free results)                                                                                               |
+| Read-only inspection                | `infra inspect drift`, `infra inspect assess`, `infra custody operation inspect` (private inputs, payload-free results)                                                                                                       |
 | Deletion authorization              | `infra assess-images`, `infra refresh-deletion-gates`, `resource-deletion-impact.sh`, `resolve-resource-deletion-assessment.sh`, `verify-resource-deletion-gate.sh`, `verify-deletion-label.sh`, `delete-recovery-project.sh` |
 | Release compilation and promotion   | `infra compile-release`, `infra validate-images`, `infra preflight images`, `infra promote release`, `infra promote service`, `preflight-release.sh`                                                                          |
 | Ordered release execution           | `release-orchestrator.sh`, `google-release-driver.sh`, `infra database-isolation`, `infra database-release`, `await-auth-initialization.sh`                                                                                   |
@@ -181,6 +181,12 @@ inventory returns exit 4; denied or malformed inventories fail closed.
 it owns [admission through configuration and completion](../docs/service-operations.md#implemented-service-root-apply)
 using the existing Storage Go client; the remaining shell entrypoint only forwards legacy callers.
 Failures never automatically release a service guard. Legacy configuration/receipt owners are unchanged.
+
+`infra custody operation inspect <state-bucket> <registered-project> [guard-generation]` reads
+the interrupted apply's evidence without invoking OpenTofu or changing admission. The protected
+registration authorizes the selected scope; exact object generations and hashes bind the report.
+Follow the [inspection contract](../docs/service-operations.md#inspect-an-interrupted-apply) for
+required inputs, read-only access and the distinction between evidence and permission to retry.
 
 `infra preflight images <compiled-release.json>` verifies all eight legacy source images.
 The protected job-bootstrap workflow uses `infra preflight service-images <manifest> <tfvars>`
