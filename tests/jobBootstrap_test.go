@@ -151,6 +151,9 @@ func TestJobBootstrapWorkflow(t *testing.T) {
 			steps := loadWorkflow(t, "workflows/foundation.yaml").Jobs["execute"].Steps
 			code, out = f.run(t, "bash", "-c", steps[stepIndex(t, steps, "infra custody plan apply")].Run)
 			expectCode(t, testCase.code, code, out)
+			if testCase.fail == "" {
+				require.Contains(t, out, "Acknowledged service guard generation: 42")
+			}
 			require.NotContains(t, out, "fixture-sensitive-diagnostic")
 			published := filepath.Join(f.env["FAKE_GCS_ROOT"], bucket, f.env["TOFU_STATE_SUFFIX"], "release/config/00000000000000000124-00001.tfvars.json")
 			completion := filepath.Join(f.env["FAKE_GCS_ROOT"], "agora-management-test-123-deployment-receipts", f.env["TOFU_STATE_SUFFIX"], "production/operations/42.json")

@@ -36,6 +36,14 @@ type objectReference struct {
 	SHA256     string `json:"sha256"`
 }
 
+type applyCompletion struct {
+	SchemaVersion int             `json:"schemaVersion"`
+	Outcome       string          `json:"outcome"`
+	Operation     applyIntent     `json:"operation"`
+	Guard         objectReference `json:"guard"`
+	Configuration objectReference `json:"configuration"`
+}
+
 // The acknowledged generation stays in this process. There is deliberately no
 // constructor that adopts a persisted guard or unlocks an interrupted operation.
 type serviceOperation struct {
@@ -79,30 +87,23 @@ func (custody store) admit(args []string, inputs []byte, plan string, getenv fun
 	if err != nil {
 		return nil, failure{70, "Service admission was not acknowledged; an existing or uncertain guard blocks apply. Do not retry or adopt it."}
 	}
+	if _, err := fmt.Fprintf(output, "Acknowledged service guard generation: %d\n", guard.Generation); err != nil {
+		return nil, err
+	}
 	return &serviceOperation{client: client, intent: intent, guard: guard}, nil
 }
 
 func (operation serviceOperation) finish(ctx context.Context, inputs []byte) error {
 	intent := operation.intent
-	name, err := sequenceName(intent.RunID+"-"+intent.RunAttempt, ".tfvars.json")
+	name, err := intent.configurationName()
 	if err != nil {
 		return err
 	}
-	prefix := "foundation/services/" + intent.Project + "/config/"
-	if intent.Root == "service-release" {
-		prefix = "services/" + intent.Project + "/release/config/"
-	}
-	config, err := createObject(ctx, operation.client, operation.guard.Bucket, prefix+name, inputs)
+	config, err := createObject(ctx, operation.client, operation.guard.Bucket, name, inputs)
 	if err != nil {
 		return failure{70, "Converged configuration publication unconfirmed; service guard retained."}
 	}
-	completion := struct {
-		SchemaVersion int             `json:"schemaVersion"`
-		Outcome       string          `json:"outcome"`
-		Operation     applyIntent     `json:"operation"`
-		Guard         objectReference `json:"guard"`
-		Configuration objectReference `json:"configuration"`
-	}{1, "converged", intent, operation.guard, config}
+	completion := applyCompletion{1, "converged", intent, operation.guard, config}
 	encoded, err := json.Marshal(completion)
 	if err != nil {
 		return err
@@ -119,6 +120,21 @@ func (operation serviceOperation) finish(ctx context.Context, inputs []byte) err
 		return failure{70, "Completion recorded but guard removal unconfirmed; reconcile its exact generation, do not repeat apply."}
 	}
 	return nil
+}
+
+func (intent applyIntent) configurationName() (string, error) {
+	name, err := sequenceName(intent.RunID+"-"+intent.RunAttempt, ".tfvars.json")
+	if err != nil {
+		return "", err
+	}
+	switch intent.Root {
+	case "service-foundation":
+		return "foundation/services/" + intent.Project + "/config/" + name, nil
+	case "service-release":
+		return "services/" + intent.Project + "/release/config/" + name, nil
+	default:
+		return "", failure{65, "Invalid service apply root."}
+	}
 }
 
 func createObject(ctx context.Context, client *storage.Service, bucket, name string, data []byte) (objectReference, error) {

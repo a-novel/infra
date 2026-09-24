@@ -46,6 +46,38 @@ scheduled work, shared-root changes and protected recovery still need the bounda
 Both pilot activation flags remain off by default; legacy production retains its existing global
 serialization and configuration/receipt owners. Do not activate competing writers on this basis.
 
+### Inspect an interrupted apply
+
+Within an approved read-only session, use the trusted binary with protected `FOUNDATION_CONFIG`
+registration and `MANAGEMENT_PROJECT_ID` already selected:
+
+```text
+infra custody operation inspect <state-bucket> <registered-project> [guard-generation]
+```
+
+Omit the generation to inspect the live guard. After a lost removal acknowledgement, supply the
+`Acknowledged service guard generation` from the apply log; removed versions remain readable
+subject to the bucket's retention/lifecycle policies. If admission itself was not acknowledged, inspect the live guard
+without treating its presence as permission to adopt it. Do not substitute configuration from
+candidate code or print the protected registration.
+
+The command uses Google's existing authentication/client and needs only object reads on the selected
+guard, completion and configuration records. It requests read-only Storage scope, checks registration
+before credentials, and is independent of mutation enable flags and writer concurrency. No workflow,
+credential grant or live activation is added by this inspection path.
+
+The report separates the live guard state from recorded convergence. It verifies the exact guard
+bytes/generation, completion intent, and referenced configuration generation/hash. Downloads are
+bounded and generation-pinned; denied, malformed, missing referenced versions or changing guard
+observations return non-success without private payloads. A successfully observed missing completion
+is reported as incomplete, not as proof that no resources changed.
+
+Exit zero means **inspection succeeded**, not that deployment succeeded or the service is safe to
+unlock. A retained record proves historical convergence only: current health, native operations and
+the previous writer still need protected reconciliation. An absent live guard proves no earlier
+outcome, and another live generation belongs to a separate operation. The command never unlocks,
+repairs evidence or retries apply. See [Storage version selection](https://docs.cloud.google.com/storage/docs/json_api/v1/objects/get).
+
 ## One owner for each responsibility
 
 | Responsibility                                                         | Owner                          | Boundary                                                                                                    |

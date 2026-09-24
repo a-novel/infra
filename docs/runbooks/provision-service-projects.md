@@ -282,6 +282,8 @@ native backend. No public artifact contains these values.
 
 After failure or interruption, preserve state and the service guard; inspect actual job UIDs,
 accepted operations and any immutable apply-completion evidence.
+Use the [read-only operation inspector](../service-operations.md#inspect-an-interrupted-apply)
+to bind that evidence to the logged guard generation; its result does not authorize another apply.
 A failed apply can leave some jobs created; an absent config record does not mean nothing happened.
 Complete protected reconciliation of the old writer and guard before creating a fresh reviewed plan
 to finish only the missing jobs. A new run or plan cannot adopt or release an interrupted guard.
