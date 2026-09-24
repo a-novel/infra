@@ -263,7 +263,7 @@ case "${STEP}" in
         chmod 600 "${OPERATIONS_FILE}"
         ;;
     promote)
-        "${SCRIPT_DIR}/promote-release-images.sh" "${RELEASE_FILE}"
+        infra promote release "${RELEASE_FILE}"
         ;;
     plan)
         # Reject effective HCL changes outside the selected service before the
@@ -400,7 +400,7 @@ case "${STEP}" in
         ;;
     receipt)
         RECEIPT_FILE="${RELEASE_DIRECTORY}/receipt.json"
-        "${SCRIPT_DIR}/promote-release-images.sh" "${RELEASE_FILE}" "${RUN_ID}"
+        infra promote release "${RELEASE_FILE}" "${RUN_ID}"
         infra receipt build deployment \
             "${RELEASE_FILE}" "${RELEASE_DIRECTORY}/active.tfvars.json" \
             "${OPERATIONS_FILE}" "${RECEIPT_FILE}"

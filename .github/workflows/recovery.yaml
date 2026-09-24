@@ -249,7 +249,7 @@ jobs:
           ./ops/preflight-release.sh "${RECOVERY_DIRECTORY}/preflight.json"
           region="$(jq --raw-output '.region' "${RECOVERY_DIRECTORY}/active.tfvars.json")"
           gcloud auth configure-docker "${region}-docker.pkg.dev" --quiet >/dev/null 2>&1
-          ./ops/promote-recovery-images.sh "${RECOVERY_DIRECTORY}/images.json"
+          infra promote recovery "${RECOVERY_DIRECTORY}/images.json"
 
       - name: Create recovery jobs without exposing services
         if: inputs.operation == 'restore-data'

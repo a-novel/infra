@@ -41,6 +41,9 @@ func VerificationImages(file, service string) ([]SourceImage, error) {
 			if image.Component != "service-json-keys" && image.Component != "service-authentication" {
 				return nil, invalid
 			}
+			if image.Repository != "ghcr.io/a-novel/"+image.Component+"/"+image.Slot {
+				return nil, invalid
+			}
 			if !versionPattern.MatchString(image.Tag) || !digestPattern.MatchString(image.Digest) {
 				return nil, invalid
 			}

@@ -239,7 +239,7 @@ gh secret set SERVICE_JOB_BOOTSTRAPS_JSON --repo a-novel/infra --env production-
 
 Both plan and apply check registration and reference scope, then verify the selected service's
 complete four-image family before Google authentication. GitHub CLI verifies producer provenance;
-Buildx checks tag/digest agreement and PostgreSQL major without running images. Every configured
+Google's registry client checks tag/digest agreement and PostgreSQL major without running images. Every configured
 job digest, and an optional API digest, must match that family in the authorized service project.
 The peer's registry is never queried.
 
@@ -248,6 +248,13 @@ After authentication, only the selected jobs' exact secret-version metadata is q
 initializer, SMTP, backup or peer secret is read. Failure stops before plan creation or consumption.
 These checks are point-in-time evidence; they do not promote images, prove runtime access or prevent
 later cloud rejection.
+
+The explicit `infra promote service <manifest> <selected-service.tfvars.json>` artifact command can
+fulfil the image-copy prerequisite using these same native inputs. It verifies the selected complete
+family and copies all four images by digest, without querying the peer. It is not called by bootstrap
+plans, applies or trusted assessments; publisher identity, destination readiness, immutable-tag policy
+and live use still require the separate onboarding approval. See the
+[promotion boundary](../../ops/README.md#protected-workflow-internals).
 
 The workflow then downloads only the approved foundation generation and embeds its original bytes;
 a denied read or mismatched checksum stops. HCL verifies the runtime/database contract. After the

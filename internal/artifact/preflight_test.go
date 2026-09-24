@@ -1,4 +1,4 @@
-package preflight_test
+package artifact_test
 
 import (
 	"encoding/json"
@@ -10,18 +10,13 @@ func TestRunImages(t *testing.T) {
 	for _, testCase := range []struct {
 		name, service string
 		failure       int
-		response      string
 	}{
-		{"Success/Legacy", "", -1, ""},
-		{"Success/JSONKeys", "json-keys", -1, ""},
-		{"Success/Authentication", "authentication", -1, ""},
-		{"Error/Provenance", "json-keys", 0, ""},
-		{"Error/ManifestUnavailable", "json-keys", 1, ""},
-		{"Error/DigestMismatch", "authentication", 1, `{"digest":"private-diagnostic"}`},
-		{"Error/ManifestMalformed", "json-keys", 1, "private-diagnostic"},
-		{"Error/ConfigUnavailable", "json-keys", 2, ""},
-		{"Error/PostgresMajor", "authentication", 2, `{"config":{"Env":["PG_MAJOR=17"]}}`},
-		{"Error/ConfigMalformed", "json-keys", 2, "private-diagnostic"},
+		{"Success/Legacy", "", -1},
+		{"Success/JSONKeys", "json-keys", -1},
+		{"Success/Authentication", "authentication", -1},
+		{"Error/Provenance", "json-keys", 0},
+		{"Error/Registry", "authentication", 1},
+		{"Error/LaterImage", "json-keys", 7},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
@@ -49,8 +44,7 @@ func TestRunImages(t *testing.T) {
 			if testCase.failure >= 0 {
 				code = 70
 				calls = calls[:testCase.failure+1]
-				calls[testCase.failure].fail = testCase.response == ""
-				calls[testCase.failure].output = testCase.response
+				calls[testCase.failure].fail = true
 			}
 			checkCalls(t, args, calls, code)
 		})

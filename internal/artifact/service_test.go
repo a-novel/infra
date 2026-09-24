@@ -1,4 +1,4 @@
-package preflight_test
+package artifact_test
 
 import "testing"
 
@@ -28,6 +28,7 @@ func TestServiceInputs(t *testing.T) {
 			inputs := serviceInputs(manifest, "json-keys")
 			testCase.mutate(manifest, inputs)
 			checkCalls(t, []string{"service-images", write(t, manifest), write(t, inputs)}, nil, 65)
+			checkCalls(t, []string{"promote", "service", write(t, manifest), write(t, inputs)}, nil, 65)
 		})
 	}
 	for _, testCase := range []struct {

@@ -156,9 +156,9 @@ size enforcement. Separate policy and deployment-time image-family tests cover t
 | Configuration and receipt custody   | `infra custody config`, `infra custody receipt`, `infra receipt build`, `infra receipt validate`                                                                                                                              |
 | Read-only inspection                | `infra inspect drift`, `infra inspect assess` (legacy and registered service foundations; private inputs, payload-free results)                                                                                               |
 | Deletion authorization              | `infra assess-images`, `infra refresh-deletion-gates`, `resource-deletion-impact.sh`, `resolve-resource-deletion-assessment.sh`, `verify-resource-deletion-gate.sh`, `verify-deletion-label.sh`, `delete-recovery-project.sh` |
-| Release compilation and promotion   | `infra compile-release`, `infra validate-images`, `infra preflight images`, `promote-release-images.sh`, `preflight-release.sh`                                                                                               |
+| Release compilation and promotion   | `infra compile-release`, `infra validate-images`, `infra preflight images`, `infra promote release`, `infra promote service`, `preflight-release.sh`                                                                          |
 | Ordered release execution           | `release-orchestrator.sh`, `google-release-driver.sh`, `infra database-isolation`, `infra database-release`, `await-auth-initialization.sh`                                                                                   |
-| Recovery                            | `infra compile-recovery`, `verify-recovery-points.sh`, `promote-recovery-images.sh`                                                                                                                                           |
+| Recovery                            | `infra compile-recovery`, `verify-recovery-points.sh`, `infra promote recovery`                                                                                                                                               |
 | Health and root validation          | `infra check-health`, `check-root.sh`, `lib/roots.sh`                                                                                                                                                                         |
 
 `infra custody` shares private file handling and the official `gcloud storage` client across
@@ -170,8 +170,33 @@ inventory returns exit 4; denied or malformed inventories fail closed.
 `infra preflight images <compiled-release.json>` verifies all eight legacy source images.
 The protected job-bootstrap workflow uses `infra preflight service-images <manifest> <tfvars>`
 before cloud authentication and `infra preflight service-secrets <tfvars>` afterwards. Both image
-paths share the GitHub CLI/Buildx verifier. The compiler remains cloud-blind; secret checks read
+paths share GitHub CLI provenance verification and Google's registry client for tag/digest and
+PostgreSQL-major checks. The compiler remains cloud-blind; secret checks read
 metadata only. See the [bootstrap boundary](../docs/runbooks/provision-service-projects.md#protected-service-job-bootstrap).
+
+Image promotion uses the same registry client, without a Docker daemon or Buildx:
+
+```text
+infra promote release <compiled-release.json> [receipt-run-id]
+infra promote recovery <compiled-images.json>
+infra promote service <manifest> <selected-service.tfvars.json>
+```
+
+The first two replace the former promotion scripts inside their existing protected workflows;
+release promotion requires the preceding source-provenance preflight, and recovery requires the
+validated receipt-owned inventory. The service command verifies all four source images and their
+producer attestations before copying only that family into the configured service project. It is an
+explicit artifact write, not a plan, job execution, deployment, or activation approval. No workflow
+automatically invokes it yet. Its future publisher must use the separately reviewed service registry
+identity and authorized native inputs, never a PR assessment credential.
+
+Authentication uses Google ADC (including the workflow's existing federation credentials) with
+the library's Google CLI fallback and Docker credential helpers. Tags are checked before copying;
+denied or ambiguous lookups fail instead of implying absence. Copies preserve the full OCI descriptor
+and confirm every destination, including receipt tags. An uncertain upload is read back; failure
+leaves existing artifacts intact and requires inspection, not deletion or an automatic command retry.
+Registry-enforced immutable tags remain the concurrent-write guard, and retention policy must protect
+receipt-referenced images. These commands do not make a multi-image transfer atomic.
 
 `infra database-release` consolidates preparation, bounded restart, restoration, and new-boot
 readiness for one service-owned host. Its protected command forms are:
