@@ -136,7 +136,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: ./ops/verify-release-images.sh "${RUNNER_TEMP}/source-verification/release.json"
+        run: infra preflight images "${RUNNER_TEMP}/source-verification/release.json"
 
       - name: Authenticate as the release boundary
         uses: google-github-actions/auth@v3.0.0

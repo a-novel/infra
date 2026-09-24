@@ -165,9 +165,10 @@ managed elsewhere, review its state removal/import addresses before using this r
 automatically. Import cannot relocate a job from the legacy workload project into a service project.
 Keep the legacy writer and retained receipts/backups until the separate workload cutover is proven.
 
-Activation still requires complete-family/provenance and enabled secret metadata checks, private
-saved-plan custody, same-service exclusion and an isolated interruption drill. The code-only bootstrap
-workflow is available for separate activation approval; it never transfers an existing resource owner.
+The protected bootstrap workflow supplies selected-family provenance, exact job/API image binding,
+enabled job-secret metadata checks and private saved-plan custody. Activation still requires
+promoted image availability, effective runtime access, same-service exclusion and an isolated
+interruption drill. It never transfers an existing resource owner.
 
 ## Inputs and execution boundary
 
@@ -175,7 +176,9 @@ workflow is available for separate activation approval; it never transfers an ex
 service/job path in the selected project's regional `agora-production` repository. `secret_versions`
 contains `postgres-password` and, for JSON Keys, `app-master-key`, with positive integer versions.
 These HCL syntax checks do not establish producer provenance, enabled versions or ownership of an
-address/subnet; the caller must verify those against the selected service's protected inputs.
+address/subnet. The [bootstrap preflight](../../docs/runbooks/provision-service-projects.md#protected-service-job-bootstrap)
+checks artifact evidence and secret metadata against protected inputs; network ownership and runtime
+readiness remain activation prerequisites.
 
 Migrations mount only their PostgreSQL password reference. Rotation additionally mounts the master
 key. The shared application identity retains its service-foundation grants, including Authentication's

@@ -43,6 +43,7 @@ jobs:
     timeout-minutes: 60
     environment: production-foundation
     permissions:
+      attestations: read
       contents: read
       id-token: write
       pull-requests: read
@@ -74,6 +75,14 @@ jobs:
           infra foundation-inputs prepare "${SELECTED_ROOT}" "${SELECTED_SERVICE}" \
             "${RUNNER_TEMP}/selected.tfvars.json" >>"${GITHUB_OUTPUT}"
 
+      - name: Verify the selected service image family
+        if: inputs.root == 'service-release'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SELECTED_FILE: ${{ steps.inputs.outputs.file }}
+        run: infra preflight service-images deploy/production/images.yaml "${SELECTED_FILE}"
+
       - name: Authenticate as the foundation boundary
         uses: google-github-actions/auth@v3.0.0
         with:
@@ -86,6 +95,13 @@ jobs:
         uses: google-github-actions/setup-gcloud@v3.0.1
         with:
           version: "581.0.0"
+
+      - name: Verify the selected job secret versions
+        if: inputs.root == 'service-release'
+        shell: bash
+        env:
+          SELECTED_FILE: ${{ steps.inputs.outputs.file }}
+        run: infra preflight service-secrets "${SELECTED_FILE}"
 
       - name: Bind the approved foundation generation
         if: inputs.root == 'service-release'

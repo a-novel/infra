@@ -156,7 +156,7 @@ size enforcement. Separate policy and deployment-time image-family tests cover t
 | Configuration and receipt custody   | `infra custody config`, `infra custody receipt`, `infra receipt build`, `infra receipt validate`                                                                                                                              |
 | Read-only inspection                | `infra inspect drift`, `infra inspect assess` (legacy and registered service foundations; private inputs, payload-free results)                                                                                               |
 | Deletion authorization              | `infra assess-images`, `infra refresh-deletion-gates`, `resource-deletion-impact.sh`, `resolve-resource-deletion-assessment.sh`, `verify-resource-deletion-gate.sh`, `verify-deletion-label.sh`, `delete-recovery-project.sh` |
-| Release compilation and promotion   | `infra compile-release`, `infra validate-images`, `verify-release-images.sh`, `promote-release-images.sh`, `preflight-release.sh`                                                                                             |
+| Release compilation and promotion   | `infra compile-release`, `infra validate-images`, `infra preflight images`, `promote-release-images.sh`, `preflight-release.sh`                                                                                               |
 | Ordered release execution           | `release-orchestrator.sh`, `google-release-driver.sh`, `infra database-isolation`, `infra database-release`, `await-auth-initialization.sh`                                                                                   |
 | Recovery                            | `infra compile-recovery`, `verify-recovery-points.sh`, `promote-recovery-images.sh`                                                                                                                                           |
 | Health and root validation          | `infra check-health`, `check-root.sh`, `lib/roots.sh`                                                                                                                                                                         |
@@ -166,6 +166,12 @@ configuration, receipts, and plans. It validates downloads before publishing own
 and uses generation preconditions for immutable uploads. Plans remain commit-bound, time-limited,
 and consumed before apply; receipt retries require identical stored bytes. Only a successful empty
 inventory returns exit 4; denied or malformed inventories fail closed.
+
+`infra preflight images <compiled-release.json>` verifies all eight legacy source images.
+The protected job-bootstrap workflow uses `infra preflight service-images <manifest> <tfvars>`
+before cloud authentication and `infra preflight service-secrets <tfvars>` afterwards. Both image
+paths share the GitHub CLI/Buildx verifier. The compiler remains cloud-blind; secret checks read
+metadata only. See the [bootstrap boundary](../docs/runbooks/provision-service-projects.md#protected-service-job-bootstrap).
 
 `infra database-release` consolidates preparation, bounded restart, restoration, and new-boot
 readiness for one service-owned host. Its protected command forms are:
