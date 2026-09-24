@@ -54,8 +54,8 @@ or renewable lease. No new database, queue, coordination platform or expiry work
 Acquire with [GCS generation preconditions](https://docs.cloud.google.com/storage/docs/request-preconditions):
 create only when no live object exists, then retain the returned generation. The small, private record
 binds the approved project/service/region, operation kind, commit, GitHub run/attempt and, for a release,
-its predetermined release ID. It contains no credentials or secret payloads. Only an acknowledged
-new acquisition authorizes mutations. A lost acknowledgement requires reconciliation, not a second
+its predetermined release ID. It contains no credentials or secret payloads. A new automated operation
+needs an acknowledged acquisition before dispatch. A lost acknowledgement requires reconciliation, not a second
 acquisition or automatic adoption of matching content.
 
 The guard has **no TTL, automatic takeover or unconditional cleanup handler**. Finishing deletes only
@@ -71,7 +71,7 @@ Privileged console access and IAM administrators remain explicit human coordinat
 
 1. **Authorize and admit.** Resolve the reviewed service/foundation, exact images and provenance,
    enabled secret-version metadata, and intended operation. Enter the writer concurrency group and
-   acquire the guard before the first live mutation. Repeat point-in-time checks at their consumption
+   acquire the guard before changing managed resources or executing work. Repeat checks at their consumption
    boundaries; the guard cannot prevent an administrator changing a secret version.
 2. **Quiesce competing scheduled work.** Pause the selected schedule, reconcile already accepted
    dispatch requests and drain their Cloud Run executions before changing jobs or schema. A paused
@@ -89,8 +89,9 @@ Privileged console access and IAM administrators remain explicit human coordinat
 
 Failure or cancellation uses the same completion boundary, not a success-only unlock shortcut.
 Completion evidence must distinguish success, no mutation dispatched, and a reconciled failure.
-It identifies the final serving/configuration state, settled executions/rollouts and intended schedule
-state. Pending approvals or work that could still start cannot be treated as settled. A migration
+It identifies the final serving/configuration state, settled operation-owned and pre-pause executions,
+and intended schedule state. Pending approvals or ambiguous operation dispatches cannot be treated as
+settled. Compatible periodic work may resume at step 4; it is not unfinished deployment work. A migration
 failure may need service-maintainer intervention; neither retry nor data rollback is automatic.
 
 ## Interruption decisions
@@ -107,9 +108,11 @@ failure may need service-maintainer intervention; neither retry nor data rollbac
 Observation-only commands and narrowly scoped evidence publication must remain available while a
 writer is blocked. Do not put the observer behind the writer's concurrency group.
 
-Protected recovery must establish that the previous writer cannot issue more requests, account for
-accepted cloud work, and record its settled outcome before releasing the guard or admitting a new
-operation. Cancelling a runner alone is insufficient: credentials, delayed requests and executable
+Protected recovery is a separately approved way to finish the recorded operation under its held
+guard, not automatic adoption by another runner. It must establish that the previous writer cannot
+issue more requests and reconcile accepted cloud work before further mutations. Record its settled
+outcome before releasing the guard or admitting a new operation. Cancelling a runner alone is
+insufficient: credentials, delayed requests and executable
 pending rollouts matter. If their status cannot be established, keep the service blocked. Never
 force-unlock merely because a run is old or a health check currently passes.
 
