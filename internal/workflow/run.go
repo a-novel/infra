@@ -104,18 +104,21 @@ func Run(ctx context.Context, args []string, execute func(context.Context, io.Wr
 		i.input("head_sha", pr.Head.SHA)
 		i.input("base_sha", sha)
 	}
-	// The shared concurrency group can otherwise queue behind a waiting approval.
-	active, err := read("gh", "api", api+"/actions/runs?branch=master&per_page=100", "--jq", `
+	// Observation must remain available while a writer waits for operator action.
+	if !i.observation {
+		active, err := read("gh", "api", api+"/actions/runs?branch=master&per_page=100", "--jq", `
       .workflow_runs[] | select(.status != "completed")
       | select(.path == ".github/workflows/drift.yaml" or .path == ".github/workflows/foundation.yaml"
         or .path == ".github/workflows/recovery.yaml" or .path == ".github/workflows/release.yaml")
+      | select(.path != ".github/workflows/drift.yaml" or (.display_title | startswith("observe rollout ") | not))
       | [.id, .name, .display_title, .status, .html_url] | @tsv`)
-	if err != nil {
-		return stop(65, "Cannot inspect active infrastructure runs.")
-	}
-	if active != "" {
-		return stop(75, "Another production infrastructure run is active:\n"+active+
-			"\nWait for it to finish or resolve it before dispatching another run.")
+		if err != nil {
+			return stop(65, "Cannot inspect active infrastructure runs.")
+		}
+		if active != "" {
+			return stop(75, "Another production infrastructure run is active:\n"+active+
+				"\nWait for it to finish or resolve it before dispatching another run.")
+		}
 	}
 
 	_, _ = fmt.Fprintf(stderr, "Dispatching %s from master at %s.\n", i.workflow, sha)

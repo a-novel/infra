@@ -26,6 +26,63 @@ type workflowJob struct {
 	Concurrency           object
 }
 
+func TestRolloutObservationWorkflow(t *testing.T) {
+	t.Parallel()
+	data, err := os.ReadFile("../../.github/workflows/drift.yaml")
+	require.NoError(t, err)
+	var document struct {
+		Permissions, Concurrency object
+		Jobs                     map[string]workflowJob
+	}
+	require.NoError(t, yaml.Unmarshal(data, &document))
+	job := document.Jobs["observe-rollout"]
+	require.Len(t, job.Steps, 5)
+	var steps []string
+	for _, item := range job.Steps {
+		uses, _, _ := strings.Cut(item.Uses, "@")
+		steps = append(steps, uses)
+		require.Empty(t, item.If, "observation steps cannot skip scope checks or swallow failure")
+	}
+	for _, testCase := range []struct {
+		name       string
+		want, have any
+	}{
+		{"DefaultPermissions", object{}, document.Permissions},
+		{"ReaderConcurrency", object{"group": "${{ inputs.operation == 'observe-rollout' && 'rollout-observation' || 'production-infrastructure' }}", "cancel-in-progress": false}, document.Concurrency},
+		{"DispatchBoundary", "github.ref == 'refs/heads/master' && github.event_name == 'workflow_dispatch' && inputs.operation == 'observe-rollout'", job.If},
+		{"JobPermissions", map[string]string{"contents": "read", "id-token": "write"}, job.Permissions},
+		{"JobDeadline", 20, job.Timeout},
+		{"StepOrder", []string{"actions/checkout", "$/.github/actions/setup-infra", "", "google-github-actions/auth", "$/.github/actions/observe-rollout"}, steps},
+		{"CleanCheckout", object{"persist-credentials": false}, job.Steps[0].With},
+		{"ScopeInputs", object{
+			"SERVICE_ROLLOUT_OBSERVATION_ENABLED": "${{ vars.SERVICE_ROLLOUT_OBSERVATION_ENABLED }}",
+			"GCP_JSON_KEYS_ROLLOUT_PARENT":        "${{ vars.GCP_JSON_KEYS_ROLLOUT_PARENT }}",
+			"SELECTED_SERVICE":                    "${{ inputs.service }}", "RELEASE_ID": "${{ inputs.release_id }}", "ROLLOUT_ID": "${{ inputs.rollout_id }}",
+		}, job.Steps[2].Env},
+		{"ScopeCommand", "set -euo pipefail\ninfra observation-inputs \"${SELECTED_SERVICE}\" \"${RELEASE_ID}\" \"${ROLLOUT_ID}\" >>\"${GITHUB_OUTPUT}\"\n", job.Steps[2].Run},
+		{"ReadOnlyIdentity", object{
+			"workload_identity_provider": "${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}",
+			"service_account":            "${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}",
+			"create_credentials_file":    true, "export_environment_variables": true,
+		}, job.Steps[3].With},
+		{"ObserverHandoff", object{"rollout": "${{ steps.scope.outputs.rollout }}", "timeout": "10m"}, job.Steps[4].With},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, testCase.want, testCase.have)
+		})
+	}
+	for _, name := range []string{"inspect", "health", "assess-resource-deletion"} {
+		require.Contains(t, document.Jobs[name].If, "inputs.operation ==")
+		require.NotContains(t, document.Jobs[name].If, "observe-rollout")
+	}
+	var raw map[string]any
+	require.NoError(t, yaml.Unmarshal(data, &raw))
+	encoded, err := json.Marshal(raw["jobs"].(map[string]any)["observe-rollout"])
+	require.NoError(t, err)
+	require.NotRegexp(t, `continue-on-error|always\(\)|secrets\.|gcloud|opentofu|submit-release|submit-rollout`, string(encoded))
+}
+
 func TestWorkflowBoundaries(t *testing.T) {
 	t.Parallel()
 	load := func(path string, value any) string {

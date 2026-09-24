@@ -15,6 +15,7 @@ func TestRun(t *testing.T) {
 		output       string
 	}{
 		{[]string{"drift"}, []string{"operation=drift"}, "202"},
+		{[]string{"drift", "observe-rollout", "json-keys", "release-123", "production"}, []string{"operation=observe-rollout", "service=json-keys", "release_id=release-123", "rollout_id=production"}, "202"},
 		{[]string{"drift", "assess-pull-request", "93"}, []string{"operation=assess-pull-request", "pull_request=93", "head_sha=" + head, "base_sha=" + sha}, "202"},
 		{[]string{"foundation", "plan", "bootstrap"}, []string{"operation=plan", "root=bootstrap"}, "202-3"},
 		{[]string{"foundation", "plan", "foundation"}, []string{"operation=plan", "root=foundation"}, "202-3"},
@@ -66,6 +67,11 @@ func TestRunInvalidIntent(t *testing.T) {
 	for _, args := range [][]string{
 		nil,
 		{"unknown"},
+		{"drift", "observe-rollout", "authentication", "release-123", "production"},
+		{"drift", "observe-rollout", "json-keys", "release-123"},
+		{"drift", "observe-rollout", "json-keys", "release-123", "production", "extra"},
+		{"drift", "observe-rollout", "json-keys", "release-123/rollouts/other", "production"},
+		{"drift", "observe-rollout", "json-keys", "release-123", "production\n"},
 		{"foundation", "plan"},
 		{"foundation", "plan", "release"},
 		{"foundation", "apply", "foundation", "01-3"},
@@ -91,6 +97,19 @@ func TestRunInvalidIntent(t *testing.T) {
 			require.Equal(t, 64, r.code)
 			require.Zero(t, r.calls)
 			require.Empty(t, r.stdout.String())
+		})
+	}
+}
+
+func TestRunObservationConcurrency(t *testing.T) {
+	t.Parallel()
+	for _, active := range []string{"303 waiting", ""} {
+		t.Run(active, func(t *testing.T) {
+			t.Parallel()
+			r := invoke(t, []string{"drift", "observe-rollout", "json-keys", "release-123", "production"},
+				map[string]string{"active": active}, "active")
+			require.Equal(t, 0, r.code, r.stderr.String())
+			require.Len(t, r.dispatches, 1)
 		})
 	}
 }

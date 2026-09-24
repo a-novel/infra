@@ -9,11 +9,26 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Inspect production drift or assess an exact pull request.
+        description: Inspect drift, assess an exact pull request, or observe a native rollout.
         required: true
         default: drift
         type: choice
-        options: [drift, assess-pull-request, assess-image-update]
+        options:
+          [drift, assess-pull-request, assess-image-update, observe-rollout]
+      service:
+        description: Observation only; select the JSON Keys pilot.
+        required: false
+        default: none
+        type: choice
+        options: [none, json-keys]
+      release_id:
+        description: Observation only; exact native Cloud Deploy release ID.
+        required: false
+        type: string
+      rollout_id:
+        description: Observation only; exact native rollout ID within that release.
+        required: false
+        type: string
       pull_request:
         description: Assessment only; pull request number.
         required: false
@@ -28,14 +43,17 @@ on:
         type: string
 
 run-name: >-
-  ${{ (inputs.operation == 'assess-pull-request' || inputs.operation == 'assess-image-update') &&
+  ${{ inputs.operation == 'observe-rollout' &&
+  format('observe rollout {0}/{1}/{2} by @{3}', inputs.service, inputs.release_id, inputs.rollout_id, github.actor) ||
+  (inputs.operation == 'assess-pull-request' || inputs.operation == 'assess-image-update') &&
   format('resource-deletion assessment PR #{0} {1} onto {2}', inputs.pull_request, inputs.head_sha, inputs.base_sha) ||
   'production drift' }}
 
 permissions: {}
 
 concurrency:
-  group: production-infrastructure
+  # Readers must not queue behind the deployment they need to inspect.
+  group: ${{ inputs.operation == 'observe-rollout' && 'rollout-observation' || 'production-infrastructure' }}
   cancel-in-progress: false
 
 env:
@@ -43,6 +61,49 @@ env:
   CLOUDSDK_CORE_DISABLE_PROMPTS: "1"
 
 jobs:
+  observe-rollout:
+    if: github.ref == 'refs/heads/master' && github.event_name == 'workflow_dispatch' && inputs.operation == 'observe-rollout'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out the exact master commit
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build reviewed infra tooling
+        uses: $/.github/actions/setup-infra
+
+      - name: Authorize the exact observation scope
+        id: scope
+        shell: bash
+        env:
+          SERVICE_ROLLOUT_OBSERVATION_ENABLED: ${{ vars.SERVICE_ROLLOUT_OBSERVATION_ENABLED }}
+          GCP_JSON_KEYS_ROLLOUT_PARENT: ${{ vars.GCP_JSON_KEYS_ROLLOUT_PARENT }}
+          SELECTED_SERVICE: ${{ inputs.service }}
+          RELEASE_ID: ${{ inputs.release_id }}
+          ROLLOUT_ID: ${{ inputs.rollout_id }}
+        run: |
+          set -euo pipefail
+          infra observation-inputs "${SELECTED_SERVICE}" "${RELEASE_ID}" "${ROLLOUT_ID}" >>"${GITHUB_OUTPUT}"
+
+      - name: Authenticate as the read-only plan boundary
+        uses: google-github-actions/auth@v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Observe deployment and verification
+        uses: $/.github/actions/observe-rollout
+        with:
+          rollout: ${{ steps.scope.outputs.rollout }}
+          timeout: 10m
+
   inspect:
     if: >-
       github.ref == 'refs/heads/master' &&
