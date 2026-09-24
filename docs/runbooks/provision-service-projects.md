@@ -221,8 +221,10 @@ image availability and effective foundation attachment/creation and secret-metad
 Apply and verify the native [plan-expiration policy](../../bootstrap/README.md#plan-artifact-expiration).
 Keep rotation absent or paused, reconcile accepted executions and retain the sole-writer boundary.
 The bootstrap flag grants no Google permissions; no new role is installed by this path.
-The existing foundation secret-container role lacks `secretmanager.versions.get`; separately review
-that metadata-only permission on the selected job secrets before activation. Payload access is not needed.
+The [service-foundation root](../../environments/service-foundation#runtime-prerequisites) owns
+secret-level Viewer grants for the selected job secrets. Apply and verify those grants before job
+bootstrap; they provide `secretmanager.versions.get` without payload access. The shared foundation
+secret-container role remains unchanged. A merged declaration is not effective IAM evidence.
 
 Prepare `SERVICE_JOB_BOOTSTRAPS_JSON` for `production-foundation`, keyed by `json-keys` or
 `authentication`, like the service-foundation map above. Each entry contains the

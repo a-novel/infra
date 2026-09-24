@@ -36,6 +36,12 @@ channel directly. It reads no secret payload. Authentication receives its Postgr
 containers; JSON Keys receives its PostgreSQL credential and master key. Neither receives peer,
 backup or initializer credentials. Numeric enabled-version selection remains release policy.
 
+Protected foundation receives [Secret Manager Viewer](https://docs.cloud.google.com/secret-manager/docs/access-control)
+on the selected jobs' secrets: PostgreSQL and the master key for JSON Keys, PostgreSQL alone for
+Authentication. This permits metadata and version listings without payload access or version mutation.
+These additive grants leave the shared container-administration role unchanged. Foundation remains a
+shared, trusted administrator; verify inherited permissions separately before activation.
+
 `agora-production` holds application images and grants the project-local release identity Writer.
 `agora-tooling` keeps verifier publication separate. Both repositories have immutable tags, deletion
 guards and no age-based cleanup; recovery can read retained images. A separately approved publisher
@@ -43,7 +49,7 @@ must promote and verify the tooling digest. No verifier writer is granted here.
 
 The version-1 `runtime` output supplies the published document and the child modules' identity and
 operations channel; callers cannot override those with a peer's coordinates. Its output waits for
-runtime-secret and application-publisher grants.
+runtime-secret, bootstrap metadata and application-publisher grants.
 Channel creation still needs a delivery test. Protected foundation receives identity attachment on
 the exact application account for approved job bootstrap.
 

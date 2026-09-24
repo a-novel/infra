@@ -51,6 +51,14 @@ run "isolated_application_assets" {
   }
 
   assert {
+    condition = { for secret, binding in google_secret_manager_secret_iam_member.foundation_job_metadata : secret => [binding.project, binding.secret_id, binding.role, binding.member] } == {
+      for secret in ["production-json-keys-postgres-password", "production-json-keys-app-master-key"] : secret =>
+      [var.management_project_id, secret, "roles/secretmanager.viewer", "serviceAccount:infra-foundation@agora-management-test.iam.gserviceaccount.com"]
+    }
+    error_message = "Bootstrap may inspect only JSON Keys job-secret metadata, without payload or version-mutation authority."
+  }
+
+  assert {
     condition = { for name, repository in google_artifact_registry_repository.images : name => {
       project   = repository.project, region = repository.location, format = repository.format, mode = repository.mode,
       immutable = repository.docker_config[0].immutable_tags, deletion = repository.deletion_policy,
@@ -173,6 +181,14 @@ run "authentication_runtime_contract" {
       ])
     )
     error_message = "Authentication must not receive the initializer password, backup credentials or JSON Keys secrets."
+  }
+
+  assert {
+    condition = { for secret, binding in google_secret_manager_secret_iam_member.foundation_job_metadata : secret => [binding.project, binding.secret_id, binding.role, binding.member] } == {
+      production-authentication-postgres-password = [var.management_project_id, "production-authentication-postgres-password",
+      "roles/secretmanager.viewer", "serviceAccount:infra-foundation@agora-management-test.iam.gserviceaccount.com"]
+    }
+    error_message = "Authentication bootstrap needs only PostgreSQL metadata; SMTP, initializer, backup and peer secrets remain outside the grant."
   }
 
   assert {
