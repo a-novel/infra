@@ -67,6 +67,7 @@ registration; use `--ttl <duration>` to select a positive duration in seconds, m
 ```text
 go run ./cmd/infra drift
 go run ./cmd/infra drift assess-pull-request <pull-request-number>
+go run ./cmd/infra drift observe-rollout json-keys <release-id> <rollout-id>
 
 go run ./cmd/infra foundation plan <bootstrap|foundation>
 go run ./cmd/infra foundation apply <bootstrap|foundation> <plan-id>
@@ -117,6 +118,11 @@ maintainer must add and retain `allow-resource-deletion` until merge.
 Progress and approval URLs go to stderr. Stdout contains only the promised opaque run identifier, so
 another program can capture it without parsing logs. None of these commands prints workflow secrets,
 OpenTofu values, credentials, or authorization headers.
+
+The separately enabled [rollout observation](../docs/runbooks/observe-rollout.md#observation-only-workflow)
+uses read-only credentials and its own concurrency group, so tracking remains available during a
+deployment. It reports the exact rollout's verification outcome without submitting or replaying work.
+All other infrastructure operations retain their shared execution guard.
 
 The launcher uses GitHub's dispatch response to identify its run and verifies the exact commit before
 returning or watching it. If dispatch cannot be confirmed, inspect the repository's Actions page before

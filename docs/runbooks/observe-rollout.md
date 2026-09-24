@@ -1,8 +1,9 @@
 # Observe one Cloud Deploy rollout
 
-The observer is a code-only pilot. No production workflow calls it, and the delivery pipeline
-remains suspended. IAM, submission, serialization, receipt publication and live activation need
-their separate reviewed changes. The existing production release workflow is unchanged.
+The observer is a code-only pilot. The observation-only path in `drift.yaml` is disabled until
+separately approved activation; the delivery pipeline remains suspended. Submission, writer
+serialization, receipt publication and workload cutover retain their separate approval gates.
+The existing production release workflow is unchanged.
 
 ## Completion boundary
 
@@ -28,7 +29,43 @@ The observer returns zero only for `succeeded`. Required action stops observatio
 a failing status so CI can notify the operator. Its ten-minute default can be set up to thirty
 minutes. A canceled or timed-out observer leaves the cloud operation running independently.
 
-## Future workflow caller
+## Observation-only workflow
+
+Before enabling this path, an administrator must approve the JSON Keys pilot's numeric pipeline
+resource name against its converged foundation and submission coordinates. Store that native name
+in the repository variable `GCP_JSON_KEYS_ROLLOUT_PARENT`:
+
+```text
+projects/PROJECT_NUMBER/locations/REGION/deliveryPipelines/agora-json-keys-grpc
+```
+
+This is an inspection allowlist, not a live-discovery result or deployment authorization. Verify
+the existing plan identity can read this project's exact releases and rollouts, and cannot mutate
+them, execute jobs or read secret payloads. The service-project module already declares Viewer
+for that identity; [effective IAM](https://docs.cloud.google.com/iam/docs/roles-permissions/clouddeploy)
+and federation still need a human check. Reuse `GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER` and
+`GCP_PLAN_SERVICE_ACCOUNT`; no new cloud grant is introduced here.
+
+Only after those checks and separate approval, set `SERVICE_ROLLOUT_OBSERVATION_ENABLED=true`.
+Leaving it unset makes a requested observation fail before authentication. The job builds reviewed
+tooling, validates the selected scope, authenticates read-only and calls the existing observer.
+It reads no state, secret versions, registry or peer resources.
+
+From clean, current `master`, with the exact IDs retained by the submission operation:
+
+```sh
+go run ./cmd/infra drift observe-rollout json-keys "${CLOUD_DEPLOY_RELEASE_ID:?}" "${CLOUD_DEPLOY_ROLLOUT_ID:?}"
+```
+
+Use `production` only if that is the recorded rollout ID. This operation can run while a deployment
+is active: its read-only concurrency group is separate from the unchanged infrastructure writer
+group. It cannot satisfy a writer's exclusion or completion requirements. A ten-minute observation
+runs within a twenty-minute job ceiling. The GitHub result and step summary report native failure,
+required action or interrupted tracking; configure GitHub Actions notifications to receive run alerts.
+Re-run this observation command for the same IDs after resolving the reported action. It never
+submits, approves, advances, cancels, retries a cloud job or publishes a recovery receipt.
+
+## Inline release tracking
 
 Build reviewed tooling with `.github/actions/setup-infra` **before** cloud authentication. Use a
 read-only identity able to get the exact Cloud Deploy release and rollout, without mutation, job

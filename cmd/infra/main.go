@@ -63,6 +63,8 @@ func main() {
 		code = artifact.Promote(ctx, os.Args[2:], quiet, artifact.NewClient(), os.Stdout, os.Stderr)
 	} else if len(os.Args) > 1 && os.Args[1] == "foundation-inputs" {
 		code = workflow.FoundationInputs(os.Args[2:], os.Getenv, os.Stdout, os.Stderr)
+	} else if len(os.Args) > 1 && os.Args[1] == "observation-inputs" {
+		code = workflow.ObservationInputs(os.Args[2:], os.Getenv, os.Stdout, os.Stderr)
 	} else if len(os.Args) > 1 && os.Args[1] == "database-isolation" {
 		// Stop the helper's entire local process group before attempting compensation.
 		execute := func(ctx context.Context, output io.Writer, name string, args ...string) error {

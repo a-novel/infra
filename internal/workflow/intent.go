@@ -12,6 +12,7 @@ import (
 const usage = `usage: go run ./cmd/infra
   drift
   drift assess-pull-request <pull-request-number>
+  drift observe-rollout json-keys <release-id> <rollout-id>
   foundation plan <bootstrap|foundation>
   foundation apply <bootstrap|foundation> <plan-id>
   foundation plan <service-foundation|service-release> <json-keys|authentication>
@@ -30,7 +31,7 @@ const usage = `usage: go run ./cmd/infra
 type intent struct {
 	workflow, planID, planPrefix, pullRequest string
 	inputs                                    []string
-	attempt, noWait                           bool
+	attempt, noWait, observation              bool
 }
 
 func (i *intent) input(key, value string) {
@@ -55,9 +56,29 @@ func parse(args []string) (intent, error) {
 	case "drift":
 		if len(args) == 0 {
 			i.input("operation", "drift")
-		} else if len(args) == 2 && args[0] == "assess-pull-request" && matches(runID, args[1]) {
+			break
+		}
+		switch args[0] {
+		case "assess-pull-request":
+			if len(args) != 2 || !matches(runID, args[1]) {
+				return i, invalid
+			}
 			i.pullRequest = args[1]
-		} else {
+		case "observe-rollout":
+			if len(args) != 4 || args[1] != "json-keys" {
+				return i, invalid
+			}
+			for _, id := range args[2:] {
+				if !matches(`[a-z]([a-z0-9-]{0,61}[a-z0-9])?`, id) {
+					return i, invalid
+				}
+			}
+			i.observation = true
+			i.input("operation", "observe-rollout")
+			i.input("service", args[1])
+			i.input("release_id", args[2])
+			i.input("rollout_id", args[3])
+		default:
 			return i, invalid
 		}
 	case "foundation":
