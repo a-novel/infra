@@ -26,7 +26,7 @@ type workflowJob struct {
 	Concurrency           object
 }
 
-func TestRolloutObservationWorkflow(t *testing.T) {
+func TestReadOnlyWorkflows(t *testing.T) {
 	t.Parallel()
 	data, err := os.ReadFile("../../.github/workflows/drift.yaml")
 	require.NoError(t, err)
@@ -35,52 +35,89 @@ func TestRolloutObservationWorkflow(t *testing.T) {
 		Jobs                     map[string]workflowJob
 	}
 	require.NoError(t, yaml.Unmarshal(data, &document))
-	job := document.Jobs["observe-rollout"]
-	require.Len(t, job.Steps, 5)
-	var steps []string
-	for _, item := range job.Steps {
-		uses, _, _ := strings.Cut(item.Uses, "@")
-		steps = append(steps, uses)
-		require.Empty(t, item.If, "observation steps cannot skip scope checks or swallow failure")
-	}
+	require.Empty(t, document.Permissions)
+	require.Equal(t, object{
+		"group":              "${{ inputs.operation == 'inspect-operation' && 'operation-inspection' || inputs.operation == 'observe-rollout' && 'rollout-observation' || 'production-infrastructure' }}",
+		"cancel-in-progress": false,
+	}, document.Concurrency)
+	var raw map[string]any
+	require.NoError(t, yaml.Unmarshal(data, &raw))
 	for _, testCase := range []struct {
-		name       string
-		want, have any
+		name, environment, reader, scopeCommand, readerCommand string
+		timeout                                                int
+		scopeEnv, readerEnv, readerWith                        object
 	}{
-		{"DefaultPermissions", object{}, document.Permissions},
-		{"ReaderConcurrency", object{"group": "${{ inputs.operation == 'observe-rollout' && 'rollout-observation' || 'production-infrastructure' }}", "cancel-in-progress": false}, document.Concurrency},
-		{"DispatchBoundary", "github.ref == 'refs/heads/master' && github.event_name == 'workflow_dispatch' && inputs.operation == 'observe-rollout'", job.If},
-		{"JobPermissions", map[string]string{"contents": "read", "id-token": "write"}, job.Permissions},
-		{"JobDeadline", 20, job.Timeout},
-		{"StepOrder", []string{"actions/checkout", "$/.github/actions/setup-infra", "", "google-github-actions/auth", "$/.github/actions/observe-rollout"}, steps},
-		{"CleanCheckout", object{"persist-credentials": false}, job.Steps[0].With},
-		{"ScopeInputs", object{
-			"SERVICE_ROLLOUT_OBSERVATION_ENABLED": "${{ vars.SERVICE_ROLLOUT_OBSERVATION_ENABLED }}",
-			"GCP_JSON_KEYS_ROLLOUT_PARENT":        "${{ vars.GCP_JSON_KEYS_ROLLOUT_PARENT }}",
-			"SELECTED_SERVICE":                    "${{ inputs.service }}", "RELEASE_ID": "${{ inputs.release_id }}", "ROLLOUT_ID": "${{ inputs.rollout_id }}",
-		}, job.Steps[2].Env},
-		{"ScopeCommand", "set -euo pipefail\ninfra observation-inputs \"${SELECTED_SERVICE}\" \"${RELEASE_ID}\" \"${ROLLOUT_ID}\" >>\"${GITHUB_OUTPUT}\"\n", job.Steps[2].Run},
-		{"ReadOnlyIdentity", object{
-			"workload_identity_provider": "${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}",
-			"service_account":            "${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}",
-			"create_credentials_file":    true, "export_environment_variables": true,
-		}, job.Steps[3].With},
-		{"ObserverHandoff", object{"rollout": "${{ steps.scope.outputs.rollout }}", "timeout": "10m"}, job.Steps[4].With},
+		{
+			name: "observe-rollout", timeout: 20, reader: "$/.github/actions/observe-rollout",
+			scopeCommand: "set -euo pipefail\ninfra observation-inputs observe-rollout \"${SELECTED_SERVICE}\" \"${RELEASE_ID}\" \"${ROLLOUT_ID}\" >>\"${GITHUB_OUTPUT}\"\n",
+			scopeEnv: object{
+				"SERVICE_ROLLOUT_OBSERVATION_ENABLED": "${{ vars.SERVICE_ROLLOUT_OBSERVATION_ENABLED }}",
+				"GCP_JSON_KEYS_ROLLOUT_PARENT":        "${{ vars.GCP_JSON_KEYS_ROLLOUT_PARENT }}",
+				"SELECTED_SERVICE":                    "${{ inputs.service }}", "RELEASE_ID": "${{ inputs.release_id }}", "ROLLOUT_ID": "${{ inputs.rollout_id }}",
+			},
+			readerWith: object{"rollout": "${{ steps.scope.outputs.rollout }}", "timeout": "10m"},
+		},
+		{
+			name: "inspect-operation", timeout: 10, environment: "production-foundation",
+			scopeCommand: "set -euo pipefail\nargs=(inspect-operation \"${SELECTED_SERVICE}\")\n" +
+				"if [[ -n \"${GUARD_GENERATION}\" ]]; then args+=(\"${GUARD_GENERATION}\"); fi\ninfra observation-inputs \"${args[@]}\" >>\"${GITHUB_OUTPUT}\"\n",
+			readerCommand: "set -euo pipefail\nargs=(operation inspect \"${STATE_BUCKET}\" \"${SELECTED_PROJECT}\")\n" +
+				"if [[ -n \"${GUARD_GENERATION}\" ]]; then args+=(\"${GUARD_GENERATION}\"); fi\ninfra custody \"${args[@]}\" | tee \"${GITHUB_STEP_SUMMARY}\"\n",
+			scopeEnv: object{
+				"FOUNDATION_CONFIG": "${{ secrets.FOUNDATION_TFVARS_JSON }}", "MANAGEMENT_PROJECT_ID": "${{ vars.GCP_MANAGEMENT_PROJECT_ID }}",
+				"STATE_BUCKET": "${{ vars.GCP_STATE_BUCKET }}", "SELECTED_SERVICE": "${{ inputs.service }}", "GUARD_GENERATION": "${{ inputs.guard_generation }}",
+			},
+			readerEnv: object{
+				"FOUNDATION_CONFIG": "${{ secrets.FOUNDATION_TFVARS_JSON }}", "MANAGEMENT_PROJECT_ID": "${{ vars.GCP_MANAGEMENT_PROJECT_ID }}",
+				"STATE_BUCKET": "${{ vars.GCP_STATE_BUCKET }}", "SELECTED_PROJECT": "${{ steps.scope.outputs.project }}", "GUARD_GENERATION": "${{ inputs.guard_generation }}",
+			},
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
-			require.Equal(t, testCase.want, testCase.have)
+			job := document.Jobs[testCase.name]
+			require.Len(t, job.Steps, 5)
+			var steps []string
+			for _, item := range job.Steps {
+				uses, _, _ := strings.Cut(item.Uses, "@")
+				steps = append(steps, uses)
+				require.Empty(t, item.If, "readers cannot skip authorization or swallow failure")
+			}
+			for _, contract := range []struct {
+				name       string
+				want, have any
+			}{
+				{"DispatchBoundary", "github.ref == 'refs/heads/master' && github.event_name == 'workflow_dispatch' && inputs.operation == '" + testCase.name + "'", job.If},
+				{"Environment", testCase.environment, job.Environment},
+				{"Permissions", map[string]string{"contents": "read", "id-token": "write"}, job.Permissions},
+				{"Deadline", testCase.timeout, job.Timeout},
+				{"StepOrder", []string{"actions/checkout", "$/.github/actions/setup-infra", "", "google-github-actions/auth", testCase.reader}, steps},
+				{"CleanCheckout", object{"persist-credentials": false}, job.Steps[0].With},
+				{"ScopeInputs", testCase.scopeEnv, job.Steps[2].Env},
+				{"ScopeCommand", testCase.scopeCommand, job.Steps[2].Run},
+				{"ReadOnlyIdentity", object{
+					"workload_identity_provider": "${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}", "service_account": "${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}",
+					"create_credentials_file": true, "export_environment_variables": true,
+				}, job.Steps[3].With},
+				{"ReaderInputs", testCase.readerEnv, job.Steps[4].Env},
+				{"ReaderCommand", testCase.readerCommand, job.Steps[4].Run},
+				{"ReaderHandoff", testCase.readerWith, job.Steps[4].With},
+			} {
+				t.Run(contract.name, func(t *testing.T) { require.Equal(t, contract.want, contract.have) })
+			}
+			encoded, err := json.Marshal(raw["jobs"].(map[string]any)[testCase.name])
+			require.NoError(t, err)
+			require.NotRegexp(t, `continue-on-error|always\(\)|gcloud|opentofu|submit-release|submit-rollout`, string(encoded))
+			if testCase.name == "observe-rollout" {
+				require.NotContains(t, string(encoded), "secrets.")
+			}
 		})
 	}
 	for _, name := range []string{"inspect", "health", "assess-resource-deletion"} {
 		require.Contains(t, document.Jobs[name].If, "inputs.operation ==")
 		require.NotContains(t, document.Jobs[name].If, "observe-rollout")
+		require.NotContains(t, document.Jobs[name].If, "inspect-operation")
 	}
-	var raw map[string]any
-	require.NoError(t, yaml.Unmarshal(data, &raw))
-	encoded, err := json.Marshal(raw["jobs"].(map[string]any)["observe-rollout"])
-	require.NoError(t, err)
-	require.NotRegexp(t, `continue-on-error|always\(\)|secrets\.|gcloud|opentofu|submit-release|submit-rollout`, string(encoded))
 }
 
 func TestWorkflowBoundaries(t *testing.T) {

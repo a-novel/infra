@@ -9,18 +9,28 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Inspect drift, assess an exact pull request, or observe a native rollout.
+        description: Inspect drift or apply evidence, assess a pull request, or observe a rollout.
         required: true
         default: drift
         type: choice
         options:
-          [drift, assess-pull-request, assess-image-update, observe-rollout]
+          [
+            drift,
+            assess-pull-request,
+            assess-image-update,
+            observe-rollout,
+            inspect-operation,
+          ]
       service:
-        description: Observation only; select the JSON Keys pilot.
+        description: Observation only; rollout supports JSON Keys, apply inspection supports either service.
         required: false
         default: none
         type: choice
-        options: [none, json-keys]
+        options: [none, json-keys, authentication]
+      guard_generation:
+        description: Apply inspection only; exact retained guard generation, or empty for the live guard.
+        required: false
+        type: string
       release_id:
         description: Observation only; exact native Cloud Deploy release ID.
         required: false
@@ -43,7 +53,9 @@ on:
         type: string
 
 run-name: >-
-  ${{ inputs.operation == 'observe-rollout' &&
+  ${{ inputs.operation == 'inspect-operation' &&
+  format('inspect operation {0}/{1} by @{2}', inputs.service, inputs.guard_generation || 'live', github.actor) ||
+  inputs.operation == 'observe-rollout' &&
   format('observe rollout {0}/{1}/{2} by @{3}', inputs.service, inputs.release_id, inputs.rollout_id, github.actor) ||
   (inputs.operation == 'assess-pull-request' || inputs.operation == 'assess-image-update') &&
   format('resource-deletion assessment PR #{0} {1} onto {2}', inputs.pull_request, inputs.head_sha, inputs.base_sha) ||
@@ -53,7 +65,7 @@ permissions: {}
 
 concurrency:
   # Readers must not queue behind the deployment they need to inspect.
-  group: ${{ inputs.operation == 'observe-rollout' && 'rollout-observation' || 'production-infrastructure' }}
+  group: ${{ inputs.operation == 'inspect-operation' && 'operation-inspection' || inputs.operation == 'observe-rollout' && 'rollout-observation' || 'production-infrastructure' }}
   cancel-in-progress: false
 
 env:
@@ -61,6 +73,60 @@ env:
   CLOUDSDK_CORE_DISABLE_PROMPTS: "1"
 
 jobs:
+  inspect-operation:
+    if: github.ref == 'refs/heads/master' && github.event_name == 'workflow_dispatch' && inputs.operation == 'inspect-operation'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: production-foundation
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out the exact master commit
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build reviewed infra tooling
+        uses: $/.github/actions/setup-infra
+
+      - name: Authorize the registered service before authentication
+        id: scope
+        shell: bash
+        env:
+          FOUNDATION_CONFIG: ${{ secrets.FOUNDATION_TFVARS_JSON }}
+          MANAGEMENT_PROJECT_ID: ${{ vars.GCP_MANAGEMENT_PROJECT_ID }}
+          STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
+          SELECTED_SERVICE: ${{ inputs.service }}
+          GUARD_GENERATION: ${{ inputs.guard_generation }}
+        run: |
+          set -euo pipefail
+          args=(inspect-operation "${SELECTED_SERVICE}")
+          if [[ -n "${GUARD_GENERATION}" ]]; then args+=("${GUARD_GENERATION}"); fi
+          infra observation-inputs "${args[@]}" >>"${GITHUB_OUTPUT}"
+
+      - name: Authenticate as the read-only plan boundary
+        uses: google-github-actions/auth@v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Inspect exact apply evidence without changing the operation
+        shell: bash
+        env:
+          FOUNDATION_CONFIG: ${{ secrets.FOUNDATION_TFVARS_JSON }}
+          MANAGEMENT_PROJECT_ID: ${{ vars.GCP_MANAGEMENT_PROJECT_ID }}
+          STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
+          SELECTED_PROJECT: ${{ steps.scope.outputs.project }}
+          GUARD_GENERATION: ${{ inputs.guard_generation }}
+        run: |
+          set -euo pipefail
+          args=(operation inspect "${STATE_BUCKET}" "${SELECTED_PROJECT}")
+          if [[ -n "${GUARD_GENERATION}" ]]; then args+=("${GUARD_GENERATION}"); fi
+          infra custody "${args[@]}" | tee "${GITHUB_STEP_SUMMARY}"
+
   observe-rollout:
     if: github.ref == 'refs/heads/master' && github.event_name == 'workflow_dispatch' && inputs.operation == 'observe-rollout'
     runs-on: ubuntu-24.04
@@ -88,7 +154,7 @@ jobs:
           ROLLOUT_ID: ${{ inputs.rollout_id }}
         run: |
           set -euo pipefail
-          infra observation-inputs "${SELECTED_SERVICE}" "${RELEASE_ID}" "${ROLLOUT_ID}" >>"${GITHUB_OUTPUT}"
+          infra observation-inputs observe-rollout "${SELECTED_SERVICE}" "${RELEASE_ID}" "${ROLLOUT_ID}" >>"${GITHUB_OUTPUT}"
 
       - name: Authenticate as the read-only plan boundary
         uses: google-github-actions/auth@v3.0.0

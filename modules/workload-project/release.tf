@@ -107,3 +107,16 @@ resource "google_storage_managed_folder_iam_member" "plan" {
   role           = "roles/storage.objectViewer"
   member         = "serviceAccount:${var.plan_service_account}"
 }
+
+resource "google_storage_bucket_iam_member" "plan_operation_reader" {
+  bucket = google_storage_managed_folder.release["receipts"].bucket
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:${var.plan_service_account}"
+
+  # Inspection selects exact objects; this condition does not grant bucket listing.
+  condition {
+    title       = "ServiceOperationEvidence-${var.project_id}"
+    description = "Read only this service's apply-completion records."
+    expression  = "resource.type == 'storage.googleapis.com/Object' && resource.name.startsWith('projects/_/buckets/${local.release_storage.receipts.bucket}/objects/${local.release_storage.receipts.prefix}operations/')"
+  }
+}

@@ -23,6 +23,7 @@ Its empty `service_projects` map leaves the current deployment unchanged. See th
 | `google_service_account.release`, `google_iam_workload_identity_pool_provider.release`, and `google_service_account_iam_member.release_federation` | A project-local `infra-release` account trusts only its service environment and the exact master release workflow, via a provider in the bootstrap-owned pool. No key or outbound impersonation grant. |
 | `google_storage_managed_folder.release` and `.release` IAM members                                                                                 | Protected state and receipt folders in the existing management buckets. The matching release account can write state and create/read receipts, but cannot replace or delete receipts.                  |
 | `google_storage_bucket_iam_member.release_metadata` and `google_storage_managed_folder_iam_member.plan`                                            | Release reads state-bucket metadata only; the existing plan identity gains read-only access to the selected service's state folder. Neither grant permits bucket administration.                       |
+| `google_storage_bucket_iam_member.plan_operation_reader`                                                                                           | The plan identity reads only this service's apply-completion records; no receipt writes or bucket listing.                                                                                             |
 
 The caller owns Shared VPC attachment, exact-subnet access for Cloud Run/MIG agents and foundation, and budget scope. These grants
 provide network attachment, not secret access or application invocation. The module creates no workloads, runtime
@@ -97,6 +98,14 @@ and `recovery/` folders: managed-folder IAM is additive, so a child of a legacy 
 its writers. The release account receives no project role, peer storage, secret access, or runtime
 permission. Foundation remains the explicit high-trust administrator; inherited project/organization
 grants must also be checked during live verification.
+
+The plan identity's existing state-folder read grant covers guards and published configuration.
+A conditional Object Viewer binding adds only exact-object reads under
+`services/<project-id>/production/operations/` in the receipt bucket for
+[interrupted-apply inspection](../../docs/service-operations.md#inspect-an-interrupted-apply).
+The [object-name condition](https://docs.cloud.google.com/storage/docs/access-control/iam#conditions)
+does not authorize bucket listing or reads of other receipt prefixes. Apply and verify this grant
+separately before first use; inspection itself cannot repair missing access.
 
 Existing bucket protections and lifecycle policies still apply. Empty folders and keyless identities
 add no paid runtime; future object storage/operations are billable. Saved-plan location and expiry,

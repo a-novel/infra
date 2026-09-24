@@ -110,7 +110,8 @@ func Run(ctx context.Context, args []string, execute func(context.Context, io.Wr
       .workflow_runs[] | select(.status != "completed")
       | select(.path == ".github/workflows/drift.yaml" or .path == ".github/workflows/foundation.yaml"
         or .path == ".github/workflows/recovery.yaml" or .path == ".github/workflows/release.yaml")
-      | select(.path != ".github/workflows/drift.yaml" or (.display_title | startswith("observe rollout ") | not))
+      | select(.path != ".github/workflows/drift.yaml" or
+          (.display_title | startswith("observe rollout ") or startswith("inspect operation ") | not))
       | [.id, .name, .display_title, .status, .html_url] | @tsv`)
 		if err != nil {
 			return stop(65, "Cannot inspect active infrastructure runs.")
