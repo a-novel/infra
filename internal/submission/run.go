@@ -12,12 +12,13 @@ import (
 
 	deploy "cloud.google.com/go/deploy/apiv1"
 	"cloud.google.com/go/deploy/apiv1/deploypb"
+	cloudrun "cloud.google.com/go/run/apiv2"
 	"google.golang.org/api/option"
 	"google.golang.org/api/storage/v1"
 )
 
-// Run exposes the dormant pilot's source publication, native submission and read-only reconciliation.
-// Target approval and durable success receipts remain separate obligations.
+// Run exposes the dormant pilot's publication, single-dispatch submission and outcome reconciliation.
+// Migration reconciliation may publish execution evidence; target approval and final receipts remain separate.
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer, options ...option.ClientOption) int {
 	if err := run(ctx, args, stdout, options...); err != nil {
 		_, _ = fmt.Fprintln(stderr, err)
@@ -32,8 +33,11 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, options .
 }
 
 func run(ctx context.Context, args []string, output io.Writer, options ...option.ClientOption) error {
-	if len(args) == 0 || !slices.Contains([]string{"publish-release-source", "submit-release", "reconcile-release", "submit-rollout", "reconcile-rollout"}, args[0]) {
-		return errors.New("expected a release or rollout submission/reconciliation command")
+	if len(args) == 0 || !slices.Contains([]string{
+		"publish-release-source", "submit-release", "reconcile-release",
+		"submit-rollout", "reconcile-rollout", "submit-migration", "reconcile-migration",
+	}, args[0]) {
+		return errors.New("expected a release, rollout or migration submission/reconciliation command")
 	}
 	flags := flag.NewFlagSet(args[0], flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -51,9 +55,14 @@ func run(ctx context.Context, args []string, output io.Writer, options ...option
 	if args[0] == "submit-rollout" {
 		flags.StringVar(&requestID, "request-id", "", "new nonzero UUID for this rollout request")
 	}
+	var jobUID, image string
+	if args[0] == "submit-migration" {
+		flags.StringVar(&jobUID, "job-uid", "", "reviewed existing migrations job UID")
+		flags.StringVar(&image, "image", "", "reviewed promoted migrations image digest")
+	}
 	timeout := flags.Duration("timeout", 10*time.Minute, "creation wait deadline, at most 30m")
 	if flags.Parse(args[1:]) != nil || flags.NArg() != 1 {
-		return errors.New("expected scope flags and one argument: request file for publication/submission, exact release ID otherwise")
+		return errors.New("expected scope flags and one argument: request file for source/release submission, exact release ID otherwise")
 	}
 	if err := scope.validate(); err != nil {
 		return err
@@ -63,6 +72,9 @@ func run(ctx context.Context, args []string, output io.Writer, options ...option
 	}
 	if args[0] == "submit-rollout" && !validRequestID(requestID) {
 		return errors.New("rollout request-id must be a nonzero lowercase UUID")
+	}
+	if args[0] == "submit-migration" && (!validRequestID(jobUID) || !scope.migrationImage(image)) {
+		return errors.New("migration requires a nonzero job UID and exact promoted JSON Keys migrations digest")
 	}
 	ctx, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()
@@ -110,6 +122,15 @@ func run(ctx context.Context, args []string, output io.Writer, options ...option
 		return errors.New("cannot initialize private storage client")
 	}
 	client := cloud{scope: scope, deploy: deployClient, storage: storageClient}
+	if args[0] == "submit-migration" || args[0] == "reconcile-migration" {
+		jobsClient, err := cloudrun.NewJobsRESTClient(ctx, options...)
+		if err != nil {
+			return errors.New("cannot initialize Cloud Run jobs client")
+		}
+		defer func() { _ = jobsClient.Close() }()
+		client.jobs = jobsClient
+		return client.migration(ctx, args[0], id, jobUID, image, output)
+	}
 	switch args[0] {
 	case "publish-release-source":
 		return client.publishSource(ctx, request, archive, output)

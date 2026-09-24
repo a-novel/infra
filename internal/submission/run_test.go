@@ -44,7 +44,7 @@ func TestRun(t *testing.T) {
 	}
 }
 
-func TestRolloutArguments(t *testing.T) {
+func TestSubmissionArguments(t *testing.T) {
 	t.Parallel()
 	for _, testCase := range []struct {
 		name, command, argument string
@@ -56,11 +56,16 @@ func TestRolloutArguments(t *testing.T) {
 		{"NoPhaseOverride", "submit-rollout", "--starting-phase=stable"},
 		{"NoTargetOverride", "submit-rollout", "--target=peer"},
 		{"NoRolloutOverride", "submit-rollout", "--rollout-id=other"},
+		{"NoMigrationUID", "submit-migration", ""},
+		{"InvalidMigrationUID", "submit-migration", "--job-uid=private-input"},
+		{"NoMigrationOverrides", "submit-migration", "--overrides=private-input"},
+		{"NoReconcileJobOverride", "reconcile-migration", "--job-uid=private-input"},
+		{"NoReconcileImageOverride", "reconcile-migration", "--image=private-input"},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				t.Error("invalid rollout arguments reached a cloud client")
+				t.Error("invalid submission arguments reached a cloud client")
 				w.WriteHeader(http.StatusForbidden)
 			}))
 			defer server.Close()

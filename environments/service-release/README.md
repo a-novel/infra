@@ -192,6 +192,9 @@ does not prevent two separately dispatched executions. Keep same-service exclusi
 updates, migrations, API rollout and receipt publication, including pausing/draining/resuming rotation.
 Migrations remain outside Cloud Deploy retry hooks. An ambiguous dispatch requires reconciliation of
 its exact execution; neither a timeout nor a missing receipt permits replay.
+The inactive JSON Keys [submission adapter](../../docs/runbooks/submit-release.md#run-the-exact-migration-once)
+now reserves migration intent and saves exact execution evidence. Its rollout command requires that
+evidence. Live caller integration and same-service exclusion remain activation prerequisites.
 
 Both job types use all-traffic Direct VPC egress and their service's network tag. The host foundation
 must provide private database access, restricted Google API routing and the Cloud Run service-agent

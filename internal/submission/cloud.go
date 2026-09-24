@@ -11,6 +11,7 @@ import (
 	deploy "cloud.google.com/go/deploy/apiv1"
 	"cloud.google.com/go/deploy/apiv1/deploypb"
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
+	cloudrun "cloud.google.com/go/run/apiv2"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/storage/v1"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -21,6 +22,7 @@ type cloud struct {
 	scope   scope
 	deploy  *deploy.CloudDeployClient
 	storage *storage.Service
+	jobs    *cloudrun.JobsClient
 }
 
 func (client cloud) submit(ctx context.Context, request *deploypb.CreateReleaseRequest, output io.Writer) error {
@@ -34,7 +36,7 @@ func (client cloud) submit(ctx context.Context, request *deploypb.CreateReleaseR
 	if err != nil {
 		return errors.New("release submission uncertain; intent retained")
 	}
-	if err := client.recordOperation(ctx, name, operation.Name(), output); err != nil {
+	if err := client.recordOperation(ctx, name, &longrunningpb.Operation{Name: operation.Name()}, output); err != nil {
 		return err
 	}
 	release, err := operation.Wait(ctx)
@@ -44,18 +46,22 @@ func (client cloud) submit(ctx context.Context, request *deploypb.CreateReleaseR
 	return report(output, request, release)
 }
 
-func (client cloud) recordOperation(ctx context.Context, intent, operation string, output io.Writer) error {
-	prefix := client.scope.location() + "/operations/"
-	if !strings.HasPrefix(operation, prefix) || !validOperationID(strings.TrimPrefix(operation, prefix)) {
+func (client cloud) recordOperation(ctx context.Context, intent string, operation *longrunningpb.Operation, output io.Writer) error {
+	if !client.scope.operation(operation.GetName()) {
 		return errors.New("unexpected operation identity; intent retained")
 	}
 	// Keep a log breadcrumb even if private operation recording fails. The immutable
 	// record is still mandatory before waiting; console output cannot replace it.
-	_, _ = fmt.Fprintf(output, "Operation: %s\n", operation)
-	if err := client.create(ctx, strings.TrimSuffix(intent, ".json")+".operation.json", &longrunningpb.Operation{Name: operation}); err != nil {
+	_, _ = fmt.Fprintf(output, "Operation: %s\n", operation.Name)
+	if err := client.create(ctx, strings.TrimSuffix(intent, ".json")+".operation.json", operation); err != nil {
 		return errors.New("operation recording uncertain; cloud request may already be accepted")
 	}
 	return nil
+}
+
+func (scope scope) operation(name string) bool {
+	prefix := scope.location() + "/operations/"
+	return strings.HasPrefix(name, prefix) && validOperationID(strings.TrimPrefix(name, prefix))
 }
 
 func validOperationID(id string) bool {

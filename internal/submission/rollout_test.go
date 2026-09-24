@@ -80,6 +80,8 @@ func TestRollout(t *testing.T) {
 		}, want: result{0, 0, 1, true}},
 		{name: "TargetReadDenied", failure: "target", want: result{0, 0, 1, true}},
 		{name: "UUIDReusedAcrossOperations", failure: "reuse-uuid", want: result{0, 0, 1, true}},
+		{name: "MigrationEvidenceMissing", failure: "migration-missing", want: result{0, 0, 1, true}},
+		{name: "MigrationEvidenceConflict", failure: "migration-conflict", want: result{0, 0, 1, true}},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
@@ -100,6 +102,17 @@ func TestRollout(t *testing.T) {
 			rolloutIntent := strings.TrimSuffix(intent, ".json") + ".rollout.json"
 			rolloutName := release.Name + "/rollouts/production"
 			objects := map[string][]byte{intent: wire(t, releaseRequest)}
+			for name, data := range migrationRecords(t, release) {
+				objects[name] = data
+			}
+			migrationResult := strings.TrimSuffix(intent, ".json") + ".migration.execution.json"
+			switch testCase.failure {
+			case "migration-missing":
+				delete(objects, migrationResult)
+			case "migration-conflict":
+				objects[migrationResult] = []byte(`{"job":"peer"}`)
+			}
+			initialRecords := len(objects)
 			var native *deploypb.Rollout
 			var mutex sync.Mutex
 			creates, writes := 0, 0
@@ -267,7 +280,7 @@ func TestRollout(t *testing.T) {
 			var output bytes.Buffer
 			reconciled := submission.Run(t.Context(), arguments(t, "reconcile-rollout", releaseRequest.ReleaseId), &output, &output, options...)
 			mutex.Lock()
-			got := result{creates, len(objects) - 1, reconciled, writes == beforeWrites}
+			got := result{creates, len(objects) - initialRecords, reconciled, writes == beforeWrites}
 			mutex.Unlock()
 			require.Equal(t, testCase.want, got, "reconcile output: %s", &output)
 			if reconciled == 0 {

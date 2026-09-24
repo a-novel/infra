@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"cloud.google.com/go/deploy/apiv1/deploypb"
+	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
@@ -36,6 +37,9 @@ func (client cloud) submitRollout(ctx context.Context, id, requestID string, out
 	if release.Abandoned || release.RenderState != deploypb.Release_SUCCEEDED || release.Uid == "" {
 		return errors.New("rollout requires an identified, fully rendered, non-abandoned release")
 	}
+	if err := client.requireMigration(ctx, id, release); err != nil {
+		return err
+	}
 	if requestID == releaseRequest.RequestId {
 		return errors.New("rollout request UUID must differ from the release request UUID")
 	}
@@ -56,7 +60,7 @@ func (client cloud) submitRollout(ctx context.Context, id, requestID string, out
 	if err != nil {
 		return errors.New("rollout submission uncertain; intent retained")
 	}
-	if err := client.recordOperation(ctx, intent, operation.Name(), output); err != nil {
+	if err := client.recordOperation(ctx, intent, &longrunningpb.Operation{Name: operation.Name()}, output); err != nil {
 		return err
 	}
 	native, err := operation.Wait(ctx)
