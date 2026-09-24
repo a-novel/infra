@@ -21,8 +21,11 @@ func imageKey(slot string) string {
 	return strings.ReplaceAll(strings.TrimPrefix(slot, "jobs/"), "rotatekeys", "rotate_keys")
 }
 
-func familyVersions(manifest object) error {
+func familyVersions(manifest object, selected ...string) error {
 	for _, family := range families {
+		if len(selected) != 0 && component(family.service) != "service-"+selected[0] {
+			continue
+		}
 		definition := obj(manifest, "components", component(family.service))
 		if definition["enabled"] != true {
 			return errors.New("both components must be enabled for a production release")

@@ -221,7 +221,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: ./ops/verify-release-images.sh "${RUNNER_TEMP}/release-preview/release.json"
+        run: infra preflight images "${RUNNER_TEMP}/release-preview/release.json"
 
       - name: Lint GitHub Actions syntax
         uses: raven-actions/actionlint@v2.2.0

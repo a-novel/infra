@@ -18,6 +18,7 @@ import (
 	"github.com/a-novel/infra/internal/inspection"
 	"github.com/a-novel/infra/internal/isolation"
 	"github.com/a-novel/infra/internal/operator"
+	"github.com/a-novel/infra/internal/preflight"
 	"github.com/a-novel/infra/internal/release"
 	"github.com/a-novel/infra/internal/rollout"
 	"github.com/a-novel/infra/internal/submission"
@@ -56,6 +57,8 @@ func main() {
 			command.WaitDelay = 5 * time.Second
 			return command.Output()
 		}, os.Stdout, os.Stderr)
+	} else if len(os.Args) > 1 && os.Args[1] == "preflight" {
+		code = preflight.Run(ctx, os.Args[2:], quiet, os.Stdout, os.Stderr)
 	} else if len(os.Args) > 1 && os.Args[1] == "foundation-inputs" {
 		code = workflow.FoundationInputs(os.Args[2:], os.Getenv, os.Stdout, os.Stderr)
 	} else if len(os.Args) > 1 && os.Args[1] == "database-isolation" {

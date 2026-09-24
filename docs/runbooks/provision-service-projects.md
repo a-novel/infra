@@ -216,11 +216,13 @@ protected foundation workflow and identity, global concurrency, native GCS locki
 24-hour plan custody. It runs no job, changes no traffic and grants no IAM access. Keep
 `SERVICE_JOB_BOOTSTRAP_ENABLED` unset until a separate onboarding PR authorizes activation.
 
-Before activation, verify the completed project/runtime/database/network prerequisites, exact image
-family and provenance, enabled secret versions and effective foundation attachment/creation access.
+Before activation, verify the completed project/runtime/database/network prerequisites, promoted
+image availability and effective foundation attachment/creation and secret-metadata access.
 Apply and verify the native [plan-expiration policy](../../bootstrap/README.md#plan-artifact-expiration).
 Keep rotation absent or paused, reconcile accepted executions and retain the sole-writer boundary.
 The bootstrap flag grants no Google permissions; no new role is installed by this path.
+The existing foundation secret-container role lacks `secretmanager.versions.get`; separately review
+that metadata-only permission on the selected job secrets before activation. Payload access is not needed.
 
 Prepare `SERVICE_JOB_BOOTSTRAPS_JSON` for `production-foundation`, keyed by `json-keys` or
 `authentication`, like the service-foundation map above. Each entry contains the
@@ -233,10 +235,21 @@ unset. Preserve other service entries. After separate authorization, publish the
 gh secret set SERVICE_JOB_BOOTSTRAPS_JSON --repo a-novel/infra --env production-foundation <"${SERVICE_JOB_BOOTSTRAPS_FILE:?}"
 ```
 
-The workflow checks registration and reference scope before authentication. It then downloads only
-the approved generation and embeds its original bytes; a denied read or mismatched checksum stops.
-HCL verifies the runtime/database contract. After the onboarding PR's prerequisites and explicit flag
-approval, use clean, current `master`:
+Both plan and apply check registration and reference scope, then verify the selected service's
+complete four-image family before Google authentication. GitHub CLI verifies producer provenance;
+Buildx checks tag/digest agreement and PostgreSQL major without running images. Every configured
+job digest, and an optional API digest, must match that family in the authorized service project.
+The peer's registry is never queried.
+
+After authentication, only the selected jobs' exact secret-version metadata is queried:
+`postgres-password` and, for JSON Keys, `app-master-key`. All must be `ENABLED`. No secret payload,
+initializer, SMTP, backup or peer secret is read. Failure stops before plan creation or consumption.
+These checks are point-in-time evidence; they do not promote images, prove runtime access or prevent
+later cloud rejection.
+
+The workflow then downloads only the approved foundation generation and embeds its original bytes;
+a denied read or mismatched checksum stops. HCL verifies the runtime/database contract. After the
+onboarding PR's prerequisites and explicit flag approval, use clean, current `master`:
 
 ```sh
 SERVICE_JOB_PLAN_ID="$(go run ./cmd/infra foundation plan service-release json-keys)"

@@ -179,6 +179,46 @@ func TestJobBootstrapBoundary(t *testing.T) {
 	require.Contains(t, bind.Run, `gcloud storage cp "${FOUNDATION_URI}" "${coordinates}" --quiet >/dev/null 2>&1`)
 }
 
+func TestPrerequisiteBoundary(t *testing.T) {
+	t.Parallel()
+	for _, testCase := range []struct{ file, job, command, condition string }{
+		{"main", "lint-repository", "infra preflight images", ""},
+		{"release", "release", "infra preflight images", "env.RELEASE_ACTION == 'deploy'"},
+		{"foundation", "execute", "infra preflight service-images", "inputs.root == 'service-release'"},
+	} {
+		t.Run(testCase.file, func(t *testing.T) {
+			t.Parallel()
+			job := loadWorkflow(t, "workflows/"+testCase.file+".yaml").Jobs[testCase.job]
+			check := stepIndex(t, job.Steps, testCase.command)
+			require.Equal(t, "read", job.Permissions["attestations"])
+			require.Equal(t, testCase.condition, job.Steps[check].If)
+			require.Equal(t, "${{ github.token }}", job.Steps[check].Env["GH_TOKEN"])
+			require.Less(t, stepIndex(t, job.Steps, "setup-infra"), check)
+			if testCase.file != "main" {
+				require.Less(t, check, stepIndex(t, job.Steps, "google-github-actions/auth@"))
+			}
+		})
+	}
+	steps := loadWorkflow(t, "workflows/foundation.yaml").Jobs["execute"].Steps
+	for _, pair := range [][2]string{
+		{"foundation-inputs prepare", "preflight service-images"},
+		{"setup-gcloud@", "preflight service-secrets"},
+		{"preflight service-secrets", "foundation-inputs bind"},
+		{"foundation-inputs bind", "create-reviewed-plan.sh"},
+		{"foundation-inputs bind", "apply-reviewed-plan.sh"},
+	} {
+		t.Run("Order/"+pair[0]+"/"+pair[1], func(t *testing.T) {
+			t.Parallel()
+			require.Less(t, stepIndex(t, steps, pair[0]), stepIndex(t, steps, pair[1]))
+		})
+	}
+	for _, command := range []string{"preflight service-images", "preflight service-secrets"} {
+		step := steps[stepIndex(t, steps, command)]
+		require.Equal(t, "inputs.root == 'service-release'", step.If, "both plan and apply require the checks")
+		require.Equal(t, "${{ steps.inputs.outputs.file }}", step.Env["SELECTED_FILE"])
+	}
+}
+
 func TestWorkflowBoundaries(t *testing.T) {
 	t.Parallel()
 	main := loadWorkflow(t, "workflows/main.yaml")
