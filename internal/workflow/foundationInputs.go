@@ -80,6 +80,18 @@ func foundationInputs(args []string, getenv func(string) string, stdout io.Write
 	if service == "none" {
 		service = ""
 	}
+	// Direct workflow submissions must satisfy the same contract as the operator command.
+	operation := getenv("FOUNDATION_OPERATION")
+	command := []string{"foundation", operation, root}
+	if service != "" {
+		command = append(command, service)
+	}
+	if planID := getenv("FOUNDATION_PLAN_ID"); planID != "" {
+		command = append(command, planID)
+	}
+	if _, err := parse(command); err != nil {
+		return err
+	}
 	data := []byte(getenv("FOUNDATION_CONFIG"))
 	suffix, foundationURI := "", ""
 	switch root {
@@ -94,6 +106,9 @@ func foundationInputs(args []string, getenv func(string) string, stdout io.Write
 		configKey, enabledKey := "SERVICE_FOUNDATION_CONFIG", "SERVICE_FOUNDATIONS_ENABLED"
 		if root == "service-release" {
 			configKey, enabledKey = "SERVICE_JOB_BOOTSTRAP_CONFIG", "SERVICE_JOB_BOOTSTRAP_ENABLED"
+		}
+		if operation == "promote-images" {
+			enabledKey = "SERVICE_IMAGE_PROMOTION_ENABLED"
 		}
 		if getenv(enabledKey) != "true" {
 			return errors.New("service bootstrap requires separate activation approval")

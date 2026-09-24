@@ -141,13 +141,14 @@ func TestWorkflowCredentials(t *testing.T) {
 	require.Equal(t, "${{ vars.SERVICE_FOUNDATIONS_ENABLED }}", foundation[selection].Env["SERVICE_FOUNDATIONS_ENABLED"])
 }
 
-func TestJobBootstrapBoundary(t *testing.T) {
+func TestServiceBootstrapBoundary(t *testing.T) {
 	t.Parallel()
 	foundation := loadWorkflow(t, "workflows/foundation.yaml")
 	job := foundation.Jobs["execute"]
 	selectIndex := stepIndex(t, job.Steps, "infra foundation-inputs prepare")
 	bindIndex := stepIndex(t, job.Steps, "infra foundation-inputs bind")
 	bind := job.Steps[bindIndex]
+	promote := job.Steps[stepIndex(t, job.Steps, "infra promote service")]
 	for _, testCase := range []struct {
 		name           string
 		actual, expect any
@@ -157,13 +158,31 @@ func TestJobBootstrapBoundary(t *testing.T) {
 		{"MasterOnly", job.If, "github.ref == 'refs/heads/master'"},
 		{"Serialization", foundation.Concurrency, object{"group": "production-infrastructure", "cancel-in-progress": false}},
 		{"ProtectedInputs", job.Steps[selectIndex].Env["SERVICE_JOB_BOOTSTRAP_CONFIG"], "${{ secrets.SERVICE_JOB_BOOTSTRAPS_JSON }}"},
+		{"OperationValidation", job.Steps[selectIndex].Env["FOUNDATION_OPERATION"], "${{ inputs.operation }}"},
+		{"PlanValidation", job.Steps[selectIndex].Env["FOUNDATION_PLAN_ID"], "${{ inputs.plan_id }}"},
+		{"PublicationActivation", job.Steps[selectIndex].Env["SERVICE_IMAGE_PROMOTION_ENABLED"], "${{ vars.SERVICE_IMAGE_PROMOTION_ENABLED }}"},
+		{"PublicationOnly", promote.If, "inputs.operation == 'promote-images'"},
+		{"PublicationCommand", promote.Run, `infra promote service deploy/production/images.yaml "${SELECTED_FILE}"`},
+		{"PublicationInputs", promote.Env, map[string]string{"GH_TOKEN": "${{ github.token }}", "SELECTED_FILE": "${{ steps.inputs.outputs.file }}"}},
 		{"ApprovedGeneration", bind.Env["FOUNDATION_URI"], "${{ steps.inputs.outputs.foundation_uri }}"},
 		{"SelectedInputs", bind.Env["SELECTED_FILE"], "${{ steps.inputs.outputs.file }}"},
-		{"BootstrapOnly", bind.If, "inputs.root == 'service-release'"},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 			require.Equal(t, testCase.expect, testCase.actual)
+		})
+	}
+	for _, testCase := range []struct{ step, condition string }{
+		{"setup-gcloud@", "inputs.operation == 'plan' || inputs.operation == 'apply'"},
+		{"setup-opentofu@", "inputs.operation == 'plan' || inputs.operation == 'apply'"},
+		{"preflight service-secrets", "inputs.root == 'service-release' && inputs.operation != 'promote-images'"},
+		{"foundation-inputs bind", "inputs.root == 'service-release' && inputs.operation != 'promote-images'"},
+		{"create-reviewed-plan.sh", "inputs.operation == 'plan'"},
+		{"apply-reviewed-plan.sh", "inputs.operation == 'apply'"},
+	} {
+		t.Run("ExcludePublication/"+testCase.step, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, testCase.condition, job.Steps[stepIndex(t, job.Steps, testCase.step)].If)
 		})
 	}
 	for _, match := range []string{"infra foundation-inputs prepare", "infra foundation-inputs bind", "./ops/create-reviewed-plan.sh", "./ops/apply-reviewed-plan.sh"} {
@@ -202,6 +221,7 @@ func TestPrerequisiteBoundary(t *testing.T) {
 	steps := loadWorkflow(t, "workflows/foundation.yaml").Jobs["execute"].Steps
 	for _, pair := range [][2]string{
 		{"foundation-inputs prepare", "preflight service-images"},
+		{"google-github-actions/auth@", "infra promote service"},
 		{"setup-gcloud@", "preflight service-secrets"},
 		{"preflight service-secrets", "foundation-inputs bind"},
 		{"foundation-inputs bind", "create-reviewed-plan.sh"},
@@ -214,7 +234,6 @@ func TestPrerequisiteBoundary(t *testing.T) {
 	}
 	for _, command := range []string{"preflight service-images", "preflight service-secrets"} {
 		step := steps[stepIndex(t, steps, command)]
-		require.Equal(t, "inputs.root == 'service-release'", step.If, "both plan and apply require the checks")
 		require.Equal(t, "${{ steps.inputs.outputs.file }}", step.Env["SELECTED_FILE"])
 	}
 }

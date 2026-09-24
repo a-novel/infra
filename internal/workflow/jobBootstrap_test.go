@@ -21,9 +21,14 @@ func TestJobBootstrapInputs(t *testing.T) {
 		name, field string
 		value       any
 		stage       string
+		env         map[string]string
 	}{
 		{name: "ExactBytes"},
-		{name: "Disabled", stage: "prepare"},
+		{name: "Disabled", stage: "prepare", env: map[string]string{"SERVICE_JOB_BOOTSTRAP_ENABLED": ""}},
+		{name: "Apply", env: map[string]string{"FOUNDATION_OPERATION": "apply", "FOUNDATION_PLAN_ID": "123-1"}},
+		{name: "ImagesOnly", env: map[string]string{"FOUNDATION_OPERATION": "promote-images", "SERVICE_JOB_BOOTSTRAP_ENABLED": ""}},
+		{name: "ImagesDisabled", stage: "prepare", env: map[string]string{"FOUNDATION_OPERATION": "promote-images", "SERVICE_IMAGE_PROMOTION_ENABLED": ""}},
+		{name: "ImagesWithPlan", stage: "prepare", env: map[string]string{"FOUNDATION_OPERATION": "promote-images", "FOUNDATION_PLAN_ID": "123-1"}},
 		{name: "PeerProject", stage: "prepare"},
 		{name: "EmbeddedCoordinates", stage: "prepare"},
 		{name: "PeerBucket", field: "bucket", value: "peer-bucket", stage: "prepare"},
@@ -48,15 +53,17 @@ func TestJobBootstrapInputs(t *testing.T) {
 				"state_bucket": bucket, "management_project_id": "agora-management-test", "foundation": reference,
 			}
 			env := map[string]string{
+				"FOUNDATION_OPERATION": "plan", "SERVICE_IMAGE_PROMOTION_ENABLED": "true",
 				"SERVICE_JOB_BOOTSTRAP_ENABLED": "true", "STATE_BUCKET": bucket, "MANAGEMENT_PROJECT_ID": "agora-management-test",
 				"FOUNDATION_CONFIG": `{"management_project_id":"agora-management-test","workload_project_id":"agora-production-test","region":"europe-west1","service_projects":{"json-keys":"agora-json-keys-test"}}`,
+			}
+			for key, value := range testCase.env {
+				env[key] = value
 			}
 			if testCase.field != "" {
 				reference[testCase.field] = testCase.value
 			}
 			switch testCase.name {
-			case "Disabled":
-				delete(env, "SERVICE_JOB_BOOTSTRAP_ENABLED")
 			case "PeerProject":
 				selected["project_id"] = "agora-peer-test"
 			case "EmbeddedCoordinates":
@@ -78,6 +85,9 @@ func TestJobBootstrapInputs(t *testing.T) {
 			}
 			require.Zero(t, code, stderr.String())
 			require.Contains(t, stdout.String(), "foundation_uri=gs://"+bucket+"/"+object+"#123456\n")
+			if env["FOUNDATION_OPERATION"] == "promote-images" {
+				return // Image publication never hydrates foundation coordinates or creates a plan.
+			}
 			switch testCase.name {
 			case "ChangedBytes":
 				coordinates = strings.TrimSpace(coordinates)

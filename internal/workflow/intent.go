@@ -16,6 +16,7 @@ const usage = `usage: go run ./cmd/infra
   foundation apply <bootstrap|foundation> <plan-id>
   foundation plan <service-foundation|service-release> <json-keys|authentication>
   foundation apply <service-foundation|service-release> <json-keys|authentication> <plan-id>
+  foundation promote-images service-release <json-keys|authentication>
   release deploy [--no-wait]
   release rollback <receipt-id>
   release recover-first-launch <failed-run-id>
@@ -77,6 +78,8 @@ func parse(args []string) (intent, error) {
 		switch {
 		case args[0] == "plan" && len(args) == 2:
 			i.attempt = true
+		case args[0] == "promote-images" && args[1] == "service-release" && len(args) == 2:
+			// Image publication has no saved plan and returns only its workflow run ID.
 		case args[0] == "apply" && len(args) == 3 && matches(attemptID, args[2]):
 			i.planID, i.planPrefix = args[2], "foundation plan "+scope+" by @"
 			i.input("plan_id", i.planID)
