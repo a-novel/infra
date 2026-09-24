@@ -4,6 +4,7 @@ import (
 	"errors"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -13,6 +14,7 @@ const usage = `usage: go run ./cmd/infra
   drift
   drift assess-pull-request <pull-request-number>
   drift observe-rollout json-keys <release-id> <rollout-id>
+  drift inspect-operation <json-keys|authentication> [guard-generation]
   foundation plan <bootstrap|foundation>
   foundation apply <bootstrap|foundation> <plan-id>
   foundation plan <service-foundation|service-release> <json-keys|authentication>
@@ -78,6 +80,20 @@ func parse(args []string) (intent, error) {
 			i.input("service", args[1])
 			i.input("release_id", args[2])
 			i.input("rollout_id", args[3])
+		case "inspect-operation":
+			if len(args) < 2 || len(args) > 3 || !slices.Contains([]string{"json-keys", "authentication"}, args[1]) {
+				return i, invalid
+			}
+			i.observation = true
+			i.input("operation", "inspect-operation")
+			i.input("service", args[1])
+			if len(args) == 3 {
+				generation, err := strconv.ParseInt(args[2], 10, 64)
+				if err != nil || generation <= 0 || strconv.FormatInt(generation, 10) != args[2] {
+					return i, invalid
+				}
+				i.input("guard_generation", args[2])
+			}
 		default:
 			return i, invalid
 		}

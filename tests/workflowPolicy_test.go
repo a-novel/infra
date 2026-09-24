@@ -116,6 +116,8 @@ func TestWorkflowCredentials(t *testing.T) {
 		{"drift", "health"},
 		{"drift", "inspect"},
 		{"drift", "assess-resource-deletion"},
+		{"drift", "observe-rollout"},
+		{"drift", "inspect-operation"},
 	} {
 		t.Run(testCase.file+"/"+testCase.job, func(t *testing.T) {
 			t.Parallel()

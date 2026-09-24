@@ -237,6 +237,16 @@ run "protected_service_project" {
   }
 
   assert {
+    condition = (
+      google_storage_bucket_iam_member.plan_operation_reader.bucket == "agora-management-test-123456789012-deployment-receipts" &&
+      google_storage_bucket_iam_member.plan_operation_reader.member == "serviceAccount:${var.plan_service_account}" &&
+      google_storage_bucket_iam_member.plan_operation_reader.role == "roles/storage.objectViewer" &&
+      google_storage_bucket_iam_member.plan_operation_reader.condition[0].expression == "resource.type == 'storage.googleapis.com/Object' && resource.name.startsWith('projects/_/buckets/agora-management-test-123456789012-deployment-receipts/objects/services/agora-json-keys-test/production/operations/')"
+    )
+    error_message = "Inspection may read only exact service completion objects, without bucket-wide listing or mutation."
+  }
+
+  assert {
     condition = google_project_iam_custom_role.foundation_control_plane.permissions == toset(flatten([
       for resource, actions in {
         "clouddeploy.deliveryPipelines" = ["create", "delete", "get", "update"]

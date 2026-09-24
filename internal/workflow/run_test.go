@@ -16,6 +16,8 @@ func TestRun(t *testing.T) {
 	}{
 		{[]string{"drift"}, []string{"operation=drift"}, "202"},
 		{[]string{"drift", "observe-rollout", "json-keys", "release-123", "production"}, []string{"operation=observe-rollout", "service=json-keys", "release_id=release-123", "rollout_id=production"}, "202"},
+		{[]string{"drift", "inspect-operation", "json-keys"}, []string{"operation=inspect-operation", "service=json-keys"}, "202"},
+		{[]string{"drift", "inspect-operation", "authentication", "123"}, []string{"operation=inspect-operation", "service=authentication", "guard_generation=123"}, "202"},
 		{[]string{"drift", "assess-pull-request", "93"}, []string{"operation=assess-pull-request", "pull_request=93", "head_sha=" + head, "base_sha=" + sha}, "202"},
 		{[]string{"foundation", "plan", "bootstrap"}, []string{"operation=plan", "root=bootstrap"}, "202-3"},
 		{[]string{"foundation", "plan", "foundation"}, []string{"operation=plan", "root=foundation"}, "202-3"},
@@ -72,6 +74,15 @@ func TestRunInvalidIntent(t *testing.T) {
 		{"drift", "observe-rollout", "json-keys", "release-123", "production", "extra"},
 		{"drift", "observe-rollout", "json-keys", "release-123/rollouts/other", "production"},
 		{"drift", "observe-rollout", "json-keys", "release-123", "production\n"},
+		{"drift", "inspect-operation"},
+		{"drift", "inspect-operation", "peer"},
+		{"drift", "inspect-operation", "json-keys", "123", "extra"},
+		{"drift", "inspect-operation", "json-keys", "0"},
+		{"drift", "inspect-operation", "json-keys", "01"},
+		{"drift", "inspect-operation", "json-keys", "+1"},
+		{"drift", "inspect-operation", "json-keys", "-1"},
+		{"drift", "inspect-operation", "json-keys", "9223372036854775808"},
+		{"drift", "inspect-operation", "json-keys", "1\n"},
 		{"foundation", "plan"},
 		{"foundation", "plan", "release"},
 		{"foundation", "apply", "foundation", "01-3"},
@@ -103,11 +114,14 @@ func TestRunInvalidIntent(t *testing.T) {
 
 func TestRunObservationConcurrency(t *testing.T) {
 	t.Parallel()
-	for _, active := range []string{"303 waiting", ""} {
-		t.Run(active, func(t *testing.T) {
+	for _, args := range [][]string{
+		{"drift", "observe-rollout", "json-keys", "release-123", "production"},
+		{"drift", "inspect-operation", "json-keys"},
+	} {
+		t.Run(args[1], func(t *testing.T) {
 			t.Parallel()
-			r := invoke(t, []string{"drift", "observe-rollout", "json-keys", "release-123", "production"},
-				map[string]string{"active": active}, "active")
+			// Fail any writer-concurrency query: readers must not issue one.
+			r := invoke(t, args, nil, "active")
 			require.Equal(t, 0, r.code, r.stderr.String())
 			require.Len(t, r.dispatches, 1)
 		})

@@ -48,8 +48,24 @@ serialization and configuration/receipt owners. Do not activate competing writer
 
 ### Inspect an interrupted apply
 
-Within an approved read-only session, use the trusted binary with protected `FOUNDATION_CONFIG`
-registration and `MANAGEMENT_PROJECT_ID` already selected:
+From clean, current `master`, dispatch the read-only inspector:
+
+```text
+go run ./cmd/infra drift inspect-operation <json-keys|authentication> [guard-generation]
+```
+
+Approve the run's `production-foundation` environment review. This makes protected registration
+available, but the job authenticates as the **read-only plan identity**, not the foundation writer.
+It selects the registered project before authentication and publishes only the payload-free report
+in the job summary. Its separate concurrency group remains available while a writer is blocked.
+
+Before first use, a separately approved foundation apply must establish the declared
+[completion-record read grant](../modules/workload-project/README.md#release-boundary).
+Merging this code does not provision that grant or activate any writer. Inspection needs no mutation
+enable flag; a service must already be registered in protected `FOUNDATION_TFVARS_JSON`.
+
+An approved read-only session can also use the trusted binary directly, with protected
+`FOUNDATION_CONFIG` registration and `MANAGEMENT_PROJECT_ID` already selected:
 
 ```text
 infra custody operation inspect <state-bucket> <registered-project> [guard-generation]
@@ -63,8 +79,7 @@ candidate code or print the protected registration.
 
 The command uses Google's existing authentication/client and needs only object reads on the selected
 guard, completion and configuration records. It requests read-only Storage scope, checks registration
-before credentials, and is independent of mutation enable flags and writer concurrency. No workflow,
-credential grant or live activation is added by this inspection path.
+before credentials, and never requests write authority.
 
 The report separates the live guard state from recorded convergence. It verifies the exact guard
 bytes/generation, completion intent, and referenced configuration generation/hash. Downloads are
