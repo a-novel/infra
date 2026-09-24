@@ -19,7 +19,9 @@ import (
 // through Google's real client. Existing custody fixtures still own plan transport.
 func applyStorage(t *testing.T, f *sandbox, failure string) {
 	t.Helper()
-	guardPath := filepath.Join(f.env["FAKE_GCS_ROOT"], "agora-management-test-123-tofu-state/services/agora-json-keys-test/release/operation.json")
+	objects := f.env["FAKE_GCS_ROOT"]
+	planMetadata := filepath.Join(filepath.Dir(f.env["FAKE_TOFU_REQUIRE_ABSENT"]), "plan.metadata.json")
+	guardPath := filepath.Join(objects, "agora-management-test-123-tofu-state/services/agora-json-keys-test/release/operation.json")
 	if failure == "busy" {
 		writeJSON(t, guardPath, object{"root": "service-foundation", "runId": "other-writer"})
 	}
@@ -95,7 +97,7 @@ func applyStorage(t *testing.T, f *sandbox, failure string) {
 			if err := json.Unmarshal(data, &record); err != nil {
 				panic(err)
 			}
-			if _, err := os.Stat(filepath.Join(f.env["FAKE_GCS_ROOT"], record.Configuration.Bucket, record.Configuration.Object)); err != nil {
+			if _, err := os.Stat(filepath.Join(objects, record.Configuration.Bucket, record.Configuration.Object)); err != nil {
 				t.Error("completion must follow configuration publication")
 			}
 		}
@@ -103,7 +105,7 @@ func applyStorage(t *testing.T, f *sandbox, failure string) {
 			http.Error(w, privateValue, http.StatusPreconditionFailed)
 			return
 		}
-		path := filepath.Join(f.env["FAKE_GCS_ROOT"], bucket, object.Name)
+		path := filepath.Join(objects, bucket, object.Name)
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			panic(err)
 		}
@@ -126,7 +128,7 @@ func applyStorage(t *testing.T, f *sandbox, failure string) {
 				panic(err)
 			}
 			if failure == "consume" {
-				if err := os.Remove(filepath.Join(filepath.Dir(f.env["FAKE_TOFU_REQUIRE_ABSENT"]), "plan.metadata.json")); err != nil {
+				if err := os.Remove(planMetadata); err != nil {
 					panic(err)
 				}
 			}
