@@ -9,12 +9,12 @@ on:
         type: choice
         options: [plan, apply]
       root:
-        description: Management, shared workload or one registered service foundation.
+        description: Management, shared workload, service foundation or create-only service jobs.
         required: true
         type: choice
-        options: [bootstrap, foundation, service-foundation]
+        options: [bootstrap, foundation, service-foundation, service-release]
       service:
-        description: Required for service-foundation; leave none for legacy roots.
+        description: Required for either service root; leave none for legacy roots.
         required: true
         default: none
         type: choice
@@ -63,6 +63,8 @@ jobs:
           FOUNDATION_CONFIG: ${{ secrets.FOUNDATION_TFVARS_JSON }}
           SERVICE_FOUNDATION_CONFIG: ${{ secrets.SERVICE_FOUNDATIONS_JSON }}
           SERVICE_FOUNDATIONS_ENABLED: ${{ vars.SERVICE_FOUNDATIONS_ENABLED }}
+          SERVICE_JOB_BOOTSTRAP_CONFIG: ${{ secrets.SERVICE_JOB_BOOTSTRAPS_JSON }}
+          SERVICE_JOB_BOOTSTRAP_ENABLED: ${{ vars.SERVICE_JOB_BOOTSTRAP_ENABLED }}
           MANAGEMENT_PROJECT_ID: ${{ vars.GCP_MANAGEMENT_PROJECT_ID }}
           STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
           SELECTED_ROOT: ${{ inputs.root }}
@@ -85,6 +87,28 @@ jobs:
         with:
           version: "581.0.0"
 
+      - name: Bind the approved foundation generation
+        if: inputs.root == 'service-release'
+        id: coordinates
+        shell: bash
+        env:
+          FOUNDATION_URI: ${{ steps.inputs.outputs.foundation_uri }}
+          SELECTED_FILE: ${{ steps.inputs.outputs.file }}
+          FOUNDATION_CONFIG: ${{ secrets.FOUNDATION_TFVARS_JSON }}
+          MANAGEMENT_PROJECT_ID: ${{ vars.GCP_MANAGEMENT_PROJECT_ID }}
+          STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
+          SERVICE_JOB_BOOTSTRAP_ENABLED: ${{ vars.SERVICE_JOB_BOOTSTRAP_ENABLED }}
+        run: |
+          set -euo pipefail
+          umask 077
+          coordinates="${RUNNER_TEMP}/foundation-coordinates.json"
+          if ! gcloud storage cp "${FOUNDATION_URI}" "${coordinates}" --quiet >/dev/null 2>&1; then
+            printf 'The approved foundation generation could not be read.\n' >&2
+            exit 1
+          fi
+          infra foundation-inputs bind "${SELECTED_FILE}" "${coordinates}" \
+            "${RUNNER_TEMP}/service-jobs.tfvars.json" >>"${GITHUB_OUTPUT}"
+
       - name: Install OpenTofu
         uses: opentofu/setup-opentofu@v2.0.2
         with:
@@ -99,10 +123,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ROOT_NAME: ${{ inputs.root }}
           STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
-          TFVARS_FILE: ${{ steps.inputs.outputs.file }}
+          TFVARS_FILE: ${{ steps.coordinates.outputs.file || steps.inputs.outputs.file }}
           TOFU_STATE_SUFFIX: ${{ steps.inputs.outputs.state_suffix }}
           FOUNDATION_CONFIG: ${{ secrets.FOUNDATION_TFVARS_JSON }}
           MANAGEMENT_PROJECT_ID: ${{ vars.GCP_MANAGEMENT_PROJECT_ID }}
+          SERVICE_JOB_BOOTSTRAP_ENABLED: ${{ vars.SERVICE_JOB_BOOTSTRAP_ENABLED }}
         run: |
           set -euo pipefail
           plan_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
@@ -119,10 +144,11 @@ jobs:
           PLAN_ID: ${{ inputs.plan_id }}
           ROOT_NAME: ${{ inputs.root }}
           STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
-          TFVARS_FILE: ${{ steps.inputs.outputs.file }}
+          TFVARS_FILE: ${{ steps.coordinates.outputs.file || steps.inputs.outputs.file }}
           TOFU_STATE_SUFFIX: ${{ steps.inputs.outputs.state_suffix }}
           FOUNDATION_CONFIG: ${{ secrets.FOUNDATION_TFVARS_JSON }}
           MANAGEMENT_PROJECT_ID: ${{ vars.GCP_MANAGEMENT_PROJECT_ID }}
+          SERVICE_JOB_BOOTSTRAP_ENABLED: ${{ vars.SERVICE_JOB_BOOTSTRAP_ENABLED }}
         run: |
           set -euo pipefail
           if ! [[ "${PLAN_ID}" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]; then

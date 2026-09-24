@@ -43,6 +43,10 @@ if [ "${PLAN_CODE}" -ne 0 ] && [ "${PLAN_CODE}" -ne 2 ]; then
     exit "${PLAN_CODE}"
 fi
 
+INPUT_ARGS=()
+if [ "${ROOT_NAME}" = service-release ]; then
+    INPUT_ARGS+=("${TOFU_VAR_FILE}")
+fi
 infra custody plan publish \
     "${STATE_BUCKET}" "${ROOT_NAME}" "${COMMIT}" "${PLAN_ID}" \
-    "${PLAN_FILE}" "${DESTRUCTIVE}"
+    "${PLAN_FILE}" "${DESTRUCTIVE}" "${INPUT_ARGS[@]}"

@@ -11,7 +11,8 @@ import (
 
 // FoundationInputs selects protected foundation configuration before authentication.
 // Check revalidates either service root's backend binding before initialization.
-// Neither operation reads cloud state or prints configuration values.
+// Bind embeds the exact downloaded foundation bytes for job bootstrap.
+// These operations never read cloud state or print configuration values.
 func FoundationInputs(args []string, getenv func(string) string, stdout, stderr io.Writer) int {
 	err := foundationInputs(args, getenv, stdout)
 	if err != nil {
@@ -58,6 +59,9 @@ func foundationInputs(args []string, getenv func(string) string, stdout io.Write
 	if len(args) != 4 {
 		return invalid
 	}
+	if args[0] == "bind" {
+		return bindFoundation(args[1:], getenv, stdout)
+	}
 	if args[0] == "check" {
 		data, err := os.ReadFile(args[1])
 		if err != nil {
@@ -77,7 +81,7 @@ func foundationInputs(args []string, getenv func(string) string, stdout io.Write
 		service = ""
 	}
 	data := []byte(getenv("FOUNDATION_CONFIG"))
-	suffix := ""
+	suffix, foundationURI := "", ""
 	switch root {
 	case "bootstrap", "foundation":
 		if service != "" {
@@ -86,12 +90,16 @@ func foundationInputs(args []string, getenv func(string) string, stdout io.Write
 		if root == "bootstrap" {
 			data = []byte(getenv("BOOTSTRAP_CONFIG"))
 		}
-	case "service-foundation":
-		if getenv("SERVICE_FOUNDATIONS_ENABLED") != "true" {
-			return errors.New("service foundations require separate activation approval")
+	case "service-foundation", "service-release":
+		configKey, enabledKey := "SERVICE_FOUNDATION_CONFIG", "SERVICE_FOUNDATIONS_ENABLED"
+		if root == "service-release" {
+			configKey, enabledKey = "SERVICE_JOB_BOOTSTRAP_CONFIG", "SERVICE_JOB_BOOTSTRAP_ENABLED"
+		}
+		if getenv(enabledKey) != "true" {
+			return errors.New("service bootstrap requires separate activation approval")
 		}
 		var configs map[string]json.RawMessage
-		if json.Unmarshal([]byte(getenv("SERVICE_FOUNDATION_CONFIG")), &configs) != nil {
+		if json.Unmarshal([]byte(getenv(configKey)), &configs) != nil {
 			return invalid
 		}
 		data = configs[service]
@@ -107,12 +115,30 @@ func foundationInputs(args []string, getenv func(string) string, stdout io.Write
 	if json.Unmarshal(data, &config) != nil || config == nil {
 		return invalid
 	}
-	if root == "service-foundation" {
+	if strings.HasPrefix(root, "service-") {
 		var declared string
 		if json.Unmarshal(config["service"], &declared) != nil || declared != service {
 			return invalid
 		}
 	}
+	if root == "service-release" {
+		reference, err := foundationSource(config, getenv("STATE_BUCKET"), suffix)
+		if err != nil {
+			return err
+		}
+		foundationURI = reference.URI
+	}
+	if err := writeFoundationInputs(file, data, stdout, suffix); err != nil {
+		return err
+	}
+	if foundationURI != "" {
+		_, err := fmt.Fprintln(stdout, "foundation_uri="+foundationURI)
+		return err
+	}
+	return nil
+}
+
+func writeFoundationInputs(file string, data []byte, stdout io.Writer, suffix string) error {
 	// A fresh destination prevents stale private inputs or symlink replacement.
 	output, err := os.OpenFile(file, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {

@@ -369,6 +369,7 @@ func TestServiceBackend(t *testing.T) {
 			code                          int
 		}{
 			{name: "NativeBackend"},
+			{name: "BootstrapDoesNotChangeAssessment", variable: "SERVICE_JOB_BOOTSTRAP_ENABLED", value: "true"},
 			{name: "Drift", action: "drift", code: 2},
 			{name: "PeerScope", variable: "TOFU_STATE_SUFFIX", value: "services/agora-peer-test", code: 65},
 			{name: "WorkspaceOverride", variable: "TF_WORKSPACE", value: "peer", code: 65},

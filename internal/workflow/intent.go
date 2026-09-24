@@ -14,8 +14,8 @@ const usage = `usage: go run ./cmd/infra
   drift assess-pull-request <pull-request-number>
   foundation plan <bootstrap|foundation>
   foundation apply <bootstrap|foundation> <plan-id>
-  foundation plan service-foundation <json-keys|authentication>
-  foundation apply service-foundation <json-keys|authentication> <plan-id>
+  foundation plan <service-foundation|service-release> <json-keys|authentication>
+  foundation apply <service-foundation|service-release> <json-keys|authentication> <plan-id>
   release deploy [--no-wait]
   release rollback <receipt-id>
   release recover-first-launch <failed-run-id>
@@ -60,13 +60,13 @@ func parse(args []string) (intent, error) {
 			return i, invalid
 		}
 	case "foundation":
-		if len(args) < 2 || !slices.Contains([]string{"bootstrap", "foundation", "service-foundation"}, args[1]) {
+		if len(args) < 2 || !slices.Contains([]string{"bootstrap", "foundation", "service-foundation", "service-release"}, args[1]) {
 			return i, invalid
 		}
 		i.input("operation", args[0])
 		i.input("root", args[1])
 		scope := args[1]
-		if args[1] == "service-foundation" {
+		if strings.HasPrefix(args[1], "service-") {
 			if len(args) < 3 || !slices.Contains([]string{"json-keys", "authentication"}, args[2]) {
 				return i, invalid
 			}

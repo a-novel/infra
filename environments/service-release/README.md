@@ -8,7 +8,9 @@ OpenTofu validates its checksum and service scope against independently approved
 coordinates, promoted image digests and numeric secret versions remain separate inputs. Neither this
 root nor its future caller needs foundation-state access.
 
-**Code only:** trusted assessment and drift can inspect this root; deployment callers remain disabled.
+**Code only:** trusted assessment and drift can inspect this root. The protected
+[job bootstrap](../../docs/runbooks/provision-service-projects.md#protected-service-job-bootstrap)
+is disabled by default; routine release remains unconnected.
 Applying a job specification does not run it. The root creates no API, initializer, scheduler, identity or IAM grant.
 Cloud Deploy owns API specifications and traffic; protected foundation owns databases, IAM, schedules
 and alerts. Existing production resources and state stay unchanged.
@@ -41,9 +43,8 @@ The trusted coordinate guard validates each backend against registration before 
 fresh local metadata. Writer enable flags do not exempt existing state from assessment or drift.
 
 Service-root changes and shared-module changes use the existing exact-candidate approval and private
-plan policy. Public verdicts contain no state, plan or configuration values. `tofu-gate` permits only
-`assess` and `drift` for this root; configuration custody permits only `fetch`. Its writer and protected
-input publication remain separate activation prerequisites.
+plan policy. Public verdicts contain no state, plan or configuration values. Read-only inspection
+remains available regardless of the bootstrap enable flag.
 
 ## Private plan custody
 
@@ -61,17 +62,18 @@ their existing checks. Legacy plan paths and metadata remain compatible.
 
 Publication is create-only. A lost upload acknowledgement or partial publication stops; inspect the
 exact objects rather than overwriting or assuming no upload occurred. `consume` retains its existing
-arguments and removes the selected pair before any future apply. A failed or ambiguous consumption
+arguments and removes the selected pair before apply. A failed or ambiguous consumption
 must block mutation. The provider owns state locking; custody is neither deployment authorization nor
-a same-service execution lock. The future protected caller must authorize the inputs and recheck
-deletion approval, then consume, apply and verify convergence under that broader exclusion.
+a same-service execution lock. The protected workflow retains global infrastructure serialization,
+authorizes the inputs, consumes the plan, applies it and verifies convergence before publishing inputs.
 
 Metadata enforces the 24-hour apply deadline. Bootstrap declares native
 [plan cleanup](../../bootstrap/README.md#plan-artifact-expiration) after age 2 days, restricted to the
 `services/` prefix and the two artifact suffixes. Cleanup is asynchronous and keeps seven-day soft delete.
 Protected bootstrap apply and live verification remain prerequisites before writer activation.
-No workflow calls this storage path or enables service job planning/application yet; backend mutation
-guards remain closed.
+`SERVICE_JOB_BOOTSTRAP_ENABLED=true` permits only create/no-op plans for this service's exact
+application jobs. Updates, imports, moves, replacements, deletions and other resources fail regardless
+of deletion approval. Routine writes and output export remain disabled.
 
 ## Approved foundation handoff
 
@@ -81,10 +83,10 @@ The inactive root accepts three independently authorized selectors: `project_id`
 reconstructed subset. The earlier standalone `runtime` and `database_private_ip` inputs are removed;
 no live caller used this root.
 
-The future protected caller must:
+Protected bootstrap uses the following handoff:
 
 1. Authorize the selectors, backend and reference against protected registration before initialization.
-   Approve the reference only after the whole protected foundation apply and convergence succeed.
+   The operator approves the reference only after protected foundation apply and convergence succeed.
 2. Fetch that exact object generation using the existing Google CLI or SDK. Native
    [generation-qualified object names](https://docs.cloud.google.com/storage/docs/using-versioned-objects)
    use `gs://BUCKET/OBJECT#GENERATION`; quote the full name. Do not list/select the newest object, omit
@@ -95,7 +97,7 @@ The future protected caller must:
    foundation snapshots taken before database provisioning are rejected. Configuring the optional API
    request also requires the document's exact JSON Keys pipeline and target.
 4. Preserve the approved reference and inputs with the private saved plan, then use the existing
-   convergence, deletion-approval and same-service exclusion boundaries. A saved plan owns its captured
+   convergence and serialized execution boundaries. A saved plan owns its captured
    values; changing the input document requires a new reviewed plan, not an apply-time substitution.
 
 HCL verifies received content, not a cloud download it did not perform. A generation string alone
@@ -107,7 +109,7 @@ downloader or new dependency is introduced.
 Coordinates describe configuration, not database health, firewall reachability or migration history.
 Require separate readiness evidence, verify effective IAM, and retain every referenced object generation
 through the lifetime of its consumers. A document left by an interrupted foundation apply is not approval.
-The live caller and protected-input publication remain unconnected.
+Automatic reference approval and routine release remain unconnected.
 
 | Root resource address                               | Owner and lifecycle                                                                   |
 | --------------------------------------------------- | ------------------------------------------------------------------------------------- |
@@ -164,8 +166,8 @@ automatically. Import cannot relocate a job from the legacy workload project int
 Keep the legacy writer and retained receipts/backups until the separate workload cutover is proven.
 
 Activation still requires complete-family/provenance and enabled secret metadata checks, private
-saved-plan custody, deletion authorization bound to the root/service/commit, same-service exclusion
-and an isolated interruption drill. No live apply or state-transfer command is enabled here.
+saved-plan custody, same-service exclusion and an isolated interruption drill. The code-only bootstrap
+workflow is available for separate activation approval; it never transfers an existing resource owner.
 
 ## Inputs and execution boundary
 

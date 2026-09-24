@@ -66,6 +66,10 @@ func run(ctx context.Context, args []string, getenv func(string) string, execute
 	storage := store{ctx, execute, args[2], directory}
 	switch args[0] {
 	case "config", "receipt":
+		if args[0] == "config" && args[1] == "publish" && len(args) > 3 && args[3] == "service-release" &&
+			getenv("SERVICE_JOB_BOOTSTRAP_ENABLED") != "true" {
+			return failure{65, "Service release configuration publication requires protected job bootstrap."}
+		}
 		return storage.document(args[0], args[1], args[3:], getenv("TOFU_STATE_SUFFIX"))
 	case "plan":
 		return storage.plan(args[1], args[3:], getenv("TOFU_STATE_SUFFIX"))

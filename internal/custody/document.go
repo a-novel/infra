@@ -26,9 +26,6 @@ func (storage store) document(kind, action string, args []string, stateSuffix st
 			}
 			prefix = "gs://" + storage.bucket + "/foundation/" + stateSuffix + "/config"
 			if args[0] == "service-release" {
-				if action != "fetch" {
-					return failure{65, "Service release configuration is inspection-only."}
-				}
 				prefix = "gs://" + storage.bucket + "/" + stateSuffix + "/release/config"
 			}
 		}
