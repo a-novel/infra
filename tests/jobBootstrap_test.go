@@ -1,6 +1,9 @@
 package tests_test
 
 import (
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -78,12 +81,26 @@ func TestJobBootstrapWorkflow(t *testing.T) {
 	for _, testCase := range []struct {
 		name, fail string
 		code       int
+		remaining  string
 	}{
-		{"Success", "", 0},
-		{"PartialApply", "apply", 1},
-		{"ConvergenceFailure", "plan", 1},
-		{"ChangedInputs", "inputs", 77},
-		{"Disabled", "disabled", 77},
+		{"Success", "", 0, "applied,completion,configuration"},
+		{"PartialApply", "apply", 1, "applied,guard"},
+		{"ConvergenceFailure", "plan", 1, "applied,guard"},
+		{"ChangedInputs", "inputs", 77, "plan"},
+		{"Disabled", "disabled", 77, "plan"},
+		{"UntrustedRepository", "repository", 65, "plan"},
+		{"ChangedRegistration", "registration", 65, "plan"},
+		{"AdmissionDenied", "guard-denied", 70, "plan"},
+		{"CompetingOperation", "busy", 70, "guard,plan"},
+		{"AdmissionResponseLost", "guard-ack", 70, "guard,plan"},
+		{"InvalidAdmissionResponse", "invalid-ack", 70, "guard,plan"},
+		{"ConsumptionFailure", "consume", 70, "guard"},
+		{"ConfigurationDenied", "config-denied", 70, "applied,guard"},
+		{"ConfigurationResponseLost", "config-ack", 70, "applied,configuration,guard"},
+		{"CompletionDenied", "completion-denied", 70, "applied,configuration,guard"},
+		{"CompletionResponseLost", "completion-ack", 70, "applied,completion,configuration,guard"},
+		{"SuccessorGuard", "successor", 70, "applied,completion,configuration,guard"},
+		{"RemovalResponseLost", "delete-ack", 70, "applied,completion,configuration"},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
@@ -103,7 +120,8 @@ func TestJobBootstrapWorkflow(t *testing.T) {
 			for key, value := range map[string]string{
 				"MANAGEMENT_PROJECT_ID": "agora-management-test", "TOFU_STATE_SUFFIX": "services/agora-json-keys-test",
 				"SERVICE_JOB_BOOTSTRAP_ENABLED": "true", "ROOT_NAME": "service-release", "STATE_BUCKET": bucket,
-				"GITHUB_SHA": strings.Repeat("a", 40), "GITHUB_RUN_ID": "124", "GITHUB_RUN_ATTEMPT": "1",
+				"GITHUB_REPOSITORY": "a-novel/infra",
+				"GITHUB_SHA":        strings.Repeat("a", 40), "GITHUB_RUN_ID": "124", "GITHUB_RUN_ATTEMPT": "1",
 				"PLAN_ID": "123-1", "TFVARS_FILE": config, "FAKE_TOFU_PLAN_CODE": "2",
 				"FAKE_TOFU_PLAN_JSON": filepath.Join(f.dir, "create.json"), "FAKE_TOFU_CLEAN_PLAN_JSON": filepath.Join(f.dir, "noop.json"),
 				"FAKE_TOFU_APPLIED": filepath.Join(f.dir, "applied"),
@@ -114,6 +132,7 @@ func TestJobBootstrapWorkflow(t *testing.T) {
 			writeJSON(t, f.env["FAKE_TOFU_CLEAN_PLAN_JSON"], jobBootstrapPlan("json-keys", "no-op"))
 			remote := filepath.Join(f.env["FAKE_GCS_ROOT"], bucket, f.env["TOFU_STATE_SUFFIX"], "release/plans", f.env["GITHUB_SHA"], "123-1")
 			f.env["FAKE_TOFU_REQUIRE_ABSENT"] = filepath.Join(remote, "plan.tfplan")
+			applyStorage(t, f, testCase.fail)
 			code, out := f.script(t, "create-reviewed-plan", "service-release", bucket, f.env["GITHUB_SHA"], "123-1", config)
 			expectCode(t, 0, code, out)
 			require.FileExists(t, f.env["FAKE_TOFU_REQUIRE_ABSENT"])
@@ -122,25 +141,51 @@ func TestJobBootstrapWorkflow(t *testing.T) {
 				require.NoError(t, os.WriteFile(config, []byte(read(t, config)+"\n"), 0o600))
 			case "disabled":
 				delete(f.env, "SERVICE_JOB_BOOTSTRAP_ENABLED")
+			case "repository":
+				f.env["GITHUB_REPOSITORY"] = "a-novel/peer"
+			case "registration":
+				f.env["FOUNDATION_CONFIG"] = strings.ReplaceAll(f.env["FOUNDATION_CONFIG"], "agora-json-keys-test", "agora-peer-test")
 			default:
 				f.env["FAKE_TOFU_FAIL_ACTION"] = testCase.fail
 			}
 			steps := loadWorkflow(t, "workflows/foundation.yaml").Jobs["execute"].Steps
-			code, out = f.run(t, "bash", "-c", steps[stepIndex(t, steps, "./ops/apply-reviewed-plan.sh")].Run)
+			code, out = f.run(t, "bash", "-c", steps[stepIndex(t, steps, "infra custody plan apply")].Run)
 			expectCode(t, testCase.code, code, out)
 			require.NotContains(t, out, "fixture-sensitive-diagnostic")
 			published := filepath.Join(f.env["FAKE_GCS_ROOT"], bucket, f.env["TOFU_STATE_SUFFIX"], "release/config/00000000000000000124-00001.tfvars.json")
-			if testCase.code == 0 {
-				require.Equal(t, read(t, config), read(t, published))
-			} else {
-				require.NoFileExists(t, published)
+			completion := filepath.Join(f.env["FAKE_GCS_ROOT"], "agora-management-test-123-deployment-receipts", f.env["TOFU_STATE_SUFFIX"], "production/operations/42.json")
+			guard := filepath.Join(f.env["FAKE_GCS_ROOT"], bucket, f.env["TOFU_STATE_SUFFIX"], "release/operation.json")
+			present := []string{}
+			for _, file := range []struct{ name, path string }{
+				{"applied", f.env["FAKE_TOFU_APPLIED"]},
+				{"completion", completion},
+				{"configuration", published},
+				{"guard", guard},
+				{"plan", f.env["FAKE_TOFU_REQUIRE_ABSENT"]},
+			} {
+				if _, err := os.Stat(file.path); err == nil {
+					present = append(present, file.name)
+				} else {
+					require.ErrorIs(t, err, os.ErrNotExist)
+				}
 			}
-			if testCase.fail == "inputs" || testCase.fail == "disabled" {
-				require.NoFileExists(t, f.env["FAKE_TOFU_APPLIED"])
-				require.FileExists(t, f.env["FAKE_TOFU_REQUIRE_ABSENT"])
-			} else {
-				require.FileExists(t, f.env["FAKE_TOFU_APPLIED"], "retain the provider's state after success or partial failure")
-				require.NoFileExists(t, f.env["FAKE_TOFU_REQUIRE_ABSENT"], "no replay after an apply attempt")
+			require.Equal(t, testCase.remaining, strings.Join(present, ","), "failed or uncertain work must not release admission or permit plan replay")
+			if strings.Contains(testCase.remaining, "configuration") {
+				require.Equal(t, read(t, config), read(t, published))
+			}
+			if strings.Contains(testCase.remaining, "completion") {
+				var record object
+				require.NoError(t, json.Unmarshal([]byte(read(t, completion)), &record))
+				require.Equal(t, object{
+					"schemaVersion": float64(1), "outcome": "converged",
+					"operation": object{
+						"schemaVersion": float64(1), "root": "service-release", "project_id": "agora-json-keys-test", "service": "json-keys", "region": "europe-west1",
+						"commit": f.env["GITHUB_SHA"], "runId": "124", "runAttempt": "1", "planId": "123-1",
+						"inputsSha256": fmt.Sprintf("%x", sha256.Sum256([]byte(read(t, config)))), "planSha256": fmt.Sprintf("%x", sha256.Sum256(nil)),
+					},
+					"guard":         object{"bucket": bucket, "object": "services/agora-json-keys-test/release/operation.json", "generation": "42", "sha256": fmt.Sprintf("%x", sha256.Sum256([]byte(read(t, filepath.Join(f.dir, "admitted-guard.json")))))},
+					"configuration": object{"bucket": bucket, "object": "services/agora-json-keys-test/release/config/00000000000000000124-00001.tfvars.json", "generation": "42", "sha256": fmt.Sprintf("%x", sha256.Sum256([]byte(read(t, config))))},
+				}, record)
 			}
 		})
 	}

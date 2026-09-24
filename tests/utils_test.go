@@ -37,7 +37,7 @@ func setup(t *testing.T) *sandbox {
 		"PATH": f.bin, "HOME": dir, "TMPDIR": dir, "LC_ALL": "C",
 		"GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.DevNull,
 	}
-	for _, name := range []string{"bash", "sh", "jq", "dirname", "mktemp", "mkdir", "rm", "chmod", "cat", "cp", "mv", "find", "sort", "grep"} {
+	for _, name := range []string{"bash", "sh", "env", "jq", "dirname", "mktemp", "mkdir", "rm", "chmod", "cat", "cp", "mv", "find", "sort", "grep"} {
 		path, err := exec.LookPath(name)
 		require.NoError(t, err)
 		f.link(t, name, path)

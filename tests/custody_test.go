@@ -128,11 +128,16 @@ func planFixture(t *testing.T, root, suffix string) (*sandbox, []string, string)
 	remote := filepath.Join(f.env["FAKE_GCS_ROOT"], args[0], "foundation", "plans", suffix, args[2], args[3])
 	meta := filepath.Join(remote, "metadata.json")
 	publish := append(append([]string{"plan", "publish"}, args...), "false")
-	if root == "service-release" {
+	if strings.HasPrefix(root, "service-") {
 		config := filepath.Join(f.dir, "inputs.json")
-		writeJSON(t, config, object{"project_id": "agora-json-keys-test", "private": privateValue})
+		writeJSON(t, config, object{
+			"project_id": "agora-json-keys-test", "management_project_id": "agora-management-test",
+			"region": "europe-west1", "state_bucket": args[0], "service": "json-keys", "private": privateValue,
+		})
 		args, publish = append(args, config), append(publish, config)
-		meta = filepath.Join(f.env["FAKE_GCS_ROOT"], args[0], suffix, "release/plans", args[2], args[3], "plan.metadata.json")
+		if root == "service-release" {
+			meta = filepath.Join(f.env["FAKE_GCS_ROOT"], args[0], suffix, "release/plans", args[2], args[3], "plan.metadata.json")
+		}
 	}
 	f.custody(t, 0, publish...)
 	return f, args, meta
@@ -194,7 +199,11 @@ func TestCustodyPlanApply(t *testing.T) {
 			t.Parallel()
 			f, args, metadataFile := planFixture(t, testCase.root, testCase.suffix)
 			remote := filepath.Dir(metadataFile)
-			f.custody(t, 70, append(append([]string{"plan", "publish"}, args...), "false")...)
+			publish := append(append([]string{"plan", "publish"}, args[:5]...), "false")
+			if len(args) == 6 {
+				publish = append(publish, args[5])
+			}
+			f.custody(t, 70, publish...)
 			f.env["TOFU_STATE_SUFFIX"] = strings.Replace(testCase.suffix, "agora-", "peer-", 1)
 			f.custody(t, 66, append([]string{"plan", "fetch"}, args...)...)
 			f.env["TOFU_STATE_SUFFIX"] = testCase.suffix
@@ -222,12 +231,12 @@ func TestCustodyPlanApply(t *testing.T) {
 			config := filepath.Join(f.dir, "config.json")
 			writeJSON(t, config, object{})
 			if testCase.root == "service-foundation" {
+				applyStorage(t, f, "")
+				f.env["SERVICE_FOUNDATIONS_ENABLED"], f.env["GITHUB_REPOSITORY"] = "true", "a-novel/infra"
+				f.env["GITHUB_SHA"], f.env["GITHUB_RUN_ID"], f.env["GITHUB_RUN_ATTEMPT"] = args[2], "124", "1"
 				f.env["MANAGEMENT_PROJECT_ID"] = "agora-management-test"
 				f.env["FOUNDATION_CONFIG"] = `{"management_project_id":"agora-management-test","workload_project_id":"agora-production-test","region":"europe-west1","service_projects":{"json-keys":"agora-json-keys-test"}}`
-				writeJSON(t, config, object{
-					"project_id": "agora-json-keys-test", "management_project_id": "agora-management-test",
-					"region": "europe-west1", "state_bucket": args[0], "service": "json-keys",
-				})
+				config = args[5]
 			}
 			code, out := f.script(t, "apply-reviewed-plan", args[1], args[0], args[2], args[3], config)
 			expectCode(t, expected, code, out)
@@ -256,6 +265,9 @@ func TestCustodyServiceScope(t *testing.T) {
 			t.Parallel()
 			f, args, _ := planFixture(t, "service-foundation", "services/agora-json-keys-test")
 			args[1], f.env["TOFU_STATE_SUFFIX"] = testCase.root, testCase.suffix
+			if testCase.root == "foundation" || testCase.name == "ReleaseNeedsInputs" {
+				args = args[:5]
+			}
 			f.custody(t, testCase.code, append([]string{"plan", "fetch"}, args...)...)
 		})
 	}
@@ -267,12 +279,13 @@ func TestCustodyServiceScope(t *testing.T) {
 			f.env["TOFU_STATE_SUFFIX"] = "services/agora-json-keys-test"
 			input, output := filepath.Join(f.dir, "config.json"), filepath.Join(f.dir, "download.json")
 			writeJSON(t, input, object{"project_id": "agora-json-keys-test"})
-			code := 0
+			prefix := "foundation/services/agora-json-keys-test/config"
 			if root == "service-release" {
-				code = 65
-				writeJSON(t, filepath.Join(f.env["FAKE_GCS_ROOT"], "fixture-bucket/services/agora-json-keys-test/release/config/00000000000000000123-00001.tfvars.json"), readJSON(t, input))
+				prefix = "services/agora-json-keys-test/release/config"
 			}
-			f.custody(t, code, "config", "publish", "fixture-bucket", root, input, "123", "1")
+			writeJSON(t, filepath.Join(f.env["FAKE_GCS_ROOT"], "fixture-bucket", prefix, "00000000000000000123-00001.tfvars.json"), readJSON(t, input))
+			f.env["SERVICE_FOUNDATIONS_ENABLED"], f.env["SERVICE_JOB_BOOTSTRAP_ENABLED"] = "true", "true"
+			f.custody(t, 65, "config", "publish", "fixture-bucket", root, input, "123", "1")
 			f.custody(t, 0, "config", "fetch", "fixture-bucket", root, output)
 			require.Equal(t, read(t, input), read(t, output))
 			f.env["TOFU_STATE_SUFFIX"] = "services/agora-authentication-test"
@@ -300,47 +313,49 @@ func TestCustodyServicePlan(t *testing.T) {
 		{"WrongAttempt", 66},
 		{"ReadDenied", 66},
 	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			t.Parallel()
-			f, args, metadataFile := planFixture(t, "service-release", "services/agora-json-keys-test")
-			f.env["FAKE_GCS_CALLS"] = filepath.Join(f.dir, "storage-calls")
-			args[4] = filepath.Join(f.dir, "download.tfplan")
-			switch testCase.name {
-			case "ChangedInputs":
-				writeJSON(t, args[5], object{"project_id": "agora-json-keys-test", "private": privateValue, "changed": true})
-			case "MissingInputBinding":
-				meta := readJSON(t, metadataFile)
-				delete(meta, "inputsSha256")
-				writeJSON(t, metadataFile, meta)
-			case "UnreadableInputs":
-				args[5] = filepath.Join(f.dir, "missing.json")
-			case "InvalidInputs":
-				writeJSON(t, args[5], nil)
-			case "MissingInputsArgument":
-				args = args[:5]
-			case "PeerScope":
-				f.env["TOFU_STATE_SUFFIX"] = "services/agora-authentication-test"
-			case "WrongAttempt":
-				args[3] = "123-2"
-			case "ReadDenied":
-				f.env["FAKE_GCS_READ_FAILURE"] = "true"
-			}
-			f.custody(t, testCase.code, append([]string{"plan", "fetch"}, args...)...)
-			if testCase.code != 0 {
-				require.NoFileExists(t, args[4])
-				if testCase.code == 64 {
-					require.NoFileExists(t, f.env["FAKE_GCS_CALLS"])
-				} else {
-					require.NotContains(t, read(t, f.env["FAKE_GCS_CALLS"]), "/plan.tfplan", "reject before downloading the opaque plan")
+		for _, root := range []string{"service-foundation", "service-release"} {
+			t.Run(root+"/"+testCase.name, func(t *testing.T) {
+				t.Parallel()
+				f, args, metadataFile := planFixture(t, root, "services/agora-json-keys-test")
+				f.env["FAKE_GCS_CALLS"] = filepath.Join(f.dir, "storage-calls")
+				args[4] = filepath.Join(f.dir, "download.tfplan")
+				switch testCase.name {
+				case "ChangedInputs":
+					writeJSON(t, args[5], object{"project_id": "agora-json-keys-test", "private": privateValue, "changed": true})
+				case "MissingInputBinding":
+					meta := readJSON(t, metadataFile)
+					delete(meta, "inputsSha256")
+					writeJSON(t, metadataFile, meta)
+				case "UnreadableInputs":
+					args[5] = filepath.Join(f.dir, "missing.json")
+				case "InvalidInputs":
+					writeJSON(t, args[5], nil)
+				case "MissingInputsArgument":
+					args = args[:5]
+				case "PeerScope":
+					f.env["TOFU_STATE_SUFFIX"] = "services/agora-authentication-test"
+				case "WrongAttempt":
+					args[3] = "123-2"
+				case "ReadDenied":
+					f.env["FAKE_GCS_READ_FAILURE"] = "true"
 				}
-				return
-			}
-			require.Equal(t, privateValue+"\x00\xff", read(t, args[4]))
-			f.custody(t, 0, append([]string{"plan", "consume"}, args[:4]...)...)
-			f.custody(t, 66, append([]string{"plan", "fetch"}, args...)...)
-			require.NoFileExists(t, metadataFile)
-			require.NoFileExists(t, filepath.Join(filepath.Dir(metadataFile), "plan.tfplan"))
-		})
+				f.custody(t, testCase.code, append([]string{"plan", "fetch"}, args...)...)
+				if testCase.code != 0 {
+					require.NoFileExists(t, args[4])
+					if testCase.code == 64 {
+						require.NoFileExists(t, f.env["FAKE_GCS_CALLS"])
+					} else {
+						require.NotContains(t, read(t, f.env["FAKE_GCS_CALLS"]), "/plan.tfplan", "reject before downloading the opaque plan")
+					}
+					return
+				}
+				require.Equal(t, privateValue+"\x00\xff", read(t, args[4]))
+				f.custody(t, 0, append([]string{"plan", "consume"}, args[:4]...)...)
+				f.custody(t, 66, append([]string{"plan", "fetch"}, args...)...)
+				require.NoFileExists(t, metadataFile)
+				require.NoFileExists(t, filepath.Join(filepath.Dir(metadataFile), "plan.tfplan"))
+			})
+		}
 	}
 }
 

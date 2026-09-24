@@ -38,7 +38,8 @@ sufficient; no bucket-wide object grant is required. Missing or unregistered fol
 
 A confirmed empty folder is skipped. Initialized state requires its matching converged inputs at
 `services/PROJECT/release/config/RUN-ATTEMPT.tfvars.json`, using the existing zero-padded sequence format.
-Missing inputs, inputs without state, unexpected workspaces/locks and denied reads stop inspection.
+Missing inputs, inputs without state, a held service-operation guard, unexpected workspaces/locks
+and denied reads stop inspection.
 The trusted coordinate guard validates each backend against registration before initialization with
 fresh local metadata. Writer enable flags do not exempt existing state from assessment or drift.
 
@@ -53,7 +54,7 @@ The existing `infra custody plan` command supports this root inside its existing
 `plan.metadata.json`; there is no extra storage grant or second plan implementation. Inspection ignores
 only these exact artifact names beneath valid commit/sequence paths. Plans alone do not establish state.
 
-For `service-release`, `publish` and `fetch` require the private tfvars filename as their **last** argument,
+For both service roots, `publish` and `fetch` require the private tfvars filename as their **last** argument,
 after the existing arguments (`publish`: bucket, root, commit, plan ID, plan file, destructive marker;
 `fetch`: bucket, root, commit, plan ID, destination). Both bind the exact input bytes by SHA-256.
 Changing even formatting requires a new plan. Missing or different inputs stop before the opaque plan
@@ -63,9 +64,10 @@ their existing checks. Legacy plan paths and metadata remain compatible.
 Publication is create-only. A lost upload acknowledgement or partial publication stops; inspect the
 exact objects rather than overwriting or assuming no upload occurred. `consume` retains its existing
 arguments and removes the selected pair before apply. A failed or ambiguous consumption
-must block mutation. The provider owns state locking; custody is neither deployment authorization nor
-a same-service execution lock. The protected workflow retains global infrastructure serialization,
-authorizes the inputs, consumes the plan, applies it and verifies convergence before publishing inputs.
+must block mutation. The provider owns state locking. The protected workflow retains global
+infrastructure serialization and uses [guarded service-root apply](../../docs/service-operations.md#implemented-service-root-apply)
+through convergence, configuration and completion publication. Standalone service configuration
+publication is refused. This does not yet enroll migrations, Cloud Deploy or scheduled executions.
 
 Metadata enforces the 24-hour apply deadline. Bootstrap declares native
 [plan cleanup](../../bootstrap/README.md#plan-artifact-expiration) after age 2 days, restricted to the

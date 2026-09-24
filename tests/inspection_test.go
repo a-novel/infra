@@ -26,6 +26,7 @@ func TestServiceInspection(t *testing.T) {
 			{"UnregisteredState", "orphan", "assess", 70, 0, false},
 			{"UnexpectedWorkspace", "workspace", "assess", 70, 0, false},
 			{"LockedState", "lock", "assess", 70, 0, false},
+			{"HeldOperation", "operation", "assess", 70, 0, false},
 			{"PlanWithState", "artifact", "assess", 0, 1, false},
 			{"PlanWithoutState", "artifact-only", "assess", 0, 0, false},
 			{"UnknownPlanObject", "artifact-unknown", "assess", 70, 0, false},
@@ -90,6 +91,8 @@ func TestServiceInspection(t *testing.T) {
 						name = "default.tflock"
 					}
 					writeJSON(t, filepath.Join(storage, prefix, "services/agora-json-keys-test", suffix, name), object{})
+				case "operation":
+					writeJSON(t, filepath.Join(storage, "services/agora-json-keys-test/release/operation.json"), object{})
 				case "artifact", "artifact-only", "artifact-unknown", "artifact-commit", "artifact-sequence":
 					commit, sequence, filename := strings.Repeat("a", 40), "123-1", "plan.tfplan"
 					switch testCase.mutation {

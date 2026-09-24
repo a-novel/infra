@@ -1,5 +1,5 @@
-// Package custody keeps private plans and run-ordered documents behind the
-// provider's storage CLI. Cloud diagnostics and stored payloads never reach logs.
+// Package custody keeps private plans, configuration and operation evidence.
+// Cloud diagnostics and stored payloads never reach logs.
 package custody
 
 import (
@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"google.golang.org/api/option"
 )
 
 type failure struct {
@@ -35,8 +37,8 @@ var (
 
 // Run handles config, receipt, and plan custody. Exit 4 means a successfully
 // listed empty inventory, never an authentication or transport failure.
-func Run(ctx context.Context, args []string, getenv func(string) string, execute func(context.Context, io.Writer, string, ...string) error, stdout, stderr io.Writer) int {
-	err := run(ctx, args, getenv, execute)
+func Run(ctx context.Context, args []string, getenv func(string) string, execute func(context.Context, io.Writer, string, ...string) error, stdout, stderr io.Writer, options ...option.ClientOption) int {
+	err := run(ctx, args, getenv, execute, stdout, options)
 	if err == nil {
 		_, err = fmt.Fprintln(stdout, "Private custody operation completed.")
 	}
@@ -51,7 +53,7 @@ func Run(ctx context.Context, args []string, getenv func(string) string, execute
 	return fault.code
 }
 
-func run(ctx context.Context, args []string, getenv func(string) string, execute func(context.Context, io.Writer, string, ...string) error) error {
+func run(ctx context.Context, args []string, getenv func(string) string, execute func(context.Context, io.Writer, string, ...string) error, output io.Writer, options []option.ClientOption) error {
 	if len(args) < 3 {
 		return failure{64, "Usage: infra custody <config|receipt|plan> <action> <bucket> ..."}
 	}
@@ -66,12 +68,15 @@ func run(ctx context.Context, args []string, getenv func(string) string, execute
 	storage := store{ctx, execute, args[2], directory}
 	switch args[0] {
 	case "config", "receipt":
-		if args[0] == "config" && args[1] == "publish" && len(args) > 3 && args[3] == "service-release" &&
-			getenv("SERVICE_JOB_BOOTSTRAP_ENABLED") != "true" {
-			return failure{65, "Service release configuration publication requires protected job bootstrap."}
+		if args[0] == "config" && args[1] == "publish" && len(args) > 3 &&
+			(args[3] == "service-foundation" || args[3] == "service-release") {
+			return failure{65, "Service configuration publication belongs to the guarded apply operation."}
 		}
 		return storage.document(args[0], args[1], args[3:], getenv("TOFU_STATE_SUFFIX"))
 	case "plan":
+		if args[1] == "apply" {
+			return storage.apply(args[3:], getenv, output, options)
+		}
 		return storage.plan(args[1], args[3:], getenv("TOFU_STATE_SUFFIX"))
 	default:
 		return failure{64, "Unknown custody command."}

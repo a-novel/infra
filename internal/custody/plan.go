@@ -2,9 +2,7 @@ package custody
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"encoding/json"
-	"fmt"
 	"io"
 	"os"
 	"regexp"
@@ -29,7 +27,7 @@ type metadata struct {
 func (storage store) plan(action string, args []string, suffix string) error {
 	count := map[string]int{"publish": 5, "fetch": 4, "consume": 3}[action]
 	expected := count
-	service := len(args) > 0 && args[0] == "service-release"
+	service := len(args) > 0 && (args[0] == "service-release" || args[0] == "service-foundation")
 	if service && action != "consume" {
 		expected++
 	}
@@ -43,16 +41,16 @@ func (storage store) plan(action string, args []string, suffix string) error {
 	prefix := "gs://" + storage.bucket + "/" + namespace + "/" + args[1] + "/" + args[2] + "/"
 	planURI, metadataURI := prefix+"plan.tfplan", prefix+"metadata.json"
 	inputsHash := ""
-	if service {
+	if args[0] == "service-release" {
 		metadataURI = prefix + "plan.metadata.json"
-		if action != "consume" {
-			data, readErr := os.ReadFile(args[count])
-			var config map[string]json.RawMessage
-			if readErr != nil || json.Unmarshal(data, &config) != nil || config == nil {
-				return failure{64, "Service plan custody requires readable JSON object inputs."}
-			}
-			inputsHash = fmt.Sprintf("%x", sha256.Sum256(data))
+	}
+	if service && action != "consume" {
+		data, readErr := os.ReadFile(args[count])
+		var config map[string]json.RawMessage
+		if readErr != nil || json.Unmarshal(data, &config) != nil || config == nil {
+			return failure{64, "Service plan custody requires readable JSON object inputs."}
 		}
+		inputsHash = checksum(data)
 	}
 	now := time.Now().Unix()
 	switch action {
@@ -71,7 +69,7 @@ func (storage store) plan(action string, args []string, suffix string) error {
 		destructive := args[4] == "true"
 		meta := metadata{
 			SchemaVersion: 1, Root: args[0], Commit: args[1], PlanID: args[2], StateSuffix: &suffix,
-			SHA256: fmt.Sprintf("%x", sha256.Sum256(data)), InputsSHA256: inputsHash,
+			SHA256: checksum(data), InputsSHA256: inputsHash,
 			CreatedEpoch: now, ExpiresEpoch: now + 86400, Destructive: &destructive,
 		}
 		encoded, err := json.Marshal(meta)
@@ -105,7 +103,7 @@ func (storage store) plan(action string, args []string, suffix string) error {
 		if err != nil {
 			return failure{66, "Reviewed opaque plan is unavailable."}
 		}
-		if meta.SHA256 != fmt.Sprintf("%x", sha256.Sum256(data)) {
+		if meta.SHA256 != checksum(data) {
 			return failure{77, "Reviewed plan hash does not match its private metadata."}
 		}
 		if err = writePrivate(args[3]+".destructive", []byte(strconv.FormatBool(*meta.Destructive)+"\n")); err != nil {

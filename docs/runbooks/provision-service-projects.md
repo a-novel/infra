@@ -193,11 +193,15 @@ or alternate workspaces. The root uses a fresh backend working directory and nat
 State is `foundation/services/PROJECT/default.tfstate`; converged configuration is recorded under
 `foundation/services/PROJECT/config/`. Opaque plans remain under the existing 24-hour expiry prefix,
 `foundation/plans/services/PROJECT/COMMIT/PLAN-ID/`, with distinct root/project metadata and checksum.
+Both service roots bind the exact input bytes; plans without that binding require a new reviewed plan.
 Other services and recovery cannot reuse that scope. No storage IAM changes are introduced.
 
-Apply consumes the exact saved plan before mutation, then requires convergence before publishing
-configuration. If it fails or is interrupted, inspect the actual resources and state before creating
-a fresh plan. Never replay a consumed plan or assume a failed run made no changes. This path does
+The [guarded apply](../service-operations.md#implemented-service-root-apply) consumes the exact saved
+plan before mutation, then requires convergence, configuration and completion publication before
+releasing the service. After failure or interruption, preserve the guard and inspect actual resources,
+state and accepted cloud operations. A fresh plan does not unlock the service; protected recovery
+must establish that the previous writer can no longer mutate it. No automatic unlock is available.
+Never replay a consumed plan or assume a failed run made no changes. This path does
 not transfer an existing resource owner, start PostgreSQL, run a migration or activate Cloud Deploy.
 The root also publishes [content-addressed coordinates](../../environments/service-foundation#published-coordinates)
 using the native storage provider. Only its service's release account gets read access to the
@@ -276,11 +280,13 @@ apply publishes `services/PROJECT/release/config/RUN-ATTEMPT.tfvars.json` for as
 Private plans use `services/PROJECT/release/plans/COMMIT/PLAN-ID/`; state remains in that root's
 native backend. No public artifact contains these values.
 
-After failure or interruption, preserve state and inspect actual job UIDs and accepted operations.
+After failure or interruption, preserve state and the service guard; inspect actual job UIDs,
+accepted operations and any immutable apply-completion evidence.
 A failed apply can leave some jobs created; an absent config record does not mean nothing happened.
-Resolve any ambiguous ownership, then create a fresh reviewed plan to finish only the missing jobs.
+Complete protected reconciliation of the old writer and guard before creating a fresh reviewed plan
+to finish only the missing jobs. A new run or plan cannot adopt or release an interrupted guard.
 Never replay a consumed plan, automatically import a conflicting job or delete it to unblock bootstrap.
-Assessment stops on state without converged inputs until reconciliation finishes.
+Assessment stops while the guard exists or state lacks converged inputs.
 
 After success, disable bootstrap, verify the jobs without executing them, and install exact-job access
 through the separate service-foundation plan. Prove a zero-change plan with the routine identity and
