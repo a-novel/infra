@@ -26,7 +26,7 @@ type cloud struct {
 	jobs    *cloudrun.JobsClient
 	// Present only for the protected operation: the ETag-bound read at dispatch
 	// must still match the template independently approved before authentication.
-	migrationTemplate *runpb.ExecutionTemplate
+	approvedMigration *runpb.Job
 }
 
 func (client cloud) submit(ctx context.Context, request *deploypb.CreateReleaseRequest, output io.Writer) error {

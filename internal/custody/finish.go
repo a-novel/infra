@@ -8,14 +8,15 @@ import (
 	"io"
 	"strings"
 
+	"google.golang.org/api/option"
 	"google.golang.org/api/storage/v1"
 )
 
-// finishOperation repeats only the last guard deletion of a recorded successful operation.
-// Incomplete operations have no recovery path here, even if their workflow ended.
-func (custody store) finishOperation(ctx context.Context, client *storage.Service, evidence operationEvidence, output io.Writer) error {
-	if !evidence.completed {
-		return failure{70, "Only exact recorded completion can finish; incomplete operations remain blocked."}
+// finishOperation records proven native success if needed, then deletes only its
+// exact guard. An unfinished apply still requires separate protected recovery.
+func (custody store) finishOperation(ctx context.Context, client *storage.Service, evidence operationEvidence, output io.Writer, options []option.ClientOption) error {
+	if !evidence.completed && (evidence.native == nil || evidence.live == 0) {
+		return failure{70, "Completion is missing; only a still-held native release can be reconciled here."}
 	}
 	guard := evidence.guard
 	if evidence.live != 0 && evidence.live != guard.Generation {
@@ -23,6 +24,11 @@ func (custody store) finishOperation(ctx context.Context, client *storage.Servic
 	}
 	if err := custody.completedWriter(ctx, evidence); err != nil {
 		return err
+	}
+	if !evidence.completed {
+		if err := evidence.native.RecordCompletion(ctx, options...); err != nil {
+			return failure{70, "Native completion unconfirmed; guard retained. " + err.Error()}
+		}
 	}
 	if evidence.live == 0 {
 		_, err := fmt.Fprintln(output, "Recorded completion verified; its guard is already absent. No mutation performed.")

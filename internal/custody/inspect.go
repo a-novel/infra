@@ -82,7 +82,7 @@ func (custody store) inspectOperation(action string, args []string, getenv func(
 		return err
 	}
 	if action == "finish" {
-		return custody.finishOperation(ctx, client, evidence, output)
+		return custody.finishOperation(ctx, client, evidence, output, options)
 	}
 	return evidence.report(output)
 }

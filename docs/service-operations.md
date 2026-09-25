@@ -54,8 +54,9 @@ Native completion has a distinct `native-success/RELEASE_ID.json` namespace in t
 folder. The validated guard supplies the exact record name; the inspector pins its Storage generation
 and verifies that the record belongs to that guard and configuration. The protected finisher can
 clean up the guard after the original writer ends, including after a lost completion-write acknowledgement.
-They are not legacy recovery receipts. Restore consumption and repair of missing completion still
-require implementation; live activation requires an approved drill.
+If native completion is missing, that same finisher can prove exact native success and publish it
+without replaying deployment. These are not legacy recovery receipts; restore consumption still
+requires implementation, and live activation requires an approved drill.
 
 All pilot activation flags remain off by default; legacy production retains its existing global
 serialization and configuration/receipt owners. Do not activate competing writers on this basis.
@@ -122,13 +123,14 @@ outcome, and another live generation belongs to a separate operation. The comman
 repairs evidence or retries apply. See [Storage version selection](https://docs.cloud.google.com/storage/docs/json_api/v1/objects/get).
 
 <a id="finish-an-already-recorded-apply"></a>
+<a id="finish-an-already-recorded-operation"></a>
 
-### Finish an already-recorded operation
+### Finish a successful operation
 
-This **off-by-default** recovery path addresses only cleanup after completion was recorded. It cannot finish
-an incomplete operation or publish missing completion evidence. The immutable completion and its
-exact configuration must already exist. Supported records are converged service-root applies and
-successful native JSON Keys releases. Rotation and unknown record kinds remain blocked.
+This **off-by-default** path finishes converged service-root applies with recorded completion, or
+successful native JSON Keys releases. Only native releases support reconstructing a missing completion
+record, using the same success proof as the ordinary writer. Unfinished applies, rotation and unknown
+record kinds remain blocked.
 
 After inspecting the exact generation, separately approve `SERVICE_OPERATION_RECOVERY_ENABLED=true`
 in the `production-foundation` environment. From clean, current `master`, select the service and
@@ -141,7 +143,7 @@ go run ./cmd/infra foundation finish-operation <service> <guard-generation> 'FIN
 The operation kind and any apply root come from the verified record. Direct workflow dispatches must
 leave `root=none` and `plan_id` empty; extra selectors fail before authentication.
 Approve the protected run. It uses the existing foundation identity and writer concurrency; it does
-not run OpenTofu, publish configuration, execute jobs or touch Cloud Deploy. Current bootstrap inputs,
+not run OpenTofu, publish configuration, execute jobs or mutate Cloud Deploy/Run. Current bootstrap inputs,
 images and secret availability are not needed. It verifies the same immutable evidence as inspection,
 then requires the [original GitHub run attempt](https://docs.github.com/en/rest/actions/workflow-runs#get-a-workflow-run-attempt)
 to be completed and bound to the recorded commit and protected workflow action. Apply records bind
@@ -149,17 +151,30 @@ the root/service to `foundation apply`; native records bind the exact `release.y
 `production deploy-service`. The attempt may have failed after recording success; its conclusion
 is not used as completion evidence.
 
-The only possible write is deleting the current guard with its exact
-[generation precondition](https://docs.cloud.google.com/storage/docs/request-preconditions).
-An already-absent guard is a verified no-op. A successor guard, active/unknown original attempt,
-incomplete evidence or unconfirmed deletion returns non-success. Reinspect the same generation after
-an uncertain result; do not replay deployment. Archived evidence is never deleted. Turn the recovery flag
-off after the approved operation and review the outcome before admitting another change.
+When completion already exists, the only write is deleting the current guard with its exact
+[generation precondition](https://docs.cloud.google.com/storage/docs/request-preconditions). An
+already-absent guard is a verified no-op. This path checks historical evidence, not current cloud state.
 
-This closes recorded cleanup only, not current application readiness or general interrupted-release
-recovery. Native render/approval/verification is checked in the stored successful record, without
-querying current Cloud Deploy/Run state. The command cannot fence console administrators or unenrolled
-writers. If other native work may still be running, keep the service blocked and reconcile it separately.
+When native completion is missing, the original guard must still be live. Before any write, the shared
+completion proof checks the exact saved request and native release/rollout, successful candidate and
+stable verification, settled private service with all ordinary traffic on the verified revision,
+approved live job UIDs/templates and saved successful migration evidence matching that approved job.
+The finisher then creates the same `native-success/RELEASE_ID.json` with `ifGenerationMatch=0`, and only
+an acknowledged write permits exact guard deletion. It neither overwrites completion nor reconstructs
+missing migration evidence. The existing foundation role declares the three additional metadata reads
+(`clouddeploy.releases.get`, `clouddeploy.rollouts.get`, `run.services.get`) in the selected workload
+project; a separately approved foundation apply and effective-permission check must precede live use.
+
+A successor/absent guard cannot repair missing completion. Active/unknown original attempts, native
+failures or identity conflicts, unavailable evidence and uncertain writes leave admission blocked.
+Reinspect the same generation after an uncertain result: a lost publication acknowledgement may have
+saved valid completion, allowing the recorded-cleanup path next time. Archived evidence is never
+deleted. Turn the recovery flag off after the approved operation and review the outcome before admitting
+another change. This is not a general repair/retry engine or a legacy data-recovery receipt.
+
+The command cannot fence console administrators or unenrolled writers. If other native work may still
+be running, keep the service blocked and reconcile it separately. Retained records and effective IAM,
+native API normalization and interruption recovery still require a human-approved activation drill.
 
 ## One owner for each responsibility
 

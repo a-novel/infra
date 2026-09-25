@@ -11,11 +11,8 @@ import (
 	"path/filepath"
 	"time"
 
-	deploy "cloud.google.com/go/deploy/apiv1"
 	"cloud.google.com/go/deploy/apiv1/deploypb"
-	cloudrun "cloud.google.com/go/run/apiv2"
 	"google.golang.org/api/option"
-	"google.golang.org/api/storage/v1"
 
 	"github.com/a-novel/infra/internal/artifact"
 	"github.com/a-novel/infra/internal/rollout"
@@ -73,28 +70,12 @@ func operate(ctx context.Context, args []string, getenv func(string) string, exe
 		_, err := fmt.Fprintln(output, "PASS selected native release source and complete image family; no cloud mutation.")
 		return err
 	}
-	deployClient, err := deploy.NewCloudDeployRESTClient(ctx, options...)
-	if err != nil {
-		return errors.New("cannot initialize Cloud Deploy client")
-	}
-	defer func() { _ = deployClient.Close() }()
-	storageClient, err := storage.NewService(ctx, options...)
-	if err != nil {
-		return errors.New("cannot initialize private storage client")
-	}
-	jobsClient, err := cloudrun.NewJobsRESTClient(ctx, options...)
-	if err != nil {
-		return errors.New("cannot initialize Cloud Run jobs client")
-	}
-	defer func() { _ = jobsClient.Close() }()
-	servicesClient, err := cloudrun.NewServicesRESTClient(ctx, options...)
-	if err != nil {
-		return errors.New("cannot initialize Cloud Run services client")
-	}
-	defer func() { _ = servicesClient.Close() }()
-	job, _ := input.job("migrations") // Validated before any client or guard exists.
-	client := cloud{scope: input.scope(), deploy: deployClient, storage: storageClient, jobs: jobsClient, migrationTemplate: job.Template}
-	operation := serviceOperation{cloud: client, input: input, data: data, services: servicesClient}
+	return withOperation(ctx, input, data, options, func(operation serviceOperation) error {
+		return operation.deployRelease(ctx, request, archive, getenv, execute, output, *timeout, options)
+	})
+}
+
+func (operation *serviceOperation) deployRelease(ctx context.Context, request *deploypb.CreateReleaseRequest, archive []byte, getenv func(string) string, execute func(context.Context, io.Writer, string, ...string) error, output io.Writer, timeout time.Duration, options []option.ClientOption) error {
 	if err := operation.acquire(ctx, getenv, output); err != nil {
 		return err
 	}
@@ -103,19 +84,19 @@ func operate(ctx context.Context, args []string, getenv func(string) string, exe
 	if err := operation.jobs(ctx); err != nil {
 		return err
 	}
-	if _, _, err := operation.serving(ctx, input.Predecessor); err != nil {
+	if _, _, err := operation.serving(ctx, operation.input.Predecessor); err != nil {
 		return err
 	}
-	if err := artifact.VerifyServiceSecrets(ctx, data, execute); err != nil {
+	if err := artifact.VerifyServiceSecrets(ctx, operation.data, execute); err != nil {
 		return err
 	}
-	if err := client.publishSource(ctx, request, archive, output); err != nil {
+	if err := operation.publishSource(ctx, request, archive, output); err != nil {
 		return err
 	}
 	if err := operation.held(ctx); err != nil {
 		return err
 	}
-	if err := client.submit(ctx, request, output); err != nil {
+	if err := operation.submit(ctx, request, output); err != nil {
 		return err
 	}
 	if err := operation.rendered(ctx, request.ReleaseId); err != nil {
@@ -124,19 +105,19 @@ func operate(ctx context.Context, args []string, getenv func(string) string, exe
 	if err := operation.held(ctx); err != nil {
 		return err
 	}
-	if err := artifact.VerifyServiceSecrets(ctx, data, execute); err != nil {
+	if err := artifact.VerifyServiceSecrets(ctx, operation.data, execute); err != nil {
 		return err
 	}
-	if err := client.migration(ctx, "submit-migration", request.ReleaseId, job.Uid, input.Images["migrations"], output); err != nil {
+	if err := operation.migration(ctx, "submit-migration", request.ReleaseId, operation.approvedMigration.Uid, operation.input.Images["migrations"], output); err != nil {
 		return err
 	}
 	if err := operation.held(ctx); err != nil {
 		return err
 	}
-	if err := client.createRollout(ctx, request.ReleaseId, input.RolloutRequestID, output, true); err != nil {
+	if err := operation.createRollout(ctx, request.ReleaseId, operation.input.RolloutRequestID, output, true); err != nil {
 		return err
 	}
-	observer := rollout.Observer{Name: request.Release.Name + "/rollouts/production", Timeout: *timeout, AwaitActions: true}
+	observer := rollout.Observer{Name: request.Release.Name + "/rollouts/production", Timeout: timeout, AwaitActions: true}
 	if err := observer.Wait(ctx, output, options...); err != nil {
 		return err
 	}

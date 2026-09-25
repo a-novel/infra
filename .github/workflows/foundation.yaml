@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Plan, apply, promote images, or finish an already-recorded service operation.
+        description: Plan, apply, promote images, or finish an exact successful service operation.
         required: true
         type: choice
         options: [plan, apply, promote-images, finish-operation]
@@ -211,7 +211,7 @@ jobs:
             "${STATE_BUCKET}" "${ROOT_NAME}" "${TFVARS_FILE}" \
             "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}"
 
-      - name: Finish only the exact recorded service operation
+      - name: Verify completion and finish only the exact service operation
         if: inputs.operation == 'finish-operation'
         shell: bash
         env:

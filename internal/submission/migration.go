@@ -73,7 +73,7 @@ func (client cloud) migration(ctx context.Context, command, id, jobUID, image st
 	// Publishing observed evidence is repeatable; dispatching database work is not.
 	_ = client.create(ctx, resultName, execution)
 	data, err := client.read(ctx, resultName)
-	stored := new(runpb.Execution)
+	stored := &runpb.Execution{}
 	if err != nil || protojson.Unmarshal(data, stored) != nil || !proto.Equal(stored, execution) {
 		return errors.New("migration succeeded but exact execution evidence is unconfirmed; reconcile, do not rerun")
 	}
@@ -92,7 +92,7 @@ func (client cloud) startMigration(ctx context.Context, name string, release *de
 	if job.Template.Template.Containers[0].Image != image {
 		return nil, nil, errors.New("migrations job does not match the reviewed image")
 	}
-	if client.migrationTemplate != nil && !proto.Equal(job.Template, client.migrationTemplate) {
+	if approved := client.approvedMigration; approved != nil && !proto.Equal(job.Template, approved.Template) {
 		return nil, nil, errors.New("migrations configuration changed after operation admission")
 	}
 	if err := client.scope.checkMigrationJob(job, release); err != nil {
@@ -138,7 +138,7 @@ func (client cloud) requireMigration(ctx context.Context, id string, release *de
 		return err
 	}
 	data, err := client.read(ctx, strings.TrimSuffix(name, ".json")+".execution.json")
-	execution := new(runpb.Execution)
+	execution := &runpb.Execution{}
 	if err != nil || protojson.Unmarshal(data, execution) != nil {
 		return errors.New("successful migration evidence missing; reconcile before submitting a rollout")
 	}
@@ -151,20 +151,24 @@ func (client cloud) readMigration(ctx context.Context, name string, release *dep
 		return nil, nil, err
 	}
 	var intent migrationIntent
+	var trailing any
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
-	if decoder.Decode(&intent) != nil || decoder.Decode(new(any)) != io.EOF {
+	if decoder.Decode(&intent) != nil || decoder.Decode(&trailing) != io.EOF {
 		return nil, nil, errors.New("invalid private migration intent")
 	}
-	job := new(runpb.Job)
+	job := &runpb.Job{}
 	if intent.SchemaVersion != 1 || intent.ReleaseUID != release.Uid || protojson.Unmarshal(intent.Job, job) != nil {
 		return nil, nil, errors.New("migration intent conflicts with the exact release identity")
 	}
 	if err := client.scope.checkMigrationJob(job, release); err != nil {
 		return nil, nil, err
 	}
+	if approved := client.approvedMigration; approved != nil && (job.Uid != approved.Uid || !proto.Equal(job.Template, approved.Template)) {
+		return nil, nil, errors.New("recorded migration differs from the approved operation job")
+	}
 	data, err = client.read(ctx, strings.TrimSuffix(name, ".json")+".operation.json")
-	operation := new(longrunningpb.Operation)
+	operation := &longrunningpb.Operation{}
 	if err != nil || protojson.Unmarshal(data, operation) != nil || !client.scope.operation(operation.Name) {
 		return nil, nil, errors.New("exact migration operation unavailable; manual audit required, never resubmit")
 	}
@@ -210,7 +214,7 @@ func completedMigration(job *runpb.Job, operation *longrunningpb.Operation, exec
 		return errors.New("migration execution identity or task configuration conflicts with the reserved job")
 	}
 	if operation.Metadata != nil {
-		initial := new(runpb.Execution)
+		initial := &runpb.Execution{}
 		if operation.Metadata.UnmarshalTo(initial) != nil {
 			return errors.New("invalid migration operation metadata")
 		}

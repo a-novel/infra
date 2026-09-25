@@ -9,9 +9,11 @@ import (
 	"io"
 	"time"
 
+	deploy "cloud.google.com/go/deploy/apiv1"
 	"cloud.google.com/go/deploy/apiv1/deploypb"
 	cloudrun "cloud.google.com/go/run/apiv2"
 	"cloud.google.com/go/run/apiv2/runpb"
+	"google.golang.org/api/option"
 	"google.golang.org/api/storage/v1"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -22,7 +24,34 @@ type serviceOperation struct {
 	input      operationInputs
 	data       []byte
 	services   *cloudrun.ServicesClient
-	generation int64 // Only the acknowledgement from this invocation may set this.
+	generation int64 // Acknowledged admission, or the exact guard selected by the protected finisher.
+}
+
+// withOperation keeps client lifetimes and the approved job binding identical for
+// deployment and completion repair. The action decides which APIs may be called.
+func withOperation(ctx context.Context, input operationInputs, data []byte, options []option.ClientOption, action func(serviceOperation) error) error {
+	deployClient, err := deploy.NewCloudDeployRESTClient(ctx, options...)
+	if err != nil {
+		return errors.New("cannot initialize Cloud Deploy client")
+	}
+	defer func() { _ = deployClient.Close() }()
+	storageClient, err := storage.NewService(ctx, options...)
+	if err != nil {
+		return errors.New("cannot initialize private storage client")
+	}
+	jobsClient, err := cloudrun.NewJobsRESTClient(ctx, options...)
+	if err != nil {
+		return errors.New("cannot initialize Cloud Run jobs client")
+	}
+	defer func() { _ = jobsClient.Close() }()
+	servicesClient, err := cloudrun.NewServicesRESTClient(ctx, options...)
+	if err != nil {
+		return errors.New("cannot initialize Cloud Run services client")
+	}
+	defer func() { _ = servicesClient.Close() }()
+	job, _ := input.job("migrations") // Validated before any client or guard exists.
+	client := cloud{scope: input.scope(), deploy: deployClient, storage: storageClient, jobs: jobsClient, approvedMigration: job}
+	return action(serviceOperation{cloud: client, input: input, data: data, services: servicesClient})
 }
 
 func (operation serviceOperation) prefix() string {
@@ -46,6 +75,7 @@ func (operation *serviceOperation) acquire(ctx context.Context, getenv func(stri
 		return errors.New("service admission busy or uncertain; no release or migration dispatched by this invocation")
 	}
 	operation.generation = object.Generation
+	operation.data = configuration
 	_, err = fmt.Fprintf(output, "Acquired guard generation: %d\n", object.Generation)
 	return err
 }
@@ -129,33 +159,9 @@ func (operation serviceOperation) serving(ctx context.Context, id string) (*depl
 }
 
 func (operation serviceOperation) finish(ctx context.Context, id string, output io.Writer) error {
-	if err := operation.held(ctx); err != nil {
-		return err
-	}
-	if err := operation.jobs(ctx); err != nil {
-		return err
-	}
-	release, native, err := operation.serving(ctx, id)
+	object, err := operation.recordCompletion(ctx, id)
 	if err != nil {
 		return err
-	}
-	if err := operation.requireMigration(ctx, id, release); err != nil {
-		return err
-	}
-	// Native records deliberately have a different namespace from legacy recovery
-	// receipts. Their reader/cutover drill is a separate activation prerequisite.
-	releaseJSON, err := protojson.Marshal(release)
-	if err != nil {
-		return errors.New("cannot encode completed native release")
-	}
-	rolloutJSON, err := protojson.Marshal(native)
-	if err != nil {
-		return errors.New("cannot encode completed native rollout")
-	}
-	receipt := nativeCompletion{1, "native-release", operation.generation, operation.data, releaseJSON, rolloutJSON, time.Now().UTC().Format(time.RFC3339)}
-	object, err := operation.record(ctx, operation.scope.ReceiptBucket, operation.scope.prefix()+"native-success/"+id+".json", receipt)
-	if err != nil {
-		return errors.New("native rollout succeeded but completion publication is uncertain; guard retained")
 	}
 	if err := operation.storage.Objects.Delete(operation.input.StateBucket, operation.prefix()+"operation.json").
 		IfGenerationMatch(operation.generation).Context(ctx).Do(); err != nil {
@@ -163,6 +169,50 @@ func (operation serviceOperation) finish(ctx context.Context, id string, output 
 	}
 	_, err = fmt.Fprintf(output, "PASS native rollout and immutable completion: gs://%s/%s#%d\nService admission released. No legacy recovery receipt was created.\n", object.Bucket, object.Name, object.Generation)
 	return err
+}
+
+// recordCompletion is the shared success proof, never a native mutation or retry.
+func (operation serviceOperation) recordCompletion(ctx context.Context, id string) (*storage.Object, error) {
+	if err := operation.held(ctx); err != nil {
+		return nil, err
+	}
+	if err := operation.jobs(ctx); err != nil {
+		return nil, err
+	}
+	release, native, err := operation.serving(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := operation.requireMigration(ctx, id, release); err != nil {
+		return nil, err
+	}
+	// Native records deliberately have a different namespace from legacy recovery
+	// receipts. Their reader/cutover drill is a separate activation prerequisite.
+	releaseJSON, err := protojson.Marshal(release)
+	if err != nil {
+		return nil, errors.New("cannot encode completed native release")
+	}
+	rolloutJSON, err := protojson.Marshal(native)
+	if err != nil {
+		return nil, errors.New("cannot encode completed native rollout")
+	}
+	receipt := nativeCompletion{1, "native-release", operation.generation, operation.data, releaseJSON, rolloutJSON, time.Now().UTC().Format(time.RFC3339)}
+	data, err := json.Marshal(receipt)
+	if err != nil {
+		return nil, errors.New("cannot encode native completion")
+	}
+	request, _ := operation.scope.request(operation.input.Request)
+	if err := recordedNativeCompletion(data, operation.data, operation.generation, operation.input, request); err != nil {
+		return nil, err
+	}
+	if err := operation.held(ctx); err != nil {
+		return nil, err
+	}
+	object, err := operation.uploadTo(ctx, operation.scope.ReceiptBucket, operation.scope.prefix()+"native-success/"+id+".json", data, "application/json")
+	if err != nil {
+		return nil, errors.New("native rollout succeeded but completion publication is uncertain; guard retained")
+	}
+	return object, nil
 }
 
 func (operation serviceOperation) record(ctx context.Context, bucket, name string, value any) (*storage.Object, error) {

@@ -38,7 +38,7 @@ After rechecking actual traffic, job convergence and migration evidence, success
 `services/PROJECT/production/native-success/RELEASE_ID.json` in the receipt bucket. It preserves the
 approved configuration, guard generation and native release/rollout. Only acknowledged publication permits
 deleting the exact guard generation. These **native completion records are not legacy recovery
-receipts**. Recovery-reader/drill support and repair of missing completion remain activation gates.
+receipts**. Recovery-reader support and a live interruption drill remain activation gates.
 
 For an interrupted guarded release, start with the existing
 [read-only operation inspector](../service-operations.md#inspect-an-interrupted-operation).
@@ -47,9 +47,11 @@ The reconciliation commands below inspect native progress separately; neither re
 unlocking or retrying. Missing completion is not proof that deployment did not happen.
 The inspector derives this exact record name from the guard and pins its generation before reading.
 A lost write acknowledgement can leave a valid record even though the deploy invocation failed.
-When completion is recorded and the original workflow has ended, the separately approved
-[operation finisher](../service-operations.md#finish-an-already-recorded-operation) can repeat only
-the exact guard deletion. It leaves missing evidence and uncertain deployment outcomes blocked.
+After the original workflow ends, the separately approved
+[operation finisher](../service-operations.md#finish-a-successful-operation) repeats exact guard deletion
+for recorded completion. If completion is missing, it reuses the ordinary writer's native success,
+actual traffic, approved-job and saved migration checks before create-only publication and cleanup.
+Missing migration evidence or uncertain native outcomes remain blocked; no deployment is replayed.
 
 Keep `SERVICE_NATIVE_RELEASE_ENABLED` unset/false and the protected operation secret unset until the
 separate activation review. The workflow retains global writer serialization. The low-level commands
