@@ -4,10 +4,10 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Create a 24-hour plan, apply an exact prior plan, or promote one service's images.
+        description: Plan, apply, promote images, or finish an already-recorded service apply.
         required: true
         type: choice
-        options: [plan, apply, promote-images]
+        options: [plan, apply, promote-images, finish-apply]
       root:
         description: Management, shared workload, service foundation or create-only service jobs.
         required: true
@@ -21,6 +21,14 @@ on:
         options: [none, json-keys, authentication]
       plan_id:
         description: Required only for apply; use the run-id-attempt printed by plan.
+        required: false
+        type: string
+      guard_generation:
+        description: Required only for finish-apply; exact inspected guard generation.
+        required: false
+        type: string
+      confirm:
+        description: Required only for finish-apply; FINISH <service> <guard-generation>.
         required: false
         type: string
 
@@ -43,6 +51,7 @@ jobs:
     timeout-minutes: 60
     environment: production-foundation
     permissions:
+      actions: read
       attestations: read
       contents: read
       id-token: write
@@ -67,8 +76,11 @@ jobs:
           SERVICE_JOB_BOOTSTRAP_CONFIG: ${{ secrets.SERVICE_JOB_BOOTSTRAPS_JSON }}
           SERVICE_JOB_BOOTSTRAP_ENABLED: ${{ vars.SERVICE_JOB_BOOTSTRAP_ENABLED }}
           SERVICE_IMAGE_PROMOTION_ENABLED: ${{ vars.SERVICE_IMAGE_PROMOTION_ENABLED }}
+          SERVICE_OPERATION_RECOVERY_ENABLED: ${{ vars.SERVICE_OPERATION_RECOVERY_ENABLED }}
           FOUNDATION_OPERATION: ${{ inputs.operation }}
           FOUNDATION_PLAN_ID: ${{ inputs.plan_id }}
+          FOUNDATION_GUARD_GENERATION: ${{ inputs.guard_generation }}
+          FOUNDATION_CONFIRM: ${{ inputs.confirm }}
           MANAGEMENT_PROJECT_ID: ${{ vars.GCP_MANAGEMENT_PROJECT_ID }}
           STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
           SELECTED_ROOT: ${{ inputs.root }}
@@ -79,7 +91,7 @@ jobs:
             "${RUNNER_TEMP}/selected.tfvars.json" >>"${GITHUB_OUTPUT}"
 
       - name: Verify the selected service image family
-        if: inputs.root == 'service-release'
+        if: inputs.root == 'service-release' && inputs.operation != 'finish-apply'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -109,14 +121,14 @@ jobs:
           version: "581.0.0"
 
       - name: Verify the selected job secret versions
-        if: inputs.root == 'service-release' && inputs.operation != 'promote-images'
+        if: inputs.root == 'service-release' && (inputs.operation == 'plan' || inputs.operation == 'apply')
         shell: bash
         env:
           SELECTED_FILE: ${{ steps.inputs.outputs.file }}
         run: infra preflight service-secrets "${SELECTED_FILE}"
 
       - name: Bind the approved foundation generation
-        if: inputs.root == 'service-release' && inputs.operation != 'promote-images'
+        if: inputs.root == 'service-release' && (inputs.operation == 'plan' || inputs.operation == 'apply')
         id: coordinates
         shell: bash
         env:
@@ -196,3 +208,21 @@ jobs:
           infra custody config publish \
             "${STATE_BUCKET}" "${ROOT_NAME}" "${TFVARS_FILE}" \
             "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}"
+
+      - name: Finish only the exact recorded service apply
+        if: inputs.operation == 'finish-apply'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ROOT_NAME: ${{ inputs.root }}
+          SELECTED_PROJECT: ${{ steps.inputs.outputs.project }}
+          GUARD_GENERATION: ${{ inputs.guard_generation }}
+          CONFIRM: ${{ inputs.confirm }}
+          STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
+          MANAGEMENT_PROJECT_ID: ${{ vars.GCP_MANAGEMENT_PROJECT_ID }}
+          FOUNDATION_CONFIG: ${{ secrets.FOUNDATION_TFVARS_JSON }}
+          SERVICE_OPERATION_RECOVERY_ENABLED: ${{ vars.SERVICE_OPERATION_RECOVERY_ENABLED }}
+        run: |
+          set -euo pipefail
+          infra custody operation finish "${STATE_BUCKET}" "${ROOT_NAME}" \
+            "${SELECTED_PROJECT}" "${GUARD_GENERATION}" "${CONFIRM}" | tee -a "${GITHUB_STEP_SUMMARY}"

@@ -20,6 +20,7 @@ const usage = `usage: go run ./cmd/infra
   foundation plan <service-foundation|service-release> <json-keys|authentication>
   foundation apply <service-foundation|service-release> <json-keys|authentication> <plan-id>
   foundation promote-images service-release <json-keys|authentication>
+  foundation finish-apply <service-foundation|service-release> <service> <guard-generation> 'FINISH <service> <guard-generation>'
   release deploy [--no-wait]
   release rollback <receipt-id>
   release recover-first-launch <failed-run-id>
@@ -104,11 +105,13 @@ func parse(args []string) (intent, error) {
 		i.input("operation", args[0])
 		i.input("root", args[1])
 		scope := args[1]
+		service := ""
 		if strings.HasPrefix(args[1], "service-") {
 			if len(args) < 3 || !slices.Contains([]string{"json-keys", "authentication"}, args[2]) {
 				return i, invalid
 			}
 			i.input("service", args[2])
+			service = args[2]
 			scope += "/" + args[2]
 			args = slices.Concat(args[:2], args[3:])
 		}
@@ -120,6 +123,13 @@ func parse(args []string) (intent, error) {
 		case args[0] == "apply" && len(args) == 3 && matches(attemptID, args[2]):
 			i.planID, i.planPrefix = args[2], "foundation plan "+scope+" by @"
 			i.input("plan_id", i.planID)
+		case args[0] == "finish-apply" && service != "" && len(args) == 4:
+			generation, err := strconv.ParseInt(args[2], 10, 64)
+			if err != nil || generation <= 0 || strconv.FormatInt(generation, 10) != args[2] || args[3] != "FINISH "+service+" "+args[2] {
+				return i, invalid
+			}
+			i.input("guard_generation", args[2])
+			i.input("confirm", args[3])
 		default:
 			return i, invalid
 		}

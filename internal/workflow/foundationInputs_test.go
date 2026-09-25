@@ -43,6 +43,8 @@ func TestFoundationInputs(t *testing.T) {
 		{name: "WrongPromotionRoot", variable: "FOUNDATION_OPERATION", value: "promote-images"},
 		{name: "UnexpectedPlanID", variable: "FOUNDATION_PLAN_ID", value: "123-1"},
 		{name: "MissingApplyPlan", variable: "FOUNDATION_OPERATION", value: "apply"},
+		{name: "UnexpectedRecoveryGeneration", variable: "FOUNDATION_GUARD_GENERATION", value: "42"},
+		{name: "UnexpectedRecoveryConfirmation", variable: "FOUNDATION_CONFIRM", value: "FINISH json-keys 42"},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
@@ -102,6 +104,54 @@ func TestFoundationInputs(t *testing.T) {
 			// Reusing a path cannot silently replace a previous selection.
 			require.NotZero(t, workflow.FoundationInputs([]string{"prepare", root, service, file}, getenv, &output, &diagnostic))
 			require.NotContains(t, diagnostic.String(), "agora-")
+		})
+	}
+}
+
+func TestFinishApplyInputs(t *testing.T) {
+	t.Parallel()
+	for _, testCase := range []struct {
+		name, root, variable, value string
+		valid                       bool
+	}{
+		{name: "Foundation", root: "service-foundation", valid: true},
+		{name: "Jobs", root: "service-release", valid: true},
+		{name: "Inactive", variable: "SERVICE_OPERATION_RECOVERY_ENABLED"},
+		{name: "Unregistered", variable: "FOUNDATION_CONFIG", value: `{}`},
+		{name: "WrongWorkflow", variable: "GITHUB_WORKFLOW_REF", value: "a-novel/infra/.github/workflows/drift.yaml@refs/heads/master"},
+		{name: "WrongEvent", variable: "GITHUB_EVENT_NAME", value: "push"},
+		{name: "MissingGeneration", variable: "FOUNDATION_GUARD_GENERATION"},
+		{name: "MissingConfirmation", variable: "FOUNDATION_CONFIRM"},
+		{name: "UnexpectedPlan", variable: "FOUNDATION_PLAN_ID", value: "123-1"},
+		{name: "PlanCannotReplaceGeneration", variable: "FOUNDATION_GUARD_GENERATION", value: "123-1"},
+		{name: "LegacyRoot", root: "foundation"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			root := testCase.root
+			if root == "" {
+				root = "service-release"
+			}
+			env := map[string]string{
+				"FOUNDATION_OPERATION": "finish-apply", "FOUNDATION_GUARD_GENERATION": "42", "FOUNDATION_CONFIRM": "FINISH json-keys 42",
+				"SERVICE_OPERATION_RECOVERY_ENABLED": "true", "GITHUB_EVENT_NAME": "workflow_dispatch",
+				"GITHUB_WORKFLOW_REF":   "a-novel/infra/.github/workflows/foundation.yaml@refs/heads/master",
+				"MANAGEMENT_PROJECT_ID": "agora-management-test", "STATE_BUCKET": "agora-management-test-123-tofu-state",
+				"FOUNDATION_CONFIG": `{"management_project_id":"agora-management-test","workload_project_id":"agora-production-test","region":"europe-west1","service_projects":{"json-keys":"agora-json-keys-test"}}`,
+			}
+			if testCase.variable != "" {
+				env[testCase.variable] = testCase.value
+			}
+			file := filepath.Join(t.TempDir(), "unused.json")
+			var output, diagnostic bytes.Buffer
+			code := workflow.FoundationInputs([]string{"prepare", root, "json-keys", file}, func(key string) string { return env[key] }, &output, &diagnostic)
+			require.Equal(t, testCase.valid, code == 0, diagnostic.String())
+			want := ""
+			if testCase.valid {
+				want = "project=agora-json-keys-test\n"
+			}
+			require.Equal(t, want, output.String())
+			require.NoFileExists(t, file, "finishing must not compile new bootstrap inputs")
 		})
 	}
 }

@@ -23,7 +23,21 @@ const inspectionLimit = 1 << 20
 
 var digestPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
-func (custody store) inspectOperation(args []string, getenv func(string) string, output io.Writer, options []option.ClientOption) error {
+type applyEvidence struct {
+	intent    applyIntent
+	guard     objectReference
+	live      int64
+	completed bool
+}
+
+func (custody store) inspectOperation(action string, args []string, getenv func(string) string, output io.Writer, options []option.ClientOption) error {
+	root, confirmation := "", ""
+	if action == "finish" {
+		if len(args) != 4 {
+			return failure{64, "Usage: infra custody operation finish <state-bucket> <root> <registered-project> <guard-generation> <confirmation>"}
+		}
+		root, confirmation, args = args[0], args[3], args[1:3]
+	}
 	if len(args) < 1 || len(args) > 2 {
 		return failure{64, "Usage: infra custody operation inspect <state-bucket> <registered-project> [guard-generation]"}
 	}
@@ -46,109 +60,142 @@ func (custody store) inspectOperation(args []string, getenv func(string) string,
 			return failure{64, "Expected a positive guard generation."}
 		}
 	}
+	readScope := storage.DevstorageReadOnlyScope
+	if action == "finish" {
+		project, err := workflow.FinishApplyProject([]string{root, scopes["services/"+args[0]], args[1], confirmation}, getenv)
+		if err != nil || project != args[0] {
+			return failure{65, "Finishing a recorded apply requires exact protected recovery authorization."}
+		}
+		readScope = storage.DevstorageReadWriteScope
+	}
 	ctx, cancel := context.WithTimeout(custody.ctx, time.Minute)
 	defer cancel()
-	client, err := storage.NewService(ctx, append(options, option.WithScopes(storage.DevstorageReadOnlyScope))...)
+	client, err := storage.NewService(ctx, append(options, option.WithScopes(readScope))...)
 	if err != nil {
 		return failure{70, "Operation inspection client unavailable."}
 	}
-	guard := objectReference{Bucket: custody.bucket, Name: "services/" + args[0] + "/release/operation.json"}
-	live, err := liveGeneration(ctx, client, guard.Bucket, guard.Name)
+	expected := applyIntent{Project: args[0], Service: scopes["services/"+args[0]], Region: region}
+	evidence, err := readApply(ctx, client, custody.bucket, expected, generation)
 	if err != nil {
 		return err
+	}
+	if action == "finish" {
+		return custody.finishApply(ctx, client, evidence, root, output)
+	}
+	return evidence.report(output)
+}
+
+// readApply verifies historical evidence separately from the observed live guard.
+func readApply(ctx context.Context, client *storage.Service, bucket string, expected applyIntent, generation int64) (applyEvidence, error) {
+	guard := objectReference{Bucket: bucket, Name: "services/" + expected.Project + "/release/operation.json"}
+	live, err := liveGeneration(ctx, client, guard.Bucket, guard.Name)
+	if err != nil {
+		return applyEvidence{}, err
 	}
 	if generation == 0 {
 		generation = live
 	}
 	if generation == 0 {
-		_, err = fmt.Fprintln(output, "No live service guard was observed; this does not establish any earlier apply outcome.")
-		return err
+		return applyEvidence{}, nil
 	}
 	guard.Generation = generation
 	data, err := readObject(ctx, client, guard)
 	if err != nil {
-		return err
+		return applyEvidence{}, err
 	}
 	guard.SHA256 = checksum(data)
 	var intent applyIntent
 	if err := decodeRecord(data, &intent); err != nil {
-		return err
+		return applyEvidence{}, err
 	}
 	if intent.SchemaVersion != 1 {
-		return failure{70, "Unsupported operation schema."}
+		return applyEvidence{}, failure{70, "Unsupported operation schema."}
 	}
-	if intent.Project != args[0] || intent.Service != scopes["services/"+args[0]] || intent.Region != region {
-		return failure{70, "Stored operation does not match the approved service scope."}
+	if intent.Project != expected.Project || intent.Service != expected.Service || intent.Region != expected.Region {
+		return applyEvidence{}, failure{70, "Stored operation does not match the approved service scope."}
 	}
 	if !commitPattern.MatchString(intent.Commit) || !sequencePattern.MatchString(intent.PlanID) {
-		return failure{70, "Stored operation identity is invalid."}
+		return applyEvidence{}, failure{70, "Stored operation identity is invalid."}
 	}
 	if !digestPattern.MatchString(intent.PlanSHA256) || !digestPattern.MatchString(intent.InputsSHA256) {
-		return failure{70, "Stored operation hashes are invalid."}
+		return applyEvidence{}, failure{70, "Stored operation hashes are invalid."}
 	}
 	name, err := intent.configurationName()
 	if err != nil {
-		return failure{70, "Stored operation root or run identity is invalid."}
+		return applyEvidence{}, failure{70, "Stored operation root or run identity is invalid."}
 	}
 	completion, err := inspectCompletion(ctx, client, intent, guard, name)
 	if err != nil {
-		return err
+		return applyEvidence{}, err
 	}
 	// Two observations detect a change; they do not fence a still-running writer.
 	current, err := liveGeneration(ctx, client, guard.Bucket, guard.Name)
 	if err != nil {
-		return err
+		return applyEvidence{}, err
 	}
 	if current != live {
-		return failure{70, "Live guard changed during inspection; repeat only this read-only inspection."}
+		return applyEvidence{}, failure{70, "Live guard changed during inspection; repeat only this read-only inspection."}
+	}
+	return applyEvidence{intent, guard, live, completion}, nil
+}
+
+func (evidence applyEvidence) report(output io.Writer) error {
+	if evidence.guard.Generation == 0 {
+		_, err := fmt.Fprintln(output, "No live service guard was observed; this does not establish any earlier apply outcome.")
+		return err
 	}
 	state := "another generation is live"
-	switch live {
-	case generation:
+	switch evidence.live {
+	case evidence.guard.Generation:
 		state = "held"
 	case 0:
 		state = "no live guard"
 	}
-	_, err = fmt.Fprintf(output, "Service: %s (%s)\nApply: %s; run %s-%s; plan %s; commit %s\nGuard generation: %d (%s)\nCompletion: %s\nEvidence only: not current health, settled native work, or permission to unlock or retry.\n",
-		intent.Service, intent.Project, intent.Root, intent.RunID, intent.RunAttempt, intent.PlanID, intent.Commit, generation, state, completion)
+	completion := "not recorded; apply may still have changed resources"
+	if evidence.completed {
+		completion = "recorded convergence; exact configuration verified"
+	}
+	intent := evidence.intent
+	_, err := fmt.Fprintf(output, "Service: %s (%s)\nApply: %s; run %s-%s; plan %s; commit %s\nGuard generation: %d (%s)\nCompletion: %s\nEvidence only: not current health, settled native work, or permission to unlock or retry.\n",
+		intent.Service, intent.Project, intent.Root, intent.RunID, intent.RunAttempt, intent.PlanID, intent.Commit, evidence.guard.Generation, state, completion)
 	return err
 }
 
-func inspectCompletion(ctx context.Context, client *storage.Service, intent applyIntent, guard objectReference, configName string) (string, error) {
+func inspectCompletion(ctx context.Context, client *storage.Service, intent applyIntent, guard objectReference, configName string) (bool, error) {
 	reference := objectReference{
 		Bucket: strings.TrimSuffix(guard.Bucket, "-tofu-state") + "-deployment-receipts",
 		Name:   fmt.Sprintf("services/%s/production/operations/%d.json", intent.Project, guard.Generation),
 	}
 	generation, err := liveGeneration(ctx, client, reference.Bucket, reference.Name)
 	if err != nil {
-		return "", err
+		return false, err
 	}
 	if generation == 0 {
-		return "not recorded; apply may still have changed resources", nil
+		return false, nil
 	}
 	reference.Generation = generation
 	data, err := readObject(ctx, client, reference)
 	if err != nil {
-		return "", err
+		return false, err
 	}
 	var completion applyCompletion
 	if err := decodeRecord(data, &completion); err != nil {
-		return "", err
+		return false, err
 	}
 	expected := applyCompletion{1, "converged", intent, guard, objectReference{
 		Bucket: guard.Bucket, Name: configName, Generation: completion.Configuration.Generation, SHA256: intent.InputsSHA256,
 	}}
 	if completion != expected || completion.Configuration.Generation <= 0 {
-		return "", failure{70, "Completion evidence does not match the exact operation and configuration."}
+		return false, failure{70, "Completion evidence does not match the exact operation and configuration."}
 	}
 	data, err = readObject(ctx, client, completion.Configuration)
 	if err != nil {
-		return "", err
+		return false, err
 	}
 	if checksum(data) != intent.InputsSHA256 {
-		return "", failure{70, "Converged configuration integrity could not be verified."}
+		return false, failure{70, "Converged configuration integrity could not be verified."}
 	}
-	return "recorded convergence; exact configuration verified", nil
+	return true, nil
 }
 
 // Only metadata 404 means absent. A failed pinned download is never absence evidence.

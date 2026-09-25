@@ -38,7 +38,9 @@ exact live guard generation. These writes use the existing foundation bucket aut
 Any failed or uncertain step after admission leaves the service blocked. A lost delete response
 also returns non-success even if removal committed; inspect the exact completion and generation,
 not just the workflow status. Cancellation stops local child processes but cannot recall accepted
-cloud operations. There is no unlock, takeover, expiry or automatic retry command. Read-only
+cloud operations. There is no force-unlock, takeover, expiry or automatic apply retry. The protected
+[finish operation](#finish-an-already-recorded-apply) can repeat only the final guard deletion after
+verifying recorded convergence and a completed original workflow attempt. Read-only
 assessment/drift refuses either service root while a guard is present, including before first state.
 
 This is the first enrolled writer, **not end-to-end service exclusion**. Native submissions,
@@ -92,6 +94,38 @@ unlock. A retained record proves historical convergence only: current health, na
 the previous writer still need protected reconciliation. An absent live guard proves no earlier
 outcome, and another live generation belongs to a separate operation. The command never unlocks,
 repairs evidence or retries apply. See [Storage version selection](https://docs.cloud.google.com/storage/docs/json_api/v1/objects/get).
+
+### Finish an already-recorded apply
+
+This **off-by-default** recovery path addresses only a failed final guard deletion. It cannot finish
+an incomplete apply or publish missing completion evidence. A successful workflow alone is not proof
+of convergence; the immutable completion and its exact configuration must already exist.
+
+After inspecting the exact generation, separately approve `SERVICE_OPERATION_RECOVERY_ENABLED=true`
+in the `production-foundation` environment. From clean, current `master`, select the root and service
+reported by the inspector:
+
+```text
+go run ./cmd/infra foundation finish-apply <service-foundation|service-release> <service> <guard-generation> 'FINISH <service> <guard-generation>'
+```
+
+Approve the protected run. It uses the existing foundation identity and writer concurrency; it does
+not run OpenTofu, publish configuration, execute jobs or touch Cloud Deploy. Current bootstrap inputs,
+images and secret availability are not needed. It verifies the same immutable evidence as inspection,
+then requires the [original GitHub run attempt](https://docs.github.com/en/rest/actions/workflow-runs#get-a-workflow-run-attempt)
+to be completed and bound to the recorded commit, root and service. The attempt may have failed after
+recording convergence; its conclusion is not used as apply evidence.
+
+The only possible write is deleting the current guard with its exact
+[generation precondition](https://docs.cloud.google.com/storage/docs/request-preconditions).
+An already-absent guard is a verified no-op. A successor guard, active/unknown original attempt,
+incomplete evidence or unconfirmed deletion returns non-success. Reinspect the same generation after
+an uncertain result; do not replay apply. Archived evidence is never deleted. Turn the recovery flag
+off after the approved operation and review the outcome before admitting another change.
+
+This closes an apply's recorded cleanup only, not application readiness or general interrupted-release
+recovery. It does not fence console administrators or unenrolled writers. If other native work may
+still be running, keep the service blocked and reconcile it separately before using this path.
 
 ## One owner for each responsibility
 
