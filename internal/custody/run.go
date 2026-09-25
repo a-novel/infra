@@ -42,7 +42,7 @@ func Run(ctx context.Context, args []string, getenv func(string) string, execute
 	err := run(ctx, args, getenv, execute, stdout, options)
 	if err == nil {
 		message := "Private custody operation completed."
-		if len(args) > 0 && args[0] == "operation" {
+		if len(args) > 1 && args[0] == "operation" && args[1] == "inspect" {
 			message = "Read-only inspection completed; no operation was changed."
 		}
 		_, err = fmt.Fprintln(stdout, message)
@@ -73,10 +73,10 @@ func run(ctx context.Context, args []string, getenv func(string) string, execute
 	storage := store{ctx, execute, args[2], directory}
 	switch args[0] {
 	case "operation":
-		if args[1] != "inspect" {
-			return failure{64, "Service operations support read-only inspection only."}
+		if args[1] != "inspect" && args[1] != "finish" {
+			return failure{64, "Service operations support inspection or finishing a recorded apply."}
 		}
-		return storage.inspectOperation(args[3:], getenv, output, options)
+		return storage.inspectOperation(args[1], args[3:], getenv, output, options)
 	case "config", "receipt":
 		if args[0] == "config" && args[1] == "publish" && len(args) > 3 &&
 			(args[3] == "service-foundation" || args[3] == "service-release") {

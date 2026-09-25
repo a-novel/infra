@@ -151,6 +151,7 @@ func TestServiceBootstrapBoundary(t *testing.T) {
 	bindIndex := stepIndex(t, job.Steps, "infra foundation-inputs bind")
 	bind := job.Steps[bindIndex]
 	promote := job.Steps[stepIndex(t, job.Steps, "infra promote service")]
+	finish := job.Steps[stepIndex(t, job.Steps, "infra custody operation finish")]
 	for _, testCase := range []struct {
 		name           string
 		actual, expect any
@@ -168,6 +169,17 @@ func TestServiceBootstrapBoundary(t *testing.T) {
 		{"PublicationInputs", promote.Env, map[string]string{"GH_TOKEN": "${{ github.token }}", "SELECTED_FILE": "${{ steps.inputs.outputs.file }}"}},
 		{"ApprovedGeneration", bind.Env["FOUNDATION_URI"], "${{ steps.inputs.outputs.foundation_uri }}"},
 		{"SelectedInputs", bind.Env["SELECTED_FILE"], "${{ steps.inputs.outputs.file }}"},
+		{"RecoveryActivationBeforeAuth", job.Steps[selectIndex].Env["SERVICE_OPERATION_RECOVERY_ENABLED"], "${{ vars.SERVICE_OPERATION_RECOVERY_ENABLED }}"},
+		{"RecoveryGeneration", job.Steps[selectIndex].Env["FOUNDATION_GUARD_GENERATION"], "${{ inputs.guard_generation }}"},
+		{"RecoveryConfirmation", job.Steps[selectIndex].Env["FOUNDATION_CONFIRM"], "${{ inputs.confirm }}"},
+		{"RecoveryOnly", finish.If, "inputs.operation == 'finish-apply'"},
+		{"RecoveryAuthority", job.Permissions["actions"], "read"},
+		{"RecoveryInputs", finish.Env, map[string]string{
+			"GH_TOKEN": "${{ github.token }}", "ROOT_NAME": "${{ inputs.root }}", "SELECTED_PROJECT": "${{ steps.inputs.outputs.project }}",
+			"GUARD_GENERATION": "${{ inputs.guard_generation }}", "CONFIRM": "${{ inputs.confirm }}", "STATE_BUCKET": "${{ vars.GCP_STATE_BUCKET }}",
+			"MANAGEMENT_PROJECT_ID": "${{ vars.GCP_MANAGEMENT_PROJECT_ID }}", "FOUNDATION_CONFIG": "${{ secrets.FOUNDATION_TFVARS_JSON }}",
+			"SERVICE_OPERATION_RECOVERY_ENABLED": "${{ vars.SERVICE_OPERATION_RECOVERY_ENABLED }}",
+		}},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
@@ -177,13 +189,13 @@ func TestServiceBootstrapBoundary(t *testing.T) {
 	for _, testCase := range []struct{ step, condition string }{
 		{"setup-gcloud@", "inputs.operation == 'plan' || inputs.operation == 'apply'"},
 		{"setup-opentofu@", "inputs.operation == 'plan' || inputs.operation == 'apply'"},
-		{"preflight service-secrets", "inputs.root == 'service-release' && inputs.operation != 'promote-images'"},
-		{"foundation-inputs bind", "inputs.root == 'service-release' && inputs.operation != 'promote-images'"},
+		{"preflight service-secrets", "inputs.root == 'service-release' && (inputs.operation == 'plan' || inputs.operation == 'apply')"},
+		{"foundation-inputs bind", "inputs.root == 'service-release' && (inputs.operation == 'plan' || inputs.operation == 'apply')"},
 		{"create-reviewed-plan.sh", "inputs.operation == 'plan'"},
 		{"infra custody plan apply", "inputs.operation == 'apply'"},
 		{"infra custody config publish", "inputs.operation == 'apply' && (inputs.root == 'bootstrap' || inputs.root == 'foundation')"},
 	} {
-		t.Run("ExcludePublication/"+testCase.step, func(t *testing.T) {
+		t.Run("ExcludePublicationAndFinish/"+testCase.step, func(t *testing.T) {
 			t.Parallel()
 			require.Equal(t, testCase.condition, job.Steps[stepIndex(t, job.Steps, testCase.step)].If)
 		})
@@ -206,7 +218,7 @@ func TestPrerequisiteBoundary(t *testing.T) {
 	for _, testCase := range []struct{ file, job, command, condition string }{
 		{"main", "lint-repository", "infra preflight images", ""},
 		{"release", "release", "infra preflight images", "env.RELEASE_ACTION == 'deploy'"},
-		{"foundation", "execute", "infra preflight service-images", "inputs.root == 'service-release'"},
+		{"foundation", "execute", "infra preflight service-images", "inputs.root == 'service-release' && inputs.operation != 'finish-apply'"},
 	} {
 		t.Run(testCase.file, func(t *testing.T) {
 			t.Parallel()
