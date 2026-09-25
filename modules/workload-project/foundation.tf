@@ -37,6 +37,7 @@ resource "google_project_iam_custom_role" "foundation_control_plane" {
     "storage.buckets.getIamPolicy",
     "storage.buckets.setIamPolicy",
     "storage.buckets.update",
+    "workflows.executions.get",
     "workflows.operations.get",
     "workflows.workflows.create",
     "workflows.workflows.delete",

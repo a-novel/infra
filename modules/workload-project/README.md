@@ -23,7 +23,7 @@ Its empty `service_projects` map leaves the current deployment unchanged. See th
 | `google_service_account.release`, `google_iam_workload_identity_pool_provider.release`, and `google_service_account_iam_member.release_federation` | A project-local `infra-release` account trusts only its service environment and the exact master release workflow, via a provider in the bootstrap-owned pool. No key or outbound impersonation grant. |
 | `google_storage_managed_folder.release` and `.release` IAM members                                                                                 | Protected state and receipt folders in the existing management buckets. The matching release account can write state and create/read receipts, but cannot replace or delete receipts.                  |
 | `google_storage_bucket_iam_member.release_metadata` and `google_storage_managed_folder_iam_member.plan`                                            | Release reads state-bucket metadata only; the existing plan identity gains read-only access to the selected service's state folder. Neither grant permits bucket administration.                       |
-| `google_storage_bucket_iam_member.plan_operation_reader`                                                                                           | The plan identity reads only this service's operation and native-completion records; no receipt writes or bucket listing.                                                                              |
+| `google_storage_bucket_iam_member.plan_operation_reader`                                                                                           | The plan identity reads only this service's operation, native-completion and rotation records; no receipt writes or bucket listing.                                                                    |
 
 The caller owns Shared VPC attachment, exact-subnet access for Cloud Run/MIG agents and foundation, and budget scope. These grants
 provide network attachment, not secret access or application invocation. The module creates no workloads, runtime
@@ -60,7 +60,7 @@ protected foundation account receives its control-plane role. Cloud Deploy pipel
 Cloud Run job specifications/IAM, paused Scheduler and Workflows definitions, and artifact-bucket metadata/IAM stay
 with that administrator. The role adds no direct job execution, rollout submission/approval, schedule
 resume, Workflows execution, API service writes, object payload access or token minting.
-Release, rollout and service metadata reads support the existing protected
+Release, rollout, service and Workflows execution metadata reads support the existing protected
 [completion finisher](../../docs/service-operations.md#finish-a-successful-operation). It reuses the
 foundation identity's existing management-bucket custody and selected-project job reads; no native
 mutation permission is added for completion repair.
@@ -105,7 +105,7 @@ grants must also be checked during live verification.
 
 The plan identity's existing state-folder read grant covers guards and published configuration.
 A conditional Object Viewer binding adds only exact-object reads under
-`services/<project-id>/production/operations/` and `services/<project-id>/production/native-success/`
+`services/<project-id>/production/{operations,native-success,rotations}/`
 in the receipt bucket for [operation inspection](../../docs/service-operations.md#inspect-an-interrupted-operation).
 The [object-name condition](https://docs.cloud.google.com/storage/docs/access-control/iam#conditions)
 does not authorize bucket listing or reads of other receipt prefixes. Apply and verify this grant

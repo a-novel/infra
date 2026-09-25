@@ -89,14 +89,14 @@ infra custody operation inspect <state-bucket> <registered-project> [guard-gener
 ```
 
 Omit the generation to inspect the live guard. After a lost removal acknowledgement, supply the
-guard generation acknowledged in the apply or native-release log; removed versions remain readable
+guard generation acknowledged in the apply, native-release or rotation record; removed versions remain readable
 subject to the bucket's retention/lifecycle policies. If admission itself was not acknowledged, inspect the live guard
 without treating its presence as permission to adopt it. Do not substitute configuration from
 candidate code or print the protected registration.
 
 The command uses Google's existing authentication/client and needs only object reads on the selected
-guard, completion and configuration records. Native records also need the declared service-local
-`native-success/` read grant, provisioned by a separately approved foundation apply.
+guard, completion and configuration records. Native release and rotation records also need the declared
+service-local `native-success/` and `rotations/` read grants, provisioned by a separately approved foundation apply.
 The inspector requests read-only Storage scope, checks registration
 before credentials, and never requests write authority.
 
@@ -116,6 +116,12 @@ record leaves the operation incomplete. Earlier native records retain the same s
 `operations/` pointers are no longer read or written. Existing pointers remain stored, and apply
 completion records in that namespace keep their current contract.
 
+For `scheduled-rotation`, inspection binds the JSON Keys dispatcher execution/revision and guard
+generation to `rotations/WORKFLOW_EXECUTION_ID/success.json`. It validates the recorded native operation,
+rotation execution and completion time, without querying Workflows or Run. A missing success record
+means incomplete, even if the job may have run. This proves recorded rotation success, not current
+key availability or application health.
+
 Exit zero means **inspection succeeded**, not that deployment succeeded or the service is safe to
 unlock. A retained record proves historical convergence only: current health, native operations and
 the previous writer still need protected reconciliation. An absent live guard proves no earlier
@@ -127,10 +133,10 @@ repairs evidence or retries apply. See [Storage version selection](https://docs.
 
 ### Finish a successful operation
 
-This **off-by-default** path finishes converged service-root applies with recorded completion, or
-successful native JSON Keys releases. Only native releases support reconstructing a missing completion
-record, using the same success proof as the ordinary writer. Unfinished applies, rotation and unknown
-record kinds remain blocked.
+This **off-by-default** path finishes converged service-root applies, successful native JSON Keys
+releases and recorded successful rotations. Only native releases support reconstructing a missing
+completion record, using the same success proof as the ordinary writer. Applies or rotations without
+recorded completion, and unknown record kinds, remain blocked.
 
 After inspecting the exact generation, separately approve `SERVICE_OPERATION_RECOVERY_ENABLED=true`
 in the `production-foundation` environment. From clean, current `master`, select the service and
@@ -144,16 +150,25 @@ The operation kind and any apply root come from the verified record. Direct work
 leave `root=none` and `plan_id` empty; extra selectors fail before authentication.
 Approve the protected run. It uses the existing foundation identity and writer concurrency; it does
 not run OpenTofu, publish configuration, execute jobs or mutate Cloud Deploy/Run. Current bootstrap inputs,
-images and secret availability are not needed. It verifies the same immutable evidence as inspection,
-then requires the [original GitHub run attempt](https://docs.github.com/en/rest/actions/workflow-runs#get-a-workflow-run-attempt)
+images and secret availability are not needed. It verifies the same immutable evidence as inspection.
+Applies and native releases then require the [original GitHub run attempt](https://docs.github.com/en/rest/actions/workflow-runs#get-a-workflow-run-attempt)
 to be completed and bound to the recorded commit and protected workflow action. Apply records bind
 the root/service to `foundation apply`; native records bind the exact `release.yaml` attempt to
 `production deploy-service`. The attempt may have failed after recording success; its conclusion
 is not used as completion evidence.
 
+Rotation instead reads the [exact Workflows execution](https://docs.cloud.google.com/workflows/docs/reference/executions/rest/v1/projects.locations.workflows.executions/get),
+requesting only state, end time and revision. Its recorded revision must match and the original
+dispatcher must have ended: `SUCCEEDED`, `FAILED` or `CANCELLED`. That proves the writer has stopped;
+the separate success record proves rotation succeeded. Failure/cancellation may follow successful
+publication. Active, unknown, denied or expired execution metadata cannot unlock the service.
+The declared `workflows.executions.get` permission needs a separately approved foundation apply and
+effective-permission check before use. This path never retries rotation or reconstructs missing success.
+
 When completion already exists, the only write is deleting the current guard with its exact
 [generation precondition](https://docs.cloud.google.com/storage/docs/request-preconditions). An
-already-absent guard is a verified no-op. This path checks historical evidence, not current cloud state.
+already-absent guard is a verified no-op. This path checks historical success and writer termination,
+not current application health.
 
 When native completion is missing, the original guard must still be live. Before any write, the shared
 completion proof checks the exact saved request and native release/rollout, successful candidate and
@@ -304,8 +319,8 @@ small decision boundary with table cases for competing owners, lost acknowledgem
 execution, missing receipts and stale-generation cleanup. Do not recreate a fake cloud in unit tests.
 
 The inactive JSON Keys workflow now connects the native path without activating it. Its native
-completion still needs restore consumption and repair for missing evidence. Recorded-success cleanup
-uses the protected finisher above. A separately approved
+completion still needs restore consumption; incomplete rotations and applies need separate reconciliation.
+Recorded-success cleanup uses the protected finisher above. A separately approved
 interruption/cutover drill must prove service isolation, scheduled-work exclusion,
 credential boundaries, operator recovery and receipt repair. Only that evidence permits replacing
 the corresponding legacy orchestration and its tests. Peer deployments and Renovate remain unchanged.

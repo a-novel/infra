@@ -30,6 +30,7 @@ type operationEvidence struct {
 	live      int64
 	completed bool
 	native    *submission.OperationEvidence
+	rotation  *rotationIntent
 }
 
 func (custody store) inspectOperation(action string, args []string, getenv func(string) string, output io.Writer, options []option.ClientOption) error {
@@ -119,15 +120,13 @@ func readOperation(ctx context.Context, client *storage.Service, bucket string, 
 	case "native-release":
 		evidence.native, err = submission.InspectOperation(data, generation, bucket, expected.Project, getenv, func(name string) ([]byte, error) {
 			receipts := strings.TrimSuffix(bucket, "-tofu-state") + "-deployment-receipts"
-			selected, err := liveGeneration(ctx, client, receipts, name)
-			if err != nil || selected == 0 {
-				return nil, err
-			}
-			return readObject(ctx, client, objectReference{Bucket: receipts, Name: name, Generation: selected})
+			return readCurrentObject(ctx, client, receipts, name)
 		})
 		if err == nil {
 			evidence.completed = evidence.native.Completed
 		}
+	case "scheduled-rotation":
+		evidence.rotation, evidence.completed, err = inspectRotation(ctx, client, expected, guard, data)
 	default:
 		err = failure{70, "Unsupported operation kind; retain the guard for protected reconciliation."}
 	}
@@ -187,6 +186,16 @@ func (evidence operationEvidence) report(output io.Writer) error {
 			evidence.intent.Service, evidence.intent.Project, evidence.guard.Generation, state, evidence.native.Report)
 		return err
 	}
+	if evidence.rotation != nil {
+		completion := "not recorded; rotation may still have run"
+		if evidence.completed {
+			completion = "recorded successful rotation"
+		}
+		_, err := fmt.Fprintf(output, "Service: %s (%s)\nGuard generation: %d (%s)\nRotation: %s; revision %s\nCompletion: %s\nEvidence only: not current health, a settled dispatcher, or permission to unlock or retry.\n",
+			evidence.intent.Service, evidence.intent.Project, evidence.guard.Generation, state,
+			evidence.rotation.WorkflowExecution, evidence.rotation.WorkflowRevision, completion)
+		return err
+	}
 	completion := "not recorded; apply may still have changed resources"
 	if evidence.completed {
 		completion = "recorded convergence; exact configuration verified"
@@ -202,16 +211,8 @@ func inspectCompletion(ctx context.Context, client *storage.Service, intent appl
 		Bucket: strings.TrimSuffix(guard.Bucket, "-tofu-state") + "-deployment-receipts",
 		Name:   fmt.Sprintf("services/%s/production/operations/%d.json", intent.Project, guard.Generation),
 	}
-	generation, err := liveGeneration(ctx, client, reference.Bucket, reference.Name)
-	if err != nil {
-		return false, err
-	}
-	if generation == 0 {
-		return false, nil
-	}
-	reference.Generation = generation
-	data, err := readObject(ctx, client, reference)
-	if err != nil {
+	data, err := readCurrentObject(ctx, client, reference.Bucket, reference.Name)
+	if err != nil || data == nil {
 		return false, err
 	}
 	var completion applyCompletion
@@ -232,6 +233,14 @@ func inspectCompletion(ctx context.Context, client *storage.Service, intent appl
 		return false, failure{70, "Converged configuration integrity could not be verified."}
 	}
 	return true, nil
+}
+
+func readCurrentObject(ctx context.Context, client *storage.Service, bucket, name string) ([]byte, error) {
+	generation, err := liveGeneration(ctx, client, bucket, name)
+	if err != nil || generation == 0 {
+		return nil, err
+	}
+	return readObject(ctx, client, objectReference{Bucket: bucket, Name: name, Generation: generation})
 }
 
 // Only metadata 404 means absent. A failed pinned download is never absence evidence.
