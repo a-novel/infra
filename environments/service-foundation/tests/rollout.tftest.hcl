@@ -126,6 +126,7 @@ run "execution_authority" {
         "clouddeploy.config.get", "clouddeploy.deliveryPipelines.get", "clouddeploy.jobRuns.get",
         "clouddeploy.operations.get", "clouddeploy.releases.create", "clouddeploy.releases.get",
         "clouddeploy.rollouts.create", "clouddeploy.rollouts.get", "clouddeploy.targets.get",
+        "run.services.get",
       ])
       deploy = toset([
         "clouddeploy.config.get", "logging.logEntries.create", "run.operations.get", "run.revisions.get",

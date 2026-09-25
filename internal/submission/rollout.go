@@ -30,6 +30,10 @@ func rolloutRequest(release *deploypb.Release, requestID string) *deploypb.Creat
 }
 
 func (client cloud) submitRollout(ctx context.Context, id, requestID string, output io.Writer) error {
+	return client.createRollout(ctx, id, requestID, output, false)
+}
+
+func (client cloud) createRollout(ctx context.Context, id, requestID string, output io.Writer, observe bool) error {
 	releaseRequest, release, err := client.readRelease(ctx, id)
 	if err != nil {
 		return err
@@ -67,6 +71,9 @@ func (client cloud) submitRollout(ctx context.Context, id, requestID string, out
 	if err != nil {
 		return errors.New("rollout creation wait interrupted or failed; intent and operation retained")
 	}
+	if observe {
+		return checkRolloutIdentity(request, native)
+	}
 	return reportRollout(output, request, release, native)
 }
 
@@ -102,9 +109,8 @@ func (client cloud) reconcileRollout(ctx context.Context, id string, output io.W
 }
 
 func reportRollout(output io.Writer, request *deploypb.CreateRolloutRequest, release *deploypb.Release, native *deploypb.Rollout) error {
-	submitted := &deploypb.Rollout{Name: native.GetName(), TargetId: native.GetTargetId(), Annotations: native.GetAnnotations()}
-	if !proto.Equal(request.Rollout, submitted) {
-		return errors.New("native rollout conflicts with the reserved request")
+	if err := checkRolloutIdentity(request, native); err != nil {
+		return err
 	}
 	observation := (rollout.Observer{Name: request.Rollout.Name}).Check(release, native)
 	if _, err := fmt.Fprintf(output, "Rollout %s: %s (%s). Durable success receipt remains pending.\n", request.Rollout.Name, observation.Outcome, observation.Stage); err != nil {
@@ -112,6 +118,14 @@ func reportRollout(output io.Writer, request *deploypb.CreateRolloutRequest, rel
 	}
 	if observation.Outcome != "succeeded" {
 		return errors.New("rollout completion not confirmed; inspect the same rollout before any further action")
+	}
+	return nil
+}
+
+func checkRolloutIdentity(request *deploypb.CreateRolloutRequest, native *deploypb.Rollout) error {
+	submitted := &deploypb.Rollout{Name: native.GetName(), TargetId: native.GetTargetId(), Annotations: native.GetAnnotations()}
+	if !proto.Equal(request.Rollout, submitted) {
+		return errors.New("native rollout conflicts with the reserved request")
 	}
 	return nil
 }

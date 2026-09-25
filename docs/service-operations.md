@@ -11,8 +11,9 @@ The current [foundation](../.github/workflows/foundation.yaml) and
 [release](../.github/workflows/release.yaml) workflows serialize production writes through
 `production-infrastructure`. Keep that working boundary until every replacement writer participates.
 The pilot's [submission commands](runbooks/submit-release.md) preserve immutable intent, dispatch
-once, and reconcile exact native operations. They do not yet reserve a service across different
-release IDs, foundation changes, job updates, scheduled work or final receipt publication.
+once, and reconcile exact native operations. The inactive protected caller now joins them under
+the same service guard as service-root applies and native rotation. Unenrolled legacy/shared-root
+writers and protected recovery still prevent activation.
 
 An **operation** is one reviewed change to one service, including the work needed to leave it in a
 known state. A **guard** admits that operation and blocks another. A **request intent** prevents replay
@@ -44,9 +45,17 @@ verifying recorded convergence and a completed original workflow attempt. Read-o
 assessment/drift refuses either service root while a guard is present, including before first state.
 
 Protected applies and the [native rotation dispatcher](../modules/service-job-access#guarded-rotation)
-now share admission in the inactive pilot. This is **not end-to-end service exclusion**: native release
-submissions, shared-root changes and protected recovery still need the boundaries below.
-Both pilot activation flags remain off by default; legacy production retains its existing global
+now share admission with the [guarded established-release caller](runbooks/submit-release.md#guarded-established-release).
+It holds the guard through source/render, one-shot migration, human approval/advancement, native
+verification, actual-traffic checks and immutable native completion. It leaves guarded rotation's
+schedule unchanged instead of adding another pause/resume controller.
+
+Native completion has a distinct `native-success/RELEASE_ID.json` namespace in the service receipt
+folder, with a generation-bound pointer under `operations/`. It is not a legacy recovery receipt;
+the apply inspector/finisher below does not accept this record kind. Its recovery consumer and
+protected interruption/finish procedure still need implementation and a separately approved drill.
+
+All pilot activation flags remain off by default; legacy production retains its existing global
 serialization and configuration/receipt owners. Do not activate competing writers on this basis.
 
 ### Inspect an interrupted apply
@@ -138,7 +147,7 @@ still be running, keep the service blocked and reconcile it separately before us
 | Scheduled rotation admission, dispatch and completion                  | Google Workflows               | Fixed service/job; same persistent guard, single submission, immutable evidence before release.             |
 | Migrations and rotation executions                                     | Cloud Run Jobs                 | Caller controls admission and records exact execution evidence; migrations remain outside retry hooks.      |
 | Complete API specification, revisions, traffic, deploy/verify progress | Cloud Deploy                   | Sole API writer after handoff; no parallel Go traffic controller.                                           |
-| Admission, scheduler pause/drain, final evidence                       | Small trusted Go caller        | Coordinates boundaries, not a second implementation of native rollout phases.                               |
+| Admission and final evidence                                           | Small trusted Go caller        | Reuses native adapters; no duplicate rollout controller or schedule toggle loop.                            |
 | Review, bounded tracking and operator handoff                          | GitHub Actions                 | Waits for the exact deployment and verification; reports required action or unknown outcome as non-success. |
 | Alerts when the runner is unavailable                                  | Native Google Cloud monitoring | Notification is not recovery evidence or authority to release a guard.                                      |
 
@@ -184,17 +193,17 @@ Privileged console access and IAM administrators remain explicit human coordinat
    enabled secret-version metadata, and intended operation. Enter the writer concurrency group and
    acquire the guard before changing managed resources or executing work. Repeat checks at their consumption
    boundaries; the guard cannot prevent an administrator changing a secret version.
-2. **Quiesce competing scheduled work.** Pause the selected schedule, reconcile already accepted
-   dispatch requests and drain their Cloud Run executions before changing jobs or schema. A paused
-   schedule, an HTTP acknowledgement or one empty execution list is not proof of quiescence. If an
-   accepted dispatch cannot be accounted for, stop with the guard held. Do not invent a quiet delay
-   as proof, and do not touch an unrelated service's schedule.
+2. **Exclude competing scheduled work.** Native rotation holds the same guard from admission through
+   execution and evidence, so a routine release leaves that schedule unchanged. This is safe only
+   after all direct/legacy dispatch paths are retired and their accepted executions reconciled.
+   Otherwise pause/drain remains a prerequisite: neither a paused schedule, an acknowledgement nor
+   one empty execution list proves quiescence. Never touch an unrelated service's schedule.
 3. **Execute through the existing owners.** Apply only the selected reviewed plan; bind submission
    to its converged job configuration. Persist request intent, dispatch a migration once, then require
    its exact successful evidence before rollout. Cloud Deploy owns deployment/verification/traffic;
    approval and advancement stay within this operation's exclusion. Unknown outcomes stop progression.
 4. **Record and finish.** Verify the exact candidate and stable phases, publish the immutable recovery
-   receipt, then restore the intended compatible schedule state. Publish immutable operation-completion
+   receipt, then confirm the intended compatible schedule state. Publish immutable operation-completion
    evidence binding the guard generation to the settled native work and receipt. Only then release
    that generation. A missing receipt is repaired from evidence, not by rerunning deployment.
 
@@ -255,7 +264,8 @@ leaves safety to undocumented callers. Keep native SDK waiting and Cloud Deploy 
 small decision boundary with table cases for competing owners, lost acknowledgements, ambiguous
 execution, missing receipts and stale-generation cleanup. Do not recreate a fake cloud in unit tests.
 
-Then connect one inactive, end-to-end JSON Keys workflow for review, with no live activation implied.
-A separately approved interruption/cutover drill must prove service isolation, scheduler draining,
+The inactive JSON Keys workflow now connects the native path without activating it. Its native
+completion still needs a recovery reader and protected repair/finish path. A separately approved
+interruption/cutover drill must prove service isolation, scheduled-work exclusion,
 credential boundaries, operator recovery and receipt repair. Only that evidence permits replacing
 the corresponding legacy orchestration and its tests. Peer deployments and Renovate remain unchanged.

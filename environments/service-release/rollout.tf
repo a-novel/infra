@@ -59,10 +59,8 @@ locals {
   rollout_parent           = var.rollout == null ? null : "projects/${var.rollout.project_number}/locations/${var.region}/deliveryPipelines/agora-json-keys-grpc"
 }
 
-output "release_request" {
-  description = "Native CreateReleaseRequest JSON for the existing submitter; configuration only, not submission intent, readiness or approval."
-  sensitive   = true
-  value = var.rollout == null ? null : {
+locals {
+  release_request = var.rollout == null ? null : {
     parent    = local.rollout_parent
     releaseId = var.rollout.release_id
     requestId = var.rollout.request_id
@@ -88,4 +86,10 @@ output "release_request" {
       }
     }
   }
+}
+
+output "release_request" {
+  description = "Native CreateReleaseRequest JSON for the existing submitter; configuration only, not submission intent, readiness or approval."
+  sensitive   = true
+  value       = local.release_request
 }

@@ -1,7 +1,6 @@
 package artifact
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -46,20 +45,9 @@ func Run(ctx context.Context, args []string, execute func(context.Context, io.Wr
 	if err != nil {
 		return stop(65, "Release prerequisite inputs are invalid; inspect the reviewed manifest and selected configuration.")
 	}
-	read := func(name string, args ...string) ([]byte, error) {
-		ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-		defer cancel()
-		var output bytes.Buffer
-		err := execute(ctx, &output, name, args...)
-		return output.Bytes(), err
-	}
 	if args[0] == "service-secrets" {
-		for _, key := range inputs.secretKeys() {
-			state, err := read("gcloud", "secrets", "versions", "describe", strconv.FormatInt(inputs.Secrets[key], 10),
-				"--secret=production-"+inputs.Service+"-"+key, "--project="+inputs.Management, "--format=value(state)", "--quiet")
-			if err != nil || strings.TrimSpace(string(state)) != "ENABLED" {
-				return stop(70, "A selected job secret version is unavailable or not enabled.")
-			}
+		if err := inputs.verifySecrets(ctx, execute); err != nil {
+			return stop(70, err.Error())
 		}
 	} else {
 		for _, image := range images {
@@ -74,6 +62,30 @@ func Run(ctx context.Context, args []string, execute func(context.Context, io.Wr
 	return 0
 }
 
+// VerifyServiceSecrets checks enabled versions from the already-bound input bytes,
+// avoiding a second read of a mutable local file during a guarded operation.
+func VerifyServiceSecrets(ctx context.Context, data []byte, execute func(context.Context, io.Writer, string, ...string) error) error {
+	inputs, err := parseService(data)
+	if err != nil {
+		return err
+	}
+	return inputs.verifySecrets(ctx, execute)
+}
+
+func (inputs serviceInputs) verifySecrets(ctx context.Context, execute func(context.Context, io.Writer, string, ...string) error) error {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	for _, key := range inputs.secretKeys() {
+		var state strings.Builder
+		err := execute(ctx, &state, "gcloud", "secrets", "versions", "describe", strconv.FormatInt(inputs.Secrets[key], 10),
+			"--secret=production-"+inputs.Service+"-"+key, "--project="+inputs.Management, "--format=value(state)", "--quiet")
+		if err != nil || strings.TrimSpace(state.String()) != "ENABLED" {
+			return errors.New("a selected job secret version is unavailable or not enabled")
+		}
+	}
+	return nil
+}
+
 func verifyImage(ctx context.Context, image release.SourceImage, execute func(context.Context, io.Writer, string, ...string) error, registry Registry) error {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
@@ -84,4 +96,32 @@ func verifyImage(ctx context.Context, image release.SourceImage, execute func(co
 		return errors.New("a release image lacks a valid producer attestation")
 	}
 	return registry.Verify(ctx, image)
+}
+
+// VerifyService binds selected configuration to its complete producer family.
+// Promoted also checks immutable destination tags; it never copies images.
+func VerifyService(ctx context.Context, manifest string, data []byte, promoted bool, execute func(context.Context, io.Writer, string, ...string) error, registry Registry) error {
+	inputs, err := parseService(data)
+	if err != nil {
+		return err
+	}
+	images, err := release.VerificationImages(manifest, inputs.Service)
+	if err != nil {
+		return errors.New("invalid selected image family")
+	}
+	if err := inputs.bindImages(images); err != nil {
+		return err
+	}
+	for _, image := range images {
+		if err := verifyImage(ctx, image, execute, registry); err != nil {
+			return err
+		}
+		if promoted {
+			image.Repository = inputs.destination(image)
+			if err := registry.Verify(ctx, image); err != nil {
+				return errors.New("selected promoted image is unavailable or differs from its producer")
+			}
+		}
+	}
+	return nil
 }

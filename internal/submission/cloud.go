@@ -12,6 +12,7 @@ import (
 	"cloud.google.com/go/deploy/apiv1/deploypb"
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	cloudrun "cloud.google.com/go/run/apiv2"
+	"cloud.google.com/go/run/apiv2/runpb"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/storage/v1"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -23,6 +24,9 @@ type cloud struct {
 	deploy  *deploy.CloudDeployClient
 	storage *storage.Service
 	jobs    *cloudrun.JobsClient
+	// Present only for the protected operation: the ETag-bound read at dispatch
+	// must still match the template independently approved before authentication.
+	migrationTemplate *runpb.ExecutionTemplate
 }
 
 func (client cloud) submit(ctx context.Context, request *deploypb.CreateReleaseRequest, output io.Writer) error {
@@ -123,16 +127,21 @@ func (client cloud) create(ctx context.Context, name string, message proto.Messa
 // upload never replaces a live object. Record callers require its acknowledgement;
 // source publication may instead establish identical immutable contents by reading.
 func (client cloud) upload(ctx context.Context, name string, data []byte, contentType string) error {
-	object, err := client.storage.Objects.Insert(client.scope.ReceiptBucket, &storage.Object{Name: name}).
+	_, err := client.uploadTo(ctx, client.scope.ReceiptBucket, name, data, contentType)
+	return err
+}
+
+func (client cloud) uploadTo(ctx context.Context, bucket, name string, data []byte, contentType string) (*storage.Object, error) {
+	object, err := client.storage.Objects.Insert(bucket, &storage.Object{Name: name}).
 		Media(bytes.NewReader(data), googleapi.ContentType(contentType), googleapi.ChunkSize(0)).
 		IfGenerationMatch(0).Context(ctx).Do()
 	if err != nil {
-		return errors.New("cannot confirm create-only private object")
+		return nil, errors.New("cannot confirm create-only private object")
 	}
-	if object.Name != name || object.Bucket != client.scope.ReceiptBucket || object.Generation <= 0 {
-		return errors.New("unexpected private object identity")
+	if object == nil || object.Name != name || object.Bucket != bucket || object.Generation <= 0 {
+		return nil, errors.New("unexpected private object identity")
 	}
-	return nil
+	return object, nil
 }
 
 func report(output io.Writer, request *deploypb.CreateReleaseRequest, release *deploypb.Release) error {

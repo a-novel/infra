@@ -92,6 +92,9 @@ func (client cloud) startMigration(ctx context.Context, name string, release *de
 	if job.Template.Template.Containers[0].Image != image {
 		return nil, nil, errors.New("migrations job does not match the reviewed image")
 	}
+	if client.migrationTemplate != nil && !proto.Equal(job.Template, client.migrationTemplate) {
+		return nil, nil, errors.New("migrations configuration changed after operation admission")
+	}
 	if err := client.scope.checkMigrationJob(job, release); err != nil {
 		return nil, nil, err
 	}

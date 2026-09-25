@@ -25,9 +25,16 @@ type serviceInputs struct {
 }
 
 func readService(file string) (serviceInputs, error) {
-	var inputs serviceInputs
 	data, err := os.ReadFile(file)
-	if err != nil || json.Unmarshal(data, &inputs) != nil {
+	if err != nil {
+		return serviceInputs{}, errors.New("cannot read service inputs")
+	}
+	return parseService(data)
+}
+
+func parseService(data []byte) (serviceInputs, error) {
+	var inputs serviceInputs
+	if json.Unmarshal(data, &inputs) != nil {
 		return inputs, errors.New("invalid service inputs")
 	}
 	project := regexp.MustCompile(`^[a-z][a-z0-9-]{4,28}[a-z0-9]$`)

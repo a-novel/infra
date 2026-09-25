@@ -16,6 +16,9 @@ var rolloutNamePattern = regexp.MustCompile(`^projects/[1-9][0-9]*/locations/[a-
 type Observer struct {
 	Name    string
 	Timeout time.Duration
+	// AwaitActions keeps the calling operation waiting for a human to approve or
+	// advance. Other intervention states still stop; this never grants approval.
+	AwaitActions bool
 }
 
 // Observation is a payload-free verdict on rollout completion, not a recovery receipt.

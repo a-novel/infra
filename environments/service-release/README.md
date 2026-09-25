@@ -10,7 +10,8 @@ root nor its future caller needs foundation-state access.
 
 **Code only:** trusted assessment and drift can inspect this root. The protected
 [job bootstrap](../../docs/runbooks/provision-service-projects.md#protected-service-job-bootstrap)
-is disabled by default; routine release remains unconnected.
+and [guarded native release](../../docs/runbooks/submit-release.md#guarded-established-release)
+are disabled by default.
 Applying a job specification does not run it. The root creates no API, initializer, scheduler, identity or IAM grant.
 Cloud Deploy owns API specifications and traffic; protected foundation owns databases, IAM, schedules
 and alerts. Existing production resources and state stay unchanged.
@@ -67,7 +68,8 @@ arguments and removes the selected pair before apply. A failed or ambiguous cons
 must block mutation. The provider owns state locking. The protected workflow retains global
 infrastructure serialization and uses [guarded service-root apply](../../docs/service-operations.md#implemented-service-root-apply)
 through convergence, configuration and completion publication. Standalone service configuration
-publication is refused. This does not yet enroll migrations, Cloud Deploy or scheduled executions.
+publication is refused. The inactive native release and rotation callers use the same guard;
+shared-root ownership transfer and interrupted-native-operation recovery remain separate work.
 
 Metadata enforces the 24-hour apply deadline. Bootstrap declares native
 [plan cleanup](../../bootstrap/README.md#plan-artifact-expiration) after age 2 days, restricted to the
@@ -75,7 +77,7 @@ Metadata enforces the 24-hour apply deadline. Bootstrap declares native
 Protected bootstrap apply and live verification remain prerequisites before writer activation.
 `SERVICE_JOB_BOOTSTRAP_ENABLED=true` permits only create/no-op plans for this service's exact
 application jobs. Updates, imports, moves, replacements, deletions and other resources fail regardless
-of deletion approval. Routine writes and output export remain disabled.
+of deletion approval. Routine job updates remain disabled.
 
 ## Approved foundation handoff
 
@@ -111,7 +113,7 @@ downloader or new dependency is introduced.
 Coordinates describe configuration, not database health, firewall reachability or migration history.
 Require separate readiness evidence, verify effective IAM, and retain every referenced object generation
 through the lifetime of its consumers. A document left by an interrupted foundation apply is not approval.
-Automatic reference approval and routine release remain unconnected.
+Automatic reference approval remains deliberately absent.
 
 | Root resource address                               | Owner and lifecycle                                                                   |
 | --------------------------------------------------- | ------------------------------------------------------------------------------------- |
@@ -152,6 +154,24 @@ same-service exclusion and the native submission reservation remain separate gat
 ambiguous submission never authorizes regenerating IDs or replaying migrations. There is still no
 live caller; Authentication API support and production ownership transfer remain separate work.
 
+## Guarded operation output
+
+`release_operation` defaults to `null`. Alongside `rollout`, it accepts the predetermined
+`predecessor` release ID and a distinct nonzero `rollout_request_id`. After convergence, its sensitive
+output adds the jobs' exact UIDs/native task templates to the existing request, image pins, secret
+references and foundation handoff. There is no second resource specification or Go renderer.
+
+The separately approved output becomes `SERVICE_RELEASE_OPERATION_JSON` in the protected
+`production-json-keys-release` environment. Leave it unset and `SERVICE_NATIVE_RELEASE_ENABLED`
+off until activation review. Do not export unknown planned UIDs, use newest-state selection, or
+hand-edit a request to bypass convergence. The caller rejects live UID/template drift and requires
+the exact predecessor's verified revision to own all ordinary traffic before migrating.
+
+This first routine path executes existing jobs without changing them, then hands API deployment to
+Cloud Deploy and records native completion. It does not bootstrap an API, update jobs/databases,
+approve/advance rollouts, or produce a legacy recovery receipt. See the
+[guarded caller contract](../../docs/runbooks/submit-release.md#guarded-established-release).
+
 ## Bootstrap before routine release
 
 A separately reviewed protected bootstrap must create the jobs **in this destination state** after
@@ -191,12 +211,15 @@ Each execution has one task on 1 CPU / 512 MiB with the image's own entrypoint. 
 ten-minute timeout and zero task retries; idempotent rotation has five minutes and one retry.
 Google's [task retry setting](https://docs.cloud.google.com/run/docs/configuring/max-retries)
 does not prevent two separately dispatched executions. Keep same-service exclusion around job
-updates, migrations, API rollout and receipt publication, including pausing/draining/resuming rotation.
+updates, migrations, API rollout and receipt publication. Once every rotation dispatcher holds the
+same guard until completion, the routine release can leave scheduling unchanged; existing direct
+dispatch paths must first be retired and their accepted work reconciled.
 Migrations remain outside Cloud Deploy retry hooks. An ambiguous dispatch requires reconciliation of
 its exact execution; neither a timeout nor a missing receipt permits replay.
 The inactive JSON Keys [submission adapter](../../docs/runbooks/submit-release.md#run-the-exact-migration-once)
 now reserves migration intent and saves exact execution evidence. Its rollout command requires that
-evidence. Live caller integration and same-service exclusion remain activation prerequisites.
+evidence. The inactive guarded caller connects these adapters; the ownership-transfer and recovery
+drill remain activation prerequisites.
 
 Both job types use all-traffic Direct VPC egress and their service's network tag. The host foundation
 must provide private database access, restricted Google API routing and the Cloud Run service-agent

@@ -14,6 +14,7 @@ locals {
       "clouddeploy.rollouts.create",
       "clouddeploy.rollouts.get",
       "clouddeploy.targets.get",
+      "run.services.get",
     ]
     deploy = [
       "clouddeploy.config.get",

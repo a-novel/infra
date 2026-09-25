@@ -54,6 +54,12 @@ func ServiceScopes(getenv func(string) string, bucket string) (map[string]string
 	return scopes, nil
 }
 
+// ServiceScope authorizes a service's native input coordinates against protected
+// foundation registration. It does not establish configuration convergence.
+func ServiceScope(data []byte, getenv func(string) string, bucket string) (string, error) {
+	return serviceFoundationScope(data, getenv, bucket)
+}
+
 func foundationInputs(args []string, getenv func(string) string, stdout io.Writer) error {
 	invalid := errors.New("invalid protected foundation inputs")
 	if len(args) != 4 {

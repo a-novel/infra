@@ -31,7 +31,7 @@ run "json_keys_jobs" {
   }
 
   assert {
-    condition     = output.release_request == null
+    condition     = output.release_request == null && output.release_operation == null
     error_message = "The API request must remain absent unless explicitly configured."
   }
 
@@ -314,6 +314,54 @@ run "native_request" {
     condition     = jsonencode(output.release_request) == jsonencode(yamldecode(file("../../internal/submission/testdata/request.yaml")))
     error_message = "HCL must produce the existing native request contract with the same database, runtime, network and secret pins as the jobs."
   }
+}
+
+run "guarded_operation" {
+  command = plan
+  variables {
+    foundation      = run.documents.cases.rollout.foundation
+    foundation_json = run.documents.cases.rollout.foundation_json
+    rollout         = run.documents.rollout_input
+    release_operation = {
+      predecessor        = "previous"
+      rollout_request_id = "33333333-3333-4333-8333-333333333333"
+    }
+  }
+
+  assert {
+    condition = (
+      jsonencode(output.release_operation.request) == jsonencode(output.release_request) &&
+      jsonencode(output.release_operation.foundation) == jsonencode(var.foundation) &&
+      output.release_operation.foundation_json == var.foundation_json &&
+      output.release_operation.predecessor == "previous" &&
+      jsonencode(output.release_operation.images) == jsonencode(var.images) &&
+      jsonencode(output.release_operation.secret_versions) == jsonencode(var.secret_versions) &&
+      alltrue([for role, native in output.release_operation.jobs :
+        native.name == "projects/${var.rollout.project_number}/locations/${var.region}/jobs/agora-json-keys-${role}" &&
+        native.template.taskCount == 1 && native.template.parallelism == 1 &&
+        native.template.template.serviceAccount == google_cloud_run_v2_job.application[role].template[0].template[0].service_account &&
+        native.template.template.containers[0].image == var.images[role] &&
+        { for env in native.template.template.containers[0].env : env.name => env.value if can(env.value) } ==
+        { for env in google_cloud_run_v2_job.application[role].template[0].template[0].containers[0].env : env.name => env.value if length(env.value_source) == 0 } &&
+        jsonencode({ for env in native.template.template.containers[0].env : env.name => env.valueSource.secretKeyRef if can(env.valueSource) }) ==
+        jsonencode({ for env in google_cloud_run_v2_job.application[role].template[0].template[0].containers[0].env : env.name => env.value_source[0].secret_key_ref[0] if length(env.value_source) > 0 })
+      ])
+    )
+    error_message = "The operation must retain the same approved request, foundation, family, secret references and native job configuration; no second resource owner."
+  }
+}
+
+run "reject_operation_without_api" {
+  command = plan
+  variables {
+    foundation      = run.documents.cases.json_keys.foundation
+    foundation_json = run.documents.cases.json_keys.foundation_json
+    release_operation = {
+      predecessor        = "previous"
+      rollout_request_id = "33333333-3333-4333-8333-333333333333"
+    }
+  }
+  expect_failures = [var.release_operation]
 }
 
 run "numeric_foundation_names" {
