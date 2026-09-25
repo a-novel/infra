@@ -2,6 +2,7 @@ package submission
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	jsonv2 "encoding/json/v2"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/deploy/apiv1/deploypb"
+	"google.golang.org/api/option"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
@@ -35,13 +37,32 @@ type nativeCompletion struct {
 }
 
 // OperationEvidence identifies the writer and historical outcome of a native release.
-// It grants no authority to replay work or publish missing completion evidence.
+// It grants no authority to replay work. Only InspectOperation supplies the private
+// configuration needed by the separately authorized completion finisher.
 type OperationEvidence struct {
 	RunID, RunAttempt, Commit string
 	// Completed requires the exact generation-bound successful native record.
 	Completed bool
 	// Report contains only validated identifiers and the historical outcome.
-	Report string
+	Report        string
+	input         operationInputs
+	configuration []byte
+	generation    int64
+}
+
+// RecordCompletion proves and saves missing native success without changing cloud
+// resources or deleting admission. The caller must independently authorize recovery
+// and establish that the exact original workflow attempt has ended first.
+func (evidence OperationEvidence) RecordCompletion(ctx context.Context, options ...option.ClientOption) error {
+	if evidence.generation <= 0 || evidence.Completed {
+		return errors.New("missing inspected native completion required")
+	}
+	return withOperation(ctx, evidence.input, evidence.configuration, options, func(operation serviceOperation) error {
+		operation.generation = evidence.generation
+		request, _ := operation.scope.request(operation.input.Request)
+		_, err := operation.recordCompletion(ctx, request.ReleaseId)
+		return err
+	})
 }
 
 // InspectOperation validates historical native completion. read is confined to the
@@ -77,6 +98,7 @@ func InspectOperation(data []byte, generation int64, bucket, project string, get
 	return &OperationEvidence{
 		RunID: guard.RunID, RunAttempt: guard.RunAttempt, Commit: request.Release.Annotations["source-commit"],
 		Completed: data != nil,
+		input:     input, configuration: guard.Configuration, generation: generation,
 		Report: fmt.Sprintf("Native release: %s; run %s-%s; commit %s\nRollout: %s/rollouts/production\nCompletion: %s\n",
 			request.ReleaseId, guard.RunID, guard.RunAttempt, request.Release.Annotations["source-commit"], request.Release.Name, completion),
 	}, nil

@@ -60,6 +60,10 @@ protected foundation account receives its control-plane role. Cloud Deploy pipel
 Cloud Run job specifications/IAM, paused Scheduler and Workflows definitions, and artifact-bucket metadata/IAM stay
 with that administrator. The role adds no direct job execution, rollout submission/approval, schedule
 resume, Workflows execution, API service writes, object payload access or token minting.
+Release, rollout and service metadata reads support the existing protected
+[completion finisher](../../docs/service-operations.md#finish-a-successful-operation). It reuses the
+foundation identity's existing management-bucket custody and selected-project job reads; no native
+mutation permission is added for completion repair.
 
 The existing Viewer grant is supplemented with policy reads for the plan account. Resource metadata
 and IAM-policy inspection are separate permissions; both are required for a complete refresh.

@@ -120,6 +120,11 @@ func TestOperationEvidence(t *testing.T) {
 				var calls, liveReads, deletes atomic.Int32
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					calls.Add(1)
+					if action == "finish" && testCase.name == "Success/Incomplete" && r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v2/") {
+						// Missing completion alone cannot finish: live native proof is unavailable.
+						w.WriteHeader(http.StatusForbidden)
+						return
+					}
 					if r.Method == http.MethodDelete && action == "finish" && r.URL.Path == guardPath {
 						deletes.Add(1)
 						if r.URL.Query().Get("ifGenerationMatch") != "42" || r.URL.Query().Has("generation") {
