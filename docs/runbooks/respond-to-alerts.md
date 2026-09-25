@@ -272,6 +272,11 @@ The inactive [service job module](../../modules/service-job-access#completion-mo
 channel. This is **not** the current combined production policy above. Do not use the legacy project
 coordinates to investigate a future service-project incident.
 
+`Agora JSON Keys rotation dispatcher failed` separately reports failed/cancelled native Workflows
+executions. Follow [guarded rotation inspection](../../modules/service-job-access#inspect-retained-admission):
+inspect its exact execution/revision, retained guard and saved Cloud Run operation. A dispatcher can
+fail before RunJob or after successful rotation; neither case authorizes replay or guard deletion.
+
 First verify the incident's project, region and exact job against the published service contract.
 Inspect only native execution names, start/completion times and status, then the associated release
 and schedule-attempt metadata. The policy covers unsuccessful completions, and for JSON Keys both

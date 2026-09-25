@@ -15,7 +15,7 @@ Its empty `service_projects` map leaves the current deployment unchanged. See th
 | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `google_project.service`                                                                                                                           | One explicit project ID, exactly one organization/folder parent, no default VPC, provider deletion prevention and `prevent_destroy`.                                                                   |
 | `google_project_service.api`                                                                                                                       | Foundation owns the declared APIs, including Cloud Build, Cloud Deploy and Storage; removing an entry leaves the API enabled for retained workloads and recovery.                                      |
-| `google_project_service_identity.agent` and `google_project_iam_member.service_agent`                                                              | Create the Google-managed Run, Build, Deploy, Scheduler and Compute agents with their documented project roles.                                                                                        |
+| `google_project_service_identity.agent` and `google_project_iam_member.service_agent`                                                              | Create the Google-managed Run, Build, Deploy, Scheduler, Workflows and Compute agents with their documented project roles.                                                                             |
 | `google_project_default_service_accounts.service`                                                                                                  | Deprivilege default accounts after API activation. This is a creation-time repair; effective organization policies prevent future automatic grants and user-managed keys.                              |
 | `google_project_iam_member.foundation`, `.metadata`, and `google_project_iam_custom_role.metadata`                                                 | Project and service-account maintenance for the protected foundation identity. This is privileged IAM administration, not a service deployment role.                                                   |
 | `google_project_iam_member.plan`                                                                                                                   | Metadata assessment by the existing read-only plan identity. No payload access is declared.                                                                                                            |
@@ -57,9 +57,9 @@ deprivileging does not establish that this separate agent has only its declared 
 
 `foundation.tf` declares configuration permissions for the inactive service foundation. Only the
 protected foundation account receives its control-plane role. Cloud Deploy pipeline/target management,
-Cloud Run job specifications/IAM, paused Scheduler configuration and artifact-bucket metadata/IAM stay
+Cloud Run job specifications/IAM, paused Scheduler and Workflows definitions, and artifact-bucket metadata/IAM stay
 with that administrator. The role adds no direct job execution, rollout submission/approval, schedule
-resume, API service writes, object payload access or token minting.
+resume, Workflows execution, API service writes, object payload access or token minting.
 
 The existing Viewer grant is supplemented with policy reads for the plan account. Resource metadata
 and IAM-policy inspection are separate permissions; both are required for a complete refresh.

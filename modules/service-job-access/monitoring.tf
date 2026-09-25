@@ -8,6 +8,47 @@ locals {
   rotation_success = "${local.execution_metric} AND resource.labels.job_name=\"agora-json-keys-rotatekeys\" AND metric.labels.result=\"succeeded\""
 }
 
+resource "google_monitoring_alert_policy" "dispatcher" {
+  count = var.runtime.service == "json-keys" ? 1 : 0
+
+  project               = var.runtime.project_id
+  display_name          = "Agora JSON Keys rotation dispatcher failed"
+  combiner              = "OR"
+  enabled               = true
+  severity              = "ERROR"
+  notification_channels = sort(tolist(var.runtime.notification_channels))
+  deletion_policy       = "DELETE"
+
+  conditions {
+    display_name = "Native workflow failed or was cancelled"
+    condition_matched_log {
+      filter = join(" AND ", [
+        "resource.type=\"workflows.googleapis.com/Workflow\"",
+        "resource.labels.project_id=\"${var.runtime.project_id}\"",
+        "resource.labels.location=\"${var.runtime.region}\"",
+        "resource.labels.workflow_id=\"agora-json-keys-rotation\"",
+        "log_id(\"workflows.googleapis.com/executions_system\")",
+        "jsonPayload.state=(\"FAILED\" OR \"CANCELLED\")",
+      ])
+    }
+  }
+
+  alert_strategy {
+    notification_rate_limit { period = "300s" }
+    auto_close           = "604800s"
+    notification_prompts = ["OPENED"]
+  }
+
+  documentation {
+    mime_type = "text/markdown"
+    content   = <<-EOT
+      Inspect the exact Workflows execution in ${var.runtime.project_id}/${var.runtime.region} and its saved Cloud Run operation.
+      The service guard may still be held even if the job succeeded. Never delete it, retry RunJob or resume rotation as cleanup.
+      Follow [guarded rotation inspection](https://github.com/a-novel/infra/blob/master/modules/service-job-access/README.md#guarded-rotation).
+    EOT
+  }
+}
+
 resource "google_monitoring_alert_policy" "jobs" {
   project               = var.runtime.project_id
   display_name          = "Agora ${var.runtime.service} application jobs unhealthy"

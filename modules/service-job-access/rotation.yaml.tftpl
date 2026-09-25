@@ -1,0 +1,180 @@
+# Mutation calls have no retries or failure cleanup. An uncertain outcome keeps admission closed.
+main:
+  steps:
+    - scope:
+        assign:
+          - jobName: projects/${project_id}/locations/${region}/jobs/agora-json-keys-rotatekeys
+          - executionID: $${sys.get_env("GOOGLE_CLOUD_WORKFLOW_EXECUTION_ID")}
+          - records: $${"${records}" + executionID + "/"}
+          - intent:
+              schemaVersion: 1
+              kind: scheduled-rotation
+              project: ${project_id}
+              service: json-keys
+              region: ${region}
+              workflowExecution: $${"${workflow}/executions/" + executionID}
+              workflowRevision: $${sys.get_env("GOOGLE_CLOUD_WORKFLOW_REVISION_ID")}
+    - acquire:
+        try:
+          call: http.post
+          args:
+            url: https://storage.googleapis.com/upload/storage/v1/b/${state_bucket}/o
+            auth: {type: OAuth2}
+            query: {uploadType: media, name: "${guard}", ifGenerationMatch: 0}
+            body: $${intent}
+          result: guard
+        except:
+          as: error
+          steps:
+            - busy:
+                switch:
+                  - condition: $${map.get(error, "code") == 412}
+                    return: {status: busy}
+            - uncertain:
+                raise: "Guard acquisition uncertain; inspect this workflow before any retry."
+    - acquired:
+        switch:
+          - condition: $${guard.body.bucket != "${state_bucket}" or guard.body.name != "${guard}" or int(guard.body.generation) <= 0}
+            raise: "Guard acknowledgement invalid; retain admission."
+    - readJob:
+        # The request fixes scope; the API may canonicalize its project ID to a number.
+        call: googleapis.run.v2.projects.locations.jobs.get
+        args: {name: '$${jobName}'}
+        result: job
+    - readyJob:
+        switch:
+          - condition: $${default(map.get(job, "reconciling"), false) or job.generation != job.observedGeneration or job.terminalCondition.state != "CONDITION_SUCCEEDED"}
+            raise: "Rotation job has not converged; retain admission."
+          - condition: $${job.uid == "" or job.etag == "" or job.template.taskCount != 1 or job.template.parallelism != 1}
+            raise: "Rotation job identity or task count invalid; retain admission."
+          - condition: $${len(job.template.template.containers) != 1 or job.template.template.serviceAccount != "${runtime}"}
+            raise: "Rotation runtime invalid; retain admission."
+          - condition: $${job.template.template.timeout != "300s" or job.template.template.maxRetries != 1}
+            raise: "Rotation task policy invalid; retain admission."
+    - pinImage:
+        switch:
+          - condition: $${not text.match_regex(job.template.template.containers[0].image, "^${region}-docker[.]pkg[.]dev/${project_id}/agora-production/service-json-keys/jobs/rotatekeys@sha256:[a-f0-9]{64}$")}
+            raise: "Rotation image is not an immutable service-owned digest; retain admission."
+          - condition: $${len(default(map.get(job.template.template.containers[0], "command"), [])) != 0 or len(default(map.get(job.template.template.containers[0], "args"), [])) != 0}
+            raise: "Rotation entrypoint must come from its approved image; retain admission."
+    - recordIntent:
+        call: record
+        args:
+          name: $${records + "intent.json"}
+          body:
+            operation: $${intent}
+            guardGeneration: $${guard.body.generation}
+            job: $${job.name}
+            jobUID: $${job.uid}
+            jobGeneration: $${job.generation}
+            jobEtag: $${job.etag}
+            image: $${job.template.template.containers[0].image}
+    - dispatch:
+        call: http.post
+        args:
+          url: $${"https://run.googleapis.com/v2/" + jobName + ":run"}
+          auth: {type: OAuth2}
+          body: {etag: '$${job.etag}'}
+        result: submitted
+    - recordOperation:
+        call: record
+        args:
+          name: $${records + "operation.json"}
+          body:
+            guardGeneration: $${guard.body.generation}
+            operation: $${submitted.body.name}
+            execution: $${map.get(submitted.body, ["metadata", "name"])}
+            executionUID: $${map.get(submitted.body, ["metadata", "uid"])}
+    - observe:
+        call: awaitOperation
+        args: {name: '$${submitted.body.name}'}
+        result: operation
+    - settled:
+        switch:
+          - condition: $${map.get(operation, "error") != null}
+            raise: "Rotation operation failed; inspect the exact operation and retain admission."
+    - execution:
+        call: googleapis.run.v2.projects.locations.jobs.executions.get
+        args: {name: '$${operation.response.name}'}
+        result: execution
+    - exactExecution:
+        # RunJob's ETag binds the template; the dispatcher has no override permission.
+        switch:
+          - condition: $${execution.job != job.name or execution.name != operation.response.name or execution.uid != operation.response.uid}
+            raise: "Execution differs from the reserved job; retain admission."
+          - condition: $${map.get(submitted.body, ["metadata", "uid"]) != null and submitted.body.metadata.uid != execution.uid}
+            raise: "Execution differs from the dispatch acknowledgement; retain admission."
+          - condition: $${default(map.get(execution, "reconciling"), false) or map.get(execution, "completionTime") == null or map.get(execution, "deleteTime") != null}
+            raise: "Execution is not settled; retain admission."
+          - condition: $${execution.taskCount != 1 or execution.parallelism != 1 or default(map.get(execution, "succeededCount"), 0) != 1}
+            raise: "Rotation task did not succeed; retain admission."
+          - condition: $${default(map.get(execution, "runningCount"), 0) != 0 or default(map.get(execution, "failedCount"), 0) != 0 or default(map.get(execution, "cancelledCount"), 0) != 0}
+            raise: "Rotation still running, failed or cancelled; retain admission."
+    - completionState:
+        assign: [{completed: false}]
+    - conditions:
+        for:
+          value: condition
+          in: $${execution.conditions}
+          steps:
+            - completed:
+                switch:
+                  - condition: $${condition.type == "Completed" and condition.state == "CONDITION_SUCCEEDED"}
+                    assign: [{completed: true}]
+    - requireSuccess:
+        switch:
+          - condition: $${not completed}
+            raise: "Successful completion condition missing; retain admission."
+    - recordSuccess:
+        call: record
+        args:
+          name: $${records + "success.json"}
+          body:
+            operation: $${intent}
+            guardGeneration: $${guard.body.generation}
+            runOperation: $${operation.name}
+            execution: $${execution.name}
+            executionUID: $${execution.uid}
+            completedAt: $${execution.completionTime}
+    - release:
+        call: http.delete
+        args:
+          url: https://storage.googleapis.com/storage/v1/b/${state_bucket}/o/${urlencode(guard)}
+          auth: {type: OAuth2}
+          query: {ifGenerationMatch: '$${guard.body.generation}'}
+    - done:
+        return: {status: succeeded, execution: '$${execution.name}'}
+
+# Only reads repeat. A timeout never cancels or submits another Cloud Run execution.
+awaitOperation:
+  params: [name]
+  steps:
+    - deadline:
+        assign: [{until: '$${sys.now() + 1800}'}]
+    - read:
+        call: googleapis.run.v2.projects.locations.operations.get
+        args: {name: '$${name}'}
+        result: operation
+    - state:
+        switch:
+          - condition: $${default(map.get(operation, "done"), false)}
+            return: $${operation}
+          - condition: $${sys.now() >= until}
+            raise: "Rotation observation timed out; inspect the saved operation and retain admission."
+    - wait:
+        call: sys.sleep
+        args: {seconds: 10}
+        next: read
+
+record:
+  params: [name, body]
+  steps:
+    - create:
+        call: http.post
+        args:
+          url: https://storage.googleapis.com/upload/storage/v1/b/${receipt_bucket}/o
+          auth: {type: OAuth2}
+          query: {uploadType: media, name: '$${name}', ifGenerationMatch: 0}
+          body: $${body}
+    - done:
+        return: null
