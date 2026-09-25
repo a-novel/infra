@@ -13,10 +13,10 @@ import (
 )
 
 // finishOperation verifies success and writer termination before exact guard deletion.
-// Only native releases can reconstruct missing completion; other owners require it.
+// Native releases and acknowledged rotations can reconstruct missing completion.
 func (custody store) finishOperation(ctx context.Context, client *storage.Service, evidence operationEvidence, output io.Writer, options []option.ClientOption) error {
-	if !evidence.completed && (evidence.native == nil || evidence.live == 0) {
-		return failure{70, "Completion is missing; only a still-held native release can be reconciled here."}
+	if !evidence.completed && ((evidence.native == nil && evidence.rotation == nil) || evidence.live == 0) {
+		return failure{70, "Completion is missing; only a still-held native release or acknowledged rotation can be reconciled here."}
 	}
 	guard := evidence.guard
 	if evidence.live != 0 && evidence.live != guard.Generation {
@@ -32,7 +32,12 @@ func (custody store) finishOperation(ctx context.Context, client *storage.Servic
 		return err
 	}
 	if !evidence.completed {
-		if err := evidence.native.RecordCompletion(ctx, options...); err != nil {
+		if evidence.rotation != nil {
+			err = evidence.rotation.recordCompletion(ctx, client, guard, options)
+		} else {
+			err = evidence.native.RecordCompletion(ctx, options...)
+		}
+		if err != nil {
 			return failure{70, "Native completion unconfirmed; guard retained. " + err.Error()}
 		}
 	}

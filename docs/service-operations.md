@@ -134,9 +134,9 @@ repairs evidence or retries apply. See [Storage version selection](https://docs.
 ### Finish a successful operation
 
 This **off-by-default** path finishes converged service-root applies, successful native JSON Keys
-releases and recorded successful rotations. Only native releases support reconstructing a missing
-completion record, using the same success proof as the ordinary writer. Applies or rotations without
-recorded completion, and unknown record kinds, remain blocked.
+releases and successful rotations. Native releases and acknowledged rotations can reconstruct a
+missing completion record from exact native success evidence. Applies without recorded convergence,
+unacknowledged rotations and unknown record kinds remain blocked.
 
 After inspecting the exact generation, separately approve `SERVICE_OPERATION_RECOVERY_ENABLED=true`
 in the `production-foundation` environment. From clean, current `master`, select the service and
@@ -163,7 +163,20 @@ dispatcher must have ended: `SUCCEEDED`, `FAILED` or `CANCELLED`. That proves th
 the separate success record proves rotation succeeded. Failure/cancellation may follow successful
 publication. Active, unknown, denied or expired execution metadata cannot unlock the service.
 The declared `workflows.executions.get` permission needs a separately approved foundation apply and
-effective-permission check before use. This path never retries rotation or reconstructs missing success.
+effective-permission check before use. This path never retries rotation.
+
+If rotation success was not published, finishing also reads the generation-pinned reservation and
+RunJob acknowledgement. Both must belong to the held guard. The reserved job UID, generation and
+pinned image must still match the job obtained from the authorized project. The completed native
+operation must return that job's exact execution and template, with one successful task and no
+running, failed or cancelled tasks. RunJob can change the job's ETag through status updates; recovery
+binds configuration through UID, generation and task template instead.
+
+The existing `run.jobs.get`, `run.operations.get` and receipt-write permissions suffice: Google's
+typed operation response supplies the execution without another execution lookup. After rechecking
+the live guard, recovery publishes the same create-only success record as the dispatcher, then removes
+only that guard generation. Missing acknowledgement, changed job configuration or unavailable native
+evidence remain blocked; there is no fallback to a latest execution or another rotation attempt.
 
 When completion already exists, the only write is deleting the current guard with its exact
 [generation precondition](https://docs.cloud.google.com/storage/docs/request-preconditions). An
@@ -319,7 +332,7 @@ small decision boundary with table cases for competing owners, lost acknowledgem
 execution, missing receipts and stale-generation cleanup. Do not recreate a fake cloud in unit tests.
 
 The inactive JSON Keys workflow now connects the native path without activating it. Its native
-completion still needs restore consumption; incomplete rotations and applies need separate reconciliation.
+completion still needs restore consumption; unacknowledged rotations and incomplete applies need separate reconciliation.
 Recorded-success cleanup uses the protected finisher above. A separately approved
 interruption/cutover drill must prove service isolation, scheduled-work exclusion,
 credential boundaries, operator recovery and receipt repair. Only that evidence permits replacing

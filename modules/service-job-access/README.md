@@ -110,10 +110,12 @@ gcloud workflows executions describe "${ROTATION_EXECUTION_ID:?}" --workflow=ago
 
 The existing [operation inspector and protected finisher](../../docs/service-operations.md#inspect-an-interrupted-operation)
 accept rotation records. Inspection verifies the exact saved success and guard generation without
-native queries. Finishing additionally requires the original dispatcher revision to have ended;
-it can only delete that guard generation, never replay rotation. An ended workflow alone is not
-job-success evidence. Missing success, unavailable/expired execution metadata or a different live guard
-requires separate reconciliation. Never age out or manually delete admission as routine cleanup.
+native queries. Finishing additionally requires the original dispatcher revision to have ended.
+When success is missing, it can reconstruct that record from the exact saved RunJob acknowledgement
+and Google's completed operation result, provided the reserved job identity and configuration still
+match. It then deletes only that guard generation, never replaying rotation. An ended workflow alone
+is not job-success evidence. Missing acknowledgement, unavailable/expired native metadata or a
+different live guard require separate reconciliation. Never age out or manually delete admission as routine cleanup.
 Guard IAM is exact-object scoped; compliant code supplies the generation precondition, which IAM
 itself does not enforce. First use requires separately approved receipt-read and Workflows metadata grants.
 
