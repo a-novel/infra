@@ -333,27 +333,32 @@ tags to unblock it. No automatic retry or cleanup is added.
 The inactive [job-access module](../../modules/service-job-access) creates JSON Keys rotation paused;
 later foundation applies preserve its operational pause/resume state. There is no activation command
 in this runbook yet. Its first protected apply requires the
-existing rotation job, the declared Scheduler service agent/role, Scheduler administration and
-`actAs` on the fresh scheduling identity. Verify that identity has no inherited invocation grants
-before creation; its exact-job grant is applied only after the provider has paused the schedule.
+existing rotation job, the declared Scheduler/Workflows APIs and agents, their configuration permissions,
+management bucket-IAM access and `actAs` on the exact scheduling/dispatcher identities. Verify the
+scheduling identity has no inherited invocation grants before creation; its execution-create grant
+is applied only after the provider has paused the schedule.
 Those configuration and attachment grants are declared by the project and job-access modules.
 Verify their effective permissions and propagation during approved provisioning. Schedule resume
 and dispatch remain outside the protected executor's control-plane role.
 
 The separate activation PR must supply a one-writer state handoff and human-run verification of:
 
-- The exact paused schedule, hourly UTC cadence, empty OAuth request and zero dispatch retries.
-- Own-rotation invocation and denied migration, peer, probe, override and secret access; no keys or
-  unexpected inherited IAM on the scheduling identity.
-- Same-service exclusion spanning paused-dispatch verification, reconciliation of accepted requests
-  and draining Cloud Run executions before updating jobs or running migrations. Scheduler HTTP
-  success and pause are not application completion evidence.
+- The exact paused schedule, hourly UTC cadence, parameter-free Workflows request and zero configured dispatch retries.
+- Scheduler execution-create only in this service project; no other invocable workflow without a
+  trust review. Dispatcher own-rotation invocation and denied migration, peer, probe, override, job
+  update and secret access; exact-guard writes and create-only rotation records. No inherited bypass.
+- Native workflow deployment and same-service guard contention with protected applies. Exercise delayed
+  Scheduler delivery, duplicate execution, lost RunJob acknowledgement and failed evidence publication.
+  Old direct-RunJob authority must be revoked and its accepted work reconciled before handoff.
+  Scheduler HTTP success, pause and an empty execution list are not quiescence evidence.
 - Successful rotation observed through native Cloud Run execution records and its success metric after
   installing/modifying the service policy. No prior metric history means absence monitoring is not ready.
 - Exact-project/region/job alert filters, verified project-local operations channels, and a controlled
   pilot showing failure and three-hour success-gap notification (including observed zeros versus absent
   samples). Quiet alerts and Scheduler HTTP success are not completion evidence. Keep the current
   production policy until that handoff is verified; protected foundation is the sole alert writer.
+- Failed and cancelled native dispatcher notifications, including before RunJob and after successful
+  execution with incomplete evidence. Reconciliation must retain uncertain admission without replay.
 - Safe resume after an approved healthy release. An interrupted or ambiguous release stays paused;
   a long maintenance pause requires a separately authorized, time-bounded alert snooze.
 

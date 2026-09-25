@@ -3,7 +3,7 @@ resource "google_service_account" "rotation" {
 
   project      = var.runtime.project_id
   account_id   = "agora-json-keys-scheduler"
-  display_name = "Agora JSON Keys rotation invoker"
+  display_name = "Agora JSON Keys rotation scheduler"
 
   lifecycle {
     prevent_destroy = true
@@ -24,7 +24,7 @@ resource "google_cloud_scheduler_job" "rotation" {
   attempt_deadline = "180s"
   deletion_policy  = "PREVENT"
 
-  # RunJob acknowledges dispatch, before rotation completes. Do not retry that request.
+  # Workflows owns completion; a duplicate delivery must acquire the same service guard.
   retry_config {
     retry_count        = 0
     max_retry_duration = "0s"
@@ -32,9 +32,9 @@ resource "google_cloud_scheduler_job" "rotation" {
 
   http_target {
     http_method = "POST"
-    uri         = "https://run.googleapis.com/v2/projects/${var.runtime.project_id}/locations/${var.runtime.region}/jobs/agora-json-keys-rotatekeys:run"
+    uri         = "https://workflowexecutions.googleapis.com/v1/${google_workflows_workflow.rotation[0].id}/executions"
     headers     = { "Content-Type" = "application/json" }
-    body        = base64encode("{}")
+    body        = base64encode(jsonencode({ disableConcurrencyQuotaOverflowBuffering = true }))
 
     oauth_token {
       service_account_email = google_service_account.rotation[0].email
@@ -57,15 +57,23 @@ resource "google_service_account_iam_member" "foundation_rotation" {
   member             = "serviceAccount:${var.foundation_service_account}"
 }
 
-resource "google_cloud_run_v2_job_iam_member" "rotation" {
+resource "google_project_iam_custom_role" "rotation_dispatch" {
+  count = var.runtime.service == "json-keys" ? 1 : 0
+
+  project     = var.runtime.project_id
+  role_id     = "agoraRotationDispatch"
+  title       = "Start rotation workflow"
+  permissions = ["workflows.executions.create"]
+}
+
+resource "google_project_iam_member" "rotation_dispatch" {
   count = var.runtime.service == "json-keys" ? 1 : 0
 
   # The provider creates an enabled schedule, then pauses it. Grant invocation afterward.
   depends_on = [google_cloud_scheduler_job.rotation]
 
-  project  = var.runtime.project_id
-  location = var.runtime.region
-  name     = "agora-json-keys-rotatekeys"
-  role     = "roles/run.invoker"
-  member   = "serviceAccount:${google_service_account.rotation[0].email}"
+  # Workflows exposes project-level IAM, so keep this service project to this dispatcher.
+  project = var.runtime.project_id
+  role    = google_project_iam_custom_role.rotation_dispatch[0].name
+  member  = "serviceAccount:${google_service_account.rotation[0].email}"
 }

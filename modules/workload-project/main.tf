@@ -37,6 +37,8 @@ resource "google_project_service" "api" {
     "serviceusage.googleapis.com",
     "storage.googleapis.com",
     "sts.googleapis.com",
+    "workflows.googleapis.com",
+    "workflowexecutions.googleapis.com",
   ])
 
   project                    = google_project.service.project_id

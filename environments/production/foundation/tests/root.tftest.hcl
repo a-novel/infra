@@ -142,6 +142,7 @@ run "protected_service_project" {
       "cloudscheduler.googleapis.com" = "roles/cloudscheduler.serviceAgent"
       "compute.googleapis.com"        = "roles/compute.serviceAgent"
       "run.googleapis.com"            = "roles/run.serviceAgent"
+      "workflows.googleapis.com"      = "roles/workflows.serviceAgent"
     }
     error_message = "Grant the documented platform roles only to the matching Google service agents."
   }
@@ -256,6 +257,8 @@ run "protected_service_project" {
         "run.jobs"                      = ["create", "delete", "get", "getIamPolicy", "setIamPolicy", "update"]
         "run.operations"                = ["get"]
         "storage.buckets"               = ["create", "delete", "get", "getIamPolicy", "setIamPolicy", "update"]
+        "workflows.operations"          = ["get"]
+        "workflows.workflows"           = ["create", "delete", "get", "update"]
       } : [for action in actions : "${resource}.${action}"]
     ]))
     error_message = "Provisioning must not add dispatch, promotion, API mutation, schedule resume, payload or token-minting permissions."

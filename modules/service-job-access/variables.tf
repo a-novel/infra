@@ -46,3 +46,16 @@ variable "runtime" {
     error_message = "Supply one to sixteen notification channels from this service project."
   }
 }
+variable "state_bucket" {
+  description = "Published management bucket containing the shared service-operation guard."
+  type        = string
+  nullable    = false
+
+  validation {
+    condition = length(var.state_bucket) <= 63 && can(regex(
+      "^${trimsuffix(split("@", var.foundation_service_account)[1], ".iam.gserviceaccount.com")}-[1-9][0-9]*-tofu-state$",
+      var.state_bucket,
+    ))
+    error_message = "Use the protected management project's published state bucket."
+  }
+}

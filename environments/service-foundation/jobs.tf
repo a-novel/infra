@@ -11,4 +11,5 @@ module "job_access" {
 
   runtime                    = local.runtime
   foundation_service_account = local.foundation_service_account
+  state_bucket               = var.state_bucket
 }

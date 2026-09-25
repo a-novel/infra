@@ -5,6 +5,7 @@ locals {
     "cloudscheduler.googleapis.com" = "roles/cloudscheduler.serviceAgent"
     "compute.googleapis.com"        = "roles/compute.serviceAgent"
     "run.googleapis.com"            = "roles/run.serviceAgent"
+    "workflows.googleapis.com"      = "roles/workflows.serviceAgent"
   }
 }
 

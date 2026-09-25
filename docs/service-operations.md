@@ -43,8 +43,9 @@ cloud operations. There is no force-unlock, takeover, expiry or automatic apply 
 verifying recorded convergence and a completed original workflow attempt. Read-only
 assessment/drift refuses either service root while a guard is present, including before first state.
 
-This is the first enrolled writer, **not end-to-end service exclusion**. Native submissions,
-scheduled work, shared-root changes and protected recovery still need the boundaries below.
+Protected applies and the [native rotation dispatcher](../modules/service-job-access#guarded-rotation)
+now share admission in the inactive pilot. This is **not end-to-end service exclusion**: native release
+submissions, shared-root changes and protected recovery still need the boundaries below.
 Both pilot activation flags remain off by default; legacy production retains its existing global
 serialization and configuration/receipt owners. Do not activate competing writers on this basis.
 
@@ -134,6 +135,7 @@ still be running, keep the service blocked and reconcile it separately before us
 | Projects, IAM, private networking, database hosts/disks                | Protected OpenTofu foundation  | Participates in exclusion for every affected service; not routine release authority.                        |
 | Selected application job specifications                                | OpenTofu service-release state | Bootstrap is create-only today; routine updates need an explicit writer handoff.                            |
 | Rotation schedule definition and invocation IAM                        | OpenTofu service foundation    | Creates paused; later pause/resume belongs to operational control, not foundation convergence.              |
+| Scheduled rotation admission, dispatch and completion                  | Google Workflows               | Fixed service/job; same persistent guard, single submission, immutable evidence before release.             |
 | Migrations and rotation executions                                     | Cloud Run Jobs                 | Caller controls admission and records exact execution evidence; migrations remain outside retry hooks.      |
 | Complete API specification, revisions, traffic, deploy/verify progress | Cloud Deploy                   | Sole API writer after handoff; no parallel Go traffic controller.                                           |
 | Admission, scheduler pause/drain, final evidence                       | Small trusted Go caller        | Coordinates boundaries, not a second implementation of native rollout phases.                               |
@@ -157,12 +159,13 @@ Application compensation never restores an old database backup or reverses concu
 The admission primitive is **one persistent guard object per service**, using the existing official
 Storage client. Its location is `services/PROJECT_ID/release/operation.json` in the state
 bucket, inside the service's existing release-state namespace. It is not a receipt, Terraform state
-or renewable lease. No new database, queue, coordination platform or expiry worker is needed.
+or renewable lease. No new database, queue or expiry worker is needed.
 
 Acquire with [GCS generation preconditions](https://docs.cloud.google.com/storage/docs/request-preconditions):
 create only when no live object exists, then retain the returned generation. The small, private record
-binds the approved project/service/region, operation kind, commit, GitHub run/attempt and, for a release,
-its predetermined release ID. It contains no credentials or secret payloads. A new automated operation
+binds the approved project/service/region and its owner: commit/GitHub run/attempt for applies and
+releases, or native workflow execution/revision for scheduled rotation. A release also binds its
+predetermined release ID. It contains no credentials or secret payloads. A new automated operation
 needs an acknowledged acquisition before dispatch. A lost acknowledgement requires reconciliation, not a second
 acquisition or automatic adoption of matching content.
 

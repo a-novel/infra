@@ -45,53 +45,103 @@ Use same-service exclusion for configuration, migrations and rollout. Reconcile 
 against native operation/execution records before any retry. Migration dispatch remains outside
 Cloud Deploy retry hooks.
 
-## Rotation schedule
+## Guarded rotation
 
-JSON Keys alone declares these foundation-owned resources:
+JSON Keys uses the native path **Scheduler → Workflows → Cloud Run Job**. Authentication creates
+none of these rotation resources. Foundation owns their definitions and IAM; the service pilot
+remains inactive and disposable recovery omits this module.
 
-| Resource                                         | Contract                                                                                                             |
-| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| `google_service_account.rotation[0]`             | Keyless `agora-json-keys-scheduler` identity in the service project; deletion blocked by `prevent_destroy`.          |
-| `google_cloud_scheduler_job.rotation[0]`         | Fixed hourly `agora-json-keys-rotation`, initially paused, with provider deletion prevention and `prevent_destroy`.  |
-| `google_cloud_run_v2_job_iam_member.rotation[0]` | Run Invoker on the exact `agora-json-keys-rotatekeys` job; removing the additive grant revokes this invocation path. |
+| Identity                    | Authority                                                                                                                       |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `agora-json-keys-scheduler` | Create workflow executions in this service project. No direct RunJob, execution reads or cancellation.                          |
+| `agora-json-keys-rotation`  | Read/invoke the exact rotation job, read regional operations, manage the exact service guard, create private rotation evidence. |
+| Application runtime         | Unchanged job identity, database and master-key access. The dispatcher cannot read those secrets or attach another runtime.     |
 
-The schedule sends an empty JSON body to the selected project's regional RunJob API with OAuth.
-Its identity receives no job-update, migration, secret, runtime-attachment or token-minting grant.
-The [workload project](../workload-project) declares the Google Scheduler service agent and its
-documented role to mint that OAuth token. The job still runs as the application identity.
-The [workload project](../workload-project#protected-provisioning-authority) declares protected Scheduler
-configuration and job-IAM authority. This module grants `foundation_service_account` attachment on
-the exact rotation identity before creating its schedule. Routine release receives none of these grants.
+[Workflows IAM](https://docs.cloud.google.com/workflows/docs/access-control) is project-scoped.
+The custom Scheduler role contains only `workflows.executions.create`; a future workflow in this
+project would also be invocable. Review that trust before adding one. The broader predefined Invoker
+role also allows cancellation and is not used here. Google's Scheduler and Workflows service agents
+mint their respective tokens; only protected foundation may attach these exact runtime identities.
 
-The [pinned provider](https://github.com/hashicorp/terraform-provider-google/blob/v8.2.0/google/services/cloudscheduler/resource_cloud_scheduler_job.go)
-creates an enabled schedule and then pauses it. The invoker grant depends on that completed operation:
-a fresh identity has no target access during creation or a failed pause. Check inherited grants before
-provisioning. This ordering does not prove the absence of a delayed, in-flight dispatch; first
-activation still reconciles native attempts and executions. Replacement with an already-authorized identity requires an explicit revoke/reconcile
-procedure; the dependency cannot retract existing authority. Deletion guards prevent routine replacement.
+### Dispatch and completion
 
-The request has zero configured transport retries. Scheduler still provides
-[at-least-once delivery](https://docs.cloud.google.com/scheduler/docs/overview); rotation must tolerate
-duplicate executions. RunJob returns an operation before the application finishes. A successful
-schedule dispatch proves neither successful rotation nor exclusive execution. Keep completion monitoring
-on Cloud Run executions. This scheduling pattern must not be used for migrations.
+`rotation.yaml.tftpl` accepts no runtime parameters. It selects the fixed project, region and job from
+protected foundation inputs and uses the same guard as [service applies](../../docs/service-operations.md):
+`services/PROJECT/release/operation.json` in `state_bucket`. Acquisition creates the object with
+`ifGenerationMatch=0`; a pre-existing guard returns `busy` without running a job. The guard identifies
+the workflow execution/revision and has no TTL. Unacknowledged acquisition fails without adoption.
 
-Foundation owns the schedule definition and IAM, not subsequent pause/resume decisions.
-`paused = true` applies at creation; [native `ignore_changes`](https://opentofu.org/docs/language/resources/behavior/)
-excludes only `paused` from later updates. The pinned provider also omits that field from ordinary
-schedule PATCH requests. All other definition fields remain managed. Foundation will not repair an
-unexpected resume: reconcile it through operational control, not another apply.
+After admission, the workflow checks the converged single-task job, service runtime, pinned local
+image and unchanged image entrypoint. It records job UID/generation/ETag and submits RunJob **once**
+with that ETag and no overrides. Authenticated HTTP mutation calls have no retry policy;
+[connectors retry writes automatically](https://docs.cloud.google.com/workflows/docs/connectors).
+Only exact operation reads repeat. Observation stops on completion or a thirty-minute budget
+(plus an in-flight read's native timeout/retries), retaining admission on uncertainty.
 
-This ownership boundary grants no resume authority or activation input. Keep the schedule paused until
-the [onboarding gates](../../docs/runbooks/provision-service-projects.md#service-scheduling-activation)
-are met. Pausing dispatch does not stop accepted executions. Same-service exclusion must span pause,
-dispatch reconciliation, execution drain, job changes, migrations, rollout and safe resume. An unknown
-outcome stays paused for reconciliation; resume is never unconditional cleanup.
+The returned operation name is recorded before waiting. Successful completion requires the exact
+execution, one succeeded task and a successful Completed condition, with no
+running, failed or cancelled tasks. Rotation retains its existing one-task retry policy; the
+application must remain idempotent. These checks prove job success, not that a new key was needed.
+The native [RunJob ETag](https://docs.cloud.google.com/run/docs/reference/rest/v2/projects.locations.jobs/run)
+binds dispatch to the inspected job version; the dispatcher has no override permission. There is no
+second implementation of template comparison in the workflow.
 
-A provisioned schedule has [Scheduler charges](https://cloud.google.com/scheduler/pricing) even while
-paused. Actual executions incur Cloud Run and logging costs. This inactive module adds none today.
-Disposable recovery must omit this module; restoring data must not start production rotation.
-The current production schedule and its IAM remain with the existing release/foundation owners.
+Create-only evidence lives in the existing receipt bucket under
+`services/PROJECT/production/rotations/WORKFLOW_EXECUTION_ID/{intent,operation,success}.json`.
+It contains identities and configuration metadata, never secret payloads. Only acknowledged success
+publication permits deletion of the acquired guard generation. Failures, cancellation, unknown
+RunJob responses and failed evidence writes leave the guard held. Lost deletion acknowledgement
+also fails even if removal committed. No error handler unlocks, retries execution or resumes Scheduler.
+
+Scheduler uses a fixed OAuth request without arguments, hourly at `10 * * * *` UTC, with zero configured retries and
+execution backlogging disabled. Its [at-least-once delivery](https://docs.cloud.google.com/scheduler/docs/overview)
+can still create duplicates: concurrent executions compete for the guard, while a later duplicate
+may rotate again after completion. This is serialization, not exactly-once delivery. A delayed
+dispatcher must acquire current admission before RunJob; a paused schedule or empty execution list
+is never used as proof of quiescence. Every other writer must enroll before activation.
+
+### Inspect retained admission
+
+Use an approved read-only session and the exact workflow execution ID from the guard or matching native log:
+
+```text
+gcloud workflows executions describe "${ROTATION_EXECUTION_ID:?}" --workflow=agora-json-keys-rotation --project="${SERVICE_PROJECT_ID:?}" --location="${INFRA_REGION:?}" --format='yaml(name,state,workflowRevisionId,status,startTime,endTime)'
+```
+
+Match the guard's generation and workflow revision to its immutable records, then inspect the saved
+Cloud Run operation and execution. Missing evidence is an unknown outcome, not permission to run
+again. The apply-only inspector/`finish-apply` rejects rotation records; it cannot finish this owner.
+No automated rotation recovery command exists yet. Keep the service blocked until separately reviewed
+reconciliation proves the original workflow and native work are settled. Never age out or manually
+delete the guard as routine cleanup. Guard IAM is exact-object scoped; compliant code supplies the
+generation precondition, which IAM itself does not enforce.
+
+The native failed/cancelled Workflows system log pages the same service channel, even if no Cloud Run
+execution was acknowledged. Cloud Run completion/freshness monitoring remains independent. Log-based
+incident closure means silence, not recovery. Call logging is disabled and execution history is basic;
+native system logs still contain status and error summaries. Inspect evidence privately.
+
+### Provisioning and activation
+
+The [pinned Scheduler provider](https://github.com/hashicorp/terraform-provider-google/blob/v8.2.0/google/services/cloudscheduler/resource_cloud_scheduler_job.go)
+creates enabled, then pauses. Execution-create permission is granted only afterward, so a fresh
+Scheduler identity has no target authority during creation or a failed pause. Existing/inherited
+grants need a separate revoke/reconcile procedure; dependency ordering cannot retract them.
+
+`paused = true` is the creation default; `ignore_changes = [paused]` preserves subsequent operational
+pause/resume. Foundation cannot use convergence to resume a held schedule. Before replacing any
+existing direct-RunJob path, pause it, revoke its invoker grant and reconcile accepted executions
+under the sole-writer boundary. Provisioning the dispatcher is not proof that the old path drained.
+
+Workload-project prerequisites declare the APIs, Google agents and protected configuration permissions.
+The selected foundation also needs its existing management bucket-IAM authority. Verify native source
+deployment, stale-ETag rejection, effective IAM denials, guard contention, delayed delivery, uncertain dispatch and evidence
+failure in the separately approved [activation drill](../../docs/runbooks/provision-service-projects.md#service-scheduling-activation).
+There is no new activation flag, live provisioning or change to the current production schedule.
+
+There is no custom dispatcher binary or hosted container. A provisioned schedule and executed workflow
+incur [Scheduler](https://cloud.google.com/scheduler/pricing) and [Workflows](https://cloud.google.com/workflows/pricing)
+charges, plus Cloud Run, storage and logging. The inactive configuration allocates none today.
 
 ## Completion monitoring
 

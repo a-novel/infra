@@ -24,7 +24,8 @@ The native backend uses the published management `state_bucket` and
 `foundation/services/PROJECT/default.tfstate`. Only the default workspace is accepted. The existing
 `foundation/` grants supply the protected administrator and read-only plan access; routine release
 and disposable recovery have separate prefixes. This is separation from routine release, not a new
-administrator per service. No storage grant is added here. Inspect inherited IAM before activation.
+administrator per service. Optional job access adds exact-guard and create-only rotation-evidence
+grants for its dedicated dispatcher. Inspect inherited IAM before activation.
 
 Authorize project, region and bucket against the published foundation coordinates **before init**.
 The bucket-name validation establishes syntax only. Use a fresh working directory and disallow backend
@@ -104,9 +105,10 @@ inputs; dropping it is resource removal, subject to its lifecycle guards and del
 3. After the selected database and approved images exist, protected bootstrap creates application jobs
    in [service-release state](../service-release#bootstrap-before-routine-release). Reconcile exact
    job UIDs and state before setting `manage_job_access = true`. The [job-access module](../../modules/service-job-access)
-   installs exact-job authority, monitoring and JSON Keys' initially paused rotation schedule. It owns
-   neither subsequent pause/resume decisions nor job specifications. A missing job fails its IAM operation;
-   it is not recreated here.
+   installs exact-job authority, monitoring and JSON Keys' initially paused Scheduler → Workflows
+   rotation path. The dispatcher shares service admission with protected applies. Foundation owns
+   neither subsequent pause/resume decisions nor job specifications. A missing job fails its IAM
+   operation; it is not recreated here.
 4. Verify allowed/denied IAM and network paths, remove temporary bootstrap authority and prove
    zero-change convergence before connecting routine release. Neither switch unsuspends Cloud Deploy
    nor resumes rotation. Their separate activation and interruption drills remain required.
