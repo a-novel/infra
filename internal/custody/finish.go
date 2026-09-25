@@ -13,7 +13,7 @@ import (
 
 // finishApply repeats only the last storage deletion of a recorded converged apply.
 // Incomplete operations have no recovery path here, even if their workflow ended.
-func (custody store) finishApply(ctx context.Context, client *storage.Service, evidence applyEvidence, root string, output io.Writer) error {
+func (custody store) finishApply(ctx context.Context, client *storage.Service, evidence operationEvidence, root string, output io.Writer) error {
 	if !evidence.completed || evidence.intent.Root != root {
 		return failure{70, "Only exact recorded convergence can finish; incomplete or different applies remain blocked."}
 	}

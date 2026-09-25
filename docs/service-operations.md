@@ -51,14 +51,16 @@ verification, actual-traffic checks and immutable native completion. It leaves g
 schedule unchanged instead of adding another pause/resume controller.
 
 Native completion has a distinct `native-success/RELEASE_ID.json` namespace in the service receipt
-folder, with a generation-bound pointer under `operations/`. It is not a legacy recovery receipt;
-the apply inspector/finisher below does not accept this record kind. Its recovery consumer and
-protected interruption/finish procedure still need implementation and a separately approved drill.
+folder, with a generation-bound pointer under `operations/`. The inspector below verifies these
+historical records. They are not legacy recovery receipts and the apply finisher rejects them.
+Restore consumption and protected native finish/repair still require implementation and an approved drill.
 
 All pilot activation flags remain off by default; legacy production retains its existing global
 serialization and configuration/receipt owners. Do not activate competing writers on this basis.
 
-### Inspect an interrupted apply
+<a id="inspect-an-interrupted-apply"></a>
+
+### Inspect an interrupted operation
 
 From clean, current `master`, dispatch the read-only inspector:
 
@@ -84,13 +86,15 @@ infra custody operation inspect <state-bucket> <registered-project> [guard-gener
 ```
 
 Omit the generation to inspect the live guard. After a lost removal acknowledgement, supply the
-`Acknowledged service guard generation` from the apply log; removed versions remain readable
+guard generation acknowledged in the apply or native-release log; removed versions remain readable
 subject to the bucket's retention/lifecycle policies. If admission itself was not acknowledged, inspect the live guard
 without treating its presence as permission to adopt it. Do not substitute configuration from
 candidate code or print the protected registration.
 
 The command uses Google's existing authentication/client and needs only object reads on the selected
-guard, completion and configuration records. It requests read-only Storage scope, checks registration
+guard, completion and configuration records. Native records also need the declared service-local
+`native-success/` read grant, provisioned by a separately approved foundation apply.
+The inspector requests read-only Storage scope, checks registration
 before credentials, and never requests write authority.
 
 The report separates the live guard state from recorded convergence. It verifies the exact guard
@@ -98,6 +102,14 @@ bytes/generation, completion intent, and referenced configuration generation/has
 bounded and generation-pinned; denied, malformed, missing referenced versions or changing guard
 observations return non-success without private payloads. A successfully observed missing completion
 is reported as incomplete, not as proof that no resources changed.
+
+For `native-release`, the report identifies the original workflow attempt and exact release/rollout.
+It checks the stored configuration hash, generation-bound completion pointer, native request identity,
+and recorded render, approval, candidate and stable verification. Inspection works with the writer
+disabled and a newer master commit; it uses the recorded source commit. It does not fetch current
+Cloud Deploy/Run status or migration executions. Use the separately authorized
+[rollout observer](runbooks/submit-release.md) for current native progress. A missing completion
+pointer leaves the operation incomplete even if an unlinked record exists.
 
 Exit zero means **inspection succeeded**, not that deployment succeeded or the service is safe to
 unlock. A retained record proves historical convergence only: current health, native operations and
@@ -265,7 +277,7 @@ small decision boundary with table cases for competing owners, lost acknowledgem
 execution, missing receipts and stale-generation cleanup. Do not recreate a fake cloud in unit tests.
 
 The inactive JSON Keys workflow now connects the native path without activating it. Its native
-completion still needs a recovery reader and protected repair/finish path. A separately approved
+completion still needs restore consumption and a protected repair/finish path. A separately approved
 interruption/cutover drill must prove service isolation, scheduled-work exclusion,
 credential boundaries, operator recovery and receipt repair. Only that evidence permits replacing
 the corresponding legacy orchestration and its tests. Peer deployments and Renovate remain unchanged.

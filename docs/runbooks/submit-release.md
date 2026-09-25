@@ -42,6 +42,12 @@ deleting the exact guard generation. These **native completion records are not l
 receipts**. Recovery-reader/drill support and a protected native finish path remain activation gates;
 `finish-apply` cannot unlock this record kind.
 
+For an interrupted guarded release, start with the existing
+[read-only operation inspector](../service-operations.md#inspect-an-interrupted-operation).
+It binds stored completion to the selected guard and configuration without querying native services.
+The reconciliation commands below inspect native progress separately; neither report authorizes
+unlocking or retrying. Missing completion is not proof that deployment did not happen.
+
 Keep `SERVICE_NATIVE_RELEASE_ENABLED` unset/false and the protected operation secret unset until the
 separate activation review. The workflow retains global writer serialization. The low-level commands
 below document the adapters and reconciliation tools; do not use them to bypass admission.
