@@ -185,6 +185,7 @@ type operationInspection struct {
 	guard, completion, config string
 	root, live, fault         string
 	writer                    object
+	dispatcher                string
 	deletes                   int
 }
 
@@ -194,6 +195,10 @@ func (fixture *operationInspection) finish() {
 	fixture.env["SERVICE_OPERATION_RECOVERY_ENABLED"] = "true"
 	fixture.env["GITHUB_EVENT_NAME"] = "workflow_dispatch"
 	fixture.env["GITHUB_WORKFLOW_REF"] = "a-novel/infra/.github/workflows/foundation.yaml@refs/heads/master"
+	if fixture.dispatcher != "" {
+		fixture.writer = object{"state": "FAILED", "workflowRevisionId": "000001-abc", "endTime": "2026-09-25T00:01:00Z"}
+		return
+	}
 	fixture.writer = object{
 		"id": 124, "run_attempt": 1, "status": "completed", "head_branch": "master", "head_sha": strings.Repeat("a", 40),
 		"event": "workflow_dispatch", "path": ".github/workflows/foundation.yaml", "repository": "a-novel/infra",
@@ -246,6 +251,16 @@ func (fixture *operationInspection) check(t *testing.T, expected int, want strin
 	var requests, liveReads, deletes atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
+		if fixture.dispatcher != "" && r.URL.Path == "/v1/"+fixture.dispatcher {
+			assert.Equal(t, []string{"GET", "finish", "state,endTime,workflowRevisionId"},
+				[]string{r.Method, fixture.args[1], r.URL.Query().Get("fields")})
+			if fixture.fault == "writer-unavailable" {
+				http.Error(w, privateValue, http.StatusForbidden)
+				return
+			}
+			assert.NoError(t, json.NewEncoder(w).Encode(fixture.writer))
+			return
+		}
 		if r.Method == http.MethodDelete {
 			deletes.Add(1)
 			assert.Equal(t, fixture.guard, r.URL.Path)
@@ -316,6 +331,7 @@ func (fixture *operationInspection) check(t *testing.T, expected int, want strin
 	var stdout, stderr bytes.Buffer
 	code := custody.Run(t.Context(), fixture.args, func(key string) string { return fixture.env[key] },
 		func(_ context.Context, output io.Writer, command string, args ...string) error {
+			assert.Empty(t, fixture.dispatcher, "rotation recovery must not execute subprocesses")
 			assert.Equal(t, "finish", fixture.args[1], "inspection must not run a subprocess")
 			assert.Equal(t, "gh", command)
 			assert.Equal(t, []string{

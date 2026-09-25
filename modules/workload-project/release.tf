@@ -116,9 +116,9 @@ resource "google_storage_bucket_iam_member" "plan_operation_reader" {
   # Inspection selects exact objects; this condition does not grant bucket listing.
   condition {
     title       = "ServiceOperationEvidence-${var.project_id}"
-    description = "Read only this service's operation and native-completion records."
+    description = "Read only this service's operation, native-completion and rotation records."
     expression = "resource.type == 'storage.googleapis.com/Object' && (${join(" || ", [
-      for prefix in ["operations", "native-success"] :
+      for prefix in ["operations", "native-success", "rotations"] :
       "resource.name.startsWith('projects/_/buckets/${local.release_storage.receipts.bucket}/objects/${local.release_storage.receipts.prefix}${prefix}/')"
     ])})"
   }

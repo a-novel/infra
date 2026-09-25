@@ -108,13 +108,14 @@ Use an approved read-only session and the exact workflow execution ID from the g
 gcloud workflows executions describe "${ROTATION_EXECUTION_ID:?}" --workflow=agora-json-keys-rotation --project="${SERVICE_PROJECT_ID:?}" --location="${INFRA_REGION:?}" --format='yaml(name,state,workflowRevisionId,status,startTime,endTime)'
 ```
 
-Match the guard's generation and workflow revision to its immutable records, then inspect the saved
-Cloud Run operation and execution. Missing evidence is an unknown outcome, not permission to run
-again. The operation inspector and `finish-operation` reject rotation records; they cannot finish this owner.
-No automated rotation recovery command exists yet. Keep the service blocked until separately reviewed
-reconciliation proves the original workflow and native work are settled. Never age out or manually
-delete the guard as routine cleanup. Guard IAM is exact-object scoped; compliant code supplies the
-generation precondition, which IAM itself does not enforce.
+The existing [operation inspector and protected finisher](../../docs/service-operations.md#inspect-an-interrupted-operation)
+accept rotation records. Inspection verifies the exact saved success and guard generation without
+native queries. Finishing additionally requires the original dispatcher revision to have ended;
+it can only delete that guard generation, never replay rotation. An ended workflow alone is not
+job-success evidence. Missing success, unavailable/expired execution metadata or a different live guard
+requires separate reconciliation. Never age out or manually delete admission as routine cleanup.
+Guard IAM is exact-object scoped; compliant code supplies the generation precondition, which IAM
+itself does not enforce. First use requires separately approved receipt-read and Workflows metadata grants.
 
 The native failed/cancelled Workflows system log pages the same service channel, even if no Cloud Run
 execution was acknowledged. Cloud Run completion/freshness monitoring remains independent. Log-based

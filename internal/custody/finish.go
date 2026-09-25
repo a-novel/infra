@@ -12,8 +12,8 @@ import (
 	"google.golang.org/api/storage/v1"
 )
 
-// finishOperation records proven native success if needed, then deletes only its
-// exact guard. An unfinished apply still requires separate protected recovery.
+// finishOperation verifies success and writer termination before exact guard deletion.
+// Only native releases can reconstruct missing completion; other owners require it.
 func (custody store) finishOperation(ctx context.Context, client *storage.Service, evidence operationEvidence, output io.Writer, options []option.ClientOption) error {
 	if !evidence.completed && (evidence.native == nil || evidence.live == 0) {
 		return failure{70, "Completion is missing; only a still-held native release can be reconciled here."}
@@ -22,7 +22,13 @@ func (custody store) finishOperation(ctx context.Context, client *storage.Servic
 	if evidence.live != 0 && evidence.live != guard.Generation {
 		return failure{70, "Another guard generation is live; it cannot be finished by this operation."}
 	}
-	if err := custody.completedWriter(ctx, evidence); err != nil {
+	var err error
+	if evidence.rotation != nil {
+		err = evidence.rotation.completedWriter(ctx, options)
+	} else {
+		err = custody.completedWriter(ctx, evidence)
+	}
+	if err != nil {
 		return err
 	}
 	if !evidence.completed {
@@ -38,7 +44,7 @@ func (custody store) finishOperation(ctx context.Context, client *storage.Servic
 	if err := client.Objects.Delete(guard.Bucket, guard.Name).IfGenerationMatch(guard.Generation).Context(ctx).Do(); err != nil {
 		return failure{70, "Guard removal unconfirmed; inspect this exact generation before any further action."}
 	}
-	_, err := fmt.Fprintf(output, "Finished recorded operation for %s; removed live guard generation %d. No deployment work repeated.\n", evidence.intent.Service, guard.Generation)
+	_, err = fmt.Fprintf(output, "Finished recorded operation for %s; removed live guard generation %d. No deployment work repeated.\n", evidence.intent.Service, guard.Generation)
 	return err
 }
 

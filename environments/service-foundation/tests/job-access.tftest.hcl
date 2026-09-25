@@ -291,6 +291,19 @@ run "guarded_rotation_dispatcher" {
   }
   assert {
     condition = alltrue([for steps in [merge(yamldecode(google_workflows_workflow.rotation[0].source_contents).main.steps...)] :
+      steps.recordSuccess.args == {
+        name = "$${records + \"success.json\"}"
+        body = {
+          operation    = "$${intent}", guardGeneration = "$${guard.body.generation}"
+          runOperation = "$${operation.name}", execution = "$${execution.name}"
+          executionUID = "$${execution.uid}", completedAt = "$${execution.completionTime}"
+        }
+      }
+    ])
+    error_message = "Emit the exact success contract consumed by operation inspection and protected finishing."
+  }
+  assert {
+    condition = alltrue([for steps in [merge(yamldecode(google_workflows_workflow.rotation[0].source_contents).main.steps...)] :
       steps.acquire.try.args.query == { uploadType = "media", name = "services/agora-json-keys-test/release/operation.json", ifGenerationMatch = 0 } &&
       steps.dispatch.call == "http.post" && steps.dispatch.args.body == { etag = "$${job.etag}" } &&
       steps.release.call == "http.delete" && steps.release.args.query == { ifGenerationMatch = "$${guard.body.generation}" }

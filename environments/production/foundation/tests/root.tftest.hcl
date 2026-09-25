@@ -242,7 +242,7 @@ run "protected_service_project" {
       google_storage_bucket_iam_member.plan_operation_reader.bucket == "agora-management-test-123456789012-deployment-receipts" &&
       google_storage_bucket_iam_member.plan_operation_reader.member == "serviceAccount:${var.plan_service_account}" &&
       google_storage_bucket_iam_member.plan_operation_reader.role == "roles/storage.objectViewer" &&
-      google_storage_bucket_iam_member.plan_operation_reader.condition[0].expression == "resource.type == 'storage.googleapis.com/Object' && (resource.name.startsWith('projects/_/buckets/agora-management-test-123456789012-deployment-receipts/objects/services/agora-json-keys-test/production/operations/') || resource.name.startsWith('projects/_/buckets/agora-management-test-123456789012-deployment-receipts/objects/services/agora-json-keys-test/production/native-success/'))"
+      google_storage_bucket_iam_member.plan_operation_reader.condition[0].expression == "resource.type == 'storage.googleapis.com/Object' && (resource.name.startsWith('projects/_/buckets/agora-management-test-123456789012-deployment-receipts/objects/services/agora-json-keys-test/production/operations/') || resource.name.startsWith('projects/_/buckets/agora-management-test-123456789012-deployment-receipts/objects/services/agora-json-keys-test/production/native-success/') || resource.name.startsWith('projects/_/buckets/agora-management-test-123456789012-deployment-receipts/objects/services/agora-json-keys-test/production/rotations/'))"
     )
     error_message = "Inspection may read only exact service completion objects, without bucket-wide listing or mutation."
   }
@@ -260,6 +260,7 @@ run "protected_service_project" {
         "run.operations"                = ["get"]
         "run.services"                  = ["get"]
         "storage.buckets"               = ["create", "delete", "get", "getIamPolicy", "setIamPolicy", "update"]
+        "workflows.executions"          = ["get"]
         "workflows.operations"          = ["get"]
         "workflows.workflows"           = ["create", "delete", "get", "update"]
       } : [for action in actions : "${resource}.${action}"]
