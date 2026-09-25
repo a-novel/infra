@@ -330,8 +330,9 @@ tags to unblock it. No automatic retry or cleanup is added.
 
 ## Service scheduling activation
 
-The inactive [job-access module](../../modules/service-job-access) keeps JSON Keys rotation paused.
-There is no command to activate it in this runbook yet. Its first protected apply requires the
+The inactive [job-access module](../../modules/service-job-access) creates JSON Keys rotation paused;
+later foundation applies preserve its operational pause/resume state. There is no activation command
+in this runbook yet. Its first protected apply requires the
 existing rotation job, the declared Scheduler service agent/role, Scheduler administration and
 `actAs` on the fresh scheduling identity. Verify that identity has no inherited invocation grants
 before creation; its exact-job grant is applied only after the provider has paused the schedule.

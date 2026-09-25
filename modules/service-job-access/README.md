@@ -3,8 +3,8 @@
 Protected foundation owns access to existing [application jobs](../../environments/service-release), schedules and alerts.
 The module consumes the [service foundation's](../../environments/service-foundation) versioned `runtime` contract.
 It derives fixed job names and the project-local `infra-release` principal; callers cannot supply
-another principal or extend the job set. The inactive foundation root composes it after explicit job
-bootstrap opt-in. **No live workflow calls that root.**
+another principal or extend the job set. The protected foundation workflow composes it after explicit
+job bootstrap opt-in; the service pilot remains disabled by default.
 
 | Grant                                   | Scope                                                                   |
 | --------------------------------------- | ----------------------------------------------------------------------- |
@@ -52,7 +52,7 @@ JSON Keys alone declares these foundation-owned resources:
 | Resource                                         | Contract                                                                                                             |
 | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
 | `google_service_account.rotation[0]`             | Keyless `agora-json-keys-scheduler` identity in the service project; deletion blocked by `prevent_destroy`.          |
-| `google_cloud_scheduler_job.rotation[0]`         | Fixed hourly `agora-json-keys-rotation`, hard-paused, with provider deletion prevention and `prevent_destroy`.       |
+| `google_cloud_scheduler_job.rotation[0]`         | Fixed hourly `agora-json-keys-rotation`, initially paused, with provider deletion prevention and `prevent_destroy`.  |
 | `google_cloud_run_v2_job_iam_member.rotation[0]` | Run Invoker on the exact `agora-json-keys-rotatekeys` job; removing the additive grant revokes this invocation path. |
 
 The schedule sends an empty JSON body to the selected project's regional RunJob API with OAuth.
@@ -76,11 +76,17 @@ duplicate executions. RunJob returns an operation before the application finishe
 schedule dispatch proves neither successful rotation nor exclusive execution. Keep completion monitoring
 on Cloud Run executions. This scheduling pattern must not be used for migrations.
 
-There is no activation input or ignored `paused` field. Keep the schedule paused until the
-[onboarding gates](../../docs/runbooks/provision-service-projects.md#service-scheduling-activation)
-are met. Pausing dispatch does not stop accepted Cloud Run executions. Same-service exclusion must
-cover pause, dispatch reconciliation, execution drain, job updates, migrations, rollout and safe resume.
-An unknown outcome stays paused for operator reconciliation; resuming must not be unconditional cleanup.
+Foundation owns the schedule definition and IAM, not subsequent pause/resume decisions.
+`paused = true` applies at creation; [native `ignore_changes`](https://opentofu.org/docs/language/resources/behavior/)
+excludes only `paused` from later updates. The pinned provider also omits that field from ordinary
+schedule PATCH requests. All other definition fields remain managed. Foundation will not repair an
+unexpected resume: reconcile it through operational control, not another apply.
+
+This ownership boundary grants no resume authority or activation input. Keep the schedule paused until
+the [onboarding gates](../../docs/runbooks/provision-service-projects.md#service-scheduling-activation)
+are met. Pausing dispatch does not stop accepted executions. Same-service exclusion must span pause,
+dispatch reconciliation, execution drain, job changes, migrations, rollout and safe resume. An unknown
+outcome stays paused for reconciliation; resume is never unconditional cleanup.
 
 A provisioned schedule has [Scheduler charges](https://cloud.google.com/scheduler/pricing) even while
 paused. Actual executions incur Cloud Run and logging costs. This inactive module adds none today.

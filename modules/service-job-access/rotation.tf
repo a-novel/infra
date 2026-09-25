@@ -44,6 +44,8 @@ resource "google_cloud_scheduler_job" "rotation" {
 
   lifecycle {
     prevent_destroy = true
+    # Create paused; later foundation convergence must preserve operational pause/resume.
+    ignore_changes = [paused]
   }
 }
 

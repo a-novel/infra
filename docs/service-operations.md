@@ -133,7 +133,7 @@ still be running, keep the service blocked and reconcile it separately before us
 | ---------------------------------------------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------- |
 | Projects, IAM, private networking, database hosts/disks                | Protected OpenTofu foundation  | Participates in exclusion for every affected service; not routine release authority.                        |
 | Selected application job specifications                                | OpenTofu service-release state | Bootstrap is create-only today; routine updates need an explicit writer handoff.                            |
-| Rotation schedule definition and invocation IAM                        | OpenTofu service foundation    | Creates paused; transfers operational pause/resume ownership explicitly before activation.                  |
+| Rotation schedule definition and invocation IAM                        | OpenTofu service foundation    | Creates paused; later pause/resume belongs to operational control, not foundation convergence.              |
 | Migrations and rotation executions                                     | Cloud Run Jobs                 | Caller controls admission and records exact execution evidence; migrations remain outside retry hooks.      |
 | Complete API specification, revisions, traffic, deploy/verify progress | Cloud Deploy                   | Sole API writer after handoff; no parallel Go traffic controller.                                           |
 | Admission, scheduler pause/drain, final evidence                       | Small trusted Go caller        | Coordinates boundaries, not a second implementation of native rollout phases.                               |
@@ -236,10 +236,9 @@ force-unlock merely because a run is old or a health check currently passes.
   bucket. Exclude it from artifact lifecycle cleanup. Teach the existing
   [state inventory](../internal/inspection/services.go) its exact identity and blocked meaning rather
   than ignoring arbitrary unexpected objects or backend locks.
-- Transfer operational ownership of the scheduler's `paused` field explicitly. The current
-  [foundation configuration](../modules/service-job-access/rotation.tf) declares it `true`; a future
-  foundation apply must not silently undo runtime policy. Prove accepted-request draining and preserve
-  safe bootstrap ordering before any resume authority is enabled.
+- The [foundation configuration](../modules/service-job-access/rotation.tf) creates schedules paused
+  and ignores only subsequent `paused` changes. Preserve this ownership boundary and safe bootstrap
+  ordering; prove accepted-request draining before enabling any operational resume authority.
 - Bind complete configuration/provenance, durable receipts and effective IAM in one protected caller.
   The service release federation currently permits the exact `release.yaml` workflow; splitting
   workflows requires a reviewed identity change, not just a new filename.
