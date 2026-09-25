@@ -88,10 +88,18 @@ func foundationInputs(args []string, getenv func(string) string, stdout io.Write
 	}
 	// Direct workflow submissions must satisfy the same contract as the operator command.
 	operation := getenv("FOUNDATION_OPERATION")
-	if operation != "finish-apply" && (getenv("FOUNDATION_GUARD_GENERATION") != "" || getenv("FOUNDATION_CONFIRM") != "") {
-		return invalid
+	if operation == "finish-operation" {
+		if root != "none" || getenv("FOUNDATION_PLAN_ID") != "" {
+			return invalid
+		}
+		project, err := FinishOperationProject([]string{service, getenv("FOUNDATION_GUARD_GENERATION"), getenv("FOUNDATION_CONFIRM")}, getenv)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintln(stdout, "project="+project)
+		return err
 	}
-	if operation == "finish-apply" && getenv("FOUNDATION_PLAN_ID") != "" {
+	if getenv("FOUNDATION_GUARD_GENERATION") != "" || getenv("FOUNDATION_CONFIRM") != "" {
 		return invalid
 	}
 	command := []string{"foundation", operation, root}
@@ -101,20 +109,7 @@ func foundationInputs(args []string, getenv func(string) string, stdout io.Write
 	if planID := getenv("FOUNDATION_PLAN_ID"); planID != "" {
 		command = append(command, planID)
 	}
-	for _, key := range []string{"FOUNDATION_GUARD_GENERATION", "FOUNDATION_CONFIRM"} {
-		if value := getenv(key); value != "" {
-			command = append(command, value)
-		}
-	}
 	if _, err := parse(command); err != nil {
-		return err
-	}
-	if operation == "finish-apply" {
-		project, err := FinishApplyProject(command[2:], getenv)
-		if err != nil {
-			return err
-		}
-		_, err = fmt.Fprintln(stdout, "project="+project)
 		return err
 	}
 	data := []byte(getenv("FOUNDATION_CONFIG"))
@@ -178,11 +173,11 @@ func foundationInputs(args []string, getenv func(string) string, stdout io.Write
 	return nil
 }
 
-// FinishApplyProject authorizes exact-generation recovery from protected registration.
+// FinishOperationProject authorizes exact-generation cleanup from protected registration.
 // It needs no current bootstrap inputs or image/secret availability.
-func FinishApplyProject(args []string, getenv func(string) string) (string, error) {
-	invalid := errors.New("recorded apply recovery requires a confirmed, registered service in the protected workflow")
-	if _, err := parse(append([]string{"foundation", "finish-apply"}, args...)); err != nil {
+func FinishOperationProject(args []string, getenv func(string) string) (string, error) {
+	invalid := errors.New("recorded operation cleanup requires a confirmed, registered service in the protected workflow")
+	if _, err := parse(append([]string{"foundation", "finish-operation"}, args...)); err != nil {
 		return "", invalid
 	}
 	if getenv("SERVICE_OPERATION_RECOVERY_ENABLED") != "true" || getenv("GITHUB_EVENT_NAME") != "workflow_dispatch" ||
@@ -194,7 +189,7 @@ func FinishApplyProject(args []string, getenv func(string) string) (string, erro
 		return "", invalid
 	}
 	for scope, service := range scopes {
-		if service == args[1] {
+		if service == args[0] {
 			return strings.TrimPrefix(scope, "services/"), nil
 		}
 	}

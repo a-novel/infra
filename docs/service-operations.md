@@ -40,7 +40,7 @@ Any failed or uncertain step after admission leaves the service blocked. A lost 
 also returns non-success even if removal committed; inspect the exact completion and generation,
 not just the workflow status. Cancellation stops local child processes but cannot recall accepted
 cloud operations. There is no force-unlock, takeover, expiry or automatic apply retry. The protected
-[finish operation](#finish-an-already-recorded-apply) can repeat only the final guard deletion after
+[finish operation](#finish-an-already-recorded-operation) can repeat only the final guard deletion after
 verifying recorded convergence and a completed original workflow attempt. Read-only
 assessment/drift refuses either service root while a guard is present, including before first state.
 
@@ -52,8 +52,9 @@ schedule unchanged instead of adding another pause/resume controller.
 
 Native completion has a distinct `native-success/RELEASE_ID.json` namespace in the service receipt
 folder, with a generation-bound pointer under `operations/`. The inspector below verifies these
-historical records. They are not legacy recovery receipts and the apply finisher rejects them.
-Restore consumption and protected native finish/repair still require implementation and an approved drill.
+historical records. The protected finisher can clean up their guard after the original writer ends.
+They are not legacy recovery receipts. Restore consumption and repair of missing completion still
+require implementation; live activation requires an approved drill.
 
 All pilot activation flags remain off by default; legacy production retains its existing global
 serialization and configuration/receipt owners. Do not activate competing writers on this basis.
@@ -117,37 +118,45 @@ the previous writer still need protected reconciliation. An absent live guard pr
 outcome, and another live generation belongs to a separate operation. The command never unlocks,
 repairs evidence or retries apply. See [Storage version selection](https://docs.cloud.google.com/storage/docs/json_api/v1/objects/get).
 
-### Finish an already-recorded apply
+<a id="finish-an-already-recorded-apply"></a>
+
+### Finish an already-recorded operation
 
 This **off-by-default** recovery path addresses only a failed final guard deletion. It cannot finish
-an incomplete apply or publish missing completion evidence. A successful workflow alone is not proof
-of convergence; the immutable completion and its exact configuration must already exist.
+an incomplete operation or publish missing completion evidence. The immutable completion and its
+exact configuration must already exist. Supported records are converged service-root applies and
+successful native JSON Keys releases. Rotation and unknown record kinds remain blocked.
 
 After inspecting the exact generation, separately approve `SERVICE_OPERATION_RECOVERY_ENABLED=true`
-in the `production-foundation` environment. From clean, current `master`, select the root and service
-reported by the inspector:
+in the `production-foundation` environment. From clean, current `master`, select the service and
+generation reported by the inspector:
 
 ```text
-go run ./cmd/infra foundation finish-apply <service-foundation|service-release> <service> <guard-generation> 'FINISH <service> <guard-generation>'
+go run ./cmd/infra foundation finish-operation <service> <guard-generation> 'FINISH <service> <guard-generation>'
 ```
 
+The operation kind and any apply root come from the verified record. Direct workflow dispatches must
+leave `root=none` and `plan_id` empty; extra selectors fail before authentication.
 Approve the protected run. It uses the existing foundation identity and writer concurrency; it does
 not run OpenTofu, publish configuration, execute jobs or touch Cloud Deploy. Current bootstrap inputs,
 images and secret availability are not needed. It verifies the same immutable evidence as inspection,
 then requires the [original GitHub run attempt](https://docs.github.com/en/rest/actions/workflow-runs#get-a-workflow-run-attempt)
-to be completed and bound to the recorded commit, root and service. The attempt may have failed after
-recording convergence; its conclusion is not used as apply evidence.
+to be completed and bound to the recorded commit and protected workflow action. Apply records bind
+the root/service to `foundation apply`; native records bind the exact `release.yaml` attempt to
+`production deploy-service`. The attempt may have failed after recording success; its conclusion
+is not used as completion evidence.
 
 The only possible write is deleting the current guard with its exact
 [generation precondition](https://docs.cloud.google.com/storage/docs/request-preconditions).
 An already-absent guard is a verified no-op. A successor guard, active/unknown original attempt,
 incomplete evidence or unconfirmed deletion returns non-success. Reinspect the same generation after
-an uncertain result; do not replay apply. Archived evidence is never deleted. Turn the recovery flag
+an uncertain result; do not replay deployment. Archived evidence is never deleted. Turn the recovery flag
 off after the approved operation and review the outcome before admitting another change.
 
-This closes an apply's recorded cleanup only, not application readiness or general interrupted-release
-recovery. It does not fence console administrators or unenrolled writers. If other native work may
-still be running, keep the service blocked and reconcile it separately before using this path.
+This closes recorded cleanup only, not current application readiness or general interrupted-release
+recovery. Native render/approval/verification is checked in the stored successful record, without
+querying current Cloud Deploy/Run state. The command cannot fence console administrators or unenrolled
+writers. If other native work may still be running, keep the service blocked and reconcile it separately.
 
 ## One owner for each responsibility
 
@@ -277,7 +286,8 @@ small decision boundary with table cases for competing owners, lost acknowledgem
 execution, missing receipts and stale-generation cleanup. Do not recreate a fake cloud in unit tests.
 
 The inactive JSON Keys workflow now connects the native path without activating it. Its native
-completion still needs restore consumption and a protected repair/finish path. A separately approved
+completion still needs restore consumption and repair for missing evidence. Recorded-success cleanup
+uses the protected finisher above. A separately approved
 interruption/cutover drill must prove service isolation, scheduled-work exclusion,
 credential boundaries, operator recovery and receipt repair. Only that evidence permits replacing
 the corresponding legacy orchestration and its tests. Peer deployments and Renovate remain unchanged.

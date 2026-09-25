@@ -208,10 +208,10 @@ func TestServiceBootstrapBoundary(t *testing.T) {
 		{"RecoveryActivationBeforeAuth", job.Steps[selectIndex].Env["SERVICE_OPERATION_RECOVERY_ENABLED"], "${{ vars.SERVICE_OPERATION_RECOVERY_ENABLED }}"},
 		{"RecoveryGeneration", job.Steps[selectIndex].Env["FOUNDATION_GUARD_GENERATION"], "${{ inputs.guard_generation }}"},
 		{"RecoveryConfirmation", job.Steps[selectIndex].Env["FOUNDATION_CONFIRM"], "${{ inputs.confirm }}"},
-		{"RecoveryOnly", finish.If, "inputs.operation == 'finish-apply'"},
+		{"RecoveryOnly", finish.If, "inputs.operation == 'finish-operation'"},
 		{"RecoveryAuthority", job.Permissions["actions"], "read"},
 		{"RecoveryInputs", finish.Env, map[string]string{
-			"GH_TOKEN": "${{ github.token }}", "ROOT_NAME": "${{ inputs.root }}", "SELECTED_PROJECT": "${{ steps.inputs.outputs.project }}",
+			"GH_TOKEN": "${{ github.token }}", "SELECTED_PROJECT": "${{ steps.inputs.outputs.project }}",
 			"GUARD_GENERATION": "${{ inputs.guard_generation }}", "CONFIRM": "${{ inputs.confirm }}", "STATE_BUCKET": "${{ vars.GCP_STATE_BUCKET }}",
 			"MANAGEMENT_PROJECT_ID": "${{ vars.GCP_MANAGEMENT_PROJECT_ID }}", "FOUNDATION_CONFIG": "${{ secrets.FOUNDATION_TFVARS_JSON }}",
 			"SERVICE_OPERATION_RECOVERY_ENABLED": "${{ vars.SERVICE_OPERATION_RECOVERY_ENABLED }}",
@@ -254,7 +254,7 @@ func TestPrerequisiteBoundary(t *testing.T) {
 	for _, testCase := range []struct{ file, job, command, condition string }{
 		{"main", "lint-repository", "infra preflight images", ""},
 		{"release", "release", "infra preflight images", "env.RELEASE_ACTION == 'deploy'"},
-		{"foundation", "execute", "infra preflight service-images", "inputs.root == 'service-release' && inputs.operation != 'finish-apply'"},
+		{"foundation", "execute", "infra preflight service-images", "inputs.root == 'service-release'"},
 	} {
 		t.Run(testCase.file, func(t *testing.T) {
 			t.Parallel()

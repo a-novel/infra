@@ -41,6 +41,7 @@ func TestCustodyOperationInspection(t *testing.T) {
 		{"ChangedGuard", "service-release", "", "42", "changed-guard", "", 70},
 		{"OversizedRecord", "service-release", "", "42", "oversized", "", 70},
 		{"MalformedRecord", "service-release", "", "42", "malformed", "", 70},
+		{"DuplicateRecordField", "service-release", "", "42", "duplicate", "", 70},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
@@ -88,24 +89,24 @@ func TestCustodyOperationEvidenceBinding(t *testing.T) {
 	}
 }
 
-func TestCustodyFinishApply(t *testing.T) {
+func TestCustodyFinishOperation(t *testing.T) {
 	t.Parallel()
 	for _, testCase := range []struct {
 		name, root, live, fault, field, value, want string
 		code, deletes                               int
 	}{
-		{name: "Foundation", root: "service-foundation", live: "42", deletes: 1, want: "No resources reapplied"},
-		{name: "Jobs", live: "42", deletes: 1, want: "No resources reapplied"},
+		{name: "Foundation", root: "service-foundation", live: "42", deletes: 1, want: "No deployment work repeated"},
+		{name: "Jobs", live: "42", deletes: 1, want: "No deployment work repeated"},
 		{name: "AlreadyAbsent", want: "No mutation performed"},
 		{name: "Successor", live: "45", code: 70},
 		{name: "Incomplete", live: "42", fault: "missing-completion", code: 70},
 		{name: "ConfigurationChanged", live: "42", fault: "changed-configuration", code: 70},
+		{name: "DuplicateRecordField", live: "42", fault: "duplicate", code: 70},
 		{name: "ActiveWriter", live: "42", field: "status", value: "in_progress", code: 70},
 		{name: "WrongAttempt", live: "42", field: "run_attempt", value: "2", code: 70},
 		{name: "WrongCommit", live: "42", field: "head_sha", value: strings.Repeat("b", 40), code: 70},
 		{name: "WrongWorkflow", live: "42", field: "path", value: ".github/workflows/recovery.yaml", code: 70},
 		{name: "WrongRepo", live: "42", field: "repository", value: "peer/infra", code: 70},
-		{name: "SelectedOtherRoot", live: "42", fault: "selected-root", code: 70},
 		{name: "WrongRoot", live: "42", field: "display_title", value: "foundation apply service-foundation/json-keys by @operator", code: 70},
 		{name: "WrongService", live: "42", field: "display_title", value: "foundation apply service-release/authentication by @operator", code: 70},
 		{name: "UnknownWriter", live: "42", fault: "writer-unavailable", code: 70},
@@ -121,9 +122,6 @@ func TestCustodyFinishApply(t *testing.T) {
 			fixture := newOperationInspection(t, root)
 			fixture.finish()
 			fixture.live, fixture.fault, fixture.deletes = testCase.live, testCase.fault, testCase.deletes
-			if testCase.fault == "selected-root" {
-				fixture.args[3] = "service-foundation"
-			}
 			if testCase.field != "" {
 				fixture.writer[testCase.field] = testCase.value
 			}
@@ -172,7 +170,7 @@ func TestCustodyOperationInspectionScope(t *testing.T) {
 				case "finish-workflow":
 					delete(fixture.env, "GITHUB_WORKFLOW_REF")
 				case "finish-confirm":
-					fixture.args[6] = "FINISH authentication 42"
+					fixture.args[5] = "FINISH authentication 42"
 				}
 			}
 			fixture.check(t, testCase.code, "")
@@ -191,7 +189,7 @@ type operationInspection struct {
 }
 
 func (fixture *operationInspection) finish() {
-	fixture.args = []string{"operation", "finish", fixture.args[2], fixture.root, "agora-json-keys-test", "42", "FINISH json-keys 42"}
+	fixture.args = []string{"operation", "finish", fixture.args[2], "agora-json-keys-test", "42", "FINISH json-keys 42"}
 	fixture.env["STATE_BUCKET"] = fixture.args[2]
 	fixture.env["SERVICE_OPERATION_RECOVERY_ENABLED"] = "true"
 	fixture.env["GITHUB_EVENT_NAME"] = "workflow_dispatch"
@@ -199,7 +197,7 @@ func (fixture *operationInspection) finish() {
 	fixture.writer = object{
 		"id": 124, "run_attempt": 1, "status": "completed", "head_branch": "master", "head_sha": strings.Repeat("a", 40),
 		"event": "workflow_dispatch", "path": ".github/workflows/foundation.yaml", "repository": "a-novel/infra",
-		"display_title": "foundation apply " + fixture.args[3] + "/json-keys by @operator",
+		"display_title": "foundation apply " + fixture.root + "/json-keys by @operator",
 	}
 }
 
@@ -283,6 +281,8 @@ func (fixture *operationInspection) check(t *testing.T, expected int, want strin
 					data = bytes.Repeat([]byte("x"), (1<<20)+1)
 				case "malformed":
 					data = append(data, []byte(` {}`)...)
+				case "duplicate":
+					data = append([]byte(`{"runId":"999",`), data[1:]...)
 				}
 			}
 		case fixture.completion:

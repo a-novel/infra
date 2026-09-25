@@ -42,50 +42,64 @@ type nativePointer struct {
 	Generation    int64  `json:"generation,string"`
 }
 
-// InspectOperation validates historical native completion and returns a payload-free
-// report. read is confined to the approved receipt bucket, bounds and pins downloads,
-// and returns nil only for an absent unversioned object. No native APIs are invoked.
-func InspectOperation(data []byte, generation int64, bucket, project string, getenv func(string) string, read func(string, int64) ([]byte, error)) (string, error) {
+// OperationEvidence identifies the writer and historical outcome of a native release.
+// It grants no authority to replay work or publish missing completion evidence.
+type OperationEvidence struct {
+	RunID, RunAttempt, Commit string
+	// Completed requires the exact generation-bound successful native record.
+	Completed bool
+	// Report contains only validated identifiers and the historical outcome.
+	Report string
+}
+
+// InspectOperation validates historical native completion. read is confined to the
+// approved receipt bucket, bounds and pins downloads, and returns nil only for an
+// absent unversioned object. No native APIs are invoked.
+func InspectOperation(data []byte, generation int64, bucket, project string, getenv func(string) string, read func(string, int64) ([]byte, error)) (*OperationEvidence, error) {
 	invalid := errors.New("native operation evidence does not match the registered operation")
 	var guard nativeGuard
 	if jsonv2.Unmarshal(data, &guard, jsonv2.RejectUnknownMembers(true)) != nil || generation <= 0 ||
 		guard.SchemaVersion != 1 || guard.Kind != "native-release" ||
 		!numberPattern.MatchString(guard.RunID) || !numberPattern.MatchString(guard.RunAttempt) {
-		return "", invalid
+		return nil, invalid
 	}
 	if guard.SHA256 != fmt.Sprintf("%x", sha256.Sum256(guard.Configuration)) {
-		return "", invalid
+		return nil, invalid
 	}
 	input, request, err := registeredOperation(guard.Configuration, getenv, bucket)
 	if err != nil || input.ProjectID != project {
-		return "", invalid
+		return nil, invalid
 	}
 	scope := input.scope()
 	data, err = read(fmt.Sprintf("%soperations/%d.json", scope.prefix(), generation), 0)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	completion := "not recorded; native work may have been accepted or completed"
 	if data != nil {
 		var pointer nativePointer
 		if jsonv2.Unmarshal(data, &pointer, jsonv2.RejectUnknownMembers(true)) != nil || pointer.Generation <= 0 {
-			return "", invalid
+			return nil, invalid
 		}
 		expected := nativePointer{1, "native-release", scope.ReceiptBucket, scope.prefix() + "native-success/" + request.ReleaseId + ".json", pointer.Generation}
 		if pointer != expected {
-			return "", invalid
+			return nil, invalid
 		}
 		data, err = read(pointer.Object, pointer.Generation)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		if err := recordedNativeCompletion(data, guard.Configuration, generation, input, request); err != nil {
-			return "", err
+			return nil, err
 		}
 		completion = "recorded native success; exact configuration and rollout verified"
 	}
-	return fmt.Sprintf("Native release: %s; run %s-%s; commit %s\nRollout: %s/rollouts/production\nCompletion: %s\n",
-		request.ReleaseId, guard.RunID, guard.RunAttempt, request.Release.Annotations["source-commit"], request.Release.Name, completion), nil
+	return &OperationEvidence{
+		RunID: guard.RunID, RunAttempt: guard.RunAttempt, Commit: request.Release.Annotations["source-commit"],
+		Completed: data != nil,
+		Report: fmt.Sprintf("Native release: %s; run %s-%s; commit %s\nRollout: %s/rollouts/production\nCompletion: %s\n",
+			request.ReleaseId, guard.RunID, guard.RunAttempt, request.Release.Annotations["source-commit"], request.Release.Name, completion),
+	}, nil
 }
 
 func recordedNativeCompletion(data, configuration []byte, generation int64, input operationInputs, request *deploypb.CreateReleaseRequest) error {

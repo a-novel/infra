@@ -108,14 +108,15 @@ func TestFoundationInputs(t *testing.T) {
 	}
 }
 
-func TestFinishApplyInputs(t *testing.T) {
+func TestFinishOperationInputs(t *testing.T) {
 	t.Parallel()
 	for _, testCase := range []struct {
 		name, root, variable, value string
 		valid                       bool
 	}{
-		{name: "Foundation", root: "service-foundation", valid: true},
-		{name: "Jobs", root: "service-release", valid: true},
+		{name: "Success", valid: true},
+		{name: "ApplyRootNotAllowed", root: "service-foundation"},
+		{name: "JobRootNotAllowed", root: "service-release"},
 		{name: "Inactive", variable: "SERVICE_OPERATION_RECOVERY_ENABLED"},
 		{name: "Unregistered", variable: "FOUNDATION_CONFIG", value: `{}`},
 		{name: "WrongWorkflow", variable: "GITHUB_WORKFLOW_REF", value: "a-novel/infra/.github/workflows/drift.yaml@refs/heads/master"},
@@ -123,6 +124,8 @@ func TestFinishApplyInputs(t *testing.T) {
 		{name: "MissingGeneration", variable: "FOUNDATION_GUARD_GENERATION"},
 		{name: "MissingConfirmation", variable: "FOUNDATION_CONFIRM"},
 		{name: "UnexpectedPlan", variable: "FOUNDATION_PLAN_ID", value: "123-1"},
+		{name: "LegacyCommand", variable: "FOUNDATION_OPERATION", value: "finish-apply"},
+		{name: "PlanCannotFinish", variable: "FOUNDATION_OPERATION", value: "plan"},
 		{name: "PlanCannotReplaceGeneration", variable: "FOUNDATION_GUARD_GENERATION", value: "123-1"},
 		{name: "LegacyRoot", root: "foundation"},
 	} {
@@ -130,10 +133,10 @@ func TestFinishApplyInputs(t *testing.T) {
 			t.Parallel()
 			root := testCase.root
 			if root == "" {
-				root = "service-release"
+				root = "none"
 			}
 			env := map[string]string{
-				"FOUNDATION_OPERATION": "finish-apply", "FOUNDATION_GUARD_GENERATION": "42", "FOUNDATION_CONFIRM": "FINISH json-keys 42",
+				"FOUNDATION_OPERATION": "finish-operation", "FOUNDATION_GUARD_GENERATION": "42", "FOUNDATION_CONFIRM": "FINISH json-keys 42",
 				"SERVICE_OPERATION_RECOVERY_ENABLED": "true", "GITHUB_EVENT_NAME": "workflow_dispatch",
 				"GITHUB_WORKFLOW_REF":   "a-novel/infra/.github/workflows/foundation.yaml@refs/heads/master",
 				"MANAGEMENT_PROJECT_ID": "agora-management-test", "STATE_BUCKET": "agora-management-test-123-tofu-state",

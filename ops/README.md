@@ -75,7 +75,7 @@ go run ./cmd/infra foundation apply <bootstrap|foundation> <plan-id>
 go run ./cmd/infra foundation plan <service-foundation|service-release> <json-keys|authentication>
 go run ./cmd/infra foundation apply <service-foundation|service-release> <json-keys|authentication> <plan-id>
 go run ./cmd/infra foundation promote-images service-release <json-keys|authentication>
-go run ./cmd/infra foundation finish-apply <service-foundation|service-release> <service> <guard-generation> 'FINISH <service> <guard-generation>'
+go run ./cmd/infra foundation finish-operation <service> <guard-generation> 'FINISH <service> <guard-generation>'
 
 go run ./cmd/infra release deploy [--no-wait]
 go run ./cmd/infra release rollback <receipt-id>
@@ -127,9 +127,10 @@ deployment. It reports the exact rollout's verification outcome without submitti
 [Interrupted-apply inspection](../docs/service-operations.md#inspect-an-interrupted-apply) likewise uses
 read-only credentials and separate concurrency, with protected foundation registration and environment
 review. A successful inspection is not a successful deployment or permission to unlock/retry.
-The separately enabled [finish operation](../docs/service-operations.md#finish-an-already-recorded-apply)
-can remove only the exact live guard of an already-recorded converged apply after its original workflow
-attempt completes. It never reapplies resources or repairs missing evidence, and uses writer concurrency.
+The separately enabled [finish operation](../docs/service-operations.md#finish-an-already-recorded-operation)
+can remove only the exact live guard of a recorded converged apply or successful native release after
+its original workflow attempt completes. It never repeats deployment or repairs missing evidence,
+and uses writer concurrency.
 All other infrastructure operations retain their shared execution guard.
 
 The launcher uses GitHub's dispatch response to identify its run and verifies the exact commit before
@@ -190,7 +191,7 @@ it owns [admission through configuration and completion](../docs/service-operati
 using the existing Storage Go client; the remaining shell entrypoint only forwards legacy callers.
 Failures never automatically release a service guard. Legacy configuration/receipt owners are unchanged.
 
-`infra custody operation finish <state-bucket> <root> <registered-project> <guard-generation> <confirmation>`
+`infra custody operation finish <state-bucket> <registered-project> <guard-generation> <confirmation>`
 is the protected workflow's narrow cleanup counterpart. It requires explicit recovery activation,
 master workflow identity, exact completion/configuration evidence and a completed original run attempt;
 only a generation-conditioned live guard deletion is allowed. It is not an ad-hoc unlock shortcut.
