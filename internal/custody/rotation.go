@@ -22,7 +22,7 @@ type rotationIntent struct {
 	WorkflowRevision  string `json:"workflowRevision"`
 }
 
-// rotationCompletion is written by the dispatcher only after its exact RunJob succeeds.
+// rotationCompletion records native success, from the dispatcher or protected recovery.
 type rotationCompletion struct {
 	Operation       rotationIntent `json:"operation"`
 	GuardGeneration int64          `json:"guardGeneration,string"`
@@ -50,8 +50,8 @@ func inspectRotation(ctx context.Context, client *storage.Service, expected appl
 	if !scoped || !rotationID.MatchString(executionID) || !regexp.MustCompile(`^[a-zA-Z0-9-]{1,64}$`).MatchString(intent.WorkflowRevision) {
 		return nil, false, failure{70, "Rotation dispatcher identity is invalid."}
 	}
-	receipts := strings.TrimSuffix(guard.Bucket, "-tofu-state") + "-deployment-receipts"
-	name := "services/" + expected.Project + "/production/rotations/" + executionID + "/success.json"
+	receipts, prefix := intent.records(guard)
+	name := prefix + "success.json"
 	data, err := readCurrentObject(ctx, client, receipts, name)
 	if err != nil || data == nil {
 		return intent, false, err
@@ -60,20 +60,31 @@ func inspectRotation(ctx context.Context, client *storage.Service, expected appl
 	if err := decodeRecord(data, &completion); err != nil {
 		return nil, false, err
 	}
-	if completion.Operation != *intent || completion.GuardGeneration != guard.Generation || completion.CompletedAt.IsZero() {
-		return nil, false, failure{70, "Rotation completion does not match its exact guard and dispatcher."}
+	return intent, true, intent.checkCompletion(completion, guard)
+}
+
+func (intent rotationIntent) records(guard objectReference) (string, string) {
+	_, id, _ := strings.Cut(intent.WorkflowExecution, "/executions/")
+	return strings.TrimSuffix(guard.Bucket, "-tofu-state") + "-deployment-receipts",
+		"services/" + intent.Project + "/production/rotations/" + id + "/"
+}
+
+// checkCompletion binds both dispatcher-written and repaired success to admission.
+func (intent rotationIntent) checkCompletion(completion rotationCompletion, guard objectReference) error {
+	if completion.Operation != intent || completion.GuardGeneration != guard.Generation || completion.CompletedAt.IsZero() {
+		return failure{70, "Rotation completion does not match its exact guard and dispatcher."}
 	}
 	// Native Run names may use the project number. Both names must share that scope.
 	location, operationID, found := strings.Cut(completion.RunOperation, "/operations/")
-	locationPattern := `^projects/(` + regexp.QuoteMeta(expected.Project) + `|[1-9][0-9]*)/locations/` + regexp.QuoteMeta(expected.Region) + `$`
+	locationPattern := `^projects/(` + regexp.QuoteMeta(intent.Project) + `|[1-9][0-9]*)/locations/` + regexp.QuoteMeta(intent.Region) + `$`
 	executionPattern := `^` + regexp.QuoteMeta(location) + `/jobs/agora-json-keys-rotatekeys/executions/agora-json-keys-rotatekeys-[a-z0-9-]+$`
 	if !found || !regexp.MustCompile(locationPattern).MatchString(location) || !regexp.MustCompile(`^[a-zA-Z0-9-]{1,128}$`).MatchString(operationID) {
-		return nil, false, failure{70, "Rotation completion has an invalid native operation."}
+		return failure{70, "Rotation completion has an invalid native operation."}
 	}
 	if !regexp.MustCompile(executionPattern).MatchString(completion.Execution) || !rotationID.MatchString(completion.ExecutionUID) {
-		return nil, false, failure{70, "Rotation completion has an invalid native execution."}
+		return failure{70, "Rotation completion has an invalid native execution."}
 	}
-	return intent, true, nil
+	return nil
 }
 
 // completedWriter verifies termination; recorded success separately proves the job outcome.

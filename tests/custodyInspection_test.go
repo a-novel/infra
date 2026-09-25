@@ -187,6 +187,7 @@ type operationInspection struct {
 	writer                    object
 	dispatcher                string
 	deletes                   int
+	handle                    func(http.ResponseWriter, *http.Request) bool
 }
 
 func (fixture *operationInspection) finish() {
@@ -251,6 +252,9 @@ func (fixture *operationInspection) check(t *testing.T, expected int, want strin
 	var requests, liveReads, deletes atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
+		if fixture.handle != nil && fixture.handle(w, r) {
+			return
+		}
 		if fixture.dispatcher != "" && r.URL.Path == "/v1/"+fixture.dispatcher {
 			assert.Equal(t, []string{"GET", "finish", "state,endTime,workflowRevisionId"},
 				[]string{r.Method, fixture.args[1], r.URL.Query().Get("fields")})
@@ -307,6 +311,9 @@ func (fixture *operationInspection) check(t *testing.T, expected int, want strin
 			if fixture.fault == "changed-configuration" {
 				data = append(data, '\n')
 			}
+		case strings.TrimSuffix(fixture.completion, "success.json") + "intent.json",
+			strings.TrimSuffix(fixture.completion, "success.json") + "operation.json":
+			// An unrecorded dispatch cannot be recovered by the success-only fixtures.
 		default:
 			t.Errorf("unexpected object read: %s", r.URL.Path)
 		}
