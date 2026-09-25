@@ -4,7 +4,7 @@ go 1.27.1
 
 require (
 	cloud.google.com/go/deploy v1.33.0
-	cloud.google.com/go/longrunning v1.2.0
+	cloud.google.com/go/longrunning v1.3.0
 	cloud.google.com/go/run v1.23.0
 	github.com/google/go-containerregistry v0.22.1
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
