@@ -10,8 +10,8 @@ cloud.google.com/go/deploy v1.33.0 h1:2PdZ8kbIztLVRMrIN/wHbalZeZZikQlxBptBFK+eEt
 cloud.google.com/go/deploy v1.33.0/go.mod h1:QdF3plD8D5gV2RmkTXBB6cHrq490WlpFr1SChdOJO2Y=
 cloud.google.com/go/iam v1.12.0 h1:Aki3bX9aHUDKPHfnRJfDcTdVedvy6quGBQcTqx3DRXk=
 cloud.google.com/go/iam v1.12.0/go.mod h1:FEZ4lXpADAC2AIpQY7LANNjjwyQ2jK439CI2VaD+sLY=
-cloud.google.com/go/longrunning v1.2.0 h1:WjYH3YHBGCxGJP9M4dWGHBfXr/cFIjMkNgWcJj7/iMM=
-cloud.google.com/go/longrunning v1.2.0/go.mod h1:5KMQALFGOCtFoi2xSOA1u3H7WKlhmckgiyFw7+LGQp0=
+cloud.google.com/go/longrunning v1.3.0 h1:lZ6c8SJJBmILp/Wnr3vGnBLa0q+cYfSHRCcUfVI2hpI=
+cloud.google.com/go/longrunning v1.3.0/go.mod h1:wpgLxCn+UA3/TZ1bj/fW39mfDpwVlMPu1xKJyoMt7V0=
 cloud.google.com/go/run v1.23.0 h1:JvTkOn+8h+QicGzBPWjgSrwpTcs2b6zJkusfEnmvkGo=
 cloud.google.com/go/run v1.23.0/go.mod h1:ZCGrir3QdVgAJsVChr2nlQTfaknro8nwpEZwJDRHHhI=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
