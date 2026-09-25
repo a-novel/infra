@@ -35,14 +35,13 @@ func (operation *serviceOperation) acquire(ctx context.Context, getenv func(stri
 	if _, err := fmt.Fprintf(output, "Service guard: gs://%s/%s\n", operation.input.StateBucket, name); err != nil {
 		return errors.New("cannot report operation identity")
 	}
-	guard := struct {
-		SchemaVersion int             `json:"schemaVersion"`
-		Kind          string          `json:"kind"`
-		RunID         string          `json:"runId"`
-		RunAttempt    string          `json:"runAttempt"`
-		SHA256        string          `json:"sha256"`
-		Configuration json.RawMessage `json:"configuration"`
-	}{1, "native-release", getenv("GITHUB_RUN_ID"), getenv("GITHUB_RUN_ATTEMPT"), fmt.Sprintf("%x", sha256.Sum256(operation.data)), operation.data}
+	// RawMessage is compacted and HTML-escaped by record encoding. Hash those
+	// preserved bytes, while the prepared-file checksum binds the original input.
+	configuration, err := json.Marshal(json.RawMessage(operation.data))
+	if err != nil {
+		return errors.New("cannot encode native operation configuration")
+	}
+	guard := nativeGuard{1, "native-release", getenv("GITHUB_RUN_ID"), getenv("GITHUB_RUN_ATTEMPT"), fmt.Sprintf("%x", sha256.Sum256(configuration)), configuration}
 	object, err := operation.record(ctx, operation.input.StateBucket, name, guard)
 	if err != nil {
 		return errors.New("service admission busy or uncertain; no release or migration dispatched by this invocation")
@@ -154,26 +153,12 @@ func (operation serviceOperation) finish(ctx context.Context, id string, output 
 	if err != nil {
 		return errors.New("cannot encode completed native rollout")
 	}
-	receipt := struct {
-		SchemaVersion int             `json:"schemaVersion"`
-		Kind          string          `json:"kind"`
-		Guard         int64           `json:"guardGeneration,string"`
-		Configuration json.RawMessage `json:"configuration"`
-		Release       json.RawMessage `json:"release"`
-		Rollout       json.RawMessage `json:"rollout"`
-		CompletedAt   string          `json:"completedAt"`
-	}{1, "native-release", operation.generation, operation.data, releaseJSON, rolloutJSON, time.Now().UTC().Format(time.RFC3339)}
+	receipt := nativeCompletion{1, "native-release", operation.generation, operation.data, releaseJSON, rolloutJSON, time.Now().UTC().Format(time.RFC3339)}
 	object, err := operation.record(ctx, operation.scope.ReceiptBucket, operation.scope.prefix()+"native-success/"+id+".json", receipt)
 	if err != nil {
 		return errors.New("native rollout succeeded but completion publication is uncertain; guard retained")
 	}
-	completion := struct {
-		SchemaVersion int    `json:"schemaVersion"`
-		Kind          string `json:"kind"`
-		Bucket        string `json:"bucket"`
-		Object        string `json:"object"`
-		Generation    int64  `json:"generation,string"`
-	}{1, "native-release", object.Bucket, object.Name, object.Generation}
+	completion := nativePointer{1, "native-release", object.Bucket, object.Name, object.Generation}
 	if _, err := operation.record(ctx, operation.scope.ReceiptBucket, operation.scope.prefix()+"operations/"+strconv.FormatInt(operation.generation, 10)+".json", completion); err != nil {
 		return errors.New("native completion breadcrumb unavailable; guard retained")
 	}

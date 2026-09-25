@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -16,6 +17,7 @@ import (
 	"google.golang.org/api/option"
 	"google.golang.org/api/storage/v1"
 
+	"github.com/a-novel/infra/internal/submission"
 	"github.com/a-novel/infra/internal/workflow"
 )
 
@@ -23,11 +25,12 @@ const inspectionLimit = 1 << 20
 
 var digestPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
-type applyEvidence struct {
-	intent    applyIntent
-	guard     objectReference
-	live      int64
-	completed bool
+type operationEvidence struct {
+	intent       applyIntent
+	guard        objectReference
+	live         int64
+	completed    bool
+	nativeReport string
 }
 
 func (custody store) inspectOperation(action string, args []string, getenv func(string) string, output io.Writer, options []option.ClientOption) error {
@@ -75,7 +78,7 @@ func (custody store) inspectOperation(action string, args []string, getenv func(
 		return failure{70, "Operation inspection client unavailable."}
 	}
 	expected := applyIntent{Project: args[0], Service: scopes["services/"+args[0]], Region: region}
-	evidence, err := readApply(ctx, client, custody.bucket, expected, generation)
+	evidence, err := readOperation(ctx, client, custody.bucket, expected, generation, getenv)
 	if err != nil {
 		return err
 	}
@@ -85,63 +88,92 @@ func (custody store) inspectOperation(action string, args []string, getenv func(
 	return evidence.report(output)
 }
 
-// readApply verifies historical evidence separately from the observed live guard.
-func readApply(ctx context.Context, client *storage.Service, bucket string, expected applyIntent, generation int64) (applyEvidence, error) {
+// readOperation verifies historical evidence separately from the observed live guard.
+func readOperation(ctx context.Context, client *storage.Service, bucket string, expected applyIntent, generation int64, getenv func(string) string) (operationEvidence, error) {
 	guard := objectReference{Bucket: bucket, Name: "services/" + expected.Project + "/release/operation.json"}
 	live, err := liveGeneration(ctx, client, guard.Bucket, guard.Name)
 	if err != nil {
-		return applyEvidence{}, err
+		return operationEvidence{}, err
 	}
 	if generation == 0 {
 		generation = live
 	}
 	if generation == 0 {
-		return applyEvidence{}, nil
+		return operationEvidence{}, nil
 	}
 	guard.Generation = generation
 	data, err := readObject(ctx, client, guard)
 	if err != nil {
-		return applyEvidence{}, err
+		return operationEvidence{}, err
 	}
 	guard.SHA256 = checksum(data)
-	var intent applyIntent
-	if err := decodeRecord(data, &intent); err != nil {
-		return applyEvidence{}, err
+	evidence := operationEvidence{intent: expected, guard: guard, live: live}
+	var header struct {
+		Kind string `json:"kind"`
 	}
-	if intent.SchemaVersion != 1 {
-		return applyEvidence{}, failure{70, "Unsupported operation schema."}
+	if jsonv2.Unmarshal(data, &header) != nil {
+		return operationEvidence{}, failure{70, "Malformed operation evidence."}
 	}
-	if intent.Project != expected.Project || intent.Service != expected.Service || intent.Region != expected.Region {
-		return applyEvidence{}, failure{70, "Stored operation does not match the approved service scope."}
+	switch header.Kind {
+	case "":
+		evidence.intent, evidence.completed, err = inspectApply(ctx, client, expected, guard, data)
+	case "native-release":
+		evidence.nativeReport, err = submission.InspectOperation(data, generation, bucket, expected.Project, getenv, func(name string, selected int64) ([]byte, error) {
+			receipts := strings.TrimSuffix(bucket, "-tofu-state") + "-deployment-receipts"
+			if selected == 0 {
+				var err error
+				selected, err = liveGeneration(ctx, client, receipts, name)
+				if err != nil || selected == 0 {
+					return nil, err
+				}
+			}
+			return readObject(ctx, client, objectReference{Bucket: receipts, Name: name, Generation: selected})
+		})
+	default:
+		err = failure{70, "Unsupported operation kind; retain the guard for protected reconciliation."}
 	}
-	if !commitPattern.MatchString(intent.Commit) || !sequencePattern.MatchString(intent.PlanID) {
-		return applyEvidence{}, failure{70, "Stored operation identity is invalid."}
-	}
-	if !digestPattern.MatchString(intent.PlanSHA256) || !digestPattern.MatchString(intent.InputsSHA256) {
-		return applyEvidence{}, failure{70, "Stored operation hashes are invalid."}
-	}
-	name, err := intent.configurationName()
 	if err != nil {
-		return applyEvidence{}, failure{70, "Stored operation root or run identity is invalid."}
-	}
-	completion, err := inspectCompletion(ctx, client, intent, guard, name)
-	if err != nil {
-		return applyEvidence{}, err
+		return operationEvidence{}, err
 	}
 	// Two observations detect a change; they do not fence a still-running writer.
 	current, err := liveGeneration(ctx, client, guard.Bucket, guard.Name)
 	if err != nil {
-		return applyEvidence{}, err
+		return operationEvidence{}, err
 	}
 	if current != live {
-		return applyEvidence{}, failure{70, "Live guard changed during inspection; repeat only this read-only inspection."}
+		return operationEvidence{}, failure{70, "Live guard changed during inspection; repeat only this read-only inspection."}
 	}
-	return applyEvidence{intent, guard, live, completion}, nil
+	return evidence, nil
 }
 
-func (evidence applyEvidence) report(output io.Writer) error {
+func inspectApply(ctx context.Context, client *storage.Service, expected applyIntent, guard objectReference, data []byte) (applyIntent, bool, error) {
+	var intent applyIntent
+	if err := decodeRecord(data, &intent); err != nil {
+		return intent, false, err
+	}
+	if intent.SchemaVersion != 1 {
+		return intent, false, failure{70, "Unsupported operation schema."}
+	}
+	if intent.Project != expected.Project || intent.Service != expected.Service || intent.Region != expected.Region {
+		return intent, false, failure{70, "Stored operation does not match the approved service scope."}
+	}
+	if !commitPattern.MatchString(intent.Commit) || !sequencePattern.MatchString(intent.PlanID) {
+		return intent, false, failure{70, "Stored operation identity is invalid."}
+	}
+	if !digestPattern.MatchString(intent.PlanSHA256) || !digestPattern.MatchString(intent.InputsSHA256) {
+		return intent, false, failure{70, "Stored operation hashes are invalid."}
+	}
+	name, err := intent.configurationName()
+	if err != nil {
+		return intent, false, failure{70, "Stored operation root or run identity is invalid."}
+	}
+	completion, err := inspectCompletion(ctx, client, intent, guard, name)
+	return intent, completion, err
+}
+
+func (evidence operationEvidence) report(output io.Writer) error {
 	if evidence.guard.Generation == 0 {
-		_, err := fmt.Fprintln(output, "No live service guard was observed; this does not establish any earlier apply outcome.")
+		_, err := fmt.Fprintln(output, "No live service guard was observed; this does not establish any earlier operation outcome.")
 		return err
 	}
 	state := "another generation is live"
@@ -150,6 +182,11 @@ func (evidence applyEvidence) report(output io.Writer) error {
 		state = "held"
 	case 0:
 		state = "no live guard"
+	}
+	if evidence.nativeReport != "" {
+		_, err := fmt.Fprintf(output, "Service: %s (%s)\nGuard generation: %d (%s)\n%sEvidence only: not current health, settled native work, a recovery receipt, or permission to unlock or retry.\n",
+			evidence.intent.Service, evidence.intent.Project, evidence.guard.Generation, state, evidence.nativeReport)
+		return err
 	}
 	completion := "not recorded; apply may still have changed resources"
 	if evidence.completed {

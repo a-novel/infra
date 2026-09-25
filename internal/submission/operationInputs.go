@@ -49,19 +49,28 @@ func (input operationInputs) scope() scope {
 }
 
 func operationConfig(data []byte, getenv func(string) string) (operationInputs, *deploypb.CreateReleaseRequest, error) {
+	input, request, err := registeredOperation(data, getenv, getenv("STATE_BUCKET"))
+	if err != nil {
+		return input, nil, err
+	}
+	if getenv("SERVICE_NATIVE_RELEASE_ENABLED") != "true" || getenv("GITHUB_EVENT_NAME") != "workflow_dispatch" ||
+		getenv("GITHUB_WORKFLOW_REF") != "a-novel/infra/.github/workflows/release.yaml@refs/heads/master" ||
+		!numberPattern.MatchString(getenv("GITHUB_RUN_ID")) || !numberPattern.MatchString(getenv("GITHUB_RUN_ATTEMPT")) ||
+		request.Release.Annotations["source-commit"] != getenv("GITHUB_SHA") {
+		return input, nil, errors.New("service release requires the enabled protected workflow at its exact source commit")
+	}
+	return input, request, nil
+}
+
+// Historical inspection uses current registration without requiring writer activation
+// or replacing the recorded source commit with the inspecting workflow's commit.
+func registeredOperation(data []byte, getenv func(string) string, bucket string) (operationInputs, *deploypb.CreateReleaseRequest, error) {
 	var input operationInputs
-	invalid := errors.New("service release requires protected, exact-current-commit HCL output and an established predecessor")
+	invalid := errors.New("service release requires registered HCL output and an established predecessor")
 	if len(data) > maxRequestBytes || jsonv2.Unmarshal(data, &input, jsonv2.RejectUnknownMembers(true)) != nil {
 		return input, nil, invalid
 	}
-	if getenv("SERVICE_NATIVE_RELEASE_ENABLED") != "true" || getenv("GITHUB_EVENT_NAME") != "workflow_dispatch" ||
-		getenv("GITHUB_WORKFLOW_REF") != "a-novel/infra/.github/workflows/release.yaml@refs/heads/master" {
-		return input, nil, invalid
-	}
-	if !numberPattern.MatchString(getenv("GITHUB_RUN_ID")) || !numberPattern.MatchString(getenv("GITHUB_RUN_ATTEMPT")) {
-		return input, nil, invalid
-	}
-	suffix, err := workflow.ServiceScope(data, getenv, getenv("STATE_BUCKET"))
+	suffix, err := workflow.ServiceScope(data, getenv, bucket)
 	if err != nil || suffix != "services/"+input.ProjectID || input.Service != "json-keys" || input.SchemaVersion != 1 {
 		return input, nil, invalid
 	}
@@ -73,7 +82,7 @@ func operationConfig(data []byte, getenv func(string) string) (operationInputs, 
 	if err != nil {
 		return input, nil, err
 	}
-	if request.Release.Annotations["source-commit"] != getenv("GITHUB_SHA") || !releasePattern.MatchString(input.Predecessor) || input.Predecessor == request.ReleaseId {
+	if !releasePattern.MatchString(input.Predecessor) || input.Predecessor == request.ReleaseId {
 		return input, nil, invalid
 	}
 	if !validRequestID(input.RolloutRequestID) || input.RolloutRequestID == request.RequestId {
@@ -107,7 +116,7 @@ func operationConfig(data []byte, getenv func(string) string) (operationInputs, 
 }
 
 func (input operationInputs) job(role string) (*runpb.Job, error) {
-	job := new(runpb.Job)
+	job := &runpb.Job{}
 	if protojson.Unmarshal(input.Jobs[role], job) != nil {
 		return nil, errors.New("invalid approved native job snapshot")
 	}

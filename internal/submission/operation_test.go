@@ -74,7 +74,10 @@ func TestOperation(t *testing.T) {
 			rotation.Template.Template.Containers[0].Name = "rotatekeys"
 			rotation.Template.Template.Containers[0].Image = strings.Replace(migration.Template.Template.Containers[0].Image, "migrations@", "rotatekeys@", 1)
 			config, env := operationFixture(t, request, migration, rotation)
-			data := encodeOperation(t, config)
+			config["foundation"] = map[string]string{"private": "<private>&configuration"}
+			var formatted bytes.Buffer
+			require.NoError(t, json.Indent(&formatted, encodeOperation(t, config), "", "  "))
+			data := bytes.ReplaceAll(formatted.Bytes(), []byte(`\u0026`), []byte("&"))
 			file := filepath.Join(t.TempDir(), "approved.json")
 			require.NoError(t, os.WriteFile(file, data, 0o600))
 			priorRequest := proto.Clone(request).(*deploypb.CreateReleaseRequest)
@@ -101,6 +104,7 @@ func TestOperation(t *testing.T) {
 			}
 			var mutex sync.Mutex
 			var got result
+			var storedGuard []byte
 			approvalReads := 0
 			generation := int64(1)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -134,6 +138,9 @@ func TestOperation(t *testing.T) {
 						return
 					}
 					objects[key] = body
+					if object.Name == guard {
+						storedGuard = body
+					}
 					got.receipt, got.completion = got.receipt || receipt, got.completion || completion
 					if (object.Name == guard && testCase.name == "GuardAckLost") || (receipt && testCase.name == "ReceiptAckLost") {
 						w.WriteHeader(http.StatusServiceUnavailable)
@@ -267,6 +274,23 @@ func TestOperation(t *testing.T) {
 			_, got.held = objects[stateBucket+"/"+guard]
 			mutex.Unlock()
 			require.Equal(t, testCase.want, got, "%s", &output)
+			if storedGuard != nil {
+				// Inspection remains usable after disabling the writer or changing master.
+				readerEnv := func(key string) string {
+					if strings.HasPrefix(key, "GITHUB_") || key == "SERVICE_NATIVE_RELEASE_ENABLED" {
+						return ""
+					}
+					return env[key]
+				}
+				report, err := submission.InspectOperation(storedGuard, 1, stateBucket, "agora-json-keys-test", readerEnv, func(name string, generation int64) ([]byte, error) {
+					if strings.Contains(name, "/native-success/") && generation != 1 {
+						t.Error("receipt download must use the recorded generation")
+					}
+					return objects[bucket+"/"+name], nil
+				})
+				require.NoError(t, err)
+				require.Equal(t, got.completion, strings.Contains(report, "recorded native success"))
+			}
 			if got.code != 0 {
 				before := got.migrations
 				require.Equal(t, 1, submission.Operation(t.Context(), args, func(key string) string { return env[key] }, execute, registry, &output, &output, options...))

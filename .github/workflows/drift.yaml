@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Inspect drift or apply evidence, assess a pull request, or observe a rollout.
+        description: Inspect drift or operation evidence, assess a pull request, or observe a rollout.
         required: true
         default: drift
         type: choice
@@ -22,13 +22,13 @@ on:
             inspect-operation,
           ]
       service:
-        description: Observation only; rollout supports JSON Keys, apply inspection supports either service.
+        description: Observation only; native releases support JSON Keys, apply inspection supports either service.
         required: false
         default: none
         type: choice
         options: [none, json-keys, authentication]
       guard_generation:
-        description: Apply inspection only; exact retained guard generation, or empty for the live guard.
+        description: Operation inspection only; exact retained guard generation, or empty for the live guard.
         required: false
         type: string
       release_id:
@@ -113,7 +113,7 @@ jobs:
           create_credentials_file: true
           export_environment_variables: true
 
-      - name: Inspect exact apply evidence without changing the operation
+      - name: Inspect exact operation evidence without changing the operation
         shell: bash
         env:
           FOUNDATION_CONFIG: ${{ secrets.FOUNDATION_TFVARS_JSON }}

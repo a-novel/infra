@@ -31,7 +31,7 @@ func TestCustodyOperationInspection(t *testing.T) {
 		{"HeldJobBootstrap", "service-release", "", "42", "", "recorded convergence", 0},
 		{"AcknowledgementLost", "service-release", "42", "", "", "42 (no live guard)", 0},
 		{"Successor", "service-release", "42", "45", "", "another generation is live", 0},
-		{"NoLiveGuard", "service-release", "", "", "", "does not establish any earlier apply outcome", 0},
+		{"NoLiveGuard", "service-release", "", "", "", "does not establish any earlier operation outcome", 0},
 		{"Incomplete", "service-release", "", "42", "missing-completion", "apply may still have changed resources", 0},
 		{"DeniedGuard", "service-release", "", "42", "denied-guard", "", 70},
 		{"DeniedCompletion", "service-release", "", "42", "denied-completion", "", 70},
