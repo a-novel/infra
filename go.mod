@@ -3,7 +3,7 @@ module github.com/a-novel/infra
 go 1.27.1
 
 require (
-	cloud.google.com/go/deploy v1.33.0
+	cloud.google.com/go/deploy v1.34.0
 	cloud.google.com/go/longrunning v1.3.0
 	cloud.google.com/go/run v1.23.0
 	github.com/google/go-containerregistry v0.22.1
