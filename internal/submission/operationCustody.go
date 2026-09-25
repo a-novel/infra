@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strconv"
 	"time"
 
 	"cloud.google.com/go/deploy/apiv1/deploypb"
@@ -157,10 +156,6 @@ func (operation serviceOperation) finish(ctx context.Context, id string, output 
 	object, err := operation.record(ctx, operation.scope.ReceiptBucket, operation.scope.prefix()+"native-success/"+id+".json", receipt)
 	if err != nil {
 		return errors.New("native rollout succeeded but completion publication is uncertain; guard retained")
-	}
-	completion := nativePointer{1, "native-release", object.Bucket, object.Name, object.Generation}
-	if _, err := operation.record(ctx, operation.scope.ReceiptBucket, operation.scope.prefix()+"operations/"+strconv.FormatInt(operation.generation, 10)+".json", completion); err != nil {
-		return errors.New("native completion breadcrumb unavailable; guard retained")
 	}
 	if err := operation.storage.Objects.Delete(operation.input.StateBucket, operation.prefix()+"operation.json").
 		IfGenerationMatch(operation.generation).Context(ctx).Do(); err != nil {

@@ -197,7 +197,7 @@ master workflow identity, exact completion/configuration evidence and a complete
 only a generation-conditioned live guard deletion is allowed. It is not an ad-hoc unlock shortcut.
 
 `infra custody operation inspect <state-bucket> <registered-project> [guard-generation]` reads
-the interrupted apply's evidence without invoking OpenTofu or changing admission. The protected
+the interrupted operation's evidence without invoking OpenTofu or changing admission. The protected
 registration authorizes the selected scope; exact object generations and hashes bind the report.
 Follow the [inspection contract](../docs/service-operations.md#inspect-an-interrupted-apply) for
 required inputs, read-only access and the distinction between evidence and permission to retry.
