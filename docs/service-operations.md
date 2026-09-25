@@ -51,8 +51,9 @@ verification, actual-traffic checks and immutable native completion. It leaves g
 schedule unchanged instead of adding another pause/resume controller.
 
 Native completion has a distinct `native-success/RELEASE_ID.json` namespace in the service receipt
-folder, with a generation-bound pointer under `operations/`. The inspector below verifies these
-historical records. The protected finisher can clean up their guard after the original writer ends.
+folder. The validated guard supplies the exact record name; the inspector pins its Storage generation
+and verifies that the record belongs to that guard and configuration. The protected finisher can
+clean up the guard after the original writer ends, including after a lost completion-write acknowledgement.
 They are not legacy recovery receipts. Restore consumption and repair of missing completion still
 require implementation; live activation requires an approved drill.
 
@@ -105,12 +106,14 @@ observations return non-success without private payloads. A successfully observe
 is reported as incomplete, not as proof that no resources changed.
 
 For `native-release`, the report identifies the original workflow attempt and exact release/rollout.
-It checks the stored configuration hash, generation-bound completion pointer, native request identity,
+It checks the stored configuration hash, completion's guard generation, native request identity,
 and recorded render, approval, candidate and stable verification. Inspection works with the writer
 disabled and a newer master commit; it uses the recorded source commit. It does not fetch current
 Cloud Deploy/Run status or migration executions. Use the separately authorized
-[rollout observer](runbooks/submit-release.md) for current native progress. A missing completion
-pointer leaves the operation incomplete even if an unlinked record exists.
+[rollout observer](runbooks/submit-release.md) for current native progress. A missing native completion
+record leaves the operation incomplete. Earlier native records retain the same schema; their separate
+`operations/` pointers are no longer read or written. Existing pointers remain stored, and apply
+completion records in that namespace keep their current contract.
 
 Exit zero means **inspection succeeded**, not that deployment succeeded or the service is safe to
 unlock. A retained record proves historical convergence only: current health, native operations and
@@ -122,7 +125,7 @@ repairs evidence or retries apply. See [Storage version selection](https://docs.
 
 ### Finish an already-recorded operation
 
-This **off-by-default** recovery path addresses only a failed final guard deletion. It cannot finish
+This **off-by-default** recovery path addresses only cleanup after completion was recorded. It cannot finish
 an incomplete operation or publish missing completion evidence. The immutable completion and its
 exact configuration must already exist. Supported records are converged service-root applies and
 successful native JSON Keys releases. Rotation and unknown record kinds remain blocked.

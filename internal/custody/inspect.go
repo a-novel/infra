@@ -117,14 +117,11 @@ func readOperation(ctx context.Context, client *storage.Service, bucket string, 
 	case "":
 		evidence.intent, evidence.completed, err = inspectApply(ctx, client, expected, guard, data)
 	case "native-release":
-		evidence.native, err = submission.InspectOperation(data, generation, bucket, expected.Project, getenv, func(name string, selected int64) ([]byte, error) {
+		evidence.native, err = submission.InspectOperation(data, generation, bucket, expected.Project, getenv, func(name string) ([]byte, error) {
 			receipts := strings.TrimSuffix(bucket, "-tofu-state") + "-deployment-receipts"
-			if selected == 0 {
-				var err error
-				selected, err = liveGeneration(ctx, client, receipts, name)
-				if err != nil || selected == 0 {
-					return nil, err
-				}
+			selected, err := liveGeneration(ctx, client, receipts, name)
+			if err != nil || selected == 0 {
+				return nil, err
 			}
 			return readObject(ctx, client, objectReference{Bucket: receipts, Name: name, Generation: selected})
 		})

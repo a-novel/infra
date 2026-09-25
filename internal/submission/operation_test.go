@@ -32,26 +32,25 @@ func TestOperation(t *testing.T) {
 	registry, digest := operationRegistry(t)
 	type result struct {
 		code, releases, migrations, rollouts int
-		held, receipt, completion            bool
+		held, receipt                        bool
 	}
 	for _, testCase := range []struct {
 		name string
 		want result
 	}{
-		{"Success", result{0, 1, 1, 1, false, true, true}},
-		{"HumanApproved", result{0, 1, 1, 1, false, true, true}},
-		{"Busy", result{1, 0, 0, 0, true, false, false}},
-		{"GuardAckLost", result{1, 0, 0, 0, true, false, false}},
-		{"JobChanged", result{1, 0, 0, 0, true, false, false}},
-		{"DispatchTemplateChanged", result{1, 1, 0, 0, true, false, false}},
-		{"MigrationAckLost", result{1, 1, 1, 0, true, false, false}},
-		{"MigrationFailed", result{1, 1, 1, 0, true, false, false}},
-		{"AwaitApprovalInterrupted", result{1, 1, 1, 1, true, false, false}},
-		{"VerificationFailed", result{1, 1, 1, 1, true, false, false}},
-		{"ReceiptDenied", result{1, 1, 1, 1, true, false, false}},
-		{"ReceiptAckLost", result{1, 1, 1, 1, true, true, false}},
-		{"CompletionDenied", result{1, 1, 1, 1, true, true, false}},
-		{"GuardReplaced", result{1, 1, 1, 1, true, true, true}},
+		{"Success", result{0, 1, 1, 1, false, true}},
+		{"HumanApproved", result{0, 1, 1, 1, false, true}},
+		{"Busy", result{1, 0, 0, 0, true, false}},
+		{"GuardAckLost", result{1, 0, 0, 0, true, false}},
+		{"JobChanged", result{1, 0, 0, 0, true, false}},
+		{"DispatchTemplateChanged", result{1, 1, 0, 0, true, false}},
+		{"MigrationAckLost", result{1, 1, 1, 0, true, false}},
+		{"MigrationFailed", result{1, 1, 1, 0, true, false}},
+		{"AwaitApprovalInterrupted", result{1, 1, 1, 1, true, false}},
+		{"VerificationFailed", result{1, 1, 1, 1, true, false}},
+		{"ReceiptDenied", result{1, 1, 1, 1, true, false}},
+		{"ReceiptAckLost", result{1, 1, 1, 1, true, true}},
+		{"GuardReplaced", result{1, 1, 1, 1, true, true}},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
@@ -132,8 +131,12 @@ func TestOperation(t *testing.T) {
 						return
 					}
 					receipt := strings.Contains(object.Name, "/native-success/")
-					completion := strings.Contains(object.Name, "/production/operations/")
-					if (receipt && testCase.name == "ReceiptDenied") || (completion && testCase.name == "CompletionDenied") {
+					if strings.Contains(object.Name, "/production/operations/") {
+						t.Error("native completion must not write a duplicate pointer")
+						w.WriteHeader(http.StatusForbidden)
+						return
+					}
+					if receipt && testCase.name == "ReceiptDenied" {
 						w.WriteHeader(http.StatusForbidden)
 						return
 					}
@@ -141,12 +144,12 @@ func TestOperation(t *testing.T) {
 					if object.Name == guard {
 						storedGuard = body
 					}
-					got.receipt, got.completion = got.receipt || receipt, got.completion || completion
+					got.receipt = got.receipt || receipt
 					if (object.Name == guard && testCase.name == "GuardAckLost") || (receipt && testCase.name == "ReceiptAckLost") {
 						w.WriteHeader(http.StatusServiceUnavailable)
 						return
 					}
-					if completion && testCase.name == "GuardReplaced" {
+					if receipt && testCase.name == "GuardReplaced" {
 						generation = 2
 					}
 					object.Bucket, object.Generation = selectedBucket, 1
@@ -165,7 +168,7 @@ func TestOperation(t *testing.T) {
 							return
 						}
 						if r.Method == http.MethodDelete {
-							if !got.receipt || !got.completion {
+							if !got.receipt {
 								t.Error("unlock before durable completion")
 							}
 							delete(objects, key)
@@ -282,14 +285,12 @@ func TestOperation(t *testing.T) {
 					}
 					return env[key]
 				}
-				evidence, err := submission.InspectOperation(storedGuard, 1, stateBucket, "agora-json-keys-test", readerEnv, func(name string, generation int64) ([]byte, error) {
-					if strings.Contains(name, "/native-success/") && generation != 1 {
-						t.Error("receipt download must use the recorded generation")
-					}
+				evidence, err := submission.InspectOperation(storedGuard, 1, stateBucket, "agora-json-keys-test", readerEnv, func(name string) ([]byte, error) {
+					require.Equal(t, "services/agora-json-keys-test/production/native-success/release-1.json", name)
 					return objects[bucket+"/"+name], nil
 				})
 				require.NoError(t, err)
-				require.Equal(t, got.completion, evidence.Completed)
+				require.Equal(t, got.receipt, evidence.Completed)
 			}
 			if got.code != 0 {
 				before := got.migrations

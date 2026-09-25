@@ -34,14 +34,6 @@ type nativeCompletion struct {
 	CompletedAt   string          `json:"completedAt"`
 }
 
-type nativePointer struct {
-	SchemaVersion int    `json:"schemaVersion"`
-	Kind          string `json:"kind"`
-	Bucket        string `json:"bucket"`
-	Object        string `json:"object"`
-	Generation    int64  `json:"generation,string"`
-}
-
 // OperationEvidence identifies the writer and historical outcome of a native release.
 // It grants no authority to replay work or publish missing completion evidence.
 type OperationEvidence struct {
@@ -53,9 +45,9 @@ type OperationEvidence struct {
 }
 
 // InspectOperation validates historical native completion. read is confined to the
-// approved receipt bucket, bounds and pins downloads, and returns nil only for an
-// absent unversioned object. No native APIs are invoked.
-func InspectOperation(data []byte, generation int64, bucket, project string, getenv func(string) string, read func(string, int64) ([]byte, error)) (*OperationEvidence, error) {
+// approved receipt bucket, selects a generation before its bounded download, and
+// returns nil only for absent metadata. No native APIs are invoked.
+func InspectOperation(data []byte, generation int64, bucket, project string, getenv func(string) string, read func(string) ([]byte, error)) (*OperationEvidence, error) {
 	invalid := errors.New("native operation evidence does not match the registered operation")
 	var guard nativeGuard
 	if jsonv2.Unmarshal(data, &guard, jsonv2.RejectUnknownMembers(true)) != nil || generation <= 0 ||
@@ -71,24 +63,12 @@ func InspectOperation(data []byte, generation int64, bucket, project string, get
 		return nil, invalid
 	}
 	scope := input.scope()
-	data, err = read(fmt.Sprintf("%soperations/%d.json", scope.prefix(), generation), 0)
+	data, err = read(scope.prefix() + "native-success/" + request.ReleaseId + ".json")
 	if err != nil {
 		return nil, err
 	}
 	completion := "not recorded; native work may have been accepted or completed"
 	if data != nil {
-		var pointer nativePointer
-		if jsonv2.Unmarshal(data, &pointer, jsonv2.RejectUnknownMembers(true)) != nil || pointer.Generation <= 0 {
-			return nil, invalid
-		}
-		expected := nativePointer{1, "native-release", scope.ReceiptBucket, scope.prefix() + "native-success/" + request.ReleaseId + ".json", pointer.Generation}
-		if pointer != expected {
-			return nil, invalid
-		}
-		data, err = read(pointer.Object, pointer.Generation)
-		if err != nil {
-			return nil, err
-		}
 		if err := recordedNativeCompletion(data, guard.Configuration, generation, input, request); err != nil {
 			return nil, err
 		}

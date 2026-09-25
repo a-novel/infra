@@ -36,8 +36,7 @@ Native Cloud Deploy remains the only API/traffic owner.
 
 After rechecking actual traffic, job convergence and migration evidence, success writes
 `services/PROJECT/production/native-success/RELEASE_ID.json` in the receipt bucket. It preserves the
-approved configuration and native release/rollout, then publishes an immutable pointer at
-`services/PROJECT/production/operations/GUARD_GENERATION.json`. Only acknowledged publication permits
+approved configuration, guard generation and native release/rollout. Only acknowledged publication permits
 deleting the exact guard generation. These **native completion records are not legacy recovery
 receipts**. Recovery-reader/drill support and repair of missing completion remain activation gates.
 
@@ -46,6 +45,8 @@ For an interrupted guarded release, start with the existing
 It binds stored completion to the selected guard and configuration without querying native services.
 The reconciliation commands below inspect native progress separately; neither report authorizes
 unlocking or retrying. Missing completion is not proof that deployment did not happen.
+The inspector derives this exact record name from the guard and pins its generation before reading.
+A lost write acknowledgement can leave a valid record even though the deploy invocation failed.
 When completion is recorded and the original workflow has ended, the separately approved
 [operation finisher](../service-operations.md#finish-an-already-recorded-operation) can repeat only
 the exact guard deletion. It leaves missing evidence and uncertain deployment outcomes blocked.

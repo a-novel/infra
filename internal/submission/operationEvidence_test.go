@@ -29,12 +29,15 @@ func TestOperationEvidence(t *testing.T) {
 		want                string
 	}{
 		{name: "Success/Held", want: "42 (held)"},
+		{name: "Success/LegacyPointerIgnored", want: "42 (held)"},
 		{name: "Success/Deleted", want: "42 (no live guard)"},
 		{name: "Success/Successor", finishCode: 70, want: "another generation is live"},
 		{name: "Success/Incomplete", finishCode: 70, want: "not recorded; native work may"},
 		{name: "Error/GuardChanged", code: 70, finishCode: 70},
 		{name: "Error/Denied", code: 70, finishCode: 70},
-		{name: "Error/MissingReceipt", code: 70, finishCode: 70},
+		{name: "Error/MissingGeneration", code: 70, finishCode: 70},
+		{name: "Error/MetadataScope", code: 70, finishCode: 70},
+		{name: "Error/MetadataGeneration", code: 70, finishCode: 70},
 		{name: "Error/Unregistered", code: 65, finishCode: 65},
 		{name: "Error/Duplicate", code: 70, finishCode: 70},
 		{"Error/GuardHash", "guard", "sha256", strings.Repeat("0", 64), 70, 70, ""},
@@ -43,9 +46,6 @@ func TestOperationEvidence(t *testing.T) {
 		{"Error/Run", "guard", "runId", "unsafe\nprivate-value", 70, 70, ""},
 		{"Error/PeerProject", "config", "project_id", "agora-peer-test", 70, 70, ""},
 		{"Error/UnknownConfiguration", "config", "unexpected", "private-value", 70, 70, ""},
-		{"Error/PointerScope", "pointer", "bucket", "peer-bucket", 70, 70, ""},
-		{"Error/PointerPath", "pointer", "object", "services/agora-peer-test/production/native-success/release-1.json", 70, 70, ""},
-		{"Error/PointerGeneration", "pointer", "generation", "0", 70, 70, ""},
 		{"Error/RecordGeneration", "receipt", "guardGeneration", "41", 70, 70, ""},
 		{"Error/RecordConfiguration", "receipt", "configuration", map[string]any{}, 70, 70, ""},
 		{"Error/RecordVersion", "receipt", "schemaVersion", 2, 70, 70, ""},
@@ -81,10 +81,9 @@ func TestOperationEvidence(t *testing.T) {
 				}
 				guard := map[string]any{"schemaVersion": 1, "kind": "native-release", "runId": "123", "runAttempt": "1"}
 				prefix := "services/agora-json-keys-test/production/"
-				pointer := map[string]any{"schemaVersion": 1, "kind": "native-release", "bucket": bucket, "object": prefix + "native-success/release-1.json", "generation": "44"}
 				receipt := map[string]any{"schemaVersion": 1, "kind": "native-release", "guardGeneration": "42", "completedAt": "2026-09-25T12:00:00Z", "configuration": config}
 				records := map[string]map[string]any{
-					"guard": guard, "config": config, "pointer": pointer, "receipt": receipt,
+					"guard": guard, "config": config, "receipt": receipt,
 					"release": decode(wire(t, release)), "rollout": decode(wire(t, operationRollout(t, release))),
 					"writer": {
 						"id": 123, "run_attempt": 1, "status": "completed", "head_branch": "master", "head_sha": env["GITHUB_SHA"],
@@ -113,8 +112,10 @@ func TestOperationEvidence(t *testing.T) {
 				}
 				objects := map[string]object{
 					guardPath: {guardData, "42"},
-					"/b/" + bucket + "/o/" + prefix + "operations/42.json":            {encodeOperation(t, pointer), "43"},
 					"/b/" + bucket + "/o/" + prefix + "native-success/release-1.json": {encodeOperation(t, receipt), "44"},
+				}
+				if testCase.name == "Success/LegacyPointerIgnored" {
+					objects["/b/"+bucket+"/o/"+prefix+"operations/42.json"] = object{[]byte(`{"bucket":"peer-bucket"}`), "43"}
 				}
 				var calls, liveReads, deletes atomic.Int32
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -137,7 +138,7 @@ func TestOperationEvidence(t *testing.T) {
 						w.WriteHeader(403)
 						return
 					}
-					if strings.Contains(r.URL.Path, "/operations/") {
+					if strings.Contains(r.URL.Path, "/native-success/") {
 						if testCase.name == "Success/Incomplete" {
 							w.WriteHeader(404)
 							return
@@ -147,13 +148,13 @@ func TestOperationEvidence(t *testing.T) {
 							return
 						}
 					}
-					if testCase.name == "Error/MissingReceipt" && strings.Contains(r.URL.Path, "/native-success/") {
-						w.WriteHeader(404)
-						return
-					}
 					if r.URL.Query().Get("alt") == "media" {
 						if r.URL.Query().Get("generation") != entry.generation {
 							t.Error("unpinned evidence download")
+						}
+						if testCase.name == "Error/MissingGeneration" && r.URL.Path != guardPath {
+							w.WriteHeader(404)
+							return
 						}
 						_, _ = w.Write(entry.data)
 						return
@@ -169,6 +170,14 @@ func TestOperationEvidence(t *testing.T) {
 						}
 					}
 					selectedBucket, name, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/b/"), "/o/")
+					if r.URL.Path != guardPath {
+						switch testCase.name {
+						case "Error/MetadataScope":
+							selectedBucket = "peer-bucket"
+						case "Error/MetadataGeneration":
+							entry.generation = "0"
+						}
+					}
 					_ = json.NewEncoder(w).Encode(map[string]string{"bucket": selectedBucket, "name": name, "generation": entry.generation})
 				}))
 				defer server.Close()
