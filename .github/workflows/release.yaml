@@ -13,6 +13,7 @@ on:
         type: choice
         options:
           - deploy
+          - deploy-service
           - rollback
           - recover-first-launch
           - drill-database-isolation
@@ -50,6 +51,7 @@ jobs:
     if: >-
       github.ref == 'refs/heads/master' &&
       vars.PRODUCTION_RELEASES_ENABLED == 'true' &&
+      inputs.action != 'deploy-service' &&
       !endsWith(inputs.action, '-database-isolation')
     runs-on: ubuntu-24.04
     # Sequential database safety checks and clean restores each keep their own
@@ -279,6 +281,61 @@ jobs:
             disk_id="$(jq --exit-status --raw-output --arg service "${service}" '.database_hosts[$service].data_disk_id | select(type == "string")' "${RELEASE_CONFIG_FILE}")"
             infra database-release recover-first-launch "${project}" "${zone}" "${service//_/-}" "${disk_id}" "${FAILED_REVISION}" "${RECEIPT_BUCKET}"
           done
+
+  native-service:
+    # Separate activation and protected inputs are required; merges cannot run this pilot.
+    if: >-
+      github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master' &&
+      inputs.action == 'deploy-service' && vars.SERVICE_NATIVE_RELEASE_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: production-json-keys-release
+    permissions:
+      contents: read
+      attestations: read
+      id-token: write
+    env:
+      MANAGEMENT_PROJECT_ID: ${{ vars.GCP_MANAGEMENT_PROJECT_ID }}
+      STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
+      SERVICE_NATIVE_RELEASE_ENABLED: ${{ vars.SERVICE_NATIVE_RELEASE_ENABLED }}
+    steps:
+      - name: Check out the exact master commit
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build reviewed release tooling
+        uses: $/.github/actions/setup-infra
+      - name: Select the protected native operation before authentication
+        id: operation
+        env:
+          SERVICE_RELEASE_OPERATION_JSON: ${{ secrets.SERVICE_RELEASE_OPERATION_JSON }}
+          FOUNDATION_CONFIG: ${{ secrets.FOUNDATION_TFVARS_JSON }}
+        run: infra service-release prepare "${RUNNER_TEMP}/native-operation.json" >>"${GITHUB_OUTPUT}"
+      - name: Verify selected source and complete image family
+        env:
+          FOUNDATION_CONFIG: ${{ secrets.FOUNDATION_TFVARS_JSON }}
+          GH_TOKEN: ${{ github.token }}
+          OPERATION_FILE: ${{ steps.operation.outputs.file }}
+          OPERATION_SHA256: ${{ steps.operation.outputs.sha256 }}
+        run: infra service-release preflight "${OPERATION_FILE}" "${OPERATION_SHA256}"
+      - name: Authenticate as the selected service release boundary
+        uses: google-github-actions/auth@v3.0.0
+        with:
+          workload_identity_provider: ${{ steps.operation.outputs.provider }}
+          service_account: ${{ steps.operation.outputs.service_account }}
+          create_credentials_file: true
+          export_environment_variables: true
+      - name: Install the pinned Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v3.0.1
+        with:
+          version: "581.0.0"
+      - name: Hold service admission through native verification and completion
+        env:
+          FOUNDATION_CONFIG: ${{ secrets.FOUNDATION_TFVARS_JSON }}
+          GH_TOKEN: ${{ github.token }}
+          OPERATION_FILE: ${{ steps.operation.outputs.file }}
+          OPERATION_SHA256: ${{ steps.operation.outputs.sha256 }}
+        run: infra service-release deploy "${OPERATION_FILE}" "${OPERATION_SHA256}"
 
   database-isolation:
     if: >-

@@ -89,6 +89,8 @@ func main() {
 		code = custody.Run(ctx, os.Args[2:], os.Getenv, quiet, os.Stdout, os.Stderr)
 	} else if len(os.Args) > 1 && os.Args[1] == "observe-rollout" {
 		code = rollout.RunObserver(ctx, os.Args[2:], os.Stdout, os.Stderr)
+	} else if len(os.Args) > 1 && os.Args[1] == "service-release" {
+		code = submission.Operation(ctx, os.Args[2:], os.Getenv, quiet, artifact.NewClient(), os.Stdout, os.Stderr)
 	} else if len(os.Args) > 1 && slices.Contains([]string{
 		"publish-release-source", "submit-release", "reconcile-release",
 		"submit-rollout", "reconcile-rollout", "submit-migration", "reconcile-migration",

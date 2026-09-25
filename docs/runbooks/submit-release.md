@@ -1,14 +1,50 @@
 # Persist and reconcile a native release submission
 
-**Code-only JSON Keys pilot. No production workflow calls these commands.** Live use still needs
-the [activation gates](#before-live-use); do not grant permissions or replace the existing release
-workflow just to try them.
+**Code-only JSON Keys pilot, disabled by default.** The protected `deploy-service` action connects
+these adapters under one guard. Live use still needs the [activation gates](#before-live-use);
+merging does not provision resources, enable the action or replace legacy production.
 
 The release command preserves the exact request before asking Cloud Deploy to render it. A separate
 rollout command hands that rendered release to an approval-required target after its migration succeeds.
 Google's clients own authentication, API decoding and operation waiting. Cloud Deploy owns rollout execution; these
 commands cannot approve, advance, retry jobs, roll back or delete resources. Migration dispatch is
 explicit and remains outside Cloud Deploy hooks.
+
+## Guarded established release
+
+The [service-release root](../../environments/service-release#guarded-operation-output) exports one
+`release_operation` from independently approved, converged configuration. It includes exact native
+job UIDs/templates, the complete image family pins, secret-version references, source commit and a
+known verified predecessor. It is not a first-launch or job-update path.
+
+The inactive `release.yaml` job builds reviewed tooling before private inputs or authentication.
+It selects the registered JSON Keys project from protected `FOUNDATION_CONFIG`, binds
+`SERVICE_RELEASE_OPERATION_JSON` to the workflow commit and a private-file checksum, and checks
+producer provenance before requesting that project's release identity. After authentication it
+also requires the promoted images; it never copies images or changes job specifications.
+
+`infra service-release deploy FILE SHA256` holds the same persistent guard as service-root applies
+and native scheduled rotation. It checks exact converged jobs and the predecessor's verified,
+private serving revision, publishes source, waits for rendering, dispatches the migration once,
+then creates and tracks the approval-gated rollout. The migration boundary repeats secret metadata
+and job-template checks; neither job overrides nor automatic migration retry are allowed.
+
+GitHub remains running through human approval/advancement and native candidate/stable verification,
+within a single 30-minute deadline. The caller cannot approve or advance anything. A failure, missing
+evidence or expired wait returns nonzero and keeps the guard; a workflow retry cannot adopt it.
+Native Cloud Deploy remains the only API/traffic owner.
+
+After rechecking actual traffic, job convergence and migration evidence, success writes
+`services/PROJECT/production/native-success/RELEASE_ID.json` in the receipt bucket. It preserves the
+approved configuration and native release/rollout, then publishes an immutable pointer at
+`services/PROJECT/production/operations/GUARD_GENERATION.json`. Only acknowledged publication permits
+deleting the exact guard generation. These **native completion records are not legacy recovery
+receipts**. Recovery-reader/drill support and a protected native finish path remain activation gates;
+`finish-apply` cannot unlock this record kind.
+
+Keep `SERVICE_NATIVE_RELEASE_ENABLED` unset/false and the protected operation secret unset until the
+separate activation review. The workflow retains global writer serialization. The low-level commands
+below document the adapters and reconciliation tools; do not use them to bypass admission.
 
 ## The private request
 
@@ -22,8 +58,8 @@ JSON, limited to 64 KiB. The [test fixture](../../internal/submission/testdata/r
 its fields in readable YAML; it is not a production configuration. The inactive
 [service-release root](../../environments/service-release#native-api-request) now produces this native
 object from the same approved foundation and inputs as the jobs. Its sensitive `release_request`
-output exports directly as JSON, without a shell template or Go renderer. Live caller integration
-remains unconnected; configuration output does not reserve intent or authorize submission.
+output exports directly as JSON, without a shell template or Go renderer. The guarded operation
+embeds the same object; configuration output alone does not reserve intent or authorize submission.
 
 | Field                                                   | Accepted contract                                                                                                                                                                                                                                              |
 | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -144,7 +180,9 @@ A crash after reserving intent but before dispatch intentionally requires operat
 has converged and the release has rendered, retain the reviewed job UID and promoted migrations
 digest from the service-release root's `jobs.definitions.migrations` output. The caller must first
 validate the complete image family, exact job configuration and enabled secret metadata, acquire
-service-wide exclusion, and pause/drain competing scheduled work.
+service-wide exclusion, and exclude competing scheduled work. The guarded caller leaves the schedule
+unchanged only after every dispatch path uses the same guard through execution completion; an
+unenrolled direct dispatcher still requires proven pause/drain before activation.
 
 ```sh
 infra submit-migration \
@@ -250,29 +288,29 @@ the existing `infra observe-rollout` command accepts the exact resource name pri
 
 ## Before live use
 
-The [service-operation contract](../service-operations.md) maps the remaining caller and ownership
-work end to end. Service-root apply holds a persistent guard through configuration publication;
-the native submission commands on this page are not enrolled yet and must remain disconnected.
+The [service-operation contract](../service-operations.md) maps the remaining ownership and recovery
+work. The protected caller now connects native submission and completion under one service guard;
+local tests do not establish effective cloud permissions, API normalization or recoverability.
 
 The remaining work in [#189](https://github.com/a-novel/infra/issues/189) and
 [#187](https://github.com/a-novel/infra/issues/187) must establish:
 
-- A trusted caller that validates the complete image family/provenance and binds parameters to the
-  selected foundation and exact enabled secret metadata.
-- A protected caller authorizing the source checkout and applying the publication/submission checks
-  above. Byte equality establishes content binding, not review authorization. Keep source, intent and
+- Independently approve the exact HCL output only after foundation/job convergence and database
+  readiness. The protected workflow checks registration and pins; it does not grant approval to a
+  hand-written configuration or establish service-maintainer migration compatibility.
+- Keep source, intent and
   operation objects private, non-overwritable and non-deletable by submitters; lifecycle must not
   discard them while an identity can be reused.
   Cloud Deploy's renderer needs read access to the exact source prefix, not receipt-write access.
-- Same-service exclusion before mutations, including migrations, through rollout and receipt
-  completion. A reservation prevents duplicate creation of **one ID**; it is not a service lock.
-  Pausing/draining scheduled mutations and keeping the selected job configuration under one owner
-  remain caller obligations. No migration command is connected to production CI in this slice.
-- A trusted workflow connecting submission to the [native observer](observe-rollout.md), final
-  durable recovery receipt, and migration interruption handling. Rendering is not final success.
+- Retire all direct/legacy mutation paths before relying on guarded rotation. Account for previously
+  accepted executions, shared-root writers and console authority; a paused schedule alone is not
+  proof of quiescence. Keep job configuration under its single OpenTofu owner.
+- Prove native completion consumption by recovery and protected handling of interrupted operations,
+  missing completion records and lost unlock acknowledgements. Rendering or a green workflow alone
+  is not recoverability evidence.
 - A known compatible predecessor for routine releases, with separate bootstrap handling. Approval
   and advancement must retain same-service exclusion and cannot bypass failed verification.
 - Least-privilege identities, the one-writer OpenTofu/Cloud Deploy handoff, and a human-approved
   interruption drill that verifies actual API normalization, IAM and receipt recovery.
 
-No legacy receipt format, workflow, production resource or Renovate setting changes in this slice.
+Legacy release behavior, receipt formats, production resources and Renovate settings stay unchanged.

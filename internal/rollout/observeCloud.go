@@ -38,7 +38,13 @@ func (observer Observer) Wait(ctx context.Context, output io.Writer, options ...
 			observed = Observation{"interrupted", "observation timeout or cancellation"}
 		}
 		if observed != previous {
-			if err := reportObservation(output, observed); err != nil {
+			waiting := observer.AwaitActions && observed.Outcome == "action-required" &&
+				(observed.Stage == "approval" || observed.Stage == "advance stable")
+			if waiting {
+				if _, err := fmt.Fprintf(output, "- action-required: %s (waiting within the operation deadline)\n", observed.Stage); err != nil {
+					return errors.New("cannot report required human action")
+				}
+			} else if err := reportObservation(output, observed); err != nil {
 				return err
 			}
 			previous = observed

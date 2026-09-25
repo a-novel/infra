@@ -23,7 +23,42 @@ type workflowJob struct {
 	Needs       any
 	Outputs     map[string]string
 	Permissions map[string]string
+	Env         map[string]string
 	Steps       []workflowStep
+}
+
+func TestNativeReleaseBoundary(t *testing.T) {
+	t.Parallel()
+	release := loadWorkflow(t, "workflows/release.yaml")
+	job := release.Jobs["native-service"]
+	selection := stepIndex(t, job.Steps, "service-release prepare")
+	preflight := stepIndex(t, job.Steps, "service-release preflight")
+	auth := stepIndex(t, job.Steps, "google-github-actions/auth@")
+	deploy := stepIndex(t, job.Steps, "service-release deploy")
+	privateDuringBuild := false
+	for _, value := range job.Env {
+		privateDuringBuild = privateDuringBuild || strings.Contains(value, "secrets.")
+	}
+	for _, testCase := range []struct {
+		name      string
+		got, want any
+	}{
+		{"ProtectedEnvironment", job.Environment, "production-json-keys-release"},
+		{"GlobalSerialization", release.Concurrency, object{"group": "production-infrastructure", "cancel-in-progress": false}},
+		{"NoGoogleCredentialsBeforeFamilyCheck", selection < preflight && preflight < auth && auth < deploy, true},
+		{"NoPrivateInputsDuringBuild", privateDuringBuild, false},
+		{"OffByDefault", strings.Contains(job.If, "vars.SERVICE_NATIVE_RELEASE_ENABLED == 'true'"), true},
+		{"ManualOnly", strings.Contains(job.If, "github.event_name == 'workflow_dispatch'"), true},
+		{"LegacyExcluded", strings.Contains(release.Jobs["release"].If, "inputs.action != 'deploy-service'"), true},
+		{"SelectedWriter", job.Steps[auth].With["service_account"], "${{ steps.operation.outputs.service_account }}"},
+		{"SelectedFederation", job.Steps[auth].With["workload_identity_provider"], "${{ steps.operation.outputs.provider }}"},
+		{"PreparedHash", job.Steps[deploy].Env["OPERATION_SHA256"], "${{ steps.operation.outputs.sha256 }}"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, testCase.want, testCase.got)
+		})
+	}
 }
 
 func TestVerifierArtifact(t *testing.T) {
@@ -110,6 +145,7 @@ func TestWorkflowCredentials(t *testing.T) {
 	t.Parallel()
 	for _, testCase := range []struct{ file, job string }{
 		{"release", "release"},
+		{"release", "native-service"},
 		{"release", "database-isolation"},
 		{"recovery", "recover"},
 		{"foundation", "execute"},
