@@ -1,7 +1,6 @@
 package custody
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	jsonv2 "encoding/json/v2"
@@ -26,20 +25,20 @@ const inspectionLimit = 1 << 20
 var digestPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 type operationEvidence struct {
-	intent       applyIntent
-	guard        objectReference
-	live         int64
-	completed    bool
-	nativeReport string
+	intent    applyIntent
+	guard     objectReference
+	live      int64
+	completed bool
+	native    *submission.OperationEvidence
 }
 
 func (custody store) inspectOperation(action string, args []string, getenv func(string) string, output io.Writer, options []option.ClientOption) error {
-	root, confirmation := "", ""
+	confirmation := ""
 	if action == "finish" {
-		if len(args) != 4 {
-			return failure{64, "Usage: infra custody operation finish <state-bucket> <root> <registered-project> <guard-generation> <confirmation>"}
+		if len(args) != 3 {
+			return failure{64, "Usage: infra custody operation finish <state-bucket> <registered-project> <guard-generation> <confirmation>"}
 		}
-		root, confirmation, args = args[0], args[3], args[1:3]
+		confirmation, args = args[2], args[:2]
 	}
 	if len(args) < 1 || len(args) > 2 {
 		return failure{64, "Usage: infra custody operation inspect <state-bucket> <registered-project> [guard-generation]"}
@@ -65,9 +64,9 @@ func (custody store) inspectOperation(action string, args []string, getenv func(
 	}
 	readScope := storage.DevstorageReadOnlyScope
 	if action == "finish" {
-		project, err := workflow.FinishApplyProject([]string{root, scopes["services/"+args[0]], args[1], confirmation}, getenv)
+		project, err := workflow.FinishOperationProject([]string{scopes["services/"+args[0]], args[1], confirmation}, getenv)
 		if err != nil || project != args[0] {
-			return failure{65, "Finishing a recorded apply requires exact protected recovery authorization."}
+			return failure{65, "Finishing a recorded operation requires exact protected recovery authorization."}
 		}
 		readScope = storage.DevstorageReadWriteScope
 	}
@@ -83,7 +82,7 @@ func (custody store) inspectOperation(action string, args []string, getenv func(
 		return err
 	}
 	if action == "finish" {
-		return custody.finishApply(ctx, client, evidence, root, output)
+		return custody.finishOperation(ctx, client, evidence, output)
 	}
 	return evidence.report(output)
 }
@@ -118,7 +117,7 @@ func readOperation(ctx context.Context, client *storage.Service, bucket string, 
 	case "":
 		evidence.intent, evidence.completed, err = inspectApply(ctx, client, expected, guard, data)
 	case "native-release":
-		evidence.nativeReport, err = submission.InspectOperation(data, generation, bucket, expected.Project, getenv, func(name string, selected int64) ([]byte, error) {
+		evidence.native, err = submission.InspectOperation(data, generation, bucket, expected.Project, getenv, func(name string, selected int64) ([]byte, error) {
 			receipts := strings.TrimSuffix(bucket, "-tofu-state") + "-deployment-receipts"
 			if selected == 0 {
 				var err error
@@ -129,6 +128,9 @@ func readOperation(ctx context.Context, client *storage.Service, bucket string, 
 			}
 			return readObject(ctx, client, objectReference{Bucket: receipts, Name: name, Generation: selected})
 		})
+		if err == nil {
+			evidence.completed = evidence.native.Completed
+		}
 	default:
 		err = failure{70, "Unsupported operation kind; retain the guard for protected reconciliation."}
 	}
@@ -183,9 +185,9 @@ func (evidence operationEvidence) report(output io.Writer) error {
 	case 0:
 		state = "no live guard"
 	}
-	if evidence.nativeReport != "" {
+	if evidence.native != nil {
 		_, err := fmt.Fprintf(output, "Service: %s (%s)\nGuard generation: %d (%s)\n%sEvidence only: not current health, settled native work, a recovery receipt, or permission to unlock or retry.\n",
-			evidence.intent.Service, evidence.intent.Project, evidence.guard.Generation, state, evidence.nativeReport)
+			evidence.intent.Service, evidence.intent.Project, evidence.guard.Generation, state, evidence.native.Report)
 		return err
 	}
 	completion := "not recorded; apply may still have changed resources"
@@ -262,9 +264,7 @@ func readObject(ctx context.Context, client *storage.Service, reference objectRe
 }
 
 func decodeRecord(data []byte, target any) error {
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if decoder.Decode(target) != nil || decoder.Decode(new(any)) != io.EOF {
+	if jsonv2.Unmarshal(data, target, jsonv2.RejectUnknownMembers(true)) != nil {
 		return failure{70, "Unsupported or malformed operation evidence."}
 	}
 	return nil

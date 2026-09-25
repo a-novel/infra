@@ -282,14 +282,14 @@ func TestOperation(t *testing.T) {
 					}
 					return env[key]
 				}
-				report, err := submission.InspectOperation(storedGuard, 1, stateBucket, "agora-json-keys-test", readerEnv, func(name string, generation int64) ([]byte, error) {
+				evidence, err := submission.InspectOperation(storedGuard, 1, stateBucket, "agora-json-keys-test", readerEnv, func(name string, generation int64) ([]byte, error) {
 					if strings.Contains(name, "/native-success/") && generation != 1 {
 						t.Error("receipt download must use the recorded generation")
 					}
 					return objects[bucket+"/"+name], nil
 				})
 				require.NoError(t, err)
-				require.Equal(t, got.completion, strings.Contains(report, "recorded native success"))
+				require.Equal(t, got.completion, evidence.Completed)
 			}
 			if got.code != 0 {
 				before := got.migrations

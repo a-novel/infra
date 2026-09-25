@@ -27,8 +27,8 @@ func TestRun(t *testing.T) {
 		{[]string{"foundation", "apply", "service-release", "authentication", "101-3"}, []string{"operation=apply", "root=service-release", "service=authentication", "plan_id=101-3"}, "202"},
 		{[]string{"foundation", "promote-images", "service-release", "json-keys"}, []string{"operation=promote-images", "root=service-release", "service=json-keys"}, "202"},
 		{[]string{"foundation", "promote-images", "service-release", "authentication"}, []string{"operation=promote-images", "root=service-release", "service=authentication"}, "202"},
-		{[]string{"foundation", "finish-apply", "service-foundation", "json-keys", "42", "FINISH json-keys 42"}, []string{"operation=finish-apply", "root=service-foundation", "service=json-keys", "guard_generation=42", "confirm=FINISH json-keys 42"}, "202"},
-		{[]string{"foundation", "finish-apply", "service-release", "authentication", "42", "FINISH authentication 42"}, []string{"operation=finish-apply", "root=service-release", "service=authentication", "guard_generation=42", "confirm=FINISH authentication 42"}, "202"},
+		{[]string{"foundation", "finish-operation", "json-keys", "42", "FINISH json-keys 42"}, []string{"operation=finish-operation", "root=none", "service=json-keys", "guard_generation=42", "confirm=FINISH json-keys 42"}, "202"},
+		{[]string{"foundation", "finish-operation", "authentication", "42", "FINISH authentication 42"}, []string{"operation=finish-operation", "root=none", "service=authentication", "guard_generation=42", "confirm=FINISH authentication 42"}, "202"},
 		{[]string{"foundation", "apply", "bootstrap", "101-3"}, []string{"operation=apply", "root=bootstrap", "plan_id=101-3"}, "202"},
 		{[]string{"foundation", "apply", "foundation", "101-3"}, []string{"operation=apply", "root=foundation", "plan_id=101-3"}, "202"},
 		{[]string{"release", "deploy"}, []string{"action=deploy"}, "202"},
@@ -95,12 +95,14 @@ func TestRunInvalidIntent(t *testing.T) {
 		{"foundation", "promote-images", "service-foundation", "json-keys"},
 		{"foundation", "promote-images", "service-release", "peer"},
 		{"foundation", "promote-images", "service-release", "json-keys", "101-3"},
-		{"foundation", "finish-apply", "foundation", "42", "FINISH json-keys 42"},
-		{"foundation", "finish-apply", "service-release", "json-keys", "42"},
-		{"foundation", "finish-apply", "service-release", "json-keys", "42", "FINISH authentication 42"},
-		{"foundation", "finish-apply", "service-release", "json-keys", "42", "FINISH json-keys 43"},
-		{"foundation", "finish-apply", "service-release", "json-keys", "01", "FINISH json-keys 01"},
-		{"foundation", "finish-apply", "service-release", "json-keys", "9223372036854775808", "FINISH json-keys 9223372036854775808"},
+		{"foundation", "finish-operation", "foundation", "42", "FINISH json-keys 42"},
+		{"foundation", "finish-operation", "json-keys", "42"},
+		{"foundation", "finish-operation", "json-keys", "42", "FINISH authentication 42"},
+		{"foundation", "finish-operation", "json-keys", "42", "FINISH json-keys 43"},
+		{"foundation", "finish-operation", "json-keys", "01", "FINISH json-keys 01"},
+		{"foundation", "finish-operation", "json-keys", "9223372036854775808", "FINISH json-keys 9223372036854775808"},
+		{"foundation", "finish-operation", "service-release", "json-keys", "42", "FINISH json-keys 42"},
+		{"foundation", "finish-apply", "service-release", "json-keys", "42", "FINISH json-keys 42"},
 		{"release", "deploy", "--force"},
 		{"release", "recover-first-launch", "invalid"},
 		{"release", "rollback", "101-0"},
@@ -136,9 +138,9 @@ func TestRunObservationConcurrency(t *testing.T) {
 	}
 }
 
-func TestRunFinishApplyConcurrency(t *testing.T) {
+func TestRunFinishOperationConcurrency(t *testing.T) {
 	t.Parallel()
-	r := invoke(t, []string{"foundation", "finish-apply", "service-release", "json-keys", "42", "FINISH json-keys 42"}, map[string]string{"active": "303 waiting"}, "")
+	r := invoke(t, []string{"foundation", "finish-operation", "json-keys", "42", "FINISH json-keys 42"}, map[string]string{"active": "303 waiting"}, "")
 	require.NotZero(t, r.code)
 	require.Empty(t, r.dispatches, "finishing is a writer, never an observation")
 }

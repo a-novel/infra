@@ -74,7 +74,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, execute
 	switch args[0] {
 	case "operation":
 		if args[1] != "inspect" && args[1] != "finish" {
-			return failure{64, "Service operations support inspection or finishing a recorded apply."}
+			return failure{64, "Service operations support inspection or finishing a recorded completion."}
 		}
 		return storage.inspectOperation(args[1], args[3:], getenv, output, options)
 	case "config", "receipt":

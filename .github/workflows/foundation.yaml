@@ -4,17 +4,19 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Plan, apply, promote images, or finish an already-recorded service apply.
+        description: Plan, apply, promote images, or finish an already-recorded service operation.
         required: true
         type: choice
-        options: [plan, apply, promote-images, finish-apply]
+        options: [plan, apply, promote-images, finish-operation]
       root:
-        description: Management, shared workload, service foundation or create-only service jobs.
+        description: Select a root for plan/apply/promotion; leave none for finish-operation.
         required: true
+        default: none
         type: choice
-        options: [bootstrap, foundation, service-foundation, service-release]
+        options:
+          [none, bootstrap, foundation, service-foundation, service-release]
       service:
-        description: Required for either service root; leave none for legacy roots.
+        description: Required for a service root or finish-operation; leave none for legacy roots.
         required: true
         default: none
         type: choice
@@ -24,11 +26,11 @@ on:
         required: false
         type: string
       guard_generation:
-        description: Required only for finish-apply; exact inspected guard generation.
+        description: Required only for finish-operation; exact inspected guard generation.
         required: false
         type: string
       confirm:
-        description: Required only for finish-apply; FINISH <service> <guard-generation>.
+        description: Required only for finish-operation; FINISH <service> <guard-generation>.
         required: false
         type: string
 
@@ -91,7 +93,7 @@ jobs:
             "${RUNNER_TEMP}/selected.tfvars.json" >>"${GITHUB_OUTPUT}"
 
       - name: Verify the selected service image family
-        if: inputs.root == 'service-release' && inputs.operation != 'finish-apply'
+        if: inputs.root == 'service-release'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -209,12 +211,11 @@ jobs:
             "${STATE_BUCKET}" "${ROOT_NAME}" "${TFVARS_FILE}" \
             "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}"
 
-      - name: Finish only the exact recorded service apply
-        if: inputs.operation == 'finish-apply'
+      - name: Finish only the exact recorded service operation
+        if: inputs.operation == 'finish-operation'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          ROOT_NAME: ${{ inputs.root }}
           SELECTED_PROJECT: ${{ steps.inputs.outputs.project }}
           GUARD_GENERATION: ${{ inputs.guard_generation }}
           CONFIRM: ${{ inputs.confirm }}
@@ -224,5 +225,5 @@ jobs:
           SERVICE_OPERATION_RECOVERY_ENABLED: ${{ vars.SERVICE_OPERATION_RECOVERY_ENABLED }}
         run: |
           set -euo pipefail
-          infra custody operation finish "${STATE_BUCKET}" "${ROOT_NAME}" \
+          infra custody operation finish "${STATE_BUCKET}" \
             "${SELECTED_PROJECT}" "${GUARD_GENERATION}" "${CONFIRM}" | tee -a "${GITHUB_STEP_SUMMARY}"

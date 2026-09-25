@@ -110,7 +110,7 @@ gcloud workflows executions describe "${ROTATION_EXECUTION_ID:?}" --workflow=ago
 
 Match the guard's generation and workflow revision to its immutable records, then inspect the saved
 Cloud Run operation and execution. Missing evidence is an unknown outcome, not permission to run
-again. The apply-only inspector/`finish-apply` rejects rotation records; it cannot finish this owner.
+again. The operation inspector and `finish-operation` reject rotation records; they cannot finish this owner.
 No automated rotation recovery command exists yet. Keep the service blocked until separately reviewed
 reconciliation proves the original workflow and native work are settled. Never age out or manually
 delete the guard as routine cleanup. Guard IAM is exact-object scoped; compliant code supplies the
