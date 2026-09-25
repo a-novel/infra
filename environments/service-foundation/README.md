@@ -104,8 +104,9 @@ inputs; dropping it is resource removal, subject to its lifecycle guards and del
 3. After the selected database and approved images exist, protected bootstrap creates application jobs
    in [service-release state](../service-release#bootstrap-before-routine-release). Reconcile exact
    job UIDs and state before setting `manage_job_access = true`. The [job-access module](../../modules/service-job-access)
-   installs exact-job authority, monitoring and JSON Keys' hard-paused rotation schedule. It owns no
-   job specification. A missing job fails its IAM operation; it is not recreated here.
+   installs exact-job authority, monitoring and JSON Keys' initially paused rotation schedule. It owns
+   neither subsequent pause/resume decisions nor job specifications. A missing job fails its IAM operation;
+   it is not recreated here.
 4. Verify allowed/denied IAM and network paths, remove temporary bootstrap authority and prove
    zero-change convergence before connecting routine release. Neither switch unsuspends Cloud Deploy
    nor resumes rotation. Their separate activation and interruption drills remain required.
