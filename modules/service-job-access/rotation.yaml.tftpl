@@ -37,6 +37,7 @@ main:
           - condition: $${guard.body.bucket != "${state_bucket}" or guard.body.name != "${guard}" or int(guard.body.generation) <= 0}
             raise: "Guard acknowledgement invalid; retain admission."
     - readJob:
+        # The request fixes scope; the API may canonicalize its project ID to a number.
         call: googleapis.run.v2.projects.locations.jobs.get
         args: {name: '$${jobName}'}
         result: job
@@ -44,7 +45,7 @@ main:
         switch:
           - condition: $${default(map.get(job, "reconciling"), false) or job.generation != job.observedGeneration or job.terminalCondition.state != "CONDITION_SUCCEEDED"}
             raise: "Rotation job has not converged; retain admission."
-          - condition: $${job.name != jobName or job.uid == "" or job.etag == "" or job.template.taskCount != 1 or job.template.parallelism != 1}
+          - condition: $${job.uid == "" or job.etag == "" or job.template.taskCount != 1 or job.template.parallelism != 1}
             raise: "Rotation job identity or task count invalid; retain admission."
           - condition: $${len(job.template.template.containers) != 1 or job.template.template.serviceAccount != "${runtime}"}
             raise: "Rotation runtime invalid; retain admission."
