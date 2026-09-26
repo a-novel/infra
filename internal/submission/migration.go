@@ -36,7 +36,7 @@ func (scope scope) migrationIntent(id string) string {
 	return strings.TrimSuffix(scope.intentName(id), ".json") + ".migration.json"
 }
 
-func (client cloud) migration(ctx context.Context, command, id, jobUID, image string, output io.Writer) error {
+func (client cloud) migration(ctx context.Context, id string, output io.Writer) error {
 	_, release, err := client.readRelease(ctx, id)
 	if err != nil {
 		return err
@@ -48,13 +48,7 @@ func (client cloud) migration(ctx context.Context, command, id, jobUID, image st
 	if _, err := fmt.Fprintf(output, "Migration intent: gs://%s/%s\n", client.scope.ReceiptBucket, name); err != nil {
 		return errors.New("cannot report migration intent identity")
 	}
-	var job *runpb.Job
-	var operation *longrunningpb.Operation
-	if command == "submit-migration" {
-		job, operation, err = client.startMigration(ctx, name, release, jobUID, image, output)
-	} else {
-		job, operation, err = client.readMigration(ctx, name, release)
-	}
+	job, operation, err := client.readMigration(ctx, name, release)
 	if err != nil {
 		return err
 	}
@@ -81,39 +75,34 @@ func (client cloud) migration(ctx context.Context, command, id, jobUID, image st
 	return err
 }
 
-func (client cloud) startMigration(ctx context.Context, name string, release *deploypb.Release, jobUID, image string, output io.Writer) (*runpb.Job, *longrunningpb.Operation, error) {
+func (client cloud) startMigration(ctx context.Context, id string, release *deploypb.Release, output io.Writer) error {
 	job, err := client.jobs.GetJob(ctx, &runpb.GetJobRequest{Name: client.scope.location() + "/jobs/agora-json-keys-migrations"})
 	if err != nil {
-		return nil, nil, errors.New("exact migrations job unavailable")
+		return errors.New("exact migrations job unavailable")
 	}
-	if job.GetUid() != jobUID || len(job.GetTemplate().GetTemplate().GetContainers()) != 1 {
-		return nil, nil, errors.New("migrations job does not match the reviewed UID or container")
-	}
-	if job.Template.Template.Containers[0].Image != image {
-		return nil, nil, errors.New("migrations job does not match the reviewed image")
-	}
-	if approved := client.approvedMigration; approved != nil && !proto.Equal(job.Template, approved.Template) {
-		return nil, nil, errors.New("migrations configuration changed after operation admission")
+	if approved := client.approvedMigration; approved == nil || job.GetUid() != approved.Uid || !proto.Equal(job.GetTemplate(), approved.Template) {
+		return errors.New("migrations configuration changed after operation admission")
 	}
 	if err := client.scope.checkMigrationJob(job, release); err != nil {
-		return nil, nil, err
+		return err
 	}
 	jobData, err := protojson.Marshal(job)
 	if err != nil {
-		return nil, nil, errors.New("cannot encode native migrations job")
+		return errors.New("cannot encode native migrations job")
 	}
 	data, err := json.Marshal(migrationIntent{SchemaVersion: 1, ReleaseUID: release.Uid, Job: jobData})
 	if err != nil || len(data) > maxRequestBytes {
-		return nil, nil, errors.New("cannot encode bounded migration intent")
+		return errors.New("cannot encode bounded migration intent")
 	}
+	name := client.scope.migrationIntent(id)
 	if err := client.upload(ctx, name, data, "application/json"); err != nil {
-		return nil, nil, errors.New("migration intent reservation not confirmed; no migration dispatched by this invocation")
+		return errors.New("migration intent reservation not confirmed; no migration dispatched by this invocation")
 	}
 	// RunJob has no request-ID field and no retries in the pinned SDK. The etag
 	// protects the inspected job version; the reservation prevents a second call.
 	native, err := client.jobs.RunJob(ctx, &runpb.RunJobRequest{Name: job.Name, Etag: job.Etag})
 	if err != nil {
-		return nil, nil, errors.New("migration submission uncertain; retain intent and audit the job, never resubmit")
+		return errors.New("migration submission uncertain; retain intent and audit the job, never resubmit")
 	}
 	operation := &longrunningpb.Operation{Name: native.Name()}
 	metadata, metadataErr := native.Metadata()
@@ -121,12 +110,12 @@ func (client cloud) startMigration(ctx context.Context, name string, release *de
 		operation.Metadata, metadataErr = anypb.New(metadata)
 	}
 	if err := client.recordOperation(ctx, name, operation, output); err != nil {
-		return nil, nil, err
+		return err
 	}
 	if metadataErr != nil {
-		return nil, nil, errors.New("migration execution identity unreadable; inspect the recorded operation")
+		return errors.New("migration execution identity unreadable; inspect the recorded operation")
 	}
-	return job, operation, nil
+	return nil
 }
 
 // Rollout submission consumes the saved success evidence without executing or

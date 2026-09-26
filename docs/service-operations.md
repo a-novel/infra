@@ -10,10 +10,10 @@ activation remain separate review gates.
 The current [foundation](../.github/workflows/foundation.yaml) and
 [release](../.github/workflows/release.yaml) workflows serialize production writes through
 `production-infrastructure`. Keep that working boundary until every replacement writer participates.
-The pilot's [submission commands](runbooks/submit-release.md) preserve immutable intent, dispatch
-once, and reconcile exact native operations. The inactive protected caller now joins them under
-the same service guard as service-root applies and native rotation. Unenrolled legacy/shared-root
-writers and protected recovery still prevent activation.
+The pilot's [guarded caller](runbooks/submit-release.md#guarded-established-release) preserves immutable
+intent and dispatches native work under the same service guard as service-root applies and native
+rotation. Standalone commands only publish source or reconcile recorded outcomes. Unenrolled
+legacy/shared-root writers and protected recovery still prevent activation.
 
 An **operation** is one reviewed change to one service, including the work needed to leave it in a
 known state. A **guard** admits that operation and blocks another. A **request intent** prevents replay

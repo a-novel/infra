@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/option"
 	"google.golang.org/api/storage/v1"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 
@@ -54,6 +55,41 @@ func TestOperation(t *testing.T) {
 		{"ReceiptDenied", result{1, 1, 1, 1, true, false}, nil},
 		{"ReceiptAckLost", result{1, 1, 1, 1, true, true}, nil},
 		{"GuardReplaced", result{1, 1, 1, 1, true, true}, nil},
+		{"Release/IntentDenied", result{1, 0, 0, 0, true, false}, nil},
+		{"Release/IntentAckLost", result{1, 0, 0, 0, true, false}, nil},
+		{"Release/DispatchDenied", result{1, 1, 0, 0, true, false}, nil},
+		{"Release/DispatchAckLost", result{1, 1, 0, 0, true, false}, nil},
+		{"Release/OperationAckLost", result{1, 1, 0, 0, true, false}, nil},
+		{"Release/OperationScope", result{1, 1, 0, 0, true, false}, nil},
+		{"Release/WaitInterrupted", result{1, 1, 0, 0, true, false}, nil},
+		{"Release/NativeConflict", result{1, 1, 0, 0, true, false}, nil},
+		{"Release/RenderFailed", result{1, 1, 0, 0, true, false}, nil},
+		{"Release/UnknownRender", result{1, 1, 0, 0, true, false}, nil},
+		{"Release/Abandoned", result{1, 1, 0, 0, true, false}, nil},
+		{"Release/NoUID", result{1, 1, 0, 0, true, false}, nil},
+		{"Migration/IntentDenied", result{1, 1, 0, 0, true, false}, nil},
+		{"Migration/IntentAckLost", result{1, 1, 0, 0, true, false}, nil},
+		{"Migration/DispatchDenied", result{1, 1, 1, 0, true, false}, nil},
+		{"Migration/OperationAckLost", result{1, 1, 1, 0, true, false}, nil},
+		{"Migration/OperationScope", result{1, 1, 1, 0, true, false}, nil},
+		{"Migration/WaitInterrupted", result{1, 1, 1, 0, true, false}, nil},
+		{"Migration/EvidenceDenied", result{1, 1, 1, 0, true, false}, nil},
+		{"Migration/EvidenceConflict", result{1, 1, 1, 0, true, false}, nil},
+		{"Rollout/IntentDenied", result{1, 1, 1, 0, true, false}, nil},
+		{"Rollout/IntentAckLost", result{1, 1, 1, 0, true, false}, nil},
+		{"Rollout/DispatchDenied", result{1, 1, 1, 1, true, false}, nil},
+		{"Rollout/DispatchAckLost", result{1, 1, 1, 1, true, false}, nil},
+		{"Rollout/OperationAckLost", result{1, 1, 1, 1, true, false}, nil},
+		{"Rollout/OperationScope", result{1, 1, 1, 1, true, false}, nil},
+		{"Rollout/WaitInterrupted", result{1, 1, 1, 1, true, false}, nil},
+		{"Rollout/NativeConflict", result{1, 1, 1, 1, true, false}, nil},
+		{"Rollout/SnapshotApprovalAbsent", result{1, 1, 1, 0, true, false}, nil},
+		{"Rollout/SnapshotPeerTarget", result{1, 1, 1, 0, true, false}, nil},
+		{"Rollout/SnapshotPeerProject", result{1, 1, 1, 0, true, false}, nil},
+		{"Rollout/NoSnapshot", result{1, 1, 1, 0, true, false}, nil},
+		{"Rollout/CurrentApprovalAbsent", result{1, 1, 1, 0, true, false}, nil},
+		{"Rollout/CurrentTargetRecreated", result{1, 1, 1, 0, true, false}, nil},
+		{"Rollout/TargetReadDenied", result{1, 1, 1, 0, true, false}, nil},
 		{"FinishSuccess", result{1, 1, 1, 1, true, false}, &result{0, 1, 1, 1, false, true}},
 		{"FinishActiveWriter", result{1, 1, 1, 1, true, false}, &result{70, 1, 1, 1, true, false}},
 		{"FinishWrongAttempt", result{1, 1, 1, 1, true, false}, &result{70, 1, 1, 1, true, false}},
@@ -84,7 +120,21 @@ func TestOperation(t *testing.T) {
 				Name: "projects/123456/locations/europe-west1/targets/agora-json-keys-grpc", Uid: "target-uid", RequireApproval: true,
 				DeploymentTarget: &deploypb.Target_Run{Run: &deploypb.CloudRunLocation{Location: "projects/123456/locations/europe-west1"}},
 			}
-			released.TargetSnapshots = []*deploypb.Target{target}
+			released.TargetSnapshots = []*deploypb.Target{proto.Clone(target).(*deploypb.Target)}
+			switch testCase.name {
+			case "Rollout/SnapshotApprovalAbsent":
+				released.TargetSnapshots[0].RequireApproval = false
+			case "Rollout/SnapshotPeerTarget":
+				released.TargetSnapshots[0].Name += "-peer"
+			case "Rollout/SnapshotPeerProject":
+				released.TargetSnapshots[0].GetRun().Location = "projects/999999/locations/europe-west1"
+			case "Rollout/NoSnapshot":
+				released.TargetSnapshots = nil
+			case "Rollout/CurrentApprovalAbsent":
+				target.RequireApproval = false
+			case "Rollout/CurrentTargetRecreated":
+				target.Uid = "recreated"
+			}
 			migration, execution := migrationFixture(t, released)
 			migration.Template.Template.Containers[0].Image = "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-production/service-json-keys/jobs/migrations@" + digest
 			execution.Template = proto.Clone(migration.Template.Template).(*runpb.TaskTemplate)
@@ -127,12 +177,34 @@ func TestOperation(t *testing.T) {
 			repairing := false
 			approvalReads := 0
 			generation := int64(1)
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			waitingStage := ""
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				mutex.Lock()
 				defer mutex.Unlock()
 				w.Header().Set("Content-Type", "application/json")
 				write := func(message proto.Message) { _, _ = w.Write(wire(t, message)) }
+				stageFailure := func(stage string) bool { return testCase.name == waitingStage+"/"+stage }
+				dispatchFailed := func() bool {
+					if stageFailure("DispatchDenied") {
+						http.Error(w, "private-provider-detail", http.StatusForbidden)
+						return true
+					}
+					if stageFailure("DispatchAckLost") || testCase.name == "MigrationAckLost" && waitingStage == "Migration" {
+						http.Error(w, "private-provider-detail", http.StatusServiceUnavailable)
+						return true
+					}
+					return false
+				}
 				completed := func(name string, message proto.Message) {
+					if stageFailure("OperationScope") {
+						name = strings.ReplaceAll(name, "123456", "999999")
+					}
+					if stageFailure("WaitInterrupted") {
+						write(&longrunningpb.Operation{Name: name})
+						return
+					}
 					response, err := anypb.New(message)
 					if err != nil {
 						panic(err)
@@ -152,6 +224,25 @@ func TestOperation(t *testing.T) {
 						return
 					}
 					receipt := strings.Contains(object.Name, "/native-success/")
+					recordStage := ""
+					switch object.Name {
+					case intent:
+						recordStage = "Release/Intent"
+					case strings.Replace(intent, ".json", ".migration.json", 1):
+						recordStage = "Migration/Intent"
+					case strings.Replace(intent, ".json", ".rollout.json", 1):
+						recordStage = "Rollout/Intent"
+					case strings.Replace(intent, ".json", ".migration.execution.json", 1):
+						recordStage = "Migration/Evidence"
+					default:
+						if strings.HasSuffix(object.Name, ".operation.json") {
+							recordStage = waitingStage + "/Operation"
+						}
+					}
+					if testCase.name == recordStage+"Denied" {
+						http.Error(w, "private-provider-detail", http.StatusForbidden)
+						return
+					}
 					if repairing && !receipt {
 						t.Error("repair may only publish native completion")
 						w.WriteHeader(http.StatusForbidden)
@@ -171,6 +262,13 @@ func TestOperation(t *testing.T) {
 						return
 					}
 					objects[key] = body
+					if testCase.name == recordStage+"Conflict" {
+						objects[key] = []byte(`{"job":"peer"}`)
+					}
+					if testCase.name == recordStage+"AckLost" {
+						http.Error(w, "private-provider-detail", http.StatusServiceUnavailable)
+						return
+					}
 					if object.Name == guard {
 						storedGuard = body
 					}
@@ -224,6 +322,10 @@ func TestOperation(t *testing.T) {
 						_ = json.NewEncoder(w).Encode(&storage.Object{Name: parts[1], Bucket: parts[0], Generation: 1})
 					}
 				case r.Method == http.MethodGet:
+					if stageFailure("WaitInterrupted") && strings.HasSuffix(r.URL.Path, "/operations/create-1") {
+						cancel()
+						return
+					}
 					if repairing && (testCase.name == "FinishActiveWriter" || testCase.name == "FinishWrongAttempt" || testCase.name == "FinishAbsentGuard" || testCase.name == "FinishSuccessor") {
 						t.Error("repair read native state before writer/guard authorization")
 					}
@@ -247,7 +349,14 @@ func TestOperation(t *testing.T) {
 						}
 						write(native)
 					case "/v1/" + target.Name:
+						if testCase.name == "Rollout/TargetReadDenied" {
+							http.Error(w, "private-provider-detail", http.StatusForbidden)
+							return
+						}
 						write(target)
+					case "/v1/" + operationName:
+						t.Error("completed native operation unexpectedly polled")
+						w.WriteHeader(http.StatusForbidden)
 					case "/v2/" + serviceName:
 						revision := previousRollout.Metadata.GetCloudRun().Revision
 						if got.rollouts > 0 {
@@ -287,11 +396,45 @@ func TestOperation(t *testing.T) {
 					switch r.URL.Path {
 					case "/v1/" + request.Parent + "/releases":
 						got.releases++
+						waitingStage = "Release"
+						reserved, posted := new(deploypb.CreateReleaseRequest), new(deploypb.Release)
+						body, _ := io.ReadAll(r.Body)
+						assert.NoError(t, protojson.Unmarshal(objects[bucket+"/"+intent], reserved))
+						assert.NoError(t, protojson.Unmarshal(body, posted))
+						assert.True(t, proto.Equal(request, reserved) && proto.Equal(request.Release, posted))
+						assert.Equal(t, request.RequestId, r.URL.Query().Get("requestId"))
+						assert.Equal(t, request.ReleaseId, r.URL.Query().Get("releaseId"))
+						switch testCase.name {
+						case "Release/NativeConflict":
+							released.DeployParameters["masterKeyVersion"] = "99"
+						case "Release/RenderFailed":
+							released.RenderState = deploypb.Release_FAILED
+						case "Release/UnknownRender":
+							released.RenderState = deploypb.Release_RENDER_STATE_UNSPECIFIED
+						case "Release/Abandoned":
+							released.Abandoned = true
+						case "Release/NoUID":
+							released.Uid = ""
+						}
+						if dispatchFailed() {
+							return
+						}
 						completed(operationName, released)
 					case "/v2/" + migration.Name + ":run":
 						got.migrations++
-						if testCase.name == "MigrationAckLost" {
-							w.WriteHeader(http.StatusServiceUnavailable)
+						waitingStage = "Migration"
+						var reserved struct {
+							ReleaseUID string          `json:"releaseUid"`
+							Job        json.RawMessage `json:"job"`
+						}
+						assert.NoError(t, json.Unmarshal(objects[bucket+"/"+strings.Replace(intent, ".json", ".migration.json", 1)], &reserved))
+						job, posted := new(runpb.Job), new(runpb.RunJobRequest)
+						assert.NoError(t, protojson.Unmarshal(reserved.Job, job))
+						body, _ := io.ReadAll(r.Body)
+						assert.NoError(t, protojson.Unmarshal(body, posted))
+						assert.True(t, reserved.ReleaseUID == released.Uid && proto.Equal(job, migration))
+						assert.True(t, proto.Equal(posted, &runpb.RunJobRequest{Name: migration.Name, Etag: migration.Etag}))
+						if dispatchFailed() {
 							return
 						}
 						if testCase.name == "MigrationFailed" {
@@ -300,6 +443,25 @@ func TestOperation(t *testing.T) {
 						completed(operationName, execution)
 					case "/v1/" + released.Name + "/rollouts":
 						got.rollouts++
+						waitingStage = "Rollout"
+						reserved, posted := new(deploypb.CreateRolloutRequest), new(deploypb.Rollout)
+						assert.NoError(t, protojson.Unmarshal(objects[bucket+"/"+strings.Replace(intent, ".json", ".rollout.json", 1)], reserved))
+						body, _ := io.ReadAll(r.Body)
+						assert.NoError(t, protojson.Unmarshal(body, posted))
+						expected := &deploypb.CreateRolloutRequest{
+							Parent: released.Name, RolloutId: "production", RequestId: config["rollout_request_id"].(string), StartingPhaseId: "canary-0",
+							Rollout: &deploypb.Rollout{Name: native.Name, TargetId: native.TargetId, Annotations: native.Annotations},
+						}
+						assert.True(t, proto.Equal(reserved, expected) && proto.Equal(posted, expected.Rollout))
+						for key, value := range map[string]string{"rolloutId": "production", "requestId": expected.RequestId, "startingPhaseId": "canary-0", "overrideDeployPolicy": "", "validateOnly": ""} {
+							assert.Equal(t, value, r.URL.Query().Get(key), key)
+						}
+						if stageFailure("NativeConflict") {
+							native.Annotations["release-uid"] = "peer"
+						}
+						if dispatchFailed() {
+							return
+						}
 						if testCase.name == "AwaitApprovalInterrupted" || testCase.name == "HumanApproved" {
 							native.ApprovalState = deploypb.Rollout_NEEDS_APPROVAL
 						}
@@ -349,11 +511,12 @@ func TestOperation(t *testing.T) {
 			args := []string{"deploy", "--source-dir=" + directory, "--timeout=" + timeout, file, fmt.Sprintf("%x", sha256.Sum256(data))}
 			var output bytes.Buffer
 			options := []option.ClientOption{option.WithEndpoint(server.URL), option.WithoutAuthentication()}
-			got.code = submission.Operation(t.Context(), args, func(key string) string { return env[key] }, execute, registry, &output, &output, options...)
+			got.code = submission.Operation(ctx, args, func(key string) string { return env[key] }, execute, registry, &output, &output, options...)
 			mutex.Lock()
 			_, got.held = objects[stateBucket+"/"+guard]
 			mutex.Unlock()
 			require.Equal(t, testCase.want, got, "%s", &output)
+			require.NotContains(t, output.String(), "private-provider-detail")
 			if storedGuard != nil {
 				// Inspection remains usable after disabling the writer or changing master.
 				readerEnv := func(key string) string {

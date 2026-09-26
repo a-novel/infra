@@ -7,7 +7,7 @@ own both its specification and traffic after the separately reviewed one-writer 
 
 ## Native release inputs
 
-`skaffold.yaml` renders `service.yaml` without builds or hooks. The [render-only submitter](../../../docs/runbooks/submit-release.md) accepts exactly
+`skaffold.yaml` renders `service.yaml` without builds or hooks. The [guarded caller](../../../docs/runbooks/submit-release.md#guarded-established-release) accepts exactly
 one `buildArtifacts` entry named `service-json-keys`, pointing to the promoted API digest in
 `REGION-docker.pkg.dev/PROJECT/agora-production/service-json-keys/grpc@sha256:…`.
 Complete image-family and provenance checks still precede submission; verification does not replace them.
@@ -16,8 +16,9 @@ The [rollout handoff](../../../docs/runbooks/submit-release.md#submit-the-approv
 reserves one approval-gated rollout for that release and reconciles it read-only after interruption.
 The [source publisher](../../../docs/runbooks/submit-release.md#publish-the-reviewed-source) binds
 the archive to those two committed files; submission checks it before reserving intent.
-There is no production caller yet: source authorization/retention, parameter authorization, service locking,
-bootstrap/predecessor checks and the final success receipt remain activation gates.
+The protected caller holds service admission through source publication, migration, rollout and
+durable completion. It requires a verified predecessor; first launch remains separate. Live source
+retention, IAM and interruption/recovery proof remain activation gates.
 
 [Cloud Deploy parameters](https://docs.cloud.google.com/deploy/docs/parameters) replace the marked
 fields without a custom renderer. The inactive
@@ -77,15 +78,16 @@ Effective inherited access still needs inspection and negative live tests.
 The network/subnet pair comes from the foundation-owned Shared VPC host, not a duplicate service VPC.
 The dedicated `agora-rollout-probe` network tag needs only restricted Google API HTTPS egress and the
 matching private DNS/Google Access path; it must not inherit the application's PostgreSQL allowance.
-There is still **no production caller or live provisioning**. API/service-agent setup, Shared VPC
+There is still **no live provisioning**. API/service-agent setup, Shared VPC
 attachment and firewall rules remain activation prerequisites, not implicit permissions added here.
 The inactive [service foundation](../../../environments/service-foundation) declares the application
 identity, its two exact secret-container grants, separate application/verifier repositories and an
 operations email channel. Its published coordinates feed the rollout module without peer state.
 The inactive [service release root](../../../environments/service-release) declares JSON Keys migrations and
 rotation using only its own database, images and secret-version references. It does not dispatch jobs
-or create a schedule. Execution authority, migration reconciliation and rotation pause/drain/resume
-remain separate activation gates; neither job becomes a Cloud Deploy retry hook.
+or create a schedule. The native rotation dispatcher shares service admission with the guarded caller.
+Retiring direct dispatchers and proving effective execution authority remain activation gates;
+neither job becomes a Cloud Deploy retry hook.
 
 `builds/rollout-verifier.Dockerfile` builds one unprivileged image from the reviewed Go module. Local
 `a-novel build --type=podman -y` does not publish it. The [artifact workflow](../../../docs/runbooks/publish-rollout-verifier.md)
@@ -99,6 +101,6 @@ serialization through the probe and receipt, since reading before/after is not a
 [#189](https://github.com/a-novel/infra/issues/189) retains the GitHub Actions completion-tracking contract:
 observe exact rollout/verification outcomes and durable receipt completion, not merely submission.
 The [read-only observer](../../../docs/runbooks/observe-rollout.md) and repo-local action report those
-native outcomes. No production workflow calls them. The rollout module also declares
+native outcomes. The protected caller uses the observer but remains disabled. The rollout module also declares
 [native operations alerts](../../../docs/runbooks/observe-rollout.md#native-operations-alerts);
 live notification delivery, receipt integration and interruption proof remain activation prerequisites.
