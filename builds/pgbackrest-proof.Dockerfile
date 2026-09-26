@@ -6,7 +6,7 @@ COPY go.mod go.sum ./
 COPY proofs/pgbackrest ./proofs/pgbackrest
 RUN go test -c -trimpath -o /proof.test ./proofs/pgbackrest
 
-FROM ghcr.io/a-novel/service-json-keys/database:v2.6.1
+FROM ghcr.io/a-novel/service-json-keys/database:v2.6.2
 # Installing the evaluation tools must preserve the service's server and extension binaries.
 RUN sha256sum /usr/lib/postgresql/18/bin/postgres /usr/lib/postgresql/18/lib/uuid-ossp.so > /tmp/database.sha256 \
     && apt-get update \
