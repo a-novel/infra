@@ -8,6 +8,11 @@
   },
   "packageRules": [
     {
+      "description": "Keep container build dependencies on version tags without digest pins.",
+      "matchManagers": ["dockerfile", "docker-compose"],
+      "pinDigests": false
+    },
+    {
       "description": "Review the stable Google provider and service-agent beta provider together.",
       "matchManagers": ["terraform"],
       "matchPackageNames": ["hashicorp/google", "hashicorp/google-beta"],

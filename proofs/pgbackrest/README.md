@@ -65,9 +65,9 @@ sizing claim. They do not predict GCS latency, growing WAL volume, SSD load or p
 
 ## Packaging and security review
 
-The Dockerfile pins Docker Official Images by digest and installs exact PGDG package versions:
+The Dockerfile selects Docker Official Images by version tag and installs exact PGDG package versions:
 pgBackRest `2.59.1-1.pgdg13+1`, PostgreSQL 18.6, and PostgreSQL 17.11 solely for the negative test.
-APT verifies the signed repository metadata and package hashes. The PGDG key in the pinned base has
+APT verifies the signed repository metadata and package hashes. The PGDG key in the inspected base has
 fingerprint `B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8`, matching the
 [PostgreSQL package repository](https://wiki.postgresql.org/wiki/Apt).
 The [upstream pgBackRest project](https://github.com/pgbackrest/pgbackrest) is MIT-licensed and
@@ -75,7 +75,7 @@ actively maintained; its [guide](https://pgbackrest.org/user-guide.html#installa
 distribution packages. This avoids maintaining a C build/distribution pipeline for the proof.
 
 These checks establish the public distribution source and integrity, not our own production
-attestation. Transitive Debian package versions can change between builds; retain the resulting
+attestation. Image tags and transitive Debian package versions can change between builds; retain the resulting
 image digest and package inventory with any future drill evidence.
 
 Trivy 0.74.0 on 26 September 2026 reported **62 Debian high/critical package findings** (including
