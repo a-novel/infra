@@ -34,7 +34,7 @@ func TestRun(t *testing.T) {
 				w.WriteHeader(http.StatusForbidden)
 			}))
 			defer server.Close()
-			args := arguments(t, "submit-release", path)
+			args := arguments(t, "publish-release-source", path)
 			args[1] = "--project-id=" + testCase.project
 			var output bytes.Buffer
 			code := submission.Run(t.Context(), args, &output, &output, option.WithEndpoint(server.URL), option.WithoutAuthentication())
@@ -49,16 +49,10 @@ func TestSubmissionArguments(t *testing.T) {
 	for _, testCase := range []struct {
 		name, command, argument string
 	}{
-		{"NoUUID", "submit-rollout", ""},
-		{"ZeroUUID", "submit-rollout", "--request-id=00000000-0000-0000-0000-000000000000"},
-		{"InvalidUUID", "submit-rollout", "--request-id=private-input"},
+		{"NoStandaloneRelease", "submit-release", ""},
+		{"NoStandaloneRollout", "submit-rollout", "--request-id=22222222-2222-4222-8222-222222222222"},
+		{"NoStandaloneMigration", "submit-migration", "--job-uid=11111111-1111-4111-8111-111111111111"},
 		{"ReconcileHasNoUUID", "reconcile-rollout", "--request-id=22222222-2222-4222-8222-222222222222"},
-		{"NoPhaseOverride", "submit-rollout", "--starting-phase=stable"},
-		{"NoTargetOverride", "submit-rollout", "--target=peer"},
-		{"NoRolloutOverride", "submit-rollout", "--rollout-id=other"},
-		{"NoMigrationUID", "submit-migration", ""},
-		{"InvalidMigrationUID", "submit-migration", "--job-uid=private-input"},
-		{"NoMigrationOverrides", "submit-migration", "--overrides=private-input"},
 		{"NoReconcileJobOverride", "reconcile-migration", "--job-uid=private-input"},
 		{"NoReconcileImageOverride", "reconcile-migration", "--image=private-input"},
 	} {

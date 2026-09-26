@@ -99,7 +99,8 @@ func (operation *serviceOperation) deployRelease(ctx context.Context, request *d
 	if err := operation.submit(ctx, request, output); err != nil {
 		return err
 	}
-	if err := operation.rendered(ctx, request.ReleaseId); err != nil {
+	release, err := operation.rendered(ctx, request.ReleaseId)
+	if err != nil {
 		return err
 	}
 	if err := operation.held(ctx); err != nil {
@@ -108,13 +109,16 @@ func (operation *serviceOperation) deployRelease(ctx context.Context, request *d
 	if err := artifact.VerifyServiceSecrets(ctx, operation.data, execute); err != nil {
 		return err
 	}
-	if err := operation.migration(ctx, "submit-migration", request.ReleaseId, operation.approvedMigration.Uid, operation.input.Images["migrations"], output); err != nil {
+	if err := operation.startMigration(ctx, request.ReleaseId, release, output); err != nil {
+		return err
+	}
+	if err := operation.migration(ctx, request.ReleaseId, output); err != nil {
 		return err
 	}
 	if err := operation.held(ctx); err != nil {
 		return err
 	}
-	if err := operation.createRollout(ctx, request.ReleaseId, operation.input.RolloutRequestID, output, true); err != nil {
+	if err := operation.createRollout(ctx, request.ReleaseId, operation.input.RolloutRequestID, output); err != nil {
 		return err
 	}
 	observer := rollout.Observer{Name: request.Release.Name + "/rollouts/production", Timeout: timeout, AwaitActions: true}
@@ -124,23 +128,23 @@ func (operation *serviceOperation) deployRelease(ctx context.Context, request *d
 	return operation.finish(ctx, request.ReleaseId, output)
 }
 
-func (operation serviceOperation) rendered(ctx context.Context, id string) error {
+func (operation serviceOperation) rendered(ctx context.Context, id string) (*deploypb.Release, error) {
 	for {
 		_, release, err := operation.readRelease(ctx, id)
-		if err != nil || release.GetAbandoned() {
-			return errors.New("render observation unavailable or abandoned")
+		if err != nil || release.GetAbandoned() || release.GetUid() == "" {
+			return nil, errors.New("render observation unavailable, unidentified or abandoned")
 		}
 		switch release.RenderState {
 		case deploypb.Release_SUCCEEDED:
-			return nil
+			return release, nil
 		case deploypb.Release_IN_PROGRESS:
 			select {
 			case <-ctx.Done():
-				return errors.New("render observation interrupted; service guard retained")
+				return nil, errors.New("render observation interrupted; service guard retained")
 			case <-time.After(10 * time.Second):
 			}
 		default:
-			return errors.New("render failed or unknown; service guard retained")
+			return nil, errors.New("render failed or unknown; service guard retained")
 		}
 	}
 }

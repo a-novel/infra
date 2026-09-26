@@ -4,11 +4,10 @@
 these adapters under one guard. Live use still needs the [activation gates](#before-live-use);
 merging does not provision resources, enable the action or replace legacy production.
 
-The release command preserves the exact request before asking Cloud Deploy to render it. A separate
-rollout command hands that rendered release to an approval-required target after its migration succeeds.
-Google's clients own authentication, API decoding and operation waiting. Cloud Deploy owns rollout execution; these
-commands cannot approve, advance, retry jobs, roll back or delete resources. Migration dispatch is
-explicit and remains outside Cloud Deploy hooks.
+The guarded caller preserves intent, waits for rendering, executes one migration and tracks the
+approval-required rollout. Google's clients own authentication, API decoding and operation waiting.
+Cloud Deploy owns rollout execution; the caller cannot approve, advance, retry jobs or roll back.
+Migration dispatch remains outside Cloud Deploy hooks.
 
 ## Guarded established release
 
@@ -54,8 +53,9 @@ actual traffic, approved-job and saved migration checks before create-only publi
 Missing migration evidence or uncertain native outcomes remain blocked; no deployment is replayed.
 
 Keep `SERVICE_NATIVE_RELEASE_ENABLED` unset/false and the protected operation secret unset until the
-separate activation review. The workflow retains global writer serialization. The low-level commands
-below document the adapters and reconciliation tools; do not use them to bypass admission.
+separate activation review. The workflow retains global writer serialization. Standalone
+`submit-release`, `submit-migration` and `submit-rollout` are unavailable. The commands below publish
+source or reconcile existing work; they cannot start a deployment or provide a first-launch path.
 
 ## The private request
 
@@ -126,20 +126,8 @@ read access only to the selected source prefix.
 
 ## Submission contract
 
-After separate live approval and completion of the gates below, the invocation will be:
-
-```sh
-infra submit-release \
-  --project-id="${SERVICE_PROJECT_ID:?}" --project-number="${SERVICE_PROJECT_NUMBER:?}" \
-  --region="${REGION:?}" --receipt-bucket="${RECEIPT_BUCKET:?}" \
-  --source-dir="${TRUSTED_CHECKOUT:?}" --timeout=10m "${PRIVATE_REQUEST_FILE:?}"
-```
-
-Build the reviewed binary before protected inputs or cloud credentials are present. These variables
-come from the selected service's reviewed contract, not the legacy shared production project.
-
-The command rebuilds the exact committed archive and compares the stored source **before any intent
-reservation or Cloud Deploy call**. Source mismatch stops without submitting anything. It then creates
+The guarded caller verifies the exact committed source before release-intent reservation or any
+Cloud Deploy write. Source mismatch stops without submitting anything. It then creates
 `services/PROJECT_ID/production/submissions/RELEASE_ID.json` in the private receipt bucket with
 [`ifGenerationMatch=0`](https://docs.cloud.google.com/storage/docs/request-preconditions).
 Only an acknowledged, new object permits **one** `CreateRelease` call. An existing object is a stop,
@@ -151,9 +139,8 @@ before waiting through the official client. Cancellation stops local observation
 operation. Neither record is removed on failure. Errors contain fixed diagnostics, not provider
 response bodies or request contents.
 
-A zero exit status means a matching release is **rendering or rendered**, not deployed. The command
-prints that distinction explicitly. A render failure, abandoned release, conflict, missing evidence
-or interrupted operation returns nonzero. No initial rollout is created by this API call.
+Rendering is not deployment success. The caller waits for rendering to finish before migration,
+and tracks the subsequent rollout through verification and durable completion.
 
 ## Reconcile an interruption
 
@@ -187,29 +174,13 @@ A crash after reserving intent but before dispatch intentionally requires operat
 
 ## Run the exact migration once
 
-**Inactive pilot: complete the activation gates before live use.** After the selected job configuration
-has converged and the release has rendered, retain the reviewed job UID and promoted migrations
-digest from the service-release root's `jobs.definitions.migrations` output. The caller must first
-validate the complete image family, exact job configuration and enabled secret metadata, acquire
-service-wide exclusion, and exclude competing scheduled work. The guarded caller leaves the schedule
-unchanged only after every dispatch path uses the same guard through execution completion; an
-unenrolled direct dispatcher still requires proven pause/drain before activation.
+The guarded caller requires the selected project's `agora-json-keys-migrations` job to match the
+approved UID and full task configuration. It must be ready, use the release's runtime account and
+the image's entrypoint, and have one task, explicit zero retries and the root's 600-second timeout.
+The complete image family and enabled secret metadata are checked before dispatch.
 
-```sh
-infra submit-migration \
-  --project-id="${SERVICE_PROJECT_ID:?}" --project-number="${SERVICE_PROJECT_NUMBER:?}" \
-  --region="${REGION:?}" --receipt-bucket="${RECEIPT_BUCKET:?}" \
-  --job-uid="${MIGRATION_JOB_UID:?}" --image="${MIGRATION_IMAGE:?}" \
-  --timeout=15m "${RELEASE_ID:?}"
-```
-
-Only the selected project's `agora-json-keys-migrations` job is accepted. It must be ready at the
-reviewed UID/image, use the release's runtime account and the image's entrypoint, and have one task,
-explicit zero retries and the root's 600-second task timeout. The private intent binds the native
-release UID and observed job snapshot. UID/image checks do not replace the caller's configuration
-and provenance approval; snapshotting a job does not make an unreviewed configuration safe.
-
-The command reserves `RELEASE_ID.migration.json` under the same private submissions prefix.
+It reserves `RELEASE_ID.migration.json` under the private submissions prefix, binding the native
+release UID and observed job snapshot.
 Only a confirmed new reservation permits one native
 [`RunJob`](https://docs.cloud.google.com/run/docs/reference/rest/v2/projects.locations.jobs/run)
 request, with the observed etag and **no overrides**. The pinned client does not retry that request.
@@ -220,7 +191,7 @@ The returned operation and any available execution identity are stored in
 acknowledged execution, preserve its task configuration, and report one successful task with no
 failure, cancellation or retry. The native successful execution is retained create-only in
 `RELEASE_ID.migration.execution.json`; identical read-back establishes publication even after a
-lost write acknowledgement. Zero exit status confirms this migration evidence, not rollout completion.
+lost write acknowledgement. The caller then proceeds to rollout while retaining service admission.
 
 ## Reconcile a migration interruption
 
@@ -248,17 +219,8 @@ expires. No automatic database backup restore or schema rollback is performed.
 
 ## Submit the approval-gated rollout
 
-After the activation gates below are satisfied, select the same release and a new nonzero lowercase
-request UUID, distinct from the release-create UUID:
-
-```sh
-infra submit-rollout \
-  --project-id="${SERVICE_PROJECT_ID:?}" --project-number="${SERVICE_PROJECT_NUMBER:?}" \
-  --region="${REGION:?}" --receipt-bucket="${RECEIPT_BUCKET:?}" \
-  --request-id="${ROLLOUT_REQUEST_ID:?}" --timeout=10m "${RELEASE_ID:?}"
-```
-
-The command requires the native release to match its private intent and finish rendering. It validates
+The guarded caller uses the independently approved rollout UUID, distinct from the release UUID.
+It requires the native release to match its private intent and finish rendering. It validates
 the three migration records and their successful execution before reserving rollout intent. Missing,
 failed or mismatched migration evidence stops without creating a rollout. Both its target snapshot
 and the current target must require approval, identify the same target UID, and
@@ -272,11 +234,9 @@ phase or policy-override flags. The request is reserved once as
 `RELEASE_ID.rollout.operation.json`. Both use the same create-only rule as release submission.
 Changing the request UUID cannot bypass an existing reservation.
 
-This normally returns **nonzero with `action-required (approval)`**. The rollout exists, but deployment
-is incomplete. Do not rerun submission to clear that result. Approval remains a separate human action,
-and stable-phase advancement follows successful candidate verification. Before approval, the live
-procedure must establish the compatible predecessor and same-service exclusion described below.
-Cloud Deploy can skip the candidate phase on first launch; bootstrap needs separate review.
+The caller keeps waiting during human approval and stable-phase advancement, within its deadline.
+An interrupted wait leaves the guard held; do not rerun deployment to clear it. Cloud Deploy can skip
+the candidate phase on first launch, so the caller requires a verified compatible predecessor.
 
 ## Reconcile the rollout
 

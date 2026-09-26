@@ -65,7 +65,7 @@ func TestRequest(t *testing.T) {
 			}))
 			defer server.Close()
 			var output bytes.Buffer
-			code := submission.Run(t.Context(), arguments(t, "submit-release", path, sourceDirectory), &output, &output,
+			code := submission.Run(t.Context(), arguments(t, "publish-release-source", path, sourceDirectory), &output, &output,
 				option.WithEndpoint(server.URL), option.WithoutAuthentication())
 			require.Equal(t, 1, code)
 			require.NotContains(t, output.String(), "private-input")

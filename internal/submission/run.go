@@ -17,8 +17,8 @@ import (
 	"google.golang.org/api/storage/v1"
 )
 
-// Run exposes the dormant pilot's publication, single-dispatch submission and outcome reconciliation.
-// Migration reconciliation may publish execution evidence; target approval and final receipts remain separate.
+// Run publishes source and reconciles recorded outcomes without dispatching native work.
+// Migration reconciliation may publish execution evidence; guard cleanup remains separately protected.
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer, options ...option.ClientOption) int {
 	if err := run(ctx, args, stdout, options...); err != nil {
 		_, _ = fmt.Fprintln(stderr, err)
@@ -34,10 +34,9 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, options .
 
 func run(ctx context.Context, args []string, output io.Writer, options ...option.ClientOption) error {
 	if len(args) == 0 || !slices.Contains([]string{
-		"publish-release-source", "submit-release", "reconcile-release",
-		"submit-rollout", "reconcile-rollout", "submit-migration", "reconcile-migration",
+		"publish-release-source", "reconcile-release", "reconcile-rollout", "reconcile-migration",
 	}, args[0]) {
-		return errors.New("expected a release, rollout or migration submission/reconciliation command")
+		return errors.New("expected source publication or reconciliation; deployment requires the protected service-release caller")
 	}
 	flags := flag.NewFlagSet(args[0], flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -46,35 +45,20 @@ func run(ctx context.Context, args []string, output io.Writer, options ...option
 	flags.StringVar(&scope.ProjectNumber, "project-number", "", "reviewed service project number")
 	flags.StringVar(&scope.Region, "region", "", "reviewed region")
 	flags.StringVar(&scope.ReceiptBucket, "receipt-bucket", "", "private management receipt bucket")
-	fromFile := args[0] == "submit-release" || args[0] == "publish-release-source"
+	fromFile := args[0] == "publish-release-source"
 	var sourceDirectory string
 	if fromFile {
 		flags.StringVar(&sourceDirectory, "source-dir", ".", "trusted checkout at the exact source commit")
 	}
-	var requestID string
-	if args[0] == "submit-rollout" {
-		flags.StringVar(&requestID, "request-id", "", "new nonzero UUID for this rollout request")
-	}
-	var jobUID, image string
-	if args[0] == "submit-migration" {
-		flags.StringVar(&jobUID, "job-uid", "", "reviewed existing migrations job UID")
-		flags.StringVar(&image, "image", "", "reviewed promoted migrations image digest")
-	}
-	timeout := flags.Duration("timeout", 10*time.Minute, "creation wait deadline, at most 30m")
+	timeout := flags.Duration("timeout", 10*time.Minute, "operation deadline, at most 30m")
 	if flags.Parse(args[1:]) != nil || flags.NArg() != 1 {
-		return errors.New("expected scope flags and one argument: request file for source/release submission, exact release ID otherwise")
+		return errors.New("expected scope flags and one argument: request file for source publication, exact release ID otherwise")
 	}
 	if err := scope.validate(); err != nil {
 		return err
 	}
 	if *timeout <= 0 || *timeout > 30*time.Minute {
 		return errors.New("timeout must be positive and at most 30m")
-	}
-	if args[0] == "submit-rollout" && !validRequestID(requestID) {
-		return errors.New("rollout request-id must be a nonzero lowercase UUID")
-	}
-	if args[0] == "submit-migration" && (!validRequestID(jobUID) || !scope.migrationImage(image)) {
-		return errors.New("migration requires a nonzero job UID and exact promoted JSON Keys migrations digest")
 	}
 	ctx, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()
@@ -107,7 +91,7 @@ func run(ctx context.Context, args []string, output io.Writer, options ...option
 	if _, err := fmt.Fprintf(output, "Release: %s/releases/%s\nIntent: gs://%s/%s\n", scope.parent(), id, scope.ReceiptBucket, scope.intentName(id)); err != nil {
 		return errors.New("cannot record selected release identity")
 	}
-	if args[0] == "submit-rollout" || args[0] == "reconcile-rollout" {
+	if args[0] == "reconcile-rollout" {
 		if _, err := fmt.Fprintf(output, "Rollout: %s/releases/%s/rollouts/production\nRollout intent: gs://%s/%s\n", scope.parent(), id, scope.ReceiptBucket, scope.rolloutIntent(id)); err != nil {
 			return errors.New("cannot record selected rollout identity")
 		}
@@ -122,27 +106,20 @@ func run(ctx context.Context, args []string, output io.Writer, options ...option
 		return errors.New("cannot initialize private storage client")
 	}
 	client := cloud{scope: scope, deploy: deployClient, storage: storageClient}
-	if args[0] == "submit-migration" || args[0] == "reconcile-migration" {
+	if args[0] == "reconcile-migration" {
 		jobsClient, err := cloudrun.NewJobsRESTClient(ctx, options...)
 		if err != nil {
 			return errors.New("cannot initialize Cloud Run jobs client")
 		}
 		defer func() { _ = jobsClient.Close() }()
 		client.jobs = jobsClient
-		return client.migration(ctx, args[0], id, jobUID, image, output)
+		return client.migration(ctx, id, output)
 	}
 	switch args[0] {
 	case "publish-release-source":
 		return client.publishSource(ctx, request, archive, output)
-	case "submit-rollout":
-		return client.submitRollout(ctx, id, requestID, output)
 	case "reconcile-rollout":
 		return client.reconcileRollout(ctx, id, output)
-	case "submit-release":
-		if err := client.verifySource(ctx, request, archive); err != nil {
-			return err
-		}
-		return client.submit(ctx, request, output)
 	default:
 		return client.reconcile(ctx, id, output)
 	}

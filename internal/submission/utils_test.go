@@ -19,7 +19,6 @@ import (
 	"testing"
 
 	"cloud.google.com/go/deploy/apiv1/deploypb"
-	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"cloud.google.com/go/run/apiv2/runpb"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -270,19 +269,5 @@ func completeRollout(t *testing.T, value *deploypb.Rollout) {
 				VerifyJob: &deploypb.Job{State: deploypb.Job_SUCCEEDED},
 			}},
 		})
-	}
-}
-
-func migrationRecords(t *testing.T, release *deploypb.Release) map[string][]byte {
-	t.Helper()
-	job, execution := migrationFixture(t, release)
-	data, err := json.Marshal(map[string]any{"schemaVersion": 1, "releaseUid": release.Uid, "job": json.RawMessage(wire(t, job))})
-	if err != nil {
-		panic(err)
-	}
-	base := strings.TrimSuffix(intent, ".json") + ".migration"
-	return map[string][]byte{
-		base + ".json": data, base + ".operation.json": wire(t, &longrunningpb.Operation{Name: operationName}),
-		base + ".execution.json": wire(t, execution),
 	}
 }

@@ -29,11 +29,7 @@ func rolloutRequest(release *deploypb.Release, requestID string) *deploypb.Creat
 	}
 }
 
-func (client cloud) submitRollout(ctx context.Context, id, requestID string, output io.Writer) error {
-	return client.createRollout(ctx, id, requestID, output, false)
-}
-
-func (client cloud) createRollout(ctx context.Context, id, requestID string, output io.Writer, observe bool) error {
+func (client cloud) createRollout(ctx context.Context, id, requestID string, output io.Writer) error {
 	releaseRequest, release, err := client.readRelease(ctx, id)
 	if err != nil {
 		return err
@@ -71,10 +67,7 @@ func (client cloud) createRollout(ctx context.Context, id, requestID string, out
 	if err != nil {
 		return errors.New("rollout creation wait interrupted or failed; intent and operation retained")
 	}
-	if observe {
-		return checkRolloutIdentity(request, native)
-	}
-	return reportRollout(output, request, release, native)
+	return checkRolloutIdentity(request, native)
 }
 
 func (scope scope) approvalTarget(target *deploypb.Target) bool {
