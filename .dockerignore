@@ -2,6 +2,7 @@
 node_modules
 **/.terraform
 **/*_test.go
+!proofs/pgbackrest/*_test.go
 **/testdata
 **/*.tfstate*
 **/*.tfvars*

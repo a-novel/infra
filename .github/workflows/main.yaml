@@ -180,6 +180,15 @@ jobs:
         shell: bash
         run: go test -race ./...
 
+      - name: Exercise the disposable physical-backup proof offline
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build -f builds/pgbackrest-proof.Dockerfile -t pgbackrest-proof:test .
+          docker run --rm --network=none --read-only --cap-drop=all \
+            --security-opt=no-new-privileges --cpus=1 --memory=2g --pids-limit=128 \
+            --tmpfs=/tmp:rw,size=1g,mode=1777 pgbackrest-proof:test
+
       - name: Test the root, plan, and operator caller policies
         shell: bash
         run: ./tests/ops_test.sh
