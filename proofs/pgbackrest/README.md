@@ -2,8 +2,9 @@
 
 Evaluation for [the backup-owner comparison](https://github.com/a-novel/infra/issues/190),
 not a production backup implementation. The Go file is a test-only driver for native commands;
-it is not linked into `infra`. No cloud resources, credentials, existing databases, production
-images, schedules, or retention policies are used or changed.
+it is not linked into `infra`. The image extends the published JSON Keys database with evaluation
+tools. No cloud resources, credentials, existing data, schedules, or retention policies are used;
+no production image is published or deployed.
 
 ## Run locally
 
@@ -29,7 +30,7 @@ Do not pass credentials, mount real data, enable networking, or use it as a depl
 
 | Scenario               | Native behavior checked                                                                                                                           |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Full backup            | Restore into a clean directory; verify the row, role, and `uuid-ossp` extension through SQL.                                                      |
+| Full backup            | Restore into a clean directory; verify the row, role, and a real `uuid-ossp` function call through SQL.                                           |
 | Point-in-time recovery | Restore a named point after a committed write; exclude the subsequent write. Wait for recovery to finish, not merely for read-only SQL readiness. |
 | Interrupted copy       | Stop pgBackRest after backup data starts copying. Its catalog must remain unchanged and the earlier full backup must still restore.               |
 | Missing/corrupt WAL    | Removing or corrupting a required archived segment makes `archive-get` fail and prevents the restored server from becoming ready.                 |
@@ -47,17 +48,21 @@ integration must test its actual shutdown path; parent exit is not evidence that
 
 This is POSIX storage evidence, **not** proof of interrupted GCS uploads, GCS permissions, locked
 retention, generation selection, host-loss recovery, or the production 6-hour RPO / 90-minute RTO.
-It also does not prove compatibility with our Alpine-based database artifacts or their extensions.
-Those require the packaging and cloud steps below before adoption.
+The selected JSON Keys `v2.6.1` database uses Debian 13, as confirmed from its published image and
+[release source](https://github.com/a-novel/service-json-keys/blob/v2.6.1/builds/database.Dockerfile).
+The proof runs that image's extension initialization SQL and checks its PostgreSQL and `uuid-ossp`
+binaries are unchanged by package installation. It does not exercise the original entrypoint,
+application migrations, historical images, or Authentication's artifact. Native backup integration
+on the actual COS host remains untested.
 
 ### Local measurements
 
-On 26 September 2026, the rebuilt image passed in **15.52 seconds**, capped at one CPU and 2 GiB
-RAM with 1 GiB tmpfs. Restores through SQL verification took **0.59–1.21 seconds**;
+On 26 September 2026, the service-image proof passed in **14.09 seconds**, capped at one CPU and 2 GiB
+RAM with 1 GiB tmpfs. Restores through SQL verification took **0.51–1.15 seconds**;
 the initial physical cluster was about 23.7 MB. The temporary interruption case adds about
 128 MiB of synthetic data. After native expiry, the repository (including WAL and catalog)
-contained **7,589,588 apparent bytes**. Container peak memory was **653,733,888 bytes** and CPU
-time about **10.34 seconds**, including PostgreSQL, backup workers and the test driver.
+contained **7,589,722 apparent bytes**. Container peak memory was **675,766,272 bytes** and CPU
+time about **9.31 seconds**, including PostgreSQL, backup workers and the test driver.
 The test image was about **547 MB** unpacked, including both PostgreSQL majors.
 
 These are small tmpfs-backed functional measurements, not a throughput benchmark or a production
@@ -65,8 +70,9 @@ sizing claim. They do not predict GCS latency, growing WAL volume, SSD load or p
 
 ## Packaging and security review
 
-The Dockerfile selects Docker Official Images by version tag and installs exact PGDG package versions:
-pgBackRest `2.59.1-1.pgdg13+1`, PostgreSQL 18.6, and PostgreSQL 17.11 solely for the negative test.
+The Dockerfile selects `ghcr.io/a-novel/service-json-keys/database:v2.6.1`, which contains
+PostgreSQL `18.6-1.pgdg13+2`. It adds PGDG pgBackRest `2.59.1-1.pgdg13+1` and
+PostgreSQL `17.11-1.pgdg13+2` solely for the negative test.
 APT verifies the signed repository metadata and package hashes. The PGDG key in the inspected base has
 fingerprint `B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8`, matching the
 [PostgreSQL package repository](https://wiki.postgresql.org/wiki/Apt).
@@ -74,14 +80,18 @@ The [upstream pgBackRest project](https://github.com/pgbackrest/pgbackrest) is M
 actively maintained; its [guide](https://pgbackrest.org/user-guide.html#installation) recommends
 distribution packages. This avoids maintaining a C build/distribution pipeline for the proof.
 
-These checks establish the public distribution source and integrity, not our own production
-attestation. Image tags and transitive Debian package versions can change between builds; retain the resulting
-image digest and package inventory with any future drill evidence.
+The selected service image passed `gh attestation verify` against its repository's
+`release.yaml`, `refs/heads/master`, and GitHub-hosted builders. This establishes the input's
+provenance, not approval or attestation of the derived proof image. Image tags and transitive Debian
+packages can change between builds; retain the generated image digest and package inventory with
+future drill evidence. The binary checks cover the server and extension, not their shared libraries.
 
-Trivy 0.74.0 on 26 September 2026 reported **62 Debian high/critical package findings** (including
-one critical) and **22 findings in the inherited `gosu` binary**. The Go proof binary had none.
+Trivy 0.74.0 on 26 September 2026 reported **99 Debian high/critical package findings** (including
+13 critical) and **22 findings in the inherited `gosu` binary**. The Go proof binary had none.
 Counts are package/advisory pairs, not distinct exploitable vulnerabilities:
 
+- Twelve critical package/advisory pairs concern four Perl packages at `5.40.1-6`; the scan
+  reports `5.40.1-6+deb13u1` as fixed. Adding pgBackRest does not upgrade every inherited package.
 - Debian `libxml2` `2.12.7+dfsg+really2.9.14-2.1+deb13u3` was flagged for
   [CVE-2026-6653](https://security-tracker.debian.org/tracker/CVE-2026-6653).
   Debian lists trixie as vulnerable but classifies the issue as minor/no-DSA; the scanner classifies

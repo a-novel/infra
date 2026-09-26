@@ -54,8 +54,8 @@ archive_command='pgbackrest --config=%s --stanza=proof archive-push %%p'
 `, p.root, p.config))
 	p.start(t, p.source, p.root)
 	p.backrest(t, "stanza-create")
-	p.sql(t, `CREATE EXTENSION "uuid-ossp";
-CREATE ROLE proof_reader;
+	run(t, "psql", "-X", "-h", p.root, "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-f", "/docker-entrypoint-initdb.d/init.sql")
+	p.sql(t, `CREATE ROLE proof_reader;
 CREATE TABLE sample (id uuid PRIMARY KEY, value text NOT NULL CHECK (value <> ''));
 INSERT INTO sample VALUES ('00000000-0000-0000-0000-000000000001', 'original');`)
 	var first, retained, newest backup
@@ -254,8 +254,8 @@ func (p proof) restore(t *testing.T, label, want string, options ...string) {
 	}, 20*time.Second, 100*time.Millisecond, "recovery target was not promoted")
 	got := run(t, "psql", "-XAt", "-h", filepath.Dir(data), "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-c", `SELECT value FROM sample;
 SELECT count(*) FROM pg_roles WHERE rolname = 'proof_reader';
-SELECT count(*) FROM pg_extension WHERE extname = 'uuid-ossp';`)
-	require.Equal(t, want+"\n1\n1", strings.TrimSpace(got))
+SELECT uuid_generate_v4() IS NOT NULL;`)
+	require.Equal(t, want+"\n1\nt", strings.TrimSpace(got))
 	t.Logf("restore through SQL verification: %s", time.Since(start).Round(time.Millisecond))
 	p.stop(t, data)
 }
