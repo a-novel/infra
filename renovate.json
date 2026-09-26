@@ -8,6 +8,11 @@
   },
   "packageRules": [
     {
+      "description": "Maintain container dependencies as published version tags; resolve digests only in generated deployment evidence.",
+      "matchDatasources": ["docker"],
+      "pinDigests": false
+    },
+    {
       "description": "Review the stable Google provider and service-agent beta provider together.",
       "matchManagers": ["terraform"],
       "matchPackageNames": ["hashicorp/google", "hashicorp/google-beta"],
@@ -40,15 +45,7 @@
       "matchFileNames": ["deploy/production/images.yaml"],
       "allowedVersions": "/^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$/",
       "versioning": "semver",
-      "pinDigests": true,
       "automerge": false
-    },
-    {
-      "description": "Surface a digest mutation behind an existing release tag for blocking review.",
-      "matchDatasources": ["docker"],
-      "matchFileNames": ["deploy/production/images.yaml"],
-      "matchUpdateTypes": ["digest"],
-      "commitMessageAction": "flag mutated"
     },
     {
       "description": "Accept only complete stable SemVer curl images for create-only backup uploads.",
@@ -56,8 +53,7 @@
       "matchFileNames": ["environments/production/release/variables.tf"],
       "matchPackageNames": ["alpine/curl"],
       "allowedVersions": "/^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$/",
-      "versioning": "semver",
-      "pinDigests": true
+      "versioning": "semver"
     },
     {
       "description": "Update the JSON Keys image family as one deployment candidate.",
@@ -157,22 +153,22 @@
     },
     {
       "customType": "regex",
-      "description": "Update stable tags and matching digests in the production manifest.",
+      "description": "Update stable version tags in the production manifest.",
       "managerFilePatterns": ["/^deploy/production/images\\.yaml$/"],
       "matchStrings": [
-        "repository:\\s*(?<depName>[^\\s]+)\\s+tag:\\s*[\"']?(?<currentValue>v[0-9]+\\.[0-9]+\\.[0-9]+)[\"']?\\s+digest:\\s*[\"']?(?<currentDigest>sha256:[a-f0-9]{64})[\"']?"
+        "repository:\\s*(?<depName>[^\\s]+)\\s+tag:\\s*[\"']?(?<currentValue>v[0-9]+\\.[0-9]+\\.[0-9]+)[\"']?"
       ],
       "datasourceTemplate": "docker",
       "versioningTemplate": "semver"
     },
     {
       "customType": "regex",
-      "description": "Update the stable curl uploader tag and matching digest.",
+      "description": "Update the stable curl uploader version tag.",
       "managerFilePatterns": [
         "/^environments/production/release/variables\\.tf$/"
       ],
       "matchStrings": [
-        "# renovate: datasource=docker depName=(?<depName>[^\\s]+) versioning=semver\\s+default\\s*=\\s*\"docker\\.io/[^:\\s]+:(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)@(?<currentDigest>sha256:[a-f0-9]{64})\""
+        "# renovate: datasource=docker depName=(?<depName>[^\\s]+) versioning=semver\\s+default\\s*=\\s*\"docker\\.io/[^:\\s]+:(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\""
       ],
       "datasourceTemplate": "docker",
       "versioningTemplate": "semver"

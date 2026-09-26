@@ -131,7 +131,8 @@ the mutable `latest` alias.
 Use [Deploy and roll back production](./runbooks/deploy-production.md) sections 1–4 to verify the
 boundary, select the seven numeric versions, and store `RELEASE_CONFIG_JSON`. Then prepare one pull
 request that fills both complete image families in `deploy/production/images.yaml` with stable
-SemVer tags and exact `sha256:` digests. Both database images must use PostgreSQL 18.
+SemVer tags only. Preflight records resolved digests in generated deployment inputs.
+Both database images must use PostgreSQL 18.
 
 During this setup-only use, the release switch remains `false`, and no prior release receipt, clean
 restore, or backup-monitor result exists. The fresh scheduled snapshot and first-release
@@ -485,7 +486,7 @@ gcloud projects add-iam-policy-binding "$INFRA_WORKLOAD_PROJECT_ID" \
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Collect every coordinate from live state and the reviewed manifest. This block extracts the digest;
+Collect every coordinate from live state and the reviewed manifest. This block resolves the version;
 do not paste or edit one:
 
 ```zsh
@@ -522,7 +523,14 @@ sole_enabled_secret_version() {
 AUTH_POSTGRES_PASSWORD_VERSION="$(sole_enabled_secret_version production-authentication-postgres-password)"
 AUTH_SUPER_ADMIN_PASSWORD_VERSION="$(sole_enabled_secret_version production-authentication-super-admin-password)"
 unset -f sole_enabled_secret_version
-INIT_DIGEST="$(node --input-type=module -e 'import { readFile } from "node:fs/promises"; import { parse } from "yaml"; const manifest = parse(await readFile("deploy/production/images.yaml", "utf8")); process.stdout.write(manifest.components["service-authentication"].images["jobs/init"].digest);')"
+local resolved_manifest
+resolved_manifest="$(mktemp)"
+{
+  go run ./cmd/infra preflight resolve-images deploy/production/images.yaml "$resolved_manifest"
+  INIT_DIGEST="$(jq -er '.components["service-authentication"].images["jobs/init"].digest' "$resolved_manifest")"
+} always {
+  rm -f -- "$resolved_manifest"
+}
 [[ "$INITIALIZER_TAG_VALUE" =~ ^tagValues/[0-9]+$ ]]
 [[ "$AUTH_POSTGRES_PASSWORD_VERSION" =~ ^[1-9][0-9]*$ ]]
 [[ "$AUTH_SUPER_ADMIN_PASSWORD_VERSION" =~ ^[1-9][0-9]*$ ]]

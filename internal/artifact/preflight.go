@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -21,18 +22,31 @@ func Run(ctx context.Context, args []string, execute func(context.Context, io.Wr
 		return code
 	}
 	if len(args) == 0 {
-		return stop(64, "Usage: infra preflight images <compiled-release> | service-images <manifest> <tfvars> | service-secrets <tfvars>")
+		return stop(64, "Usage: infra preflight resolve-images <manifest> <output> | images <compiled-release> | service-images <manifest> <tfvars> | service-secrets <tfvars>")
 	}
 	var images []release.SourceImage
 	var inputs serviceInputs
 	var err error
 	switch {
+	case args[0] == "resolve-images" && len(args) == 3:
+		err = release.ResolveManifest(args[1], args[2], func(image release.SourceImage) (string, error) {
+			if err := resolveImage(ctx, &image, registry); err != nil {
+				return "", err
+			}
+			return image.Digest, verifyImage(ctx, image, execute, registry)
+		})
+		if err != nil {
+			return stop(70, err.Error())
+		}
 	case args[0] == "images" && len(args) == 2:
 		images, err = release.VerificationImages(args[1], "")
 	case args[0] == "service-images" && len(args) == 3:
 		inputs, err = readService(args[2])
 		if err == nil {
 			images, err = release.VerificationImages(args[1], inputs.Service)
+		}
+		if err == nil {
+			err = resolveImages(ctx, images, registry)
 		}
 		if err == nil {
 			err = inputs.bindImages(images)
@@ -60,6 +74,30 @@ func Run(ctx context.Context, args []string, execute func(context.Context, io.Wr
 		return stop(70, "Cannot report prerequisite checks.")
 	}
 	return 0
+}
+
+func resolveImages(ctx context.Context, images []release.SourceImage, registry Registry) error {
+	for index := range images {
+		if err := resolveImage(ctx, &images[index], registry); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func resolveImage(ctx context.Context, image *release.SourceImage, registry Registry) error {
+	if image.Digest != "" {
+		return nil
+	}
+	digest, err := registry.Resolve(ctx, image.Repository+":"+image.Tag)
+	if err != nil {
+		return err
+	}
+	if !regexp.MustCompile(`^sha256:[a-f0-9]{64}$`).MatchString(digest) {
+		return errors.New("invalid resolved image digest")
+	}
+	image.Digest = digest
+	return nil
 }
 
 // VerifyServiceSecrets checks enabled versions from the already-bound input bytes,
@@ -108,6 +146,9 @@ func VerifyService(ctx context.Context, manifest string, data []byte, promoted b
 	images, err := release.VerificationImages(manifest, inputs.Service)
 	if err != nil {
 		return errors.New("invalid selected image family")
+	}
+	if err := resolveImages(ctx, images, registry); err != nil {
+		return err
 	}
 	if err := inputs.bindImages(images); err != nil {
 		return err

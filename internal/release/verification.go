@@ -12,7 +12,7 @@ type SourceImage struct {
 	Slot       string // Slot is the database, API or jobs/role within that producer.
 	Repository string // Repository is the public OCI repository without a tag or digest.
 	Tag        string // Tag is the family's published SemVer release.
-	Digest     string // Digest is the reviewed SHA-256 image digest.
+	Digest     string // Digest is resolved during preflight or retained in historical receipts.
 }
 
 // VerificationImages reads the existing compiled eight-image inventory when service

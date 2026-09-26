@@ -103,7 +103,7 @@ missing check, wrong source, broader bypass, or disabled ruleset fails the verif
 
 A pull request that changes a production OpenTofu root, shared OpenTofu code or lock versions, or
 the production image manifest needs a verdict for its exact head and current `master` base.
-Renovate tag/digest-only image updates are assessed automatically once the normal PR validation
+Renovate version-only image updates are assessed automatically once the normal PR validation
 jobs pass. The automatic path reads current release metadata with trusted `master` code and never
 executes candidate code. Changes to image repositories, enabled components, or any other files need
 human assessment.
@@ -232,7 +232,7 @@ The three names form a security allowlist. Add a root only when a new lifecycle 
 
 | Path                                      | Purpose                                                                        |
 | ----------------------------------------- | ------------------------------------------------------------------------------ |
-| `deploy/production/images.yaml`           | Enabled components plus stable SemVer image tags and exact digests.            |
+| `deploy/production/images.yaml`           | Enabled components and stable SemVer image tags.                               |
 | `deploy/production/recovery-cleanup.json` | Inactive-by-default exact authorization for one disposable recovery deletion.  |
 | [`ops/`](./ops/README.md)                 | Human operator commands and protected workflow internals.                      |
 | `cmd/infra/`, `internal/`                 | Go operator commands and their credential-free boundary tests.                 |
@@ -269,13 +269,18 @@ the plan, state, configuration, or resource values.
 
 The manifest schema accepts only the eight declared database, job, and service image slots. An
 enabled component must provide its complete four-image family with exact repository names, complete
-stable `vMAJOR.MINOR.PATCH` tags, and `sha256` digests; a disabled component must provide no images.
+stable `vMAJOR.MINOR.PATCH` tags; a disabled component must provide no images.
 Branch tags, SHA tags, partial SemVer, prereleases, standalone images, mismatched repositories,
 partial families, and undeclared future images fail validation. A deterministic local-registry dry
 run proves that Renovate ignores noisy references, groups all four images for one service, separates
-service and PostgreSQL majors, and surfaces a digest changed behind an existing tag for blocking
-review. Renovate waits for four updates per service group and never automerges. Merge one family,
+service and PostgreSQL majors, and leaves digest resolution out of dependency updates.
+Renovate waits for four updates per service group and never automerges. Merge one family,
 wait for its deployment, then merge the next in the maintainer-chosen service order.
+
+Maintained image dependencies use version tags only, including Dockerfile bases and HCL defaults.
+Preflight resolves application versions and verifies provenance before writing a private snapshot.
+Generated deployments and receipts retain those digests; rollback and recovery use saved evidence,
+not a fresh tag lookup. A published tag that differs from the preceding receipt is rejected.
 
 The production manifest selects two reviewed stable launch families, but this code alone still
 creates nothing. Foundation seeds empty group-level release metadata and the host remains idle until

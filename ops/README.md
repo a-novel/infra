@@ -102,7 +102,7 @@ The separately enabled [image-publication operation](../docs/runbooks/provision-
 copies only the selected service's verified family. It takes no plan ID and never creates jobs or
 deploys services; plan/apply never perform this publication implicitly.
 
-Renovate PRs that only change image tags and digests are assessed automatically after the normal
+Renovate PRs that only change image versions are assessed automatically after the normal
 PR validation jobs pass. Completion of `master` CI also checks open image PRs against the new base.
 The workflow reads release-state metadata using protected-master tooling; it never checks out or
 executes candidate code. The resulting verdict refreshes both deletion gates automatically.
@@ -202,7 +202,11 @@ registration authorizes the selected scope; exact object generations and hashes 
 Follow the [inspection contract](../docs/service-operations.md#inspect-an-interrupted-apply) for
 required inputs, read-only access and the distinction between evidence and permission to retry.
 
-`infra preflight images <compiled-release.json>` verifies all eight legacy source images.
+`infra preflight resolve-images <manifest> <output.json>` resolves the version-only manifest,
+verifies all eight producer images and writes a private digest snapshot. Feed that snapshot to
+`infra compile-release`; it remains cloud-blind. `infra preflight images <compiled-release.json>`
+rechecks an already compiled inventory. Offline maintenance can reuse receipt-owned digests when
+all repository/version pairs still match; a new version requires preflight resolution.
 The protected job-bootstrap workflow uses `infra preflight service-images <manifest> <tfvars>`
 before cloud authentication and `infra preflight service-secrets <tfvars>` afterwards. Both image
 paths share GitHub CLI provenance verification and Google's registry client for tag/digest and

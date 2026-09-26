@@ -190,7 +190,7 @@ func TestImageAssessment(t *testing.T) {
 		"successful jobs from earlier partial rerun": {mutate: func(f *fixture) { f.ci["run_attempt"] = 2 }, accept: true},
 		"digest only": {mutate: func(f *fixture) {
 			f.blob(head, manifestPath, strings.ReplaceAll(manifest("v1.0.0"), strings.Repeat("1", 64), strings.Repeat("2", 64)))
-		}, accept: true},
+		}},
 		"human":              {mutate: func(f *fixture) { f.pull["user"] = object{"login": "maintainer", "type": "User"} }},
 		"other bot":          {mutate: func(f *fixture) { f.pull["user"].(object)["login"] = "renovate[bot]" }},
 		"fork":               {mutate: func(f *fixture) { f.pull["head"].(object)["repo"] = object{"full_name": "another/repo"} }},

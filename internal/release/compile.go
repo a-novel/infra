@@ -137,6 +137,16 @@ func (compiler *Compiler) CompileRelease(files []string, identity Identity, acti
 			return err
 		}
 	}
+	if action == "rollback" {
+		if previousManifest != nil {
+			manifest = clone(previousManifest)
+		} else if currentManifest := obj(current, "imageManifest"); currentManifest != nil {
+			manifest = clone(currentManifest)
+		}
+	}
+	if err = bindReceiptImages(manifest, previousManifest); err != nil {
+		return err
+	}
 	changed := []string{}
 	if action == "deploy" && previousManifest != nil {
 		changed, err = imageChanges(previousManifest, manifest)

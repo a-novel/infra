@@ -431,10 +431,12 @@ dedicated runtime identities.
 
 `deploy/production/images.yaml` contains two enabled four-image families. Every enabled family
 fills all slots with the exact GHCR repository, one complete stable
-`vMAJOR.MINOR.PATCH` shared by that family, and its exact `sha256:` digest. The schema rejects
-branches, prereleases, partial families, unknown slots, moving references, and PostgreSQL other than
-major 18. Both the pull-request check and deployment compiler reject partial transitions, digest
-mutations behind unchanged tags, and combined service-family updates. Renovate waits for all four
+`vMAJOR.MINOR.PATCH` shared by that family. Maintain versions only, without digest fields.
+The schema rejects branches, prereleases, partial families, unknown slots, and PostgreSQL other than
+major 18. Preflight resolves the versions and verifies their provenance before compilation; generated
+deployments and receipts retain the digests. Both the pull-request check and deployment compiler
+reject partial transitions and combined service-family updates. Deployment also rejects a tag whose
+resolved digest differs from the preceding receipt. Renovate waits for all four
 updates in each service group and never automerges. Its grouping can still contain inconsistent
 versions while publication is incomplete; the compiler and source-image verification reject those
 before deployment. Merging a valid family PR starts deployment automatically.

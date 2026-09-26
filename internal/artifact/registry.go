@@ -19,8 +19,20 @@ import (
 // Registry separates image evidence and copying from command/input policy.
 // Implementations return payload-free errors safe for operator diagnostics.
 type Registry interface {
+	Resolve(context.Context, string) (string, error)
 	Verify(context.Context, release.SourceImage) error
 	Copy(context.Context, string, string) error
+}
+
+// Resolve records a published version's descriptor without downloading layers.
+func (client *Client) Resolve(ctx context.Context, reference string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	descriptor, err := client.get(ctx, reference)
+	if err != nil {
+		return "", errors.New("cannot resolve a published image version")
+	}
+	return descriptor.Digest.String(), nil
 }
 
 // Client delegates OCI manifests, indexes, authentication and transfers to the

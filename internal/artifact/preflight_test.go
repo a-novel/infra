@@ -2,7 +2,12 @@ package artifact_test
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestRunImages(t *testing.T) {
@@ -47,6 +52,78 @@ func TestRunImages(t *testing.T) {
 				calls[testCase.failure].fail = true
 			}
 			checkCalls(t, args, calls, code)
+		})
+	}
+}
+
+func TestResolveImages(t *testing.T) {
+	t.Parallel()
+	for _, testCase := range []struct {
+		name    string
+		failure int
+	}{
+		{"Snapshot", -1},
+		{"MissingTag", 0},
+		{"Provenance", 1},
+		{"TagMovedAfterResolution", 2},
+		{"LastImage", 23},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			expected := read(t, "../../tests/fixtures/manifests/valid.yaml")
+			manifest := read(t, "../../tests/fixtures/manifests/valid.yaml")
+			var calls []call
+			checks := imageCalls(expected, "")
+			for index := 0; index < len(checks); index += 2 {
+				registry := checks[index+1]
+				calls = append(calls, call{"resolve", registry.args[:1], registry.args[1], false}, checks[index], registry)
+			}
+			for _, component := range manifest["components"].(object) {
+				for _, image := range component.(object)["images"].(object) {
+					delete(image.(object), "digest")
+				}
+			}
+			output := filepath.Join(t.TempDir(), "resolved.json")
+			code := 0
+			if testCase.failure >= 0 {
+				code = 70
+				calls = calls[:testCase.failure+1]
+				calls[testCase.failure].fail = true
+			}
+			checkCalls(t, []string{"resolve-images", write(t, manifest), output}, calls, code)
+			if code != 0 {
+				require.NoFileExists(t, output)
+				return
+			}
+			require.Equal(t, expected, read(t, output))
+			info, err := os.Stat(output)
+			require.NoError(t, err)
+			require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+		})
+	}
+}
+
+func TestServiceVersions(t *testing.T) {
+	t.Parallel()
+	for _, service := range []string{"json-keys", "authentication"} {
+		t.Run(service, func(t *testing.T) {
+			t.Parallel()
+			manifest := read(t, "../../tests/fixtures/manifests/valid.yaml")
+			inputs := serviceInputs(manifest, service)
+			checks := imageCalls(manifest, service)
+			var calls []call
+			for index := 1; index < len(checks); index += 2 {
+				registry := checks[index]
+				calls = append(calls, call{"resolve", registry.args[:1], registry.args[1], false})
+				delete(images(manifest, service)[registry.args[2]].(object), "digest")
+			}
+			calls = append(calls, checks...)
+			for name, component := range manifest["components"].(object) {
+				if !strings.HasSuffix(name, service) {
+					component.(object)["enabled"], component.(object)["images"] = false, object{}
+				}
+			}
+			checkCalls(t, []string{"service-images", write(t, manifest), write(t, inputs)}, calls, 0)
 		})
 	}
 }
