@@ -188,7 +188,7 @@
     "image": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["repository", "tag", "digest"],
+      "required": ["repository", "tag"],
       "properties": {
         "repository": {
           "type": "string"
@@ -198,6 +198,7 @@
           "pattern": "^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
         },
         "digest": {
+          "description": "Generated deployment snapshots and historical receipts only; maintained inputs use the tag alone.",
           "type": "string",
           "pattern": "^sha256:[a-f0-9]{64}$"
         }

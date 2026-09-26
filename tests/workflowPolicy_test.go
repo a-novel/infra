@@ -252,8 +252,8 @@ func TestServiceBootstrapBoundary(t *testing.T) {
 func TestPrerequisiteBoundary(t *testing.T) {
 	t.Parallel()
 	for _, testCase := range []struct{ file, job, command, condition string }{
-		{"main", "lint-repository", "infra preflight images", ""},
-		{"release", "release", "infra preflight images", "env.RELEASE_ACTION == 'deploy'"},
+		{"main", "lint-repository", "infra preflight resolve-images", ""},
+		{"release", "release", "infra preflight resolve-images", "env.RELEASE_ACTION == 'deploy'"},
 		{"foundation", "execute", "infra preflight service-images", "inputs.root == 'service-release'"},
 	} {
 		t.Run(testCase.file, func(t *testing.T) {

@@ -60,7 +60,8 @@ func TestRun(t *testing.T) {
 		{"BranchTag", func(f *fixture) {
 			section(f.manifest, "components", "service-json-keys", "images", "grpc")["tag"] = "feat-update"
 		}},
-		{"MissingDigest", func(f *fixture) {
+		{"UnresolvedNewVersion", func(f *fixture) {
+			f.change("json_keys", true)
 			delete(section(f.manifest, "components", "service-json-keys", "images", "grpc"), "digest")
 		}},
 		{"MissingImage", func(f *fixture) { delete(section(f.manifest, "components", "service-json-keys", "images"), "grpc") }},
@@ -104,7 +105,7 @@ func TestRun(t *testing.T) {
 
 func TestRunImageTransition(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"FirstLaunch", "Service", "PartialFamily", "BothServices", "MixedVersions"} {
+	for _, name := range []string{"FirstLaunch", "Service", "PartialFamily", "BothServices", "MixedVersions", "MaintainedDigest"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			fixture := setup(t)
@@ -129,6 +130,13 @@ func TestRunImageTransition(t *testing.T) {
 			}
 			file := filepath.Join(t.TempDir(), "previous.json")
 			write(t, file, previous)
+			if name != "MaintainedDigest" {
+				for _, value := range section(fixture.manifest, "components") {
+					for _, image := range value.(object)["images"].(object) {
+						delete(image.(object), "digest")
+					}
+				}
+			}
 			write(t, fixture.files[0], fixture.manifest)
 			var stdout, stderr bytes.Buffer
 			require.Equal(t, code, release.Run([]string{"validate-images", file, fixture.files[0]}, func(string) string { return "" }, &stdout, &stderr), stderr.String())

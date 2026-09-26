@@ -210,8 +210,13 @@ jobs:
           infra validate-images \
             "${base_manifest}" deploy/production/images.yaml
 
-      # Compile with public fixtures before contacting GHCR. This exercises the
-      # same schema, enabled-scope, and fixed release graph used in production.
+      - name: Resolve candidate versions and verify provenance
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: infra preflight resolve-images deploy/production/images.yaml "${RUNNER_TEMP}/resolved-images.json"
+
+      # Compile the verified snapshot with public configuration fixtures.
       - name: Compile the production image candidate
         shell: bash
         env:
@@ -223,14 +228,8 @@ jobs:
           set -euo pipefail
           umask 077
           infra compile-release \
-            deploy/production/images.yaml tests/fixtures/release-config.json - \
+            "${RUNNER_TEMP}/resolved-images.json" tests/fixtures/release-config.json - \
             "${RUNNER_TEMP}/release-preview"
-
-      - name: Verify candidate provenance, digest, and PostgreSQL major
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: infra preflight images "${RUNNER_TEMP}/release-preview/release.json"
 
       - name: Lint GitHub Actions syntax
         uses: raven-actions/actionlint@v2.2.0

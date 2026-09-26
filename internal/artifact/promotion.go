@@ -49,6 +49,9 @@ func Promote(ctx context.Context, args []string, execute func(context.Context, i
 			sources, err = release.VerificationImages(args[1], inputs.Service)
 		}
 		if err == nil {
+			err = resolveImages(ctx, sources, registry)
+		}
+		if err == nil {
 			err = inputs.bindImages(sources)
 		}
 		for _, image := range sources {

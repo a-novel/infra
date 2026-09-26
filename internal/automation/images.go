@@ -13,10 +13,7 @@ import (
 	"unicode/utf8"
 )
 
-var (
-	tagLine    = regexp.MustCompile(`^        tag: v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
-	digestLine = regexp.MustCompile(`^        digest: sha256:[a-f0-9]{64}$`)
-)
+var tagLine = regexp.MustCompile(`^        tag: v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 
 type blob struct {
 	Path, Mode, Type, SHA, Encoding, Content string
@@ -29,8 +26,7 @@ func imageValuesOnly(previous, next string) bool {
 		return false
 	}
 	for i, line := range before {
-		if line == after[i] || (tagLine.MatchString(line) && tagLine.MatchString(after[i])) ||
-			(digestLine.MatchString(line) && digestLine.MatchString(after[i])) {
+		if line == after[i] || (tagLine.MatchString(line) && tagLine.MatchString(after[i])) {
 			continue
 		}
 		return false

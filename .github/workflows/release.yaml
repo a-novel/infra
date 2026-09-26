@@ -117,28 +117,16 @@ jobs:
 
       # Verification happens before Google credentials exist. Remote manifest
       # and config inspection never downloads layers or executes an entrypoint.
-      - name: Compile source-image verification inputs
-        if: env.RELEASE_ACTION == 'deploy'
-        shell: bash
-        env:
-          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
-          GITHUB_RUN_ID: ${{ github.run_id }}
-          GITHUB_SHA: ${{ github.sha }}
-          RELEASE_ACTION: deploy
-          RELEASE_CONFIG_FILE: ${{ steps.config.outputs.file }}
-        run: |
-          set -euo pipefail
-          umask 077
-          infra compile-release \
-            deploy/production/images.yaml "${RELEASE_CONFIG_FILE}" - \
-            "${RUNNER_TEMP}/source-verification"
-
-      - name: Verify source provenance, digest, and PostgreSQL major
+      - name: Resolve source versions and verify provenance
         if: env.RELEASE_ACTION == 'deploy'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: infra preflight images "${RUNNER_TEMP}/source-verification/release.json"
+        run: |
+          set -euo pipefail
+          umask 077
+          infra preflight resolve-images \
+            deploy/production/images.yaml "${RUNNER_TEMP}/resolved-images.json"
 
       - name: Authenticate as the release boundary
         uses: google-github-actions/auth@v3.0.0
@@ -239,8 +227,12 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
+          manifest="deploy/production/images.yaml"
+          if [ "${RELEASE_ACTION}" = deploy ]; then
+            manifest="${RUNNER_TEMP}/resolved-images.json"
+          fi
           infra compile-release \
-            deploy/production/images.yaml "${RELEASE_CONFIG_FILE}" \
+            "${manifest}" "${RELEASE_CONFIG_FILE}" \
             "${PRIOR_RECEIPT}" "${RUNNER_TEMP}/release"
 
       - name: Deploy the selected service scope

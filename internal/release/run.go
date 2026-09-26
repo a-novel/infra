@@ -66,6 +66,9 @@ func Run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 			err = familyVersions(next)
 		}
 		if err == nil {
+			err = versionInputs(next)
+		}
+		if err == nil {
 			_, err = imageChanges(previous, next)
 		}
 	case "receipt":

@@ -52,10 +52,12 @@ func imageChanges(previous, next object) ([]string, error) {
 		count := 0
 		for _, slot := range family.slots {
 			oldImage, newImage := obj(before, "images", slot), obj(after, "images", slot)
-			if !reflect.DeepEqual(oldImage, newImage) {
+			if oldImage["repository"] != newImage["repository"] || oldImage["tag"] != newImage["tag"] {
 				count++
+				continue
 			}
-			if oldImage["tag"] == newImage["tag"] && oldImage["digest"] != newImage["digest"] {
+			oldDigest, newDigest := str(oldImage, "digest"), str(newImage, "digest")
+			if oldDigest != "" && newDigest != "" && oldDigest != newDigest {
 				return nil, fmt.Errorf("%s/%s mutates an existing release tag", name, slot)
 			}
 		}

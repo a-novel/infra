@@ -100,20 +100,20 @@ func TestRenovateLookup(t *testing.T) {
 		require.NoError(t, os.MkdirAll(filepath.Dir(destination), 0o700))
 		require.NoError(t, os.WriteFile(destination, []byte(read(t, "../"+file)), 0o600))
 	}
-	// Struct field order preserves the repository/tag/digest regex-manager contract.
+	// Struct field order preserves the repository/tag regex-manager contract.
 	var manifest struct {
 		SchemaVersion int `yaml:"schemaVersion"`
 		PostgresMajor int `yaml:"postgresMajor"`
 		Components    map[string]struct {
 			Enabled bool
-			Images  map[string]struct{ Repository, Tag, Digest string }
+			Images  map[string]struct{ Repository, Tag string }
 		}
 	}
 	require.NoError(t, yaml.Unmarshal([]byte(read(t, "../deploy/production/images.yaml")), &manifest))
 	for _, component := range manifest.Components {
 		for slot, image := range component.Images {
 			repository := strings.TrimPrefix(image.Repository, "ghcr.io/")
-			image.Repository, image.Tag, image.Digest = registry+"/"+repository, "v2.5.0", registryDigest(repository, "v2.5.0")
+			image.Repository, image.Tag = registry+"/"+repository, "v2.5.0"
 			component.Images[slot] = image
 		}
 	}
@@ -198,9 +198,7 @@ func TestRenovateLookup(t *testing.T) {
 			}
 			for _, update := range dep.Updates {
 				groups[update.BranchName] = append(groups[update.BranchName], update.UpdateType+":"+update.NewValue)
-				if update.UpdateType == "digest" {
-					require.True(t, strings.HasSuffix(dep.DepName, "/service-authentication/rest"))
-				}
+				require.NotEqual(t, "digest", update.UpdateType)
 			}
 		}
 	}
@@ -213,7 +211,6 @@ func TestRenovateLookup(t *testing.T) {
 	require.Equal(t, map[string][]string{
 		"renovate/service-json-keys-images":       {"minor:v2.6.0", "minor:v2.6.0", "minor:v2.6.0", "minor:v2.6.0"},
 		"renovate/major-service-json-keys-images": {"major:v3.0.0", "major:v3.0.0", "major:v3.0.0", "major:v3.0.0"},
-		"renovate/service-authentication-images":  {"digest:v2.5.0"},
 	}, groups)
 }
 

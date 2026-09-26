@@ -136,6 +136,14 @@ func TestRegistryVerify(t *testing.T) {
 			server, options := registryServer(t, nil)
 			source := seedImage(t, server+"/source:v1", databaseImage(t, testCase.major), options)
 			_, digest, _ := strings.Cut(source, "@")
+			client := artifact.NewClient(options...)
+			resolved, resolveErr := client.Resolve(t.Context(), server+"/source:"+testCase.tag)
+			if testCase.tag == "missing" {
+				require.Error(t, resolveErr)
+			} else {
+				require.NoError(t, resolveErr)
+				require.Equal(t, digest, resolved)
+			}
 			if testCase.digest != "" {
 				digest = testCase.digest
 			}

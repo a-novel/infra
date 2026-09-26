@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
@@ -110,6 +111,16 @@ func imageCalls(manifest object, service string) []call {
 
 type testRegistry struct {
 	execute func(context.Context, io.Writer, string, ...string) error
+}
+
+func (registry testRegistry) Resolve(ctx context.Context, reference string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	var output strings.Builder
+	if err := registry.execute(ctx, &output, "resolve", reference); err != nil {
+		return "", errors.New("image version unavailable")
+	}
+	return output.String(), nil
 }
 
 func (registry testRegistry) Verify(ctx context.Context, image release.SourceImage) error {
