@@ -372,7 +372,7 @@ variable "backup_uploader_image" {
   description = "Small public curl image used only for create-only uploads and read-only recovery monitoring."
   type        = string
   # renovate: datasource=docker depName=alpine/curl versioning=semver
-  default = "docker.io/alpine/curl:8.22.0@sha256:d7720f8cffb47e7a80d01fb2c1b38562fab0e436948537e9b77dc312d29d12d6"
+  default = "docker.io/alpine/curl:8.22.0@sha256:a39f52cab21d7e283448a9f73032dfb578ffcea9edaaa90c1d637117149b337f"
 
   validation {
     condition     = can(regex("^docker\\.io/alpine/curl:(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)@sha256:[a-f0-9]{64}$", var.backup_uploader_image))
