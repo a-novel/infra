@@ -167,11 +167,11 @@ importers:
   .:
     devDependencies:
       prettier:
-        specifier: 3.9.8
-        version: 3.9.8
+        specifier: 3.9.9
+        version: 3.9.9
       renovate:
-        specifier: 44.108.1
-        version: 44.108.1(supports-color@7.2.0)(typanion@3.14.0)
+        specifier: 44.110.0
+        version: 44.110.0(supports-color@7.2.0)(typanion@3.14.0)
 
 packages:
 
@@ -2009,13 +2009,13 @@ packages:
     resolution: {integrity: sha512-RvwwcruNjI1ncT5xRakeyS9Lf8lcItv34KD+aif+VH9kduAyfYBipGh12274xtenIPZ119/R9BdTBa8gAwSh0A==}
     engines: {node: '>=12'}
 
-  prettier@3.9.6:
-    resolution: {integrity: sha512-OpN0zzVdiaiAhxpuuj5efpIS4sY9j7bY6uR5mnj5yPzGkdkjNKSJeUThPb60Jw29QuAZgA4o+/iB49kFiaBX6g==}
+  prettier@3.9.7:
+    resolution: {integrity: sha512-T3mF5P7HFzZVLDQuCUNtJj6WK1pcpLMweMNUVwGb01bLNkH9AkKxtZvmInw8K6bnn2O3d6/5RHl6zSHiBAD0Og==}
     engines: {node: '>=14'}
     hasBin: true
 
-  prettier@3.9.8:
-    resolution: {integrity: sha512-WRFq3Wn3WId7LLROfMLdH7xaFr2jR62wU8nLO6rQUOLOxNZUviyJQs1M0iIhLexSFy+L+w0ch66wtoO2jRjG0A==}
+  prettier@3.9.9:
+    resolution: {integrity: sha512-Z/CJHIkdujO/OtN7nXUii0Rf3VT5SRuhjBA82Xvu2XhBUgX3nhP67T0LHceBdQLex7OOFGTox+Q5Yg8Jk2Qivg==}
     engines: {node: '>=14'}
     hasBin: true
 
@@ -2079,8 +2079,8 @@ packages:
   remark@15.0.1:
     resolution: {integrity: sha512-Eht5w30ruCXgFmxVUSlNWQ9iiimq07URKeFS3hNc8cUWy1llX4KDWfyEDZRycMc+znsN9Ux5/tJ/BFdgdOwA3A==}
 
-  renovate@44.108.1:
-    resolution: {integrity: sha512-ZdACP2DoqjNuCPjiQxScYkJEYd8yvKKjzpuFy0CXR4RcEJeyX3DWcVmQbQcv4jOoBbnKYM2tlKoWn8HOOAGtow==}
+  renovate@44.110.0:
+    resolution: {integrity: sha512-FXUw+MV0usQLd0iy3W+tC92B3qRyweCWyiYoOo8YSceycjPGtGBRwPexQMR6ZwEj35mU+N9cJeYvJTk9rRZ9LQ==}
     engines: {node: ^24.11.0, pnpm: ^11.0.0}
     hasBin: true
 
@@ -4690,9 +4690,9 @@ snapshots:
   picomatch@4.0.5:
     optional: true
 
-  prettier@3.9.6: {}
+  prettier@3.9.7: {}
 
-  prettier@3.9.8: {}
+  prettier@3.9.9: {}
 
   proc-log@7.0.0:
     optional: true
@@ -4791,7 +4791,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  renovate@44.108.1(supports-color@7.2.0)(typanion@3.14.0):
+  renovate@44.110.0(supports-color@7.2.0)(typanion@3.14.0):
     dependencies:
       '@aws-sdk/client-codecommit': 3.1117.0
       '@aws-sdk/client-ec2': 3.1117.0
@@ -4890,7 +4890,7 @@ snapshots:
       p-queue: 9.3.3
       p-throttle: 8.1.1
       parse-link-header: 2.0.0
-      prettier: 3.9.6
+      prettier: 3.9.7
       protobufjs: 8.8.0
       punycode: 2.3.1
       remark: 15.0.1(supports-color@7.2.0)
