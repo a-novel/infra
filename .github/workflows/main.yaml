@@ -184,10 +184,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker build -f builds/pgbackrest-proof.Dockerfile -t pgbackrest-proof:test .
-          docker run --rm --network=none --read-only --cap-drop=all \
-            --security-opt=no-new-privileges --cpus=1 --memory=2g --pids-limit=128 \
-            --tmpfs=/tmp:rw,size=1g,mode=1777 pgbackrest-proof:test
+          for service in json-keys authentication; do
+            docker build -f builds/pgbackrest-proof.Dockerfile \
+              --build-arg DATABASE_SERVICE="$service" -t "pgbackrest-proof:$service" .
+            docker run --rm --network=none --read-only --cap-drop=all \
+              --security-opt=no-new-privileges --cpus=1 --memory=2g --pids-limit=128 \
+              --tmpfs=/tmp:rw,size=1g,mode=1777 "pgbackrest-proof:$service"
+          done
 
       - name: Test the root, plan, and operator caller policies
         shell: bash
