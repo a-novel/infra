@@ -1,7 +1,8 @@
 # Private pgBackRest / GCS proof host
 
-**Code only; not provisioned or executed.** This root prepares the next bounded experiment for
-[#190](https://github.com/a-novel/infra/issues/190). It does not adopt pgBackRest or change production.
+The one-time JSON Keys trial ran on 27 September 2026; its compute and networking were removed.
+Read the [result and remaining cleanup](result-20260927.md) before considering another operation.
+Production adoption remains blocked under [#190](https://github.com/a-novel/infra/issues/190).
 The [offline proof](../pgbackrest/README.md) and [synthetic storage result](../gcs-storage/result-20260927.md)
 cover different contracts; neither establishes real database recovery through GCS.
 
@@ -63,7 +64,10 @@ and a new state directory. Do not run either production workflow or a backend mi
 created custom role has not propagated, inspect the exact project/role/bucket relationship, then
 review a fresh plan for only the missing bindings; do not broaden permissions.
 
-## Live acceptance sequence (not yet authorized)
+## Live acceptance contract
+
+The [result](result-20260927.md#observations) distinguishes completed checks from remaining gates.
+This sequence grants no authority to recreate the host or resume the experiment.
 
 Use the selected published database image with native PostgreSQL and pgBackRest commands, a synthetic
 database and a new repository prefix. Configure `repo1-type=gcs`, `repo1-gcs-key-type=auto` and the
