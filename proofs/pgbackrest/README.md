@@ -137,40 +137,23 @@ responsibilities without adding a replacement coordinator.
 | Restore archive orchestration                         | `restore` and PostgreSQL recovery             | Empty/disposable target checks, exact major/extensions, SQL/application validation  |
 | Disk mount, VM startup, secret delivery, readiness    | Existing host owner                           | pgBackRest does not replace these 563 lines                                         |
 
+The [adoption boundary](../pgbackrest-gcs/result-20260927.md#adoption-proposal) maps these responsibilities
+to concrete retirement batches and identifies the custody decision still blocking implementation.
 Do not port the five scripts to Go in parallel with adopting pgBackRest. If adoption is accepted,
 use a small per-service native configuration plus existing operation admission; remove the old
 writer path only after the new format passes recovery/custody review. Keep the logical reader,
 exact old database images and generation-bound receipts until their last retained backup expires.
 Do not reinterpret old `completed.manifest` files as physical backup catalogs.
 
-## Human-only GCS contract drill — not yet authorized to run
+## Live GCS evidence and adoption decision
 
-The [synthetic storage trial](../gcs-storage/result-20260927.md) passed on 27 September, with final
-retained-resource cleanup still pending. The next [private VM proof root](../pgbackrest-gcs/README.md)
-is approved for code preparation only. Its provisioning, current image-risk review and live
-pgBackRest execution need separate approval; the original storage project must not be reused.
+The [synthetic storage trial](../gcs-storage/result-20260927.md) and the separately approved
+[native JSON Keys trial](../pgbackrest-gcs/result-20260927.md) ran on 27 September 2026.
+The latter established full, differential and named-point SQL recovery through GCS, including
+exact-set recovery after repairing an aged full-backup dependency with the recovery identity.
+The original repository-time cutoff still failed after that repair.
 
-Start with the [isolated storage trial](../../docs/runbooks/gcs-storage-trial.md). Its inactive
-HCL root and native GCS checklist test mutable catalogs, retention, aged dependencies and separate
-recovery access using tiny synthetic objects. It provisions nothing in CI and uses no database image.
-An unlocked storage pass does not authorize a locked policy, pgBackRest execution or production custody.
-
-After storage review and a fresh artifact security review, separately approve a disposable private
-PostgreSQL 18 host and a new per-service management-side bucket. Keep the production bucket and
-logical readers unchanged. Use stanza `proof`, `repo1-type=gcs`, `repo1-gcs-key-type=auto`, a synthetic
-`pg1-path`, and its dedicated database user. Complete this integration matrix:
-
-| Test                                                         | Required evidence before adoption                                                                                                                                                                |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Backup followed by another backup                            | Catalog advances; prior generations remain readable with the recovery identity.                                                                                                                  |
-| Interrupted upload (`pgbackrest --force stop`, then `start`) | No partial backup is selectable; previous exact recovery point restores. Test forced host/container loss as well as native cancellation.                                                         |
-| Native expiry while an object is retention-protected         | Protected generations cannot be deleted. Record whether backup/expiry returns failure after catalog advancement; do not blindly replay it.                                                       |
-| Missing/corrupt current catalog or WAL                       | Prove historical catalog/WAL selection after native object recovery, including changed generation/timestamps and an aged full backup needed by a fresh differential. SQL verification must pass. |
-| Cross-service access and policy changes                      | The writer cannot access a peer bucket or change its own retention/IAM policy.                                                                                                                   |
-| Workload identity removed                                    | Management-side recovery identity can still select and restore the exact retained backup.                                                                                                        |
-
-Use native `info`, `verify`, explicit `--set`, `--repo-target-time` and `restore`; do not build a
-second catalog or generic object-age sweeper. Native object recovery preserves bytes in a new live
-generation; it does not establish pgBackRest's historical timestamp selection. Exact integration
-commands and grants belong in the separately reviewed live-drill change.
-Until this matrix and packaging pass, the outcome is **promising local behavior, no live cutover**.
+The native trial result owns the remaining acceptance gates, cleanup deadlines and proposed
+retirement batches. Neither trial authorizes production custody changes, additional provisioning,
+bucket locking or retirement of logical readers. The offline measurements and scans above remain
+evidence for their named versions; they do not describe the later CA-corrected image.
