@@ -2,8 +2,9 @@
 
 Evaluation for [the backup-owner comparison](https://github.com/a-novel/infra/issues/190),
 not a production backup implementation. The Go file is a test-only driver for native commands;
-it is not linked into `infra`. The image extends the published JSON Keys database with evaluation
-tools. No cloud resources, credentials, existing data, schedules, or retention policies are used;
+it is not linked into `infra`. The image uses each service's published PostgreSQL and pgBackRest,
+adding only the test driver and an incompatible PostgreSQL major. No cloud resources,
+credentials, existing data, schedules, or retention policies are used;
 no production image is published or deployed.
 
 ## Run locally
@@ -18,10 +19,20 @@ podman run --rm --network=none --read-only --cap-drop=all \
   ghcr.io/a-novel/infra/pgbackrest-proof:local
 ```
 
+The default selects JSON Keys. To exercise Authentication with the same driver (the CLI has no
+build-argument option), build the other named stage and repeat the run command above:
+
+```sh
+podman build --format docker -f builds/pgbackrest-proof.Dockerfile \
+  --build-arg DATABASE_SERVICE=authentication \
+  -t ghcr.io/a-novel/infra/pgbackrest-proof:local .
+```
+
 The local tag is built, never pushed. All data lives in container tmpfs and disappears on exit.
 There are no host mounts or published ports. The process runs as `postgres`, using peer-authenticated
 Unix sockets; host authentication is SCRAM, not trust. Normal Go tests skip this package unless
-`INFRA_PGBACKREST_PROOF=1`; the proof image sets it and CI runs that image offline.
+`INFRA_PGBACKREST_PROOF=1`; the proof image sets it and CI runs both variants offline.
+The Dockerfile owns the two SemVer selections; Renovate's native Dockerfile manager updates them.
 
 The image has advisory findings below. Keep it restricted to this synthetic, offline test.
 Do not pass credentials, mount real data, enable networking, or use it as a deployment artifact.
@@ -48,64 +59,53 @@ integration must test its actual shutdown path; parent exit is not evidence that
 
 This is POSIX storage evidence, **not** proof of interrupted GCS uploads, GCS permissions, locked
 retention, generation selection, host-loss recovery, or the production 6-hour RPO / 90-minute RTO.
-The selected JSON Keys `v2.6.1` database uses Debian 13, as confirmed from its published image and
-[release source](https://github.com/a-novel/service-json-keys/blob/v2.6.1/builds/database.Dockerfile).
-The proof runs that image's extension initialization SQL and checks its PostgreSQL and `uuid-ossp`
-binaries are unchanged by package installation. It does not exercise the original entrypoint,
-application migrations, historical images, or Authentication's artifact. Native backup integration
-on the actual COS host remains untested.
+The proof runs each image's extension initialization SQL and checks that its PostgreSQL, `uuid-ossp`
+and pgBackRest binaries survive installation of the negative-test server unchanged. Shared libraries
+are not covered by those checks. It does not exercise the original entrypoints, application
+migrations, historical images, or native backup integration on the actual COS host.
 
 ### Local measurements
 
-On 26 September 2026, the service-image proof passed in **14.09 seconds**, capped at one CPU and 2 GiB
-RAM with 1 GiB tmpfs. Restores through SQL verification took **0.51–1.15 seconds**;
-the initial physical cluster was about 23.7 MB. The temporary interruption case adds about
-128 MiB of synthetic data. After native expiry, the repository (including WAL and catalog)
-contained **7,589,722 apparent bytes**. Container peak memory was **675,766,272 bytes** and CPU
-time about **9.31 seconds**, including PostgreSQL, backup workers and the test driver.
-The test image was about **547 MB** unpacked, including both PostgreSQL majors.
+Both published-image variants passed on 27 September 2026, capped at one CPU and 2 GiB RAM with
+1 GiB tmpfs. The initial physical cluster was about 23.7 MB; the interruption case adds about
+128 MiB of synthetic data. CPU and memory include PostgreSQL, backup workers and the test driver.
+
+| Published input       | Total proof | Restore through SQL | Peak memory (bytes) | CPU time | Retained repository (bytes) |
+| --------------------- | ----------- | ------------------- | ------------------- | -------- | --------------------------- |
+| JSON Keys v2.6.2      | 13.85 s     | 0.50–1.04 s         | 656,023,552         | 9.10 s   | 7,589,816                   |
+| Authentication v2.9.2 | 14.27 s     | 0.48–1.09 s         | 652,488,704         | 9.10 s   | 7,589,501                   |
 
 These are small tmpfs-backed functional measurements, not a throughput benchmark or a production
 sizing claim. They do not predict GCS latency, growing WAL volume, SSD load or production RTO.
 
 ## Packaging and security review
 
-The Dockerfile selects `ghcr.io/a-novel/service-json-keys/database:v2.6.1`, which contains
-PostgreSQL `18.6-1.pgdg13+2`. It adds PGDG pgBackRest `2.59.1-1.pgdg13+1` and
-PostgreSQL `17.11-1.pgdg13+2` solely for the negative test.
-APT verifies the signed repository metadata and package hashes. The PGDG key in the inspected base has
-fingerprint `B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8`, matching the
-[PostgreSQL package repository](https://wiki.postgresql.org/wiki/Apt).
-The [upstream pgBackRest project](https://github.com/pgbackrest/pgbackrest) is MIT-licensed and
-actively maintained; its [guide](https://pgbackrest.org/user-guide.html#installation) recommends
-distribution packages. This avoids maintaining a C build/distribution pipeline for the proof.
+The published [JSON Keys v2.6.2](https://github.com/a-novel/service-json-keys/blob/v2.6.2/builds/database.Dockerfile)
+and [Authentication v2.9.2](https://github.com/a-novel/service-authentication/blob/v2.9.2/builds/database.Dockerfile)
+images own PostgreSQL `18.6-1.pgdg13+2` and PGDG pgBackRest `2.59.1-1.pgdg13+1`.
+Infra no longer installs or versions a second pgBackRest. It adds only PostgreSQL
+`17.11-1.pgdg13+2` from the signed PGDG repository for the negative test.
 
-The selected service image passed `gh attestation verify` against its repository's
-`release.yaml`, `refs/heads/master`, and GitHub-hosted builders. This establishes the input's
-provenance, not approval or attestation of the derived proof image. Image tags and transitive Debian
-packages can change between builds; retain the generated image digest and package inventory with
-future drill evidence. The binary checks cover the server and extension, not their shared libraries.
+Both inputs passed `gh attestation verify` on 27 September 2026, requiring their repository's
+`release.yaml`, `refs/heads/master`, and GitHub-hosted builders. This verifies their provenance,
+not the derived proof image or fitness for a live trial. Retain resolved digests and package
+inventories in generated drill evidence; maintained image references remain SemVer tags.
 
-Trivy 0.74.0 on 26 September 2026 reported **99 Debian high/critical package findings** (including
-13 critical) and **22 findings in the inherited `gosu` binary**. The Go proof binary had none.
-Counts are package/advisory pairs, not distinct exploitable vulnerabilities:
+Trivy 0.74.0 scans of both published inputs on 27 September 2026 each report **62 Debian
+high/critical findings (one critical)** and **22 inherited gosu findings (one critical)**, using
+the advisory database updated on 26 September. Counts are package/advisory pairs, not distinct
+exploits. None of the 62 Debian findings has a fixed stable package in that scan; gosu still embeds
+Go 1.24.6. The refreshed packaging removes the earlier fixable Perl findings. Remaining advisories
+are not automatically reachable vulnerabilities, but neither are they accepted risks:
 
-- Twelve critical package/advisory pairs concern four Perl packages at `5.40.1-6`; the scan
-  reports `5.40.1-6+deb13u1` as fixed. Adding pgBackRest does not upgrade every inherited package.
-- Debian `libxml2` `2.12.7+dfsg+really2.9.14-2.1+deb13u3` was flagged for
-  [CVE-2026-6653](https://security-tracker.debian.org/tracker/CVE-2026-6653).
-  Debian lists trixie as vulnerable but classifies the issue as minor/no-DSA; the scanner classifies
-  it as critical. There was no fixed trixie version in the scan. Do not equate severity with a
-  proven reachable exploit, or silently discard the finding.
-- Inherited `gosu` was built with Go 1.24.6, including
-  [CVE-2025-68121](https://pkg.go.dev/vuln/GO-2026-4337). The proof does not call `gosu` or the
-  original image entrypoint. Production packaging should omit unused tooling and use supported,
-  patched dependencies rather than inherit this test image.
+| Critical finding                                                                   | Reachability assessment and remaining limit                                                                                                                                                                                                                                                                                                                                                                                           |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [libxml2 CVE-2026-6653](https://security-tracker.debian.org/tracker/CVE-2026-6653) | Malformed XML can trigger a use-after-free. Debian still marks trixie vulnerable (minor/no-DSA). pgBackRest's [GCS backend](https://github.com/pgbackrest/pgbackrest/blob/release/2.59.1/src/storage/gcs/storage.c) uses JSON, but PostgreSQL exposes [XML functions](https://www.postgresql.org/docs/18/functions-xml.html); there is no image-wide non-reachability claim. Review SQL access and untrusted XML before a live trial. |
+| [gosu CVE-2025-68121](https://pkg.go.dev/vuln/GO-2026-4337)                        | The advisory requires a TLS session-resumption path. [gosu 1.19](https://github.com/tianon/gosu/blob/1.19/main.go) switches user and executes a command, with no TLS handshake evident in that path. This is a source-level inference for this finding, not clearance of every Go advisory. The proof bypasses gosu; production entrypoints can use it.                                                                               |
 
-No advisory ignore or security-gate exception is added. **Production packaging is not approved.**
-Before a live trial, review reachable findings, build a minimal patched artifact compatible with
-the selected database image, verify its provenance, scan it, and obtain human approval. The second
-PostgreSQL major and the Go test binary belong only to this proof, never to that artifact.
+No advisory ignore or security-gate exception is added. **Live pgBackRest adoption is not approved.**
+Before a live trial, refresh the scan and resolve or explicitly review the residual risks with the
+operator. The second PostgreSQL major and Go test binary must never enter the live artifact.
 
 To reproduce the advisory inspection with the repository-pinned scanner:
 
