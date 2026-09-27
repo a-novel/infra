@@ -25,13 +25,13 @@ Use the Google Cloud CLI version pinned in the repository's workflows and record
 
 ```sh
 umask 077
-TRIAL_DIR="$(mktemp -d)" || return 1
-export TRIAL_DIR
-export TF_DATA_DIR="${TRIAL_DIR:?}/provider"
-export TRIAL_PROJECT="${TF_VAR_project_id:?}"
-export TRIAL_BUCKET="${TRIAL_PROJECT:?}-${TF_VAR_service:?}"
-export TRIAL_PEER="${TRIAL_PROJECT:?}-peer"
-export TRIAL_WRITER="gcs-proof-writer@${TRIAL_PROJECT:?}.iam.gserviceaccount.com"
+TRIAL_DIR="$(mktemp -d)" &&
+export TRIAL_DIR &&
+export TF_DATA_DIR="${TRIAL_DIR:?}/provider" &&
+export TRIAL_PROJECT="${TF_VAR_project_id:?}" &&
+export TRIAL_BUCKET="${TRIAL_PROJECT:?}-${TF_VAR_service:?}" &&
+export TRIAL_PEER="${TRIAL_PROJECT:?}-peer" &&
+export TRIAL_WRITER="gcs-proof-writer@${TRIAL_PROJECT:?}.iam.gserviceaccount.com" &&
 export TRIAL_RECOVERY="gcs-proof-recovery@${TRIAL_PROJECT:?}.iam.gserviceaccount.com"
 ```
 
@@ -91,6 +91,14 @@ before continuing. Policy tests attempt the already configured values and the sa
 printf 'peer-denial-probe\n' | gcloud storage cp - "gs://${TRIAL_PEER:?}/probe" \
   --if-generation-match=0 --project="${TRIAL_PROJECT:?}" --impersonate-service-account="${TRIAL_WRITER:?}"
 ```
+
+```sh
+gcloud storage objects list "gs://${TRIAL_PEER:?}/*" \
+  --project="${TRIAL_PROJECT:?}" --impersonate-service-account="${TRIAL_WRITER:?}"
+```
+
+Repeat the peer listing as the recovery identity and require the same permission denial. An empty
+successful listing fails the isolation test even though the peer bucket contains no data.
 
 ```sh
 gcloud storage buckets update "gs://${TRIAL_BUCKET:?}" --retention-period="${TF_VAR_retention_seconds:?}s" \
