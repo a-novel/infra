@@ -87,11 +87,11 @@ jobs:
           tofu fmt -check -recursive modules
           tflint --recursive --chdir=modules --config="${GITHUB_WORKSPACE}/.tflint.hcl" --format=compact
 
-      - name: Validate inactive service roots without backends
+      - name: Validate inactive roots without backends
         shell: bash
         run: |
           set -euo pipefail
-          for root in environments/service-foundation environments/service-release; do
+          for root in environments/service-foundation environments/service-release proofs/gcs-storage; do
             tofu -chdir="$root" fmt -check -recursive -diff
             tofu -chdir="$root" init -backend=false -input=false -lockfile=readonly -no-color
             tofu -chdir="$root" validate -no-color

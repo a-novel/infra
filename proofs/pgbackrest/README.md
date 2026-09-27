@@ -145,63 +145,27 @@ Do not reinterpret old `completed.manifest` files as physical backup catalogs.
 
 ## Human-only GCS contract drill — not yet authorized to run
 
-Local success is insufficient to replace create-only custody. This next drill requires a separately
-approved, patched artifact, a disposable private PostgreSQL 18 host with synthetic data, and a **new
-per-service management-project bucket**. It must not reuse the production backup bucket.
-Do not provision these or change IAM/retention as part of this proof.
+Start with the [isolated storage trial](../../docs/runbooks/gcs-storage-trial.md). Its inactive
+HCL root and native GCS checklist test mutable catalogs, retention, aged dependencies and separate
+recovery access using tiny synthetic objects. It provisions nothing in CI and uses no database image.
+An unlocked storage pass does not authorize a locked policy, pgBackRest execution or production custody.
 
-The reviewed setup must specify the bucket, runtime identity and cleanup owner; versioning;
-the minimum retention period; native full/WAL retention; and recovery access after workload-project
-loss. The existing create-only backup principal cannot be reused unchanged: the native catalog is
-mutable. Test the proposed bucket-scoped `storage.objects.create/get/list/delete` permissions,
-not an unreviewed project-wide storage-admin grant. Do not grant runtime bucket-policy mutation.
-Google documents the important interaction between
-[versioning](https://docs.cloud.google.com/storage/docs/object-versioning) and
-[retention locks](https://docs.cloud.google.com/storage/docs/bucket-lock): retaining generations
-does not by itself prevent the current catalog from being replaced. Locking retention is irreversible.
+After storage review and a fresh artifact security review, separately approve a disposable private
+PostgreSQL 18 host and a new per-service management-side bucket. Keep the production bucket and
+logical readers unchanged. Use stanza `proof`, `repo1-type=gcs`, `repo1-gcs-key-type=auto`, a synthetic
+`pg1-path`, and its dedicated database user. Complete this integration matrix:
 
-After that setup is approved, a human can inspect the exact boundary:
-
-```sh
-(
-set -euo pipefail
-gcloud storage buckets describe "gs://${INFRA_BACKUP_DRILL_BUCKET:?}" \
-  --project="${INFRA_MANAGEMENT_PROJECT_ID:?}" \
-  --format='yaml(name,versioning,retention_policy,lifecycle_config,soft_delete_policy)'
-gcloud storage buckets get-iam-policy "gs://${INFRA_BACKUP_DRILL_BUCKET:?}" \
-  --project="${INFRA_MANAGEMENT_PROJECT_ID:?}" --format=json
-)
-```
-
-On that disposable host, the reviewed pgBackRest configuration must use stanza `proof`, the new
-bucket, `repo1-type=gcs`, `repo1-gcs-key-type=auto`, a synthetic `pg1-path`, and no static key.
-Run as its dedicated database user, with no other stanza in the configuration:
-
-```sh
-(
-set -euo pipefail
-pgbackrest --config="${INFRA_BACKUP_DRILL_CONFIG:?}" --stanza=proof stanza-create
-pgbackrest --config="${INFRA_BACKUP_DRILL_CONFIG:?}" --stanza=proof check
-pgbackrest --config="${INFRA_BACKUP_DRILL_CONFIG:?}" --stanza=proof --type=full backup
-pgbackrest --config="${INFRA_BACKUP_DRILL_CONFIG:?}" --stanza=proof --output=json info
-gcloud storage objects list "gs://${INFRA_BACKUP_DRILL_BUCKET:?}/**" \
-  --project="${INFRA_MANAGEMENT_PROJECT_ID:?}" --all-versions \
-  --format='table(name,generation,size,retentionExpirationTime)'
-)
-```
-
-Then execute and record this acceptance matrix using the approved identities and repository:
-
-| Test                                                         | Required evidence before adoption                                                                                                                                                                            |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Backup followed by another backup                            | Catalog advances; prior generations remain readable with the recovery identity.                                                                                                                              |
-| Interrupted upload (`pgbackrest --force stop`, then `start`) | No partial backup is selectable; previous exact recovery point restores. Test forced host/container loss as well as native cancellation.                                                                     |
-| Native expiry while an object is retention-protected         | Protected generations cannot be deleted. Record whether backup/expiry returns failure after catalog advancement; do not blindly replay it.                                                                   |
-| Missing/corrupt current catalog or WAL                       | Recovery identity restores the selected historical catalog and matching WAL generations using the pinned repository target time; SQL verification passes. Never mutate the real repository to simulate this. |
-| Cross-service access and policy changes                      | The writer cannot access a peer bucket or change its own retention/IAM policy.                                                                                                                               |
-| Workload identity removed                                    | Management-side recovery identity can still select and restore the exact retained backup.                                                                                                                    |
+| Test                                                         | Required evidence before adoption                                                                                                                                                                |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Backup followed by another backup                            | Catalog advances; prior generations remain readable with the recovery identity.                                                                                                                  |
+| Interrupted upload (`pgbackrest --force stop`, then `start`) | No partial backup is selectable; previous exact recovery point restores. Test forced host/container loss as well as native cancellation.                                                         |
+| Native expiry while an object is retention-protected         | Protected generations cannot be deleted. Record whether backup/expiry returns failure after catalog advancement; do not blindly replay it.                                                       |
+| Missing/corrupt current catalog or WAL                       | Prove historical catalog/WAL selection after native object recovery, including changed generation/timestamps and an aged full backup needed by a fresh differential. SQL verification must pass. |
+| Cross-service access and policy changes                      | The writer cannot access a peer bucket or change its own retention/IAM policy.                                                                                                                   |
+| Workload identity removed                                    | Management-side recovery identity can still select and restore the exact retained backup.                                                                                                        |
 
 Use native `info`, `verify`, explicit `--set`, `--repo-target-time` and `restore`; do not build a
-second catalog or generic object-age sweeper. Exact mutation commands and identity grants belong in
-the separately reviewed live-drill change once those coordinates and policies are chosen.
+second catalog or generic object-age sweeper. Native object recovery preserves bytes in a new live
+generation; it does not establish pgBackRest's historical timestamp selection. Exact integration
+commands and grants belong in the separately reviewed live-drill change.
 Until this matrix and packaging pass, the outcome is **promising local behavior, no live cutover**.
