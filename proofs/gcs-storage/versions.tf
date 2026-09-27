@@ -9,6 +9,5 @@ terraform {
   }
 }
 
-provider "google" {
-  project = var.project_id
-}
+# Every resource selects its project or bucket explicitly. Use the default provider when
+# standalone, or inherit the caller's provider (including its mock) when composed.

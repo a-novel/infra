@@ -12,8 +12,10 @@ for the small synthetic experiment. There is no database startup script, image p
 provisioner or automatic backup. Native pgBackRest will perform the later backup/restore operations;
 this root only supplies its host and repository. No new library or test framework is needed.
 
-The root composes `../gcs-storage`, preserving that root's resource addresses and policy. Its own
-project input requires a **fresh** `a-novel-gcs-proof-pgbr<6–8 digits>` project, excluding the retained
+The root composes `../gcs-storage`, preserving that root's resource addresses and policy. The storage
+module inherits this root's provider, including its test mock. Standalone storage still uses the same
+default provider address and explicit resource project/bucket inputs, without a nested configuration.
+The project input requires a **fresh** `a-novel-gcs-proof-pgbr<6–8 digits>` project, excluding the retained
 September storage trial. A name guard is not evidence of project ownership. Keep both roots' state
 and evidence separate; never initialize this root against the earlier trial's state.
 
