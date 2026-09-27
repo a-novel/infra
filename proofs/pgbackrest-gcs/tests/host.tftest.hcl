@@ -18,12 +18,14 @@ run "private_bounded_host" {
       boot_ssd     = google_compute_instance.trial.boot_disk[0].initialize_params[0].type
       data_ssd     = google_compute_disk.data.type
       auto_restart = google_compute_instance.trial.scheduling[0].automatic_restart
+      maintenance  = google_compute_instance.trial.scheduling[0].on_host_maintenance
       limit        = google_compute_instance.trial.scheduling[0].max_run_duration[0].seconds
       on_limit     = google_compute_instance.trial.scheduling[0].instance_termination_action
       metadata     = google_compute_instance.trial.metadata
       } == {
       external_ips = 0, forward = false, secure_boot = true,
       boot_ssd     = "pd-ssd", data_ssd = "pd-ssd", auto_restart = false, limit = 14400, on_limit = "STOP",
+      maintenance  = "MIGRATE",
       metadata = tomap({
         block-project-ssh-keys = "TRUE", disable-legacy-endpoints = "TRUE",
         enable-oslogin         = "TRUE", serial-port-enable = "FALSE"

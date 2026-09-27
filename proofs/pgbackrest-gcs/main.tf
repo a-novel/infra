@@ -56,8 +56,9 @@ resource "google_compute_instance" "trial" {
     enable_vtpm                 = true
   }
   scheduling {
+    # Standard E2 requires live migration; the runtime limit still stops the VM.
     automatic_restart           = false
-    on_host_maintenance         = "TERMINATE"
+    on_host_maintenance         = "MIGRATE"
     provisioning_model          = "STANDARD"
     instance_termination_action = "STOP"
     max_run_duration {
