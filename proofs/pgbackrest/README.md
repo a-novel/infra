@@ -145,6 +145,11 @@ Do not reinterpret old `completed.manifest` files as physical backup catalogs.
 
 ## Human-only GCS contract drill — not yet authorized to run
 
+The [synthetic storage trial](../gcs-storage/result-20260927.md) passed on 27 September, with final
+retained-resource cleanup still pending. The next [private VM proof root](../pgbackrest-gcs/README.md)
+is approved for code preparation only. Its provisioning, current image-risk review and live
+pgBackRest execution need separate approval; the original storage project must not be reused.
+
 Start with the [isolated storage trial](../../docs/runbooks/gcs-storage-trial.md). Its inactive
 HCL root and native GCS checklist test mutable catalogs, retention, aged dependencies and separate
 recovery access using tiny synthetic objects. It provisions nothing in CI and uses no database image.

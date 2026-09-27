@@ -1,8 +1,10 @@
 # Isolated GCS storage trial
 
-This is a **human-only, not-yet-executed** evaluation for [the backup comparison](https://github.com/a-novel/infra/issues/190).
+This is a **human-only** evaluation for [the backup comparison](https://github.com/a-novel/infra/issues/190).
 It uses synthetic objects to test mutable-catalog custody before running pgBackRest against GCS.
 Merging this guide authorizes no cloud operations. Production buckets, backups, schedules and IAM stay unchanged.
+The [27 September result](../../proofs/gcs-storage/result-20260927.md) records the completed synthetic
+trial and its outstanding cleanup; every new run still needs its own scope approval.
 
 ## 1. Approve the disposable scope
 
@@ -25,7 +27,7 @@ Use the Google Cloud CLI version pinned in the repository's workflows and record
 
 ```sh
 umask 077
-TRIAL_DIR="$(mktemp -d)" &&
+TRIAL_DIR="$(mktemp -d "${HOME:?}/agora-gcs-proof.XXXXXXXX")" &&
 export TRIAL_DIR &&
 export TF_DATA_DIR="${TRIAL_DIR:?}/provider" &&
 export TRIAL_PROJECT="${TF_VAR_project_id:?}" &&
@@ -81,6 +83,8 @@ no lifecycle rules, and only the two intended object-role grants. Inspect inheri
 Obtain the approved, expiring impersonation grants now. Record the operator and expiry in the evidence.
 Allow at least 30 seconds for versioning propagation before writing or replacing objects; wait for
 IAM propagation too. Do not expand a role to work around a propagation delay.
+Preserve the private state/evidence directory across sessions and reboots; cleanup extends beyond the
+soft-delete window. Confirm both identities can list their selected bucket before testing peer denial.
 
 Run these **negative checks individually**, as the writer. Each must return HTTP 403 identifying the
 corresponding denied permission. Authentication, quota, missing-resource, retention, etag or syntax
@@ -88,12 +92,29 @@ errors are inconclusive. Stop if a command succeeds; inspect the disposable buck
 before continuing. Policy tests attempt the already configured values and the saved etag-bound policy.
 
 ```sh
-printf 'peer-denial-probe\n' | gcloud storage cp - "gs://${TRIAL_PEER:?}/probe" \
-  --if-generation-match=0 --project="${TRIAL_PROJECT:?}" --impersonate-service-account="${TRIAL_WRITER:?}"
+(
+set +x
+set -euo pipefail
+trial_token="$(gcloud auth print-access-token --project="${TRIAL_PROJECT:?}" \
+  --impersonate-service-account="${TRIAL_WRITER:?}")"
+case "$trial_token" in
+  ''|*[^A-Za-z0-9._~+/=-]*) printf 'STOP: invalid access-token response.\n' >&2; exit 1 ;;
+esac
+builtin printf 'header = "Authorization: Bearer %s"\n' "$trial_token" |
+  curl -q --config - --silent --show-error --fail-with-body \
+    --connect-timeout 10 --max-time 60 --request POST --header 'Content-Type: text/plain' \
+    --data-binary 'peer-denial-probe' --write-out '\nHTTP_STATUS=%{http_code}\n' \
+    "https://storage.googleapis.com/upload/storage/v1/b/${TRIAL_PEER:?}/o?uploadType=media&name=probe&ifGenerationMatch=0"
+)
 ```
 
+This direct upload tests `storage.objects.create`; CLI copy may fail on its preliminary GET instead.
+The token goes through standard input, not command arguments or output. The `[^...]` pattern also
+avoids interactive zsh's `!` history expansion. Expected curl exit 22 with HTTP 403 is a negative pass
+only when the response identifies the intended principal and denied create permission.
+
 ```sh
-gcloud storage objects list "gs://${TRIAL_PEER:?}/*" \
+gcloud storage objects list "gs://${TRIAL_PEER:?}/**" \
   --project="${TRIAL_PROJECT:?}" --impersonate-service-account="${TRIAL_WRITER:?}"
 ```
 
@@ -106,8 +127,12 @@ gcloud storage buckets update "gs://${TRIAL_BUCKET:?}" --retention-period="${TF_
 ```
 
 ```sh
-gcloud storage buckets set-iam-policy "gs://${TRIAL_BUCKET:?}" "${TRIAL_DIR:?}/bucket-iam.json" \
+(
+set -euo pipefail
+trial_etag="$(jq -er '.etag | select(type == "string" and length > 0)' "${TRIAL_DIR:?}/bucket-iam.json")"
+gcloud storage buckets set-iam-policy "gs://${TRIAL_BUCKET:?}" "${TRIAL_DIR:?}/bucket-iam.json" --etag="$trial_etag" \
   --project="${TRIAL_PROJECT:?}" --impersonate-service-account="${TRIAL_WRITER:?}"
+)
 ```
 
 ## 3. Replace a retained catalog
@@ -129,7 +154,7 @@ gcloud storage objects describe "gs://${TRIAL_BUCKET:?}/full" --raw --format=jso
 catalog_generation="$(jq -er '.generation' "${TRIAL_DIR:?}/catalog-v1.json")"
 printf 'catalog-v2\n' | gcloud storage cp - "gs://${TRIAL_BUCKET:?}/catalog" --if-generation-match="$catalog_generation" \
   --project="${TRIAL_PROJECT:?}" --impersonate-service-account="${TRIAL_WRITER:?}"
-gcloud storage objects list "gs://${TRIAL_BUCKET:?}/*" --all-versions --raw --format=json \
+gcloud storage objects list "gs://${TRIAL_BUCKET:?}/**" --raw --format=json \
   --project="${TRIAL_PROJECT:?}" --impersonate-service-account="${TRIAL_RECOVERY:?}" >"${TRIAL_DIR:?}/before-expiry.json"
 test "$(gcloud storage cat "gs://${TRIAL_BUCKET:?}/catalog#${catalog_generation}" \
   --project="${TRIAL_PROJECT:?}" --impersonate-service-account="${TRIAL_RECOVERY:?}")" = 'catalog-v1'
@@ -165,7 +190,7 @@ printf 'depends-on-full-generation=%s\n' "$full_generation" | gcloud storage cp 
   --if-generation-match=0 --project="${TRIAL_PROJECT:?}" --impersonate-service-account="${TRIAL_WRITER:?}"
 gcloud storage rm "gs://${TRIAL_BUCKET:?}/full#${full_generation}" "gs://${TRIAL_BUCKET:?}/catalog#${catalog_generation}" \
   --project="${TRIAL_PROJECT:?}" --impersonate-service-account="${TRIAL_WRITER:?}"
-gcloud storage objects list "gs://${TRIAL_BUCKET:?}/*" --soft-deleted --raw --format=json \
+gcloud storage objects list "gs://${TRIAL_BUCKET:?}/**" --soft-deleted --exhaustive --raw --format=json \
   --project="${TRIAL_PROJECT:?}" --impersonate-service-account="${TRIAL_RECOVERY:?}" >"${TRIAL_DIR:?}/soft-deleted.json"
 )
 ```
@@ -175,7 +200,7 @@ those generations must now fail (404, not IAM denial). Run this check individual
 `catalog`, substituting their saved generation; do not count a missing latest object alone as proof.
 
 ```sh
-gcloud storage cat "gs://${TRIAL_BUCKET:?}/${TRIAL_OBJECT:?}#${TRIAL_GENERATION:?}" \
+gcloud storage objects describe "gs://${TRIAL_BUCKET:?}/${TRIAL_OBJECT:?}#${TRIAL_GENERATION:?}" \
   --project="${TRIAL_PROJECT:?}" --impersonate-service-account="${TRIAL_RECOVERY:?}"
 ```
 
@@ -216,6 +241,8 @@ Save one evidence record with the approved scope, effective IAM, each native res
 metadata, UTC times, checksum comparison and the reviewer. List both noncurrent/live and soft-deleted
 objects; sum their raw `size` fields separately to expose retained bytes. Retain the billing/cost
 review, including copies that outlive the trial. None of these tiny fixtures predicts production WAL cost.
+Native object listing includes live and noncurrent generations by default; use a separate
+`--soft-deleted --exhaustive` inventory for retained deleted copies, with the quoted `/**` pattern.
 
 The acceptance decision is **storage semantics observed**, not production custody approval, a
 pgBackRest integration pass or RPO/RTO evidence. CI validates HCL and command syntax only. Actual cloud

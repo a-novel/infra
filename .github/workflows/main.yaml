@@ -89,9 +89,11 @@ jobs:
 
       - name: Validate inactive roots without backends
         shell: bash
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: /dev/null
         run: |
           set -euo pipefail
-          for root in environments/service-foundation environments/service-release proofs/gcs-storage; do
+          for root in environments/service-foundation environments/service-release proofs/gcs-storage proofs/pgbackrest-gcs; do
             tofu -chdir="$root" fmt -check -recursive -diff
             tofu -chdir="$root" init -backend=false -input=false -lockfile=readonly -no-color
             tofu -chdir="$root" validate -no-color
