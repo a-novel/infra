@@ -85,9 +85,17 @@ repo1-host-key-file=%[2]s/client.pem
 		}},
 		{"Limit/ClientOverridesRepository", func(t *testing.T) {
 			outside := t.TempDir()
-			write(t, filepath.Join(outside, "outside-repository"), "synthetic path-override probe")
+			path := filepath.Join(outside, "outside-repository")
+			write(t, path, "synthetic path-override probe")
+			require.NoError(t, os.Chmod(path, 0o400))
 			out := p.backrest(t, "--repo1-path="+outside, "repo-ls")
 			require.Equal(t, "outside-repository\n", out)
+			require.Equal(t, "synthetic path-override probe", p.backrest(t, "--repo1-path="+outside, "repo-get", "outside-repository"))
+			require.NoError(t, os.Chmod(path, 0o000))
+			denied, err := p.command(t.Context(), "--repo1-path="+outside, "repo-get", "outside-repository").CombinedOutput()
+			require.Error(t, err, string(denied))
+			require.Contains(t, string(denied), "Permission denied")
+			p.backrest(t, "repo-ls")
 		}},
 		{"Error/StoppedRepositoryThenExplicitRetry", func(t *testing.T) {
 			stop()

@@ -78,15 +78,24 @@ credential is issued or delivered, and renewal remains a separate activation gat
 
 **TLS is authentication, not a fixed repository policy.** `Limit/ClientOverridesRepository`
 demonstrates that an authorized client can override `repo1-path` and list a synthetic directory
-outside the configured repository. The [native protocol implementation](https://github.com/pgbackrest/pgbackrest/blob/release/2.59.1/src/protocol/helper.c)
+outside the configured repository. It also reads an owner-readable (`0400`) synthetic file through
+`repo-get`; removing read permission makes that read fail, while normal repository listing still
+works. The [native protocol implementation](https://github.com/pgbackrest/pgbackrest/blob/release/2.59.1/src/protocol/helper.c)
 loads client-supplied parameters before checking the authorized stanza. A green test records this
 limitation; it does not endorse that access or establish the effect of every possible override.
 
-Consequently, the proposed same-VM repository container is **not ready for host wiring**. Its
-filesystem, egress and identity restrictions must hold independently of client-controlled options;
-TLS alone cannot make the host identity safe to delegate. Keep PostgreSQL's existing metadata denial.
-This offline test does not establish Docker/COS isolation, GCS permissions or credential confinement.
-Those design and live-proof gates remain tracked in [#190](https://github.com/a-novel/infra/issues/190).
+Read-only mounts protect integrity, not confidentiality from the process that must read them.
+In particular, `0400` alone cannot hide the server's PEM identity from an authorized native client
+running through that process. This test reads only synthetic probe data, not credentials. Both
+endpoints share a user and container; separate mounts, Docker/COS isolation, GCS options and
+metadata access are not established by this proof.
+
+The dedicated repository host therefore remains **disabled and unwired**. Its filesystem, egress
+and identity restrictions must hold independently of client-controlled options. Before wiring it,
+review whether the service's database client and repository process may share one backup-writer
+trust boundary, with recovery authority kept separate, or whether a different transport is needed.
+Do not silently claim credential confinement or relax PostgreSQL's metadata denial. That decision
+and the live-proof gates remain in [#190](https://github.com/a-novel/infra/issues/190).
 
 ### Local measurements
 
