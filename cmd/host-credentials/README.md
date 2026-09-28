@@ -53,6 +53,11 @@ expiry monitoring, and restart coordination must be defined before activation.
 Certificate validation also does not confine an authenticated pgBackRest client:
 filesystem, network, metadata, and attached-identity restrictions remain separate
 host requirements. PostgreSQL must remain unable to reach VM credentials.
+The [native transport proof](../../proofs/pgbackrest/README.md#native-repository-transport)
+also shows that an authorized client can read a server-readable synthetic file outside its
+repository. Private file modes and read-only mounts are not confidentiality barriers against
+that process. The loader's safe delivery contract does not establish server-key confinement;
+host wiring remains blocked on the reviewed client/process trust boundary.
 
 ## Checks
 
