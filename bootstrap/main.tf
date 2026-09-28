@@ -72,7 +72,7 @@ locals {
     }
   }
 
-  secret_definitions = {
+  secret_definitions = merge({
     production-authentication-postgres-password = {
       contract = "POSTGRES_PASSWORD"
       purpose  = "Authentication database owner password"
@@ -101,7 +101,10 @@ locals {
       contract = "POSTGRES_BACKUP_PASSWORD"
       purpose  = "JSON Keys database read-only backup password"
     }
-  }
+    }, { for endpoint, credential in local.pgbackrest_tls : "production-json-keys-pgbackrest-${endpoint}" => {
+      contract = credential.contract
+      purpose  = credential.purpose
+  } })
 
   audited_services = toset([
     # Service Account Credentials inherits IAM's Data Access configuration and

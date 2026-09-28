@@ -23,6 +23,8 @@ run "default_has_no_native_custody" {
       length(google_storage_bucket_iam_member.pgbackrest_writer) == 0,
       length(google_storage_bucket_iam_member.pgbackrest_recovery) == 0,
       length(local.management_buckets) == 3,
+      length(google_secret_manager_secret.application) == 7,
+      length(google_secret_manager_secret_iam_member.pgbackrest_tls) == 0,
       output.json_keys_pgbackrest == null,
     ])
     error_message = "Existing inputs must create no native storage, identities or authority."
@@ -41,6 +43,14 @@ run "explicit_null_has_no_native_custody" {
 run "isolated_native_custody" {
   command = plan
   variables { json_keys_pgbackrest = { workload_project_id = "agora-json-keys-test" } }
+
+  assert {
+    condition = (
+      length(google_secret_manager_secret.application) == 7 &&
+      length(google_secret_manager_secret_iam_member.pgbackrest_tls) == 0
+    )
+    error_message = "Storage custody alone must not create TLS credentials or payload grants."
+  }
 
   assert {
     condition = { for service, bucket in google_storage_bucket.pgbackrest : service => {
@@ -108,6 +118,46 @@ run "isolated_native_custody" {
       output.json_keys_pgbackrest.writer == "agora-backup-repository@agora-json-keys-test.iam.gserviceaccount.com",
     ])
     error_message = "Bind only the selected host and disabled recovery identity to native storage, with its existing administrator."
+  }
+}
+
+run "isolated_tls_credentials" {
+  command = plan
+  variables {
+    json_keys_pgbackrest = { workload_project_id = "agora-json-keys-test", tls_credentials = true }
+  }
+
+  assert {
+    condition = { for key, binding in google_secret_manager_secret_iam_member.pgbackrest_tls : key => {
+      project = binding.project
+      secret  = binding.secret_id
+      role    = binding.role
+      member  = binding.member
+      } } == { for key, pair in {
+      "ca:agora-database"                  = ["ca", "agora-database"]
+      "ca:agora-backup-repository"         = ["ca", "agora-backup-repository"]
+      "database:agora-database"            = ["database", "agora-database"]
+      "repository:agora-backup-repository" = ["repository", "agora-backup-repository"]
+      } : key => {
+      project = var.management_project_id
+      secret  = "production-json-keys-pgbackrest-${pair[0]}"
+      role    = "roles/secretmanager.secretAccessor"
+      member  = "serviceAccount:${pair[1]}@agora-json-keys-test.iam.gserviceaccount.com"
+    } }
+    error_message = "Each host may read its own identity and the public CA bundle only."
+  }
+
+  assert {
+    condition = (
+      length(google_secret_manager_secret.application) == 10 &&
+      length(google_secret_manager_secret_iam_member.operator) == 20 &&
+      alltrue([for endpoint in ["ca", "database", "repository"] : alltrue([
+        google_secret_manager_secret.application["production-json-keys-pgbackrest-${endpoint}"].deletion_protection,
+        google_secret_manager_secret.application["production-json-keys-pgbackrest-${endpoint}"].deletion_policy == "PREVENT",
+        google_secret_manager_secret.application["production-json-keys-pgbackrest-${endpoint}"].version_destroy_ttl == "2592000s",
+      ])])
+    )
+    error_message = "TLS credentials must inherit the existing operator and delayed-destruction contract."
   }
 }
 

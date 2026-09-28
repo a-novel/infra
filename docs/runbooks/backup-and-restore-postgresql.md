@@ -477,6 +477,12 @@ bucket or peer changes are allowed. Initial bucket creation needs approved boots
 existing bucket-scoped administration cannot create another bucket. A partially completed apply
 requires state reconciliation and a fresh reviewed plan, never a broader role or blind replay.
 
+Keep `json_keys_pgbackrest.tls_credentials` false during storage-only provisioning. A later separate
+opt-in adds only the [TLS credential containers and access contract](../../bootstrap/README.md#disabled-tls-credential-custody):
+three empty secrets, four exact-host reader bindings and the existing operator grants for those
+secrets. It issues no certificates, uploads no payloads and starts no host. Approve issuer custody,
+numeric-version delivery, expiry alerting and renewal/revocation procedures before using it.
+
 After approved provisioning, independently inspect bucket policy, versioning, retention and inherited
 IAM. Prove intended own-bucket access and peer/policy denials before enabling a writer. Code-only
 tests prove neither effective access nor recoverability. Recovery remains disabled and receives no

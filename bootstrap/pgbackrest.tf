@@ -1,7 +1,10 @@
 variable "json_keys_pgbackrest" {
   description = "Opt-in native repository custody for the registered JSON Keys service project. Leave null until separately approved; this does not activate backups."
-  type        = object({ workload_project_id = string })
-  default     = null
+  type = object({
+    workload_project_id = string
+    tls_credentials     = optional(bool, false)
+  })
+  default = null
 
   validation {
     condition = var.json_keys_pgbackrest == null ? true : (

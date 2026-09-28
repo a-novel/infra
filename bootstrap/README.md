@@ -94,10 +94,11 @@ granting permission to create `.tflock` or state objects. OpenTofu documents the
 
 ## Disabled JSON Keys native-backup custody
 
-`json_keys_pgbackrest = null` creates no native-backup resources. The optional object accepts only
-`workload_project_id`, identifying the independently registered JSON Keys service project whose
+`json_keys_pgbackrest = null` creates no native-backup resources. The optional object's
+`workload_project_id` identifies the independently registered JSON Keys service project whose
 `agora-backup-repository` account already exists. This is syntax-checked, not discovered or authorized by HCL;
 the operator must reconcile it with the protected service registration before any opt-in.
+Its optional `tls_credentials` flag defaults to false; storage custody alone creates no TLS secrets.
 
 | Address                                                                                                       | Purpose and authority                                                                                                                | Lifecycle and cost                                                                                                                             |
 | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -134,6 +135,49 @@ retention and soft delete protect individual generations; they do not guarantee 
 outlives every dependent differential. Native expiry, version cleanup, storage cost and restoration
 must be proven together before activation. No automatic expiry or retention lock is enabled.
 
+### Disabled TLS credential custody
+
+Setting `json_keys_pgbackrest.tls_credentials = true` additionally creates three protected containers
+through `google_secret_manager_secret.application` and four exact-secret accessor bindings through
+`google_secret_manager_secret_iam_member.pgbackrest_tls`. The existing operator Accessor and
+Version Manager grants cover these containers too. The seven default application containers and
+their resource addresses stay unchanged. No secret version, signing service, certificate issuer or
+host delivery process is created; keep this flag off until separately approved provisioning.
+
+| Secret ID                                    | PEM payload contract                                                                       | Runtime readers in the selected service project |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------ | ----------------------------------------------- |
+| `production-json-keys-pgbackrest-ca`         | Public CA certificate bundle only (`PGBACKREST_CA_PEM`). Never the CA private key.         | `agora-database`, `agora-backup-repository`     |
+| `production-json-keys-pgbackrest-database`   | Client certificate/chain followed by its matching private key (`PGBACKREST_IDENTITY_PEM`). | `agora-database` only                           |
+| `production-json-keys-pgbackrest-repository` | Server certificate/chain followed by its matching private key (`PGBACKREST_IDENTITY_PEM`). | `agora-backup-repository` only                  |
+
+The native TLS proof uses one PEM file for both pgBackRest certificate and key options. Keeping that
+pair in one secret version prevents delivery from mixing independently rotated versions; it requires
+no custom envelope, parser or crypto library. Select explicit numeric versions, never `latest`.
+Secret IAM applies to every enabled version, so a version pin is not an IAM boundary. No peer,
+application, release or recovery identity receives a TLS payload binding here; inspect inherited
+policies and prove cross-key denial after any approved provisioning.
+
+Before uploading real credentials or activating a host, review these remaining operations:
+
+- Name the operator responsible for issuance, renewal and expiry alerts. Keep the signing key
+  offline and outside both hosts and OpenTofu. Define certificate lifetimes, the server DNS SAN and
+  the exact client identity/stanza mapping before issuance; no automated issuer is implied here.
+- Retrieve the selected versions through each host's own instance identity into private ephemeral
+  files. Bind only that host's identity bundle and public trust into its container. Reject invalid,
+  expired, mismatched or wrong-name credentials before starting; never log them or put payloads in
+  state, instance metadata or environment variables. Host delivery is not implemented by this slice.
+- Validate a staged renewal with both trust paths before retiring old versions. Disabling a Secret
+  Manager version does not revoke a certificate already loaded by a running process. A compromised
+  key needs removal of its accepted identity/trust as appropriate, credential replacement and
+  connection draining, with recovery and rollback reviewed separately.
+
+The current `ops/add-secret-version.sh` accepts single-line passwords, **not these multiline PEM
+contracts**. Do not extend its allowlist or upload credentials ad hoc; approve the issuance and
+delivery procedure first. The [offline proof](../proofs/pgbackrest/README.md#native-repository-transport)
+checks native format and handshake behavior, not live host isolation, issuance or rotation.
+Use [Secret Manager's access and version guidance](https://docs.cloud.google.com/secret-manager/docs/best-practices)
+and the [pgBackRest TLS options](https://pgbackrest.org/configuration.html) for that implementation.
+
 ## Secret contracts
 
 Container names include the environment and owning component. The annotation is a public contract
@@ -149,7 +193,7 @@ name, never a value.
 | `production-json-keys-postgres-password`             | `POSTGRES_PASSWORD`        | JSON Keys database owner password.                          |
 | `production-json-keys-postgres-backup-password`      | `POSTGRES_BACKUP_PASSWORD` | JSON Keys read-only logical-backup password.                |
 
-Runtime identities live in the workload project, so the foundation root owns their additive
+For the seven application contracts above, runtime identities live in the workload project, so the foundation root owns their additive
 payload bindings. Authentication receives its owner password and SMTP credential; its initializer
 receives the same owner password and the super-admin password. JSON Keys receives its owner password
 and master key. The database host receives both owner and backup passwords, while the backup identity

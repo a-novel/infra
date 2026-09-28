@@ -71,6 +71,10 @@ certificates on container loopback. Both service-image variants check backup/WAL
 recovery; a CA-signed but unauthorized client, wrong stanza and untrusted server must fail, with
 authorized positive controls. A stopped server prevents restore, and an explicit retry of the same
 set succeeds after restart. No external network, credential proxy or new runtime dependency is used.
+Each endpoint supplies its certificate and private key from one standard PEM file, passed to both
+native options. This verifies the single-version identity format in the
+[disabled custody contract](../../bootstrap/README.md#disabled-tls-credential-custody); no real
+credential is issued or delivered, and renewal remains a separate activation gate.
 
 **TLS is authentication, not a fixed repository policy.** `Limit/ClientOverridesRepository`
 demonstrates that an authorized client can override `repo1-path` and list a synthetic directory
