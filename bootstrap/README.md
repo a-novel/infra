@@ -96,7 +96,7 @@ granting permission to create `.tflock` or state objects. OpenTofu documents the
 
 `json_keys_pgbackrest = null` creates no native-backup resources. The optional object accepts only
 `workload_project_id`, identifying the independently registered JSON Keys service project whose
-`agora-database` account already exists. This is syntax-checked, not discovered or authorized by HCL;
+`agora-backup-repository` account already exists. This is syntax-checked, not discovered or authorized by HCL;
 the operator must reconcile it with the protected service registration before any opt-in.
 
 | Address                                                                                                       | Purpose and authority                                                                                                                | Lifecycle and cost                                                                                                                             |
@@ -104,7 +104,7 @@ the operator must reconcile it with the protected service registration before an
 | `google_storage_bucket.pgbackrest["json-keys"]`                                                               | Separate management-owned EU repository; private uniform access, versioning, seven-day unlocked retention and seven-day soft delete. | `prevent_destroy` and `force_destroy=false`; no age-based lifecycle deletion of physical chains. Every retained generation is billable.        |
 | `google_project_iam_custom_role.pgbackrest[writer/recovery]`                                                  | Writer has object create/get/list/delete. Recovery has create/get/list/restore, without delete or policy permissions.                | Deletion-protected role definitions in the bucket's management project; no project-wide role binding.                                          |
 | `google_service_account.pgbackrest_recovery["json-keys"]`                                                     | Separate management-side identity, created disabled.                                                                                 | Deletion-protected, keyless, with no federation, attachment or impersonation grants. Enabling it requires a separate reviewed recovery change. |
-| `google_storage_bucket_iam_member.pgbackrest_writer/pgbackrest_recovery["json-keys"]`                         | Only the declared database host and recovery identity receive the corresponding role on the native bucket.                           | Additive grants; inspect inherited access separately. No grant on logical backups, peers, secrets or state.                                    |
+| `google_storage_bucket_iam_member.pgbackrest_writer/pgbackrest_recovery["json-keys"]`                         | Only the dedicated repository host and recovery identity receive the corresponding role on the native bucket.                        | Additive grants; inspect inherited access separately. No grant on logical backups, peers, secrets or state.                                    |
 | `google_storage_bucket_iam_member.foundation_admin/operator_admin` with the `pgbackrest-json-keys` bucket key | Existing management administrators maintain this bucket through exact-bucket grants.                                                 | No new project-wide permission. Initial bucket creation still requires separately approved bootstrap authority.                                |
 
 Provider references: [bucket](https://registry.terraform.io/providers/hashicorp/google/8.2.0/docs/resources/storage_bucket),
@@ -120,6 +120,12 @@ The `json_keys_pgbackrest` output supplies non-secret coordinates after the decl
 not published into service configuration and does not authorize recovery or attest backup health.
 The protected bootstrap input materializer already preserves this optional object; default omission
 needs no new CLI, workflow or state root. Keep it absent from protected inputs during code review.
+
+The [service foundation](../environments/service-foundation/README.md#optional-stopped-repository-host)
+owns the repository identity and stopped VM. After separately approved provisioning, reconcile that
+identity before applying this bucket grant. The database identity receives no native-storage access;
+the repository identity receives no database password. These independent roots require that explicit
+ordering, not an inferred cross-state dependency.
 
 Provisioning, host access to instance credentials, WAL configuration, scheduling, monitoring and
 recovery activation remain blocked by the [native adoption gates](../docs/runbooks/backup-and-restore-postgresql.md#native-backup-preparation).

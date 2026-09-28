@@ -469,7 +469,9 @@ separate provisioning approval. Existing logical jobs, schedules, receipts and r
 remain authoritative.
 
 Before any later opt-in, reconcile the proposed project with the protected JSON Keys service
-registration and existing `agora-database` identity. Review a private saved bootstrap plan with only
+registration and existing `agora-backup-repository` identity from the
+[stopped repository host](../../environments/service-foundation/README.md#optional-stopped-repository-host).
+Provision that identity through the separately reviewed service-foundation plan first. Review a private saved bootstrap plan with only
 the new native bucket, its two roles, disabled recovery account and exact-bucket bindings; no logical
 bucket or peer changes are allowed. Initial bucket creation needs approved bootstrap authority;
 existing bucket-scoped administration cannot create another bucket. A partially completed apply
@@ -489,6 +491,12 @@ After exact-generation object repair, recover only an explicitly approved set/ta
 empty destination and verify SQL/application health. The old repository-time cutoff may still fail;
 never remove it or choose a different set automatically. Preserve all supported logical readers until
 their final retained recovery points expire.
+
+Temporary coexistence is approved during this transition. Retire the selected custom backup jobs,
+schedules and redundant tooling only after native recovery, alert delivery and retention/expiry meet
+the accepted recovery objectives. Daily disk snapshots need a separate cost/recovery-speed review.
+The EUR 10–15 additional monthly per-service ceiling covers the whole replacement, including retained
+storage and networking; subtract old costs only when their resources and retention obligations end.
 
 ## Cleanup
 

@@ -13,12 +13,12 @@ Production and retained recovery evidence remain unchanged.
 
 ## Owners and state
 
-| Owner                                                                    | Resources                                                                                                                    |
-| ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
-| Shared foundation and [workload project](../../modules/workload-project) | Projects, APIs, Google agents, release identity, storage namespaces, Shared VPC and host network policy.                     |
-| This root                                                                | Application assets, optional private database host/storage/identity, and the optionally composed rollout/job-access modules. |
-| [Service release](../service-release)                                    | Application job specifications, bootstrapped directly in their destination state.                                            |
-| Cloud Deploy                                                             | API specification, revisions and traffic after an approved handoff.                                                          |
+| Owner                                                                    | Resources                                                                                                                              |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Shared foundation and [workload project](../../modules/workload-project) | Projects, APIs, Google agents, release identity, storage namespaces, Shared VPC and host network policy.                               |
+| This root                                                                | Application assets, optional private database and repository hosts/identities, and the optionally composed rollout/job-access modules. |
+| [Service release](../service-release)                                    | Application job specifications, bootstrapped directly in their destination state.                                                      |
+| Cloud Deploy                                                             | API specification, revisions and traffic after an approved handoff.                                                                    |
 
 The native backend uses the published management `state_bucket` and
 `foundation/services/PROJECT/default.tfstate`. Only the default workspace is accepted. The existing
@@ -173,6 +173,44 @@ The maintained [Google VM module v15.3.0](https://github.com/terraform-google-mo
 requires providers below v8, incompatible with this repository's v8.2.0 pin. Native resources retain
 [stateful MIG](https://docs.cloud.google.com/compute/docs/instance-groups/how-stateful-migs-work) behavior
 without weakening upstream constraints or adding a controller. Runtime/backup replacement remains #190.
+
+## Optional stopped repository host
+
+`pgbackrest_repository = null` creates nothing. For JSON Keys with a declared `database`, an explicit
+`pgbackrest_repository = {}` prepares one private COS VM and its `agora-backup-repository` identity.
+It uses the database's reviewed zone, subnet and COS image, an **e2-micro** candidate and one 20 GiB
+**pd-standard** boot disk. The only capacity override is `machine_type = "e2-small"`; select it only
+after measurement. Neither profile is a proven backup-throughput or monthly-cost guarantee.
+
+The native instance resource converges to `TERMINATED`. Creation can briefly boot the VM before the
+provider stops it; the boot disk remains billable while stopped. The host has no startup payload,
+database disk, public IP, guest-attribute readiness or running repository daemon. Deletion is guarded.
+An image replacement needs an explicit maintenance review; the root grants no automatic rollout or
+application-release control over this host. Existing database metadata and coordinates are unchanged.
+
+Only protected foundation receives attachment permission on the repository identity. This root gives
+it no secret, registry or project-level role. The separate [bootstrap custody option](../../bootstrap/README.md#disabled-json-keys-native-backup-custody)
+grants its native bucket access after the identity exists. Bootstrap retains ownership of that bucket,
+its writer/recovery roles and disabled recovery identity. The standalone `pgbackrest_repository` output
+describes the stopped host; it is not published in the application coordinates or consumed by release.
+The existing protected input materializer and private configuration publisher preserve the opt-in.
+
+Activation needs a reviewed native TLS runtime/certificate lifecycle, host filesystem and egress
+limits, image delivery, monitoring and restore proof. Shared foundation remains the network-policy
+owner; it must authorize only the selected database-to-repository channel and required private Google
+APIs. Inspect inherited IAM and project metadata before provisioning. No new firewall, public address,
+NAT, startup script, secret grant, telemetry grant or daemon is supplied by this preparation.
+
+The design ceiling is EUR 10–15 additional per service per month, with minimum tested capacity as the
+target. Confirm local-currency compute/disk rates and budget storage generations, requests, networking,
+logs and temporary overlap before live approval. Compare the whole replacement against costs actually
+retired. Existing logical backups and daily snapshots remain active until their respective reviewed
+cutovers; retained logical recovery points keep their readers and images through expiration.
+
+Google documents the [native instance lifecycle](https://github.com/hashicorp/terraform-provider-google/blob/v8.2.0/website/docs/r/compute_instance.html.markdown)
+and [single attached service-account boundary](https://docs.cloud.google.com/compute/docs/access/service-accounts).
+This preparation proves resource intent only; effective isolation and recovery require the separate
+activation evidence in [the backup runbook](../../docs/runbooks/backup-and-restore-postgresql.md#native-backup-preparation).
 
 ## Cloud-blind validation
 
