@@ -128,6 +128,13 @@ protected foundation in that project, not routine release. Keeping the host idle
 VM/disk/snapshot cost; leaving `database = null` creates none of those resources. No existing production
 resource or state address is moved by this definition.
 
+Native backup repository networking is also disabled. The shared foundation's
+[`pgbackrest_repository_services` contract](../../environments/production/foundation#resource-inventory)
+requires the selected project's database/repository identities to exist first. This configuration
+publisher does not expose that opt-in yet: its reviewed publication, native TLS and host/container
+allow-list, and effective own-service/peer-denial checks belong to a separate activation change.
+The rules alone start nothing and grant neither operator access nor API permissions.
+
 ## Protected service-foundation plans
 
 This code path reuses the existing foundation environment, identity, global execution lock and
