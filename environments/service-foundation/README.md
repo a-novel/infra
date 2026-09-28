@@ -207,12 +207,12 @@ The optional `pgbackrest_repository.runtime` object installs public configuratio
 cloud-init and adds Reader on this project's two image repositories. It requires these generated
 deployment inputs; maintained image dependencies still use SemVer:
 
-| Field               | Required value                                                                                           |
-| ------------------- | -------------------------------------------------------------------------------------------------------- |
-| `server_image`      | Approved promoted digest at `REGION-docker.pkg.dev/PROJECT/agora-production/json-keys/database@sha256:…` |
-| `credentials_image` | Approved promoted digest at `REGION-docker.pkg.dev/PROJECT/agora-tooling/host-credentials@sha256:…`      |
-| `ca_version`        | Positive numeric version of the public CA secret                                                         |
-| `identity_version`  | Positive numeric version of the repository PEM identity secret                                           |
+| Field               | Required value                                                                                                   |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `server_image`      | Approved promoted digest at `REGION-docker.pkg.dev/PROJECT/agora-production/service-json-keys/database@sha256:…` |
+| `credentials_image` | Approved promoted digest at `REGION-docker.pkg.dev/PROJECT/agora-tooling/host-credentials@sha256:…`              |
+| `ca_version`        | Positive numeric version of the public CA secret                                                                 |
+| `identity_version`  | Positive numeric version of the repository PEM identity secret                                                   |
 
 The management project number and native bucket come from `state_bucket`. The server certificate
 must cover `agora-pgbackrest-json-keys.ZONE.c.PROJECT.internal`; the authorized database client CN is

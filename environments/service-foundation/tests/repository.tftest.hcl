@@ -104,12 +104,7 @@ run "private_stopped_repository" {
 run "prepared_runtime_stays_inactive" {
   command = plan
   variables {
-    pgbackrest_repository = { runtime = {
-      server_image      = "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-production/json-keys/database@sha256:${sha256("server")}"
-      credentials_image = "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-tooling/host-credentials@sha256:${sha256("credentials")}"
-      ca_version        = "1"
-      identity_version  = "2"
-    } }
+    pgbackrest_repository = { runtime = jsondecode(file("tests/fixtures/repository-runtime.json")) }
   }
 
   assert {
@@ -156,12 +151,9 @@ run "prepared_runtime_stays_inactive" {
 run "reject_peer_server_image" {
   command = plan
   variables {
-    pgbackrest_repository = { runtime = {
-      server_image      = "europe-west1-docker.pkg.dev/agora-peer-test/agora-production/json-keys/database@sha256:${sha256("server")}"
-      credentials_image = "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-tooling/host-credentials@sha256:${sha256("credentials")}"
-      ca_version        = "1"
-      identity_version  = "2"
-    } }
+    pgbackrest_repository = { runtime = merge(jsondecode(file("tests/fixtures/repository-runtime.json")), {
+      server_image = "europe-west1-docker.pkg.dev/agora-peer-test/agora-production/service-json-keys/database@sha256:${sha256("server")}"
+    }) }
   }
   expect_failures = [var.pgbackrest_repository]
 }
@@ -169,12 +161,9 @@ run "reject_peer_server_image" {
 run "reject_unresolved_loader_image" {
   command = plan
   variables {
-    pgbackrest_repository = { runtime = {
-      server_image      = "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-production/json-keys/database@sha256:${sha256("server")}"
+    pgbackrest_repository = { runtime = merge(jsondecode(file("tests/fixtures/repository-runtime.json")), {
       credentials_image = "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-tooling/host-credentials:v1.0.0"
-      ca_version        = "1"
-      identity_version  = "2"
-    } }
+    }) }
   }
   expect_failures = [var.pgbackrest_repository]
 }
@@ -182,12 +171,7 @@ run "reject_unresolved_loader_image" {
 run "reject_secret_alias" {
   command = plan
   variables {
-    pgbackrest_repository = { runtime = {
-      server_image      = "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-production/json-keys/database@sha256:${sha256("server")}"
-      credentials_image = "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-tooling/host-credentials@sha256:${sha256("credentials")}"
-      ca_version        = "latest"
-      identity_version  = "2"
-    } }
+    pgbackrest_repository = { runtime = merge(jsondecode(file("tests/fixtures/repository-runtime.json")), { ca_version = "latest" }) }
   }
   expect_failures = [var.pgbackrest_repository]
 }
@@ -195,12 +179,7 @@ run "reject_secret_alias" {
 run "reject_identity_argument_injection" {
   command = plan
   variables {
-    pgbackrest_repository = { runtime = {
-      server_image      = "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-production/json-keys/database@sha256:${sha256("server")}"
-      credentials_image = "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-tooling/host-credentials@sha256:${sha256("credentials")}"
-      ca_version        = "1"
-      identity_version  = "2\nExecStart=/usr/bin/true"
-    } }
+    pgbackrest_repository = { runtime = merge(jsondecode(file("tests/fixtures/repository-runtime.json")), { identity_version = "2\nExecStart=/usr/bin/true" }) }
   }
   expect_failures = [var.pgbackrest_repository]
 }
