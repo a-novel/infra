@@ -460,6 +460,36 @@ That epic must compare WAL archival, managed PostgreSQL, restore sequencing, enc
 retention, monitoring, and the measured operator burden. Do not bolt continuous WAL shipping onto
 these jobs without that design.
 
+## Native backup preparation
+
+The accepted JSON Keys pgBackRest design is staged under [#190](https://github.com/a-novel/infra/issues/190).
+Its [bootstrap custody option](../../bootstrap/README.md#disabled-json-keys-native-backup-custody)
+defaults to null and is not a backup deployment. Keep it absent from `BOOTSTRAP_TFVARS_JSON` until
+separate provisioning approval. Existing logical jobs, schedules, receipts and recovery objectives
+remain authoritative.
+
+Before any later opt-in, reconcile the proposed project with the protected JSON Keys service
+registration and existing `agora-database` identity. Review a private saved bootstrap plan with only
+the new native bucket, its two roles, disabled recovery account and exact-bucket bindings; no logical
+bucket or peer changes are allowed. Initial bucket creation needs approved bootstrap authority;
+existing bucket-scoped administration cannot create another bucket. A partially completed apply
+requires state reconciliation and a fresh reviewed plan, never a broader role or blind replay.
+
+After approved provisioning, independently inspect bucket policy, versioning, retention and inherited
+IAM. Prove intended own-bucket access and peer/policy denials before enabling a writer. Code-only
+tests prove neither effective access nor recoverability. Recovery remains disabled and receives no
+attachment/impersonation path in this slice. Retained objects are billable even without a running VM;
+do not enable continuous writes before expiry reconciliation and storage-cost monitoring are accepted.
+
+Runtime activation additionally requires reviewed container credential/egress access, service
+bootstrap, shutdown and admission behavior, native scheduling/monitoring, GCS verification, retention
+denial, catalog/WAL repair and source-loss recovery evidence. The
+[trial report](../../proofs/pgbackrest-gcs/result-20260927.md#remaining-adoption-gates) records the gaps.
+After exact-generation object repair, recover only an explicitly approved set/target into an isolated
+empty destination and verify SQL/application health. The old repository-time cutoff may still fail;
+never remove it or choose a different set automatically. Preserve all supported logical readers until
+their final retained recovery points expire.
+
 ## Cleanup
 
 Clear operator-shell identifiers when the procedure finishes:
