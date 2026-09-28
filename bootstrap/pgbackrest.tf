@@ -87,7 +87,7 @@ resource "google_storage_bucket_iam_member" "pgbackrest_writer" {
 
   bucket = google_storage_bucket.pgbackrest[each.key].name
   role   = google_project_iam_custom_role.pgbackrest["writer"].name
-  member = "serviceAccount:agora-database@${each.value.workload_project_id}.iam.gserviceaccount.com"
+  member = "serviceAccount:agora-backup-repository@${each.value.workload_project_id}.iam.gserviceaccount.com"
 }
 
 resource "google_storage_bucket_iam_member" "pgbackrest_recovery" {
@@ -106,7 +106,7 @@ output "json_keys_pgbackrest" {
     management_project = var.management_project_id
     workload_project   = var.json_keys_pgbackrest.workload_project_id
     bucket             = google_storage_bucket.pgbackrest["json-keys"].name
-    writer             = "agora-database@${var.json_keys_pgbackrest.workload_project_id}.iam.gserviceaccount.com"
+    writer             = "agora-backup-repository@${var.json_keys_pgbackrest.workload_project_id}.iam.gserviceaccount.com"
     recovery           = google_service_account.pgbackrest_recovery["json-keys"].email
   }
 

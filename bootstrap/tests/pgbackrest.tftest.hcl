@@ -88,7 +88,7 @@ run "isolated_native_custody" {
       role   = binding.role
       member = binding.member
       } } == { for purpose, member in {
-      writer   = "serviceAccount:agora-database@agora-json-keys-test.iam.gserviceaccount.com"
+      writer   = "serviceAccount:agora-backup-repository@agora-json-keys-test.iam.gserviceaccount.com"
       recovery = "serviceAccount:pgbr-json-keys-recovery@agora-management-test.iam.gserviceaccount.com"
       } : purpose => {
       bucket = google_storage_bucket.pgbackrest["json-keys"].name
@@ -105,6 +105,7 @@ run "isolated_native_custody" {
       google_storage_bucket_iam_member.foundation_admin["pgbackrest-json-keys"].bucket == google_storage_bucket.pgbackrest["json-keys"].name,
       google_storage_bucket.backups.name != google_storage_bucket.pgbackrest["json-keys"].name,
       output.json_keys_pgbackrest.service == "json-keys",
+      output.json_keys_pgbackrest.writer == "agora-backup-repository@agora-json-keys-test.iam.gserviceaccount.com",
     ])
     error_message = "Bind only the selected host and disabled recovery identity to native storage, with its existing administrator."
   }
