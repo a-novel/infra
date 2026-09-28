@@ -11,6 +11,7 @@ import (
 
 type workflow struct {
 	On          object
+	Inputs      object
 	Permissions map[string]string
 	Concurrency object
 	Jobs        map[string]workflowJob
@@ -65,12 +66,20 @@ func TestVerifierArtifact(t *testing.T) {
 	t.Parallel()
 	publication := loadWorkflow(t, "workflows/publish-rollout-verifier.yaml")
 	build, publish := publication.Jobs["build"], publication.Jobs["publish"]
-	action := loadWorkflow(t, "actions/build-rollout-verifier/action.yaml").Runs.Steps
+	tooling := loadWorkflow(t, "actions/build-tooling-image/action.yaml")
+	action := tooling.Runs.Steps
 	image := action[stepIndex(t, action, "docker/build-push-action@")]
 	scan := action[stepIndex(t, action, "aquasecurity/trivy-action@")]
 	upload := build.Steps[stepIndex(t, build.Steps, "actions/upload-artifact@")]
 	download := publish.Steps[stepIndex(t, publish.Steps, "actions/download-artifact@")]
 	attest := publish.Steps[stepIndex(t, publish.Steps, "actions/attest@")]
+	var ciImages []string
+	for _, step := range loadWorkflow(t, "workflows/main.yaml").Jobs["scan-infrastructure"].Steps {
+		if step.Uses == "$/.github/actions/build-tooling-image" {
+			selected, _ := step.With["image_name"].(string)
+			ciImages = append(ciImages, selected)
+		}
+	}
 	for _, testCase := range []struct {
 		name           string
 		actual, expect any
@@ -87,6 +96,9 @@ func TestVerifierArtifact(t *testing.T) {
 		{"OnlyImageArchive", upload.With["path"], "${{ runner.temp }}/rollout-verifier.tar"},
 		{"MissingArchiveFails", upload.With["if-no-files-found"], "error"},
 		{"NoBuildPush", image.With["push"], false},
+		{"DefaultPublicationImage", nested(tooling.Inputs, "image_name")["default"], "rollout-verifier"},
+		{"BothImagesScanned", ciImages, []string{"", "host-credentials"}},
+		{"PublicationUsesDefault", build.Steps[stepIndex(t, build.Steps, "build-tooling-image")].With["image_name"], nil},
 		{"SinglePlatform", image.With["platforms"], "linux/amd64"},
 		{"ScannedArchive", image.With["outputs"], "type=docker,dest=" + scan.With["input"].(string)},
 		{"BlockingScan", []any{scan.With["scanners"], scan.With["severity"], scan.With["exit-code"]}, []any{"vuln,secret", "HIGH,CRITICAL", "1"}},
@@ -106,12 +118,12 @@ func TestVerifierArtifact(t *testing.T) {
 		require.NoError(t, err)
 		require.NotRegexp(t, `checkout@|google-github-actions|secrets\.|build-push-action|docker (build|run)|go run|go build`, string(encoded))
 		for _, steps := range [][]workflowStep{build.Steps, loadWorkflow(t, "workflows/main.yaml").Jobs["scan-infrastructure"].Steps} {
-			stepIndex(t, steps, "$/.github/actions/build-rollout-verifier")
+			stepIndex(t, steps, "$/.github/actions/build-tooling-image")
 		}
 		for _, pair := range [][2]string{{"actions/download-artifact@", "docker load"}, {"docker load", "docker/login-action@"}, {"docker/login-action@", "docker push"}, {"docker push", "actions/attest@"}, {"actions/attest@", "GITHUB_STEP_SUMMARY"}} {
 			require.Less(t, stepIndex(t, publish.Steps, pair[0]), stepIndex(t, publish.Steps, pair[1]))
 		}
-		require.Less(t, stepIndex(t, build.Steps, "$/.github/actions/build-rollout-verifier"), stepIndex(t, build.Steps, "actions/upload-artifact@"))
+		require.Less(t, stepIndex(t, build.Steps, "$/.github/actions/build-tooling-image"), stepIndex(t, build.Steps, "actions/upload-artifact@"))
 		require.Less(t, stepIndex(t, action, "docker/build-push-action@"), stepIndex(t, action, "aquasecurity/trivy-action@"))
 	})
 }
