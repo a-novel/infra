@@ -1,7 +1,15 @@
 variable "pgbackrest_repository" {
-  description = "Optional stopped JSON Keys repository host. Runtime, network access and backup activation need separate review."
-  type        = object({ machine_type = optional(string, "e2-micro") })
-  default     = null
+  description = "Optional stopped JSON Keys repository host. Runtime installs a disabled service; activation needs separate review."
+  type = object({
+    machine_type = optional(string, "e2-micro")
+    runtime = optional(object({
+      server_image      = string
+      credentials_image = string
+      ca_version        = string
+      identity_version  = string
+    }))
+  })
+  default = null
 
   validation {
     condition = var.pgbackrest_repository == null ? true : (
@@ -9,6 +17,22 @@ variable "pgbackrest_repository" {
       contains(["e2-micro", "e2-small"], var.pgbackrest_repository.machine_type)
     )
     error_message = "The repository pilot requires a JSON Keys database and a small reviewed E2 profile."
+  }
+
+  validation {
+    condition = try(var.pgbackrest_repository.runtime, null) == null ? true : alltrue([
+      can(regex("^${var.region}-docker[.]pkg[.]dev/${var.project_id}/agora-production/json-keys/database@sha256:[0-9a-f]{64}$", var.pgbackrest_repository.runtime.server_image)),
+      can(regex("^${var.region}-docker[.]pkg[.]dev/${var.project_id}/agora-tooling/host-credentials@sha256:[0-9a-f]{64}$", var.pgbackrest_repository.runtime.credentials_image)),
+    ])
+    error_message = "Repository runtime images must be approved promoted digests in this service project's application and tooling repositories."
+  }
+
+  validation {
+    condition = try(var.pgbackrest_repository.runtime, null) == null ? true : alltrue([
+      for version in [var.pgbackrest_repository.runtime.ca_version, var.pgbackrest_repository.runtime.identity_version] :
+      can(regex("^[1-9][0-9]{0,19}$", version))
+    ])
+    error_message = "Repository TLS versions must be positive numeric versions, never aliases."
   }
 }
 
@@ -68,7 +92,7 @@ resource "google_compute_instance" "repository" {
     scopes = ["cloud-platform"]
   }
 
-  metadata = {
+  metadata = merge({
     block-project-ssh-keys    = "TRUE"
     cos-update-strategy       = "update_disabled"
     disable-legacy-endpoints  = "TRUE"
@@ -77,7 +101,7 @@ resource "google_compute_instance" "repository" {
     google-logging-enabled    = "false"
     google-monitoring-enabled = "false"
     serial-port-enable        = "FALSE"
-  }
+  }, each.value.runtime == null ? {} : { user-data = local.repository_cloud_config[each.key] })
 
   scheduling {
     automatic_restart   = true

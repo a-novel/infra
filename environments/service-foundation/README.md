@@ -183,13 +183,13 @@ It uses the database's reviewed zone, subnet and COS image, an **e2-micro** cand
 after measurement. Neither profile is a proven backup-throughput or monthly-cost guarantee.
 
 The native instance resource converges to `TERMINATED`. Creation can briefly boot the VM before the
-provider stops it; the boot disk remains billable while stopped. The host has no startup payload,
-database disk, public IP, guest-attribute readiness or running repository daemon. Deletion is guarded.
+provider stops it; the boot disk remains billable while stopped. The host has no database disk,
+public IP, guest-attribute readiness or running repository daemon. Deletion is guarded.
 An image replacement needs an explicit maintenance review; the root grants no automatic rollout or
 application-release control over this host. Existing database metadata and coordinates are unchanged.
 
-Only protected foundation receives attachment permission on the repository identity. This root gives
-it no secret, registry or project-level role. The separate [bootstrap custody option](../../bootstrap/README.md#disabled-json-keys-native-backup-custody)
+Only protected foundation receives attachment permission on the repository identity. With runtime
+absent, this root gives it no secret, registry or project-level role. The separate [bootstrap custody option](../../bootstrap/README.md#disabled-json-keys-native-backup-custody)
 grants its native bucket access after the identity exists. Bootstrap retains ownership of that bucket,
 its writer/recovery roles and disabled recovery identity. The standalone `pgbackrest_repository` output
 describes the stopped host; it is not published in the application coordinates or consumed by release.
@@ -199,7 +199,54 @@ Activation needs a reviewed native TLS runtime/certificate lifecycle, host files
 limits, image delivery, monitoring and restore proof. Shared foundation remains the network-policy
 owner; it must authorize only the selected database-to-repository channel and required private Google
 APIs. Inspect inherited IAM and project metadata before provisioning. No new firewall, public address,
-NAT, startup script, secret grant, telemetry grant or daemon is supplied by this preparation.
+NAT, secret grant or telemetry grant is supplied by this preparation.
+
+### Prepared native runtime
+
+The optional `pgbackrest_repository.runtime` object installs public configuration through COS
+cloud-init and adds Reader on this project's two image repositories. It requires these generated
+deployment inputs; maintained image dependencies still use SemVer:
+
+| Field               | Required value                                                                                           |
+| ------------------- | -------------------------------------------------------------------------------------------------------- |
+| `server_image`      | Approved promoted digest at `REGION-docker.pkg.dev/PROJECT/agora-production/json-keys/database@sha256:…` |
+| `credentials_image` | Approved promoted digest at `REGION-docker.pkg.dev/PROJECT/agora-tooling/host-credentials@sha256:…`      |
+| `ca_version`        | Positive numeric version of the public CA secret                                                         |
+| `identity_version`  | Positive numeric version of the repository PEM identity secret                                           |
+
+The management project number and native bucket come from `state_bucket`. The server certificate
+must cover `agora-pgbackrest-json-keys.ZONE.c.PROJECT.internal`; the authorized database client CN is
+`agora-database.PROJECT`. Reconcile these names with the separately approved issuer and zonal DNS
+before activation. Input syntax checks do not prove provenance, effective grants or certificate custody.
+
+Boot only writes the configuration and registers `agora-backup-repository.service`; it neither pulls
+images nor reads secrets nor starts/enables the service. This also covers the brief creation boot.
+COS recreates `/etc` each boot. There is no `[Install]` target or automatic service restart.
+
+One systemd service owns the future runtime. Its pre-start commands pull the exact artifacts through
+COS's metadata-backed registry helper, create a private ephemeral parent and run the existing
+[credential loader](../../cmd/host-credentials/README.md). The server starts only after successful
+delivery. Both containers run as UID/GID 999 with bounded resources, a read-only root and no host
+control socket. Only the delivered directory is mounted read-only into the server. Stop/failure
+cleanup reaps the two service-owned container names before systemd removes its runtime directory.
+No custom supervisor or credential proxy is involved.
+
+The database client and repository process share the service's **backup-writer trust boundary**,
+including server-readable files and writer authority. TLS authenticates the client; it does not
+hide the server's identity from it. Independent recovery authority remains outside that boundary.
+The dedicated host has no database password or application secrets. PostgreSQL's direct metadata
+denial is unchanged. Effective peer, policy and recovery denials still require live verification.
+
+Do not start this unit until publication/promotion, credential issuance and expiry/revocation,
+effective IAM/egress, operation admission, monitoring and a scoped COS lifecycle proof are approved.
+That proof must include failed credential delivery, interrupted startup, server stop and restart,
+and Docker/host failure. Unit-active is not backup readiness. Metadata updates do not reload a running
+service; changing versions requires a separately admitted stopped-consumer lifecycle. Existing
+backup writers and daily snapshots remain unchanged.
+
+References: [COS cloud-init](https://docs.cloud.google.com/container-optimized-os/docs/how-to/create-configure-instance),
+[systemd service cleanup](https://github.com/systemd/systemd/blob/v257/man/systemd.service.xml),
+[runtime directory lifetime](https://github.com/systemd/systemd/blob/v257/man/systemd.exec.xml).
 
 The design ceiling is EUR 10–15 additional per service per month, with minimum tested capacity as the
 target. Confirm local-currency compute/disk rates and budget storage generations, requests, networking,
