@@ -1,0 +1,16 @@
+[global]
+repo1-host=${server_name}
+repo1-host-type=tls
+repo1-host-port=8432
+repo1-host-ca-file=/run/pgbackrest/ca.pem
+repo1-host-cert-file=/run/pgbackrest/identity.pem
+repo1-host-key-file=/run/pgbackrest/identity.pem
+repo1-path=/json-keys
+expire-auto=n
+log-level-console=info
+log-level-file=off
+
+[json-keys]
+pg1-path=/var/lib/postgresql/18/docker
+pg1-user=agora_json_keys
+pg1-database=agora_json_keys

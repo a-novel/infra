@@ -152,16 +152,49 @@ The project owner supplies Compute Instance Admin only to protected foundation a
 to Google's Compute/MIG agents. Shared foundation supplies exact-subnet Network User to the caller and
 MIG agent; the VM runtime gets no network-administration role. Verify inherited authority separately.
 
-Both foundation paths use the same [host assets](../../assets/database-host), relocated without changing
-their bytes. The current production templates, resource addresses and backup/receipt formats are unchanged.
-Unlike the legacy coordinator, this root owns its **idle** group metadata without `ignore_changes`: no
-image, credential versions or release revision are selected. It must not adopt an active group or be
-paired with an external metadata writer. Future activation must explicitly replace this idle-only
-contract with one reviewed owner and safe maintenance/reconciliation behavior, not bypass it with drift.
-No routine release host mutation or automatic migration is granted here.
+Both foundation paths reuse the same [host preparation adapter](../../assets/database-host).
+Without `database_runtime`, this root owns **idle** group metadata: no image, credential versions or
+release revision are selected. The legacy production caller keeps its existing behavior. No routine
+release host mutation or automatic migration is granted here. This root must not adopt an active group
+or be paired with an external metadata writer.
+
+### Prepared database lifecycle
+
+`database_runtime` opts the JSON Keys host into a **disabled** systemd lifecycle under protected
+foundation maintenance. It requires `pgbackrest_repository.runtime` and reuses its `server_image`,
+`credentials_image` and `ca_version`, so client/server compatibility has one image selector. Supply
+`revision` (full reviewed commit), `password_version`, `backup_password_version` and `identity_version`
+(positive numeric versions of the database owner's password, logical-backup password and client TLS
+identity). No secret payload is stored in metadata. The tooling repository adds Reader only for the
+database identity; TLS-secret access remains separate bootstrap custody.
+
+Cloud-init installs the shared adapter, client configuration and `agora-database.service`, then only
+reloads systemd. It replaces the metadata startup/shutdown scripts; no unit is enabled or started.
+Foundation owns the selected group metadata without `ignore_changes`. Routine API releases own none
+of it. Template preparation does not update a running member or prove database readiness.
+
+On a future approved start, the existing loader delivers TLS credentials into ephemeral storage;
+the shared adapter retains disk, image, password and health checks. systemd receives readiness only
+after health and password activation, waits for the container's exit and bounds failure retries to
+three starts per ten minutes. Docker restart is disabled for this path. Stop drains PostgreSQL before
+reaping the exact consumers and removing runtime credentials. No new supervisor or boot implementation
+is introduced. The client expects the reviewed PostgreSQL 18 image layout and UID/GID 999.
+
+Only the selected repository IP on TCP 8432 is allowed out of the database bridge; host-gateway,
+metadata and other initiated traffic remain blocked. Its certificate name is mapped explicitly, with
+container DNS still disabled and raw-packet capability removed. The read-only client credential mount
+contains no cloud token. WAL archiving and its command are explicitly off; no backup, restore, expiry
+or schedule is run. Daily logical backups remain unchanged.
+
+Before activation, separately review operation admission, exact image/credential evidence, empty-disk
+versus existing-data handling, network/IAM denials, TLS delivery failure, startup interruption, crash
+restart and Docker/host shutdown on COS. Neither these mocked tests nor the earlier offline TLS proof
+substitutes for that rehearsal. A database image change is maintenance, not an API rollout; do not
+automatically replay migrations or downgrade an existing data directory.
 
 The published document includes the version-1 `database` output without granting state access. A stable
-MIG and private IP are only provisioning evidence. Before activation, verify the boot-bound `idle` status, allowed/denied host
+MIG and private IP are only provisioning evidence. Before activation, verify the disabled unit (or the
+legacy boot-bound `idle` status), allowed/denied host
 and container network paths, exact secret/image access, image provenance, application health and backup/
 restore evidence. The current host firewall still addresses the legacy database IPs; approving the new
 IP rules and proving peer denial belongs to the separate network/cutover change. Do not route an API to
