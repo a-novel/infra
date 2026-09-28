@@ -7,7 +7,8 @@ and existing backups are unchanged.
 
 The one-shot command uses Google's Secret Manager client and the VM's attached
 identity. It does not use local ADC, issue certificates, rotate credentials, or
-run a credential service. A future systemd unit owns ordering and lifecycle.
+run a credential service. The [disabled repository unit](../../environments/service-foundation/README.md#prepared-native-runtime)
+owns ordering and lifecycle; database-host delivery is not wired.
 
 ## Contract
 
@@ -57,7 +58,9 @@ The [native transport proof](../../proofs/pgbackrest/README.md#native-repository
 also shows that an authorized client can read a server-readable synthetic file outside its
 repository. Private file modes and read-only mounts are not confidentiality barriers against
 that process. The loader's safe delivery contract does not establish server-key confinement;
-host wiring remains blocked on the reviewed client/process trust boundary.
+the database client and repository process share the accepted per-service backup-writer trust
+boundary. Recovery authority remains separate. Prepared host wiring stays disabled pending the
+effective IAM/egress and lifecycle proofs.
 
 ## Checks
 

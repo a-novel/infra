@@ -90,12 +90,12 @@ running through that process. This test reads only synthetic probe data, not cre
 endpoints share a user and container; separate mounts, Docker/COS isolation, GCS options and
 metadata access are not established by this proof.
 
-The dedicated repository host therefore remains **disabled and unwired**. Its filesystem, egress
-and identity restrictions must hold independently of client-controlled options. Before wiring it,
-review whether the service's database client and repository process may share one backup-writer
-trust boundary, with recovery authority kept separate, or whether a different transport is needed.
-Do not silently claim credential confinement or relax PostgreSQL's metadata denial. That decision
-and the live-proof gates remain in [#190](https://github.com/a-novel/infra/issues/190).
+The accepted code-only integration treats the service's database client and repository process as
+one backup-writer trust boundary, with independent recovery authority. The
+[prepared host runtime](../../environments/service-foundation/README.md#prepared-native-runtime)
+remains disabled. Its effective filesystem, egress and IAM limits need a separate live proof;
+PostgreSQL's direct metadata denial is unchanged. This proof does not establish credential
+confinement. Acceptance and remaining activation gates live in [#190](https://github.com/a-novel/infra/issues/190).
 
 ### Local measurements
 
