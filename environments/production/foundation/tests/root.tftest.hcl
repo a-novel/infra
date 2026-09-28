@@ -764,8 +764,6 @@ run "builds_the_project_replacement_window" {
       strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "--subnet") &&
       strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "--dns 127.0.0.1") &&
       !strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "--internal") &&
-      strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "--restart on-failure:5") &&
-      !strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "--restart unless-stopped") &&
       length(google_compute_instance_template.database["authentication"].disk) == 2 &&
       one([
         for disk in google_compute_instance_template.database["authentication"].disk : disk

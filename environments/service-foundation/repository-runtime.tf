@@ -21,7 +21,7 @@ locals {
         content = templatefile("${path.module}/templates/repository.service.tftpl", merge(runtime, {
           project           = var.project_id
           management_number = trimprefix(trimsuffix(var.state_bucket, "-tofu-state"), "${var.management_project_id}-")
-          server_name       = "agora-pgbackrest-json-keys.${var.database.zone}.c.${var.project_id}.internal"
+          server_name       = local.repository_name
         }))
       },
     ]

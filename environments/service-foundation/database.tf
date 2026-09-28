@@ -1,5 +1,5 @@
-# This root prepares storage only. Database activation and disruptive maintenance
-# need their own reviewed contract before any operational writer is connected.
+# Foundation prepares storage and an optional disabled lifecycle. Activation and
+# disruptive maintenance require separate review; API releases never own this host.
 locals {
   database = var.database == null ? {} : { host = var.database }
   database_profiles = {
@@ -84,7 +84,7 @@ resource "google_compute_instance_template" "database" {
   tags           = ["agora-database-${var.service}"]
   labels         = { component = var.service, role = "database" }
 
-  metadata = {
+  metadata = merge({
     agora-database-service             = var.service
     agora-database-data-disk-id        = google_compute_disk.database[each.key].disk_id
     agora-database-container-cpu       = tostring(each.value.container_cpu)
@@ -101,9 +101,12 @@ resource "google_compute_instance_template" "database" {
     google-logging-enabled             = "true"
     google-monitoring-enabled          = "true"
     serial-port-enable                 = "FALSE"
-    shutdown-script                    = file("${path.module}/../../assets/database-host/shutdown.sh")
-  }
-  metadata_startup_script = file("${path.module}/../../assets/database-host/startup.sh")
+    }, var.database_runtime == null ? {
+    shutdown-script = file("${path.module}/../../assets/database-host/shutdown.sh")
+    } : {
+    user-data = try(local.database_cloud_config[each.key], "")
+  })
+  metadata_startup_script = var.database_runtime == null ? file("${path.module}/../../assets/database-host/startup.sh") : null
 
   disk {
     auto_delete  = true
@@ -169,10 +172,10 @@ resource "google_compute_instance_group_manager" "database" {
   }
   all_instances_config {
     metadata = {
-      "agora-${var.service}-database-image"                   = ""
-      "agora-${var.service}-postgres-password-version"        = "0"
-      "agora-${var.service}-postgres-backup-password-version" = "0"
-      agora-database-release-revision                         = ""
+      "agora-${var.service}-database-image"                   = try(local.database_runtime[each.key].server_image, "")
+      "agora-${var.service}-postgres-password-version"        = try(local.database_runtime[each.key].password_version, "0")
+      "agora-${var.service}-postgres-backup-password-version" = try(local.database_runtime[each.key].backup_password_version, "0")
+      agora-database-release-revision                         = try(local.database_runtime[each.key].revision, "")
     }
   }
   update_policy {

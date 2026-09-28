@@ -1,6 +1,7 @@
 #!/bin/bash
 
-# Prepares the service-owned disk and converges its pinned PostgreSQL container on every boot.
+# Prepares the service-owned disk and its selected PostgreSQL container.
+# No arguments: legacy boot. --supervise: native systemd lifecycle, with TLS client only.
 # Release metadata contains only immutable image references and numeric secret-version identifiers.
 
 set -euo pipefail
@@ -19,6 +20,7 @@ READINESS_REVISION="invalid"
 SECRET_TEMP_FILES=()
 DATABASE_COMPONENT=""
 DATABASE_CONTAINERS=()
+DATABASE_SUPERVISED=false
 
 remove_database_secret_files() {
     if [ -n "${DATABASE_COMPONENT}" ]; then
@@ -206,13 +208,17 @@ configure_database_firewall() {
 
     # Inbound VPC connections are forwarded through Docker's published-port
     # rules. Their replies may return, while every connection initiated by a
-    # database container is rejected, including metadata and peer access.
+    # database container is rejected, except the opt-in TLS repository endpoint.
     iptables -w -N "${docker_chain}" 2>/dev/null || true
     iptables -w -F "${docker_chain}"
     iptables -w -A "${docker_chain}" \
         -s "${DATABASE_BRIDGE_RANGE}" \
         -m conntrack --ctstate ESTABLISHED,RELATED \
         -j RETURN
+    if [ "${DATABASE_SUPERVISED}" = true ]; then
+        iptables -w -A "${docker_chain}" -s "${DATABASE_BRIDGE_RANGE}" \
+            -d "${PGBACKREST_REPOSITORY_IP}" -p tcp --dport 8432 -j RETURN
+    fi
     iptables -w -A "${docker_chain}" -s "${DATABASE_BRIDGE_RANGE}" -j REJECT
     while iptables -w -D DOCKER-USER -j "${docker_chain}" 2>/dev/null; do :; done
     iptables -w -I DOCKER-USER 1 -j "${docker_chain}"
@@ -322,6 +328,21 @@ start_database() {
     local elapsed=0
     local health=""
     local running=""
+    local restart="on-failure:5"
+    local client_options=()
+    local postgres_options=()
+
+    if [ "${DATABASE_SUPERVISED}" = true ]; then
+        restart=no
+        client_options=(
+            --cap-drop=NET_RAW
+            --add-host "${PGBACKREST_REPOSITORY_NAME}:${PGBACKREST_REPOSITORY_IP}"
+            --mount "type=bind,source=/etc/agora-database/pgbackrest.conf,target=/etc/pgbackrest/pgbackrest.conf,readonly"
+            --mount "type=bind,source=/run/agora/pgbackrest/current,target=/run/pgbackrest,readonly"
+        )
+        # Prepared client configuration must not enable backups on an existing disk.
+        postgres_options=(-c archive_mode=off -c archive_command=)
+    fi
 
     prepare_database_directory "${image}" "${data_directory}"
 
@@ -339,7 +360,7 @@ start_database() {
         --network "${network_name}" \
         --dns 127.0.0.1 \
         --publish "${DATABASE_IP}:${host_port}:5432" \
-        --restart on-failure:5 \
+        --restart "${restart}" \
         --stop-timeout 60 \
         --cpus "${CONTAINER_CPU}" \
         --memory "${CONTAINER_MEMORY_MB}m" \
@@ -356,12 +377,14 @@ start_database() {
         --mount "type=bind,source=${password_file},target=/run/agora-postgres-password,readonly" \
         --mount "type=bind,source=${backup_password_file},target=/run/agora-postgres-backup-password,readonly" \
         --tmpfs "/var/run/postgresql:rw,nosuid,nodev,size=16m" \
+        "${client_options[@]}" \
         "${image}" \
         postgres \
         -c "listen_addresses=*" \
         -c "agora.database_image=${image}" \
         -c "max_connections=${MAX_CONNECTIONS}" \
-        -c "password_encryption=scram-sha-256" >/dev/null
+        -c "password_encryption=scram-sha-256" \
+        "${postgres_options[@]}" >/dev/null
 
     until [ "${health}" = "healthy" ]; do
         running="$(docker inspect --format '{{.State.Running}}' "${container_name}")"
@@ -388,6 +411,32 @@ start_database() {
 
     activate_database_credentials "${container_name}" "${database_user}" "${database_name}"
 }
+
+supervise_database() {
+    local status
+
+    cleanup
+    TOKEN_CONFIG=""
+    SECRET_TEMP_FILES=()
+    # READY follows health and password activation, not merely container creation.
+    systemd-notify --ready
+    status="$(docker wait "agora-postgres-${DATABASE_COMPONENT}")"
+    publish_database_status stopped
+    return "${status}"
+}
+
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+    return
+fi
+
+case "$*" in
+    "") ;;
+    --supervise)
+        DATABASE_SUPERVISED=true
+        : "${PGBACKREST_REPOSITORY_NAME:?}" "${PGBACKREST_REPOSITORY_IP:?}"
+        ;;
+    *) printf 'Usage: %s [--supervise]\n' "$0" >&2; exit 64 ;;
+esac
 
 DATABASE_COMPONENT="$(attribute_get agora-database-service)"
 case "${DATABASE_COMPONENT}" in
@@ -545,3 +594,6 @@ start_database \
 
 publish_database_status healthy
 printf 'Database release %s is healthy.\n' "${RELEASE_REVISION}"
+if [ "${DATABASE_SUPERVISED}" = true ]; then
+    supervise_database
+fi

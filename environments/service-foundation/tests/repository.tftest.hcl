@@ -158,6 +158,86 @@ run "reject_peer_server_image" {
   expect_failures = [var.pgbackrest_repository]
 }
 
+run "prepared_database_lifecycle" {
+  command = plan
+  variables {
+    pgbackrest_repository = { runtime = jsondecode(file("tests/fixtures/repository-runtime.json")) }
+    database_runtime      = jsondecode(file("tests/fixtures/database-runtime.json"))
+  }
+  override_resource {
+    target = google_compute_instance.repository
+    values = { network_interface = { network_ip = "10.90.0.3" } }
+  }
+  assert {
+    condition = alltrue([
+      google_compute_instance_template.database["host"].metadata_startup_script == null,
+      !contains(keys(google_compute_instance_template.database["host"].metadata), "shutdown-script"),
+      google_compute_instance_template.database["host"].metadata["user-data"] == local.database_cloud_config.host,
+      yamldecode(local.database_cloud_config.host).runcmd == [["systemctl", "daemon-reload"]],
+      length(yamldecode(local.database_cloud_config.host).write_files) == 4,
+      google_compute_instance_group_manager.database["host"].all_instances_config[0].metadata == tomap({
+        agora-json-keys-database-image                   = var.pgbackrest_repository.runtime.server_image
+        agora-json-keys-postgres-password-version        = "3"
+        agora-json-keys-postgres-backup-password-version = "4"
+        agora-database-release-revision                  = var.database_runtime.revision
+      }),
+      google_artifact_registry_repository_iam_member.database_tooling["host"].repository == "agora-tooling",
+      google_artifact_registry_repository_iam_member.database_tooling["host"].role == "roles/artifactregistry.reader",
+      google_artifact_registry_repository_iam_member.database_tooling["host"].member == "serviceAccount:${google_service_account.database["host"].email}",
+    ])
+    error_message = "Preparation must replace legacy boot ownership without starting PostgreSQL or publishing secrets."
+  }
+  assert {
+    condition = alltrue([for option in [
+      "Type=notify", "Restart=on-failure", "StartLimitBurst=3", "RuntimeDirectoryPreserve=no",
+      "PGBACKREST_REPOSITORY_IP=10.90.0.3", "--endpoint=database --ca-version=1 --identity-version=5",
+      "--name=agora-database.agora-json-keys-test", "--supervise", "ExecStopPost=",
+    ] : strcontains(yamldecode(local.database_cloud_config.host).write_files[3].content, option)])
+    error_message = "Systemd must own bounded restart, exact TLS delivery and stopped-consumer cleanup."
+  }
+  assert {
+    condition = alltrue([for option in [
+      "repo1-host=${local.repository_name}", "repo1-host-type=tls", "repo1-host-port=8432",
+      "repo1-host-key-file=/run/pgbackrest/identity.pem", "expire-auto=n",
+      "pg1-path=/var/lib/postgresql/18/docker", "pg1-user=agora_json_keys",
+    ] : strcontains(yamldecode(local.database_cloud_config.host).write_files[2].content, option)])
+    error_message = "The client must use native TLS and the selected PostgreSQL 18 layout, without GCS credentials."
+  }
+}
+
+run "reject_database_without_repository_runtime" {
+  command = plan
+  variables { database_runtime = jsondecode(file("tests/fixtures/database-runtime.json")) }
+  expect_failures = [var.database_runtime]
+}
+
+run "reject_database_password_alias" {
+  command = plan
+  variables {
+    pgbackrest_repository = { runtime = jsondecode(file("tests/fixtures/repository-runtime.json")) }
+    database_runtime      = merge(jsondecode(file("tests/fixtures/database-runtime.json")), { password_version = "latest" })
+  }
+  expect_failures = [var.database_runtime]
+}
+
+run "reject_database_identity_injection" {
+  command = plan
+  variables {
+    pgbackrest_repository = { runtime = jsondecode(file("tests/fixtures/repository-runtime.json")) }
+    database_runtime      = merge(jsondecode(file("tests/fixtures/database-runtime.json")), { identity_version = "5\nExecStart=/bin/true" })
+  }
+  expect_failures = [var.database_runtime]
+}
+
+run "reject_database_revision" {
+  command = plan
+  variables {
+    pgbackrest_repository = { runtime = jsondecode(file("tests/fixtures/repository-runtime.json")) }
+    database_runtime      = merge(jsondecode(file("tests/fixtures/database-runtime.json")), { revision = "master" })
+  }
+  expect_failures = [var.database_runtime]
+}
+
 run "reject_unresolved_loader_image" {
   command = plan
   variables {

@@ -7,8 +7,9 @@ and existing backups are unchanged.
 
 The one-shot command uses Google's Secret Manager client and the VM's attached
 identity. It does not use local ADC, issue certificates, rotate credentials, or
-run a credential service. The [disabled repository unit](../../environments/service-foundation/README.md#prepared-native-runtime)
-owns ordering and lifecycle; database-host delivery is not wired.
+run a credential service. The disabled [repository](../../environments/service-foundation/README.md#prepared-native-runtime)
+and [database](../../environments/service-foundation/README.md#prepared-database-lifecycle) units own
+ordering and lifecycle. Neither starts automatically.
 
 ## Contract
 
