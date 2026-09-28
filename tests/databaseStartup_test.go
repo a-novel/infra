@@ -57,7 +57,11 @@ if [ "$DATABASE_SUPERVISED" = true ]; then supervise_database; fi
 			expectCode(t, tc.code, code, out)
 			args := strings.Split(strings.TrimSpace(read(t, filepath.Join(f.dir, "arguments"))), "\n")
 			native := tc.supervised == "true"
-			require.Equal(t, native, strings.Contains(strings.Join(args, " "), "--restart no"))
+			restart := "on-failure:5"
+			if native {
+				restart = "no"
+			}
+			require.Contains(t, strings.Join(args, " "), "--restart "+restart)
 			require.Equal(t, native, strings.Contains(strings.Join(args, " "), "archive_mode=off"))
 			require.Equal(t, native, strings.Contains(strings.Join(args, " "), "repository.test:10.90.0.3"))
 			require.Equal(t, native && tc.health == "healthy" && tc.passwordStatus == "0", strings.Contains(out, "credentials\nready\n"))
