@@ -13,6 +13,7 @@ type workflow struct {
 	On          object
 	Inputs      object
 	Permissions map[string]string
+	Env         map[string]string
 	Concurrency object
 	Jobs        map[string]workflowJob
 	Runs        workflowJob
@@ -62,7 +63,7 @@ func TestNativeReleaseBoundary(t *testing.T) {
 	}
 }
 
-func TestVerifierArtifact(t *testing.T) {
+func TestToolingArtifact(t *testing.T) {
 	t.Parallel()
 	publication := loadWorkflow(t, "workflows/publish-rollout-verifier.yaml")
 	build, publish := publication.Jobs["build"], publication.Jobs["publish"]
@@ -73,6 +74,7 @@ func TestVerifierArtifact(t *testing.T) {
 	upload := build.Steps[stepIndex(t, build.Steps, "actions/upload-artifact@")]
 	download := publish.Steps[stepIndex(t, publish.Steps, "actions/download-artifact@")]
 	attest := publish.Steps[stepIndex(t, publish.Steps, "actions/attest@")]
+	selection := nested(publication.On, "workflow_dispatch", "inputs", "tool")
 	var ciImages []string
 	for _, step := range loadWorkflow(t, "workflows/main.yaml").Jobs["scan-infrastructure"].Steps {
 		if step.Uses == "$/.github/actions/build-tooling-image" {
@@ -86,23 +88,28 @@ func TestVerifierArtifact(t *testing.T) {
 	}{
 		{"ManualOnly", len(publication.On), 1},
 		{"PublicationOffByDefault", nested(publication.On, "workflow_dispatch", "inputs", "publish")["default"], false},
+		{"ToolChoice", selection["type"], "choice"},
+		{"DefaultTool", selection["default"], "rollout-verifier"},
+		{"AllowedTools", selection["options"], []any{"rollout-verifier", "host-credentials"}},
+		{"CanonicalTool", publication.Env, map[string]string{"TOOL": "${{ inputs.tool == 'host-credentials' && 'host-credentials' || 'rollout-verifier' }}"}},
 		{"NoInheritedAuthority", publication.Permissions, map[string]string{}},
 		{"ReadOnlyBuild", build.Permissions, map[string]string{"contents": "read"}},
-		{"Approval", publish.Environment, "rollout-artifacts"},
+		{"Approval", publish.Environment, "${{ inputs.tool == 'host-credentials' && 'host-artifacts' || 'rollout-artifacts' }}"},
 		{"PublishAuthority", publish.Permissions, map[string]string{"contents": "read", "packages": "write", "attestations": "write", "id-token": "write"}},
 		{"SameRunArtifact", publish.Needs, "build"},
-		{"ExactArtifactOutput", build.Outputs, map[string]string{"artifact_id": "${{ steps.archive.outputs.artifact-id }}"}},
+		{"ExactArtifactOutput", build.Outputs, map[string]string{"artifact_id": "${{ steps.archive.outputs.artifact-id }}", "tool": "${{ env.TOOL }}"}},
 		{"ExactArtifactInput", download.With, object{"artifact-ids": "${{ needs.build.outputs.artifact_id || '0' }}", "path": "${{ runner.temp }}", "merge-multiple": true, "digest-mismatch": "error"}},
-		{"OnlyImageArchive", upload.With["path"], "${{ runner.temp }}/rollout-verifier.tar"},
+		{"OnlyImageArchive", upload.With["path"], "${{ runner.temp }}/${{ env.TOOL }}.tar"},
+		{"SelectedDestination", publish.Env["IMAGE"], "ghcr.io/a-novel/infra/${{ needs.build.outputs.tool }}:sha-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}"},
 		{"MissingArchiveFails", upload.With["if-no-files-found"], "error"},
 		{"NoBuildPush", image.With["push"], false},
 		{"DefaultPublicationImage", nested(tooling.Inputs, "image_name")["default"], "rollout-verifier"},
 		{"BothImagesScanned", ciImages, []string{"", "host-credentials"}},
-		{"PublicationUsesDefault", build.Steps[stepIndex(t, build.Steps, "build-tooling-image")].With["image_name"], nil},
+		{"PublicationUsesSelection", build.Steps[stepIndex(t, build.Steps, "build-tooling-image")].With["image_name"], "${{ env.TOOL }}"},
 		{"SinglePlatform", image.With["platforms"], "linux/amd64"},
 		{"ScannedArchive", image.With["outputs"], "type=docker,dest=" + scan.With["input"].(string)},
 		{"BlockingScan", []any{scan.With["scanners"], scan.With["severity"], scan.With["exit-code"]}, []any{"vuln,secret", "HIGH,CRITICAL", "1"}},
-		{"AttestedDigest", attest.With, object{"subject-name": "ghcr.io/a-novel/infra/rollout-verifier", "subject-digest": "${{ steps.publish.outputs.digest }}", "push-to-registry": true, "create-storage-record": false}},
+		{"AttestedDigest", attest.With, object{"subject-name": "ghcr.io/a-novel/infra/${{ env.TOOL }}", "subject-digest": "${{ steps.publish.outputs.digest }}", "push-to-registry": true, "create-storage-record": false}},
 		{"NoCancellation", publication.Concurrency["cancel-in-progress"], false},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -112,8 +119,11 @@ func TestVerifierArtifact(t *testing.T) {
 	}
 	t.Run("TrustBoundary", func(t *testing.T) {
 		t.Parallel()
-		require.Contains(t, publish.If, "inputs.publish && vars.ROLLOUT_VERIFIER_PUBLICATION_ENABLED == 'true'")
-		require.Contains(t, publish.If, "github.repository == 'a-novel/infra' && github.ref == 'refs/heads/master'")
+		require.Equal(t, strings.Fields(`inputs.publish && github.repository == 'a-novel/infra' && github.ref == 'refs/heads/master' && (
+			(inputs.tool == 'rollout-verifier' && vars.ROLLOUT_VERIFIER_PUBLICATION_ENABLED == 'true') ||
+			(inputs.tool == 'host-credentials' && vars.HOST_CREDENTIALS_PUBLICATION_ENABLED == 'true')
+		)`), strings.Fields(publish.If))
+		require.Contains(t, build.Steps[0].If, `!contains(fromJSON('["rollout-verifier", "host-credentials"]'), inputs.tool)`)
 		encoded, err := json.Marshal(publish)
 		require.NoError(t, err)
 		require.NotRegexp(t, `checkout@|google-github-actions|secrets\.|build-push-action|docker (build|run)|go run|go build`, string(encoded))

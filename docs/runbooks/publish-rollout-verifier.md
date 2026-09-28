@@ -1,52 +1,80 @@
-# Publish the rollout verifier
+# Publish infrastructure tooling
 
-This publishes a tooling image to GHCR. It does not access Google Cloud, promote an image into a
-workload project, approve a rollout or change production. The Cloud Deploy pilot remains suspended.
+This publishes one reviewed tooling image to GHCR. Cloud promotion and host/rollout activation
+require separate approval. The workflow has no Google Cloud credentials.
 
-The existing `scan-infrastructure` CI check builds and scans the verifier on every PR. The manual
+The `scan-infrastructure` CI check builds and scans both tools on every PR. The manual
 `publish-rollout-verifier.yaml` workflow uses the same action, with publication off by default.
+Its filename remains stable because it identifies the verifier's provenance signer.
 Its read-only build job exports one `linux/amd64` Docker image and fails on high/critical
 vulnerabilities or secrets. A separate publishing job receives that exact archive by artifact ID,
 checks its archive digest through GitHub's artifact action, pushes it without rebuilding, and attests
 the registry digest.
 The publishing runner never checks out or executes repository code.
 
+## Select the tool
+
+The workflow defaults to `rollout-verifier`. Each tool has an independent opt-in and approval
+environment; enabling the verifier does not authorize host credential publication.
+
+| Tool               | Repository variable                    | Approval environment |
+| ------------------ | -------------------------------------- | -------------------- |
+| `rollout-verifier` | `ROLLOUT_VERIFIER_PUBLICATION_ENABLED` | `rollout-artifacts`  |
+| `host-credentials` | `HOST_CREDENTIALS_PUBLICATION_ENABLED` | `host-artifacts`     |
+
+For the credential loader, use:
+
+```sh
+TOOL=host-credentials
+PUBLICATION_SWITCH=HOST_CREDENTIALS_PUBLICATION_ENABLED
+ARTIFACT_ENV=host-artifacts
+```
+
+For the verifier, select all three values from its row. The loader remains unwired to hosts;
+publication neither reads TLS secrets nor issues certificates.
+
 ## Build and scan only
 
 After the workflow has merged, run this against reviewed `master`:
 
 ```sh
-gh workflow run publish-rollout-verifier.yaml --repo a-novel/infra --ref master -f publish=false
+gh workflow run publish-rollout-verifier.yaml --repo a-novel/infra --ref master \
+  -f tool="${TOOL:?}" -f publish=false
 ```
 
 This mode needs no environment approval, publication switch or cloud credentials. A passing scan
-establishes artifact buildability and the current scanner verdict, not private probe connectivity or
-successful Cloud Deploy verification. Those require the separately approved live pilot.
+establishes artifact buildability and the current scanner verdict. Host credential delivery,
+repository confinement and Cloud Deploy verification require their separately approved live proofs.
 
 ## Enable publication once approved
 
-A maintainer first configures the `rollout-artifacts` GitHub environment with required reviewers,
+A maintainer first configures the selected GitHub environment with required reviewers,
 protected-branch access and administrator bypass disabled. The workflow cannot enforce those external
 settings by naming an environment: inspect them before enabling publication.
 
 ```sh
-gh api repos/a-novel/infra/environments/rollout-artifacts --jq '{name,can_admins_bypass,deployment_branch_policy,protection_rules}'
+gh api "repos/a-novel/infra/environments/${ARTIFACT_ENV:?}" \
+  --jq '{name,can_admins_bypass,deployment_branch_policy,protection_rules}'
 ```
 
 Stop if the environment is absent, lacks its reviewer gate, permits bypass, or allows unreviewed
-branches. Confirm `master` is protected. Then explicitly enable this artifact-only workflow:
+branches. Confirm `master` is protected. Review GHCR package access too: these workflow gates do
+not make the repository's package-write token an image-scoped credential. Then enable only the
+selected tool:
 
 ```sh
-gh variable set ROLLOUT_VERIFIER_PUBLICATION_ENABLED --repo a-novel/infra --body true
-gh workflow run publish-rollout-verifier.yaml --repo a-novel/infra --ref master -f publish=true
+gh variable set "${PUBLICATION_SWITCH:?}" --repo a-novel/infra --body true
+gh workflow run publish-rollout-verifier.yaml --repo a-novel/infra --ref master \
+  -f tool="${TOOL:?}" -f publish=true
 ```
 
-Approve the exact run's `rollout-artifacts` deployment only after reviewing its source commit and
+Approve the exact run's selected environment deployment only after reviewing its tool, source commit and
 successful build/scan. The scanned archive expires after one day; an expired artifact requires a new
 build and approval. No workflow is dispatched or setting changed by merging this code.
 
-The successful run summary contains `ghcr.io/a-novel/infra/rollout-verifier@sha256:…` and its source
-commit. The tag includes the source commit, run ID and attempt for navigation; consumers pin the digest.
+The successful run summary contains `ghcr.io/a-novel/infra/<tool>@sha256:…` and its source
+commit. Generated attempt tags identify that run; promotion and runtime records retain its digest.
+Maintained image dependencies continue to use SemVer.
 Publication has only repository-read, package-write, attestation-write and signing-token permissions.
 It has no Google federation login or production environment access.
 
@@ -56,12 +84,12 @@ Set these two values from the reviewed, successful publication run. Do not resol
 select the latest image:
 
 ```sh
-VERIFIER_DIGEST='sha256:<64 hexadecimal characters from the successful run>'
-VERIFIER_COMMIT='<40-character reviewed source commit>'
-gh attestation verify "oci://ghcr.io/a-novel/infra/rollout-verifier@${VERIFIER_DIGEST:?}" \
+TOOL_DIGEST='sha256:<64 hexadecimal characters from the successful run>'
+TOOL_COMMIT='<40-character reviewed source commit>'
+gh attestation verify "oci://ghcr.io/a-novel/infra/${TOOL:?}@${TOOL_DIGEST:?}" \
   --repo a-novel/infra \
   --signer-workflow a-novel/infra/.github/workflows/publish-rollout-verifier.yaml \
-  --source-ref refs/heads/master --source-digest "${VERIFIER_COMMIT:?}" \
+  --source-ref refs/heads/master --source-digest "${TOOL_COMMIT:?}" \
   --deny-self-hosted-runners
 ```
 
@@ -70,8 +98,9 @@ also confirm the publication run succeeded: an attestation alone records origin,
 or the current vulnerability status.
 
 Promotion into the selected project's regional Artifact Registry is a separate approved operation.
-Preserve and verify the source digest, then pin the same destination digest in the Cloud Deploy worker
-and probe. Keep referenced images and attestations available for retained rollouts and rollback.
+Preserve and verify the source digest in the selected consumer's reviewed runtime record. For the
+verifier, the worker and probe use that same destination digest. Host tooling still needs reviewed
+distribution and startup configuration. Keep referenced images and attestations available for rollback.
 
 ## Interrupted publication
 
@@ -84,7 +113,7 @@ reruns a database migration.
 To stop future publications, remove the explicit opt-in:
 
 ```sh
-gh variable delete ROLLOUT_VERIFIER_PUBLICATION_ENABLED --repo a-novel/infra
+gh variable delete "${PUBLICATION_SWITCH:?}" --repo a-novel/infra
 ```
 
 This does not cancel an already running publisher or delete any image. Leave it unset until approved.
