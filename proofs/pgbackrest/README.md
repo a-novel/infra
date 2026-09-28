@@ -64,6 +64,26 @@ and pgBackRest binaries survive installation of the negative-test server unchang
 are not covered by those checks. It does not exercise the original entrypoints, application
 migrations, historical images, or native backup integration on the actual COS host.
 
+### Native repository transport
+
+`TestRepositoryTLS` reuses the recovery driver with a native repository server and temporary test
+certificates on container loopback. Both service-image variants check backup/WAL transfer and SQL
+recovery; a CA-signed but unauthorized client, wrong stanza and untrusted server must fail, with
+authorized positive controls. A stopped server prevents restore, and an explicit retry of the same
+set succeeds after restart. No external network, credential proxy or new runtime dependency is used.
+
+**TLS is authentication, not a fixed repository policy.** `Limit/ClientOverridesRepository`
+demonstrates that an authorized client can override `repo1-path` and list a synthetic directory
+outside the configured repository. The [native protocol implementation](https://github.com/pgbackrest/pgbackrest/blob/release/2.59.1/src/protocol/helper.c)
+loads client-supplied parameters before checking the authorized stanza. A green test records this
+limitation; it does not endorse that access or establish the effect of every possible override.
+
+Consequently, the proposed same-VM repository container is **not ready for host wiring**. Its
+filesystem, egress and identity restrictions must hold independently of client-controlled options;
+TLS alone cannot make the host identity safe to delegate. Keep PostgreSQL's existing metadata denial.
+This offline test does not establish Docker/COS isolation, GCS permissions or credential confinement.
+Those design and live-proof gates remain tracked in [#190](https://github.com/a-novel/infra/issues/190).
+
 ### Local measurements
 
 Both published-image variants passed on 27 September 2026, capped at one CPU and 2 GiB RAM with

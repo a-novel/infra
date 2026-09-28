@@ -23,41 +23,7 @@ func TestRecovery(t *testing.T) {
 	t.Log(strings.TrimSpace(run(t, "pgbackrest", "version")))
 	t.Log(strings.TrimSpace(run(t, "postgres", "--version")))
 	t.Log(strings.TrimSpace(run(t, "/usr/lib/postgresql/17/bin/postgres", "--version")))
-	p := proof{root: t.TempDir()}
-	p.config = filepath.Join(p.root, "pgbackrest.conf")
-	p.source = filepath.Join(p.root, "source")
-	p.repo = filepath.Join(p.root, "repository")
-	write(t, p.config, fmt.Sprintf(`[global]
-repo1-path=%s
-repo1-retention-full=2
-process-max=1
-start-fast=y
-archive-timeout=10
-db-timeout=15
-protocol-timeout=30
-log-level-console=warn
-log-level-file=off
-lock-path=%s/lock
-
-[proof]
-pg1-path=%s
-pg1-socket-path=%s
-`, p.repo, p.root, p.source, p.root))
-	run(t, "initdb", "-D", p.source, "--auth-local=peer", "--auth-host=scram-sha-256", "--no-locale")
-	write(t, filepath.Join(p.source, "postgresql.conf"), fmt.Sprintf(`listen_addresses=''
-unix_socket_directories='%s'
-shared_buffers='64MB'
-max_connections=20
-wal_level=replica
-archive_mode=on
-archive_command='pgbackrest --config=%s --stanza=proof archive-push %%p'
-`, p.root, p.config))
-	p.start(t, p.source, p.root)
-	p.backrest(t, "stanza-create")
-	run(t, "psql", "-X", "-h", p.root, "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-f", "/docker-entrypoint-initdb.d/init.sql")
-	p.sql(t, `CREATE ROLE proof_reader;
-CREATE TABLE sample (id uuid PRIMARY KEY, value text NOT NULL CHECK (value <> ''));
-INSERT INTO sample VALUES ('00000000-0000-0000-0000-000000000001', 'original');`)
+	p := newProof(t)
 	var first, retained, newest backup
 	for _, tc := range []struct {
 		name string
@@ -179,6 +145,47 @@ UPDATE ballast SET value = value || '!';`)
 }
 
 type proof struct{ root, config, source, repo string }
+
+// newProof creates only synthetic data, shared by the local and TLS transport cases.
+func newProof(t *testing.T) proof {
+	t.Helper()
+	p := proof{root: t.TempDir()}
+	p.config = filepath.Join(p.root, "pgbackrest.conf")
+	p.source = filepath.Join(p.root, "source")
+	p.repo = filepath.Join(p.root, "repository")
+	write(t, p.config, fmt.Sprintf(`[global]
+repo1-path=%s
+repo1-retention-full=2
+process-max=1
+start-fast=y
+archive-timeout=10
+db-timeout=15
+protocol-timeout=30
+log-level-console=warn
+log-level-file=off
+lock-path=%s/lock
+
+[proof]
+pg1-path=%s
+pg1-socket-path=%s
+`, p.repo, p.root, p.source, p.root))
+	run(t, "initdb", "-D", p.source, "--auth-local=peer", "--auth-host=scram-sha-256", "--no-locale")
+	write(t, filepath.Join(p.source, "postgresql.conf"), fmt.Sprintf(`listen_addresses=''
+unix_socket_directories='%s'
+shared_buffers='64MB'
+max_connections=20
+wal_level=replica
+archive_mode=on
+archive_command='pgbackrest --config=%s --stanza=proof archive-push %%p'
+`, p.root, p.config))
+	p.start(t, p.source, p.root)
+	p.backrest(t, "stanza-create")
+	run(t, "psql", "-X", "-h", p.root, "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-f", "/docker-entrypoint-initdb.d/init.sql")
+	p.sql(t, `CREATE ROLE proof_reader;
+CREATE TABLE sample (id uuid PRIMARY KEY, value text NOT NULL CHECK (value <> ''));
+INSERT INTO sample VALUES ('00000000-0000-0000-0000-000000000001', 'original');`)
+	return p
+}
 
 type backup struct {
 	Label   string
