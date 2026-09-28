@@ -1,0 +1,6 @@
+{
+  "server_image": "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-production/service-json-keys/database@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "credentials_image": "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-tooling/host-credentials@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "ca_version": "1",
+  "identity_version": "2"
+}

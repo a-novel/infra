@@ -21,7 +21,7 @@ variable "pgbackrest_repository" {
 
   validation {
     condition = try(var.pgbackrest_repository.runtime, null) == null ? true : alltrue([
-      can(regex("^${var.region}-docker[.]pkg[.]dev/${var.project_id}/agora-production/json-keys/database@sha256:[0-9a-f]{64}$", var.pgbackrest_repository.runtime.server_image)),
+      can(regex("^${var.region}-docker[.]pkg[.]dev/${var.project_id}/agora-production/service-json-keys/database@sha256:[0-9a-f]{64}$", var.pgbackrest_repository.runtime.server_image)),
       can(regex("^${var.region}-docker[.]pkg[.]dev/${var.project_id}/agora-tooling/host-credentials@sha256:[0-9a-f]{64}$", var.pgbackrest_repository.runtime.credentials_image)),
     ])
     error_message = "Repository runtime images must be approved promoted digests in this service project's application and tooling repositories."
