@@ -1,8 +1,9 @@
 # Native-backup host credentials
 
-Inactive JSON Keys pilot component. CI builds and scans this image, but does not
-publish it. No host starts it, no secret is populated, and existing backups are
-unchanged.
+Inactive JSON Keys pilot component. CI builds and scans this image. Its
+[protected publisher](../../docs/runbooks/publish-rollout-verifier.md) requires
+separate activation and approval. No host starts it, no secret is populated,
+and existing backups are unchanged.
 
 The one-shot command uses Google's Secret Manager client and the VM's attached
 identity. It does not use local ADC, issue certificates, rotate credentials, or
@@ -59,5 +60,5 @@ Table-driven tests use the official client against a local HTTP server and
 ephemeral test certificates. They exercise delivery, integrity failures,
 certificate identity/usage failures, private output permissions, and concurrent
 no-overwrite publication without cloud access. The shared image action builds
-and scans both this loader and the existing rollout verifier; only the latter
-has a publication workflow.
+and scans both this loader and the existing rollout verifier; their shared
+publisher retains separate opt-ins and approval environments.
