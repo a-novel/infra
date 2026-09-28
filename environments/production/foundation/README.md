@@ -159,6 +159,32 @@ still applies. Empty-map and recovery plans add none of these grants or probe ac
 must test [Shared VPC Direct VPC access](https://docs.cloud.google.com/run/docs/configuring/shared-vpc-direct-vpc)
 and denied database reachability before activation.
 
+`pgbackrest_repository_services = []` adds no rules. Selecting `json-keys` from `service_projects`
+prepares four identity-scoped native rules in [`pgbackrest-network.tf`](./pgbackrest-network.tf):
+
+| Resource suffix (`google_compute_firewall.pgbackrest_*`) | Source → destination                                        | Permit   |
+| -------------------------------------------------------- | ----------------------------------------------------------- | -------- |
+| `database_egress`                                        | Selected database identity → existing subnet                | TCP 8432 |
+| `repository_ingress`                                     | That database identity → its dedicated repository identity  | TCP 8432 |
+| `google_egress`                                          | Repository identity → existing restricted Google API ranges | TCP 443  |
+| `iap_ingress`                                            | IAP TCP-forwarding range → repository identity              | TCP 22   |
+
+The receiving identity rule enforces the peer boundary: classic egress rules cannot select a
+destination service account. Do not add source CIDRs to the TLS rule; Google combines them with the
+identity using **OR**, not **AND**. The VPC-wide egress deny remains unchanged, including no repository
+connection back to PostgreSQL. Recovery ignores the copied production opt-in and creates no rules.
+No new route, NAT, public IP, IAM grant or firewall logging is introduced. These rules have no fixed
+charge; traffic retains normal usage charges. Removal still requires the managed-deletion gate.
+
+Before a separately approved activation, attach the service project and create both identities in
+service foundation; review effective rules and attachment authority. The firewall does not grant
+OS Login/IAP or API permissions, filter Google's always-reachable metadata server, or configure
+native TLS. Existing database-container outbound/metadata isolation and backup schedules remain
+unchanged. Certificate delivery, exact host allow-list, repository runtime and live positive/peer
+denial checks remain activation prerequisites. See [Google's account selectors and Shared VPC rules](https://docs.cloud.google.com/firewall/docs/firewalls#service-accounts-vs-tags),
+the [pinned provider resource](https://github.com/hashicorp/terraform-provider-google/blob/v8.2.0/website/docs/r/compute_firewall.html.markdown),
+and [pgBackRest's TLS port](https://pgbackrest.org/configuration.html#section-repository/option-repo-host-port).
+
 Both Google providers are pinned in [`versions.tf`](./versions.tf); only service-agent creation uses
 `google-beta`. Rows group repeated resources that share a
 single boundary; their `for_each` keys are part of the reviewed configuration and mocked tests.
