@@ -32,21 +32,26 @@ func TestRepositoryTLS(t *testing.T) {
 			"-out", path+".csr", "-subj", "/CN="+name, "-addext", "subjectAltName=DNS:"+name)
 		run(t, "openssl", "x509", "-req", "-in", path+".csr", "-out", path+".crt", "-days", "1", "-copy_extensions", "copy",
 			"-CA", p.root+"/ca.crt", "-CAkey", p.root+"/ca.key", "-CAcreateserial")
+		certificate, err := os.ReadFile(path + ".crt")
+		require.NoError(t, err)
+		key, err := os.ReadFile(path + ".key")
+		require.NoError(t, err)
+		write(t, path+".pem", string(certificate)+string(key))
 	}
 	write(t, serverConfig, strings.Replace(string(config), "[global]", fmt.Sprintf(`[global]
 tls-server-address=127.0.0.1
 tls-server-auth=client=proof
 tls-server-ca-file=%[1]s/ca.crt
-tls-server-cert-file=%[1]s/localhost.crt
-tls-server-key-file=%[1]s/localhost.key
+tls-server-cert-file=%[1]s/localhost.pem
+tls-server-key-file=%[1]s/localhost.pem
 `, p.root), 1)+"\n[peer]\n")
 	write(t, p.config, strings.Replace(string(config), "[global]", fmt.Sprintf(`[global]
 repo1-host=localhost
 repo1-host-type=tls
 repo1-host-config=%[1]s
 repo1-host-ca-file=%[2]s/ca.crt
-repo1-host-cert-file=%[2]s/client.crt
-repo1-host-key-file=%[2]s/client.key
+repo1-host-cert-file=%[2]s/client.pem
+repo1-host-key-file=%[2]s/client.pem
 `, serverConfig, p.root), 1))
 	stop := startRepository(t, serverConfig)
 	var set string
@@ -61,7 +66,7 @@ repo1-host-key-file=%[2]s/client.key
 			p.restore(t, set, "original")
 		}},
 		{"Error/UnauthorizedClient", func(t *testing.T) {
-			out, err := p.command(t.Context(), "--repo1-host-cert-file="+p.root+"/peer.crt", "--repo1-host-key-file="+p.root+"/peer.key", "repo-ls").CombinedOutput()
+			out, err := p.command(t.Context(), "--repo1-host-cert-file="+p.root+"/peer.pem", "--repo1-host-key-file="+p.root+"/peer.pem", "repo-ls").CombinedOutput()
 			require.Error(t, err, string(out))
 			require.Contains(t, string(out), "access denied")
 			p.backrest(t, "repo-ls")
