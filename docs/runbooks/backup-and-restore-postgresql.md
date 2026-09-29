@@ -494,7 +494,9 @@ bootstrap, shutdown and admission behavior, native scheduling/monitoring, GCS ve
 denial, catalog/WAL repair and source-loss recovery evidence. The
 [trial report](../../proofs/pgbackrest-gcs/result-20260927.md#remaining-adoption-gates) records the gaps.
 The [prepared native jobs](../../environments/service-foundation/README.md#prepared-native-backup-jobs)
-install no timers and leave WAL archiving off. Approve archive-failure/WAL-growth alerts before the
+install disabled timers and leave WAL archiving off. The prepared
+[native alert policies](respond-to-alerts.md#native-backup-pilot) remain disabled too.
+Approve and prove archive-failure/WAL-growth alerts before the
 foundation opt-in: failed archiving retains WAL and can exhaust the source disk. A stopped database
 must stay stopped when a job is requested; test interruption and exact-container cleanup on COS
 before enabling schedules. Keep automatic expiry disabled until retention reconciliation is proven.

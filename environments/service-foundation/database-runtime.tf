@@ -31,6 +31,11 @@ locals {
     full          = "--type=full --repo1-bundle --no-expire-auto backup"
     diff          = "--type=diff --repo1-bundle --no-expire-auto backup"
   }
+  database_backup_calendars = {
+    full  = "Sun *-*-* 02:00:00 UTC"
+    diff  = "Mon..Sat *-*-* 02:00:00 UTC"
+    check = "*-*-* *:30:00 UTC"
+  }
   database_runtime = var.database_runtime == null ? {} : {
     for key, runtime in local.repository_runtime : key => merge(runtime, var.database_runtime)
   }
@@ -71,8 +76,12 @@ locals {
           command = command
           image   = runtime.server_image
         })
+        }], [for name, calendar in local.database_backup_calendars : {
+        path        = "/etc/systemd/system/agora-backup-${name}.timer"
+        permissions = "0644"
+        content     = templatefile("${path.module}/templates/database-backup.timer.tftpl", { name = name, calendar = calendar })
     }])
-    # Preparation only registers units; activation and schedules require separate approval.
+    # Preparation only registers units; starting timers or services requires separate approval.
     runcmd = [["systemctl", "daemon-reload"]]
   })}" }
 }
