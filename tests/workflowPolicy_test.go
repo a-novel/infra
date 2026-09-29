@@ -410,5 +410,5 @@ func TestWorkflowBoundaries(t *testing.T) {
 	require.Equal(t, "github.ref == 'refs/heads/master'", renovate.Jobs["renovate"].If)
 	step := renovate.Jobs["renovate"].Steps[0]
 	require.Contains(t, step.Uses, "a-novel-kit/workflows/generic-actions/renovate@")
-	require.Equal(t, object{"github_token": "${{ github.token }}", "app_private_key": "${{ secrets.DEPENDENCY_BOT_PRIVATE_KEY }}", "client_id": "${{ vars.DEPENDENCY_BOT_CLIENT_ID }}"}, step.With)
+	require.Equal(t, object{"repository_config": "true", "github_token": "${{ github.token }}", "app_private_key": "${{ secrets.DEPENDENCY_BOT_PRIVATE_KEY }}", "client_id": "${{ vars.DEPENDENCY_BOT_CLIENT_ID }}"}, step.With)
 }
