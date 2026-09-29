@@ -10,9 +10,10 @@ Do not apply it directly. Enrollment must bind its private inputs and reviewed p
 recovery custody/admission path first; see [activation](#activation-gates). Legacy logical recovery
 and current backups remain unchanged.
 
-The prepared image currently inherits unresolved HIGH/CRITICAL scanner findings from the service
-database base. Its blocking image scan is unchanged: publication and merge readiness require a
-reviewed remediation or separately approved risk decision. Prior proof use is not risk acceptance.
+The prepared image consumes the published Wolfi database patch. Its blocking image scan is unchanged;
+green scans and offline proofs do not authorize publication, provisioning or recovery execution.
+This is a fresh-database boundary, not an in-place upgrade of Debian data directories. Retain the
+old image/reader for existing backups and review compatibility against the selected backup evidence.
 
 ## Contract
 

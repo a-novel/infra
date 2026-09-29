@@ -22,7 +22,6 @@ func TestRecovery(t *testing.T) {
 	}
 	t.Log(strings.TrimSpace(run(t, "pgbackrest", "version")))
 	t.Log(strings.TrimSpace(run(t, "postgres", "--version")))
-	t.Log(strings.TrimSpace(run(t, "/usr/lib/postgresql/17/bin/postgres", "--version")))
 	p := newProof(t, "proof")
 	var first, retained, newest backup
 	for _, tc := range []struct {
@@ -90,7 +89,7 @@ UPDATE ballast SET value = value || '!';`)
 					require.Error(t, err, string(out))
 					data := filepath.Join(t.TempDir(), "restore")
 					p.backrest(t, "--set="+first.Label, "--pg1-path="+data, "--type=immediate", "--archive-mode=off", "restore")
-					out, err = p.boot(t, data, "pg_ctl", filepath.Dir(data))
+					out, err = p.boot(t, data, filepath.Dir(data))
 					require.Error(t, err, "incomplete recovery must not accept connections: %s", out)
 					log, err := os.ReadFile(data + ".log")
 					require.NoError(t, err)
@@ -101,7 +100,9 @@ UPDATE ballast SET value = value || '!';`)
 		{"PostgreSQL major mismatch is refused", func(t *testing.T) {
 			data := filepath.Join(t.TempDir(), "restore")
 			p.backrest(t, "--set="+first.Label, "--pg1-path="+data, "--type=immediate", "--archive-mode=off", "restore")
-			out, err := p.boot(t, data, "/usr/lib/postgresql/17/bin/pg_ctl", filepath.Dir(data))
+			// Exercise the published server's native version guard, without installing another major.
+			write(t, filepath.Join(data, "PG_VERSION"), "17\n")
+			out, err := p.boot(t, data, filepath.Dir(data))
 			require.Error(t, err, string(out))
 			log, err := os.ReadFile(data + ".log")
 			require.NoError(t, err)
@@ -223,11 +224,11 @@ func (p proof) sql(t *testing.T, sql string) string {
 
 func (p proof) start(t *testing.T, data, socket string) {
 	t.Helper()
-	out, err := p.boot(t, data, "pg_ctl", socket)
+	out, err := p.boot(t, data, socket)
 	require.NoError(t, err, "%s", out)
 }
 
-func (p proof) boot(t *testing.T, data, binary, socket string) ([]byte, error) {
+func (p proof) boot(t *testing.T, data, socket string) ([]byte, error) {
 	t.Helper()
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -235,7 +236,7 @@ func (p proof) boot(t *testing.T, data, binary, socket string) ([]byte, error) {
 		_ = exec.CommandContext(ctx, "pg_ctl", "-D", data, "-m", "immediate", "stop").Run()
 	})
 	// Startup logs use a file: pg_ctl must not leave the server holding Go's output pipe.
-	return exec.CommandContext(t.Context(), binary, "-D", data, "-l", data+".log", "-o", "-k "+socket, "-t", "15", "-w", "start").CombinedOutput()
+	return exec.CommandContext(t.Context(), "pg_ctl", "-D", data, "-l", data+".log", "-o", "-k "+socket, "-t", "15", "-w", "start").CombinedOutput()
 }
 
 func (p proof) stop(t *testing.T, data string) {
