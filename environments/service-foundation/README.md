@@ -183,8 +183,8 @@ is introduced. The client expects the reviewed PostgreSQL 18 image layout and UI
 Only the selected repository IP on TCP 8432 is allowed out of the database bridge; host-gateway,
 metadata and other initiated traffic remain blocked. Its certificate name is mapped explicitly, with
 container DNS still disabled and raw-packet capability removed. The read-only client credential mount
-contains no cloud token. WAL archiving and its command are explicitly off; no backup, restore, expiry
-or schedule is run. Daily logical backups remain unchanged.
+contains no cloud token. WAL archiving defaults off; the prepared jobs below share this network.
+Daily logical backups remain unchanged.
 
 Before activation, separately review operation admission, exact image/credential evidence, empty-disk
 versus existing-data handling, network/IAM denials, TLS delivery failure, startup interruption, crash
@@ -206,6 +206,33 @@ The maintained [Google VM module v15.3.0](https://github.com/terraform-google-mo
 requires providers below v8, incompatible with this repository's v8.2.0 pin. Native resources retain
 [stateful MIG](https://docs.cloud.google.com/compute/docs/instance-groups/how-stateful-migs-work) behavior
 without weakening upstream constraints or adding a controller. Runtime/backup replacement remains #190.
+
+### Prepared native backup jobs
+
+The database lifecycle also installs four disabled `agora-backup-<operation>.service` units from one
+template: `stanza-create`, `check`, `full` and `diff`. There are no timers or automatic starts.
+After separate activation approval, foundation can set `database_runtime.wal_archiving = true` to
+enable PostgreSQL's native `pgbackrest --stanza=json-keys archive-push %p` command. This requires a
+database maintenance restart, not an API release. The default explicitly clears archiving on existing
+data too; do not toggle an active WAL chain without reviewing its recovery consequences.
+
+Each job runs a foreground container on the existing database VM with the same reviewed image.
+It reads database files and the local socket through read-only mounts, shares pgBackRest's lock
+directory and uses the database's restricted network namespace and host-name mapping. The worker has
+no host control socket or cloud token. Its SQL connection has the database owner's authority; the
+read-only data mount is not a separate database trust boundary.
+
+systemd requires the database to be active without starting it. Jobs have a one-hour limit, bounded
+stop cleanup and no automatic retries. Database stop propagates to workers without replaying them on
+restart; database failure cleanup also reaps their exact container names before removing credentials.
+pgBackRest owns conflicting-operation locks, WAL checks and completion metadata. Automatic expiry is
+disabled in the shared configuration and each job. Failed jobs require inspection before explicit retry.
+
+Before activation, rehearse shared-socket access, native lock contention, stop/timeout and database/
+Docker failure on COS. Verify admission, alert delivery, backup age, WAL growth, repository outage and
+isolated SQL restore. Archive failures retain WAL and can fill the database disk; no WAL-discard limit
+is configured. This preparation adds no VM or cloud grant, but future backup I/O and stored WAL cost
+money. Scheduling, expiry and retirement of existing protection remain separately reviewed work.
 
 ## Optional stopped repository host
 

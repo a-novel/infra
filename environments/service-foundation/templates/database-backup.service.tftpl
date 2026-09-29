@@ -1,0 +1,26 @@
+[Unit]
+Description=Agora JSON Keys native backup (${name})
+After=agora-database.service docker.service
+StopPropagatedFrom=agora-database.service docker.service
+
+[Service]
+Type=exec
+Restart=no
+RuntimeMaxSec=1h
+TimeoutStartSec=30
+TimeoutStopSec=45
+# Check without a Requires/Requisite dependency: database restarts must not replay jobs.
+ExecStartPre=/usr/bin/systemctl is-active --quiet agora-database.service
+ExecStart=/usr/bin/docker run --rm --name=agora-backup-${name} --pull=never \
+    --network=container:agora-postgres-json-keys --read-only --user=999:999 \
+    --cap-drop=ALL --security-opt=no-new-privileges --cpus=0.5 --memory=512m --memory-swap=512m \
+    --pids-limit=64 --no-healthcheck --log-driver=none --ulimit=core=0 --stop-signal=SIGTERM \
+    --tmpfs=/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777 \
+    --mount=type=bind,source=/mnt/disks/agora-data/json-keys,target=/var/lib/postgresql,readonly \
+    --mount=type=bind,source=/run/agora/postgresql,target=/var/run/postgresql,readonly \
+    --mount=type=bind,source=/run/agora/pgbackrest-lock,target=/run/pgbackrest-lock \
+    --mount=type=bind,source=/run/agora/pgbackrest/current,target=/run/pgbackrest,readonly \
+    --mount=type=bind,source=/etc/agora-database/pgbackrest.conf,target=/etc/pgbackrest/pgbackrest.conf,readonly \
+    --entrypoint=pgbackrest ${image} --stanza=json-keys ${command}
+ExecStop=-/usr/bin/docker stop --time=30 agora-backup-${name}
+ExecStopPost=-/usr/bin/docker rm --force agora-backup-${name}

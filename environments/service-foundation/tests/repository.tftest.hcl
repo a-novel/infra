@@ -174,7 +174,7 @@ run "prepared_database_lifecycle" {
       !contains(keys(google_compute_instance_template.database["host"].metadata), "shutdown-script"),
       google_compute_instance_template.database["host"].metadata["user-data"] == local.database_cloud_config.host,
       yamldecode(local.database_cloud_config.host).runcmd == [["systemctl", "daemon-reload"]],
-      length(yamldecode(local.database_cloud_config.host).write_files) == 4,
+      length(yamldecode(local.database_cloud_config.host).write_files) == 8,
       google_compute_instance_group_manager.database["host"].all_instances_config[0].metadata == tomap({
         agora-json-keys-database-image                   = var.pgbackrest_repository.runtime.server_image
         agora-json-keys-postgres-password-version        = "3"
@@ -192,6 +192,8 @@ run "prepared_database_lifecycle" {
       "Type=notify", "Restart=on-failure", "StartLimitBurst=3", "RuntimeDirectoryPreserve=no",
       "PGBACKREST_REPOSITORY_IP=10.90.0.3", "--endpoint=database --ca-version=1 --identity-version=5",
       "--name=agora-database.agora-json-keys-test", "--supervise", "ExecStopPost=",
+      "Environment=PGBACKREST_WAL_ARCHIVING=false", "/run/agora/postgresql /run/agora/pgbackrest-lock",
+      "rm --force agora-backup-check agora-backup-diff agora-backup-full agora-backup-stanza-create",
     ] : strcontains(yamldecode(local.database_cloud_config.host).write_files[3].content, option)])
     error_message = "Systemd must own bounded restart, exact TLS delivery and stopped-consumer cleanup."
   }
@@ -200,8 +202,58 @@ run "prepared_database_lifecycle" {
       "repo1-host=${local.repository_name}", "repo1-host-type=tls", "repo1-host-port=8432",
       "repo1-host-key-file=/run/pgbackrest/identity.pem", "expire-auto=n",
       "pg1-path=/var/lib/postgresql/18/docker", "pg1-user=agora_json_keys",
+      "pg1-socket-path=/var/run/postgresql", "lock-path=/run/pgbackrest-lock", "process-max=1",
     ] : strcontains(yamldecode(local.database_cloud_config.host).write_files[2].content, option)])
     error_message = "The client must use native TLS and the selected PostgreSQL 18 layout, without GCS credentials."
+  }
+  assert {
+    condition = alltrue(flatten([for file in slice(yamldecode(local.database_cloud_config.host).write_files, 4, 8) : [
+      for option in [
+        "Type=exec", "Restart=no", "RuntimeMaxSec=1h", "TimeoutStopSec=45",
+        "StopPropagatedFrom=agora-database.service docker.service",
+        "ExecStartPre=/usr/bin/systemctl is-active --quiet agora-database.service",
+        "--network=container:agora-postgres-json-keys", "--read-only --user=999:999",
+        "source=/mnt/disks/agora-data/json-keys,target=/var/lib/postgresql,readonly",
+        "source=/run/agora/postgresql,target=/var/run/postgresql,readonly",
+        "source=/run/agora/pgbackrest-lock,target=/run/pgbackrest-lock",
+        "${var.pgbackrest_repository.runtime.server_image} --stanza=json-keys",
+        "ExecStop=-/usr/bin/docker stop", "ExecStopPost=-/usr/bin/docker rm --force",
+      ] : strcontains(file.content, option)
+    ]]))
+    error_message = "Native jobs must reuse the database's image, socket, locks and isolated network with bounded container cleanup."
+  }
+  assert {
+    condition = alltrue([for name, command in {
+      stanza-create = "stanza-create"
+      check         = "check"
+      full          = "--type=full --repo1-bundle --no-expire-auto backup"
+      diff          = "--type=diff --repo1-bundle --no-expire-auto backup"
+      } : strcontains(one([for file in yamldecode(local.database_cloud_config.host).write_files : file.content
+      if file.path == "/etc/systemd/system/agora-backup-${name}.service"]), "--stanza=json-keys ${command}\n")
+    ])
+    error_message = "Only backup commands may carry pgBackRest's backup-only options."
+  }
+  assert {
+    condition = alltrue([for file in yamldecode(local.database_cloud_config.host).write_files :
+      !endswith(file.path, ".timer") && !strcontains(file.content, "[Install]")
+    ])
+    error_message = "Prepared jobs must not install schedules or automatic activation."
+  }
+}
+
+run "explicit_wal_archiving" {
+  command = plan
+  variables {
+    pgbackrest_repository = { runtime = jsondecode(file("tests/fixtures/repository-runtime.json")) }
+    database_runtime      = merge(jsondecode(file("tests/fixtures/database-runtime.json")), { wal_archiving = true })
+  }
+  override_resource {
+    target = google_compute_instance.repository
+    values = { network_interface = { network_ip = "10.90.0.3" } }
+  }
+  assert {
+    condition     = strcontains(yamldecode(local.database_cloud_config.host).write_files[3].content, "Environment=PGBACKREST_WAL_ARCHIVING=true")
+    error_message = "WAL archiving requires an explicit foundation-owned opt-in."
   }
 }
 

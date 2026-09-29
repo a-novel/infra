@@ -330,6 +330,7 @@ start_database() {
     local running=""
     local restart="on-failure:5"
     local client_options=()
+    local socket_options=(--tmpfs "/var/run/postgresql:rw,nosuid,nodev,size=16m")
     local postgres_options=()
 
     if [ "${DATABASE_SUPERVISED}" = true ]; then
@@ -339,9 +340,15 @@ start_database() {
             --add-host "${PGBACKREST_REPOSITORY_NAME}:${PGBACKREST_REPOSITORY_IP}"
             --mount "type=bind,source=/etc/agora-database/pgbackrest.conf,target=/etc/pgbackrest/pgbackrest.conf,readonly"
             --mount "type=bind,source=/run/agora/pgbackrest/current,target=/run/pgbackrest,readonly"
+            --mount "type=bind,source=/run/agora/pgbackrest-lock,target=/run/pgbackrest-lock"
         )
-        # Prepared client configuration must not enable backups on an existing disk.
-        postgres_options=(-c archive_mode=off -c archive_command=)
+        socket_options=(--mount "type=bind,source=/run/agora/postgresql,target=/var/run/postgresql")
+        # Override any archived settings on an existing disk unless foundation opts in.
+        case "${PGBACKREST_WAL_ARCHIVING:-false}" in
+            false) postgres_options=(-c archive_mode=off -c archive_command=) ;;
+            true) postgres_options=(-c archive_mode=on -c "archive_command=pgbackrest --stanza=json-keys archive-push %p") ;;
+            *) printf 'error: WAL archiving must be true or false\n' >&2; return 1 ;;
+        esac
     fi
 
     prepare_database_directory "${image}" "${data_directory}"
@@ -376,7 +383,7 @@ start_database() {
         --mount "type=bind,source=${data_directory},target=/var/lib/postgresql" \
         --mount "type=bind,source=${password_file},target=/run/agora-postgres-password,readonly" \
         --mount "type=bind,source=${backup_password_file},target=/run/agora-postgres-backup-password,readonly" \
-        --tmpfs "/var/run/postgresql:rw,nosuid,nodev,size=16m" \
+        "${socket_options[@]}" \
         "${client_options[@]}" \
         "${image}" \
         postgres \
