@@ -493,6 +493,11 @@ Runtime activation additionally requires reviewed container credential/egress ac
 bootstrap, shutdown and admission behavior, native scheduling/monitoring, GCS verification, retention
 denial, catalog/WAL repair and source-loss recovery evidence. The
 [trial report](../../proofs/pgbackrest-gcs/result-20260927.md#remaining-adoption-gates) records the gaps.
+The [prepared native jobs](../../environments/service-foundation/README.md#prepared-native-backup-jobs)
+install no timers and leave WAL archiving off. Approve archive-failure/WAL-growth alerts before the
+foundation opt-in: failed archiving retains WAL and can exhaust the source disk. A stopped database
+must stay stopped when a job is requested; test interruption and exact-container cleanup on COS
+before enabling schedules. Keep automatic expiry disabled until retention reconciliation is proven.
 After exact-generation object repair, recover only an explicitly approved set/target into an isolated
 empty destination and verify SQL/application health. The old repository-time cutoff may still fail;
 never remove it or choose a different set automatically. Preserve all supported logical readers until
