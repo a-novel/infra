@@ -28,8 +28,8 @@ locals {
   database_backup_jobs = {
     stanza-create = "stanza-create"
     check         = "check"
-    full          = "--type=full --repo1-bundle backup"
-    diff          = "--type=diff --repo1-bundle backup"
+    full          = "--type=full --repo1-bundle --no-expire-auto backup"
+    diff          = "--type=diff --repo1-bundle --no-expire-auto backup"
   }
   database_runtime = var.database_runtime == null ? {} : {
     for key, runtime in local.repository_runtime : key => merge(runtime, var.database_runtime)

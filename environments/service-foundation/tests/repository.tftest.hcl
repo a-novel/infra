@@ -216,11 +216,22 @@ run "prepared_database_lifecycle" {
         "source=/mnt/disks/agora-data/json-keys,target=/var/lib/postgresql,readonly",
         "source=/run/agora/postgresql,target=/var/run/postgresql,readonly",
         "source=/run/agora/pgbackrest-lock,target=/run/pgbackrest-lock",
-        "${var.pgbackrest_repository.runtime.server_image} --stanza=json-keys --no-expire-auto",
+        "${var.pgbackrest_repository.runtime.server_image} --stanza=json-keys",
         "ExecStop=-/usr/bin/docker stop", "ExecStopPost=-/usr/bin/docker rm --force",
       ] : strcontains(file.content, option)
     ]]))
     error_message = "Native jobs must reuse the database's image, socket, locks and isolated network with bounded container cleanup."
+  }
+  assert {
+    condition = alltrue([for name, command in {
+      stanza-create = "stanza-create"
+      check         = "check"
+      full          = "--type=full --repo1-bundle --no-expire-auto backup"
+      diff          = "--type=diff --repo1-bundle --no-expire-auto backup"
+      } : strcontains(one([for file in yamldecode(local.database_cloud_config.host).write_files : file.content
+      if file.path == "/etc/systemd/system/agora-backup-${name}.service"]), "--stanza=json-keys ${command}\n")
+    ])
+    error_message = "Only backup commands may carry pgBackRest's backup-only options."
   }
   assert {
     condition = alltrue([for file in yamldecode(local.database_cloud_config.host).write_files :
