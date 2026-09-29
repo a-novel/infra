@@ -249,7 +249,7 @@ run "prepared_database_lifecycle" {
       } : alltrue([for option in [
         "OnCalendar=${calendar}", "Unit=agora-backup-${name}.service", "Persistent=false",
         "RandomizedDelaySec=5m", "StopPropagatedFrom=agora-database.service",
-      ] : strcontains(one([for file in yamldecode(local.database_cloud_config.host).write_files : file.content
+        ] : strcontains(one([for file in yamldecode(local.database_cloud_config.host).write_files : file.content
       if file.path == "/etc/systemd/system/agora-backup-${name}.timer"]), option)])
     ])
     error_message = "Only full, differential and checks get disabled UTC timers, with no catch-up or database restart coupling."
