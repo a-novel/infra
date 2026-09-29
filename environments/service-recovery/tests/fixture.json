@@ -1,0 +1,19 @@
+{
+  "project": "a-novel-recovery-proof",
+  "source_project": "source-project",
+  "protected_projects": [
+    "source-project",
+    "management-project",
+    "peer-project"
+  ],
+  "management_project": "management-project",
+  "management_number": "123456789012",
+  "region": "europe-west1",
+  "zone": "europe-west1-d",
+  "cos_image": "projects/cos-cloud/global/images/cos-129-19506-448-53",
+  "restore_image": "europe-west1-docker.pkg.dev/a-novel-recovery-proof/agora-tooling/native-restore@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "disk_gib": 10,
+  "system_id": "7690306691413745679",
+  "set": "20260927-200643F",
+  "repository_time": "2026-09-27T20:35:40Z"
+}

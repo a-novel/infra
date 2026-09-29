@@ -90,11 +90,11 @@ func TestToolingArtifact(t *testing.T) {
 		{"PublicationOffByDefault", nested(publication.On, "workflow_dispatch", "inputs", "publish")["default"], false},
 		{"ToolChoice", selection["type"], "choice"},
 		{"DefaultTool", selection["default"], "rollout-verifier"},
-		{"AllowedTools", selection["options"], []any{"rollout-verifier", "host-credentials"}},
-		{"CanonicalTool", publication.Env, map[string]string{"TOOL": "${{ inputs.tool == 'host-credentials' && 'host-credentials' || 'rollout-verifier' }}"}},
+		{"AllowedTools", selection["options"], []any{"rollout-verifier", "host-credentials", "native-restore"}},
+		{"CanonicalTool", publication.Env, map[string]string{"TOOL": "${{ inputs.tool }}"}},
 		{"NoInheritedAuthority", publication.Permissions, map[string]string{}},
 		{"ReadOnlyBuild", build.Permissions, map[string]string{"contents": "read"}},
-		{"Approval", publish.Environment, "${{ inputs.tool == 'host-credentials' && 'host-artifacts' || 'rollout-artifacts' }}"},
+		{"Approval", publish.Environment, "${{ inputs.tool == 'rollout-verifier' && 'rollout-artifacts' || 'host-artifacts' }}"},
 		{"PublishAuthority", publish.Permissions, map[string]string{"contents": "read", "packages": "write", "attestations": "write", "id-token": "write"}},
 		{"SameRunArtifact", publish.Needs, "build"},
 		{"ExactArtifactOutput", build.Outputs, map[string]string{"artifact_id": "${{ steps.archive.outputs.artifact-id }}", "tool": "${{ env.TOOL }}"}},
@@ -104,7 +104,7 @@ func TestToolingArtifact(t *testing.T) {
 		{"MissingArchiveFails", upload.With["if-no-files-found"], "error"},
 		{"NoBuildPush", image.With["push"], false},
 		{"DefaultPublicationImage", nested(tooling.Inputs, "image_name")["default"], "rollout-verifier"},
-		{"BothImagesScanned", ciImages, []string{"", "host-credentials"}},
+		{"AllImagesScanned", ciImages, []string{"", "host-credentials", "native-restore"}},
 		{"PublicationUsesSelection", build.Steps[stepIndex(t, build.Steps, "build-tooling-image")].With["image_name"], "${{ env.TOOL }}"},
 		{"SinglePlatform", image.With["platforms"], "linux/amd64"},
 		{"ScannedArchive", image.With["outputs"], "type=docker,dest=" + scan.With["input"].(string)},
@@ -121,9 +121,10 @@ func TestToolingArtifact(t *testing.T) {
 		t.Parallel()
 		require.Equal(t, strings.Fields(`inputs.publish && github.repository == 'a-novel/infra' && github.ref == 'refs/heads/master' && (
 			(inputs.tool == 'rollout-verifier' && vars.ROLLOUT_VERIFIER_PUBLICATION_ENABLED == 'true') ||
-			(inputs.tool == 'host-credentials' && vars.HOST_CREDENTIALS_PUBLICATION_ENABLED == 'true')
+			(inputs.tool == 'host-credentials' && vars.HOST_CREDENTIALS_PUBLICATION_ENABLED == 'true') ||
+			(inputs.tool == 'native-restore' && vars.NATIVE_RESTORE_PUBLICATION_ENABLED == 'true')
 		)`), strings.Fields(publish.If))
-		require.Contains(t, build.Steps[0].If, `!contains(fromJSON('["rollout-verifier", "host-credentials"]'), inputs.tool)`)
+		require.Contains(t, build.Steps[0].If, `!contains(fromJSON('["rollout-verifier", "host-credentials", "native-restore"]'), inputs.tool)`)
 		encoded, err := json.Marshal(publish)
 		require.NoError(t, err)
 		require.NotRegexp(t, `checkout@|google-github-actions|secrets\.|build-push-action|docker (build|run)|go run|go build`, string(encoded))

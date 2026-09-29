@@ -23,7 +23,7 @@ func TestRecovery(t *testing.T) {
 	t.Log(strings.TrimSpace(run(t, "pgbackrest", "version")))
 	t.Log(strings.TrimSpace(run(t, "postgres", "--version")))
 	t.Log(strings.TrimSpace(run(t, "/usr/lib/postgresql/17/bin/postgres", "--version")))
-	p := newProof(t)
+	p := newProof(t, "proof")
 	var first, retained, newest backup
 	for _, tc := range []struct {
 		name string
@@ -144,12 +144,12 @@ UPDATE ballast SET value = value || '!';`)
 	}
 }
 
-type proof struct{ root, config, source, repo string }
+type proof struct{ root, config, source, repo, stanza string }
 
 // newProof creates only synthetic data, shared by the local and TLS transport cases.
-func newProof(t *testing.T) proof {
+func newProof(t *testing.T, stanza string) proof {
 	t.Helper()
-	p := proof{root: t.TempDir()}
+	p := proof{root: t.TempDir(), stanza: stanza}
 	p.config = filepath.Join(p.root, "pgbackrest.conf")
 	p.source = filepath.Join(p.root, "source")
 	p.repo = filepath.Join(p.root, "repository")
@@ -165,10 +165,10 @@ log-level-console=warn
 log-level-file=off
 lock-path=%s/lock
 
-[proof]
+[%s]
 pg1-path=%s
 pg1-socket-path=%s
-`, p.repo, p.root, p.source, p.root))
+`, p.repo, p.root, stanza, p.source, p.root))
 	run(t, "initdb", "-D", p.source, "--auth-local=peer", "--auth-host=scram-sha-256", "--no-locale")
 	write(t, filepath.Join(p.source, "postgresql.conf"), fmt.Sprintf(`listen_addresses=''
 unix_socket_directories='%s'
@@ -176,8 +176,8 @@ shared_buffers='64MB'
 max_connections=20
 wal_level=replica
 archive_mode=on
-archive_command='pgbackrest --config=%s --stanza=proof archive-push %%p'
-`, p.root, p.config))
+archive_command='pgbackrest --config=%s --stanza=%s archive-push %%p'
+`, p.root, p.config, stanza))
 	p.start(t, p.source, p.root)
 	p.backrest(t, "stanza-create")
 	run(t, "psql", "-X", "-h", p.root, "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-f", "/docker-entrypoint-initdb.d/init.sql")
@@ -193,7 +193,7 @@ type backup struct {
 }
 
 func (p proof) command(ctx context.Context, args ...string) *exec.Cmd {
-	return exec.CommandContext(ctx, "pgbackrest", append([]string{"--config=" + p.config, "--stanza=proof"}, args...)...)
+	return exec.CommandContext(ctx, "pgbackrest", append([]string{"--config=" + p.config, "--stanza=" + p.stanza}, args...)...)
 }
 
 func (p proof) backrest(t *testing.T, args ...string) string {

@@ -7,6 +7,7 @@ FROM docker.io/library/golang:1.27.1-alpine AS builder
 ENV CGO_ENABLED=0
 WORKDIR /app
 COPY go.mod go.sum ./
+COPY internal/recovery ./internal/recovery
 COPY proofs/pgbackrest ./proofs/pgbackrest
 RUN go test -c -trimpath -o /proof.test ./proofs/pgbackrest
 
