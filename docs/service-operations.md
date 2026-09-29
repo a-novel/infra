@@ -251,8 +251,29 @@ inspecting that generation and its completion evidence, never by deleting the cu
 Native generation checks provide the storage primitive; Agora retains only the admission policy.
 
 This is a cooperative trusted-tooling boundary, **not fencing of other cloud APIs**: a GCS generation
-cannot invalidate a delayed Cloud Run or Cloud Deploy request. All mutating callers must participate.
+cannot invalidate a delayed Cloud Run or Cloud Deploy request. All conflicting mutating callers must participate.
 Privileged console access and IAM administrators remain explicit human coordination boundaries.
+
+### Native online backups
+
+The disabled native backup pilot distinguishes **compatible online protection** from a conflicting
+service change. Routine full/differential backups, archive checks and continuous WAL archiving use
+pgBackRest locks and the database's systemd lifecycle; they do not acquire the cloud service guard.
+They gain no guard-write permission or authority over application deployments. This exception does
+not apply to migrations, rotation, applies, restore, expiry or disruptive maintenance.
+
+Protected database/repository maintenance and recovery acquire service admission first, then stop
+the three backup timers and drain/check the worker services before changing their runtime. Database
+stop propagates to timers/workers; restart does not resume schedules. Continuous WAL archiving is
+separate: stopping timers is not repository exclusion. Before destructive repository work, quiesce
+PostgreSQL's archiver as part of the approved database shutdown. For an approved temporary repository
+outage, retain WAL and monitor disk capacity instead of discarding it or silently disabling archiving.
+
+Resume scheduling only after explicit reconciliation of database, repository and backup health.
+Unknown worker outcomes remain failures to inspect. The calendar's next attempt is ordinary native
+backup scheduling, never authority to replay a restore or mutation. The guarded remote maintenance
+executor and live stop/drain rehearsal remain activation gates; these disabled timers do not supply
+that executor. See the [prepared backup path](../environments/service-foundation/README.md#prepared-native-backup-jobs).
 
 ## One operation from admission to completion
 

@@ -36,6 +36,9 @@ run "no_repository_by_default" {
       length(google_service_account.repository) == 0,
       length(google_service_account_iam_member.repository_attachment) == 0,
       length(google_artifact_registry_repository_iam_member.repository_images) == 0,
+      length(google_logging_metric.database_backup_success) == 0,
+      length(google_monitoring_alert_policy.database_backup_health) == 0,
+      length(google_monitoring_alert_policy.database_backup_failure) == 0,
       output.pgbackrest_repository == null,
     ])
     error_message = "Existing database inputs must add no repository host, identity or attachment authority."
@@ -174,7 +177,7 @@ run "prepared_database_lifecycle" {
       !contains(keys(google_compute_instance_template.database["host"].metadata), "shutdown-script"),
       google_compute_instance_template.database["host"].metadata["user-data"] == local.database_cloud_config.host,
       yamldecode(local.database_cloud_config.host).runcmd == [["systemctl", "daemon-reload"]],
-      length(yamldecode(local.database_cloud_config.host).write_files) == 8,
+      length(yamldecode(local.database_cloud_config.host).write_files) == 11,
       google_compute_instance_group_manager.database["host"].all_instances_config[0].metadata == tomap({
         agora-json-keys-database-image                   = var.pgbackrest_repository.runtime.server_image
         agora-json-keys-postgres-password-version        = "3"
@@ -193,7 +196,7 @@ run "prepared_database_lifecycle" {
       "PGBACKREST_REPOSITORY_IP=10.90.0.3", "--endpoint=database --ca-version=1 --identity-version=5",
       "--name=agora-database.agora-json-keys-test", "--supervise", "ExecStopPost=",
       "Environment=PGBACKREST_WAL_ARCHIVING=false", "/run/agora/postgresql /run/agora/pgbackrest-lock",
-      "rm --force agora-backup-check agora-backup-diff agora-backup-full agora-backup-stanza-create",
+      "kill agora-backup-check agora-backup-diff agora-backup-full agora-backup-stanza-create",
     ] : strcontains(yamldecode(local.database_cloud_config.host).write_files[3].content, option)])
     error_message = "Systemd must own bounded restart, exact TLS delivery and stopped-consumer cleanup."
   }
@@ -217,7 +220,8 @@ run "prepared_database_lifecycle" {
         "source=/run/agora/postgresql,target=/var/run/postgresql,readonly",
         "source=/run/agora/pgbackrest-lock,target=/run/pgbackrest-lock",
         "${var.pgbackrest_repository.runtime.server_image} --stanza=json-keys",
-        "ExecStop=-/usr/bin/docker stop", "ExecStopPost=-/usr/bin/docker rm --force",
+        "ExecStop=-/usr/bin/docker stop", "ExecStopPost=-/usr/bin/docker kill",
+        "--log-driver=json-file --log-opt=max-size=2m --log-opt=max-file=2 --log-opt=tag={{.Name}}",
       ] : strcontains(file.content, option)
     ]]))
     error_message = "Native jobs must reuse the database's image, socket, locks and isolated network with bounded container cleanup."
@@ -235,9 +239,40 @@ run "prepared_database_lifecycle" {
   }
   assert {
     condition = alltrue([for file in yamldecode(local.database_cloud_config.host).write_files :
-      !endswith(file.path, ".timer") && !strcontains(file.content, "[Install]")
+      !strcontains(file.content, "[Install]")
     ])
-    error_message = "Prepared jobs must not install schedules or automatic activation."
+    error_message = "Prepared jobs and timers must not enable boot activation."
+  }
+  assert {
+    condition = alltrue([for name, calendar in {
+      full = "Sun *-*-* 02:00:00 UTC", diff = "Mon..Sat *-*-* 02:00:00 UTC", check = "*-*-* *:30:00 UTC",
+      } : alltrue([for option in [
+        "OnCalendar=${calendar}", "Unit=agora-backup-${name}.service", "Persistent=false",
+        "RandomizedDelaySec=5m", "StopPropagatedFrom=agora-database.service",
+        ] : strcontains(one([for file in yamldecode(local.database_cloud_config.host).write_files : file.content
+      if file.path == "/etc/systemd/system/agora-backup-${name}.timer"]), option)])
+    ])
+    error_message = "Only full, differential and checks get disabled UTC timers, with no catch-up or database restart coupling."
+  }
+  assert {
+    condition = alltrue([
+      !google_monitoring_alert_policy.database_backup_failure["host"].enabled,
+      google_monitoring_alert_policy.database_backup_failure["host"].notification_channels == tolist([google_monitoring_notification_channel.operations.name]),
+      toset(keys(google_monitoring_alert_policy.database_backup_health)) == toset(["full", "backup", "check", "disk"]),
+      google_logging_metric.database_backup_success["host"].project == var.project_id,
+      google_logging_metric.database_backup_success["host"].label_extractors == tomap({ job = "EXTRACT(jsonPayload.\"cos.googleapis.com/container_name\")" }),
+    ])
+    error_message = "Monitoring must remain disabled in the selected project and use the existing notification channel."
+  }
+  assert {
+    condition = alltrue([for policy in google_monitoring_alert_policy.database_backup_health :
+      alltrue([
+        !policy.enabled, length(policy.conditions) == 1, policy.project == var.project_id,
+        policy.notification_channels == tolist([google_monitoring_notification_channel.operations.name]),
+        policy.conditions[0].condition_prometheus_query_language[0].duration == "600s",
+      ])
+    ])
+    error_message = "Each disabled health policy must have one native condition and the service's notification channel."
   }
 }
 

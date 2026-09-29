@@ -1,0 +1,11 @@
+[Unit]
+Description=Agora JSON Keys native backup schedule (${name})
+After=agora-database.service
+StopPropagatedFrom=agora-database.service
+
+[Timer]
+OnCalendar=${calendar}
+Unit=agora-backup-${name}.service
+Persistent=false
+RandomizedDelaySec=5m
+AccuracySec=1m

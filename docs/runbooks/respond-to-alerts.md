@@ -336,6 +336,35 @@ and escalation checks. Freeze database-changing releases until both databases ag
 logical backup and the monitor succeeds. Do not delete a partial object, rewrite a completion
 manifest, or call a backup successful from object presence alone.
 
+## Native backup pilot
+
+**Inactive service-owned preparation, not current production monitoring.** The five prepared policies
+are disabled and use the selected service's operations channel. Existing logical-backup and snapshot
+protection remains unchanged.
+
+An error policy reports pgBackRest/WAL errors or warning journal events from its workers. The health
+policies report a missed Sunday full-backup deadline, missing daily-backup/hourly-check success,
+disk pressure or missing disk metrics, including never-seen series. The weekly check runs Sunday
+04:00–23:59 UTC using a 24-hour lookback; Monday's closure is not proof of repair or a continuous
+full-chain age guarantee. A stopped host, failed collection and a missed job are actionable uncertainty.
+No incident proves that a restore would succeed; `info` can be OK with a missing dependency.
+
+Inspect the exact project/VM bound in the policy, then the relevant `agora-backup-*.service` journal,
+its retained Docker logs and the three timers. The prepared units retain bounded logs until the next
+run; export relevant failure evidence first. Inspect native backup sets and archive progress without
+changing the selected recovery point. Do not run expiry, delete WAL, weaken retention or fall back
+silently to a different set/time. A failed archive can fill the database disk while the API still works.
+
+Disruptive maintenance/recovery follows [service admission](../service-operations.md#native-online-backups),
+including stopping timers and draining workers. Stopping timers alone does not stop WAL archiving.
+After host replacement, reconcile the policies' numeric VM ID before resuming scheduled work.
+
+Before activation, the approved COS rehearsal must establish actual container/journal field mapping,
+first successful counters, no-data and zero-data behavior, UTC deadline boundaries, stopped-host
+detection, data-disk coverage and notification delivery. Check bounds against measured backup runtime
+and workload recovery objectives. Alerting resources/metrics must exist before collecting the baseline;
+log metrics are not retrospective. Review storage/request/logging cost alongside backup retention.
+
 ## Budget alerts
 
 **Signal:** `Agora production infrastructure` at current or forecast spend of 50%, 75%, 90%, or

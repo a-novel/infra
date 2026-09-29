@@ -210,7 +210,11 @@ without weakening upstream constraints or adding a controller. Runtime/backup re
 ### Prepared native backup jobs
 
 The database lifecycle also installs four disabled `agora-backup-<operation>.service` units from one
-template: `stanza-create`, `check`, `full` and `diff`. There are no timers or automatic starts.
+template: `stanza-create`, `check`, `full` and `diff`. Three disabled timers prepare a weekly full
+(Sunday 02:00 UTC), differential (Monday–Saturday 02:00 UTC), and hourly archive check (:30 UTC),
+with up to five minutes of jitter. Nothing starts or enables them on boot. Missed runs do not catch
+up automatically; no timer creates the stanza or runs expiry. These are initial review settings,
+not a measured RPO or permission to activate scheduling.
 After separate activation approval, foundation can set `database_runtime.wal_archiving = true` to
 enable PostgreSQL's native `pgbackrest --stanza=json-keys archive-push %p` command. This requires a
 database maintenance restart, not an API release. The default explicitly clears archiving on existing
@@ -226,13 +230,42 @@ systemd requires the database to be active without starting it. Jobs have a one-
 stop cleanup and no automatic retries. Database stop propagates to workers without replaying them on
 restart; database failure cleanup also reaps their exact container names before removing credentials.
 pgBackRest owns conflicting-operation locks, WAL checks and completion metadata. Automatic expiry is
-disabled in the shared configuration and each job. Failed jobs require inspection before explicit retry.
+disabled in the shared configuration and each job. Failed jobs require inspection before explicit retry;
+the next calendar event is an independent scheduled attempt, not an automatic command retry.
+
+Routine online backups/checks and continuous WAL archiving use native pgBackRest coordination rather
+than acquiring the service-wide deployment guard. Disruptive maintenance and recovery retain protected
+[service admission](../../docs/service-operations.md#native-online-backups). Stop all three timers and
+drain workers before maintenance; a database stop also stops them without restarting them afterward.
+Stopping timers does **not** stop PostgreSQL's continuous archiver. Work requiring exclusive repository
+access must quiesce that writer too. An API release must not control this lifecycle.
+
+Each worker keeps one exited container with at most two 2 MiB Docker log files until its next run.
+COS's existing collector reads these logs; no second agent, cloud dispatcher or database-host grant is
+added. Database cleanup stops workers but preserves their logs. Startup failures/timeouts also have
+systemd journal evidence. Logs can still be lost on host loss or collection outage; the independent
+missing-success conditions cover that uncertainty, not proof of recovery.
+
+Five disabled Cloud Monitoring policies use the existing operations channel: native command/unit
+errors, Sunday's full-backup deadline (04:00 UTC), any backup (24 hours 45 minutes), archive check
+(three hours), disk pressure (85%) or missing disk telemetry (one hour). PromQL explicitly covers
+zero/never-seen samples; a standard absence condition would require prior history. The full check
+evaluates Sunday 04:00–23:59 UTC against the preceding 24 hours; it is not continuous full-chain age
+monitoring, and Monday's automatic closure does not prove a repair. Log-based alert lookbacks plus
+retest windows must stay within [Google's 25-hour limit](https://docs.cloud.google.com/monitoring/alerts/using-promql).
+The policies bind the current numeric VM ID;
+protected host replacement must reconcile them. Native success is not dependency integrity or SQL
+restore evidence. See [alert response](../../docs/runbooks/respond-to-alerts.md#native-backup-pilot).
 
 Before activation, rehearse shared-socket access, native lock contention, stop/timeout and database/
-Docker failure on COS. Verify admission, alert delivery, backup age, WAL growth, repository outage and
-isolated SQL restore. Archive failures retain WAL and can fill the database disk; no WAL-discard limit
+Docker failure on COS. Verify maintenance admission, default COS log fields, startup-failure/timeout
+events, first/zero/missing successes, stopped-host detection, alert delivery, data-disk metric coverage,
+backup age, WAL growth, repository outage and isolated SQL restore. Archive failures retain WAL and
+can fill the database disk; no WAL-discard limit
 is configured. This preparation adds no VM or cloud grant, but future backup I/O and stored WAL cost
-money. Scheduling, expiry and retirement of existing protection remain separately reviewed work.
+money. No resources are applied here; log-based metrics, stored logs and future backup traffic are not
+a zero-cost guarantee. Scheduling activation, expiry and retirement of existing protection remain
+separately reviewed work.
 
 ## Optional stopped repository host
 
