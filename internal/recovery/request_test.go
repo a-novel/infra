@@ -28,6 +28,10 @@ func TestRequest(t *testing.T) {
 	}{
 		{"Success", func(*recovery.Request) {}, false},
 		{"Success/ExplicitCutoff", func(r *recovery.Request) { r.RepositoryTime = "2026-09-27T20:35:40Z" }, false},
+		{"Success/Data", func(r *recovery.Request) { r.VerifySQL, r.ExpectedDataSHA256 = true, strings.Repeat("a", 64) }, false},
+		{"Error/DataWithoutSQL", func(r *recovery.Request) { r.ExpectedDataSHA256 = strings.Repeat("a", 64) }, true},
+		{"Error/MalformedData", func(r *recovery.Request) { r.VerifySQL, r.ExpectedDataSHA256 = true, strings.Repeat("A", 64) }, true},
+		{"Error/ShortData", func(r *recovery.Request) { r.VerifySQL, r.ExpectedDataSHA256 = true, "a" }, true},
 		{"Error/Peer", func(r *recovery.Request) { r.Service = "authentication" }, true},
 		{"Error/SourceTarget", func(r *recovery.Request) { r.Project = r.SourceProject }, true},
 		{"Error/ManagementTarget", func(r *recovery.Request) { r.Project = r.ManagementProject }, true},

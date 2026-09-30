@@ -16,6 +16,9 @@ import (
 //go:embed verify.sql
 var verificationSQL string
 
+//go:embed data.sql
+var dataSQL string
+
 // VerifySQL validates restored JSON Keys data in a separately supervised, networkless
 // container. It pauses at backup consistency, preserves failures and refuses replay.
 func VerifySQL(ctx context.Context, request Request, parent string, execute func(context.Context, io.Writer, string, ...string) ([]byte, error)) (err error) {
@@ -121,11 +124,18 @@ statement_timeout='30s'
 	if err != nil || checks != "t" {
 		return errors.New("JSON Keys recovery checks failed; inspect private diagnostics")
 	}
+	result := sqlCompletion{SystemID: request.SystemID, Set: request.Set, Stopped: true}
+	if request.ExpectedDataSHA256 != "" {
+		result.DataSHA256, err = query(dataSQL)
+		if err != nil || result.DataSHA256 != request.ExpectedDataSHA256 {
+			return errors.New("recovered application data differs from the independent expectation or could not be read")
+		}
+	}
 	if _, err := command("pg_ctl", "-D", data, "-m", "fast", "-w", "-t", "30", "stop"); err != nil {
 		return errors.New("verified PostgreSQL shutdown is unconfirmed")
 	}
 	stopped = true
-	outcome, err := json.Marshal(sqlCompletion{request.SystemID, request.Set, true})
+	outcome, err := json.Marshal(result)
 	if err != nil {
 		return err
 	}
@@ -133,9 +143,10 @@ statement_timeout='30s'
 }
 
 type sqlCompletion struct {
-	SystemID string `json:"system_id"`
-	Set      string `json:"set"`
-	Stopped  bool   `json:"postgresql_stopped"`
+	SystemID   string `json:"system_id"`
+	Set        string `json:"set"`
+	Stopped    bool   `json:"postgresql_stopped"`
+	DataSHA256 string `json:"data_sha256,omitempty"`
 }
 
 // CheckEvidence requires the selected outcome; files-only success cannot authorize SQL completion.
@@ -145,7 +156,8 @@ func (request Request) CheckEvidence(files map[string]string) error {
 	}
 	if request.VerifySQL {
 		var result sqlCompletion
-		if json.Unmarshal([]byte(files["verification/sql-verified.json"]), &result) != nil || result != (sqlCompletion{request.SystemID, request.Set, true}) {
+		expected := sqlCompletion{SystemID: request.SystemID, Set: request.Set, Stopped: true, DataSHA256: request.ExpectedDataSHA256}
+		if json.Unmarshal([]byte(files["verification/sql-verified.json"]), &result) != nil || result != expected {
 			return errors.New("stopped, SQL-verified recovery is unconfirmed")
 		}
 	}

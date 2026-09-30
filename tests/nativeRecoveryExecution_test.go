@@ -51,6 +51,9 @@ func TestNativeRecoveryExecution(t *testing.T) {
 		{"SQLWorkerFailure", "sql-agora-native-verify.service", 70, true, true},
 		{"SQLNetworkBoundary", "sql-verify-network", 70, true, true},
 		{"SQLLostCompletion", "sql-completion-ack", 70, true, true},
+		{"SQLDataSuccess", "sql-data-success", 0, false, true},
+		{"SQLDataMissing", "sql-data-missing", 70, true, true},
+		{"SQLDataMismatch", "sql-data-mismatch", 70, true, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -59,6 +62,9 @@ func TestNativeRecoveryExecution(t *testing.T) {
 			verifySQL := strings.HasPrefix(tc.fault, "sql-")
 			if verifySQL {
 				nested(config, "recovery")["verify_sql"] = true
+			}
+			if strings.HasPrefix(tc.fault, "sql-data-") {
+				nested(config, "recovery")["expected_data_sha256"] = strings.Repeat("a", 64)
 			}
 			file := filepath.Join(f.dir, "inputs.json")
 			writeJSON(t, file, config)
@@ -72,7 +78,14 @@ func TestNativeRecoveryExecution(t *testing.T) {
 				runtime.fail = strings.TrimPrefix(tc.fault, "sql-")
 			}
 			if verifySQL && tc.fault != "sql-incomplete" {
-				runtime.replies["sudo -n cat /mnt/disks/agora-recovery/work/attempt/verification/sql-verified.json"] = fmt.Sprintf(`{"system_id":%q,"set":%q,"postgresql_stopped":true}`, host.SystemID, host.Set)
+				observed := host.ExpectedDataSHA256
+				switch tc.fault {
+				case "sql-data-missing":
+					observed = ""
+				case "sql-data-mismatch":
+					observed = strings.Repeat("b", 64)
+				}
+				runtime.replies["sudo -n cat /mnt/disks/agora-recovery/work/attempt/verification/sql-verified.json"] = fmt.Sprintf(`{"system_id":%q,"set":%q,"postgresql_stopped":true,"data_sha256":%q}`, host.SystemID, host.Set, observed)
 			}
 			bucket, receipts := f.env["STATE_BUCKET"], strings.TrimSuffix(f.env["STATE_BUCKET"], "-tofu-state")+"-deployment-receipts"
 			guardName := "services/" + host.SourceProject + "/release/operation.json"

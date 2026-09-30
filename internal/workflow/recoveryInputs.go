@@ -17,20 +17,21 @@ import (
 // RecoveryHost binds a disposable host to independently reviewed recovery inputs.
 // The source service owns admission; Project owns only this host's state.
 type RecoveryHost struct {
-	Project           string   `json:"project"`
-	SourceProject     string   `json:"source_project"`
-	ProtectedProjects []string `json:"protected_projects"`
-	ManagementProject string   `json:"management_project"`
-	ManagementNumber  string   `json:"management_number"`
-	Region            string   `json:"region"`
-	Zone              string   `json:"zone"`
-	COSImage          string   `json:"cos_image"`
-	RestoreImage      string   `json:"restore_image"`
-	DiskGiB           int      `json:"disk_gib"`
-	SystemID          string   `json:"system_id"`
-	Set               string   `json:"set"`
-	RepositoryTime    string   `json:"repository_time,omitempty"`
-	VerifySQL         bool     `json:"verify_sql,omitempty"`
+	Project            string   `json:"project"`
+	SourceProject      string   `json:"source_project"`
+	ProtectedProjects  []string `json:"protected_projects"`
+	ManagementProject  string   `json:"management_project"`
+	ManagementNumber   string   `json:"management_number"`
+	Region             string   `json:"region"`
+	Zone               string   `json:"zone"`
+	COSImage           string   `json:"cos_image"`
+	RestoreImage       string   `json:"restore_image"`
+	DiskGiB            int      `json:"disk_gib"`
+	SystemID           string   `json:"system_id"`
+	Set                string   `json:"set"`
+	RepositoryTime     string   `json:"repository_time,omitempty"`
+	VerifySQL          bool     `json:"verify_sql,omitempty"`
+	ExpectedDataSHA256 string   `json:"expected_data_sha256,omitempty"`
 }
 
 // Request is the exact selection shared by the prepared host and its worker.
@@ -39,6 +40,7 @@ func (host RecoveryHost) Request() recovery.Request {
 		Service: "json-keys", SourceProject: host.SourceProject, Project: host.Project,
 		ManagementProject: host.ManagementProject, ManagementNumber: host.ManagementNumber,
 		SystemID: host.SystemID, Major: 18, Set: host.Set, RepositoryTime: host.RepositoryTime, VerifySQL: host.VerifySQL,
+		ExpectedDataSHA256: host.ExpectedDataSHA256,
 	}
 }
 
