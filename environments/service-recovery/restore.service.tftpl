@@ -1,0 +1,26 @@
+[Unit]
+Description=Agora JSON Keys native file recovery (manual approval only)
+Requires=docker.service
+After=docker.service network-online.target gcr-online.target
+Wants=network-online.target gcr-online.target
+AssertPathIsMountPoint=/mnt/disks/agora-recovery
+
+[Service]
+Type=exec
+Restart=no
+RuntimeMaxSec=55min
+TimeoutStopSec=45
+UMask=0077
+ExecStartPre=/usr/bin/install -d -o 999 -g 999 -m 0700 /mnt/disks/agora-recovery/work
+ExecStartPre=/usr/bin/docker --config=/etc/agora-recovery/docker pull ${image}
+# Both the retained container name and the worker's on-disk attempt refuse replay.
+ExecStart=/usr/bin/docker run --name=agora-native-restore --pull=never \
+    --network=bridge --read-only --user=999:999 --cap-drop=ALL --security-opt=no-new-privileges \
+    --cpus=1 --memory=1g --memory-swap=1g --pids-limit=64 --no-healthcheck --ulimit=core=0 \
+    --log-driver=none --stop-signal=SIGTERM \
+    --tmpfs=/tmp:rw,noexec,nosuid,nodev,size=32m,mode=1777 \
+    --mount=type=bind,source=/mnt/disks/agora-recovery/work,target=/recovery \
+    --mount=type=bind,source=/etc/agora-recovery/request.json,target=/etc/agora-recovery/request.json,readonly \
+    ${image}
+ExecStop=-/usr/bin/docker stop --time=30 agora-native-restore
+ExecStopPost=-/usr/bin/docker kill agora-native-restore

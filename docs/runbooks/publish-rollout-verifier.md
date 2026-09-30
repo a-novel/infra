@@ -3,7 +3,7 @@
 This publishes one reviewed tooling image to GHCR. Cloud promotion and host/rollout activation
 require separate approval. The workflow has no Google Cloud credentials.
 
-The `scan-infrastructure` CI check builds and scans both tools on every PR. The manual
+The `scan-infrastructure` CI check builds and scans all tools on every PR. The manual
 `publish-rollout-verifier.yaml` workflow uses the same action, with publication off by default.
 Its filename remains stable because it identifies the verifier's provenance signer.
 Its read-only build job exports one `linux/amd64` Docker image and fails on high/critical
@@ -21,6 +21,7 @@ environment; enabling the verifier does not authorize host credential publicatio
 | ------------------ | -------------------------------------- | -------------------- |
 | `rollout-verifier` | `ROLLOUT_VERIFIER_PUBLICATION_ENABLED` | `rollout-artifacts`  |
 | `host-credentials` | `HOST_CREDENTIALS_PUBLICATION_ENABLED` | `host-artifacts`     |
+| `native-restore`   | `NATIVE_RESTORE_PUBLICATION_ENABLED`   | `host-artifacts`     |
 
 For the credential loader, use:
 
@@ -30,8 +31,9 @@ PUBLICATION_SWITCH=HOST_CREDENTIALS_PUBLICATION_ENABLED
 ARTIFACT_ENV=host-artifacts
 ```
 
-For the verifier, select all three values from its row. The loader remains unwired to hosts;
-publication neither reads TLS secrets nor issues certificates.
+For another tool, select all three values from its row. Publication neither reads TLS secrets
+nor starts hosts. The restore worker carries JSON Keys' PostgreSQL image; its system libraries
+and extensions are part of the scan and compatibility review.
 
 ## Build and scan only
 

@@ -11,6 +11,7 @@ on:
         options:
           - rollout-verifier
           - host-credentials
+          - native-restore
       publish:
         description: Publish the scanned image after environment approval (otherwise build and scan only)
         type: boolean
@@ -21,7 +22,7 @@ run-name: ${{ inputs.tool }} ${{ inputs.publish && 'publish' || 'build only' }} 
 permissions: {}
 
 env:
-  TOOL: ${{ inputs.tool == 'host-credentials' && 'host-credentials' || 'rollout-verifier' }}
+  TOOL: ${{ inputs.tool }}
 
 concurrency:
   group: rollout-verifier-publication
@@ -40,10 +41,11 @@ jobs:
       - name: Reject an unapproved publication context
         if: >-
           github.repository != 'a-novel/infra' || github.ref != 'refs/heads/master' ||
-          !contains(fromJSON('["rollout-verifier", "host-credentials"]'), inputs.tool) ||
+          !contains(fromJSON('["rollout-verifier", "host-credentials", "native-restore"]'), inputs.tool) ||
           (inputs.publish && !(
             (inputs.tool == 'rollout-verifier' && vars.ROLLOUT_VERIFIER_PUBLICATION_ENABLED == 'true') ||
-            (inputs.tool == 'host-credentials' && vars.HOST_CREDENTIALS_PUBLICATION_ENABLED == 'true')
+            (inputs.tool == 'host-credentials' && vars.HOST_CREDENTIALS_PUBLICATION_ENABLED == 'true') ||
+            (inputs.tool == 'native-restore' && vars.NATIVE_RESTORE_PUBLICATION_ENABLED == 'true')
           ))
         shell: bash
         run: |
@@ -76,11 +78,12 @@ jobs:
     if: >-
       inputs.publish && github.repository == 'a-novel/infra' && github.ref == 'refs/heads/master' && (
         (inputs.tool == 'rollout-verifier' && vars.ROLLOUT_VERIFIER_PUBLICATION_ENABLED == 'true') ||
-        (inputs.tool == 'host-credentials' && vars.HOST_CREDENTIALS_PUBLICATION_ENABLED == 'true')
+        (inputs.tool == 'host-credentials' && vars.HOST_CREDENTIALS_PUBLICATION_ENABLED == 'true') ||
+        (inputs.tool == 'native-restore' && vars.NATIVE_RESTORE_PUBLICATION_ENABLED == 'true')
       )
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    environment: ${{ inputs.tool == 'host-credentials' && 'host-artifacts' || 'rollout-artifacts' }}
+    environment: ${{ inputs.tool == 'rollout-verifier' && 'rollout-artifacts' || 'host-artifacts' }}
     permissions:
       contents: read
       packages: write

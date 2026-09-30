@@ -22,8 +22,7 @@ func TestRecovery(t *testing.T) {
 	}
 	t.Log(strings.TrimSpace(run(t, "pgbackrest", "version")))
 	t.Log(strings.TrimSpace(run(t, "postgres", "--version")))
-	t.Log(strings.TrimSpace(run(t, "/usr/lib/postgresql/17/bin/postgres", "--version")))
-	p := newProof(t)
+	p := newProof(t, "proof")
 	var first, retained, newest backup
 	for _, tc := range []struct {
 		name string
@@ -90,7 +89,7 @@ UPDATE ballast SET value = value || '!';`)
 					require.Error(t, err, string(out))
 					data := filepath.Join(t.TempDir(), "restore")
 					p.backrest(t, "--set="+first.Label, "--pg1-path="+data, "--type=immediate", "--archive-mode=off", "restore")
-					out, err = p.boot(t, data, "pg_ctl", filepath.Dir(data))
+					out, err = p.boot(t, data, filepath.Dir(data))
 					require.Error(t, err, "incomplete recovery must not accept connections: %s", out)
 					log, err := os.ReadFile(data + ".log")
 					require.NoError(t, err)
@@ -101,7 +100,9 @@ UPDATE ballast SET value = value || '!';`)
 		{"PostgreSQL major mismatch is refused", func(t *testing.T) {
 			data := filepath.Join(t.TempDir(), "restore")
 			p.backrest(t, "--set="+first.Label, "--pg1-path="+data, "--type=immediate", "--archive-mode=off", "restore")
-			out, err := p.boot(t, data, "/usr/lib/postgresql/17/bin/pg_ctl", filepath.Dir(data))
+			// Exercise the published server's native version guard, without installing another major.
+			write(t, filepath.Join(data, "PG_VERSION"), "17\n")
+			out, err := p.boot(t, data, filepath.Dir(data))
 			require.Error(t, err, string(out))
 			log, err := os.ReadFile(data + ".log")
 			require.NoError(t, err)
@@ -144,12 +145,12 @@ UPDATE ballast SET value = value || '!';`)
 	}
 }
 
-type proof struct{ root, config, source, repo string }
+type proof struct{ root, config, source, repo, stanza string }
 
 // newProof creates only synthetic data, shared by the local and TLS transport cases.
-func newProof(t *testing.T) proof {
+func newProof(t *testing.T, stanza string) proof {
 	t.Helper()
-	p := proof{root: t.TempDir()}
+	p := proof{root: t.TempDir(), stanza: stanza}
 	p.config = filepath.Join(p.root, "pgbackrest.conf")
 	p.source = filepath.Join(p.root, "source")
 	p.repo = filepath.Join(p.root, "repository")
@@ -165,10 +166,10 @@ log-level-console=warn
 log-level-file=off
 lock-path=%s/lock
 
-[proof]
+[%s]
 pg1-path=%s
 pg1-socket-path=%s
-`, p.repo, p.root, p.source, p.root))
+`, p.repo, p.root, stanza, p.source, p.root))
 	run(t, "initdb", "-D", p.source, "--auth-local=peer", "--auth-host=scram-sha-256", "--no-locale")
 	write(t, filepath.Join(p.source, "postgresql.conf"), fmt.Sprintf(`listen_addresses=''
 unix_socket_directories='%s'
@@ -176,8 +177,8 @@ shared_buffers='64MB'
 max_connections=20
 wal_level=replica
 archive_mode=on
-archive_command='pgbackrest --config=%s --stanza=proof archive-push %%p'
-`, p.root, p.config))
+archive_command='pgbackrest --config=%s --stanza=%s archive-push %%p'
+`, p.root, p.config, stanza))
 	p.start(t, p.source, p.root)
 	p.backrest(t, "stanza-create")
 	run(t, "psql", "-X", "-h", p.root, "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-f", "/docker-entrypoint-initdb.d/init.sql")
@@ -193,7 +194,7 @@ type backup struct {
 }
 
 func (p proof) command(ctx context.Context, args ...string) *exec.Cmd {
-	return exec.CommandContext(ctx, "pgbackrest", append([]string{"--config=" + p.config, "--stanza=proof"}, args...)...)
+	return exec.CommandContext(ctx, "pgbackrest", append([]string{"--config=" + p.config, "--stanza=" + p.stanza}, args...)...)
 }
 
 func (p proof) backrest(t *testing.T, args ...string) string {
@@ -223,11 +224,11 @@ func (p proof) sql(t *testing.T, sql string) string {
 
 func (p proof) start(t *testing.T, data, socket string) {
 	t.Helper()
-	out, err := p.boot(t, data, "pg_ctl", socket)
+	out, err := p.boot(t, data, socket)
 	require.NoError(t, err, "%s", out)
 }
 
-func (p proof) boot(t *testing.T, data, binary, socket string) ([]byte, error) {
+func (p proof) boot(t *testing.T, data, socket string) ([]byte, error) {
 	t.Helper()
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -235,7 +236,7 @@ func (p proof) boot(t *testing.T, data, binary, socket string) ([]byte, error) {
 		_ = exec.CommandContext(ctx, "pg_ctl", "-D", data, "-m", "immediate", "stop").Run()
 	})
 	// Startup logs use a file: pg_ctl must not leave the server holding Go's output pipe.
-	return exec.CommandContext(t.Context(), binary, "-D", data, "-l", data+".log", "-o", "-k "+socket, "-t", "15", "-w", "start").CombinedOutput()
+	return exec.CommandContext(t.Context(), "pg_ctl", "-D", data, "-l", data+".log", "-o", "-k "+socket, "-t", "15", "-w", "start").CombinedOutput()
 }
 
 func (p proof) stop(t *testing.T, data string) {

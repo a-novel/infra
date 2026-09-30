@@ -3,7 +3,7 @@
 Evaluation for [the backup-owner comparison](https://github.com/a-novel/infra/issues/190),
 not a production backup implementation. The Go file is a test-only driver for native commands;
 it is not linked into `infra`. The image uses each service's published PostgreSQL and pgBackRest,
-adding only the test driver and an incompatible PostgreSQL major. No cloud resources,
+adding only the test driver. No cloud resources,
 credentials, existing data, schedules, or retention policies are used;
 no production image is published or deployed.
 
@@ -34,7 +34,7 @@ Unix sockets; host authentication is SCRAM, not trust. Normal Go tests skip this
 `INFRA_PGBACKREST_PROOF=1`; the proof image sets it and CI runs both variants offline.
 The Dockerfile owns the two SemVer selections; Renovate's native Dockerfile manager updates them.
 
-The image has advisory findings below. Keep it restricted to this synthetic, offline test.
+Keep this image restricted to the synthetic, offline test, regardless of its scan result.
 Do not pass credentials, mount real data, enable networking, or use it as a deployment artifact.
 
 ## What the test establishes
@@ -45,7 +45,7 @@ Do not pass credentials, mount real data, enable networking, or use it as a depl
 | Point-in-time recovery | Restore a named point after a committed write; exclude the subsequent write. Wait for recovery to finish, not merely for read-only SQL readiness. |
 | Interrupted copy       | Stop pgBackRest after backup data starts copying. Its catalog must remain unchanged and the earlier full backup must still restore.               |
 | Missing/corrupt WAL    | Removing or corrupting a required archived segment makes `archive-get` fail and prevents the restored server from becoming ready.                 |
-| Incompatible major     | PostgreSQL 17 refuses the restored PostgreSQL 18 data directory with its native incompatibility error.                                            |
+| Incompatible major     | The published server refuses an incompatible `PG_VERSION` marker in a disposable restored directory with its native incompatibility error.        |
 | Retention              | Retain two full backups and a dependent differential. Restore the differential and newest full; the expired full is no longer selectable.         |
 | Repository integrity   | Run native `verify` over the retained repository.                                                                                                 |
 
@@ -59,9 +59,9 @@ integration must test its actual shutdown path; parent exit is not evidence that
 
 This is POSIX storage evidence, **not** proof of interrupted GCS uploads, GCS permissions, locked
 retention, generation selection, host-loss recovery, or the production 6-hour RPO / 90-minute RTO.
-The proof runs each image's extension initialization SQL and checks that its PostgreSQL, `uuid-ossp`
-and pgBackRest binaries survive installation of the negative-test server unchanged. Shared libraries
-are not covered by those checks. It does not exercise the original entrypoints, application
+The proof runs each image's extension initialization SQL; the published runtime is unchanged.
+The wrong-major fixture exercises PostgreSQL's native startup version guard, not real PostgreSQL 17
+data or cross-major conversion. It does not exercise the original entrypoints, application
 migrations, historical images, or native backup integration on the actual COS host.
 
 ### Native repository transport
@@ -113,32 +113,28 @@ sizing claim. They do not predict GCS latency, growing WAL volume, SSD load or p
 
 ## Packaging and security review
 
-The published [JSON Keys v2.6.2](https://github.com/a-novel/service-json-keys/blob/v2.6.2/builds/database.Dockerfile)
-and [Authentication v2.9.2](https://github.com/a-novel/service-authentication/blob/v2.9.2/builds/database.Dockerfile)
-images own PostgreSQL `18.6-1.pgdg13+2` and PGDG pgBackRest `2.59.1-1.pgdg13+1`.
-Infra no longer installs or versions a second pgBackRest. It adds only PostgreSQL
-`17.11-1.pgdg13+2` from the signed PGDG repository for the negative test.
+The published [JSON Keys v2.6.5](https://github.com/a-novel/service-json-keys/blob/v2.6.5/builds/database.Dockerfile)
+and [Authentication v2.9.5](https://github.com/a-novel/service-authentication/blob/v2.9.5/builds/database.Dockerfile)
+images own Wolfi PostgreSQL 18.6 and pgBackRest 2.59.1. Infra neither rebuilds nor installs database
+packages. The proof adds a Go test driver to each published image, leaving its tools and shared
+libraries intact. The negative-major fixture relies on PostgreSQL's
+[native version guard](https://github.com/postgres/postgres/blob/REL_18_STABLE/src/backend/utils/init/miscinit.c),
+so it needs no second server, package builder or dependency-update rules.
 
-Both inputs passed `gh attestation verify` on 27 September 2026, requiring their repository's
+Both inputs passed `gh attestation verify` on 30 September 2026, requiring their repository's
 `release.yaml`, `refs/heads/master`, and GitHub-hosted builders. This verifies their provenance,
 not the derived proof image or fitness for a live trial. Retain resolved digests and package
 inventories in generated drill evidence; maintained image references remain SemVer tags.
 
-Trivy 0.74.0 scans of both published inputs on 27 September 2026 each report **62 Debian
-high/critical findings (one critical)** and **22 inherited gosu findings (one critical)**, using
-the advisory database updated on 26 September. Counts are package/advisory pairs, not distinct
-exploits. None of the 62 Debian findings has a fixed stable package in that scan; gosu still embeds
-Go 1.24.6. The refreshed packaging removes the earlier fixable Perl findings. Remaining advisories
-are not automatically reachable vulnerabilities, but neither are they accepted risks:
+Trivy 0.74.0 scans of both published inputs on 30 September 2026 report **zero HIGH/CRITICAL
+findings and zero secret findings**, without ignores or policy exceptions. This replaces the earlier
+Debian inputs, whose unchanged scan blocked adoption; it is not a claim of no vulnerabilities.
+The derived recovery image is scanned separately by CI. **Live pgBackRest adoption remains unapproved.**
+Refresh scans before activation. The test driver never enters the recovery image.
 
-| Critical finding                                                                   | Reachability assessment and remaining limit                                                                                                                                                                                                                                                                                                                                                                                           |
-| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [libxml2 CVE-2026-6653](https://security-tracker.debian.org/tracker/CVE-2026-6653) | Malformed XML can trigger a use-after-free. Debian still marks trixie vulnerable (minor/no-DSA). pgBackRest's [GCS backend](https://github.com/pgbackrest/pgbackrest/blob/release/2.59.1/src/storage/gcs/storage.c) uses JSON, but PostgreSQL exposes [XML functions](https://www.postgresql.org/docs/18/functions-xml.html); there is no image-wide non-reachability claim. Review SQL access and untrusted XML before a live trial. |
-| [gosu CVE-2025-68121](https://pkg.go.dev/vuln/GO-2026-4337)                        | The advisory requires a TLS session-resumption path. [gosu 1.19](https://github.com/tianon/gosu/blob/1.19/main.go) switches user and executes a command, with no TLS handshake evident in that path. This is a source-level inference for this finding, not clearance of every Go advisory. The proof bypasses gosu; production entrypoints can use it.                                                                               |
-
-No advisory ignore or security-gate exception is added. **Live pgBackRest adoption is not approved.**
-Before a live trial, refresh the scan and resolve or explicitly review the residual risks with the
-operator. The second PostgreSQL major and Go test binary must never enter the live artifact.
+Wolfi is a fresh-database boundary, not an in-place Debian data-directory upgrade. Retain old images
+and the logical reader for existing backups until their retention ends; neither this proof nor a
+successful physical restore authorizes a live reset, old-data conversion or cutover.
 
 To reproduce the advisory inspection with the repository-pinned scanner:
 
@@ -148,11 +144,11 @@ podman save --output "${PROOF_SCAN_DIR:?}/image.tar" ghcr.io/a-novel/infra/pgbac
 podman run --rm --cap-drop=all --security-opt=no-new-privileges \
   --mount="type=bind,src=${PROOF_SCAN_DIR:?}/image.tar,dst=/scan/image.tar,ro" \
   docker.io/aquasec/trivy:0.74.0 image --input /scan/image.tar \
-  --scanners vuln --severity HIGH,CRITICAL --exit-code=1
+  --scanners vuln,secret --severity HIGH,CRITICAL --exit-code=1
 ```
 
 The scanner needs network access for its public advisory database; the database proof does not.
-The archive contains synthetic tooling only. After reviewing the expected nonzero scan result,
+The archive contains synthetic tooling only. After reviewing the scan result,
 remove it with `rm -- "${PROOF_SCAN_DIR:?}/image.tar" && rmdir -- "$PROOF_SCAN_DIR"`.
 
 ## Ownership and removal boundary
@@ -188,5 +184,5 @@ The original repository-time cutoff still failed after that repair.
 
 The native trial result owns the remaining acceptance gates, cleanup deadlines and proposed
 retirement batches. Neither trial authorizes production custody changes, additional provisioning,
-bucket locking or retirement of logical readers. The offline measurements and scans above remain
-evidence for their named versions; they do not describe the later CA-corrected image.
+bucket locking or retirement of logical readers. Historical measurements and live trials apply only
+to their named versions; the Wolfi image refresh has not undergone a live cloud recovery trial.

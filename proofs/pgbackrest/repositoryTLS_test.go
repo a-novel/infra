@@ -19,7 +19,7 @@ func TestRepositoryTLS(t *testing.T) {
 	if os.Getenv("INFRA_PGBACKREST_PROOF") != "1" {
 		t.Skip("run the disposable pgbackrest-proof image; see README.md")
 	}
-	p := newProof(t)
+	p := newProof(t, "proof")
 	config, err := os.ReadFile(p.config)
 	require.NoError(t, err)
 	serverConfig := filepath.Join(p.root, "server.conf")

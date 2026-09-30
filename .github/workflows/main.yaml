@@ -93,7 +93,7 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS: /dev/null
         run: |
           set -euo pipefail
-          for root in environments/service-foundation environments/service-release proofs/gcs-storage proofs/pgbackrest-gcs; do
+          for root in environments/service-foundation environments/service-release environments/service-recovery proofs/gcs-storage proofs/pgbackrest-gcs; do
             tofu -chdir="$root" fmt -check -recursive -diff
             tofu -chdir="$root" init -backend=false -input=false -lockfile=readonly -no-color
             tofu -chdir="$root" validate -no-color
@@ -142,6 +142,11 @@ jobs:
         uses: $/.github/actions/build-tooling-image
         with:
           image_name: host-credentials
+
+      - name: Build and scan the inactive native restore worker
+        uses: $/.github/actions/build-tooling-image
+        with:
+          image_name: native-restore
 
   lint-repository:
     runs-on: ubuntu-24.04
