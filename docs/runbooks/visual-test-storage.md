@@ -149,8 +149,8 @@ recovery; the latest-only policy intentionally provides no historical reference 
 is lost or a bad publication is confirmed, pause publication, review the source commit and explicitly
 reseed from trusted master. Never select a branch batch as an automatic recovery source.
 
-To retire the feature, disable the consumer and revoke Drive membership, preserve any evidence a human
-needs, then review identity removal. The Shared Drive remains Workspace-owned and are not destroyed by
+To retire the feature, disable the consumer and revoke its folder grants and Drive membership, preserve any evidence a human
+needs, then review identity removal. The Shared Drive remains Workspace-owned and is not destroyed by
 OpenTofu. No visual-test GCS resources were applied as part of this proposal; if an operator provisioned
 an earlier revision independently, inventory it and plan its retirement separately.
 
