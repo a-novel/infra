@@ -25,7 +25,7 @@ merging infrastructure configuration alone does not change Studio's existing art
    The consumer must explicitly request OAuth scope `https://www.googleapis.com/auth/drive` through
    service-account impersonation. No credential file or domain-wide delegation is needed.
 6. Release and adopt the shared workflow, run the allow/deny and large-transfer checks below, then seed
-   from reviewed master using its explicit initial-seed control. Disable seed mode after the first
+   from reviewed master by setting `STUDIO_VISUAL_SEED_SHA` to that exact commit and rerunning its main run. Unset it after the first
    successful publication. Missing references fail ordinary comparisons.
 
 | Shared Drive | CI role                | Maintenance role      |
@@ -45,6 +45,7 @@ GitHub run metadata and the trusted workflow decide eligibility for publication.
 | `STUDIO_VISUAL_MAINTENANCE_ACCOUNT`  | `studio_visual_tests.identities.maintenance.service_account`   |
 | `STUDIO_VISUAL_REFERENCES_DRIVE`     | References Shared Drive ID                                     |
 | `STUDIO_VISUAL_RESULTS_DRIVE`        | Results Shared Drive ID                                        |
+| `STUDIO_VISUAL_SEED_SHA`             | Exact reviewed master SHA; temporary first-reference seed only |
 
 The consumer workflows are `main.yaml` and trusted `visual-tests.yaml`. Give only the relevant jobs
 `id-token: write`. Maintenance accepts only events evaluated on `refs/heads/master`; it must never
@@ -65,7 +66,11 @@ permitted content; traces can contain cookies and credentials, so access stays p
   meets the one-batch retention policy. Brief overlap during a replacement is necessary.
 - Serialize trusted publication and cleanup. Verify GitHub's run identity, attempt, branch, current
   head and test result. A stale, failed, canceled, partial or branch run cannot replace references.
-  Candidate jobs upload pending evidence; completion events reconcile branch retention. Master publishes its locally validated batch directly with the maintenance identity. Cleanup never promotes candidate-uploaded files into references.
+  Candidate jobs upload pending evidence; completion events reconcile branch retention. Master stages
+  its locally validated batch directly in the references Drive with the maintenance identity. Serialized
+  maintenance verifies the completed successful `test-browser` job and current master before marking
+  that batch current. It never copies candidate-uploaded results into references. After publication,
+  delete the duplicate master results batch; keep failed master diagnostics until a successful replacement.
 - Remove batches after PR merge or branch deletion. Recheck live GitHub state before publication so
   an in-flight upload cannot revive a removed branch. A scheduled sweep removes orphaned uploads and
   retries interrupted cleanup. API or permission failures are visible and never treated as empty lists.
