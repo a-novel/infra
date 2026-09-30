@@ -30,6 +30,7 @@ locals {
     check         = "check"
     full          = "--type=full --archive-copy --repo1-bundle --no-expire-auto backup"
     diff          = "--type=diff --archive-copy --repo1-bundle --no-expire-auto backup"
+    verify        = "--output=text --verbose --log-level-console=error verify"
   }
   database_backup_calendars = {
     full  = "Sun *-*-* 02:00:00 UTC"
