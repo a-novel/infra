@@ -30,10 +30,13 @@ provider/account coordinates are non-secret repository variables.
 2. Read `visual_tests` through approved operator state access. For Studio, use
    `visual_tests.platforms.studio`; the accounts remain `studio-visual-ci` and
    `studio-visual-maintenance` in the management project.
-3. A Workspace administrator locates the existing **Platform** Shared Drive and **studio → ci**
-   directory. Record its actual URL/ID; names alone are not unique. Create or reuse only the exported
-   child paths: `studio/ci/references` and `studio/ci/results`. Record both child folder IDs from their
-   URLs, not the Drive ID or the `ci` parent ID. No new Shared Drive is needed.
+3. A Workspace administrator verifies the owner-supplied
+   [Studio CI parent folder](https://drive.google.com/drive/folders/1fttoQXh7kqzKXAlWu2Otrw-FHGFxAm7A)
+   (`1fttoQXh7kqzKXAlWu2Otrw-FHGFxAm7A`) resolves to **Platform → studio → ci**. Its location,
+   children and permissions have not yet been verified through authenticated Drive access.
+   Create or reuse only the exported child paths: `studio/ci/references` and `studio/ci/results`.
+   Record both child folder IDs from their URLs; neither repository variable takes the Drive ID or
+   this `ci` parent ID. No new Shared Drive is needed.
 4. Grant CI Viewer access on `references` and Contributor access on `results`, with no Drive-level
    or parent membership. Workspace policy must permit explicit nonmember folder sharing and these
    external service accounts. Existing Drive-wide restrictions affect other content too; review them
