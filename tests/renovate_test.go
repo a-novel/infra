@@ -60,6 +60,15 @@ func TestRenovatePolicy(t *testing.T) {
 		}
 		require.True(t, found, "manual review for %s", testCase.value)
 	}
+	blockedGoogleAPI := false
+	for _, value := range rules {
+		rule := value.(object)
+		names, _ := rule["matchPackageNames"].([]any)
+		if slices.Contains(names, any("google.golang.org/api")) && rule["allowedVersions"] == "<0.299.0 || >0.299.0" {
+			blockedGoogleAPI = true
+		}
+	}
+	require.True(t, blockedGoogleAPI)
 	// The final rule must override any generic automation rule for these paths.
 	last := rules[len(rules)-1].(object)
 	require.Equal(t, false, last["automerge"])

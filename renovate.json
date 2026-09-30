@@ -102,6 +102,12 @@
       "postUpdateOptions": ["gomodTidy"]
     },
     {
+      "description": "Hold google.golang.org/api off v0.299.0 because its module graph forces vulnerable gRPC v1.84.0; admit the first later release.",
+      "matchManagers": ["gomod"],
+      "matchPackageNames": ["google.golang.org/api"],
+      "allowedVersions": "<0.299.0 || >0.299.0"
+    },
+    {
       "description": "Resolve only declared tools in the isolated linter module, on separate branches from runtime dependencies.",
       "matchManagers": ["gomod"],
       "matchFileNames": ["golangci-lint.mod"],

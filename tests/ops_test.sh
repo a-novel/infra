@@ -205,6 +205,8 @@ ln -s "${SCRIPT_DIR}/fixtures/fake-gcloud-storage.sh" "${DELETION_GATE_BIN}/gclo
 DELETION_HEAD=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 DELETION_BASE=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 DELETION_GROUP=cccccccccccccccccccccccccccccccccccccccc
+DELETION_LIVE_BASE=dddddddddddddddddddddddddddddddddddddddd
+DELETION_OTHER_GROUP=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 
 write_deletion_assessment() {
     local approval="$1"
@@ -244,6 +246,8 @@ assert_resource_gate_code() {
     local event_name="${6:-pull_request}"
     local permission="${7:-admin}"
     local pull_request_head="${8:-${DELETION_HEAD}}"
+    local live_base="${9:-${DELETION_BASE}}"
+    local queue_group="${10:-${DELETION_GROUP}}"
     local gate_head="${DELETION_HEAD}"
     local check_sha="${DELETION_HEAD}"
     local merge_ref=""
@@ -259,7 +263,10 @@ assert_resource_gate_code() {
         FAKE_GATE_BASE="${DELETION_BASE}" \
         FAKE_GATE_FILES="${files}" \
         FAKE_GATE_HEAD="${pull_request_head}" \
+        FAKE_GATE_GROUP="${DELETION_GROUP}" \
         FAKE_GATE_LABEL_MODE="${label_mode}" \
+        FAKE_GATE_LIVE_BASE="${live_base}" \
+        FAKE_GATE_QUEUE_GROUP="${queue_group}" \
         FAKE_GATE_RUN_MODE="${run_mode}" \
         GATE_BASE_SHA="${DELETION_BASE}" \
         FAKE_GATE_PERMISSION="${permission}" \
@@ -288,6 +295,8 @@ assert_resource_gate_code 77 image success approved "${MISMATCHED_ASSESSMENT}"
 assert_resource_gate_code 77 image success untrusted "${DESTRUCTIVE_ASSESSMENT}" pull_request read
 assert_resource_gate_code 77 image success missing "${SAFE_ASSESSMENT}" pull_request admin dddddddddddddddddddddddddddddddddddddddd
 assert_resource_gate_code 0 image success missing "${SAFE_ASSESSMENT}" merge_group
+assert_resource_gate_code 0 image success missing "${SAFE_ASSESSMENT}" merge_group admin "${DELETION_HEAD}" "${DELETION_LIVE_BASE}"
+assert_resource_gate_code 77 image success missing "${SAFE_ASSESSMENT}" merge_group admin "${DELETION_HEAD}" "${DELETION_BASE}" "${DELETION_OTHER_GROUP}"
 
 # The trusted dispatcher check accepts human maintainers and fork candidates,
 # while a first release with no converged input record always needs approval.
