@@ -278,6 +278,7 @@ run "builds_the_protected_management_plane" {
         "production-authentication-postgres-password",
         "production-authentication-smtp-sender-password",
         "production-authentication-super-admin-password",
+        "production-authentication-waitlist-secret",
         "production-json-keys-app-master-key",
         "production-json-keys-postgres-backup-password",
         "production-json-keys-postgres-password",
@@ -289,12 +290,12 @@ run "builds_the_protected_management_plane" {
         secret.version_destroy_ttl == "2592000s"
       ])
     )
-    error_message = "The exact seven application secret containers must remain protected."
+    error_message = "The exact application secret containers must remain protected."
   }
 
   assert {
     condition = (
-      length(google_secret_manager_secret_iam_member.operator) == 14 &&
+      length(google_secret_manager_secret_iam_member.operator) == 16 &&
       toset([
         for binding in values(google_secret_manager_secret_iam_member.operator) : binding.role
         ]) == toset([

@@ -181,6 +181,10 @@ locals {
       secret   = "production-json-keys-postgres-password"
     }
     } : {
+    "authentication:waitlist-secret" = {
+      identity = "authentication"
+      secret   = "production-authentication-waitlist-secret"
+    }
     "authentication-initializer:postgres-password" = {
       identity = "authentication_initializer"
       secret   = "production-authentication-postgres-password"

@@ -380,6 +380,7 @@ audit_foundation() {
         production-authentication-postgres-backup-password
         production-authentication-smtp-sender-password
         production-authentication-super-admin-password
+        production-authentication-waitlist-secret
         production-json-keys-app-master-key
         production-json-keys-postgres-password
         production-json-keys-postgres-backup-password
@@ -413,7 +414,7 @@ audit_foundation() {
             production-json-keys-postgres-password)
                 expected_secret_services='["agora-json-keys", "agora-json-keys-database"]'
                 ;;
-            production-authentication-smtp-sender-password)
+            production-authentication-smtp-sender-password | production-authentication-waitlist-secret)
                 expected_secret_services='["agora-authentication"]'
                 ;;
             production-authentication-super-admin-password)
@@ -450,7 +451,7 @@ audit_foundation() {
             fail "Secret Manager runtime allowlist for ${secret_name}"
         fi
     done
-    pass 'seven Secret Manager containers and runtime allowlists'
+    pass 'Secret Manager containers and runtime allowlists'
 
     backup_policy_json="$(gcloud storage buckets get-iam-policy \
         "gs://${BACKUP_BUCKET_NAME}" --format=json)"

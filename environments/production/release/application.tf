@@ -1,4 +1,7 @@
 locals {
+  # Clean-room recovery must never write to the production invitation list.
+  authentication_waitlist = var.recovery_mode ? null : try(var.application_release.authentication.waitlist, null)
+
   application_candidate = {
     for service in ["json_keys", "authentication"] : service => (
       var.application_release == null ? false :
@@ -456,6 +459,30 @@ resource "google_cloud_run_v2_service" "authentication" {
       env {
         name  = "REST_TIMEOUT_SHUTDOWN"
         value = "9s"
+      }
+
+      dynamic "env" {
+        for_each = local.authentication_waitlist == null ? [] : [local.authentication_waitlist]
+
+        content {
+          name  = "WAITLIST_URL"
+          value = env.value.url
+        }
+      }
+
+      dynamic "env" {
+        for_each = local.authentication_waitlist == null ? [] : [local.authentication_waitlist]
+
+        content {
+          name = "WAITLIST_SECRET"
+
+          value_source {
+            secret_key_ref {
+              secret  = "projects/${var.management_project_id}/secrets/production-authentication-waitlist-secret"
+              version = tostring(env.value.secret_version)
+            }
+          }
+        }
       }
 
       env {

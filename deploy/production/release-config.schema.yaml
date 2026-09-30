@@ -31,7 +31,18 @@ properties:
   subnet_id: true
   # Rollback uses the receipt's mail configuration. The compiler checks the
   # current HTTPS origin only for a new deployment.
-  authentication: true
+  authentication:
+    type: object
+    properties:
+      waitlist:
+        type: [object, "null"]
+        additionalProperties: false
+        required: [url, secret_version]
+        properties:
+          url:
+            type: string
+            pattern: '^https://script\.google\.com/macros/s/[A-Za-z0-9_-]+/exec$'
+          secret_version: { $ref: "#/$defs/positiveInteger" }
   database_hosts:
     type: object
     additionalProperties: false

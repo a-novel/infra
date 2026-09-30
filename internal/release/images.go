@@ -132,7 +132,7 @@ func secretVersions(application, database object) []any {
 	if application == nil {
 		return []any{}
 	}
-	return []any{
+	versions := []any{
 		[]any{"production-authentication-postgres-password", at(application, "authentication", "secrets", "postgres_password_version")},
 		[]any{"production-authentication-postgres-backup-password", database["authenticationBackupPasswordVersion"]},
 		[]any{"production-authentication-smtp-sender-password", at(application, "authentication", "secrets", "smtp_password_version")},
@@ -141,4 +141,8 @@ func secretVersions(application, database object) []any {
 		[]any{"production-json-keys-postgres-password", at(application, "json_keys", "secrets", "postgres_password_version")},
 		[]any{"production-json-keys-postgres-backup-password", database["jsonKeysBackupPasswordVersion"]},
 	}
+	if waitlist := obj(application, "authentication", "waitlist"); waitlist != nil {
+		versions = append(versions, []any{"production-authentication-waitlist-secret", waitlist["secret_version"]})
+	}
+	return versions
 }

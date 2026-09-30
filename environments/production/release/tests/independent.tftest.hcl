@@ -50,6 +50,62 @@ run "active_baseline" {
   variables {
     application_release = jsondecode(file("../../../tests/fixtures/application-release.json"))
   }
+  assert {
+    condition = alltrue([
+      for env in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env :
+      !startswith(env.name, "WAITLIST_")
+    ])
+    error_message = "Historical receipts must keep waitlist configuration absent."
+  }
+}
+
+run "waitlist_uses_exact_secret_only_on_authentication" {
+  command = plan
+  variables {
+    application_release = merge(jsondecode(file("../../../tests/fixtures/application-release.json")), {
+      authentication = merge(jsondecode(file("../../../tests/fixtures/application-release.json")).authentication, {
+        waitlist = { url = "https://script.google.com/macros/s/fixture-id/exec", secret_version = 14 }
+      })
+    })
+  }
+  assert {
+    condition = (
+      one([for env in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env : env if env.name == "WAITLIST_URL"]).value == var.application_release.authentication.waitlist.url &&
+      one([for env in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env : env if env.name == "WAITLIST_SECRET"]).value_source[0].secret_key_ref[0] == {
+        secret  = "projects/agora-management-test/secrets/production-authentication-waitlist-secret"
+        version = "14"
+      } &&
+      alltrue([for env in one(one(google_cloud_run_v2_service.json_keys[0].template).containers).env : !startswith(env.name, "WAITLIST_")]) &&
+      alltrue(flatten([for job in values(google_cloud_run_v2_job.application) : [
+        for env in one(one(one(job.template).template).containers).env : !startswith(env.name, "WAITLIST_")
+      ]]))
+    )
+    error_message = "Only Authentication REST may mount the pinned waitlist key and endpoint."
+  }
+}
+
+run "rejects_waitlist_development_url" {
+  command = plan
+  variables {
+    application_release = merge(jsondecode(file("../../../tests/fixtures/application-release.json")), {
+      authentication = merge(jsondecode(file("../../../tests/fixtures/application-release.json")).authentication, {
+        waitlist = { url = "https://script.google.com/macros/s/fixture-id/dev", secret_version = 14 }
+      })
+    })
+  }
+  expect_failures = [var.application_release]
+}
+
+run "rejects_waitlist_fractional_version" {
+  command = plan
+  variables {
+    application_release = merge(jsondecode(file("../../../tests/fixtures/application-release.json")), {
+      authentication = merge(jsondecode(file("../../../tests/fixtures/application-release.json")).authentication, {
+        waitlist = { url = "https://script.google.com/macros/s/fixture-id/exec", secret_version = 1.5 }
+      })
+    })
+  }
+  expect_failures = [var.application_release]
 }
 
 run "authentication_candidate_leaves_json_keys_active" {

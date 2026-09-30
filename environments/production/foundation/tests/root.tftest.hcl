@@ -634,7 +634,7 @@ run "builds_the_project_replacement_window" {
         for account in values(google_service_account.runtime) :
         account.deletion_policy == "DELETE"
       ]) &&
-      length(google_secret_manager_secret_iam_member.runtime) == 12 &&
+      length(google_secret_manager_secret_iam_member.runtime) == 13 &&
       local.runtime_secret_access == {
         "authentication:postgres-password" = {
           identity = "authentication"
@@ -643,6 +643,10 @@ run "builds_the_project_replacement_window" {
         "authentication:smtp-password" = {
           identity = "authentication"
           secret   = "production-authentication-smtp-sender-password"
+        }
+        "authentication:waitlist-secret" = {
+          identity = "authentication"
+          secret   = "production-authentication-waitlist-secret"
         }
         "authentication-initializer:postgres-password" = {
           identity = "authentication_initializer"
@@ -1477,6 +1481,7 @@ run "limits_disposable_recovery_authority_to_the_replacement_project" {
       contains(google_compute_firewall.allow_postgres_egress["json_keys"].target_tags, "agora-restore") &&
       contains(keys(local.runtime_secret_access), "restore:authentication-owner-password") &&
       contains(keys(local.runtime_secret_access), "restore:json-keys-owner-password") &&
+      !contains(keys(local.runtime_secret_access), "authentication:waitlist-secret") &&
       length(google_secret_manager_secret_iam_member.runtime) == 0 &&
       length(google_storage_bucket_iam_member.backup_runtime_creator) == 0 &&
       length(google_storage_bucket_iam_member.restore_runtime_viewer) == 0
