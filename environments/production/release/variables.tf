@@ -201,6 +201,11 @@ variable "application_release" {
       # Older receipts predate this setting; rollback must retain their exact
       # environment. The compiler requires an origin for every new release.
       web_client_url = optional(string)
+      # The key payload is owned by Secret Manager; release inputs pin only its version.
+      waitlist = optional(object({
+        url            = string
+        secret_version = number
+      }))
     })
     json_keys = object({
       active_revision = optional(string)
@@ -218,6 +223,15 @@ variable "application_release" {
   })
   default  = null
   nullable = true
+
+  validation {
+    condition = try(var.application_release.authentication.waitlist, null) == null ? true : (
+      can(regex("^https://script\\.google\\.com/macros/s/[A-Za-z0-9_-]+/exec$", var.application_release.authentication.waitlist.url)) &&
+      try(var.application_release.authentication.waitlist.secret_version >= 1 &&
+      floor(var.application_release.authentication.waitlist.secret_version) == var.application_release.authentication.waitlist.secret_version, false)
+    )
+    error_message = "Authentication waitlist requires a canonical Apps Script /exec URL and a positive numeric Secret Manager version."
+  }
 
   validation {
     condition = var.application_release == null ? true : alltrue([

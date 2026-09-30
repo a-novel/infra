@@ -60,10 +60,15 @@ production-authentication-postgres-password
 production-authentication-postgres-backup-password
 production-authentication-smtp-sender-password
 production-authentication-super-admin-password
+production-authentication-waitlist-secret
 production-json-keys-app-master-key
 production-json-keys-postgres-password
 production-json-keys-postgres-backup-password
 ```
+
+The waitlist key is the same random value stored as `WAITLIST_SECRET` in the production Apps
+Script project, at least 32 characters. It is independent of the Google account password and
+the test deployment's key. See [Connect the invitation list](./configure-waitlist.md) for its rollout.
 
 ## Add one version safely
 

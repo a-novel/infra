@@ -90,6 +90,10 @@ locals {
       contract = "SUPER_ADMIN_PASSWORD"
       purpose  = "Authentication bootstrap administrator password"
     }
+    production-authentication-waitlist-secret = {
+      contract = "WAITLIST_SECRET"
+      purpose  = "Authentication invitation-list request signing key"
+    }
     production-json-keys-app-master-key = {
       contract = "APP_MASTER_KEY"
       purpose  = "JSON Keys service application master key"

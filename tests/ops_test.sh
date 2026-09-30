@@ -51,6 +51,16 @@ printf '%s\n' \
     '#!/bin/bash' \
     'set -euo pipefail' \
     'case "$*" in' \
+    '  "secrets describe production-authentication-waitlist-secret --project=agora-management-test --format=yaml(name,annotations,createTime,versionDestroyTtl)")' \
+    '    printf "%s\n" "name: production-authentication-waitlist-secret" ;;' \
+    '  "secrets versions add production-authentication-waitlist-secret --project=agora-management-test --data-file=- --quiet --format=value(name.basename())")' \
+    '    payload="$(cat)"' \
+    '    [ "$payload" = "$FAKE_EXPECTED_SECRET" ]' \
+    '    printf "%s" "14" ;;' \
+    '  "secrets versions describe 14 --secret=production-authentication-waitlist-secret --project=agora-management-test --format=value(state)")' \
+    '    printf "%s" "ENABLED" ;;' \
+    '  "secrets versions describe 14 --secret=production-authentication-waitlist-secret --project=agora-management-test --format=yaml(name,state,createTime,destroyTime,scheduledDestroyTime)")' \
+    '    printf "%s\n" "state: ENABLED" ;;' \
     '  "secrets describe production-authentication-postgres-password --project=agora-management-test --format=yaml(name,annotations,createTime,versionDestroyTtl)")' \
     '    printf "%s\n" "name: production-authentication-postgres-password" ;;' \
     '  "secrets describe production-json-keys-app-master-key --project=agora-management-test --format=yaml(name,annotations,createTime,versionDestroyTtl)")' \
@@ -90,6 +100,26 @@ CREATED_SECRET_VERSION="$(
 assert_equal "${CREATED_SECRET_VERSION}" \
     'Created production-authentication-postgres-password version 7.'
 assert_absent "${TEMP_DIR}/add-secret.err" "${POSTGRES_SECRET}"
+
+for WAITLIST_KEY in fixture-only-waitlist-signing-key-0123456789 too-short; do
+    WAITLIST_CODE=0
+    printf '%s\n%s\n' "$WAITLIST_KEY" "$WAITLIST_KEY" \
+        | PATH="${SECRET_MOCK_BIN}:${PATH}" \
+            FAKE_EXPECTED_SECRET="$WAITLIST_KEY" \
+            INFRA_MANAGEMENT_PROJECT_ID=agora-management-test \
+            INFRA_WORKLOAD_PROJECT_ID=agora-production-test \
+            "${REPOSITORY_ROOT}/ops/add-secret-version.sh" production-authentication-waitlist-secret \
+            >"${TEMP_DIR}/waitlist-key.out" 2>"${TEMP_DIR}/waitlist-key.err" || WAITLIST_CODE=$?
+    if [ "$WAITLIST_KEY" = too-short ]; then
+        assert_equal "$WAITLIST_CODE" 65
+        grep -Fq 'Waitlist signing keys require at least 32 characters.' "${TEMP_DIR}/waitlist-key.err"
+    else
+        assert_equal "$WAITLIST_CODE" 0
+        assert_equal "$(<"${TEMP_DIR}/waitlist-key.out")" 'Created production-authentication-waitlist-secret version 14.'
+    fi
+    assert_absent "${TEMP_DIR}/waitlist-key.out" "$WAITLIST_KEY"
+    assert_absent "${TEMP_DIR}/waitlist-key.err" "$WAITLIST_KEY"
+done
 
 printf -v INVALID_MASTER_KEY 'v%063d' 0
 set +e

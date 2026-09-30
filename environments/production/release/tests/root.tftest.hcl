@@ -861,6 +861,7 @@ run "builds_restore_only_contracts_in_a_disposable_recovery_state" {
           username      = "smtp-login@example.com"
         }
         super_admin_email = "admin@example.com"
+        waitlist          = { url = "https://script.google.com/macros/s/fixture-id/exec", secret_version = 14 }
       }
       json_keys = {
         active_revision = "agora-json-keys-grpc-abcdef012345"
@@ -899,6 +900,14 @@ run "builds_restore_only_contracts_in_a_disposable_recovery_state" {
       google_tags_location_tag_binding.json_keys[0].location == var.region
     )
     error_message = "Disposable recovery must grant only recovery automation and keep schedules, initialization, and public ingress disabled."
+  }
+
+  assert {
+    condition = alltrue([
+      for env in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env :
+      !startswith(env.name, "WAITLIST_")
+    ])
+    error_message = "Recovery rehearsals must not contact the production waitlist."
   }
 
   assert {

@@ -18,6 +18,7 @@ is_declared_secret() {
             production-authentication-postgres-backup-password | \
             production-authentication-smtp-sender-password | \
             production-authentication-super-admin-password | \
+            production-authentication-waitlist-secret | \
             production-json-keys-app-master-key | \
             production-json-keys-postgres-password | \
             production-json-keys-postgres-backup-password) return 0 ;;
@@ -85,6 +86,12 @@ add_secret_version() {
     fi
 
     case "${secret_id}" in
+        production-authentication-waitlist-secret)
+            if [ "${#secret_value}" -lt 32 ]; then
+                printf 'Waitlist signing keys require at least 32 characters.\n' >&2
+                return 65
+            fi
+            ;;
         production-authentication-postgres-password | \
             production-authentication-postgres-backup-password | \
             production-json-keys-postgres-password | \
