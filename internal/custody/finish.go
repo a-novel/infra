@@ -57,6 +57,9 @@ func (custody store) completedWriter(ctx context.Context, evidence operationEvid
 	intent := evidence.intent
 	runID, attempt, commit := intent.RunID, intent.RunAttempt, intent.Commit
 	path, prefix := ".github/workflows/foundation.yaml", "foundation apply "+intent.Root+"/"+intent.Service+" by @"
+	if intent.Root == "service-recovery" {
+		path, prefix = ".github/workflows/recovery.yaml", "recovery apply-native "+intent.Project+" by @"
+	}
 	if native := evidence.native; native != nil {
 		runID, attempt, commit = native.RunID, native.RunAttempt, native.Commit
 		path, prefix = ".github/workflows/release.yaml", "production deploy-service by @"

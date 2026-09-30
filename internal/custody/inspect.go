@@ -152,7 +152,8 @@ func inspectApply(ctx context.Context, client *storage.Service, expected applyIn
 	if intent.SchemaVersion != 1 {
 		return intent, false, failure{70, "Unsupported operation schema."}
 	}
-	if intent.Project != expected.Project || intent.Service != expected.Service || intent.Region != expected.Region {
+	if intent.guardProject() != expected.Project || intent.Service != expected.Service || intent.Region != expected.Region ||
+		(intent.Root != "service-recovery" && intent.SourceProject != "") {
 		return intent, false, failure{70, "Stored operation does not match the approved service scope."}
 	}
 	if !commitPattern.MatchString(intent.Commit) || !sequencePattern.MatchString(intent.PlanID) {
@@ -199,17 +200,20 @@ func (evidence operationEvidence) report(output io.Writer) error {
 	completion := "not recorded; apply may still have changed resources"
 	if evidence.completed {
 		completion = "recorded convergence; exact configuration verified"
+		if evidence.intent.Root == "service-recovery" {
+			completion = "host prepared; exact configuration verified; no database recovery or cutover"
+		}
 	}
 	intent := evidence.intent
 	_, err := fmt.Fprintf(output, "Service: %s (%s)\nApply: %s; run %s-%s; plan %s; commit %s\nGuard generation: %d (%s)\nCompletion: %s\nEvidence only: not current health, settled native work, or permission to unlock or retry.\n",
-		intent.Service, intent.Project, intent.Root, intent.RunID, intent.RunAttempt, intent.PlanID, intent.Commit, evidence.guard.Generation, state, completion)
+		intent.Service, intent.guardProject(), intent.Root+"/"+intent.Project, intent.RunID, intent.RunAttempt, intent.PlanID, intent.Commit, evidence.guard.Generation, state, completion)
 	return err
 }
 
 func inspectCompletion(ctx context.Context, client *storage.Service, intent applyIntent, guard objectReference, configName string) (bool, error) {
 	reference := objectReference{
 		Bucket: strings.TrimSuffix(guard.Bucket, "-tofu-state") + "-deployment-receipts",
-		Name:   fmt.Sprintf("services/%s/production/operations/%d.json", intent.Project, guard.Generation),
+		Name:   fmt.Sprintf("services/%s/production/operations/%d.json", intent.guardProject(), guard.Generation),
 	}
 	data, err := readCurrentObject(ctx, client, reference.Bucket, reference.Name)
 	if err != nil || data == nil {
@@ -219,7 +223,7 @@ func inspectCompletion(ctx context.Context, client *storage.Service, intent appl
 	if err := decodeRecord(data, &completion); err != nil {
 		return false, err
 	}
-	expected := applyCompletion{1, "converged", intent, guard, objectReference{
+	expected := applyCompletion{1, intent.outcome(), intent, guard, objectReference{
 		Bucket: guard.Bucket, Name: configName, Generation: completion.Configuration.Generation, SHA256: intent.InputsSHA256,
 	}}
 	if completion != expected || completion.Configuration.Generation <= 0 {

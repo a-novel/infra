@@ -140,7 +140,25 @@ def service_job_bootstrap:
         . as $field | $change | known([$field])))
   );
 
+# Host preparation is create-only. Maintenance, imports and cleanup are separate approvals.
+def native_recovery_preparation:
+  .variables.recovery.value.project as $project |
+  $ENV.TOFU_STATE_SUFFIX == "services/" + $project and
+  all((.resource_changes // [])[];
+    .mode == "managed" and
+    (.type | IN("google_compute_disk", "google_compute_instance", "google_compute_network",
+      "google_compute_subnetwork", "google_compute_route", "google_compute_firewall",
+      "google_dns_managed_zone", "google_dns_record_set")) and
+    .previous_address == null and .deposed == null and .change.importing == null and
+    (.change.actions == ["create"] or .change.actions == ["no-op"]) and
+    (.change | known(["project"]) and .after.project == $project) and
+    (if .type == "google_compute_instance" then
+      (.change | known(["desired_status"]) and .after.desired_status == "TERMINATED")
+    else true end)
+  );
+
 . as $plan |
+($root_name != "service-recovery" or $ENV.NATIVE_RECOVERY_PREPARATION != "true" or native_recovery_preparation) and
 ($root_name != "service-release" or $ENV.SERVICE_JOB_BOOTSTRAP != "true" or service_job_bootstrap) and
 (.errored == null or .errored == false) and
 (.format_version | type == "string" and test("^1\\.[0-9]+$")) and

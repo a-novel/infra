@@ -37,12 +37,20 @@ func (i inspector) services(ctx context.Context, mode, root string, result *verd
 	if err != nil {
 		return failure{70, "Service registration does not match the protected management coordinates."}
 	}
-	if root == "service-foundation" {
-		// Both roots share admission in the release namespace. A held guard also
-		// blocks foundation assessment, including before its first state exists.
+	if root != "service-release" {
+		// Admission belongs to the source service, including before foundation
+		// or disposable recovery state exists.
 		if _, err := i.serviceStates(ctx, "service-release", scopes); err != nil {
 			return err
 		}
+	}
+	check := workflow.FoundationInputs
+	if root == "service-recovery" {
+		scopes, err = workflow.RecoveryScopes(getenv, i.bucket)
+		if err != nil {
+			return failure{70, "Recovery destinations do not match protected registration."}
+		}
+		check = workflow.RecoveryInputs
 	}
 	states, err := i.serviceStates(ctx, root, scopes)
 	if err != nil {
@@ -64,7 +72,7 @@ func (i inspector) services(ctx context.Context, mode, root string, result *verd
 			return err
 		}
 		file, code := i.config(ctx, root, scope)
-		if code != 0 || workflow.FoundationInputs([]string{"check", file, i.bucket, scope}, getenv, io.Discard, io.Discard) != 0 {
+		if code != 0 || check([]string{"check", file, i.bucket, scope}, getenv, io.Discard, io.Discard) != 0 {
 			return failure{70, "Service state lacks matching converged inputs."}
 		}
 		env := []string{"TOFU_STATE_SUFFIX=" + scope, "FOUNDATION_CONFIG=" + string(registration)}
@@ -77,6 +85,9 @@ func (i inspector) services(ctx context.Context, mode, root string, result *verd
 
 func (i inspector) serviceStates(ctx context.Context, root string, scopes map[string]string) (map[string]bool, error) {
 	prefixes := []string{"foundation/services/"}
+	if root == "service-recovery" {
+		prefixes = []string{"foundation/recovery/services/"}
+	}
 	if root == "service-release" {
 		// Folder metadata is bucket-wide; object reads are granted only within
 		// each exact service folder. Inventory must retain that IAM boundary.
@@ -104,7 +115,7 @@ func (i inspector) serviceStates(ctx context.Context, root string, scopes map[st
 			return nil, failure{70, "Could not inventory service state."}
 		}
 		for name := range strings.FieldsSeq(string(data)) {
-			parts := strings.SplitN(strings.TrimPrefix(name, "foundation/"), "/", 3)
+			parts := strings.SplitN(strings.TrimPrefix(strings.TrimPrefix(name, "foundation/"), "recovery/"), "/", 3)
 			if !strings.HasPrefix(name, prefix) || len(parts) != 3 {
 				return nil, failure{70, "Unexpected service state metadata."}
 			}

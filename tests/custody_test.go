@@ -138,6 +138,9 @@ func planFixture(t *testing.T, root, suffix string) (*sandbox, []string, string)
 		if root == "service-release" {
 			meta = filepath.Join(f.env["FAKE_GCS_ROOT"], args[0], suffix, "release/plans", args[2], args[3], "plan.metadata.json")
 		}
+		if root == "service-recovery" {
+			meta = filepath.Join(f.env["FAKE_GCS_ROOT"], args[0], "foundation/plans/recovery", suffix, args[2], args[3], "metadata.json")
+		}
 	}
 	f.custody(t, 0, publish...)
 	return f, args, meta
@@ -313,7 +316,7 @@ func TestCustodyServicePlan(t *testing.T) {
 		{"WrongAttempt", 66},
 		{"ReadDenied", 66},
 	} {
-		for _, root := range []string{"service-foundation", "service-release"} {
+		for _, root := range []string{"service-foundation", "service-release", "service-recovery"} {
 			t.Run(root+"/"+testCase.name, func(t *testing.T) {
 				t.Parallel()
 				f, args, metadataFile := planFixture(t, root, "services/agora-json-keys-test")

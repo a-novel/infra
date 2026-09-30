@@ -75,6 +75,9 @@ func invoke(t *testing.T, args []string, overrides map[string]string, failAt str
 				title = "foundation plan " + scope + " by @operator"
 			case "recovery":
 				title = "recovery plan-workload " + args[2] + " by @operator"
+				if strings.HasSuffix(args[1], "-native") {
+					title = "recovery plan-native " + args[2] + " by @operator"
+				}
 			}
 			body = fmt.Sprintf(`{"id":202,"run_attempt":3,"head_sha":%q,"head_branch":"master",`+
 				`"path":%q,"display_title":%q,"event":"workflow_dispatch","status":"completed","conclusion":"success"}`,

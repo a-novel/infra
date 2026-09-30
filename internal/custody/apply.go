@@ -20,7 +20,7 @@ func (storage store) apply(args []string, getenv func(string) string, output io.
 	}
 	root, commit, planID, inputs := args[0], args[1], args[2], args[3]
 	suffix := getenv("TOFU_STATE_SUFFIX")
-	service := root == "service-foundation" || root == "service-release"
+	service := root == "service-foundation" || root == "service-release" || root == "service-recovery"
 	data, err := os.ReadFile(inputs)
 	if err != nil || !json.Valid(data) {
 		return failure{64, "Apply requires readable private JSON inputs."}
@@ -32,13 +32,20 @@ func (storage store) apply(args []string, getenv func(string) string, output io.
 	}
 	if service {
 		enabled := "SERVICE_FOUNDATIONS_ENABLED"
+		check := workflow.FoundationInputs
 		if root == "service-release" {
 			enabled = "SERVICE_JOB_BOOTSTRAP_ENABLED"
+		}
+		if root == "service-recovery" {
+			enabled, check = "NATIVE_RECOVERY_PREPARATION_ENABLED", workflow.RecoveryInputs
+			if !workflow.RecoveryEnabled(getenv) || getenv("RECOVERY_OPERATION") != "apply-native" {
+				return failure{77, "Native host preparation requires its exact protected workflow."}
+			}
 		}
 		if getenv(enabled) != "true" {
 			return failure{77, "Service apply requires separate activation approval."}
 		}
-		if workflow.FoundationInputs([]string{"check", inputs, storage.bucket, suffix}, getenv, io.Discard, io.Discard) != 0 {
+		if check([]string{"check", inputs, storage.bucket, suffix}, getenv, io.Discard, io.Discard) != 0 {
 			return failure{65, "Service apply does not match protected registration."}
 		}
 		if commit != getenv("GITHUB_SHA") || getenv("GITHUB_REPOSITORY") != "a-novel/infra" {

@@ -13,7 +13,8 @@ The current [foundation](../.github/workflows/foundation.yaml) and
 The pilot's [guarded caller](runbooks/submit-release.md#guarded-established-release) preserves immutable
 intent and dispatches native work under the same service guard as service-root applies and native
 rotation. Standalone commands only publish source or reconcile recorded outcomes. Unenrolled
-legacy/shared-root writers and protected recovery still prevent activation.
+legacy/shared-root writers and recovery execution still prevent activation. Native recovery host
+preparation alone now participates as described below.
 
 An **operation** is one reviewed change to one service, including the work needed to leave it in a
 known state. A **guard** admits that operation and blocks another. A **request intent** prevents replay
@@ -43,6 +44,22 @@ cloud operations. There is no force-unlock, takeover, expiry or automatic apply 
 [finish operation](#finish-an-already-recorded-operation) can repeat only the final guard deletion after
 verifying recorded convergence and a completed original workflow attempt. Read-only
 assessment/drift refuses either service root while a guard is present, including before first state.
+
+### Implemented: disposable native host preparation
+
+The disabled [native recovery preparation](../environments/service-recovery/README.md#guarded-host-preparation)
+uses the same custody and completion path. Its guard belongs to the **source service**, while its
+state/configuration belongs to a separately registered disposable destination. The protected recovery
+workflow permits only creates/no-ops and a stopped destination host; it cannot start a restore or SQL
+recovery. `host-prepared` completion binds both projects and the reviewed plan/input hashes. It is not
+a restored-database receipt or authority for cutover. The inspector and finisher recognize that
+outcome and the exact original recovery workflow attempt, without replaying provisioning.
+
+Assessment/drift also inspect the destination inventory with writes disabled. Unregistered state,
+missing converged inputs or a held source guard stop inspection. Effective source guard/receipt IAM
+and all recovery execution/fencing remain separate activation gates; merging enrollment grants no access.
+
+### Implemented: guarded native release
 
 Protected applies and the [native rotation dispatcher](../modules/service-job-access#guarded-rotation)
 now share admission with the [guarded established-release caller](runbooks/submit-release.md#guarded-established-release).
