@@ -44,11 +44,12 @@ run "selected_host" {
 run "offline_sql" {
   command = plan
   variables {
-    recovery = merge(jsondecode(file("tests/fixture.json")), { verify_sql = true })
+    recovery = merge(jsondecode(file("tests/fixture.json")), { verify_sql = true, expected_data_sha256 = sha256("source") })
   }
   assert {
     condition = alltrue([
       local.requests["selected"].verify_sql,
+      local.requests["selected"].expected_data_sha256 == sha256("source"),
       strcontains(yamldecode(google_compute_instance.recovery["selected"].metadata["user-data"]).write_files[3].content, "--network=none"),
       strcontains(yamldecode(google_compute_instance.recovery["selected"].metadata["user-data"]).write_files[3].content, " verify-sql"),
       !strcontains(yamldecode(google_compute_instance.recovery["selected"].metadata["user-data"]).write_files[3].content, "docker pull"),
@@ -56,6 +57,22 @@ run "offline_sql" {
     ])
     error_message = "SQL verification must be explicit, manual, networkless and reuse the previously pulled image."
   }
+}
+
+run "data_without_sql" {
+  command = plan
+  variables {
+    recovery = merge(jsondecode(file("tests/fixture.json")), { expected_data_sha256 = sha256("source") })
+  }
+  expect_failures = [var.recovery]
+}
+
+run "malformed_data" {
+  command = plan
+  variables {
+    recovery = merge(jsondecode(file("tests/fixture.json")), { verify_sql = true, expected_data_sha256 = "invalid" })
+  }
+  expect_failures = [var.recovery]
 }
 
 run "protected_target" {

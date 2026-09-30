@@ -47,6 +47,15 @@ selected backup's consistency point. It checks the independent system ID, JSON K
 constraints and UUID extension. `sql-verified` requires those checks plus confirmed PostgreSQL and
 VM shutdown; it is not continuous health, source fencing or application cutover evidence.
 
+To prove application data fidelity, also supply `expected_data_sha256`: the lowercase SHA-256
+captured independently using [data.sql](../../internal/recovery/data.sql) from the quiesced source.
+It requires `verify_sql = true` and is bound before preparation alongside the exact set/system ID.
+The worker compares persisted `public.keys` rows at backup consistency and records the observed
+`data_sha256` in its existing private SQL completion. A missing or different digest fails completion.
+Omitting the expectation preserves older schema-only requests; those cannot pass data-fidelity acceptance.
+Follow the [capture procedure](../../docs/runbooks/accept-native-backups.md#capture-independent-application-data)
+for the consistency boundary and limitations.
+
 Any existing attempt or container name blocks replay, including after interruption. Preserve failed
 attempts. A new attempt requires reconciliation and separately approved fresh destination storage.
 `repo-target-time` is preserved for both catalog reads and restore. Soft-delete repair can make an

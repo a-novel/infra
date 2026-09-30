@@ -7,20 +7,21 @@ variable "state_bucket" {
 variable "recovery" {
   description = "Disabled by default. Private, independently approved disposable host inputs; never infer authorization from this object."
   type = object({
-    project            = string
-    source_project     = string
-    protected_projects = set(string)
-    management_project = string
-    management_number  = string
-    region             = string
-    zone               = string
-    cos_image          = string
-    restore_image      = string
-    disk_gib           = number
-    system_id          = string
-    set                = string
-    repository_time    = optional(string, "")
-    verify_sql         = optional(bool, false)
+    project              = string
+    source_project       = string
+    protected_projects   = set(string)
+    management_project   = string
+    management_number    = string
+    region               = string
+    zone                 = string
+    cos_image            = string
+    restore_image        = string
+    disk_gib             = number
+    system_id            = string
+    set                  = string
+    repository_time      = optional(string, "")
+    verify_sql           = optional(bool, false)
+    expected_data_sha256 = optional(string, "")
   })
   default = null
 
@@ -51,23 +52,25 @@ variable "recovery" {
       can(regex("^[1-9][0-9]{0,19}$", var.recovery.system_id)),
       can(regex("^[0-9]{8}-[0-9]{6}F(_[0-9]{8}-[0-9]{6}D)?$", var.recovery.set)),
       var.recovery.repository_time == "" || can(timecmp(var.recovery.repository_time, "2000-01-01T00:00:00Z")),
+      var.recovery.expected_data_sha256 == "" || (var.recovery.verify_sql && can(regex("^[a-f0-9]{64}$", var.recovery.expected_data_sha256))),
     ])
-    error_message = "Select the independently evidenced database system ID and exact full/differential set; preserve any reviewed repository-time cutoff."
+    error_message = "Select the independently evidenced database ID and exact backup set/cutoff; a data fingerprint requires verify_sql and a lowercase SHA-256 expectation."
   }
 }
 
 locals {
   hosts = var.recovery == null ? {} : { selected = var.recovery }
   requests = { for key, host in local.hosts : key => {
-    service            = "json-keys"
-    source_project     = host.source_project
-    project            = host.project
-    management_project = host.management_project
-    management_number  = host.management_number
-    system_id          = host.system_id
-    major              = 18
-    set                = host.set
-    repository_time    = host.repository_time
-    verify_sql         = host.verify_sql
+    service              = "json-keys"
+    source_project       = host.source_project
+    project              = host.project
+    management_project   = host.management_project
+    management_number    = host.management_number
+    system_id            = host.system_id
+    major                = 18
+    set                  = host.set
+    repository_time      = host.repository_time
+    verify_sql           = host.verify_sql
+    expected_data_sha256 = host.expected_data_sha256
   } }
 }

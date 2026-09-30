@@ -78,6 +78,10 @@ migrations, historical images, or native backup integration on the actual COS ho
 `TestOfflineSQL` exercises the JSON Keys recovery worker with full/differential `archive-copy` backups,
 then starts PostgreSQL with no archive reader or network. It requires the expected system ID and native
 paused-at-consistency state, checks tables/roles/extensions, and stops the server before completion.
+It captures the application fingerprint independently before each backup and exercises the worker's
+comparison, including wrong-set, missing-row and empty expectations. A compact source table checks
+UUID ordering, session formatting and nullable-field distinctions; encrypted payloads stay inside SQL.
+Requests without an expectation retain schema-only behavior, not data-fidelity evidence.
 Restored configuration containing an unavailable preload library is ignored. Missing copied WAL and
 failed SQL checks leave no success marker; used attempts refuse replay. The proof logs copied WAL's
 stored and restored sizes; synthetic compression is not a production cost estimate. Host-network

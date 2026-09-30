@@ -31,6 +31,9 @@ type Request struct {
 	RepositoryTime string `json:"repository_time,omitempty"`
 	// VerifySQL requests offline validation after restoring consistency WAL with the backup.
 	VerifySQL bool `json:"verify_sql,omitempty"`
+	// ExpectedDataSHA256 is captured independently from quiesced source rows with data.sql.
+	// An absent expectation retains schema-only verification, not proof of data fidelity.
+	ExpectedDataSHA256 string `json:"expected_data_sha256,omitempty"`
 }
 
 // Outcome identifies the evidence required before the recovery guard can be released.
@@ -73,6 +76,9 @@ func (r Request) Validate() error {
 		if _, err := time.Parse(time.RFC3339, r.RepositoryTime); err != nil {
 			return errors.New("invalid repository time")
 		}
+	}
+	if r.ExpectedDataSHA256 != "" && (!r.VerifySQL || !matches(`[a-f0-9]{64}`, r.ExpectedDataSHA256)) {
+		return errors.New("application data verification requires SQL verification and a lowercase SHA-256 expectation")
 	}
 	return nil
 }

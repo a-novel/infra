@@ -119,7 +119,8 @@ monitor-only apply must leave hosts and timers unchanged. Keep observers active 
 
 In the approved synthetic database, exercise the actual service image's bootstrap, extensions and
 schema/migrations through the existing service-owned path. Record the system ID independently from
-the source, and deterministic application rows before each backup. An `initdb`-only fixture cannot
+the source, and [capture the application fingerprint](#capture-independent-application-data) before
+each backup. An `initdb`-only fixture cannot
 prove application recovery. Migration failure needs inspection, not replay.
 
 Request WAL activation through guarded foundation maintenance only after disk/notification coverage
@@ -137,6 +138,54 @@ boot targets for this rehearsal. Confirm their UTC deadlines and no-catch-up beh
 them; restart does not resume them. Resumption requires explicit database/repository/backup health
 reconciliation. Do not change production calendars to shorten an observation window and call that
 a real deadline test.
+
+### Capture independent application data
+
+Keep synthetic application writers, rotations and migrations quiesced from capture until the full
+or differential backup completes. Run the fixed [data.sql](../../internal/recovery/data.sql) from
+the same reviewed commit as the recovery image, against the independently checked source host.
+It hashes all eight persisted `public.keys` fields, including encrypted private keys and nulls,
+in UUID order with UTC timestamps. Only one SHA-256 leaves PostgreSQL. The clock-dependent
+`active_keys` view is excluded. PostgreSQL owns [serialization](https://www.postgresql.org/docs/18/functions-json.html)
+and [hashing](https://www.postgresql.org/docs/18/functions-binarystring.html); no extra extension is needed.
+
+From the reviewed infra checkout, reuse the `NATIVE_*`/`GCP_ACCOUNT` inputs from the identity
+checkpoint. Set `NATIVE_EVIDENCE_DIR` to the existing private evidence directory outside all test
+projects. This command only reads source data; a failed or malformed observation is not an expectation.
+
+```bash
+bash <<'CAPTURE'
+set +x
+set -euo pipefail
+umask 077
+set -C
+: "${NATIVE_SERVICE_PROJECT:?}" "${NATIVE_ZONE:?}" "${NATIVE_DATABASE_INSTANCE:?}"
+: "${GCP_ACCOUNT:?}" "${NATIVE_EVIDENCE_DIR:?}"
+capture_dir="$(mktemp -d "$NATIVE_EVIDENCE_DIR/data.XXXXXXXX")"
+gcloud compute ssh "$NATIVE_DATABASE_INSTANCE" \
+  --project="$NATIVE_SERVICE_PROJECT" --zone="$NATIVE_ZONE" --account="$GCP_ACCOUNT" \
+  --tunnel-through-iap --ssh-key-expire-after=1h \
+  --command='sudo -n timeout 40s docker exec -i --user=postgres agora-postgres-json-keys psql -XqAtw -v ON_ERROR_STOP=1 -h /var/run/postgresql -U agora_json_keys -d agora_json_keys -f -' \
+  < internal/recovery/data.sql > "$capture_dir/candidate.txt"
+mapfile -t fingerprint < "$capture_dir/candidate.txt"
+[[ ${#fingerprint[@]} == 1 && ${fingerprint[0]} =~ ^[a-f0-9]{64}$ ]] ||
+  { printf 'STOP: incomplete fingerprint; retain diagnostics.\n' >&2; exit 1; }
+mv -- "$capture_dir/candidate.txt" "$capture_dir/expected_data_sha256.txt"
+printf 'PASS: source fingerprint saved in %s\n' "$capture_dir"
+CAPTURE
+```
+
+After native backup completion, bind that file to its exact set, independent system ID, source
+numeric VM ID, observation/backup times and reviewed commit in private evidence. Resume writers
+only after that association is recorded. Before recovery preparation, set `verify_sql = true` and
+`expected_data_sha256` to that file's value in the protected recovery input. Never derive it from
+the recovered destination or update it to match a failed restore.
+
+An empty table has a valid fingerprint: use meaningful, independently known synthetic rows for
+the rehearsal. This is a small-table comparison, bounded by the existing container memory and
+30-second query/five-minute worker limits; aggregation uses 32 bytes per row plus query overhead.
+Timeouts or resource exhaustion fail the attempt. It does not prove a concurrent production
+snapshot, decryption with application secrets, later PITR, or API compatibility.
 
 ## 4. Acceptance matrix
 
@@ -157,10 +206,10 @@ missing evidence into a pass. Destructive rows require their exact synthetic tar
 | Retention and expiry               | Follow [native expiry acceptance](backup-and-restore-postgresql.md#native-expiry-acceptance), including retention denial, partial catalog mutation, retained-chain SQL recovery and explicit reconciliation. Inventory live/noncurrent/soft-deleted bytes.                               |
 | Notification                       | Actual worker failure, integrity error/empty report, archive failure, stopped host, never-seen/missing success, disk pressure/missing telemetry and weekly deadline produce the intended notification. Record event, incident and delivery timestamps; calendar closure is not recovery. |
 
-The existing SQL verifier checks the schema, roles, extensions and database identity; it does not
-compare restored rows with independently recorded expectations. Its completion marker alone cannot
-pass the data-fidelity row above. Agree a separately reviewed, isolated observation of those rows
-before the live recovery batch; otherwise leave that gate unproven.
+Data-fidelity acceptance requires the independently captured `expected_data_sha256` in the prepared
+request and the matching `data_sha256` in stopped SQL completion. Missing expectations retain
+schema-only behavior and leave this acceptance gate unproven. A mismatch retains the failed attempt
+and service guard; reconcile it without changing expectations, replaying or promoting the database.
 
 The guarded recovery path currently verifies **backup consistency**, not later PITR or API cutover.
 Record PITR beyond that point as unproven by this workflow; do not use the old manual proof to claim
