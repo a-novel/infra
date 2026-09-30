@@ -1,127 +1,133 @@
 # Studio visual-test storage
 
-The [bootstrap inventory](../../bootstrap/README.md#studio-visual-test-storage) defines the storage and
-identity boundaries. This runbook prepares the handoff to the shared Playwright workflow; that workflow
-and screenshot comparisons are separate consumer changes. Existing GitHub artifact uploads continue
-until the consumer switches storage.
+Studio visual evidence uses two dedicated Google Workspace Shared Drives. Bootstrap owns the Drive
+API and GitHub federation described in the [resource inventory](../../bootstrap/README.md#studio-visual-test-storage).
+The shared workflow owns comparison, publication and cleanup. This runbook prepares its activation;
+merging infrastructure configuration alone does not change Studio's existing artifact uploads.
 
 ## Provision and hand off
 
-1. Merge the reviewed configuration. An operator follows the
-   [protected bootstrap plan/apply](../../ops/README.md#protected-workflow-operations) from `master`,
-   checking the management project, region, two new buckets and exact Studio identities. Agents and
-   infra PR jobs use mocked validation only. No new API, service-account key or secret payload is needed.
-   On an existing management plane, the foundation account's bucket-scoped grants cannot create new
-   buckets. A human operator must separately approve and temporarily grant project-level
-   `roles/storage.admin` to that apply identity for the reviewed bootstrap operation. Record the grant,
-   remove it immediately after the two bucket IAM bindings are applied, and verify root convergence
-   using the permanent bucket-scoped grants. Remove it on failure too, then diagnose and review a new
-   plan. Never grant Owner or Editor to automation. For initial management-plane creation, the
-   [human bootstrap procedure](./bootstrap-management-plane.md#5-establish-temporary-bootstrap-authority)
-   already supplies temporary creation authority.
-2. Inspect the `studio_visual_tests` output through the approved operator state access. Pass its
-   bucket/object paths and `ci` / `master` provider/account pairs as non-secret configuration to Studio's
-   shared Playwright action. Keep those values separate from production credentials.
-3. Keep the caller at `a-novel/platform-studio/.github/workflows/main.yaml`. Give only the relevant
-   storage jobs `id-token: write`. Branch pushes and merge-group jobs use `ci`; baseline publication uses
-   `master`, only after successful tests on a master push. Fork PR jobs have no storage identity.
-4. Check the existing management-project budget alerts before enabling uploads. Limit archives to
-   synthetic test data and remove credentials from traces. Private report links require an authorized
-   operator; anonymous access and public website hosting remain disabled.
+1. Merge the reviewed bootstrap configuration. An operator follows the
+   [protected bootstrap plan/apply](../../ops/README.md#protected-workflow-operations) from `master`.
+   Review the Drive API, two service accounts and two providers. Agents and PR checks use mocked
+   validation only. The existing service-usage and IAM administration grants cover these resources.
+2. Read `studio_visual_tests` through approved operator state access. Confirm that `ci` names
+   `studio-visual-ci` and `maintenance` names `studio-visual-maintenance` in the management project.
+3. A Workspace administrator creates **Studio visual references** and **Studio visual results** as
+   dedicated Shared Drives. Record each Drive ID from its URL. Service accounts cannot own files in
+   My Drive and do not inherit domain membership. Confirm the Workspace edition supports Shared Drives
+   and that external-member policy permits the two service accounts before activation.
+4. Add the exact service-account email addresses with the membership below. Keep both Drives private,
+   restrict file access to Drive members (`driveMembersOnly`), and restrict folder sharing to managers.
+   Domain-only membership must allow these specific external service accounts. Retain named human
+   managers for recovery. Do not grant either account access to general company Drives.
+5. Set the following non-secret Studio repository variables from the verified output and Drive URLs.
+   The consumer must explicitly request OAuth scope `https://www.googleapis.com/auth/drive` through
+   service-account impersonation. No credential file or domain-wide delegation is needed.
+6. Release and adopt the shared workflow, run the allow/deny and large-transfer checks below, then seed
+   from reviewed master using its explicit initial-seed control. Disable seed mode after the first
+   successful publication. Missing references fail ordinary comparisons.
+
+| Shared Drive | CI role                | Maintenance role      |
+| ------------ | ---------------------- | --------------------- |
+| References   | Viewer (`reader`)      | Manager (`organizer`) |
+| Results      | Contributor (`writer`) | Manager (`organizer`) |
+
+Drive requires Manager authority on the parent to permanently delete a Shared Drive file. Maintenance
+therefore holds this authority only on the two dedicated Drives. Contributors can modify result files;
+GitHub run metadata and the trusted workflow decide eligibility for publication.
+
+| Repository variable                  | Source                                                         |
+| ------------------------------------ | -------------------------------------------------------------- |
+| `STUDIO_VISUAL_CI_PROVIDER`          | `studio_visual_tests.identities.ci.identity_provider`          |
+| `STUDIO_VISUAL_CI_ACCOUNT`           | `studio_visual_tests.identities.ci.service_account`            |
+| `STUDIO_VISUAL_MAINTENANCE_PROVIDER` | `studio_visual_tests.identities.maintenance.identity_provider` |
+| `STUDIO_VISUAL_MAINTENANCE_ACCOUNT`  | `studio_visual_tests.identities.maintenance.service_account`   |
+| `STUDIO_VISUAL_REFERENCES_DRIVE`     | References Shared Drive ID                                     |
+| `STUDIO_VISUAL_RESULTS_DRIVE`        | Results Shared Drive ID                                        |
+
+The consumer workflows are `main.yaml` and trusted `visual-tests.yaml`. Give only the relevant jobs
+`id-token: write`. Maintenance accepts only events evaluated on `refs/heads/master`; it must never
+check out or execute PR code. Fork runs have no candidate identity. Synthetic test data is the only
+permitted content; traces can contain cookies and credentials, so access stays private.
 
 ## Consumer contract
 
-- Upload reports beneath `reports_prefix/<run-id>/<run-attempt>/`, using create-only writes and
-  generation precondition `0`. Do not use bucket listing, destination reads or overwrite-based sync
-  with the report creator. A retry needs a fresh object name if the previous upload already committed.
-- Read metadata for the exact `baseline_object`, then download that immutable generation. Keep its
-  generation fixed throughout the run, including retries. Read failures must fail visibly; a missing
-  baseline requires explicit first-master seeding and must not silently skip PR comparisons.
-- Store the complete comparison batch as one archive at the fixed master object name. Include a
-  manifest with the source commit, run ID/attempt, Playwright/browser versions and screenshot settings.
-  The archive contains every current baseline image; removing a test removes its image on replacement.
-  Reports and traces stay in the expiring reports bucket.
-- Serialize master publication, verify the candidate commit still matches current master, and replace
-  with an `ifGenerationMatch` precondition using the generation observed before testing (or `0` for
-  first seed). A stale run or precondition failure cannot promote. Retry from the current master and
-  freshly read baseline. Build and validate the entire archive before uploading; never delete the
-  live object before replacement. GCS makes a completed object replacement atomic.
-- Only a successful master test batch may publish. A failed, canceled, partial or PR run leaves the
-  live baseline untouched. A screenshot change approved on a PR becomes the new baseline only after
-  merge and a successful master run; carry the reviewed change authorization into that master run.
-- The agreed `allow-screenshot-change` label applies only to visual differences. Comparison must still
-  run and retain evidence; functional tests, missing screenshots and upload errors still fail. The
-  consumer must validate a human maintainer's label action, refresh checks when the label changes and
-  tie the result to the current PR head. Follow infra's
-  [deletion-gate pattern](../../.github/workflows/refresh-deletion-gates.yaml) for trusted event handling.
-  Label handling does not belong in bucket IAM and is not implemented by this configuration.
-- The first master seed needs explicit bootstrap mode and complete functional tests. Browser/platform
-  upgrades that change rendering require the same reviewed baseline update procedure.
-
-References: [Playwright comparisons](https://playwright.dev/docs/test-snapshots),
-[GCS consistency and atomicity](https://docs.cloud.google.com/storage/docs/consistency),
-[generation preconditions](https://docs.cloud.google.com/storage/docs/request-preconditions).
+- A **reference batch** contains the latest successful master screenshots. A **branch batch** holds
+  the latest completed run's screenshots, traces, report and service logs. Keep the reference regardless
+  of age, including after months without a run. Keep one latest published batch per live branch.
+- Use Drive file IDs and bounded metadata, not names as unique keys. Upload immutable archives with
+  resumable transfers and retries; stream 2–4 GiB batches with bounded memory. Validate complete uploads
+  before making them current. Readers verify checksums and retry selection if a replacement removed
+  the old file during download.
+- Store each batch as a fresh file, then permanently delete superseded files after publication.
+  Updating binary content can retain old revisions, and Trash retains deleted data. Neither behavior
+  meets the one-batch retention policy. Brief overlap during a replacement is necessary.
+- Serialize trusted publication and cleanup. Verify GitHub's run identity, attempt, branch, current
+  head and test result. A stale, failed, canceled, partial or branch run cannot replace references.
+  Candidate jobs upload pending evidence; completion events reconcile branch retention. Master publishes its locally validated batch directly with the maintenance identity. Cleanup never promotes candidate-uploaded files into references.
+- Remove batches after PR merge or branch deletion. Recheck live GitHub state before publication so
+  an in-flight upload cannot revive a removed branch. A scheduled sweep removes orphaned uploads and
+  retries interrupted cleanup. API or permission failures are visible and never treated as empty lists.
+- Native Playwright comparison always runs. The human-maintainer `allow-screenshot-change` label
+  permits visual differences for the exact reviewed PR head. Functional failures, incomplete captures,
+  missing references and upload errors remain failures. Refresh checks on label changes and carry the
+  reviewed approval into the successful post-merge master run. Follow infra's
+  [trusted event pattern](../../.github/workflows/refresh-deletion-gates.yaml).
+- Explicit first-master seeding requires a complete successful functional run. Rendering changes from
+  browser/platform upgrades use the same reviewed update path. No screenshot/report GitHub artifact
+  upload remains on the Drive path; small coverage artifacts can remain for Codecov.
 
 ## Verify after apply
 
-Use approved operator access to inspect the buckets and their effective IAM, including inherited
-project grants. The providers and accounts must match the `studio_visual_tests` output.
+Inspect the providers, effective Google Cloud IAM and Workspace membership independently. HCL output
+alone does not prove Drive access. Use an approved disposable test batch for destructive probes.
 
-| Check                             | Expected result                                                                                                                                                                               |
-| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Both buckets                      | Regional Standard, uniform access, public access prevention, soft delete disabled; no bucket-wide retention lock.                                                                             |
-| Reports policy                    | Versioning disabled; delete when object age reaches seven days.                                                                                                                               |
-| Baseline policy                   | Versioning enabled; delete only noncurrent generations seven days after replacement. No live-object age rule.                                                                                 |
-| CI identity                       | Read the exact baseline generation and create a fresh run report. Baseline writes/deletes, report reads/overwrites/deletes, bucket listing, unrelated prefixes, state and secrets are denied. |
-| Publisher identity                | Replace the exact master archive with a generation precondition. Other objects and bucket-policy changes are denied.                                                                          |
-| Federation                        | CI works on Studio branch push/merge-group runs. Publisher works only on Studio master pushes. Other repositories/workflows, tags, PR events and branch publication are denied.               |
-| Failed or overlapping publication | A failed upload preserves the old live archive; a stale generation precondition rejects replacement.                                                                                          |
-| Quiet master                      | The same live generation remains readable after seven days without a successful master run. Superseded generations become eligible for cleanup after seven days.                              |
+| Check                      | Expected result                                                                                                                                |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| CI federation              | Studio `main.yaml` branch pushes and merge groups authenticate; other repositories, workflows, tags and PR events fail.                        |
+| Maintenance federation     | Only master `main.yaml` pushes and master `visual-tests.yaml` allowlisted events authenticate. Candidate branch and other event attempts fail. |
+| CI Drive access            | Read references and upload results. Reference writes/deletes, permanent result deletion, unrelated Drives, state and secrets fail.             |
+| Sharing                    | Anonymous and nonmember requests fail; service-account access succeeds without user impersonation.                                             |
+| Maintenance access         | Publish and permanently delete disposable evidence in the dedicated Drives. No project-wide infrastructure or company Drive access.            |
+| Large/interrupted transfer | Upload and download a 4 GiB test archive; checksums match, memory stays bounded, and a resumed upload produces one complete file.              |
+| Failed/stale publication   | Current references remain readable; old runs cannot replace newer master results.                                                              |
+| Cleanup race               | Merge/delete while a branch run is uploading; after reconciliation no branch batch remains. A missed event is repaired by the sweep.           |
+| Quiet master               | The same reference stays readable past seven days without a successful replacement.                                                            |
 
-Cloud lifecycle deletion is asynchronous; seven days is eligibility, not an exact removal deadline.
-Run non-destructive identity checks before enabling publication. Exercise replacement/recovery with
-an explicitly approved initial test baseline. Never delete the active baseline as a permissions probe.
-The repository's mocked tests verify policy structure; these live checks verify the deployed boundary.
+Complete these checks before enabling normal uploads. If Workspace blocks service-account membership,
+stop activation and review that policy; do not introduce account keys or domain-wide delegation as a
+fallback. Google documents [roles](https://developers.google.com/workspace/drive/api/guides/ref-roles),
+[Shared Drive support](https://developers.google.com/workspace/drive/api/guides/enable-shareddrives),
+[resumable uploads](https://developers.google.com/workspace/drive/api/guides/manage-uploads),
+[revisions](https://developers.google.com/workspace/drive/api/guides/manage-revisions) and
+[permanent deletion](https://developers.google.com/workspace/drive/api/guides/delete).
 
 ## Recovery and retirement
 
-For an incomplete upload, retry without deleting the live object. For a bad successful publication,
-an operator can copy a known-good noncurrent generation back to the fixed object name, guarded by the
-current generation precondition. Validate its manifest and record which master commit it represents;
-then rerun current-master tests. Noncurrent generations are recoverable only until lifecycle deletes
-them. If the live archive was explicitly deleted, it becomes noncurrent and has that same recovery
-window. `prevent_destroy` protects infrastructure changes, not object operations.
+Retry an incomplete upload while keeping the current reference. Permanent cleanup has no Drive Trash
+recovery; the latest-only policy intentionally provides no historical reference archive. If a reference
+is lost or a bad publication is confirmed, pause publication, review the source commit and explicitly
+reseed from trusted master. Never select a branch batch as an automatic recovery source.
 
-Reports and expired historical baselines have no soft-delete recovery. If no valid master generation
-remains, reseed explicitly from reviewed master. To retire the feature, first disable the consumer and
-federation, export any retained evidence, then review removal of deletion protection and bucket contents.
-Changing the bucket location requires a separately reviewed migration.
+To retire the feature, disable the consumer and revoke Drive membership, preserve any evidence a human
+needs, then review identity removal. Shared Drives remain Workspace-owned and are not destroyed by
+OpenTofu. No visual-test GCS resources were applied as part of this proposal; if an operator provisioned
+an earlier revision independently, inventory it and plan its retirement separately.
 
-## Cost estimate
+## Capacity and cost
 
-Assume **2–4 GiB per report batch**, a 30-day month and steady daily volume. For the default Belgium
-region, Standard storage is approximately **$0.020/GiB-month**. Upload traffic is free. Internet
-downloads to GitHub-hosted runners in Europe or North America start at **$0.12/GiB**, then $0.11 after
-1,024 GiB/month. Rates verified against Google's [storage pricing](https://cloud.google.com/storage/pricing)
-and [pricing examples](https://cloud.google.com/storage/pricing-examples) on September 30, 2026.
+Within the existing Workspace pooled-storage allowance, this design needs no additional storage
+subscription. At **2–4 GiB per batch**, master plus ten branch batches occupies about **22–44 GiB**, plus
+short-lived upload overlap and orphaned files until cleanup succeeds. Fifty runs per day transferring
+one batch each way use roughly **100–200 GiB/day in each direction**.
 
-| Runs/day | Temporary reports retained (7 days) | Report storage/month | Downloads/month if every run fetches a 2–4 GiB baseline |
-| -------- | ----------------------------------- | -------------------- | ------------------------------------------------------- |
-| 1        | 14–28 GiB                           | $0.28–$0.56          | $7.20–$14.40                                            |
-| 10       | 140–280 GiB                         | $2.80–$5.60          | $72.00–$142.24                                          |
-| 50       | 700–1,400 GiB                       | $14.00–$28.00        | $340.24–$670.24                                         |
+Google currently lists a free standard allowance, with **400 million quota units/day/project** and
+**1 TB/day/project of downloads** as future billing thresholds. An account can upload/copy **750 GB/day**.
+API methods consume different numbers of quota units; archive transfers reduce request count. Shared
+Drive storage headroom, API usage and cleanup failures still require monitoring.
 
-A live 2–4 GiB master archive adds **$0.04–$0.08/month** indefinitely. Superseded baseline history adds
-approximately `master publications/day × 7 × baseline GiB × $0.020` per month. At one master
-publication/day with 2–4 GiB archives, that is another **$0.28–$0.56/month**. If every run publishes
-master, historical baseline storage is approximately another report-storage column.
-
-This treats the comparison archive as large as the full report for the download estimate. Keeping
-traces and HTML reports outside the archive usually reduces comparison downloads; measure actual
-baseline bytes before setting the budget. Human report downloads add egress too. Reusing a cached
-immutable generation avoids repeat downloads without accepting a stale baseline.
-
-Regional Standard requests cost $0.005 per 1,000 Class A operations and $0.0004 per 1,000 Class B
-operations; a few archives per run keep these small. Estimates exclude taxes, audit-log charges,
-other project usage, credits and lifecycle cleanup delays. Soft delete is explicitly disabled on
-both buckets, so expired objects do not incur an additional soft-delete retention period.
+Google has announced future charges above daily thresholds with at least 90 days' notice; published
+rates and activation dates must be rechecked before rollout. Sources, checked September 30, 2026:
+[Drive limits](https://developers.google.com/workspace/drive/api/guides/limits) and
+[Workspace API policy](https://developers.google.com/workspace/tools-safety).

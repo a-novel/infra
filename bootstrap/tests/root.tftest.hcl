@@ -50,7 +50,7 @@ run "builds_the_protected_management_plane" {
 
   assert {
     condition = (
-      length(google_project_service.management) == 12 &&
+      length(google_project_service.management) == 13 &&
       contains(keys(google_project_service.management), "billingbudgets.googleapis.com") &&
       contains(keys(google_project_service.management), "cloudbilling.googleapis.com") &&
       contains(keys(google_project_service.management), "cloudquotas.googleapis.com") &&

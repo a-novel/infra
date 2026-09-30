@@ -3,74 +3,19 @@ locals {
     owner_id      = "131281268"
     repository_id = "1338436652"
     repository    = "a-novel/platform-studio"
-    workflow      = "a-novel/platform-studio/.github/workflows/main.yaml"
   }
-  visual_baseline_object = "platform-studio/master/batch.tar"
-  visual_report_prefix   = "platform-studio/runs/"
   visual_identities = {
     ci = {
       account_id = "studio-visual-ci"
+      workflow   = "assertion.workflow_ref == 'a-novel/platform-studio/.github/workflows/main.yaml@' + assertion.ref"
       condition  = "assertion.ref.startsWith('refs/heads/') && assertion.event_name in ['push', 'merge_group']"
     }
-    master = {
-      account_id = "studio-visual-master"
-      condition  = "assertion.ref == 'refs/heads/master' && assertion.event_name == 'push'"
+    maintenance = {
+      account_id = "studio-visual-maintenance"
+      workflow   = "(assertion.workflow_ref == 'a-novel/platform-studio/.github/workflows/main.yaml@refs/heads/master' && assertion.event_name == 'push') || (assertion.workflow_ref == 'a-novel/platform-studio/.github/workflows/visual-tests.yaml@refs/heads/master' && assertion.event_name in ['workflow_run', 'pull_request_target', 'delete', 'schedule'])"
+      condition  = "assertion.ref == 'refs/heads/master'"
     }
   }
-}
-
-resource "google_storage_bucket" "visual_reports" {
-  name                        = "${local.bucket_name_prefix}-visual-reports"
-  location                    = var.region
-  storage_class               = "STANDARD"
-  force_destroy               = false
-  uniform_bucket_level_access = true
-  public_access_prevention    = "enforced"
-
-  versioning {
-    enabled = false
-  }
-  soft_delete_policy {
-    retention_duration_seconds = 0
-  }
-  lifecycle_rule {
-    action { type = "Delete" }
-    condition { age = 7 }
-  }
-  lifecycle {
-    prevent_destroy = true
-  }
-
-  depends_on = [google_project_service.management["storage.googleapis.com"]]
-}
-
-resource "google_storage_bucket" "visual_baselines" {
-  name                        = "${local.bucket_name_prefix}-visual-baselines"
-  location                    = var.region
-  storage_class               = "STANDARD"
-  force_destroy               = false
-  uniform_bucket_level_access = true
-  public_access_prevention    = "enforced"
-
-  versioning {
-    enabled = true
-  }
-  soft_delete_policy {
-    retention_duration_seconds = 0
-  }
-  lifecycle_rule {
-    action { type = "Delete" }
-    # The latest complete master batch stays live, even through months of inactivity.
-    condition {
-      with_state                 = "ARCHIVED"
-      days_since_noncurrent_time = 7
-    }
-  }
-  lifecycle {
-    prevent_destroy = true
-  }
-
-  depends_on = [google_project_service.management["storage.googleapis.com"]]
 }
 
 resource "google_service_account" "visual_tests" {
@@ -94,7 +39,7 @@ resource "google_iam_workload_identity_pool_provider" "visual_tests" {
   workload_identity_pool_id          = google_iam_workload_identity_pool.github.workload_identity_pool_id
   workload_identity_pool_provider_id = each.value.account_id
   display_name                       = "Studio visual tests ${each.key}"
-  description                        = "Trust Studio main workflow ${each.key} runs for visual-test storage."
+  description                        = "Trust Studio ${each.key} workflow events for Drive visual-test storage."
   deletion_policy                    = "PREVENT"
 
   attribute_mapping = {
@@ -111,7 +56,7 @@ resource "google_iam_workload_identity_pool_provider" "visual_tests" {
     "assertion.repository_owner_id == '${local.studio_github.owner_id}'",
     "assertion.repository_id == '${local.studio_github.repository_id}'",
     "assertion.repository == '${local.studio_github.repository}'",
-    "assertion.workflow_ref == '${local.studio_github.workflow}@' + assertion.ref",
+    "(${each.value.workflow})",
     each.value.condition,
   ])
 
@@ -131,61 +76,22 @@ resource "google_service_account_iam_member" "visual_tests" {
   member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.trust_boundary/${each.value.account_id}"
 }
 
-resource "google_storage_bucket_iam_member" "visual_report_creator" {
-  bucket = google_storage_bucket.visual_reports.name
-  role   = "roles/storage.objectCreator"
-  member = "serviceAccount:${google_service_account.visual_tests["ci"].email}"
-
-  condition {
-    title       = "StudioRunReportsOnly"
-    description = "Create unique report objects beneath Studio's run prefix."
-    expression  = "resource.type == 'storage.googleapis.com/Object' && resource.name.startsWith('projects/_/buckets/${google_storage_bucket.visual_reports.name}/objects/${local.visual_report_prefix}')"
-  }
-}
-
-resource "google_storage_bucket_iam_member" "visual_baseline_reader" {
-  bucket = google_storage_bucket.visual_baselines.name
-  role   = "roles/storage.objectViewer"
-  member = "serviceAccount:${google_service_account.visual_tests["ci"].email}"
-
-  condition {
-    title       = "StudioMasterBatchOnly"
-    description = "Read the complete master baseline by its exact object name."
-    expression  = "resource.type == 'storage.googleapis.com/Object' && resource.name == 'projects/_/buckets/${google_storage_bucket.visual_baselines.name}/objects/${local.visual_baseline_object}'"
-  }
-}
-
-resource "google_storage_bucket_iam_member" "visual_baseline_publisher" {
-  bucket = google_storage_bucket.visual_baselines.name
-  role   = "roles/storage.objectAdmin"
-  member = "serviceAccount:${google_service_account.visual_tests["master"].email}"
-
-  condition {
-    title       = "StudioMasterBatchOnly"
-    description = "Replace the complete master batch atomically at its exact object name."
-    expression  = "resource.type == 'storage.googleapis.com/Object' && resource.name == 'projects/_/buckets/${google_storage_bucket.visual_baselines.name}/objects/${local.visual_baseline_object}'"
-  }
-}
-
 output "studio_visual_tests" {
-  description = "Private visual-test storage and keyless CI coordinates; the consumer workflow controls successful master promotion."
+  description = "Keyless Drive identities; Workspace administrators configure Shared Drive membership separately."
   value = {
-    reports_bucket  = google_storage_bucket.visual_reports.name
-    reports_prefix  = local.visual_report_prefix
-    baseline_bucket = google_storage_bucket.visual_baselines.name
-    baseline_object = local.visual_baseline_object
+    oauth_scope = "https://www.googleapis.com/auth/drive"
     identities = { for name, account in google_service_account.visual_tests : name => {
       service_account   = account.email
       identity_provider = google_iam_workload_identity_pool_provider.visual_tests[name].name
     } }
+    shared_drive_roles = {
+      references = { ci = "reader", maintenance = "organizer" }
+      results    = { ci = "writer", maintenance = "organizer" }
+    }
   }
 
   depends_on = [
+    google_project_service.management["drive.googleapis.com"],
     google_service_account_iam_member.visual_tests,
-    google_storage_bucket_iam_member.visual_report_creator,
-    google_storage_bucket_iam_member.visual_baseline_reader,
-    google_storage_bucket_iam_member.visual_baseline_publisher,
-    google_storage_bucket_iam_member.foundation_admin,
-    google_storage_bucket_iam_member.operator_admin,
   ]
 }
