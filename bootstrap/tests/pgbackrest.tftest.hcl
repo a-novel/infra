@@ -121,6 +121,37 @@ run "isolated_native_custody" {
   }
 }
 
+run "noncurrent_cleanup_requires_separate_opt_in" {
+  command = plan
+  variables {
+    json_keys_pgbackrest = { workload_project_id = "agora-json-keys-test", noncurrent_cleanup = true }
+  }
+
+  assert {
+    condition = [for rule in google_storage_bucket.pgbackrest["json-keys"].lifecycle_rule : {
+      action     = one(rule.action).type
+      state      = one(rule.condition).with_state
+      days       = one(rule.condition).days_since_noncurrent_time
+      age        = coalesce(one(rule.condition).age, 0)
+      send_age   = one(rule.condition).send_age_if_zero
+      newer      = coalesce(one(rule.condition).num_newer_versions, 0)
+      send_newer = coalesce(one(rule.condition).send_num_newer_versions_if_zero, false)
+      }] == [{
+      action = "Delete", state = "ARCHIVED", days = 7,
+      age    = 0, send_age = false, newer = 0, send_newer = false,
+    }]
+    error_message = "Cleanup must select only seven-day-old noncurrent generations, without age or version-count shortcuts."
+  }
+
+  assert {
+    condition = alltrue([
+      tonumber(google_storage_bucket.pgbackrest["json-keys"].retention_policy[0].retention_period) == 604800,
+      google_storage_bucket.pgbackrest["json-keys"].soft_delete_policy[0].retention_duration_seconds == 604800,
+    ])
+    error_message = "Noncurrent cleanup must preserve minimum retention and soft delete."
+  }
+}
+
 run "isolated_tls_credentials" {
   command = plan
   variables {
