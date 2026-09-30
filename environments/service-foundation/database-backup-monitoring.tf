@@ -66,7 +66,7 @@ resource "google_monitoring_alert_policy" "database_backup_failure" {
   project               = var.project_id
   display_name          = "Agora ${var.service} native backup failed"
   combiner              = "OR"
-  enabled               = false
+  enabled               = var.database_runtime.backup_alerts_enabled
   severity              = "ERROR"
   notification_channels = [google_monitoring_notification_channel.operations.name]
   deletion_policy       = "DELETE"
@@ -98,7 +98,7 @@ resource "google_monitoring_alert_policy" "database_backup_health" {
   project               = var.project_id
   display_name          = "Agora ${var.service}: ${each.value.title}"
   combiner              = "OR"
-  enabled               = false
+  enabled               = var.database_runtime.backup_alerts_enabled
   severity              = "ERROR"
   notification_channels = [google_monitoring_notification_channel.operations.name]
   deletion_policy       = "DELETE"

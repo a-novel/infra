@@ -258,7 +258,7 @@ added. Database cleanup stops workers but preserves their logs. Startup failures
 systemd journal evidence. Logs can still be lost on host loss or collection outage; the independent
 missing-success conditions cover that uncertainty, not proof of recovery.
 
-Five disabled Cloud Monitoring policies use the existing operations channel: native command/unit
+Five default-off Cloud Monitoring policies use the existing operations channel: native command/unit
 errors, Sunday's full-backup deadline (04:00 UTC), any backup (24 hours 45 minutes), archive check
 (three hours), disk pressure (85%) or missing disk telemetry (one hour). PromQL explicitly covers
 zero/never-seen samples; a standard absence condition would require prior history. The full check
@@ -268,6 +268,13 @@ retest windows must stay within [Google's 25-hour limit](https://docs.cloud.goog
 The policies bind the current numeric VM ID;
 protected host replacement must reconcile them. Native success is not dependency integrity or SQL
 restore evidence. See [alert response](../../docs/runbooks/respond-to-alerts.md#native-backup-pilot).
+
+`database_runtime.backup_alerts_enabled = true` enables these five policies through the reviewed
+foundation plan. It changes no host, timer, WAL setting or IAM grant. Prove channel delivery and
+disk telemetry before enabling WAL, then test actual worker logs and missing-success conditions in
+the [native acceptance rehearsal](../../docs/runbooks/accept-native-backups.md). Notification delivery
+is live evidence; an enabled policy is only configuration. Keep alerts enabled while native protection
+is in use; disabling them requires a separate monitoring decision.
 
 Before activation, rehearse shared-socket access, native lock contention, stop/timeout and database/
 Docker failure on COS. Verify maintenance admission, default COS log fields, startup-failure/timeout
@@ -287,7 +294,7 @@ repository. Verification adds no cloud permissions or repository writes. Reads a
 cost money; measure a complete scan before choosing a schedule or increasing its limits.
 
 Inspect the retained `agora-backup-verify` Docker logs and systemd journal. pgBackRest 2.59.1 can exit
-zero while reporting `status: error`; systemd completion alone is insufficient. The disabled failure
+zero while reporting `status: error`; systemd completion alone is insufficient. The default-off failure
 alert also matches that worker's error and empty-repository reports. Its verbose report must cover the
 expected backup sets and WAL; an empty, partial, interrupted or missing report is not verification.
 Export evidence before another invocation replaces the worker's logs. No verification result feeds
