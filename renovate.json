@@ -1,7 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "github>a-novel-kit/workflows//renovate/infra#v1.31.0",
+    "github>a-novel-kit/workflows//renovate/infra#v1.32.0",
     ":semanticCommits"
   ],
   "rangeStrategy": "pin",
@@ -14,6 +14,11 @@
       "description": "Maintain container dependencies as published version tags; resolve digests only in generated deployment evidence.",
       "matchDatasources": ["docker"],
       "pinDigests": false
+    },
+    {
+      "description": "Resolve Terraform providers and modules from the registry used by OpenTofu.",
+      "matchDatasources": ["terraform-provider", "terraform-module"],
+      "registryUrls": ["https://registry.opentofu.org"]
     },
     {
       "description": "Review the stable Google provider and service-agent beta provider together.",
@@ -100,6 +105,12 @@
       "matchManagers": ["gomod"],
       "matchFileNames": ["go.mod"],
       "postUpdateOptions": ["gomodTidy"]
+    },
+    {
+      "description": "Hold google.golang.org/api off v0.299.0 because its module graph forces vulnerable gRPC v1.84.0; admit the first later release.",
+      "matchManagers": ["gomod"],
+      "matchPackageNames": ["google.golang.org/api"],
+      "allowedVersions": "<0.299.0 || >0.299.0"
     },
     {
       "description": "Resolve only declared tools in the isolated linter module, on separate branches from runtime dependencies.",

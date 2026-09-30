@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -28,12 +29,13 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	fmt.Println("Files restored. PostgreSQL remains stopped; SQL recovery and cutover are not approved by this result.")
+	fmt.Println("Selected recovery step completed; PostgreSQL stopped. No cutover authorized.")
 }
 
 func run(ctx context.Context) error {
-	if len(os.Args) != 1 || os.Getenv("GCE_METADATA_HOST") != "" {
-		return errors.New("arguments and metadata overrides are not supported")
+	verify := len(os.Args) == 2 && os.Args[1] == "verify-sql"
+	if (!verify && len(os.Args) != 1) || os.Getenv("GCE_METADATA_HOST") != "" {
+		return errors.New("unsupported recovery arguments or metadata override")
 	}
 	data, err := os.ReadFile("/etc/agora-recovery/request.json")
 	if err != nil {
@@ -47,6 +49,18 @@ func run(ctx context.Context) error {
 	}
 	if err = request.Validate(); err != nil {
 		return err
+	}
+	if verify {
+		interfaces, err := net.Interfaces()
+		if err != nil {
+			return errors.New("offline network boundary is unavailable")
+		}
+		for _, device := range interfaces {
+			if device.Flags&net.FlagLoopback == 0 {
+				return errors.New("SQL verification requires a networkless container")
+			}
+		}
+		return recovery.VerifySQL(ctx, request, "/recovery", recovery.Command)
 	}
 	client := metadata.NewClient(nil)
 	project, err := client.ProjectIDWithContext(ctx)

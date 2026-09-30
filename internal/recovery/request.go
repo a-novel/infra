@@ -29,6 +29,25 @@ type Request struct {
 	Set string `json:"set"`
 	// RepositoryTime preserves an optional RFC3339 historical repository view.
 	RepositoryTime string `json:"repository_time,omitempty"`
+	// VerifySQL requests offline validation after restoring consistency WAL with the backup.
+	VerifySQL bool `json:"verify_sql,omitempty"`
+}
+
+// Outcome identifies the evidence required before the recovery guard can be released.
+func (r Request) Outcome() string {
+	if r.VerifySQL {
+		return "sql-verified"
+	}
+	return "files-restored"
+}
+
+// Confirmation binds operator acknowledgement to the selected execution boundary.
+func (r Request) Confirmation(generation string) string {
+	action := "RESTORE-FILES"
+	if r.VerifySQL {
+		action = "RESTORE-SQL"
+	}
+	return action + " " + r.Project + " " + generation
 }
 
 // Validate limits the pilot to exact-set recovery to backup consistency, without promotion.

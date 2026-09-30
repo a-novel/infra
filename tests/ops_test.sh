@@ -185,7 +185,7 @@ README.md||[false,[]]
 environments/production/foundation/main.tf||[true,["foundation"]]
 deploy/production/images.yaml||[true,["release"]]
 docs/old.md|bootstrap/main.tf|[true,["bootstrap"]]
-modules/shared/main.tf||[true,["bootstrap","foundation","release","service-foundation","service-release"]]
+modules/shared/main.tf||[true,["bootstrap","foundation","release","service-foundation","service-release","service-recovery"]]
 assets/database-host/startup.sh||[true,["foundation","service-foundation"]]
 docs/old.md|assets/database-host/shutdown.sh|[true,["foundation","service-foundation"]]
 environments/service-foundation/main.tf||[true,["service-foundation"]]
@@ -193,6 +193,8 @@ docs/old.md|environments/service-foundation/main.tf|[true,["service-foundation"]
 environments/service-release/jobs.tf||[true,["service-release"]]
 environments/service-release/README.md||[true,["service-release"]]
 docs/old.md|environments/service-release/jobs.tf|[true,["service-release"]]
+environments/service-recovery/main.tf||[true,["service-recovery"]]
+docs/old.md|environments/service-recovery/main.tf|[true,["service-recovery"]]
 CASES
 
 # The metadata-only merge gate fails closed unless exact protected evidence
@@ -205,6 +207,8 @@ ln -s "${SCRIPT_DIR}/fixtures/fake-gcloud-storage.sh" "${DELETION_GATE_BIN}/gclo
 DELETION_HEAD=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 DELETION_BASE=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 DELETION_GROUP=cccccccccccccccccccccccccccccccccccccccc
+DELETION_LIVE_BASE=dddddddddddddddddddddddddddddddddddddddd
+DELETION_OTHER_GROUP=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 
 write_deletion_assessment() {
     local approval="$1"
@@ -244,6 +248,8 @@ assert_resource_gate_code() {
     local event_name="${6:-pull_request}"
     local permission="${7:-admin}"
     local pull_request_head="${8:-${DELETION_HEAD}}"
+    local live_base="${9:-${DELETION_BASE}}"
+    local queue_group="${10:-${DELETION_GROUP}}"
     local gate_head="${DELETION_HEAD}"
     local check_sha="${DELETION_HEAD}"
     local merge_ref=""
@@ -259,7 +265,10 @@ assert_resource_gate_code() {
         FAKE_GATE_BASE="${DELETION_BASE}" \
         FAKE_GATE_FILES="${files}" \
         FAKE_GATE_HEAD="${pull_request_head}" \
+        FAKE_GATE_GROUP="${DELETION_GROUP}" \
         FAKE_GATE_LABEL_MODE="${label_mode}" \
+        FAKE_GATE_LIVE_BASE="${live_base}" \
+        FAKE_GATE_QUEUE_GROUP="${queue_group}" \
         FAKE_GATE_RUN_MODE="${run_mode}" \
         GATE_BASE_SHA="${DELETION_BASE}" \
         FAKE_GATE_PERMISSION="${permission}" \
@@ -288,6 +297,8 @@ assert_resource_gate_code 77 image success approved "${MISMATCHED_ASSESSMENT}"
 assert_resource_gate_code 77 image success untrusted "${DESTRUCTIVE_ASSESSMENT}" pull_request read
 assert_resource_gate_code 77 image success missing "${SAFE_ASSESSMENT}" pull_request admin dddddddddddddddddddddddddddddddddddddddd
 assert_resource_gate_code 0 image success missing "${SAFE_ASSESSMENT}" merge_group
+assert_resource_gate_code 0 image success missing "${SAFE_ASSESSMENT}" merge_group admin "${DELETION_HEAD}" "${DELETION_LIVE_BASE}"
+assert_resource_gate_code 77 image success missing "${SAFE_ASSESSMENT}" merge_group admin "${DELETION_HEAD}" "${DELETION_BASE}" "${DELETION_OTHER_GROUP}"
 
 # The trusted dispatcher check accepts human maintainers and fork candidates,
 # while a first release with no converged input record always needs approval.
@@ -451,96 +462,6 @@ assert_deletion_gate_rejects \
 assert_deletion_gate_rejects "${PRE_MERGE_TIMELINE}" triage
 assert_deletion_gate_rejects "$(jq '.[0][0].actor.type = "Bot"' <<<"${PRE_MERGE_TIMELINE}")" write
 assert_deletion_gate_rejects "$(jq '.[0][0].performed_via_github_app = {id: 123}' <<<"${PRE_MERGE_TIMELINE}")" write
-
-# Project cleanup is permitted only for the exact committed recovery target.
-# The mock records deletion without exposing project metadata in script output.
-if ! jq --exit-status '
-  .schemaVersion == 1 and
-  (if .replacementProject == null then
-    .sourceReceipt == null and .crossProjectAccessRevoked == false
-   else
-    (.replacementProject | test("^[a-z][a-z0-9-]{4,28}[a-z0-9]$")) and
-    (.sourceReceipt | test("^[1-9][0-9]*-[1-9][0-9]*$")) and
-    .crossProjectAccessRevoked == true
-   end)
-' "${REPOSITORY_ROOT}/deploy/production/recovery-cleanup.json" >/dev/null; then
-    printf 'The recovery cleanup authorization has an invalid shape.\n' >&2
-    exit 1
-fi
-
-# shellcheck disable=SC2016
-printf '%s\n' \
-    '#!/bin/bash' \
-    'if [ "$1 $2" = "projects describe" ] && [[ "$*" == *"--format=json"* ]]; then' \
-    '    if [ "${RECOVERY_LABEL_VALID:-true}" = true ]; then' \
-    '        printf '\''{"projectId":"agora-recovery-test","lifecycleState":"ACTIVE","labels":{"application":"agora","environment":"production","managed-by":"opentofu","plane":"workload","recovery":"true"}}\n'\''' \
-    '    else' \
-    '        printf '\''{"projectId":"agora-recovery-test","lifecycleState":"ACTIVE","labels":{"recovery":"false"}}\n'\''' \
-    '    fi' \
-    'elif [ "$1 $2" = "projects describe" ]; then' \
-    '    if [ -f "${RECOVERY_DELETE_STATE}" ]; then printf "DELETE_REQUESTED\n"; else printf "ACTIVE\n"; fi' \
-    'elif [ "$1 $2" = "projects get-iam-policy" ]; then' \
-    '    printf "roles/resourcemanager.projectDeleter\n"' \
-    'elif [ "$1 $2" = "projects delete" ]; then' \
-    '    : >"${RECOVERY_DELETE_STATE}"' \
-    'else' \
-    '    exit 1' \
-    'fi' \
-    >"${DELETION_MOCK_BIN}/gcloud"
-chmod 0700 "${DELETION_MOCK_BIN}/gcloud"
-
-jq -n '{management_project_id:"agora-management-test",workload_project_id:"agora-production-test"}' \
-    >"${TEMP_DIR}/cleanup-foundation.json"
-jq -n '{schemaVersion:1,replacementProject:"agora-recovery-test",sourceReceipt:"500-1",crossProjectAccessRevoked:true}' \
-    >"${TEMP_DIR}/cleanup-authorized.json"
-RECOVERY_DELETE_STATE="${TEMP_DIR}/recovery-delete-requested"
-PATH="${DELETION_MOCK_BIN}:${PATH}" \
-    PR_FIXTURE="${PR_FIXTURE}" TIMELINE_FIXTURE="${PRE_MERGE_TIMELINE}" \
-    APPROVER_PERMISSION=write RECOVERY_DELETE_STATE="${RECOVERY_DELETE_STATE}" \
-    "${REPOSITORY_ROOT}/ops/delete-recovery-project.sh" \
-    a-novel/infra "${DELETION_COMMIT}" agora-recovery-test 500-1 \
-    "${TEMP_DIR}/cleanup-foundation.json" "${TEMP_DIR}/cleanup-authorized.json" \
-    'DELETE agora-recovery-test' >"${TEMP_DIR}/recovery-cleanup.out"
-grep -Fq 'Disposable recovery project is DELETE_REQUESTED.' \
-    "${TEMP_DIR}/recovery-cleanup.out"
-test -f "${RECOVERY_DELETE_STATE}"
-
-assert_recovery_cleanup_rejects() {
-    local authorization="$1"
-    local confirmation="$2"
-    local label_valid="$3"
-    local expected="$4"
-    local foundation="${5:-${TEMP_DIR}/cleanup-foundation.json}"
-    local code=0
-    rm -f -- "${RECOVERY_DELETE_STATE}"
-    set +e
-    PATH="${DELETION_MOCK_BIN}:${PATH}" \
-        PR_FIXTURE="${PR_FIXTURE}" TIMELINE_FIXTURE="${PRE_MERGE_TIMELINE}" \
-        APPROVER_PERMISSION=write RECOVERY_DELETE_STATE="${RECOVERY_DELETE_STATE}" \
-        RECOVERY_LABEL_VALID="${label_valid}" \
-        "${REPOSITORY_ROOT}/ops/delete-recovery-project.sh" \
-        a-novel/infra "${DELETION_COMMIT}" agora-recovery-test 500-1 \
-        "${foundation}" "${authorization}" \
-        "${confirmation}" >/dev/null 2>&1
-    code=$?
-    set -e
-    assert_equal "${code}" "${expected}"
-    test ! -e "${RECOVERY_DELETE_STATE}"
-}
-
-jq '.crossProjectAccessRevoked = false' "${TEMP_DIR}/cleanup-authorized.json" \
-    >"${TEMP_DIR}/cleanup-not-revoked.json"
-jq '.management_project_id = "invalid project"' "${TEMP_DIR}/cleanup-foundation.json" \
-    >"${TEMP_DIR}/cleanup-invalid-foundation.json"
-assert_recovery_cleanup_rejects \
-    "${TEMP_DIR}/cleanup-authorized.json" 'DELETE wrong-project' true 65
-assert_recovery_cleanup_rejects \
-    "${TEMP_DIR}/cleanup-not-revoked.json" 'DELETE agora-recovery-test' true 77
-assert_recovery_cleanup_rejects \
-    "${TEMP_DIR}/cleanup-authorized.json" 'DELETE agora-recovery-test' false 77
-assert_recovery_cleanup_rejects \
-    "${TEMP_DIR}/cleanup-authorized.json" 'DELETE agora-recovery-test' true 77 \
-    "${TEMP_DIR}/cleanup-invalid-foundation.json"
 
 # Cloud Quotas may omit the optional justification and default-false
 # reconciling fields. Omission is accepted, while a pending preference fails.

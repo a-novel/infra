@@ -2,12 +2,12 @@
 
 # Runs the only supported live OpenTofu plan/apply paths and never prints plan
 # values. Detailed plan codes remain 0 (clean), 1 (error), and 2 (changes).
-# Usage: tofu-gate.sh <plan|apply|assess|converge|drift|output> <root> <state-bucket> [private-file]
+# Usage: tofu-gate.sh <plan|inspect|apply|assess|converge|drift|output> <root> <state-bucket> [private-file]
 
 set -euo pipefail
 
 if [ "$#" -lt 3 ] || [ "$#" -gt 4 ]; then
-    printf 'Usage: %s <plan|apply|assess|converge|drift|output> <root> <state-bucket> [private-file]\n' "$0" >&2
+    printf 'Usage: %s <plan|inspect|apply|assess|converge|drift|output> <root> <state-bucket> [private-file]\n' "$0" >&2
     exit 64
 fi
 
@@ -30,7 +30,7 @@ fi
 ROOT_DIR="$(resolve_root "${REPOSITORY_ROOT}" "${ROOT_NAME}")"
 
 case "${ACTION}" in
-    plan | apply | output)
+    plan | inspect | apply | output)
         if [ -z "${PLAN_FILE}" ]; then
             printf 'A private plan file is required for %s.\n' "${ACTION}" >&2
             exit 64
@@ -43,7 +43,7 @@ case "${ACTION}" in
         fi
         ;;
     *)
-        printf 'Unknown action. Expected plan, apply, assess, converge, drift, or output.\n' >&2
+        printf 'Unknown action. Expected plan, inspect, apply, assess, converge, drift, or output.\n' >&2
         exit 64
         ;;
 esac
@@ -55,6 +55,7 @@ fi
 
 STATE_PREFIX="${ROOT_NAME}"
 JOB_BOOTSTRAP=false
+NATIVE_PREPARATION=false
 if [[ "${ROOT_NAME}" = service-* ]]; then
     if [ "${ROOT_NAME}" = service-release ] && [ "${ACTION}" != assess ] && [ "${ACTION}" != drift ]; then
         if [ "${SERVICE_JOB_BOOTSTRAP_ENABLED:-false}" != true ] || [ "${ACTION}" = output ]; then
@@ -63,7 +64,18 @@ if [[ "${ROOT_NAME}" = service-* ]]; then
         fi
         JOB_BOOTSTRAP=true
     fi
-    infra foundation-inputs check "${TOFU_VAR_FILE:?}" "${STATE_BUCKET}" "${TOFU_STATE_SUFFIX:?}"
+    INPUT_COMMAND=foundation-inputs
+    if [ "${ROOT_NAME}" = service-recovery ]; then
+        INPUT_COMMAND=recovery-inputs
+        if [ "${ACTION}" != assess ] && [ "${ACTION}" != drift ]; then
+            if [ "${NATIVE_RECOVERY_PREPARATION_ENABLED:-false}" != true ] || [ "${ACTION}" = output ]; then
+                printf 'Native recovery host preparation requires separate activation.\n' >&2
+                exit 77
+            fi
+            NATIVE_PREPARATION=true
+        fi
+    fi
+    infra "${INPUT_COMMAND}" check "${TOFU_VAR_FILE:?}" "${STATE_BUCKET}" "${TOFU_STATE_SUFFIX:?}"
     if [ "${TF_WORKSPACE:-default}" != default ] || [ -n "${!TF_CLI_ARGS*}" ]; then
         printf 'Service roots require the default workspace and explicit CLI arguments.\n' >&2
         exit 65
@@ -153,7 +165,7 @@ classify_plan() {
         return 1
     fi
 
-    if SERVICE_JOB_BOOTSTRAP="${JOB_BOOTSTRAP}" "${SCRIPT_DIR}/plan-summary.sh" "${ROOT_NAME}" "${json_plan}"; then
+    if NATIVE_RECOVERY_PREPARATION="${NATIVE_PREPARATION}" SERVICE_JOB_BOOTSTRAP="${JOB_BOOTSTRAP}" "${SCRIPT_DIR}/plan-summary.sh" "${ROOT_NAME}" "${json_plan}"; then
         summary_code=0
     else
         summary_code=$?
@@ -342,6 +354,12 @@ case "${ACTION}" in
         fi
         apply_plan "${PLAN_FILE}"
         printf 'The exact reviewed %s plan applied successfully.\n' "${ROOT_NAME}"
+        ;;
+    inspect)
+        classify_plan "${PLAN_FILE}"
+        # This contains sensitive prior-state values, not a public plan artifact.
+        (umask 077; cp "${TEMP_DIR}/plan.json" "${PLAN_FILE}.json")
+        chmod 600 "${PLAN_FILE}.json"
         ;;
     output)
         if ! tofu -chdir="${ROOT_DIR}" output -json \

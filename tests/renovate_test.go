@@ -60,6 +60,21 @@ func TestRenovatePolicy(t *testing.T) {
 		}
 		require.True(t, found, "manual review for %s", testCase.value)
 	}
+	blockedGoogleAPI, usesOpenTofuRegistry := false, false
+	for _, value := range rules {
+		rule := value.(object)
+		names, _ := rule["matchPackageNames"].([]any)
+		if slices.Contains(names, any("google.golang.org/api")) && rule["allowedVersions"] == "<0.299.0 || >0.299.0" {
+			blockedGoogleAPI = true
+		}
+		datasources, _ := rule["matchDatasources"].([]any)
+		registries, _ := rule["registryUrls"].([]any)
+		if slices.Contains(datasources, any("terraform-provider")) && slices.Contains(datasources, any("terraform-module")) && slices.Equal(registries, []any{"https://registry.opentofu.org"}) {
+			usesOpenTofuRegistry = true
+		}
+	}
+	require.True(t, blockedGoogleAPI)
+	require.True(t, usesOpenTofuRegistry)
 	// The final rule must override any generic automation rule for these paths.
 	last := rules[len(rules)-1].(object)
 	require.Equal(t, false, last["automerge"])
@@ -78,6 +93,7 @@ func TestRenovateLookup(t *testing.T) {
 	t.Cleanup(server.Close)
 	registry := strings.TrimPrefix(server.URL, "http://")
 	config := readJSON(t, "../renovate.json")
+	delete(config, "extends")
 	const workflowFile = ".github/workflows/main.yaml"
 	files := []string{workflowFile, "go.mod", "golangci-lint.mod"}
 	config["enabledManagers"] = []string{"custom.regex", "gomod"}

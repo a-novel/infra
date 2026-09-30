@@ -28,6 +28,12 @@ agent access to the exact foundation subnet. Application authority and active wo
 No existing workload or deployment authority moves with this change. Follow the
 [service-project onboarding boundary](../../../docs/runbooks/provision-service-projects.md) before activation.
 
+`service_recovery_projects` separately registers disposable native-recovery destinations as
+`project ID → json-keys` (default `{}`). It creates no project, IAM grant or host. Destinations must
+not match management, the legacy workload or any live service project. Protected preparation and
+read-only state inventory consume this registration; see the
+[inactive recovery root](../../service-recovery/README.md#guarded-host-preparation).
+
 The protected foundation identity uses the `foundation/` object boundary in the management state
 bucket and requires human approval for every apply. It is the deliberate high-trust identity that
 maintains both this root and post-bootstrap management-plane configuration. It can administer IAM

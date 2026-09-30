@@ -27,7 +27,7 @@ type metadata struct {
 func (storage store) plan(action string, args []string, suffix string) error {
 	count := map[string]int{"publish": 5, "fetch": 4, "consume": 3}[action]
 	expected := count
-	service := len(args) > 0 && (args[0] == "service-release" || args[0] == "service-foundation")
+	service := len(args) > 0 && strings.HasPrefix(args[0], "service-")
 	if service && action != "consume" {
 		expected++
 	}
@@ -116,10 +116,13 @@ func (storage store) plan(action string, args []string, suffix string) error {
 
 // planPrefix keeps plans within their writer's existing storage boundary.
 func planPrefix(root, suffix string) (string, error) {
-	if root == "service-foundation" || root == "service-release" {
+	if root == "service-foundation" || root == "service-release" || root == "service-recovery" {
 		if serviceScopePattern.MatchString(suffix) {
 			if root == "service-release" {
 				return suffix + "/release/plans", nil
+			}
+			if root == "service-recovery" {
+				return "foundation/plans/recovery/" + suffix, nil
 			}
 			return "foundation/plans/" + suffix, nil
 		}

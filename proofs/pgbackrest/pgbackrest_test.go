@@ -2,8 +2,10 @@ package pgbackrest_test
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -116,8 +118,50 @@ UPDATE ballast SET value = value || '!';`)
 			all := p.backups(t)
 			retained = all[len(all)-1]
 			p.sql(t, "UPDATE sample SET value = 'newest';")
-			p.backrest(t, "--type=full", "backup")
+			p.backrest(t, "--type=full", "--no-expire-auto", "backup")
+			p.stop(t, p.source) // Quiesce WAL writes before comparing the repository.
+			before := p.backups(t)
+			require.Len(t, before, 4)
+			newest = before[3]
+			snapshot := repositoryFiles(t, p.repo)
+			p.backrest(t, "--dry-run", "expire")
+			require.Equal(t, snapshot, repositoryFiles(t, p.repo), "dry run must not change repository files")
+
+			expired := filepath.Join(p.repo, "backup", p.stanza, first.Label)
+			for _, denial := range []struct {
+				name     string
+				path     string
+				catalog  []backup
+				manifest bool
+			}{
+				{"manifest removal", expired, before, true},
+				{"data cleanup after catalog save", filepath.Join(expired, "pg_data/base/1"), before[1:], false},
+			} {
+				if !t.Run(denial.name, func(t *testing.T) {
+					info, err := os.Stat(denial.path)
+					require.NoError(t, err)
+					t.Cleanup(func() { require.NoError(t, os.Chmod(denial.path, info.Mode().Perm())) })
+					require.NoError(t, os.Chmod(denial.path, 0o500))
+					out, err := p.command(t.Context(), "expire").CombinedOutput()
+					require.Error(t, err, string(out))
+					require.Contains(t, string(out), "Permission denied")
+					require.Contains(t, string(out), denial.path)
+					require.Equal(t, denial.catalog, p.backups(t))
+					_, err = os.Stat(filepath.Join(expired, "backup.manifest"))
+					if denial.manifest {
+						require.NoError(t, err)
+					} else {
+						require.ErrorIs(t, err, fs.ErrNotExist)
+					}
+					p.restore(t, retained.Label, "differential")
+					p.restore(t, newest.Label, "newest")
+				}) {
+					t.Fatal("stopping expiry proof after unexpected failure behavior")
+				}
+			}
+			// Reconcile partial cleanup explicitly, after restoring fixture permissions.
 			p.backrest(t, "expire")
+			require.NoDirExists(t, expired)
 			all = p.backups(t)
 			require.Len(t, all, 3, "two full backups and their differential")
 			newest = all[2]
@@ -129,7 +173,7 @@ UPDATE ballast SET value = value || '!';`)
 			t.Logf("native catalog after expiry: %s", p.backrest(t, "--output=json", "info"))
 		}},
 		{"native repository verification", func(t *testing.T) {
-			p.backrest(t, "verify")
+			require.Contains(t, p.backrest(t, "--output=text", "--verbose", "verify"), "\nstatus: ok\n")
 			t.Logf("retained repository bytes including WAL/catalog: %s", strings.TrimSpace(run(t, "du", "-sb", p.repo)))
 		}},
 	} {
@@ -143,6 +187,28 @@ UPDATE ballast SET value = value || '!';`)
 			t.Logf("container %s: %s", metric, strings.TrimSpace(string(value)))
 		}
 	}
+}
+
+// repositoryFiles detects removed, added or changed content without depending on access times.
+func repositoryFiles(t *testing.T, root string) map[string][sha256.Size]byte {
+	t.Helper()
+	files := map[string][sha256.Size]byte{}
+	require.NoError(t, filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return err
+		}
+		if entry.Type()&fs.ModeSymlink != 0 {
+			target, err := os.Readlink(path)
+			files[path] = sha256.Sum256([]byte(target))
+			return err
+		}
+		data, err := os.ReadFile(path)
+		if err == nil {
+			files[path] = sha256.Sum256(data)
+		}
+		return err
+	}))
+	return files
 }
 
 type proof struct{ root, config, source, repo, stanza string }

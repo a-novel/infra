@@ -20,7 +20,7 @@ func (storage store) apply(args []string, getenv func(string) string, output io.
 	}
 	root, commit, planID, inputs := args[0], args[1], args[2], args[3]
 	suffix := getenv("TOFU_STATE_SUFFIX")
-	service := root == "service-foundation" || root == "service-release"
+	service := root == "service-foundation" || root == "service-release" || root == "service-recovery"
 	data, err := os.ReadFile(inputs)
 	if err != nil || !json.Valid(data) {
 		return failure{64, "Apply requires readable private JSON inputs."}
@@ -32,13 +32,20 @@ func (storage store) apply(args []string, getenv func(string) string, output io.
 	}
 	if service {
 		enabled := "SERVICE_FOUNDATIONS_ENABLED"
+		check := workflow.FoundationInputs
 		if root == "service-release" {
 			enabled = "SERVICE_JOB_BOOTSTRAP_ENABLED"
+		}
+		if root == "service-recovery" {
+			enabled, check = "NATIVE_RECOVERY_PREPARATION_ENABLED", workflow.RecoveryInputs
+			if !workflow.RecoveryEnabled(getenv) || getenv("RECOVERY_OPERATION") != "apply-native" {
+				return failure{77, "Native host preparation requires its exact protected workflow."}
+			}
 		}
 		if getenv(enabled) != "true" {
 			return failure{77, "Service apply requires separate activation approval."}
 		}
-		if workflow.FoundationInputs([]string{"check", inputs, storage.bucket, suffix}, getenv, io.Discard, io.Discard) != 0 {
+		if check([]string{"check", inputs, storage.bucket, suffix}, getenv, io.Discard, io.Discard) != 0 {
 			return failure{65, "Service apply does not match protected registration."}
 		}
 		if commit != getenv("GITHUB_SHA") || getenv("GITHUB_REPOSITORY") != "a-novel/infra" {
@@ -66,6 +73,20 @@ func (storage store) apply(args []string, getenv func(string) string, output io.
 			return failure{77, "Managed-resource deletion requires approval on the exact merged PR."}
 		}
 	}
+	var upkeep maintenance
+	if root == "service-foundation" {
+		command := []string{
+			"ALLOW_RESOURCE_DELETION=" + destructive, "TOFU_VAR_FILE=" + inputs,
+			"./ops/tofu-gate.sh", "inspect", root, storage.bucket, plan,
+		}
+		if err := storage.execute(storage.ctx, io.Discard, "env", command...); err != nil {
+			return failure{65, "Reviewed foundation plan could not be inspected; no admission or apply attempted."}
+		}
+		upkeep, err = plannedMaintenance(plan+".json", data, getenv)
+		if err != nil {
+			return err
+		}
+	}
 	var operation *serviceOperation
 	if service {
 		operation, err = storage.admit(args[:3], data, plan, getenv, output, options)
@@ -77,6 +98,11 @@ func (storage store) apply(args []string, getenv func(string) string, output io.
 	if err := storage.plan("consume", args[:3], suffix); err != nil {
 		return err
 	}
+	for _, host := range upkeep.hosts {
+		if err := storage.quiesce(host); err != nil {
+			return failure{70, "Native host quiescence is unconfirmed; no apply attempted. Keep the service guard and reconcile the original operation."}
+		}
+	}
 	for _, action := range []string{"apply", "converge"} {
 		command := []string{
 			"ALLOW_RESOURCE_DELETION=" + destructive, "TOFU_VAR_FILE=" + inputs,
@@ -87,6 +113,11 @@ func (storage store) apply(args []string, getenv func(string) string, output io.
 		}
 		if err := storage.execute(storage.ctx, output, "env", command...); err != nil {
 			return failure{1, "Reviewed apply or convergence failed; reconcile the resources and any held service guard before continuing."}
+		}
+	}
+	if upkeep.bringUp {
+		if err := storage.bringUp(inputs, data); err != nil {
+			return failure{70, "Native host bring-up is unconfirmed; keep the service guard and reconcile the original operation. Do not repeat apply."}
 		}
 	}
 	if operation != nil {

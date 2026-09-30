@@ -20,13 +20,16 @@ func (storage store) document(kind, action string, args []string, stateSuffix st
 			return failure{65, "Invalid configuration root."}
 		}
 		prefix, suffix = "gs://"+storage.bucket+"/"+args[0]+"/config", ".tfvars.json"
-		if args[0] == "service-foundation" || args[0] == "service-release" {
+		if strings.HasPrefix(args[0], "service-") {
 			if !serviceScopePattern.MatchString(stateSuffix) {
 				return failure{65, "Invalid private custody scope."}
 			}
 			prefix = "gs://" + storage.bucket + "/foundation/" + stateSuffix + "/config"
 			if args[0] == "service-release" {
 				prefix = "gs://" + storage.bucket + "/" + stateSuffix + "/release/config"
+			}
+			if args[0] == "service-recovery" {
+				prefix = "gs://" + storage.bucket + "/foundation/recovery/" + stateSuffix + "/config"
 			}
 		}
 		args = args[1:]

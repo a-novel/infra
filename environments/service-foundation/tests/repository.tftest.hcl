@@ -40,6 +40,7 @@ run "no_repository_by_default" {
       length(google_monitoring_alert_policy.database_backup_health) == 0,
       length(google_monitoring_alert_policy.database_backup_failure) == 0,
       output.pgbackrest_repository == null,
+      output.native_bringup == null,
     ])
     error_message = "Existing database inputs must add no repository host, identity or attachment authority."
   }
@@ -173,11 +174,13 @@ run "prepared_database_lifecycle" {
   }
   assert {
     condition = alltrue([
+      output.native_bringup == null,
+      google_compute_instance_group_manager.database["host"].update_policy[0].type == "OPPORTUNISTIC",
       google_compute_instance_template.database["host"].metadata_startup_script == null,
       !contains(keys(google_compute_instance_template.database["host"].metadata), "shutdown-script"),
       google_compute_instance_template.database["host"].metadata["user-data"] == local.database_cloud_config.host,
       yamldecode(local.database_cloud_config.host).runcmd == [["systemctl", "daemon-reload"]],
-      length(yamldecode(local.database_cloud_config.host).write_files) == 11,
+      length(yamldecode(local.database_cloud_config.host).write_files) == 12,
       google_compute_instance_group_manager.database["host"].all_instances_config[0].metadata == tomap({
         agora-json-keys-database-image                   = var.pgbackrest_repository.runtime.server_image
         agora-json-keys-postgres-password-version        = "3"
@@ -196,7 +199,7 @@ run "prepared_database_lifecycle" {
       "PGBACKREST_REPOSITORY_IP=10.90.0.3", "--endpoint=database --ca-version=1 --identity-version=5",
       "--name=agora-database.agora-json-keys-test", "--supervise", "ExecStopPost=",
       "Environment=PGBACKREST_WAL_ARCHIVING=false", "/run/agora/postgresql /run/agora/pgbackrest-lock",
-      "kill agora-backup-check agora-backup-diff agora-backup-full agora-backup-stanza-create",
+      "kill agora-backup-check agora-backup-diff agora-backup-full agora-backup-stanza-create agora-backup-verify",
     ] : strcontains(yamldecode(local.database_cloud_config.host).write_files[3].content, option)])
     error_message = "Systemd must own bounded restart, exact TLS delivery and stopped-consumer cleanup."
   }
@@ -210,12 +213,13 @@ run "prepared_database_lifecycle" {
     error_message = "The client must use native TLS and the selected PostgreSQL 18 layout, without GCS credentials."
   }
   assert {
-    condition = alltrue(flatten([for file in slice(yamldecode(local.database_cloud_config.host).write_files, 4, 8) : [
+    condition = alltrue(flatten([for file in slice(yamldecode(local.database_cloud_config.host).write_files, 4, 9) : [
       for option in [
         "Type=exec", "Restart=no", "RuntimeMaxSec=1h", "TimeoutStopSec=45",
         "StopPropagatedFrom=agora-database.service docker.service",
         "ExecStartPre=/usr/bin/systemctl is-active --quiet agora-database.service",
         "--network=container:agora-postgres-json-keys", "--read-only --user=999:999",
+        "--cpus=0.5 --memory=512m --memory-swap=512m", "--pids-limit=64",
         "source=/mnt/disks/agora-data/json-keys,target=/var/lib/postgresql,readonly",
         "source=/run/agora/postgresql,target=/var/run/postgresql,readonly",
         "source=/run/agora/pgbackrest-lock,target=/run/pgbackrest-lock",
@@ -230,12 +234,13 @@ run "prepared_database_lifecycle" {
     condition = alltrue([for name, command in {
       stanza-create = "stanza-create"
       check         = "check"
-      full          = "--type=full --repo1-bundle --no-expire-auto backup"
-      diff          = "--type=diff --repo1-bundle --no-expire-auto backup"
+      full          = "--type=full --archive-copy --repo1-bundle --no-expire-auto backup"
+      diff          = "--type=diff --archive-copy --repo1-bundle --no-expire-auto backup"
+      verify        = "--output=text --verbose --log-level-console=error verify"
       } : strcontains(one([for file in yamldecode(local.database_cloud_config.host).write_files : file.content
       if file.path == "/etc/systemd/system/agora-backup-${name}.service"]), "--stanza=json-keys ${command}\n")
     ])
-    error_message = "Only backup commands may carry pgBackRest's backup-only options."
+    error_message = "Each worker must use its native options; verification must emit a text report even when it exits zero."
   }
   assert {
     condition = alltrue([for file in yamldecode(local.database_cloud_config.host).write_files :
@@ -265,6 +270,15 @@ run "prepared_database_lifecycle" {
     error_message = "Monitoring must remain disabled in the selected project and use the existing notification channel."
   }
   assert {
+    condition = alltrue([for message, matched in {
+      "stanza: json-keys\nstatus: error\n  backup: invalid\n" = true
+      "    no archives or backups exist in the repo\n"        = true
+      "stanza: json-keys\nstatus: ok\n"                       = false
+      "verify command end: completed successfully"            = false
+    } : can(regex(local.database_verify_failure_pattern, message)) == matched])
+    error_message = "Integrity alerts must distinguish native damage and empty-repository reports from healthy or completed commands."
+  }
+  assert {
     condition = alltrue([for policy in google_monitoring_alert_policy.database_backup_health :
       alltrue([
         !policy.enabled, length(policy.conditions) == 1, policy.project == var.project_id,
@@ -273,6 +287,39 @@ run "prepared_database_lifecycle" {
       ])
     ])
     error_message = "Each disabled health policy must have one native condition and the service's notification channel."
+  }
+}
+
+run "guarded_bringup_uses_native_reconciliation" {
+  command = plan
+  variables {
+    pgbackrest_repository = { runtime = jsondecode(file("tests/fixtures/repository-runtime.json")) }
+    database_runtime      = merge(jsondecode(file("tests/fixtures/database-runtime.json")), { bring_up = true })
+  }
+  override_resource {
+    target = google_compute_instance.repository
+    values = { network_interface = { network_ip = "10.90.0.3" } }
+  }
+  assert {
+    condition = [
+      google_compute_instance.repository["host"].desired_status,
+      google_compute_instance_group_manager.database["host"].update_policy[0].type,
+      google_compute_instance_group_manager.database["host"].update_policy[0].replacement_method,
+      tostring(google_compute_instance_group_manager.database["host"].update_policy[0].max_surge_fixed),
+    ] == ["RUNNING", "PROACTIVE", "RECREATE", "0"]
+    error_message = "Explicit bring-up delegates singleton reconciliation to Google without a second database writer."
+  }
+  assert {
+    condition = alltrue([
+      output.native_bringup.project == var.project_id,
+      output.native_bringup.group == "agora-database-json-keys",
+      output.native_bringup.image == var.pgbackrest_repository.runtime.server_image,
+      output.native_bringup.database.metadata["user-data"] == local.database_cloud_config.host,
+      output.native_bringup.repository.metadata["user-data"] == local.repository_cloud_config.host,
+      yamldecode(local.database_cloud_config.host).runcmd == [["systemctl", "daemon-reload"]],
+      yamldecode(local.repository_cloud_config.host).runcmd == [["systemctl", "daemon-reload"]],
+    ])
+    error_message = "Private targets must bind expected configuration; boot still starts no services or timers."
   }
 }
 

@@ -131,6 +131,8 @@ review effective membership, sharing restrictions and storage usage separately f
 `agora-backup-repository` account already exists. This is syntax-checked, not discovered or authorized by HCL;
 the operator must reconcile it with the protected service registration before any opt-in.
 Its optional `tls_credentials` flag defaults to false; storage custody alone creates no TLS secrets.
+The independent `noncurrent_cleanup` flag also defaults to false; its
+[retention policy](#disabled-noncurrent-cleanup) needs separate activation approval.
 
 | Address                                                                                                       | Purpose and authority                                                                                                                | Lifecycle and cost                                                                                                                             |
 | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -166,6 +168,26 @@ No host metadata, firewall, job, schedule, image or logical-backup policy change
 retention and soft delete protect individual generations; they do not guarantee an old full backup
 outlives every dependent differential. Native expiry, version cleanup, storage cost and restoration
 must be proven together before activation. No automatic expiry or retention lock is enabled.
+
+### Disabled noncurrent cleanup
+
+`json_keys_pgbackrest.noncurrent_cleanup = true` prepares one GCS lifecycle rule: delete only
+noncurrent generations at least seven days after they became noncurrent. It does not expire live
+objects, count newer versions, change IAM, or add a worker. pgBackRest alone owns live backup-chain
+and WAL expiry; automatic native expiry remains off.
+
+Seven-day bucket retention and seven-day soft delete remain unchanged. A versioned, name-based
+delete makes an object noncurrent; actual generation deletion later enters soft delete. The
+seven-plus-seven-day sequence is a minimum protection window after becoming noncurrent, not an
+exact deletion deadline: [lifecycle processing is asynchronous](https://docs.cloud.google.com/storage/docs/lifecycle).
+Live, noncurrent and soft-deleted bytes remain billable until removed. Native expiry without this
+cleanup cannot bound versioned storage growth.
+
+Retained backup sets keep their live dependencies, but old repository-time views have finite
+generation retention. Soft-delete repair creates a new generation and may not satisfy an earlier
+repository-time cutoff; changing that selector needs explicit recovery approval. Complete the
+[human-only expiry acceptance](../docs/runbooks/backup-and-restore-postgresql.md#native-expiry-acceptance)
+before enabling either cleanup mechanism. Existing logical backups and snapshots are unchanged.
 
 ### Disabled TLS credential custody
 

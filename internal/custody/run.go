@@ -30,7 +30,7 @@ type store struct {
 
 var (
 	bucketPattern       = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$`)
-	rootPattern         = regexp.MustCompile(`^(bootstrap|foundation|release|service-foundation)$`)
+	rootPattern         = regexp.MustCompile(`^(bootstrap|foundation|release|service-foundation|service-recovery)$`)
 	serviceScopePattern = regexp.MustCompile(`^services/[a-z][a-z0-9-]{4,28}[a-z0-9]$`)
 	sequencePattern     = regexp.MustCompile(`^[1-9][0-9]{0,19}-[1-9][0-9]{0,4}$`)
 	commitPattern       = regexp.MustCompile(`^[a-f0-9]{40}$`)
@@ -72,6 +72,17 @@ func run(ctx context.Context, args []string, getenv func(string) string, execute
 	defer func() { _ = os.RemoveAll(directory) }() // Best-effort private scratch cleanup.
 	storage := store{ctx, execute, args[2], directory}
 	switch args[0] {
+	case "recovery":
+		switch args[1] {
+		case "execute":
+			return storage.restore(args[3:], getenv, output, options)
+		case "cleanup":
+			return storage.cleanup(args[3:], getenv, output, options)
+		case "cleanup-project":
+			return storage.legacyCleanup(args[3:], getenv, options)
+		default:
+			return failure{64, "Unknown protected recovery action."}
+		}
 	case "operation":
 		if args[1] != "inspect" && args[1] != "finish" {
 			return failure{64, "Service operations support inspection or finishing exact successful completion."}
@@ -79,7 +90,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, execute
 		return storage.inspectOperation(args[1], args[3:], getenv, output, options)
 	case "config", "receipt":
 		if args[0] == "config" && args[1] == "publish" && len(args) > 3 &&
-			(args[3] == "service-foundation" || args[3] == "service-release") {
+			strings.HasPrefix(args[3], "service-") {
 			return failure{65, "Service configuration publication belongs to the guarded apply operation."}
 		}
 		return storage.document(args[0], args[1], args[3:], getenv("TOFU_STATE_SUFFIX"))

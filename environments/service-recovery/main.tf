@@ -25,7 +25,7 @@ resource "google_compute_instance" "recovery" {
     enable-oslogin           = "TRUE"
     serial-port-enable       = "FALSE"
     user-data = "#cloud-config\n${yamlencode({
-      write_files = [
+      write_files = concat([
         {
           path        = "/etc/agora-recovery/request.json"
           permissions = "0444"
@@ -36,12 +36,11 @@ resource "google_compute_instance" "recovery" {
           permissions = "0600"
           content     = jsonencode({ credHelpers = { "europe-west1-docker.pkg.dev" = "gcr" } })
         },
-        {
-          path        = "/etc/systemd/system/agora-native-restore.service"
-          permissions = "0644"
-          content     = templatefile("${path.module}/restore.service.tftpl", { image = each.value.restore_image })
-        },
-      ]
+        ], [for name, network in { restore = "bridge", verify = "none" } : {
+          path                             = "/etc/systemd/system/agora-native-${name}.service"
+          permissions                      = "0644"
+          content                          = templatefile("${path.module}/restore.service.tftpl", { image = each.value.restore_image, name = name, network = network })
+      }])
       # Creation boots briefly even with a stopped desired state; preparation must not start work.
       runcmd = [["systemctl", "daemon-reload"]]
     })}"
@@ -86,10 +85,13 @@ resource "google_compute_instance" "recovery" {
 output "recovery" {
   description = "Prepared host coordinates. These do not authorize execution or establish successful database recovery."
   value = { for key, host in local.hosts : key => {
-    project = host.project
-    zone    = host.zone
-    host    = google_compute_instance.recovery[key].name
-    disk    = google_compute_disk.data[key].name
-    request = local.requests[key]
+    project          = host.project
+    zone             = host.zone
+    host             = google_compute_instance.recovery[key].name
+    disk             = google_compute_disk.data[key].name
+    request          = local.requests[key]
+    instance_id      = google_compute_instance.recovery[key].instance_id
+    disk_id          = google_compute_disk.data[key].disk_id
+    user_data_sha256 = sha256(google_compute_instance.recovery[key].metadata["user-data"])
   } }
 }

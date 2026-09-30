@@ -511,6 +511,36 @@ the accepted recovery objectives. Daily disk snapshots need a separate cost/reco
 The EUR 10–15 additional monthly per-service ceiling covers the whole replacement, including retained
 storage and networking; subtract old costs only when their resources and retention obligations end.
 
+### Native expiry acceptance
+
+This is a future **human-only, separately approved** synthetic GCS drill, not permission to expire
+real backups. Keep automatic pgBackRest expiry and
+[`json_keys_pgbackrest.noncurrent_cleanup`](../../bootstrap/README.md#disabled-noncurrent-cleanup)
+off until its evidence is accepted. Use the deployed image, native transport and retention policy;
+the offline POSIX proof does not emulate GCS.
+
+1. Preserve a private catalog and generation inventory: object name, generation, live/noncurrent
+   state, bytes, noncurrent time, retention expiration and soft-delete/hard-delete times. Record
+   native full/differential dependencies and prove the retained sets through SQL before expiry.
+2. Run native dry-run expiry, inspect its selected chains and confirm no repository change. Then
+   execute only the reviewed native expiry. Capture its exit status, catalog, manifests and new
+   generation inventory even on failure; a failed expiry is not necessarily a rollback.
+3. Distinguish a successful name-based live-to-noncurrent transition from an actual generation
+   deletion blocked by retention. Record the exact denied operation and generation; do not weaken
+   retention or infer a denial from the mere presence of retained bytes. After review, reconcile
+   partial expiry with native tooling and restore retained full/differential sets through SQL.
+4. After separate lifecycle opt-in, verify that only eligible noncurrent generations enter soft
+   delete and that live dependencies remain. Observe actual completion, allowing lifecycle lag;
+   seven days noncurrent plus seven days soft-deleted is not an exact hard-deletion deadline.
+   Export retained-byte totals by state and compare actual storage/network costs with the agreed
+   per-service ceiling, including coexistence costs.
+5. Test an explicitly selected historical view and exact-set recovery after generation repair.
+   Preserve a failed original cutoff as evidence; never silently advance it. Record the accepted
+   recovery window and failure/expiry alert ownership before authorizing routine native expiry.
+
+Do not invent catalog repair or blindly replay expiry after an unexpected result. Preserve evidence
+and stop for review. Legacy backup and snapshot retirement still requires its own acceptance.
+
 ## Cleanup
 
 Clear operator-shell identifiers when the procedure finishes:

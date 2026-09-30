@@ -309,6 +309,7 @@ run "two_service_projects_share_only_the_host" {
   command = plan
 
   variables {
+    service_recovery_projects = { a-novel-recovery-proof = "json-keys" }
     service_projects = {
       json-keys      = "agora-json-keys-test"
       authentication = "agora-authentication-test"
@@ -433,6 +434,15 @@ run "reject_recovery_fleet_provisioning" {
     service_projects = { json-keys = "agora-json-keys-test" }
   }
   expect_failures = [var.service_projects]
+}
+
+run "reject_live_native_recovery_destination" {
+  command = plan
+  variables {
+    service_projects          = { json-keys = "a-novel-recovery-proof" }
+    service_recovery_projects = { a-novel-recovery-proof = "json-keys" }
+  }
+  expect_failures = [var.service_recovery_projects]
 }
 
 run "builds_the_project_replacement_window" {

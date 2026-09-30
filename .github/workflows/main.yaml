@@ -71,7 +71,7 @@ jobs:
           cache: true
 
       - name: Install TFLint
-        uses: terraform-linters/setup-tflint@v6.3.1
+        uses: terraform-linters/setup-tflint@v6.3.2
         with:
           # renovate: datasource=github-releases depName=terraform-linters/tflint
           tflint_version: v0.64.0
@@ -102,7 +102,7 @@ jobs:
           done
 
       - name: Lint shell scripts
-        uses: a-novel-kit/workflows/generic-actions/lint-shell@v1.31.0
+        uses: a-novel-kit/workflows/generic-actions/lint-shell@v1.32.0
         with:
           # renovate: datasource=github-releases depName=koalaman/shellcheck
           version: "0.11.0"
@@ -256,7 +256,7 @@ jobs:
           pyflakes: false
 
       - name: Audit GitHub Actions security
-        uses: a-novel-kit/workflows/security-actions/lint-workflows@v1.31.0
+        uses: a-novel-kit/workflows/security-actions/lint-workflows@v1.32.0
         with:
           # renovate: datasource=docker depName=ghcr.io/zizmorcore/zizmor
           version: "1.30.1"

@@ -7,17 +7,31 @@ on:
         description: Plan/apply a disposable workload, restore exact data, or delete one reviewed drill project.
         required: true
         type: choice
-        options: [plan-workload, apply-workload, restore-data, cleanup-project]
+        options:
+          [
+            plan-workload,
+            apply-workload,
+            restore-data,
+            cleanup-project,
+            plan-native,
+            apply-native,
+            restore-native,
+            cleanup-native,
+          ]
       replacement_project_id:
         description: New disposable Google Cloud project ID; never the production project.
         required: true
         type: string
       target_receipt:
-        description: Immutable successful production run-id-attempt to recover.
-        required: true
+        description: Legacy operations only; immutable successful production run-id-attempt to recover.
+        required: false
         type: string
       plan_id:
-        description: apply-workload only; exact run-id-attempt printed by plan-workload.
+        description: Apply only; exact run-id-attempt printed by the matching plan operation.
+        required: false
+        type: string
+      preparation_generation:
+        description: restore-native only; exact source guard generation of completed host preparation.
         required: false
         type: string
       json_keys_attempt:
@@ -33,7 +47,7 @@ on:
         required: false
         type: string
       confirm:
-        description: Type RESTORE or DELETE followed by one space and the replacement project ID.
+        description: DELETE project for cleanup; RESTORE project for legacy; RESTORE-FILES or RESTORE-SQL project preparation-generation for native recovery.
         required: false
         type: string
 
@@ -50,8 +64,121 @@ env:
   CLOUDSDK_CORE_DISABLE_PROMPTS: "1"
 
 jobs:
+  prepare-native:
+    if: github.ref == 'refs/heads/master' && endsWith(inputs.operation, '-native')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 80
+    environment: production-recovery
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      pull-requests: read
+    env:
+      MANAGEMENT_PROJECT_ID: ${{ vars.GCP_MANAGEMENT_PROJECT_ID }}
+      STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
+      NATIVE_RECOVERY_PREPARATION_ENABLED: ${{ vars.NATIVE_RECOVERY_PREPARATION_ENABLED }}
+      NATIVE_RECOVERY_EXECUTION_ENABLED: ${{ vars.NATIVE_RECOVERY_EXECUTION_ENABLED }}
+      NATIVE_RECOVERY_SQL_ENABLED: ${{ vars.NATIVE_RECOVERY_SQL_ENABLED }}
+      NATIVE_RECOVERY_CLEANUP_ENABLED: ${{ vars.NATIVE_RECOVERY_CLEANUP_ENABLED }}
+      RECOVERY_OPERATION: ${{ inputs.operation }}
+    steps:
+      - name: Check out the exact master commit
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build reviewed recovery tooling
+        uses: $/.github/actions/setup-infra
+
+      - name: Authorize the exact native operation before authentication
+        id: scope
+        shell: bash
+        env:
+          FOUNDATION_CONFIG: ${{ secrets.FOUNDATION_TFVARS_JSON }}
+          NATIVE_RECOVERY_CONFIG: ${{ secrets.NATIVE_RECOVERY_TFVARS_JSON }}
+          REPLACEMENT_PROJECT_ID: ${{ inputs.replacement_project_id }}
+          RECOVERY_PLAN_ID: ${{ inputs.plan_id }}
+          PREPARATION_GENERATION: ${{ inputs.preparation_generation }}
+          TARGET_RECEIPT: ${{ inputs.target_receipt }}
+          JSON_KEYS_ATTEMPT: ${{ inputs.json_keys_attempt }}
+          AUTHENTICATION_ATTEMPT: ${{ inputs.authentication_attempt }}
+          LOST_WRITE_WINDOW: ${{ inputs.lost_write_window }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          infra recovery-inputs prepare "${REPLACEMENT_PROJECT_ID}" "${RUNNER_TEMP}/native-recovery.tfvars.json" >>"${GITHUB_OUTPUT}"
+
+      - name: Authenticate as the recovery boundary
+        uses: google-github-actions/auth@v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_RECOVERY_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_RECOVERY_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Install the pinned Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v3.0.1
+        with:
+          version: "581.0.0"
+
+      - name: Install OpenTofu
+        if: inputs.operation == 'plan-native' || inputs.operation == 'apply-native'
+        uses: opentofu/setup-opentofu@v2.0.2
+        with:
+          tofu_version_file: .opentofu-version
+          tofu_wrapper: false
+          cache: true
+
+      - name: Prepare only the stopped native recovery host
+        if: inputs.operation == 'plan-native' || inputs.operation == 'apply-native'
+        shell: bash
+        env:
+          FOUNDATION_CONFIG: ${{ secrets.FOUNDATION_TFVARS_JSON }}
+          GH_TOKEN: ${{ github.token }}
+          TOFU_STATE_SUFFIX: ${{ steps.scope.outputs.state_suffix }}
+          TOFU_VAR_FILE: ${{ steps.scope.outputs.file }}
+          PLAN_ID: ${{ inputs.plan_id }}
+        run: |
+          set -euo pipefail
+          if [[ "${RECOVERY_OPERATION}" == plan-native ]]; then
+            plan_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            ./ops/create-reviewed-plan.sh service-recovery "${STATE_BUCKET}" "${GITHUB_SHA}" "${plan_id}" "${TOFU_VAR_FILE}"
+            printf 'Native host plan ID: %s\n' "${plan_id}" >>"${GITHUB_STEP_SUMMARY}"
+          else
+            infra custody plan apply "${STATE_BUCKET}" service-recovery "${GITHUB_SHA}" "${PLAN_ID}" "${TOFU_VAR_FILE}"
+            printf 'Native host prepared and stopped. No database restore, startup or cutover performed.\n' >>"${GITHUB_STEP_SUMMARY}"
+          fi
+
+      - name: Complete the selected recovery once and stop the disposable host
+        if: inputs.operation == 'restore-native'
+        shell: bash
+        env:
+          FOUNDATION_CONFIG: ${{ secrets.FOUNDATION_TFVARS_JSON }}
+          GH_TOKEN: ${{ github.token }}
+          TOFU_VAR_FILE: ${{ steps.scope.outputs.file }}
+          PREPARATION_GENERATION: ${{ inputs.preparation_generation }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          infra custody recovery execute "${STATE_BUCKET}" "${TOFU_VAR_FILE}" "${PREPARATION_GENERATION}" "${CONFIRM}"
+          printf 'Selected native recovery completed; private evidence recorded; host stopped. No promotion or cutover.\n' >>"${GITHUB_STEP_SUMMARY}"
+
+      - name: Request deletion of the completed disposable native recovery project
+        if: inputs.operation == 'cleanup-native'
+        shell: bash
+        env:
+          FOUNDATION_CONFIG: ${{ secrets.FOUNDATION_TFVARS_JSON }}
+          GH_TOKEN: ${{ github.token }}
+          TOFU_VAR_FILE: ${{ steps.scope.outputs.file }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          infra custody recovery cleanup "${STATE_BUCKET}" "${TOFU_VAR_FILE}" deploy/production/native-recovery-cleanup.json "${CONFIRM}"
+          printf 'Project deletion requested; management evidence and reservations retained. Permanent erasure and final billing are not confirmed.\n' >>"${GITHUB_STEP_SUMMARY}"
+
   recover:
-    if: github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/master' && !endsWith(inputs.operation, '-native')
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     environment: production-recovery
@@ -66,7 +193,6 @@ jobs:
           persist-credentials: false
 
       - name: Build reviewed recovery tooling
-        if: inputs.operation != 'cleanup-project'
         uses: $/.github/actions/setup-infra
 
       - name: Materialize the protected foundation inputs
@@ -141,17 +267,17 @@ jobs:
         shell: bash
         env:
           CONFIRM: ${{ inputs.confirm }}
-          FOUNDATION_CONFIG_FILE: ${{ steps.foundation.outputs.file }}
+          FOUNDATION_CONFIG: ${{ secrets.FOUNDATION_TFVARS_JSON }}
+          STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
           GH_TOKEN: ${{ github.token }}
           REPLACEMENT_PROJECT_ID: ${{ inputs.replacement_project_id }}
           TARGET_RECEIPT: ${{ inputs.target_receipt }}
         run: |
           set -euo pipefail
-          ./ops/delete-recovery-project.sh \
-            "${GITHUB_REPOSITORY}" "${GITHUB_SHA}" \
+          infra custody recovery cleanup-project "${STATE_BUCKET}" \
             "${REPLACEMENT_PROJECT_ID}" "${TARGET_RECEIPT}" \
-            "${FOUNDATION_CONFIG_FILE}" \
             deploy/production/recovery-cleanup.json "${CONFIRM}"
+          printf 'Disposable recovery project is DELETE_REQUESTED; retained state and receipts are unchanged.\n' >>"${GITHUB_STEP_SUMMARY}"
 
       - name: Create the exact private recovery-foundation plan
         if: inputs.operation == 'plan-workload'

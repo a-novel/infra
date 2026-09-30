@@ -1,3 +1,9 @@
+variable "state_bucket" {
+  description = "Protected management state bucket; workflow registration validates the exact binding before initialization."
+  type        = string
+  default     = ""
+}
+
 variable "recovery" {
   description = "Disabled by default. Private, independently approved disposable host inputs; never infer authorization from this object."
   type = object({
@@ -14,6 +20,7 @@ variable "recovery" {
     system_id          = string
     set                = string
     repository_time    = optional(string, "")
+    verify_sql         = optional(bool, false)
   })
   default = null
 
@@ -61,5 +68,6 @@ locals {
     major              = 18
     set                = host.set
     repository_time    = host.repository_time
+    verify_sql         = host.verify_sql
   } }
 }

@@ -3,12 +3,18 @@
 This root prepares one isolated JSON Keys host for an exact full/differential pgBackRest restore.
 `recovery = null` creates nothing. A configured host is stopped, has no startup restore, and stops
 after four hours when explicitly started. The worker restores files to backup consistency and leaves
-PostgreSQL stopped. It does not prove SQL recovery or authorize traffic cutover.
+PostgreSQL stopped. Optional offline SQL verification uses the same host, then stops PostgreSQL again.
+Neither outcome authorizes traffic cutover.
 
-This root is **not enrolled** in `ops/lib/roots.sh`, protected workflows, live assessment or drift.
-Do not apply it directly. Enrollment must bind its private inputs and reviewed plan to the existing
-recovery custody/admission path first; see [activation](#activation-gates). Legacy logical recovery
-and current backups remain unchanged.
+The protected recovery workflow separates **host preparation** from **file restoration**, disabled
+unless their respective `NATIVE_RECOVERY_PREPARATION_ENABLED` / `NATIVE_RECOVERY_EXECUTION_ENABLED`
+flags are `true`. Assessment and drift inspect registered state without
+either mutation flag. Do not apply this root directly; see [preparation](#guarded-host-preparation)
+and the separate [activation gates](#activation-gates). Legacy logical recovery and current backups
+remain unchanged.
+
+[Project cleanup](#guarded-project-cleanup) has its own disabled activation flag and committed
+authorization. Merging these paths does not provision resources, restore data or delete a project.
 
 The prepared image consumes the published Wolfi database patch. Its blocking image scan is unchanged;
 green scans and offline proofs do not authorize publication, provisioning or recovery execution.
@@ -35,10 +41,149 @@ ID, and invokes pgBackRest with an exact set and no delta/force fallback. After 
 `pg_controldata` against that same system ID. `files-restored.json` means only that files were restored;
 neither the source nor restored PostgreSQL was started by the worker.
 
+With protected `verify_sql = true`, a second container verifies SQL with **no network**. It reads
+the copied consistency WAL, ignores restored startup configuration, and pauses PostgreSQL at the
+selected backup's consistency point. It checks the independent system ID, JSON Keys tables, roles,
+constraints and UUID extension. `sql-verified` requires those checks plus confirmed PostgreSQL and
+VM shutdown; it is not continuous health, source fencing or application cutover evidence.
+
 Any existing attempt or container name blocks replay, including after interruption. Preserve failed
 attempts. A new attempt requires reconciliation and separately approved fresh destination storage.
 `repo-target-time` is preserved for both catalog reads and restore. Soft-delete repair can make an
 object visible only under a newer generation: changing that cutoff is a new selection, not a retry.
+
+## Guarded host preparation
+
+Protected `FOUNDATION_TFVARS_JSON` registers `service_recovery_projects` as a map from disposable
+project ID to `json-keys`. It creates no project or grant. `NATIVE_RECOVERY_TFVARS_JSON` maps each
+destination to this root's complete `{ "state_bucket": "…", "recovery": { … } }` input. The nested
+fields are defined in [variables.tf](variables.tf); include management, legacy workload and every
+registered service project in `protected_projects`. Unknown fields, unregistered destinations,
+peer sources, implicit backup selection and mismatched backend coordinates fail before authentication.
+Digest validation checks the image's exact destination and syntax, **not its provenance**; reviewed
+publication/promotion and backup compatibility remain prerequisites.
+
+After separate activation approval, dispatch from clean, current `master`:
+
+```text
+go run ./cmd/infra recovery plan-native <registered-destination>
+go run ./cmd/infra recovery apply-native <registered-destination> <plan-run-id-attempt>
+```
+
+Both runs require `production-recovery` review and retain global infrastructure serialization.
+The private plan expires after 24 hours and binds the exact commit, destination and input bytes.
+Preparation accepts only creates/no-ops in the disposable project, with the VM's desired state
+`TERMINATED`; updates, replacements, imports and cleanup require a separate maintenance path.
+
+State and converged inputs use `foundation/recovery/services/DESTINATION/`; private plans use
+`foundation/plans/recovery/services/DESTINATION/`. These reuse the existing recovery storage boundary.
+Apply acquires the **source service's** guard before consuming the plan, then verifies zero-change
+convergence and publishes `host-prepared` completion under that source's receipt folder before
+releasing the exact guard generation. This records host preparation, not database recovery or health.
+Uncertain apply, publication or acknowledgement retains the guard; use the existing
+[operation inspector and finisher](../../docs/service-operations.md#inspect-an-interrupted-apply).
+Neither planning nor successful preparation starts the restore unit, formats storage or cuts over traffic.
+
+## Guarded file restoration
+
+After separate execution approval and the activation checks below, dispatch from current `master`:
+
+```text
+go run ./cmd/infra recovery restore-native <destination> <preparation-generation> 'RESTORE-FILES <destination> <preparation-generation>'
+```
+
+The generation is the **source guard generation** printed by successful `apply-native`, not a plan ID.
+Its original workflow must have ended. Preparation must record the exact backend state generation,
+numeric VM/disk IDs and host-definition hash; older preparation records cannot authorize this path.
+Changing inputs, state or resource incarnations requires a new reviewed preparation, not a retry.
+
+Execution acquires the source service guard and creates a permanent, create-only destination
+reservation before starting the host. It verifies the private VM, identity and four-hour cap, then
+checks the named data disk for partitions, mounts and signatures. Only this blank disk is formatted;
+an existing mount directory also refuses execution. No broad device discovery or force option is used.
+The disabled systemd one-shot unit runs the existing worker once and waits for its terminal outcome.
+This adds no dispatcher or automatic recovery fallback.
+
+Success requires the worker's exact request, catalog, database identity and files-only marker, plus
+a successfully exited container and a stopped VM. Private evidence is copied into the existing
+destination state namespace (at most 1 MiB), and `files-restored` completion into the source receipt
+folder, before the exact guard is released. The disk, retained container, local attempt and destination
+reservation remain; a second dispatch cannot reuse them, even after success.
+
+On any uncertain command, disconnected runner or evidence-publication failure, retain the source
+guard and destination. Inspect the VM and `/mnt/disks/agora-recovery/work/attempt` privately; do not
+restart the unit, reformat the disk, delete the reservation or rerun the workflow. The four-hour cap
+bounds an unattended start, but disks/DNS keep billing. Stop unresolved work only after inspecting it.
+The existing operation inspector understands this outcome; its finisher can release **recorded**
+success after the originating workflow ends. It cannot reconstruct missing restore completion or
+authorize reuse. Review cleanup separately, preserving exported evidence and original backups.
+
+### Optional offline SQL verification
+
+Select `verify_sql = true` **before host preparation**, separately approve
+`NATIVE_RECOVERY_SQL_ENABLED=true`, and use the same guarded dispatch with confirmation
+`RESTORE-SQL <destination> <preparation-generation>`. The existing execution flag remains required.
+The second systemd unit has a five-minute limit, no image pull and `--network=none`; no cloud
+credentials or WAL-fetch proxy enter PostgreSQL's container. It never promotes the recovered server.
+
+Future native full/differential backups use pgBackRest's
+[`archive-copy`](https://pgbackrest.org/command.html#command-backup/option-archive-copy), duplicating
+the WAL needed for backup consistency alongside the ordinary WAL archive. Storage/transfer grow
+with WAL generated during each backup; there is no additional VM. Historical backups without copied
+WAL fail this offline verification rather than falling back to network access. Files-only recovery
+and historical readers remain available. PITR beyond the selected backup requires a separate design.
+
+Any missing WAL, failed SQL check, unconfirmed shutdown or missing completion retains admission and
+the attempt. Do not resume SQL on an earlier files-only destination or replay a failed verification;
+review a fresh destination and its complete selection instead.
+
+## Guarded project cleanup
+
+Cleanup uses the same Resource Manager deletion path as legacy drills, not an OpenTofu destroy
+or a second per-resource coordinator. It is limited to a **completed** native recovery with private
+evidence exported to management storage. Active, failed or uncertain work must first be reconciled;
+cleanup is not an escape hatch from a held service guard.
+
+Before activation, independently review the whole disposable project's inventory and remove its
+temporary cross-project grants. Commit the exact target to
+[`native-recovery-cleanup.json`](../../deploy/production/native-recovery-cleanup.json):
+`replacementProject`, numeric `projectNumber` as a string, `service = "json-keys"`, `sourceProject`,
+`restoreGeneration` as a string, and `crossProjectAccessRevoked = true`. The generation selects
+the completed **restore's source guard**, not its preparation generation. Its retained evidence
+binds the exact preparation, input bytes, numeric VM/disk identities and selected recovery outcome.
+The revocation field is a human attestation, not an automated effective-IAM proof.
+
+The authorization PR needs the existing human `allow-resource-deletion` label **before merge**.
+Separately approve `NATIVE_RECOVERY_CLEANUP_ENABLED=true` in `production-recovery`. The project must
+carry the five legacy recovery labels (`application=agora`, `environment=production`,
+`managed-by=opentofu`, `plane=workload`, `recovery=true`) and the exact unconditional project-local
+`roles/resourcemanager.projectDeleter` binding for `infra-recovery@MANAGEMENT.iam.gserviceaccount.com`.
+Those labels and permissions are activation prerequisites, not changes made by this implementation.
+Keep the protected destination registration/inputs available through reconciliation.
+
+From clean, current `master`, request the separately reviewed operation:
+
+```text
+go run ./cmd/infra recovery cleanup-native <destination> 'DELETE <destination>'
+```
+
+The workflow validates scope before authentication. Under the source service guard it rechecks the
+prepared state, exact stopped host/disk and project identity, then creates a permanent cleanup
+reservation before **one** deletion request. Success records `deletion-requested` in the existing
+receipt folder before releasing that guard. The project includes its disks, DNS and image repository;
+its local restored data is disposable. Management-owned backup objects, state, private evidence and
+both destination reservations remain untouched. Preparation and restore cannot reuse that destination.
+
+An uncertain response retains admission. Use the existing
+[inspector and finisher](../../docs/service-operations.md#inspect-an-interrupted-apply), never rerun
+cleanup. After the original cleanup workflow ends, the finisher may reconstruct missing completion
+only by reading the exact project's `DELETE_REQUESTED` state. It needs separately reviewed
+`resourcemanager.projects.get` access, **not** project-delete authority. ACTIVE, inaccessible or
+missing projects do not establish success; manual reconciliation is required. No deletion is replayed.
+
+`deletion-requested` does not prove permanent erasure or final billing settlement. Verify both
+separately, and reset the committed authorization to its inactive null/false template through a PR.
+Do not undelete a completed drill or remove retained reservations to reuse it.
 
 ## Resources and cost boundary
 
@@ -61,29 +206,28 @@ before provisioning. This is not an additional permanent backup VM.
 
 ## Activation gates
 
-1. Enroll this root in the existing protected recovery workflow, scope resolver, plan custody,
-   assessment and drift paths in a reviewed change. Bind the complete protected registration, request,
-   image provenance and destination to the exact consumed plan and durable operation intent. Retain
-   the service guard through the accepted disruptive outcome; never release ambiguous work.
+1. Review the protected registration and private inputs, then separately authorize host preparation.
+   Preparation, file restoration and optional offline SQL verification are independently disabled.
+   Cutover is not enrolled. Never release ambiguous work.
 2. Separately approve image publication/promotion and effective IAM. The existing management recovery
    account stays disabled until approved. Cross-project attachment, organization policy, IAP/OS Login,
-   exact native-bucket access and Artifact Registry reads need explicit review. Do not attach the
+   exact native-bucket access, Artifact Registry reads, source guard and completion-folder access
+   need explicit review. This enrollment adds no IAM grants. Do not attach the
    writer or widen its grants. Private Google Access is not a service perimeter or an IAM grant.
 3. Review a fresh empty disposable project, source ownership, independent database identity/major,
    selected native label, retained image and any repository cutoff. Record lost writes and source
    fencing requirements; inspect/quiesce native work before disruptive or repository-mutating steps.
 4. Apply only an approved saved plan. Verify the stopped host, effective network/IAM, image and disk
-   IDs. Format only the independently verified fresh data disk and mount it at
-   `/mnt/disks/agora-recovery` with `nodev,nosuid,noexec`. No formatter is embedded in boot or restore.
-5. Under a separately admitted execution, start the host and the single disabled unit explicitly.
-   Capture the local outcome and native diagnostics privately. A lost runner response is unknown
+   IDs. The separately approved execution formats only the checked fresh data disk and mounts it at
+   `/mnt/disks/agora-recovery` with `nodev,nosuid,noexec`. Boot and the restore worker contain no formatter.
+5. Under a separately admitted execution, start the host and its selected disabled units explicitly.
+   Use the guarded file-restoration dispatch above, not a manual bypass. A lost runner response is unknown
    outcome; inspect the retained container/attempt rather than starting again.
-6. Approve SQL recovery separately. Restore-generated configuration includes an archive reader; do
-   not boot recovered configuration with cloud authority by default. Establish an isolated WAL-fetch
-   and SQL-validation boundary, verify roles/extensions/data, and prove source-host-loss recovery.
+6. Approve offline SQL verification separately, with copied consistency WAL in the selected backup.
+   Prove the actual host's network and process boundaries, roles/extensions/data and source-host-loss recovery.
    Cutover additionally requires application compatibility, source fencing and lost-write acceptance.
 7. Export evidence and publish the reviewed outcome through existing private custody. Stop the VM,
-   revoke temporary access, then review a cleanup plan for only this disposable project's resources.
+   revoke temporary access, then separately approve the exact project cleanup described above.
    Keep original backup objects, historical logical readers and retained receipts intact.
 
 Offline tests exercise real pgBackRest restoration and the worker's policy, with local synthetic

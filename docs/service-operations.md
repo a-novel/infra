@@ -13,7 +13,8 @@ The current [foundation](../.github/workflows/foundation.yaml) and
 The pilot's [guarded caller](runbooks/submit-release.md#guarded-established-release) preserves immutable
 intent and dispatches native work under the same service guard as service-root applies and native
 rotation. Standalone commands only publish source or reconcile recorded outcomes. Unenrolled
-legacy/shared-root writers and protected recovery still prevent activation.
+legacy/shared-root writers and recovery execution still prevent activation. Native recovery host
+preparation, file restoration and optional offline SQL verification participate as described below.
 
 An **operation** is one reviewed change to one service, including the work needed to leave it in a
 known state. A **guard** admits that operation and blocks another. A **request intent** prevents replay
@@ -43,6 +44,48 @@ cloud operations. There is no force-unlock, takeover, expiry or automatic apply 
 [finish operation](#finish-an-already-recorded-operation) can repeat only the final guard deletion after
 verifying recorded convergence and a completed original workflow attempt. Read-only
 assessment/drift refuses either service root while a guard is present, including before first state.
+
+### Implemented: disposable native host preparation
+
+The disabled [native recovery preparation](../environments/service-recovery/README.md#guarded-host-preparation)
+uses the same custody and completion path. Its guard belongs to the **source service**, while its
+state/configuration belongs to a separately registered disposable destination. The protected recovery
+workflow permits only creates/no-ops and a stopped destination host; it cannot start a restore or SQL
+recovery. `host-prepared` completion binds both projects and the reviewed plan/input hashes. It is not
+a restored-database receipt or authority for cutover. The inspector and finisher recognize that
+outcome and the exact original recovery workflow attempt, without replaying provisioning.
+
+Assessment/drift also inspect the destination inventory with writes disabled. Unregistered state,
+missing converged inputs or a held source guard stop inspection. Effective source guard/receipt IAM
+and all recovery execution/fencing remain separate activation gates; merging enrollment grants no access.
+
+### Implemented: guarded native file restoration
+
+The independently disabled [native file restoration](../environments/service-recovery/README.md#guarded-file-restoration)
+also holds the source guard. Its create-only destination reservation precedes VM startup and checked
+disk formatting. Completion binds preparation, numeric resource identities and private worker evidence;
+`files-restored` means the VM was stopped, not that PostgreSQL recovery or SQL validation succeeded.
+When explicitly selected and separately enabled, `sql-verified` records offline SQL checks at backup
+consistency and confirmed PostgreSQL/VM shutdown. It does not prove source fencing or authorize cutover.
+Inspection reads those generation-pinned records. Finishing can remove only a recorded-success guard
+after the exact `recovery restore-native` workflow attempt ends; it cannot repair missing completion,
+restart a worker or clear the destination reservation.
+
+### Implemented: disposable native project cleanup
+
+The independently disabled [cleanup path](../environments/service-recovery/README.md#guarded-project-cleanup)
+reuses whole-project deletion after completed recovery. It checks the exact committed authorization,
+completed preparation/restore evidence, original writer termination and stopped host identities.
+The source guard and permanent cleanup reservation precede the single Resource Manager request.
+`deletion-requested` completion means that state was observed, not permanent erasure or settled billing.
+All management state, evidence, backups and destination reservations survive cleanup.
+
+After writer termination, the finisher can repair missing completion by reading the exact project's
+`DELETE_REQUESTED` state. It never repeats deletion or treats an inaccessible/missing project as success.
+The foundation finisher needs separately reviewed project-read permission only. Failed or uncertain
+restores remain outside normal cleanup; do not delete their guard or destination to bypass reconciliation.
+
+### Implemented: guarded native release
 
 Protected applies and the [native rotation dispatcher](../modules/service-job-access#guarded-rotation)
 now share admission with the [guarded established-release caller](runbooks/submit-release.md#guarded-established-release).
@@ -134,8 +177,9 @@ repairs evidence or retries apply. See [Storage version selection](https://docs.
 ### Finish a successful operation
 
 This **off-by-default** path finishes converged service-root applies, successful native JSON Keys
-releases and successful rotations. Native releases and acknowledged rotations can reconstruct a
-missing completion record from exact native success evidence. Applies without recorded convergence,
+releases, successful rotations, recorded native recovery and observed native project deletion.
+Native releases, acknowledged rotations and project cleanup can reconstruct a missing completion
+record from their exact native outcome. Applies without recorded convergence,
 unacknowledged rotations and unknown record kinds remain blocked.
 
 After inspecting the exact generation, separately approve `SERVICE_OPERATION_RECOVERY_ENABLED=true`
@@ -271,9 +315,42 @@ outage, retain WAL and monitor disk capacity instead of discarding it or silentl
 
 Resume scheduling only after explicit reconciliation of database, repository and backup health.
 Unknown worker outcomes remain failures to inspect. The calendar's next attempt is ordinary native
-backup scheduling, never authority to replay a restore or mutation. The guarded remote maintenance
-executor and live stop/drain rehearsal remain activation gates; these disabled timers do not supply
-that executor. See the [prepared backup path](../environments/service-foundation/README.md#prepared-native-backup-jobs).
+backup scheduling, never authority to replay a restore or mutation.
+
+The protected `foundation apply` path prepares this quiescence for JSON Keys behind
+`NATIVE_BACKUP_MAINTENANCE_ENABLED=true`, independently of foundation enrollment. It inspects the
+exact private saved plan: changes to the database template, instance group, data disk or repository
+VM require stopping existing native hosts. Initial creation, no-op and monitoring-only plans do
+not stop a database. Legacy/native ownership handoffs require separate review.
+
+After acquiring admission and consuming the plan, it checks the prior state's numeric VM identity
+and native user-data, then uses bounded systemd stops over IAP: timers, workers, PostgreSQL, repository.
+Loaded inactive units, empty unit jobs and absence of running native containers must be observed
+before apply. A stop can interrupt a backup; it is not evidence that the backup completed. Native
+stop handlers retain failed worker logs and pgBackRest owns partial-backup handling. Missing units,
+changed hosts and uncertain SSH responses block apply and retain the guard; do not replay them.
+
+Without the separate bring-up opt-in, apply/convergence leaves the native services stopped.
+`database_runtime.bring_up = true` also requires `NATIVE_BACKUP_BRINGUP_ENABLED=true` in that
+protected workflow. OpenTofu then owns a RUNNING repository VM and proactive stateful database
+replacement with zero surge. A disruptive plan holds admission through apply/convergence, observed
+single-member/template reconciliation and native bring-up. No-op and monitoring-only plans do not
+restart hosts.
+
+The caller binds private generated targets to the registered project and numeric VM identities.
+It stop/starts the already-quiesced repository VM to load the reviewed COS configuration, waits for
+cloud-init, and starts repository then database through systemd. The database unit signals readiness
+after health and credential activation. Exact running image/health and an authenticated pgBackRest
+repository read must pass, with all backup timers inactive, before normal completion publication and
+guard removal. A stale boot configuration, failed start or uncertain observation retains admission;
+there is no automatic retry or rollback. Existing completion inspection/finishing remains unchanged.
+
+This proves the checked host runtime, not a successful backup, WAL protection, API cutover or restore.
+It creates no stanza, starts no backup job and enables no timer. Host reboot does not automatically
+start these disabled units. Arbitrary IAM/network changes and destructive repository work require
+their own maintenance scope. No live maintenance is enabled by merging this code; effective host
+permissions, COS lifecycle/interruption behavior and recovery after host failure remain activation
+gates. See the [prepared backup path](../environments/service-foundation/README.md#prepared-native-backup-jobs).
 
 ## One operation from admission to completion
 

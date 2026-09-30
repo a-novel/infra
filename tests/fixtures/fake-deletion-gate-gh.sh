@@ -6,6 +6,11 @@ set -euo pipefail
 
 HEAD_SHA="${FAKE_GATE_HEAD:-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}"
 BASE_SHA="${FAKE_GATE_BASE:-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb}"
+LIVE_BASE_SHA="${FAKE_GATE_LIVE_BASE:-${BASE_SHA}}"
+GROUP_SHA="${FAKE_GATE_GROUP:-cccccccccccccccccccccccccccccccccccccccc}"
+QUEUE_BASE_SHA="${FAKE_GATE_QUEUE_BASE:-${BASE_SHA}}"
+QUEUE_GROUP_SHA="${FAKE_GATE_QUEUE_GROUP:-${GROUP_SHA}}"
+QUEUE_HEAD_SHA="${FAKE_GATE_QUEUE_HEAD:-${HEAD_SHA}}"
 PULL_REQUEST="${FAKE_GATE_PR:-93}"
 HEAD_REPOSITORY="${FAKE_GATE_HEAD_REPOSITORY:-a-novel/infra}"
 LABEL_MODE="${FAKE_GATE_LABEL_MODE:-missing}"
@@ -23,7 +28,7 @@ pull_request_json() {
     jq -n \
         --argjson number "${PULL_REQUEST}" \
         --arg head "${HEAD_SHA}" \
-        --arg base "${BASE_SHA}" \
+        --arg base "${LIVE_BASE_SHA}" \
         --arg head_repository "${HEAD_REPOSITORY}" \
         --argjson labels "${labels}" '
           {
@@ -68,6 +73,13 @@ if [ "${1:-}" = api ]; then
                 endpoint="$1"
                 shift
                 ;;
+            graphql)
+                endpoint="$1"
+                shift
+                ;;
+            -F | -f)
+                shift 2
+                ;;
             *)
                 shift
                 ;;
@@ -80,6 +92,29 @@ if [ "${1:-}" = api ]; then
     fi
 
     case "${endpoint}" in
+        graphql)
+            jq -n \
+                --argjson number "${PULL_REQUEST}" \
+                --arg head "${QUEUE_HEAD_SHA}" \
+                --arg base "${QUEUE_BASE_SHA}" \
+                --arg group "${QUEUE_GROUP_SHA}" '
+                  {
+                    data: {
+                      repository: {
+                        pullRequest: {
+                          number: $number,
+                          headRefOid: $head,
+                          mergeQueueEntry: {
+                            baseCommit: {oid: $base},
+                            headCommit: {oid: $group},
+                            pullRequest: {number: $number, headRefOid: $head}
+                          }
+                        }
+                      }
+                    }
+                  }
+                '
+            ;;
         users/*)
             actor="${endpoint#users/}"
             jq -n --arg actor "${actor}" --arg type "${FAKE_GATE_ACTOR_TYPE:-User}" \
@@ -102,6 +137,7 @@ if [ "${1:-}" = api ]; then
                 foundation) jq -n '[{filename: "environments/production/foundation/main.tf"}]' ;;
                 service) jq -n '[{filename: "environments/service-foundation/main.tf"}]' ;;
                 service-release) jq -n '[{filename: "environments/service-release/main.tf"}]' ;;
+                service-recovery) jq -n '[{filename: "environments/service-recovery/main.tf"}]' ;;
                 release) jq -n '[{filename: "environments/production/release/main.tf"}]' ;;
                 image) jq -n '[{filename: "deploy/production/images.yaml"}]' ;;
                 shared) jq -n '[{filename: "modules/shared/main.tf"}]' ;;

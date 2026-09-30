@@ -63,6 +63,9 @@ func fixtureCommand(name string, args []string) (int, error) {
 		if len(args) > 0 && args[0] == "foundation-inputs" {
 			return infraworkflow.FoundationInputs(args[1:], os.Getenv, os.Stdout, os.Stderr), nil
 		}
+		if len(args) > 0 && args[0] == "recovery-inputs" {
+			return infraworkflow.RecoveryInputs(args[1:], os.Getenv, os.Stdout, os.Stderr), nil
+		}
 		if len(args) > 0 && args[0] == "custody" {
 			var options []option.ClientOption
 			if endpoint := os.Getenv("TEST_STORAGE_ENDPOINT"); endpoint != "" {

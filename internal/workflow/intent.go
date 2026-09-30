@@ -27,6 +27,10 @@ const usage = `usage: go run ./cmd/infra
   release drill-database-isolation <receipt-id> 'DRILL authentication'
   release restore-database-isolation <receipt-id> 'RESTORE authentication'
   recovery plan-workload <replacement-project-id> <receipt-id>
+  recovery plan-native <registered-recovery-project>
+  recovery apply-native <registered-recovery-project> <plan-id>
+  recovery restore-native <registered-recovery-project> <preparation-generation> '<RESTORE-FILES|RESTORE-SQL> <project> <preparation-generation>'
+  recovery cleanup-native <registered-recovery-project> 'DELETE <project>'
   recovery apply-workload <replacement-project-id> <receipt-id> <plan-id>
   recovery restore-data <replacement-project-id> <receipt-id> <json-keys-attempt> <authentication-attempt> <lost-write-window> <confirmation>
   recovery cleanup-project <replacement-project-id> <receipt-id> <confirmation>`
@@ -160,6 +164,33 @@ func parse(args []string) (intent, error) {
 			return i, invalid
 		}
 	case "recovery":
+		if len(args) >= 2 && slices.Contains([]string{"plan-native", "apply-native", "restore-native", "cleanup-native"}, args[0]) {
+			if !matches(`a-novel-recovery-[a-z0-9-]{1,13}[a-z0-9]`, args[1]) {
+				return i, invalid
+			}
+			i.input("operation", args[0])
+			i.input("replacement_project_id", args[1])
+			switch {
+			case args[0] == "cleanup-native" && len(args) == 3 && args[2] == "DELETE "+args[1]:
+				i.input("confirm", args[2])
+			case args[0] == "plan-native" && len(args) == 2:
+				i.attempt = true
+			case args[0] == "apply-native" && len(args) == 3 && matches(attemptID, args[2]):
+				i.planID, i.planPrefix = args[2], "recovery plan-native "+args[1]+" by @"
+				i.input("plan_id", i.planID)
+			case args[0] == "restore-native" && len(args) == 4:
+				generation, err := strconv.ParseInt(args[2], 10, 64)
+				if err != nil || generation <= 0 || strconv.FormatInt(generation, 10) != args[2] ||
+					!slices.Contains([]string{"RESTORE-FILES " + args[1] + " " + args[2], "RESTORE-SQL " + args[1] + " " + args[2]}, args[3]) {
+					return i, invalid
+				}
+				i.input("preparation_generation", args[2])
+				i.input("confirm", args[3])
+			default:
+				return i, invalid
+			}
+			break
+		}
 		if len(args) < 3 || !matches(`[a-z][a-z0-9-]{4,28}[a-z0-9]`, args[1]) || !matches(attemptID, args[2]) {
 			return i, invalid
 		}

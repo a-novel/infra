@@ -42,6 +42,50 @@ case "${EVENT_NAME}" in
         PULL_REQUEST="$(printf '%s' "${GATE_MERGE_HEAD_REF:-}" |
             grep -oE 'pr-[0-9]+' | head -n1 | grep -oE '[0-9]+' || true)"
         BASE_SHA="${GATE_BASE_SHA:-}"
+        if ! [[ "${PULL_REQUEST}" =~ ^[1-9][0-9]*$ ]] ||
+            ! [[ "${BASE_SHA}" =~ ^[a-f0-9]{40}$ ]]; then
+            printf 'The gate event does not identify an exact pull request and base.\n' >&2
+            exit 77
+        fi
+        # shellcheck disable=SC2016
+        if ! QUEUE_METADATA="$(gh api graphql \
+            -F owner="${REPOSITORY%%/*}" \
+            -F name="${REPOSITORY#*/}" \
+            -F number="${PULL_REQUEST}" \
+            -f query='query($owner: String!, $name: String!, $number: Int!) {
+              repository(owner: $owner, name: $name) {
+                pullRequest(number: $number) {
+                  number
+                  headRefOid
+                  mergeQueueEntry {
+                    baseCommit { oid }
+                    headCommit { oid }
+                    pullRequest { number headRefOid }
+                  }
+                }
+              }
+            }' 2>/dev/null)"; then
+            printf 'Could not read the merge queue entry for the resource-deletion gate.\n' >&2
+            exit 70
+        fi
+        if ! HEAD_SHA="$(jq --exit-status --raw-output \
+            --argjson number "${PULL_REQUEST}" \
+            --arg base "${BASE_SHA}" \
+            --arg group "${CHECK_SHA}" '
+              .data.repository.pullRequest as $pull
+              | if
+                  $pull.number == $number and
+                  $pull.mergeQueueEntry.pullRequest.number == $number and
+                  $pull.mergeQueueEntry.pullRequest.headRefOid == $pull.headRefOid and
+                  $pull.mergeQueueEntry.baseCommit.oid == $base and
+                  $pull.mergeQueueEntry.headCommit.oid == $group
+                then $pull.headRefOid
+                else error("merge group no longer queued")
+                end
+            ' <<<"${QUEUE_METADATA}" 2>/dev/null)"; then
+            printf 'The merge group no longer represents the queued pull request.\n' >&2
+            exit 77
+        fi
         ;;
     push)
         if [ "${GITHUB_REF:-}" = refs/heads/master ]; then
@@ -93,13 +137,14 @@ if ! [[ "${HEAD_SHA}" =~ ^[a-f0-9]{40}$ ]]; then
 fi
 if ! jq --exit-status \
     --arg repository "${REPOSITORY}" \
+    --arg event "${EVENT_NAME}" \
     --arg head "${HEAD_SHA}" \
     --arg base "${BASE_SHA}" '
       .state == "open" and
       .base.ref == "master" and
       .base.repo.full_name == $repository and
       .head.sha == $head and
-      .base.sha == $base
+      ($event == "merge_group" or .base.sha == $base)
     ' <<<"${PR_METADATA}" >/dev/null; then
     printf 'The pull request moved after the assessed head and base were selected.\n' >&2
     exit 77

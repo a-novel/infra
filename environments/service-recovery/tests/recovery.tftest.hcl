@@ -34,9 +34,27 @@ run "selected_host" {
       jsonencode(yamldecode(google_compute_instance.recovery["selected"].metadata["user-data"]).runcmd) == jsonencode([["systemctl", "daemon-reload"]]),
       jsondecode(yamldecode(google_compute_instance.recovery["selected"].metadata["user-data"]).write_files[0].content) == local.requests["selected"],
       local.requests["selected"].repository_time == "2026-09-27T20:35:40Z",
+      !local.requests["selected"].verify_sql,
       !strcontains(yamldecode(google_compute_instance.recovery["selected"].metadata["user-data"]).write_files[2].content, "[Install]"),
     ])
     error_message = "Boot may register the exact request and unit only; it must not execute restoration."
+  }
+}
+
+run "offline_sql" {
+  command = plan
+  variables {
+    recovery = merge(jsondecode(file("tests/fixture.json")), { verify_sql = true })
+  }
+  assert {
+    condition = alltrue([
+      local.requests["selected"].verify_sql,
+      strcontains(yamldecode(google_compute_instance.recovery["selected"].metadata["user-data"]).write_files[3].content, "--network=none"),
+      strcontains(yamldecode(google_compute_instance.recovery["selected"].metadata["user-data"]).write_files[3].content, " verify-sql"),
+      !strcontains(yamldecode(google_compute_instance.recovery["selected"].metadata["user-data"]).write_files[3].content, "docker pull"),
+      !strcontains(yamldecode(google_compute_instance.recovery["selected"].metadata["user-data"]).write_files[3].content, "[Install]"),
+    ])
+    error_message = "SQL verification must be explicit, manual, networkless and reuse the previously pulled image."
   }
 }
 

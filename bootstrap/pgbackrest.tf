@@ -3,6 +3,7 @@ variable "json_keys_pgbackrest" {
   type = object({
     workload_project_id = string
     tls_credentials     = optional(bool, false)
+    noncurrent_cleanup  = optional(bool, false)
   })
   default = null
 
@@ -46,7 +47,19 @@ resource "google_storage_bucket" "pgbackrest" {
     retention_duration_seconds = 604800
   }
 
-  # Physical dependencies expire as native backup chains, never by object age.
+  # pgBackRest owns live chains; GCS disposes only generations no longer current.
+  dynamic "lifecycle_rule" {
+    for_each = each.value.noncurrent_cleanup ? [true] : []
+    content {
+      action { type = "Delete" }
+      condition {
+        with_state                 = "ARCHIVED"
+        days_since_noncurrent_time = 7
+        send_age_if_zero           = false
+      }
+    }
+  }
+
   lifecycle {
     prevent_destroy = true
   }

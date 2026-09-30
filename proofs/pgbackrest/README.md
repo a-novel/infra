@@ -47,11 +47,20 @@ Do not pass credentials, mount real data, enable networking, or use it as a depl
 | Missing/corrupt WAL    | Removing or corrupting a required archived segment makes `archive-get` fail and prevents the restored server from becoming ready.                 |
 | Incompatible major     | The published server refuses an incompatible `PG_VERSION` marker in a disposable restored directory with its native incompatibility error.        |
 | Retention              | Retain two full backups and a dependent differential. Restore the differential and newest full; the expired full is no longer selectable.         |
-| Repository integrity   | Run native `verify` over the retained repository.                                                                                                 |
+| Repository integrity   | Require a healthy native `verify` report over the retained repository.                                                                            |
 
 The cases intentionally share one evolving repository and stop on the first failure. This is not a
 coverage suite for pgBackRest internals. Its output includes native catalog sizes, repository bytes,
 restore-through-SQL duration and cgroup resource counters when available.
+
+The retention case first checks that native `expire --dry-run` leaves repository content unchanged.
+It then denies manifest removal and, separately, data cleanup after the catalog has changed.
+Both failed commands must leave the retained full/differential sets restorable through SQL.
+Restoring fixture permissions permits an explicit native reconciliation; no catalog is repaired by
+the test. These POSIX denials establish expiry ordering, not GCS retention behavior. A dry run does
+not reserve the repository or prove later deletion will succeed. The
+[live acceptance procedure](../../docs/runbooks/backup-and-restore-postgresql.md#native-expiry-acceptance)
+covers the separate GCS generation lifecycle.
 
 Interruption uses `pgbackrest --force stop` followed by `start`, not a bespoke process coordinator.
 An exploratory parent-only SIGTERM left a worker holding the backup lock. A future VM/container
@@ -64,6 +73,16 @@ The wrong-major fixture exercises PostgreSQL's native startup version guard, not
 data or cross-major conversion. It does not exercise the original entrypoints, application
 migrations, historical images, or native backup integration on the actual COS host.
 
+### Offline SQL verification
+
+`TestOfflineSQL` exercises the JSON Keys recovery worker with full/differential `archive-copy` backups,
+then starts PostgreSQL with no archive reader or network. It requires the expected system ID and native
+paused-at-consistency state, checks tables/roles/extensions, and stops the server before completion.
+Restored configuration containing an unavailable preload library is ignored. Missing copied WAL and
+failed SQL checks leave no success marker; used attempts refuse replay. The proof logs copied WAL's
+stored and restored sizes; synthetic compression is not a production cost estimate. Host-network
+enforcement and real cloud custody still need the separately approved activation drill.
+
 ### Native repository transport
 
 `TestRepositoryTLS` reuses the recovery driver with a native repository server and temporary test
@@ -71,6 +90,11 @@ certificates on container loopback. Both service-image variants check backup/WAL
 recovery; a CA-signed but unauthorized client, wrong stanza and untrusted server must fail, with
 authorized positive controls. A stopped server prevents restore, and an explicit retry of the same
 set succeeds after restart. No external network, credential proxy or new runtime dependency is used.
+Integrity cases read the native text report for healthy, missing and corrupt backup bundles, with
+repaired positive controls. pgBackRest can exit zero when the report says `status: error`; an empty
+repository can also exit zero. These cases protect the
+[prepared verification worker's](../../environments/service-foundation/README.md#native-integrity-check)
+report-based alert contract. They do not emulate Cloud Logging or establish live delivery.
 Each endpoint supplies its certificate and private key from one standard PEM file, passed to both
 native options. This verifies the single-version identity format in the
 [disabled custody contract](../../bootstrap/README.md#disabled-tls-credential-custody); no real

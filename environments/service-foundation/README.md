@@ -139,8 +139,8 @@ profiles are available without changing the service's storage owner. Backend/pro
 and available regional quota still require protected preflight; syntax checks do not provide either.
 
 The zonal stateful MIG has exactly one member, a preserved data disk and internal IP, no external IP,
-Shielded VM and OS Login. Template changes are opportunistic: applying foundation does not roll the
-running member. A crash/recreation can still interrupt this singleton database; neither preserved state
+Shielded VM and OS Login. Template changes are opportunistic by default; the explicit guarded bring-up
+opt-in below selects proactive replacement. A crash/recreation can still interrupt this singleton database; neither preserved state
 nor a warm API provides database HA. Disk and group deletion are guarded, and the disk is never an
 auto-deleted attachment. Daily regional crash-consistent snapshots retain seven days; they do not replace
 the management-plane logical backups or a tested restore.
@@ -171,9 +171,9 @@ database identity; TLS-secret access remains separate bootstrap custody.
 Cloud-init installs the shared adapter, client configuration and `agora-database.service`, then only
 reloads systemd. It replaces the metadata startup/shutdown scripts; no unit is enabled or started.
 Foundation owns the selected group metadata without `ignore_changes`. Routine API releases own none
-of it. Template preparation does not update a running member or prove database readiness.
+of it. Default template preparation does not update a running member or prove database readiness.
 
-On a future approved start, the existing loader delivers TLS credentials into ephemeral storage;
+On an approved start, the existing loader delivers TLS credentials into ephemeral storage;
 the shared adapter retains disk, image, password and health checks. systemd receives readiness only
 after health and password activation, waits for the container's exit and bounds failure retries to
 three starts per ten minutes. Docker restart is disabled for this path. Stop drains PostgreSQL before
@@ -185,6 +185,18 @@ metadata and other initiated traffic remain blocked. Its certificate name is map
 container DNS still disabled and raw-packet capability removed. The read-only client credential mount
 contains no cloud token. WAL archiving defaults off; the prepared jobs below share this network.
 Daily logical backups remain unchanged.
+
+`database_runtime.bring_up` defaults to false. With separately approved
+`NATIVE_BACKUP_MAINTENANCE_ENABLED` and `NATIVE_BACKUP_BRINGUP_ENABLED` workflow gates, it enrolls
+disruptive foundation applies in [guarded bring-up](../../docs/service-operations.md#native-online-backups).
+The provider owns proactive stateful RECREATE updates with one unavailable member and zero surge;
+the disk and IP stay preserved. This singleton maintenance needs a downtime window.
+The repository's desired state becomes RUNNING. Custody uses the sensitive `native_bringup` output
+privately, reboots the quiesced repository through blocking stop/start, checks the loaded configuration,
+and starts repository then database through systemd. Successful native repository access and database
+health are required before releasing admission. Timers stay off, and COS boot still only registers units.
+No-op/monitor-only applies never restart hosts. An interrupted bring-up needs explicit reconciliation;
+neither another apply nor a healthy current host can substitute for missing completion evidence.
 
 Before activation, separately review operation admission, exact image/credential evidence, empty-disk
 versus existing-data handling, network/IAM denials, TLS delivery failure, startup interruption, crash
@@ -209,8 +221,8 @@ without weakening upstream constraints or adding a controller. Runtime/backup re
 
 ### Prepared native backup jobs
 
-The database lifecycle also installs four disabled `agora-backup-<operation>.service` units from one
-template: `stanza-create`, `check`, `full` and `diff`. Three disabled timers prepare a weekly full
+The database lifecycle also installs five disabled `agora-backup-<operation>.service` units from one
+template: `stanza-create`, `check`, `full`, `diff` and `verify`. Three disabled timers prepare a weekly full
 (Sunday 02:00 UTC), differential (Monday–Saturday 02:00 UTC), and hourly archive check (:30 UTC),
 with up to five minutes of jitter. Nothing starts or enables them on boot. Missed runs do not catch
 up automatically; no timer creates the stanza or runs expiry. These are initial review settings,
@@ -267,6 +279,24 @@ money. No resources are applied here; log-based metrics, stored logs and future 
 a zero-cost guarantee. Scheduling activation, expiry and retirement of existing protection remain
 separately reviewed work.
 
+### Native integrity check
+
+`agora-backup-verify.service` is operator-invoked after separate activation approval; it has no timer.
+It uses the shared worker's one-hour, 0.5-CPU and 512-MiB limits and native TLS connection to read the
+repository. Verification adds no cloud permissions or repository writes. Reads and transfer still
+cost money; measure a complete scan before choosing a schedule or increasing its limits.
+
+Inspect the retained `agora-backup-verify` Docker logs and systemd journal. pgBackRest 2.59.1 can exit
+zero while reporting `status: error`; systemd completion alone is insufficient. The disabled failure
+alert also matches that worker's error and empty-repository reports. Its verbose report must cover the
+expected backup sets and WAL; an empty, partial, interrupted or missing report is not verification.
+Export evidence before another invocation replaces the worker's logs. No verification result feeds
+the backup-success metric or authorizes repair, expiry or restore.
+
+The [offline proof](../../proofs/pgbackrest#native-repository-transport) exercises healthy, empty,
+missing and corrupt data through native TLS. GCS behavior, COS log delivery and notifications still
+need live evidence. Native integrity checks complement isolated SQL restore drills.
+
 ## Optional stopped repository host
 
 `pgbackrest_repository = null` creates nothing. For JSON Keys with a declared `database`, an explicit
@@ -275,7 +305,7 @@ It uses the database's reviewed zone, subnet and COS image, an **e2-micro** cand
 **pd-standard** boot disk. The only capacity override is `machine_type = "e2-small"`; select it only
 after measurement. Neither profile is a proven backup-throughput or monthly-cost guarantee.
 
-The native instance resource converges to `TERMINATED`. Creation can briefly boot the VM before the
+By default the native instance resource converges to `TERMINATED`. Creation can briefly boot the VM before the
 provider stops it; the boot disk remains billable while stopped. The host has no database disk,
 public IP, guest-attribute readiness or running repository daemon. Deletion is guarded.
 An image replacement needs an explicit maintenance review; the root grants no automatic rollout or
@@ -285,7 +315,7 @@ Only protected foundation receives attachment permission on the repository ident
 absent, this root gives it no secret, registry or project-level role. The separate [bootstrap custody option](../../bootstrap/README.md#disabled-json-keys-native-backup-custody)
 grants its native bucket access after the identity exists. Bootstrap retains ownership of that bucket,
 its writer/recovery roles and disabled recovery identity. The standalone `pgbackrest_repository` output
-describes the stopped host; it is not published in the application coordinates or consumed by release.
+describes host coordinates; it is not readiness evidence, published in application coordinates or consumed by release.
 The existing protected input materializer and private configuration publisher preserve the opt-in.
 
 Activation needs a reviewed native TLS runtime/certificate lifecycle, host filesystem and egress
