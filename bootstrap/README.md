@@ -95,7 +95,8 @@ granting permission to create `.tflock` or state objects. OpenTofu documents the
 ## Platform visual-test storage
 
 [`visual-tests.tf`](./visual-tests.tf) owns Drive API enablement and keyless identities from `visual_test_platforms`.
-A Workspace administrator configures folder grants in the existing **Platform** Shared Drive.
+A Workspace administrator configures candidate folder grants and trusted maintenance Manager membership
+in the dedicated **CI - Platform** Shared Drive.
 Studio uses `studio/ci/references` and `studio/ci/results`. The
 [visual-test storage runbook](../docs/runbooks/visual-test-storage.md) covers setup, verification,
 retention and recovery. This configuration adds no visual-test GCS buckets.
@@ -119,9 +120,9 @@ Google documents [GitHub federation](https://cloud.google.com/iam/docs/workload-
 The `visual_tests` output exposes the OAuth scope, per-platform provider/account pairs, folder paths
 and required Drive/folder roles. These roles are a handoff contract, not Workspace permissions applied by OpenTofu. Infra
 PR checks stay cloud-blind. Candidate CI can create and edit evidence in the platform results folder;
-only trusted maintenance can replace references or permanently delete batches. Maintenance needs `organizer` authority on a parent for permanent deletion; its folder-only scope
-must be verified before activation. Drive-wide Manager access needs explicit owner approval. The
-trusted workflow limits operations to its platform folders and repository. Workspace operators
+only trusted maintenance can replace references or permanently delete batches. Maintenance has owner-approved `organizer` membership on **CI - Platform** for permanent deletion.
+That Google permission covers all platform folders in this dedicated Drive; candidate access stays
+limited to its own folder pair. The trusted workflow limits operations to its platform folders and repository. Workspace operators
 review effective membership, sharing restrictions and storage usage separately from Google Cloud IAM.
 
 ## Disabled JSON Keys native-backup custody
