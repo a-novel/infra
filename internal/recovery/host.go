@@ -238,6 +238,7 @@ func (host Host) prepareDisk(ctx context.Context) error {
 	}
 	// mkdir is exclusive; mkfs has no force flag. Neither accepts a caller-supplied path.
 	for _, command := range []string{
+		"sudo -n mkdir -p /mnt/disks",
 		"sudo -n mkdir -m 0700 " + mountPath,
 		"sudo -n mkfs.ext4 -m 0 -L agora-recovery " + diskPath,
 		"sudo -n mount -t ext4 -o discard,nodev,nosuid,noexec " + diskPath + " " + mountPath,
