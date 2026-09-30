@@ -65,6 +65,8 @@ func main() {
 		code = artifact.Run(ctx, os.Args[2:], quiet, artifact.NewClient(), os.Stdout, os.Stderr)
 	} else if len(os.Args) > 1 && os.Args[1] == "promote" {
 		code = artifact.Promote(ctx, os.Args[2:], quiet, artifact.NewClient(), os.Stdout, os.Stderr)
+	} else if len(os.Args) > 1 && os.Args[1] == "recovery-inputs" {
+		code = workflow.RecoveryInputs(os.Args[2:], os.Getenv, os.Stdout, os.Stderr)
 	} else if len(os.Args) > 1 && os.Args[1] == "foundation-inputs" {
 		code = workflow.FoundationInputs(os.Args[2:], os.Getenv, os.Stdout, os.Stderr)
 	} else if len(os.Args) > 1 && os.Args[1] == "observation-inputs" {

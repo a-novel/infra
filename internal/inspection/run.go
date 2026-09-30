@@ -94,7 +94,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, execute
 			return err
 		}
 	}
-	for _, root := range []string{"service-foundation", "service-release"} {
+	for _, root := range []string{"service-foundation", "service-release", "service-recovery"} {
 		if err := i.services(ctx, "drift", root, nil); err != nil {
 			return err
 		}

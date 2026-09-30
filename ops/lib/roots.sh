@@ -20,11 +20,11 @@ resolve_root() {
         release)
             printf "%s/environments/production/release\n" "$1"
             ;;
-        service-foundation | service-release)
+        service-foundation | service-release | service-recovery)
             printf "%s/environments/%s\n" "$1" "$2"
             ;;
         *)
-            printf "Unknown root. Expected bootstrap, foundation, release, service-foundation, or service-release.\n" >&2
+            printf "Unknown root. Expected bootstrap, foundation, release, service-foundation, service-release, or service-recovery.\n" >&2
             return 64
             ;;
     esac

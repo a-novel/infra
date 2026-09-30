@@ -29,6 +29,8 @@ func TestCustodyOperationInspection(t *testing.T) {
 	}{
 		{"HeldFoundation", "service-foundation", "", "42", "", "42 (held)", 0},
 		{"HeldJobBootstrap", "service-release", "", "42", "", "recorded convergence", 0},
+		{"PreparedHost", "service-recovery", "", "42", "", "no database recovery or cutover", 0},
+		{"UnconfirmedHost", "service-recovery", "", "42", "missing-completion", "apply may still have changed resources", 0},
 		{"AcknowledgementLost", "service-release", "42", "", "", "42 (no live guard)", 0},
 		{"Successor", "service-release", "42", "45", "", "another generation is live", 0},
 		{"NoLiveGuard", "service-release", "", "", "", "does not establish any earlier operation outcome", 0},
@@ -97,6 +99,9 @@ func TestCustodyFinishOperation(t *testing.T) {
 	}{
 		{name: "Foundation", root: "service-foundation", live: "42", deletes: 1, want: "No deployment work repeated"},
 		{name: "Jobs", live: "42", deletes: 1, want: "No deployment work repeated"},
+		{name: "PreparedHost", root: "service-recovery", live: "42", deletes: 1, want: "No deployment work repeated"},
+		{name: "NativeWrongWorkflow", root: "service-recovery", live: "42", field: "path", value: ".github/workflows/foundation.yaml", code: 70},
+		{name: "NativeWrongDestination", root: "service-recovery", live: "42", field: "display_title", value: "recovery apply-native a-novel-recovery-peer by @operator", code: 70},
 		{name: "AlreadyAbsent", want: "No mutation performed"},
 		{name: "Successor", live: "45", code: 70},
 		{name: "Incomplete", live: "42", fault: "missing-completion", code: 70},
@@ -205,6 +210,10 @@ func (fixture *operationInspection) finish() {
 		"event": "workflow_dispatch", "path": ".github/workflows/foundation.yaml", "repository": "a-novel/infra",
 		"display_title": "foundation apply " + fixture.root + "/json-keys by @operator",
 	}
+	if fixture.root == "service-recovery" {
+		fixture.writer["path"] = ".github/workflows/recovery.yaml"
+		fixture.writer["display_title"] = "recovery apply-native a-novel-recovery-proof by @operator"
+	}
 }
 
 func newOperationInspection(t *testing.T, root string) *operationInspection {
@@ -215,10 +224,16 @@ func newOperationInspection(t *testing.T, root string) *operationInspection {
 	if root == "service-foundation" {
 		config = "foundation/services/" + project + "/config/00000000000000000124-00001.tfvars.json"
 	}
+	if root == "service-recovery" {
+		config = "foundation/recovery/services/a-novel-recovery-proof/config/00000000000000000124-00001.tfvars.json"
+	}
 	intent := object{
 		"schemaVersion": 1, "root": root, "project_id": project, "service": "json-keys", "region": "europe-west1",
 		"commit": strings.Repeat("a", 40), "runId": "124", "runAttempt": "1", "planId": "123-1",
 		"planSha256": strings.Repeat("b", 64), "inputsSha256": fmt.Sprintf("%x", sha256.Sum256([]byte(privateValue))),
+	}
+	if root == "service-recovery" {
+		intent["project_id"], intent["source_project"] = "a-novel-recovery-proof", project
 	}
 	guardRef := object{"bucket": bucket, "object": guard, "generation": "42"}
 	configRef := object{"bucket": bucket, "object": config, "generation": "44", "sha256": intent["inputsSha256"]}
@@ -227,6 +242,9 @@ func newOperationInspection(t *testing.T, root string) *operationInspection {
 		operation[key] = value
 	}
 	completion := object{"schemaVersion": 1, "outcome": "converged", "operation": operation, "guard": guardRef, "configuration": configRef}
+	if root == "service-recovery" {
+		completion["outcome"] = "host-prepared"
+	}
 	return &operationInspection{
 		args: []string{"operation", "inspect", bucket, project}, root: root, live: "42",
 		env: map[string]string{

@@ -5,6 +5,12 @@ project is no longer trusted. It builds a different Google Cloud project from co
 logical backups, and deploys one exact successful application receipt. Production is never repaired
 in place and the recovered services remain internal until a separate, reviewed cutover decision.
 
+This is the **legacy logical-backup path**. The disabled
+[native pgBackRest path](../../environments/service-recovery/README.md#guarded-host-preparation)
+shares this protected workflow only for `plan-native` / `apply-native` host preparation. Those
+operations consume separate protected inputs, not the logical receipt/attempt selectors below.
+A native `host-prepared` outcome does not authorize any restore, database startup or cutover.
+
 Official references: [project creation and management](https://cloud.google.com/resource-manager/docs/creating-managing-projects),
 [Cloud Billing IAM](https://cloud.google.com/billing/docs/how-to/billing-access),
 [Cloud Storage preconditions](https://cloud.google.com/storage/docs/request-preconditions),

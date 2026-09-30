@@ -20,6 +20,24 @@ variable "service_projects" {
   }
 }
 
+# Consumed from converged private inputs by recovery dispatch and state inventory, not resources.
+# tflint-ignore: terraform_unused_declarations
+variable "service_recovery_projects" {
+  description = "Approved existing disposable recovery project ID to source service. Registration only: creates no project or IAM and does not enable preparation."
+  type        = map(string)
+  default     = {}
+  nullable    = false
+
+  validation {
+    condition = alltrue([for project, service in var.service_recovery_projects :
+      service == "json-keys" && contains(keys(var.service_projects), service) &&
+      can(regex("^a-novel-recovery-[a-z0-9-]{1,13}[a-z0-9]$", project)) &&
+      !contains(concat([var.management_project_id, var.workload_project_id], values(var.service_projects)), project)
+    ]) && (!var.recovery_mode || length(var.service_recovery_projects) == 0)
+    error_message = "Register only disposable JSON Keys recovery destinations outside the complete live project set; legacy recovery cannot register them."
+  }
+}
+
 module "service_project" {
   source   = "../../../modules/workload-project"
   for_each = var.recovery_mode ? {} : var.service_projects

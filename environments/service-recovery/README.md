@@ -5,10 +5,11 @@ This root prepares one isolated JSON Keys host for an exact full/differential pg
 after four hours when explicitly started. The worker restores files to backup consistency and leaves
 PostgreSQL stopped. It does not prove SQL recovery or authorize traffic cutover.
 
-This root is **not enrolled** in `ops/lib/roots.sh`, protected workflows, live assessment or drift.
-Do not apply it directly. Enrollment must bind its private inputs and reviewed plan to the existing
-recovery custody/admission path first; see [activation](#activation-gates). Legacy logical recovery
-and current backups remain unchanged.
+The protected recovery workflow enrolls **host preparation only**, disabled unless
+`NATIVE_RECOVERY_PREPARATION_ENABLED=true`. Assessment and drift inspect registered state without
+that mutation flag. Do not apply this root directly; see [preparation](#guarded-host-preparation)
+and the separate [activation gates](#activation-gates). Legacy logical recovery and current backups
+remain unchanged.
 
 The prepared image consumes the published Wolfi database patch. Its blocking image scan is unchanged;
 green scans and offline proofs do not authorize publication, provisioning or recovery execution.
@@ -40,6 +41,38 @@ attempts. A new attempt requires reconciliation and separately approved fresh de
 `repo-target-time` is preserved for both catalog reads and restore. Soft-delete repair can make an
 object visible only under a newer generation: changing that cutoff is a new selection, not a retry.
 
+## Guarded host preparation
+
+Protected `FOUNDATION_TFVARS_JSON` registers `service_recovery_projects` as a map from disposable
+project ID to `json-keys`. It creates no project or grant. `NATIVE_RECOVERY_TFVARS_JSON` maps each
+destination to this root's complete `{ "state_bucket": "…", "recovery": { … } }` input. The nested
+fields are defined in [variables.tf](variables.tf); include management, legacy workload and every
+registered service project in `protected_projects`. Unknown fields, unregistered destinations,
+peer sources, implicit backup selection and mismatched backend coordinates fail before authentication.
+Digest validation checks the image's exact destination and syntax, **not its provenance**; reviewed
+publication/promotion and backup compatibility remain prerequisites.
+
+After separate activation approval, dispatch from clean, current `master`:
+
+```text
+go run ./cmd/infra recovery plan-native <registered-destination>
+go run ./cmd/infra recovery apply-native <registered-destination> <plan-run-id-attempt>
+```
+
+Both runs require `production-recovery` review and retain global infrastructure serialization.
+The private plan expires after 24 hours and binds the exact commit, destination and input bytes.
+Preparation accepts only creates/no-ops in the disposable project, with the VM's desired state
+`TERMINATED`; updates, replacements, imports and cleanup require a separate maintenance path.
+
+State and converged inputs use `foundation/recovery/services/DESTINATION/`; private plans use
+`foundation/plans/recovery/services/DESTINATION/`. These reuse the existing recovery storage boundary.
+Apply acquires the **source service's** guard before consuming the plan, then verifies zero-change
+convergence and publishes `host-prepared` completion under that source's receipt folder before
+releasing the exact guard generation. This records host preparation, not database recovery or health.
+Uncertain apply, publication or acknowledgement retains the guard; use the existing
+[operation inspector and finisher](../../docs/service-operations.md#inspect-an-interrupted-apply).
+Neither planning nor successful preparation starts the restore unit, formats storage or cuts over traffic.
+
 ## Resources and cost boundary
 
 Every address below is conditional on `recovery`. The root grants no IAM roles, enables no account,
@@ -61,13 +94,13 @@ before provisioning. This is not an additional permanent backup VM.
 
 ## Activation gates
 
-1. Enroll this root in the existing protected recovery workflow, scope resolver, plan custody,
-   assessment and drift paths in a reviewed change. Bind the complete protected registration, request,
-   image provenance and destination to the exact consumed plan and durable operation intent. Retain
-   the service guard through the accepted disruptive outcome; never release ambiguous work.
+1. Review the protected registration and private inputs, then separately authorize host preparation.
+   The workflow is implemented but disabled. Execution, SQL recovery and cutover are not enrolled;
+   each needs its own guarded outcome before it may run. Never release ambiguous work.
 2. Separately approve image publication/promotion and effective IAM. The existing management recovery
    account stays disabled until approved. Cross-project attachment, organization policy, IAP/OS Login,
-   exact native-bucket access and Artifact Registry reads need explicit review. Do not attach the
+   exact native-bucket access, Artifact Registry reads, source guard and completion-folder access
+   need explicit review. This enrollment adds no IAM grants. Do not attach the
    writer or widen its grants. Private Google Access is not a service perimeter or an IAM grant.
 3. Review a fresh empty disposable project, source ownership, independent database identity/major,
    selected native label, retained image and any repository cutoff. Record lost writes and source

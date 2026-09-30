@@ -20,8 +20,15 @@ import (
 func applyStorage(t *testing.T, f *sandbox, failure string) {
 	t.Helper()
 	objects := f.env["FAKE_GCS_ROOT"]
+	bucket := f.env["STATE_BUCKET"]
+	if bucket == "" {
+		bucket = "agora-management-test-123-tofu-state"
+	}
 	planMetadata := filepath.Join(filepath.Dir(f.env["FAKE_TOFU_REQUIRE_ABSENT"]), "plan.metadata.json")
-	guardPath := filepath.Join(objects, "agora-management-test-123-tofu-state/services/agora-json-keys-test/release/operation.json")
+	if f.env["ROOT_NAME"] == "service-recovery" {
+		planMetadata = filepath.Join(filepath.Dir(f.env["FAKE_TOFU_REQUIRE_ABSENT"]), "metadata.json")
+	}
+	guardPath := filepath.Join(objects, bucket, "services/agora-json-keys-test/release/operation.json")
 	if failure == "busy" {
 		writeJSON(t, guardPath, object{"root": "service-foundation", "runId": "other-writer"})
 	}
@@ -33,7 +40,7 @@ func applyStorage(t *testing.T, f *sandbox, failure string) {
 		}()
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method == http.MethodDelete {
-			if r.URL.Path != "/b/agora-management-test-123-tofu-state/o/services/agora-json-keys-test/release/operation.json" ||
+			if r.URL.Path != "/b/"+bucket+"/o/services/agora-json-keys-test/release/operation.json" ||
 				r.URL.Query().Get("ifGenerationMatch") != "42" || r.URL.Query().Get("generation") != "" {
 				t.Error("delete must match only the acknowledged live guard generation")
 			}
