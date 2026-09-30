@@ -128,12 +128,25 @@ protected foundation in that project, not routine release. Keeping the host idle
 VM/disk/snapshot cost; leaving `database = null` creates none of those resources. No existing production
 resource or state address is moved by this definition.
 
-Native backup repository networking is also disabled. The shared foundation's
+### Native repository network selection
+
+The reviewed `.envrc` keeps `INFRA_PGBACKREST_REPOSITORY_SERVICES='[]'` until network activation
+is approved. After the selected project's database/repository identities exist, the human operator
+can publish `["json-keys"]` through the same `foundation-setup configure` command. The
+`--pgbackrest-repository-services '["json-keys"]'` flag overrides that environment value for one
+call. Keep the approved selection in `.envrc` for subsequent publications.
+
+Only JSON Keys is supported, and it must also appear in `INFRA_SERVICE_PROJECTS`. Missing, null,
+malformed, duplicate or unsupported selections fail before external commands. Use `[]` explicitly
+to select no repository rules; publishing it after activation requests removal in the next plan
+and needs its own review. The publisher replaces the complete configuration in both protected
+environments; it does not merge remote settings.
+
+The shared foundation's
 [`pgbackrest_repository_services` contract](../../environments/production/foundation#resource-inventory)
-requires the selected project's database/repository identities to exist first. This configuration
-publisher does not expose that opt-in yet: its reviewed publication, native TLS and host/container
-allow-list, and effective own-service/peer-denial checks belong to a separate activation change.
-The rules alone start nothing and grant neither operator access nor API permissions.
+owns the rules. Its recovery mode ignores the copied selection and creates no repository network.
+Publishing the input starts no host and applies no IAM or network change. Native TLS, the
+host/container allow-list and effective own-service/peer-denial checks remain activation gates.
 
 ## Protected service-foundation plans
 
