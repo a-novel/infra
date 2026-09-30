@@ -2,9 +2,10 @@
 
 Service projects are opt-in project shells with separate release identities and private storage
 folders. Production still runs in the existing workload project, under the existing release identity.
-Keep `INFRA_SERVICE_PROJECTS='{}'` in `.envrc` until a separately reviewed onboarding change supplies
-the exact project IDs, temporary provisioning permissions, verification, and access-removal
-commands. Merging the project module is not authorization to create a project or move a workload.
+The reviewed `.envrc` selects only `json-keys → a-novel-json-keys-prod`; follow the
+[JSON Keys project-shell procedure](./onboard-json-keys-project.md) before publishing that selection.
+The project is permanent but initially synthetic-only. Runtime and repository-network activation
+remain disabled. Merging this configuration does not create the project or move a workload.
 
 ## Review the configuration
 
@@ -73,7 +74,8 @@ Before the first apply creates federation, create each exact `<environment>-<ser
 GitHub environment with required reviewers, protected-branch restriction, and admin bypass disabled.
 An environment name in a token does not prove those protections exist.
 
-The onboarding PR must record the exact operator commands and successful sanitized results for:
+The onboarding PR supplies the operator procedure; human activation must record successful
+sanitized results for:
 
 1. Project Creator and billing-link authority for the protected foundation identity, plus temporary
    Shared VPC administration at the appropriate parent. All projects must belong to the same
