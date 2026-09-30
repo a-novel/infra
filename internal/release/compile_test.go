@@ -12,6 +12,64 @@ import (
 
 func TestCompiler(t *testing.T) {
 	t.Parallel()
+	waitlist := object{"url": "https://script.google.com/macros/s/fixture-id/exec", "secret_version": json.Number("14")}
+	for _, testCase := range []struct {
+		name, action, service string
+		before, after         any
+		invalid               bool
+	}{
+		{name: "Enable", action: "deploy", service: "authentication", after: waitlist},
+		{name: "Disable", action: "deploy", before: waitlist},
+		{name: "RollbackEnabled", action: "rollback", before: waitlist},
+		{name: "RollbackKeyRotation", action: "rollback", before: waitlist, after: object{"url": "https://script.google.com/macros/s/fixture-id/exec", "secret_version": json.Number("15")}},
+		{name: "RollbackDisabled", action: "rollback", after: object{"url": "https://script.google.com/macros/s/fixture-id/exec", "secret_version": json.Number("15")}},
+		{name: "UnchangedPeer", action: "deploy", service: "json_keys", before: waitlist, after: waitlist},
+		{name: "ChangedPeer", action: "deploy", service: "json_keys", after: waitlist, invalid: true},
+		{name: "MissingVersion", action: "deploy", after: object{"url": "https://script.google.com/macros/s/fixture-id/exec"}, invalid: true},
+		{name: "MissingURL", action: "deploy", after: object{"secret_version": 14}, invalid: true},
+		{name: "Payload", action: "deploy", after: object{"url": "https://script.google.com/macros/s/fixture-id/exec", "secret_version": "private-payload"}, invalid: true},
+		{name: "ExtraPayload", action: "deploy", after: object{"url": "https://script.google.com/macros/s/fixture-id/exec", "secret_version": 14, "secret": "private-payload"}, invalid: true},
+		{name: "DevelopmentURL", action: "deploy", after: object{"url": "https://script.google.com/macros/s/fixture-id/dev", "secret_version": 14}, invalid: true},
+		{name: "ForeignURL", action: "deploy", after: object{"url": "https://private-payload.example/exec", "secret_version": 14}, invalid: true},
+		{name: "Query", action: "deploy", after: object{"url": "https://script.google.com/macros/s/fixture-id/exec?private-payload", "secret_version": 14}, invalid: true},
+		{name: "ZeroVersion", action: "deploy", after: object{"url": "https://script.google.com/macros/s/fixture-id/exec", "secret_version": 0}, invalid: true},
+		{name: "FractionalVersion", action: "deploy", after: object{"url": "https://script.google.com/macros/s/fixture-id/exec", "secret_version": 1.5}, invalid: true},
+	} {
+		t.Run("Waitlist/"+testCase.name, func(t *testing.T) {
+			t.Parallel()
+			fixture := setup(t)
+			if testCase.before != nil {
+				section(fixture.receipt, "activeTfvars", "application_release", "authentication")["waitlist"] = testCase.before
+			}
+			section(fixture.config, "authentication")["waitlist"] = testCase.after
+			if testCase.service != "" {
+				fixture.change(testCase.service, false)
+			}
+			err := fixture.compile(t, testCase.action, "", "")
+			if testCase.invalid {
+				require.Error(t, err)
+				require.NotContains(t, err.Error(), "private-payload")
+				require.NoDirExists(t, fixture.files[3])
+				return
+			}
+			require.NoError(t, err)
+			for _, file := range []string{"candidate.tfvars.json", "active.tfvars.json"} {
+				require.Equal(t, testCase.after, section(result(t, fixture, file), "application_release", "authentication")["waitlist"])
+			}
+			require.Equal(t, testCase.before, section(result(t, fixture, "rollback.tfvars.json"), "application_release", "authentication")["waitlist"])
+			selected := testCase.after
+			if testCase.action == "rollback" {
+				selected = testCase.before
+			}
+			versions := field(result(t, fixture, "release.json"), "cloud", "secretVersions")
+			if selected == nil {
+				require.Len(t, versions, 7)
+			} else {
+				require.Len(t, versions, 8)
+				require.Contains(t, versions, []any{"production-authentication-waitlist-secret", selected.(object)["secret_version"]})
+			}
+		})
+	}
 	for _, testCase := range []struct {
 		name, service string
 		database      bool

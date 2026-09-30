@@ -61,6 +61,7 @@ An active workflow must finish or be recovered before another production command
 | Rehearse native backup adoption before activation      | [Accept native backups](./accept-native-backups.md)                    |
 | Add, rotate, disable, or destroy a payload version     | [Add or rotate a secret version](./secret-versions.md)                 |
 | Replace or verify the hosted SMTP provider             | [Configure hosted SMTP](./configure-hosted-smtp.md)                    |
+| Connect Authentication to the invitation list          | [Configure the waitlist](./configure-waitlist.md)                      |
 | Diagnose an alert or scheduled-check failure           | [Respond to production alerts](./respond-to-alerts.md)                 |
 | Rebuild after the workload project is untrusted        | [Recover production into a disposable project](./disaster-recovery.md) |
 | Recover an incorrect OpenTofu state object             | [Recover a prior state generation](./state-recovery.md)                |

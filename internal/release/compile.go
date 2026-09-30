@@ -223,6 +223,9 @@ func (compiler *Compiler) CompileRelease(files []string, identity Identity, acti
 	}
 	database["hosts"] = databaseHosts
 	authentication := obj(application, "authentication")
+	if waitlist := obj(config, "authentication", "waitlist"); waitlist != nil {
+		authentication["waitlist"] = waitlist
+	}
 	for _, key := range []string{"smtp", "super_admin_email", "web_client_url"} {
 		if value, exists := obj(config, "authentication")[key]; exists {
 			authentication[key] = value
