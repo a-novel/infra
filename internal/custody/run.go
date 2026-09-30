@@ -73,10 +73,16 @@ func run(ctx context.Context, args []string, getenv func(string) string, execute
 	storage := store{ctx, execute, args[2], directory}
 	switch args[0] {
 	case "recovery":
-		if args[1] != "execute" {
-			return failure{64, "Native recovery supports only guarded execution."}
+		switch args[1] {
+		case "execute":
+			return storage.restore(args[3:], getenv, output, options)
+		case "cleanup":
+			return storage.cleanup(args[3:], getenv, output, options)
+		case "cleanup-project":
+			return storage.legacyCleanup(args[3:], getenv, options)
+		default:
+			return failure{64, "Unknown protected recovery action."}
 		}
-		return storage.restore(args[3:], getenv, output, options)
 	case "operation":
 		if args[1] != "inspect" && args[1] != "finish" {
 			return failure{64, "Service operations support inspection or finishing exact successful completion."}

@@ -32,6 +32,7 @@ type operationEvidence struct {
 	native    *submission.OperationEvidence
 	rotation  *rotationIntent
 	restore   *restoreIntent
+	cleanup   *cleanupIntent
 }
 
 func (custody store) inspectOperation(action string, args []string, getenv func(string) string, output io.Writer, options []option.ClientOption) error {
@@ -130,6 +131,8 @@ func readOperation(ctx context.Context, client *storage.Service, bucket string, 
 		evidence.rotation, evidence.completed, err = inspectRotation(ctx, client, expected, guard, data)
 	case "native-restore":
 		evidence.restore, evidence.completed, err = inspectRestore(ctx, client, expected, guard, data)
+	case "native-cleanup":
+		evidence.cleanup, evidence.completed, err = inspectCleanup(ctx, client, expected, guard, data)
 	default:
 		err = failure{70, "Unsupported operation kind; retain the guard for protected reconciliation."}
 	}
@@ -210,6 +213,15 @@ func (evidence operationEvidence) report(output io.Writer) error {
 		}
 		_, err := fmt.Fprintf(output, "Service: %s (%s)\nGuard generation: %d (%s)\nNative restoration: %s\nCompletion: %s\nNever replay this destination. Evidence is not current health, source fencing, cutover or permission to unlock.\n",
 			evidence.intent.Service, evidence.intent.Project, evidence.guard.Generation, state, evidence.restore.Target.Project, completion)
+		return err
+	}
+	if evidence.cleanup != nil {
+		completion := "not recorded; inspect project lifecycle without replaying deletion"
+		if evidence.completed {
+			completion = "deletion-requested; not permanent erasure or final billing reconciliation"
+		}
+		_, err := fmt.Fprintf(output, "Service: %s (%s)\nGuard generation: %d (%s)\nCleanup: %s (%s)\nCompletion: %s\nManagement evidence and reservations remain retained. Never reuse this destination.\n",
+			evidence.intent.Service, evidence.intent.Project, evidence.guard.Generation, state, evidence.cleanup.Target.Project, evidence.cleanup.Target.Number, completion)
 		return err
 	}
 	completion := "not recorded; apply may still have changed resources"

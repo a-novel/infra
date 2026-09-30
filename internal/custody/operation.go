@@ -103,6 +103,13 @@ func (custody store) admit(args []string, inputs []byte, plan string, getenv fun
 	if _, err := fmt.Fprintf(output, "Acknowledged service guard generation: %d\n", guard.Generation); err != nil {
 		return nil, err
 	}
+	if intent.Root == "service-recovery" {
+		name := "foundation/recovery/services/" + intent.Project + "/restore-attempt.json"
+		used, err := liveGeneration(custody.ctx, client, custody.bucket, name)
+		if err != nil || used != 0 {
+			return nil, failure{70, "Recovery destination was already used or its reservation is unreadable; apply blocked and guard retained."}
+		}
+	}
 	return &serviceOperation{client: client, intent: intent, guard: guard}, nil
 }
 

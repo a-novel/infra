@@ -772,12 +772,17 @@ go run ./cmd/infra recovery cleanup-project \
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-The helper waits through `production-recovery`. The workflow installs no Node or OpenTofu tooling for
-cleanup. It matches the requested source-receipt ID to the exact committed tuple, replays the
-historical deletion-label gate for the exact merge, rejects management/production IDs, verifies the
-five code-owned recovery labels, requires the exact recovery service account to hold only the
-predefined project-deletion boundary, then requests deletion with all provider output hidden.
-Expected safe output is `Disposable recovery project is DELETE_REQUESTED.`
+The helper waits through `production-recovery`. Cleanup builds the shared Go tooling but installs
+no OpenTofu runtime. It matches the requested source-receipt ID to the exact committed tuple, checks
+the historical deletion-label gate for the exact merge, rejects every registered management/workload/
+service project, and verifies the five recovery labels. It requires an exact unconditional recovery
+Project Deleter binding, then requests deletion once using Google's client and the verified numeric
+project identity. Other effective privileges are not inferred from that binding. Private API payloads
+remain hidden. The summary reports `Disposable recovery project is DELETE_REQUESTED`; this is not
+permanent erasure or settled billing. An uncertain response requires read-only inspection, not replay.
+
+Native drills use the same project-deletion implementation with additional completion evidence and
+source admission; see [native cleanup](../../environments/service-recovery/README.md#guarded-project-cleanup).
 
 Google project deletion is recoverable for its documented pending-deletion window. Do not restore a
 completed drill project unless the deletion itself was erroneous; preserve the private incident

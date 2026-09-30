@@ -13,6 +13,9 @@ either mutation flag. Do not apply this root directly; see [preparation](#guarde
 and the separate [activation gates](#activation-gates). Legacy logical recovery and current backups
 remain unchanged.
 
+[Project cleanup](#guarded-project-cleanup) has its own disabled activation flag and committed
+authorization. Merging these paths does not provision resources, restore data or delete a project.
+
 The prepared image consumes the published Wolfi database patch. Its blocking image scan is unchanged;
 green scans and offline proofs do not authorize publication, provisioning or recovery execution.
 This is a fresh-database boundary, not an in-place upgrade of Debian data directories. Retain the
@@ -134,6 +137,54 @@ Any missing WAL, failed SQL check, unconfirmed shutdown or missing completion re
 the attempt. Do not resume SQL on an earlier files-only destination or replay a failed verification;
 review a fresh destination and its complete selection instead.
 
+## Guarded project cleanup
+
+Cleanup uses the same Resource Manager deletion path as legacy drills, not an OpenTofu destroy
+or a second per-resource coordinator. It is limited to a **completed** native recovery with private
+evidence exported to management storage. Active, failed or uncertain work must first be reconciled;
+cleanup is not an escape hatch from a held service guard.
+
+Before activation, independently review the whole disposable project's inventory and remove its
+temporary cross-project grants. Commit the exact target to
+[`native-recovery-cleanup.json`](../../deploy/production/native-recovery-cleanup.json):
+`replacementProject`, numeric `projectNumber` as a string, `service = "json-keys"`, `sourceProject`,
+`restoreGeneration` as a string, and `crossProjectAccessRevoked = true`. The generation selects
+the completed **restore's source guard**, not its preparation generation. Its retained evidence
+binds the exact preparation, input bytes, numeric VM/disk identities and selected recovery outcome.
+The revocation field is a human attestation, not an automated effective-IAM proof.
+
+The authorization PR needs the existing human `allow-resource-deletion` label **before merge**.
+Separately approve `NATIVE_RECOVERY_CLEANUP_ENABLED=true` in `production-recovery`. The project must
+carry the five legacy recovery labels (`application=agora`, `environment=production`,
+`managed-by=opentofu`, `plane=workload`, `recovery=true`) and the exact unconditional project-local
+`roles/resourcemanager.projectDeleter` binding for `infra-recovery@MANAGEMENT.iam.gserviceaccount.com`.
+Those labels and permissions are activation prerequisites, not changes made by this implementation.
+Keep the protected destination registration/inputs available through reconciliation.
+
+From clean, current `master`, request the separately reviewed operation:
+
+```text
+go run ./cmd/infra recovery cleanup-native <destination> 'DELETE <destination>'
+```
+
+The workflow validates scope before authentication. Under the source service guard it rechecks the
+prepared state, exact stopped host/disk and project identity, then creates a permanent cleanup
+reservation before **one** deletion request. Success records `deletion-requested` in the existing
+receipt folder before releasing that guard. The project includes its disks, DNS and image repository;
+its local restored data is disposable. Management-owned backup objects, state, private evidence and
+both destination reservations remain untouched. Preparation and restore cannot reuse that destination.
+
+An uncertain response retains admission. Use the existing
+[inspector and finisher](../../docs/service-operations.md#inspect-an-interrupted-apply), never rerun
+cleanup. After the original cleanup workflow ends, the finisher may reconstruct missing completion
+only by reading the exact project's `DELETE_REQUESTED` state. It needs separately reviewed
+`resourcemanager.projects.get` access, **not** project-delete authority. ACTIVE, inaccessible or
+missing projects do not establish success; manual reconciliation is required. No deletion is replayed.
+
+`deletion-requested` does not prove permanent erasure or final billing settlement. Verify both
+separately, and reset the committed authorization to its inactive null/false template through a PR.
+Do not undelete a completed drill or remove retained reservations to reuse it.
+
 ## Resources and cost boundary
 
 Every address below is conditional on `recovery`. The root grants no IAM roles, enables no account,
@@ -176,7 +227,7 @@ before provisioning. This is not an additional permanent backup VM.
    Prove the actual host's network and process boundaries, roles/extensions/data and source-host-loss recovery.
    Cutover additionally requires application compatibility, source fencing and lost-write acceptance.
 7. Export evidence and publish the reviewed outcome through existing private custody. Stop the VM,
-   revoke temporary access, then review a cleanup plan for only this disposable project's resources.
+   revoke temporary access, then separately approve the exact project cleanup described above.
    Keep original backup objects, historical logical readers and retained receipts intact.
 
 Offline tests exercise real pgBackRest restoration and the worker's policy, with local synthetic

@@ -71,6 +71,20 @@ Inspection reads those generation-pinned records. Finishing can remove only a re
 after the exact `recovery restore-native` workflow attempt ends; it cannot repair missing completion,
 restart a worker or clear the destination reservation.
 
+### Implemented: disposable native project cleanup
+
+The independently disabled [cleanup path](../environments/service-recovery/README.md#guarded-project-cleanup)
+reuses whole-project deletion after completed recovery. It checks the exact committed authorization,
+completed preparation/restore evidence, original writer termination and stopped host identities.
+The source guard and permanent cleanup reservation precede the single Resource Manager request.
+`deletion-requested` completion means that state was observed, not permanent erasure or settled billing.
+All management state, evidence, backups and destination reservations survive cleanup.
+
+After writer termination, the finisher can repair missing completion by reading the exact project's
+`DELETE_REQUESTED` state. It never repeats deletion or treats an inaccessible/missing project as success.
+The foundation finisher needs separately reviewed project-read permission only. Failed or uncertain
+restores remain outside normal cleanup; do not delete their guard or destination to bypass reconciliation.
+
 ### Implemented: guarded native release
 
 Protected applies and the [native rotation dispatcher](../modules/service-job-access#guarded-rotation)
@@ -163,8 +177,9 @@ repairs evidence or retries apply. See [Storage version selection](https://docs.
 ### Finish a successful operation
 
 This **off-by-default** path finishes converged service-root applies, successful native JSON Keys
-releases, successful rotations and recorded native recovery. Native releases and acknowledged rotations can reconstruct a
-missing completion record from exact native success evidence. Applies without recorded convergence,
+releases, successful rotations, recorded native recovery and observed native project deletion.
+Native releases, acknowledged rotations and project cleanup can reconstruct a missing completion
+record from their exact native outcome. Applies without recorded convergence,
 unacknowledged rotations and unknown record kinds remain blocked.
 
 After inspecting the exact generation, separately approve `SERVICE_OPERATION_RECOVERY_ENABLED=true`

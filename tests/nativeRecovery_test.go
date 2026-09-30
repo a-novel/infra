@@ -42,6 +42,11 @@ func TestNativeRecoveryInputs(t *testing.T) {
 		{name: "Restore/Disabled", env: "NATIVE_RECOVERY_EXECUTION_ENABLED", value: "false"},
 		{name: "Restore/WrongConfirmation", env: "CONFIRM", value: "RESTORE wrong"},
 		{name: "Restore/PlanMixedIn", env: "RECOVERY_PLAN_ID", value: "123-1"},
+		{name: "Cleanup/Exact", valid: true},
+		{name: "Cleanup/Disabled", env: "NATIVE_RECOVERY_CLEANUP_ENABLED", value: "false"},
+		{name: "Cleanup/WrongConfirmation", env: "CONFIRM", value: "DELETE wrong"},
+		{name: "Cleanup/MixedPreparation", env: "PREPARATION_GENERATION", value: "42"},
+		{name: "Cleanup/MixedPlan", env: "RECOVERY_PLAN_ID", value: "123-1"},
 		{name: "Disabled", env: "NATIVE_RECOVERY_PREPARATION_ENABLED", value: "false"},
 		{name: "WrongWorkflow", env: "GITHUB_WORKFLOW_REF", value: "a-novel/infra/.github/workflows/foundation.yaml@refs/heads/master"},
 		{name: "MissingPlan", env: "RECOVERY_OPERATION", value: "apply-native"},
@@ -62,6 +67,11 @@ func TestNativeRecoveryInputs(t *testing.T) {
 			t.Parallel()
 			f := setup(t)
 			config := nativeInputs(t, f)
+			if strings.HasPrefix(testCase.name, "Cleanup/") {
+				f.env["NATIVE_RECOVERY_PREPARATION_ENABLED"] = "false"
+				f.env["NATIVE_RECOVERY_CLEANUP_ENABLED"], f.env["RECOVERY_OPERATION"] = "true", "cleanup-native"
+				f.env["CONFIRM"] = "DELETE a-novel-recovery-proof"
+			}
 			if strings.HasPrefix(testCase.name, "Restore/") {
 				f.env["NATIVE_RECOVERY_PREPARATION_ENABLED"] = "false"
 				f.env["NATIVE_RECOVERY_EXECUTION_ENABLED"], f.env["RECOVERY_OPERATION"] = "true", "restore-native"
@@ -127,6 +137,7 @@ func TestNativeRecoveryApply(t *testing.T) {
 		{"ConvergenceFailure", "converge", 1, true},
 		{"LostCompletion", "completion-ack", 70, true},
 		{"SuccessorGuard", "successor", 70, true},
+		{"RetiredDestination", "used", 70, true},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
@@ -134,6 +145,9 @@ func TestNativeRecoveryApply(t *testing.T) {
 			input := nativeInputs(t, f)
 			config := filepath.Join(f.dir, "inputs.json")
 			writeJSON(t, config, input)
+			if testCase.fault == "used" {
+				writeJSON(t, filepath.Join(f.env["FAKE_GCS_ROOT"], f.env["STATE_BUCKET"], "foundation/recovery/services/a-novel-recovery-proof/restore-attempt.json"), object{})
+			}
 			writeJSON(t, filepath.Join(f.env["FAKE_GCS_ROOT"], f.env["STATE_BUCKET"], "foundation/recovery/services/a-novel-recovery-proof/default.tfstate"), object{"outputs": object{}})
 			bucket, commit := f.env["STATE_BUCKET"], strings.Repeat("a", 40)
 			f.env["GITHUB_REPOSITORY"], f.env["GITHUB_SHA"] = "a-novel/infra", commit
@@ -214,7 +228,9 @@ func TestNativeRecoveryWorkflow(t *testing.T) {
 		{"BuildWithoutPrivateInputs", privateDuringBuild, false},
 		{"ExplicitActivation", job.Env["NATIVE_RECOVERY_PREPARATION_ENABLED"], "${{ vars.NATIVE_RECOVERY_PREPARATION_ENABLED }}"},
 		{"MasterOnly", strings.Contains(job.If, "github.ref == 'refs/heads/master'"), true},
-		{"LegacyExcluded", strings.Contains(recovery.Jobs["recover"].If, "inputs.operation != 'plan-native' && inputs.operation != 'apply-native'"), true},
+		{"LegacyExcluded", strings.Contains(recovery.Jobs["recover"].If, "!endsWith(inputs.operation, '-native')"), true},
+		{"CleanupActivation", job.Env["NATIVE_RECOVERY_CLEANUP_ENABLED"], "${{ vars.NATIVE_RECOVERY_CLEANUP_ENABLED }}"},
+		{"CleanupSelection", job.Steps[stepIndex(t, job.Steps, "custody recovery cleanup")].If, "inputs.operation == 'cleanup-native'"},
 		{"BoundInputs", job.Steps[apply].Env["TOFU_VAR_FILE"], "${{ steps.scope.outputs.file }}"},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
