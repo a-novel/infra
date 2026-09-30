@@ -95,7 +95,8 @@ granting permission to create `.tflock` or state objects. OpenTofu documents the
 ## Platform visual-test storage
 
 [`visual-tests.tf`](./visual-tests.tf) owns Drive API enablement and keyless identities from `visual_test_platforms`.
-A Workspace administrator owns the dedicated test Shared Drive and each platform's folder grants. The
+A Workspace administrator configures folder grants in the existing **Platform** Shared Drive.
+Studio uses `studio/ci/references` and `studio/ci/results`. The
 [visual-test storage runbook](../docs/runbooks/visual-test-storage.md) covers setup, verification,
 retention and recovery. This configuration adds no visual-test GCS buckets.
 
@@ -104,7 +105,7 @@ retention and recovery. This configuration adds no visual-test GCS buckets.
 | `google_project_service.management["drive.googleapis.com"]`                                         | Enables Drive requests charged to the management project's API quota. Shared Drive storage belongs to Workspace.                                                                                                                                                                                                                         | Kept enabled on removal from configuration. Standard API usage currently has no additional charge; future overage policy is linked below.                                                             |
 | `google_service_account.visual_tests["studio-ci"]` and `["studio-maintenance"]`                     | Separate keyless candidate and trusted maintenance identities. They receive no project-wide roles, state, backup or secret access.                                                                                                                                                                                                       | `prevent_destroy`; replacing an account requires updating Workspace membership and consumer coordinates. Accounts need no paid Workspace seat.                                                        |
 | `google_iam_workload_identity_pool_provider.visual_tests["studio-ci"]` and `["studio-maintenance"]` | Existing pool and GitHub issuer, owner ID `131281268`, Studio repository ID `1338436652` and exact repo name. CI accepts `main.yaml` branch pushes/merge groups. Maintenance accepts master `main.yaml` pushes for publication and master `visual-tests.yaml` workflow-run, pull-request-target, delete and schedule events for cleanup. | Provider-owned `studio-visual-ci` / `studio-visual-maintenance` boundaries, canonical audience, provider deletion prevention and `prevent_destroy`. Workflow renames require a reviewed trust change. |
-| `google_service_account_iam_member.visual_tests["studio-ci"]` and `["studio-maintenance"]`          | Each constant provider boundary can impersonate only its matching account. Drive access is separately authorized by folder grants and maintenance Drive membership.                                                                                                                                                                      | Additive Workload Identity User bindings. Removing a binding disables federation. No account keys, Token Creator grant or domain-wide delegation.                                                     |
+| `google_service_account_iam_member.visual_tests["studio-ci"]` and `["studio-maintenance"]`          | Each constant provider boundary can impersonate only its matching account. Drive access is separately authorized by folder grants and separately verified maintenance deletion authority.                                                                                                                                                | Additive Workload Identity User bindings. Removing a binding disables federation. No account keys, Token Creator grant or domain-wide delegation.                                                     |
 
 Provider references: [API service](https://registry.terraform.io/providers/hashicorp/google/8.2.0/docs/resources/google_project_service),
 [service account](https://registry.terraform.io/providers/hashicorp/google/8.2.0/docs/resources/google_service_account),
@@ -118,8 +119,9 @@ Google documents [GitHub federation](https://cloud.google.com/iam/docs/workload-
 The `visual_tests` output exposes the OAuth scope, per-platform provider/account pairs, folder paths
 and required Drive/folder roles. These roles are a handoff contract, not Workspace permissions applied by OpenTofu. Infra
 PR checks stay cloud-blind. Candidate CI can create and edit evidence in the platform results folder;
-only trusted maintenance can replace references or permanently delete batches. Maintenance is Manager
-of the dedicated test Drive; the trusted workflow limits operations to its platform folders and repository. Workspace operators
+only trusted maintenance can replace references or permanently delete batches. Maintenance needs `organizer` authority on a parent for permanent deletion; its folder-only scope
+must be verified before activation. Drive-wide Manager access needs explicit owner approval. The
+trusted workflow limits operations to its platform folders and repository. Workspace operators
 review effective membership, sharing restrictions and storage usage separately from Google Cloud IAM.
 
 ## Disabled JSON Keys native-backup custody

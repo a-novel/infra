@@ -104,16 +104,16 @@ resource "google_service_account_iam_member" "visual_tests" {
 }
 
 output "visual_tests" {
-  description = "Per-platform Drive handoff; a Workspace administrator grants folder access and dedicated test Drive maintenance membership."
+  description = "Per-platform Drive handoff; a Workspace administrator verifies folder access and maintenance deletion authority before activation."
   value = {
-    oauth_scope            = "https://www.googleapis.com/auth/drive"
-    maintenance_drive_role = "organizer"
-    ci_folder_roles        = { references = "reader", results = "writer" }
+    oauth_scope             = "https://www.googleapis.com/auth/drive"
+    maintenance_parent_role = "organizer"
+    ci_folder_roles         = { references = "reader", results = "writer" }
     platforms = { for platform, github in var.visual_test_platforms : platform => {
       repository = github.repository
       folders = {
-        references = "${split("/", github.repository)[1]}/references"
-        results    = "${split("/", github.repository)[1]}/results"
+        references = "${platform}/ci/references"
+        results    = "${platform}/ci/results"
       }
       identities = { for role in ["ci", "maintenance"] : role => {
         service_account   = google_service_account.visual_tests["${platform}-${role}"].email

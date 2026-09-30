@@ -1,7 +1,8 @@
 # Platform visual-test storage
 
-Platform visual evidence uses one dedicated **Platform visual tests** Google Workspace Shared Drive.
-Each platform owns a folder with separate `references` and `results` children. Bootstrap owns the
+Platform visual evidence uses the existing **Platform** Shared Drive in Agorastoryverse Google Workspace.
+Studio stores batches under `studio/ci`, with separate `references` and `results` children.
+Future platforms reuse `<platform>/ci/references` and `<platform>/ci/results`. Bootstrap owns the
 Drive API and GitHub federation described in the [resource inventory](../../bootstrap/README.md#platform-visual-test-storage).
 Shared workflows own comparison, publication and cleanup; platforms supply identity and folder IDs.
 Merging infrastructure configuration alone does not change existing artifact uploads.
@@ -29,16 +30,15 @@ provider/account coordinates are non-secret repository variables.
 2. Read `visual_tests` through approved operator state access. For Studio, use
    `visual_tests.platforms.studio`; the accounts remain `studio-visual-ci` and
    `studio-visual-maintenance` in the management project.
-3. A Workspace administrator creates the dedicated **Platform visual tests** Shared Drive once, with
-   named human Managers for recovery. Keep ordinary company documents outside it. Create the paths
-   exported under each platform's `folders`: currently `platform-studio/references` and
-   `platform-studio/results`. Record the two child folder IDs from their URLs, not the Drive ID.
-4. Grant access using the table below. CI must have no Drive-level or platform-parent membership;
-   share only its two child folders. Allow explicit nonmember folder sharing (`driveMembersOnly=false`)
-   and the service accounts under external-sharing policy; restrict folder sharing to Managers.
-   Do not enable public, link-wide or domain-wide access. Maintenance is a Manager of the dedicated
-   test Drive, so its authority spans all platform folders. The trusted action additionally scopes
-   every list, upload and cleanup to its configured folder IDs and GitHub repository.
+3. A Workspace administrator locates the existing **Platform** Shared Drive and **studio → ci**
+   directory. Record its actual URL/ID; names alone are not unique. Create or reuse only the exported
+   child paths: `studio/ci/references` and `studio/ci/results`. Record both child folder IDs from their
+   URLs, not the Drive ID or the `ci` parent ID. No new Shared Drive is needed.
+4. Grant CI Viewer access on `references` and Contributor access on `results`, with no Drive-level
+   or parent membership. Workspace policy must permit explicit nonmember folder sharing and these
+   external service accounts. Existing Drive-wide restrictions affect other content too; review them
+   with the Workspace administrator before changing them. Keep evidence private and restrict folder
+   sharing to Managers. Resolve maintenance deletion authority as described below before activation.
 5. Set the same six non-secret `VISUAL_*` variables in each platform repository using its own output
    and folder IDs. Request OAuth scope `https://www.googleapis.com/auth/drive` through service-account
    impersonation. No credential file is needed.
@@ -46,17 +46,29 @@ provider/account coordinates are non-secret repository variables.
    from reviewed master by setting `VISUAL_SEED_SHA` to that exact commit and rerunning its main run.
    Unset it after the first successful publication. Missing references fail ordinary comparisons.
 
-| Resource                     | CI access                                   | Maintenance access                                                        |
-| ---------------------------- | ------------------------------------------- | ------------------------------------------------------------------------- |
-| Dedicated test Drive         | No membership                               | Manager (`organizer`)                                                     |
-| `platform-studio/references` | Viewer (`reader`), direct folder grant      | Inherited Manager                                                         |
-| `platform-studio/results`    | Contributor (`writer`), direct folder grant | Inherited Manager                                                         |
-| Another platform's folders   | No access                                   | Inherited Manager; trusted action operates only on its configured folders |
+| Resource               | CI access                                   | Maintenance requirement                          |
+| ---------------------- | ------------------------------------------- | ------------------------------------------------ |
+| `studio/ci/references` | Viewer (`reader`), direct folder grant      | Publish and permanently delete reference batches |
+| `studio/ci/results`    | Contributor (`writer`), direct folder grant | Publish and permanently delete result batches    |
+| Other Platform content | No access                                   | No wider grant without explicit owner approval   |
 
-Google requires Manager authority on a parent for permanent deletion. Keeping maintenance at the
-Drive level supports that operation without depending on folder-only Manager grants. Candidate CI
-cannot replace reference files or permanently delete results. The action rejects My Drive, root
-folders, mismatched platform parents and a candidate identity with reference write authority.
+Google requires `organizer` authority on a parent for permanent deletion. The
+`maintenance_parent_role` output states this API requirement, not the scope of an applied grant.
+Ask the Workspace administrator to verify whether it can be confined to `studio/ci`. Folder-only
+Manager authority has **not** been verified in this Workspace; an Editor or Content manager grant
+is not proof that permanent deletion will work. Inspect `canListChildren`, `canAddChildren` and
+`canDeleteChildren` on both child folders as the maintenance account, then upload and permanently
+delete disposable evidence. Also verify access to unrelated Platform content is denied.
+
+The earlier proposal used Manager access across a dedicated test Drive. Do not
+carry that grant over to the existing **Platform** Drive without the owner's explicit approval.
+If folder-only deletion cannot be granted, leave activation disabled and review the permission scope
+with the owner. Do not silently broaden access or switch to Trash/30-day retention.
+
+The trusted action scopes every operation by configured folder ID and repository, but this filtering
+does not reduce the service account's Google permissions. Candidate CI cannot replace reference files
+or permanently delete results. Runtime checks reject My Drive, root folders, mismatched parents,
+candidate reference write authority and maintenance without permanent-delete capability.
 
 | Repository variable           | Source within `visual_tests.platforms.<platform>`              |
 | ----------------------------- | -------------------------------------------------------------- |
@@ -80,8 +92,8 @@ and verified numeric repository ID (`gh api repos/OWNER/REPO --jq .id`). Bootstr
 accounts, both federation providers and their bindings from that entry. Keep Studio in the map when
 supplying an override. No back-office identity is provisioned until its repository exists.
 
-After applying that reviewed change, create the exported folder pair in the existing test Drive and
-grant the same roles above. Set the same variable names in the new repository; reuse the shared
+After applying that reviewed change, create the exported folder pair under `<platform>/ci` in **Platform** and
+verify the same folder grants and cleanup capabilities above. Set the same variable names in the new repository; reuse the shared
 Playwright actions and Studio's thin caller conventions without copying upload or retention code.
 Seed its own reviewed master. Each platform compares, retains and cleans up its own batches; adding
 one requires no change to shared action code or existing platform configuration.
@@ -122,17 +134,17 @@ one requires no change to shared action code or existing platform configuration.
 Inspect the providers, effective Google Cloud IAM and Workspace membership independently. HCL output
 alone does not prove Drive access. Use an approved disposable test batch for destructive probes.
 
-| Check                      | Expected result                                                                                                                                                                                                                              |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CI federation              | Each platform `main.yaml` branch push/merge group authenticates only as its own identity; other repositories, workflows, tags and PR events fail.                                                                                            |
-| Maintenance federation     | Only master `main.yaml` pushes and master `visual-tests.yaml` allowlisted events authenticate. Candidate branch and other event attempts fail.                                                                                               |
-| CI Drive access            | Read own references and upload own results. Reference writes/deletes, permanent deletion, other platforms, unrelated Drives, state and secrets fail.                                                                                         |
-| Sharing                    | Anonymous and ungranted requests fail; explicitly shared folder access succeeds without Drive membership or user impersonation.                                                                                                              |
-| Maintenance access         | Publish and permanently delete disposable evidence in the dedicated test Drive. Manager authority spans the dedicated test Drive, while cleanup leaves another platform's batches intact. No general company Drive or infrastructure access. |
-| Large/interrupted transfer | Upload and download a 4 GiB test archive; checksums match, memory stays bounded, and a resumed upload produces one complete file.                                                                                                            |
-| Failed/stale publication   | Current references remain readable; old runs cannot replace newer master results.                                                                                                                                                            |
-| Cleanup race               | Merge/delete while a branch run is uploading; after reconciliation no branch batch remains. A missed event is repaired by the sweep.                                                                                                         |
-| Quiet master               | The same reference stays readable past seven days without a successful replacement.                                                                                                                                                          |
+| Check                      | Expected result                                                                                                                                                                                                        |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CI federation              | Each platform `main.yaml` branch push/merge group authenticates only as its own identity; other repositories, workflows, tags and PR events fail.                                                                      |
+| Maintenance federation     | Only master `main.yaml` pushes and master `visual-tests.yaml` allowlisted events authenticate. Candidate branch and other event attempts fail.                                                                         |
+| CI Drive access            | Read own references and upload own results. Reference writes/deletes, permanent deletion, other platforms, unrelated Drives, state and secrets fail.                                                                   |
+| Sharing                    | Anonymous and ungranted requests fail; explicitly shared folder access succeeds without Drive membership or user impersonation.                                                                                        |
+| Maintenance access         | Publish and permanently delete disposable evidence under the selected `ci` directory. Verify both actual account access and cleanup boundaries against other Platform content; broader access requires owner approval. |
+| Large/interrupted transfer | Upload and download a 4 GiB test archive; checksums match, memory stays bounded, and a resumed upload produces one complete file.                                                                                      |
+| Failed/stale publication   | Current references remain readable; old runs cannot replace newer master results.                                                                                                                                      |
+| Cleanup race               | Merge/delete while a branch run is uploading; after reconciliation no branch batch remains. A missed event is repaired by the sweep.                                                                                   |
+| Quiet master               | The same reference stays readable past seven days without a successful replacement.                                                                                                                                    |
 
 Complete these checks before enabling normal uploads. If Workspace blocks service-account membership,
 stop activation and review that policy; do not introduce account keys or domain-wide delegation as a

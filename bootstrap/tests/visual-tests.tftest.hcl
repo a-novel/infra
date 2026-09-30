@@ -52,7 +52,7 @@ run "exports_separate_candidate_and_maintenance_membership" {
   assert {
     condition = (
       output.visual_tests.ci_folder_roles.references == "reader" &&
-      output.visual_tests.maintenance_drive_role == "organizer" &&
+      output.visual_tests.maintenance_parent_role == "organizer" &&
       output.visual_tests.ci_folder_roles.results == "writer" &&
       google_service_account.visual_tests["studio-ci"].account_id != google_service_account.visual_tests["studio-maintenance"].account_id
     )
@@ -106,8 +106,8 @@ run "a_second_platform_gets_distinct_repository_trust_and_folder_coordinates" {
     condition = (
       length(google_service_account.visual_tests) == 4 &&
       length(google_iam_workload_identity_pool_provider.visual_tests) == 4 &&
-      output.visual_tests.platforms.studio.folders.references == "platform-studio/references" &&
-      output.visual_tests.platforms.fixture.folders.results == "platform-fixture/results" &&
+      output.visual_tests.platforms.studio.folders.references == "studio/ci/references" &&
+      output.visual_tests.platforms.fixture.folders.results == "fixture/ci/results" &&
       alltrue([for name, provider in google_iam_workload_identity_pool_provider.visual_tests :
         strcontains(provider.attribute_condition, "assertion.repository_id == '${local.visual_identities[name].repository_id}'") &&
         strcontains(provider.attribute_condition, "assertion.repository == '${local.visual_identities[name].repository}'") &&
