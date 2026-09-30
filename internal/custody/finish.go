@@ -13,10 +13,11 @@ import (
 )
 
 // finishOperation verifies success and writer termination before exact guard deletion.
-// Native releases and acknowledged rotations can reconstruct missing completion.
+// Native releases, acknowledged rotations and observed project deletion can
+// reconstruct missing completion without repeating the original mutation.
 func (custody store) finishOperation(ctx context.Context, client *storage.Service, evidence operationEvidence, output io.Writer, options []option.ClientOption) error {
-	if !evidence.completed && ((evidence.native == nil && evidence.rotation == nil) || evidence.live == 0) {
-		return failure{70, "Completion is missing; only a still-held native release or acknowledged rotation can be reconciled here."}
+	if !evidence.completed && ((evidence.native == nil && evidence.rotation == nil && evidence.cleanup == nil) || evidence.live == 0) {
+		return failure{70, "Completion is missing; this operation cannot be safely reconciled here."}
 	}
 	guard := evidence.guard
 	if evidence.live != 0 && evidence.live != guard.Generation {
@@ -32,7 +33,9 @@ func (custody store) finishOperation(ctx context.Context, client *storage.Servic
 		return err
 	}
 	if !evidence.completed {
-		if evidence.rotation != nil {
+		if evidence.cleanup != nil {
+			err = evidence.cleanup.reconcile(ctx, client, guard, options)
+		} else if evidence.rotation != nil {
 			err = evidence.rotation.recordCompletion(ctx, client, guard, options)
 		} else {
 			err = evidence.native.RecordCompletion(ctx, options...)
@@ -67,6 +70,10 @@ func (custody store) completedWriter(ctx context.Context, evidence operationEvid
 	if restore := evidence.restore; restore != nil {
 		runID, attempt, commit = restore.RunID, restore.RunAttempt, restore.Commit
 		path, prefix = ".github/workflows/recovery.yaml", "recovery restore-native "+restore.Target.Project+" by @"
+	}
+	if cleanup := evidence.cleanup; cleanup != nil {
+		runID, attempt, commit = cleanup.RunID, cleanup.RunAttempt, cleanup.Commit
+		path, prefix = ".github/workflows/recovery.yaml", "recovery cleanup-native "+cleanup.Target.Project+" by @"
 	}
 	var output bytes.Buffer
 	endpoint := "repos/a-novel/infra/actions/runs/" + runID + "/attempts/" + attempt

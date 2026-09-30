@@ -158,7 +158,12 @@ func recoveryInputs(args []string, getenv func(string) string, output io.Writer)
 		return invalid
 	}
 	command := []string{"recovery", getenv("RECOVERY_OPERATION"), args[1]}
-	if getenv("RECOVERY_OPERATION") == "restore-native" {
+	if getenv("RECOVERY_OPERATION") == "cleanup-native" {
+		if !RecoveryCleanupEnabled(getenv) || getenv("RECOVERY_PLAN_ID") != "" || getenv("PREPARATION_GENERATION") != "" {
+			return invalid
+		}
+		command = append(command, getenv("CONFIRM"))
+	} else if getenv("RECOVERY_OPERATION") == "restore-native" {
 		if !RecoveryExecutionEnabled(getenv) || getenv("RECOVERY_PLAN_ID") != "" {
 			return invalid
 		}
@@ -209,6 +214,11 @@ func RecoveryEnabled(getenv func(string) string) bool {
 // RecoveryExecutionEnabled is independent of host preparation and remains off by default.
 func RecoveryExecutionEnabled(getenv func(string) string) bool {
 	return getenv("NATIVE_RECOVERY_EXECUTION_ENABLED") == "true" && recoveryWorkflow(getenv)
+}
+
+// RecoveryCleanupEnabled is independent of preparation and restoration activation.
+func RecoveryCleanupEnabled(getenv func(string) string) bool {
+	return getenv("NATIVE_RECOVERY_CLEANUP_ENABLED") == "true" && recoveryWorkflow(getenv)
 }
 
 func recoveryWorkflow(getenv func(string) string) bool {

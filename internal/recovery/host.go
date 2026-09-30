@@ -149,6 +149,15 @@ func (request Request) CheckFiles(files map[string]string) error {
 	return nil
 }
 
+// CheckStopped reuses the exact prepared VM and disk checks before project cleanup.
+// It neither starts the host nor reads its database files.
+func (host Host) CheckStopped(ctx context.Context) error {
+	if err := host.Target.Validate(); err != nil {
+		return err
+	}
+	return host.check(ctx, "TERMINATED")
+}
+
 func (host Host) check(ctx context.Context, status string) error {
 	data, err := host.cloud(ctx, "instances", "describe", hostName, "--format=json")
 	var vm compute.Instance

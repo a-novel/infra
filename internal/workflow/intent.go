@@ -30,6 +30,7 @@ const usage = `usage: go run ./cmd/infra
   recovery plan-native <registered-recovery-project>
   recovery apply-native <registered-recovery-project> <plan-id>
   recovery restore-native <registered-recovery-project> <preparation-generation> '<RESTORE-FILES|RESTORE-SQL> <project> <preparation-generation>'
+  recovery cleanup-native <registered-recovery-project> 'DELETE <project>'
   recovery apply-workload <replacement-project-id> <receipt-id> <plan-id>
   recovery restore-data <replacement-project-id> <receipt-id> <json-keys-attempt> <authentication-attempt> <lost-write-window> <confirmation>
   recovery cleanup-project <replacement-project-id> <receipt-id> <confirmation>`
@@ -163,13 +164,15 @@ func parse(args []string) (intent, error) {
 			return i, invalid
 		}
 	case "recovery":
-		if len(args) >= 2 && slices.Contains([]string{"plan-native", "apply-native", "restore-native"}, args[0]) {
+		if len(args) >= 2 && slices.Contains([]string{"plan-native", "apply-native", "restore-native", "cleanup-native"}, args[0]) {
 			if !matches(`a-novel-recovery-[a-z0-9-]{1,13}[a-z0-9]`, args[1]) {
 				return i, invalid
 			}
 			i.input("operation", args[0])
 			i.input("replacement_project_id", args[1])
 			switch {
+			case args[0] == "cleanup-native" && len(args) == 3 && args[2] == "DELETE "+args[1]:
+				i.input("confirm", args[2])
 			case args[0] == "plan-native" && len(args) == 2:
 				i.attempt = true
 			case args[0] == "apply-native" && len(args) == 3 && matches(attemptID, args[2]):
