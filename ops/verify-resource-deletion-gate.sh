@@ -47,6 +47,7 @@ case "${EVENT_NAME}" in
             printf 'The gate event does not identify an exact pull request and base.\n' >&2
             exit 77
         fi
+        # shellcheck disable=SC2016
         if ! QUEUE_METADATA="$(gh api graphql \
             -F owner="${REPOSITORY%%/*}" \
             -F name="${REPOSITORY#*/}" \
