@@ -170,7 +170,7 @@ func TestWorkflowBoundaries(t *testing.T) {
 	}
 	load(".github/workflows/drift.yaml", &drift)
 	steps := drift.Jobs["assess-resource-deletion"].Steps
-	build, verify, auth := -1, -1, -1
+	build, verify, auth, authorize, candidate, tofu := -1, -1, -1, -1, -1, -1
 	for i, s := range steps {
 		if s.Uses == "$/.github/actions/setup-infra" {
 			build = i
@@ -188,6 +188,18 @@ func TestWorkflowBoundaries(t *testing.T) {
 		if s.With["path"] == "candidate" || strings.HasPrefix(s.Uses, "opentofu/") || strings.Contains(s.Run, "resolve-resource-deletion-assessment.sh") {
 			require.Equal(t, "inputs.operation == 'assess-pull-request'", s.If)
 		}
+		if strings.Contains(s.Run, "resolve-resource-deletion-assessment.sh") {
+			authorize = i
+		}
+		if s.With["path"] == "candidate" {
+			candidate = i
+			require.Equal(t, "${{ inputs.head_sha }}", s.With["ref"])
+			require.Equal(t, false, s.With["persist-credentials"])
+		}
+		if strings.HasPrefix(s.Uses, "opentofu/") {
+			tofu = i
+			require.Equal(t, "candidate/.opentofu-version", s.With["tofu_version_file"])
+		}
 		if strings.Contains(s.Run, "infra inspect assess") {
 			require.Contains(t, s.Run, "candidate=--image-only")
 			require.NotContains(t, s.Run, "${{")
@@ -196,6 +208,10 @@ func TestWorkflowBoundaries(t *testing.T) {
 	require.GreaterOrEqual(t, build, 0)
 	require.Greater(t, verify, build)
 	require.Greater(t, auth, verify)
+	require.Greater(t, authorize, build)
+	require.Greater(t, candidate, authorize)
+	require.Greater(t, auth, candidate)
+	require.Greater(t, tofu, candidate)
 	var action struct {
 		Inputs object
 		Runs   struct{ Steps []step }
