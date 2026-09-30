@@ -2,12 +2,12 @@
 
 # Runs the only supported live OpenTofu plan/apply paths and never prints plan
 # values. Detailed plan codes remain 0 (clean), 1 (error), and 2 (changes).
-# Usage: tofu-gate.sh <plan|apply|assess|converge|drift|output> <root> <state-bucket> [private-file]
+# Usage: tofu-gate.sh <plan|inspect|apply|assess|converge|drift|output> <root> <state-bucket> [private-file]
 
 set -euo pipefail
 
 if [ "$#" -lt 3 ] || [ "$#" -gt 4 ]; then
-    printf 'Usage: %s <plan|apply|assess|converge|drift|output> <root> <state-bucket> [private-file]\n' "$0" >&2
+    printf 'Usage: %s <plan|inspect|apply|assess|converge|drift|output> <root> <state-bucket> [private-file]\n' "$0" >&2
     exit 64
 fi
 
@@ -30,7 +30,7 @@ fi
 ROOT_DIR="$(resolve_root "${REPOSITORY_ROOT}" "${ROOT_NAME}")"
 
 case "${ACTION}" in
-    plan | apply | output)
+    plan | inspect | apply | output)
         if [ -z "${PLAN_FILE}" ]; then
             printf 'A private plan file is required for %s.\n' "${ACTION}" >&2
             exit 64
@@ -43,7 +43,7 @@ case "${ACTION}" in
         fi
         ;;
     *)
-        printf 'Unknown action. Expected plan, apply, assess, converge, drift, or output.\n' >&2
+        printf 'Unknown action. Expected plan, inspect, apply, assess, converge, drift, or output.\n' >&2
         exit 64
         ;;
 esac
@@ -354,6 +354,12 @@ case "${ACTION}" in
         fi
         apply_plan "${PLAN_FILE}"
         printf 'The exact reviewed %s plan applied successfully.\n' "${ROOT_NAME}"
+        ;;
+    inspect)
+        classify_plan "${PLAN_FILE}"
+        # This contains sensitive prior-state values, not a public plan artifact.
+        (umask 077; cp "${TEMP_DIR}/plan.json" "${PLAN_FILE}.json")
+        chmod 600 "${PLAN_FILE}.json"
         ;;
     output)
         if ! tofu -chdir="${ROOT_DIR}" output -json \

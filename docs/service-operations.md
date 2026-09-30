@@ -315,9 +315,27 @@ outage, retain WAL and monitor disk capacity instead of discarding it or silentl
 
 Resume scheduling only after explicit reconciliation of database, repository and backup health.
 Unknown worker outcomes remain failures to inspect. The calendar's next attempt is ordinary native
-backup scheduling, never authority to replay a restore or mutation. The guarded remote maintenance
-executor and live stop/drain rehearsal remain activation gates; these disabled timers do not supply
-that executor. See the [prepared backup path](../environments/service-foundation/README.md#prepared-native-backup-jobs).
+backup scheduling, never authority to replay a restore or mutation.
+
+The protected `foundation apply` path prepares this quiescence for JSON Keys behind
+`NATIVE_BACKUP_MAINTENANCE_ENABLED=true`, independently of foundation enrollment. It inspects the
+exact private saved plan: changes to the database template, instance group, data disk or repository
+VM require stopping existing native hosts. Initial creation, no-op and monitoring-only plans do
+not stop a database. Legacy/native ownership handoffs require separate review.
+
+After acquiring admission and consuming the plan, it checks the prior state's numeric VM identity
+and native user-data, then uses bounded systemd stops over IAP: timers, workers, PostgreSQL, repository.
+Loaded inactive units, empty unit jobs and absence of running native containers must be observed
+before apply. A stop can interrupt a backup; it is not evidence that the backup completed. Native
+stop handlers retain failed worker logs and pgBackRest owns partial-backup handling. Missing units,
+changed hosts and uncertain SSH responses block apply and retain the guard; do not replay them.
+
+Apply and convergence still use existing private custody. **They do not restart the database or
+timers, roll a MIG member, or establish readiness.** Resume remains separately approved, after host,
+repository, database and backup reconciliation. This hook does not cover arbitrary IAM/network
+changes or destructive repository work; those require their own reviewed maintenance scope.
+No live maintenance is enabled by merging this code. The actual COS stop/drain rehearsal remains an
+activation gate. See the [prepared backup path](../environments/service-foundation/README.md#prepared-native-backup-jobs).
 
 ## One operation from admission to completion
 

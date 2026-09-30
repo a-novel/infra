@@ -73,6 +73,20 @@ func (storage store) apply(args []string, getenv func(string) string, output io.
 			return failure{77, "Managed-resource deletion requires approval on the exact merged PR."}
 		}
 	}
+	var maintenance []maintenanceHost
+	if root == "service-foundation" {
+		command := []string{
+			"ALLOW_RESOURCE_DELETION=" + destructive, "TOFU_VAR_FILE=" + inputs,
+			"./ops/tofu-gate.sh", "inspect", root, storage.bucket, plan,
+		}
+		if err := storage.execute(storage.ctx, io.Discard, "env", command...); err != nil {
+			return failure{65, "Reviewed foundation plan could not be inspected; no admission or apply attempted."}
+		}
+		maintenance, err = plannedMaintenance(plan+".json", data, getenv)
+		if err != nil {
+			return err
+		}
+	}
 	var operation *serviceOperation
 	if service {
 		operation, err = storage.admit(args[:3], data, plan, getenv, output, options)
@@ -83,6 +97,11 @@ func (storage store) apply(args []string, getenv func(string) string, output io.
 	// No cleanup handler releases admission: providers can keep working after a lost runner.
 	if err := storage.plan("consume", args[:3], suffix); err != nil {
 		return err
+	}
+	for _, host := range maintenance {
+		if err := storage.quiesce(host); err != nil {
+			return failure{70, "Native host quiescence is unconfirmed; no apply attempted. Keep the service guard and reconcile the original operation."}
+		}
 	}
 	for _, action := range []string{"apply", "converge"} {
 		command := []string{
