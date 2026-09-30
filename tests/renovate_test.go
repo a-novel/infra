@@ -93,6 +93,7 @@ func TestRenovateLookup(t *testing.T) {
 	t.Cleanup(server.Close)
 	registry := strings.TrimPrefix(server.URL, "http://")
 	config := readJSON(t, "../renovate.json")
+	delete(config, "extends")
 	const workflowFile = ".github/workflows/main.yaml"
 	files := []string{workflowFile, "go.mod", "golangci-lint.mod"}
 	config["enabledManagers"] = []string{"custom.regex", "gomod"}
