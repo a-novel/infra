@@ -159,8 +159,11 @@ func startRepository(t *testing.T, config string) func() {
 	require.NoError(t, cmd.Start())
 	stop := func() {
 		if cmd.ProcessState == nil {
-			require.NoError(t, cmd.Process.Signal(syscall.SIGTERM))
-			require.NoError(t, cmd.Wait())
+			// This fixture exercises an outage; SIGTERM can leave the idle accept loop waiting.
+			require.NoError(t, cmd.Process.Kill())
+			var exit *exec.ExitError
+			require.ErrorAs(t, cmd.Wait(), &exit)
+			require.Equal(t, syscall.SIGKILL, exit.Sys().(syscall.WaitStatus).Signal())
 		}
 	}
 	t.Cleanup(stop)
