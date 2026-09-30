@@ -53,6 +53,15 @@ The cases intentionally share one evolving repository and stop on the first fail
 coverage suite for pgBackRest internals. Its output includes native catalog sizes, repository bytes,
 restore-through-SQL duration and cgroup resource counters when available.
 
+The retention case first checks that native `expire --dry-run` leaves repository content unchanged.
+It then denies manifest removal and, separately, data cleanup after the catalog has changed.
+Both failed commands must leave the retained full/differential sets restorable through SQL.
+Restoring fixture permissions permits an explicit native reconciliation; no catalog is repaired by
+the test. These POSIX denials establish expiry ordering, not GCS retention behavior. A dry run does
+not reserve the repository or prove later deletion will succeed. The
+[live acceptance procedure](../../docs/runbooks/backup-and-restore-postgresql.md#native-expiry-acceptance)
+covers the separate GCS generation lifecycle.
+
 Interruption uses `pgbackrest --force stop` followed by `start`, not a bespoke process coordinator.
 An exploratory parent-only SIGTERM left a worker holding the backup lock. A future VM/container
 integration must test its actual shutdown path; parent exit is not evidence that all work stopped.
