@@ -23,6 +23,7 @@ type foundationOptions struct {
 	adopt                                                           bool
 	databaseOperators, initializers                                 []string
 	serviceProjects                                                 map[string]string
+	repositoryServices                                              []string
 }
 
 type foundation struct {
@@ -70,6 +71,7 @@ func foundationFlags(args []string, getenv func(string) string) (foundationOptio
 	}
 	o.command = args[0]
 	serviceProjects := getenv("INFRA_SERVICE_PROJECTS")
+	repositoryServices := getenv("INFRA_PGBACKREST_REPOSITORY_SERVICES")
 	flags := flag.NewFlagSet("foundation-setup", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	if o.command == "configure" || o.command == "grant" || o.command == "finish" {
@@ -95,6 +97,7 @@ func foundationFlags(args []string, getenv func(string) string) (foundationOptio
 	}
 	if o.command == "configure" {
 		flags.StringVar(&serviceProjects, "service-projects", serviceProjects, "JSON object mapping service names to project IDs; use {} for none")
+		flags.StringVar(&repositoryServices, "pgbackrest-repository-services", repositoryServices, "JSON array of declared services with native repository networking; use [] for none")
 		flags.StringVar(&o.region, "region", cmp.Or(getenv("INFRA_REGION"), "europe-west1"), "Workload region")
 		flags.StringVar(&o.zone, "database-zone", getenv("INFRA_DATABASE_ZONE"), "Database zone")
 		flags.StringVar(&o.subnet, "subnet-cidr", "10.20.0.0/24", "Private /24 subnet")
@@ -112,6 +115,12 @@ func foundationFlags(args []string, getenv func(string) string) (foundationOptio
 	if o.command == "configure" {
 		if json.Unmarshal([]byte(serviceProjects), &o.serviceProjects) != nil || o.serviceProjects == nil {
 			return o, errors.New("service projects must be a JSON object; load the reviewed .envrc or pass --service-projects")
+		}
+		if json.Unmarshal([]byte(repositoryServices), &o.repositoryServices) != nil || o.repositoryServices == nil {
+			return o, errors.New("repository services must be a JSON array; load the reviewed .envrc or pass --pgbackrest-repository-services")
+		}
+		if len(o.repositoryServices) > 0 && (!slices.Equal(o.repositoryServices, []string{"json-keys"}) || o.serviceProjects["json-keys"] == "") {
+			return o, errors.New("repository networking supports only one declared json-keys service")
 		}
 		o.zone = cmp.Or(o.zone, o.region+"-c")
 		prefix, err := netip.ParsePrefix(o.subnet)
@@ -250,7 +259,7 @@ func (f foundation) configure(ctx context.Context, o foundationOptions, getenv f
 		"management_project_id": f.management, "workload_project_id": f.workload, "workload_project_name": o.name,
 		"backup_bucket_name": bucket, "billing_account_id": f.billing, "organization_id": nil, "folder_id": nil,
 		"region": o.region, "database_zone": o.zone, "subnet_cidr": o.subnet, "adopt_existing_project": o.adopt,
-		"service_projects": o.serviceProjects,
+		"service_projects": o.serviceProjects, "pgbackrest_repository_services": o.repositoryServices,
 	}
 	if o.parent.Type != "" {
 		config[o.parent.Type+"_id"] = o.parent.ID

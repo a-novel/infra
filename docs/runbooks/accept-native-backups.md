@@ -56,6 +56,19 @@ backup/verify duration, peak memory, CPU and disk headroom under an agreed repre
 
 ## 2. Provision through existing owners
 
+Use the future independent JSON Keys service project as the synthetic-only source. Its foundation
+state remains the long-lived owner; only the independently registered recovery project is disposable.
+This rehearsal does not authorize API cutover or retaining paid compute indefinitely. Record source
+resources and their ongoing storage cost at closeout. Keep the current workload and both September
+trial projects outside this enrollment.
+
+Enroll in this order: review the exact service-project mapping and protected environments; create
+the project shell; create the idle database/repository identities and hosts; then publish the
+[repository network selection](provision-service-projects.md#native-repository-network-selection)
+and review its separate shared-foundation plan. Leave application jobs, rotations and releases
+absent. Prepare custody, artifact promotion and certificate versions before runtime configuration.
+Each step retains its existing approval and saved-plan boundary.
+
 Approve each private saved plan separately. Its allowed address set comes from the actual reviewed
 plan, including prerequisite resources; there is no universal resource count. Reject peer changes,
 legacy ownership transfer, unexpected replacements/deletions and public access.
@@ -109,6 +122,87 @@ INSPECT
 Inspect loaded units and bounded logs over approved IAP/OS Login access. Use selected `systemctl show`
 properties (`LoadState`, `ActiveState`, `SubState`, `Result`, `ExecMainStatus`) and Docker
 state/image/health fields; do not dump container environment, metadata payloads or secret files.
+
+### Park compute between attended windows
+
+This procedure is limited to the synthetic source with no API traffic, application jobs or scheduled
+rotations. Native group power commands do not acquire the service guard. The human operator must
+hold an exclusive maintenance window; this is not a general production pause feature.
+
+First approve and complete a protected service-foundation change from `database_runtime.bring_up = true`
+to `false`, with native maintenance enabled and without bring-up. Confirm its quiescence evidence,
+successful completion and guard release: timers/workers/database/repository stopped, no owned running
+containers, repository VM `TERMINATED`. A no-op plan does not quiesce anything. Preserve failure
+evidence and any held guard if this step is uncertain; do not proceed to manual power operations.
+
+Before parking, close native workflow admission using the existing activation settings below. Record
+their prior values and obtain explicit approval for the settings change. These flags are shared:
+if another service uses them, stop for a service-scoped maintenance design instead of disabling it.
+Leave the current production release flag and legacy backups unchanged.
+
+| Protected entry point                         | Setting required during parking                                                                                                 |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Service-foundation plans/applies              | `SERVICE_FOUNDATIONS_ENABLED=false`                                                                                             |
+| Application-job bootstrap and native release  | `SERVICE_JOB_BOOTSTRAP_ENABLED=false`, `SERVICE_NATIVE_RELEASE_ENABLED=false`                                                   |
+| Native recovery preparation/execution/cleanup | `NATIVE_RECOVERY_PREPARATION_ENABLED=false`, `NATIVE_RECOVERY_EXECUTION_ENABLED=false`, `NATIVE_RECOVERY_CLEANUP_ENABLED=false` |
+| Completion repair                             | `SERVICE_OPERATION_RECOVERY_ENABLED=false`                                                                                      |
+
+Inspect effective repository/environment settings and queued, approval-waiting and running workflows.
+Changing a flag does not revoke a run's captured inputs or stop accepted cloud work. Reconcile those
+runs and their native operations before continuing. Withhold shared-foundation/bootstrap applies,
+configuration publications and direct administrative writes throughout the window. Require an absent
+service guard and no autoscaler on the selected group. Do not disable repairs or change group size
+with `resize`.
+
+Bind `NATIVE_DATABASE_GROUP` and its numeric `NATIVE_DATABASE_GROUP_ID` to the reviewed service
+foundation output and live inspection. Reuse the source project, zone, instance name/numeric ID and
+account from the identity checkpoint. Inspect the selected group before and after each power request:
+
+```bash
+bash <<'GROUP'
+set -euo pipefail
+: "${NATIVE_SERVICE_PROJECT:?}" "${NATIVE_ZONE:?}" "${GCP_ACCOUNT:?}"
+: "${NATIVE_DATABASE_GROUP:?}" "${NATIVE_DATABASE_GROUP_ID:?}"
+gcloud compute instance-groups managed describe "$NATIVE_DATABASE_GROUP" \
+  --project="$NATIVE_SERVICE_PROJECT" --zone="$NATIVE_ZONE" --account="$GCP_ACCOUNT" \
+  --format=json |
+  jq -e --arg id "$NATIVE_DATABASE_GROUP_ID" --arg name "$NATIVE_DATABASE_GROUP" '
+    select(.id == $id and .name == $name) |
+    {id,name,targetSize,targetStoppedSize,targetSuspendedSize,status,currentActions}'
+gcloud compute instance-groups managed list-instances "$NATIVE_DATABASE_GROUP" \
+  --project="$NATIVE_SERVICE_PROJECT" --zone="$NATIVE_ZONE" --account="$GCP_ACCOUNT" \
+  --format='json(instance,instanceStatus,targetStatus,currentAction)'
+GROUP
+```
+
+After approval of the exact observed member, the human runs the native group command once:
+
+```bash
+gcloud compute instance-groups managed stop-instances "${NATIVE_DATABASE_GROUP:?}" \
+  --instances="${NATIVE_DATABASE_INSTANCE:?}" --project="${NATIVE_SERVICE_PROJECT:?}" \
+  --zone="${NATIVE_ZONE:?}" --account="${GCP_ACCOUNT:?}"
+```
+
+Google's [group stop operation](https://docs.cloud.google.com/compute/docs/reference/rest/v1/instanceGroupManagers/stopInstances)
+changes running/stopped targets. Request completion precedes member convergence. Read-only inspection
+must establish exactly the original member, `targetStatus=STOPPED`, `instanceStatus=TERMINATED`,
+`currentAction=NONE`, stable group status and counts **running 0, stopped 1, suspended 0**. Recheck its
+numeric VM ID and the repository's stopped state. Unknown outcomes require inspection, not resubmission.
+Keep the admission settings closed and do not apply OpenTofu while parked: HCL still declares one
+running member. Record stop time and retained disks, snapshots, registry and storage costs.
+
+For a separately priced resume window, recheck the same parked identities/counts and absent guard.
+Keep admission closed while the human runs `gcloud compute instance-groups managed start-instances`
+with the same group, member, project, zone and account arguments. Verify the original member is
+`RUNNING`, target `RUNNING`, action `NONE`, group stable, and counts **running 1, stopped 0, suspended 0**.
+Confirm the loaded native units and containers remain stopped and the repository VM remains stopped.
+Host power alone is not database bring-up.
+
+Only then review restoration of the admission settings needed for the next batch and generate a
+fresh protected plan. Reject unexpected replacement, drift or peer changes. Resume runtime through
+guarded foundation bring-up; backup timers require their separate health reconciliation and approval.
+No old saved plan or failed power request is replayed. These observations need live evidence before
+the pause/resume procedure is accepted for use beyond this rehearsal.
 
 ## 3. Establish protection, then scheduling
 
