@@ -28,15 +28,16 @@ Verify default-account deprivileging and service-account-key restrictions, as re
 [shared onboarding contract](./provision-service-projects.md#first-activation-prerequisites).
 
 ```sh
-gcloud projects describe a-novel-management-prod --account=geoffroy.vincent@agorastoryverse.com --format='yaml(projectId,projectNumber,lifecycleState,parent)'
-gcloud projects describe a-novel-production-prod --account=geoffroy.vincent@agorastoryverse.com --format='yaml(projectId,projectNumber,lifecycleState,parent)'
+MANAGEMENT_PROJECT_ID=a-novel-management-prod
+WORKLOAD_PROJECT_ID=a-novel-production-prod
+gcloud projects describe "${MANAGEMENT_PROJECT_ID:?}" --account=geoffroy.vincent@agorastoryverse.com --format='yaml(projectId,projectNumber,lifecycleState,parent)'
+gcloud projects describe "${WORKLOAD_PROJECT_ID:?}" --account=geoffroy.vincent@agorastoryverse.com --format='yaml(projectId,projectNumber,lifecycleState,parent)'
 gcloud billing projects describe a-novel-management-prod --account=geoffroy.vincent@agorastoryverse.com
 gcloud billing projects describe a-novel-production-prod --account=geoffroy.vincent@agorastoryverse.com
-gcloud projects list --account=geoffroy.vincent@agorastoryverse.com --filter='projectId=a-novel-json-keys-prod' --format='yaml(projectId,projectNumber,lifecycleState,parent)'
 ```
 
-An empty listing means no matching project is visible to this account, not that the ID is globally
-available. Do not create it manually. The existing module must own creation; on collision or partial
+The operator's empty project listing means no matching project was visible to that account, not
+that the ID is globally available. Do not create it manually. The existing module must own creation; on collision or partial
 failure, inspect ownership and private state before any retry, import or ID change.
 
 In the infra repository's **Settings → Environments**, create `production-json-keys-release` with
@@ -126,7 +127,8 @@ Do not treat successful creation as proof of peer isolation or permission denial
 After verifying creator Owner exists and the declared replacement grants are present, remove it:
 
 ```sh
-gcloud projects remove-iam-policy-binding a-novel-json-keys-prod --member=serviceAccount:infra-foundation@a-novel-management-prod.iam.gserviceaccount.com --role=roles/owner --condition=None --account=geoffroy.vincent@agorastoryverse.com
+SOURCE_PROJECT_ID=a-novel-json-keys-prod
+gcloud projects remove-iam-policy-binding "${SOURCE_PROJECT_ID:?}" --member=serviceAccount:infra-foundation@a-novel-management-prod.iam.gserviceaccount.com --role=roles/owner --condition=None --account=geoffroy.vincent@agorastoryverse.com
 ```
 
 Separately remove the parent/billing additions recorded for this operation, including after a failed
