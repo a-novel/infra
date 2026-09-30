@@ -1,21 +1,48 @@
+variable "visual_test_platforms" {
+  description = "Platforms using Drive evidence; add a repository once to generate both keyless identities."
+  type = map(object({
+    repository    = string
+    repository_id = string
+  }))
+  default = {
+    studio = {
+      repository    = "a-novel/platform-studio"
+      repository_id = "1338436652"
+    }
+  }
+  validation {
+    condition = alltrue([for platform, github in var.visual_test_platforms :
+      can(regex("^[a-z][a-z0-9-]{0,9}[a-z0-9]$", platform)) &&
+      can(regex("^a-novel/platform-[a-z0-9-]+$", github.repository)) &&
+      can(regex("^[0-9]+$", github.repository_id))
+    ])
+    error_message = "Use a 2–11 character platform slug, an a-novel/platform-* repository and its numeric GitHub ID."
+  }
+  validation {
+    condition = (
+      length(distinct([for github in var.visual_test_platforms : github.repository])) == length(var.visual_test_platforms) &&
+      length(distinct([for github in var.visual_test_platforms : github.repository_id])) == length(var.visual_test_platforms)
+    )
+    error_message = "Each platform must have a distinct repository and numeric GitHub ID."
+  }
+}
+
 locals {
-  studio_github = {
-    owner_id      = "131281268"
-    repository_id = "1338436652"
-    repository    = "a-novel/platform-studio"
-  }
-  visual_identities = {
-    ci = {
-      account_id = "studio-visual-ci"
-      workflow   = "assertion.workflow_ref == 'a-novel/platform-studio/.github/workflows/main.yaml@' + assertion.ref"
-      condition  = "assertion.ref.startsWith('refs/heads/') && assertion.event_name in ['push', 'merge_group']"
+  visual_identities = merge([for platform, github in var.visual_test_platforms : {
+    for role in ["ci", "maintenance"] : "${platform}-${role}" => {
+      platform      = platform
+      role          = role
+      repository    = github.repository
+      repository_id = github.repository_id
+      account_id    = "${platform}-visual-${role}"
+      workflow = role == "ci" ? (
+        "assertion.workflow_ref == '${github.repository}/.github/workflows/main.yaml@' + assertion.ref"
+        ) : (
+        "(assertion.workflow_ref == '${github.repository}/.github/workflows/main.yaml@refs/heads/master' && assertion.event_name == 'push') || (assertion.workflow_ref == '${github.repository}/.github/workflows/visual-tests.yaml@refs/heads/master' && assertion.event_name in ['workflow_run', 'pull_request_target', 'delete', 'schedule'])"
+      )
+      condition = role == "ci" ? "assertion.ref.startsWith('refs/heads/') && assertion.event_name in ['push', 'merge_group']" : "assertion.ref == 'refs/heads/master'"
     }
-    maintenance = {
-      account_id = "studio-visual-maintenance"
-      workflow   = "(assertion.workflow_ref == 'a-novel/platform-studio/.github/workflows/main.yaml@refs/heads/master' && assertion.event_name == 'push') || (assertion.workflow_ref == 'a-novel/platform-studio/.github/workflows/visual-tests.yaml@refs/heads/master' && assertion.event_name in ['workflow_run', 'pull_request_target', 'delete', 'schedule'])"
-      condition  = "assertion.ref == 'refs/heads/master'"
-    }
-  }
+  }]...)
 }
 
 resource "google_service_account" "visual_tests" {
@@ -23,8 +50,8 @@ resource "google_service_account" "visual_tests" {
 
   project      = var.management_project_id
   account_id   = each.value.account_id
-  display_name = "Studio visual tests ${each.key}"
-  description  = "Keyless visual-test storage identity for Studio ${each.key} runs."
+  display_name = "${each.value.platform} visual ${each.value.role}"
+  description  = "Keyless visual-test storage identity for ${each.value.repository} ${each.value.role} runs."
 
   lifecycle {
     prevent_destroy = true
@@ -38,8 +65,8 @@ resource "google_iam_workload_identity_pool_provider" "visual_tests" {
 
   workload_identity_pool_id          = google_iam_workload_identity_pool.github.workload_identity_pool_id
   workload_identity_pool_provider_id = each.value.account_id
-  display_name                       = "Studio visual tests ${each.key}"
-  description                        = "Trust Studio ${each.key} workflow events for Drive visual-test storage."
+  display_name                       = "${each.value.platform} visual ${each.value.role}"
+  description                        = "Trust ${each.value.platform} ${each.value.role} workflow events for Drive visual-test storage."
   deletion_policy                    = "PREVENT"
 
   attribute_mapping = {
@@ -53,9 +80,9 @@ resource "google_iam_workload_identity_pool_provider" "visual_tests" {
     "attribute.trust_boundary" = "'${each.value.account_id}'"
   }
   attribute_condition = join(" && ", [
-    "assertion.repository_owner_id == '${local.studio_github.owner_id}'",
-    "assertion.repository_id == '${local.studio_github.repository_id}'",
-    "assertion.repository == '${local.studio_github.repository}'",
+    "assertion.repository_owner_id == '131281268'",
+    "assertion.repository_id == '${each.value.repository_id}'",
+    "assertion.repository == '${each.value.repository}'",
     "(${each.value.workflow})",
     each.value.condition,
   ])
@@ -76,18 +103,23 @@ resource "google_service_account_iam_member" "visual_tests" {
   member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.trust_boundary/${each.value.account_id}"
 }
 
-output "studio_visual_tests" {
-  description = "Keyless Drive identities; Workspace administrators configure Shared Drive membership separately."
+output "visual_tests" {
+  description = "Per-platform Drive handoff; a Workspace administrator grants folder access and dedicated test Drive maintenance membership."
   value = {
-    oauth_scope = "https://www.googleapis.com/auth/drive"
-    identities = { for name, account in google_service_account.visual_tests : name => {
-      service_account   = account.email
-      identity_provider = google_iam_workload_identity_pool_provider.visual_tests[name].name
+    oauth_scope            = "https://www.googleapis.com/auth/drive"
+    maintenance_drive_role = "organizer"
+    ci_folder_roles        = { references = "reader", results = "writer" }
+    platforms = { for platform, github in var.visual_test_platforms : platform => {
+      repository = github.repository
+      folders = {
+        references = "${split("/", github.repository)[1]}/references"
+        results    = "${split("/", github.repository)[1]}/results"
+      }
+      identities = { for role in ["ci", "maintenance"] : role => {
+        service_account   = google_service_account.visual_tests["${platform}-${role}"].email
+        identity_provider = google_iam_workload_identity_pool_provider.visual_tests["${platform}-${role}"].name
+      } }
     } }
-    shared_drive_roles = {
-      references = { ci = "reader", maintenance = "organizer" }
-      results    = { ci = "writer", maintenance = "organizer" }
-    }
   }
 
   depends_on = [
