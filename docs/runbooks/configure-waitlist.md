@@ -7,8 +7,12 @@ and production. Verify the copied script's `WAITLIST_SPREADSHEET_ID` before send
 
 ## Provision the production key
 
-Merge the reviewed infrastructure change, then complete the existing
-[management bootstrap](./bootstrap-management-plane.md) and protected foundation plan/apply.
+Merge the reviewed infrastructure change, then follow
+[Start an operation](./README.md#start-an-operation). For an existing installation, use the
+[protected foundation plan/apply workflow](../../ops/README.md#protected-workflow-operations) for
+the `bootstrap` root first, then the `foundation` root. Review and apply each saved plan before
+continuing. Do not rerun the one-time management bootstrap.
+
 This creates `production-authentication-waitlist-secret` and grants the production Authentication
 runtime access. No payload version is created by OpenTofu. Do not configure Cloud Run manually.
 
@@ -43,8 +47,9 @@ Replace the example URL with the production `/exec` URL and `1` with the uploade
 The URL must have no query, fragment, credentials, or development `/dev` suffix. Keep the real
 URL in private operator inputs. No payload or additional `secret_versions` entry is needed.
 
-Deploy through the existing protected release workflow described in
-[Production operations](./README.md). Configuration-only changes use its maintenance path;
+Store the merged configuration as `RELEASE_CONFIG_JSON` in the `production-release` environment,
+following [the release configuration procedure](./deploy-production.md#4-store-the-protected-non-payload-release-configuration).
+Deploy through that runbook's protected release workflow. Configuration-only changes use its maintenance path;
 changes to another service's image family must not also change Authentication's configuration.
 Preflight checks the selected secret version's metadata without reading its payload.
 
