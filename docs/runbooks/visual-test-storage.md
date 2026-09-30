@@ -1,0 +1,193 @@
+# Platform visual-test storage
+
+Platform visual evidence uses the existing **Platform** Shared Drive in Agorastoryverse Google Workspace.
+Studio stores batches under `studio/ci`, with separate `references` and `results` children.
+Future platforms reuse `<platform>/ci/references` and `<platform>/ci/results`. Bootstrap owns the
+Drive API and GitHub federation described in the [resource inventory](../../bootstrap/README.md#platform-visual-test-storage).
+Shared workflows own comparison, publication and cleanup; platforms supply identity and folder IDs.
+Merging infrastructure configuration alone does not change existing artifact uploads.
+
+## Identities and subscriptions
+
+These service accounts are Google Cloud workload identities, not Workspace user accounts. They need
+no paid Workspace seat. Files uploaded into a Shared Drive belong to the organisation and consume its
+existing pooled storage. They cannot own files in My Drive and are not members of the Workspace domain,
+so a Workspace administrator must allow and explicitly grant their access. See Google's
+[Shared Drive storage model](https://developers.google.com/workspace/drive/api/guides/about-shareddrives),
+[service-account sharing rules](https://developers.google.com/workspace/drive/api/guides/manage-shareddrives)
+and [IAM pricing](https://cloud.google.com/iam/pricing).
+
+GitHub exchanges its job identity for a short-lived Drive access token. No shared secret,
+service-account key, subscribed automation user or domain-wide delegation is needed. Folder IDs and
+provider/account coordinates are non-secret repository variables.
+
+## Provision and hand off
+
+1. Merge the reviewed bootstrap configuration. An operator follows the
+   [protected bootstrap plan/apply](../../ops/README.md#protected-workflow-operations) from `master`.
+   Review the Drive API and two accounts/providers per configured platform. Agents and PR checks use
+   mocked validation only. Existing service-usage and IAM administration grants cover these resources.
+2. Read `visual_tests` through approved operator state access. For Studio, use
+   `visual_tests.platforms.studio`; the accounts remain `studio-visual-ci` and
+   `studio-visual-maintenance` in the management project.
+3. Use the owner-supplied
+   [Studio CI parent folder](https://drive.google.com/drive/folders/1fttoQXh7kqzKXAlWu2Otrw-FHGFxAm7A)
+   (`1fttoQXh7kqzKXAlWu2Otrw-FHGFxAm7A`) at **Platform → studio → ci**. Authenticated Drive
+   metadata verified that hierarchy and both children on September 30, 2026. The folder IDs below
+   are stored in Studio's repository variables; service-account permissions still need verification.
+   For another platform, create or reuse the exported `<platform>/ci/references` and
+   `<platform>/ci/results` children. Neither folder variable takes the Drive ID or the `ci` parent ID.
+
+   - `VISUAL_REFERENCES_FOLDER`: [references](https://drive.google.com/drive/folders/1uiWxHN-AVLOUuG19W6s3iZAS03tc3Gxl)
+     (`1uiWxHN-AVLOUuG19W6s3iZAS03tc3Gxl`).
+   - `VISUAL_RESULTS_FOLDER`: [results](https://drive.google.com/drive/folders/1lM2EKh64LM-KHxLMWfVoo0le50PfEok4)
+     (`1lM2EKh64LM-KHxLMWfVoo0le50PfEok4`).
+
+4. Grant CI Viewer access on `references` and Contributor access on `results`, with no Drive-level
+   or parent membership. Workspace policy must permit explicit nonmember folder sharing and these
+   external service accounts. Existing Drive-wide restrictions affect other content too; review them
+   with the Workspace administrator before changing them. Keep evidence private and restrict folder
+   sharing to Managers. Resolve maintenance deletion authority as described below before activation.
+5. Set the same six non-secret `VISUAL_*` variables in each platform repository using its own output
+   and folder IDs. Request OAuth scope `https://www.googleapis.com/auth/drive` through service-account
+   impersonation. No credential file is needed.
+6. Release and adopt the shared workflow, run the allow/deny and large-transfer checks below, then seed
+   from reviewed master by setting `VISUAL_SEED_SHA` to that exact commit and rerunning its main run.
+   Unset it after the first successful publication. Missing references fail ordinary comparisons.
+
+| Resource               | CI access                                   | Maintenance requirement                          |
+| ---------------------- | ------------------------------------------- | ------------------------------------------------ |
+| `studio/ci/references` | Viewer (`reader`), direct folder grant      | Publish and permanently delete reference batches |
+| `studio/ci/results`    | Contributor (`writer`), direct folder grant | Publish and permanently delete result batches    |
+| Other Platform content | No access                                   | No wider grant without explicit owner approval   |
+
+Google requires `organizer` authority on a parent for permanent deletion. The
+`maintenance_parent_role` output states this API requirement, not the scope of an applied grant.
+Ask the Workspace administrator to verify whether it can be confined to `studio/ci`. Folder-only
+Manager authority has **not** been verified in this Workspace; an Editor or Content manager grant
+is not proof that permanent deletion will work. Inspect `canListChildren`, `canAddChildren` and
+`canDeleteChildren` on both child folders as the maintenance account, then upload and permanently
+delete disposable evidence. Also verify access to unrelated Platform content is denied.
+
+The earlier proposal used Manager access across a dedicated test Drive. Do not
+carry that grant over to the existing **Platform** Drive without the owner's explicit approval.
+If folder-only deletion cannot be granted, leave activation disabled and review the permission scope
+with the owner. Do not silently broaden access or switch to Trash/30-day retention.
+
+The trusted action scopes every operation by configured folder ID and repository, but this filtering
+does not reduce the service account's Google permissions. Candidate CI cannot replace reference files
+or permanently delete results. Runtime checks reject My Drive, root folders, mismatched parents,
+candidate reference write authority and maintenance without permanent-delete capability.
+
+| Repository variable           | Source within `visual_tests.platforms.<platform>`              |
+| ----------------------------- | -------------------------------------------------------------- |
+| `VISUAL_CI_PROVIDER`          | `identities.ci.identity_provider`                              |
+| `VISUAL_CI_ACCOUNT`           | `identities.ci.service_account`                                |
+| `VISUAL_MAINTENANCE_PROVIDER` | `identities.maintenance.identity_provider`                     |
+| `VISUAL_MAINTENANCE_ACCOUNT`  | `identities.maintenance.service_account`                       |
+| `VISUAL_REFERENCES_FOLDER`    | ID of this platform's `references` child folder                |
+| `VISUAL_RESULTS_FOLDER`       | ID of this platform's `results` child folder                   |
+| `VISUAL_SEED_SHA`             | Exact reviewed master SHA; temporary first-reference seed only |
+
+The consumer workflows are `main.yaml` and trusted `visual-tests.yaml`. Give only the relevant jobs
+`id-token: write`. Maintenance accepts only events evaluated on `refs/heads/master`; it must never
+check out or execute PR code. Fork runs have no candidate identity. Synthetic test data is the only
+permitted content; traces can contain cookies and credentials, so access stays private.
+
+## Add another platform
+
+Add one entry to `visual_test_platforms` with its short slug, full `a-novel/platform-*` repository name
+and verified numeric repository ID (`gh api repos/OWNER/REPO --jq .id`). Bootstrap generates both
+accounts, both federation providers and their bindings from that entry. Keep Studio in the map when
+supplying an override. No back-office identity is provisioned until its repository exists.
+
+After applying that reviewed change, create the exported folder pair under `<platform>/ci` in **Platform** and
+verify the same folder grants and cleanup capabilities above. Set the same variable names in the new repository; reuse the shared
+Playwright actions and Studio's thin caller conventions without copying upload or retention code.
+Seed its own reviewed master. Each platform compares, retains and cleans up its own batches; adding
+one requires no change to shared action code or existing platform configuration.
+
+## Consumer contract
+
+- A **reference batch** contains the latest successful master screenshots. A **branch batch** holds
+  the latest completed run's screenshots, traces, report and service logs. Keep the reference regardless
+  of age, including after months without a run. Keep one latest published batch per live branch.
+- Use Drive file IDs and bounded metadata, not names as unique keys. Upload immutable archives with
+  resumable transfers and retries; stream 2–4 GiB batches with bounded memory. Validate complete uploads
+  before making them current. Readers verify checksums and retry selection if a replacement removed
+  the old file during download.
+- Store each batch as a fresh file, then permanently delete superseded files after publication.
+  Updating binary content can retain old revisions, and Trash retains deleted data. Neither behavior
+  meets the one-batch retention policy. Brief overlap during a replacement is necessary.
+- Serialize trusted publication and cleanup. Verify GitHub's run identity, attempt, branch, current
+  head and test result. A stale, failed, canceled, partial or branch run cannot replace references.
+  Candidate jobs upload pending evidence; completion events reconcile branch retention. Master stages
+  its locally validated batch directly in the references folder with the maintenance identity. Serialized
+  maintenance verifies the completed successful `test-browser` job and current master before marking
+  that batch current. It never copies candidate-uploaded results into references. After publication,
+  delete the duplicate master results batch; keep failed master diagnostics until a successful replacement.
+- Remove batches after PR merge or branch deletion. Recheck live GitHub state before publication so
+  an in-flight upload cannot revive a removed branch. A scheduled sweep removes orphaned uploads and
+  retries interrupted cleanup. API or permission failures are visible and never treated as empty lists.
+- Native Playwright comparison always runs. The human-maintainer `allow-screenshot-change` label
+  permits visual differences for the exact reviewed PR head. Functional failures, incomplete captures,
+  missing references and upload errors remain failures. Refresh checks on label changes and carry the
+  reviewed approval into the successful post-merge master run. Follow infra's
+  [trusted event pattern](../../.github/workflows/refresh-deletion-gates.yaml).
+- Explicit first-master seeding requires a complete successful functional run. Rendering changes from
+  browser/platform upgrades use the same reviewed update path. No screenshot/report GitHub artifact
+  upload remains on the Drive path; small coverage artifacts can remain for Codecov.
+
+## Verify after apply
+
+Inspect the providers, effective Google Cloud IAM and Workspace membership independently. HCL output
+alone does not prove Drive access. Use an approved disposable test batch for destructive probes.
+
+| Check                      | Expected result                                                                                                                                                                                                        |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CI federation              | Each platform `main.yaml` branch push/merge group authenticates only as its own identity; other repositories, workflows, tags and PR events fail.                                                                      |
+| Maintenance federation     | Only master `main.yaml` pushes and master `visual-tests.yaml` allowlisted events authenticate. Candidate branch and other event attempts fail.                                                                         |
+| CI Drive access            | Read own references and upload own results. Reference writes/deletes, permanent deletion, other platforms, unrelated Drives, state and secrets fail.                                                                   |
+| Sharing                    | Anonymous and ungranted requests fail; explicitly shared folder access succeeds without Drive membership or user impersonation.                                                                                        |
+| Maintenance access         | Publish and permanently delete disposable evidence under the selected `ci` directory. Verify both actual account access and cleanup boundaries against other Platform content; broader access requires owner approval. |
+| Large/interrupted transfer | Upload and download a 4 GiB test archive; checksums match, memory stays bounded, and a resumed upload produces one complete file.                                                                                      |
+| Failed/stale publication   | Current references remain readable; old runs cannot replace newer master results.                                                                                                                                      |
+| Cleanup race               | Merge/delete while a branch run is uploading; after reconciliation no branch batch remains. A missed event is repaired by the sweep.                                                                                   |
+| Quiet master               | The same reference stays readable past seven days without a successful replacement.                                                                                                                                    |
+
+Complete these checks before enabling normal uploads. If Workspace blocks service-account membership,
+stop activation and review that policy; do not introduce account keys or domain-wide delegation as a
+fallback. Google documents [roles](https://developers.google.com/workspace/drive/api/guides/ref-roles),
+[Shared Drive support](https://developers.google.com/workspace/drive/api/guides/enable-shareddrives),
+[resumable uploads](https://developers.google.com/workspace/drive/api/guides/manage-uploads),
+[revisions](https://developers.google.com/workspace/drive/api/guides/manage-revisions) and
+[permanent deletion](https://developers.google.com/workspace/drive/api/guides/delete).
+
+## Recovery and retirement
+
+Retry an incomplete upload while keeping the current reference. Permanent cleanup has no Drive Trash
+recovery; the latest-only policy intentionally provides no historical reference archive. If a reference
+is lost or a bad publication is confirmed, pause publication, review the source commit and explicitly
+reseed from trusted master. Never select a branch batch as an automatic recovery source.
+
+To retire the feature, disable the consumer and revoke its folder grants and Drive membership, preserve any evidence a human
+needs, then review identity removal. The Shared Drive remains Workspace-owned and is not destroyed by
+OpenTofu. No visual-test GCS resources were applied as part of this proposal; if an operator provisioned
+an earlier revision independently, inventory it and plan its retirement separately.
+
+## Capacity and cost
+
+Within the existing Workspace pooled-storage allowance, this design needs no additional storage
+subscription. At **2–4 GiB per batch**, one platform's master plus ten branch batches occupies about **22–44 GiB**, plus
+short-lived upload overlap and orphaned files until cleanup succeeds. Sum this capacity across platforms. Fifty runs per day transferring
+one batch each way use roughly **100–200 GiB/day in each direction**.
+
+Google currently lists a free standard allowance, with **400 million quota units/day/project** and
+**1 TB/day/project of downloads** as future billing thresholds. An account can upload/copy **750 GB/day**.
+API methods consume different numbers of quota units; archive transfers reduce request count. Shared
+Drive storage headroom, API usage and cleanup failures still require monitoring.
+
+Google has announced future charges above daily thresholds with at least 90 days' notice; published
+rates and activation dates must be rechecked before rollout. Sources, checked September 30, 2026:
+[Drive limits](https://developers.google.com/workspace/drive/api/guides/limits) and
+[Workspace API policy](https://developers.google.com/workspace/tools-safety).

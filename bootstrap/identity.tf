@@ -107,7 +107,7 @@ resource "google_service_account" "automation" {
 resource "google_iam_workload_identity_pool" "github" {
   workload_identity_pool_id = "github-actions"
   display_name              = "GitHub Actions"
-  description               = "Keyless identities for a-novel/infra workflows."
+  description               = "Keyless identities for registered a-novel workflows."
   disabled                  = false
   deletion_policy           = "PREVENT"
 
