@@ -22,7 +22,7 @@ run "default_has_no_native_custody" {
       length(google_service_account.pgbackrest_recovery) == 0,
       length(google_storage_bucket_iam_member.pgbackrest_writer) == 0,
       length(google_storage_bucket_iam_member.pgbackrest_recovery) == 0,
-      length(local.management_buckets) == 3,
+      length(local.management_buckets) == 5,
       length(google_secret_manager_secret.application) == 7,
       length(google_secret_manager_secret_iam_member.pgbackrest_tls) == 0,
       output.json_keys_pgbackrest == null,

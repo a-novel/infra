@@ -62,7 +62,7 @@ Removing or broadening this rule requires another policy review.
 
 ## Automation trust boundaries
 
-All providers trust GitHub issuer `https://token.actions.githubusercontent.com`, organization ID
+The four infra providers trust GitHub issuer `https://token.actions.githubusercontent.com`, organization ID
 `131281268`, repository ID `1344262359`, repository `a-novel/infra`, and
 `refs/heads/master`. Names are retained for audit readability; the numeric IDs prevent a renamed or
 re-created organization/repository from inheriting trust.
@@ -91,6 +91,42 @@ Its authenticated drift workflow must use `tofu plan -lock=false` and share a ro
 concurrency group with every writer. That serialization makes the read-only exception safe without
 granting permission to create `.tflock` or state objects. OpenTofu documents the tradeoff in its
 [`plan` locking option](https://opentofu.org/docs/cli/commands/plan/#other-options).
+
+## Studio visual-test storage
+
+[`visual-tests.tf`](./visual-tests.tf) owns private regional Standard storage for Playwright evidence.
+The latest successful **master** comparison batch stays live indefinitely. Reports expire after seven
+days; superseded master generations expire seven days after replacement. The
+[visual-test storage runbook](../docs/runbooks/visual-test-storage.md) covers deployment, consumer
+requirements, verification, recovery and pricing. Merging this configuration does not provision it or
+change Studio's current artifact uploads.
+
+| Address                                                                                                               | Purpose and authority                                                                                                                                                                                                                      | Lifecycle, recovery and cost                                                                                                                                                                                                                                                  |
+| --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `google_storage_bucket.visual_reports`                                                                                | Management-owned bucket in `var.region` (`europe-west1` by default), separate from state and backups. Private uniform access; stores temporary Studio run reports.                                                                         | Seven-day age expiry, no versioning or soft delete; expired reports are unrecoverable. `prevent_destroy` and `force_destroy=false` protect the bucket. Stored bytes, operations and downloads are billable.                                                                   |
+| `google_storage_bucket.visual_baselines`                                                                              | Private versioned bucket in the same region. Holds the complete `platform-studio/master/batch.tar` comparison archive.                                                                                                                     | The live generation has no expiry. Only noncurrent generations expire after seven days; soft delete is disabled. Bucket deletion is protected. Current and historical generations incur storage charges.                                                                      |
+| `google_service_account.visual_tests["ci"]` and `["master"]`                                                          | Separate keyless identities for report/comparison jobs and master baseline publication. No project-wide roles, state, backup or secret grants.                                                                                             | `prevent_destroy`; changing an account interrupts its consumer until coordinates are updated. Accounts have no direct recurring charge.                                                                                                                                       |
+| `google_iam_workload_identity_pool_provider.visual_tests["ci"]` and `["master"]`                                      | Existing pool, GitHub issuer, numeric owner `131281268` and Studio repo `1338436652`, exact repo name and `main.yaml` workflow at the token's branch ref. CI accepts branch pushes and merge groups; publisher accepts only master pushes. | Provider-owned `studio-visual-ci` / `studio-visual-master` constants isolate impersonation. Canonical audience, deletion protection and `prevent_destroy`. Renaming the workflow is a reviewed trust migration.                                                               |
+| `google_service_account_iam_member.visual_tests["ci"]` and `["master"]`                                               | Each provider's constant boundary can impersonate only its corresponding account.                                                                                                                                                          | Additive Workload Identity User bindings; removing a grant disables that consumer's federation. No account keys or Token Creator grant.                                                                                                                                       |
+| `google_storage_bucket_iam_member.visual_report_creator`                                                              | CI has Object Creator only under `platform-studio/runs/` in the reports bucket.                                                                                                                                                            | Unique object creation; no read, overwrite or deletion. Uploads use run ID and attempt in their paths. No bucket configuration authority.                                                                                                                                     |
+| `google_storage_bucket_iam_member.visual_baseline_reader` and `.visual_baseline_publisher`                            | CI has Object Viewer; master has Object Admin. Both grants restrict access to the exact master archive object.                                                                                                                             | Reader can fetch known generations; bucket listing is denied by the object condition. Publisher can replace/delete that object, including historical generations, but cannot change bucket policy. Successful-run and freshness checks belong to the trusted master workflow. |
+| `google_storage_bucket_iam_member.foundation_admin` and `.operator_admin`, keys `visual-reports` / `visual-baselines` | Existing foundation and human operators administer these exact buckets. Operator keys also include the principal, as for other management buckets.                                                                                         | Existing high-trust administration; no new project-wide grant. Audit configuration already covers storage and federation operations.                                                                                                                                          |
+
+Provider references: [bucket](https://registry.terraform.io/providers/hashicorp/google/8.2.0/docs/resources/storage_bucket),
+[service account](https://registry.terraform.io/providers/hashicorp/google/8.2.0/docs/resources/google_service_account),
+[federation provider](https://registry.terraform.io/providers/hashicorp/google/8.2.0/docs/resources/iam_workload_identity_pool_provider),
+[account IAM](https://registry.terraform.io/providers/hashicorp/google/8.2.0/docs/resources/google_service_account_iam),
+[bucket IAM](https://registry.terraform.io/providers/hashicorp/google/8.2.0/docs/resources/storage_bucket_iam).
+Google documents [lifecycle conditions](https://docs.cloud.google.com/storage/docs/lifecycle),
+[versioning](https://docs.cloud.google.com/storage/docs/object-versioning),
+[soft delete](https://docs.cloud.google.com/storage/docs/soft-delete),
+[storage roles](https://docs.cloud.google.com/storage/docs/access-control/iam-roles) and
+[GitHub federation](https://cloud.google.com/iam/docs/workload-identity-federation-with-deployment-pipelines).
+
+The `studio_visual_tests` output exposes bucket/object paths and provider/account pairs. The shared
+workflow should consume these coordinates after operator provisioning. Infra PR jobs remain cloud-blind;
+Studio's candidate identity is a separate, evidence-only boundary. Same-repository contributors can
+upload arbitrary reports within that prefix, so upload volume and budget alerts require monitoring.
 
 ## Disabled JSON Keys native-backup custody
 
