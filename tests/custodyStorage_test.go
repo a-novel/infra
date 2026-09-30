@@ -39,6 +39,23 @@ func applyStorage(t *testing.T, f *sandbox, failure string) {
 			}
 		}()
 		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			bucket, name, ok := strings.Cut(strings.TrimPrefix(r.URL.Path, "/b/"), "/o/")
+			data, err := os.ReadFile(filepath.Join(objects, bucket, name))
+			if !ok || err != nil {
+				http.Error(w, privateValue, http.StatusNotFound)
+				return
+			}
+			if r.URL.Query().Get("alt") == "media" {
+				if r.URL.Query().Get("generation") != "42" {
+					t.Error("state download must be generation pinned")
+				}
+				_, _ = w.Write(data)
+			} else {
+				_ = json.NewEncoder(w).Encode(&storage.Object{Bucket: bucket, Name: name, Generation: 42})
+			}
+			return
+		}
 		if r.Method == http.MethodDelete {
 			if r.URL.Path != "/b/"+bucket+"/o/services/agora-json-keys-test/release/operation.json" ||
 				r.URL.Query().Get("ifGenerationMatch") != "42" || r.URL.Query().Get("generation") != "" {

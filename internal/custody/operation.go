@@ -40,11 +40,12 @@ type objectReference struct {
 }
 
 type applyCompletion struct {
-	SchemaVersion int             `json:"schemaVersion"`
-	Outcome       string          `json:"outcome"`
-	Operation     applyIntent     `json:"operation"`
-	Guard         objectReference `json:"guard"`
-	Configuration objectReference `json:"configuration"`
+	SchemaVersion int              `json:"schemaVersion"`
+	Outcome       string           `json:"outcome"`
+	Operation     applyIntent      `json:"operation"`
+	Guard         objectReference  `json:"guard"`
+	Configuration objectReference  `json:"configuration"`
+	State         *objectReference `json:"state,omitempty"`
 }
 
 // The acknowledged generation stays in this process. There is deliberately no
@@ -115,7 +116,21 @@ func (operation serviceOperation) finish(ctx context.Context, inputs []byte) err
 	if err != nil {
 		return failure{70, "Converged configuration publication unconfirmed; service guard retained."}
 	}
-	completion := applyCompletion{1, intent.outcome(), intent, operation.guard, config}
+	completion := applyCompletion{SchemaVersion: 1, Outcome: intent.outcome(), Operation: intent, Guard: operation.guard, Configuration: config}
+	if intent.Root == "service-recovery" {
+		name := "foundation/recovery/services/" + intent.Project + "/default.tfstate"
+		generation, err := liveGeneration(ctx, operation.client, operation.guard.Bucket, name)
+		if err != nil || generation == 0 {
+			return failure{70, "Prepared recovery state is unavailable; guard retained."}
+		}
+		state := objectReference{Bucket: operation.guard.Bucket, Name: name, Generation: generation}
+		data, err := readObject(ctx, operation.client, state)
+		if err != nil {
+			return err
+		}
+		state.SHA256 = checksum(data)
+		completion.State = &state
+	}
 	encoded, err := json.Marshal(completion)
 	if err != nil {
 		return err

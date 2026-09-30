@@ -31,6 +31,7 @@ type operationEvidence struct {
 	completed bool
 	native    *submission.OperationEvidence
 	rotation  *rotationIntent
+	restore   *restoreIntent
 }
 
 func (custody store) inspectOperation(action string, args []string, getenv func(string) string, output io.Writer, options []option.ClientOption) error {
@@ -127,6 +128,8 @@ func readOperation(ctx context.Context, client *storage.Service, bucket string, 
 		}
 	case "scheduled-rotation":
 		evidence.rotation, evidence.completed, err = inspectRotation(ctx, client, expected, guard, data)
+	case "native-restore":
+		evidence.restore, evidence.completed, err = inspectRestore(ctx, client, expected, guard, data)
 	default:
 		err = failure{70, "Unsupported operation kind; retain the guard for protected reconciliation."}
 	}
@@ -197,6 +200,15 @@ func (evidence operationEvidence) report(output io.Writer) error {
 			evidence.rotation.WorkflowExecution, evidence.rotation.WorkflowRevision, completion)
 		return err
 	}
+	if evidence.restore != nil {
+		completion := "not recorded; host work may still be running"
+		if evidence.completed {
+			completion = "files restored and host stopped; PostgreSQL not started or verified"
+		}
+		_, err := fmt.Fprintf(output, "Service: %s (%s)\nGuard generation: %d (%s)\nNative restoration: %s\nCompletion: %s\nNever replay this destination. Evidence is not current host health, SQL verification or permission to unlock.\n",
+			evidence.intent.Service, evidence.intent.Project, evidence.guard.Generation, state, evidence.restore.Target.Project, completion)
+		return err
+	}
 	completion := "not recorded; apply may still have changed resources"
 	if evidence.completed {
 		completion = "recorded convergence; exact configuration verified"
@@ -223,9 +235,9 @@ func inspectCompletion(ctx context.Context, client *storage.Service, intent appl
 	if err := decodeRecord(data, &completion); err != nil {
 		return false, err
 	}
-	expected := applyCompletion{1, intent.outcome(), intent, guard, objectReference{
+	expected := applyCompletion{SchemaVersion: 1, Outcome: intent.outcome(), Operation: intent, Guard: guard, Configuration: objectReference{
 		Bucket: guard.Bucket, Name: configName, Generation: completion.Configuration.Generation, SHA256: intent.InputsSHA256,
-	}}
+	}, State: completion.State}
 	if completion != expected || completion.Configuration.Generation <= 0 {
 		return false, failure{70, "Completion evidence does not match the exact operation and configuration."}
 	}
@@ -235,6 +247,18 @@ func inspectCompletion(ctx context.Context, client *storage.Service, intent appl
 	}
 	if checksum(data) != intent.InputsSHA256 {
 		return false, failure{70, "Converged configuration integrity could not be verified."}
+	}
+	if completion.State != nil {
+		state := *completion.State
+		if intent.Root != "service-recovery" || state.Bucket != guard.Bucket ||
+			state.Name != "foundation/recovery/services/"+intent.Project+"/default.tfstate" ||
+			state.Generation <= 0 || !digestPattern.MatchString(state.SHA256) {
+			return false, failure{70, "Prepared recovery state reference is invalid."}
+		}
+		data, err := readObject(ctx, client, state)
+		if err != nil || checksum(data) != state.SHA256 {
+			return false, failure{70, "Prepared recovery state integrity could not be verified."}
+		}
 	}
 	return true, nil
 }

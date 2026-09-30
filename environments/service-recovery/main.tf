@@ -86,10 +86,13 @@ resource "google_compute_instance" "recovery" {
 output "recovery" {
   description = "Prepared host coordinates. These do not authorize execution or establish successful database recovery."
   value = { for key, host in local.hosts : key => {
-    project = host.project
-    zone    = host.zone
-    host    = google_compute_instance.recovery[key].name
-    disk    = google_compute_disk.data[key].name
-    request = local.requests[key]
+    project          = host.project
+    zone             = host.zone
+    host             = google_compute_instance.recovery[key].name
+    disk             = google_compute_disk.data[key].name
+    request          = local.requests[key]
+    instance_id      = google_compute_instance.recovery[key].instance_id
+    disk_id          = google_compute_disk.data[key].disk_id
+    user_data_sha256 = sha256(google_compute_instance.recovery[key].metadata["user-data"])
   } }
 }

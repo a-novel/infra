@@ -64,6 +64,10 @@ func (custody store) completedWriter(ctx context.Context, evidence operationEvid
 		runID, attempt, commit = native.RunID, native.RunAttempt, native.Commit
 		path, prefix = ".github/workflows/release.yaml", "production deploy-service by @"
 	}
+	if restore := evidence.restore; restore != nil {
+		runID, attempt, commit = restore.RunID, restore.RunAttempt, restore.Commit
+		path, prefix = ".github/workflows/recovery.yaml", "recovery restore-native "+restore.Target.Project+" by @"
+	}
 	var output bytes.Buffer
 	endpoint := "repos/a-novel/infra/actions/runs/" + runID + "/attempts/" + attempt
 	query := `{id,run_attempt,status,head_branch,head_sha,event,path,display_title,repository:.repository.full_name}`
