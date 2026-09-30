@@ -574,9 +574,9 @@ test "${BOOTSTRAP_PLAN_EXIT}" -eq 2
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
 
-Expected safe result: validation and all four mocked tests pass; the state list contains
+Expected safe result: validation and all mocked tests pass; the state list contains
 `google_storage_bucket.state` and no other managed address; and the summary contains one `update` for
-`google_storage_bucket`, plus 108 creates across the declared inventory. It prints no resource
+`google_storage_bucket`, plus creates matching the current declared inventory. It prints no resource
 address, project ID, email, token, state value, or payload. Exit code `2` confirms that the saved plan
 contains changes.
 The full binary plan and its mode-`0600` non-secret custody record remain outside the repository;
@@ -863,7 +863,7 @@ must not be added as a workaround.
 
 ## 12. Verify federation and remove temporary broad access
 
-First prove that all four providers use the canonical audience and exact immutable claims:
+First prove that the four infra providers use the canonical audience and exact immutable claims:
 
 ```zsh
 () {
@@ -899,6 +899,9 @@ gcloud iam workload-identity-pools providers list \
   --format='table(name.basename(),attributeCondition)'
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
+
+Verify the additional Studio providers and visual-storage policies using the
+[visual-test checks](./visual-test-storage.md#verify-after-apply).
 
 Confirm no project service account has a user-managed key. Enumerating the project instead of naming
 the four current accounts keeps this check fail-closed when another account is introduced:

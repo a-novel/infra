@@ -11,6 +11,14 @@ until the consumer switches storage.
    [protected bootstrap plan/apply](../../ops/README.md#protected-workflow-operations) from `master`,
    checking the management project, region, two new buckets and exact Studio identities. Agents and
    infra PR jobs use mocked validation only. No new API, service-account key or secret payload is needed.
+   On an existing management plane, the foundation account's bucket-scoped grants cannot create new
+   buckets. A human operator must separately approve and temporarily grant project-level
+   `roles/storage.admin` to that apply identity for the reviewed bootstrap operation. Record the grant,
+   remove it immediately after the two bucket IAM bindings are applied, and verify root convergence
+   using the permanent bucket-scoped grants. Remove it on failure too, then diagnose and review a new
+   plan. Never grant Owner or Editor to automation. For initial management-plane creation, the
+   [human bootstrap procedure](./bootstrap-management-plane.md#5-establish-temporary-bootstrap-authority)
+   already supplies temporary creation authority.
 2. Inspect the `studio_visual_tests` output through the approved operator state access. Pass its
    bucket/object paths and `ci` / `master` provider/account pairs as non-secret configuration to Studio's
    shared Playwright action. Keep those values separate from production credentials.
