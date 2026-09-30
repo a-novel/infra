@@ -269,9 +269,9 @@ run "prepared_database_lifecycle" {
   assert {
     condition = alltrue([for message, matched in {
       "stanza: json-keys\nstatus: error\n  backup: invalid\n" = true
-      "    no archives or backups exist in the repo\n"       = true
-      "stanza: json-keys\nstatus: ok\n"                      = false
-      "verify command end: completed successfully"           = false
+      "    no archives or backups exist in the repo\n"        = true
+      "stanza: json-keys\nstatus: ok\n"                       = false
+      "verify command end: completed successfully"            = false
     } : can(regex(local.database_verify_failure_pattern, message)) == matched])
     error_message = "Integrity alerts must distinguish native damage and empty-repository reports from healthy or completed commands."
   }
