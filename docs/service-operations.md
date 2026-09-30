@@ -330,12 +330,27 @@ before apply. A stop can interrupt a backup; it is not evidence that the backup 
 stop handlers retain failed worker logs and pgBackRest owns partial-backup handling. Missing units,
 changed hosts and uncertain SSH responses block apply and retain the guard; do not replay them.
 
-Apply and convergence still use existing private custody. **They do not restart the database or
-timers, roll a MIG member, or establish readiness.** Resume remains separately approved, after host,
-repository, database and backup reconciliation. This hook does not cover arbitrary IAM/network
-changes or destructive repository work; those require their own reviewed maintenance scope.
-No live maintenance is enabled by merging this code. The actual COS stop/drain rehearsal remains an
-activation gate. See the [prepared backup path](../environments/service-foundation/README.md#prepared-native-backup-jobs).
+Without the separate bring-up opt-in, apply/convergence leaves the native services stopped.
+`database_runtime.bring_up = true` also requires `NATIVE_BACKUP_BRINGUP_ENABLED=true` in that
+protected workflow. OpenTofu then owns a RUNNING repository VM and proactive stateful database
+replacement with zero surge. A disruptive plan holds admission through apply/convergence, observed
+single-member/template reconciliation and native bring-up. No-op and monitoring-only plans do not
+restart hosts.
+
+The caller binds private generated targets to the registered project and numeric VM identities.
+It stop/starts the already-quiesced repository VM to load the reviewed COS configuration, waits for
+cloud-init, and starts repository then database through systemd. The database unit signals readiness
+after health and credential activation. Exact running image/health and an authenticated pgBackRest
+repository read must pass, with all backup timers inactive, before normal completion publication and
+guard removal. A stale boot configuration, failed start or uncertain observation retains admission;
+there is no automatic retry or rollback. Existing completion inspection/finishing remains unchanged.
+
+This proves the checked host runtime, not a successful backup, WAL protection, API cutover or restore.
+It creates no stanza, starts no backup job and enables no timer. Host reboot does not automatically
+start these disabled units. Arbitrary IAM/network changes and destructive repository work require
+their own maintenance scope. No live maintenance is enabled by merging this code; effective host
+permissions, COS lifecycle/interruption behavior and recovery after host failure remain activation
+gates. See the [prepared backup path](../environments/service-foundation/README.md#prepared-native-backup-jobs).
 
 ## One operation from admission to completion
 

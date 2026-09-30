@@ -73,7 +73,7 @@ func (storage store) apply(args []string, getenv func(string) string, output io.
 			return failure{77, "Managed-resource deletion requires approval on the exact merged PR."}
 		}
 	}
-	var maintenance []maintenanceHost
+	var upkeep maintenance
 	if root == "service-foundation" {
 		command := []string{
 			"ALLOW_RESOURCE_DELETION=" + destructive, "TOFU_VAR_FILE=" + inputs,
@@ -82,7 +82,7 @@ func (storage store) apply(args []string, getenv func(string) string, output io.
 		if err := storage.execute(storage.ctx, io.Discard, "env", command...); err != nil {
 			return failure{65, "Reviewed foundation plan could not be inspected; no admission or apply attempted."}
 		}
-		maintenance, err = plannedMaintenance(plan+".json", data, getenv)
+		upkeep, err = plannedMaintenance(plan+".json", data, getenv)
 		if err != nil {
 			return err
 		}
@@ -98,7 +98,7 @@ func (storage store) apply(args []string, getenv func(string) string, output io.
 	if err := storage.plan("consume", args[:3], suffix); err != nil {
 		return err
 	}
-	for _, host := range maintenance {
+	for _, host := range upkeep.hosts {
 		if err := storage.quiesce(host); err != nil {
 			return failure{70, "Native host quiescence is unconfirmed; no apply attempted. Keep the service guard and reconcile the original operation."}
 		}
@@ -113,6 +113,11 @@ func (storage store) apply(args []string, getenv func(string) string, output io.
 		}
 		if err := storage.execute(storage.ctx, output, "env", command...); err != nil {
 			return failure{1, "Reviewed apply or convergence failed; reconcile the resources and any held service guard before continuing."}
+		}
+	}
+	if upkeep.bringUp {
+		if err := storage.bringUp(inputs, data); err != nil {
+			return failure{70, "Native host bring-up is unconfirmed; keep the service guard and reconcile the original operation. Do not repeat apply."}
 		}
 	}
 	if operation != nil {
