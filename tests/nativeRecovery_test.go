@@ -34,6 +34,10 @@ func TestNativeRecoveryInputs(t *testing.T) {
 		valid                   bool
 	}{
 		{name: "Exact", valid: true},
+		{name: "Restore/Exact", valid: true},
+		{name: "Restore/Disabled", env: "NATIVE_RECOVERY_EXECUTION_ENABLED", value: "false"},
+		{name: "Restore/WrongConfirmation", env: "CONFIRM", value: "RESTORE wrong"},
+		{name: "Restore/PlanMixedIn", env: "RECOVERY_PLAN_ID", value: "123-1"},
 		{name: "Disabled", env: "NATIVE_RECOVERY_PREPARATION_ENABLED", value: "false"},
 		{name: "WrongWorkflow", env: "GITHUB_WORKFLOW_REF", value: "a-novel/infra/.github/workflows/foundation.yaml@refs/heads/master"},
 		{name: "MissingPlan", env: "RECOVERY_OPERATION", value: "apply-native"},
@@ -54,6 +58,11 @@ func TestNativeRecoveryInputs(t *testing.T) {
 			t.Parallel()
 			f := setup(t)
 			config := nativeInputs(t, f)
+			if strings.HasPrefix(testCase.name, "Restore/") {
+				f.env["NATIVE_RECOVERY_PREPARATION_ENABLED"] = "false"
+				f.env["NATIVE_RECOVERY_EXECUTION_ENABLED"], f.env["RECOVERY_OPERATION"] = "true", "restore-native"
+				f.env["PREPARATION_GENERATION"], f.env["CONFIRM"] = "42", "RESTORE-FILES a-novel-recovery-proof 42"
+			}
 			if testCase.field != "" {
 				nested(config, "recovery")[testCase.field] = testCase.value
 			}
@@ -117,6 +126,7 @@ func TestNativeRecoveryApply(t *testing.T) {
 			input := nativeInputs(t, f)
 			config := filepath.Join(f.dir, "inputs.json")
 			writeJSON(t, config, input)
+			writeJSON(t, filepath.Join(f.env["FAKE_GCS_ROOT"], f.env["STATE_BUCKET"], "foundation/recovery/services/a-novel-recovery-proof/default.tfstate"), object{"outputs": object{}})
 			bucket, commit := f.env["STATE_BUCKET"], strings.Repeat("a", 40)
 			f.env["GITHUB_REPOSITORY"], f.env["GITHUB_SHA"] = "a-novel/infra", commit
 			f.env["GITHUB_RUN_ID"], f.env["GITHUB_RUN_ATTEMPT"] = "124", "1"

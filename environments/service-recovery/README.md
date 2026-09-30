@@ -5,9 +5,10 @@ This root prepares one isolated JSON Keys host for an exact full/differential pg
 after four hours when explicitly started. The worker restores files to backup consistency and leaves
 PostgreSQL stopped. It does not prove SQL recovery or authorize traffic cutover.
 
-The protected recovery workflow enrolls **host preparation only**, disabled unless
-`NATIVE_RECOVERY_PREPARATION_ENABLED=true`. Assessment and drift inspect registered state without
-that mutation flag. Do not apply this root directly; see [preparation](#guarded-host-preparation)
+The protected recovery workflow separates **host preparation** from **file restoration**, disabled
+unless their respective `NATIVE_RECOVERY_PREPARATION_ENABLED` / `NATIVE_RECOVERY_EXECUTION_ENABLED`
+flags are `true`. Assessment and drift inspect registered state without
+either mutation flag. Do not apply this root directly; see [preparation](#guarded-host-preparation)
 and the separate [activation gates](#activation-gates). Legacy logical recovery and current backups
 remain unchanged.
 
@@ -73,6 +74,40 @@ Uncertain apply, publication or acknowledgement retains the guard; use the exist
 [operation inspector and finisher](../../docs/service-operations.md#inspect-an-interrupted-apply).
 Neither planning nor successful preparation starts the restore unit, formats storage or cuts over traffic.
 
+## Guarded file restoration
+
+After separate execution approval and the activation checks below, dispatch from current `master`:
+
+```text
+go run ./cmd/infra recovery restore-native <destination> <preparation-generation> 'RESTORE-FILES <destination> <preparation-generation>'
+```
+
+The generation is the **source guard generation** printed by successful `apply-native`, not a plan ID.
+Its original workflow must have ended. Preparation must record the exact backend state generation,
+numeric VM/disk IDs and host-definition hash; older preparation records cannot authorize this path.
+Changing inputs, state or resource incarnations requires a new reviewed preparation, not a retry.
+
+Execution acquires the source service guard and creates a permanent, create-only destination
+reservation before starting the host. It verifies the private VM, identity and four-hour cap, then
+checks the named data disk for partitions, mounts and signatures. Only this blank disk is formatted;
+an existing mount directory also refuses execution. No broad device discovery or force option is used.
+The disabled systemd one-shot unit runs the existing worker once and waits for its terminal outcome.
+This adds no dispatcher, polling loop, PostgreSQL startup or automatic recovery fallback.
+
+Success requires the worker's exact request, catalog, database identity and files-only marker, plus
+a successfully exited container and a stopped VM. Private evidence is copied into the existing
+destination state namespace (at most 1 MiB), and `files-restored` completion into the source receipt
+folder, before the exact guard is released. The disk, retained container, local attempt and destination
+reservation remain; a second dispatch cannot reuse them, even after success.
+
+On any uncertain command, disconnected runner or evidence-publication failure, retain the source
+guard and destination. Inspect the VM and `/mnt/disks/agora-recovery/work/attempt` privately; do not
+restart the unit, reformat the disk, delete the reservation or rerun the workflow. The four-hour cap
+bounds an unattended start, but disks/DNS keep billing. Stop unresolved work only after inspecting it.
+The existing operation inspector understands this outcome; its finisher can release **recorded**
+success after the originating workflow ends. It cannot reconstruct missing restore completion or
+authorize reuse. Review cleanup separately, preserving exported evidence and original backups.
+
 ## Resources and cost boundary
 
 Every address below is conditional on `recovery`. The root grants no IAM roles, enables no account,
@@ -95,8 +130,8 @@ before provisioning. This is not an additional permanent backup VM.
 ## Activation gates
 
 1. Review the protected registration and private inputs, then separately authorize host preparation.
-   The workflow is implemented but disabled. Execution, SQL recovery and cutover are not enrolled;
-   each needs its own guarded outcome before it may run. Never release ambiguous work.
+   Preparation and file-restoration workflows are implemented but independently disabled. SQL recovery
+   and cutover are not enrolled; each needs its own guarded outcome. Never release ambiguous work.
 2. Separately approve image publication/promotion and effective IAM. The existing management recovery
    account stays disabled until approved. Cross-project attachment, organization policy, IAP/OS Login,
    exact native-bucket access, Artifact Registry reads, source guard and completion-folder access
@@ -106,10 +141,10 @@ before provisioning. This is not an additional permanent backup VM.
    selected native label, retained image and any repository cutoff. Record lost writes and source
    fencing requirements; inspect/quiesce native work before disruptive or repository-mutating steps.
 4. Apply only an approved saved plan. Verify the stopped host, effective network/IAM, image and disk
-   IDs. Format only the independently verified fresh data disk and mount it at
-   `/mnt/disks/agora-recovery` with `nodev,nosuid,noexec`. No formatter is embedded in boot or restore.
+   IDs. The separately approved execution formats only the checked fresh data disk and mounts it at
+   `/mnt/disks/agora-recovery` with `nodev,nosuid,noexec`. Boot and the restore worker contain no formatter.
 5. Under a separately admitted execution, start the host and the single disabled unit explicitly.
-   Capture the local outcome and native diagnostics privately. A lost runner response is unknown
+   Use the guarded file-restoration dispatch above, not a manual bypass. A lost runner response is unknown
    outcome; inspect the retained container/attempt rather than starting again.
 6. Approve SQL recovery separately. Restore-generated configuration includes an archive reader; do
    not boot recovered configuration with cloud authority by default. Establish an isolated WAL-fetch

@@ -32,6 +32,15 @@ type RecoveryHost struct {
 	RepositoryTime    string   `json:"repository_time,omitempty"`
 }
 
+// Request is the exact selection shared by the prepared host and its worker.
+func (host RecoveryHost) Request() recovery.Request {
+	return recovery.Request{
+		Service: "json-keys", SourceProject: host.SourceProject, Project: host.Project,
+		ManagementProject: host.ManagementProject, ManagementNumber: host.ManagementNumber,
+		SystemID: host.SystemID, Major: 18, Set: host.Set, RepositoryTime: host.RepositoryTime,
+	}
+}
+
 // RecoveryScopes lists approved destinations independently of mutation activation.
 // Missing registration means no enrolled destinations, not permission to infer them.
 func RecoveryScopes(getenv func(string) string, bucket string) (map[string]string, error) {
@@ -91,12 +100,7 @@ func RecoveryScope(data []byte, getenv func(string) string, bucket string) (Reco
 	if _, err := ServiceScope(source, getenv, bucket); err != nil {
 		return host, invalid
 	}
-	request := recovery.Request{
-		Service: "json-keys", SourceProject: host.SourceProject, Project: host.Project,
-		ManagementProject: host.ManagementProject, ManagementNumber: host.ManagementNumber,
-		SystemID: host.SystemID, Major: 18, Set: host.Set, RepositoryTime: host.RepositoryTime,
-	}
-	if request.Validate() != nil || bucket != host.ManagementProject+"-"+host.ManagementNumber+"-tofu-state" {
+	if host.Request().Validate() != nil || bucket != host.ManagementProject+"-"+host.ManagementNumber+"-tofu-state" {
 		return host, invalid
 	}
 	var registration struct {
@@ -130,7 +134,7 @@ func RecoveryScope(data []byte, getenv func(string) string, bucket string) (Reco
 // RecoveryInputs selects native inputs before credentials, or rechecks their backend binding.
 func RecoveryInputs(args []string, getenv func(string) string, output, diagnostic io.Writer) int {
 	if err := recoveryInputs(args, getenv, output); err != nil {
-		_, _ = fmt.Fprintln(diagnostic, "Native recovery input authorization failed; no host preparation is authorized.") // Best effort on a closed stream.
+		_, _ = fmt.Fprintln(diagnostic, "Native recovery input authorization failed; no native mutation is authorized.") // Best effort on a closed stream.
 		return 65
 	}
 	return 0
@@ -152,20 +156,25 @@ func recoveryInputs(args []string, getenv func(string) string, output io.Writer)
 	if len(args) != 3 || args[0] != "prepare" || args[2] == "" || strings.ContainsAny(args[2], "\r\n") {
 		return invalid
 	}
-	if !RecoveryEnabled(getenv) {
-		return invalid
-	}
-	if !slices.Contains([]string{"plan-native", "apply-native"}, getenv("RECOVERY_OPERATION")) {
-		return invalid
-	}
 	command := []string{"recovery", getenv("RECOVERY_OPERATION"), args[1]}
-	if plan := getenv("RECOVERY_PLAN_ID"); plan != "" {
-		command = append(command, plan)
+	if getenv("RECOVERY_OPERATION") == "restore-native" {
+		if !RecoveryExecutionEnabled(getenv) || getenv("RECOVERY_PLAN_ID") != "" {
+			return invalid
+		}
+		command = append(command, getenv("PREPARATION_GENERATION"), getenv("CONFIRM"))
+	} else {
+		if !RecoveryEnabled(getenv) || !slices.Contains([]string{"plan-native", "apply-native"}, getenv("RECOVERY_OPERATION")) ||
+			getenv("PREPARATION_GENERATION") != "" || getenv("CONFIRM") != "" {
+			return invalid
+		}
+		if plan := getenv("RECOVERY_PLAN_ID"); plan != "" {
+			command = append(command, plan)
+		}
 	}
 	if _, err := parse(command); err != nil {
 		return err
 	}
-	for _, field := range []string{"TARGET_RECEIPT", "JSON_KEYS_ATTEMPT", "AUTHENTICATION_ATTEMPT", "LOST_WRITE_WINDOW", "CONFIRM"} {
+	for _, field := range []string{"TARGET_RECEIPT", "JSON_KEYS_ATTEMPT", "AUTHENTICATION_ATTEMPT", "LOST_WRITE_WINDOW"} {
 		if getenv(field) != "" {
 			return invalid
 		}
@@ -184,7 +193,15 @@ func recoveryInputs(args []string, getenv func(string) string, output io.Writer)
 
 // RecoveryEnabled confines host preparation to the separately activated protected workflow.
 func RecoveryEnabled(getenv func(string) string) bool {
-	return getenv("NATIVE_RECOVERY_PREPARATION_ENABLED") == "true" &&
-		getenv("GITHUB_EVENT_NAME") == "workflow_dispatch" &&
+	return getenv("NATIVE_RECOVERY_PREPARATION_ENABLED") == "true" && recoveryWorkflow(getenv)
+}
+
+// RecoveryExecutionEnabled is independent of host preparation and remains off by default.
+func RecoveryExecutionEnabled(getenv func(string) string) bool {
+	return getenv("NATIVE_RECOVERY_EXECUTION_ENABLED") == "true" && recoveryWorkflow(getenv)
+}
+
+func recoveryWorkflow(getenv func(string) string) bool {
+	return getenv("GITHUB_EVENT_NAME") == "workflow_dispatch" &&
 		getenv("GITHUB_WORKFLOW_REF") == "a-novel/infra/.github/workflows/recovery.yaml@refs/heads/master"
 }

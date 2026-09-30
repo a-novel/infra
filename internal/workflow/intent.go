@@ -29,6 +29,7 @@ const usage = `usage: go run ./cmd/infra
   recovery plan-workload <replacement-project-id> <receipt-id>
   recovery plan-native <registered-recovery-project>
   recovery apply-native <registered-recovery-project> <plan-id>
+  recovery restore-native <registered-recovery-project> <preparation-generation> 'RESTORE-FILES <project> <preparation-generation>'
   recovery apply-workload <replacement-project-id> <receipt-id> <plan-id>
   recovery restore-data <replacement-project-id> <receipt-id> <json-keys-attempt> <authentication-attempt> <lost-write-window> <confirmation>
   recovery cleanup-project <replacement-project-id> <receipt-id> <confirmation>`
@@ -162,7 +163,7 @@ func parse(args []string) (intent, error) {
 			return i, invalid
 		}
 	case "recovery":
-		if len(args) >= 2 && (args[0] == "plan-native" || args[0] == "apply-native") {
+		if len(args) >= 2 && slices.Contains([]string{"plan-native", "apply-native", "restore-native"}, args[0]) {
 			if !matches(`a-novel-recovery-[a-z0-9-]{1,13}[a-z0-9]`, args[1]) {
 				return i, invalid
 			}
@@ -174,6 +175,13 @@ func parse(args []string) (intent, error) {
 			case args[0] == "apply-native" && len(args) == 3 && matches(attemptID, args[2]):
 				i.planID, i.planPrefix = args[2], "recovery plan-native "+args[1]+" by @"
 				i.input("plan_id", i.planID)
+			case args[0] == "restore-native" && len(args) == 4:
+				generation, err := strconv.ParseInt(args[2], 10, 64)
+				if err != nil || generation <= 0 || strconv.FormatInt(generation, 10) != args[2] || args[3] != "RESTORE-FILES "+args[1]+" "+args[2] {
+					return i, invalid
+				}
+				i.input("preparation_generation", args[2])
+				i.input("confirm", args[3])
 			default:
 				return i, invalid
 			}
