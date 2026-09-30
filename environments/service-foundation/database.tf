@@ -179,7 +179,7 @@ resource "google_compute_instance_group_manager" "database" {
     }
   }
   update_policy {
-    type                           = "OPPORTUNISTIC"
+    type                           = local.native_host_bringup ? "PROACTIVE" : "OPPORTUNISTIC"
     minimal_action                 = "REPLACE"
     most_disruptive_allowed_action = "REPLACE"
     max_surge_fixed                = 0

@@ -1,5 +1,5 @@
 variable "pgbackrest_repository" {
-  description = "Optional stopped JSON Keys repository host. Runtime installs a disabled service; activation needs separate review."
+  description = "Optional JSON Keys repository host, stopped unless guarded bring-up is selected. Runtime installs a disabled service."
   type = object({
     machine_type = optional(string, "e2-micro")
     runtime = optional(object({
@@ -67,7 +67,7 @@ resource "google_compute_instance" "repository" {
   zone                      = var.database.zone
   name                      = "agora-pgbackrest-${var.service}"
   machine_type              = each.value.machine_type
-  desired_status            = "TERMINATED"
+  desired_status            = local.native_host_bringup ? "RUNNING" : "TERMINATED"
   allow_stopping_for_update = false
   deletion_protection       = true
   can_ip_forward            = false
@@ -124,7 +124,7 @@ resource "google_compute_instance" "repository" {
 }
 
 output "pgbackrest_repository" {
-  description = "Stopped repository host coordinates; bootstrap separately grants its management-bucket access. This is not backup readiness."
+  description = "Repository host coordinates; bootstrap separately grants its management-bucket access. This is not backup readiness."
   value = length(local.pgbackrest_repository) == 0 ? null : {
     schema_version  = 1
     project_id      = var.project_id

@@ -1,11 +1,12 @@
 variable "database_runtime" {
-  description = "Prepared, disabled JSON Keys lifecycle owned by foundation maintenance, never an API release. Reuses the repository's image, loader and CA."
+  description = "JSON Keys lifecycle owned by foundation maintenance. Reuses the repository's image, loader and CA; bring-up and WAL archiving are separate opt-ins."
   type = object({
     revision                = string
     password_version        = string
     backup_password_version = string
     identity_version        = string
     wal_archiving           = optional(bool, false)
+    bring_up                = optional(bool, false)
   })
   default = null
 
@@ -25,6 +26,7 @@ variable "database_runtime" {
 }
 
 locals {
+  native_host_bringup = try(var.database_runtime.bring_up, false)
   database_backup_jobs = {
     stanza-create = "stanza-create"
     check         = "check"

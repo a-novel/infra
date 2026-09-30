@@ -40,6 +40,7 @@ run "no_repository_by_default" {
       length(google_monitoring_alert_policy.database_backup_health) == 0,
       length(google_monitoring_alert_policy.database_backup_failure) == 0,
       output.pgbackrest_repository == null,
+      output.native_bringup == null,
     ])
     error_message = "Existing database inputs must add no repository host, identity or attachment authority."
   }
@@ -173,6 +174,8 @@ run "prepared_database_lifecycle" {
   }
   assert {
     condition = alltrue([
+      output.native_bringup == null,
+      google_compute_instance_group_manager.database["host"].update_policy[0].type == "OPPORTUNISTIC",
       google_compute_instance_template.database["host"].metadata_startup_script == null,
       !contains(keys(google_compute_instance_template.database["host"].metadata), "shutdown-script"),
       google_compute_instance_template.database["host"].metadata["user-data"] == local.database_cloud_config.host,
@@ -284,6 +287,39 @@ run "prepared_database_lifecycle" {
       ])
     ])
     error_message = "Each disabled health policy must have one native condition and the service's notification channel."
+  }
+}
+
+run "guarded_bringup_uses_native_reconciliation" {
+  command = plan
+  variables {
+    pgbackrest_repository = { runtime = jsondecode(file("tests/fixtures/repository-runtime.json")) }
+    database_runtime      = merge(jsondecode(file("tests/fixtures/database-runtime.json")), { bring_up = true })
+  }
+  override_resource {
+    target = google_compute_instance.repository
+    values = { network_interface = { network_ip = "10.90.0.3" } }
+  }
+  assert {
+    condition = [
+      google_compute_instance.repository["host"].desired_status,
+      google_compute_instance_group_manager.database["host"].update_policy[0].type,
+      google_compute_instance_group_manager.database["host"].update_policy[0].replacement_method,
+      tostring(google_compute_instance_group_manager.database["host"].update_policy[0].max_surge_fixed),
+    ] == ["RUNNING", "PROACTIVE", "RECREATE", "0"]
+    error_message = "Explicit bring-up delegates singleton reconciliation to Google without a second database writer."
+  }
+  assert {
+    condition = alltrue([
+      output.native_bringup.project == var.project_id,
+      output.native_bringup.group == "agora-database-json-keys",
+      output.native_bringup.image == var.pgbackrest_repository.runtime.server_image,
+      output.native_bringup.database.metadata["user-data"] == local.database_cloud_config.host,
+      output.native_bringup.repository.metadata["user-data"] == local.repository_cloud_config.host,
+      yamldecode(local.database_cloud_config.host).runcmd == [["systemctl", "daemon-reload"]],
+      yamldecode(local.repository_cloud_config.host).runcmd == [["systemctl", "daemon-reload"]],
+    ])
+    error_message = "Private targets must bind expected configuration; boot still starts no services or timers."
   }
 }
 
