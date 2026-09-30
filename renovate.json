@@ -16,6 +16,11 @@
       "pinDigests": false
     },
     {
+      "description": "Resolve Terraform providers and modules from the registry used by OpenTofu.",
+      "matchDatasources": ["terraform-provider", "terraform-module"],
+      "registryUrls": ["https://registry.opentofu.org"]
+    },
+    {
       "description": "Review the stable Google provider and service-agent beta provider together.",
       "matchManagers": ["terraform"],
       "matchPackageNames": ["hashicorp/google", "hashicorp/google-beta"],
