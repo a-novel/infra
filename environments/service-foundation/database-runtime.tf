@@ -1,5 +1,5 @@
 variable "database_runtime" {
-  description = "JSON Keys lifecycle owned by foundation maintenance. Reuses the repository's image, loader and CA; bring-up and WAL archiving are separate opt-ins."
+  description = "JSON Keys lifecycle owned by foundation maintenance. Reuses the repository's image, loader and CA; bring-up, WAL archiving and backup alerts are separate opt-ins."
   type = object({
     revision                = string
     password_version        = string
@@ -7,6 +7,7 @@ variable "database_runtime" {
     identity_version        = string
     wal_archiving           = optional(bool, false)
     bring_up                = optional(bool, false)
+    backup_alerts_enabled   = optional(bool, false)
   })
   default = null
 

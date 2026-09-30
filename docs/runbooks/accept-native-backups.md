@@ -1,0 +1,197 @@
+# Accept native backups before adoption
+
+This is the JSON Keys **human-run acceptance procedure**, not authorization to provision or operate
+cloud resources. Preparation may merge with every native path disabled. Approval of a live batch
+names its exact targets, mutations, spending limit and stop conditions. Keep results in
+[#190](https://github.com/a-novel/infra/issues/190); merging this procedure closes no adoption gate.
+
+Exercise the current database VM → TLS repository VM → management-owned GCS path using the deployed
+units. The [September single-VM result](../../proofs/pgbackrest-gcs/result-20260927.md) and
+[offline proofs](../../proofs/pgbackrest/README.md) cover different boundaries. Do not recreate that
+trial or substitute its simpler network, identity or entrypoint for this rehearsal.
+
+## 1. Approve the scope and cost
+
+Start with the [operator preflight](README.md#start-an-operation). Record the following privately
+before requesting the first live plan; publish only its sanitized review and evidence references.
+
+| Approval field | Required binding                                                                                                                                                                                                                 |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Source         | Registered JSON Keys project **ID and number**, zone, state prefix, database group/disk and repository host. Confirm this is a new synthetic-only database, with no serving API, application writes or retained production data. |
+| Custody        | Management project/bucket, native repository and distinct writer/recovery identities; current protected registration, input hashes and exact Git commit. Existing state must have one owner.                                     |
+| Artifacts      | Published service and tooling SemVer inputs, resolved promoted digests, producer provenance, current scan review and PostgreSQL/pgBackRest compatibility. No floating tags or inherited trial exceptions.                        |
+| Credentials    | Issuer custody, certificate names, expiry/renewal/revocation procedure and enabled numeric secret versions. Record metadata only; keep private keys off evidence/logs and the issuer off runtime hosts.                          |
+| Recovery       | Fresh independently registered disposable project/number, source's service guard, independent PostgreSQL system ID and selected full/differential set. Record any cutoff before recovery.                                        |
+| Execution      | Named operator and cleanup owner, attended host windows, synthetic data/size limit, maximum retained bytes, fault-injection scope, stop conditions and a separately priced attempt budget.                                       |
+| Evidence       | Durable private location outside all test VMs/projects for state references, logs and checksums. Record each command's start/end, outcome and native identity; sanitize before sharing.                                          |
+
+Use existing [foundation provisioning](provision-service-projects.md#protected-service-foundation-plans)
+and [native recovery registration](../../environments/service-recovery/README.md#guarded-host-preparation).
+These workflows authorize registered scopes, not arbitrary trial coordinates. Never repoint a
+production registration, reuse an old trial project, or use `-target` to manufacture isolation.
+If an approved synthetic source cannot be represented by the existing registration, stop for an
+enrollment design; do not bypass the guard or create a parallel proof implementation.
+
+### Cost worksheet
+
+Before provisioning, price the saved plan with dated EUR rates for its exact region and billing
+account. The recurring **additional** EUR 10–15/service/month ceiling is not a trial budget or an
+instruction to spend that amount. Record gross replacement cost, temporary overlap and net steady
+state at two, seven and ten services. Credit old costs only after resources and retention obligations end.
+
+| Cost               | Quantity to measure and price                                                                                                                                                        |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Repository         | One e2-micro candidate and 20 GiB standard boot disk; use e2-small only after measured capacity failure and separate approval. No repository data disk, new NAT or public IP.        |
+| Source             | The database VM, boot/data disks and existing daily snapshots during the rehearsal. These are real trial costs even where the future database host already belongs in the baseline.  |
+| Recovery           | One bounded disposable attempt at a time; include VM hours, boot/data disks, private DNS and image storage through cleanup. Preserve failed evidence before replacing a destination. |
+| Repository storage | Full/differential data, continuous WAL, copied consistency WAL, incomplete uploads, noncurrent versions and soft-deleted bytes over their actual retention windows.                  |
+| Operations         | GCS requests/transfers, registry storage, Secret Manager, logs, metrics and alert evaluation; include shared-network charges attributable to the test.                               |
+
+The source database/repository definitions have **no automatic trial shutdown deadline**. The recovery
+host's four-hour limit covers one start only. Agree an attended stop window before starting anything;
+export evidence and stop compute between stages and retention waits. Stopping VMs leaves billable
+disks and other resources. [Billing alerts are not spending caps](https://docs.cloud.google.com/billing/docs/how-to/budgets).
+Do not claim a monthly estimate from a few synthetic rows: record WAL/day, retained bytes by state,
+backup/verify duration, peak memory, CPU and disk headroom under an agreed representative load.
+
+## 2. Provision through existing owners
+
+Approve each private saved plan separately. Its allowed address set comes from the actual reviewed
+plan, including prerequisite resources; there is no universal resource count. Reject peer changes,
+legacy ownership transfer, unexpected replacements/deletions and public access.
+
+| Owner                                      | Allowed purpose and checkpoint                                                                                                                                                                                                           |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shared foundation                          | Selected project/agents, exact subnet access and [repository network rules](../../environments/production/foundation). No peer redeployment, public endpoint or new dedicated NAT.                                                       |
+| Service foundation                         | Selected database/repository hosts and identities, image stores and operations channel. Initially keep runtime absent; confirm idle database and stopped repository, exact disk/VM IDs and effective permissions.                        |
+| Management bootstrap                       | [Native bucket/roles](../../bootstrap/README.md#disabled-json-keys-native-backup-custody), then [TLS containers/grants](../../bootstrap/README.md#disabled-tls-credential-custody). Recovery stays disabled until its separate approval. |
+| Protected publication and operator custody | Publish/promote reviewed artifacts, issue certificates and populate exact secret versions through their existing procedures. No package downloads or credential workarounds on a host.                                                   |
+| Service foundation runtime                 | Install current units with `bring_up = false`, `wal_archiving = false` and `backup_alerts_enabled = false`. Convergence installs configuration; it establishes neither loaded boot configuration nor health.                             |
+
+Reconcile inherited IAM, private DNS/routes, issuer custody and protected-environment permissions
+before any consumer start. The repository process and authenticated database client share the accepted
+backup-writer trust domain. Prove peer, policy and recovery boundaries without claiming server-readable
+files or credentials are hidden from that client. Use synthetic probes, never credential extraction.
+
+Bring up through the existing [guarded foundation operation](../service-operations.md#native-online-backups)
+with its separately approved maintenance/bring-up gates. Hold admission through native reconciliation
+and runtime readiness. Do not manually substitute `systemctl start` for this protected host operation.
+Bring-up leaves timers off. Failed or uncertain commands retain admission; inspect the original work
+before deciding how to reconcile it. `finish-operation` requires its existing completion evidence.
+
+### Read-only host identity checkpoint
+
+After bring-up, set the four exported `NATIVE_*` inputs below from the reviewed registration and
+private post-apply evidence, in a fresh operator shell. The database instance **numeric ID** is not its
+name. This example reads one host and rejects a mismatch; it does not prove runtime or network health.
+Capture its output privately alongside the repository host's independently inspected identity.
+
+```bash
+bash <<'INSPECT'
+set -euo pipefail
+: "${NATIVE_SERVICE_PROJECT:?Set the approved JSON Keys project ID}"
+: "${NATIVE_ZONE:?Set the approved zone}"
+: "${NATIVE_DATABASE_INSTANCE:?Set the observed managed member name}"
+: "${NATIVE_DATABASE_ID:?Set the approved numeric instance ID}"
+: "${GCP_ACCOUNT:?Load the reviewed operator account}"
+gcloud compute instances describe "$NATIVE_DATABASE_INSTANCE" \
+  --project="$NATIVE_SERVICE_PROJECT" --zone="$NATIVE_ZONE" --account="$GCP_ACCOUNT" \
+  --format='json(id,name,status,serviceAccounts.email,networkInterfaces.accessConfigs)' |
+  jq -e --arg id "$NATIVE_DATABASE_ID" --arg name "$NATIVE_DATABASE_INSTANCE" \
+    --arg identity "agora-database@${NATIVE_SERVICE_PROJECT}.iam.gserviceaccount.com" '
+    select(.id == $id and .name == $name and .status == "RUNNING"
+      and [.serviceAccounts[].email] == [$identity]
+      and (.networkInterfaces | length == 1
+        and all(.[]; (.accessConfigs // [] | length) == 0)))'
+INSPECT
+```
+
+Inspect loaded units and bounded logs over approved IAP/OS Login access. Use selected `systemctl show`
+properties (`LoadState`, `ActiveState`, `SubState`, `Result`, `ExecMainStatus`) and Docker
+state/image/health fields; do not dump container environment, metadata payloads or secret files.
+
+## 3. Establish protection, then scheduling
+
+Enable `database_runtime.backup_alerts_enabled` through its reviewed foundation plan before WAL
+activation. Confirm the five policies use the selected VM ID and real operations channel. First
+prove notification delivery and data-disk telemetry; absence of incidents is not evidence. A
+monitor-only apply must leave hosts and timers unchanged. Keep observers active throughout the drill.
+
+In the approved synthetic database, exercise the actual service image's bootstrap, extensions and
+schema/migrations through the existing service-owned path. Record the system ID independently from
+the source, and deterministic application rows before each backup. An `initdb`-only fixture cannot
+prove application recovery. Migration failure needs inspection, not replay.
+
+Request WAL activation through guarded foundation maintenance only after disk/notification coverage
+works. Create the stanza using the installed `agora-backup-stanza-create.service`, then run
+`agora-backup-check.service` and `agora-backup-full.service` in that order, waiting for each native
+command and its container to finish. A successful `systemctl start` dispatch is not job completion.
+Inspect retained logs plus pgBackRest `info`; preserve set, database epoch/system ID, WAL bounds and
+copied consistency WAL. Use `agora-backup-diff.service` after another recorded commit, and
+`agora-backup-verify.service` to inspect the complete native integrity report. Exit zero alone does
+not establish integrity, especially for an empty repository.
+
+After first-backup, recovery and monitoring evidence is accepted, separately approve starting the
+installed full/diff/check timers. They have no `[Install]` section: do not use `enable --now` or add
+boot targets for this rehearsal. Confirm their UTC deadlines and no-catch-up behavior. Shutdown stops
+them; restart does not resume them. Resumption requires explicit database/repository/backup health
+reconciliation. Do not change production calendars to shorten an observation window and call that
+a real deadline test.
+
+## 4. Acceptance matrix
+
+Run one reviewed fault at a time with a healthy positive control before and after. Mark each row
+**pass, fail or not run**, with private evidence references. Stop progression on failure; never turn
+missing evidence into a pass. Destructive rows require their exact synthetic targets to be approved.
+
+| Case                               | Evidence required for acceptance                                                                                                                                                                                                                                                         |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Identity and network               | Own-service operations work from the actual containers. Database metadata/host-gateway and peer paths fail; repository peer buckets, policy changes and recovery authority fail for the intended permission. Include effective inherited IAM, attachment and host/container controls.    |
+| TLS and boot                       | Exact promoted images and loaded configuration; successful native authenticated repository read. Wrong trust/identity, unavailable secret and expiry fail closed without consumer start. Exercise renewal and removal of loaded old credentials with stopped consumers.                  |
+| Backup chain                       | Real full → changed rows → differential, WAL archival and complete integrity report. Preserve expected SQL independently of the backup catalog. Measure durations, stored bytes and WAL growth.                                                                                          |
+| Isolated recovery                  | Use protected `plan-native`, `apply-native`, then `restore-native` with approved `RESTORE-SQL` selection. Require copied WAL, networkless paused SQL checks, expected application rows and stopped PostgreSQL/VM plus private completion. A files-only result is insufficient.           |
+| Interruption                       | Interrupt a real upload and maintenance/start/restore at meaningful boundaries, including a lost acknowledgement. Preserve partial objects/attempts; prior usable backups stay usable. Unknown outcomes hold admission and cannot be replayed.                                           |
+| Process and host failure           | Database stop stops timers/workers and all owned containers; jobs cannot start a stopped database. Exercise repository/Docker/host outage and bounded WAL growth, loaded configuration after reboot, and explicit reconciliation. No automatic timer resume is assumed.                  |
+| Source loss and writer containment | After explicit synthetic host/disk-loss approval, recover without the original data disk. Establish old writer credentials are unusable with effective-access evidence; account disable alone is insufficient. Recover under independent recovery authority.                             |
+| Dependency damage                  | Separately remove/corrupt a still-required bundle, mutable catalog and WAL generation. Native verification/restore must detect the loss. Repair only reviewed generations under independent recovery authority, then repeat SQL recovery with the approved selection.                    |
+| Retention and expiry               | Follow [native expiry acceptance](backup-and-restore-postgresql.md#native-expiry-acceptance), including retention denial, partial catalog mutation, retained-chain SQL recovery and explicit reconciliation. Inventory live/noncurrent/soft-deleted bytes.                               |
+| Notification                       | Actual worker failure, integrity error/empty report, archive failure, stopped host, never-seen/missing success, disk pressure/missing telemetry and weekly deadline produce the intended notification. Record event, incident and delivery timestamps; calendar closure is not recovery. |
+
+The existing SQL verifier checks the schema, roles, extensions and database identity; it does not
+compare restored rows with independently recorded expectations. Its completion marker alone cannot
+pass the data-fidelity row above. Agree a separately reviewed, isolated observation of those rows
+before the live recovery batch; otherwise leave that gate unproven.
+
+The guarded recovery path currently verifies **backup consistency**, not later PITR or API cutover.
+Record PITR beyond that point as unproven by this workflow; do not use the old manual proof to claim
+the new execution boundary supports it. Recovery selections and limitations belong in the acceptance
+decision. After soft-delete repair, the original repository-time cutoff can still fail because restored
+objects get new generations/timestamps. Preserve that failure; an explicit-set comparison needs separate
+approval and a fresh destination, never an automatic fallback.
+
+Capture total operator RTO separately from automated restore duration, and RPO from the last recovered
+committed data relative to the simulated loss. Compare with the currently accepted recovery objectives;
+do not infer them from backup frequency. Test Authentication independently before extending approval
+beyond JSON Keys.
+
+## 5. Close the rehearsal and decide adoption
+
+Export evidence before stopping or deleting its only copy. Inventory every created resource, grant,
+image and object generation against the approved plans; reconcile partial operations first.
+
+| Boundary                           | Cleanup decision                                                                                                                                                                                                                                                                                  |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Source hosts                       | Quiesce through protected maintenance: timers, workers, archiver/database, repository. Confirm no owned containers remain. Stop compute explicitly; never stop just a MIG member and assume it stays stopped. Source disk/IP, snapshots, registry and boot disks survive as their owners specify. |
+| Source resources                   | Retain or remove only with an exact reviewed ownership/cleanup plan. Existing `prevent_destroy`/deletion guards are intentional. No blanket foundation destroy, management-project deletion or recovery-cleanup shortcut for the source. Record retained cost and owner.                          |
+| Recovery project                   | After completed/exported evidence and revoked cross-project access, use [guarded cleanup](../../environments/service-recovery/README.md#guarded-project-cleanup). Failed/uncertain attempts need reconciliation first. `DELETE_REQUESTED` is not permanent erasure or settled billing.            |
+| Management storage and credentials | Retain backup generations, state, evidence, receipts and reservations. Revoke temporary grants and reconcile credential retirement without affecting current readers. Review storage cleanup only after actual retention/soft-delete inventory permits it.                                        |
+
+Keep all legacy protection through a separate adoption decision. Record measured gross/net EUR cost,
+retention liabilities, resource headroom, RPO/RTO, passed cases and unresolved limits. Only accepted
+native protection authorizes a separate PR retiring the selected logical writer/jobs and redundant
+tooling. Historical readers/images remain until their supported points expire; snapshots have their
+own cost/recovery-value decision. This procedure creates no recurring trial or cleanup automation.
+
+Primary references: [pgBackRest operations](https://pgbackrest.org/user-guide.html),
+[systemd timers](https://github.com/systemd/systemd/blob/v257/man/systemd.timer.xml),
+[GCS soft deletion](https://docs.cloud.google.com/storage/docs/soft-delete).

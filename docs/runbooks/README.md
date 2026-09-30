@@ -58,6 +58,7 @@ An active workflow must finish or be recovered before another production command
 | Scale, resize, inspect, or roll back the database host | [Operate the private PostgreSQL host](./operate-postgresql-host.md)    |
 | Inspect or SSH to the private database host            | [Debug the private PostgreSQL host](./debug-postgresql-host.md)        |
 | Back up, restore, or prove a pre-change recovery gate  | [Back up and restore PostgreSQL](./backup-and-restore-postgresql.md)   |
+| Rehearse native backup adoption before activation      | [Accept native backups](./accept-native-backups.md)                    |
 | Add, rotate, disable, or destroy a payload version     | [Add or rotate a secret version](./secret-versions.md)                 |
 | Replace or verify the hosted SMTP provider             | [Configure hosted SMTP](./configure-hosted-smtp.md)                    |
 | Diagnose an alert or scheduled-check failure           | [Respond to production alerts](./respond-to-alerts.md)                 |

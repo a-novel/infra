@@ -290,6 +290,32 @@ run "prepared_database_lifecycle" {
   }
 }
 
+run "backup_alerts_do_not_activate_hosts" {
+  command = plan
+  variables {
+    pgbackrest_repository = { runtime = jsondecode(file("tests/fixtures/repository-runtime.json")) }
+    database_runtime      = merge(jsondecode(file("tests/fixtures/database-runtime.json")), { backup_alerts_enabled = true })
+  }
+  assert {
+    condition = alltrue(concat(
+      [google_monitoring_alert_policy.database_backup_failure["host"].enabled],
+      [for policy in google_monitoring_alert_policy.database_backup_health : policy.enabled],
+    ))
+    error_message = "Explicit approval enables the five existing native alert policies."
+  }
+  assert {
+    condition = alltrue([
+      output.native_bringup == null,
+      !var.database_runtime.wal_archiving,
+      google_compute_instance.repository["host"].desired_status == "TERMINATED",
+      google_compute_instance_group_manager.database["host"].update_policy[0].type == "OPPORTUNISTIC",
+      yamldecode(local.database_cloud_config.host).runcmd == [["systemctl", "daemon-reload"]],
+      yamldecode(local.repository_cloud_config.host).runcmd == [["systemctl", "daemon-reload"]],
+    ])
+    error_message = "Alert activation must leave host bring-up, WAL and timers inactive."
+  }
+}
+
 run "guarded_bringup_uses_native_reconciliation" {
   command = plan
   variables {
