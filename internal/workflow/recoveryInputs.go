@@ -30,6 +30,7 @@ type RecoveryHost struct {
 	SystemID          string   `json:"system_id"`
 	Set               string   `json:"set"`
 	RepositoryTime    string   `json:"repository_time,omitempty"`
+	VerifySQL         bool     `json:"verify_sql,omitempty"`
 }
 
 // Request is the exact selection shared by the prepared host and its worker.
@@ -37,7 +38,7 @@ func (host RecoveryHost) Request() recovery.Request {
 	return recovery.Request{
 		Service: "json-keys", SourceProject: host.SourceProject, Project: host.Project,
 		ManagementProject: host.ManagementProject, ManagementNumber: host.ManagementNumber,
-		SystemID: host.SystemID, Major: 18, Set: host.Set, RepositoryTime: host.RepositoryTime,
+		SystemID: host.SystemID, Major: 18, Set: host.Set, RepositoryTime: host.RepositoryTime, VerifySQL: host.VerifySQL,
 	}
 }
 
@@ -188,7 +189,16 @@ func recoveryInputs(args []string, getenv func(string) string, output io.Writer)
 	if err != nil || host.Project != args[1] {
 		return invalid
 	}
+	if getenv("RECOVERY_OPERATION") == "restore-native" &&
+		(getenv("CONFIRM") != host.Request().Confirmation(getenv("PREPARATION_GENERATION")) || !RecoverySQLAllowed(host.VerifySQL, getenv)) {
+		return invalid
+	}
 	return writeFoundationInputs(args[2], data, output, "services/"+host.Project)
+}
+
+// RecoverySQLAllowed requires independent activation for requests that start offline PostgreSQL.
+func RecoverySQLAllowed(selected bool, getenv func(string) string) bool {
+	return !selected || (getenv("NATIVE_RECOVERY_SQL_ENABLED") == "true" && recoveryWorkflow(getenv))
 }
 
 // RecoveryEnabled confines host preparation to the separately activated protected workflow.

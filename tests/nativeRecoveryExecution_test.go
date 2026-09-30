@@ -45,11 +45,21 @@ func TestNativeRecoveryExecution(t *testing.T) {
 		{"UncertainWorker", "systemctl start", 70, true, true},
 		{"LostCompletion", "completion-ack", 70, true, true},
 		{"LostGuardDeletion", "delete-ack", 70, true, true},
+		{"SQLSuccess", "sql-success", 0, false, true},
+		{"SQLDisabled", "sql-disabled", 77, false, false},
+		{"SQLIncomplete", "sql-incomplete", 70, true, true},
+		{"SQLWorkerFailure", "sql-agora-native-verify.service", 70, true, true},
+		{"SQLNetworkBoundary", "sql-verify-network", 70, true, true},
+		{"SQLLostCompletion", "sql-completion-ack", 70, true, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			f := setup(t)
 			config := nativeInputs(t, f)
+			verifySQL := strings.HasPrefix(tc.fault, "sql-")
+			if verifySQL {
+				nested(config, "recovery")["verify_sql"] = true
+			}
 			file := filepath.Join(f.dir, "inputs.json")
 			writeJSON(t, file, config)
 			getenv := func(key string) string { return f.env[key] }
@@ -58,6 +68,12 @@ func TestNativeRecoveryExecution(t *testing.T) {
 			host, err := infraworkflow.RecoveryScope(input, getenv, f.env["STATE_BUCKET"])
 			require.NoError(t, err)
 			runtime := newRecoveryHost(t, host.Request())
+			if verifySQL {
+				runtime.fail = strings.TrimPrefix(tc.fault, "sql-")
+			}
+			if verifySQL && tc.fault != "sql-incomplete" {
+				runtime.replies["sudo -n cat /mnt/disks/agora-recovery/work/attempt/verification/sql-verified.json"] = fmt.Sprintf(`{"system_id":%q,"set":%q,"postgresql_stopped":true}`, host.SystemID, host.Set)
+			}
 			bucket, receipts := f.env["STATE_BUCKET"], strings.TrimSuffix(f.env["STATE_BUCKET"], "-tofu-state")+"-deployment-receipts"
 			guardName := "services/" + host.SourceProject + "/release/operation.json"
 			prefix := "foundation/recovery/services/" + host.Project + "/"
@@ -94,7 +110,11 @@ func TestNativeRecoveryExecution(t *testing.T) {
 			f.env["NATIVE_RECOVERY_EXECUTION_ENABLED"], f.env["RECOVERY_OPERATION"] = "true", "restore-native"
 			f.env["GITHUB_REPOSITORY"], f.env["GITHUB_SHA"] = "a-novel/infra", strings.Repeat("a", 40)
 			f.env["GITHUB_RUN_ID"], f.env["GITHUB_RUN_ATTEMPT"] = "125", "1"
-			confirmation := "RESTORE-FILES " + host.Project + " 42"
+			confirmation := host.Request().Confirmation("42")
+			f.env["NATIVE_RECOVERY_SQL_ENABLED"] = "true"
+			if tc.fault == "sql-disabled" {
+				f.env["NATIVE_RECOVERY_SQL_ENABLED"] = "false"
+			}
 			if tc.fault == "disabled" {
 				f.env["NATIVE_RECOVERY_EXECUTION_ENABLED"] = "false"
 			}
@@ -111,7 +131,7 @@ func TestNativeRecoveryExecution(t *testing.T) {
 				switch r.Method {
 				case http.MethodGet:
 					data, generation := objects[key], "44"
-					if strings.HasSuffix(name, "restore-attempt.json") || strings.HasSuffix(name, "files-restored.json") || strings.HasSuffix(name, "/operations/100.json") {
+					if strings.HasSuffix(name, "restore-attempt.json") || strings.HasSuffix(name, host.Request().Outcome()+".json") || strings.HasSuffix(name, "/operations/100.json") {
 						generation = "100"
 					}
 					if name == guardName {
@@ -178,7 +198,7 @@ func TestNativeRecoveryExecution(t *testing.T) {
 					if strings.Contains(metadata.Name, "/operations/") {
 						fault = "completion-ack"
 					}
-					if tc.fault == fault && fault != "" {
+					if strings.TrimPrefix(tc.fault, "sql-") == fault && fault != "" {
 						http.Error(w, privateValue, http.StatusForbidden)
 						return
 					}
@@ -216,15 +236,19 @@ func TestNativeRecoveryExecution(t *testing.T) {
 			if code == 0 {
 				var completion object
 				require.NoError(t, json.Unmarshal(objects[receipts+"/services/"+host.SourceProject+"/production/operations/100.json"], &completion))
-				require.Equal(t, []any{"files-restored", "TERMINATED"}, []any{completion["outcome"], runtime.vm["status"]})
+				require.Equal(t, []any{host.Request().Outcome(), "TERMINATED"}, []any{completion["outcome"], runtime.vm["status"]})
 			}
-			if code == 0 || tc.fault == "completion-ack" || tc.fault == "delete-ack" {
+			if code == 0 || strings.HasSuffix(tc.fault, "completion-ack") || tc.fault == "delete-ack" {
 				calls := len(runtime.commands)
 				stdout.Reset()
 				stderr.Reset()
 				code = custody.Run(t.Context(), []string{"operation", "inspect", bucket, host.SourceProject, "100"}, getenv, execute, &stdout, &stderr, option.WithEndpoint(server.URL), option.WithoutAuthentication())
 				expectCode(t, 0, code, stdout.String()+stderr.String())
-				require.Contains(t, stdout.String(), "PostgreSQL not started or verified")
+				outcome := "PostgreSQL not started or verified"
+				if verifySQL {
+					outcome = "SQL verified offline at backup consistency"
+				}
+				require.Contains(t, stdout.String(), outcome)
 				f.env["SERVICE_OPERATION_RECOVERY_ENABLED"] = "true"
 				f.env["GITHUB_WORKFLOW_REF"] = "a-novel/infra/.github/workflows/foundation.yaml@refs/heads/master"
 				code = custody.Run(t.Context(), []string{"operation", "finish", bucket, host.SourceProject, "100", "FINISH json-keys 100"}, getenv, execute, &stdout, &stderr, option.WithEndpoint(server.URL), option.WithoutAuthentication())

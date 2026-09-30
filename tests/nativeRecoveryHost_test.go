@@ -93,7 +93,14 @@ func (f *recoveryHostFixture) execute(_ context.Context, output io.Writer, binar
 		f.vm["status"] = "TERMINATED"
 	}
 	if strings.HasPrefix(command, "sudo -n docker inspect") {
-		_, err := fmt.Fprint(output, "exited|0|"+f.host.Image+"|no")
+		network := "bridge"
+		if strings.HasSuffix(command, "agora-native-verify") {
+			network = "none"
+			if f.fail == "verify-network" {
+				network = "bridge"
+			}
+		}
+		_, err := fmt.Fprint(output, "exited|0|"+f.host.Image+"|no|"+network)
 		return err
 	}
 	_, err := fmt.Fprint(output, f.replies[command])

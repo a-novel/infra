@@ -20,6 +20,7 @@ variable "recovery" {
     system_id          = string
     set                = string
     repository_time    = optional(string, "")
+    verify_sql         = optional(bool, false)
   })
   default = null
 
@@ -67,5 +68,6 @@ locals {
     major              = 18
     set                = host.set
     repository_time    = host.repository_time
+    verify_sql         = host.verify_sql
   } }
 }

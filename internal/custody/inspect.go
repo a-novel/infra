@@ -204,8 +204,11 @@ func (evidence operationEvidence) report(output io.Writer) error {
 		completion := "not recorded; host work may still be running"
 		if evidence.completed {
 			completion = "files restored and host stopped; PostgreSQL not started or verified"
+			if evidence.restore.Target.Request.VerifySQL {
+				completion = "SQL verified offline at backup consistency; PostgreSQL and host stopped"
+			}
 		}
-		_, err := fmt.Fprintf(output, "Service: %s (%s)\nGuard generation: %d (%s)\nNative restoration: %s\nCompletion: %s\nNever replay this destination. Evidence is not current host health, SQL verification or permission to unlock.\n",
+		_, err := fmt.Fprintf(output, "Service: %s (%s)\nGuard generation: %d (%s)\nNative restoration: %s\nCompletion: %s\nNever replay this destination. Evidence is not current health, source fencing, cutover or permission to unlock.\n",
 			evidence.intent.Service, evidence.intent.Project, evidence.guard.Generation, state, evidence.restore.Target.Project, completion)
 		return err
 	}

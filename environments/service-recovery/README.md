@@ -3,7 +3,8 @@
 This root prepares one isolated JSON Keys host for an exact full/differential pgBackRest restore.
 `recovery = null` creates nothing. A configured host is stopped, has no startup restore, and stops
 after four hours when explicitly started. The worker restores files to backup consistency and leaves
-PostgreSQL stopped. It does not prove SQL recovery or authorize traffic cutover.
+PostgreSQL stopped. Optional offline SQL verification uses the same host, then stops PostgreSQL again.
+Neither outcome authorizes traffic cutover.
 
 The protected recovery workflow separates **host preparation** from **file restoration**, disabled
 unless their respective `NATIVE_RECOVERY_PREPARATION_ENABLED` / `NATIVE_RECOVERY_EXECUTION_ENABLED`
@@ -36,6 +37,12 @@ native catalog and diagnostics there, verifies the selected catalog entry's data
 ID, and invokes pgBackRest with an exact set and no delta/force fallback. After restore it checks
 `pg_controldata` against that same system ID. `files-restored.json` means only that files were restored;
 neither the source nor restored PostgreSQL was started by the worker.
+
+With protected `verify_sql = true`, a second container verifies SQL with **no network**. It reads
+the copied consistency WAL, ignores restored startup configuration, and pauses PostgreSQL at the
+selected backup's consistency point. It checks the independent system ID, JSON Keys tables, roles,
+constraints and UUID extension. `sql-verified` requires those checks plus confirmed PostgreSQL and
+VM shutdown; it is not continuous health, source fencing or application cutover evidence.
 
 Any existing attempt or container name blocks replay, including after interruption. Preserve failed
 attempts. A new attempt requires reconciliation and separately approved fresh destination storage.
@@ -92,7 +99,7 @@ reservation before starting the host. It verifies the private VM, identity and f
 checks the named data disk for partitions, mounts and signatures. Only this blank disk is formatted;
 an existing mount directory also refuses execution. No broad device discovery or force option is used.
 The disabled systemd one-shot unit runs the existing worker once and waits for its terminal outcome.
-This adds no dispatcher, polling loop, PostgreSQL startup or automatic recovery fallback.
+This adds no dispatcher or automatic recovery fallback.
 
 Success requires the worker's exact request, catalog, database identity and files-only marker, plus
 a successfully exited container and a stopped VM. Private evidence is copied into the existing
@@ -107,6 +114,25 @@ bounds an unattended start, but disks/DNS keep billing. Stop unresolved work onl
 The existing operation inspector understands this outcome; its finisher can release **recorded**
 success after the originating workflow ends. It cannot reconstruct missing restore completion or
 authorize reuse. Review cleanup separately, preserving exported evidence and original backups.
+
+### Optional offline SQL verification
+
+Select `verify_sql = true` **before host preparation**, separately approve
+`NATIVE_RECOVERY_SQL_ENABLED=true`, and use the same guarded dispatch with confirmation
+`RESTORE-SQL <destination> <preparation-generation>`. The existing execution flag remains required.
+The second systemd unit has a five-minute limit, no image pull and `--network=none`; no cloud
+credentials or WAL-fetch proxy enter PostgreSQL's container. It never promotes the recovered server.
+
+Future native full/differential backups use pgBackRest's
+[`archive-copy`](https://pgbackrest.org/command.html#command-backup/option-archive-copy), duplicating
+the WAL needed for backup consistency alongside the ordinary WAL archive. Storage/transfer grow
+with WAL generated during each backup; there is no additional VM. Historical backups without copied
+WAL fail this offline verification rather than falling back to network access. Files-only recovery
+and historical readers remain available. PITR beyond the selected backup requires a separate design.
+
+Any missing WAL, failed SQL check, unconfirmed shutdown or missing completion retains admission and
+the attempt. Do not resume SQL on an earlier files-only destination or replay a failed verification;
+review a fresh destination and its complete selection instead.
 
 ## Resources and cost boundary
 
@@ -130,8 +156,8 @@ before provisioning. This is not an additional permanent backup VM.
 ## Activation gates
 
 1. Review the protected registration and private inputs, then separately authorize host preparation.
-   Preparation and file-restoration workflows are implemented but independently disabled. SQL recovery
-   and cutover are not enrolled; each needs its own guarded outcome. Never release ambiguous work.
+   Preparation, file restoration and optional offline SQL verification are independently disabled.
+   Cutover is not enrolled. Never release ambiguous work.
 2. Separately approve image publication/promotion and effective IAM. The existing management recovery
    account stays disabled until approved. Cross-project attachment, organization policy, IAP/OS Login,
    exact native-bucket access, Artifact Registry reads, source guard and completion-folder access
@@ -143,12 +169,11 @@ before provisioning. This is not an additional permanent backup VM.
 4. Apply only an approved saved plan. Verify the stopped host, effective network/IAM, image and disk
    IDs. The separately approved execution formats only the checked fresh data disk and mounts it at
    `/mnt/disks/agora-recovery` with `nodev,nosuid,noexec`. Boot and the restore worker contain no formatter.
-5. Under a separately admitted execution, start the host and the single disabled unit explicitly.
+5. Under a separately admitted execution, start the host and its selected disabled units explicitly.
    Use the guarded file-restoration dispatch above, not a manual bypass. A lost runner response is unknown
    outcome; inspect the retained container/attempt rather than starting again.
-6. Approve SQL recovery separately. Restore-generated configuration includes an archive reader; do
-   not boot recovered configuration with cloud authority by default. Establish an isolated WAL-fetch
-   and SQL-validation boundary, verify roles/extensions/data, and prove source-host-loss recovery.
+6. Approve offline SQL verification separately, with copied consistency WAL in the selected backup.
+   Prove the actual host's network and process boundaries, roles/extensions/data and source-host-loss recovery.
    Cutover additionally requires application compatibility, source fencing and lost-write acceptance.
 7. Export evidence and publish the reviewed outcome through existing private custody. Stop the VM,
    revoke temporary access, then review a cleanup plan for only this disposable project's resources.

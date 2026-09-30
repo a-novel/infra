@@ -50,9 +50,12 @@ func (custody store) restore(args []string, getenv func(string) string, output i
 	if err != nil {
 		return failure{65, "Invalid native restore scope."}
 	}
+	if !workflow.RecoverySQLAllowed(host.VerifySQL, getenv) {
+		return failure{77, "Offline SQL verification is not activated."}
+	}
 	generation, err := strconv.ParseInt(args[1], 10, 64)
-	if err != nil || generation <= 0 || strconv.FormatInt(generation, 10) != args[1] || args[2] != "RESTORE-FILES "+host.Project+" "+args[1] {
-		return failure{65, "Exact preparation generation and file-restoration confirmation are required."}
+	if err != nil || generation <= 0 || strconv.FormatInt(generation, 10) != args[1] || args[2] != host.Request().Confirmation(args[1]) {
+		return failure{65, "Exact preparation generation and selected recovery confirmation are required."}
 	}
 	intent := restoreIntent{SchemaVersion: 1, Kind: "native-restore", Commit: getenv("GITHUB_SHA"), RunID: getenv("GITHUB_RUN_ID"), RunAttempt: getenv("GITHUB_RUN_ATTEMPT")}
 	if !commitPattern.MatchString(intent.Commit) || !sequencePattern.MatchString(intent.RunID+"-"+intent.RunAttempt) {
@@ -112,7 +115,7 @@ func (custody store) restore(args []string, getenv func(string) string, output i
 	runtime := recovery.Host{Target: intent.Target, DiskGiB: host.DiskGiB, Image: host.RestoreImage, Scratch: custody.scratch, Execute: custody.execute}
 	files, err := runtime.Restore(ctx)
 	if err != nil {
-		return failure{70, "File restoration incomplete or uncertain; guard and destination retained. Inspect private host evidence without replay. " + err.Error()}
+		return failure{70, "Selected recovery incomplete or uncertain; guard and destination retained. Inspect private host evidence without replay. " + err.Error()}
 	}
 	data, err := json.Marshal(files)
 	if err != nil || len(data) > inspectionLimit {
@@ -122,7 +125,7 @@ func (custody store) restore(args []string, getenv func(string) string, output i
 	if err != nil {
 		return failure{70, "Restore evidence publication unconfirmed; guard retained."}
 	}
-	data, err = json.Marshal(restoreCompletion{"files-restored", intent, guard, attempt, evidence})
+	data, err = json.Marshal(restoreCompletion{host.Request().Outcome(), intent, guard, attempt, evidence})
 	if err != nil {
 		return err
 	}
@@ -130,9 +133,9 @@ func (custody store) restore(args []string, getenv func(string) string, output i
 		return failure{70, "Restore completion publication unconfirmed; guard retained."}
 	}
 	if err := client.Objects.Delete(guard.Bucket, guard.Name).IfGenerationMatch(guard.Generation).Context(ctx).Do(); err != nil {
-		return failure{70, "Files restored and host stopped; guard removal unconfirmed. Finish only this recorded generation."}
+		return failure{70, "Selected recovery completed and host stopped; guard removal unconfirmed. Finish only this recorded generation."}
 	}
-	_, err = fmt.Fprintln(output, "Files restored; private evidence recorded; host stopped. PostgreSQL was not started or verified. Destination cannot be reused.")
+	_, err = fmt.Fprintf(output, "%s: private evidence recorded; host stopped. No cutover. Destination cannot be reused.\n", host.Request().Outcome())
 	return err
 }
 
@@ -141,7 +144,7 @@ func (intent restoreIntent) attemptName() string {
 }
 
 func (intent restoreIntent) evidenceName() string {
-	return "foundation/recovery/services/" + intent.Target.Project + "/files-restored.json"
+	return "foundation/recovery/services/" + intent.Target.Project + "/" + intent.Target.Request.Outcome() + ".json"
 }
 
 func completionName(project string, generation int64) string {
@@ -221,7 +224,7 @@ func inspectRestore(ctx context.Context, client *storage.Service, expected apply
 	if err := decodeRecord(data, &completed); err != nil {
 		return nil, false, err
 	}
-	if completed.Operation != intent || completed.Guard != guard || completed.Outcome != "files-restored" ||
+	if completed.Operation != intent || completed.Guard != guard || completed.Outcome != intent.Target.Request.Outcome() ||
 		completed.Attempt.Name != intent.attemptName() || completed.Evidence.Name != intent.evidenceName() {
 		return nil, false, failure{70, "Restore completion differs from the admitted operation."}
 	}
@@ -244,8 +247,8 @@ func inspectRestore(ctx context.Context, client *storage.Service, expected apply
 			}
 		} else {
 			var files map[string]string
-			if decodeRecord(data, &files) != nil || intent.Target.Request.CheckFiles(files) != nil {
-				return nil, false, failure{70, "Files-only recovery evidence is invalid."}
+			if decodeRecord(data, &files) != nil || intent.Target.Request.CheckEvidence(files) != nil {
+				return nil, false, failure{70, "Selected recovery evidence is invalid."}
 			}
 		}
 	}

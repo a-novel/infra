@@ -25,7 +25,7 @@ resource "google_compute_instance" "recovery" {
     enable-oslogin           = "TRUE"
     serial-port-enable       = "FALSE"
     user-data = "#cloud-config\n${yamlencode({
-      write_files = [
+      write_files = concat([
         {
           path        = "/etc/agora-recovery/request.json"
           permissions = "0444"
@@ -36,12 +36,11 @@ resource "google_compute_instance" "recovery" {
           permissions = "0600"
           content     = jsonencode({ credHelpers = { "europe-west1-docker.pkg.dev" = "gcr" } })
         },
-        {
-          path        = "/etc/systemd/system/agora-native-restore.service"
-          permissions = "0644"
-          content     = templatefile("${path.module}/restore.service.tftpl", { image = each.value.restore_image })
-        },
-      ]
+        ], [for name, network in { restore = "bridge", verify = "none" } : {
+          path                             = "/etc/systemd/system/agora-native-${name}.service"
+          permissions                      = "0644"
+          content                          = templatefile("${path.module}/restore.service.tftpl", { image = each.value.restore_image, name = name, network = network })
+      }])
       # Creation boots briefly even with a stopped desired state; preparation must not start work.
       runcmd = [["systemctl", "daemon-reload"]]
     })}"
