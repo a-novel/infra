@@ -46,7 +46,7 @@ on:
         required: false
         type: string
       confirm:
-        description: Legacy RESTORE/DELETE project; native RESTORE-FILES project preparation-generation.
+        description: Legacy RESTORE/DELETE project; native RESTORE-FILES or RESTORE-SQL project preparation-generation, matching protected inputs.
         required: false
         type: string
 
@@ -78,6 +78,7 @@ jobs:
       STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
       NATIVE_RECOVERY_PREPARATION_ENABLED: ${{ vars.NATIVE_RECOVERY_PREPARATION_ENABLED }}
       NATIVE_RECOVERY_EXECUTION_ENABLED: ${{ vars.NATIVE_RECOVERY_EXECUTION_ENABLED }}
+      NATIVE_RECOVERY_SQL_ENABLED: ${{ vars.NATIVE_RECOVERY_SQL_ENABLED }}
       RECOVERY_OPERATION: ${{ inputs.operation }}
     steps:
       - name: Check out the exact master commit
@@ -147,7 +148,7 @@ jobs:
             printf 'Native host prepared and stopped. No database restore, startup or cutover performed.\n' >>"${GITHUB_STEP_SUMMARY}"
           fi
 
-      - name: Restore files once and stop the disposable host
+      - name: Complete the selected recovery once and stop the disposable host
         if: inputs.operation == 'restore-native'
         shell: bash
         env:
@@ -159,7 +160,7 @@ jobs:
         run: |
           set -euo pipefail
           infra custody recovery execute "${STATE_BUCKET}" "${TOFU_VAR_FILE}" "${PREPARATION_GENERATION}" "${CONFIRM}"
-          printf 'Files restored; private completion recorded; host stopped. No PostgreSQL startup, SQL verification or cutover.\n' >>"${GITHUB_STEP_SUMMARY}"
+          printf 'Selected native recovery completed; private evidence recorded; host stopped. No promotion or cutover.\n' >>"${GITHUB_STEP_SUMMARY}"
 
   recover:
     if: github.ref == 'refs/heads/master' && inputs.operation != 'plan-native' && inputs.operation != 'apply-native' && inputs.operation != 'restore-native'

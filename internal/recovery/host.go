@@ -59,7 +59,7 @@ type Host struct {
 	Execute func(context.Context, io.Writer, string, ...string) error
 }
 
-// Restore prepares only a blank named disk, restores files and stops the host.
+// Restore prepares a blank named disk, completes the selected recovery and stops the host.
 // On any error it leaves the attempt intact: an SSH failure can mean work is still running.
 func (host Host) Restore(ctx context.Context) (map[string]string, error) {
 	if err := host.Target.Validate(); err != nil {
@@ -89,22 +89,25 @@ func (host Host) Restore(ctx context.Context) (map[string]string, error) {
 	if err := host.prepareDisk(ctx); err != nil {
 		return nil, err
 	}
-	if _, err := host.ssh(ctx, "sudo -n systemctl start agora-native-restore.service"); err != nil {
+	if err := host.worker(ctx, "restore", "bridge"); err != nil {
 		return nil, err
 	}
-	result, err := host.ssh(ctx, `sudo -n docker inspect --format '{{.State.Status}}|{{.State.ExitCode}}|{{.Config.Image}}|{{.HostConfig.RestartPolicy.Name}}' agora-native-restore`)
-	if err != nil || strings.TrimSpace(string(result)) != "exited|0|"+host.Image+"|no" {
-		return nil, errors.New("restore container completion is unconfirmed")
+	names := []string{"request.json", "catalog.json", "restore.log", "files-restored.json"}
+	if host.Target.Request.VerifySQL {
+		if err := host.worker(ctx, "verify", "none"); err != nil {
+			return nil, err
+		}
+		names = append(names, "verification/postgres.log", "verification/sql-verified.json")
 	}
 	evidence := map[string]string{}
-	for _, name := range []string{"request.json", "catalog.json", "restore.log", "files-restored.json"} {
+	for _, name := range names {
 		data, err := host.ssh(ctx, "sudo -n cat "+mountPath+"/work/attempt/"+name)
 		if err != nil {
 			return nil, err
 		}
 		evidence[name] = string(data)
 	}
-	if err := host.Target.Request.CheckFiles(evidence); err != nil {
+	if err := host.Target.Request.CheckEvidence(evidence); err != nil {
 		return nil, err
 	}
 	if _, err := host.cloud(ctx, "instances", "stop", hostName); err != nil {
@@ -114,6 +117,17 @@ func (host Host) Restore(ctx context.Context) (map[string]string, error) {
 		return nil, err
 	}
 	return evidence, nil
+}
+
+func (host Host) worker(ctx context.Context, name, network string) error {
+	if _, err := host.ssh(ctx, "sudo -n systemctl start agora-native-"+name+".service"); err != nil {
+		return err
+	}
+	result, err := host.ssh(ctx, `sudo -n docker inspect --format '{{.State.Status}}|{{.State.ExitCode}}|{{.Config.Image}}|{{.HostConfig.RestartPolicy.Name}}|{{.HostConfig.NetworkMode}}' agora-native-`+name)
+	if err != nil || strings.TrimSpace(string(result)) != "exited|0|"+host.Image+"|no|"+network {
+		return errors.New("recovery container completion or network boundary is unconfirmed")
+	}
+	return nil
 }
 
 // CheckFiles verifies a worker's files-only completion, never database startup or SQL recovery.

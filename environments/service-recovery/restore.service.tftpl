@@ -1,5 +1,5 @@
 [Unit]
-Description=Agora JSON Keys native file recovery (manual approval only)
+Description=Agora JSON Keys native ${name} (manual approval only)
 Requires=docker.service
 After=docker.service network-online.target gcr-online.target
 Wants=network-online.target gcr-online.target
@@ -9,19 +9,21 @@ AssertPathIsMountPoint=/mnt/disks/agora-recovery
 Type=oneshot
 RemainAfterExit=yes
 Restart=no
-TimeoutStartSec=55min
+TimeoutStartSec=${name == "restore" ? "55min" : "5min"}
 TimeoutStopSec=45
 UMask=0077
+%{ if name == "restore" ~}
 ExecStartPre=/usr/bin/install -d -o 999 -g 999 -m 0700 /mnt/disks/agora-recovery/work
 ExecStartPre=/usr/bin/docker --config=/etc/agora-recovery/docker pull ${image}
+%{ endif ~}
 # Both the retained container name and the worker's on-disk attempt refuse replay.
-ExecStart=/usr/bin/docker run --name=agora-native-restore --pull=never \
-    --network=bridge --read-only --user=999:999 --cap-drop=ALL --security-opt=no-new-privileges \
+ExecStart=/usr/bin/docker run --name=agora-native-${name} --pull=never \
+    --network=${network} --read-only --user=999:999 --cap-drop=ALL --security-opt=no-new-privileges \
     --cpus=1 --memory=1g --memory-swap=1g --pids-limit=64 --no-healthcheck --ulimit=core=0 \
     --log-driver=none --stop-signal=SIGTERM \
     --tmpfs=/tmp:rw,noexec,nosuid,nodev,size=32m,mode=1777 \
     --mount=type=bind,source=/mnt/disks/agora-recovery/work,target=/recovery \
     --mount=type=bind,source=/etc/agora-recovery/request.json,target=/etc/agora-recovery/request.json,readonly \
-    ${image}
-ExecStop=-/usr/bin/docker stop --time=30 agora-native-restore
-ExecStopPost=-/usr/bin/docker kill agora-native-restore
+    ${image}${name == "verify" ? " verify-sql" : ""}
+ExecStop=-/usr/bin/docker stop --time=30 agora-native-${name}
+ExecStopPost=-/usr/bin/docker kill agora-native-${name}

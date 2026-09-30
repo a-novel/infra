@@ -35,6 +35,10 @@ func TestNativeRecoveryInputs(t *testing.T) {
 	}{
 		{name: "Exact", valid: true},
 		{name: "Restore/Exact", valid: true},
+		{name: "Restore/SQL/Exact", valid: true},
+		{name: "Restore/SQL/Disabled", env: "NATIVE_RECOVERY_SQL_ENABLED", value: "false"},
+		{name: "Restore/SQL/FileConfirmation", env: "CONFIRM", value: "RESTORE-FILES a-novel-recovery-proof 42"},
+		{name: "Restore/SQLConfirmationWithoutSelection", env: "CONFIRM", value: "RESTORE-SQL a-novel-recovery-proof 42"},
 		{name: "Restore/Disabled", env: "NATIVE_RECOVERY_EXECUTION_ENABLED", value: "false"},
 		{name: "Restore/WrongConfirmation", env: "CONFIRM", value: "RESTORE wrong"},
 		{name: "Restore/PlanMixedIn", env: "RECOVERY_PLAN_ID", value: "123-1"},
@@ -62,6 +66,10 @@ func TestNativeRecoveryInputs(t *testing.T) {
 				f.env["NATIVE_RECOVERY_PREPARATION_ENABLED"] = "false"
 				f.env["NATIVE_RECOVERY_EXECUTION_ENABLED"], f.env["RECOVERY_OPERATION"] = "true", "restore-native"
 				f.env["PREPARATION_GENERATION"], f.env["CONFIRM"] = "42", "RESTORE-FILES a-novel-recovery-proof 42"
+			}
+			if strings.HasPrefix(testCase.name, "Restore/SQL/") {
+				nested(config, "recovery")["verify_sql"] = true
+				f.env["NATIVE_RECOVERY_SQL_ENABLED"], f.env["CONFIRM"] = "true", "RESTORE-SQL a-novel-recovery-proof 42"
 			}
 			if testCase.field != "" {
 				nested(config, "recovery")[testCase.field] = testCase.value

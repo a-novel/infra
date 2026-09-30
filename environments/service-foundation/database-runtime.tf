@@ -28,8 +28,8 @@ locals {
   database_backup_jobs = {
     stanza-create = "stanza-create"
     check         = "check"
-    full          = "--type=full --repo1-bundle --no-expire-auto backup"
-    diff          = "--type=diff --repo1-bundle --no-expire-auto backup"
+    full          = "--type=full --archive-copy --repo1-bundle --no-expire-auto backup"
+    diff          = "--type=diff --archive-copy --repo1-bundle --no-expire-auto backup"
   }
   database_backup_calendars = {
     full  = "Sun *-*-* 02:00:00 UTC"

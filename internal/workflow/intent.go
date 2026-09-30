@@ -29,7 +29,7 @@ const usage = `usage: go run ./cmd/infra
   recovery plan-workload <replacement-project-id> <receipt-id>
   recovery plan-native <registered-recovery-project>
   recovery apply-native <registered-recovery-project> <plan-id>
-  recovery restore-native <registered-recovery-project> <preparation-generation> 'RESTORE-FILES <project> <preparation-generation>'
+  recovery restore-native <registered-recovery-project> <preparation-generation> '<RESTORE-FILES|RESTORE-SQL> <project> <preparation-generation>'
   recovery apply-workload <replacement-project-id> <receipt-id> <plan-id>
   recovery restore-data <replacement-project-id> <receipt-id> <json-keys-attempt> <authentication-attempt> <lost-write-window> <confirmation>
   recovery cleanup-project <replacement-project-id> <receipt-id> <confirmation>`
@@ -177,7 +177,8 @@ func parse(args []string) (intent, error) {
 				i.input("plan_id", i.planID)
 			case args[0] == "restore-native" && len(args) == 4:
 				generation, err := strconv.ParseInt(args[2], 10, 64)
-				if err != nil || generation <= 0 || strconv.FormatInt(generation, 10) != args[2] || args[3] != "RESTORE-FILES "+args[1]+" "+args[2] {
+				if err != nil || generation <= 0 || strconv.FormatInt(generation, 10) != args[2] ||
+					!slices.Contains([]string{"RESTORE-FILES " + args[1] + " " + args[2], "RESTORE-SQL " + args[1] + " " + args[2]}, args[3]) {
 					return i, invalid
 				}
 				i.input("preparation_generation", args[2])

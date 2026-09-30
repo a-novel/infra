@@ -64,6 +64,16 @@ The wrong-major fixture exercises PostgreSQL's native startup version guard, not
 data or cross-major conversion. It does not exercise the original entrypoints, application
 migrations, historical images, or native backup integration on the actual COS host.
 
+### Offline SQL verification
+
+`TestOfflineSQL` exercises the JSON Keys recovery worker with full/differential `archive-copy` backups,
+then starts PostgreSQL with no archive reader or network. It requires the expected system ID and native
+paused-at-consistency state, checks tables/roles/extensions, and stops the server before completion.
+Restored configuration containing an unavailable preload library is ignored. Missing copied WAL and
+failed SQL checks leave no success marker; used attempts refuse replay. The proof logs copied WAL's
+stored and restored sizes; synthetic compression is not a production cost estimate. Host-network
+enforcement and real cloud custody still need the separately approved activation drill.
+
 ### Native repository transport
 
 `TestRepositoryTLS` reuses the recovery driver with a native repository server and temporary test

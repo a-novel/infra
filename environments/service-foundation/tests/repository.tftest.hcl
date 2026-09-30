@@ -230,8 +230,8 @@ run "prepared_database_lifecycle" {
     condition = alltrue([for name, command in {
       stanza-create = "stanza-create"
       check         = "check"
-      full          = "--type=full --repo1-bundle --no-expire-auto backup"
-      diff          = "--type=diff --repo1-bundle --no-expire-auto backup"
+      full          = "--type=full --archive-copy --repo1-bundle --no-expire-auto backup"
+      diff          = "--type=diff --archive-copy --repo1-bundle --no-expire-auto backup"
       } : strcontains(one([for file in yamldecode(local.database_cloud_config.host).write_files : file.content
       if file.path == "/etc/systemd/system/agora-backup-${name}.service"]), "--stanza=json-keys ${command}\n")
     ])

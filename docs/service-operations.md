@@ -14,7 +14,7 @@ The pilot's [guarded caller](runbooks/submit-release.md#guarded-established-rele
 intent and dispatches native work under the same service guard as service-root applies and native
 rotation. Standalone commands only publish source or reconcile recorded outcomes. Unenrolled
 legacy/shared-root writers and recovery execution still prevent activation. Native recovery host
-preparation and files-only restoration now participate as described below.
+preparation, file restoration and optional offline SQL verification participate as described below.
 
 An **operation** is one reviewed change to one service, including the work needed to leave it in a
 known state. A **guard** admits that operation and blocks another. A **request intent** prevents replay
@@ -65,6 +65,8 @@ The independently disabled [native file restoration](../environments/service-rec
 also holds the source guard. Its create-only destination reservation precedes VM startup and checked
 disk formatting. Completion binds preparation, numeric resource identities and private worker evidence;
 `files-restored` means the VM was stopped, not that PostgreSQL recovery or SQL validation succeeded.
+When explicitly selected and separately enabled, `sql-verified` records offline SQL checks at backup
+consistency and confirmed PostgreSQL/VM shutdown. It does not prove source fencing or authorize cutover.
 Inspection reads those generation-pinned records. Finishing can remove only a recorded-success guard
 after the exact `recovery restore-native` workflow attempt ends; it cannot repair missing completion,
 restart a worker or clear the destination reservation.
@@ -161,7 +163,7 @@ repairs evidence or retries apply. See [Storage version selection](https://docs.
 ### Finish a successful operation
 
 This **off-by-default** path finishes converged service-root applies, successful native JSON Keys
-releases, successful rotations and recorded native file restoration. Native releases and acknowledged rotations can reconstruct a
+releases, successful rotations and recorded native recovery. Native releases and acknowledged rotations can reconstruct a
 missing completion record from exact native success evidence. Applies without recorded convergence,
 unacknowledged rotations and unknown record kinds remain blocked.
 
