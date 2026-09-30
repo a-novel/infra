@@ -177,7 +177,7 @@ run "prepared_database_lifecycle" {
       !contains(keys(google_compute_instance_template.database["host"].metadata), "shutdown-script"),
       google_compute_instance_template.database["host"].metadata["user-data"] == local.database_cloud_config.host,
       yamldecode(local.database_cloud_config.host).runcmd == [["systemctl", "daemon-reload"]],
-      length(yamldecode(local.database_cloud_config.host).write_files) == 11,
+      length(yamldecode(local.database_cloud_config.host).write_files) == 12,
       google_compute_instance_group_manager.database["host"].all_instances_config[0].metadata == tomap({
         agora-json-keys-database-image                   = var.pgbackrest_repository.runtime.server_image
         agora-json-keys-postgres-password-version        = "3"
@@ -196,7 +196,7 @@ run "prepared_database_lifecycle" {
       "PGBACKREST_REPOSITORY_IP=10.90.0.3", "--endpoint=database --ca-version=1 --identity-version=5",
       "--name=agora-database.agora-json-keys-test", "--supervise", "ExecStopPost=",
       "Environment=PGBACKREST_WAL_ARCHIVING=false", "/run/agora/postgresql /run/agora/pgbackrest-lock",
-      "kill agora-backup-check agora-backup-diff agora-backup-full agora-backup-stanza-create",
+      "kill agora-backup-check agora-backup-diff agora-backup-full agora-backup-stanza-create agora-backup-verify",
     ] : strcontains(yamldecode(local.database_cloud_config.host).write_files[3].content, option)])
     error_message = "Systemd must own bounded restart, exact TLS delivery and stopped-consumer cleanup."
   }
@@ -210,12 +210,13 @@ run "prepared_database_lifecycle" {
     error_message = "The client must use native TLS and the selected PostgreSQL 18 layout, without GCS credentials."
   }
   assert {
-    condition = alltrue(flatten([for file in slice(yamldecode(local.database_cloud_config.host).write_files, 4, 8) : [
+    condition = alltrue(flatten([for file in slice(yamldecode(local.database_cloud_config.host).write_files, 4, 9) : [
       for option in [
         "Type=exec", "Restart=no", "RuntimeMaxSec=1h", "TimeoutStopSec=45",
         "StopPropagatedFrom=agora-database.service docker.service",
         "ExecStartPre=/usr/bin/systemctl is-active --quiet agora-database.service",
         "--network=container:agora-postgres-json-keys", "--read-only --user=999:999",
+        "--cpus=0.5 --memory=512m --memory-swap=512m", "--pids-limit=64",
         "source=/mnt/disks/agora-data/json-keys,target=/var/lib/postgresql,readonly",
         "source=/run/agora/postgresql,target=/var/run/postgresql,readonly",
         "source=/run/agora/pgbackrest-lock,target=/run/pgbackrest-lock",
@@ -232,10 +233,11 @@ run "prepared_database_lifecycle" {
       check         = "check"
       full          = "--type=full --archive-copy --repo1-bundle --no-expire-auto backup"
       diff          = "--type=diff --archive-copy --repo1-bundle --no-expire-auto backup"
+      verify        = "--output=text --verbose --log-level-console=error verify"
       } : strcontains(one([for file in yamldecode(local.database_cloud_config.host).write_files : file.content
       if file.path == "/etc/systemd/system/agora-backup-${name}.service"]), "--stanza=json-keys ${command}\n")
     ])
-    error_message = "Only backup commands may carry pgBackRest's backup-only options."
+    error_message = "Each worker must use its native options; verification must emit a text report even when it exits zero."
   }
   assert {
     condition = alltrue([for file in yamldecode(local.database_cloud_config.host).write_files :
@@ -263,6 +265,15 @@ run "prepared_database_lifecycle" {
       google_logging_metric.database_backup_success["host"].label_extractors == tomap({ job = "EXTRACT(jsonPayload.\"cos.googleapis.com/container_name\")" }),
     ])
     error_message = "Monitoring must remain disabled in the selected project and use the existing notification channel."
+  }
+  assert {
+    condition = alltrue([for message, matched in {
+      "stanza: json-keys\nstatus: error\n  backup: invalid\n" = true
+      "    no archives or backups exist in the repo\n"       = true
+      "stanza: json-keys\nstatus: ok\n"                      = false
+      "verify command end: completed successfully"           = false
+    } : can(regex(local.database_verify_failure_pattern, message)) == matched])
+    error_message = "Integrity alerts must distinguish native damage and empty-repository reports from healthy or completed commands."
   }
   assert {
     condition = alltrue([for policy in google_monitoring_alert_policy.database_backup_health :

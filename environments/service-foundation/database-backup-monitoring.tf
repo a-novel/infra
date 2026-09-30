@@ -1,4 +1,6 @@
 locals {
+  # Native verify can report damage or an empty repository with exit status zero.
+  database_verify_failure_pattern = "(?m)^ *(status: error|no archives or backups exist in the repo) *$"
   database_backup_log_scope = { for key, runtime in local.database_runtime : key => join(" AND ", [
     "resource.type=\"gce_instance\"",
     "resource.labels.project_id=\"${var.project_id}\"",
@@ -74,6 +76,7 @@ resource "google_monitoring_alert_policy" "database_backup_failure" {
     condition_matched_log {
       filter = "${local.database_backup_log_scope[each.key]} AND (${join(" OR ", [
         "(log_id(\"cos_containers\") AND jsonPayload.message=~\"(ERROR: \\\\[[0-9]+\\\\]:|archive command failed)\")",
+        "(log_id(\"cos_containers\") AND jsonPayload.\"cos.googleapis.com/container_name\"=\"agora-backup-verify\" AND jsonPayload.message=~\"${local.database_verify_failure_pattern}\")",
         "(log_id(\"cos_journal_warning\") AND (jsonPayload.UNIT=~\"^agora-backup-.*[.]service$\" OR jsonPayload._SYSTEMD_UNIT=~\"^agora-backup-.*[.]service$\"))",
       ])})"
     }
@@ -85,7 +88,7 @@ resource "google_monitoring_alert_policy" "database_backup_failure" {
   }
   documentation {
     mime_type = "text/markdown"
-    content   = "Inspect the selected worker's journal and retained Docker logs. Do not disable WAL archiving, delete WAL, run expiry or retry a restore. Follow [native backup response](https://github.com/a-novel/infra/blob/master/docs/runbooks/respond-to-alerts.md#native-backup-pilot)."
+    content   = "Inspect the selected worker's journal and retained Docker logs. Verify can exit zero with an error report; inspect its [integrity result](https://github.com/a-novel/infra/blob/master/environments/service-foundation/README.md#native-integrity-check). Do not disable WAL archiving, delete WAL, run expiry or retry a restore. Follow [native backup response](https://github.com/a-novel/infra/blob/master/docs/runbooks/respond-to-alerts.md#native-backup-pilot)."
   }
 }
 

@@ -47,7 +47,7 @@ Do not pass credentials, mount real data, enable networking, or use it as a depl
 | Missing/corrupt WAL    | Removing or corrupting a required archived segment makes `archive-get` fail and prevents the restored server from becoming ready.                 |
 | Incompatible major     | The published server refuses an incompatible `PG_VERSION` marker in a disposable restored directory with its native incompatibility error.        |
 | Retention              | Retain two full backups and a dependent differential. Restore the differential and newest full; the expired full is no longer selectable.         |
-| Repository integrity   | Run native `verify` over the retained repository.                                                                                                 |
+| Repository integrity   | Require a healthy native `verify` report over the retained repository.                                                                            |
 
 The cases intentionally share one evolving repository and stop on the first failure. This is not a
 coverage suite for pgBackRest internals. Its output includes native catalog sizes, repository bytes,
@@ -81,6 +81,11 @@ certificates on container loopback. Both service-image variants check backup/WAL
 recovery; a CA-signed but unauthorized client, wrong stanza and untrusted server must fail, with
 authorized positive controls. A stopped server prevents restore, and an explicit retry of the same
 set succeeds after restart. No external network, credential proxy or new runtime dependency is used.
+Integrity cases read the native text report for healthy, missing and corrupt backup bundles, with
+repaired positive controls. pgBackRest can exit zero when the report says `status: error`; an empty
+repository can also exit zero. These cases protect the
+[prepared verification worker's](../../environments/service-foundation/README.md#native-integrity-check)
+report-based alert contract. They do not emulate Cloud Logging or establish live delivery.
 Each endpoint supplies its certificate and private key from one standard PEM file, passed to both
 native options. This verifies the single-version identity format in the
 [disabled custody contract](../../bootstrap/README.md#disabled-tls-credential-custody); no real

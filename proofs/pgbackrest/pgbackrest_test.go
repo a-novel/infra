@@ -129,7 +129,7 @@ UPDATE ballast SET value = value || '!';`)
 			t.Logf("native catalog after expiry: %s", p.backrest(t, "--output=json", "info"))
 		}},
 		{"native repository verification", func(t *testing.T) {
-			p.backrest(t, "verify")
+			require.Contains(t, p.backrest(t, "--output=text", "--verbose", "verify"), "\nstatus: ok\n")
 			t.Logf("retained repository bytes including WAL/catalog: %s", strings.TrimSpace(run(t, "du", "-sb", p.repo)))
 		}},
 	} {

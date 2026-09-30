@@ -59,11 +59,47 @@ repo1-host-key-file=%[2]s/client.pem
 		name string
 		run  func(*testing.T)
 	}{
+		{"Limit/EmptyRepository", func(t *testing.T) {
+			report := p.backrest(t, "--output=text", "--verbose", "--log-level-console=error", "verify")
+			require.Contains(t, report, "no archives or backups exist in the repo")
+		}},
 		{"Success/BackupAndSQLRecovery", func(t *testing.T) {
 			p.backrest(t, "check")
-			p.backrest(t, "--type=full", "backup")
+			p.backrest(t, "--type=full", "--repo1-bundle", "backup")
 			set = p.backups(t)[0].Label
 			p.restore(t, set, "original")
+		}},
+		{"RepositoryIntegrity", func(t *testing.T) {
+			bundle := filepath.Join(p.repo, "backup", p.stanza, set, "bundle", "1")
+			original, err := os.ReadFile(bundle)
+			require.NoError(t, err)
+			for _, tc := range []struct {
+				name   string
+				status string
+			}{
+				{"Healthy", "ok"},
+				{"Missing", "error"},
+				{"Corrupt", "error"},
+			} {
+				passed := t.Run(tc.name, func(t *testing.T) {
+					t.Cleanup(func() {
+						require.NoError(t, os.WriteFile(bundle, original, 0o600))
+					})
+					switch tc.name {
+					case "Missing":
+						require.NoError(t, os.Remove(bundle))
+					case "Corrupt":
+						write(t, bundle, "corrupt synthetic backup bundle")
+					}
+					// backrest requires exit zero; only the native report distinguishes damaged files.
+					report := p.backrest(t, "--output=text", "--verbose", "--log-level-console=error", "verify")
+					require.Contains(t, report, "\nstatus: "+tc.status+"\n")
+				})
+				if !passed {
+					t.Fatal("integrity scenario failed; do not continue with repository mutations")
+				}
+				require.Contains(t, p.backrest(t, "--output=text", "--verbose", "--log-level-console=error", "verify"), "\nstatus: ok\n")
+			}
 		}},
 		{"Error/UnauthorizedClient", func(t *testing.T) {
 			out, err := p.command(t.Context(), "--repo1-host-cert-file="+p.root+"/peer.pem", "--repo1-host-key-file="+p.root+"/peer.pem", "repo-ls").CombinedOutput()

@@ -209,8 +209,8 @@ without weakening upstream constraints or adding a controller. Runtime/backup re
 
 ### Prepared native backup jobs
 
-The database lifecycle also installs four disabled `agora-backup-<operation>.service` units from one
-template: `stanza-create`, `check`, `full` and `diff`. Three disabled timers prepare a weekly full
+The database lifecycle also installs five disabled `agora-backup-<operation>.service` units from one
+template: `stanza-create`, `check`, `full`, `diff` and `verify`. Three disabled timers prepare a weekly full
 (Sunday 02:00 UTC), differential (Monday–Saturday 02:00 UTC), and hourly archive check (:30 UTC),
 with up to five minutes of jitter. Nothing starts or enables them on boot. Missed runs do not catch
 up automatically; no timer creates the stanza or runs expiry. These are initial review settings,
@@ -266,6 +266,24 @@ is configured. This preparation adds no VM or cloud grant, but future backup I/O
 money. No resources are applied here; log-based metrics, stored logs and future backup traffic are not
 a zero-cost guarantee. Scheduling activation, expiry and retirement of existing protection remain
 separately reviewed work.
+
+### Native integrity check
+
+`agora-backup-verify.service` is operator-invoked after separate activation approval; it has no timer.
+It uses the shared worker's one-hour, 0.5-CPU and 512-MiB limits and native TLS connection to read the
+repository. Verification adds no cloud permissions or repository writes. Reads and transfer still
+cost money; measure a complete scan before choosing a schedule or increasing its limits.
+
+Inspect the retained `agora-backup-verify` Docker logs and systemd journal. pgBackRest 2.59.1 can exit
+zero while reporting `status: error`; systemd completion alone is insufficient. The disabled failure
+alert also matches that worker's error and empty-repository reports. Its verbose report must cover the
+expected backup sets and WAL; an empty, partial, interrupted or missing report is not verification.
+Export evidence before another invocation replaces the worker's logs. No verification result feeds
+the backup-success metric or authorizes repair, expiry or restore.
+
+The [offline proof](../../proofs/pgbackrest#native-repository-transport) exercises healthy, empty,
+missing and corrupt data through native TLS. GCS behavior, COS log delivery and notifications still
+need live evidence. Native integrity checks complement isolated SQL restore drills.
 
 ## Optional stopped repository host
 
