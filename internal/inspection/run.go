@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/a-novel/infra/internal/custody"
@@ -41,7 +43,8 @@ func (err failure) Error() string { return err.message }
 
 // Run inspects drift or an exact, previously authorized PR candidate. execute
 // receives additional environment entries separately from literal arguments and
-// must keep child stderr private. This command never applies a plan.
+// must keep child stderr private, retaining it in [exec.ExitError] as [exec.Cmd.Output] does.
+// Only allowlisted plan failure categories are published. This command never applies a plan.
 func Run(ctx context.Context, args []string, getenv func(string) string, execute func(context.Context, []string, string, ...string) ([]byte, error), stdout, stderr io.Writer) int {
 	err := run(ctx, args, getenv, execute, stdout)
 	if err == nil {
@@ -148,5 +151,26 @@ func (i inspector) plan(ctx context.Context, mode, root, file string, env []stri
 			return failure{2, "Infrastructure drift detected; inspect the affected root before mutation."}
 		}
 	}
-	return failure{70, "Read-only plan failed; private diagnostics were not published."}
+	message := "Read-only plan failed; private diagnostics were not published."
+	if categories := planFailureCategories(err); categories != "" {
+		message += " Sanitized categories: " + categories + "."
+	}
+	return failure{70, message}
+}
+
+// The runner's diagnostic rows may carry private source metadata. Only the fixed
+// reason vocabulary from ops/tofu-gate.sh may cross this boundary.
+var planFailureRow = regexp.MustCompile(`(?m)^(ZONE_RESOURCE_POOL_EXHAUSTED|RESOURCE_EXHAUSTED|PERMISSION_DENIED|UNAUTHENTICATED|NOT_FOUND|INVALID_ARGUMENT|FAILED_PRECONDITION|ALREADY_EXISTS|ABORTED|DEADLINE_EXCEEDED|UNAVAILABLE|INTERNAL|CONFIGURATION|UNKNOWN)\t(google_[a-z0-9_]+|-)\t([A-Za-z0-9][A-Za-z0-9._-]*:[1-9][0-9]*|-)\t[1-9][0-9]*$`)
+
+func planFailureCategories(err error) string {
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) {
+		return ""
+	}
+	categories := []string{}
+	for _, row := range planFailureRow.FindAllSubmatch(exit.Stderr, -1) {
+		categories = append(categories, string(row[1]))
+	}
+	slices.Sort(categories)
+	return strings.Join(slices.Compact(categories), ", ")
 }

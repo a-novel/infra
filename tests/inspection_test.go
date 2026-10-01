@@ -1,12 +1,19 @@
 package tests_test
 
 import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/a-novel/infra/internal/inspection"
 )
 
 func TestServiceInspection(t *testing.T) {
@@ -48,6 +55,7 @@ func TestServiceInspection(t *testing.T) {
 			{"DriftFleet", "both", "drift", 0, 3, false},
 			{"DriftBothRoots", "mixed", "drift", 0, 3, false},
 			{"DriftChanges", "deletion", "drift", 2, 2, false},
+			{"DriftPlanFailure", "plan-failure", "drift", 70, 2, false},
 		} {
 			releaseOnly := strings.HasPrefix(testCase.mutation, "folder-") || strings.HasPrefix(testCase.mutation, "artifact")
 			if root == "service-foundation" && releaseOnly {
@@ -125,6 +133,7 @@ func TestServiceInspection(t *testing.T) {
 					f.env["FAKE_TOFU_PLAN_CODE"] = "2"
 				case "plan-failure":
 					f.env["FAKE_TOFU_FAIL_ACTION"] = "plan"
+					f.env["FAKE_TOFU_DIAGNOSTICS"] = filepath.Join(f.root, "tests/fixtures/plan-diagnostics.jsonl")
 				}
 				writeJSON(t, filepath.Join(storage, "foundation/config/00000000000000000001-00001.tfvars.json"), registration)
 				for _, service := range services {
@@ -159,6 +168,12 @@ func TestServiceInspection(t *testing.T) {
 				}
 				code, out := f.run(t, "infra", args...)
 				expectCode(t, testCase.code, code, out)
+				if testCase.mutation == "plan-failure" {
+					require.Contains(t, out, "Sanitized categories: CONFIGURATION, PERMISSION_DENIED, UNKNOWN, ZONE_RESOURCE_POOL_EXHAUSTED.")
+					require.NotContains(t, out, "fixture-sensitive")
+					require.NotContains(t, out, "google_compute_disk")
+					require.NotContains(t, out, "identity.tf")
+				}
 				calls, err := os.ReadFile(f.env["FAKE_TOFU_CALLS"])
 				if err != nil {
 					require.ErrorIs(t, err, os.ErrNotExist)
@@ -223,6 +238,69 @@ func TestInspectionAuthorization(t *testing.T) {
 			} else {
 				require.NoFileExists(t, output)
 			}
+		})
+	}
+}
+
+func TestInspectionDiagnostics(t *testing.T) {
+	t.Parallel()
+	row := "PERMISSION_DENIED\tgoogle_project\tprivate.tf:47\t1\n"
+	categories := []string{"ABORTED", "ALREADY_EXISTS", "CONFIGURATION", "DEADLINE_EXCEEDED", "FAILED_PRECONDITION", "INTERNAL", "INVALID_ARGUMENT", "NOT_FOUND", "PERMISSION_DENIED", "RESOURCE_EXHAUSTED", "UNAUTHENTICATED", "UNAVAILABLE", "UNKNOWN", "ZONE_RESOURCE_POOL_EXHAUSTED"}
+	for _, testCase := range []struct {
+		name, diagnostic, categories string
+		plainError                   bool
+	}{
+		{"AllCategories", strings.Join(categories, "\t-\t-\t1\n") + "\t-\t-\t1\n", strings.Join(categories, ", "), false},
+		{"Deduplicated", row + row + "UNKNOWN\t-\t-\t2\n", "PERMISSION_DENIED, UNKNOWN", false},
+		{"MixedPrivateText", privateValue + "\n" + row + "::error::" + privateValue, "PERMISSION_DENIED", false},
+		{"NoDiagnostics", "", "", false},
+		{"RawText", "PERMISSION_DENIED " + privateValue, "", false},
+		{"UnknownCategory", "PRIVATE_CATEGORY\tgoogle_project\tprivate.tf:47\t1\n", "", false},
+		{"InvalidType", "PERMISSION_DENIED\tprivate-project\tprivate.tf:47\t1\n", "", false},
+		{"InvalidSource", "PERMISSION_DENIED\tgoogle_project\t/private/path.tf:47\t1\n", "", false},
+		{"InvalidCount", "PERMISSION_DENIED\tgoogle_project\tprivate.tf:47\t0\n", "", false},
+		{"TruncatedRow", strings.TrimSuffix(row, "1\n"), "", false},
+		{"ExtraColumn", strings.TrimSuffix(row, "\n") + "\t" + privateValue + "\n", "", false},
+		{"PlainError", row, "", true},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			f := inspectionFixture(t)
+			bucket := "agora-management-test-123-tofu-state"
+			writeJSON(t, filepath.Join(f.env["FAKE_GCS_ROOT"], bucket, "bootstrap/config/00000000000000000001-00001.tfvars.json"), object{})
+			args := []string{"drift", bucket}
+			var stdout, stderr bytes.Buffer
+			plans := 0
+			code := inspection.Run(t.Context(), args, func(key string) string { return f.env[key] },
+				func(ctx context.Context, env []string, name string, args ...string) ([]byte, error) {
+					if filepath.Base(name) == "tofu-gate.sh" {
+						plans++
+						if testCase.plainError {
+							return []byte(privateValue), errors.New(testCase.diagnostic)
+						}
+						command := exec.CommandContext(ctx, "sh", "-c", `printf '%s' "$1"; printf '%s' "$2" >&2; exit 1`, "sh", privateValue, testCase.diagnostic)
+						data, err := command.Output()
+						require.Error(t, err)
+						return data, fmt.Errorf("%s: %w", privateValue, err)
+					}
+					if !filepath.IsAbs(name) {
+						name = filepath.Join(f.bin, name)
+					}
+					command := exec.CommandContext(ctx, name, args...)
+					for key, value := range f.env {
+						command.Env = append(command.Env, key+"="+value)
+					}
+					command.Env = append(command.Env, env...)
+					return command.Output()
+				}, &stdout, &stderr)
+			message := "Read-only plan failed; private diagnostics were not published."
+			if testCase.categories != "" {
+				message += " Sanitized categories: " + testCase.categories + "."
+			}
+			require.Equal(t, 70, code)
+			require.Equal(t, 1, plans, stderr.String())
+			require.Empty(t, stdout.String())
+			require.Equal(t, message+"\n", stderr.String())
 		})
 	}
 }
