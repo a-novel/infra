@@ -34,7 +34,8 @@ type pull struct {
 	Number       int64
 	State        string
 	Draft        *bool
-	ChangedFiles int `json:"changed_files"`
+	ChangedFiles int    `json:"changed_files"`
+	CreatedAt    string `json:"created_at"`
 	User         struct{ Login, Type string }
 	Base, Head   branch
 }

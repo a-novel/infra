@@ -19,13 +19,17 @@ import (
 
 func TestRefreshNotifications(t *testing.T) {
 	t.Parallel()
-	for _, action := range []string{"labeled", "unlabeled", "CI completion"} {
+	for _, action := range []string{"labeled", "unlabeled", "CI completion", "PR creation"} {
 		t.Run(action, func(t *testing.T) {
 			t.Parallel()
 			f := newFixture(t)
 			f.routes["/actions/workflows/drift.yaml/runs?branch=master&event=workflow_dispatch&head_sha="+base+"&per_page=100"] = pages("workflow_runs", []object{})
-			f.routes["/issues/42/events?per_page=100"] = pages("", []object{{"event": "unlabeled", "label": object{"name": "allow-resource-deletion"}, "created_at": changed}})
-			if action != "CI completion" {
+			if action == "PR creation" {
+				f.pull["created_at"] = changed
+			} else {
+				f.routes["/issues/42/events?per_page=100"] = pages("", []object{{"event": "unlabeled", "label": object{"name": "allow-resource-deletion"}, "created_at": changed}})
+			}
+			if action == "labeled" || action == "unlabeled" {
 				f.env["GITHUB_EVENT_NAME"] = "pull_request_target"
 				f.event["action"], f.event["label"], f.event["pull_request"] = action, object{"name": "allow-resource-deletion"}, f.pull
 			}
@@ -36,17 +40,25 @@ func TestRefreshNotifications(t *testing.T) {
 			gate["id"], gate["run_id"] = 1010, 101
 			f.routes["/actions/runs/101/attempts/1/jobs?per_page=100"] = pages("jobs", []object{gate})
 			f.routes["/actions/workflows/main.yaml/runs?head_sha="+head+"&per_page=100"] = pages("workflow_runs", []object{f.ci, push})
+			count := 2
+			if action == "PR creation" {
+				f.jobs[3]["started_at"] = after
+				count = 1
+			}
 			f.env["GITHUB_STEP_SUMMARY"] = filepath.Join(t.TempDir(), "summary")
 			code, output := f.run("refresh-deletion-gates")
 			require.Zero(t, code, output)
-			require.Len(t, f.posts, 2)
+			require.Len(t, f.posts, count)
+			if action == "PR creation" {
+				require.Equal(t, "repos/a-novel/infra/actions/jobs/1010/rerun --method POST", f.posts[0])
+			}
 			summary, err := os.ReadFile(f.env["GITHUB_STEP_SUMMARY"])
 			require.NoError(t, err)
 			require.Equal(t, output, string(summary))
 			f.jobs[3]["started_at"], gate["started_at"] = after, after
 			code, output = f.run("refresh-deletion-gates")
 			require.Zero(t, code, output)
-			require.Len(t, f.posts, 2, "duplicate notification must not create a loop")
+			require.Len(t, f.posts, count, "duplicate notification must not create a loop")
 		})
 	}
 }
@@ -56,6 +68,10 @@ func TestRefreshRequiresNewEvidence(t *testing.T) {
 	for name, mutate := range map[string]func(*fixture){
 		"ordinary CI": func(f *fixture) {
 			f.routes["/actions/workflows/drift.yaml/runs?branch=master&event=workflow_dispatch&head_sha="+base+"&per_page=100"] = pages("workflow_runs", []object{})
+		},
+		"fresh CI with changed workflow": func(f *fixture) {
+			f.routes["/actions/workflows/drift.yaml/runs?branch=master&event=workflow_dispatch&head_sha="+base+"&per_page=100"] = pages("workflow_runs", []object{})
+			f.routes["/contents/"+mainPath+"?ref="+head] = object{"sha": head}
 		},
 		"ambiguous PR association": func(f *fixture) {
 			f.routes["/commits/"+head+"/pulls?per_page=100"] = pages("", []object{f.pull, f.pull})
