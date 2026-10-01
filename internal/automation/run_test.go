@@ -49,9 +49,10 @@ func newFixture(t *testing.T) *fixture {
 	repo := object{"full_name": "a-novel/infra"}
 	pull := object{
 		"number": 42, "state": "open", "draft": false, "changed_files": 1,
-		"user": object{"login": "anovelbot-dependencies[bot]", "type": "Bot"},
-		"base": object{"ref": "master", "sha": base, "repo": repo},
-		"head": object{"ref": "renovate/authentication", "sha": head, "repo": repo},
+		"created_at": "2026-09-07T00:00:00Z",
+		"user":       object{"login": "anovelbot-dependencies[bot]", "type": "Bot"},
+		"base":       object{"ref": "master", "sha": base, "repo": repo},
+		"head":       object{"ref": "renovate/authentication", "sha": head, "repo": repo},
 	}
 	ci := object{
 		"id": 100, "workflow_id": 50, "path": mainPath, "event": "pull_request", "repository": repo, "head_repository": repo,
@@ -324,6 +325,8 @@ func TestGateRefresh(t *testing.T) {
 		"different candidate workflow": {mutate: func(f *fixture) { f.routes["/contents/"+mainPath+"?ref="+head] = object{"sha": head} }, fail: true},
 		"wrong gate attempt":           {mutate: func(f *fixture) { f.jobs[3]["run_attempt"] = 2 }, fail: true},
 		"wrong gate run":               {mutate: func(f *fixture) { f.jobs[3]["run_id"] = 101 }, fail: true},
+		"missing PR creation":          {mutate: func(f *fixture) { delete(f.pull, "created_at") }, fail: true},
+		"malformed PR creation":        {mutate: func(f *fixture) { f.pull["created_at"] = "yesterday" }, fail: true},
 		"malformed timestamp":          {mutate: func(f *fixture) { f.jobs[3]["started_at"] = "yesterday" }, fail: true},
 		"PR moved before POST": {mutate: func(f *fixture) {
 			f.before = func(path, _ string) error {

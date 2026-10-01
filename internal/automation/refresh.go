@@ -74,7 +74,12 @@ func (c client) refreshTarget(ctx context.Context, eventName string, e event) (t
 	return matches[0], nil
 }
 
-func (c client) changedAt(ctx context.Context, t target) (time.Time, error) {
+// changedAt includes PR creation because a branch gate can run before its PR exists.
+func (c client) changedAt(ctx context.Context, t target, createdAt string) (time.Time, error) {
+	changed, err := timestamp(createdAt)
+	if err != nil {
+		return time.Time{}, err
+	}
 	events, err := list[struct {
 		Event     string
 		Label     struct{ Name string }
@@ -83,7 +88,6 @@ func (c client) changedAt(ctx context.Context, t target) (time.Time, error) {
 	if err != nil {
 		return time.Time{}, err
 	}
-	changed := time.Unix(0, 0)
 	for _, e := range events {
 		if !slices.Contains([]string{"labeled", "unlabeled"}, e.Event) || e.Label.Name != deletionLabel {
 			continue
@@ -130,21 +134,13 @@ func (c client) refreshGates(ctx context.Context, eventName string, e event, tru
 	if err != nil || !t.current(p, c.repo) || p.Head.Ref == "" || p.Head.Repo.FullName == "" {
 		return nil, err
 	}
-	changed, err := c.changedAt(ctx, t)
-	if err != nil || changed.Equal(time.Unix(0, 0)) {
+	changed, err := c.changedAt(ctx, t, p.CreatedAt)
+	if err != nil {
 		return nil, err
 	}
 	w, err := fetch[workflow](ctx, c, "/actions/workflows/main.yaml")
 	if err != nil {
 		return nil, err
-	}
-	candidate, err := fetch[blob](ctx, c, "/contents/"+mainPath+"?ref="+t.Head)
-	if err != nil {
-		return nil, err
-	}
-	// GitHub reruns dependent jobs too, so the entire CI workflow must be reviewed.
-	if w.Path != mainPath || !positiveID(w.ID) || candidate.SHA != trustedMain {
-		return nil, errors.New("the candidate CI workflow differs from trusted master; review and refresh it manually")
 	}
 	runs, err := list[run](ctx, c, "/actions/workflows/main.yaml/runs?head_sha="+t.Head+"&per_page=100", "workflow_runs")
 	if err != nil {
@@ -188,6 +184,14 @@ func (c client) refreshGates(ctx context.Context, eventName string, e event, tru
 		}
 		if started.After(changed) {
 			continue
+		}
+		candidate, err := fetch[blob](ctx, c, "/contents/"+mainPath+"?ref="+t.Head)
+		if err != nil {
+			return nil, err
+		}
+		// GitHub reruns dependent jobs too, so the entire CI workflow must be reviewed.
+		if w.Path != mainPath || !positiveID(w.ID) || candidate.SHA != trustedMain {
+			return nil, errors.New("the candidate CI workflow differs from trusted master; review and refresh it manually")
 		}
 		if !positiveID(gate.ID) || gate.RunID != live.ID || gate.Attempt != live.Attempt {
 			return nil, errors.New("the gate job does not belong to the selected run attempt")
