@@ -152,7 +152,8 @@ The project owner supplies Compute Instance Admin only to protected foundation a
 to Google's Compute/MIG agents. Shared foundation supplies exact-subnet Network User to the caller and
 MIG agent; the VM runtime gets no network-administration role. Verify inherited authority separately.
 
-Both foundation paths reuse the same [host preparation adapter](../../assets/database-host).
+This root uses the [service-owned host adapter](../../assets/database-host/startup.sh); the shared
+foundation retains a [frozen legacy adapter](../../assets/database-host/README.md).
 Without `database_runtime`, this root owns **idle** group metadata: no image, credential versions or
 release revision are selected. The legacy production caller keeps its existing behavior. No routine
 release host mutation or automatic migration is granted here. This root must not adopt an active group

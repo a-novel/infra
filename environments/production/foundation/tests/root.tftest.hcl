@@ -322,6 +322,13 @@ run "two_service_projects_share_only_the_host" {
   }
 
   assert {
+    condition = alltrue([for template in google_compute_instance_template.database :
+      sha256(template.metadata_startup_script) == "9a978a30da8ec115f5cfd3d157d15474f6028275b4829825e7ce56c0a71353a5"
+    ])
+    error_message = "Project onboarding must retain the applied startup bytes on both legacy database templates."
+  }
+
+  assert {
     condition = alltrue([for service, project in var.service_projects :
       output.service_projects[service].release.schema_version == 1 &&
       output.service_projects[service].release.environment == "production-${service}-release" &&
@@ -447,6 +454,13 @@ run "reject_live_native_recovery_destination" {
 
 run "builds_the_project_replacement_window" {
   command = plan
+
+  assert {
+    condition = alltrue([for template in google_compute_instance_template.database :
+      sha256(template.metadata_startup_script) == "9a978a30da8ec115f5cfd3d157d15474f6028275b4829825e7ce56c0a71353a5"
+    ])
+    error_message = "The legacy database templates must retain the applied startup bytes independently of native-host development."
+  }
 
   assert {
     condition = (

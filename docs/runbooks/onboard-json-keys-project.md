@@ -102,6 +102,12 @@ gh workflow run foundation.yaml --repo a-novel/infra --ref master --field operat
 Privately review the saved exact-commit plan. Expected changes are the selected project module,
 keyless release federation, management-bucket service folders, Shared VPC host/attachment and
 exact-subnet grants, the existing restricted HTTPS probe tag, and the budget's project scope.
+The separately approved Authentication waitlist grant may also appear: Secret Accessor on
+`production-authentication-waitlist-secret` for the existing Authentication runtime identity. Review
+that single binding explicitly; it does not authorize a payload change or application deployment.
+Both legacy database templates must remain unchanged. Their startup asset is
+[frozen at the applied revision](../../assets/database-host/README.md); new native-host development
+must not enter this onboarding plan through that asset.
 Stop for any VM, disk, NAT, application, database, backup, schedule, secret payload, resource
 replacement/deletion or unrelated legacy change. This shell adds no paid runtime; it is not a
 quote or an automatic spending cap. Future host costs require their own review.
