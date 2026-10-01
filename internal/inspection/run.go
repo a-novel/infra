@@ -132,9 +132,17 @@ func (i inspector) config(ctx context.Context, root, scope string) (string, int)
 	return file, code
 }
 
+// plan publishes only the trusted gate's sanitized diagnostic file; child stderr stays private.
 func (i inspector) plan(ctx context.Context, mode, root, file string, env []string) error {
-	env = append(env, "TOFU_VAR_FILE="+file, "TOFU_REPOSITORY_ROOT="+i.candidate, "ALLOW_RESOURCE_DELETION=false")
-	_, err := i.execute(ctx, env, filepath.Join(i.trusted, "ops/tofu-gate.sh"), mode, root, i.bucket)
+	diagnostics, err := os.CreateTemp(i.scratch, "plan-diagnostics-")
+	if err != nil {
+		return err
+	}
+	if err := diagnostics.Close(); err != nil {
+		return err
+	}
+	env = append(env, "TOFU_VAR_FILE="+file, "TOFU_REPOSITORY_ROOT="+i.candidate, "ALLOW_RESOURCE_DELETION=false", "TOFU_DIAGNOSTICS_FILE="+diagnostics.Name())
+	_, err = i.execute(ctx, env, filepath.Join(i.trusted, "ops/tofu-gate.sh"), mode, root, i.bucket)
 	if err == nil {
 		_, err = fmt.Fprintf(i.output, "%s %s completed.\n", root, mode)
 		return err
@@ -148,5 +156,12 @@ func (i inspector) plan(ctx context.Context, mode, root, file string, env []stri
 			return failure{2, "Infrastructure drift detected; inspect the affected root before mutation."}
 		}
 	}
-	return failure{70, "Read-only plan failed; private diagnostics were not published."}
+	data, err := os.ReadFile(diagnostics.Name())
+	if err != nil {
+		return err
+	}
+	if _, err := i.output.Write(data); err != nil {
+		return err
+	}
+	return failure{70, fmt.Sprintf("%s read-only plan failed; private diagnostics were not published.", root)}
 }

@@ -25,6 +25,7 @@ func TestDeletionAssessment(t *testing.T) {
 		{"Established", object{"application_release": object{"rollout": object{"phase": "active"}}}, "image", "", false, 0},
 		{"CleanPlan", object{"application_release": nil}, "release", "", true, 0},
 		{"FailedPlan", object{"application_release": nil}, "release", "plan", true, 70},
+		{"PlanDiagnostics", object{"application_release": nil}, "release", "diagnostics", true, 70},
 		{"ListFailure", object{"application_release": nil}, "image", "FAKE_GCS_LIST_FAILURE", true, 70},
 		{"ReadFailure", object{"application_release": nil}, "image", "FAKE_GCS_READ_FAILURE", true, 70},
 	} {
@@ -54,7 +55,10 @@ func TestDeletionAssessment(t *testing.T) {
 			f.env["FAKE_GATE_HEAD"], f.env["FAKE_GATE_BASE"], f.env["FAKE_GATE_FILES"] = head, base, testCase.files
 			f.env["FAKE_GCS_ROOT"], f.env["FAKE_TOFU_PLAN_CODE"] = storage, "0"
 			f.env["FAKE_TOFU_PLAN_JSON"] = filepath.Join(f.root, "tests/fixtures/plans/no-changes.json")
-			if testCase.failure == "plan" {
+			if testCase.failure == "diagnostics" {
+				f.env["FAKE_TOFU_DIAGNOSTICS"] = filepath.Join(f.root, "tests/fixtures/plan-diagnostics.jsonl")
+			}
+			if testCase.failure == "plan" || testCase.failure == "diagnostics" {
 				f.env["FAKE_TOFU_FAIL_ACTION"] = "plan"
 			} else if testCase.failure != "" {
 				f.env[testCase.failure] = "true"
@@ -62,8 +66,16 @@ func TestDeletionAssessment(t *testing.T) {
 			output := filepath.Join(f.dir, "assessment.json")
 			code, out = f.run(t, "infra", "inspect", "assess", "a-novel/infra", "93", head, base, candidate, "agora-state-test", output)
 			expectCode(t, testCase.code, code, out)
+			require.NotContains(t, out, "fixture-sensitive")
 			if code != 0 {
 				require.NoFileExists(t, output)
+				if testCase.failure == "plan" || testCase.failure == "diagnostics" {
+					require.Contains(t, out, "release read-only plan failed")
+				}
+				if testCase.failure == "diagnostics" {
+					require.Contains(t, out, "PERMISSION_DENIED\tgoogle_project\tidentity.tf:47\t1")
+					require.Contains(t, out, "ZONE_RESOURCE_POOL_EXHAUSTED\tgoogle_compute_disk\tdatabase.tf:54\t1")
+				}
 				return
 			}
 			require.Equal(t, object{
