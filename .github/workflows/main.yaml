@@ -133,7 +133,7 @@ jobs:
           hide-progress: true
           cache: false
           # renovate: datasource=github-releases depName=aquasecurity/trivy
-          version: v0.74.0
+          version: v0.75.0
 
       - name: Build and scan the rollout verifier without credentials
         uses: $/.github/actions/build-tooling-image
