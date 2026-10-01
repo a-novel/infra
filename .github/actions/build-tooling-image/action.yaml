@@ -36,4 +36,4 @@ runs:
         hide-progress: true
         cache: false
         # renovate: datasource=github-releases depName=aquasecurity/trivy
-        version: v0.74.0
+        version: v0.75.0

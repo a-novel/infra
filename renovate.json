@@ -1,7 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "github>a-novel-kit/workflows//renovate/infra#v1.35.0",
+    "github>a-novel-kit/workflows//renovate/infra#v1.36.2",
     ":semanticCommits"
   ],
   "rangeStrategy": "pin",
