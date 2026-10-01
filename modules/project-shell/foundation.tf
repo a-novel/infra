@@ -1,5 +1,5 @@
 # Configuration authority stays with the protected administrator. Dispatch and
-# promotion belong to the service's separately reviewed operational identities.
+# promotion belong to separately reviewed workload identities.
 resource "google_project_iam_custom_role" "foundation_control_plane" {
   project     = google_project.service.project_id
   role_id     = "foundationServiceControlPlane"

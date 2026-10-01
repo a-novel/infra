@@ -1,16 +1,16 @@
 output "project_id" {
   description = "Service-owned project ID."
-  value       = google_project.service.project_id
+  value       = module.project.project_id
 }
 
 output "project_number" {
   description = "Project number for billing and Google-managed service identities."
-  value       = google_project.service.number
+  value       = module.project.project_number
 }
 
 output "service_agents" {
   description = "Google-managed IAM members after their project service-agent roles are established."
-  value       = { for service, binding in google_project_iam_member.service_agent : service => binding.member }
+  value       = module.project.service_agents
 }
 
 output "release" {

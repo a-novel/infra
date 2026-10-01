@@ -5,11 +5,26 @@ environment. The API, jobs, and database that belong to that service will share 
 prepares the service's release identity and private storage boundary, without activating a workflow.
 The protected shared foundation owns this module; a service deployer must not own or apply it.
 
+This is the compatibility composition for existing service-project callers. The
+[project-shell module](../project-shell) now owns project provisioning under
+`module.project`; release resources retain their existing addresses here. The
+relative moves in `moved.tf` retain every caller's project resources, including
+`for_each` instances. Keep these moves for existing states. No manual state edits
+are needed for this extraction.
+
+Shared environment/trust-zone placement is not enabled yet: release storage,
+identities and operation guards still assume one project per service. Review owned
+obsolete projects and billing capacity before new provisioning. Public-admin,
+staging and Kubernetes remain deferred.
+
 The production caller is [foundation/service-projects.tf](../../environments/production/foundation/service-projects.tf).
 Its empty `service_projects` map leaves the current deployment unchanged. See the
 [onboarding boundary](../../docs/runbooks/provision-service-projects.md) before selecting a project.
 
 ## Ownership
+
+The project, API, service-agent, logging and foundation IAM addresses below are
+relative to `module.project`. Release and storage addresses remain in this module.
 
 | Resource                                                                                                                                           | Contract                                                                                                                                                                                               |
 | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -55,7 +70,7 @@ deprivileging does not establish that this separate agent has only its declared 
 
 ## Protected provisioning authority
 
-`foundation.tf` declares configuration permissions for the inactive service foundation. Only the
+`../project-shell/foundation.tf` declares configuration permissions for the inactive service foundation. Only the
 protected foundation account receives its control-plane role. Cloud Deploy pipeline/target management,
 Cloud Run job specifications/IAM, paused Scheduler and Workflows definitions, and artifact-bucket metadata/IAM stay
 with that administrator. The role adds no direct job execution, rollout submission/approval, schedule
