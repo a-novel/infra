@@ -117,6 +117,16 @@ run "a_second_platform_gets_distinct_repository_trust_and_folder_coordinates" {
     )
     error_message = "Adding a platform must create separate repository-bound identities and platform folders without copying resources."
   }
+  assert {
+    condition = alltrue([for name, provider in google_iam_workload_identity_pool_provider.visual_tests :
+      startswith(provider.attribute_mapping["google.subject"], "'${local.visual_identities[name].account_id}:'") &&
+      toset(flatten(regexall("assertion\\.([a-z_]+)", provider.attribute_mapping["google.subject"]))) == toset([
+        "repository_id", "run_id", "run_attempt",
+      ])
+    ])
+    error_message = "Visual subjects must be provider-scoped run identities independent of branch names, workflow paths and repository names."
+  }
+
 }
 
 run "rejects_duplicate_repository_identities" {
