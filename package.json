@@ -14,7 +14,7 @@
   },
   "devDependencies": {
     "prettier": "3.9.9",
-    "renovate": "44.115.12"
+    "renovate": "44.115.13"
   },
   "packageManager": "pnpm@12.7.0",
   "engines": {
