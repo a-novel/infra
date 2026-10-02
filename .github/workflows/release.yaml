@@ -141,6 +141,12 @@ jobs:
         with:
           version: "581.0.0"
 
+      - name: Reject an unfinished legacy host maintenance operation
+        shell: bash
+        env:
+          STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
+        run: infra custody operation check-legacy "${STATE_BUCKET}"
+
       - name: Install OpenTofu
         if: env.RELEASE_ACTION != 'recover-first-launch'
         uses: opentofu/setup-opentofu@v2.0.2

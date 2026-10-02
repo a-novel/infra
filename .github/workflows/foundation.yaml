@@ -50,7 +50,7 @@ jobs:
   execute:
     if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 360
     environment: production-foundation
     permissions:
       actions: read
@@ -194,6 +194,8 @@ jobs:
           SERVICE_FOUNDATIONS_ENABLED: ${{ vars.SERVICE_FOUNDATIONS_ENABLED }}
           NATIVE_BACKUP_MAINTENANCE_ENABLED: ${{ vars.NATIVE_BACKUP_MAINTENANCE_ENABLED }}
           NATIVE_BACKUP_BRINGUP_ENABLED: ${{ vars.NATIVE_BACKUP_BRINGUP_ENABLED }}
+          LEGACY_DATABASE_MAINTENANCE_ENABLED: ${{ vars.LEGACY_DATABASE_MAINTENANCE_ENABLED }}
+          PRODUCTION_RELEASES_ENABLED: ${{ vars.PRODUCTION_RELEASES_ENABLED }}
           SERVICE_JOB_BOOTSTRAP_ENABLED: ${{ vars.SERVICE_JOB_BOOTSTRAP_ENABLED }}
         run: |
           set -euo pipefail
