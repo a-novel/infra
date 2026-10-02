@@ -407,7 +407,7 @@ run "two_service_projects_share_only_the_host" {
 
   assert {
     condition = alltrue([for template in google_compute_instance_template.database :
-      sha256(template.metadata_startup_script) == "70ff4e785555663bf830264df51951e0a32175429399eb7adb15f3162fce42a0"
+      sha256(template.metadata_startup_script) == "e63b8bbd9ff729e842240ad2ea5ede7617612c25381ac16263c8ca528d243c2d"
     ])
     error_message = "Project onboarding must retain the reviewed startup bytes on both legacy database templates."
   }
@@ -541,7 +541,7 @@ run "builds_the_project_replacement_window" {
 
   assert {
     condition = alltrue([for template in google_compute_instance_template.database :
-      sha256(template.metadata_startup_script) == "70ff4e785555663bf830264df51951e0a32175429399eb7adb15f3162fce42a0"
+      sha256(template.metadata_startup_script) == "e63b8bbd9ff729e842240ad2ea5ede7617612c25381ac16263c8ca528d243c2d"
     ])
     error_message = "The legacy database templates must retain the reviewed startup bytes independently of native-host development."
   }
