@@ -2,6 +2,7 @@ package custody
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 
 	"google.golang.org/api/option"
 
+	"github.com/a-novel/infra/internal/diagnostics"
 	"github.com/a-novel/infra/internal/workflow"
 )
 
@@ -104,15 +106,24 @@ func (storage store) apply(args []string, getenv func(string) string, output io.
 		}
 	}
 	for _, action := range []string{"apply", "converge"} {
+		diagnosticFile := filepath.Join(storage.scratch, action+"-diagnostics.tsv")
 		command := []string{
 			"ALLOW_RESOURCE_DELETION=" + destructive, "TOFU_VAR_FILE=" + inputs,
+			"TOFU_DIAGNOSTICS_FILE=" + diagnosticFile,
 			"./ops/tofu-gate.sh", action, root, storage.bucket,
 		}
 		if action == "apply" {
 			command = append(command, plan)
 		}
 		if err := storage.execute(storage.ctx, output, "env", command...); err != nil {
-			return failure{1, "Reviewed apply or convergence failed; reconcile the resources and any held service guard before continuing."}
+			message := fmt.Sprintf("Reviewed %s failed; reconcile the resources and any held service guard before continuing.", action)
+			// Failures before OpenTofu starts have no diagnostic file.
+			if data, err := os.ReadFile(diagnosticFile); err == nil {
+				if categories := diagnostics.Categories(data); categories != "" {
+					message += " Sanitized categories: " + categories + "."
+				}
+			}
+			return failure{1, message}
 		}
 	}
 	if upkeep.bringUp {
