@@ -29,6 +29,53 @@ type workflowJob struct {
 	Steps       []workflowStep
 }
 
+func TestRepositoryChecks(t *testing.T) {
+	t.Parallel()
+	main := loadWorkflow(t, "workflows/main.yaml")
+	gate := main.Jobs["lint-repository"]
+	checks := []string{"lint-tooling", "test-go", "test-backup", "validate-release"}
+	require.Equal(t, []any{"lint-tooling", "test-go", "test-backup", "validate-release"}, gate.Needs)
+	require.Equal(t, "always()", gate.If)
+	require.Empty(t, gate.Permissions)
+	require.Len(t, gate.Steps, 1)
+	step := gate.Steps[0]
+	require.Equal(t, "${{ toJSON(needs) }}", step.Env["CHECK_RESULTS"])
+	for _, name := range checks {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			job, exists := main.Jobs[name]
+			require.True(t, exists)
+			require.Nil(t, job.Needs)
+			require.Empty(t, job.If)
+			require.Nil(t, job.Environment)
+			permissions := map[string]string{"contents": "read"}
+			if name == "validate-release" {
+				permissions["attestations"] = "read"
+			}
+			require.Equal(t, permissions, job.Permissions)
+			for _, testCase := range []struct {
+				result string
+				code   int
+			}{{"success", 0}, {"failure", 1}, {"cancelled", 1}, {"skipped", 1}} {
+				t.Run(testCase.result, func(t *testing.T) {
+					t.Parallel()
+					results := object{}
+					for _, check := range checks {
+						results[check] = object{"result": "success"}
+					}
+					results[name] = object{"result": testCase.result}
+					data, err := json.Marshal(results)
+					require.NoError(t, err)
+					fixture := setup(t)
+					fixture.env["CHECK_RESULTS"] = string(data)
+					code, output := fixture.run(t, "bash", "-c", step.Run)
+					expectCode(t, testCase.code, code, output)
+				})
+			}
+		})
+	}
+}
+
 func TestNativeReleaseBoundary(t *testing.T) {
 	t.Parallel()
 	release := loadWorkflow(t, "workflows/release.yaml")
@@ -196,7 +243,7 @@ func TestWorkflowCredentials(t *testing.T) {
 	build := loadWorkflow(t, "actions/setup-infra/action.yaml").Runs.Steps
 	require.Equal(t, false, build[0].With["cache"])
 	require.Contains(t, build[1].Run, "go build -mod=readonly")
-	stepIndex(t, loadWorkflow(t, "workflows/main.yaml").Jobs["lint-repository"].Steps, "$/.github/actions/setup-infra")
+	stepIndex(t, loadWorkflow(t, "workflows/main.yaml").Jobs["validate-release"].Steps, "$/.github/actions/setup-infra")
 	foundation := loadWorkflow(t, "workflows/foundation.yaml").Jobs["execute"].Steps
 	selection := stepIndex(t, foundation, "infra foundation-inputs prepare")
 	require.Less(t, selection, stepIndex(t, foundation, "google-github-actions/auth@"))
@@ -276,7 +323,7 @@ func TestServiceBootstrapBoundary(t *testing.T) {
 func TestPrerequisiteBoundary(t *testing.T) {
 	t.Parallel()
 	for _, testCase := range []struct{ file, job, command, condition string }{
-		{"main", "lint-repository", "infra preflight resolve-images", ""},
+		{"main", "validate-release", "infra preflight resolve-images", ""},
 		{"release", "release", "infra preflight resolve-images", "env.RELEASE_ACTION == 'deploy'"},
 		{"foundation", "execute", "infra preflight service-images", "inputs.root == 'service-release'"},
 	} {

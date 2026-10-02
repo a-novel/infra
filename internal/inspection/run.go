@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/a-novel/infra/internal/custody"
@@ -41,7 +42,8 @@ func (err failure) Error() string { return err.message }
 
 // Run inspects drift or an exact, previously authorized PR candidate. execute
 // receives additional environment entries separately from literal arguments and
-// must keep child stderr private. This command never applies a plan.
+// must keep child stderr private.
+// Only allowlisted plan failure categories are published. This command never applies a plan.
 func Run(ctx context.Context, args []string, getenv func(string) string, execute func(context.Context, []string, string, ...string) ([]byte, error), stdout, stderr io.Writer) int {
 	err := run(ctx, args, getenv, execute, stdout)
 	if err == nil {
@@ -132,7 +134,7 @@ func (i inspector) config(ctx context.Context, root, scope string) (string, int)
 	return file, code
 }
 
-// plan publishes only the trusted gate's sanitized diagnostic file; child stderr stays private.
+// plan publishes only fixed categories from the trusted gate's diagnostic file.
 func (i inspector) plan(ctx context.Context, mode, root, file string, env []string) error {
 	diagnostics, err := os.CreateTemp(i.scratch, "plan-diagnostics-")
 	if err != nil {
@@ -160,8 +162,22 @@ func (i inspector) plan(ctx context.Context, mode, root, file string, env []stri
 	if err != nil {
 		return err
 	}
-	if _, err := i.output.Write(data); err != nil {
-		return err
+	message := fmt.Sprintf("%s read-only plan failed; private diagnostics were not published.", root)
+	if categories := planFailureCategories(data); categories != "" {
+		message += " Sanitized categories: " + categories + "."
 	}
-	return failure{70, fmt.Sprintf("%s read-only plan failed; private diagnostics were not published.", root)}
+	return failure{70, message}
+}
+
+// The runner's diagnostic rows may carry private source metadata. Only the fixed
+// reason vocabulary from ops/tofu-gate.sh may cross this boundary.
+var planFailureRow = regexp.MustCompile(`(?m)^(ZONE_RESOURCE_POOL_EXHAUSTED|RESOURCE_EXHAUSTED|PERMISSION_DENIED|UNAUTHENTICATED|NOT_FOUND|INVALID_ARGUMENT|FAILED_PRECONDITION|ALREADY_EXISTS|ABORTED|DEADLINE_EXCEEDED|UNAVAILABLE|INTERNAL|CONFIGURATION|UNKNOWN)\t(google_[a-z0-9_]+|-)\t([A-Za-z0-9][A-Za-z0-9._-]*:[1-9][0-9]*|-)\t[1-9][0-9]*$`)
+
+func planFailureCategories(data []byte) string {
+	categories := []string{}
+	for _, row := range planFailureRow.FindAllSubmatch(data, -1) {
+		categories = append(categories, string(row[1]))
+	}
+	slices.Sort(categories)
+	return strings.Join(slices.Compact(categories), ", ")
 }
