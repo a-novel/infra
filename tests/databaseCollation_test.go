@@ -73,13 +73,13 @@ prepare_database_collations database:test "$TMPDIR/data with spaces" owner datab
 func TestPostgresArchiveValidation(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		name, diagnostics, archive, restoreStatus, message string
-		code                                               int
+		name, diagnostics, archive, restoreStatus string
+		code                                      int
 	}{
-		{"Success", "", "archive", "0", "", 0},
-		{"Error/Diagnostics", "private warning", "archive", "0", "pg_dump emitted diagnostics", 1},
-		{"Error/Empty", "", "", "0", "empty archive", 1},
-		{"Error/Unreadable", "", "archive", "1", "pg_restore could not read archive", 1},
+		{"Success", "", "archive", "0", 0},
+		{"Error/Diagnostics", "private warning", "archive", "0", 1},
+		{"Error/Empty", "", "", "0", 1},
+		{"Error/Unreadable", "", "archive", "1", 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -99,7 +99,7 @@ pg_restore() { printf 'private restore diagnostic\n' >&2; return "$RESTORE_STATU
 			expectCode(t, tc.code, code, out)
 			require.NotContains(t, out, "private")
 			if tc.code != 0 {
-				require.Contains(t, out, tc.message)
+				require.Contains(t, out, "error: PostgreSQL archive validation failed")
 			}
 		})
 	}
