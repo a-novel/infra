@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -27,7 +28,7 @@ func TestLegacyMaintenance(t *testing.T) {
 		"MissingMetadata", "UnhealthySource", "PublicAddress", "DiskAutoDelete", "PreservationDisabled", "WrongPreservedDisk", "WrongPreservedIP", "ProactiveGroup", "Surge",
 		"BusyMember", "MultipleMembers", "TemplateReused", "TemplateChangedImage", "TemplateChangedScript",
 		"StaleSnapshot", "BackupFailure", "RestoreFailure", "MetadataDrift", "ChangedInstance", "ReplaceFailure", "ReadinessFailure",
-		"AddressDrift", "WrongAdoptedTemplate", "SameInstance", "WrongRuntime", "WrongLiveScript",
+		"AddressDrift", "WrongAdoptedTemplate", "SameInstance", "SameBootDisk", "InvalidBootDisk", "WrongRuntime", "WrongLiveScript",
 	} {
 		t.Run(scenario, func(t *testing.T) {
 			t.Parallel()
@@ -136,7 +137,7 @@ func TestLegacyMaintenance(t *testing.T) {
 			code = database.Run(t.Context(), []string{"maintenance-replace", targets, outputs, evidence}, getenv, cloud.execute, &logs, &logs)
 			require.NotContains(t, logs.String(), privateValue)
 			require.NotContains(t, logs.String(), "sha256:")
-			if slices.Contains([]string{"Success", "NumericTemplate", "ComputedFields", "BackupTag"}, scenario) {
+			if slices.Contains([]string{"Success", "NumericTemplate", "ComputedFields", "BackupTag", "SameInstance"}, scenario) {
 				expectCode(t, 0, code, logs.String())
 				require.Equal(t, []string{"backup/json-keys", "restore/json-keys", "backup/authentication", "restore/authentication", "replace/json-keys", "replace/authentication"}, cloud.events)
 				var proof []object
@@ -144,7 +145,12 @@ func TestLegacyMaintenance(t *testing.T) {
 				require.Len(t, proof, 2)
 				for _, host := range proof {
 					require.Equal(t, "333", host["oldInstanceId"])
-					require.Equal(t, "444", host["newInstanceId"])
+					id := "444"
+					if scenario == "SameInstance" {
+						id = "333"
+					}
+					require.Equal(t, id, host["newInstanceId"])
+					require.Equal(t, "666", host["bootDiskId"])
 					require.NotEmpty(t, host["restoreExecution"])
 				}
 				info, err := os.Stat(evidence)
@@ -282,7 +288,7 @@ func (cloud *maintenanceCloud) execute(ctx context.Context, output io.Writer, co
 			if cloud.scenario == "Surge" {
 				nested(policy, "maxSurge")["fixed"] = 1
 			}
-			value = object{"name": "agora-database-" + service, "targetSize": 1, "versions": []object{{"name": "primary", "instanceTemplate": cloud.template(service, cloud.applied)}}, "statefulPolicy": object{"preservedState": state}, "updatePolicy": policy, "allInstancesConfig": object{"properties": object{"metadata": metadata}}}
+			value = object{"name": "agora-database-" + service, "targetSize": 1, "status": object{"isStable": cloud.scenario != "UnstableGroup"}, "versions": []object{{"name": "primary", "instanceTemplate": cloud.template(service, cloud.applied)}}, "statefulPolicy": object{"preservedState": state}, "updatePolicy": policy, "allInstancesConfig": object{"properties": object{"metadata": metadata}}}
 		case "list-instances":
 			if slices.Contains(args, "--format=value(instance.basename())") {
 				return c.execute(ctx, output, command, args...)
@@ -340,7 +346,25 @@ func (cloud *maintenanceCloud) execute(ctx context.Context, output io.Writer, co
 		if cloud.scenario == "WrongLiveScript" && updated {
 			items[0]["value"] = "unreviewed"
 		}
-		value = object{"name": name, "id": instanceID, "status": "RUNNING", "machineType": prefix + "/zones/" + c.zone + "/machineTypes/e2-medium", "serviceAccounts": accounts, "metadata": object{"items": items}, "networkInterfaces": []object{nic}, "disks": []object{{"boot": true, "autoDelete": true, "deviceName": "agora-boot"}, disk}}
+		value = object{"name": name, "id": instanceID, "status": "RUNNING", "machineType": prefix + "/zones/" + c.zone + "/machineTypes/e2-medium", "serviceAccounts": accounts, "metadata": object{"items": items}, "networkInterfaces": []object{nic}, "disks": []object{{"boot": true, "autoDelete": true, "deviceName": "agora-boot", "source": prefix + "/zones/" + c.zone + "/disks/" + name}, disk}}
+	case "compute disks describe":
+		if args[3] != name {
+			return c.execute(ctx, output, command, args...)
+		}
+		id, created := "555", time.Now().Add(-24*time.Hour)
+		if updated {
+			id, created = "666", time.Now().Add(-20*time.Minute)
+			if cloud.scenario == "SameBootDisk" {
+				id = "555"
+			}
+			if cloud.scenario == "OutsideInterval" {
+				created = time.Now().Add(-24 * time.Hour)
+			}
+		}
+		value = object{"id": id, "selfLink": prefix + "/zones/" + c.zone + "/disks/" + name, "status": "READY", "creationTimestamp": created.Format(time.RFC3339), "users": []string{prefix + "/zones/" + c.zone + "/instances/" + name}}
+		if cloud.scenario == "InvalidBootDisk" && updated {
+			value.(object)["users"] = []string{"other-instance"}
+		}
 	case "run jobs execute":
 		kind := "backup"
 		if strings.Contains(args[3], "restore") {

@@ -37,6 +37,11 @@ func (target *maintenanceTarget) capture(ctx context.Context, execute func(conte
 		return err
 	}
 	target.Instance, target.InstanceID = instance.Name, strconv.FormatUint(instance.Id, 10)
+	bootDisk, err := target.bootDisk(ctx, execute, instance)
+	if err != nil {
+		return err
+	}
+	target.BootDiskID = strconv.FormatUint(bootDisk.Id, 10)
 	target.Address = instance.NetworkInterfaces[0].NetworkIP
 	target.Boot, err = h.current(ctx)
 	if err != nil || !strings.HasPrefix(target.Boot, "healthy:"+metadata[revisionKey]+":") {
@@ -69,7 +74,7 @@ func (target maintenanceTarget) observe(ctx context.Context, execute func(contex
 	if err != nil || json.Unmarshal([]byte(data), &group) != nil || group.Name != h.group() || group.TargetSize != 1 ||
 		len(group.Versions) != 1 || !target.matchesTemplate(group.Versions[0].InstanceTemplate, groupTemplate) || group.Versions[0].Name != "primary" ||
 		group.StatefulPolicy == nil || group.StatefulPolicy.PreservedState == nil || group.UpdatePolicy == nil ||
-		group.AllInstancesConfig == nil || group.AllInstancesConfig.Properties == nil {
+		group.AllInstancesConfig == nil || group.AllInstancesConfig.Properties == nil || group.Status == nil || !group.Status.IsStable {
 		return nil, failure{70, "maintenance group identity or stateful policy is unconfirmed"}
 	}
 	policy, state := group.UpdatePolicy, group.StatefulPolicy.PreservedState
@@ -169,12 +174,51 @@ func withoutStartup(properties *compute.InstanceProperties) compute.InstanceProp
 	return result
 }
 
-func maintenanceReplace(ctx context.Context, args []string, getenv func(string) string, execute func(context.Context, io.Writer, string, ...string) error) error {
-	if len(args) != 3 {
+// bootDisk identifies the disposable boot disk independently of the preserved VM ID.
+func (target maintenanceTarget) bootDisk(ctx context.Context, execute func(context.Context, io.Writer, string, ...string) error, instance *compute.Instance) (*compute.Disk, error) {
+	h := target.host(execute)
+	prefix := "https://www.googleapis.com/compute/v1/projects/" + h.project + "/zones/" + h.zone
+	for _, attached := range instance.Disks {
+		if !attached.Boot {
+			continue
+		}
+		name := filepath.Base(attached.Source)
+		if !matches(`[a-z][a-z0-9-]{0,62}`, name) || attached.Source != prefix+"/disks/"+name {
+			break
+		}
+		data, err := h.compute(ctx, "disks", "describe", name, "--format=json")
+		var disk compute.Disk
+		if err != nil || json.Unmarshal([]byte(data), &disk) != nil || disk.Id == 0 || disk.SelfLink != attached.Source ||
+			disk.Status != "READY" || !slices.Equal(disk.Users, []string{prefix + "/instances/" + instance.Name}) {
+			break
+		}
+		return &disk, nil
+	}
+	return nil, failure{70, "exact attached boot disk is unconfirmed"}
+}
+
+func maintenanceReplace(ctx context.Context, args []string, getenv func(string) string, execute func(context.Context, io.Writer, string, ...string) error, recovery bool) error {
+	count := 3
+	var started, finished time.Time
+	if recovery {
+		count = 5
+	}
+	if len(args) != count {
 		return failure{64, "maintenance-replace requires private targets, outputs and evidence files"}
 	}
 	if !maintenanceEnabled(getenv) {
 		return failure{77, "protected maintenance activation and paused releases are required"}
+	}
+	if recovery {
+		var err error
+		started, err = time.Parse(time.RFC3339Nano, args[3])
+		if err != nil {
+			return failure{65, "invalid original maintenance interval"}
+		}
+		finished, err = time.Parse(time.RFC3339Nano, args[4])
+		if err != nil || !finished.After(started) || finished.After(time.Now()) || getenv("LEGACY_DATABASE_RECOVERY_ENABLED") != "true" {
+			return failure{77, "separate recovery activation and a completed original maintenance interval are required"}
+		}
 	}
 	var targets []maintenanceTarget
 	var outputs struct {
@@ -189,6 +233,7 @@ func maintenanceReplace(ctx context.Context, args []string, getenv func(string) 
 		return failure{65, "maintenance inputs are unavailable"}
 	}
 	var evidence []object
+	completed := map[string]bool{}
 	seen := map[string]bool{}
 	for index, target := range targets {
 		h := target.host(execute)
@@ -215,14 +260,39 @@ func maintenanceReplace(ctx context.Context, args []string, getenv func(string) 
 		if startupScript(current.Metadata) != target.Startup || !reflect.DeepEqual(withoutStartup(old), withoutStartup(current)) {
 			return failure{70, "converged template differs beyond the reviewed startup script"}
 		}
+		record := object{"service": target.Service, "diskId": target.DiskID, "privateAddress": target.Address, "oldInstanceId": target.InstanceID, "template": selected.URL, "templateId": selected.ID}
+		if recovery {
+			if instance, err := target.observe(ctx, execute, selected.URL, selected.URL); err == nil {
+				disk, diskErr := target.bootDisk(ctx, execute, instance)
+				boot, bootErr := h.current(ctx)
+				if diskErr != nil || bootErr != nil || boot == target.Boot || !strings.HasPrefix(boot, "healthy:"+target.Metadata[revisionKey]+":") {
+					return failure{70, "previous replacement completion is unconfirmed"}
+				}
+				created, err := time.Parse(time.RFC3339Nano, disk.CreationTimestamp)
+				if err != nil || created.Before(started) || created.After(finished) || strconv.FormatUint(disk.Id, 10) == target.BootDiskID {
+					return failure{70, "boot disk does not prove recreation during the original operation"}
+				}
+				completed[target.Service] = true
+				record["reconciled"], record["newInstanceId"], record["bootDiskId"] = true, strconv.FormatUint(instance.Id, 10), strconv.FormatUint(disk.Id, 10)
+				record["boot"] = boot
+				evidence = append(evidence, record)
+				continue
+			}
+		}
 		instance, err := target.observe(ctx, execute, selected.URL, target.Template)
 		if err != nil || strconv.FormatUint(instance.Id, 10) != target.InstanceID {
 			return failure{70, "the selected host changed before its recovery checks"}
 		}
+		disk, err := target.bootDisk(ctx, execute, instance)
+		if err != nil || (target.BootDiskID != "" && target.BootDiskID != strconv.FormatUint(disk.Id, 10)) || (!recovery && target.BootDiskID == "") {
+			return failure{70, "prior boot disk changed or was not captured"}
+		}
+		// Older retained holds lack this field; pending hosts establish it before checks.
+		target.BootDiskID = strconv.FormatUint(disk.Id, 10)
+		targets[index] = target
 		if err := h.snapshot(ctx); err != nil {
 			return err
 		}
-		record := object{"service": target.Service, "diskId": target.DiskID, "privateAddress": target.Address, "oldInstanceId": target.InstanceID, "template": selected.URL, "templateId": selected.ID}
 		for _, kind := range []string{"backup", "restore"} {
 			job := "agora-postgres-" + kind + "-" + target.Service
 			name, err := h.command(ctx, "run", "jobs", "execute", job, "--project="+h.project, "--region="+h.region(), "--wait", "--quiet", "--format=value(metadata.name)")
@@ -234,12 +304,19 @@ func maintenanceReplace(ctx context.Context, args []string, getenv func(string) 
 		evidence = append(evidence, record)
 	}
 	for index, target := range targets {
+		if completed[target.Service] {
+			continue
+		}
 		h := target.host(execute)
 		selected := outputs.Templates.Value[strings.ReplaceAll(target.Service, "-", "_")]
 		instance, err := target.observe(ctx, execute, selected.URL, target.Template)
 		boot, bootErr := h.current(ctx)
 		if err != nil || bootErr != nil || boot != target.Boot || strconv.FormatUint(instance.Id, 10) != target.InstanceID {
 			return failure{70, "host changed after backup checks; replacement blocked"}
+		}
+		disk, err := target.bootDisk(ctx, execute, instance)
+		if err != nil || strconv.FormatUint(disk.Id, 10) != target.BootDiskID {
+			return failure{70, "boot disk changed after backup checks; replacement blocked"}
 		}
 		if err := h.snapshot(ctx); err != nil {
 			return err
@@ -256,11 +333,33 @@ func maintenanceReplace(ctx context.Context, args []string, getenv func(string) 
 			return err
 		}
 		instance, err = target.observe(ctx, execute, selected.URL, selected.URL)
-		if err != nil || strconv.FormatUint(instance.Id, 10) == target.InstanceID {
+		if err != nil {
 			return failure{70, "replacement identity or preserved state is unconfirmed"}
 		}
+		disk, err = target.bootDisk(ctx, execute, instance)
+		if err != nil || strconv.FormatUint(disk.Id, 10) == target.BootDiskID {
+			return failure{70, "replacement boot disk incarnation is unconfirmed"}
+		}
+		evidence[index]["bootDiskId"] = strconv.FormatUint(disk.Id, 10)
 		evidence[index]["newInstanceId"] = strconv.FormatUint(instance.Id, 10)
 		evidence[index]["completedAt"] = time.Now().UTC().Format(time.RFC3339)
+		boot, err = h.current(ctx)
+		if err != nil || boot == target.Boot || !strings.HasPrefix(boot, "healthy:"+target.Metadata[revisionKey]+":") {
+			return failure{70, "replacement healthy boot is unconfirmed"}
+		}
+		evidence[index]["boot"] = boot
+	}
+	for index, target := range targets {
+		selected := outputs.Templates.Value[strings.ReplaceAll(target.Service, "-", "_")]
+		instance, err := target.observe(ctx, execute, selected.URL, selected.URL)
+		if err != nil || strconv.FormatUint(instance.Id, 10) != evidence[index]["newInstanceId"] {
+			return failure{70, "completed host changed before maintenance completion"}
+		}
+		disk, err := target.bootDisk(ctx, execute, instance)
+		boot, bootErr := target.host(execute).current(ctx)
+		if err != nil || strconv.FormatUint(disk.Id, 10) != evidence[index]["bootDiskId"] || bootErr != nil || boot != evidence[index]["boot"] {
+			return failure{70, "completed host boot disk or health changed"}
+		}
 	}
 	data, err := json.Marshal(evidence)
 	if err != nil {

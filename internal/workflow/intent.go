@@ -21,6 +21,7 @@ const usage = `usage: go run ./cmd/infra
   foundation apply <service-foundation|service-release> <json-keys|authentication> <plan-id>
   foundation promote-images service-release <json-keys|authentication>
   foundation finish-operation <service> <guard-generation> 'FINISH <service> <guard-generation>'
+  foundation recover-legacy <guard-generation> 'RECOVER LEGACY <guard-generation>'
   release deploy [--no-wait]
   release rollback <receipt-id>
   release recover-first-launch <failed-run-id>
@@ -103,6 +104,21 @@ func parse(args []string) (intent, error) {
 			return i, invalid
 		}
 	case "foundation":
+		if len(args) > 0 && args[0] == "recover-legacy" {
+			if len(args) != 3 {
+				return i, invalid
+			}
+			generation, err := strconv.ParseInt(args[1], 10, 64)
+			if err != nil || generation <= 0 || strconv.FormatInt(generation, 10) != args[1] || args[2] != "RECOVER LEGACY "+args[1] {
+				return i, invalid
+			}
+			i.input("operation", args[0])
+			i.input("root", "foundation")
+			i.input("service", "none")
+			i.input("guard_generation", args[1])
+			i.input("confirm", args[2])
+			break
+		}
 		if len(args) > 0 && args[0] == "finish-operation" {
 			if len(args) != 4 || !slices.Contains([]string{"json-keys", "authentication"}, args[1]) {
 				return i, invalid

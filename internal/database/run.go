@@ -54,7 +54,9 @@ func run(ctx context.Context, args []string, getenv func(string) string, execute
 		case "maintenance-plan":
 			return "Maintenance targets inspected; no host changed.", maintenancePlan(ctx, args[1:], getenv, execute)
 		case "maintenance-replace":
-			return "Maintenance completed with preserved disks and addresses.", maintenanceReplace(ctx, args[1:], getenv, execute)
+			return "Maintenance completed with preserved disks and addresses.", maintenanceReplace(ctx, args[1:], getenv, execute, false)
+		case "maintenance-recover":
+			return "Maintenance reconciled with preserved disks and addresses.", maintenanceReplace(ctx, args[1:], getenv, execute, true)
 		}
 	}
 	counts := map[string][2]int{"current": {4, 4}, "wait": {6, 6}, "prepare": {6, 8}, "deploy": {9, 9}, "restore": {6, 6}, "recover-first-launch": {7, 7}}
