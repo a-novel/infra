@@ -23,7 +23,7 @@ func FoundationInputs(args []string, getenv func(string) string, stdout, stderr 
 }
 
 // ServiceScopes returns backend scopes and their service names from
-// the converged FOUNDATION_CONFIG registration, never from candidate code.
+// the protected FOUNDATION_CONFIG registration, never from candidate code.
 // Older registrations without service_projects describe an empty fleet.
 func ServiceScopes(getenv func(string) string, bucket string) (map[string]string, error) {
 	var registration map[string]json.RawMessage

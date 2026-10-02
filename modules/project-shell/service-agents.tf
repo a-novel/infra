@@ -24,7 +24,8 @@ resource "google_project_iam_member" "service_agent" {
 
   project = google_project.service.project_id
   role    = each.value
-  member  = google_project_service_identity.agent[each.key].member
+  # Compute's identity-generation response can omit its email and member.
+  member = each.key == "compute.googleapis.com" ? "serviceAccount:service-${google_project.service.number}@compute-system.iam.gserviceaccount.com" : google_project_service_identity.agent[each.key].member
 }
 
 # Google APIs, not the VM runtime or Compute Engine agent, manages MIG members.

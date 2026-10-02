@@ -8,16 +8,17 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 
 	"github.com/a-novel/infra/internal/custody"
+	"github.com/a-novel/infra/internal/diagnostics"
 )
 
 type command func(context.Context, []string, string, ...string) ([]byte, error)
 
 type inspector struct {
 	bucket, trusted, candidate, scratch string
+	pendingFoundation                   string
 	getenv                              func(string) string
 	execute                             command
 	output                              io.Writer
@@ -57,12 +58,12 @@ func Run(ctx context.Context, args []string, getenv func(string) string, execute
 
 func run(ctx context.Context, args []string, getenv func(string) string, execute command, output io.Writer) error {
 	drift := len(args) == 2 && args[0] == "drift"
-	assess := len(args) == 8 && args[0] == "assess"
+	assess := len(args) == 8 && (args[0] == "assess" || args[0] == "assess-pending-foundation")
 	if !drift && !assess {
-		return failure{64, "Usage: infra inspect drift <bucket> | assess <repository> <pr> <head> <base> <candidate|--image-only> <bucket> <verdict-file>"}
+		return failure{64, "Usage: infra inspect drift <bucket> | assess|assess-pending-foundation <repository> <pr> <head> <base> <candidate|--image-only> <bucket> <verdict-file>"}
 	}
 	bucket := args[1]
-	if args[0] == "assess" {
+	if assess {
 		bucket = args[6]
 	}
 	if !regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$`).MatchString(bucket) {
@@ -77,8 +78,13 @@ func run(ctx context.Context, args []string, getenv func(string) string, execute
 		return err
 	}
 	defer func() { _ = os.RemoveAll(scratch) }() // Best-effort private scratch cleanup.
-	i := inspector{bucket, trusted, trusted, scratch, getenv, execute, output}
-	if args[0] == "assess" {
+	i := inspector{bucket: bucket, trusted: trusted, candidate: trusted, scratch: scratch, getenv: getenv, execute: execute, output: output}
+	if args[0] == "assess-pending-foundation" {
+		if err := i.selectPendingFoundation(args[3], args[4], args[5]); err != nil {
+			return err
+		}
+	}
+	if assess {
 		return i.assess(ctx, args[1:])
 	}
 	for _, root := range []string{"bootstrap", "foundation", "release"} {
@@ -115,6 +121,9 @@ func (i inspector) assessOrDrift(ctx context.Context, mode, root, file string, e
 }
 
 func (i inspector) config(ctx context.Context, root, scope string) (string, int) {
+	if root == "foundation" && scope == "" && i.pendingFoundation != "" {
+		return i.pendingFoundation, 0
+	}
 	file := filepath.Join(i.scratch, strings.ReplaceAll(root+"-"+scope, "/", "-")+".json")
 	getenv := func(key string) string {
 		if key == "TOFU_STATE_SUFFIX" {
@@ -136,14 +145,14 @@ func (i inspector) config(ctx context.Context, root, scope string) (string, int)
 
 // plan publishes only fixed categories from the trusted gate's diagnostic file.
 func (i inspector) plan(ctx context.Context, mode, root, file string, env []string) error {
-	diagnostics, err := os.CreateTemp(i.scratch, "plan-diagnostics-")
+	diagnosticFile, err := os.CreateTemp(i.scratch, "plan-diagnostics-")
 	if err != nil {
 		return err
 	}
-	if err := diagnostics.Close(); err != nil {
+	if err := diagnosticFile.Close(); err != nil {
 		return err
 	}
-	env = append(env, "TOFU_VAR_FILE="+file, "TOFU_REPOSITORY_ROOT="+i.candidate, "ALLOW_RESOURCE_DELETION=false", "TOFU_DIAGNOSTICS_FILE="+diagnostics.Name())
+	env = append(env, "TOFU_VAR_FILE="+file, "TOFU_REPOSITORY_ROOT="+i.candidate, "ALLOW_RESOURCE_DELETION=false", "TOFU_DIAGNOSTICS_FILE="+diagnosticFile.Name())
 	_, err = i.execute(ctx, env, filepath.Join(i.trusted, "ops/tofu-gate.sh"), mode, root, i.bucket)
 	if err == nil {
 		_, err = fmt.Fprintf(i.output, "%s %s completed.\n", root, mode)
@@ -158,26 +167,13 @@ func (i inspector) plan(ctx context.Context, mode, root, file string, env []stri
 			return failure{2, "Infrastructure drift detected; inspect the affected root before mutation."}
 		}
 	}
-	data, err := os.ReadFile(diagnostics.Name())
+	data, err := os.ReadFile(diagnosticFile.Name())
 	if err != nil {
 		return err
 	}
 	message := fmt.Sprintf("%s read-only plan failed; private diagnostics were not published.", root)
-	if categories := planFailureCategories(data); categories != "" {
+	if categories := diagnostics.Categories(data); categories != "" {
 		message += " Sanitized categories: " + categories + "."
 	}
 	return failure{70, message}
-}
-
-// The runner's diagnostic rows may carry private source metadata. Only the fixed
-// reason vocabulary from ops/tofu-gate.sh may cross this boundary.
-var planFailureRow = regexp.MustCompile(`(?m)^(ZONE_RESOURCE_POOL_EXHAUSTED|RESOURCE_EXHAUSTED|PERMISSION_DENIED|UNAUTHENTICATED|NOT_FOUND|INVALID_ARGUMENT|FAILED_PRECONDITION|ALREADY_EXISTS|ABORTED|DEADLINE_EXCEEDED|UNAVAILABLE|INTERNAL|CONFIGURATION|UNKNOWN)\t(google_[a-z0-9_]+|-)\t([A-Za-z0-9][A-Za-z0-9._-]*:[1-9][0-9]*|-)\t[1-9][0-9]*$`)
-
-func planFailureCategories(data []byte) string {
-	categories := []string{}
-	for _, row := range planFailureRow.FindAllSubmatch(data, -1) {
-		categories = append(categories, string(row[1]))
-	}
-	slices.Sort(categories)
-	return strings.Join(slices.Compact(categories), ", ")
 }

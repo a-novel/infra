@@ -190,13 +190,17 @@ func TestCustodyPlanIntegrity(t *testing.T) {
 func TestCustodyPlanApply(t *testing.T) {
 	t.Parallel()
 	for _, testCase := range []struct {
-		name, root, suffix string
-		failed             bool
+		name, root, suffix, action string
+		diagnostics                bool
 	}{
-		{"Recovery", "foundation", "recovery/agora-recovery-test", false},
-		{"RecoveryFailure", "foundation", "recovery/agora-recovery-test", true},
-		{"Service", "service-foundation", "services/agora-json-keys-test", false},
-		{"ServiceFailure", "service-foundation", "services/agora-json-keys-test", true},
+		{"Recovery", "foundation", "recovery/agora-recovery-test", "", false},
+		{"RecoveryFailure", "foundation", "recovery/agora-recovery-test", "apply", true},
+		{"RecoveryConvergenceFailure", "foundation", "recovery/agora-recovery-test", "plan", true},
+		{"Service", "service-foundation", "services/agora-json-keys-test", "", false},
+		{"ServiceFailure", "service-foundation", "services/agora-json-keys-test", "apply", true},
+		{"ServiceConvergenceFailure", "service-foundation", "services/agora-json-keys-test", "plan", true},
+		{"NoDiagnostics", "foundation", "recovery/agora-recovery-test", "apply", false},
+		{"InitializationFailure", "foundation", "recovery/agora-recovery-test", "init", false},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
@@ -228,8 +232,11 @@ func TestCustodyPlanApply(t *testing.T) {
 			f.env["FAKE_TOFU_REQUIRE_ABSENT"] = filepath.Join(remote, "plan.tfplan")
 			f.env["FAKE_TOFU_PLAN_JSON"], f.env["FAKE_TOFU_PLAN_CODE"] = filepath.Join(f.root, "tests/fixtures/plans/safe.json"), "0"
 			expected := 0
-			if testCase.failed {
-				f.env["FAKE_TOFU_FAIL_ACTION"], expected = "apply", 1
+			if testCase.action != "" {
+				f.env["FAKE_TOFU_FAIL_ACTION"], expected = testCase.action, 1
+			}
+			if testCase.diagnostics {
+				f.env["FAKE_TOFU_DIAGNOSTICS"] = filepath.Join(f.root, "tests/fixtures/plan-diagnostics.jsonl")
 			}
 			config := filepath.Join(f.dir, "config.json")
 			writeJSON(t, config, object{})
@@ -243,7 +250,20 @@ func TestCustodyPlanApply(t *testing.T) {
 			}
 			code, out := f.script(t, "apply-reviewed-plan", args[1], args[0], args[2], args[3], config)
 			expectCode(t, expected, code, out)
-			require.NotContains(t, out, "fixture-sensitive-diagnostic")
+			require.NotContains(t, out, "fixture-sensitive")
+			if testCase.action != "" {
+				stage := "apply"
+				if testCase.action == "plan" {
+					stage = "converge"
+				}
+				require.Contains(t, out, "Reviewed "+stage+" failed;")
+			}
+			if testCase.diagnostics {
+				require.Contains(t, out, "Sanitized categories: CONFIGURATION, PERMISSION_DENIED, UNKNOWN, ZONE_RESOURCE_POOL_EXHAUSTED.")
+				require.NotContains(t, out, "identity.tf")
+			} else {
+				require.NotContains(t, out, "Sanitized categories:")
+			}
 			require.NoFileExists(t, filepath.Join(remote, "plan.tfplan"))
 			f.custody(t, 66, append([]string{"plan", "fetch"}, args...)...)
 		})

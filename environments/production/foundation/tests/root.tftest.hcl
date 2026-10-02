@@ -160,8 +160,17 @@ run "protected_project_shell" {
       google_project_iam_member.service_agent[service].project == var.project_id &&
       google_project_iam_member.service_agent[service].member == agent.member &&
       output.service_agents[service] == agent.member
+      if service != "compute.googleapis.com"
     ]) && google_project_service.api["storage.googleapis.com"].service == "storage.googleapis.com"
     error_message = "Enable the APIs and bind their returned identities inside the selected project."
+  }
+
+  assert {
+    condition = (
+      google_project_iam_member.service_agent["compute.googleapis.com"].member == "serviceAccount:service-987654321098@compute-system.iam.gserviceaccount.com" &&
+      output.service_agents["compute.googleapis.com"] == google_project_iam_member.service_agent["compute.googleapis.com"].member
+    )
+    error_message = "Compute's service agent must use its documented project-number identity."
   }
 
   assert {

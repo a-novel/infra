@@ -136,9 +136,12 @@ func TestCustodyMaintenance(t *testing.T) {
 			template := "https://www.googleapis.com/compute/v1/projects/agora-json-keys-test/global/instanceTemplates/new-template"
 			execute := func(ctx context.Context, output io.Writer, command string, values ...string) error {
 				if command == "env" {
-					action := values[3]
+					script := slices.Index(values, "./ops/tofu-gate.sh")
+					require.NotEqual(t, -1, script)
+					gateArgs := values[script+1:]
+					action := gateArgs[0]
 					if action == "inspect" {
-						writeJSON(t, values[6]+".json", plan)
+						writeJSON(t, gateArgs[3]+".json", plan)
 						return nil
 					}
 					assert.FileExists(t, guard, "apply/converge require admission")
@@ -158,7 +161,7 @@ func TestCustodyMaintenance(t *testing.T) {
 						if testCase.name == "BringUp/OutputPeer" {
 							target["project"] = "agora-authentication-test"
 						}
-						writeJSON(t, values[6], object{"native_bringup": object{"value": target}})
+						writeJSON(t, gateArgs[3], object{"native_bringup": object{"value": target}})
 					}
 					return nil
 				}
