@@ -18,6 +18,7 @@ type command func(context.Context, []string, string, ...string) ([]byte, error)
 
 type inspector struct {
 	bucket, trusted, candidate, scratch string
+	pendingFoundation                   string
 	getenv                              func(string) string
 	execute                             command
 	output                              io.Writer
@@ -57,12 +58,12 @@ func Run(ctx context.Context, args []string, getenv func(string) string, execute
 
 func run(ctx context.Context, args []string, getenv func(string) string, execute command, output io.Writer) error {
 	drift := len(args) == 2 && args[0] == "drift"
-	assess := len(args) == 8 && args[0] == "assess"
+	assess := len(args) == 8 && (args[0] == "assess" || args[0] == "assess-pending-foundation")
 	if !drift && !assess {
-		return failure{64, "Usage: infra inspect drift <bucket> | assess <repository> <pr> <head> <base> <candidate|--image-only> <bucket> <verdict-file>"}
+		return failure{64, "Usage: infra inspect drift <bucket> | assess|assess-pending-foundation <repository> <pr> <head> <base> <candidate|--image-only> <bucket> <verdict-file>"}
 	}
 	bucket := args[1]
-	if args[0] == "assess" {
+	if assess {
 		bucket = args[6]
 	}
 	if !regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$`).MatchString(bucket) {
@@ -77,8 +78,13 @@ func run(ctx context.Context, args []string, getenv func(string) string, execute
 		return err
 	}
 	defer func() { _ = os.RemoveAll(scratch) }() // Best-effort private scratch cleanup.
-	i := inspector{bucket, trusted, trusted, scratch, getenv, execute, output}
-	if args[0] == "assess" {
+	i := inspector{bucket: bucket, trusted: trusted, candidate: trusted, scratch: scratch, getenv: getenv, execute: execute, output: output}
+	if args[0] == "assess-pending-foundation" {
+		if err := i.selectPendingFoundation(args[3], args[4], args[5]); err != nil {
+			return err
+		}
+	}
+	if assess {
 		return i.assess(ctx, args[1:])
 	}
 	for _, root := range []string{"bootstrap", "foundation", "release"} {
@@ -115,6 +121,9 @@ func (i inspector) assessOrDrift(ctx context.Context, mode, root, file string, e
 }
 
 func (i inspector) config(ctx context.Context, root, scope string) (string, int) {
+	if root == "foundation" && scope == "" && i.pendingFoundation != "" {
+		return i.pendingFoundation, 0
+	}
 	file := filepath.Join(i.scratch, strings.ReplaceAll(root+"-"+scope, "/", "-")+".json")
 	getenv := func(key string) string {
 		if key == "TOFU_STATE_SUFFIX" {
