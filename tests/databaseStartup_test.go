@@ -22,12 +22,17 @@ func TestDatabaseStartup(t *testing.T) {
 		{"Error/Health", "true", "false", "unhealthy", "0", "0", 1},
 		{"Error/Password", "true", "false", "healthy", "1", "0", 1},
 		{"Error/ContainerExit", "true", "false", "healthy", "0", "137", 137},
+		{"Error/Collation", "true", "false", "healthy", "0", "0", 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			f := setup(t)
 			f.env["HEALTH"], f.env["PASSWORD_STATUS"], f.env["EXIT_STATUS"] = tc.health, tc.passwordStatus, tc.exitStatus
 			f.env["PGBACKREST_WAL_ARCHIVING"] = tc.wal
+			f.env["COLLATION_STATUS"] = "0"
+			if tc.name == "Error/Collation" {
+				f.env["COLLATION_STATUS"] = "1"
+			}
 			code, out := f.run(t, "bash", "-c", `
 . assets/database-host/startup.sh
 DATABASE_SUPERVISED="$1"
@@ -40,6 +45,7 @@ MAX_CONNECTIONS=50
 PGBACKREST_REPOSITORY_NAME=repository.test
 PGBACKREST_REPOSITORY_IP=10.90.0.3
 prepare_database_directory() { :; }
+prepare_database_collations() { printf 'collations\n'; return "$COLLATION_STATUS"; }
 activate_database_credentials() { printf 'credentials\n'; return "$PASSWORD_STATUS"; }
 systemd-notify() { printf 'ready\n'; }
 publish_database_status() { printf '%s\n' "$1"; }
@@ -58,11 +64,12 @@ start_database json-keys image 5432 user database /password /backup-password
 if [ "$DATABASE_SUPERVISED" = true ]; then supervise_database; fi
 `, "startup-test", tc.supervised)
 			expectCode(t, tc.code, code, out)
-			if tc.wal == "invalid" {
+			if tc.wal == "invalid" || tc.name == "Error/Collation" {
 				require.NoFileExists(t, filepath.Join(f.dir, "arguments"))
 				return
 			}
 			args := strings.ReplaceAll(read(t, filepath.Join(f.dir, "arguments")), "\n", " ")
+			require.Contains(t, out, "collations\n")
 			native := tc.supervised == "true"
 			restart := "on-failure:5"
 			if native {
