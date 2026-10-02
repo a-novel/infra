@@ -46,6 +46,25 @@ target. Its compiler always writes `service_projects = {}` into the disposable f
 the root also rejects a nonempty map in recovery mode. Older source configurations without the map
 remain supported.
 
+### Assess a partial foundation operation
+
+A failed apply can leave resources in state while private custody still holds the last successfully
+applied configuration. Keep that converged record intact. After inspecting the partial operation and
+reviewing the complete pending `FOUNDATION_TFVARS_JSON` in `production-foundation`, a maintainer may
+dispatch `production drift` on current `master` with operation `assess-pending-foundation` and the
+exact pull request, head SHA and base SHA. Approve that run through the existing foundation
+environment only after checking those inputs. The workflow uses the read-only plan identity.
+
+This explicit mode uses the pending document for the shared foundation and service registration.
+Each initialized service root still requires its own converged inputs and state. Missing registration,
+denied inventory reads and held operation guards remain failures. Normal assessments, image-only
+checks and scheduled drift continue using converged inputs. There is no automatic fallback.
+
+The run publishes the same exact-commit verdict and applies the same deletion-approval gate. It
+publishes no configuration to custody, applies no plan and releases no guard. A successful assessment
+does not establish convergence or authorize resuming an interrupted apply. Merge the assessment
+tooling into protected `master` before using this mode for a candidate PR.
+
 ## What the plan will own
 
 - The [project module](../../modules/workload-project/README.md) creates protected project shells,
@@ -159,7 +178,8 @@ this code. Trusted deletion assessment and scheduled drift inspect initialized s
 when the writer enable flag is unset; verify that coverage during approved activation.
 
 Inspection selects service/project scopes from the last converged shared-foundation registration,
-not candidate code. An entirely empty scope is explicitly skipped. Existing state without matching
+with the explicit pending-input mode above available for reviewed partial operations. Candidate code
+cannot select inputs. An entirely empty scope is explicitly skipped. Existing state without matching
 converged inputs, inputs without state, unregistered state and denied inventory reads fail inspection.
 The same project, region, management and backend checks run before any service backend is initialized.
 Assessment publishes only the existing commit tuple and boolean verdict, never private inputs or plans.
