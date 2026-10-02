@@ -7,13 +7,18 @@ inputs:
 runs:
   using: composite
   steps:
+    # Reuse local build layers across tooling images in this job.
     - uses: docker/setup-buildx-action@v4.4.1
+      id: builder
+      with:
+        name: infra-tooling-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
 
     - name: Build without publishing
       uses: docker/build-push-action@v7.4.0
       env:
         DOCKER_BUILD_RECORD_UPLOAD: "false"
       with:
+        builder: ${{ steps.builder.outputs.name }}
         context: .
         file: builds/${{ inputs.image_name }}.Dockerfile
         platforms: linux/amd64

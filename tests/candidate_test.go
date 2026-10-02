@@ -36,6 +36,9 @@ func (f *sandbox) command(t *testing.T, name string) {
 	}
 	require.NoError(t, os.Symlink(binary, target))
 	f.env["INFRA_TEST_COMMAND"] = "1"
+	// Fixture commands finish their work before exit; avoid paying the race
+	// runtime's one-second exit delay for every simulated CLI invocation.
+	f.env["GORACE"] = "atexit_sleep_ms=0"
 }
 
 func TestCandidatePlan(t *testing.T) {

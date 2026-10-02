@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -43,7 +42,7 @@ func (err failure) Error() string { return err.message }
 
 // Run inspects drift or an exact, previously authorized PR candidate. execute
 // receives additional environment entries separately from literal arguments and
-// must keep child stderr private, retaining it in [exec.ExitError] as [exec.Cmd.Output] does.
+// must keep child stderr private.
 // Only allowlisted plan failure categories are published. This command never applies a plan.
 func Run(ctx context.Context, args []string, getenv func(string) string, execute func(context.Context, []string, string, ...string) ([]byte, error), stdout, stderr io.Writer) int {
 	err := run(ctx, args, getenv, execute, stdout)
@@ -135,9 +134,17 @@ func (i inspector) config(ctx context.Context, root, scope string) (string, int)
 	return file, code
 }
 
+// plan publishes only fixed categories from the trusted gate's diagnostic file.
 func (i inspector) plan(ctx context.Context, mode, root, file string, env []string) error {
-	env = append(env, "TOFU_VAR_FILE="+file, "TOFU_REPOSITORY_ROOT="+i.candidate, "ALLOW_RESOURCE_DELETION=false")
-	_, err := i.execute(ctx, env, filepath.Join(i.trusted, "ops/tofu-gate.sh"), mode, root, i.bucket)
+	diagnostics, err := os.CreateTemp(i.scratch, "plan-diagnostics-")
+	if err != nil {
+		return err
+	}
+	if err := diagnostics.Close(); err != nil {
+		return err
+	}
+	env = append(env, "TOFU_VAR_FILE="+file, "TOFU_REPOSITORY_ROOT="+i.candidate, "ALLOW_RESOURCE_DELETION=false", "TOFU_DIAGNOSTICS_FILE="+diagnostics.Name())
+	_, err = i.execute(ctx, env, filepath.Join(i.trusted, "ops/tofu-gate.sh"), mode, root, i.bucket)
 	if err == nil {
 		_, err = fmt.Fprintf(i.output, "%s %s completed.\n", root, mode)
 		return err
@@ -151,8 +158,12 @@ func (i inspector) plan(ctx context.Context, mode, root, file string, env []stri
 			return failure{2, "Infrastructure drift detected; inspect the affected root before mutation."}
 		}
 	}
-	message := "Read-only plan failed; private diagnostics were not published."
-	if categories := planFailureCategories(err); categories != "" {
+	data, err := os.ReadFile(diagnostics.Name())
+	if err != nil {
+		return err
+	}
+	message := fmt.Sprintf("%s read-only plan failed; private diagnostics were not published.", root)
+	if categories := planFailureCategories(data); categories != "" {
 		message += " Sanitized categories: " + categories + "."
 	}
 	return failure{70, message}
@@ -162,13 +173,9 @@ func (i inspector) plan(ctx context.Context, mode, root, file string, env []stri
 // reason vocabulary from ops/tofu-gate.sh may cross this boundary.
 var planFailureRow = regexp.MustCompile(`(?m)^(ZONE_RESOURCE_POOL_EXHAUSTED|RESOURCE_EXHAUSTED|PERMISSION_DENIED|UNAUTHENTICATED|NOT_FOUND|INVALID_ARGUMENT|FAILED_PRECONDITION|ALREADY_EXISTS|ABORTED|DEADLINE_EXCEEDED|UNAVAILABLE|INTERNAL|CONFIGURATION|UNKNOWN)\t(google_[a-z0-9_]+|-)\t([A-Za-z0-9][A-Za-z0-9._-]*:[1-9][0-9]*|-)\t[1-9][0-9]*$`)
 
-func planFailureCategories(err error) string {
-	var exit *exec.ExitError
-	if !errors.As(err, &exit) {
-		return ""
-	}
+func planFailureCategories(data []byte) string {
 	categories := []string{}
-	for _, row := range planFailureRow.FindAllSubmatch(exit.Stderr, -1) {
+	for _, row := range planFailureRow.FindAllSubmatch(data, -1) {
 		categories = append(categories, string(row[1]))
 	}
 	slices.Sort(categories)

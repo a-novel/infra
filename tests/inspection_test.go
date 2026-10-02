@@ -278,7 +278,15 @@ func TestInspectionDiagnostics(t *testing.T) {
 						if testCase.plainError {
 							return []byte(privateValue), errors.New(testCase.diagnostic)
 						}
-						command := exec.CommandContext(ctx, "sh", "-c", `printf '%s' "$1"; printf '%s' "$2" >&2; exit 1`, "sh", privateValue, testCase.diagnostic)
+						diagnostics := ""
+						for _, entry := range env {
+							if value, ok := strings.CutPrefix(entry, "TOFU_DIAGNOSTICS_FILE="); ok {
+								diagnostics = value
+							}
+						}
+						require.NotEmpty(t, diagnostics)
+						require.NoError(t, os.WriteFile(diagnostics, []byte(testCase.diagnostic), 0o600))
+						command := exec.CommandContext(ctx, "sh", "-c", `printf '%s' "$1"; printf '%s' "$1" >&2; exit 1`, "sh", privateValue+"\nABORTED\t-\t-\t1\n")
 						data, err := command.Output()
 						require.Error(t, err)
 						return data, fmt.Errorf("%s: %w", privateValue, err)
@@ -293,7 +301,7 @@ func TestInspectionDiagnostics(t *testing.T) {
 					command.Env = append(command.Env, env...)
 					return command.Output()
 				}, &stdout, &stderr)
-			message := "Read-only plan failed; private diagnostics were not published."
+			message := "bootstrap read-only plan failed; private diagnostics were not published."
 			if testCase.categories != "" {
 				message += " Sanitized categories: " + testCase.categories + "."
 			}
