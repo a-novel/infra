@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -92,6 +93,11 @@ func (i inspector) assess(ctx context.Context, args []string) error {
 	}
 	if imageOnly && (!slices.Equal(impact.Roots, []string{"release"}) || !impact.ReleaseManifest || impact.ReleaseRoot) {
 		return failure{77, "An image-only assessment cannot execute a candidate plan."}
+	}
+	if i.pendingFoundation != "" {
+		if _, err := fmt.Fprintln(i.output, "Assessment uses environment-approved pending foundation inputs; converged records remain unchanged."); err != nil {
+			return err
+		}
 	}
 	for _, root := range impact.Roots {
 		if root == "service-foundation" || root == "service-release" || root == "service-recovery" {

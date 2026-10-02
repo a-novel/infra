@@ -186,7 +186,7 @@ func TestWorkflowBoundaries(t *testing.T) {
 			auth = i
 		}
 		if s.With["path"] == "candidate" || strings.HasPrefix(s.Uses, "opentofu/") || strings.Contains(s.Run, "resolve-resource-deletion-assessment.sh") {
-			require.Equal(t, "inputs.operation == 'assess-pull-request'", s.If)
+			require.Equal(t, "inputs.operation == 'assess-pull-request' || inputs.operation == 'assess-pending-foundation'", s.If)
 		}
 		if strings.Contains(s.Run, "resolve-resource-deletion-assessment.sh") {
 			authorize = i
@@ -200,8 +200,9 @@ func TestWorkflowBoundaries(t *testing.T) {
 			tofu = i
 			require.Equal(t, "candidate/.opentofu-version", s.With["tofu_version_file"])
 		}
-		if strings.Contains(s.Run, "infra inspect assess") {
+		if strings.Contains(s.Run, `infra inspect "${mode}"`) {
 			require.Contains(t, s.Run, "candidate=--image-only")
+			require.Contains(t, s.Run, "mode=assess-pending-foundation")
 			require.NotContains(t, s.Run, "${{")
 		}
 	}

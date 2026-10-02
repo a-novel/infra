@@ -381,7 +381,11 @@ func TestWorkflowBoundaries(t *testing.T) {
 			t.Parallel()
 			require.Empty(t, testCase.workflow.Permissions)
 			require.Equal(t, testCase.permissions, testCase.job.Permissions)
-			require.Nil(t, testCase.job.Environment)
+			if testCase.name == "Assessment" {
+				require.Equal(t, "${{ inputs.operation == 'assess-pending-foundation' && 'production-foundation' || '' }}", testCase.job.Environment)
+			} else {
+				require.Nil(t, testCase.job.Environment)
+			}
 		})
 	}
 
@@ -417,8 +421,19 @@ func TestWorkflowBoundaries(t *testing.T) {
 	require.Equal(t, 1, candidates)
 	verdict := assessment.Steps[stepIndex(t, assessment.Steps, "actions/upload-artifact@")]
 	require.Equal(t, "${{ runner.temp }}/resource-deletion/assessment.json", verdict.With["path"])
-	prepare := assessment.Steps[stepIndex(t, assessment.Steps, "infra inspect assess")]
+	prepare := assessment.Steps[stepIndex(t, assessment.Steps, `infra inspect "${mode}"`)]
 	require.Equal(t, "${{ github.token }}", prepare.Env["GH_TOKEN"])
+	require.Equal(t, "${{ inputs.operation == 'assess-pending-foundation' && secrets.FOUNDATION_TFVARS_JSON || '' }}", prepare.Env["PENDING_FOUNDATION_CONFIG"])
+	require.Contains(t, assessment.If, "inputs.operation == 'assess-pending-foundation'")
+	require.Contains(t, prepare.Run, "mode=assess-pending-foundation")
+	for _, command := range []string{"resolve-resource-deletion-assessment.sh", "setup-opentofu@"} {
+		require.Equal(t, "inputs.operation == 'assess-pull-request' || inputs.operation == 'assess-pending-foundation'", assessment.Steps[stepIndex(t, assessment.Steps, command)].If)
+	}
+	for _, name := range []string{"inspect", "health"} {
+		for _, step := range drift.Jobs[name].Steps {
+			require.NotContains(t, step.Env, "PENDING_FOUNDATION_CONFIG")
+		}
+	}
 	for _, testCase := range []struct {
 		name             string
 		actual, expected any

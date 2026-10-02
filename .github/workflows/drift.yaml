@@ -17,6 +17,7 @@ on:
           [
             drift,
             assess-pull-request,
+            assess-pending-foundation,
             assess-image-update,
             observe-rollout,
             inspect-operation,
@@ -57,7 +58,7 @@ run-name: >-
   format('inspect operation {0}/{1} by @{2}', inputs.service, inputs.guard_generation || 'live', github.actor) ||
   inputs.operation == 'observe-rollout' &&
   format('observe rollout {0}/{1}/{2} by @{3}', inputs.service, inputs.release_id, inputs.rollout_id, github.actor) ||
-  (inputs.operation == 'assess-pull-request' || inputs.operation == 'assess-image-update') &&
+  (inputs.operation == 'assess-pull-request' || inputs.operation == 'assess-pending-foundation' || inputs.operation == 'assess-image-update') &&
   format('resource-deletion assessment PR #{0} {1} onto {2}', inputs.pull_request, inputs.head_sha, inputs.base_sha) ||
   'production drift' }}
 
@@ -266,9 +267,11 @@ jobs:
     if: >-
       github.ref == 'refs/heads/master' &&
       github.event_name == 'workflow_dispatch' &&
-      (inputs.operation == 'assess-pull-request' || inputs.operation == 'assess-image-update')
+      (inputs.operation == 'assess-pull-request' || inputs.operation == 'assess-pending-foundation' || inputs.operation == 'assess-image-update')
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    # Only partial-operation assessment may read pending protected inputs.
+    environment: ${{ inputs.operation == 'assess-pending-foundation' && 'production-foundation' || '' }}
     permissions:
       actions: read
       contents: read
@@ -301,7 +304,7 @@ jobs:
       # This check runs before credentials exist because the candidate plan can
       # execute providers and external data sources.
       - name: Resolve maintainer-approved exact candidate
-        if: inputs.operation == 'assess-pull-request'
+        if: inputs.operation == 'assess-pull-request' || inputs.operation == 'assess-pending-foundation'
         id: target
         shell: bash
         env:
@@ -316,7 +319,7 @@ jobs:
           printf 'repository=%s\n' "${repository}" >>"${GITHUB_OUTPUT}"
 
       - name: Check out the exact candidate without running it
-        if: inputs.operation == 'assess-pull-request'
+        if: inputs.operation == 'assess-pull-request' || inputs.operation == 'assess-pending-foundation'
         uses: actions/checkout@v7.0.1
         with:
           path: candidate
@@ -338,7 +341,7 @@ jobs:
           version: "581.0.0"
 
       - name: Install OpenTofu
-        if: inputs.operation == 'assess-pull-request'
+        if: inputs.operation == 'assess-pull-request' || inputs.operation == 'assess-pending-foundation'
         uses: opentofu/setup-opentofu@v2.0.2
         with:
           tofu_version_file: candidate/.opentofu-version
@@ -354,16 +357,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ inputs.head_sha }}
           MANAGEMENT_PROJECT_ID: ${{ vars.GCP_MANAGEMENT_PROJECT_ID }}
+          PENDING_FOUNDATION_CONFIG: ${{ inputs.operation == 'assess-pending-foundation' && secrets.FOUNDATION_TFVARS_JSON || '' }}
           PULL_REQUEST: ${{ inputs.pull_request }}
           STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
         run: |
           set -euo pipefail
           umask 077
+          mode=assess
           candidate="${GITHUB_WORKSPACE}/candidate"
           if [ "${ASSESSMENT_OPERATION}" = assess-image-update ]; then
             candidate=--image-only
           fi
-          infra inspect assess \
+          if [ "${ASSESSMENT_OPERATION}" = assess-pending-foundation ]; then
+            mode=assess-pending-foundation
+          fi
+          infra inspect "${mode}" \
             "${GITHUB_REPOSITORY}" "${PULL_REQUEST}" "${HEAD_SHA}" "${BASE_SHA}" \
             "${candidate}" "${STATE_BUCKET}" \
             "${RUNNER_TEMP}/resource-deletion/assessment.json"
