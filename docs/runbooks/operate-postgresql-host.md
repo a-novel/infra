@@ -41,6 +41,31 @@ Stop before every mutating step unless all of these controls exist on `master`:
 The inspection commands below become available after those workflows create the host. They do not
 authorize an operator to change a VM, group, disk, firewall, metadata, or secret with `gcloud`.
 
+### Review startup-template maintenance before planning
+
+The shared startup script is part of both immutable legacy database templates. A startup-only
+correction can replace both templates and their template-scoped release IAM bindings, then update
+both managed groups' template targets. It must preserve the data disks, stateful addresses, runtime
+identities, image selections, secret versions, and resource sizes.
+
+Before dispatching the foundation plan, check the merge queue and refresh clean `master`. The PR
+whose merge commit is now `master` must have received `allow-resource-deletion` from a human
+maintainer before merging. Approval on an earlier PR does not carry forward through an intervening
+merge, even when that merge changes only tooling or documentation. A label added after merge does
+not authorize that commit. If approval is missing, prepare a maintenance PR describing the pending
+replacement scope and obtain the label before merging it. Recheck this boundary whenever `master`
+moves.
+
+Keep `PRODUCTION_RELEASES_ENABLED=false` and use the
+[protected foundation plan](./provision-workload-foundation.md#4-apply-the-workload-foundation).
+Review the complete fresh plan; a documentation-only PR does not make unapplied infrastructure
+changes disappear. Stop for unrelated resource actions or changes to the preserved properties above.
+The label permits the plan's deletion gate; the exact saved-plan apply still requires separate
+approval. Template application leaves these opportunistic groups' running members unchanged.
+Before applying, require the separately reviewed protected replacement step and recovery gates
+described under [host maintenance](#change-cpu-memory-or-connection-capacity). Verify the running
+hosts adopted the corrected startup script before approving a production release retry.
+
 ## Result and operating limits
 
 Foundation creates one private `e2-medium` VM per database. Each has its own single-member
