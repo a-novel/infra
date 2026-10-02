@@ -99,11 +99,11 @@ variables {
   ]
 }
 
-run "protected_service_project" {
+run "protected_project_shell" {
   command = plan
 
   module {
-    source = "../../../modules/workload-project"
+    source = "../../../modules/project-shell"
   }
 
   variables {
@@ -111,7 +111,6 @@ run "protected_service_project" {
     labels                     = { service = "json-keys", environment = "test" }
     foundation_service_account = "infra-foundation@agora-management-test.iam.gserviceaccount.com"
     plan_service_account       = "infra-plan@agora-management-test.iam.gserviceaccount.com"
-    management                 = { project_id = "agora-management-test", project_number = "123456789012" }
   }
 
   assert {
@@ -193,6 +192,63 @@ run "protected_service_project" {
   }
 
   assert {
+    condition = google_project_iam_custom_role.foundation_control_plane.permissions == toset(flatten([
+      for resource, actions in {
+        "clouddeploy.deliveryPipelines" = ["create", "delete", "get", "update"]
+        "clouddeploy.targets"           = ["create", "delete", "get", "update"]
+        "clouddeploy.operations"        = ["get"]
+        "clouddeploy.releases"          = ["get"]
+        "clouddeploy.rollouts"          = ["get"]
+        "cloudscheduler.jobs"           = ["create", "delete", "fullView", "get", "pause", "update"]
+        "run.jobs"                      = ["create", "delete", "get", "getIamPolicy", "setIamPolicy", "update"]
+        "run.operations"                = ["get"]
+        "run.services"                  = ["get"]
+        "storage.buckets"               = ["create", "delete", "get", "getIamPolicy", "setIamPolicy", "update"]
+        "workflows.executions"          = ["get"]
+        "workflows.operations"          = ["get"]
+        "workflows.workflows"           = ["create", "delete", "get", "update"]
+      } : [for action in actions : "${resource}.${action}"]
+    ]))
+    error_message = "Provisioning must not add dispatch, promotion, API mutation, schedule resume, payload or token-minting permissions."
+  }
+
+  assert {
+    condition = google_project_iam_custom_role.plan_policy.permissions == toset([
+      "artifactregistry.repositories.getIamPolicy", "iam.roles.get", "iam.serviceAccounts.getIamPolicy",
+      "resourcemanager.projects.getIamPolicy", "run.jobs.getIamPolicy", "storage.buckets.getIamPolicy",
+    ])
+    error_message = "Assessment needs policy refresh without payload access, identity attachment or mutation."
+  }
+
+  assert {
+    condition = alltrue([for entry in [
+      { role = google_project_iam_custom_role.foundation_control_plane, grant = google_project_iam_member.foundation_control_plane, account = var.foundation_service_account },
+      { role = google_project_iam_custom_role.plan_policy, grant = google_project_iam_member.plan_policy, account = var.plan_service_account },
+      ] : entry.role.project == var.project_id &&
+      [entry.grant.project, entry.grant.role, entry.grant.member] == [
+        var.project_id, entry.role.name, "serviceAccount:${entry.account}",
+      ]
+    ])
+    error_message = "Bind administration and policy reading only to their protected owners in the selected project."
+  }
+}
+
+run "protected_service_project" {
+  command = plan
+
+  module {
+    source = "../../../modules/workload-project"
+  }
+
+  variables {
+    project_id                 = "agora-json-keys-test"
+    labels                     = { service = "json-keys", environment = "test" }
+    foundation_service_account = "infra-foundation@agora-management-test.iam.gserviceaccount.com"
+    plan_service_account       = "infra-plan@agora-management-test.iam.gserviceaccount.com"
+    management                 = { project_id = "agora-management-test", project_number = "123456789012" }
+  }
+
+  assert {
     condition = (
       google_service_account.release.project == "agora-json-keys-test" &&
       google_service_account.release.account_id == "infra-release" &&
@@ -257,51 +313,71 @@ run "protected_service_project" {
   }
 
   assert {
-    condition = google_project_iam_custom_role.foundation_control_plane.permissions == toset(flatten([
-      for resource, actions in {
-        "clouddeploy.deliveryPipelines" = ["create", "delete", "get", "update"]
-        "clouddeploy.targets"           = ["create", "delete", "get", "update"]
-        "clouddeploy.operations"        = ["get"]
-        "clouddeploy.releases"          = ["get"]
-        "clouddeploy.rollouts"          = ["get"]
-        "cloudscheduler.jobs"           = ["create", "delete", "fullView", "get", "pause", "update"]
-        "run.jobs"                      = ["create", "delete", "get", "getIamPolicy", "setIamPolicy", "update"]
-        "run.operations"                = ["get"]
-        "run.services"                  = ["get"]
-        "storage.buckets"               = ["create", "delete", "get", "getIamPolicy", "setIamPolicy", "update"]
-        "workflows.executions"          = ["get"]
-        "workflows.operations"          = ["get"]
-        "workflows.workflows"           = ["create", "delete", "get", "update"]
-      } : [for action in actions : "${resource}.${action}"]
-    ]))
-    error_message = "Provisioning must not add dispatch, promotion, API mutation, schedule resume, payload or token-minting permissions."
+    condition = (
+      output.project_id == "agora-json-keys-test" &&
+      output.project_number == module.project.project_number &&
+      output.service_agents == module.project.service_agents &&
+      output.release.service_account == google_service_account.release.email &&
+      output.release.workload_identity_provider == google_iam_workload_identity_pool_provider.release.name
+    )
+    error_message = "Compatibility outputs must retain project coordinates, established service agents and release authority."
   }
 
   assert {
-    condition = google_project_iam_custom_role.plan_policy.permissions == toset([
-      "artifactregistry.repositories.getIamPolicy", "iam.roles.get", "iam.serviceAccounts.getIamPolicy",
-      "resourcemanager.projects.getIamPolicy", "run.jobs.getIamPolicy", "storage.buckets.getIamPolicy",
+    condition = alltrue([
+      for address in [
+        "google_project.service",
+        "google_project_service.api",
+        "google_project_default_service_accounts.service",
+        "google_project_iam_member.foundation",
+        "google_project_iam_custom_role.metadata",
+        "google_project_iam_member.metadata",
+        "google_project_iam_member.plan",
+        "google_logging_project_bucket_config.default",
+        "google_project_iam_custom_role.foundation_control_plane",
+        "google_project_iam_member.foundation_control_plane",
+        "google_project_iam_custom_role.plan_policy",
+        "google_project_iam_member.plan_policy",
+        "google_project_service_identity.agent",
+        "google_project_iam_member.service_agent",
+        "google_project_iam_member.mig_agent",
+        ] : can(regex(
+          format("(?s)from\\s*=\\s*%s\\s+to\\s*=\\s*module\\.project\\.%s\\s*}", replace(address, ".", "\\."), replace(address, ".", "\\.")),
+          file("${path.module}/moved.tf")
+      ))
     ])
-    error_message = "Assessment needs policy refresh without payload access, identity attachment or mutation."
+    error_message = "Retain every legacy project resource move inside the compatibility module, including all for_each instances."
   }
+}
 
+run "folder_project_without_service_labels" {
+  command = plan
+  module {
+    source = "../../../modules/project-shell"
+  }
+  variables {
+    project_id                 = "agora-private-test"
+    organization_id            = null
+    folder_id                  = "234567890123"
+    labels                     = { environment = "test", trust = "private" }
+    foundation_service_account = "infra-foundation@agora-management-test.iam.gserviceaccount.com"
+    plan_service_account       = "infra-plan@agora-management-test.iam.gserviceaccount.com"
+  }
   assert {
-    condition = alltrue([for entry in [
-      { role = google_project_iam_custom_role.foundation_control_plane, grant = google_project_iam_member.foundation_control_plane, account = var.foundation_service_account },
-      { role = google_project_iam_custom_role.plan_policy, grant = google_project_iam_member.plan_policy, account = var.plan_service_account },
-      ] : entry.role.project == var.project_id &&
-      [entry.grant.project, entry.grant.role, entry.grant.member] == [
-        var.project_id, entry.role.name, "serviceAccount:${entry.account}",
-      ]
-    ])
-    error_message = "Bind administration and policy reading only to their protected owners in the selected project."
+    condition = (
+      google_project.service.folder_id == "234567890123" &&
+      google_project.service.org_id == null &&
+      google_project.service.labels == tomap(var.labels) &&
+      output.project_id == var.project_id
+    )
+    error_message = "Project ownership must accept an environment/trust boundary without inventing a service release identity."
   }
 }
 
 run "reject_parentless_service_project" {
   command = plan
   module {
-    source = "../../../modules/workload-project"
+    source = "../../../modules/project-shell"
   }
   variables {
     project_id                 = "agora-json-keys-test"
@@ -309,7 +385,6 @@ run "reject_parentless_service_project" {
     labels                     = { service = "json-keys", environment = "test" }
     foundation_service_account = "infra-foundation@agora-management-test.iam.gserviceaccount.com"
     plan_service_account       = "infra-plan@agora-management-test.iam.gserviceaccount.com"
-    management                 = { project_id = "agora-management-test", project_number = "123456789012" }
   }
   expect_failures = [google_project.service]
 }
@@ -326,7 +401,7 @@ run "two_service_projects_share_only_the_host" {
   }
 
   override_resource {
-    target = module.service_project.google_project.service
+    target = module.service_project.module.project.google_project.service
     values = { number = "111111111111" }
   }
 

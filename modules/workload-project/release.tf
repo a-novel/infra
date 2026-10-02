@@ -17,7 +17,7 @@ locals {
 }
 
 resource "google_service_account" "release" {
-  project      = google_project.service.project_id
+  project      = module.project.project_id
   account_id   = "infra-release"
   display_name = "Service release"
   description  = "Keyless release writer for ${var.project_id}."
@@ -25,8 +25,6 @@ resource "google_service_account" "release" {
   lifecycle {
     prevent_destroy = true
   }
-
-  depends_on = [google_project_service.api["iam.googleapis.com"]]
 }
 
 resource "google_iam_workload_identity_pool_provider" "release" {
