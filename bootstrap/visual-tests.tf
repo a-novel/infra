@@ -70,7 +70,8 @@ resource "google_iam_workload_identity_pool_provider" "visual_tests" {
   deletion_policy                    = "PREVENT"
 
   attribute_mapping = {
-    "google.subject"                = "assertion.sub"
+    # GitHub subjects contain refs; merge-queue and long branch refs exceed Google's 127-byte limit.
+    "google.subject"                = "'${each.value.account_id}:' + assertion.repository_id + ':' + assertion.run_id + ':' + assertion.run_attempt"
     "attribute.repository_id"       = "assertion.repository_id"
     "attribute.repository_owner_id" = "assertion.repository_owner_id"
     "attribute.ref"                 = "assertion.ref"
