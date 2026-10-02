@@ -303,7 +303,7 @@ prepare_database_directory() {
         --read-only \
         --entrypoint stat \
         "${image}" \
-        --format '%u:%g' \
+        -c '%u:%g' \
         /var/lib/postgresql)"
     if ! [[ "${image_owner}" =~ ^[1-9][0-9]*:[1-9][0-9]*$ ]]; then
         printf 'error: database image has an invalid PostgreSQL data owner\n' >&2
