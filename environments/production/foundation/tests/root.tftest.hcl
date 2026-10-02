@@ -407,9 +407,9 @@ run "two_service_projects_share_only_the_host" {
 
   assert {
     condition = alltrue([for template in google_compute_instance_template.database :
-      sha256(template.metadata_startup_script) == "9a978a30da8ec115f5cfd3d157d15474f6028275b4829825e7ce56c0a71353a5"
+      sha256(template.metadata_startup_script) == "70ff4e785555663bf830264df51951e0a32175429399eb7adb15f3162fce42a0"
     ])
-    error_message = "Project onboarding must retain the applied startup bytes on both legacy database templates."
+    error_message = "Project onboarding must retain the reviewed startup bytes on both legacy database templates."
   }
 
   assert {
@@ -541,9 +541,9 @@ run "builds_the_project_replacement_window" {
 
   assert {
     condition = alltrue([for template in google_compute_instance_template.database :
-      sha256(template.metadata_startup_script) == "9a978a30da8ec115f5cfd3d157d15474f6028275b4829825e7ce56c0a71353a5"
+      sha256(template.metadata_startup_script) == "70ff4e785555663bf830264df51951e0a32175429399eb7adb15f3162fce42a0"
     ])
-    error_message = "The legacy database templates must retain the applied startup bytes independently of native-host development."
+    error_message = "The legacy database templates must retain the reviewed startup bytes independently of native-host development."
   }
 
   assert {
@@ -859,7 +859,7 @@ run "builds_the_project_replacement_window" {
       strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "agora.database_image=$${image}") &&
       strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "log_min_error_statement=panic") &&
       strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "--entrypoint stat") &&
-      strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "--format '%u:%g'") &&
+      strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "-c '%u:%g'") &&
       strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "chown -- \"$${image_owner}\" \"$${data_directory}\"") &&
       strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "docker logs --tail 20") &&
       strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "guest-attributes/agora/database-release") &&

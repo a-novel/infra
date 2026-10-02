@@ -118,7 +118,7 @@ resource "google_compute_instance_template" "database" {
     shutdown-script                    = file("${path.module}/../../../assets/database-host/shutdown.sh")
   }
 
-  # Preserve the applied template bytes until these legacy hosts are retired.
+  # Legacy script changes replace these templates and require approved host maintenance.
   metadata_startup_script = file("${path.module}/../../../assets/database-host/legacy-startup.sh")
 
   disk {
