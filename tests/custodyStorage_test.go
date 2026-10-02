@@ -28,7 +28,12 @@ func applyStorage(t *testing.T, f *sandbox, failure string) {
 	if f.env["ROOT_NAME"] == "service-recovery" {
 		planMetadata = filepath.Join(filepath.Dir(f.env["FAKE_TOFU_REQUIRE_ABSENT"]), "metadata.json")
 	}
-	guardPath := filepath.Join(objects, bucket, "services/agora-json-keys-test/release/operation.json")
+	guardName := "services/agora-json-keys-test/release/operation.json"
+	legacy := f.env["ROOT_NAME"] == "foundation" && f.env["TOFU_STATE_SUFFIX"] == ""
+	if legacy {
+		guardName = "release/legacy-maintenance/operation.json"
+	}
+	guardPath := filepath.Join(objects, bucket, guardName)
 	if failure == "busy" {
 		writeJSON(t, guardPath, object{"root": "service-foundation", "runId": "other-writer"})
 	}
@@ -57,7 +62,7 @@ func applyStorage(t *testing.T, f *sandbox, failure string) {
 			return
 		}
 		if r.Method == http.MethodDelete {
-			if r.URL.Path != "/b/"+bucket+"/o/services/agora-json-keys-test/release/operation.json" ||
+			if r.URL.Path != "/b/"+bucket+"/o/"+guardName ||
 				r.URL.Query().Get("ifGenerationMatch") != "42" || r.URL.Query().Get("generation") != "" {
 				t.Error("delete must match only the acknowledged live guard generation")
 			}
@@ -106,7 +111,7 @@ func applyStorage(t *testing.T, f *sandbox, failure string) {
 		if strings.Contains(object.Name, "/config/") {
 			stage = "config"
 		}
-		if strings.Contains(object.Name, "/operations/") {
+		if strings.Contains(object.Name, "/operations/") || strings.Contains(object.Name, "/completions/") {
 			stage = "completion"
 		}
 		if stage != "guard" {
@@ -114,7 +119,7 @@ func applyStorage(t *testing.T, f *sandbox, failure string) {
 				t.Error("publication must occur while the guard is held")
 			}
 		}
-		if stage == "completion" {
+		if stage == "completion" && !legacy {
 			var record struct {
 				Configuration struct{ Bucket, Object string }
 			}

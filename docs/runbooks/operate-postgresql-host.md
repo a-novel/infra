@@ -62,9 +62,82 @@ Review the complete fresh plan; a documentation-only PR does not make unapplied 
 changes disappear. Stop for unrelated resource actions or changes to the preserved properties above.
 The label permits the plan's deletion gate; the exact saved-plan apply still requires separate
 approval. Template application leaves these opportunistic groups' running members unchanged.
-Before applying, require the separately reviewed protected replacement step and recovery gates
-described under [host maintenance](#change-cpu-memory-or-connection-capacity). Verify the running
-hosts adopted the corrected startup script before approving a production release retry.
+For startup-only replacements, use the protected path below. Other host changes still require a
+separately reviewed maintenance implementation. Verify the running hosts adopted the corrected
+startup script before approving a production release retry.
+
+### Protected startup-only maintenance
+
+This path is disabled unless the protected foundation environment has
+`LEGACY_DATABASE_MAINTENANCE_ENABLED=true` and `PRODUCTION_RELEASES_ENABLED=false`. Enabling it,
+approving the exact saved-plan apply, accepting downtime, and later retrying a release are separate
+human decisions. Leave it unset during ordinary operation. Do not dispatch a release concurrently.
+
+The private foundation configuration must also opt in with `legacy_backup_job_access=true`, only
+after the two backup jobs, two clean restore-check jobs and backup-monitor job already exist.
+The operator configuration command accepts `--legacy-backup-job-access`; preserve all other reviewed
+configuration when publishing it. The default is false, and disposable recovery ignores it. This
+opt-in adds an independent `agora-backup-maintenance=enabled` tag to those five existing jobs. Their
+`agora-invocation=scheduled` tags and existing scheduler/release access remain unchanged. The
+foundation plan owns the additional tags, so it can establish access before maintenance checks
+without deploying jobs or retrying a production release.
+
+The existing foundation `apply` operation inspects the saved plan before consuming it. It accepts
+only startup-script replacements for the existing legacy templates, their template IAM and group
+target changes, and the initial maintenance-job tag and permission additions. Data disks, image selections,
+machine sizes, network configuration, stateful preservation rules and release metadata cannot
+change. Unrelated managed-resource actions block admission. Both hosts are selected when the shared
+startup script changes; there is no caller-supplied host name or broad replacement switch.
+
+The protected operation:
+
+1. Captures the current template, singleton, disk identity, private address, release metadata and
+   healthy boot. Creates a private, create-only maintenance hold, then consumes the reviewed plan.
+2. Applies and checks convergence of the template targets and any approved safety-job permissions.
+   The verified `OPPORTUNISTIC` policy leaves running members alone. Newly granted IAM may need
+   propagation; permission failure stops the operation, never authorizes an unchecked replacement.
+3. Requires each selected disk's scheduled snapshot to be within the existing 26-hour window and
+   runs both existing logical backup and clean restore-check jobs for every selected service.
+   All checks must succeed before replacing either host.
+4. Rechecks the original host and boot, then updates that exact member with `REPLACE`/`RECREATE`,
+   zero surge and one unavailable member. Verifies a new VM incarnation and healthy boot on the
+   same data disk and private address, with the reviewed template, image, identity and secret-version
+   metadata. It stops at the first failure; it does not continue to the peer or roll back automatically.
+5. Writes private completion evidence, including backup/restore execution names and old/new host
+   identities, before deleting only its acknowledged hold generation.
+
+The foundation invocation grant matches only the independent backup tag. The existing `scheduled`
+class also includes JSON Keys key rotation and is not an invocation boundary for maintenance.
+The new invocation role grants only `run.jobs.run`: no configuration overrides, cancellation,
+deployment or secret-payload access. Job/execution/operation metadata reads are project-scoped
+because operation polling does not carry the job tag.
+
+Foundation also receives tag administration on already-scheduled jobs and Tag User on the new value.
+This metadata authority is broader than the execution grant: the protected plan's exact five-job
+allowlist enforces its use. Foundation remains a trusted IAM administrator, not an unprivileged
+runtime identity. Review these grants and every attachment in the saved plan. Missing jobs or tags,
+IAM propagation failures and unexpected attachments stop the operation before host replacement.
+If a job is later deleted and recreated, refresh its foundation-owned tag through another reviewed
+plan before maintenance. No release workflow silently restores this permission. No new VM,
+disk, recurring job or schedule is added. An activated maintenance window runs existing jobs and
+therefore incurs their normal execution cost; this is not a zero-cost operation.
+
+The hold is `gs://<state-bucket>/release/legacy-maintenance/operation.json`. Completion evidence is
+under `release/legacy-maintenance/completions/<hold-generation>.json` in the same private bucket.
+Both legacy foundation applies and legacy releases refuse an existing or unreadable hold. A lost
+runner, failed backup, failed convergence or uncertain replacement leaves it in place. Do not rerun
+the consumed plan, adopt the hold, clear it speculatively, or run `update-instances` by hand.
+
+For interrupted maintenance, keep releases paused. First establish that the original workflow and
+Google operations are no longer running, then compare the exact hold generation and any completion
+record against each group's live member, template, disk, address, release metadata and health.
+Reconcile incomplete replacement through a separately reviewed protected recovery change. This
+startup-only path intentionally has no generic unlock/retry command. Removing an obsolete hold
+requires explicit approval and a generation-matched deletion after that reconciliation.
+
+After successful verification, turn off `LEGACY_DATABASE_MAINTENANCE_ENABLED`. Independently verify
+client connectivity and the applicable release prerequisites before approving a production retry.
+Completion of maintenance does not re-enable releases.
 
 ## Result and operating limits
 
@@ -336,13 +409,16 @@ exact returned `projects/cos-cloud/global/images/<name>` path. Never commit a mu
 
 Treat the resulting template change as the planned outage below: require the backup/restore gate,
 review the new templates and a separately reviewed, bounded replacement step. The existing
-foundation workflow applies template targets but does not roll the opportunistic groups. Do not
-apply a template-changing maintenance plan until its protected replacement step is implemented
-and reviewed. Preserve each service data disk and `nic0`, then repeat all host and client checks.
+startup-only path does not accept a COS-image change. Do not apply an image-changing maintenance
+plan until its protected replacement and recovery scope is implemented and reviewed. Preserve each
+service data disk and `nic0`, then repeat all host and client checks.
 
 ## Change CPU, memory, or connection capacity
 
 Treat every machine or container-shape change as a planned outage:
+
+The startup-only operation above rejects these changes; the maintenance PR must extend its reviewed
+scope and checks before execution.
 
 1. Run the fresh scheduled-snapshot and logical-backup gate. Confirm the latest clean restore check
    and record the recovery point and accepted lost-write boundary.

@@ -49,6 +49,14 @@ func Run(ctx context.Context, args []string, getenv func(string) string, execute
 }
 
 func run(ctx context.Context, args []string, getenv func(string) string, execute func(context.Context, io.Writer, string, ...string) error) (string, error) {
+	if len(args) > 0 {
+		switch args[0] {
+		case "maintenance-plan":
+			return "Maintenance targets inspected; no host changed.", maintenancePlan(ctx, args[1:], getenv, execute)
+		case "maintenance-replace":
+			return "Maintenance completed with preserved disks and addresses.", maintenanceReplace(ctx, args[1:], getenv, execute)
+		}
+	}
 	counts := map[string][2]int{"current": {4, 4}, "wait": {6, 6}, "prepare": {6, 8}, "deploy": {9, 9}, "restore": {6, 6}, "recover-first-launch": {7, 7}}
 	if len(args) < 4 || counts[args[0]][0] == 0 || len(args) < counts[args[0]][0] || len(args) > counts[args[0]][1] {
 		return "", failure{64, "usage: infra database-release <current|wait|prepare|deploy|restore|recover-first-launch> <project> <zone> <service> ..."}

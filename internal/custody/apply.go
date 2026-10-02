@@ -22,6 +22,12 @@ func (storage store) apply(args []string, getenv func(string) string, output io.
 	}
 	root, commit, planID, inputs := args[0], args[1], args[2], args[3]
 	suffix := getenv("TOFU_STATE_SUFFIX")
+	legacy := root == "foundation" && suffix == ""
+	if legacy {
+		if err := storage.checkLegacyMaintenance(options); err != nil {
+			return err
+		}
+	}
 	service := root == "service-foundation" || root == "service-release" || root == "service-recovery"
 	data, err := os.ReadFile(inputs)
 	if err != nil || !json.Valid(data) {
@@ -76,7 +82,8 @@ func (storage store) apply(args []string, getenv func(string) string, output io.
 		}
 	}
 	var upkeep maintenance
-	if root == "service-foundation" {
+	var legacyOperation *legacyMaintenance
+	if root == "service-foundation" || legacy {
 		command := []string{
 			"ALLOW_RESOURCE_DELETION=" + destructive, "TOFU_VAR_FILE=" + inputs,
 			"./ops/tofu-gate.sh", "inspect", root, storage.bucket, plan,
@@ -84,7 +91,11 @@ func (storage store) apply(args []string, getenv func(string) string, output io.
 		if err := storage.execute(storage.ctx, io.Discard, "env", command...); err != nil {
 			return failure{65, "Reviewed foundation plan could not be inspected; no admission or apply attempted."}
 		}
-		upkeep, err = plannedMaintenance(plan+".json", data, getenv)
+		if legacy {
+			legacyOperation, err = storage.admitLegacyMaintenance(plan, inputs, commit, planID, getenv, output, options)
+		} else {
+			upkeep, err = plannedMaintenance(plan+".json", data, getenv)
+		}
 		if err != nil {
 			return err
 		}
@@ -129,6 +140,11 @@ func (storage store) apply(args []string, getenv func(string) string, output io.
 	if upkeep.bringUp {
 		if err := storage.bringUp(inputs, data); err != nil {
 			return failure{70, "Native host bring-up is unconfirmed; keep the service guard and reconcile the original operation. Do not repeat apply."}
+		}
+	}
+	if legacyOperation != nil {
+		if err := storage.completeLegacyMaintenance(legacyOperation, inputs, output); err != nil {
+			return err
 		}
 	}
 	if operation != nil {

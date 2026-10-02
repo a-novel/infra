@@ -72,6 +72,16 @@ output "runtime_service_accounts" {
   }
 }
 
+output "database_maintenance_templates" {
+  description = "Converged template incarnations for protected legacy host maintenance."
+  value = {
+    for service, template in google_compute_instance_template.database : service => {
+      url = template.self_link
+      id  = template.numeric_id
+    }
+  }
+}
+
 output "root_name" {
   description = "Stable root identifier used by repository validation."
   value       = local.root_name
