@@ -66,6 +66,26 @@ For startup-only replacements, use the protected path below. Other host changes 
 separately reviewed maintenance implementation. Verify the running hosts adopted the corrected
 startup script before approving a production release retry.
 
+### Database image collation changes
+
+PostgreSQL 18 images can use different libc or ICU sorting-library versions even when the
+PostgreSQL version is unchanged. Before publishing a database port, startup checks the selected
+image against the existing cluster in a short-lived, network-isolated container on the same host.
+It uses the existing data disk and CPU/memory allocation; it adds no cloud resource.
+
+For the application database, `postgres` and `template1`, a version mismatch rebuilds ordinary
+user-table indexes before refreshing named and default collation versions. Each database's
+rebuild and refresh share one transaction. A failed rebuild cannot mark that database reconciled.
+The same preparation runs when rollback selects the previous image. No database is dropped or
+reinitialized, and backup validation still rejects every `pg_dump` diagnostic.
+
+This is not a general schema migration: materialized views, partitioned or foreign tables, and
+stored generated columns stop preparation for a separately reviewed migration. Review the actual
+schema and available disk headroom before changing the sorting library. Preparation is limited to
+120 seconds (plus a 15-second forced-stop grace), inside the existing startup budget. A timeout or
+SQL error leaves the normal database container stopped; retain the maintenance hold and investigate
+instead of refreshing versions manually or accepting a warning-bearing backup.
+
 ### Protected startup-only maintenance
 
 This path is disabled unless the protected foundation environment has

@@ -308,6 +308,117 @@ prepare_database_directory() {
     chown -- "${image_owner}" "${data_directory}"
 }
 
+# Run before publishing a port. Each database rebuild and version refresh is
+# one transaction, so an interrupted upgrade cannot mark partial work complete.
+# The same check runs when a receipt selects an older image during rollback.
+prepare_database_collations() {
+    local image="$1"
+    local data_directory="$2"
+    local database_user="$3"
+    local database_name="$4"
+
+    if [ ! -f "${data_directory}/18/docker/PG_VERSION" ]; then
+        return
+    fi
+
+    if ! docker run --rm --interactive \
+        --network none --read-only --user postgres --no-healthcheck \
+        --cap-drop ALL --security-opt no-new-privileges \
+        --cpus "${CONTAINER_CPU}" --memory "${CONTAINER_MEMORY_MB}m" \
+        --memory-swap "${CONTAINER_MEMORY_MB}m" --pids-limit 128 \
+        --tmpfs /tmp:rw,nosuid,nodev,noexec,size=32m,mode=1777 \
+        --mount "type=bind,source=${data_directory},target=/var/lib/postgresql" \
+        --entrypoint timeout "${image}" -k 15 120 \
+        /bin/bash -se -- "${database_user}" "${database_name}" \
+        >/dev/null 2>&1 <<'COLLATION'
+set -euo pipefail
+[ "$(cat "${PGDATA}/PG_VERSION")" = 18 ]
+trap 'pg_ctl -D "$PGDATA" -m fast -w -t 30 stop >/dev/null 2>&1 || true' EXIT
+pg_ctl -D "$PGDATA" -l /tmp/postgres.log -w -t 30 \
+    -o "-c listen_addresses= -c unix_socket_directories=/tmp -c archive_mode=off -c archive_command= -c shared_preload_libraries= -c autovacuum=off -c max_worker_processes=0" start
+
+for database in "$2" postgres template1; do
+    psql -X -v ON_ERROR_STOP=1 --single-transaction \
+        -h /tmp -U "$1" -d "$database" <<'SQL'
+SET LOCAL lock_timeout = '5s';
+SET LOCAL statement_timeout = '60s';
+DO $collation$
+DECLARE
+    target_relation record;
+    target_collation record;
+    database_changed boolean;
+    collations_changed boolean;
+BEGIN
+    IF pg_is_in_recovery() THEN
+        RAISE EXCEPTION 'collation preparation requires a primary database';
+    END IF;
+
+    SELECT datcollversion IS DISTINCT FROM pg_database_collation_actual_version(oid)
+    INTO database_changed
+    FROM pg_database
+    WHERE datname = current_database();
+
+    SELECT EXISTS (
+        SELECT FROM pg_collation
+        WHERE collversion IS NOT NULL
+          AND collversion IS DISTINCT FROM pg_collation_actual_version(oid)
+    ) INTO collations_changed;
+
+    IF NOT database_changed AND NOT collations_changed THEN
+        RETURN;
+    END IF;
+
+    -- These stored derivations need a separately reviewed data migration.
+    IF EXISTS (
+        SELECT FROM pg_class relation
+        JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+        WHERE namespace.nspname NOT IN ('pg_catalog', 'information_schema')
+          AND namespace.nspname NOT LIKE 'pg_toast%'
+          AND (relation.relkind IN ('m', 'p', 'f')
+               OR EXISTS (SELECT FROM pg_attribute
+                          WHERE attrelid = relation.oid AND attgenerated = 's'))
+    ) THEN
+        RAISE EXCEPTION 'collation change requires a separately reviewed data migration';
+    END IF;
+
+    FOR target_relation IN
+        SELECT namespace.nspname, relation.relname
+        FROM pg_class relation
+        JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+        WHERE relation.relkind = 'r'
+          AND namespace.nspname NOT IN ('pg_catalog', 'information_schema')
+          AND namespace.nspname NOT LIKE 'pg_toast%'
+        ORDER BY relation.oid
+    LOOP
+        EXECUTE format('REINDEX TABLE %I.%I', target_relation.nspname, target_relation.relname);
+    END LOOP;
+
+    FOR target_collation IN
+        SELECT namespace.nspname, c.collname
+        FROM pg_collation c
+        JOIN pg_namespace namespace ON namespace.oid = c.collnamespace
+        WHERE c.collversion IS NOT NULL
+          AND c.collversion IS DISTINCT FROM pg_collation_actual_version(c.oid)
+    LOOP
+        EXECUTE format('ALTER COLLATION %I.%I REFRESH VERSION', target_collation.nspname, target_collation.collname);
+    END LOOP;
+
+    IF database_changed THEN
+        EXECUTE format('ALTER DATABASE %I REFRESH COLLATION VERSION', current_database());
+    END IF;
+END
+$collation$;
+SQL
+done
+pg_ctl -D "$PGDATA" -m fast -w -t 30 stop
+trap - EXIT
+COLLATION
+    then
+        printf 'error: isolated database collation preparation failed\n' >&2
+        return 1
+    fi
+}
+
 start_database() {
     local key="$1"
     local image="$2"
@@ -329,6 +440,8 @@ start_database() {
         docker stop --time 60 "${container_name}" >/dev/null
         docker rm "${container_name}" >/dev/null
     fi
+
+    prepare_database_collations "${image}" "${data_directory}" "${database_user}" "${database_name}"
 
     # `on-failure` restarts a crashed PostgreSQL process but, unlike
     # `always`/`unless-stopped`, never starts it when Docker itself boots. The

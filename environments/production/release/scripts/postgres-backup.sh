@@ -162,10 +162,16 @@ fi
 
 # Treat a warning as an incomplete recovery point. The diagnostic stays in the
 # ephemeral volume because PostgreSQL messages can contain object identifiers.
-if [ -s "${PG_DUMP_LOG}" ] ||
-    [ ! -s "${DUMP_FILE}" ] ||
-    ! pg_restore --list "${DUMP_FILE}" >/dev/null 2>&1; then
-    printf 'error: PostgreSQL archive validation failed\n' >&2
+if [ -s "${PG_DUMP_LOG}" ]; then
+    printf 'error: PostgreSQL archive validation failed: pg_dump emitted diagnostics\n' >&2
+    exit 1
+fi
+if [ ! -s "${DUMP_FILE}" ]; then
+    printf 'error: PostgreSQL archive validation failed: empty archive\n' >&2
+    exit 1
+fi
+if ! pg_restore --list "${DUMP_FILE}" >/dev/null 2>&1; then
+    printf 'error: PostgreSQL archive validation failed: pg_restore could not read archive\n' >&2
     exit 1
 fi
 rm -f -- "${PG_DUMP_LOG}"
