@@ -1,0 +1,20 @@
+enforcement: active
+rules:
+  - type: required_status_checks
+    parameters:
+      required_status_checks:
+        - { context: epic-freeze, integration_id: 103 }
+        - { context: lint-repository, integration_id: 15368 }
+        - { context: lint-tooling, integration_id: 15368 }
+        - { context: merge-gate, integration_id: 103 }
+        - { context: resource-deletion-gate, integration_id: 15368 }
+        - { context: scan-infrastructure, integration_id: 15368 }
+        - { context: test-backup, integration_id: 15368 }
+        - { context: test-go, integration_id: 15368 }
+        - { context: validate-opentofu, integration_id: 15368 }
+        - { context: validate-release, integration_id: 15368 }
+bypass_actors:
+  - { actor_id: null, actor_type: OrganizationAdmin, bypass_mode: always }
+  - { actor_id: 5, actor_type: RepositoryRole, bypass_mode: always }
+  - { actor_id: 102, actor_type: Integration, bypass_mode: always }
+  - { actor_id: 103, actor_type: Integration, bypass_mode: always }

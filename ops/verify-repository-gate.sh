@@ -57,10 +57,14 @@ if ! jq --exit-status \
       ([
         "epic-freeze",
         "lint-repository",
+        "lint-tooling",
         "merge-gate",
         "resource-deletion-gate",
         "scan-infrastructure",
-        "validate-opentofu"
+        "test-backup",
+        "test-go",
+        "validate-opentofu",
+        "validate-release"
       ] | sort) and
       any(
         .rules[]
