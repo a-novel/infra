@@ -2,7 +2,7 @@ name: main
 
 on:
   push:
-    branches: ["**", "!gh-readonly-queue/**"]
+    branches: [master]
     tags-ignore: ["**"]
   pull_request:
     types: [opened, reopened, synchronize, labeled, unlabeled]
@@ -102,7 +102,7 @@ jobs:
           done
 
       - name: Lint shell scripts
-        uses: a-novel-kit/workflows/generic-actions/lint-shell@v1.36.2
+        uses: a-novel-kit/workflows/generic-actions/lint-shell@v1.36.3
         with:
           # renovate: datasource=github-releases depName=koalaman/shellcheck
           version: "0.11.0"
@@ -148,11 +148,60 @@ jobs:
         with:
           image_name: native-restore
 
-  lint-repository:
+  lint-tooling:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
-      attestations: read
+      contents: read
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6.1.0
+
+      - name: Install Node.js
+        uses: actions/setup-node@v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install repository tooling
+        shell: bash
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Go
+        uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Validate repository configuration
+        shell: bash
+        run: pnpm lint
+
+      - name: Lint GitHub Actions syntax
+        uses: raven-actions/actionlint@v2.2.0
+        with:
+          # renovate: datasource=github-releases depName=rhysd/actionlint
+          version: 1.7.12
+          cache: false
+          shellcheck: false
+          pyflakes: false
+
+      - name: Audit GitHub Actions security
+        uses: a-novel-kit/workflows/security-actions/lint-workflows@v1.36.3
+        with:
+          # renovate: datasource=docker depName=ghcr.io/zizmorcore/zizmor
+          version: "1.30.1"
+
+  test-go:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
       contents: read
     steps:
       - name: Check out the repository
@@ -177,10 +226,6 @@ jobs:
       - name: Build reviewed infra tooling
         uses: $/.github/actions/setup-infra
 
-      - name: Validate repository configuration
-        shell: bash
-        run: pnpm lint
-
       - name: Install the operator runbook shell
         shell: bash
         run: |
@@ -191,6 +236,22 @@ jobs:
       - name: Test tooling, runbooks, and workflow boundaries without credentials
         shell: bash
         run: go test -race ./...
+
+      - name: Test the root, plan, and operator caller policies
+        shell: bash
+        run: ./tests/ops_test.sh
+
+  test-backup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Exercise the disposable physical-backup proof offline
         shell: bash
@@ -204,9 +265,21 @@ jobs:
               --tmpfs=/tmp:rw,size=1g,mode=1777 "pgbackrest-proof:$service"
           done
 
-      - name: Test the root, plan, and operator caller policies
-        shell: bash
-        run: ./tests/ops_test.sh
+  validate-release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      attestations: read
+      contents: read
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Build reviewed infra tooling
+        uses: $/.github/actions/setup-infra
 
       - name: Validate the production image transition
         if: github.event_name == 'pull_request'
@@ -246,17 +319,18 @@ jobs:
             "${RUNNER_TEMP}/resolved-images.json" tests/fixtures/release-config.json - \
             "${RUNNER_TEMP}/release-preview"
 
-      - name: Lint GitHub Actions syntax
-        uses: raven-actions/actionlint@v2.2.0
-        with:
-          # renovate: datasource=github-releases depName=rhysd/actionlint
-          version: 1.7.12
-          cache: false
-          shellcheck: false
-          pyflakes: false
-
-      - name: Audit GitHub Actions security
-        uses: a-novel-kit/workflows/security-actions/lint-workflows@v1.36.2
-        with:
-          # renovate: datasource=docker depName=ghcr.io/zizmorcore/zizmor
-          version: "1.30.1"
+  # Preserve the existing required check while its work runs independently.
+  lint-repository:
+    needs: [lint-tooling, test-go, test-backup, validate-release]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - name: Require every repository check to succeed
+        shell: bash
+        env:
+          CHECK_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          jq --exit-status 'all(.[]; .result == "success")' <<<"${CHECK_RESULTS}"

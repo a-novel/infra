@@ -21,6 +21,13 @@ GitHub exchanges its job identity for a short-lived Drive access token. No share
 service-account key, subscribed automation user or domain-wide delegation is needed. Folder IDs and
 provider/account coordinates are non-secret repository variables.
 
+Google's federated subject is scoped by provider and GitHub repository ID, run ID and run attempt.
+Branch names and workflow paths stay in the authorization conditions, so long merge-queue refs cannot
+exceed Google's [127-byte subject limit](https://cloud.google.com/iam/docs/troubleshooting-workload-identity-federation#mapped_google.subject_claim_exceeds_the_127_bytes_limit).
+Existing providers need the protected bootstrap plan/apply after this mapping changes. Review the
+in-place provider updates, then retry a merge-queue browser run; account IDs, folder grants and
+repository variables remain the same.
+
 ## Provision and hand off
 
 1. Merge the reviewed bootstrap configuration. An operator follows the

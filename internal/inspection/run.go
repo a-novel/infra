@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/a-novel/infra/internal/custody"
@@ -41,7 +42,8 @@ func (err failure) Error() string { return err.message }
 
 // Run inspects drift or an exact, previously authorized PR candidate. execute
 // receives additional environment entries separately from literal arguments and
-// must keep child stderr private. This command never applies a plan.
+// must keep child stderr private.
+// Only allowlisted plan failure categories are published. This command never applies a plan.
 func Run(ctx context.Context, args []string, getenv func(string) string, execute func(context.Context, []string, string, ...string) ([]byte, error), stdout, stderr io.Writer) int {
 	err := run(ctx, args, getenv, execute, stdout)
 	if err == nil {
@@ -132,9 +134,17 @@ func (i inspector) config(ctx context.Context, root, scope string) (string, int)
 	return file, code
 }
 
+// plan publishes only fixed categories from the trusted gate's diagnostic file.
 func (i inspector) plan(ctx context.Context, mode, root, file string, env []string) error {
-	env = append(env, "TOFU_VAR_FILE="+file, "TOFU_REPOSITORY_ROOT="+i.candidate, "ALLOW_RESOURCE_DELETION=false")
-	_, err := i.execute(ctx, env, filepath.Join(i.trusted, "ops/tofu-gate.sh"), mode, root, i.bucket)
+	diagnostics, err := os.CreateTemp(i.scratch, "plan-diagnostics-")
+	if err != nil {
+		return err
+	}
+	if err := diagnostics.Close(); err != nil {
+		return err
+	}
+	env = append(env, "TOFU_VAR_FILE="+file, "TOFU_REPOSITORY_ROOT="+i.candidate, "ALLOW_RESOURCE_DELETION=false", "TOFU_DIAGNOSTICS_FILE="+diagnostics.Name())
+	_, err = i.execute(ctx, env, filepath.Join(i.trusted, "ops/tofu-gate.sh"), mode, root, i.bucket)
 	if err == nil {
 		_, err = fmt.Fprintf(i.output, "%s %s completed.\n", root, mode)
 		return err
@@ -148,5 +158,26 @@ func (i inspector) plan(ctx context.Context, mode, root, file string, env []stri
 			return failure{2, "Infrastructure drift detected; inspect the affected root before mutation."}
 		}
 	}
-	return failure{70, "Read-only plan failed; private diagnostics were not published."}
+	data, err := os.ReadFile(diagnostics.Name())
+	if err != nil {
+		return err
+	}
+	message := fmt.Sprintf("%s read-only plan failed; private diagnostics were not published.", root)
+	if categories := planFailureCategories(data); categories != "" {
+		message += " Sanitized categories: " + categories + "."
+	}
+	return failure{70, message}
+}
+
+// The runner's diagnostic rows may carry private source metadata. Only the fixed
+// reason vocabulary from ops/tofu-gate.sh may cross this boundary.
+var planFailureRow = regexp.MustCompile(`(?m)^(ZONE_RESOURCE_POOL_EXHAUSTED|RESOURCE_EXHAUSTED|PERMISSION_DENIED|UNAUTHENTICATED|NOT_FOUND|INVALID_ARGUMENT|FAILED_PRECONDITION|ALREADY_EXISTS|ABORTED|DEADLINE_EXCEEDED|UNAVAILABLE|INTERNAL|CONFIGURATION|UNKNOWN)\t(google_[a-z0-9_]+|-)\t([A-Za-z0-9][A-Za-z0-9._-]*:[1-9][0-9]*|-)\t[1-9][0-9]*$`)
+
+func planFailureCategories(data []byte) string {
+	categories := []string{}
+	for _, row := range planFailureRow.FindAllSubmatch(data, -1) {
+		categories = append(categories, string(row[1]))
+	}
+	slices.Sort(categories)
+	return strings.Join(slices.Compact(categories), ", ")
 }

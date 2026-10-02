@@ -275,6 +275,11 @@ summarize_failure() {
 
     printf 'reason\tresource_type\tsource\tcount\n' >&2
     command cat "${summary_file}" >&2
+
+    # Inspection callers receive only the same sanitized rows through a private file.
+    if [ -n "${TOFU_DIAGNOSTICS_FILE:-}" ]; then
+        command cp "${summary_file}" "${TOFU_DIAGNOSTICS_FILE}"
+    fi
 }
 
 plan_changes() {
