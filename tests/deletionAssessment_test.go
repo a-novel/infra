@@ -73,8 +73,10 @@ func TestDeletionAssessment(t *testing.T) {
 					require.Contains(t, out, "release read-only plan failed")
 				}
 				if testCase.failure == "diagnostics" {
-					require.Contains(t, out, "PERMISSION_DENIED\tgoogle_project\tidentity.tf:47\t1")
-					require.Contains(t, out, "ZONE_RESOURCE_POOL_EXHAUSTED\tgoogle_compute_disk\tdatabase.tf:54\t1")
+					require.Contains(t, out, "Sanitized categories: CONFIGURATION, PERMISSION_DENIED, UNKNOWN, ZONE_RESOURCE_POOL_EXHAUSTED.")
+					require.NotContains(t, out, "google_project")
+					require.NotContains(t, out, "identity.tf")
+					require.NotContains(t, out, "database.tf")
 				}
 				return
 			}
