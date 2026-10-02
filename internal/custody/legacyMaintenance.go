@@ -81,6 +81,10 @@ func (custody store) completeLegacyMaintenance(operation *legacyMaintenance, inp
 	if err := custody.execute(custody.ctx, output, "infra", "database-release", "maintenance-replace", operation.targets, outputs, evidence); err != nil {
 		return failure{70, "Maintenance incomplete; hold retained. Keep releases paused, inspect the original run, and do not repeat replacement."}
 	}
+	return custody.finishLegacyMaintenance(operation, evidence)
+}
+
+func (custody store) finishLegacyMaintenance(operation *legacyMaintenance, evidence string) error {
 	data, err := os.ReadFile(evidence)
 	if err != nil || !json.Valid(data) {
 		return failure{70, "Maintenance evidence unavailable; hold retained."}

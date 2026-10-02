@@ -132,6 +132,11 @@ func TestLegacyMaintenanceWorkflowBoundary(t *testing.T) {
 	require.Equal(t, "${{ vars.LEGACY_DATABASE_MAINTENANCE_ENABLED }}", apply.Env["LEGACY_DATABASE_MAINTENANCE_ENABLED"])
 	require.Equal(t, "${{ vars.PRODUCTION_RELEASES_ENABLED }}", apply.Env["PRODUCTION_RELEASES_ENABLED"])
 	require.Equal(t, "production-foundation", job.Environment)
+	recovery := job.Steps[stepIndex(t, job.Steps, "infra custody operation recover-legacy")]
+	require.Equal(t, "inputs.operation == 'recover-legacy'", recovery.If)
+	for _, flag := range []string{"LEGACY_DATABASE_RECOVERY_ENABLED", "LEGACY_DATABASE_MAINTENANCE_ENABLED", "PRODUCTION_RELEASES_ENABLED"} {
+		require.Equal(t, "${{ vars."+flag+" }}", recovery.Env[flag])
+	}
 	require.Equal(t, object{"group": "production-infrastructure", "cancel-in-progress": false}, foundation.Concurrency)
 	release := loadWorkflow(t, "workflows/release.yaml").Jobs["release"]
 	check := stepIndex(t, release.Steps, "infra custody operation check-legacy")

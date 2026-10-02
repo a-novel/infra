@@ -294,8 +294,8 @@ func TestServiceBootstrapBoundary(t *testing.T) {
 		})
 	}
 	for _, testCase := range []struct{ step, condition string }{
-		{"setup-gcloud@", "inputs.operation == 'plan' || inputs.operation == 'apply'"},
-		{"setup-opentofu@", "inputs.operation == 'plan' || inputs.operation == 'apply'"},
+		{"setup-gcloud@", "inputs.operation == 'plan' || inputs.operation == 'apply' || inputs.operation == 'recover-legacy'"},
+		{"setup-opentofu@", "inputs.operation == 'plan' || inputs.operation == 'apply' || inputs.operation == 'recover-legacy'"},
 		{"preflight service-secrets", "inputs.root == 'service-release' && (inputs.operation == 'plan' || inputs.operation == 'apply')"},
 		{"foundation-inputs bind", "inputs.root == 'service-release' && (inputs.operation == 'plan' || inputs.operation == 'apply')"},
 		{"create-reviewed-plan.sh", "inputs.operation == 'plan'"},

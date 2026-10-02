@@ -4,12 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Plan, apply, promote images, or finish an exact successful service operation.
+        description: Plan, apply, promote images, finish a service operation, or recover exact legacy maintenance.
         required: true
         type: choice
-        options: [plan, apply, promote-images, finish-operation]
+        options: [plan, apply, promote-images, finish-operation, recover-legacy]
       root:
-        description: Select a root for plan/apply/promotion; leave none for finish-operation.
+        description: Select a root for plan/apply/promotion; foundation for recover-legacy; none for finish-operation.
         required: true
         default: none
         type: choice
@@ -26,11 +26,11 @@ on:
         required: false
         type: string
       guard_generation:
-        description: Required only for finish-operation; exact inspected guard generation.
+        description: Required for finish-operation or recover-legacy; exact inspected guard generation.
         required: false
         type: string
       confirm:
-        description: Required only for finish-operation; FINISH <service> <guard-generation>.
+        description: FINISH <service> <guard-generation> or RECOVER LEGACY <guard-generation> for the selected recovery action.
         required: false
         type: string
 
@@ -79,6 +79,9 @@ jobs:
           SERVICE_JOB_BOOTSTRAP_ENABLED: ${{ vars.SERVICE_JOB_BOOTSTRAP_ENABLED }}
           SERVICE_IMAGE_PROMOTION_ENABLED: ${{ vars.SERVICE_IMAGE_PROMOTION_ENABLED }}
           SERVICE_OPERATION_RECOVERY_ENABLED: ${{ vars.SERVICE_OPERATION_RECOVERY_ENABLED }}
+          LEGACY_DATABASE_RECOVERY_ENABLED: ${{ vars.LEGACY_DATABASE_RECOVERY_ENABLED }}
+          LEGACY_DATABASE_MAINTENANCE_ENABLED: ${{ vars.LEGACY_DATABASE_MAINTENANCE_ENABLED }}
+          PRODUCTION_RELEASES_ENABLED: ${{ vars.PRODUCTION_RELEASES_ENABLED }}
           FOUNDATION_OPERATION: ${{ inputs.operation }}
           FOUNDATION_PLAN_ID: ${{ inputs.plan_id }}
           FOUNDATION_GUARD_GENERATION: ${{ inputs.guard_generation }}
@@ -117,7 +120,7 @@ jobs:
         run: infra promote service deploy/production/images.yaml "${SELECTED_FILE}"
 
       - name: Install the pinned Google Cloud CLI
-        if: inputs.operation == 'plan' || inputs.operation == 'apply'
+        if: inputs.operation == 'plan' || inputs.operation == 'apply' || inputs.operation == 'recover-legacy'
         uses: google-github-actions/setup-gcloud@v3.0.1
         with:
           version: "581.0.0"
@@ -152,7 +155,7 @@ jobs:
             "${RUNNER_TEMP}/service-jobs.tfvars.json" >>"${GITHUB_OUTPUT}"
 
       - name: Install OpenTofu
-        if: inputs.operation == 'plan' || inputs.operation == 'apply'
+        if: inputs.operation == 'plan' || inputs.operation == 'apply' || inputs.operation == 'recover-legacy'
         uses: opentofu/setup-opentofu@v2.0.2
         with:
           tofu_version_file: .opentofu-version
@@ -202,6 +205,25 @@ jobs:
           infra custody plan apply \
             "${STATE_BUCKET}" "${ROOT_NAME}" "${GITHUB_SHA}" \
             "${PLAN_ID}" "${TFVARS_FILE}"
+
+      - name: Recover only the exact retained legacy maintenance
+        if: inputs.operation == 'recover-legacy'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GUARD_GENERATION: ${{ inputs.guard_generation }}
+          CONFIRM: ${{ inputs.confirm }}
+          STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
+          TFVARS_FILE: ${{ steps.inputs.outputs.file }}
+          FOUNDATION_CONFIG: ${{ secrets.FOUNDATION_TFVARS_JSON }}
+          MANAGEMENT_PROJECT_ID: ${{ vars.GCP_MANAGEMENT_PROJECT_ID }}
+          LEGACY_DATABASE_RECOVERY_ENABLED: ${{ vars.LEGACY_DATABASE_RECOVERY_ENABLED }}
+          LEGACY_DATABASE_MAINTENANCE_ENABLED: ${{ vars.LEGACY_DATABASE_MAINTENANCE_ENABLED }}
+          PRODUCTION_RELEASES_ENABLED: ${{ vars.PRODUCTION_RELEASES_ENABLED }}
+        run: |
+          set -euo pipefail
+          infra custody operation recover-legacy "${STATE_BUCKET}" \
+            "${GUARD_GENERATION}" "${CONFIRM}" "${TFVARS_FILE}"
 
       - name: Publish converged legacy configuration
         if: inputs.operation == 'apply' && (inputs.root == 'bootstrap' || inputs.root == 'foundation')

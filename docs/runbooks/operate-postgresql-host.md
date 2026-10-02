@@ -91,7 +91,7 @@ startup script changes; there is no caller-supplied host name or broad replaceme
 
 The protected operation:
 
-1. Captures the current template, singleton, disk identity, private address, release metadata and
+1. Captures the current template, singleton, data and boot disk identities, private address, release metadata and
    healthy boot. Creates a private, create-only maintenance hold, then consumes the reviewed plan.
 2. Applies and checks convergence of the template targets and any approved safety-job permissions.
    The verified `OPPORTUNISTIC` policy leaves running members alone. Newly granted IAM may need
@@ -100,9 +100,10 @@ The protected operation:
    runs both existing logical backup and clean restore-check jobs for every selected service.
    All checks must succeed before replacing either host.
 4. Rechecks the original host and boot, then updates that exact member with `REPLACE`/`RECREATE`,
-   zero surge and one unavailable member. Verifies a new VM incarnation and healthy boot on the
+   zero surge and one unavailable member. Verifies a new boot disk incarnation and healthy boot on the
    same data disk and private address, with the reviewed template, image, identity and secret-version
-   metadata. It stops at the first failure; it does not continue to the peer or roll back automatically.
+   metadata. Google may retain the VM ID during recreation; that ID alone is not a replacement
+   signal. It stops at the first failure; it does not continue to the peer or roll back automatically.
 5. Writes private completion evidence, including backup/restore execution names and old/new host
    identities, before deleting only its acknowledged hold generation.
 
@@ -131,13 +132,50 @@ the consumed plan, adopt the hold, clear it speculatively, or run `update-instan
 For interrupted maintenance, keep releases paused. First establish that the original workflow and
 Google operations are no longer running, then compare the exact hold generation and any completion
 record against each group's live member, template, disk, address, release metadata and health.
-Reconcile incomplete replacement through a separately reviewed protected recovery change. This
-startup-only path intentionally has no generic unlock/retry command. Removing an obsolete hold
-requires explicit approval and a generation-matched deletion after that reconciliation.
+Use the separately enabled recovery path below only when the applied foundation has converged and
+each host is either still on its original template or provably completed the recorded replacement.
+Other partial states require investigation, not a generic unlock or retry.
 
 After successful verification, turn off `LEGACY_DATABASE_MAINTENANCE_ENABLED`. Independently verify
 client connectivity and the applicable release prerequisites before approving a production retry.
 Completion of maintenance does not re-enable releases.
+
+### Reconcile interrupted startup-only maintenance
+
+After reviewing the exact retained hold and original failed run, a human may separately enable
+`LEGACY_DATABASE_RECOVERY_ENABLED=true` in `production-foundation`. Keep maintenance enabled and
+production releases explicitly paused. From clean, current `master`, use the inspected hold's
+numeric generation, not a plan ID:
+
+```sh
+go run ./cmd/infra foundation recover-legacy "${MAINTENANCE_HOLD_GENERATION:?}" "RECOVER LEGACY ${MAINTENANCE_HOLD_GENERATION:?}"
+```
+
+This is a protected foundation dispatch with the usual approval and global writer serialization.
+It does not replay the consumed plan, apply infrastructure, alter IAM, or enable releases. It requires
+the current protected foundation configuration to converge with applied state before touching hosts.
+It verifies the hold's workload scope and original workflow identity, and rejects an active or rerun
+original writer. A completed run is not by itself evidence that its hosts completed maintenance.
+
+For each host, the helper verifies the stable singleton, preserved data disk and address, exact
+release metadata, runtime identity, sizing, subnet and reviewed startup template. A host already on
+the new template is skipped only with a new healthy guest boot and a boot disk created within the
+original operation's interval, from hold creation through workflow completion. When the hold includes
+the old boot disk ID, that ID must differ too. Older holds can use the bounded disk creation time;
+they never require the VM ID to change. A pending host must retain its original instance and healthy
+boot; its boot disk is captured before fresh snapshot, backup and clean restore checks. Only pending
+hosts run those jobs and undergo replacement. All hosts are rechecked before completion.
+
+Before any recovery jobs or replacement, a create-only record is stored at
+`release/legacy-maintenance/recoveries/<hold-generation>.json`. After host verification, the workflow
+publishes the converged foundation configuration, writes completion evidence, then deletes only the
+acknowledged hold generation. Uncertain admission, replacement, publication or completion retains
+the recovery record and prevents automatic replay. Do not delete either record or rerun the original
+apply to bypass a failure; reconcile the exact evidence through a separately reviewed operation.
+
+After success, disable both maintenance flags. Release activation and retry still need independent
+approval and client-connectivity verification. Recovery creates no additional VM or recurring job;
+fresh safety jobs for pending hosts incur their existing execution costs.
 
 ## Result and operating limits
 
@@ -536,6 +574,7 @@ Do not rely on application passwords while a public path exists.
 - [Preserved state during updates](https://cloud.google.com/compute/docs/instance-groups/preserved-state)
 - [All-instances configuration](https://cloud.google.com/compute/docs/instance-groups/set-mig-aic)
 - [MIG update policy types](https://cloud.google.com/compute/docs/instance-groups/rolling-out-updates-to-managed-instance-groups#configure_update_policy)
+- [Recreation and retained VM identities](https://cloud.google.com/compute/docs/instance-groups/rolling-out-updates-to-managed-instance-groups#replacement_method)
 - [`gcloud` all-instances update](https://cloud.google.com/sdk/gcloud/reference/compute/instance-groups/managed/all-instances-config/update)
 - [`gcloud` update instances](https://cloud.google.com/sdk/gcloud/reference/compute/instance-groups/managed/update-instances)
 - [`gcloud` wait until stable](https://cloud.google.com/sdk/gcloud/reference/compute/instance-groups/managed/wait-until)

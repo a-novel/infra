@@ -88,6 +88,19 @@ func foundationInputs(args []string, getenv func(string) string, stdout io.Write
 	}
 	// Direct workflow submissions must satisfy the same contract as the operator command.
 	operation := getenv("FOUNDATION_OPERATION")
+	if operation == "recover-legacy" {
+		if root != "foundation" || service != "" || getenv("FOUNDATION_PLAN_ID") != "" {
+			return invalid
+		}
+		if err := LegacyMaintenanceRecovery([]string{getenv("FOUNDATION_GUARD_GENERATION"), getenv("FOUNDATION_CONFIRM")}, getenv); err != nil {
+			return err
+		}
+		data := []byte(getenv("FOUNDATION_CONFIG"))
+		if !json.Valid(data) {
+			return invalid
+		}
+		return writeFoundationInputs(file, data, stdout, "")
+	}
 	if operation == "finish-operation" {
 		if root != "none" || getenv("FOUNDATION_PLAN_ID") != "" {
 			return invalid
@@ -169,6 +182,22 @@ func foundationInputs(args []string, getenv func(string) string, stdout io.Write
 	if foundationURI != "" {
 		_, err := fmt.Fprintln(stdout, "foundation_uri="+foundationURI)
 		return err
+	}
+	return nil
+}
+
+// LegacyMaintenanceRecovery authorizes an exact retained hold in a separately enabled
+// protected dispatch. It does not authorize replaying its consumed plan.
+func LegacyMaintenanceRecovery(args []string, getenv func(string) string) error {
+	if _, err := parse(append([]string{"foundation", "recover-legacy"}, args...)); err != nil {
+		return err
+	}
+	if getenv("LEGACY_DATABASE_RECOVERY_ENABLED") != "true" || getenv("LEGACY_DATABASE_MAINTENANCE_ENABLED") != "true" ||
+		getenv("PRODUCTION_RELEASES_ENABLED") != "false" || getenv("GITHUB_REPOSITORY") != "a-novel/infra" ||
+		getenv("GITHUB_REF") != "refs/heads/master" || !matches(`[a-f0-9]{40}`, getenv("GITHUB_SHA")) ||
+		getenv("GITHUB_EVENT_NAME") != "workflow_dispatch" ||
+		getenv("GITHUB_WORKFLOW_REF") != "a-novel/infra/.github/workflows/foundation.yaml@refs/heads/master" {
+		return errors.New("legacy recovery requires separate protected activation and paused releases")
 	}
 	return nil
 }

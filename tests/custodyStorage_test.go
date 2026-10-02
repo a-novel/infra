@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"google.golang.org/api/storage/v1"
 )
@@ -57,7 +58,7 @@ func applyStorage(t *testing.T, f *sandbox, failure string) {
 				}
 				_, _ = w.Write(data)
 			} else {
-				_ = json.NewEncoder(w).Encode(&storage.Object{Bucket: bucket, Name: name, Generation: 42})
+				_ = json.NewEncoder(w).Encode(&storage.Object{Bucket: bucket, Name: name, Generation: 42, TimeCreated: time.Now().Add(-time.Hour).Format(time.RFC3339)})
 			}
 			return
 		}

@@ -18,6 +18,7 @@ type maintenanceTarget struct {
 	Project, Zone, Service, DiskID, Template, Startup string
 	TemplateID, ReplacementID                         string
 	Instance, InstanceID, Address, Boot               string
+	BootDiskID                                        string
 	Metadata                                          map[string]string
 	Properties                                        *compute.InstanceProperties
 }

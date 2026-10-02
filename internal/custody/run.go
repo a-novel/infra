@@ -84,6 +84,9 @@ func run(ctx context.Context, args []string, getenv func(string) string, execute
 			return failure{64, "Unknown protected recovery action."}
 		}
 	case "operation":
+		if args[1] == "recover-legacy" {
+			return storage.recoverLegacyMaintenance(args[3:], getenv, output, options)
+		}
 		if args[1] == "check-legacy" && len(args) == 3 {
 			return storage.checkLegacyMaintenance(options)
 		}
