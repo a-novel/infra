@@ -63,6 +63,9 @@ func TestNativeRecoveryInputs(t *testing.T) {
 		{name: "ImplicitBackup", field: "set", value: "latest"},
 		{name: "UnknownField", field: "PROJECT", value: "a-novel-recovery-peer"},
 		{name: "IncompleteProtection"},
+		{name: "PublicProjectProtected", valid: true},
+		{name: "PublicProjectMissingProtection"},
+		{name: "PublicProjectTarget"},
 		{name: "LegacyRegistration"},
 		{name: "ReadOnlyWithWritesDisabled", valid: true},
 	} {
@@ -92,6 +95,17 @@ func TestNativeRecoveryInputs(t *testing.T) {
 			}
 			if testCase.name == "IncompleteProtection" {
 				nested(config, "recovery")["protected_projects"] = []string{"agora-management-test", "agora-json-keys-test"}
+			}
+			if strings.HasPrefix(testCase.name, "PublicProject") {
+				public := "agora-public-test"
+				if testCase.name == "PublicProjectTarget" {
+					public = "a-novel-recovery-proof"
+				}
+				f.env["FOUNDATION_CONFIG"] = strings.TrimSuffix(f.env["FOUNDATION_CONFIG"], "}") + `,"public_project_id":"` + public + `"}`
+				if testCase.name == "PublicProjectProtected" {
+					host := nested(config, "recovery")
+					host["protected_projects"] = append(host["protected_projects"].([]string), public)
+				}
 			}
 			if testCase.name == "LegacyRegistration" {
 				f.env["FOUNDATION_CONFIG"] = strings.TrimSuffix(f.env["FOUNDATION_CONFIG"], "}") + `,"recovery_mode":true}`

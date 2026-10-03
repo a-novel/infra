@@ -299,6 +299,7 @@ func TestRecoveryCleanupLegacy(t *testing.T) {
 		{"ProtectedManagement", "management", 77, 0},
 		{"ProtectedWorkload", "workload", 77, 0},
 		{"ProtectedService", "service", 77, 0},
+		{"ProtectedPublic", "public", 77, 0},
 		{"MissingMergedLabel", "approval", 77, 0},
 		{"NotDisposable", "labels", 77, 0},
 		{"PeerIdentity", "peer", 70, 0},
@@ -330,6 +331,8 @@ func TestRecoveryCleanupLegacy(t *testing.T) {
 				f.env["FOUNDATION_CONFIG"] = strings.ReplaceAll(f.env["FOUNDATION_CONFIG"], "agora-"+map[string]string{"management": "management", "workload": "production"}[tc.fault]+"-test", project.project)
 			case "service":
 				f.env["FOUNDATION_CONFIG"] = strings.ReplaceAll(f.env["FOUNDATION_CONFIG"], "agora-authentication-test", project.project)
+			case "public":
+				f.env["FOUNDATION_CONFIG"] = strings.TrimSuffix(f.env["FOUNDATION_CONFIG"], "}") + `,"public_project_id":"` + project.project + `"}`
 			}
 			file := filepath.Join(f.dir, "authorization.json")
 			writeJSON(t, file, authorization)

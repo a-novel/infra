@@ -88,10 +88,18 @@ func (compiler *Compiler) CompileRecovery(args []string, identity Identity) erro
 			}
 		}
 	}
+	if value := config["public_project_id"]; value != nil {
+		project, ok := value.(string)
+		if !ok || !projectPattern.MatchString(project) || project == target {
+			return errors.New("invalid public project or recovery target is the production public project")
+		}
+	}
 	foundation := clone(config)
 	foundation["workload_project_id"], foundation["workload_project_name"], foundation["recovery_mode"] = target, "Agora recovery", true
 	foundation["service_projects"] = object{}
 	delete(foundation, "retire_json_keys_project")
+	delete(foundation, "public_project_id")
+	delete(foundation, "shared_vpc_enabled")
 	outputs := map[string]any{"foundation.tfvars.json": foundation}
 	if phase == "foundation" {
 		return writeOutputs(args[7], outputs)

@@ -8,7 +8,38 @@ before publishing the empty selection. Environment/trust-zone projects are the a
 dedicated service projects require a separate justification. Runtime and repository-network
 activation remain disabled. Merging configuration does not move a workload or delete a project.
 
-## Review the configuration
+## Production trust-zone foundation
+
+The target shape is management, private production and public production, with per-service
+permissions inside each zone. Reuse `workload_project_id` as the private zone's existing network and
+database owner. Its current public-facing workloads remain there until a separately reviewed move;
+the new `production_projects` output describes target coordinates, not achieved isolation.
+Stage/preproduction, public-admin, Kubernetes and exceptional dedicated projects are outside this batch.
+
+The optional public shell uses the existing `project-shell` module. It creates project/API and
+foundation-maintenance prerequisites, deprivileges default accounts and attaches to the existing
+Shared VPC. It grants no application identity, secret access, host Network Viewer or subnet use.
+No VM, disk, application, database or network appliance is created. Its project number joins the
+existing budget without changing the amount or thresholds; a budget is an alert, not a spending cap.
+
+The configuration publisher accepts `INFRA_SHARED_VPC_ENABLED=true` / `--shared-vpc-enabled` to
+retain the existing Shared VPC host independently of the obsolete-project retirement switch.
+`INFRA_PUBLIC_PROJECT_ID` / `--public-project-id` selects the optional public shell. Both are omitted
+from the published document by default; the reviewed `.envrc` selects neither. The public ID must
+be valid, distinct from management and workload, and accompanied by explicit Shared VPC retention.
+Retirement, dedicated-service maps, repository-network selection and recovery registration must be
+absent before selecting it. Recovery compilation removes both inputs, and recovery/cleanup checks
+reject the registered public production project as a disposable target.
+
+Do not publish this selection yet. First finish and review the shared-project per-service
+permissions and component-placement contracts. Before provisioning, review the complete successor
+configuration, keep the existing Shared VPC address and deletion protection, and verify an exact
+protected plan. Before moving workloads, verify public identities cannot read the private master
+key or private database credentials, and exercise the intended permitted/denied network paths.
+Private secret ownership alone does not establish those denials. No existing release registration,
+state, receipt, guard or backup owner changes with this shell definition.
+
+## Dedicated-service compatibility configuration
 
 The reviewed `.envrc` declares a JSON object mapping service names to project IDs. For example, these
 synthetic values select two project shells:

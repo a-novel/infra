@@ -75,7 +75,7 @@ module "service_project" {
 }
 
 resource "google_compute_shared_vpc_host_project" "production" {
-  count = var.retire_json_keys_project || length(module.service_project) > 0 ? 1 : 0
+  count = var.shared_vpc_enabled || var.retire_json_keys_project || length(module.service_project) > 0 ? 1 : 0
 
   project         = google_project.workload.project_id
   deletion_policy = "PREVENT"

@@ -134,6 +134,58 @@ func (f *foundationFixture) cleanup() []string {
 
 func TestFoundation(t *testing.T) {
 	t.Parallel()
+	t.Run("TrustZones", func(t *testing.T) {
+		t.Parallel()
+		for _, tc := range []struct {
+			name, public, shared, services, retirement string
+			args                                       []string
+			valid                                      bool
+		}{
+			{"Disabled", "", "", "{}", "", nil, true},
+			{"RetainHost", "", "true", "{}", "", nil, true},
+			{"Public", "agora-public-test", "true", "{}", "", nil, true},
+			{"Explicit", "", "", "{}", "", []string{"--shared-vpc-enabled", "--public-project-id=agora-public-test"}, true},
+			{"Management", "management-project-prod", "true", "{}", "", nil, false},
+			{"Workload", "workload-project-prod", "true", "{}", "", nil, false},
+			{"InvalidID", "INVALID", "true", "{}", "", nil, false},
+			{"NoHost", "agora-public-test", "false", "{}", "", nil, false},
+			{"MalformedHost", "", "yes", "{}", "", nil, false},
+			{"DedicatedService", "agora-public-test", "true", `{"json-keys":"json-keys-project-prod"}`, "", nil, false},
+			{"Retirement", "agora-public-test", "true", "{}", "true", nil, false},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+				f := foundationCase()
+				writes := f.configuration()
+				f.env["INFRA_PUBLIC_PROJECT_ID"], f.env["INFRA_SHARED_VPC_ENABLED"] = tc.public, tc.shared
+				f.env["INFRA_SERVICE_PROJECTS"], f.env["INFRA_RETIRE_JSON_KEYS_PROJECT"] = tc.services, tc.retirement
+				code, out := f.run(t, append([]string{"configure"}, tc.args...)...)
+				if !tc.valid {
+					require.Equal(t, 64, code, out)
+					require.Empty(t, f.calls)
+					return
+				}
+				require.Zero(t, code, out)
+				require.Equal(t, writes, f.mutations)
+				require.Len(t, f.secrets, 2)
+				require.Equal(t, f.secrets[0], f.secrets[1])
+				var config map[string]any
+				require.NoError(t, json.Unmarshal(f.secrets[0], &config))
+				if tc.name == "Disabled" {
+					require.NotContains(t, config, "shared_vpc_enabled")
+					require.NotContains(t, config, "public_project_id")
+				} else {
+					require.Equal(t, true, config["shared_vpc_enabled"])
+					if tc.name != "RetainHost" {
+						require.Equal(t, "agora-public-test", config["public_project_id"])
+					} else {
+						require.NotContains(t, config, "public_project_id")
+					}
+				}
+				require.Equal(t, "workload-project-prod", config["workload_project_id"])
+			})
+		}
+	})
 	t.Run("Configuration", func(t *testing.T) {
 		t.Parallel()
 		f := foundationCase()
