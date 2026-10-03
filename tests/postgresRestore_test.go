@@ -31,7 +31,8 @@ func TestPostgresRestoreStartup(t *testing.T) {
 				f.command(t, name)
 			}
 			f.env["RESTORE_SCENARIO"], f.env["PGDATA"], f.env["WORKSPACE"] = scenario, filepath.Join(f.dir, "pgdata"), f.dir
-			f.env["PGSOCKET"], f.env["DATABASE_NAME"], f.env["DATABASE_OWNER"] = filepath.Join(f.dir, "socket"), "fixture", "postgres"
+			f.env["DATABASE_NAME"], f.env["DATABASE_OWNER"] = "fixture", "postgres"
+			f.env["PGHOST"], f.env["PGHOSTADDR"] = "production.invalid", "192.0.2.1"
 			restore := read(t, filepath.Join(f.root, "environments/production/release/scripts/postgres-restore.sh"))
 			fragment := func(start, end string) string {
 				_, remainder, found := strings.Cut(restore, start)
@@ -49,7 +50,10 @@ kill() {
     if [ "$1" != -0 ]; then printf 'stop-entrypoint\n' >>"$TMPDIR/calls"; fi
     builtin kill "$@"
 }
-` + fragment("cleanup() {", "for variable_name") + startup + `printf 'restore-ready\n' >>"$TMPDIR/calls"`
+` + fragment("cleanup() {", "for variable_name") + startup + fragment("export PGDATABASE=", "if ! pg_restore") + `
+test -z "$PGHOST"
+test -z "$PGHOSTADDR"
+printf 'restore-ready\n' >>"$TMPDIR/calls"`
 			code, out := f.run(t, "bash", "-c", harness)
 			events := ""
 			if _, err := os.Stat(filepath.Join(f.dir, "calls")); err == nil {
@@ -75,12 +79,15 @@ kill() {
 // the real cleanup signal and has a deadline if a broken trap leaves it running.
 func restoreCommand(name string, args []string) (int, error) {
 	data, scenario := os.Getenv("PGDATA"), os.Getenv("RESTORE_SCENARIO")
+	if (name == "entrypoint" || name == "pg_isready") && (os.Getenv("PGHOST") != "" || os.Getenv("PGHOSTADDR") != "") {
+		return 99, fmt.Errorf("restore must use the image's local socket default")
+	}
 	switch {
 	case name == "install" && slices.Equal(args, []string{"-d", "-m", "0700", "-o", "postgres", "-g", "postgres", data}):
 		return 0, os.Mkdir(data, 0o700)
 	case name == "gosu" && slices.Equal(args, []string{"postgres", "pg_ctl", "--pgdata=" + data, "--mode=fast", "--wait", "stop"}):
 		return 0, record("stop-server")
-	case name == "pg_isready" && slices.Equal(args, []string{"--host=" + os.Getenv("PGSOCKET"), "--port=5432", "--username=postgres", "--dbname=fixture"}):
+	case name == "pg_isready" && slices.Equal(args, []string{"--host=", "--port=5432", "--username=postgres", "--dbname=fixture"}):
 		pid, err := os.ReadFile(filepath.Join(data, "postmaster.pid"))
 		if err != nil || string(pid) == "0\n" {
 			return 0, record("probe-temporary")
