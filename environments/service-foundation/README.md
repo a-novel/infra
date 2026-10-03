@@ -54,6 +54,29 @@ a retained operation. Shared runtime operations remain unsupported.
 Writer flags and protected inputs remain separately activated. Approved coordinate consumers,
 effective access checks and runtime ownership handoff still precede deployment. No new host or
 runtime is selected here.
+
+### Existing private database handoff
+
+The production foundation remains the sole owner of both existing database hosts and disks.
+When a service appears in `service_release_zones`, it publishes one minimal schema-2 database
+document under `foundation/database-coordinates/production/PRIVATE_PROJECT/SERVICE/SHA256.json`.
+The `database_coordinates` output pins its generation and checksum. Empty registration publishes
+nothing; the handoff adds no host or access grant.
+
+After foundation convergence, approve the exact reference and fetch its generation with the
+existing Google CLI. Supply `database_handoff.private_project_id`, `reference` and the unmodified
+`document_json` in this root's protected configuration. The input guard binds the private project
+to the parent registration before authentication. HCL checks the reference and minimal endpoint
+contract; a checksum alone does not prove origin or approve an interrupted publication.
+
+Both prerequisite zones can publish their own database endpoint as `database`, retaining
+`database_source` in the schema-2 envelope. The standalone `database` output remains null because
+this root owns no shared database host. Keep `database`, `database_runtime` and
+`pgbackrest_repository` inputs null. API/ORM behavior and current backup ownership stay unchanged.
+Runtime activation still requires effective network, database-role and inherited-IAM checks.
+
+### Dedicated-project preparation
+
 The remaining sections describe the unchanged dedicated-project path (`zone = null`).
 
 ## Owners and state

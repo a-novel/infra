@@ -40,8 +40,8 @@ sufficient; no bucket-wide object grant is required. Missing or unregistered fol
 The shared foundation's `service_release_zones` enrolls
 `workloads/production/ZONE/PROJECT/SERVICE/release/` folders for private/public-api boundaries.
 Enrollment accepts empty folders and exact saved-plan artifacts. Existing state, configuration or
-other objects stop inspection pending an approved ownership handoff. This root and its protected
-mutation callers remain dedicated-project-only; an API registration never activates database jobs.
+other objects stop inspection pending an approved ownership handoff. Protected mutation callers
+remain dedicated-project-only; an API registration never activates database jobs.
 The platform-only public zone cannot enroll these backend services. Historical public custody paths
 remain readable, but an old public registration must undergo an explicit ownership handoff rather
 than being silently reinterpreted as public-api.
@@ -96,6 +96,18 @@ application jobs. Updates, imports, moves, replacements, deletions and other res
 of deletion approval. Routine job updates remain disabled.
 
 ## Approved foundation handoff
+
+`zone = "private"` prepares the schema-2 shared-service job contract. It accepts the
+[existing-database handoff](../service-foundation#existing-private-database-handoff) only through
+that private scope's approved runtime document. The native backend derives
+`workloads/production/private/PROJECT/SERVICE/release/`; application images use
+`agora-SERVICE-private-production`, and jobs attach `agora-SERVICE-private`.
+Public API and platform zones are rejected. Shared API rollout remains disabled.
+
+This contract is cloud-blind preparation: existing job names still have their legacy owner.
+Reconcile exact resource/state ownership and enroll the protected writer before applying it.
+The current bootstrap, assessment and routine mutation guards still reject shared release state.
+The following dedicated-project handoff remains unchanged when `zone = null`.
 
 The inactive root accepts three independently authorized selectors: `project_id`, `service` and
 `region`. Its `foundation` input is the exact version-1 reference returned by foundation: `bucket`,
@@ -249,8 +261,8 @@ another project uses its own approved restored-data path, not these production m
 
 The existing CI validation job runs this root directly with the committed provider lock and no
 backend initialization. All resource tests are provider-mocked plans, covering both service contracts
-and safety-sensitive invalid inputs. One provider-free, resource-free fixture module evaluates a small
-document table; invalid documents receive matching hashes so contract rejection cannot be masked by a
+and safety-sensitive invalid inputs. Provider-free, resource-free fixtures evaluate
+document tables; invalid documents receive matching hashes so contract rejection cannot be masked by a
 checksum failure:
 
 ```sh

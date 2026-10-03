@@ -4,7 +4,10 @@ locals {
     runtime        = local.runtime
     database       = local.database_coordinates
     rollout        = try(module.rollout["api"].rollout, null)
-  }, var.zone == null ? {} : { scope = local.scope })
+    }, var.zone == null ? {} : { scope = local.scope },
+    var.database_handoff == null ? {} : { database = try(jsondecode(var.database_handoff.document_json), null) },
+    var.database_handoff == null ? {} : { database_source = var.database_handoff.reference },
+  )
   coordinates_json = jsonencode(local.coordinates)
 }
 

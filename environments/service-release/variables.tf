@@ -31,6 +31,17 @@ variable "service" {
   }
 }
 
+variable "zone" {
+  description = "Private shared-zone job contract; null preserves dedicated-service inputs. Protected shared job writers remain disabled."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.zone == null ? true : var.zone == "private"
+    error_message = "Database migrations and rotation belong only to private; public API and platform job placement is forbidden."
+  }
+}
+
 variable "region" {
   description = "Independently approved region for this service's jobs and database."
   type        = string
@@ -81,7 +92,7 @@ variable "images" {
   }
   validation {
     condition = alltrue([for role, image in var.images : can(regex(
-      "^${var.region}-docker\\.pkg\\.dev/${var.project_id}/agora-production/service-${var.service}/jobs/${role}@sha256:[a-f0-9]{64}$", image,
+      "^${replace(local.production_repository, ".", "\\.")}/service-${var.service}/jobs/${role}@sha256:[a-f0-9]{64}$", image,
     ))])
     error_message = "Each job must use its exact promoted path and SHA-256 digest in this service project's regional registry."
   }
