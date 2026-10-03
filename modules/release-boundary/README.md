@@ -40,7 +40,7 @@ outbound impersonation grant. Wrong repository/ref/workflow/environment federati
 access must fail in live checks; mocked tests establish only the configuration contract.
 
 No bucket or paid runtime is created by this module. Future storage and operations are billable.
-Select saved-plan locations and verify their expiration policy before workflow activation;
-the existing rules cover dedicated-service, private and historical public plan paths, not
-`public-api`. Its narrowly scoped cleanup rule must be added and verified before activation. No state or retained
-receipt is copied, removed or adopted by selecting a boundary.
+Select saved-plan locations and apply and verify their
+[expiration policy](../../bootstrap/README.md#plan-artifact-expiration) before workflow activation.
+The declared rules cover dedicated-service, private, historical public and public-api plan paths.
+No state or retained receipt is copied, removed or adopted by selecting a boundary.

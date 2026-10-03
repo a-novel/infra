@@ -331,6 +331,7 @@ run "expires_only_plan_artifacts_after_two_days" {
       for prefixes in [
         ["services/"],
         ["workloads/production/private/", "workloads/production/public/"],
+        ["workloads/production/public-api/"],
         ] : length([
           for rule in google_storage_bucket.state.lifecycle_rule : rule
           if one(rule.action).type == "Delete" && try(
@@ -355,6 +356,17 @@ run "expires_only_plan_artifacts_after_two_days" {
         "workloads/production/private/private-project/authentication/release/plans/commit/1-1/plan.metadata.json" = true
         "workloads/production/public/public-project/json-keys/release/plans/commit/1-1/plan.tfplan"               = true
         "workloads/production/public/public-project/json-keys/release/plans/commit/1-1/plan.metadata.json"        = true
+        "workloads/production/public-api/api-project/json-keys/release/plans/commit/1-1/plan.tfplan"              = true
+        "workloads/production/public-api/api-project/authentication/release/plans/commit/1-1/plan.metadata.json"  = true
+        "workloads/production/public-api/api-project/json-keys/release/default.tfstate"                           = false
+        "workloads/production/public-api/api-project/json-keys/release/default.tflock"                            = false
+        "workloads/production/public-api/api-project/json-keys/release/config/1-1.tfvars.json"                    = false
+        "workloads/production/public-api/api-project/json-keys/production/success/1-1.json"                       = false
+        "workloads/production/public-api/api-project/json-keys/release/operation.json"                            = false
+        "workloads/production/public-api/api-project/json-keys/release/plans/commit/1-1/plan.tfplan.extra"        = false
+        "workloads/production/public-api/api-project/json-keys/release/plans/commit/1-1/plan.metadata.json.extra" = false
+        "workloads/staging/public-api/api-project/json-keys/release/plans/commit/1-1/plan.tfplan"                 = false
+        "workloads/production/public-api-unrelated/plan.tfplan"                                                   = false
         "workloads/production/private/private-project/authentication/release/default.tfstate"                     = false
         "workloads/production/public/public-project/json-keys/release/default.tflock"                             = false
         "workloads/production/private/private-project/json-keys/release/config/1-1.tfvars.json"                   = false

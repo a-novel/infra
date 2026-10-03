@@ -46,7 +46,8 @@ behavior a maintainer must understand; ordinary OpenTofu language behavior is no
 
 The state bucket declares two-day expiration under `bootstrap/plans/`, `foundation/plans/` and
 `release/plans/`. Separate rules cover plan artifacts under `services/` and under the exact pair
-`workloads/production/private/` and `workloads/production/public/`. Both rules require the suffix
+`workloads/production/private/` and `workloads/production/public/`, with another rule for
+`workloads/production/public-api/` alone. These rules require the suffix
 `/plan.tfplan` or `/plan.metadata.json`; state, locks, private inputs and foundation coordinates
 are excluded. Their existing version-retention rule remains unchanged.
 
@@ -59,7 +60,7 @@ Declaring these rules does not install them. Before activating the service-job w
 use the [protected bootstrap plan/apply](../ops/README.md#protected-workflow-operations) and verify
 the bucket's lifecycle selectors, versioning and soft delete through the
 [storage inspection](../docs/runbooks/bootstrap-management-plane.md#9-verify-resources).
-Removing or broadening either rule requires another policy review.
+Removing or broadening any rule requires another policy review.
 
 ## Automation trust boundaries
 
