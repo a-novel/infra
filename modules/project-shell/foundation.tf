@@ -9,6 +9,8 @@ resource "google_project_iam_custom_role" "foundation_control_plane" {
     "clouddeploy.deliveryPipelines.create",
     "clouddeploy.deliveryPipelines.delete",
     "clouddeploy.deliveryPipelines.get",
+    "clouddeploy.deliveryPipelines.getIamPolicy",
+    "clouddeploy.deliveryPipelines.setIamPolicy",
     "clouddeploy.deliveryPipelines.update",
     "clouddeploy.operations.get",
     "clouddeploy.releases.get",
@@ -16,6 +18,8 @@ resource "google_project_iam_custom_role" "foundation_control_plane" {
     "clouddeploy.targets.create",
     "clouddeploy.targets.delete",
     "clouddeploy.targets.get",
+    "clouddeploy.targets.getIamPolicy",
+    "clouddeploy.targets.setIamPolicy",
     "clouddeploy.targets.update",
     "cloudscheduler.jobs.create",
     "cloudscheduler.jobs.delete",
@@ -31,6 +35,8 @@ resource "google_project_iam_custom_role" "foundation_control_plane" {
     "run.jobs.update",
     "run.operations.get",
     "run.services.get",
+    "run.services.getIamPolicy",
+    "run.services.setIamPolicy",
     "storage.buckets.create",
     "storage.buckets.delete",
     "storage.buckets.get",
@@ -62,10 +68,13 @@ resource "google_project_iam_custom_role" "plan_policy" {
   description = "Refresh service-foundation IAM without changing policies or reading payloads."
   permissions = [
     "artifactregistry.repositories.getIamPolicy",
+    "clouddeploy.deliveryPipelines.getIamPolicy",
+    "clouddeploy.targets.getIamPolicy",
     "iam.roles.get",
     "iam.serviceAccounts.getIamPolicy",
     "resourcemanager.projects.getIamPolicy",
     "run.jobs.getIamPolicy",
+    "run.services.getIamPolicy",
     "storage.buckets.getIamPolicy",
   ]
 

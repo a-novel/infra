@@ -17,6 +17,12 @@ permissions are retained. Foundation remains a high-trust administrator with pro
 IAM and Compute instance administration. This module does not make shared workloads
 mutually isolated by itself.
 
+The protected foundation can read/write native Cloud Deploy pipeline/target and
+Cloud Run service IAM so the rollout module can bind workers to individual resources.
+The plan identity receives only the matching policy reads. These additions do not
+grant the foundation API creation/update or rollout execution; protected first deployment
+and retained-private-project enrollment still require their own reviewed handoff.
+
 The foundation's mocked tests cover both direct project-shell use and compatibility
 outputs. Live provisioning requires a separately reviewed saved plan. Review owned
 obsolete projects and billing capacity before creating any new projects; public-admin
