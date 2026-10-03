@@ -28,7 +28,7 @@ relative to `module.project`. Release and storage addresses remain in this modul
 
 | Resource                                                                                                                                           | Contract                                                                                                                                                                                               |
 | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `google_project.service`                                                                                                                           | One explicit project ID, exactly one organization/folder parent, no default VPC, provider deletion prevention and `prevent_destroy`.                                                                   |
+| `google_project.service`                                                                                                                           | One explicit project ID, exactly one organization/folder parent, no default VPC, and persistent provider deletion prevention.                                                                          |
 | `google_project_service.api`                                                                                                                       | Foundation owns the declared APIs, including Cloud Build, Cloud Deploy and Storage; removing an entry leaves the API enabled for retained workloads and recovery.                                      |
 | `google_project_service_identity.agent` and `google_project_iam_member.service_agent`                                                              | Create the Google-managed Run, Build, Deploy, Scheduler, Workflows and Compute agents with their documented project roles.                                                                             |
 | `google_project_default_service_accounts.service`                                                                                                  | Deprivilege default accounts after API activation. This is a creation-time repair; effective organization policies prevent future automatic grants and user-managed keys.                              |
@@ -132,6 +132,15 @@ service-specific runtime grants, state handoff, and interrupted-rollout handling
 separate service-lifecycle rollout, not this boundary module.
 
 ## Validation and rollout
+
+`retirement` defaults to false. Persistent provider `PREVENT` policies protect the project,
+release identity, federation provider, log bucket and custody folders even when a caller removes
+a module instance. These are apply-time protections; the saved-plan deletion gate also remains
+required. Retirement preparation must first apply explicit `DELETE` policies to the empty project
+and disabled release identity/provider, and `ABANDON` to logs and management custody folders.
+Removing the registration in a second reviewed plan then preserves those folders and their
+objects while revoking the module-owned access. The production caller permits this only for the
+audited obsolete JSON Keys shell; see the [retirement runbook](../../docs/runbooks/retire-json-keys-project.md).
 
 The foundation's native mocked tests exercise this module and its caller through the existing
 `validate-opentofu` check. No cloud credentials are needed. Mocked results establish configuration

@@ -149,9 +149,12 @@ only after resource creation has been explicitly authorized.
 and state/receipt folder grants; its
 [module inventory](../../../modules/workload-project/README.md#ownership) lists the resources.
 `google_compute_shared_vpc_host_project.production` enables the existing workload project as the
-network host only when the map is nonempty. `google_compute_shared_vpc_service_project.service`
-attaches each shell. Both have `prevent_destroy`; the host also has
-provider `PREVENT`. The existing budget adds each project's number. Shared VPC adds no network
+network host when the map is nonempty or `retire_json_keys_project` retains the existing host.
+`google_compute_shared_vpc_service_project.service` attaches each shell. The host retains both
+`prevent_destroy` and provider `PREVENT`; attachment deletion is enabled only by the validated
+retirement selection. The [retirement runbook](../../../docs/runbooks/retire-json-keys-project.md)
+requires preparation before removing the obsolete registration. The existing budget adds each
+registered project's number. Shared VPC adds no network
 appliance; traffic and later workloads retain their product usage charges. See the
 [host resource](https://registry.terraform.io/providers/hashicorp/google/8.2.0/docs/resources/compute_shared_vpc_host_project),
 [attachment resource](https://registry.terraform.io/providers/hashicorp/google/8.2.0/docs/resources/compute_shared_vpc_service_project),

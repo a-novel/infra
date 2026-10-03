@@ -2,10 +2,11 @@
 
 Service projects are opt-in project shells with separate release identities and private storage
 folders. Production still runs in the existing workload project, under the existing release identity.
-The reviewed `.envrc` selects only `json-keys → a-novel-json-keys-prod`; follow the
-[JSON Keys project-shell procedure](./onboard-json-keys-project.md) before publishing that selection.
-The project is permanent but initially synthetic-only. Runtime and repository-network activation
-remain disabled. Merging this configuration does not create the project or move a workload.
+The reviewed `.envrc` selects no service project and enables the bounded
+[obsolete JSON Keys retirement](./retire-json-keys-project.md). Complete its two reviewed stages
+before publishing the empty selection. Environment/trust-zone projects are the agreed direction;
+dedicated service projects require a separate justification. Runtime and repository-network
+activation remain disabled. Merging configuration does not move a workload or delete a project.
 
 ## Review the configuration
 
@@ -17,6 +18,8 @@ export INFRA_SERVICE_PROJECTS='{"json-keys":"agora-json-keys-test","authenticati
 ```
 
 Use one entry per independently operated service and environment, not per image, job, or revision.
+This compatibility path is not the default placement model for future services. Clear the retirement
+selection only through a reviewed successor configuration that preserves the existing Shared VPC host.
 Project IDs must differ from each other, management, and the existing workload project. A production
 service project requires the same organization/folder parent as the foundation. OpenTofu validates
 these constraints before apply.
