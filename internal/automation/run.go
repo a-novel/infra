@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -15,8 +16,8 @@ import (
 // without forwarding child stderr or accepting interactive input.
 func Run(ctx context.Context, args []string, getenv func(string) string, execute func(context.Context, io.Writer, string, ...string) error, stdout, stderr io.Writer) int {
 	mode := strings.Join(args, " ")
-	if mode != "assess-images dispatch" && mode != "assess-images verify" && mode != "refresh-deletion-gates" {
-		_, _ = fmt.Fprintln(stderr, "Usage: infra assess-images <dispatch|verify> | refresh-deletion-gates")
+	if !slices.Contains([]string{"assess-updates dispatch", "assess-images verify", "assess-versions verify", "refresh-deletion-gates"}, mode) {
+		_, _ = fmt.Fprintln(stderr, "Usage: infra assess-updates dispatch | assess-images verify | assess-versions verify | refresh-deletion-gates")
 		return 64
 	}
 	c := client{repo: getenv("GITHUB_REPOSITORY"), execute: execute}
@@ -46,20 +47,24 @@ func Run(ctx context.Context, args []string, getenv func(string) string, execute
 }
 
 func (c client) command(ctx context.Context, mode string, getenv func(string) string) (string, error) {
-	if mode == "assess-images verify" {
+	if mode == "assess-images verify" || mode == "assess-versions verify" {
 		number, _ := strconv.ParseInt(getenv("PULL_REQUEST"), 10, 64)
 		t := target{Number: number, Head: getenv("HEAD_SHA"), Base: getenv("BASE_SHA")}
 		if getenv("GITHUB_REF") != "refs/heads/master" || getenv("GITHUB_SHA") != t.Base {
-			return "", errors.New("image assessment must run from the exact master commit")
+			return "", errors.New("update assessment must run from the exact master commit")
 		}
-		ok, err := c.verifyImages(ctx, t)
+		verify, kind := c.verifyImages, "image-only"
+		if mode == "assess-versions verify" {
+			verify, kind = c.verifyVersions, "version-only"
+		}
+		ok, err := verify(ctx, t)
 		if err != nil {
 			return "", err
 		}
 		if !ok {
-			return "", errors.New("the PR is not a current, validated image-only Renovate update")
+			return "", fmt.Errorf("the PR is not a current, validated %s Renovate update", kind)
 		}
-		return "Verified the exact image-only Renovate update.", nil
+		return fmt.Sprintf("Verified the exact %s Renovate update.", kind), nil
 	}
 	file, err := os.Open(getenv("GITHUB_EVENT_PATH"))
 	if err != nil {
@@ -80,18 +85,18 @@ func (c client) command(ctx context.Context, mode string, getenv func(string) st
 		return "", errors.New("could not resolve the trusted checkout")
 	}
 	trusted := strings.TrimSpace(out.String())
-	if mode == "assess-images dispatch" {
+	if mode == "assess-updates dispatch" {
 		if getenv("GITHUB_EVENT_NAME") != "workflow_run" {
-			return "", errors.New("image assessment dispatch requires a workflow completion")
+			return "", errors.New("update assessment dispatch requires a workflow completion")
 		}
-		ids, err := c.dispatchImages(ctx, e, trusted)
+		ids, err := c.dispatchUpdates(ctx, e, trusted)
 		if err != nil {
 			return "", err
 		}
 		if len(ids) == 0 {
-			return "No image-only assessment needs requesting.", nil
+			return "No Renovate update assessment needs requesting.", nil
 		}
-		return fmt.Sprintf("Requested image-only assessment for PR #%d.", ids[0]), nil
+		return fmt.Sprintf("Requested a Renovate update assessment for PR #%d.", ids[0]), nil
 	}
 	lines, err := c.refreshGates(ctx, getenv("GITHUB_EVENT_NAME"), e, trusted)
 	if err != nil {

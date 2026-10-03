@@ -105,6 +105,36 @@ func manifest(tag string) string {
 	return "components:\n  example:\n    enabled: true\n    images:\n      rest:\n        repository: ghcr.io/a-novel/example/rest\n        tag: " + tag + "\n        digest: sha256:" + strings.Repeat("1", 64) + "\n"
 }
 
+func versionsTF(tofu, provider string) string {
+	return "terraform {\n  # renovate: datasource=github-releases depName=opentofu/opentofu\n  required_version = \"= " + tofu +
+		"\"\n\n  required_providers {\n    google = {\n      source  = \"hashicorp/google\"\n      version = \"" + provider + "\"\n    }\n  }\n}\n"
+}
+
+func lockFile(version string, hashes ...string) string {
+	value := "provider \"registry.opentofu.org/hashicorp/google\" {\n  version     = \"" + version + "\"\n  constraints = \"" + version + "\"\n  hashes = [\n"
+	for _, hash := range hashes {
+		value += "    \"h1:" + strings.Repeat(hash, 43) + "=\",\n    \"zh:" + strings.Repeat(hash, 64) + "\",\n"
+	}
+	return value + "  ]\n}\n"
+}
+
+// versionUpdate turns the fixture PR into a Renovate bump of OpenTofu and the Google provider in one root.
+func (f *fixture) versionUpdate() {
+	f.t.Helper()
+	var files []object
+	for _, file := range []struct{ path, before, after string }{
+		{".opentofu-version", "1.13.0\n", "1.13.1\n"},
+		{"bootstrap/versions.tf", versionsTF("1.13.0", "8.2.0"), versionsTF("1.13.1", "8.5.0")},
+		{"bootstrap/.terraform.lock.hcl", lockFile("8.2.0", "a", "b"), lockFile("8.5.0", "c", "d")},
+	} {
+		f.blob(base, file.path, file.before)
+		f.blob(head, file.path, file.after)
+		files = append(files, object{"filename": file.path, "status": "modified"})
+	}
+	f.pull["changed_files"] = len(files)
+	f.routes["/pulls/42/files?per_page=100"] = pages("", files)
+}
+
 func pages(key string, values []object) []any {
 	if key == "" {
 		return []any{[]object{}, values}
@@ -261,13 +291,76 @@ func TestImageAssessment(t *testing.T) {
 	}
 }
 
+func TestVersionAssessment(t *testing.T) {
+	t.Parallel()
+	versions := func(value string) func(*fixture) {
+		return func(f *fixture) { f.blob(head, "bootstrap/versions.tf", value) }
+	}
+	lock := func(value string) func(*fixture) {
+		return func(f *fixture) { f.blob(head, "bootstrap/.terraform.lock.hcl", value) }
+	}
+	files := func(entries ...object) func(*fixture) {
+		return func(f *fixture) {
+			f.pull["changed_files"] = len(entries)
+			f.routes["/pulls/42/files?per_page=100"] = pages("", entries)
+		}
+	}
+	modified := func(path string) object { return object{"filename": path, "status": "modified"} }
+	for name, tt := range map[string]struct {
+		mutate func(*fixture)
+		accept bool
+	}{
+		"OpenTofu and provider bump": {accept: true},
+		"lock hash count changes":    {mutate: lock(lockFile("8.5.0", "c", "d", "e")), accept: true},
+		"constraint range":           {mutate: versions(versionsTF("1.13.1", ">= 8.5.0, < 9.0.0")), accept: true},
+		"OpenTofu version only":      {mutate: files(modified(".opentofu-version")), accept: true},
+		"provider source":            {mutate: versions(strings.ReplaceAll(versionsTF("1.13.1", "8.5.0"), "hashicorp/google", "attacker/google"))},
+		"extra configuration":        {mutate: versions(strings.ReplaceAll(versionsTF("1.13.1", "8.5.0"), "  required_providers", "  experiments = [x]\n  required_providers"))},
+		"interpolated version":       {mutate: versions(versionsTF("1.13.1", "${var.version}"))},
+		"quoted version":             {mutate: versions(versionsTF("1.13.1", `8.5.0\" `))},
+		"new lock provider":          {mutate: lock(lockFile("8.5.0", "c", "d") + strings.ReplaceAll(lockFile("1.0.0", "e"), "hashicorp/google", "attacker/google"))},
+		"lock comment":               {mutate: lock("# unreviewed\n" + lockFile("8.5.0", "c", "d"))},
+		"non-release OpenTofu":       {mutate: func(f *fixture) { f.blob(head, ".opentofu-version", "latest\n") }},
+		"identical file":             {mutate: versions(versionsTF("1.13.0", "8.2.0"))},
+		"oversized file":             {mutate: versions(versionsTF("1.13.1", "8.5.0") + strings.Repeat("#", 65537))},
+		"other file":                 {mutate: files(modified(".opentofu-version"), modified("bootstrap/main.tf"))},
+		"added file":                 {mutate: files(object{"filename": "bootstrap/versions.tf", "status": "added"})},
+		"renamed file":               {mutate: files(object{"filename": "bootstrap/versions.tf", "status": "modified", "previous_filename": "versions.tf"})},
+		"incomplete file list":       {mutate: func(f *fixture) { f.pull["changed_files"] = 4 }},
+		"changed CI workflow":        {mutate: func(f *fixture) { f.blob(head, mainPath, "unreviewed workflow") }},
+		"human":                      {mutate: func(f *fixture) { f.pull["user"] = object{"login": "maintainer", "type": "User"} }},
+		"fork":                       {mutate: func(f *fixture) { f.pull["head"].(object)["repo"] = object{"full_name": "another/repo"} }},
+		"draft":                      {mutate: func(f *fixture) { f.pull["draft"] = true }},
+		"failed validation":          {mutate: func(f *fixture) { f.jobs[0]["conclusion"] = "failure" }},
+		"master moved":               {mutate: func(f *fixture) { f.routes["/git/ref/heads/master"] = object{"object": object{"sha": trusted}} }},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			f := newFixture(t)
+			f.versionUpdate()
+			if tt.mutate != nil {
+				tt.mutate(f)
+			}
+			code, output := f.run("assess-versions", "verify")
+			require.Equal(t, tt.accept, code == 0, output)
+			require.Empty(t, f.posts)
+		})
+	}
+}
+
 func TestAssessmentDispatch(t *testing.T) {
 	t.Parallel()
 	for name, tt := range map[string]struct {
-		mutate func(*fixture)
-		count  int
+		mutate    func(*fixture)
+		count     int
+		operation string
 	}{
-		"validated": {count: 1},
+		"validated":      {count: 1},
+		"version update": {mutate: func(f *fixture) { f.versionUpdate() }, count: 1, operation: "assess-version-update"},
+		"neither update kind": {mutate: func(f *fixture) {
+			f.versionUpdate()
+			f.blob(head, "bootstrap/versions.tf", "unreviewed configuration\n")
+		}},
 		"master completion": {mutate: func(f *fixture) {
 			trigger := maps.Clone(f.ci)
 			trigger["id"], trigger["event"], trigger["head_sha"], trigger["head_branch"], trigger["conclusion"] = 200, "push", base, "master", "success"
@@ -294,11 +387,15 @@ func TestAssessmentDispatch(t *testing.T) {
 			if tt.mutate != nil {
 				tt.mutate(f)
 			}
-			code, output := f.run("assess-images", "dispatch")
+			code, output := f.run("assess-updates", "dispatch")
 			require.Zero(t, code, output)
 			require.Len(t, f.posts, tt.count)
 			if tt.count == 1 {
-				require.Equal(t, "repos/a-novel/infra/actions/workflows/drift.yaml/dispatches --method POST -f ref=master -f inputs[operation]=assess-image-update -f inputs[pull_request]=42 -f inputs[head_sha]="+head+" -f inputs[base_sha]="+base, f.posts[0])
+				operation := tt.operation
+				if operation == "" {
+					operation = "assess-image-update"
+				}
+				require.Equal(t, "repos/a-novel/infra/actions/workflows/drift.yaml/dispatches --method POST -f ref=master -f inputs[operation]="+operation+" -f inputs[pull_request]=42 -f inputs[head_sha]="+head+" -f inputs[base_sha]="+base, f.posts[0])
 			}
 		})
 	}

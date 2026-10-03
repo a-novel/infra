@@ -442,7 +442,7 @@ func TestWorkflowBoundaries(t *testing.T) {
 
 	assessment := drift.Jobs["assess-resource-deletion"]
 	auth := stepIndex(t, assessment.Steps, "google-github-actions/auth@")
-	for _, command := range []string{"resolve-resource-deletion-assessment.sh", "infra assess-images verify"} {
+	for _, command := range []string{"resolve-resource-deletion-assessment.sh", "infra assess-images verify", "infra assess-versions verify"} {
 		index := stepIndex(t, assessment.Steps, command)
 		require.Less(t, index, auth)
 		require.Equal(t, "${{ github.token }}", assessment.Steps[index].Env["GH_TOKEN"])
@@ -466,7 +466,7 @@ func TestWorkflowBoundaries(t *testing.T) {
 	require.Contains(t, assessment.If, "inputs.operation == 'assess-pending-foundation'")
 	require.Contains(t, prepare.Run, "mode=assess-pending-foundation")
 	for _, command := range []string{"resolve-resource-deletion-assessment.sh", "setup-opentofu@"} {
-		require.Equal(t, "inputs.operation == 'assess-pull-request' || inputs.operation == 'assess-pending-foundation'", assessment.Steps[stepIndex(t, assessment.Steps, command)].If)
+		require.Equal(t, "inputs.operation == 'assess-pull-request' || inputs.operation == 'assess-pending-foundation' || inputs.operation == 'assess-version-update'", assessment.Steps[stepIndex(t, assessment.Steps, command)].If)
 	}
 	for _, name := range []string{"inspect", "health"} {
 		for _, step := range drift.Jobs[name].Steps {

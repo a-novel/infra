@@ -99,7 +99,7 @@ func main() {
 		code = submission.Run(ctx, os.Args[1:], os.Stdout, os.Stderr)
 	} else if len(os.Args) > 1 && os.Args[1] == "check-health" {
 		code = health.Run(ctx, os.Args[2:], quiet, nil, os.Stdout, os.Stderr)
-	} else if len(os.Args) > 1 && (os.Args[1] == "assess-images" || os.Args[1] == "refresh-deletion-gates") {
+	} else if len(os.Args) > 1 && slices.Contains([]string{"assess-updates", "assess-images", "assess-versions", "refresh-deletion-gates"}, os.Args[1]) {
 		code = automation.Run(ctx, os.Args[1:], os.Getenv, quiet, os.Stdout, os.Stderr)
 	} else if len(os.Args) > 1 && (os.Args[1] == "database" || os.Args[1] == "verify-env") {
 		syscall.Umask(0o077)

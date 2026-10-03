@@ -69,6 +69,10 @@ type workflow struct {
 	ID   int64
 	Path string
 }
+type changedFile struct {
+	Filename, Status string
+	PreviousFilename string `json:"previous_filename"`
+}
 type target struct {
 	Number     int64
 	Head, Base string

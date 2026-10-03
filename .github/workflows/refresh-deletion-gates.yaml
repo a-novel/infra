@@ -13,7 +13,7 @@ on: # zizmor: ignore[dangerous-triggers]
 permissions: {}
 
 jobs:
-  assess-images:
+  assess-updates:
     if: >-
       github.event_name == 'workflow_run' &&
       ((github.event.workflow_run.path == '.github/workflows/main.yaml' &&
@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     concurrency:
-      group: image-assessment-request
+      group: update-assessment-request
       cancel-in-progress: false
     permissions:
       actions: write
@@ -41,13 +41,13 @@ jobs:
       - name: Build reviewed infra tooling
         uses: $/.github/actions/setup-infra
 
-      - name: Request assessments for validated image updates
+      - name: Request assessments for validated Renovate updates
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          infra assess-images dispatch
+          infra assess-updates dispatch
 
   refresh:
     if: >-
