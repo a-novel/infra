@@ -22,6 +22,8 @@ type foundationOptions struct {
 	parent                                                          *projectParent
 	adopt, legacyBackupAccess                                       bool
 	retireJSONKeys                                                  bool
+	sharedVPC                                                       bool
+	publicProject                                                   string
 	databaseOperators, initializers                                 []string
 	serviceProjects                                                 map[string]string
 	repositoryServices                                              []string
@@ -97,6 +99,12 @@ func foundationFlags(args []string, getenv func(string) string) (foundationOptio
 		flags.BoolVar(&o.adopt, "adopt-existing-project", false, "Adopt the exact existing workload project")
 	}
 	if o.command == "configure" {
+		sharedVPC := getenv("INFRA_SHARED_VPC_ENABLED")
+		if sharedVPC != "" && sharedVPC != "true" && sharedVPC != "false" {
+			return o, errors.New("shared VPC selection must be true or false")
+		}
+		flags.BoolVar(&o.sharedVPC, "shared-vpc-enabled", sharedVPC == "true", "Retain the production Shared VPC host independently of service projects")
+		flags.StringVar(&o.publicProject, "public-project-id", getenv("INFRA_PUBLIC_PROJECT_ID"), "Optional public production project shell; empty selects none")
 		retirement := getenv("INFRA_RETIRE_JSON_KEYS_PROJECT")
 		if retirement != "" && retirement != "true" && retirement != "false" {
 			return o, errors.New("JSON Keys retirement must be true or false")
@@ -125,6 +133,11 @@ func foundationFlags(args []string, getenv func(string) string) (foundationOptio
 		}
 		if json.Unmarshal([]byte(repositoryServices), &o.repositoryServices) != nil || o.repositoryServices == nil {
 			return o, errors.New("repository services must be a JSON array; load the reviewed .envrc or pass --pgbackrest-repository-services")
+		}
+		if o.publicProject != "" && (!matches(`[a-z][a-z0-9-]{4,28}[a-z0-9]`, o.publicProject) ||
+			o.publicProject == getenv("INFRA_MANAGEMENT_PROJECT_ID") || o.publicProject == getenv("INFRA_WORKLOAD_PROJECT_ID") ||
+			!o.sharedVPC || o.retireJSONKeys || len(o.serviceProjects) != 0 || len(o.repositoryServices) != 0) {
+			return o, errors.New("public project requires a distinct valid ID, shared VPC and no dedicated-service or retirement selection")
 		}
 		if o.retireJSONKeys && (getenv("INFRA_MANAGEMENT_PROJECT_ID") != "a-novel-management-prod" ||
 			getenv("INFRA_WORKLOAD_PROJECT_ID") != "a-novel-production-prod" || len(o.repositoryServices) != 0 ||
@@ -278,6 +291,12 @@ func (f foundation) configure(ctx context.Context, o foundationOptions, getenv f
 	}
 	if o.retireJSONKeys {
 		config["retire_json_keys_project"] = true
+	}
+	if o.sharedVPC {
+		config["shared_vpc_enabled"] = true
+	}
+	if o.publicProject != "" {
+		config["public_project_id"] = o.publicProject
 	}
 	if o.parent.Type != "" {
 		config[o.parent.Type+"_id"] = o.parent.ID

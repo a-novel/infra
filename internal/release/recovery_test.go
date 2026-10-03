@@ -11,7 +11,7 @@ import (
 
 func TestCompilerRecovery(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"Release", "Foundation", "Retirement", "FoundationRetirement", "ServiceProjects", "FoundationServiceProjects", "ServiceProjectTarget", "InvalidServiceProjects", "InvalidServiceProjectID", "LegacyHost", "CustomQuotas", "SourceTarget", "ManagementTarget", "WrongSource", "WrongOutputProject", "MissingOutput", "BadAttempt", "ForeignImage", "DuplicateImage"} {
+	for _, name := range []string{"Release", "Foundation", "Retirement", "FoundationRetirement", "PublicProject", "FoundationPublicProject", "PublicProjectTarget", "InvalidPublicProject", "ServiceProjects", "FoundationServiceProjects", "ServiceProjectTarget", "InvalidServiceProjects", "InvalidServiceProjectID", "LegacyHost", "CustomQuotas", "SourceTarget", "ManagementTarget", "WrongSource", "WrongOutputProject", "MissingOutput", "BadAttempt", "ForeignImage", "DuplicateImage"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			fixture := setup(t)
@@ -33,6 +33,18 @@ func TestCompilerRecovery(t *testing.T) {
 			switch name {
 			case "Foundation":
 				files[6] = "foundation"
+			case "PublicProject", "FoundationPublicProject", "PublicProjectTarget", "InvalidPublicProject":
+				config["shared_vpc_enabled"] = true
+				config["public_project_id"] = "agora-public-test"
+				if name != "PublicProject" {
+					files[6] = "foundation"
+				}
+				if name == "PublicProjectTarget" {
+					files[3], invalid = "agora-public-test", true
+				}
+				if name == "InvalidPublicProject" {
+					config["public_project_id"], invalid = 123, true
+				}
 			case "Retirement", "FoundationRetirement":
 				config["retire_json_keys_project"] = true
 				if name == "FoundationRetirement" {
@@ -100,6 +112,8 @@ func TestCompilerRecovery(t *testing.T) {
 			require.Equal(t, true, foundation["recovery_mode"])
 			require.Equal(t, object{}, foundation["service_projects"])
 			require.NotContains(t, foundation, "retire_json_keys_project")
+			require.NotContains(t, foundation, "public_project_id")
+			require.NotContains(t, foundation, "shared_vpc_enabled")
 			if files[6] == "foundation" {
 				require.NoFileExists(t, filepath.Join(files[7], "active.tfvars.json"))
 				return

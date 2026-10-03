@@ -55,6 +55,7 @@ func RecoveryScopes(getenv func(string) string, bucket string) (map[string]strin
 		Projects   map[string]string `json:"service_recovery_projects"`
 		Management string            `json:"management_project_id"`
 		Workload   string            `json:"workload_project_id"`
+		Public     string            `json:"public_project_id"`
 		Legacy     bool              `json:"recovery_mode"`
 	}
 	if jsonv2.Unmarshal([]byte(getenv("FOUNDATION_CONFIG")), &registered) != nil {
@@ -67,7 +68,7 @@ func RecoveryScopes(getenv func(string) string, bucket string) (map[string]strin
 	scopes := map[string]string{}
 	for project, service := range registered.Projects {
 		if registered.Legacy || service != "json-keys" || !matches(`a-novel-recovery-[a-z0-9-]{1,13}[a-z0-9]`, project) ||
-			project == registered.Management || project == registered.Workload || services["services/"+project] != "" ||
+			project == registered.Management || project == registered.Workload || project == registered.Public || services["services/"+project] != "" ||
 			!slices.Contains(slices.Collect(maps.Values(services)), service) {
 			return nil, errors.New("invalid recovery destination")
 		}
@@ -108,12 +109,16 @@ func RecoveryScope(data []byte, getenv func(string) string, bucket string) (Reco
 	}
 	var registration struct {
 		Workload string            `json:"workload_project_id"`
+		Public   string            `json:"public_project_id"`
 		Projects map[string]string `json:"service_projects"`
 	}
 	if jsonv2.Unmarshal([]byte(getenv("FOUNDATION_CONFIG")), &registration) != nil {
 		return host, invalid
 	}
 	protected := []string{host.ManagementProject, registration.Workload}
+	if registration.Public != "" {
+		protected = append(protected, registration.Public)
+	}
 	for _, project := range registration.Projects {
 		protected = append(protected, project)
 	}
