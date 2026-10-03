@@ -45,6 +45,16 @@ cloud operations. There is no force-unlock, takeover, expiry or automatic apply 
 verifying recorded convergence and a completed original workflow attempt. Read-only
 assessment/drift refuses either service root while a guard is present, including before first state.
 
+Shared trust-zone prerequisites use the same path with a schema-2 intent binding
+`workloads/production/ZONE/PROJECT/SERVICE`. Their state/configuration is under
+`foundation/SCOPE/`, and completion under `SCOPE/production/operations/GENERATION.json` in the
+receipt bucket. Both zones of one service share
+`foundation/operations/production/SERVICE/operation.json` in the state bucket, covered by the
+existing foundation reader/writer grants. Read-only assessment inventories every registered
+prerequisite scope and blocks on held or orphaned guards. The existing logical-service inspect
+and finish commands resolve this common guard without selecting a current zone configuration.
+Database/repository hosts, jobs, rollout and other shared runtime operations remain blocked.
+
 ### Implemented: disposable native host preparation
 
 The disabled [native recovery preparation](../environments/service-recovery/README.md#guarded-host-preparation)
@@ -128,10 +138,12 @@ An approved read-only session can also use the trusted binary directly, with pro
 `FOUNDATION_CONFIG` registration and `MANAGEMENT_PROJECT_ID` already selected:
 
 ```text
-infra custody operation inspect <state-bucket> <registered-project> [guard-generation]
+infra custody operation inspect <state-bucket> <registered-operation-scope> [guard-generation]
 ```
 
-Omit the generation to inspect the live guard. After a lost removal acknowledgement, supply the
+The operation scope is the project ID for dedicated registrations or
+`workloads/production/SERVICE` for shared registrations. Omit the generation to inspect the live guard.
+After a lost removal acknowledgement, supply the
 guard generation acknowledged in the apply, native-release or rotation record; removed versions remain readable
 subject to the bucket's retention/lifecycle policies. If admission itself was not acknowledged, inspect the live guard
 without treating its presence as permission to adopt it. Do not substitute configuration from
@@ -277,8 +289,9 @@ Application compensation never restores an old database backup or reverses concu
 | Immutable release/request intents                                                                                                       | One-shot dispatch and later reconciliation | Another release ID can reserve different intents for the same service.           |
 
 The admission primitive is **one persistent guard object per service**, using the existing official
-Storage client. Its location is `services/PROJECT_ID/release/operation.json` in the state
-bucket, inside the service's existing release-state namespace. It is not a receipt, Terraform state
+Storage client. Dedicated registrations use `services/PROJECT_ID/release/operation.json`; shared
+prerequisites use `foundation/operations/production/SERVICE/operation.json` in the state
+bucket. It is not a receipt, Terraform state
 or renewable lease. No new database, queue or expiry worker is needed.
 
 Acquire with [GCS generation preconditions](https://docs.cloud.google.com/storage/docs/request-preconditions):

@@ -22,6 +22,7 @@ type applyIntent struct {
 	Root          string `json:"root"`
 	Project       string `json:"project_id"`
 	SourceProject string `json:"source_project,omitempty"`
+	Scope         string `json:"scope,omitempty"`
 	Service       string `json:"service"`
 	Region        string `json:"region"`
 	Commit        string `json:"commit"`
@@ -82,13 +83,16 @@ func (custody store) admit(args []string, inputs []byte, plan string, getenv fun
 		return nil, err
 	}
 	intent.SchemaVersion, intent.Root, intent.Commit, intent.PlanID = 1, args[0], args[1], args[2]
+	if args[0] == "service-foundation" && foundationScopePattern.MatchString(getenv("TOFU_STATE_SUFFIX")) {
+		intent.SchemaVersion, intent.Scope = 2, getenv("TOFU_STATE_SUFFIX")
+	}
 	intent.RunID, intent.RunAttempt = getenv("GITHUB_RUN_ID"), getenv("GITHUB_RUN_ATTEMPT")
 	intent.PlanSHA256, intent.InputsSHA256 = checksum(data), checksum(inputs)
 	client, err := storage.NewService(custody.ctx, options...)
 	if err != nil {
 		return nil, failure{70, "Service admission client unavailable; no apply attempted."}
 	}
-	name := "services/" + intent.guardProject() + "/release/operation.json"
+	name := intent.guardName()
 	if _, err := fmt.Fprintf(output, "Service guard: gs://%s/%s; reconcile this object after any interrupted apply.\n", custody.bucket, name); err != nil {
 		return nil, err
 	}
@@ -143,7 +147,7 @@ func (operation serviceOperation) finish(ctx context.Context, inputs []byte) err
 		return err
 	}
 	receipts := strings.TrimSuffix(operation.guard.Bucket, "-tofu-state") + "-deployment-receipts"
-	name = fmt.Sprintf("services/%s/production/operations/%d.json", intent.guardProject(), operation.guard.Generation)
+	name = intent.completionName(operation.guard.Generation)
 	if _, err := createObject(ctx, operation.client, receipts, name, encoded); err != nil {
 		return failure{70, "Apply completion evidence unconfirmed; service guard retained."}
 	}
@@ -163,6 +167,9 @@ func (intent applyIntent) configurationName() (string, error) {
 	}
 	switch intent.Root {
 	case "service-foundation":
+		if intent.Scope != "" {
+			return "foundation/" + intent.Scope + "/config/" + name, nil
+		}
 		return "foundation/services/" + intent.Project + "/config/" + name, nil
 	case "service-release":
 		return "services/" + intent.Project + "/release/config/" + name, nil
@@ -182,6 +189,28 @@ func (intent applyIntent) guardProject() string {
 		return intent.SourceProject
 	}
 	return intent.Project
+}
+
+func (intent applyIntent) operationScope() string {
+	if intent.Scope != "" {
+		return "workloads/production/" + intent.Service
+	}
+	return intent.guardProject()
+}
+
+func (intent applyIntent) guardName() string {
+	if intent.Scope != "" {
+		return "foundation/operations/production/" + intent.Service + "/operation.json"
+	}
+	return "services/" + intent.guardProject() + "/release/operation.json"
+}
+
+func (intent applyIntent) completionName(generation int64) string {
+	scope := intent.Scope
+	if scope == "" {
+		scope = "services/" + intent.guardProject()
+	}
+	return fmt.Sprintf("%s/production/operations/%d.json", scope, generation)
 }
 
 func (intent applyIntent) outcome() string {

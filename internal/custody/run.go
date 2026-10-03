@@ -33,9 +33,10 @@ var (
 	rootPattern         = regexp.MustCompile(`^(bootstrap|foundation|release|service-foundation|service-recovery)$`)
 	serviceScopePattern = regexp.MustCompile(`^services/[a-z][a-z0-9-]{4,28}[a-z0-9]$`)
 	// public remains readable for historical custody; registration admits only private/public-api.
-	releaseScopePattern = regexp.MustCompile(`^workloads/production/(private|public-api|public)/[a-z][a-z0-9-]{4,28}[a-z0-9]/(json-keys|authentication)$`)
-	sequencePattern     = regexp.MustCompile(`^[1-9][0-9]{0,19}-[1-9][0-9]{0,4}$`)
-	commitPattern       = regexp.MustCompile(`^[a-f0-9]{40}$`)
+	releaseScopePattern    = regexp.MustCompile(`^workloads/production/(private|public-api|public)/[a-z][a-z0-9-]{4,28}[a-z0-9]/(json-keys|authentication)$`)
+	foundationScopePattern = regexp.MustCompile(`^workloads/production/(private|public-api)/[a-z][a-z0-9-]{4,28}[a-z0-9]/(json-keys|authentication)$`)
+	sequencePattern        = regexp.MustCompile(`^[1-9][0-9]{0,19}-[1-9][0-9]{0,4}$`)
+	commitPattern          = regexp.MustCompile(`^[a-f0-9]{40}$`)
 )
 
 // Run handles private custody and read-only operation inspection. Exit 4 means a successfully

@@ -33,24 +33,28 @@ func (i inspector) services(ctx context.Context, mode, root string, result *verd
 		}
 		return i.getenv(key)
 	}
-	scopes, err := workflow.ServiceScopes(getenv, i.bucket)
+	scopes, err := workflow.ReleaseScopes(getenv, i.bucket)
 	if err != nil {
 		return failure{70, "Service registration does not match the protected management coordinates."}
 	}
-	releases, err := workflow.ReleaseScopes(getenv, i.bucket)
-	if err != nil {
-		return failure{70, "Release boundaries do not match the protected management coordinates."}
+	// A shared guard excludes both zones of the same service. Even an orphaned
+	// guard blocks assessment; registration removal cannot silently abandon it.
+	guards, err := i.execute(ctx, nil, "gcloud", "storage", "objects", "list", "gs://"+i.bucket+"/foundation/operations/production/**", "--format=value(name)")
+	if err != nil || strings.TrimSpace(string(guards)) != "" {
+		return failure{70, "Shared operation inventory is unreadable or held; reconcile it before assessment."}
 	}
 	if root != "service-release" {
 		// Admission belongs to the source service, including before foundation
 		// or disposable recovery state exists.
-		if _, err := i.serviceStates(ctx, "service-release", releases); err != nil {
+		if _, err := i.serviceStates(ctx, "service-release", scopes); err != nil {
 			return err
 		}
-	} else {
-		scopes = releases
 	}
 	check := workflow.FoundationInputs
+	checkAction := "check"
+	if root == "service-foundation" {
+		checkAction = "check-foundation"
+	}
 	if root == "service-recovery" {
 		scopes, err = workflow.RecoveryScopes(getenv, i.bucket)
 		if err != nil {
@@ -78,7 +82,7 @@ func (i inspector) services(ctx context.Context, mode, root string, result *verd
 			return err
 		}
 		file, code := i.config(ctx, root, scope)
-		if code != 0 || check([]string{"check", file, i.bucket, scope}, getenv, io.Discard, io.Discard) != 0 {
+		if code != 0 || check([]string{checkAction, file, i.bucket, scope}, getenv, io.Discard, io.Discard) != 0 {
 			return failure{70, "Service state lacks matching converged inputs."}
 		}
 		env := []string{"TOFU_STATE_SUFFIX=" + scope, "FOUNDATION_CONFIG=" + string(registration)}
@@ -90,7 +94,7 @@ func (i inspector) services(ctx context.Context, mode, root string, result *verd
 }
 
 func (i inspector) serviceStates(ctx context.Context, root string, scopes map[string]string) (map[string]bool, error) {
-	prefixes := []string{"foundation/services/"}
+	prefixes := []string{"foundation/services/", "foundation/workloads/"}
 	if root == "service-recovery" {
 		prefixes = []string{"foundation/recovery/services/"}
 	}
@@ -129,11 +133,15 @@ func (i inspector) serviceStates(ctx context.Context, root string, scopes map[st
 			}
 			scope, object := strings.TrimSuffix(prefix, "/release/"), strings.TrimPrefix(name, prefix)
 			if root != "service-release" {
-				parts := strings.SplitN(strings.TrimPrefix(strings.TrimPrefix(name, "foundation/"), "recovery/"), "/", 3)
-				if len(parts) != 3 {
+				length := 3
+				if prefix == "foundation/workloads/" {
+					length = 6
+				}
+				parts := strings.SplitN(strings.TrimPrefix(strings.TrimPrefix(name, "foundation/"), "recovery/"), "/", length)
+				if len(parts) != length {
 					return nil, failure{70, "Unexpected service state metadata."}
 				}
-				scope, object = strings.Join(parts[:2], "/"), parts[2]
+				scope, object = strings.Join(parts[:length-1], "/"), parts[length-1]
 			}
 			if scopes[scope] == "" {
 				return nil, failure{70, "Unregistered service state requires reconciliation."}

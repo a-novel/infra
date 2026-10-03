@@ -41,6 +41,10 @@ func (storage store) apply(args []string, getenv func(string) string, output io.
 	if service {
 		enabled := "SERVICE_FOUNDATIONS_ENABLED"
 		check := workflow.FoundationInputs
+		checkAction := "check"
+		if root == "service-foundation" {
+			checkAction = "check-foundation"
+		}
 		if root == "service-release" {
 			enabled = "SERVICE_JOB_BOOTSTRAP_ENABLED"
 		}
@@ -53,7 +57,7 @@ func (storage store) apply(args []string, getenv func(string) string, output io.
 		if getenv(enabled) != "true" {
 			return failure{77, "Service apply requires separate activation approval."}
 		}
-		if check([]string{"check", inputs, storage.bucket, suffix}, getenv, io.Discard, io.Discard) != 0 {
+		if check([]string{checkAction, inputs, storage.bucket, suffix}, getenv, io.Discard, io.Discard) != 0 {
 			return failure{65, "Service apply does not match protected registration."}
 		}
 		if commit != getenv("GITHUB_SHA") || getenv("GITHUB_REPOSITORY") != "a-novel/infra" {

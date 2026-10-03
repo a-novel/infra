@@ -10,7 +10,7 @@ import (
 )
 
 // FoundationInputs selects protected foundation configuration before authentication.
-// Check revalidates either service root's backend binding before initialization.
+// Check revalidates legacy runtime inputs; check-foundation also admits shared prerequisites.
 // Bind embeds the exact downloaded foundation bytes for job bootstrap.
 // These operations never read cloud state or print configuration values.
 func FoundationInputs(args []string, getenv func(string) string, stdout, stderr io.Writer) int {
@@ -68,12 +68,16 @@ func foundationInputs(args []string, getenv func(string) string, stdout io.Write
 	if args[0] == "bind" {
 		return bindFoundation(args[1:], getenv, stdout)
 	}
-	if args[0] == "check" {
+	if args[0] == "check" || args[0] == "check-foundation" {
 		data, err := os.ReadFile(args[1])
 		if err != nil {
 			return err
 		}
-		suffix, err := serviceFoundationScope(data, getenv, args[2])
+		selectScope := ServiceScope
+		if args[0] == "check-foundation" {
+			selectScope = FoundationScope
+		}
+		suffix, err := selectScope(data, getenv, args[2])
 		if err != nil || suffix != args[3] {
 			return invalid
 		}
@@ -152,7 +156,11 @@ func foundationInputs(args []string, getenv func(string) string, stdout io.Write
 		}
 		data = configs[service]
 		var err error
-		suffix, err = serviceFoundationScope(data, getenv, getenv("STATE_BUCKET"))
+		selectScope := ServiceScope
+		if root == "service-foundation" {
+			selectScope = FoundationScope
+		}
+		suffix, err = selectScope(data, getenv, getenv("STATE_BUCKET"))
 		if err != nil {
 			return err
 		}
@@ -202,7 +210,8 @@ func LegacyMaintenanceRecovery(args []string, getenv func(string) string) error 
 	return nil
 }
 
-// FinishOperationProject authorizes exact-generation cleanup from protected registration.
+// FinishOperationProject returns the historical project key or shared service key
+// for exact-generation cleanup from protected registration.
 // It needs no current bootstrap inputs or image/secret availability.
 func FinishOperationProject(args []string, getenv func(string) string) (string, error) {
 	invalid := errors.New("recorded operation cleanup requires a confirmed, registered service in the protected workflow")
@@ -213,13 +222,13 @@ func FinishOperationProject(args []string, getenv func(string) string) (string, 
 		getenv("GITHUB_WORKFLOW_REF") != "a-novel/infra/.github/workflows/foundation.yaml@refs/heads/master" {
 		return "", invalid
 	}
-	scopes, err := ServiceScopes(getenv, getenv("STATE_BUCKET"))
+	scopes, err := OperationScopes(getenv, getenv("STATE_BUCKET"))
 	if err != nil {
 		return "", invalid
 	}
 	for scope, service := range scopes {
 		if service == args[0] {
-			return strings.TrimPrefix(scope, "services/"), nil
+			return scope, nil
 		}
 	}
 	return "", invalid
@@ -252,7 +261,7 @@ func serviceFoundationScope(data []byte, getenv func(string) string, bucket stri
 	if json.Unmarshal(data, &fields) != nil || json.Unmarshal([]byte(getenv("FOUNDATION_CONFIG")), &registration) != nil {
 		return "", invalid
 	}
-	// Shared prerequisites have no enrolled state owner or operation guard yet.
+	// Legacy runtime consumers must not select shared prerequisite state.
 	if zone, exists := fields["zone"]; exists && string(zone) != "null" {
 		return "", invalid
 	}
