@@ -32,11 +32,11 @@ resource "google_storage_bucket_iam_member" "artifacts" {
   member = "serviceAccount:${local.workers[each.value.account]}"
 }
 
-# The parent receipt folder remains owned by workload-project. Readers here cannot
+# The parent receipt folder remains owned by the release boundary. Readers here cannot
 # read its sibling intents/receipts or write source, even in the management project.
 resource "google_storage_managed_folder" "source" {
   bucket          = var.receipt_bucket
-  name            = "services/${var.project_id}/production/sources/"
+  name            = local.source_folder
   force_destroy   = false
   deletion_policy = "PREVENT"
 

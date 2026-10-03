@@ -1,9 +1,9 @@
 # Cloud Run rollout boundary (inactive pilot)
 
 This module declares one Cloud Deploy delivery pipeline, its Cloud Run target and probe, execution
-identities, private artifact storage, and native operations alerts for one service project.
-The inactive [service foundation root](../../environments/service-foundation) composes it after
-verifier promotion. **No live workflow selects that root. The pipeline is suspended in code**, not behind an input
+identities, private artifact storage, and native operations alerts for one API.
+The [service foundation root](../../environments/service-foundation) composes it after
+verifier promotion. **Shared runtime enrollment is blocked and the pipeline is suspended in code**, not behind an input
 switch. It cannot deploy an API until a separately reviewed activation change completes the gates
 below. The existing production release path remains the only active writer.
 
@@ -45,24 +45,28 @@ The [first deployment can skip the canary](https://docs.cloud.google.com/deploy/
 Bootstrap therefore needs separate approval and evidence; this configuration alone is not a
 zero-traffic first-launch guarantee. Routine submission must require a known compatible predecessor.
 
-`RENDER`/`DEPLOY` uses the module-owned `rollout-deploy` account, `VERIFY` uses `rollout-verify`,
-and the secret-free probe job uses `rollout-probe`. None falls back to the default Compute account.
+With dedicated scope, `RENDER`/`DEPLOY` uses `rollout-deploy`, `VERIFY` uses `rollout-verify`,
+and the secret-free probe uses `rollout-probe`. Shared scope uses `deploy-SERVICE-ZONE`,
+`verify-SERVICE-ZONE` and `probe-SERVICE-ZONE`, with `api` as the short account suffix for
+`public-api`. None falls back to the default Compute account.
 Executions have a ten-minute limit and a service-specific artifact prefix. The module declares no
 APIs, application service, application runtime identity, release, or production workflow.
 
 ## Execution authority and storage
 
-The existing [service release identity](../workload-project/README.md),
-`infra-release@PROJECT.iam.gserviceaccount.com`, submits releases. `runtime_service_account` is the
-separately owned application identity. This module adds only the following grants:
+The existing [release boundary](../release-boundary/README.md) owns the submitter:
+`infra-release@PROJECT.iam.gserviceaccount.com` for dedicated scope, or
+`infra-SERVICE-ZONE@PROJECT.iam.gserviceaccount.com` for shared scope (again shortening `public-api`
+to `api`). `runtime_service_account` is the separately owned application identity.
+This module adds only the following grants:
 
-| Identity                          | Granted authority                                                                                                                                                                                                                           |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Submitter                         | Create/read native releases and rollouts, inspect their records, attach deploy/verify accounts. No approve, advance, retry, ignore, cancel, rollback or pipeline-update permission.                                                         |
-| Deploy                            | Render and update API specifications/traffic in this service project; attach only the selected app runtime. Read app images and source, create/read artifacts, write execution logs. No job execution or IAM changes.                       |
-| Verify                            | Read Cloud Deploy and Run evidence; execute **the exact probe job** with overrides and wait for its operation. Read verifier images, create/read artifacts and write logs. No API/job updates, migration execution or direct secret access. |
-| Probe                             | `run.routes.invoke` in this service project. No job execution, database, secret or storage grants.                                                                                                                                          |
-| Google Cloud Deploy service agent | Read the selected service's source folder in the management bucket. Its identity and Google-managed project role belong to `workload-project`.                                                                                              |
+| Identity                          | Granted authority                                                                                                                                                                                                                                    |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Submitter                         | Create/read releases and rollouts on the exact pipeline; inspect its target and API; attach deploy/verify accounts. No approve, advance, retry, ignore, cancel, rollback or pipeline-update permission.                                              |
+| Deploy                            | Render and update only the selected existing API specification/traffic; attach only its app runtime. Read app images and source, create/read artifacts, write execution logs. No service creation, deletion, job execution or IAM changes.           |
+| Verify                            | Read the selected pipeline and API evidence; execute **the exact probe job** with overrides and wait for its operation. Read verifier images, create/read artifacts and write logs. No API/job updates, migration execution or direct secret access. |
+| Probe                             | `run.routes.invoke` on only the selected API. No project-level binding, job execution, database, secret or storage grants.                                                                                                                           |
+| Google Cloud Deploy service agent | Read the selected service's source folder in the management bucket. Its identity and Google-managed project role belong to `workload-project`.                                                                                                       |
 
 `foundation_service_account` receives Service Account User on the module's three exact execution
 identities before target/probe creation. The owning root supplies its protected executor; its project
@@ -74,21 +78,40 @@ Small custom permission sets keep those responsibilities separate. Standard serv
 repository-reader and storage roles are bound to the exact resources where they fit. The runner's
 storage permissions are bucket-scoped, not granted through a project-wide runner role.
 
-API deployment and invocation are **project-wide**, deliberately relying on one workload per project.
-They are not narrowed to a service name by a purported Cloud Run `resource.name` IAM condition.
+Native [Cloud Run resource IAM](https://docs.cloud.google.com/run/docs/securing/managing-access)
+and [Cloud Deploy pipeline/target IAM](https://docs.cloud.google.com/deploy/docs/securing/iam)
+enforce the selected resources without a purported Cloud Run `resource.name` condition.
+Only `clouddeploy.config.get`, the required `clouddeploy.operations.get` / `run.operations.get`,
+and worker `logging.logEntries.create` remain project-bound. Operation/configuration metadata is
+therefore not isolated between services; these grants cannot create or modify peer workloads.
 The reviewed manifest and verifier additionally enforce the expected service. The deployer can run
 code as the application identity: `actAs` therefore gives indirect access to that application's
 permissions. Source review, the protected target and image provenance remain essential.
 
-`artifact_bucket` names a new private bucket owned by this module in the service project. It uses
+The API must already exist before its resource IAM is provisioned. Routine workers no longer have
+`run.services.create`: [creation is authorized on the parent project/location](https://docs.cloud.google.com/run/docs/reference/rest/v2/projects.locations.services/create).
+Protected bootstrap or ownership transfer must establish the first service and reconcile its writer
+before rollout enrollment. This module never creates a placeholder API or becomes a second service-specification writer.
+
+Optional `scope = { service = "json-keys", zone = "private" }` selects shared naming and custody.
+The accepted services are `json-keys` / `authentication`; API zones are `private` / `public-api`, never
+the platform `public` zone. The exact API name, application identity, artifact bucket and verifier
+repository must match that scope. Custom role IDs also include service/zone so one root cannot
+overwrite another service's role definition. A null scope retains the dedicated pilot's names and paths,
+but receives the same tightened resource-level grants and first-deployment requirement.
+
+`artifact_bucket` names a new private bucket owned by this module in the selected project. Shared scope
+requires `PROJECT-SERVICE-ZONE-rollout`, shortening `public-api` to `api`. It uses
 uniform access, public-access prevention, versioning and seven-day soft delete. Execution workers
 may create/read objects, not overwrite/delete them. There is no age-based expiry: retained releases
 must keep their render/rollout artifacts until an explicitly reviewed retirement.
 
 `receipt_bucket` is the existing management bucket. The module owns only its nested
-`services/PROJECT/production/sources/` managed folder, with read-only access for render/deploy and
-the selected project's Cloud Deploy agent. The parent and the submitter's create/read access remain
-owned by `workload-project`; workers get no sibling intent/receipt access. Bucket, folder and identity
+`services/PROJECT/production/sources/` managed folder in dedicated scope, or
+`workloads/production/ZONE/PROJECT/SERVICE/production/sources/` in shared scope. Render/deploy and
+the selected project's Cloud Deploy agent receive read-only access. That Google-managed agent is
+project-wide, not a distinct agent per service. The parent and submitter access remain owned by
+the release boundary; workers get no sibling intent/receipt access. Bucket, folder and identity
 deletion are protected. These additive grants do not remove inherited permissions: inspect effective
 IAM and test denied peer, secret, receipt-write and non-probe job access before activation.
 
@@ -101,6 +124,11 @@ The [artifact publication workflow](../../docs/runbooks/publish-rollout-verifier
 the image; publication requires a separate opt-in and approval. Verified provenance and promotion
 into the selected project's registry remain activation prerequisites. A dummy successful container
 would defeat the gate.
+
+The current verifier supports the dedicated JSON Keys private gRPC pilot only. The shared permission
+definitions do not expand that executable contract. Service-specific image namespaces, other API
+protocols and shared submission inputs must be reviewed before enrollment; the shared-root guard
+and suspended pipeline remain in place meanwhile.
 
 The verifier must:
 
@@ -159,7 +187,8 @@ and completion-evidence implementation; this table is a contract, not live proof
    routing, effective IAM, platform-log routing and notification delivery. Target approval,
    advancement/recovery and migration authority remain separate from these execution grants.
 3. Review saved source/destination state, inventory, and a reversible one-writer handoff under #187.
-   These are new service projects: state import alone cannot move existing cross-project workloads.
+   The agreed private zone reuses the existing workload project and database hosts. Public API/platform
+   moves cross projects; state import alone cannot move those workloads.
    Preserve retained backups and receipts; leave unrelated Renovate automation unchanged.
 4. Prove same-service serialization across migrations, configuration changes, release submission,
    phase advancement, and receipts. Cloud Deploy's rollout records are not a lock for external jobs.

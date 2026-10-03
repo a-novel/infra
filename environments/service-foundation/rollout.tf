@@ -14,7 +14,7 @@ variable "rollout" {
 
   validation {
     condition = var.rollout == null ? true : can(regex(
-      "^${var.region}-docker\\.pkg\\.dev/${var.project_id}/agora-tooling/[a-z0-9/_-]+@sha256:[a-f0-9]{64}$",
+      "^${var.region}-docker\\.pkg\\.dev/${var.project_id}/${var.zone == null ? "agora-tooling" : "agora-${var.service}-${local.zone_suffix}-tooling"}/[a-z0-9/_-]+@sha256:[a-f0-9]{64}$",
       var.rollout.verification_image,
     ))
     error_message = "Use the reviewed verifier digest in this service's separate tooling repository."
@@ -26,12 +26,13 @@ module "rollout" {
   for_each = var.rollout == null ? {} : { api = var.rollout }
 
   project_id                 = var.project_id
+  scope                      = var.zone == null ? null : { service = var.service, zone = var.zone }
   foundation_service_account = local.foundation_service_account
   region                     = var.region
-  name                       = "agora-json-keys-grpc"
+  name                       = "agora-${var.service}-${var.zone == "public-api" ? "rest" : "grpc"}"
   runtime_service_account    = local.runtime.service_account
   notification_channels      = local.runtime.notification_channels
-  artifact_bucket            = "${var.project_id}-rollout-artifacts"
+  artifact_bucket            = var.zone == null ? "${var.project_id}-rollout-artifacts" : "${var.project_id}-${var.service}-${local.zone_suffix}-rollout"
   receipt_bucket             = "${trimsuffix(var.state_bucket, "-tofu-state")}-deployment-receipts"
   verification_image         = each.value.verification_image
   probe = {
