@@ -11,11 +11,11 @@ variable "foundation" {
 
   validation {
     condition = (
-      var.foundation.schema_version == 1 &&
+      var.foundation.schema_version == local.coordinates_version &&
       var.foundation.bucket == var.state_bucket &&
-      var.foundation.object == "foundation/coordinates/${var.project_id}/${var.foundation.sha256}.json"
+      var.foundation.object == "foundation/coordinates/${local.coordinate_scope}/${var.foundation.sha256}.json"
     )
-    error_message = "Pin a version-1 coordinate reference in this service's foundation folder and management bucket."
+    error_message = "Pin the expected coordinate schema in this service's exact foundation folder and management bucket."
   }
   validation {
     condition = (
@@ -38,17 +38,30 @@ variable "foundation_json" {
   validation {
     condition = try(alltrue([for contract in [
       jsondecode(var.foundation_json), jsondecode(var.foundation_json).runtime, jsondecode(var.foundation_json).database,
-    ] : contract.schema_version == 1]), false)
-    error_message = "Supply version-1 JSON coordinates with both runtime and database contracts; an absent database is not deployable."
+    ] : contract.schema_version == local.coordinates_version]), false)
+    error_message = "Supply the expected schema for both runtime and database contracts; an absent database is not deployable."
   }
   validation {
     condition = try(
       jsondecode(var.foundation_json).runtime.project_id == var.project_id &&
       jsondecode(var.foundation_json).runtime.service == var.service &&
       jsondecode(var.foundation_json).runtime.region == var.region &&
-      jsondecode(var.foundation_json).runtime.service_account == "agora-${var.service}@${var.project_id}.iam.gserviceaccount.com",
+      jsondecode(var.foundation_json).runtime.service_account == "agora-${var.service}${var.zone == null ? "" : "-private"}@${var.project_id}.iam.gserviceaccount.com",
     false)
     error_message = "The runtime must match the independently approved project, service, region and application identity."
+  }
+  validation {
+    condition = var.zone == null ? true : try(
+      jsondecode(var.foundation_json).scope == local.coordinate_scope &&
+      jsondecode(var.foundation_json).runtime.zone == "private" &&
+      jsondecode(var.foundation_json).runtime.repositories["agora-production"] == local.production_repository &&
+      jsondecode(var.foundation_json).database_source.schema_version == 2 &&
+      jsondecode(var.foundation_json).database_source.bucket == var.state_bucket &&
+      jsondecode(var.foundation_json).database_source.object == "foundation/database-coordinates/production/${var.project_id}/${var.service}/${jsondecode(var.foundation_json).database_source.sha256}.json" &&
+      can(regex("^[1-9][0-9]*$", jsondecode(var.foundation_json).database_source.generation)) &&
+      can(regex("^[a-f0-9]{64}$", jsondecode(var.foundation_json).database_source.sha256)),
+    false)
+    error_message = "Shared jobs require their private service scope, registry and exact existing-database source reference."
   }
   validation {
     condition = try(
@@ -69,5 +82,8 @@ variable "foundation_json" {
 }
 
 locals {
-  coordinates = try(jsondecode(var.foundation_json), null)
+  coordinates           = try(jsondecode(var.foundation_json), null)
+  coordinates_version   = var.zone == null ? 1 : 2
+  coordinate_scope      = var.zone == null ? var.project_id : "workloads/production/private/${var.project_id}/${var.service}"
+  production_repository = "${var.region}-docker.pkg.dev/${var.project_id}/${var.zone == null ? "agora-production" : "agora-${var.service}-private-production"}"
 }

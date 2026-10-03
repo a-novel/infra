@@ -14,6 +14,9 @@ func FoundationScope(data []byte, getenv func(string) string, bucket string) (st
 		return "", errors.New("invalid foundation inputs")
 	}
 	if zone, exists := fields["zone"]; !exists || string(zone) == "null" {
+		if handoff, exists := fields["database_handoff"]; exists && string(handoff) != "null" {
+			return "", errors.New("database handoff requires a shared foundation scope")
+		}
 		return ServiceScope(data, getenv, bucket)
 	}
 	invalid := errors.New("shared foundation inputs do not match protected prerequisites")
@@ -42,6 +45,17 @@ func FoundationScope(data []byte, getenv func(string) string, bucket string) (st
 	}
 	if value, exists := fields["manage_job_access"]; exists && string(value) != "false" {
 		return "", invalid
+	}
+	if value, exists := fields["database_handoff"]; exists && string(value) != "null" {
+		var handoff struct {
+			PrivateProjectID string `json:"private_project_id"`
+		}
+		var privateProject string
+		if json.Unmarshal(value, &handoff) != nil ||
+			json.Unmarshal(registration["workload_project_id"], &privateProject) != nil ||
+			privateProject == "" || handoff.PrivateProjectID != privateProject {
+			return "", invalid
+		}
 	}
 	return scope, nil
 }

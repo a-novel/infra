@@ -11,8 +11,8 @@ variable "rollout" {
   default = null
 
   validation {
-    condition     = var.rollout == null ? true : var.service == "json-keys"
-    error_message = "Only the JSON Keys API pilot is supported; Authentication remains jobs-only."
+    condition     = var.rollout == null ? true : var.service == "json-keys" && var.zone == null
+    error_message = "Only the dedicated JSON Keys API pilot is supported; shared-zone rollout remains disabled."
   }
   validation {
     condition = var.rollout == null ? true : (

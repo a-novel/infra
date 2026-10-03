@@ -1,8 +1,8 @@
 run "shared_release_disabled_by_default" {
   command = plan
   assert {
-    condition     = length(module.service_release) == 0 && output.service_release_boundaries == null
-    error_message = "Existing inputs must not create or publish shared release identities."
+    condition     = length(module.service_release) == 0 && output.service_release_boundaries == null && length(google_storage_bucket_object.database_coordinates) == 0 && length(output.database_coordinates) == 0
+    error_message = "Existing inputs must not create shared identities or database publications."
   }
 }
 
@@ -12,6 +12,28 @@ run "shared_release_service_and_zone_coordinates" {
     shared_vpc_enabled    = true
     public_api_project_id = "agora-api-test"
     service_release_zones = { json-keys = ["private", "public-api"], authentication = ["private", "public-api"] }
+  }
+  assert {
+    condition = (
+      toset(keys(google_storage_bucket_object.database_coordinates)) == toset(["json-keys", "authentication"]) &&
+      alltrue([for service, document in google_storage_bucket_object.database_coordinates :
+        document.bucket == "agora-management-test-123456789012-tofu-state" &&
+        document.deletion_policy == "ABANDON" && document.cache_control == "private, no-store" &&
+        output.database_coordinates[service].schema_version == 2
+      ]) &&
+      alltrue([for service, coordinates in local.shared_database_coordinates :
+        toset(keys(coordinates)) == toset(["schema_version", "service", "project_id", "zone", "private_ip", "port"]) &&
+        coordinates.schema_version == 2 && coordinates.service == service &&
+        coordinates.project_id == var.workload_project_id && coordinates.zone == var.database_zone &&
+        coordinates.port == (service == "json-keys" ? 5432 : 5433)
+      ]) &&
+      toset(keys(google_compute_disk.database)) == toset(["json_keys", "authentication"]) &&
+      toset(keys(google_compute_instance_group_manager.database)) == toset(["json_keys", "authentication"]) &&
+      alltrue([for service, disk in google_compute_disk.database :
+        disk.name == "agora-data-${replace(service, "_", "-")}" && disk.project == var.workload_project_id
+      ])
+    )
+    error_message = "Publish one minimal retained endpoint per service without moving or multiplying database owners."
   }
   assert {
     condition = (

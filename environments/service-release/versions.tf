@@ -4,7 +4,7 @@ terraform {
 
   backend "gcs" {
     bucket = var.state_bucket
-    prefix = "services/${var.project_id}/release/"
+    prefix = var.zone == null ? "services/${var.project_id}/release/" : "workloads/production/private/${var.project_id}/${var.service}/release/"
   }
 
   required_providers {
