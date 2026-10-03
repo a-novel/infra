@@ -149,10 +149,10 @@ either `services/` alone or the exact pair `workloads/production/private/` and `
 Its project/name and every existing Delete rule must remain unchanged, and all other protections still
 apply. [Cloud Storage intersects these conditions](https://docs.cloud.google.com/storage/docs/lifecycle#lifecycle_configuration),
 excluding state, locks and configuration. Missing, broader or unknown selectors are rejected.
-Bootstrap declares the [native service-prefix rule](../bootstrap/README.md#plan-artifact-expiration).
-The shared-zone rule is permitted by policy but not yet declared. It must be added separately, preserving
-the service-prefix rule. Protected apply and live verification remain separate human-approved operations before the
-service-job writer can be activated. Trusted assessments execute policy from `master`.
+Bootstrap declares [separate native rules](../bootstrap/README.md#plan-artifact-expiration) for the
+dedicated-service and shared-zone prefixes. Protected apply and live verification remain separate
+human-approved operations before the service-job writer can be activated. Trusted assessments execute
+policy from `master`.
 
 ## Protected workflow internals
 

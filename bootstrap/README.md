@@ -45,8 +45,9 @@ behavior a maintainer must understand; ordinary OpenTofu language behavior is no
 ## Plan artifact expiration
 
 The state bucket declares two-day expiration under `bootstrap/plans/`, `foundation/plans/` and
-`release/plans/`, and for objects under `services/` ending in `/plan.tfplan` or `/plan.metadata.json`.
-The service prefix and suffix must both match; state, locks, private inputs and foundation coordinates
+`release/plans/`. Separate rules cover plan artifacts under `services/` and under the exact pair
+`workloads/production/private/` and `workloads/production/public/`. Both rules require the suffix
+`/plan.tfplan` or `/plan.metadata.json`; state, locks, private inputs and foundation coordinates
 are excluded. Their existing version-retention rule remains unchanged.
 
 [Cloud Storage lifecycle](https://docs.cloud.google.com/storage/docs/lifecycle) acts asynchronously.
@@ -54,11 +55,11 @@ In this versioned bucket it first makes a live plan noncurrent, then deletes tha
 soft delete still permits recovery. Custody metadata independently enforces the exact 24-hour apply
 deadline, including for restored objects. Storage cleanup never authorizes applying a plan.
 
-Declaring the rule does not install it. Before activating the service-job writer, an operator must
+Declaring these rules does not install them. Before activating the service-job writer, an operator must
 use the [protected bootstrap plan/apply](../ops/README.md#protected-workflow-operations) and verify
 the bucket's lifecycle selectors, versioning and soft delete through the
 [storage inspection](../docs/runbooks/bootstrap-management-plane.md#9-verify-resources).
-Removing or broadening this rule requires another policy review.
+Removing or broadening either rule requires another policy review.
 
 ## Automation trust boundaries
 
