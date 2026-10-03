@@ -252,6 +252,10 @@ func serviceFoundationScope(data []byte, getenv func(string) string, bucket stri
 	if json.Unmarshal(data, &fields) != nil || json.Unmarshal([]byte(getenv("FOUNDATION_CONFIG")), &registration) != nil {
 		return "", invalid
 	}
+	// Shared prerequisites have no enrolled state owner or operation guard yet.
+	if zone, exists := fields["zone"]; exists && string(zone) != "null" {
+		return "", invalid
+	}
 	// OpenTofu variable names are case-sensitive, unlike JSON struct decoding.
 	for name, target := range map[string]*string{
 		"project_id": &selected.Project, "management_project_id": &selected.Management,

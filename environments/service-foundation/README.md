@@ -11,6 +11,38 @@ plan inputs and holds service admission through convergence and completion publi
 also stops read-only assessment; standalone service configuration publication is refused.
 Production and retained recovery evidence remain unchanged.
 
+## Shared trust-zone prerequisites
+
+An optional `zone` selects `private` or `public-api` for cloud-blind preparation. Both services
+can share each project: identity and repository names include service and zone, and coordinate
+folders include the full production scope. The `public` platform zone is rejected.
+
+| Profile    | JSON Keys runtime secret grants            | Authentication runtime secret grants  |
+| ---------- | ------------------------------------------ | ------------------------------------- |
+| Private    | Service PostgreSQL password and master key | Service PostgreSQL and SMTP passwords |
+| Public API | Service PostgreSQL password only           | Service PostgreSQL and SMTP passwords |
+
+These grants preserve the existing API/ORM contracts. They do not prove database-role restrictions
+or remove inherited IAM; verify both before activation. Shared profiles grant no job-secret metadata
+access and reject database/repository hosts, rollout and job-access opt-ins until ownership is
+reconciled. Existing hosts and backups stay with their current owner.
+
+Shared runtime accounts use `agora-SERVICE-private` or `agora-SERVICE-api`. Each owns separate
+`agora-SERVICE-SUFFIX-production` and `agora-SERVICE-SUFFIX-tooling` repositories. The matching
+`infra-SERVICE-SUFFIX` release identity receives Writer only on the application repository; tooling
+publication remains protected. The API suffix keeps Authentication account IDs within Google's limit.
+
+Schema-2 runtime coordinates add `zone`; the published envelope also binds
+`scope = workloads/production/ZONE/PROJECT/SERVICE`. Its retained, hash-addressed object lives under
+`foundation/coordinates/workloads/production/ZONE/PROJECT/SERVICE/`, readable by only that scope's
+release identity plus existing protected parent readers. No state is shared with runtime callers.
+
+The protected workflow still rejects every non-null `zone` before cloud authentication, including
+one combined with legacy project registration. These profiles are not enrolled writers: shared
+state, one guard per logical service, approved coordinate consumers and effective access checks
+must be implemented before provisioning or migration. No new host or runtime is selected here.
+The remaining sections describe the unchanged dedicated-project path (`zone = null`).
+
 ## Owners and state
 
 | Owner                                                                    | Resources                                                                                                                              |

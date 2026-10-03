@@ -681,8 +681,9 @@ under the production prefix.
 
 Before activating a service-job writer, verify the state bucket's
 [plan artifact rules](../../bootstrap/README.md#plan-artifact-expiration): one age-two-day Delete rule
-for `services/` and one for exactly `workloads/production/private/` and
-`workloads/production/public/`. Each must require `/plan.tfplan` or `/plan.metadata.json` and cover
+for `services/`, one for exactly `workloads/production/private/` and
+`workloads/production/public/`, and one for exactly `workloads/production/public-api/`.
+Each must require `/plan.tfplan` or `/plan.metadata.json` and cover
 both live and noncurrent versions. Preserve the core plan-prefix rule, the 90-day/50-newer-version
 rule, versioning and seven-day soft delete. Stop activation if any selector or protection differs;
 a merged declaration alone is not live verification.

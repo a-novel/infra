@@ -1,6 +1,6 @@
 locals {
-  runtime = {
-    schema_version  = 1
+  runtime = merge({
+    schema_version  = local.coordinates_version
     project_id      = var.project_id
     service         = var.service
     region          = var.region
@@ -10,7 +10,7 @@ locals {
     repositories = { for name, repository in google_artifact_registry_repository.images : name =>
       "${repository.location}-docker.pkg.dev/${repository.project}/${repository.repository_id}"
     }
-  }
+  }, var.zone == null ? {} : { zone = var.zone })
 }
 
 output "runtime" {

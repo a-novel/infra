@@ -10,13 +10,24 @@ variable "state_bucket" {
 }
 
 variable "project_id" {
-  description = "Existing project dedicated to this production service. Apply workload-project prerequisites first."
+  description = "Existing production project authorized for this service and optional trust zone."
   type        = string
   nullable    = false
 
   validation {
     condition     = can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", var.project_id))
     error_message = "Use a valid 6-30 character Google Cloud project ID."
+  }
+}
+
+variable "zone" {
+  description = "Shared production trust zone for prerequisites only; null preserves the dedicated-project contract."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.zone == null ? true : contains(["private", "public-api"], var.zone)
+    error_message = "Select private or public-api; platforms cannot use this backend foundation."
   }
 }
 
