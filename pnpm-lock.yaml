@@ -176,8 +176,8 @@ importers:
         specifier: 3.9.9
         version: 3.9.9
       renovate:
-        specifier: 44.121.3
-        version: 44.121.3(supports-color@7.2.0)(typanion@3.14.0)
+        specifier: 44.124.2
+        version: 44.124.2(supports-color@7.2.0)(typanion@3.14.0)
 
 packages:
 
@@ -2013,11 +2013,6 @@ packages:
     resolution: {integrity: sha512-qcJu88Q2IWqJsDD529JKMdwGm/dvInW4HvQnRwiH9JtihJvzGOscDtHE3x1pBKeUOTysQ8kVmLnJ2kJu7yhcGA==}
     engines: {node: '>=12'}
 
-  prettier@3.9.8:
-    resolution: {integrity: sha512-WRFq3Wn3WId7LLROfMLdH7xaFr2jR62wU8nLO6rQUOLOxNZUviyJQs1M0iIhLexSFy+L+w0ch66wtoO2jRjG0A==}
-    engines: {node: '>=14'}
-    hasBin: true
-
   prettier@3.9.9:
     resolution: {integrity: sha512-Z/CJHIkdujO/OtN7nXUii0Rf3VT5SRuhjBA82Xvu2XhBUgX3nhP67T0LHceBdQLex7OOFGTox+Q5Yg8Jk2Qivg==}
     engines: {node: '>=14'}
@@ -2087,8 +2082,8 @@ packages:
   remark@15.0.1:
     resolution: {integrity: sha512-Eht5w30ruCXgFmxVUSlNWQ9iiimq07URKeFS3hNc8cUWy1llX4KDWfyEDZRycMc+znsN9Ux5/tJ/BFdgdOwA3A==}
 
-  renovate@44.121.3:
-    resolution: {integrity: sha512-Lmup8NkYLoWv/SUB2AjIAxBpthjxVj6uRHsdRi+xoQNl3l4xtEjyweyEFP7a0jPZB5Z7pOMWm8ZW5ECxobkNYQ==}
+  renovate@44.124.2:
+    resolution: {integrity: sha512-UIgTKB693qsUV4ePyxxwko5Wq5gc9PotI6Gt6wjPH6brgz+3e4RIwPxTKSZqnaBgXZ/VJaZv7ufYO1ncjBEKvg==}
     engines: {node: ^24.11.0, pnpm: ^11.0.0}
     hasBin: true
 
@@ -4715,8 +4710,6 @@ snapshots:
   picomatch@4.0.7:
     optional: true
 
-  prettier@3.9.8: {}
-
   prettier@3.9.9: {}
 
   pretty-ms@9.3.1:
@@ -4820,7 +4813,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  renovate@44.121.3(supports-color@7.2.0)(typanion@3.14.0):
+  renovate@44.124.2(supports-color@7.2.0)(typanion@3.14.0):
     dependencies:
       '@aws-sdk/client-codecommit': 3.1117.0
       '@aws-sdk/client-ec2': 3.1117.0
@@ -4919,7 +4912,7 @@ snapshots:
       p-queue: 9.3.3
       p-throttle: 8.1.1
       parse-link-header: 2.0.0
-      prettier: 3.9.8
+      prettier: 3.9.9
       protobufjs: 8.8.0
       punycode: 2.3.1
       remark: 15.0.1(supports-color@7.2.0)
