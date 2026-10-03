@@ -143,13 +143,15 @@ approval. Exit 3 continues to mean a managed-resource deletion requiring maintai
 See the [pre-merge assessment policy](../README.md#assess-resource-deletion-impact-before-merge)
 for protected settings and coverage limits.
 
-The bootstrap state bucket has one narrow policy exception: an in-place update may add a Delete rule
-with age 2 days, prefix `services/`, and exactly the suffixes `/plan.tfplan` and `/plan.metadata.json`.
+The bootstrap state bucket has one narrow policy exception: an in-place update may add one Delete rule
+with age 2 days and exactly the suffixes `/plan.tfplan` and `/plan.metadata.json`. Its prefixes must be
+either `services/` alone or the exact pair `workloads/production/private/` and `workloads/production/public/`.
 Its project/name and every existing Delete rule must remain unchanged, and all other protections still
 apply. [Cloud Storage intersects these conditions](https://docs.cloud.google.com/storage/docs/lifecycle#lifecycle_configuration),
 excluding state, locks and configuration. Missing, broader or unknown selectors are rejected.
-Bootstrap declares this [native rule](../bootstrap/README.md#plan-artifact-expiration).
-Its protected apply and live verification remain separate human-approved operations before the
+Bootstrap declares the [native service-prefix rule](../bootstrap/README.md#plan-artifact-expiration).
+The shared-zone rule is permitted by policy but not yet declared. It must be added separately, preserving
+the service-prefix rule. Protected apply and live verification remain separate human-approved operations before the
 service-job writer can be activated. Trusted assessments execute policy from `master`.
 
 ## Protected workflow internals
