@@ -79,8 +79,10 @@ and recovery-mode HCL rejects it.
 The [release-boundary contract](../../modules/release-boundary) publishes schema-2 coordinates under
 `service_release_boundaries`, keyed by `service/zone`. Its identities and storage paths distinguish
 services sharing a project and components of one service in different zones. It creates no runtime
-permissions and does not enroll the existing service workflows. Those workflows, guards and
-foundation state paths still use the dedicated-project contract described below.
+permissions. Shared [prerequisite profiles](../../environments/service-foundation#shared-trust-zone-prerequisites)
+can use the existing protected foundation workflow with separate service/zone state and one guard
+per service across zones. Application release, database and recovery writers remain
+dedicated-project-only; the compatibility contract below does not activate them in shared projects.
 
 Before selecting or activating these boundaries, complete zone-aware workflow registration, runtime
 permission review, saved-plan expiration and the single-writer state handoff. Create each exact
