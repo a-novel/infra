@@ -373,7 +373,7 @@ func TestPlanServiceExpiration(t *testing.T) {
 		{"Error/PrematureExpiry", "bootstrap", func(_ object, condition object) { condition["age"] = 1 }, 65},
 		{"Error/MissingPrefix", "bootstrap", func(_ object, condition object) { delete(condition, "matches_prefix") }, 65},
 		{"Error/BroadPrefix", "bootstrap", func(_ object, condition object) { condition["matches_prefix"] = []string{"services/", ""} }, 65},
-		{"Error/SharedPrefixRequiresReview", "bootstrap", func(_ object, condition object) {
+		{"Error/SharedPrefixRequiresPolicyChange", "bootstrap", func(_ object, condition object) {
 			condition["matches_prefix"] = []string{"services/", "workloads/"}
 		}, 65},
 		{"Error/MissingSuffix", "bootstrap", func(_ object, condition object) { delete(condition, "matches_suffix") }, 65},

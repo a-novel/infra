@@ -331,7 +331,7 @@ run "expires_only_plan_artifacts_after_two_days" {
       for rule in google_storage_bucket.state.lifecycle_rule : rule
       if one(rule.action).type == "Delete" && try(
         one(rule.condition).age == 2 &&
-        toset(one(rule.condition).matches_prefix) == toset(["services/", "workloads/"]) &&
+        one(rule.condition).matches_prefix == tolist(["services/"]) &&
         toset(one(rule.condition).matches_suffix) == toset(["/plan.tfplan", "/plan.metadata.json"]) &&
         one(rule.condition).with_state == "ANY",
         false,
@@ -346,8 +346,8 @@ run "expires_only_plan_artifacts_after_two_days" {
         "services/json-project/release/plans/commit/1-1/plan.tfplan"                                       = true
         "services/json-project/release/plans/commit/1-1/plan.metadata.json"                                = true
         "services/auth-project/release/plans/commit/2-1/plan.tfplan"                                       = true
-        "workloads/production/private/private-project/json-keys/release/plans/commit/1-1/plan.tfplan"      = true
-        "workloads/production/public/public-project/json-keys/release/plans/commit/1-1/plan.metadata.json" = true
+        "workloads/production/private/private-project/json-keys/release/plans/commit/1-1/plan.tfplan"      = false
+        "workloads/production/public/public-project/json-keys/release/plans/commit/1-1/plan.metadata.json" = false
         "workloads/production/private/private-project/authentication/release/default.tfstate"              = false
         "workloads/production/public/public-project/json-keys/release/default.tflock"                      = false
         "workloads/production/private/private-project/json-keys/release/config/1-1.tfvars.json"            = false
