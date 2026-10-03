@@ -391,6 +391,15 @@ func TestPlanServiceExpiration(t *testing.T) {
 		{"Error/CombinedExactPrefixes", "bootstrap", func(_ object, condition object) {
 			condition["matches_prefix"] = []string{"services/", "workloads/production/private/", "workloads/production/public/"}
 		}, 65},
+		{"Error/CombinedAPIAndSharedPrefixes", "bootstrap", func(_ object, condition object) {
+			condition["matches_prefix"] = []string{"workloads/production/private/", "workloads/production/public/", "workloads/production/public-api/"}
+		}, 65},
+		{"Error/MissingAPIBoundary", "bootstrap", func(_ object, condition object) {
+			condition["matches_prefix"] = []string{"workloads/production/public-api"}
+		}, 65},
+		{"Error/OtherAPIEnvironment", "bootstrap", func(_ object, condition object) {
+			condition["matches_prefix"] = []string{"workloads/staging/public-api/"}
+		}, 65},
 		{"Error/MissingSuffix", "bootstrap", func(_ object, condition object) { delete(condition, "matches_suffix") }, 65},
 		{"Error/BroadSuffix", "bootstrap", func(_ object, condition object) { condition["matches_suffix"] = []string{"/plan.tfplan", ".json"} }, 65},
 		{"Error/RemovedRule", "bootstrap", func(p, _ object) {
@@ -429,13 +438,17 @@ func TestPlanServiceExpiration(t *testing.T) {
 		}{
 			{"Dedicated", []string{"services/"}},
 			{"Shared", []string{"workloads/production/private/", "workloads/production/public/"}},
+			{"API", []string{"workloads/production/public-api/"}},
 		} {
 			t.Run(testCase.name+"/"+namespace.name, func(t *testing.T) {
 				t.Parallel()
 				bucket := func() object {
-					priorPrefix := "foundation/plans/"
-					if namespace.name == "Shared" {
-						priorPrefix = "services/"
+					priorPrefixes := []string{"foundation/plans/"}
+					switch namespace.name {
+					case "Shared":
+						priorPrefixes = []string{"services/"}
+					case "API":
+						priorPrefixes = []string{"workloads/production/private/", "workloads/production/public/"}
 					}
 					return object{
 						"name": "agora-management-test-123456789012-tofu-state", "project": "agora-management-test",
@@ -447,7 +460,7 @@ func TestPlanServiceExpiration(t *testing.T) {
 						}, object{
 							"action": []any{object{"type": "Delete"}},
 							"condition": []any{object{
-								"age": 2, "matches_prefix": []string{priorPrefix},
+								"age": 2, "matches_prefix": priorPrefixes,
 								"matches_suffix": []string{"/plan.tfplan", "/plan.metadata.json"},
 							}},
 						}},

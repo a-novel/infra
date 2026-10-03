@@ -145,12 +145,14 @@ for protected settings and coverage limits.
 
 The bootstrap state bucket has one narrow policy exception: an in-place update may add one Delete rule
 with age 2 days and exactly the suffixes `/plan.tfplan` and `/plan.metadata.json`. Its prefixes must be
-either `services/` alone or the exact pair `workloads/production/private/` and `workloads/production/public/`.
+`services/` alone, the exact pair `workloads/production/private/` and `workloads/production/public/`,
+or `workloads/production/public-api/` alone.
 Its project/name and every existing Delete rule must remain unchanged, and all other protections still
 apply. [Cloud Storage intersects these conditions](https://docs.cloud.google.com/storage/docs/lifecycle#lifecycle_configuration),
 excluding state, locks and configuration. Missing, broader or unknown selectors are rejected.
 Bootstrap declares [separate native rules](../bootstrap/README.md#plan-artifact-expiration) for the
-dedicated-service and shared-zone prefixes. Protected apply and live verification remain separate
+dedicated-service and private/public prefixes; the public-api rule still needs its own declaration.
+Protected apply and live verification remain separate
 human-approved operations before the service-job writer can be activated. Trusted assessments execute
 policy from `master`.
 
