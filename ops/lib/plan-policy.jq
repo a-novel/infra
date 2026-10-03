@@ -83,12 +83,46 @@ def candidate_schedule_pause($plan):
       .after.project == $plan.variables.workload_project_id.value and
       .after.region == $plan.variables.region.value);
 
+# Only the audited shell may prepare persistent guards for a later approved delete.
+# Resource identities and every non-policy field remain fixed; custody is abandoned,
+# never destroyed, and the unused release identity/provider must be disabled.
+def retire_json_keys_policy($plan):
+  {
+    "module.project.google_project.service": ["DELETE", "projects/a-novel-json-keys-prod"],
+    "module.project.google_logging_project_bucket_config.default": ["ABANDON", "projects/a-novel-json-keys-prod/locations/global/buckets/_Default"],
+    "google_service_account.release": ["DELETE", "projects/a-novel-json-keys-prod/serviceAccounts/infra-release@a-novel-json-keys-prod.iam.gserviceaccount.com"],
+    "google_iam_workload_identity_pool_provider.release": ["DELETE", "projects/a-novel-management-prod/locations/global/workloadIdentityPools/github-actions/providers/r-a-novel-json-keys-prod"],
+    "google_storage_managed_folder.release[\"state\"]": ["ABANDON", "a-novel-management-prod-232403541574-tofu-state/services/a-novel-json-keys-prod/release/"],
+    "google_storage_managed_folder.release[\"receipts\"]": ["ABANDON", "a-novel-management-prod-232403541574-deployment-receipts/services/a-novel-json-keys-prod/production/"]
+  } as $targets
+  | .address as $address
+  | ($targets | to_entries | map(select($address == "module.service_project[\"json-keys\"]." + .key)) | .[0].value) as $target
+  | (.type | IN("google_service_account", "google_iam_workload_identity_pool_provider")) as $disable
+  | $root_name == "foundation" and $target != null and
+    ($plan.variables | .retire_json_keys_project.value == true and
+      .management_project_id.value == "a-novel-management-prod" and
+      .workload_project_id.value == "a-novel-production-prod" and
+      .organization_id.value == "1031663934757" and .folder_id.value == null and
+      .recovery_mode.value == false and .service_recovery_projects.value == {} and
+      .service_projects.value == {"json-keys": "a-novel-json-keys-prod"} and
+      .pgbackrest_repository_services.value == []) and
+    .previous_address == null and .deposed == null and .change.importing == null and
+    (.change | .actions == ["update"] and known([]) and
+      .before.id == $target[1] and .before.deletion_policy == "PREVENT" and
+      .after.deletion_policy == $target[0] and
+      (if $disable then
+        .after.disabled == true and
+        (.before | del(.deletion_policy, .disabled)) == (.after | del(.deletion_policy, .disabled))
+       else
+        (.before | del(.deletion_policy)) == (.after | del(.deletion_policy))
+       end));
+
 def protections($plan):
   . as $resource | .type as $type | .change
   | keep(["deletion_protection"]; true) and
     keep(["force_destroy"]; false) and
-    keep(["deletion_policy"]; "PREVENT") and
-    keep(["deletion_policy"]; "ABANDON") and
+    ((keep(["deletion_policy"]; "PREVENT") and keep(["deletion_policy"]; "ABANDON")) or
+      ($resource | retire_json_keys_policy($plan))) and
     (if $type == "google_storage_bucket" then
       keep(["public_access_prevention"]; "enforced") and
       keep(["uniform_bucket_level_access"]; true) and
