@@ -19,6 +19,7 @@ func TestCompilerRecovery(t *testing.T) {
 			for _, key := range []string{"management_project_id", "workload_project_id", "region", "backup_bucket_name"} {
 				config[key] = fixture.config[key]
 			}
+			config["service_release_zones"] = object{"json-keys": []string{"private"}}
 			state := object{
 				"workload_project_id": object{"value": "agora-recovery-test"},
 				"network":             object{"value": object{"network_id": "recovery-network", "subnet_id": "recovery-subnet"}},
@@ -113,6 +114,7 @@ func TestCompilerRecovery(t *testing.T) {
 			require.Equal(t, object{}, foundation["service_projects"])
 			require.NotContains(t, foundation, "retire_json_keys_project")
 			require.NotContains(t, foundation, "public_project_id")
+			require.NotContains(t, foundation, "service_release_zones")
 			require.NotContains(t, foundation, "shared_vpc_enabled")
 			if files[6] == "foundation" {
 				require.NoFileExists(t, filepath.Join(files[7], "active.tfvars.json"))

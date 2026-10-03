@@ -26,6 +26,7 @@ type foundationOptions struct {
 	publicProject                                                   string
 	databaseOperators, initializers                                 []string
 	serviceProjects                                                 map[string]string
+	serviceReleaseZones                                             map[string][]string
 	repositoryServices                                              []string
 }
 
@@ -74,6 +75,7 @@ func foundationFlags(args []string, getenv func(string) string) (foundationOptio
 	}
 	o.command = args[0]
 	serviceProjects := getenv("INFRA_SERVICE_PROJECTS")
+	serviceReleaseZones := cmp.Or(getenv("INFRA_SERVICE_RELEASE_ZONES"), "{}")
 	repositoryServices := getenv("INFRA_PGBACKREST_REPOSITORY_SERVICES")
 	flags := flag.NewFlagSet("foundation-setup", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -112,6 +114,7 @@ func foundationFlags(args []string, getenv func(string) string) (foundationOptio
 		flags.BoolVar(&o.retireJSONKeys, "retire-json-keys-project", retirement == "true", "Prepare the audited obsolete JSON Keys project for retirement and retain the production Shared VPC host")
 		flags.BoolVar(&o.legacyBackupAccess, "legacy-backup-job-access", false, "Enable maintenance tagging and access only after all five legacy backup jobs exist")
 		flags.StringVar(&serviceProjects, "service-projects", serviceProjects, "JSON object mapping service names to project IDs; use {} for none")
+		flags.StringVar(&serviceReleaseZones, "service-release-zones", serviceReleaseZones, "JSON object mapping services to private/public release zones; use {} to leave disabled")
 		flags.StringVar(&repositoryServices, "pgbackrest-repository-services", repositoryServices, "JSON array of declared services with native repository networking; use [] for none")
 		flags.StringVar(&o.region, "region", cmp.Or(getenv("INFRA_REGION"), "europe-west1"), "Workload region")
 		flags.StringVar(&o.zone, "database-zone", getenv("INFRA_DATABASE_ZONE"), "Database zone")
@@ -133,6 +136,9 @@ func foundationFlags(args []string, getenv func(string) string) (foundationOptio
 		}
 		if json.Unmarshal([]byte(repositoryServices), &o.repositoryServices) != nil || o.repositoryServices == nil {
 			return o, errors.New("repository services must be a JSON array; load the reviewed .envrc or pass --pgbackrest-repository-services")
+		}
+		if err := o.releaseZones(serviceReleaseZones); err != nil {
+			return o, err
 		}
 		if o.publicProject != "" && (!matches(`[a-z][a-z0-9-]{4,28}[a-z0-9]`, o.publicProject) ||
 			o.publicProject == getenv("INFRA_MANAGEMENT_PROJECT_ID") || o.publicProject == getenv("INFRA_WORKLOAD_PROJECT_ID") ||
@@ -297,6 +303,9 @@ func (f foundation) configure(ctx context.Context, o foundationOptions, getenv f
 	}
 	if o.publicProject != "" {
 		config["public_project_id"] = o.publicProject
+	}
+	if len(o.serviceReleaseZones) > 0 {
+		config["service_release_zones"] = o.serviceReleaseZones
 	}
 	if o.parent.Type != "" {
 		config[o.parent.Type+"_id"] = o.parent.ID

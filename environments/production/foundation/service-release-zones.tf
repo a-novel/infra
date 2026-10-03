@@ -1,0 +1,54 @@
+variable "service_release_zones" {
+  description = "Disabled-by-default service release identities and custody folders in shared production projects; no runtime enrollment."
+  type        = map(set(string))
+  default     = {}
+  nullable    = false
+
+  validation {
+    condition = alltrue([for service, zones in var.service_release_zones :
+      contains(["json-keys", "authentication"], service) && zones != null &&
+      try(length(zones) > 0 && alltrue([for zone in zones : contains(["private", "public"], zone)]), false)
+    ])
+    error_message = "Select nonempty private/public zone sets for JSON Keys or Authentication."
+  }
+
+  validation {
+    condition = length(var.service_release_zones) == 0 || (
+      !var.recovery_mode && !var.retire_json_keys_project && var.shared_vpc_enabled &&
+      length(var.service_projects) == 0 && length(var.service_recovery_projects) == 0 &&
+      length(var.pgbackrest_repository_services) == 0 &&
+      (var.public_project_id != null || alltrue([for zones in var.service_release_zones : !try(contains(zones, "public"), false)]))
+    )
+    error_message = "Shared release boundaries require explicit Shared VPC, a public shell for public selections, and no dedicated-service, native-repository, retirement or recovery selection."
+  }
+}
+
+locals {
+  service_release_boundaries = {
+    for boundary in flatten([for service, zones in var.service_release_zones : [
+      for zone in coalesce(zones, toset([])) : { service = service, zone = zone }
+    ]]) : "${boundary.service}/${boundary.zone}" => boundary
+    if boundary.zone != "public" || var.public_project_id != null
+  }
+}
+
+module "service_release" {
+  source   = "../../../modules/release-boundary"
+  for_each = var.recovery_mode ? {} : local.service_release_boundaries
+
+  project_id           = each.value.zone == "private" ? google_project.workload.project_id : module.public_project["public"].project_id
+  zone                 = each.value.zone
+  labels               = merge(local.labels, { service = each.value.service })
+  plan_service_account = local.automation_service_accounts.plan
+  management = {
+    project_id     = var.management_project_id
+    project_number = data.google_project.management[0].number
+  }
+
+  depends_on = [google_project_service.workload["iam.googleapis.com"], module.public_project]
+}
+
+output "service_release_boundaries" {
+  description = "Schema-2 identities and custody coordinates, not runtime registration or migration evidence. Null when disabled."
+  value       = length(module.service_release) == 0 ? null : { for key, boundary in module.service_release : key => boundary.release }
+}
