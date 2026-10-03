@@ -39,11 +39,13 @@ def delete_rules:
 def service_plan_expiration:
   (.action | length) == 1 and .action[0].type == "Delete" and
   (.condition | length) == 1 and
-  (.condition[0] | .age == 2 and .matches_prefix == ["services/"] and
+  (.condition[0] | .age == 2 and
+    ((.matches_prefix | sort) | . == ["services/"] or
+      . == ["workloads/production/private/", "workloads/production/public/"]) and
     (.matches_suffix | sort) == ["/plan.metadata.json", "/plan.tfplan"]);
 
-# Only bootstrap may add this rule to its existing state bucket. Every existing
-# Delete rule must retain its JSON value, including this one in subsequent plans.
+# Only bootstrap may add one plan-expiration rule to its existing state bucket.
+# Every existing Delete rule must retain its JSON value in subsequent plans.
 def add_service_plan_expiration($plan):
   $plan.variables.management_project_id.value as $project
   | $root_name == "bootstrap" and .address == "google_storage_bucket.state" and

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -340,6 +341,7 @@ func TestPlanServiceExpiration(t *testing.T) {
 	}{
 		{"Success", "bootstrap", nil, 0},
 		{"Success/AdditionalRestriction", "bootstrap", func(_ object, condition object) { condition["with_state"] = "LIVE" }, 0},
+		{"Success/ReorderedPrefixes", "bootstrap", func(_ object, condition object) { slices.Reverse(condition["matches_prefix"].([]string)) }, 0},
 		{"Success/UnchangedRules", "bootstrap", func(p, _ object) {
 			change := nested(resource(p), "change")
 			change["before"] = change["after"]
@@ -373,8 +375,21 @@ func TestPlanServiceExpiration(t *testing.T) {
 		{"Error/PrematureExpiry", "bootstrap", func(_ object, condition object) { condition["age"] = 1 }, 65},
 		{"Error/MissingPrefix", "bootstrap", func(_ object, condition object) { delete(condition, "matches_prefix") }, 65},
 		{"Error/BroadPrefix", "bootstrap", func(_ object, condition object) { condition["matches_prefix"] = []string{"services/", ""} }, 65},
-		{"Error/SharedPrefixRequiresPolicyChange", "bootstrap", func(_ object, condition object) {
+		{"Error/CombinedBroadPrefixes", "bootstrap", func(_ object, condition object) {
 			condition["matches_prefix"] = []string{"services/", "workloads/"}
+		}, 65},
+		{"Error/BroadSharedPrefix", "bootstrap", func(_ object, condition object) { condition["matches_prefix"] = []string{"workloads/production/"} }, 65},
+		{"Error/MissingZone", "bootstrap", func(_ object, condition object) {
+			condition["matches_prefix"] = []string{"workloads/production/private/"}
+		}, 65},
+		{"Error/OtherEnvironment", "bootstrap", func(_ object, condition object) {
+			condition["matches_prefix"] = []string{"workloads/staging/private/", "workloads/staging/public/"}
+		}, 65},
+		{"Error/AdditionalZone", "bootstrap", func(_ object, condition object) {
+			condition["matches_prefix"] = []string{"workloads/production/private/", "workloads/production/public/", "workloads/production/public-admin/"}
+		}, 65},
+		{"Error/CombinedExactPrefixes", "bootstrap", func(_ object, condition object) {
+			condition["matches_prefix"] = []string{"services/", "workloads/production/private/", "workloads/production/public/"}
 		}, 65},
 		{"Error/MissingSuffix", "bootstrap", func(_ object, condition object) { delete(condition, "matches_suffix") }, 65},
 		{"Error/BroadSuffix", "bootstrap", func(_ object, condition object) { condition["matches_suffix"] = []string{"/plan.tfplan", ".json"} }, 65},
@@ -386,6 +401,12 @@ func TestPlanServiceExpiration(t *testing.T) {
 			after := nested(resource(p), "change", "after")
 			rule := after["lifecycle_rule"].([]any)[0].(object)
 			rule["condition"] = []any{object{"days_since_noncurrent_time": 89, "num_newer_versions": 50}}
+		}, 65},
+		{"Error/ReplaceExistingPlanRule", "bootstrap", func(p, condition object) {
+			after := nested(resource(p), "change", "after")
+			rules := after["lifecycle_rule"].([]any)
+			rules[1].(object)["condition"] = []any{condition}
+			after["lifecycle_rule"] = rules[:2]
 		}, 65},
 		{"Error/WithdrawCleanup", "bootstrap", func(p, _ object) {
 			change := nested(resource(p), "change")
@@ -402,35 +423,55 @@ func TestPlanServiceExpiration(t *testing.T) {
 			nested(resource(p), "change", "after")["soft_delete_policy"] = []any{object{"retention_duration_seconds": 0}}
 		}, 65},
 	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			t.Parallel()
-			bucket := func() object {
-				return object{
-					"name": "agora-management-test-123456789012-tofu-state", "project": "agora-management-test",
-					"versioning":         []any{object{"enabled": true}},
-					"soft_delete_policy": []any{object{"retention_duration_seconds": 604800}},
-					"lifecycle_rule": []any{object{
-						"action":    []any{object{"type": "Delete"}},
-						"condition": []any{object{"days_since_noncurrent_time": 90, "num_newer_versions": 50}},
-					}},
+		for _, namespace := range []struct {
+			name     string
+			prefixes []string
+		}{
+			{"Dedicated", []string{"services/"}},
+			{"Shared", []string{"workloads/production/private/", "workloads/production/public/"}},
+		} {
+			t.Run(testCase.name+"/"+namespace.name, func(t *testing.T) {
+				t.Parallel()
+				bucket := func() object {
+					priorPrefix := "foundation/plans/"
+					if namespace.name == "Shared" {
+						priorPrefix = "services/"
+					}
+					return object{
+						"name": "agora-management-test-123456789012-tofu-state", "project": "agora-management-test",
+						"versioning":         []any{object{"enabled": true}},
+						"soft_delete_policy": []any{object{"retention_duration_seconds": 604800}},
+						"lifecycle_rule": []any{object{
+							"action":    []any{object{"type": "Delete"}},
+							"condition": []any{object{"days_since_noncurrent_time": 90, "num_newer_versions": 50}},
+						}, object{
+							"action": []any{object{"type": "Delete"}},
+							"condition": []any{object{
+								"age": 2, "matches_prefix": []string{priorPrefix},
+								"matches_suffix": []string{"/plan.tfplan", "/plan.metadata.json"},
+							}},
+						}},
+					}
 				}
-			}
-			condition := object{
-				"age": 2, "matches_prefix": []string{"services/"},
-				"matches_suffix": []string{"/plan.tfplan", "/plan.metadata.json"},
-				"with_state":     "ANY", "send_age_if_zero": false,
-			}
-			before, after := bucket(), bucket()
-			after["lifecycle_rule"] = append(after["lifecycle_rule"].([]any), object{
-				"action": []any{object{"type": "Delete", "storage_class": ""}}, "condition": []any{condition},
+				condition := object{
+					"age": 2, "matches_prefix": slices.Clone(namespace.prefixes),
+					"matches_suffix": []string{"/plan.tfplan", "/plan.metadata.json"},
+					"with_state":     "ANY", "send_age_if_zero": false,
+				}
+				before, after := bucket(), bucket()
+				after["lifecycle_rule"] = append(after["lifecycle_rule"].([]any), object{
+					"action": []any{object{"type": "Delete", "storage_class": ""}}, "condition": []any{condition},
+				})
+				value := plan("google_storage_bucket", before, after)
+				resource(value)["address"] = "google_storage_bucket.state"
+				value["variables"] = object{"management_project_id": object{"value": "agora-management-test"}}
+				if testCase.mutate != nil {
+					testCase.mutate(value, condition)
+				}
+				f := setup(t)
+				f.env["ALLOW_RESOURCE_DELETION"] = "true"
+				f.summary(t, testCase.root, value, testCase.code)
 			})
-			value := plan("google_storage_bucket", before, after)
-			resource(value)["address"] = "google_storage_bucket.state"
-			value["variables"] = object{"management_project_id": object{"value": "agora-management-test"}}
-			if testCase.mutate != nil {
-				testCase.mutate(value, condition)
-			}
-			setup(t).summary(t, testCase.root, value, testCase.code)
-		})
+		}
 	}
 }

@@ -84,8 +84,9 @@ shared-root ownership transfer and interrupted-native-operation recovery remain 
 Metadata enforces the 24-hour apply deadline. Bootstrap declares native
 [plan cleanup](../../bootstrap/README.md#plan-artifact-expiration) after age 2 days, restricted to the
 `services/` prefix and the two artifact suffixes. Cleanup is asynchronous and keeps seven-day soft delete.
-The shared `workloads/` namespace is not yet covered. Its native cleanup requires a separately reviewed
-policy change; deletion approval alone cannot bypass the existing lifecycle protection.
+The shared release folders are not yet covered. The [plan policy](../../ops/README.md#protected-workflow-operations)
+permits a separate rule for the production private/public prefixes; declaring that rule remains a
+prerequisite. Existing Delete rules must stay unchanged; deletion approval cannot bypass that protection.
 Protected bootstrap apply and live verification remain prerequisites before writer activation.
 `SERVICE_JOB_BOOTSTRAP_ENABLED=true` permits only create/no-op plans for this service's exact
 application jobs. Updates, imports, moves, replacements, deletions and other resources fail regardless
