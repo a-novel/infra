@@ -11,7 +11,6 @@ BACKUP_MOUNT=/backups
 WORKSPACE=/workspace
 LOCAL_DUMP="${WORKSPACE}/database.dump"
 PGDATA="${WORKSPACE}/pgdata"
-PGSOCKET=/var/run/postgresql
 POSTGRES_PID=""
 
 cleanup() {
@@ -176,6 +175,8 @@ export POSTGRES_DB="${DATABASE_NAME}"
 export POSTGRES_HOST_AUTH_METHOD=trust
 export POSTGRES_INITDB_ARGS='--auth-local=trust --auth-host=reject'
 export POSTGRES_USER="${DATABASE_OWNER}"
+# The image's server and libpq share a compiled-in local socket directory.
+export PGHOST= PGHOSTADDR=
 
 # The same database image recreates declared extensions and the owner role.
 # It listens only on a local Unix socket and has no production credential.
@@ -191,7 +192,7 @@ READY_DEADLINE=$((SECONDS + 120))
 # The entrypoint's temporary server accepts connections before initialization ends.
 # Only the final server replaces the entrypoint process and inherits its PID.
 until [ "$(head -n 1 "${PGDATA}/postmaster.pid" 2>/dev/null)" = "${POSTGRES_PID}" ] &&
-    pg_isready --host="${PGSOCKET}" --port=5432 --username="${DATABASE_OWNER}" --dbname="${DATABASE_NAME}" >/dev/null 2>&1; do
+    pg_isready --host= --port=5432 --username="${DATABASE_OWNER}" --dbname="${DATABASE_NAME}" >/dev/null 2>&1; do
     if ! kill -0 "${POSTGRES_PID}" 2>/dev/null || [ "${SECONDS}" -ge "${READY_DEADLINE}" ]; then
         printf 'error: clean restore database did not become ready\n' >&2
         exit 1
@@ -200,7 +201,6 @@ until [ "$(head -n 1 "${PGDATA}/postmaster.pid" 2>/dev/null)" = "${POSTGRES_PID}
 done
 
 export PGDATABASE="${DATABASE_NAME}"
-export PGHOST="${PGSOCKET}"
 export PGPORT=5432
 export PGUSER="${DATABASE_OWNER}"
 
