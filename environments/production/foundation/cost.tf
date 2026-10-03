@@ -103,7 +103,8 @@ resource "google_billing_budget" "workload" {
       "projects/${data.google_project.management[0].number}",
       "projects/${google_project.workload.number}",
       ], [for project in module.service_project : "projects/${project.project_number}"],
-    [for project in module.public_project : "projects/${project.project_number}"]))
+      [for project in module.public_project : "projects/${project.project_number}"],
+    [for project in module.public_api_project : "projects/${project.project_number}"]))
     calendar_period        = "MONTH"
     credit_types_treatment = "INCLUDE_ALL_CREDITS"
   }

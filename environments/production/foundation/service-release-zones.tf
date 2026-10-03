@@ -7,9 +7,9 @@ variable "service_release_zones" {
   validation {
     condition = alltrue([for service, zones in var.service_release_zones :
       contains(["json-keys", "authentication"], service) && zones != null &&
-      try(length(zones) > 0 && alltrue([for zone in zones : contains(["private", "public"], zone)]), false)
+      try(length(zones) > 0 && alltrue([for zone in zones : contains(["private", "public-api"], zone)]), false)
     ])
-    error_message = "Select nonempty private/public zone sets for JSON Keys or Authentication."
+    error_message = "Select nonempty private/public-api zone sets for JSON Keys or Authentication; public is reserved for platforms."
   }
 
   validation {
@@ -17,9 +17,9 @@ variable "service_release_zones" {
       !var.recovery_mode && !var.retire_json_keys_project && var.shared_vpc_enabled &&
       length(var.service_projects) == 0 && length(var.service_recovery_projects) == 0 &&
       length(var.pgbackrest_repository_services) == 0 &&
-      (var.public_project_id != null || alltrue([for zones in var.service_release_zones : !try(contains(zones, "public"), false)]))
+      (var.public_api_project_id != null || alltrue([for zones in var.service_release_zones : !try(contains(zones, "public-api"), false)]))
     )
-    error_message = "Shared release boundaries require explicit Shared VPC, a public shell for public selections, and no dedicated-service, native-repository, retirement or recovery selection."
+    error_message = "Shared release boundaries require explicit Shared VPC, an API shell for public-api selections, and no dedicated-service, native-repository, retirement or recovery selection."
   }
 }
 
@@ -28,7 +28,7 @@ locals {
     for boundary in flatten([for service, zones in var.service_release_zones : [
       for zone in coalesce(zones, toset([])) : { service = service, zone = zone }
     ]]) : "${boundary.service}/${boundary.zone}" => boundary
-    if boundary.zone != "public" || var.public_project_id != null
+    if contains(["private", "public-api"], boundary.zone) && (boundary.zone != "public-api" || var.public_api_project_id != null)
   }
 }
 
@@ -36,7 +36,7 @@ module "service_release" {
   source   = "../../../modules/release-boundary"
   for_each = var.recovery_mode ? {} : local.service_release_boundaries
 
-  project_id           = each.value.zone == "private" ? google_project.workload.project_id : module.public_project["public"].project_id
+  project_id           = each.value.zone == "private" ? google_project.workload.project_id : module.public_api_project["public-api"].project_id
   zone                 = each.value.zone
   labels               = merge(local.labels, { service = each.value.service })
   plan_service_account = local.automation_service_accounts.plan
@@ -45,7 +45,7 @@ module "service_release" {
     project_number = data.google_project.management[0].number
   }
 
-  depends_on = [google_project_service.workload["iam.googleapis.com"], module.public_project]
+  depends_on = [google_project_service.workload["iam.googleapis.com"], module.public_api_project]
 }
 
 output "service_release_boundaries" {

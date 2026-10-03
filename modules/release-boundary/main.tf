@@ -20,8 +20,9 @@ locals {
 }
 
 resource "google_service_account" "release" {
-  project         = var.project_id
-  account_id      = var.zone == null ? "infra-release" : "infra-${var.labels.service}-${var.zone}"
+  project = var.project_id
+  # Authentication's full public-api suffix exceeds the 30-character account limit.
+  account_id      = var.zone == null ? "infra-release" : "infra-${var.labels.service}-${var.zone == "public-api" ? "api" : var.zone}"
   display_name    = "Service release"
   description     = "Keyless release writer for ${var.project_id}."
   disabled        = var.retirement

@@ -30,7 +30,7 @@ func ReleaseScopes(getenv func(string) string, bucket string) (map[string]string
 	if len(scopes) != 0 {
 		return nil, invalid
 	}
-	var management, private, public, region string
+	var management, private, public, publicAPI, region string
 	for key, target := range map[string]*string{
 		"management_project_id": &management, "workload_project_id": &private, "region": &region,
 	} {
@@ -44,10 +44,15 @@ func ReleaseScopes(getenv func(string) string, bucket string) (map[string]string
 		!matches(`[a-z]+-[a-z]+[1-9][0-9]*`, region) {
 		return nil, invalid
 	}
-	if data, exists := registration["public_project_id"]; exists && string(data) != "null" {
-		if json.Unmarshal(data, &public) != nil || !matches(`[a-z][a-z0-9-]{4,28}[a-z0-9]`, public) || public == private || public == management {
-			return nil, invalid
+	for key, target := range map[string]*string{"public_project_id": &public, "public_api_project_id": &publicAPI} {
+		if data, exists := registration[key]; exists && string(data) != "null" {
+			if json.Unmarshal(data, target) != nil || !matches(`[a-z][a-z0-9-]{4,28}[a-z0-9]`, *target) || *target == private || *target == management {
+				return nil, invalid
+			}
 		}
+	}
+	if publicAPI != "" && publicAPI == public {
+		return nil, invalid
 	}
 	for key, expected := range map[string]bool{"shared_vpc_enabled": true, "recovery_mode": false, "retire_json_keys_project": false} {
 		var actual bool
@@ -77,12 +82,12 @@ func ReleaseScopes(getenv func(string) string, bucket string) (map[string]string
 			return nil, invalid
 		}
 		for index, zone := range selections {
-			if !slices.Contains([]string{"private", "public"}, zone) || slices.Contains(selections[:index], zone) {
+			if !slices.Contains([]string{"private", "public-api"}, zone) || slices.Contains(selections[:index], zone) {
 				return nil, invalid
 			}
 			project := private
-			if zone == "public" {
-				project = public
+			if zone == "public-api" {
+				project = publicAPI
 				if project == "" {
 					return nil, invalid
 				}

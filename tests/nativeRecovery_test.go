@@ -66,6 +66,9 @@ func TestNativeRecoveryInputs(t *testing.T) {
 		{name: "PublicProjectProtected", valid: true},
 		{name: "PublicProjectMissingProtection"},
 		{name: "PublicProjectTarget"},
+		{name: "APIProjectProtected", valid: true},
+		{name: "APIProjectMissingProtection"},
+		{name: "APIProjectTarget"},
 		{name: "LegacyRegistration"},
 		{name: "ReadOnlyWithWritesDisabled", valid: true},
 	} {
@@ -96,13 +99,17 @@ func TestNativeRecoveryInputs(t *testing.T) {
 			if testCase.name == "IncompleteProtection" {
 				nested(config, "recovery")["protected_projects"] = []string{"agora-management-test", "agora-json-keys-test"}
 			}
-			if strings.HasPrefix(testCase.name, "PublicProject") {
+			if strings.HasPrefix(testCase.name, "PublicProject") || strings.HasPrefix(testCase.name, "APIProject") {
 				public := "agora-public-test"
-				if testCase.name == "PublicProjectTarget" {
+				key := "public_project_id"
+				if strings.HasPrefix(testCase.name, "APIProject") {
+					key = "public_api_project_id"
+				}
+				if strings.HasSuffix(testCase.name, "Target") {
 					public = "a-novel-recovery-proof"
 				}
-				f.env["FOUNDATION_CONFIG"] = strings.TrimSuffix(f.env["FOUNDATION_CONFIG"], "}") + `,"public_project_id":"` + public + `"}`
-				if testCase.name == "PublicProjectProtected" {
+				f.env["FOUNDATION_CONFIG"] = strings.TrimSuffix(f.env["FOUNDATION_CONFIG"], "}") + `,"` + key + `":"` + public + `"}`
+				if strings.HasSuffix(testCase.name, "Protected") {
 					host := nested(config, "recovery")
 					host["protected_projects"] = append(host["protected_projects"].([]string), public)
 				}

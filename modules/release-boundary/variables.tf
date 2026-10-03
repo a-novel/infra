@@ -25,8 +25,8 @@ variable "zone" {
   type        = string
   default     = null
   validation {
-    condition     = var.zone == null ? true : contains(["private", "public"], var.zone)
-    error_message = "Select private or public, or leave null for the dedicated-project compatibility path."
+    condition     = var.zone == null ? true : contains(["private", "public-api"], var.zone)
+    error_message = "Select private or public-api, or leave null for the dedicated-project compatibility path."
   }
 }
 

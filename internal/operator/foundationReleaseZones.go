@@ -15,11 +15,11 @@ func (o *foundationOptions) releaseZones(value string) error {
 	}
 	for service, zones := range o.serviceReleaseZones {
 		if !slices.Contains([]string{"json-keys", "authentication"}, service) || len(zones) == 0 || len(zones) > 2 {
-			return errors.New("select private/public release zones for JSON Keys or Authentication")
+			return errors.New("select private/public-api release zones for JSON Keys or Authentication")
 		}
 		for index, zone := range zones {
-			if !slices.Contains([]string{"private", "public"}, zone) || slices.Contains(zones[:index], zone) || zone == "public" && o.publicProject == "" {
-				return errors.New("release zones must be unique private/public selections; public requires its project shell")
+			if !slices.Contains([]string{"private", "public-api"}, zone) || slices.Contains(zones[:index], zone) || zone == "public-api" && o.publicAPIProject == "" {
+				return errors.New("release zones must be unique private/public-api selections; public-api requires its project shell and public is reserved for platforms")
 			}
 		}
 	}

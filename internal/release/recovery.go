@@ -88,10 +88,12 @@ func (compiler *Compiler) CompileRecovery(args []string, identity Identity) erro
 			}
 		}
 	}
-	if value := config["public_project_id"]; value != nil {
-		project, ok := value.(string)
-		if !ok || !projectPattern.MatchString(project) || project == target {
-			return errors.New("invalid public project or recovery target is the production public project")
+	for _, key := range []string{"public_project_id", "public_api_project_id"} {
+		if value := config[key]; value != nil {
+			project, ok := value.(string)
+			if !ok || !projectPattern.MatchString(project) || project == target {
+				return errors.New("invalid zone project or recovery target is a production zone project")
+			}
 		}
 	}
 	foundation := clone(config)
@@ -99,6 +101,7 @@ func (compiler *Compiler) CompileRecovery(args []string, identity Identity) erro
 	foundation["service_projects"] = object{}
 	delete(foundation, "retire_json_keys_project")
 	delete(foundation, "public_project_id")
+	delete(foundation, "public_api_project_id")
 	delete(foundation, "shared_vpc_enabled")
 	delete(foundation, "service_release_zones")
 	outputs := map[string]any{"foundation.tfvars.json": foundation}
