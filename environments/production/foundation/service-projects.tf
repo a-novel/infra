@@ -1,3 +1,21 @@
+variable "retire_json_keys_project" {
+  description = "Authorize staged retirement of the audited obsolete JSON Keys project and retain the existing production Shared VPC host. Apply preparation before removing its registration."
+  type        = bool
+  default     = false
+  nullable    = false
+
+  validation {
+    condition = !var.retire_json_keys_project || (
+      !var.recovery_mode && var.management_project_id == "a-novel-management-prod" &&
+      var.workload_project_id == "a-novel-production-prod" && var.organization_id == "1031663934757" &&
+      var.folder_id == null && length(var.pgbackrest_repository_services) == 0 &&
+      length(var.service_recovery_projects) == 0 &&
+      alltrue([for service, project in var.service_projects : service == "json-keys" && project == "a-novel-json-keys-prod"])
+    )
+    error_message = "Retirement is limited to the obsolete JSON Keys shell in the audited production organization, with native backups and recovery registration absent."
+  }
+}
+
 variable "service_projects" {
   description = "Service name to new project ID. Empty preserves the shared-project deployment."
   type        = map(string)
@@ -43,6 +61,7 @@ module "service_project" {
   for_each = var.recovery_mode ? {} : var.service_projects
 
   project_id                 = each.value
+  retirement                 = var.retire_json_keys_project
   billing_account_id         = var.billing_account_id
   organization_id            = var.organization_id
   folder_id                  = var.folder_id
@@ -56,7 +75,7 @@ module "service_project" {
 }
 
 resource "google_compute_shared_vpc_host_project" "production" {
-  count = length(module.service_project) == 0 ? 0 : 1
+  count = var.retire_json_keys_project || length(module.service_project) > 0 ? 1 : 0
 
   project         = google_project.workload.project_id
   deletion_policy = "PREVENT"
@@ -75,7 +94,7 @@ resource "google_compute_shared_vpc_service_project" "service" {
   service_project = each.value.project_id
 
   lifecycle {
-    prevent_destroy = true
+    prevent_destroy = !var.retire_json_keys_project
   }
 
   # Shared VPC attachment requires the service project's Compute API.

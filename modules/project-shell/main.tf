@@ -1,16 +1,15 @@
 resource "google_project" "service" {
+  # Provider protection survives removal of a for_each module instance.
   project_id          = var.project_id
   name                = var.project_id
   billing_account     = var.billing_account_id
   org_id              = var.organization_id
   folder_id           = var.folder_id
   auto_create_network = false
-  deletion_policy     = "PREVENT"
+  deletion_policy     = var.retirement ? "DELETE" : "PREVENT"
   labels              = var.labels
 
   lifecycle {
-    prevent_destroy = true
-
     precondition {
       condition     = (var.organization_id != null) != (var.folder_id != null)
       error_message = "Project shells require exactly one organization or folder parent."
@@ -106,7 +105,7 @@ resource "google_logging_project_bucket_config" "default" {
   location        = "global"
   bucket_id       = "_Default"
   retention_days  = 30
-  deletion_policy = "PREVENT"
+  deletion_policy = var.retirement ? "ABANDON" : "PREVENT"
 
   depends_on = [google_project_service.api["logging.googleapis.com"]]
 }

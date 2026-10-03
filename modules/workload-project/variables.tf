@@ -1,3 +1,10 @@
+variable "retirement" {
+  description = "Prepare the audited empty project for a separately approved removal; preserve its management-side custody folders."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
 variable "project_id" {
   description = "Globally unique ID for one service in one environment."
   type        = string

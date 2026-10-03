@@ -11,7 +11,7 @@ import (
 
 func TestCompilerRecovery(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"Release", "Foundation", "ServiceProjects", "FoundationServiceProjects", "ServiceProjectTarget", "InvalidServiceProjects", "InvalidServiceProjectID", "LegacyHost", "CustomQuotas", "SourceTarget", "ManagementTarget", "WrongSource", "WrongOutputProject", "MissingOutput", "BadAttempt", "ForeignImage", "DuplicateImage"} {
+	for _, name := range []string{"Release", "Foundation", "Retirement", "FoundationRetirement", "ServiceProjects", "FoundationServiceProjects", "ServiceProjectTarget", "InvalidServiceProjects", "InvalidServiceProjectID", "LegacyHost", "CustomQuotas", "SourceTarget", "ManagementTarget", "WrongSource", "WrongOutputProject", "MissingOutput", "BadAttempt", "ForeignImage", "DuplicateImage"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			fixture := setup(t)
@@ -33,6 +33,11 @@ func TestCompilerRecovery(t *testing.T) {
 			switch name {
 			case "Foundation":
 				files[6] = "foundation"
+			case "Retirement", "FoundationRetirement":
+				config["retire_json_keys_project"] = true
+				if name == "FoundationRetirement" {
+					files[6] = "foundation"
+				}
 			case "ServiceProjects", "FoundationServiceProjects", "ServiceProjectTarget":
 				config["service_projects"] = object{"json-keys": "json-keys-project-prod", "authentication": "authentication-prod"}
 				if name == "FoundationServiceProjects" {
@@ -94,6 +99,7 @@ func TestCompilerRecovery(t *testing.T) {
 			require.Equal(t, "agora-recovery-test", foundation["workload_project_id"])
 			require.Equal(t, true, foundation["recovery_mode"])
 			require.Equal(t, object{}, foundation["service_projects"])
+			require.NotContains(t, foundation, "retire_json_keys_project")
 			if files[6] == "foundation" {
 				require.NoFileExists(t, filepath.Join(files[7], "active.tfvars.json"))
 				return

@@ -21,6 +21,7 @@ type foundationOptions struct {
 	command, name, region, zone, subnet, costEmail, operationsEmail string
 	parent                                                          *projectParent
 	adopt, legacyBackupAccess                                       bool
+	retireJSONKeys                                                  bool
 	databaseOperators, initializers                                 []string
 	serviceProjects                                                 map[string]string
 	repositoryServices                                              []string
@@ -96,6 +97,11 @@ func foundationFlags(args []string, getenv func(string) string) (foundationOptio
 		flags.BoolVar(&o.adopt, "adopt-existing-project", false, "Adopt the exact existing workload project")
 	}
 	if o.command == "configure" {
+		retirement := getenv("INFRA_RETIRE_JSON_KEYS_PROJECT")
+		if retirement != "" && retirement != "true" && retirement != "false" {
+			return o, errors.New("JSON Keys retirement must be true or false")
+		}
+		flags.BoolVar(&o.retireJSONKeys, "retire-json-keys-project", retirement == "true", "Prepare the audited obsolete JSON Keys project for retirement and retain the production Shared VPC host")
 		flags.BoolVar(&o.legacyBackupAccess, "legacy-backup-job-access", false, "Enable maintenance tagging and access only after all five legacy backup jobs exist")
 		flags.StringVar(&serviceProjects, "service-projects", serviceProjects, "JSON object mapping service names to project IDs; use {} for none")
 		flags.StringVar(&repositoryServices, "pgbackrest-repository-services", repositoryServices, "JSON array of declared services with native repository networking; use [] for none")
@@ -119,6 +125,11 @@ func foundationFlags(args []string, getenv func(string) string) (foundationOptio
 		}
 		if json.Unmarshal([]byte(repositoryServices), &o.repositoryServices) != nil || o.repositoryServices == nil {
 			return o, errors.New("repository services must be a JSON array; load the reviewed .envrc or pass --pgbackrest-repository-services")
+		}
+		if o.retireJSONKeys && (getenv("INFRA_MANAGEMENT_PROJECT_ID") != "a-novel-management-prod" ||
+			getenv("INFRA_WORKLOAD_PROJECT_ID") != "a-novel-production-prod" || len(o.repositoryServices) != 0 ||
+			len(o.serviceProjects) > 1 || len(o.serviceProjects) == 1 && o.serviceProjects["json-keys"] != "a-novel-json-keys-prod") {
+			return o, errors.New("retirement is limited to the obsolete JSON Keys shell with native repository networking disabled")
 		}
 		if len(o.repositoryServices) > 0 && (!slices.Equal(o.repositoryServices, []string{"json-keys"}) || o.serviceProjects["json-keys"] == "") {
 			return o, errors.New("repository networking supports only one declared json-keys service")
@@ -264,6 +275,9 @@ func (f foundation) configure(ctx context.Context, o foundationOptions, getenv f
 	}
 	if o.legacyBackupAccess {
 		config["legacy_backup_job_access"] = true
+	}
+	if o.retireJSONKeys {
+		config["retire_json_keys_project"] = true
 	}
 	if o.parent.Type != "" {
 		config[o.parent.Type+"_id"] = o.parent.ID

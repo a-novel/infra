@@ -17,14 +17,12 @@ locals {
 }
 
 resource "google_service_account" "release" {
-  project      = module.project.project_id
-  account_id   = "infra-release"
-  display_name = "Service release"
-  description  = "Keyless release writer for ${var.project_id}."
-
-  lifecycle {
-    prevent_destroy = true
-  }
+  project         = module.project.project_id
+  account_id      = "infra-release"
+  display_name    = "Service release"
+  description     = "Keyless release writer for ${var.project_id}."
+  disabled        = var.retirement
+  deletion_policy = var.retirement ? "DELETE" : "PREVENT"
 }
 
 resource "google_iam_workload_identity_pool_provider" "release" {
@@ -33,7 +31,8 @@ resource "google_iam_workload_identity_pool_provider" "release" {
   workload_identity_pool_provider_id = "r-${var.project_id}"
   display_name                       = "Service release"
   description                        = "Trusts only the ${local.release_environment} release workflow on master."
-  deletion_policy                    = "PREVENT"
+  deletion_policy                    = var.retirement ? "DELETE" : "PREVENT"
+  disabled                           = var.retirement
 
   attribute_mapping = {
     # Keep the subject below Google's 127-byte limit for long service names.
@@ -54,9 +53,6 @@ resource "google_iam_workload_identity_pool_provider" "release" {
     issuer_uri = "https://token.actions.githubusercontent.com"
   }
 
-  lifecycle {
-    prevent_destroy = true
-  }
 }
 
 resource "google_service_account_iam_member" "release_federation" {
@@ -73,11 +69,7 @@ resource "google_storage_managed_folder" "release" {
   bucket          = each.value.bucket
   name            = each.value.prefix
   force_destroy   = false
-  deletion_policy = "PREVENT"
-
-  lifecycle {
-    prevent_destroy = true
-  }
+  deletion_policy = var.retirement ? "ABANDON" : "PREVENT"
 }
 
 resource "google_storage_managed_folder_iam_member" "release" {
