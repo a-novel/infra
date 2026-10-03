@@ -434,28 +434,29 @@ run "protected_project_shell" {
   assert {
     condition = google_project_iam_custom_role.foundation_control_plane.permissions == toset(flatten([
       for resource, actions in {
-        "clouddeploy.deliveryPipelines" = ["create", "delete", "get", "update"]
-        "clouddeploy.targets"           = ["create", "delete", "get", "update"]
+        "clouddeploy.deliveryPipelines" = ["create", "delete", "get", "getIamPolicy", "setIamPolicy", "update"]
+        "clouddeploy.targets"           = ["create", "delete", "get", "getIamPolicy", "setIamPolicy", "update"]
         "clouddeploy.operations"        = ["get"]
         "clouddeploy.releases"          = ["get"]
         "clouddeploy.rollouts"          = ["get"]
         "cloudscheduler.jobs"           = ["create", "delete", "fullView", "get", "pause", "update"]
         "run.jobs"                      = ["create", "delete", "get", "getIamPolicy", "setIamPolicy", "update"]
         "run.operations"                = ["get"]
-        "run.services"                  = ["get"]
+        "run.services"                  = ["get", "getIamPolicy", "setIamPolicy"]
         "storage.buckets"               = ["create", "delete", "get", "getIamPolicy", "setIamPolicy", "update"]
         "workflows.executions"          = ["get"]
         "workflows.operations"          = ["get"]
         "workflows.workflows"           = ["create", "delete", "get", "update"]
       } : [for action in actions : "${resource}.${action}"]
     ]))
-    error_message = "Provisioning must not add dispatch, promotion, API mutation, schedule resume, payload or token-minting permissions."
+    error_message = "Resource-policy administration must not add dispatch, promotion, API-specification mutation, schedule resume, payload or token minting."
   }
 
   assert {
     condition = google_project_iam_custom_role.plan_policy.permissions == toset([
       "artifactregistry.repositories.getIamPolicy", "iam.roles.get", "iam.serviceAccounts.getIamPolicy",
-      "resourcemanager.projects.getIamPolicy", "run.jobs.getIamPolicy", "storage.buckets.getIamPolicy",
+      "clouddeploy.deliveryPipelines.getIamPolicy", "clouddeploy.targets.getIamPolicy",
+      "resourcemanager.projects.getIamPolicy", "run.jobs.getIamPolicy", "run.services.getIamPolicy", "storage.buckets.getIamPolicy",
     ])
     error_message = "Assessment needs policy refresh without payload access, identity attachment or mutation."
   }

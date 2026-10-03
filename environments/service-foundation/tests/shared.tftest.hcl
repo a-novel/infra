@@ -223,7 +223,7 @@ run "reject_shared_rollout" {
   command = plan
   variables {
     rollout = {
-      verification_image = "europe-west1-docker.pkg.dev/agora-private-test/agora-tooling/verify@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      verification_image = "europe-west1-docker.pkg.dev/agora-private-test/agora-json-keys-private-tooling/verify@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       network            = "projects/agora-network-test/global/networks/agora-production"
       subnetwork         = "projects/agora-network-test/regions/europe-west1/subnetworks/agora-production-europe-west1"
     }

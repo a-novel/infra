@@ -123,22 +123,60 @@ run "execution_authority" {
   assert {
     condition = { for key, role in google_project_iam_custom_role.execution : key => role.permissions } == {
       submit = toset([
-        "clouddeploy.config.get", "clouddeploy.deliveryPipelines.get", "clouddeploy.jobRuns.get",
-        "clouddeploy.operations.get", "clouddeploy.releases.create", "clouddeploy.releases.get",
-        "clouddeploy.rollouts.create", "clouddeploy.rollouts.get", "clouddeploy.targets.get",
-        "run.services.get",
+        "clouddeploy.config.get", "clouddeploy.operations.get",
       ])
       deploy = toset([
-        "clouddeploy.config.get", "logging.logEntries.create", "run.operations.get", "run.revisions.get",
-        "run.services.create", "run.services.get", "run.services.update",
+        "clouddeploy.config.get", "logging.logEntries.create", "run.operations.get",
       ])
       verify = toset([
-        "clouddeploy.config.get", "clouddeploy.jobRuns.get", "clouddeploy.releases.get", "clouddeploy.rollouts.get",
-        "logging.logEntries.create", "run.operations.get", "run.revisions.get", "run.services.get",
+        "clouddeploy.config.get", "logging.logEntries.create", "run.operations.get",
       ])
-      probe = toset(["run.routes.invoke"])
     }
-    error_message = "Keep project permissions separate: submit, deploy, read-only verification, and API-only invocation."
+    error_message = "Project roles contain only configuration/operation metadata and execution logging, never service creation or invocation."
+  }
+
+  assert {
+    condition = { for key, role in google_project_iam_custom_role.pipeline : key => role.permissions } == {
+      submit = toset([
+        "clouddeploy.deliveryPipelines.get", "clouddeploy.jobRuns.get", "clouddeploy.releases.create",
+        "clouddeploy.releases.get", "clouddeploy.rollouts.create", "clouddeploy.rollouts.get",
+      ])
+      verify = toset(["clouddeploy.jobRuns.get", "clouddeploy.releases.get", "clouddeploy.rollouts.get"])
+    }
+    error_message = "Pipeline roles separate record submission from verification without operational recovery powers."
+  }
+
+  assert {
+    condition = { for key, role in google_project_iam_custom_role.service : key => role.permissions } == {
+      submit = toset(["run.services.get"])
+      deploy = toset(["run.revisions.get", "run.services.get", "run.services.update"])
+      verify = toset(["run.revisions.get", "run.services.get"])
+      probe  = toset(["run.routes.invoke"])
+    }
+    error_message = "Existing-service roles exclude service creation, deletion, IAM, jobs and secret access."
+  }
+
+  assert {
+    condition = (
+      alltrue([for key, binding in google_clouddeploy_delivery_pipeline_iam_member.execution :
+        binding.project == var.project_id && binding.location == var.region && binding.name == var.name &&
+        binding.role == google_project_iam_custom_role.pipeline[key].name &&
+        binding.member == "serviceAccount:${key == "submit" ? "infra-release@${var.project_id}.iam.gserviceaccount.com" : google_service_account.execution[key].email}"
+      ]) &&
+      alltrue([for key, binding in google_cloud_run_v2_service_iam_member.execution :
+        binding.project == var.project_id && binding.location == var.region && binding.name == var.name &&
+        binding.role == google_project_iam_custom_role.service[key].name &&
+        binding.member == "serviceAccount:${key == "submit" ? "infra-release@${var.project_id}.iam.gserviceaccount.com" : google_service_account.execution[key].email}"
+      ]) &&
+      google_project_iam_custom_role.target.permissions == toset(["clouddeploy.targets.get"]) &&
+      [google_clouddeploy_target_iam_member.submit.project, google_clouddeploy_target_iam_member.submit.location,
+        google_clouddeploy_target_iam_member.submit.name, google_clouddeploy_target_iam_member.submit.role,
+        google_clouddeploy_target_iam_member.submit.member] == [
+        var.project_id, var.region, var.name, google_project_iam_custom_role.target.name,
+        "serviceAccount:infra-release@${var.project_id}.iam.gserviceaccount.com",
+      ]
+    )
+    error_message = "Pipeline, target and existing API authority must be resource-bound to exactly this service."
   }
 
   assert {

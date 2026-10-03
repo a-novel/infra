@@ -1,11 +1,28 @@
 variable "project_id" {
-  description = "Project dedicated to this service and environment; pipeline, target, and execution identities stay here."
+  description = "Project containing the selected API, pipeline, target and execution identities."
   type        = string
   nullable    = false
 
   validation {
     condition     = can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", var.project_id))
     error_message = "Use a valid 6-30 character Google Cloud project ID."
+  }
+}
+
+variable "scope" {
+  description = "Approved shared service/zone placement; null preserves the dedicated pilot's identity and custody names. Does not activate a runtime."
+  type = object({
+    service = string
+    zone    = string
+  })
+  default = null
+
+  validation {
+    condition = var.scope == null ? true : (
+      contains(["json-keys", "authentication"], var.scope.service) &&
+      contains(["private", "public-api"], var.scope.zone)
+    )
+    error_message = "Shared API authority requires json-keys or authentication in private or public-api, never the platform zone."
   }
 }
 
@@ -40,6 +57,11 @@ variable "name" {
     condition     = can(regex("^[a-z]([a-z0-9-]{0,54}[a-z0-9])?$", var.name))
     error_message = "Use a lowercase 1-56 character service name, leaving space for the probe job suffix."
   }
+
+  validation {
+    condition     = var.scope == null ? true : var.name == "agora-${var.scope.service}-${var.scope.zone == "private" ? "grpc" : "rest"}"
+    error_message = "The shared pipeline and target must name the selected service's private gRPC or public REST API."
+  }
 }
 
 variable "runtime_service_account" {
@@ -56,6 +78,11 @@ variable "runtime_service_account" {
     )
     error_message = "Use an application identity in this service project, distinct from release and rollout identities."
   }
+
+  validation {
+    condition     = var.scope == null ? true : var.runtime_service_account == "agora-${var.scope.service}-${var.scope.zone == "public-api" ? "api" : var.scope.zone}@${var.project_id}.iam.gserviceaccount.com"
+    error_message = "Shared deployment may attach only the selected service/zone application identity."
+  }
 }
 
 variable "artifact_bucket" {
@@ -66,6 +93,11 @@ variable "artifact_bucket" {
   validation {
     condition     = can(regex("^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$", var.artifact_bucket))
     error_message = "Use a 3-63 character bucket name containing lowercase letters, digits, and hyphens."
+  }
+
+  validation {
+    condition     = var.scope == null ? true : var.artifact_bucket == "${var.project_id}-${var.scope.service}-${var.scope.zone == "public-api" ? "api" : var.scope.zone}-rollout"
+    error_message = "Use the exact shared service/zone rollout bucket, not a peer's artifact store."
   }
 }
 
@@ -110,6 +142,14 @@ variable "verification_image" {
       var.verification_image,
     ))
     error_message = "Pin the reviewed verifier by SHA-256 digest in the selected project's regional Artifact Registry."
+  }
+
+  validation {
+    condition = var.scope == null ? true : startswith(
+      var.verification_image,
+      "${var.region}-docker.pkg.dev/${var.project_id}/agora-${var.scope.service}-${var.scope.zone == "public-api" ? "api" : var.scope.zone}-tooling/",
+    )
+    error_message = "Shared verification must use the selected service/zone tooling repository."
   }
 }
 
