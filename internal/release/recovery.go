@@ -100,6 +100,7 @@ func (compiler *Compiler) CompileRecovery(args []string, identity Identity) erro
 	delete(foundation, "retire_json_keys_project")
 	delete(foundation, "public_project_id")
 	delete(foundation, "shared_vpc_enabled")
+	delete(foundation, "service_release_zones")
 	outputs := map[string]any{"foundation.tfvars.json": foundation}
 	if phase == "foundation" {
 		return writeOutputs(args[7], outputs)

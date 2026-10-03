@@ -74,3 +74,43 @@ moved {
   from = google_project_iam_member.mig_agent
   to   = module.project.google_project_iam_member.mig_agent
 }
+
+moved {
+  from = google_service_account.release
+  to   = module.release.google_service_account.release
+}
+
+moved {
+  from = google_iam_workload_identity_pool_provider.release
+  to   = module.release.google_iam_workload_identity_pool_provider.release
+}
+
+moved {
+  from = google_service_account_iam_member.release_federation
+  to   = module.release.google_service_account_iam_member.release_federation
+}
+
+moved {
+  from = google_storage_managed_folder.release
+  to   = module.release.google_storage_managed_folder.release
+}
+
+moved {
+  from = google_storage_managed_folder_iam_member.release
+  to   = module.release.google_storage_managed_folder_iam_member.release
+}
+
+moved {
+  from = google_storage_bucket_iam_member.release_metadata
+  to   = module.release.google_storage_bucket_iam_member.release_metadata
+}
+
+moved {
+  from = google_storage_managed_folder_iam_member.plan
+  to   = module.release.google_storage_managed_folder_iam_member.plan
+}
+
+moved {
+  from = google_storage_bucket_iam_member.plan_operation_reader
+  to   = module.release.google_storage_bucket_iam_member.plan_operation_reader
+}

@@ -39,6 +39,37 @@ key or private database credentials, and exercise the intended permitted/denied 
 Private secret ownership alone does not establish those denials. No existing release registration,
 state, receipt, guard or backup owner changes with this shell definition.
 
+## Shared-project release boundaries
+
+`service_release_zones` prepares separate identities and custody folders within the selected
+trust-zone projects. It defaults to `{}` and is omitted by the publisher when empty. The reviewed
+`.envrc` remains unchanged. After separate configuration approval, the publisher accepts
+`INFRA_SERVICE_RELEASE_ZONES` or `--service-release-zones`, for example this inactive selection:
+
+```json
+{ "json-keys": ["private", "public"], "authentication": ["private", "public"] }
+```
+
+Only the two deployed services and nonempty private/public zone sets are accepted. Shared VPC must
+be explicitly retained; public selections require `public_project_id`. Dedicated-service registration,
+retirement, repository-network selection and recovery registration cannot be combined with this input.
+The publisher validates before external commands and writes the complete configuration, not a merge;
+preserve any approved selection in the reviewed `.envrc`. Legacy recovery compilation removes it,
+and recovery-mode HCL rejects it.
+
+The [release-boundary contract](../../modules/release-boundary) publishes schema-2 coordinates under
+`service_release_boundaries`, keyed by `service/zone`. Its identities and storage paths distinguish
+services sharing a project and components of one service in different zones. It creates no runtime
+permissions and does not enroll the existing service workflows. Those workflows, guards and
+foundation state paths still use the dedicated-project contract described below.
+
+Before selecting or activating these boundaries, complete zone-aware workflow registration, runtime
+permission review, saved-plan expiration and the single-writer state handoff. Create each exact
+service/zone GitHub environment with required reviewers, protected branches and no admin bypass
+before federation. Live checks must prove permitted own-state access, immutable receipts, denied
+peer/legacy state access and denied public access to private secrets. Keep existing release and backup
+owners unchanged until those checks pass; no state transfer or resource migration happens here.
+
 ## Dedicated-service compatibility configuration
 
 The reviewed `.envrc` declares a JSON object mapping service names to project IDs. For example, these

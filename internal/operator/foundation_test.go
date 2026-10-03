@@ -134,6 +134,71 @@ func (f *foundationFixture) cleanup() []string {
 
 func TestFoundation(t *testing.T) {
 	t.Parallel()
+	t.Run("ReleaseZones", func(t *testing.T) {
+		t.Parallel()
+		for _, tc := range []struct {
+			name, value, flag, public, shared, projects, repository, retirement string
+			valid                                                               bool
+		}{
+			{name: "Disabled", valid: true},
+			{name: "Empty", value: "{}", valid: true},
+			{name: "Private", value: `{"json-keys":["private"],"authentication":["private"]}`, shared: "true", valid: true},
+			{name: "Split", value: `{"json-keys":["private","public"],"authentication":["public"]}`, shared: "true", public: "agora-public-test", valid: true},
+			{name: "Flag", value: "invalid", flag: `{"json-keys":["private"]}`, shared: "true", valid: true},
+			{name: "DisableFlag", value: `{"json-keys":["private"]}`, flag: "{}", valid: true},
+			{name: "Malformed", value: "private-invalid-json"},
+			{name: "Null", value: "null"},
+			{name: "Array", value: "[]"},
+			{name: "NullZones", value: `{"json-keys":null}`, shared: "true"},
+			{name: "EmptyZones", value: `{"json-keys":[]}`, shared: "true"},
+			{name: "ScalarZone", value: `{"json-keys":"private"}`, shared: "true"},
+			{name: "UnknownService", value: `{"peer":["private"]}`, shared: "true"},
+			{name: "UnknownZone", value: `{"json-keys":["admin"]}`, shared: "true"},
+			{name: "Duplicate", value: `{"json-keys":["private","private"]}`, shared: "true"},
+			{name: "TooMany", value: `{"json-keys":["private","public","private"]}`, shared: "true"},
+			{name: "MissingPublic", value: `{"json-keys":["public"]}`, shared: "true"},
+			{name: "MissingHost", value: `{"json-keys":["private"]}`},
+			{name: "Dedicated", value: `{"json-keys":["private"]}`, shared: "true", projects: `{"json-keys":"agora-json-keys-test"}`},
+			{name: "NativeRepository", value: `{"json-keys":["private"]}`, shared: "true", repository: `["json-keys"]`},
+			{name: "Retirement", value: `{"json-keys":["private"]}`, shared: "true", retirement: "true"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+				f := foundationCase()
+				writes := f.configuration()
+				f.env["INFRA_SERVICE_RELEASE_ZONES"] = tc.value
+				f.env["INFRA_PUBLIC_PROJECT_ID"], f.env["INFRA_SHARED_VPC_ENABLED"] = tc.public, tc.shared
+				f.env["INFRA_RETIRE_JSON_KEYS_PROJECT"] = tc.retirement
+				for key, value := range map[string]string{"INFRA_SERVICE_PROJECTS": tc.projects, "INFRA_PGBACKREST_REPOSITORY_SERVICES": tc.repository} {
+					if value != "" {
+						f.env[key] = value
+					}
+				}
+				args, expected := []string{"configure"}, tc.value
+				if tc.flag != "" {
+					args, expected = append(args, "--service-release-zones", tc.flag), tc.flag
+				}
+				code, out := f.run(t, args...)
+				require.NotContains(t, out, "private-invalid-json")
+				if !tc.valid {
+					require.Equal(t, 64, code, out)
+					require.Empty(t, f.calls)
+					return
+				}
+				require.Zero(t, code, out)
+				require.Equal(t, writes, f.mutations)
+				require.Len(t, f.secrets, 2)
+				require.Equal(t, f.secrets[0], f.secrets[1])
+				var config map[string]json.RawMessage
+				require.NoError(t, json.Unmarshal(f.secrets[0], &config))
+				if expected == "" || expected == "{}" {
+					require.NotContains(t, config, "service_release_zones")
+				} else {
+					require.JSONEq(t, expected, string(config["service_release_zones"]))
+				}
+			})
+		}
+	})
 	t.Run("TrustZones", func(t *testing.T) {
 		t.Parallel()
 		for _, tc := range []struct {

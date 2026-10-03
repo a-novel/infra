@@ -7,15 +7,17 @@ The protected shared foundation owns this module; a service deployer must not ow
 
 This is the compatibility composition for existing service-project callers. The
 [project-shell module](../project-shell) now owns project provisioning under
-`module.project`; release resources retain their existing addresses here. The
-relative moves in `moved.tf` retain every caller's project resources, including
-`for_each` instances. Keep these moves for existing states. No manual state edits
-are needed for this extraction.
+`module.project`; [release-boundary](../release-boundary) owns release resources
+under `module.release`. The relative moves in `moved.tf` retain every caller's
+project and release resources, including `for_each` instances. Keep these moves
+for existing states. Names, storage paths, grants and schema-1 outputs are unchanged;
+no manual state edits are needed for either extraction.
 
-Shared environment/trust-zone placement is not enabled yet: release storage,
-identities and operation guards still assume one project per service. Review owned
-obsolete projects and billing capacity before new provisioning. Public-admin,
-staging and Kubernetes remain deferred.
+Shared environment/trust-zone release identities are defined separately through
+`service_release_zones`, default empty. Existing workflow registration and operation
+guards still assume one project per service, so shared runtime enrollment remains
+disabled. Review owned obsolete projects and billing capacity before new provisioning.
+Public-admin, staging and Kubernetes remain deferred.
 
 The production caller is [foundation/service-projects.tf](../../environments/production/foundation/service-projects.tf).
 Its empty `service_projects` map leaves the current deployment unchanged. See the
@@ -24,7 +26,7 @@ Its empty `service_projects` map leaves the current deployment unchanged. See th
 ## Ownership
 
 The project, API, service-agent, logging and foundation IAM addresses below are
-relative to `module.project`. Release and storage addresses remain in this module.
+relative to `module.project`. Release and storage addresses are relative to `module.release`.
 
 | Resource                                                                                                                                           | Contract                                                                                                                                                                                               |
 | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
