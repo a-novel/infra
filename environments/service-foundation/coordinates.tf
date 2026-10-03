@@ -1,16 +1,16 @@
 locals {
-  coordinates = {
-    schema_version = 1
+  coordinates = merge({
+    schema_version = local.coordinates_version
     runtime        = local.runtime
     database       = local.database_coordinates
     rollout        = try(module.rollout["api"].rollout, null)
-  }
+  }, var.zone == null ? {} : { scope = local.scope })
   coordinates_json = jsonencode(local.coordinates)
 }
 
 resource "google_storage_managed_folder" "coordinates" {
   bucket          = var.state_bucket
-  name            = "foundation/coordinates/${var.project_id}/"
+  name            = var.zone == null ? "foundation/coordinates/${var.project_id}/" : "foundation/coordinates/${local.scope}/"
   force_destroy   = false
   deletion_policy = "PREVENT"
 
@@ -23,7 +23,7 @@ resource "google_storage_managed_folder_iam_member" "coordinate_reader" {
   bucket         = google_storage_managed_folder.coordinates.bucket
   managed_folder = google_storage_managed_folder.coordinates.name
   role           = "roles/storage.objectViewer"
-  member         = "serviceAccount:infra-release@${var.project_id}.iam.gserviceaccount.com"
+  member         = "serviceAccount:${local.release_service_account}"
 }
 
 resource "google_storage_bucket_object" "coordinates" {
@@ -55,7 +55,7 @@ resource "google_storage_bucket_object" "coordinates" {
 output "coordinates" {
   description = "Pin this exact object and checksum only after the protected apply and convergence succeed."
   value = {
-    schema_version = 1
+    schema_version = local.coordinates_version
     bucket         = google_storage_bucket_object.coordinates.bucket
     object         = google_storage_bucket_object.coordinates.name
     generation     = google_storage_bucket_object.coordinates.generation

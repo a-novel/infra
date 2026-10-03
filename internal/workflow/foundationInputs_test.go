@@ -22,6 +22,10 @@ func TestFoundationInputs(t *testing.T) {
 		{name: "Shared", root: "foundation", service: "none", valid: true},
 		{name: "JSONKeys", valid: true},
 		{name: "Authentication", service: "authentication", valid: true},
+		{name: "ExplicitNullZone", valid: true},
+		{name: "SharedPrivateNotEnrolled", field: "zone", value: "private"},
+		{name: "SharedAPINotEnrolled", field: "zone", value: "public-api"},
+		{name: "EmptyZone", field: "zone"},
 		{name: "PeerProject", field: "project_id", value: "agora-peer-test"},
 		{name: "PeerBucket", field: "state_bucket", value: "agora-peer-test-123-tofu-state"},
 		{name: "Management", field: "management_project_id", value: "agora-peer-test"},
@@ -56,12 +60,15 @@ func TestFoundationInputs(t *testing.T) {
 				service = "json-keys"
 			}
 			bucket := "agora-management-test-123-tofu-state"
-			selected := map[string]string{
+			selected := map[string]any{
 				"project_id": "agora-" + service + "-test", "management_project_id": "agora-management-test",
 				"state_bucket": bucket, "region": "europe-west1", "service": service,
 			}
 			if testCase.field != "" {
 				selected[testCase.field] = testCase.value
+			}
+			if testCase.name == "ExplicitNullZone" {
+				selected["zone"] = nil
 			}
 			if testCase.name == "CaseSensitiveProject" {
 				selected["PROJECT_ID"] = "agora-json-keys-test"
@@ -92,7 +99,7 @@ func TestFoundationInputs(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
 			if root == "service-foundation" {
-				suffix := "services/" + selected["project_id"]
+				suffix := "services/agora-" + service + "-test"
 				require.Equal(t, "file="+file+"\nstate_suffix="+suffix+"\n", output.String())
 				for _, scope := range []string{suffix, "services/agora-peer-test", "recovery/agora-json-keys-test", ""} {
 					output.Reset()

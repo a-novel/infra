@@ -5,8 +5,15 @@ provider "google" {
 
 locals {
   foundation_service_account = "infra-foundation@${var.management_project_id}.iam.gserviceaccount.com"
+  zone_suffix                = var.zone == "public-api" ? "api" : var.zone
+  release_service_account    = var.zone == null ? "infra-release@${var.project_id}.iam.gserviceaccount.com" : "infra-${var.service}-${local.zone_suffix}@${var.project_id}.iam.gserviceaccount.com"
+  coordinates_version        = var.zone == null ? 1 : 2
+  scope                      = var.zone == null ? "services/${var.project_id}" : "workloads/production/${var.zone}/${var.project_id}/${var.service}"
   runtime_secrets = {
-    json-keys      = toset(["production-json-keys-postgres-password", "production-json-keys-app-master-key"])
+    json-keys = toset(concat(
+      ["production-json-keys-postgres-password"],
+      var.zone == "public-api" ? [] : ["production-json-keys-app-master-key"],
+    ))
     authentication = toset(["production-authentication-postgres-password", "production-authentication-smtp-sender-password"])
   }
   job_secrets = {
@@ -17,7 +24,7 @@ locals {
 
 resource "google_service_account" "runtime" {
   project      = var.project_id
-  account_id   = "agora-${var.service}"
+  account_id   = var.zone == null ? "agora-${var.service}" : "agora-${var.service}-${local.zone_suffix}"
   display_name = "Agora ${var.service} application"
 
   lifecycle {
@@ -25,7 +32,14 @@ resource "google_service_account" "runtime" {
 
     precondition {
       condition     = terraform.workspace == "default"
-      error_message = "Service foundation owns one default-workspace state per project."
+      error_message = "Service foundation owns one default-workspace state per authorized service scope."
+    }
+    precondition {
+      condition = var.zone == null || (
+        var.database == null && var.pgbackrest_repository == null && var.database_runtime == null &&
+        var.rollout == null && !var.manage_job_access
+      )
+      error_message = "Shared-zone prerequisites cannot enroll hosts, rollout or jobs before their ownership handoff."
     }
   }
 }
@@ -47,7 +61,7 @@ resource "google_secret_manager_secret_iam_member" "runtime" {
 }
 
 resource "google_secret_manager_secret_iam_member" "foundation_job_metadata" {
-  for_each = lookup(local.job_secrets, var.service, toset([]))
+  for_each = var.zone == null ? lookup(local.job_secrets, var.service, toset([])) : toset([])
 
   project   = var.management_project_id
   secret_id = each.key
@@ -60,7 +74,7 @@ resource "google_artifact_registry_repository" "images" {
 
   project         = var.project_id
   location        = var.region
-  repository_id   = each.key
+  repository_id   = var.zone == null ? each.key : "agora-${var.service}-${local.zone_suffix}-${trimprefix(each.key, "agora-")}"
   format          = "DOCKER"
   mode            = "STANDARD_REPOSITORY"
   deletion_policy = "PREVENT"
@@ -83,7 +97,7 @@ resource "google_artifact_registry_repository_iam_member" "release" {
   location   = google_artifact_registry_repository.images["agora-production"].location
   repository = google_artifact_registry_repository.images["agora-production"].repository_id
   role       = "roles/artifactregistry.writer"
-  member     = "serviceAccount:infra-release@${var.project_id}.iam.gserviceaccount.com"
+  member     = "serviceAccount:${local.release_service_account}"
 }
 
 resource "google_artifact_registry_repository_iam_member" "recovery" {
