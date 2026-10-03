@@ -3,7 +3,6 @@ package workflow
 import (
 	"fmt"
 	"io"
-	"strings"
 )
 
 // ObservationInputs authorizes a rollout or apply-evidence reader before
@@ -18,13 +17,13 @@ func ObservationInputs(args []string, getenv func(string) string, stdout, stderr
 		return stop("Select a supported read-only operation and its exact scope.")
 	}
 	if args[0] == "inspect-operation" {
-		scopes, err := ServiceScopes(getenv, getenv("STATE_BUCKET"))
+		scopes, err := OperationScopes(getenv, getenv("STATE_BUCKET"))
 		if err != nil {
 			return stop("Operation inspection requires protected service registration.")
 		}
 		for scope, service := range scopes {
 			if service == args[1] {
-				if _, err := fmt.Fprintln(stdout, "project="+strings.TrimPrefix(scope, "services/")); err != nil {
+				if _, err := fmt.Fprintln(stdout, "project="+scope); err != nil {
 					return stop("Cannot record the authorized service identity.")
 				}
 				return 0

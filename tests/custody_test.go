@@ -170,6 +170,8 @@ func TestCustodyPlanIntegrity(t *testing.T) {
 	} {
 		for _, boundary := range []struct{ root, scope string }{
 			{"service-foundation", "services/agora-json-keys-test"},
+			{"service-foundation", "workloads/production/private/agora-private-test/json-keys"},
+			{"service-foundation", "workloads/production/public-api/agora-api-test/json-keys"},
 			{"service-release", "services/agora-json-keys-test"},
 			{"service-release", "workloads/production/private/agora-private-test/json-keys"},
 		} {

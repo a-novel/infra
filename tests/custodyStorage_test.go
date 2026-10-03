@@ -30,6 +30,9 @@ func applyStorage(t *testing.T, f *sandbox, failure string) {
 		planMetadata = filepath.Join(filepath.Dir(f.env["FAKE_TOFU_REQUIRE_ABSENT"]), "metadata.json")
 	}
 	guardName := "services/agora-json-keys-test/release/operation.json"
+	if strings.HasPrefix(f.env["TOFU_STATE_SUFFIX"], "workloads/") {
+		guardName = "foundation/operations/production/json-keys/operation.json"
+	}
 	legacy := f.env["ROOT_NAME"] == "foundation" && f.env["TOFU_STATE_SUFFIX"] == ""
 	if legacy {
 		guardName = "release/legacy-maintenance/operation.json"
@@ -112,7 +115,7 @@ func applyStorage(t *testing.T, f *sandbox, failure string) {
 		if strings.Contains(object.Name, "/config/") {
 			stage = "config"
 		}
-		if strings.Contains(object.Name, "/operations/") || strings.Contains(object.Name, "/completions/") {
+		if object.Name != guardName && (strings.Contains(object.Name, "/operations/") || strings.Contains(object.Name, "/completions/")) {
 			stage = "completion"
 		}
 		if stage != "guard" {

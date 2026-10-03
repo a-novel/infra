@@ -65,6 +65,10 @@ if [[ "${ROOT_NAME}" = service-* ]]; then
         JOB_BOOTSTRAP=true
     fi
     INPUT_COMMAND=foundation-inputs
+    INPUT_ACTION=check
+    if [ "${ROOT_NAME}" = service-foundation ]; then
+        INPUT_ACTION=check-foundation
+    fi
     if [ "${ROOT_NAME}" = service-recovery ]; then
         INPUT_COMMAND=recovery-inputs
         if [ "${ACTION}" != assess ] && [ "${ACTION}" != drift ]; then
@@ -75,7 +79,7 @@ if [[ "${ROOT_NAME}" = service-* ]]; then
             NATIVE_PREPARATION=true
         fi
     fi
-    infra "${INPUT_COMMAND}" check "${TOFU_VAR_FILE:?}" "${STATE_BUCKET}" "${TOFU_STATE_SUFFIX:?}"
+    infra "${INPUT_COMMAND}" "${INPUT_ACTION}" "${TOFU_VAR_FILE:?}" "${STATE_BUCKET}" "${TOFU_STATE_SUFFIX:?}"
     if [ "${TF_WORKSPACE:-default}" != default ] || [ -n "${!TF_CLI_ARGS*}" ]; then
         printf 'Service roots require the default workspace and explicit CLI arguments.\n' >&2
         exit 65

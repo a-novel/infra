@@ -196,7 +196,7 @@ type operationInspection struct {
 }
 
 func (fixture *operationInspection) finish() {
-	fixture.args = []string{"operation", "finish", fixture.args[2], "agora-json-keys-test", "42", "FINISH json-keys 42"}
+	fixture.args = []string{"operation", "finish", fixture.args[2], fixture.args[3], "42", "FINISH json-keys 42"}
 	fixture.env["STATE_BUCKET"] = fixture.args[2]
 	fixture.env["SERVICE_OPERATION_RECOVERY_ENABLED"] = "true"
 	fixture.env["GITHUB_EVENT_NAME"] = "workflow_dispatch"

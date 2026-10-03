@@ -13,7 +13,7 @@ Production and retained recovery evidence remain unchanged.
 
 ## Shared trust-zone prerequisites
 
-An optional `zone` selects `private` or `public-api` for cloud-blind preparation. Both services
+An optional `zone` selects `private` or `public-api` prerequisites. Both services
 can share each project: identity and repository names include service and zone, and coordinate
 folders include the full production scope. The `public` platform zone is rejected.
 
@@ -37,10 +37,23 @@ Schema-2 runtime coordinates add `zone`; the published envelope also binds
 `foundation/coordinates/workloads/production/ZONE/PROJECT/SERVICE/`, readable by only that scope's
 release identity plus existing protected parent readers. No state is shared with runtime callers.
 
-The protected workflow still rejects every non-null `zone` before cloud authentication, including
-one combined with legacy project registration. These profiles are not enrolled writers: shared
-state, one guard per logical service, approved coordinate consumers and effective access checks
-must be implemented before provisioning or migration. No new host or runtime is selected here.
+The protected workflow authorizes these profiles against `service_release_zones`, using the
+existing per-service configuration selector. Shared and dedicated registrations cannot be mixed.
+Each selected scope owns `foundation/workloads/production/ZONE/PROJECT/SERVICE/default.tfstate`
+and its adjacent private `config/` history. Saved plans use `foundation/plans/SCOPE/`, covered by
+the existing core plan-expiration rule. No backend override or non-default workspace is accepted.
+
+Both zones of one service share `foundation/operations/production/SERVICE/operation.json`.
+Schema-2 apply intent binds the full scope; completion uses that scope's existing receipt folder
+at `SCOPE/production/operations/GENERATION.json`. Admission, publication and exact-generation
+cleanup retain the existing interruption rules. Read-only inspection covers every registered
+foundation scope and blocks on unknown state or retained guards. The existing inspect/finish
+commands still select the logical service; they require no current zone configuration to inspect
+a retained operation. Shared runtime operations remain unsupported.
+
+Writer flags and protected inputs remain separately activated. Approved coordinate consumers,
+effective access checks and runtime ownership handoff still precede deployment. No new host or
+runtime is selected here.
 The remaining sections describe the unchanged dedicated-project path (`zone = null`).
 
 ## Owners and state

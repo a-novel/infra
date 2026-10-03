@@ -39,15 +39,15 @@ func (custody store) inspectOperation(action string, args []string, getenv func(
 	confirmation := ""
 	if action == "finish" {
 		if len(args) != 3 {
-			return failure{64, "Usage: infra custody operation finish <state-bucket> <registered-project> <guard-generation> <confirmation>"}
+			return failure{64, "Usage: infra custody operation finish <state-bucket> <registered-operation-scope> <guard-generation> <confirmation>"}
 		}
 		confirmation, args = args[2], args[:2]
 	}
 	if len(args) < 1 || len(args) > 2 {
-		return failure{64, "Usage: infra custody operation inspect <state-bucket> <registered-project> [guard-generation]"}
+		return failure{64, "Usage: infra custody operation inspect <state-bucket> <registered-operation-scope> [guard-generation]"}
 	}
-	scopes, err := workflow.ServiceScopes(getenv, custody.bucket)
-	if err != nil || scopes["services/"+args[0]] == "" {
+	scopes, err := workflow.OperationScopes(getenv, custody.bucket)
+	if err != nil || scopes[args[0]] == "" {
 		return failure{65, "Operation inspection does not match protected registration."}
 	}
 	var registration map[string]json.RawMessage
@@ -67,7 +67,7 @@ func (custody store) inspectOperation(action string, args []string, getenv func(
 	}
 	readScope := storage.DevstorageReadOnlyScope
 	if action == "finish" {
-		project, err := workflow.FinishOperationProject([]string{scopes["services/"+args[0]], args[1], confirmation}, getenv)
+		project, err := workflow.FinishOperationProject([]string{scopes[args[0]], args[1], confirmation}, getenv)
 		if err != nil || project != args[0] {
 			return failure{65, "Finishing a recorded operation requires exact protected recovery authorization."}
 		}
@@ -79,7 +79,10 @@ func (custody store) inspectOperation(action string, args []string, getenv func(
 	if err != nil {
 		return failure{70, "Operation inspection client unavailable."}
 	}
-	expected := applyIntent{Project: args[0], Service: scopes["services/"+args[0]], Region: region}
+	expected := applyIntent{Project: args[0], Service: scopes[args[0]], Region: region}
+	if strings.HasPrefix(args[0], "workloads/") {
+		expected.Project, expected.Scope = "", args[0]
+	}
 	evidence, err := readOperation(ctx, client, custody.bucket, expected, generation, getenv)
 	if err != nil {
 		return err
@@ -92,7 +95,7 @@ func (custody store) inspectOperation(action string, args []string, getenv func(
 
 // readOperation verifies historical evidence separately from the observed live guard.
 func readOperation(ctx context.Context, client *storage.Service, bucket string, expected applyIntent, generation int64, getenv func(string) string) (operationEvidence, error) {
-	guard := objectReference{Bucket: bucket, Name: "services/" + expected.Project + "/release/operation.json"}
+	guard := objectReference{Bucket: bucket, Name: expected.guardName()}
 	live, err := liveGeneration(ctx, client, guard.Bucket, guard.Name)
 	if err != nil {
 		return operationEvidence{}, err
@@ -116,9 +119,12 @@ func readOperation(ctx context.Context, client *storage.Service, bucket string, 
 	if jsonv2.Unmarshal(data, &header) != nil {
 		return operationEvidence{}, failure{70, "Malformed operation evidence."}
 	}
+	if expected.Scope != "" && header.Kind != "" {
+		return operationEvidence{}, failure{70, "Shared runtime operations are not enrolled."}
+	}
 	switch header.Kind {
 	case "":
-		evidence.intent, evidence.completed, err = inspectApply(ctx, client, expected, guard, data)
+		evidence.intent, evidence.completed, err = inspectApply(ctx, client, expected, guard, data, getenv)
 	case "native-release":
 		evidence.native, err = submission.InspectOperation(data, generation, bucket, expected.Project, getenv, func(name string) ([]byte, error) {
 			receipts := strings.TrimSuffix(bucket, "-tofu-state") + "-deployment-receipts"
@@ -150,15 +156,23 @@ func readOperation(ctx context.Context, client *storage.Service, bucket string, 
 	return evidence, nil
 }
 
-func inspectApply(ctx context.Context, client *storage.Service, expected applyIntent, guard objectReference, data []byte) (applyIntent, bool, error) {
+func inspectApply(ctx context.Context, client *storage.Service, expected applyIntent, guard objectReference, data []byte, getenv func(string) string) (applyIntent, bool, error) {
 	var intent applyIntent
 	if err := decodeRecord(data, &intent); err != nil {
 		return intent, false, err
 	}
-	if intent.SchemaVersion != 1 {
+	if expected.Scope != "" {
+		scopes, err := workflow.ReleaseScopes(getenv, guard.Bucket)
+		parts := strings.Split(intent.Scope, "/")
+		if err != nil || intent.SchemaVersion != 2 || intent.Root != "service-foundation" ||
+			!foundationScopePattern.MatchString(intent.Scope) || scopes[intent.Scope] != intent.Service ||
+			len(parts) != 5 || parts[3] != intent.Project || parts[4] != intent.Service {
+			return intent, false, failure{70, "Shared operation does not match registered prerequisites."}
+		}
+	} else if intent.SchemaVersion != 1 || intent.Scope != "" {
 		return intent, false, failure{70, "Unsupported operation schema."}
 	}
-	if intent.guardProject() != expected.Project || intent.Service != expected.Service || intent.Region != expected.Region ||
+	if intent.operationScope() != expected.operationScope() || intent.Service != expected.Service || intent.Region != expected.Region ||
 		(intent.Root != "service-recovery" && intent.SourceProject != "") {
 		return intent, false, failure{70, "Stored operation does not match the approved service scope."}
 	}
@@ -240,7 +254,7 @@ func (evidence operationEvidence) report(output io.Writer) error {
 func inspectCompletion(ctx context.Context, client *storage.Service, intent applyIntent, guard objectReference, configName string) (bool, error) {
 	reference := objectReference{
 		Bucket: strings.TrimSuffix(guard.Bucket, "-tofu-state") + "-deployment-receipts",
-		Name:   fmt.Sprintf("services/%s/production/operations/%d.json", intent.guardProject(), guard.Generation),
+		Name:   intent.completionName(guard.Generation),
 	}
 	data, err := readCurrentObject(ctx, client, reference.Bucket, reference.Name)
 	if err != nil || data == nil {

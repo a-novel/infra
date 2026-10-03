@@ -1,6 +1,7 @@
 package tests_test
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -125,8 +126,12 @@ func TestSharedReleaseCustody(t *testing.T) {
 			f.custody(t, 65, "config", "publish", args[0], "service-release", download, "124", "1")
 			for _, root := range []string{"service-foundation", "service-recovery"} {
 				args[1] = root
-				f.custody(t, 65, append([]string{"plan", "fetch"}, args...)...)
-				f.custody(t, 65, "config", "fetch", args[0], root, download)
+				planCode, configCode := 65, 65
+				if root == "service-foundation" && zone != "public" {
+					planCode, configCode = 66, 4
+				}
+				f.custody(t, planCode, append([]string{"plan", "fetch"}, args...)...)
+				f.custody(t, configCode, "config", "fetch", args[0], root, download)
 			}
 			args[1] = "service-release"
 			f.env["MANAGEMENT_PROJECT_ID"] = "agora-management-test"
@@ -137,6 +142,89 @@ func TestSharedReleaseCustody(t *testing.T) {
 			require.NotContains(t, read(t, f.env["FAKE_GCS_CALLS"]), "storage rm")
 			writeJSON(t, args[5], object{"changed": true})
 			f.custody(t, 77, append([]string{"plan", "fetch"}, args...)...)
+		})
+	}
+}
+
+func TestSharedFoundationInspection(t *testing.T) {
+	t.Parallel()
+	for _, testCase := range []struct {
+		name  string
+		code  int
+		plans int
+	}{
+		{name: "AllScopes", plans: 3},
+		{name: "HeldGuard", code: 70},
+		{name: "OrphanGuard", code: 70},
+		{name: "OrphanState", code: 70},
+		{name: "MissingConfig", code: 70},
+		{name: "PeerConfig", code: 70},
+		{name: "WrongZone", code: 70},
+		{name: "RuntimeOptIn", code: 70},
+		{name: "LockedState", code: 70},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			f := inspectionFixture(t)
+			bucket := "agora-management-test-123-tofu-state"
+			storage := filepath.Join(f.env["FAKE_GCS_ROOT"], bucket)
+			f.env["FAKE_GATE_FILES"] = "service"
+			f.env["FAKE_TOFU_ONLY_ROOT"] = filepath.Join(f.dir, "environments/service-foundation")
+			f.env["FAKE_GCS_MANAGED_FOLDERS"] = ""
+			var registration object
+			require.NoError(t, json.Unmarshal([]byte(sharedRegistration), &registration))
+			writeJSON(t, filepath.Join(storage, "foundation/config/00000000000000000001-00001.tfvars.json"), registration)
+			for _, selection := range []struct{ zone, project, service string }{
+				{"private", "agora-private-test", "json-keys"},
+				{"public-api", "agora-api-test", "authentication"},
+				{"public-api", "agora-api-test", "json-keys"},
+			} {
+				scope := "workloads/production/" + selection.zone + "/" + selection.project + "/" + selection.service
+				f.env["FAKE_GCS_MANAGED_FOLDERS"] += scope + "/release/\n"
+				writeJSON(t, filepath.Join(storage, "foundation", scope, "default.tfstate"), object{})
+				config := object{
+					"zone": selection.zone, "project_id": selection.project, "service": selection.service,
+					"region": "europe-west1", "management_project_id": "agora-management-test", "state_bucket": bucket,
+				}
+				if testCase.name == "PeerConfig" {
+					config["project_id"] = "agora-peer-test"
+				}
+				if testCase.name == "WrongZone" {
+					config["zone"] = "public"
+				}
+				if testCase.name == "RuntimeOptIn" {
+					config["manage_job_access"] = true
+				}
+				if testCase.name != "MissingConfig" {
+					writeJSON(t, filepath.Join(storage, "foundation", scope, "config/00000000000000000001-00001.tfvars.json"), config)
+				}
+			}
+			switch testCase.name {
+			case "HeldGuard", "OrphanGuard":
+				service := "json-keys"
+				if testCase.name == "OrphanGuard" {
+					service = "peer"
+				}
+				writeJSON(t, filepath.Join(storage, "foundation/operations/production", service, "operation.json"), object{})
+			case "OrphanState":
+				writeJSON(t, filepath.Join(storage, "foundation/workloads/production/private/agora-peer-test/json-keys/default.tfstate"), object{})
+			case "LockedState":
+				writeJSON(t, filepath.Join(storage, "foundation/workloads/production/private/agora-private-test/json-keys/default.tflock"), object{})
+			}
+			output := filepath.Join(f.dir, "assessment.json")
+			code, out := f.run(t, "infra", "inspect", "assess", "a-novel/infra", "93", f.env["FAKE_GATE_HEAD"], f.env["FAKE_GATE_BASE"], f.dir, bucket, output)
+			expectCode(t, testCase.code, code, out)
+			calls, err := os.ReadFile(f.env["FAKE_TOFU_CALLS"])
+			if err != nil {
+				require.ErrorIs(t, err, os.ErrNotExist)
+			}
+			require.Equal(t, testCase.plans, strings.Count(string(calls), " plan "))
+			require.NotContains(t, string(calls), " apply ")
+			if code == 0 {
+				require.FileExists(t, output)
+			} else {
+				require.NoFileExists(t, output)
+			}
 		})
 	}
 }
