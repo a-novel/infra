@@ -234,6 +234,77 @@ func TestFoundation(t *testing.T) {
 			})
 		}
 	})
+	t.Run("Retirement", func(t *testing.T) {
+		t.Parallel()
+		for _, tc := range []struct {
+			name, selection, environment string
+			args                         []string
+			valid, enabled               bool
+		}{
+			{"Prepare", `{"json-keys":"a-novel-json-keys-prod"}`, "true", nil, true, true},
+			{"Remove", `{}`, "true", nil, true, true},
+			{"Explicit", `{}`, "", []string{"--retire-json-keys-project"}, true, true},
+			{"Disabled", `{}`, "true", []string{"--retire-json-keys-project=false"}, true, false},
+			{"WrongProject", `{"json-keys":"different-project"}`, "true", nil, false, false},
+			{"Peer", `{"authentication":"a-novel-json-keys-prod"}`, "true", nil, false, false},
+			{"Multiple", `{"json-keys":"a-novel-json-keys-prod","authentication":"different-project"}`, "true", nil, false, false},
+			{"Malformed", `{}`, "yes", nil, false, false},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+				f := foundationCase()
+				f.configuration()
+				replace := strings.NewReplacer("management-project-prod", "a-novel-management-prod", "workload-project-prod", "a-novel-production-prod")
+				replies := make(map[string][]string, len(f.replies))
+				for command, values := range f.replies {
+					for _, value := range values {
+						replies[replace.Replace(command)] = append(replies[replace.Replace(command)], replace.Replace(value))
+					}
+				}
+				f.replies = replies
+				f.env["INFRA_MANAGEMENT_PROJECT_ID"] = "a-novel-management-prod"
+				f.env["INFRA_WORKLOAD_PROJECT_ID"] = "a-novel-production-prod"
+				f.env["INFRA_SERVICE_PROJECTS"] = tc.selection
+				f.env["INFRA_RETIRE_JSON_KEYS_PROJECT"] = tc.environment
+				code, out := f.run(t, append([]string{"configure"}, tc.args...)...)
+				if !tc.valid {
+					require.Equal(t, 64, code, out)
+					require.Empty(t, f.calls)
+					return
+				}
+				require.Zero(t, code, out)
+				require.Len(t, f.secrets, 2)
+				require.Equal(t, f.secrets[0], f.secrets[1])
+				var config map[string]json.RawMessage
+				require.NoError(t, json.Unmarshal(f.secrets[0], &config))
+				if tc.enabled {
+					require.JSONEq(t, "true", string(config["retire_json_keys_project"]))
+				} else {
+					require.NotContains(t, config, "retire_json_keys_project")
+				}
+			})
+		}
+	})
+	t.Run("RetirementBoundary", func(t *testing.T) {
+		t.Parallel()
+		for _, tc := range []struct{ name, key, value string }{
+			{"Management", "INFRA_MANAGEMENT_PROJECT_ID", "other-management"},
+			{"Workload", "INFRA_WORKLOAD_PROJECT_ID", "other-production"},
+			{"Repository", "INFRA_PGBACKREST_REPOSITORY_SERVICES", `["json-keys"]`},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+				f := foundationCase()
+				f.env["INFRA_MANAGEMENT_PROJECT_ID"] = "a-novel-management-prod"
+				f.env["INFRA_WORKLOAD_PROJECT_ID"] = "a-novel-production-prod"
+				f.env["INFRA_RETIRE_JSON_KEYS_PROJECT"] = "true"
+				f.env[tc.key] = tc.value
+				code, out := f.run(t, "configure")
+				require.Equal(t, 64, code, out)
+				require.Empty(t, f.calls)
+			})
+		}
+	})
 	t.Run("CleanupActualParent", func(t *testing.T) {
 		t.Parallel()
 		f := foundationCase()

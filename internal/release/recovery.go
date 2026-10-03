@@ -91,6 +91,7 @@ func (compiler *Compiler) CompileRecovery(args []string, identity Identity) erro
 	foundation := clone(config)
 	foundation["workload_project_id"], foundation["workload_project_name"], foundation["recovery_mode"] = target, "Agora recovery", true
 	foundation["service_projects"] = object{}
+	delete(foundation, "retire_json_keys_project")
 	outputs := map[string]any{"foundation.tfvars.json": foundation}
 	if phase == "foundation" {
 		return writeOutputs(args[7], outputs)
