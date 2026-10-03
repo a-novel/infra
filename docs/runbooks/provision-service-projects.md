@@ -86,9 +86,9 @@ Before selecting or activating these boundaries, complete zone-aware workflow re
 permission review, saved-plan expiration and the single-writer state handoff. Create each exact
 service/zone GitHub environment with required reviewers, protected branches and no admin bypass
 before federation. Live checks must prove permitted own-state access, immutable receipts, denied
-peer/legacy state access and the zone-specific secret restrictions above. The existing saved-plan
-cleanup rules cover private and historical public paths, not `public-api`; add and verify its narrow
-cleanup rule through protected bootstrap before enabling a writer. Keep existing release and backup
+peer/legacy state access and the zone-specific secret restrictions above. Apply and verify the declared
+[saved-plan cleanup rules](../../bootstrap/README.md#plan-artifact-expiration), including the separate
+public-api rule, through protected bootstrap before enabling a writer. Keep existing release and backup
 owners unchanged until those checks pass; no state transfer or resource migration happens here.
 
 ## Dedicated-service compatibility configuration

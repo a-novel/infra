@@ -151,10 +151,9 @@ Its project/name and every existing Delete rule must remain unchanged, and all o
 apply. [Cloud Storage intersects these conditions](https://docs.cloud.google.com/storage/docs/lifecycle#lifecycle_configuration),
 excluding state, locks and configuration. Missing, broader or unknown selectors are rejected.
 Bootstrap declares [separate native rules](../bootstrap/README.md#plan-artifact-expiration) for the
-dedicated-service and private/public prefixes; the public-api rule still needs its own declaration.
-Protected apply and live verification remain separate
-human-approved operations before the service-job writer can be activated. Trusted assessments execute
-policy from `master`.
+dedicated-service, private/public and public-api prefixes. Protected apply and live verification remain
+separate human-approved operations before the service-job writer can be activated. Trusted assessments
+execute policy from `master`.
 
 ## Protected workflow internals
 
