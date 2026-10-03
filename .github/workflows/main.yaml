@@ -123,9 +123,11 @@ jobs:
         env:
           TRIVY_DISABLE_TELEMETRY: "true"
           TRIVY_INCLUDE_DEV_DEPS: "true"
+          TRIVY_SHOW_SUPPRESSED: "true"
         with:
           scan-type: fs
           scan-ref: .
+          trivyignores: .trivyignore.yaml
           scanners: vuln,misconfig,secret
           severity: HIGH,CRITICAL
           exit-code: "1"

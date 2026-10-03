@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
@@ -74,6 +75,44 @@ func TestRepositoryChecks(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestTemporaryToolingExceptions(t *testing.T) {
+	t.Parallel()
+	main := loadWorkflow(t, "workflows/main.yaml")
+	steps := main.Jobs["scan-infrastructure"].Steps
+	scan := steps[stepIndex(t, steps, "aquasecurity/trivy-action@")]
+	require.Equal(t, ".trivyignore.yaml", scan.With["trivyignores"])
+	require.Equal(t, "true", scan.Env["TRIVY_INCLUDE_DEV_DEPS"])
+	require.Equal(t, "true", scan.Env["TRIVY_SHOW_SUPPRESSED"])
+	require.Equal(t, "vuln,misconfig,secret", scan.With["scanners"])
+	require.Equal(t, "HIGH,CRITICAL", scan.With["severity"])
+	require.Equal(t, "1", scan.With["exit-code"])
+
+	var config struct {
+		Vulnerabilities []struct {
+			ID        string
+			Paths     []string
+			PURLs     []string  `yaml:"purls"`
+			ExpiredAt time.Time `yaml:"expired_at"`
+			Statement string
+		}
+	}
+	decoder := yaml.NewDecoder(strings.NewReader(read(t, "../.trivyignore.yaml")))
+	decoder.KnownFields(true)
+	require.NoError(t, decoder.Decode(&config))
+	require.Len(t, config.Vulnerabilities, 2)
+	for index, purl := range []string{"pkg:npm/braces@3.0.3", "pkg:npm/http-cache-semantics@4.2.0"} {
+		finding := config.Vulnerabilities[index]
+		require.Equal(t, []string{"CVE-2026-93687", "CVE-2026-93748"}[index], finding.ID)
+		require.Equal(t, []string{"pnpm-lock.yaml"}, finding.Paths)
+		require.Equal(t, []string{purl}, finding.PURLs)
+		require.Equal(t, time.Date(2026, time.October, 10, 0, 0, 0, 0, time.UTC), finding.ExpiredAt)
+		require.NotEmpty(t, finding.Statement)
+	}
+	tooling := loadWorkflow(t, "actions/build-tooling-image/action.yaml").Runs.Steps
+	imageScan := tooling[stepIndex(t, tooling, "aquasecurity/trivy-action@")]
+	require.NotContains(t, imageScan.With, "trivyignores")
 }
 
 func TestNativeReleaseBoundary(t *testing.T) {
