@@ -176,7 +176,7 @@ export POSTGRES_HOST_AUTH_METHOD=trust
 export POSTGRES_INITDB_ARGS='--auth-local=trust --auth-host=reject'
 export POSTGRES_USER="${DATABASE_OWNER}"
 # The image's server and libpq share a compiled-in local socket directory.
-export PGHOST= PGHOSTADDR=
+export PGHOST='' PGHOSTADDR=''
 
 # The same database image recreates declared extensions and the owner role.
 # It listens only on a local Unix socket and has no production credential.
