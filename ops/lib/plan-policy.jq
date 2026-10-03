@@ -41,7 +41,8 @@ def service_plan_expiration:
   (.condition | length) == 1 and
   (.condition[0] | .age == 2 and
     ((.matches_prefix | sort) | . == ["services/"] or
-      . == ["workloads/production/private/", "workloads/production/public/"]) and
+      . == ["workloads/production/private/", "workloads/production/public/"] or
+      . == ["workloads/production/public-api/"]) and
     (.matches_suffix | sort) == ["/plan.metadata.json", "/plan.tfplan"]);
 
 # Only bootstrap may add one plan-expiration rule to its existing state bucket.
