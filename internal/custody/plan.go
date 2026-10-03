@@ -116,6 +116,9 @@ func (storage store) plan(action string, args []string, suffix string) error {
 
 // planPrefix keeps plans within their writer's existing storage boundary.
 func planPrefix(root, suffix string) (string, error) {
+	if root == "service-release" && releaseScopePattern.MatchString(suffix) {
+		return suffix + "/release/plans", nil
+	}
 	if root == "service-foundation" || root == "service-release" || root == "service-recovery" {
 		if serviceScopePattern.MatchString(suffix) {
 			if root == "service-release" {

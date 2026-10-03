@@ -33,9 +33,15 @@ operations; migrations and Cloud Deploy still require the broader same-service e
 ## Read-only assessment and drift
 
 The existing inspector selects projects from the last converged shared-foundation registration.
-It inventories native managed-folder metadata under `services/`, then reads objects only within each
-registered `services/PROJECT/release/` folder. The plan identity's existing folder-scoped access is
+It inventories native managed-folder metadata under `services/` and `workloads/`, then reads objects only within each
+registered release folder. The plan identity's existing folder-scoped access is
 sufficient; no bucket-wide object grant is required. Missing or unregistered folders stop inspection.
+
+The shared foundation's `service_release_zones` enrolls
+`workloads/production/ZONE/PROJECT/SERVICE/release/` folders for private/public boundaries.
+Enrollment accepts empty folders and exact saved-plan artifacts. Existing state, configuration or
+other objects stop inspection pending an approved ownership handoff. This root and its protected
+mutation callers remain dedicated-project-only; a public registration never selects database jobs.
 
 A confirmed empty folder is skipped. Initialized state requires its matching converged inputs at
 `services/PROJECT/release/config/RUN-ATTEMPT.tfvars.json`, using the existing zero-padded sequence format.
@@ -54,6 +60,10 @@ The existing `infra custody plan` command supports this root inside its existing
 `services/PROJECT/release/plans/COMMIT/RUN-ATTEMPT/`. Each plan has `plan.tfplan` and
 `plan.metadata.json`; there is no extra storage grant or second plan implementation. Inspection ignores
 only these exact artifact names beneath valid commit/sequence paths. Plans alone do not establish state.
+The same custody format supports shared release folders under
+`workloads/production/ZONE/PROJECT/SERVICE/release/`. Its exact scope remains bound in metadata;
+foundation and recovery roots cannot use that namespace. Configuration reads support the same
+boundary, while configuration publication and shared-zone apply remain blocked.
 
 For both service roots, `publish` and `fetch` require the private tfvars filename as their **last** argument,
 after the existing arguments (`publish`: bucket, root, commit, plan ID, plan file, destructive marker;
@@ -74,6 +84,8 @@ shared-root ownership transfer and interrupted-native-operation recovery remain 
 Metadata enforces the 24-hour apply deadline. Bootstrap declares native
 [plan cleanup](../../bootstrap/README.md#plan-artifact-expiration) after age 2 days, restricted to the
 `services/` prefix and the two artifact suffixes. Cleanup is asynchronous and keeps seven-day soft delete.
+The shared `workloads/` namespace is not yet covered. Its native cleanup requires a separately reviewed
+policy change; deletion approval alone cannot bypass the existing lifecycle protection.
 Protected bootstrap apply and live verification remain prerequisites before writer activation.
 `SERVICE_JOB_BOOTSTRAP_ENABLED=true` permits only create/no-op plans for this service's exact
 application jobs. Updates, imports, moves, replacements, deletions and other resources fail regardless

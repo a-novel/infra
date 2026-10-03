@@ -168,10 +168,14 @@ func TestCustodyPlanIntegrity(t *testing.T) {
 		{"MissingApproval", func(meta object) { delete(meta, "destructive") }, false},
 		{"HashMismatch", func(object) {}, true},
 	} {
-		for _, root := range []string{"service-foundation", "service-release"} {
-			t.Run(root+"/"+testCase.name, func(t *testing.T) {
+		for _, boundary := range []struct{ root, scope string }{
+			{"service-foundation", "services/agora-json-keys-test"},
+			{"service-release", "services/agora-json-keys-test"},
+			{"service-release", "workloads/production/private/agora-private-test/json-keys"},
+		} {
+			t.Run(boundary.scope+"/"+boundary.root+"/"+testCase.name, func(t *testing.T) {
 				t.Parallel()
-				f, args, metadataFile := planFixture(t, root, "services/agora-json-keys-test")
+				f, args, metadataFile := planFixture(t, boundary.root, boundary.scope)
 				meta := readJSON(t, metadataFile)
 				testCase.change(meta)
 				writeJSON(t, metadataFile, meta)
