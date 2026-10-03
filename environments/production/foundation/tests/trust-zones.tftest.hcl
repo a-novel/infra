@@ -47,7 +47,7 @@ variables {
 run "disabled_by_default" {
   command = plan
   assert {
-    condition     = length(module.public_project) == 0 && length(google_compute_shared_vpc_service_project.public) == 0 && output.production_projects == null
+    condition     = length(module.public_project) == 0 && length(module.public_api_project) == 0 && length(google_compute_shared_vpc_service_project.public_api) == 0 && output.production_projects == null
     error_message = "Existing inputs must create no public shell or placement output."
   }
 }
@@ -64,16 +64,15 @@ run "retain_host_without_retirement" {
 run "optional_public_shell" {
   command = plan
   variables {
-    shared_vpc_enabled = true
-    public_project_id  = "agora-public-test"
+    public_project_id = "agora-public-test"
   }
   override_resource {
     target = module.public_project["public"].google_project.service
     values = { number = "222222222222" }
   }
   assert {
-    condition     = length(module.public_project) == 1 && google_compute_shared_vpc_service_project.public["public"].host_project == var.workload_project_id && google_compute_shared_vpc_service_project.public["public"].service_project == var.public_project_id
-    error_message = "One public shell must attach to the existing network owner."
+    condition     = length(module.public_project) == 1 && length(module.public_api_project) == 0 && length(google_compute_shared_vpc_service_project.public_api) == 0 && length(google_compute_shared_vpc_host_project.production) == 0
+    error_message = "A platform shell must neither attach to private Shared VPC nor require its host activation."
   }
   assert {
     condition     = output.production_projects.private.project_id == var.workload_project_id && output.production_projects.public.project_id == var.public_project_id && output.production_projects.public.project_number == "222222222222"
@@ -116,10 +115,10 @@ run "reject_invalid_project" {
   expect_failures = [var.public_project_id]
 }
 
-run "reject_implicit_host" {
+run "reject_api_implicit_host" {
   command = plan
-  variables { public_project_id = "agora-public-test" }
-  expect_failures = [var.public_project_id]
+  variables { public_api_project_id = "agora-api-test" }
+  expect_failures = [var.public_api_project_id]
 }
 
 run "reject_dedicated_registration" {
@@ -162,4 +161,111 @@ run "reject_recovery_public_project" {
     public_project_id = "agora-public-test"
   }
   expect_failures = [var.public_project_id]
+}
+
+run "three_project_coordinates" {
+  command = plan
+  variables {
+    shared_vpc_enabled    = true
+    public_project_id     = "agora-public-test"
+    public_api_project_id = "agora-api-test"
+  }
+  override_resource {
+    target = module.public_project["public"].google_project.service
+    values = { number = "222222222222" }
+  }
+  override_resource {
+    target = module.public_api_project["public-api"].google_project.service
+    values = { number = "333333333333" }
+  }
+  assert {
+    condition = (
+      keys(output.production_projects) == ["private", "public", "public-api"] &&
+      output.production_projects.private.project_id == var.workload_project_id &&
+      output.production_projects.public.project_id == var.public_project_id &&
+      output.production_projects.public-api.project_id == var.public_api_project_id &&
+      length(google_compute_shared_vpc_service_project.public_api) == 1 &&
+      google_compute_shared_vpc_service_project.public_api["public-api"].host_project == var.workload_project_id &&
+      google_compute_shared_vpc_service_project.public_api["public-api"].service_project == var.public_api_project_id
+    )
+    error_message = "Only the API project may attach to the existing private network; platform and management projects remain distinct."
+  }
+  assert {
+    condition = (
+      length(module.service_release) == 0 && length(module.service_project) == 0 &&
+      length(google_compute_subnetwork_iam_member.service_run) == 0 &&
+      length(google_compute_subnetwork_iam_member.service_mig) == 0 &&
+      length(google_compute_subnetwork_iam_member.service_foundation) == 0 &&
+      google_billing_budget.workload[0].budget_filter[0].projects == toset(["projects/123456789012", "projects/987654321098", "projects/222222222222", "projects/333333333333"]) &&
+      google_billing_budget.workload[0].amount[0].specified_amount[0].units == tostring(var.monthly_budget_units)
+    )
+    error_message = "Project shells must only extend existing budget coverage, with no service or private subnet access."
+  }
+}
+
+run "reject_api_platform_collision" {
+  command = plan
+  variables {
+    shared_vpc_enabled    = true
+    public_project_id     = "agora-public-test"
+    public_api_project_id = "agora-public-test"
+  }
+  expect_failures = [var.public_api_project_id]
+}
+
+run "reject_api_management_collision" {
+  command = plan
+  variables {
+    shared_vpc_enabled    = true
+    public_api_project_id = "agora-management-test"
+  }
+  expect_failures = [var.public_api_project_id]
+}
+
+run "reject_api_private_collision" {
+  command = plan
+  variables {
+    shared_vpc_enabled    = true
+    public_api_project_id = "agora-production-test"
+  }
+  expect_failures = [var.public_api_project_id]
+}
+
+run "reject_api_invalid_project" {
+  command = plan
+  variables {
+    shared_vpc_enabled    = true
+    public_api_project_id = "INVALID"
+  }
+  expect_failures = [var.public_api_project_id]
+}
+
+run "reject_recovery_api_project" {
+  command = plan
+  variables {
+    recovery_mode         = true
+    public_api_project_id = "agora-api-test"
+  }
+  expect_failures = [var.public_api_project_id]
+}
+
+run "reject_api_dedicated_registration" {
+  command = plan
+  variables {
+    shared_vpc_enabled    = true
+    public_api_project_id = "agora-api-test"
+    service_projects      = { json-keys = "agora-json-keys-test" }
+  }
+  expect_failures = [var.public_api_project_id]
+}
+
+run "reject_service_platform_placement" {
+  command = plan
+  variables {
+    shared_vpc_enabled    = true
+    public_project_id     = "agora-public-test"
+    public_api_project_id = "agora-api-test"
+    service_release_zones = { json-keys = ["public"] }
+  }
+  expect_failures = [var.service_release_zones]
 }

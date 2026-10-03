@@ -25,7 +25,13 @@ func TestReleaseScopes(t *testing.T) {
 		{name: "InvalidPrivateProject", key: "workload_project_id", value: "../peer"},
 		{name: "PublicReusesPrivate", key: "public_project_id", value: "agora-private-test"},
 		{name: "PublicReusesManagement", key: "public_project_id", value: "agora-management-test"},
-		{name: "MissingPublicProject", key: "public_project_id"},
+		{name: "MissingPublicProject", key: "public_project_id", valid: true},
+		{name: "MissingAPIProject", key: "public_api_project_id"},
+		{name: "APIReusesPrivate", key: "public_api_project_id", value: "agora-private-test"},
+		{name: "APIReusesManagement", key: "public_api_project_id", value: "agora-management-test"},
+		{name: "APIReusesPlatform", key: "public_api_project_id", value: "agora-public-test"},
+		{name: "InvalidAPIProject", key: "public_api_project_id", value: 123},
+		{name: "PlatformServiceRejected", key: "service_release_zones", value: map[string][]string{"json-keys": {"public"}}},
 		{name: "InvalidRegion", key: "region", value: "europe-west1/peer"},
 		{name: "NullZones", key: "service_release_zones"},
 		{name: "UnknownService", key: "service_release_zones", value: map[string][]string{"peer": {"private"}}},
@@ -49,8 +55,8 @@ func TestReleaseScopes(t *testing.T) {
 			t.Parallel()
 			registration := map[string]any{
 				"management_project_id": "agora-management-test", "workload_project_id": "agora-private-test",
-				"public_project_id": "agora-public-test", "region": "europe-west1", "shared_vpc_enabled": true,
-				"service_release_zones": map[string][]string{"json-keys": {"private", "public"}, "authentication": {"private"}},
+				"public_project_id": "agora-public-test", "public_api_project_id": "agora-api-test", "region": "europe-west1", "shared_vpc_enabled": true,
+				"service_release_zones": map[string][]string{"json-keys": {"private", "public-api"}, "authentication": {"private"}},
 			}
 			if testCase.key != "" {
 				registration[testCase.key] = testCase.value
@@ -69,7 +75,7 @@ func TestReleaseScopes(t *testing.T) {
 			require.Equal(t, map[string]string{
 				"workloads/production/private/agora-private-test/json-keys":      "json-keys",
 				"workloads/production/private/agora-private-test/authentication": "authentication",
-				"workloads/production/public/agora-public-test/json-keys":        "json-keys",
+				"workloads/production/public-api/agora-api-test/json-keys":       "json-keys",
 			}, scopes)
 			_, err = workflow.ReleaseScopes(getenv, "agora-peer-test-123-tofu-state")
 			require.Error(t, err)

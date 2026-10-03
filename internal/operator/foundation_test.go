@@ -143,7 +143,8 @@ func TestFoundation(t *testing.T) {
 			{name: "Disabled", valid: true},
 			{name: "Empty", value: "{}", valid: true},
 			{name: "Private", value: `{"json-keys":["private"],"authentication":["private"]}`, shared: "true", valid: true},
-			{name: "Split", value: `{"json-keys":["private","public"],"authentication":["public"]}`, shared: "true", public: "agora-public-test", valid: true},
+			{name: "Split", value: `{"json-keys":["private","public-api"],"authentication":["public-api"]}`, shared: "true", public: "agora-api-test", valid: true},
+			{name: "PlatformServiceRejected", value: `{"json-keys":["public"]}`, shared: "true", public: "agora-api-test"},
 			{name: "Flag", value: "invalid", flag: `{"json-keys":["private"]}`, shared: "true", valid: true},
 			{name: "DisableFlag", value: `{"json-keys":["private"]}`, flag: "{}", valid: true},
 			{name: "Malformed", value: "private-invalid-json"},
@@ -156,7 +157,7 @@ func TestFoundation(t *testing.T) {
 			{name: "UnknownZone", value: `{"json-keys":["admin"]}`, shared: "true"},
 			{name: "Duplicate", value: `{"json-keys":["private","private"]}`, shared: "true"},
 			{name: "TooMany", value: `{"json-keys":["private","public","private"]}`, shared: "true"},
-			{name: "MissingPublic", value: `{"json-keys":["public"]}`, shared: "true"},
+			{name: "MissingAPI", value: `{"json-keys":["public-api"]}`, shared: "true"},
 			{name: "MissingHost", value: `{"json-keys":["private"]}`},
 			{name: "Dedicated", value: `{"json-keys":["private"]}`, shared: "true", projects: `{"json-keys":"agora-json-keys-test"}`},
 			{name: "NativeRepository", value: `{"json-keys":["private"]}`, shared: "true", repository: `["json-keys"]`},
@@ -167,7 +168,7 @@ func TestFoundation(t *testing.T) {
 				f := foundationCase()
 				writes := f.configuration()
 				f.env["INFRA_SERVICE_RELEASE_ZONES"] = tc.value
-				f.env["INFRA_PUBLIC_PROJECT_ID"], f.env["INFRA_SHARED_VPC_ENABLED"] = tc.public, tc.shared
+				f.env["INFRA_PUBLIC_API_PROJECT_ID"], f.env["INFRA_SHARED_VPC_ENABLED"] = tc.public, tc.shared
 				f.env["INFRA_RETIRE_JSON_KEYS_PROJECT"] = tc.retirement
 				for key, value := range map[string]string{"INFRA_SERVICE_PROJECTS": tc.projects, "INFRA_PGBACKREST_REPOSITORY_SERVICES": tc.repository} {
 					if value != "" {
@@ -213,7 +214,7 @@ func TestFoundation(t *testing.T) {
 			{"Management", "management-project-prod", "true", "{}", "", nil, false},
 			{"Workload", "workload-project-prod", "true", "{}", "", nil, false},
 			{"InvalidID", "INVALID", "true", "{}", "", nil, false},
-			{"NoHost", "agora-public-test", "false", "{}", "", nil, false},
+			{"NoHost", "agora-public-test", "false", "{}", "", nil, true},
 			{"MalformedHost", "", "yes", "{}", "", nil, false},
 			{"DedicatedService", "agora-public-test", "true", `{"json-keys":"json-keys-project-prod"}`, "", nil, false},
 			{"Retirement", "agora-public-test", "true", "{}", "true", nil, false},
@@ -240,7 +241,11 @@ func TestFoundation(t *testing.T) {
 					require.NotContains(t, config, "shared_vpc_enabled")
 					require.NotContains(t, config, "public_project_id")
 				} else {
-					require.Equal(t, true, config["shared_vpc_enabled"])
+					if tc.name == "NoHost" {
+						require.NotContains(t, config, "shared_vpc_enabled")
+					} else {
+						require.Equal(t, true, config["shared_vpc_enabled"])
+					}
 					if tc.name != "RetainHost" {
 						require.Equal(t, "agora-public-test", config["public_project_id"])
 					} else {
@@ -248,6 +253,49 @@ func TestFoundation(t *testing.T) {
 					}
 				}
 				require.Equal(t, "workload-project-prod", config["workload_project_id"])
+			})
+		}
+	})
+	t.Run("APIProject", func(t *testing.T) {
+		t.Parallel()
+		for _, tc := range []struct {
+			name, project, public, shared string
+			args                          []string
+			valid                         bool
+		}{
+			{name: "APIOnly", project: "agora-api-test", shared: "true", valid: true},
+			{name: "BothShells", project: "agora-api-test", public: "agora-public-test", shared: "true", valid: true},
+			{name: "Explicit", args: []string{"--shared-vpc-enabled", "--public-api-project-id=agora-api-test"}, valid: true},
+			{name: "PlatformCollision", project: "agora-public-test", public: "agora-public-test", shared: "true"},
+			{name: "ManagementCollision", project: "management-project-prod", shared: "true"},
+			{name: "PrivateCollision", project: "workload-project-prod", shared: "true"},
+			{name: "Invalid", project: "INVALID", shared: "true"},
+			{name: "NoHost", project: "agora-api-test"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+				f := foundationCase()
+				writes := f.configuration()
+				f.env["INFRA_PUBLIC_API_PROJECT_ID"], f.env["INFRA_PUBLIC_PROJECT_ID"], f.env["INFRA_SHARED_VPC_ENABLED"] = tc.project, tc.public, tc.shared
+				code, out := f.run(t, append([]string{"configure"}, tc.args...)...)
+				if !tc.valid {
+					require.Equal(t, 64, code, out)
+					require.Empty(t, f.calls)
+					return
+				}
+				require.Zero(t, code, out)
+				require.Equal(t, writes, f.mutations)
+				require.Len(t, f.secrets, 2)
+				require.Equal(t, f.secrets[0], f.secrets[1])
+				var config map[string]any
+				require.NoError(t, json.Unmarshal(f.secrets[0], &config))
+				require.Equal(t, "agora-api-test", config["public_api_project_id"])
+				require.Equal(t, "workload-project-prod", config["workload_project_id"])
+				if tc.public == "" {
+					require.NotContains(t, config, "public_project_id")
+				} else {
+					require.Equal(t, tc.public, config["public_project_id"])
+				}
 			})
 		}
 	})

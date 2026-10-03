@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -11,7 +12,7 @@ import (
 
 func TestCompilerRecovery(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"Release", "Foundation", "Retirement", "FoundationRetirement", "PublicProject", "FoundationPublicProject", "PublicProjectTarget", "InvalidPublicProject", "ServiceProjects", "FoundationServiceProjects", "ServiceProjectTarget", "InvalidServiceProjects", "InvalidServiceProjectID", "LegacyHost", "CustomQuotas", "SourceTarget", "ManagementTarget", "WrongSource", "WrongOutputProject", "MissingOutput", "BadAttempt", "ForeignImage", "DuplicateImage"} {
+	for _, name := range []string{"Release", "Foundation", "Retirement", "FoundationRetirement", "PublicProject", "FoundationPublicProject", "PublicProjectTarget", "InvalidPublicProject", "APIProject", "FoundationAPIProject", "APIProjectTarget", "InvalidAPIProject", "ServiceProjects", "FoundationServiceProjects", "ServiceProjectTarget", "InvalidServiceProjects", "InvalidServiceProjectID", "LegacyHost", "CustomQuotas", "SourceTarget", "ManagementTarget", "WrongSource", "WrongOutputProject", "MissingOutput", "BadAttempt", "ForeignImage", "DuplicateImage"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			fixture := setup(t)
@@ -34,17 +35,21 @@ func TestCompilerRecovery(t *testing.T) {
 			switch name {
 			case "Foundation":
 				files[6] = "foundation"
-			case "PublicProject", "FoundationPublicProject", "PublicProjectTarget", "InvalidPublicProject":
+			case "PublicProject", "FoundationPublicProject", "PublicProjectTarget", "InvalidPublicProject", "APIProject", "FoundationAPIProject", "APIProjectTarget", "InvalidAPIProject":
 				config["shared_vpc_enabled"] = true
-				config["public_project_id"] = "agora-public-test"
-				if name != "PublicProject" {
+				key := "public_project_id"
+				if strings.Contains(name, "APIProject") {
+					key = "public_api_project_id"
+				}
+				config[key] = "agora-public-test"
+				if name != "PublicProject" && name != "APIProject" {
 					files[6] = "foundation"
 				}
-				if name == "PublicProjectTarget" {
+				if strings.HasSuffix(name, "Target") {
 					files[3], invalid = "agora-public-test", true
 				}
-				if name == "InvalidPublicProject" {
-					config["public_project_id"], invalid = 123, true
+				if strings.HasPrefix(name, "Invalid") {
+					config[key], invalid = 123, true
 				}
 			case "Retirement", "FoundationRetirement":
 				config["retire_json_keys_project"] = true
@@ -114,6 +119,7 @@ func TestCompilerRecovery(t *testing.T) {
 			require.Equal(t, object{}, foundation["service_projects"])
 			require.NotContains(t, foundation, "retire_json_keys_project")
 			require.NotContains(t, foundation, "public_project_id")
+			require.NotContains(t, foundation, "public_api_project_id")
 			require.NotContains(t, foundation, "service_release_zones")
 			require.NotContains(t, foundation, "shared_vpc_enabled")
 			if files[6] == "foundation" {

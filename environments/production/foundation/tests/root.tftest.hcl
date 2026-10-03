@@ -10,17 +10,17 @@ run "shared_release_service_and_zone_coordinates" {
   command = plan
   variables {
     shared_vpc_enabled    = true
-    public_project_id     = "agora-public-test"
-    service_release_zones = { json-keys = ["private", "public"], authentication = ["private", "public"] }
+    public_api_project_id = "agora-api-test"
+    service_release_zones = { json-keys = ["private", "public-api"], authentication = ["private", "public-api"] }
   }
   assert {
     condition = (
       length(module.service_release) == 4 && length(module.service_project) == 0 &&
-      length(module.public_project) == 1 && length(google_compute_shared_vpc_host_project.production) == 1 &&
+      length(module.public_api_project) == 1 && length(google_compute_shared_vpc_host_project.production) == 1 &&
       length(distinct([for boundary in output.service_release_boundaries : boundary.environment])) == 4 &&
       alltrue([for key, boundary in output.service_release_boundaries :
         boundary.schema_version == 2 && key == "${boundary.service}/${boundary.zone}" &&
-        boundary.project_id == (boundary.zone == "private" ? "agora-production-test" : "agora-public-test") &&
+        boundary.project_id == (boundary.zone == "private" ? "agora-production-test" : "agora-api-test") &&
         boundary.environment == "production-${boundary.service}-${boundary.zone}-release" &&
         boundary.state.bucket == "agora-management-test-123456789012-tofu-state" &&
         boundary.receipts.bucket == "agora-management-test-123456789012-deployment-receipts" &&
@@ -39,7 +39,7 @@ run "shared_release_private_without_public_shell" {
     service_release_zones = { json-keys = ["private"], authentication = ["private"] }
   }
   assert {
-    condition     = length(module.service_release) == 2 && length(module.public_project) == 0 && alltrue([for boundary in output.service_release_boundaries : boundary.project_id == "agora-production-test"])
+    condition     = length(module.service_release) == 2 && length(module.public_api_project) == 0 && alltrue([for boundary in output.service_release_boundaries : boundary.project_id == "agora-production-test"])
     error_message = "Private release boundaries must not require or provision a public project."
   }
 }
@@ -48,31 +48,31 @@ run "shared_release_federation_and_permissions" {
   command = plan
   module { source = "../../../modules/release-boundary" }
   variables {
-    project_id           = "agora-public-test"
-    zone                 = "public"
+    project_id           = "agora-api-test"
+    zone                 = "public-api"
     labels               = { service = "authentication", environment = "production" }
     plan_service_account = "infra-plan@agora-management-test.iam.gserviceaccount.com"
     management           = { project_id = "agora-management-test", project_number = "123456789012" }
   }
   assert {
     condition = (
-      google_service_account.release.project == "agora-public-test" &&
-      google_service_account.release.account_id == "infra-authentication-public" &&
+      google_service_account.release.project == "agora-api-test" &&
+      google_service_account.release.account_id == "infra-authentication-api" &&
       google_service_account.release.deletion_policy == "PREVENT" && !google_service_account.release.disabled &&
       google_iam_workload_identity_pool_provider.release.project == "agora-management-test" &&
       google_iam_workload_identity_pool_provider.release.workload_identity_pool_id == "github-actions" &&
-      google_iam_workload_identity_pool_provider.release.workload_identity_pool_provider_id == "r-${substr(sha256("production:agora-public-test:authentication:public"), 0, 28)}" &&
+      google_iam_workload_identity_pool_provider.release.workload_identity_pool_provider_id == "r-${substr(sha256("production:agora-api-test:authentication:public-api"), 0, 28)}" &&
       google_iam_workload_identity_pool_provider.release.deletion_policy == "PREVENT" && !google_iam_workload_identity_pool_provider.release.disabled &&
-      google_iam_workload_identity_pool_provider.release.attribute_mapping["attribute.service_release"] == "'production:agora-public-test:authentication:public'" &&
+      google_iam_workload_identity_pool_provider.release.attribute_mapping["attribute.service_release"] == "'production:agora-api-test:authentication:public-api'" &&
       google_iam_workload_identity_pool_provider.release.attribute_mapping["google.subject"] == "assertion.repository_id + ':' + assertion.environment" &&
       google_iam_workload_identity_pool_provider.release.attribute_condition == join(" && ", [
         "assertion.repository_owner_id == '131281268'", "assertion.repository_id == '1344262359'",
         "assertion.ref == 'refs/heads/master'", "assertion.workflow_ref == 'a-novel/infra/.github/workflows/release.yaml@refs/heads/master'",
-        "assertion.environment == 'production-authentication-public-release'"
+        "assertion.environment == 'production-authentication-public-api-release'"
       ]) &&
       google_iam_workload_identity_pool_provider.release.oidc[0].issuer_uri == "https://token.actions.githubusercontent.com" &&
       google_iam_workload_identity_pool_provider.release.oidc[0].allowed_audiences == null &&
-      google_service_account_iam_member.release_federation.member == "principalSet://iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/github-actions/attribute.service_release/production:agora-public-test:authentication:public" &&
+      google_service_account_iam_member.release_federation.member == "principalSet://iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/github-actions/attribute.service_release/production:agora-api-test:authentication:public-api" &&
       google_service_account_iam_member.release_federation.role == "roles/iam.workloadIdentityUser" &&
       google_service_account_iam_member.release_federation.service_account_id == google_service_account.release.name
     )
@@ -81,7 +81,7 @@ run "shared_release_federation_and_permissions" {
   assert {
     condition = (
       alltrue([for key, folder in google_storage_managed_folder.release :
-        folder.name == "workloads/production/public/agora-public-test/authentication/${key == "state" ? "release" : "production"}/" &&
+        folder.name == "workloads/production/public-api/agora-api-test/authentication/${key == "state" ? "release" : "production"}/" &&
         folder.deletion_policy == "PREVENT" && !folder.force_destroy
       ]) &&
       { for key, binding in google_storage_managed_folder_iam_member.release : key => binding.role } == {
@@ -100,7 +100,7 @@ run "shared_release_federation_and_permissions" {
       google_storage_managed_folder_iam_member.plan.managed_folder == google_storage_managed_folder.release["state"].name &&
       google_storage_bucket_iam_member.plan_operation_reader.role == "roles/storage.objectViewer" &&
       google_storage_bucket_iam_member.plan_operation_reader.member == "serviceAccount:${var.plan_service_account}" &&
-      google_storage_bucket_iam_member.plan_operation_reader.condition[0].expression == "resource.type == 'storage.googleapis.com/Object' && (resource.name.startsWith('projects/_/buckets/agora-management-test-123456789012-deployment-receipts/objects/workloads/production/public/agora-public-test/authentication/production/operations/') || resource.name.startsWith('projects/_/buckets/agora-management-test-123456789012-deployment-receipts/objects/workloads/production/public/agora-public-test/authentication/production/native-success/') || resource.name.startsWith('projects/_/buckets/agora-management-test-123456789012-deployment-receipts/objects/workloads/production/public/agora-public-test/authentication/production/rotations/'))"
+      google_storage_bucket_iam_member.plan_operation_reader.condition[0].expression == "resource.type == 'storage.googleapis.com/Object' && (resource.name.startsWith('projects/_/buckets/agora-management-test-123456789012-deployment-receipts/objects/workloads/production/public-api/agora-api-test/authentication/production/operations/') || resource.name.startsWith('projects/_/buckets/agora-management-test-123456789012-deployment-receipts/objects/workloads/production/public-api/agora-api-test/authentication/production/native-success/') || resource.name.startsWith('projects/_/buckets/agora-management-test-123456789012-deployment-receipts/objects/workloads/production/public-api/agora-api-test/authentication/production/rotations/'))"
     )
     error_message = "Custody writes and evidence reads must remain bounded to sibling service/zone folders."
   }
@@ -110,7 +110,7 @@ run "shared_release_rejects_missing_public" {
   command = plan
   variables {
     shared_vpc_enabled    = true
-    service_release_zones = { json-keys = ["public"] }
+    service_release_zones = { json-keys = ["public-api"] }
   }
   expect_failures = [var.service_release_zones]
 }

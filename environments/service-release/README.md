@@ -38,10 +38,13 @@ registered release folder. The plan identity's existing folder-scoped access is
 sufficient; no bucket-wide object grant is required. Missing or unregistered folders stop inspection.
 
 The shared foundation's `service_release_zones` enrolls
-`workloads/production/ZONE/PROJECT/SERVICE/release/` folders for private/public boundaries.
+`workloads/production/ZONE/PROJECT/SERVICE/release/` folders for private/public-api boundaries.
 Enrollment accepts empty folders and exact saved-plan artifacts. Existing state, configuration or
 other objects stop inspection pending an approved ownership handoff. This root and its protected
-mutation callers remain dedicated-project-only; a public registration never selects database jobs.
+mutation callers remain dedicated-project-only; an API registration never activates database jobs.
+The platform-only public zone cannot enroll these backend services. Historical public custody paths
+remain readable, but an old public registration must undergo an explicit ownership handoff rather
+than being silently reinterpreted as public-api.
 
 A confirmed empty folder is skipped. Initialized state requires its matching converged inputs at
 `services/PROJECT/release/config/RUN-ATTEMPT.tfvars.json`, using the existing zero-padded sequence format.
@@ -83,8 +86,9 @@ shared-root ownership transfer and interrupted-native-operation recovery remain 
 
 Metadata enforces the 24-hour apply deadline. Bootstrap declares native
 [plan cleanup](../../bootstrap/README.md#plan-artifact-expiration) after age 2 days, with separate
-rules for dedicated-service and production private/public prefixes restricted to the two artifact
-suffixes. Cleanup is asynchronous and keeps seven-day soft delete. The
+rules for dedicated-service and production private/historical-public prefixes restricted to the two
+artifact suffixes. Those rules do not cover public-api: its additional narrowly scoped rule and live
+verification are prerequisites before writer activation. Cleanup is asynchronous and keeps seven-day soft delete. The
 [plan policy](../../ops/README.md#protected-workflow-operations) requires existing Delete rules to stay
 unchanged; deletion approval cannot bypass that protection.
 Protected bootstrap apply and live verification remain prerequisites before writer activation.

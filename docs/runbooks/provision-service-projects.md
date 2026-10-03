@@ -10,32 +10,45 @@ activation remain disabled. Merging configuration does not move a workload or de
 
 ## Production trust-zone foundation
 
-The target shape is management, private production and public production, with per-service
-permissions inside each zone. Reuse `workload_project_id` as the private zone's existing network and
-database owner. Its current public-facing workloads remain there until a separately reviewed move;
+The target shape is management plus three production workload zones, with per-service permissions
+inside each zone:
+
+| Zone         | Workloads                                         | Private-network access                                                                                                       |
+| ------------ | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `private`    | Internal APIs, databases and signing/key material | Existing network owner; admit only explicitly authorized callers.                                                            |
+| `public-api` | Existing public REST APIs                         | The only application zone attached to the private Shared VPC; service-specific access still requires IAM and firewall rules. |
+| `public`     | Platforms/frontends                               | No private Shared VPC attachment or database credentials; use the public API contracts.                                      |
+
+Reuse `workload_project_id` as the private zone's existing network and database owner. Its current
+public-facing workloads remain there until a separately reviewed move;
 the new `production_projects` output describes target coordinates, not achieved isolation.
 Stage/preproduction, public-admin, Kubernetes and exceptional dedicated projects are outside this batch.
 
-The optional public shell uses the existing `project-shell` module. It creates project/API and
-foundation-maintenance prerequisites, deprivileges default accounts and attaches to the existing
-Shared VPC. It grants no application identity, secret access, host Network Viewer or subnet use.
-No VM, disk, application, database or network appliance is created. Its project number joins the
+Both optional shells use the existing `project-shell` module. They create project/API and
+foundation-maintenance prerequisites and deprivilege default accounts. Only `public-api` attaches to
+the existing Shared VPC. Neither shell grants application identities, secret access, host Network
+Viewer or subnet use. No VM, disk, application, database or network appliance is created. Their project numbers join the
 existing budget without changing the amount or thresholds; a budget is an alert, not a spending cap.
 
 The configuration publisher accepts `INFRA_SHARED_VPC_ENABLED=true` / `--shared-vpc-enabled` to
 retain the existing Shared VPC host independently of the obsolete-project retirement switch.
-`INFRA_PUBLIC_PROJECT_ID` / `--public-project-id` selects the optional public shell. Both are omitted
-from the published document by default; the reviewed `.envrc` selects neither. The public ID must
-be valid, distinct from management and workload, and accompanied by explicit Shared VPC retention.
+`INFRA_PUBLIC_API_PROJECT_ID` / `--public-api-project-id` selects the API shell;
+`INFRA_PUBLIC_PROJECT_ID` / `--public-project-id` selects the platform shell. These inputs are omitted
+from the published document by default; the reviewed `.envrc` selects neither shell. Project IDs must
+be valid and distinct from each other, management and workload. Only the API shell requires explicit
+Shared VPC retention.
 Retirement, dedicated-service maps, repository-network selection and recovery registration must be
-absent before selecting it. Recovery compilation removes both inputs, and recovery/cleanup checks
-reject the registered public production project as a disposable target.
+absent before selecting either shell. Recovery compilation removes both project selectors and the
+Shared VPC selection; recovery/cleanup checks reject either registered project as a disposable target.
 
 Do not publish this selection yet. First finish and review the shared-project per-service
 permissions and component-placement contracts. Before provisioning, review the complete successor
 configuration, keep the existing Shared VPC address and deletion protection, and verify an exact
-protected plan. Before moving workloads, verify public identities cannot read the private master
-key or private database credentials, and exercise the intended permitted/denied network paths.
+protected plan. Existing APIs and ORMs remain unchanged: each API may use its own narrowly scoped
+database credentials, but JSON Keys REST must not read master-key or private-key material. Platform
+identities must have neither database credentials nor direct private access. Verify these effective
+permissions and the intended permitted/denied network paths before moving workloads. Existing
+management and backup/recovery access remains separately scoped. No additional forwarding proxy is required.
 Private secret ownership alone does not establish those denials. No existing release registration,
 state, receipt, guard or backup owner changes with this shell definition.
 
@@ -47,11 +60,17 @@ trust-zone projects. It defaults to `{}` and is omitted by the publisher when em
 `INFRA_SERVICE_RELEASE_ZONES` or `--service-release-zones`, for example this inactive selection:
 
 ```json
-{ "json-keys": ["private", "public"], "authentication": ["private", "public"] }
+{
+  "json-keys": ["private", "public-api"],
+  "authentication": ["private", "public-api"]
+}
 ```
 
-Only the two deployed services and nonempty private/public zone sets are accepted. Shared VPC must
-be explicitly retained; public selections require `public_project_id`. Dedicated-service registration,
+Only the two deployed backend services and nonempty private/public-api zone sets are accepted.
+`public` is reserved for platforms: an old backend `public` selection is rejected, not silently
+relocated. Historical custody paths remain readable, but selecting new coordinates does not migrate
+their state or grants. Shared VPC must be explicitly retained; API selections require
+`public_api_project_id`. Dedicated-service registration,
 retirement, repository-network selection and recovery registration cannot be combined with this input.
 The publisher validates before external commands and writes the complete configuration, not a merge;
 preserve any approved selection in the reviewed `.envrc`. Legacy recovery compilation removes it,
@@ -67,7 +86,9 @@ Before selecting or activating these boundaries, complete zone-aware workflow re
 permission review, saved-plan expiration and the single-writer state handoff. Create each exact
 service/zone GitHub environment with required reviewers, protected branches and no admin bypass
 before federation. Live checks must prove permitted own-state access, immutable receipts, denied
-peer/legacy state access and denied public access to private secrets. Keep existing release and backup
+peer/legacy state access and the zone-specific secret restrictions above. The existing saved-plan
+cleanup rules cover private and historical public paths, not `public-api`; add and verify its narrow
+cleanup rule through protected bootstrap before enabling a writer. Keep existing release and backup
 owners unchanged until those checks pass; no state transfer or resource migration happens here.
 
 ## Dedicated-service compatibility configuration

@@ -8,7 +8,8 @@ or job-execution permission.
 ## Configuration
 
 The production foundation selects boundaries through `service_release_zones`, default `{}`.
-It resolves `private` to the existing workload project and `public` to the optional public shell.
+It resolves `private` to the existing workload project and `public-api` to the optional API shell.
+The platform-only `public` zone cannot enroll these backend services.
 The [onboarding runbook](../../docs/runbooks/provision-service-projects.md#shared-project-release-boundaries)
 describes validation and activation prerequisites. Keep the selection empty until zone-aware
 workflow registration, single-writer state handoff and runtime permissions are reviewed.
@@ -21,7 +22,7 @@ retain existing state ownership. `retirement` is available only for that compati
 
 | Coordinate         | Shared-zone contract                                                                                                                                                                          |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Service account    | `infra-<service>-<zone>` in the selected project; persistent deletion prevention.                                                                                                             |
+| Service account    | `infra-<service>-<zone>` in the selected project, using `api` for the `public-api` suffix to stay within the 30-character account-ID limit; persistent deletion prevention.                   |
 | GitHub environment | `<environment>-<service>-<zone>-release`; configure required reviewers, protected branches and no admin bypass before creating federation.                                                    |
 | Provider           | Management's existing `github-actions` pool; stable `r-` plus 28 hex characters of the environment/project/service/zone scope hash.                                                           |
 | Federation         | Immutable repository and owner IDs, master, the exact release workflow and environment; a constant scope attribute selects the matching account.                                              |
@@ -40,5 +41,6 @@ access must fail in live checks; mocked tests establish only the configuration c
 
 No bucket or paid runtime is created by this module. Future storage and operations are billable.
 Select saved-plan locations and verify their expiration policy before workflow activation;
-the existing `services/` plan lifecycle does not cover `workloads/`. No state or retained
+the existing rules cover dedicated-service, private and historical public plan paths, not
+`public-api`. Its narrowly scoped cleanup rule must be added and verified before activation. No state or retained
 receipt is copied, removed or adopted by selecting a boundary.

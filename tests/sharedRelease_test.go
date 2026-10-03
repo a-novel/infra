@@ -33,12 +33,12 @@ func TestSharedReleaseInspection(t *testing.T) {
 				f := inspectionFixture(t)
 				bucket := "agora-management-test-123-tofu-state"
 				private := "workloads/production/private/agora-private-test/json-keys/release/"
-				public := "workloads/production/public/agora-public-test/json-keys/release/"
+				public := "workloads/production/public-api/agora-api-test/json-keys/release/"
 				auth := "workloads/production/private/agora-private-test/authentication/release/"
 				registration := object{
 					"management_project_id": "agora-management-test", "workload_project_id": "agora-private-test",
-					"public_project_id": "agora-public-test", "region": "europe-west1", "shared_vpc_enabled": true,
-					"service_release_zones": object{"json-keys": []string{"private", "public"}, "authentication": []string{"private"}},
+					"public_api_project_id": "agora-api-test", "region": "europe-west1", "shared_vpc_enabled": true,
+					"service_release_zones": object{"json-keys": []string{"private", "public-api"}, "authentication": []string{"private"}},
 				}
 				f.env["FAKE_GCS_MANAGED_FOLDERS"] = strings.Join([]string{private, public, auth}, "\n")
 				f.env["FAKE_GATE_FILES"] = root
@@ -90,7 +90,7 @@ func TestSharedReleaseInspection(t *testing.T) {
 
 func TestSharedReleaseCustody(t *testing.T) {
 	t.Parallel()
-	for _, zone := range []string{"private", "public"} {
+	for _, zone := range []string{"private", "public-api", "public"} {
 		t.Run(zone, func(t *testing.T) {
 			t.Parallel()
 			scope := "workloads/production/" + zone + "/agora-zone-test/json-keys"

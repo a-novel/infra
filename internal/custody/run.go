@@ -32,7 +32,8 @@ var (
 	bucketPattern       = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$`)
 	rootPattern         = regexp.MustCompile(`^(bootstrap|foundation|release|service-foundation|service-recovery)$`)
 	serviceScopePattern = regexp.MustCompile(`^services/[a-z][a-z0-9-]{4,28}[a-z0-9]$`)
-	releaseScopePattern = regexp.MustCompile(`^workloads/production/(private|public)/[a-z][a-z0-9-]{4,28}[a-z0-9]/(json-keys|authentication)$`)
+	// public remains readable for historical custody; registration admits only private/public-api.
+	releaseScopePattern = regexp.MustCompile(`^workloads/production/(private|public-api|public)/[a-z][a-z0-9-]{4,28}[a-z0-9]/(json-keys|authentication)$`)
 	sequencePattern     = regexp.MustCompile(`^[1-9][0-9]{0,19}-[1-9][0-9]{0,4}$`)
 	commitPattern       = regexp.MustCompile(`^[a-f0-9]{40}$`)
 )

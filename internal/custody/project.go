@@ -141,6 +141,7 @@ func cleanupBoundary(project string, getenv func(string) string) (string, error)
 		Management string            `json:"management_project_id"`
 		Workload   string            `json:"workload_project_id"`
 		Public     string            `json:"public_project_id"`
+		PublicAPI  string            `json:"public_api_project_id"`
 		Services   map[string]string `json:"service_projects"`
 	}
 	invalid := failure{77, "Cleanup cannot target a management, workload or service project."}
@@ -148,8 +149,10 @@ func cleanupBoundary(project string, getenv func(string) string) (string, error)
 		return "", invalid
 	}
 	protected := []string{foundation.Management, foundation.Workload}
-	if foundation.Public != "" {
-		protected = append(protected, foundation.Public)
+	for _, zone := range []string{foundation.Public, foundation.PublicAPI} {
+		if zone != "" {
+			protected = append(protected, zone)
+		}
 	}
 	for _, service := range foundation.Services {
 		protected = append(protected, service)
