@@ -331,7 +331,7 @@ run "expires_only_plan_artifacts_after_two_days" {
       for rule in google_storage_bucket.state.lifecycle_rule : rule
       if one(rule.action).type == "Delete" && try(
         one(rule.condition).age == 2 &&
-        one(rule.condition).matches_prefix == tolist(["services/"]) &&
+        toset(one(rule.condition).matches_prefix) == toset(["services/", "workloads/"]) &&
         toset(one(rule.condition).matches_suffix) == toset(["/plan.tfplan", "/plan.metadata.json"]) &&
         one(rule.condition).with_state == "ANY",
         false,
@@ -343,17 +343,25 @@ run "expires_only_plan_artifacts_after_two_days" {
   assert {
     condition = alltrue([
       for object, expires in {
-        "services/json-project/release/plans/commit/1-1/plan.tfplan"        = true
-        "services/json-project/release/plans/commit/1-1/plan.metadata.json" = true
-        "services/auth-project/release/plans/commit/2-1/plan.tfplan"        = true
-        "bootstrap/plans/commit/1-1/plan.tfplan"                            = true
-        "services/json-project/release/default.tfstate"                     = false
-        "services/json-project/release/default.tflock"                      = false
-        "services/json-project/release/config/1-1.tfvars.json"              = false
-        "services/json-project/release/plans/commit/1-1/plan.tfplan.extra"  = false
-        "foundation/coordinates/json-project/checksum.json"                 = false
-        "foundation/coordinates/json-project/plan.metadata.json"            = false
-        "services-unrelated/plan.tfplan"                                    = false
+        "services/json-project/release/plans/commit/1-1/plan.tfplan"                                       = true
+        "services/json-project/release/plans/commit/1-1/plan.metadata.json"                                = true
+        "services/auth-project/release/plans/commit/2-1/plan.tfplan"                                       = true
+        "workloads/production/private/private-project/json-keys/release/plans/commit/1-1/plan.tfplan"      = true
+        "workloads/production/public/public-project/json-keys/release/plans/commit/1-1/plan.metadata.json" = true
+        "workloads/production/private/private-project/authentication/release/default.tfstate"              = false
+        "workloads/production/public/public-project/json-keys/release/default.tflock"                      = false
+        "workloads/production/private/private-project/json-keys/release/config/1-1.tfvars.json"            = false
+        "workloads/production/public/public-project/json-keys/production/success/1-1.json"                 = false
+        "workloads/production/public/public-project/json-keys/release/operation.json"                      = false
+        "workloads-unrelated/plan.tfplan"                                                                  = false
+        "bootstrap/plans/commit/1-1/plan.tfplan"                                                           = true
+        "services/json-project/release/default.tfstate"                                                    = false
+        "services/json-project/release/default.tflock"                                                     = false
+        "services/json-project/release/config/1-1.tfvars.json"                                             = false
+        "services/json-project/release/plans/commit/1-1/plan.tfplan.extra"                                 = false
+        "foundation/coordinates/json-project/checksum.json"                                                = false
+        "foundation/coordinates/json-project/plan.metadata.json"                                           = false
+        "services-unrelated/plan.tfplan"                                                                   = false
         } : anytrue([
           for rule in google_storage_bucket.state.lifecycle_rule : try(
             one(rule.action).type == "Delete" && one(rule.condition).age == 2 &&

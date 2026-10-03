@@ -37,12 +37,18 @@ func (i inspector) services(ctx context.Context, mode, root string, result *verd
 	if err != nil {
 		return failure{70, "Service registration does not match the protected management coordinates."}
 	}
+	releases, err := workflow.ReleaseScopes(getenv, i.bucket)
+	if err != nil {
+		return failure{70, "Release boundaries do not match the protected management coordinates."}
+	}
 	if root != "service-release" {
 		// Admission belongs to the source service, including before foundation
 		// or disposable recovery state exists.
-		if _, err := i.serviceStates(ctx, "service-release", scopes); err != nil {
+		if _, err := i.serviceStates(ctx, "service-release", releases); err != nil {
 			return err
 		}
+	} else {
+		scopes = releases
 	}
 	check := workflow.FoundationInputs
 	if root == "service-recovery" {
@@ -91,11 +97,14 @@ func (i inspector) serviceStates(ctx context.Context, root string, scopes map[st
 	if root == "service-release" {
 		// Folder metadata is bucket-wide; object reads are granted only within
 		// each exact service folder. Inventory must retain that IAM boundary.
-		data, err := i.execute(ctx, nil, "gcloud", "storage", "managed-folders", "list", "gs://"+i.bucket+"/services/", "--raw", "--format=value(name)")
-		if err != nil {
-			return nil, failure{70, "Could not inventory service release folders."}
+		prefixes = nil
+		for _, namespace := range []string{"services/", "workloads/"} {
+			data, err := i.execute(ctx, nil, "gcloud", "storage", "managed-folders", "list", "gs://"+i.bucket+"/"+namespace, "--raw", "--format=value(name)")
+			if err != nil {
+				return nil, failure{70, "Could not inventory service release folders."}
+			}
+			prefixes = append(prefixes, strings.Fields(string(data))...)
 		}
-		prefixes = strings.Fields(string(data))
 		folders := map[string]bool{}
 		for _, prefix := range prefixes {
 			scope, ok := strings.CutSuffix(prefix, "/release/")
@@ -115,22 +124,30 @@ func (i inspector) serviceStates(ctx context.Context, root string, scopes map[st
 			return nil, failure{70, "Could not inventory service state."}
 		}
 		for name := range strings.FieldsSeq(string(data)) {
-			parts := strings.SplitN(strings.TrimPrefix(strings.TrimPrefix(name, "foundation/"), "recovery/"), "/", 3)
-			if !strings.HasPrefix(name, prefix) || len(parts) != 3 {
+			if !strings.HasPrefix(name, prefix) {
 				return nil, failure{70, "Unexpected service state metadata."}
 			}
-			scope := strings.Join(parts[:2], "/")
+			scope, object := strings.TrimSuffix(prefix, "/release/"), strings.TrimPrefix(name, prefix)
+			if root != "service-release" {
+				parts := strings.SplitN(strings.TrimPrefix(strings.TrimPrefix(name, "foundation/"), "recovery/"), "/", 3)
+				if len(parts) != 3 {
+					return nil, failure{70, "Unexpected service state metadata."}
+				}
+				scope, object = strings.Join(parts[:2], "/"), parts[2]
+			}
 			if scopes[scope] == "" {
 				return nil, failure{70, "Unregistered service state requires reconciliation."}
 			}
-			object := parts[2]
 			if root == "service-release" {
-				object = strings.TrimPrefix(object, "release/")
 				if object == "operation.json" {
 					return nil, failure{70, "A service operation is held; reconcile it before assessment or further mutation."}
 				}
 				if servicePlanObject.MatchString(object) {
 					continue
+				}
+				// Shared folders are enrolled before any runtime state handoff.
+				if strings.HasPrefix(scope, "workloads/") {
+					return nil, failure{70, "Shared release state requires an approved ownership handoff; runtime inspection remains blocked."}
 				}
 			}
 			if object != "default.tfstate" && !strings.HasPrefix(object, "config/") {

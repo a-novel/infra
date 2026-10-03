@@ -16,7 +16,13 @@ local_path() {
 if [ "$1 $2 $3" = "storage managed-folders list" ]; then
     [ "${FAKE_GCS_FOLDERS_FAILURE:-false}" != true ]
     [ "$5 $6" = '--raw --format=value(name)' ]
-    printf '%s\n' "${FAKE_GCS_MANAGED_FOLDERS:-}"
+    FOLDER_PREFIX="${4#gs://}"
+    FOLDER_PREFIX="${FOLDER_PREFIX#*/}"
+    while IFS= read -r folder; do
+        if [[ "${folder}" == "${FOLDER_PREFIX}"* ]]; then
+            printf '%s\n' "${folder}"
+        fi
+    done <<<"${FAKE_GCS_MANAGED_FOLDERS:-}"
 elif [ "$1 $2 $3" = "storage objects list" ]; then
     if [ "${FAKE_GCS_LIST_FAILURE:-false}" = true ]; then
         exit 1
@@ -26,6 +32,9 @@ elif [ "$1 $2 $3" = "storage objects list" ]; then
     if [[ "${OBJECT_PATTERN}" == services/* ]]; then
         [ "${FAKE_GCS_SERVICE_LIST_FAILURE:-false}" != true ]
         [[ "${OBJECT_PATTERN}" == services/agora-*-test/release/** ]] || exit 99
+    elif [[ "${OBJECT_PATTERN}" == workloads/* ]]; then
+        [ "${FAKE_GCS_SERVICE_LIST_FAILURE:-false}" != true ]
+        [[ "${OBJECT_PATTERN}" == workloads/production/*/agora-*-test/*/release/** ]] || exit 99
     fi
     PATTERN="$(local_path "${4%/**}")"
     if [ -d "${PATTERN}" ]; then

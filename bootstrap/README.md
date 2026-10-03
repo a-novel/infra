@@ -45,7 +45,7 @@ behavior a maintainer must understand; ordinary OpenTofu language behavior is no
 ## Plan artifact expiration
 
 The state bucket declares two-day expiration under `bootstrap/plans/`, `foundation/plans/` and
-`release/plans/`, and for objects under `services/` ending in `/plan.tfplan` or `/plan.metadata.json`.
+`release/plans/`, and for objects under `services/` or `workloads/` ending in `/plan.tfplan` or `/plan.metadata.json`.
 The service prefix and suffix must both match; state, locks, private inputs and foundation coordinates
 are excluded. Their existing version-retention rule remains unchanged.
 

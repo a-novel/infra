@@ -65,7 +65,7 @@ resource "google_storage_bucket" "state" {
     # Plans share the service state folder; both name selectors must match.
     condition {
       age            = 2
-      matches_prefix = ["services/"]
+      matches_prefix = ["services/", "workloads/"]
       matches_suffix = ["/plan.tfplan", "/plan.metadata.json"]
       with_state     = "ANY"
     }

@@ -21,7 +21,7 @@ func (storage store) document(kind, action string, args []string, stateSuffix st
 		}
 		prefix, suffix = "gs://"+storage.bucket+"/"+args[0]+"/config", ".tfvars.json"
 		if strings.HasPrefix(args[0], "service-") {
-			if !serviceScopePattern.MatchString(stateSuffix) {
+			if !serviceScopePattern.MatchString(stateSuffix) && (args[0] != "service-release" || !releaseScopePattern.MatchString(stateSuffix)) {
 				return failure{65, "Invalid private custody scope."}
 			}
 			prefix = "gs://" + storage.bucket + "/foundation/" + stateSuffix + "/config"
