@@ -76,6 +76,14 @@ run "production_release_boundary_selection" {
   }
   assert {
     condition = (
+      google_project_iam_member.public_api_network_viewer[0].project == var.workload_project_id &&
+      google_project_iam_member.public_api_network_viewer[0].role == "roles/compute.networkViewer" &&
+      google_project_iam_member.public_api_network_viewer[0].member == module.public_api_project["public-api"].service_agents["run.googleapis.com"] &&
+      google_compute_subnetwork_iam_member.public_api_run[0].project == var.workload_project_id &&
+      google_compute_subnetwork_iam_member.public_api_run[0].subnetwork == google_compute_subnetwork.production.name &&
+      google_compute_subnetwork_iam_member.public_api_run[0].region == var.region &&
+      google_compute_subnetwork_iam_member.public_api_run[0].role == "roles/compute.networkUser" &&
+      google_compute_subnetwork_iam_member.public_api_run[0].member == module.public_api_project["public-api"].service_agents["run.googleapis.com"] &&
       google_project_iam_custom_role.foundation_public_api[0].project == var.public_api_project_id &&
       toset(google_project_iam_custom_role.foundation_public_api[0].permissions) == toset(["run.services.create", "run.services.update"]) &&
       google_project_iam_member.foundation_public_api[0].project == var.public_api_project_id &&

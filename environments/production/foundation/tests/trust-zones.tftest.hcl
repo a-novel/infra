@@ -194,6 +194,7 @@ run "three_project_coordinates" {
     condition = (
       length(module.service_release) == 0 && length(module.service_project) == 0 &&
       length(google_project_iam_custom_role.foundation_public_api) == 0 && length(google_project_service.public_api_telemetry) == 0 &&
+      length(google_project_iam_member.public_api_network_viewer) == 0 && length(google_compute_subnetwork_iam_member.public_api_run) == 0 &&
       length(google_compute_subnetwork_iam_member.service_run) == 0 &&
       length(google_compute_subnetwork_iam_member.service_mig) == 0 &&
       length(google_compute_subnetwork_iam_member.service_foundation) == 0 &&

@@ -54,3 +54,21 @@ resource "google_project_service" "public_api_telemetry" {
 
   depends_on = [module.public_api_project]
 }
+
+resource "google_project_iam_member" "public_api_network_viewer" {
+  count = length(google_project_iam_custom_role.foundation_public_api)
+
+  project = google_compute_shared_vpc_service_project.public_api["public-api"].host_project
+  role    = "roles/compute.networkViewer"
+  member  = module.public_api_project["public-api"].service_agents["run.googleapis.com"]
+}
+
+resource "google_compute_subnetwork_iam_member" "public_api_run" {
+  count = length(google_project_iam_custom_role.foundation_public_api)
+
+  project    = google_compute_shared_vpc_service_project.public_api["public-api"].host_project
+  region     = var.region
+  subnetwork = google_compute_subnetwork.production.name
+  role       = "roles/compute.networkUser"
+  member     = module.public_api_project["public-api"].service_agents["run.googleapis.com"]
+}
