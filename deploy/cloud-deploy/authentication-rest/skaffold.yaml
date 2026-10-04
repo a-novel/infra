@@ -1,0 +1,9 @@
+apiVersion: skaffold/v4beta7
+kind: Config
+metadata:
+  name: authentication-rest
+manifests:
+  rawYaml:
+    - service.yaml
+deploy:
+  cloudrun: {}

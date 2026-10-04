@@ -1,0 +1,8 @@
+jsonKeysHost: agora-json-keys-grpc-123456.europe-west1.run.app
+platformAuthURL: https://accounts.example.test
+smtpAddress: smtp.example.test:587
+smtpUsername: provider-project-login
+smtpSenderDomain: example.test
+smtpSenderEmail: noreply@example.test
+smtpSenderName: Agora
+smtpPasswordVersion: "21"

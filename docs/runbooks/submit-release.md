@@ -57,6 +57,50 @@ separate activation review. The workflow retains global writer serialization. St
 `submit-release`, `submit-migration` and `submit-rollout` are unavailable. The commands below publish
 source or reconcile existing work; they cannot start a deployment or provide a first-launch path.
 
+## Shared-zone source preparation
+
+Source validation/publication and read-only release reconciliation also accept an independently
+selected `--service=json-keys|authentication` and `--zone=private|public-api`. The supported API
+pairs are private JSON Keys gRPC and public-api JSON Keys REST/Authentication REST. Public platforms
+and private Authentication API placement are rejected. Omitting both flags preserves the dedicated
+pilot below.
+
+The shared contract binds the exact API pipeline, `agora-SERVICE-private|api` runtime account,
+`agora-SERVICE-private|api-production` image repository and
+`workloads/production/ZONE/PROJECT/SERVICE/production/` custody prefix. The promoted image role is
+`grpc` in private and `rest` in public-api. Parameter validation establishes syntax and component
+scope; protected coordinates must still establish the actual database, network, project number and
+enabled secret versions before any deployment.
+
+```sh
+infra validate-release-source \
+  --service="${SERVICE:?}" --zone="${ZONE:?}" \
+  --project-id="${SERVICE_PROJECT_ID:?}" --project-number="${SERVICE_PROJECT_NUMBER:?}" \
+  --region="${REGION:?}" --receipt-bucket="${RECEIPT_BUCKET:?}" \
+  --source-dir="${TRUSTED_CHECKOUT:?}" "${PRIVATE_REQUEST_FILE:?}"
+```
+
+This command reads only the bounded native request and exact committed sources, without initializing
+cloud clients. It does not approve deployment. The same scope flags select immutable
+`publish-release-source` or read-only `reconcile-release`; shared migration/rollout reconciliation
+and the protected deployment operation remain unavailable pending private-owner enrollment.
+
+Private JSON Keys reuses `deploy/cloud-deploy/json-keys`. The REST sources live in
+`deploy/cloud-deploy/json-keys-rest` and `deploy/cloud-deploy/authentication-rest`. JSON Keys REST
+accepts the common database/network parameters but rejects `masterKeyVersion`. Both JSON Keys
+components use the same private database and port 5432; Authentication uses its own database on 5433. API sources contain no database provisioning or migration jobs.
+
+Authentication adds its JSON Keys endpoint, platform URL and SMTP configuration. Its optional
+waitlist requires both `waitlistURL` and `waitlistSecretVersion` and selects
+`skaffold-waitlist.yaml`; otherwise `skaffold.yaml` selects the base manifest without waitlist access.
+Both raw variants are committed and regression-compared. They preserve Cloud Deploy's parameter
+comments, which native Kustomize rendering strips. The bounded archive contains only the two
+Skaffold files and their two raw manifests.
+
+Authentication retains instance-based CPU for accepted email work and its existing one-instance
+minimum. JSON Keys REST is additional capacity with a zero-instance minimum. No API activation or
+new VM is implied; live capacity/cost and one-writer checks remain required.
+
 ## The private request
 
 The trusted caller supplies the service project ID, numeric project number, region and management

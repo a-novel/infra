@@ -34,6 +34,7 @@ var (
 // do not establish that a project number, bucket or foundation input is authorized.
 type scope struct {
 	ProjectID, ProjectNumber, Region, ReceiptBucket string
+	Service, Zone                                   string
 }
 
 func (scope scope) validate() error {
@@ -50,6 +51,11 @@ func (scope scope) validate() error {
 			return errors.New("invalid independently selected project, region or receipt bucket")
 		}
 	}
+	switch scope.Service + "/" + scope.Zone {
+	case "/", "json-keys/private", "json-keys/public-api", "authentication/public-api":
+	default:
+		return errors.New("unsupported service and trust zone")
+	}
 	return nil
 }
 
@@ -58,10 +64,29 @@ func (scope scope) location() string {
 }
 
 func (scope scope) parent() string {
-	return scope.location() + "/deliveryPipelines/" + pilotTarget
+	return scope.location() + "/deliveryPipelines/" + scope.target()
 }
 
-func (scope scope) prefix() string { return "services/" + scope.ProjectID + "/production/" }
+func (scope scope) target() string {
+	if scope.Zone == "public-api" {
+		return "agora-" + scope.Service + "-rest"
+	}
+	return pilotTarget
+}
+
+func (scope scope) prefix() string {
+	if scope.Zone != "" {
+		return "workloads/production/" + scope.Zone + "/" + scope.ProjectID + "/" + scope.Service + "/production/"
+	}
+	return "services/" + scope.ProjectID + "/production/"
+}
+
+func (scope scope) zoneSuffix() string {
+	if scope.Zone == "public-api" {
+		return "api"
+	}
+	return scope.Zone
+}
 
 func (scope scope) intentName(id string) string {
 	return scope.prefix() + "submissions/" + id + ".json"
@@ -73,7 +98,7 @@ func (scope scope) request(data []byte) (*deploypb.CreateReleaseRequest, error) 
 		return nil, errors.New("expected a bounded native CreateReleaseRequest JSON document")
 	}
 	if request.Parent != scope.parent() || !releasePattern.MatchString(request.ReleaseId) {
-		return nil, errors.New("release must belong to the selected JSON Keys pipeline")
+		return nil, errors.New("release must belong to the selected service pipeline")
 	}
 	if !validRequestID(request.RequestId) {
 		return nil, errors.New("requestId must be a nonzero lowercase UUID")
@@ -94,13 +119,25 @@ func (scope scope) request(data []byte) (*deploypb.CreateReleaseRequest, error) 
 		return nil, errors.New("release annotations must bind the request UUID and exact source commit")
 	}
 	source := "gs://" + scope.ReceiptBucket + "/" + scope.sourceName(request)
-	if release.SkaffoldConfigUri != source || release.SkaffoldConfigPath != "skaffold.yaml" || !versionPattern.MatchString(release.SkaffoldVersion) {
+	config := "skaffold.yaml"
+	if scope.Service == "authentication" && release.DeployParameters["waitlistSecretVersion"] != "" {
+		config = "skaffold-waitlist.yaml"
+	}
+	if release.SkaffoldConfigUri != source || release.SkaffoldConfigPath != config || !versionPattern.MatchString(release.SkaffoldVersion) {
 		return nil, errors.New("release must use its commit-addressed source archive and a pinned Skaffold version")
 	}
 	artifacts := release.BuildArtifacts
-	imagePrefix := scope.Region + "-docker.pkg.dev/" + scope.ProjectID + "/agora-production/service-json-keys/grpc@sha256:"
-	if len(artifacts) != 1 || artifacts[0].GetImage() != "service-json-keys" || !strings.HasPrefix(artifacts[0].GetTag(), imagePrefix) {
-		return nil, errors.New("release must contain only the selected project's JSON Keys gRPC image")
+	service, role, repository := "json-keys", "grpc", "agora-production"
+	if scope.Zone != "" {
+		service = scope.Service
+		repository = "agora-" + service + "-" + scope.zoneSuffix() + "-production"
+		if scope.Zone == "public-api" {
+			role = "rest"
+		}
+	}
+	imagePrefix := scope.Region + "-docker.pkg.dev/" + scope.ProjectID + "/" + repository + "/service-" + service + "/" + role + "@sha256:"
+	if len(artifacts) != 1 || artifacts[0].GetImage() != "service-"+service || !strings.HasPrefix(artifacts[0].GetTag(), imagePrefix) {
+		return nil, errors.New("release must contain only the selected service and zone image")
 	}
 	if !digestPattern.MatchString(strings.TrimPrefix(artifacts[0].Tag, imagePrefix)) {
 		return nil, errors.New("release image must be pinned by digest")
@@ -131,15 +168,25 @@ func (scope scope) parameters(parameters map[string]string) error {
 		"runtimeServiceAccount":   `[a-z][a-z0-9-]{4,28}[a-z0-9]@` + regexp.QuoteMeta(scope.ProjectID) + `\.iam\.gserviceaccount\.com`,
 		"databasePrivateIP":       regexp.QuoteMeta(ip.String()),
 		"managementProjectNumber": `[1-9][0-9]*`,
-		"masterKeyVersion":        `[1-9][0-9]*`,
 		"postgresPasswordVersion": `[1-9][0-9]*`,
 	}
+	if scope.Zone != "" {
+		patterns["runtimeServiceAccount"] = regexp.QuoteMeta("agora-" + scope.Service + "-" + scope.zoneSuffix() + "@" + scope.ProjectID + ".iam.gserviceaccount.com")
+	}
+	if scope.Zone != "public-api" {
+		patterns["masterKeyVersion"] = `[1-9][0-9]*`
+	}
+	if scope.Service == "authentication" {
+		for name, pattern := range authenticationParameters(parameters) {
+			patterns[name] = pattern
+		}
+	}
 	if len(parameters) != len(patterns) {
-		return errors.New("release requires exactly the eight JSON Keys deploy parameters")
+		return errors.New("release parameters must exactly match the selected API contract")
 	}
 	for name, pattern := range patterns {
-		if !regexp.MustCompile("^" + pattern + "$").MatchString(parameters[name]) {
-			return fmt.Errorf("invalid JSON Keys deploy parameter: %s", name)
+		if len(parameters[name]) > 512 || !regexp.MustCompile("^"+pattern+"$").MatchString(parameters[name]) {
+			return fmt.Errorf("invalid API deploy parameter: %s", name)
 		}
 	}
 	return nil

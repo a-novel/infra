@@ -43,8 +43,8 @@ type operationInputs struct {
 
 func (input operationInputs) scope() scope {
 	return scope{
-		input.ProjectID, input.ProjectNumber, input.Region,
-		strings.TrimSuffix(input.StateBucket, "-tofu-state") + "-deployment-receipts",
+		ProjectID: input.ProjectID, ProjectNumber: input.ProjectNumber, Region: input.Region,
+		ReceiptBucket: strings.TrimSuffix(input.StateBucket, "-tofu-state") + "-deployment-receipts",
 	}
 }
 

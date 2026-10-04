@@ -15,11 +15,22 @@ import (
 	"cloud.google.com/go/deploy/apiv1/deploypb"
 )
 
-const sourceDirectory = "deploy/cloud-deploy/json-keys/"
+// sourceFiles selects a closed, committed native-renderer input set for one API.
+func (scope scope) sourceFiles() (string, []string) {
+	directory := "deploy/cloud-deploy/json-keys/"
+	files := []string{"skaffold.yaml", "service.yaml"}
+	if scope.Zone == "public-api" {
+		directory = "deploy/cloud-deploy/" + scope.Service + "-rest/"
+	}
+	if scope.Service == "authentication" {
+		files = append(files, "skaffold-waitlist.yaml", "service-waitlist.yaml")
+	}
+	return directory, files
+}
 
 // sourceArchive reads committed blobs, not working-tree files. The caller must
 // authorize the checkout/commit; this check only binds its contents to the request.
-func sourceArchive(ctx context.Context, directory, commit string) ([]byte, error) {
+func (scope scope) sourceArchive(ctx context.Context, directory, commit string) ([]byte, error) {
 	head, err := sourceGit(ctx, directory, "rev-parse", "--verify", "HEAD^{commit}")
 	if err != nil || strings.TrimSpace(string(head)) != commit {
 		return nil, errors.New("source checkout must be at the exact reviewed request commit")
@@ -27,7 +38,8 @@ func sourceArchive(ctx context.Context, directory, commit string) ([]byte, error
 	var archive bytes.Buffer
 	zipped := gzip.NewWriter(&archive)
 	writer := tar.NewWriter(zipped)
-	for _, name := range []string{"skaffold.yaml", "service.yaml"} {
+	sourceDirectory, files := scope.sourceFiles()
+	for _, name := range files {
 		path := sourceDirectory + name
 		entry, err := sourceGit(ctx, directory, "ls-tree", "-l", commit, "--", path)
 		if err != nil {
@@ -35,10 +47,10 @@ func sourceArchive(ctx context.Context, directory, commit string) ([]byte, error
 		}
 		fields := strings.Fields(string(entry))
 		if len(fields) != 5 || fields[4] != path {
-			return nil, errors.New("source must contain both allowlisted YAML paths")
+			return nil, errors.New("source must contain all allowlisted YAML paths")
 		}
 		if fields[0] != "100644" || fields[1] != "blob" || !commitPattern.MatchString(fields[2]) {
-			return nil, errors.New("source must contain both allowlisted non-executable regular YAML files")
+			return nil, errors.New("source must contain all allowlisted non-executable regular YAML files")
 		}
 		size, err := strconv.Atoi(fields[3])
 		if err != nil || size <= 0 || size > 16<<10 {

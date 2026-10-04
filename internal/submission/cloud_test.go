@@ -17,6 +17,25 @@ import (
 
 func TestReconcileRelease(t *testing.T) {
 	t.Parallel()
+	for _, component := range []struct {
+		name, service, zone string
+		waitlist            bool
+	}{
+		{"Legacy", "", "", false},
+		{"Private", "json-keys", "private", false},
+		{"PublicKeys", "json-keys", "public-api", false},
+		{"Authentication", "authentication", "public-api", false},
+		{"Waitlist", "authentication", "public-api", true},
+	} {
+		t.Run(component.name, func(t *testing.T) {
+			t.Parallel()
+			testReconcileRelease(t, component.service, component.zone, component.waitlist)
+		})
+	}
+}
+
+func testReconcileRelease(t *testing.T, service, zone string, waitlist bool) {
+	t.Helper()
 	for _, testCase := range []struct {
 		name string
 		want int
@@ -35,6 +54,16 @@ func TestReconcileRelease(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 			request := fixture(t)
+			args := arguments(t, "reconcile-release", "release-1")
+			intentName := intent
+			if zone != "" {
+				var scopeArgs []string
+				request, scopeArgs = sharedFixture(t, sourceCheckout(t), service, zone, waitlist)
+				args = append([]string{"reconcile-release"}, scopeArgs...)
+				args = append(args, "release-1")
+				prefix := strings.Split(strings.TrimPrefix(request.Release.SkaffoldConfigUri, "gs://"+bucket+"/"), "sources/")[0]
+				intentName = prefix + "submissions/release-1.json"
+			}
 			native := proto.Clone(request.Release).(*deploypb.Release)
 			native.Uid, native.RenderState = "release-uid", deploypb.Release_SUCCEEDED
 			switch testCase.name {
@@ -60,7 +89,7 @@ func TestReconcileRelease(t *testing.T) {
 					return
 				}
 				switch r.URL.Path {
-				case "/b/" + bucket + "/o/" + intent:
+				case "/b/" + bucket + "/o/" + intentName:
 					if testCase.name == "IntentMissing" {
 						http.NotFound(w, r)
 					} else {
@@ -82,7 +111,7 @@ func TestReconcileRelease(t *testing.T) {
 			}))
 			defer server.Close()
 			var output bytes.Buffer
-			code := submission.Run(t.Context(), arguments(t, "reconcile-release", "release-1"), &output, &output,
+			code := submission.Run(t.Context(), args, &output, &output,
 				option.WithEndpoint(server.URL), option.WithoutAuthentication())
 			require.Equal(t, testCase.want, code, "%s", &output)
 			require.NotContains(t, output.String(), "private-provider-detail")

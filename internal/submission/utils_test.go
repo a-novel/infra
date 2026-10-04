@@ -38,6 +38,9 @@ import (
 //go:embed testdata/request.yaml
 var requestFixture []byte
 
+//go:embed testdata/authenticationParameters.yaml
+var authenticationParametersFixture []byte
+
 const (
 	bucket        = "agora-management-test-123456789012-deployment-receipts"
 	intent        = "services/agora-json-keys-test/production/submissions/release-1.json"
@@ -59,6 +62,47 @@ func fixture(t *testing.T) *deploypb.CreateReleaseRequest {
 		panic(err)
 	}
 	return request
+}
+
+func sharedFixture(t *testing.T, directory, service, zone string, waitlist bool) (*deploypb.CreateReleaseRequest, []string) {
+	t.Helper()
+	request := fixture(t)
+	project, suffix, role := "agora-private-test", "private", "grpc"
+	if zone == "public-api" {
+		project, suffix, role = "agora-public-api-test", "api", "rest"
+		delete(request.Release.DeployParameters, "masterKeyVersion")
+	}
+	request.Parent = "projects/123456/locations/europe-west1/deliveryPipelines/agora-" + service + "-" + role
+	request.Release.Name = request.Parent + "/releases/" + request.ReleaseId
+	commit := gitSource(t, directory, "rev-parse", "HEAD")
+	request.Release.Annotations["source-commit"] = commit
+	request.Release.SkaffoldConfigUri = "gs://" + bucket + "/workloads/production/" + zone + "/" + project + "/" + service + "/production/sources/" + commit + ".tar.gz"
+	request.Release.BuildArtifacts = []*deploypb.BuildArtifact{{
+		Image: "service-" + service,
+		Tag:   "europe-west1-docker.pkg.dev/" + project + "/agora-" + service + "-" + suffix + "-production/service-" + service + "/" + role + "@sha256:" + strings.Repeat("b", 64),
+	}}
+	parameters := request.Release.DeployParameters
+	parameters["projectId"] = project
+	parameters["runtimeServiceAccount"] = "agora-" + service + "-" + suffix + "@" + project + ".iam.gserviceaccount.com"
+	if service == "authentication" {
+		var authentication map[string]string
+		if err := yaml.Unmarshal(authenticationParametersFixture, &authentication); err != nil {
+			panic(err)
+		}
+		for name, value := range authentication {
+			parameters[name] = value
+		}
+		parameters["databasePrivateIP"] = "10.20.0.6"
+	}
+	if waitlist {
+		parameters["waitlistURL"], parameters["waitlistSecretVersion"] = "https://waitlist.example.test", "31"
+		request.Release.SkaffoldConfigPath = "skaffold-waitlist.yaml"
+	}
+	args := []string{
+		"--project-id=" + project, "--project-number=123456", "--region=europe-west1",
+		"--receipt-bucket=" + bucket, "--service=" + service, "--zone=" + zone, "--timeout=5s",
+	}
+	return request, args
 }
 
 func operationFixture(t *testing.T, request *deploypb.CreateReleaseRequest, migration, rotation *runpb.Job) (map[string]any, map[string]string) {
@@ -209,20 +253,29 @@ func upload(t *testing.T, request *http.Request) (*storage.Object, []byte) {
 	return object, data
 }
 
-func sourceCheckout(t *testing.T) string {
+func sourceCheckout(t *testing.T, sources ...string) string {
 	t.Helper()
 	directory := t.TempDir()
-	path := filepath.Join(directory, "deploy/cloud-deploy/json-keys")
-	if err := os.MkdirAll(path, 0o700); err != nil {
-		panic(err)
+	if len(sources) == 0 {
+		sources = []string{"json-keys"}
 	}
-	for _, name := range []string{"skaffold.yaml", "service.yaml"} {
-		data, err := os.ReadFile(filepath.Join("../../deploy/cloud-deploy/json-keys", name))
+	for _, source := range sources {
+		path := filepath.Join(directory, "deploy/cloud-deploy", source)
+		if err := os.MkdirAll(path, 0o700); err != nil {
+			panic(err)
+		}
+		files, err := filepath.Glob(filepath.Join("../../deploy/cloud-deploy", source, "*.yaml"))
 		if err != nil {
 			panic(err)
 		}
-		if err := os.WriteFile(filepath.Join(path, name), data, 0o644); err != nil {
-			panic(err)
+		for _, file := range files {
+			data, err := os.ReadFile(file)
+			if err != nil {
+				panic(err)
+			}
+			if err := os.WriteFile(filepath.Join(path, filepath.Base(file)), data, 0o644); err != nil {
+				panic(err)
+			}
 		}
 	}
 	gitSource(t, directory, "init", "--quiet")
