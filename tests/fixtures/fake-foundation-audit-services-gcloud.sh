@@ -12,6 +12,7 @@ required_services='[
   {"config":{"name":"cloudquotas.googleapis.com"}},
   {"config":{"name":"cloudresourcemanager.googleapis.com"}},
   {"config":{"name":"cloudscheduler.googleapis.com"}},
+  {"config":{"name":"cloudtrace.googleapis.com"}},
   {"config":{"name":"compute.googleapis.com"}},
   {"config":{"name":"dns.googleapis.com"}},
   {"config":{"name":"iam.googleapis.com"}},
@@ -20,7 +21,8 @@ required_services='[
   {"config":{"name":"monitoring.googleapis.com"}},
   {"config":{"name":"oslogin.googleapis.com"}},
   {"config":{"name":"run.googleapis.com"}},
-  {"config":{"name":"serviceusage.googleapis.com"}}
+  {"config":{"name":"serviceusage.googleapis.com"}},
+  {"config":{"name":"telemetry.googleapis.com"}}
 ]'
 
 cloud_run_policy='{
@@ -115,13 +117,11 @@ case "$*" in
         case "${FAKE_FOUNDATION_SERVICE_MODE:-allowed}" in
             allowed)
                 jq --compact-output '. + [
-                  {"config":{"name":"cloudtrace.googleapis.com"}},
                   {"config":{"name":"containerregistry.googleapis.com"}},
                   {"config":{"name":"iamcredentials.googleapis.com"}},
                   {"config":{"name":"pubsub.googleapis.com"}},
                   {"config":{"name":"storage-api.googleapis.com"}},
-                  {"config":{"name":"storage-component.googleapis.com"}},
-                  {"config":{"name":"telemetry.googleapis.com"}}
+                  {"config":{"name":"storage-component.googleapis.com"}}
                 ]' <<<"$required_services"
                 ;;
             missing)

@@ -199,7 +199,9 @@ check, and the workflow reads the exact project and region from private configur
 discovering or logging them. Separate operations and cost email channels both receive the
 current/forecast budget; only operations receives Google application incidents. Successful request
 logs for the two exact health paths are excluded while failures, application logs, and audit records
-remain for 30 days.
+remain for 30 days. Authentication and JSON Keys export OpenTelemetry traces and logs over OTLP to
+Google's Telemetry API with their own runtime identities, so the same instrumentation can move to any
+OTLP backend without an agent or collector.
 
 The three-hour cadence is a launch-stage cost and detection tradeoff. Authentication needs
 instance-based CPU because detached mail can continue after an HTTP response, and Google may keep
