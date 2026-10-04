@@ -121,7 +121,7 @@ def protections($plan):
       (keep(["paused"]; false) or ($resource | candidate_schedule_pause($plan)))
     else true end);
 
-# Shared private jobs are adopted by exact ID; bootstrap cannot replace them.
+# Shared private workloads are adopted by exact ID; bootstrap cannot replace them.
 # Dedicated projects retain their create-only bootstrap contract.
 def service_job_bootstrap:
   if .variables.zone.value == "public-api" then
@@ -143,15 +143,26 @@ def service_job_bootstrap:
   .variables.project_id.value as $project | .variables.service.value as $service |
   .variables.region.value as $region | (.variables.zone.value == "private") as $private |
   (.variables.adopt_existing_jobs.value == true) as $adopt |
+  (.variables.adopt_existing_api.value == true) as $adopt_api |
   (if $service == "json-keys" then ["migrations", "rotatekeys"]
    elif $service == "authentication" then ["migrations"] else [] end) as $roles |
   ($roles | length > 0) and
   $ENV.TOFU_STATE_SUFFIX == (if $private then "workloads/production/private/" + $project + "/" + $service else "services/" + $project end) and
   all((.resource_changes // [])[];
-    .mode == "managed" and .type == "google_cloud_run_v2_job" and
+    .mode == "managed" and .previous_address == null and .deposed == null and
+    (if .type == "google_cloud_run_v2_service" then
+      $private and $service == "json-keys" and
+      .address == "google_cloud_run_v2_service.api[0]" and .index == 0 and
+      (.change.actions == ["update"] or .change.actions == ["no-op"]) and
+      (.change.importing == null or ($adopt_api and
+        .change.importing.id == "projects/" + $project + "/locations/" + $region + "/services/agora-json-keys-grpc")) and
+      .change.after.name == "agora-json-keys-grpc" and
+      (.change | known(["ingress"]) and known(["invoker_iam_disabled"]) and
+        .after.ingress == "INGRESS_TRAFFIC_INTERNAL_ONLY" and .after.invoker_iam_disabled == false)
+    else
+    .type == "google_cloud_run_v2_job" and
     (.index as $role | $roles | index($role) != null) and
     .address == "google_cloud_run_v2_job.application[" + (.index | tojson) + "]" and
-    .previous_address == null and .deposed == null and
     (if $private then
       (.change.actions == ["update"] or .change.actions == ["no-op"]) and
       (.change.importing == null or ($adopt and
@@ -159,7 +170,8 @@ def service_job_bootstrap:
     else
       .change.importing == null and (.change.actions == ["create"] or .change.actions == ["no-op"])
     end) and
-    .change.after.name == "agora-" + $service + "-" + .index and
+    .change.after.name == "agora-" + $service + "-" + .index
+    end) and
     (.change | . as $change | .after.project == $project and .after.location == $region and
       .after.deletion_protection == true and
       all(["project", "location", "name", "deletion_protection"][];

@@ -101,8 +101,31 @@ resource "google_cloud_scheduler_job" "json_keys_rotation" {
   }
 }
 
-resource "google_cloud_run_v2_service" "json_keys" {
-  count = var.application_release == null ? 0 : 1
+removed {
+  from = google_cloud_run_v2_service.json_keys
+  lifecycle {
+    destroy = false
+  }
+}
+
+data "google_cloud_run_v2_service" "json_keys" {
+  count = var.application_release == null || var.recovery_mode ? 0 : 1
+
+  project  = var.workload_project_id
+  location = var.region
+  name     = "agora-json-keys-grpc"
+}
+
+locals {
+  application_json_keys = var.application_release == null ? null : {
+    name = "agora-json-keys-grpc"
+    uri  = var.recovery_mode ? google_cloud_run_v2_service.recovery_json_keys[0].uri : data.google_cloud_run_v2_service.json_keys[0].uri
+  }
+}
+
+# Production belongs to service-release/private; retain only the disposable recovery probe.
+resource "google_cloud_run_v2_service" "recovery_json_keys" {
+  count = var.recovery_mode && var.application_release != null ? 1 : 0
 
   project  = var.workload_project_id
   location = var.region
@@ -114,7 +137,7 @@ resource "google_cloud_run_v2_service" "json_keys" {
   labels               = merge(local.labels, { component = "json-keys", role = "grpc" })
 
   scaling {
-    min_instance_count = var.recovery_mode ? 0 : 1
+    min_instance_count = 0
     max_instance_count = 3
   }
 
@@ -220,35 +243,9 @@ resource "google_cloud_run_v2_service" "json_keys" {
     }
   }
 
-  dynamic "traffic" {
-    for_each = local.application_candidate.json_keys && var.application_release.json_keys.active_revision != null ? [1] : []
-
-    content {
-      type     = "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION"
-      revision = var.application_release.json_keys.active_revision
-      percent  = 100
-    }
-  }
-
-  dynamic "traffic" {
-    for_each = local.application_candidate.json_keys ? [1] : []
-
-    content {
-      type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
-      percent = var.application_release.json_keys.active_revision == null ? 100 : 0
-      # The release mutex protects this fixed tag; the driver verifies its revision.
-      tag = "candidate"
-    }
-  }
-
-  dynamic "traffic" {
-    for_each = !local.application_candidate.json_keys ? [1] : []
-
-    content {
-      type     = var.recovery_mode ? "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST" : "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION"
-      revision = var.recovery_mode ? null : var.application_release.json_keys.active_revision
-      percent  = 100
-    }
+  traffic {
+    type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
+    percent = 100
   }
 }
 
@@ -339,7 +336,7 @@ resource "google_cloud_run_v2_service" "authentication" {
 
       env {
         name  = "SERVICE_JSON_KEYS_HOST"
-        value = trimprefix(google_cloud_run_v2_service.json_keys[0].uri, "https://")
+        value = trimprefix(local.application_json_keys.uri, "https://")
       }
 
       env {

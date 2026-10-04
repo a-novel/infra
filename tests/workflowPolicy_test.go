@@ -77,6 +77,21 @@ func TestRepositoryChecks(t *testing.T) {
 	}
 }
 
+func TestNativeReleaseChecks(t *testing.T) {
+	t.Parallel()
+	main := loadWorkflow(t, "workflows/main.yaml")
+	native := main.Jobs["validate-opentofu"].Steps
+	step := native[stepIndex(t, native, "environments/service-release")]
+	require.Contains(t, step.Run, `tofu -chdir="$root" validate`)
+	require.Contains(t, step.Run, `tofu -chdir="$root" test`)
+	release := main.Jobs["validate-release"].Steps
+	stepIndex(t, release, "infra validate-images")
+	stepIndex(t, release, "infra preflight resolve-images")
+	for _, item := range release {
+		require.NotContains(t, item.Run, "infra compile-release", "modern producer inventories must not recreate the retired eight-image deployment")
+	}
+}
+
 func TestTemporaryToolingExceptions(t *testing.T) {
 	t.Parallel()
 	main := loadWorkflow(t, "workflows/main.yaml")

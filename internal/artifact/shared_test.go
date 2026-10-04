@@ -13,8 +13,11 @@ func TestSharedServiceImages(t *testing.T) {
 		code                int
 	}{
 		{"JSONKeysPrivate", "json-keys", "private", nil, 0},
+		{"JSONKeysPrivateAPI", "json-keys", "private", nil, 0},
 		{"AuthenticationPrivate", "authentication", "private", nil, 0},
 		{"AuthenticationAPI", "authentication", "public-api", nil, 0},
+		{"AuthenticationWithoutInitializerPrivate", "authentication", "private", nil, 0},
+		{"AuthenticationWithoutInitializerAPI", "authentication", "public-api", nil, 0},
 		{"PlatformZone", "authentication", "public", nil, 65},
 		{"MissingSMTP", "authentication", "public-api", func(c object) { delete(c["secret_versions"].(object), "smtp-sender-password") }, 65},
 		{"MasterKeyInAPI", "authentication", "public-api", func(c object) { c["secret_versions"].(object)["app-master-key"] = 7 }, 65},
@@ -26,6 +29,9 @@ func TestSharedServiceImages(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 			manifest := read(t, "../../tests/fixtures/manifests/valid.yaml")
+			if strings.Contains(testCase.name, "WithoutInitializer") {
+				delete(images(manifest, "authentication"), "jobs/init")
+			}
 			inputs := serviceInputs(manifest, testCase.service)
 			scope := testCase.zone
 			if scope == "public-api" {
@@ -35,6 +41,10 @@ func TestSharedServiceImages(t *testing.T) {
 			inputs["zone"] = testCase.zone
 			for role, image := range inputs["images"].(object) {
 				inputs["images"].(object)[role] = strings.ReplaceAll(image.(string), "agora-production", repository)
+			}
+			if testCase.name == "JSONKeysPrivateAPI" {
+				digest := images(manifest, "json-keys")["grpc"].(object)["digest"].(string)
+				inputs["api"] = object{"image": "europe-west1-docker.pkg.dev/fixture-service/" + repository + "/service-json-keys/grpc@" + digest}
 			}
 			if testCase.zone == "public-api" {
 				inputs["images"] = object{}

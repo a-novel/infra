@@ -63,6 +63,7 @@ func TestResolveImages(t *testing.T) {
 		failure int
 	}{
 		{"Snapshot", -1},
+		{"WithoutInitializer", -1},
 		{"MissingTag", 0},
 		{"Provenance", 1},
 		{"TagMovedAfterResolution", 2},
@@ -72,6 +73,10 @@ func TestResolveImages(t *testing.T) {
 			t.Parallel()
 			expected := read(t, "../../tests/fixtures/manifests/valid.yaml")
 			manifest := read(t, "../../tests/fixtures/manifests/valid.yaml")
+			if testCase.name == "WithoutInitializer" {
+				delete(images(manifest, "authentication"), "jobs/init")
+				delete(images(expected, "authentication"), "jobs/init")
+			}
 			var calls []call
 			checks := imageCalls(expected, "")
 			for index := 0; index < len(checks); index += 2 {

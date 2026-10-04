@@ -87,7 +87,7 @@ jobs:
           tofu fmt -check -recursive modules
           tflint --recursive --chdir=modules --config="${GITHUB_WORKSPACE}/.tflint.hcl" --format=compact
 
-      - name: Validate inactive roots without backends
+      - name: Validate native service and proof roots without backends
         shell: bash
         env:
           GOOGLE_APPLICATION_CREDENTIALS: /dev/null
@@ -297,26 +297,13 @@ jobs:
           infra validate-images \
             "${base_manifest}" deploy/production/images.yaml
 
+      # Native resource contracts run in validate-opentofu; historical compiler
+      # compatibility remains covered by test-go, not today's producer inventory.
       - name: Resolve candidate versions and verify provenance
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: infra preflight resolve-images deploy/production/images.yaml "${RUNNER_TEMP}/resolved-images.json"
-
-      # Compile the verified snapshot with public configuration fixtures.
-      - name: Compile the production image candidate
-        shell: bash
-        env:
-          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
-          GITHUB_RUN_ID: ${{ github.run_id }}
-          GITHUB_SHA: ${{ github.sha }}
-          RELEASE_ACTION: deploy
-        run: |
-          set -euo pipefail
-          umask 077
-          infra compile-release \
-            "${RUNNER_TEMP}/resolved-images.json" tests/fixtures/release-config.json - \
-            "${RUNNER_TEMP}/release-preview"
 
   # Preserve the existing required check while its work runs independently.
   lint-repository:

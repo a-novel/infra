@@ -32,6 +32,9 @@ func familyVersions(manifest object, selected ...string) error {
 		}
 		var version string
 		for _, slot := range family.slots {
+			if obj(definition, "images", slot) == nil {
+				continue
+			}
 			tag := str(definition, "images", slot, "tag")
 			if version != "" && version != tag {
 				return errors.New("component images must use one SemVer release")
@@ -49,9 +52,13 @@ func imageChanges(previous, next object) ([]string, error) {
 		name := component(family.service)
 		before, after := obj(previous, "components", name), obj(next, "components", name)
 		firstLaunch = firstLaunch && before["enabled"] != true
-		count := 0
+		count, total := 0, 0
 		for _, slot := range family.slots {
 			oldImage, newImage := obj(before, "images", slot), obj(after, "images", slot)
+			if oldImage == nil && newImage == nil {
+				continue
+			}
+			total++
 			if oldImage["repository"] != newImage["repository"] || oldImage["tag"] != newImage["tag"] {
 				count++
 				continue
@@ -64,7 +71,7 @@ func imageChanges(previous, next object) ([]string, error) {
 		if count == 0 && before["enabled"] == after["enabled"] {
 			continue
 		}
-		if count != len(family.slots) {
+		if count != total {
 			return nil, fmt.Errorf("%s must update its complete image family", name)
 		}
 		changed = append(changed, family.service)

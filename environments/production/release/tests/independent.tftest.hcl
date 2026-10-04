@@ -1,5 +1,5 @@
 mock_provider "google" {
-  mock_resource "google_cloud_run_v2_service" {
+  mock_data "google_cloud_run_v2_service" {
     defaults = {
       uri = "https://agora-json-keys-grpc-test.europe-west1.run.app"
     }
@@ -68,7 +68,7 @@ run "retained_waitlist_settings_cannot_leak_into_private_runtimes" {
   assert {
     condition = (
       length(google_cloud_run_v2_service.authentication) == 0 &&
-      alltrue([for env in one(one(google_cloud_run_v2_service.json_keys[0].template).containers).env : !startswith(env.name, "WAITLIST_")])
+      length(google_cloud_run_v2_service.recovery_json_keys) == 0
     )
     error_message = "Private JSON Keys must not mount the public API's waitlist settings."
   }
@@ -108,9 +108,7 @@ run "authentication_candidate_leaves_json_keys_active" {
   assert {
     condition = (
       length(google_cloud_run_v2_service.authentication) == 0 &&
-      one(google_cloud_run_v2_service.json_keys[0].traffic).percent == 100 &&
-      one(google_cloud_run_v2_service.json_keys[0].traffic).revision == var.application_release.json_keys.active_revision &&
-      one(google_cloud_run_v2_service.json_keys[0].template).revision == var.application_release.json_keys.revision &&
+      length(google_cloud_run_v2_service.recovery_json_keys) == 0 &&
       !google_cloud_scheduler_job.json_keys_rotation[0].paused
     )
     error_message = "Authentication candidates must preserve JSON Keys traffic, revision and rotation."
@@ -140,8 +138,7 @@ run "json_keys_candidate_does_not_recreate_authentication" {
   }
   assert {
     condition = (
-      length(google_cloud_run_v2_service.json_keys[0].traffic) == 2 &&
-      one([for traffic in google_cloud_run_v2_service.json_keys[0].traffic : traffic if traffic.percent == 0]).tag == "candidate" &&
+      length(google_cloud_run_v2_service.recovery_json_keys) == 0 &&
       length(google_cloud_run_v2_service.authentication) == 0 &&
       google_cloud_scheduler_job.json_keys_rotation[0].paused
     )

@@ -56,15 +56,11 @@ resource "google_tags_location_tag_binding" "postgres_backup_monitor" {
 }
 
 resource "google_tags_location_tag_binding" "json_keys" {
-  count = length(google_cloud_run_v2_service.json_keys)
+  count = var.application_release == null ? 0 : 1
 
-  parent    = "//run.googleapis.com/projects/${google_cloud_run_v2_service.json_keys[count.index].project}/locations/${google_cloud_run_v2_service.json_keys[count.index].location}/services/${google_cloud_run_v2_service.json_keys[count.index].name}"
-  location  = google_cloud_run_v2_service.json_keys[count.index].location
+  parent    = "//run.googleapis.com/projects/${var.workload_project_id}/locations/${var.region}/services/${local.application_json_keys.name}"
+  location  = var.region
   tag_value = var.cloud_run_invocation_tags.values.internal
-
-  lifecycle {
-    replace_triggered_by = [google_cloud_run_v2_service.json_keys[count.index].uid]
-  }
 }
 
 resource "google_tags_location_tag_binding" "authentication" {

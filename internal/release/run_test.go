@@ -143,3 +143,39 @@ func TestRunImageTransition(t *testing.T) {
 		})
 	}
 }
+
+func TestAuthenticationWithoutInitializer(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"RetireInitializer", "LaterRelease", "PartialFamily", "MixedVersions"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			fixture := setup(t)
+			previous := read(t, fixture.files[0])
+			fixture.change("authentication", true)
+			if name == "LaterRelease" {
+				delete(section(previous, "components", "service-authentication", "images"), "jobs/init")
+			}
+			nextImages := section(fixture.manifest, "components", "service-authentication", "images")
+			delete(nextImages, "jobs/init")
+			code := 0
+			if name == "PartialFamily" {
+				nextImages["rest"] = field(previous, "components", "service-authentication", "images", "rest")
+				code = 65
+			}
+			if name == "MixedVersions" {
+				section(nextImages, "rest")["tag"] = "v5.0.0"
+				code = 65
+			}
+			for _, family := range section(fixture.manifest, "components") {
+				for _, value := range family.(object)["images"].(object) {
+					delete(value.(object), "digest")
+				}
+			}
+			file := filepath.Join(t.TempDir(), "previous.json")
+			write(t, file, previous)
+			write(t, fixture.files[0], fixture.manifest)
+			var stdout, stderr bytes.Buffer
+			require.Equal(t, code, release.Run([]string{"validate-images", file, fixture.files[0]}, func(string) string { return "" }, &stdout, &stderr), stderr.String())
+		})
+	}
+}

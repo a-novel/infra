@@ -23,13 +23,10 @@ components:
     images:
       database:
         repository: ghcr.io/a-novel/service-authentication/database
-        tag: v2.9.1
-      jobs/init:
-        repository: ghcr.io/a-novel/service-authentication/jobs/init
-        tag: v2.9.1
+        tag: v2.11.0
       jobs/migrations:
         repository: ghcr.io/a-novel/service-authentication/jobs/migrations
-        tag: v2.9.1
+        tag: v2.11.0
       rest:
         repository: ghcr.io/a-novel/service-authentication/rest
-        tag: v2.9.1
+        tag: v2.11.0

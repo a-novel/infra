@@ -84,7 +84,7 @@ run "keeps_recovery_disabled_before_the_database_release" {
       length(google_cloud_run_v2_job.json_keys_smoke) == 0 &&
       length(google_tags_location_tag_binding.json_keys_smoke) == 0 &&
       length(google_cloud_scheduler_job.json_keys_rotation) == 0 &&
-      length(google_cloud_run_v2_service.json_keys) == 0 &&
+      length(google_cloud_run_v2_service.recovery_json_keys) == 0 &&
       length(google_cloud_run_v2_service.authentication) == 0 &&
       length(google_tags_location_tag_binding.application) == 0 &&
       length(google_tags_location_tag_binding.postgres_backup) == 0 &&
@@ -428,180 +428,15 @@ run "retains_private_json_keys_without_the_handed_off_public_api" {
 
   assert {
     condition = (
-      local.application_database_environment == {
-        authentication = {
-          POSTGRES_HOST        = "10.20.0.5"
-          POSTGRES_PORT        = "5433"
-          POSTGRES_USER        = "agora_authentication"
-          POSTGRES_DATABASE    = "agora_authentication"
-          POSTGRES_TLS_ENABLED = "false"
-        }
-        json_keys = {
-          POSTGRES_HOST        = "10.20.0.6"
-          POSTGRES_PORT        = "5432"
-          POSTGRES_USER        = "agora_json_keys"
-          POSTGRES_DATABASE    = "agora_json_keys"
-          POSTGRES_TLS_ENABLED = "false"
-        }
-      } &&
-      {
-        for environment in one(one(google_cloud_run_v2_service.json_keys[0].template).containers).env :
-        environment.name => environment.value
-        if contains(keys(local.application_database_environment.json_keys), environment.name) && length(environment.value_source) == 0
-      } == local.application_database_environment.json_keys
-    )
-    error_message = "Every application runtime must receive its exact discrete private-database settings."
-  }
-
-  assert {
-    condition = (
-      length(google_cloud_run_v2_service.json_keys) == 1 &&
-      google_cloud_run_v2_service.json_keys[0].ingress == "INGRESS_TRAFFIC_INTERNAL_ONLY" &&
-      google_tags_location_tag_binding.json_keys[0].tag_value == var.cloud_run_invocation_tags.values.internal &&
-      google_tags_location_tag_binding.json_keys[0].parent == "//run.googleapis.com/projects/${var.workload_project_id}/locations/${var.region}/services/${google_cloud_run_v2_service.json_keys[0].name}" &&
-      google_tags_location_tag_binding.json_keys[0].location == var.region &&
-      !google_cloud_run_v2_service.json_keys[0].invoker_iam_disabled &&
-      !google_cloud_run_v2_service.json_keys[0].deletion_protection &&
-      one(google_cloud_run_v2_service.json_keys[0].scaling).min_instance_count == 1 &&
-      length(one(google_cloud_run_v2_service.json_keys[0].template).scaling) == 0 &&
-      one(google_cloud_run_v2_service.json_keys[0].scaling).max_instance_count == 3 &&
-      one(google_cloud_run_v2_service.json_keys[0].template).service_account == var.runtime_service_accounts.json_keys &&
-      one(google_cloud_run_v2_service.json_keys[0].template).timeout == "60s" &&
-      one(google_cloud_run_v2_service.json_keys[0].template).max_instance_request_concurrency == 20 &&
-      one(google_cloud_run_v2_service.json_keys[0].template).execution_environment == "EXECUTION_ENVIRONMENT_GEN2" &&
-      one(one(google_cloud_run_v2_service.json_keys[0].template).containers).image == var.application_release.json_keys.images.grpc &&
-      one(one(google_cloud_run_v2_service.json_keys[0].template).containers).ports[0].name == "h2c" &&
-      one(one(google_cloud_run_v2_service.json_keys[0].template).containers).ports[0].container_port == 8080 &&
-      one(one(google_cloud_run_v2_service.json_keys[0].template).containers).resources[0].cpu_idle &&
-      one(one(google_cloud_run_v2_service.json_keys[0].template).containers).resources[0].limits == tomap({
-        cpu    = "1"
-        memory = "512Mi"
-      }) &&
-      length(one(one(google_cloud_run_v2_service.json_keys[0].template).containers).startup_probe) == 1 &&
-      one(one(google_cloud_run_v2_service.json_keys[0].template).containers).startup_probe[0].tcp_socket[0].port == 8080 &&
-      one(one(google_cloud_run_v2_service.json_keys[0].template).containers).startup_probe[0].initial_delay_seconds == 0 &&
-      one(one(google_cloud_run_v2_service.json_keys[0].template).containers).startup_probe[0].timeout_seconds == 1 &&
-      one(one(google_cloud_run_v2_service.json_keys[0].template).containers).startup_probe[0].period_seconds == 3 &&
-      one(one(google_cloud_run_v2_service.json_keys[0].template).containers).startup_probe[0].failure_threshold == 80 &&
-      length(one(one(google_cloud_run_v2_service.json_keys[0].template).containers).liveness_probe) == 0 &&
-      one(one(google_cloud_run_v2_service.json_keys[0].template).vpc_access).egress == "ALL_TRAFFIC" &&
-      toset(one(one(google_cloud_run_v2_service.json_keys[0].template).vpc_access).network_interfaces[0].tags) == toset(["agora-json-keys"]) &&
-      one(google_cloud_run_v2_service.json_keys[0].template).revision == var.application_release.json_keys.revision &&
-      one(google_cloud_run_v2_service.json_keys[0].traffic).percent == 100
-    )
-    error_message = "JSON Keys must remain an internal h2c service with request-based CPU, bounded scaling, TCP startup, and private-only egress."
-  }
-
-  assert {
-    condition = (
-      toset([
-        for environment in one(one(google_cloud_run_v2_service.json_keys[0].template).containers).env : environment.name
-        if length(environment.value_source) == 1
-      ]) == toset(["APP_MASTER_KEY", "POSTGRES_PASSWORD"]) &&
-      one([
-        for environment in one(one(google_cloud_run_v2_service.json_keys[0].template).containers).env : environment
-        if environment.name == "APP_MASTER_KEY"
-        ]).value_source[0].secret_key_ref[0] == {
-        secret  = "projects/agora-management-test/secrets/production-json-keys-app-master-key"
-        version = "7"
-      } &&
-      one([
-        for environment in one(one(google_cloud_run_v2_service.json_keys[0].template).containers).env : environment
-        if environment.name == "POSTGRES_PASSWORD"
-        ]).value_source[0].secret_key_ref[0] == {
-        secret  = "projects/agora-management-test/secrets/production-json-keys-postgres-password"
-        version = "8"
-      }
-    )
-    error_message = "JSON Keys may resolve only its exact master-key and owner-password versions."
-  }
-
-  assert {
-    condition = (
+      length(google_cloud_run_v2_service.recovery_json_keys) == 0 &&
       length(google_cloud_run_v2_service.authentication) == 0 &&
       length(google_tags_location_tag_binding.authentication) == 0 &&
       output.application_runtime.authentication == null &&
-      length([
-        for environment in one(one(google_cloud_run_v2_service.json_keys[0].template).containers).env : environment
-        if environment.name == "OTEL"
-      ]) == 0
+      data.google_cloud_run_v2_service.json_keys[0].name == "agora-json-keys-grpc" &&
+      google_tags_location_tag_binding.json_keys[0].tag_value == var.cloud_run_invocation_tags.values.internal &&
+      google_tags_location_tag_binding.json_keys[0].parent == "//run.googleapis.com/projects/agora-production-test/locations/europe-west1/services/agora-json-keys-grpc"
     )
-    error_message = "Retirement must not recreate Authentication or add an unapplied telemetry setting to the existing JSON Keys revision."
-  }
-}
-
-run "routes_a_first_release_to_its_only_revisions" {
-  command = plan
-
-
-  variables {
-    database_releases = {
-      authentication = {
-        image                   = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-authentication/database@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        backup_password_version = 11
-      }
-      json_keys = {
-        image                   = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-json-keys/database@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-        backup_password_version = 7
-      }
-    }
-    application_release = {
-      rollout = {
-        candidate_tag = "c-0123456789abcdef"
-        phase         = "candidate"
-      }
-      authentication = {
-        images = {
-          init       = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-authentication/jobs/init@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-          migrations = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-authentication/jobs/migrations@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
-          rest       = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-authentication/rest@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
-        }
-        revision = "agora-authentication-rest-0123456789ab"
-        secrets = {
-          postgres_password_version    = 11
-          smtp_password_version        = 12
-          super_admin_password_version = 13
-        }
-        smtp = {
-          address       = "smtp.example.com:587"
-          sender_domain = "smtp.example.com"
-          sender_email  = "noreply@example.com"
-          sender_name   = "Agora"
-          username      = "smtp-login@example.com"
-        }
-        super_admin_email = "admin@example.com"
-      }
-      json_keys = {
-        images = {
-          grpc        = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-json-keys/grpc@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-          migrations  = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-json-keys/jobs/migrations@sha256:1111111111111111111111111111111111111111111111111111111111111111"
-          rotate_keys = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-json-keys/jobs/rotatekeys@sha256:2222222222222222222222222222222222222222222222222222222222222222"
-        }
-        revision = "agora-json-keys-grpc-abcdef012345"
-        secrets = {
-          app_master_key_version    = 7
-          postgres_password_version = 8
-        }
-      }
-    }
-  }
-
-  assert {
-    condition = alltrue([
-      for service in [
-        google_cloud_run_v2_service.json_keys[0],
-        ] : (
-        one(service.scaling).min_instance_count == 1 &&
-        one(service.scaling).max_instance_count == 3 &&
-        length(one(service.template).scaling) == 0 &&
-        length(service.traffic) == 1 &&
-        one(service.traffic).type == "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST" &&
-        one(service.traffic).percent == 100 &&
-        one(service.traffic).revision == null &&
-        one(service.traffic).tag == (service.name == "agora-json-keys-grpc" ? "candidate" : var.application_release.rollout.candidate_tag)
-      )
-    ])
-    error_message = "A first release must route all traffic to its tagged latest revision because no prior revision exists."
+    error_message = "The legacy root must retain invocation and scheduler wiring without owning either production API."
   }
 }
 
@@ -704,7 +539,7 @@ run "builds_restore_only_contracts_in_a_disposable_recovery_state" {
       google_tags_location_tag_binding.authentication[0].parent == "//run.googleapis.com/projects/${var.workload_project_id}/locations/${var.region}/services/${google_cloud_run_v2_service.authentication[0].name}" &&
       google_tags_location_tag_binding.authentication[0].location == var.region &&
       google_tags_location_tag_binding.json_keys[0].tag_value == var.cloud_run_invocation_tags.values.internal &&
-      google_tags_location_tag_binding.json_keys[0].parent == "//run.googleapis.com/projects/${var.workload_project_id}/locations/${var.region}/services/${google_cloud_run_v2_service.json_keys[0].name}" &&
+      google_tags_location_tag_binding.json_keys[0].parent == "//run.googleapis.com/projects/${var.workload_project_id}/locations/${var.region}/services/${google_cloud_run_v2_service.recovery_json_keys[0].name}" &&
       google_tags_location_tag_binding.json_keys[0].location == var.region
     )
     error_message = "Disposable recovery must grant only recovery automation and keep schedules, initialization, and public ingress disabled."
@@ -721,7 +556,7 @@ run "builds_restore_only_contracts_in_a_disposable_recovery_state" {
   assert {
     condition = alltrue([
       for service in [
-        google_cloud_run_v2_service.json_keys[0],
+        google_cloud_run_v2_service.recovery_json_keys[0],
         google_cloud_run_v2_service.authentication[0],
         ] : (
         one(service.scaling).min_instance_count == 0 &&

@@ -5,9 +5,27 @@ variable "adopt_existing_jobs" {
   nullable    = false
 
   validation {
-    condition     = !var.adopt_existing_jobs || (var.zone == "private" && var.api == null)
-    error_message = "Job adoption is restricted to the selected private service with no API deployment."
+    condition     = !var.adopt_existing_jobs || var.zone == "private"
+    error_message = "Job adoption is restricted to the selected private service."
   }
+}
+
+variable "adopt_existing_api" {
+  description = "Import the existing private JSON Keys gRPC service after its previous state owner has forgotten it."
+  type        = bool
+  default     = false
+  nullable    = false
+
+  validation {
+    condition     = !var.adopt_existing_api || (var.zone == "private" && var.service == "json-keys" && var.api != null)
+    error_message = "API adoption is restricted to the existing private JSON Keys gRPC service."
+  }
+}
+
+import {
+  for_each = var.adopt_existing_api ? toset(["json-keys"]) : toset([])
+  to       = google_cloud_run_v2_service.api[0]
+  id       = "projects/${var.project_id}/locations/${var.region}/services/agora-json-keys-grpc"
 }
 
 import {
