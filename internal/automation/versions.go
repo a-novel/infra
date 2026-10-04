@@ -13,8 +13,8 @@ import (
 const openTofuVersionPath = ".opentofu-version"
 
 var (
-	releaseLine  = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
-	versionValue = regexp.MustCompile(`^(\s*(?:required_version|version|constraints)\s*=\s*")[0-9A-Za-z.,<>=~! +-]*(")$`)
+	releaseFile  = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\n?$`)
+	versionValue = regexp.MustCompile(`^(\s*(?:required_version|version|constraints)\s*=\s*")[0-9A-Za-z.,<>=~! +-]+(")$`)
 	lockHash     = regexp.MustCompile(`^\s*"(?:h1|zh):[A-Za-z0-9+/=]+",?$`)
 )
 
@@ -23,22 +23,27 @@ func versionPath(name string) bool {
 	return name == openTofuVersionPath || path.Base(name) == "versions.tf" || path.Base(name) == ".terraform.lock.hcl"
 }
 
-// versionValuesOnly reports whether next differs from previous only in version values. A provider lock
-// file may also replace its hashes, since they follow the locked version.
+// versionValuesOnly reports whether next differs from previous only in nonempty version values. The
+// OpenTofu version file must hold exactly one release, since setup-opentofu reads an empty one as
+// latest. A provider lock file may also replace its hashes, since they follow the locked version.
 func versionValuesOnly(name, previous, next string) bool {
 	if previous == next || len(next) > 65536 {
 		return false
+	}
+	if name == openTofuVersionPath {
+		return releaseFile.MatchString(previous) && releaseFile.MatchString(next)
 	}
 	normalize := func(content string) []string {
 		var lines []string
 		for _, line := range strings.Split(content, "\n") {
 			switch {
-			case name == openTofuVersionPath && releaseLine.MatchString(line):
-				line = ""
 			case path.Base(name) == ".terraform.lock.hcl" && lockHash.MatchString(line):
 				continue
+			case versionValue.MatchString(line):
+				// The tag keeps a normalized value apart from any literal line.
+				line = "value " + versionValue.ReplaceAllString(line, "${1}${2}")
 			default:
-				line = versionValue.ReplaceAllString(line, "${1}${2}")
+				line = "line " + line
 			}
 			lines = append(lines, line)
 		}
