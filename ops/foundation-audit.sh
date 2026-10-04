@@ -148,6 +148,7 @@ audit_foundation() {
         "cloudquotas.googleapis.com",
         "cloudresourcemanager.googleapis.com",
         "cloudscheduler.googleapis.com",
+        "cloudtrace.googleapis.com",
         "compute.googleapis.com",
         "dns.googleapis.com",
         "iam.googleapis.com",
@@ -156,18 +157,17 @@ audit_foundation() {
         "monitoring.googleapis.com",
         "oslogin.googleapis.com",
         "run.googleapis.com",
-        "serviceusage.googleapis.com"
+        "serviceusage.googleapis.com",
+        "telemetry.googleapis.com"
       ]'
     # Google can enable defaults and service dependencies beside the APIs
     # OpenTofu owns. The explicit auxiliary set keeps new products reviewable.
     allowed_auxiliary_services_json='[
-        "cloudtrace.googleapis.com",
         "containerregistry.googleapis.com",
         "iamcredentials.googleapis.com",
         "pubsub.googleapis.com",
         "storage-api.googleapis.com",
-        "storage-component.googleapis.com",
-        "telemetry.googleapis.com"
+        "storage-component.googleapis.com"
       ]'
     missing_services="$(jq --raw-output \
         --argjson required "$required_services_json" '

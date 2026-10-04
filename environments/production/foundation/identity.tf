@@ -542,6 +542,14 @@ resource "google_project_iam_member" "database_runtime_observability" {
   member  = "serviceAccount:${google_service_account.runtime[each.value.identity].email}"
 }
 
+resource "google_project_iam_member" "application_telemetry" {
+  for_each = toset(["authentication", "json_keys"])
+
+  project = google_project.workload.project_id
+  role    = "roles/telemetry.writer"
+  member  = "serviceAccount:${google_service_account.runtime[each.key].email}"
+}
+
 resource "google_project_iam_member" "database_operator" {
   for_each = local.database_operator_project_bindings
 

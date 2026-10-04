@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// FoundationScope authorizes prerequisites in a registered service/zone state.
+// FoundationScope authorizes prerequisites and suspended pipeline setup in a registered service/zone state.
 // Runtime writers continue to use the dedicated-service contract in ServiceScope.
 func FoundationScope(data []byte, getenv func(string) string, bucket string) (string, error) {
 	var fields, registration map[string]json.RawMessage
@@ -38,12 +38,17 @@ func FoundationScope(data []byte, getenv func(string) string, bucket string) (st
 		selectedBucket != bucket || json.Unmarshal(registration["region"], &registeredRegion) != nil || region != registeredRegion {
 		return "", invalid
 	}
-	for _, key := range []string{"database", "database_runtime", "pgbackrest_repository", "rollout"} {
+	for _, key := range []string{"database", "database_runtime", "pgbackrest_repository"} {
 		if value, exists := fields[key]; exists && string(value) != "null" {
 			return "", invalid
 		}
 	}
 	if value, exists := fields["manage_job_access"]; exists && string(value) != "false" {
+		return "", invalid
+	}
+	rollout := fields["rollout"]
+	withRollout := rollout != nil && string(rollout) != "null"
+	if withRollout && (service != "json-keys" && zone != "public-api" || fields["database_handoff"] == nil || string(fields["database_handoff"]) == "null") {
 		return "", invalid
 	}
 	if value, exists := fields["database_handoff"]; exists && string(value) != "null" {
@@ -55,6 +60,17 @@ func FoundationScope(data []byte, getenv func(string) string, bucket string) (st
 			json.Unmarshal(registration["workload_project_id"], &privateProject) != nil ||
 			privateProject == "" || handoff.PrivateProjectID != privateProject {
 			return "", invalid
+		}
+		if withRollout {
+			var probe struct {
+				Network    string `json:"network"`
+				Subnetwork string `json:"subnetwork"`
+			}
+			if json.Unmarshal(rollout, &probe) != nil ||
+				!matches(`projects/`+privateProject+`/global/networks/[a-z][a-z0-9-]+`, probe.Network) ||
+				!matches(`projects/`+privateProject+`/regions/`+region+`/subnetworks/[a-z][a-z0-9-]+`, probe.Subnetwork) {
+				return "", invalid
+			}
 		}
 	}
 	return scope, nil

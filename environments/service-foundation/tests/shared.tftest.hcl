@@ -219,7 +219,7 @@ run "reject_shared_database" {
   expect_failures = [google_service_account.runtime]
 }
 
-run "reject_shared_rollout" {
+run "reject_shared_rollout_without_handoff" {
   command = plan
   variables {
     rollout = {

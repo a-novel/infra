@@ -1,8 +1,8 @@
 # Single-service foundation root (inactive)
 
 This protected root assembles one service's runtime prerequisites, Cloud Deploy control plane and
-application-job access. It supports JSON Keys and Authentication; the rollout verifier currently
-supports JSON Keys only. The manual foundation workflow can select this root after separately approved
+application-job access. It supports JSON Keys and Authentication; rollout profiles cover JSON Keys
+gRPC/REST and shared Authentication REST. The manual foundation workflow can select this root after separately approved
 configuration and activation. **Plan/apply fails before authentication unless `SERVICE_FOUNDATIONS_ENABLED=true`.**
 Read-only drift and trusted PR assessment still cover initialized scopes while that writer flag is off,
 using the last converged shared-foundation registration and each scope's private configuration.
@@ -24,8 +24,9 @@ folders include the full production scope. The `public` platform zone is rejecte
 
 These grants preserve the existing API/ORM contracts. They do not prove database-role restrictions
 or remove inherited IAM; verify both before activation. Shared profiles grant no job-secret metadata
-access and reject database/repository hosts, rollout and job-access opt-ins until ownership is
-reconciled. Existing hosts and backups stay with their current owner.
+access and reject database/repository hosts and application-job access until ownership is
+reconciled. Existing hosts and backups stay with their current owner. Optional rollout setup remains
+suspended and requires the existing private database handoff described below.
 
 Shared runtime accounts use `agora-SERVICE-private` or `agora-SERVICE-api`. Each owns separate
 `agora-SERVICE-SUFFIX-production` and `agora-SERVICE-SUFFIX-tooling` repositories. The matching
@@ -74,6 +75,25 @@ Both prerequisite zones can publish their own database endpoint as `database`, r
 this root owns no shared database host. Keep `database`, `database_runtime` and
 `pgbackrest_repository` inputs null. API/ORM behavior and current backup ownership stay unchanged.
 Runtime activation still requires effective network, database-role and inherited-IAM checks.
+
+### Suspended shared API setup
+
+After approving the database handoff, `rollout` may select the existing module for private JSON Keys
+gRPC or public-api JSON Keys/Authentication REST. The root derives each API name, scope-specific
+identities, artifact bucket and repositories. Supply a reviewed verifier digest from that component's
+tooling repository and canonical probe network/subnet IDs in the retained private project and region.
+Private Authentication has no reviewed gRPC rollout profile and remains rejected.
+
+The module creates a suspended pipeline and approval-gated target; it neither creates the application
+service nor changes its specification or traffic. Its exact-service IAM requires an existing API.
+A missing API therefore needs separately reviewed first-launch provisioning. Before adopting existing
+control-plane resources, reconcile their sole state owner and any pending native work. Google notes
+that [suspension does not cancel queued or running rollouts](https://docs.cloud.google.com/deploy/docs/suspend-pipeline).
+
+This setup can publish rollout coordinates alongside the unchanged database reference. It does not
+enable shared release submission, migration jobs or host ownership. Keep those writers disabled until
+the existing API writer is handed off and effective access, network and cost checks pass. A pipeline
+setup plan/apply still uses protected private custody and the same service guard as both API zones.
 
 ### Dedicated-project preparation
 
