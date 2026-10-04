@@ -178,6 +178,7 @@ output "api" {
     uri              = google_cloud_run_v2_service.api[0].uri
     revision         = var.api.revision
     serving_revision = var.api.serving_revision
-    candidate_uri    = try(one([for traffic in google_cloud_run_v2_service.api[0].traffic_statuses : traffic.uri if traffic.tag == "candidate"]), null)
+    # Traffic status can lag a successful update; the declared tag owns this URL.
+    candidate_uri = var.api.revision == var.api.serving_revision ? null : replace(google_cloud_run_v2_service.api[0].uri, "https://", "https://candidate---")
   }
 }

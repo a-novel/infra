@@ -130,6 +130,52 @@ run "promote_verified_candidate" {
   }
 }
 
+run "candidate_endpoint_before_traffic_status" {
+  command = plan
+  variables {
+    foundation      = run.documents.cases.json-keys.foundation
+    foundation_json = run.documents.cases.json-keys.foundation_json
+    api             = run.documents.api.json-keys
+  }
+  override_resource {
+    target = google_cloud_run_v2_service.api[0]
+    values = {
+      uri              = "https://agora-json-keys-rest-example-ew.a.run.app"
+      traffic_statuses = []
+    }
+  }
+  assert {
+    condition     = output.api.candidate_uri == "https://candidate---agora-json-keys-rest-example-ew.a.run.app"
+    error_message = "The declared candidate endpoint must remain stable while Cloud Run traffic status catches up."
+  }
+}
+
+run "promoted_endpoint_ignores_stale_traffic_status" {
+  command = plan
+  variables {
+    foundation      = run.documents.cases.json-keys.foundation
+    foundation_json = run.documents.cases.json-keys.foundation_json
+    api             = merge(run.documents.api.json-keys, { serving_revision = run.documents.api.json-keys.revision })
+  }
+  override_resource {
+    target = google_cloud_run_v2_service.api[0]
+    values = {
+      uri = "https://agora-json-keys-rest-example-ew.a.run.app"
+      traffic_statuses = [{
+        tag      = "candidate"
+        uri      = "https://candidate---agora-json-keys-rest-example-ew.a.run.app"
+        revision = "agora-json-keys-rest-candidate"
+        percent  = 0
+        type     = "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION"
+      }]
+    }
+  }
+  assert {
+    condition     = output.api.candidate_uri == null
+    error_message = "A promoted service must stop advertising a candidate even while observed traffic retains its old tag."
+  }
+}
+
 run "reject_peer_revision" {
   command = plan
   variables {
