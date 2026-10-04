@@ -1,7 +1,7 @@
 # Evaluation only: no production image, credentials, or host data are consumed.
 ARG DATABASE_SERVICE=json-keys
 FROM ghcr.io/a-novel/service-json-keys/database:v2.8.0 AS json-keys
-FROM ghcr.io/a-novel/service-authentication/database:v2.10.0 AS authentication
+FROM ghcr.io/a-novel/service-authentication/database:v2.11.0 AS authentication
 
 FROM docker.io/library/golang:1.27.1-alpine AS builder
 ENV CGO_ENABLED=0
