@@ -13,7 +13,7 @@ Trusted assessment and drift inspect initialized scopes. The protected
 [job bootstrap](../../docs/runbooks/provision-service-projects.md#protected-service-job-bootstrap)
 is disabled by default. Registered public-api deployment uses the same protected workflow,
 saved-plan custody and service guard. Its reviewed plans admit only the selected API's
-create, update or no-op actions. Private job plans allow exact imports and in-place updates;
+create, update or no-op actions. Private workload plans allow exact imports and in-place updates;
 replacements and deletions remain blocked.
 Applying a job specification does not run it. With `api = null`, the root creates no API. Foundation
 owns databases and IAM. Existing schedules and invocation tags retain their current owner during
@@ -96,8 +96,10 @@ the two artifact suffixes. Cleanup is asynchronous and keeps seven-day soft dele
 unchanged; deletion approval cannot bypass that protection.
 Protected bootstrap apply and live verification remain prerequisites before writer activation.
 `SERVICE_JOB_BOOTSTRAP_ENABLED=true` permits dedicated-project job creation, registered public-api
-creation/updates, or shared-private job adoption/updates. Private imports additionally require
-`adopt_existing_jobs=true` and the exact derived project, region and job name. Moves, replacements,
+creation/updates, or shared-private workload adoption/updates. Private imports additionally require
+`adopt_existing_jobs=true` or `adopt_existing_api=true` and the exact derived project, region and
+resource name. Only JSON Keys gRPC can be adopted as a private API; its internal ingress and IAM
+authentication must remain enabled. Moves, replacements,
 deletions and unrelated resources fail regardless of deletion approval. The routine release
 dispatcher remains disabled.
 
@@ -197,7 +199,7 @@ needs live prerequisite verification and health evidence before replacing its ex
 
 ## Bootstrap before routine release
 
-Existing shared-private jobs move through native OpenTofu
+Existing shared-private jobs and JSON Keys gRPC move through native OpenTofu
 [removal](https://opentofu.org/docs/language/resources/syntax/#removing-resources) and
 [import](https://opentofu.org/docs/language/import/) blocks. Keep the legacy deployment dispatcher
 disabled throughout. Register each private service and apply its foundation prerequisites using the
@@ -209,16 +211,31 @@ existing database handoff, then promote the already reviewed image digests.
 | `application["json_keys_migrations"]`      | JSON Keys      | `application["migrations"]` |
 | `application["json_keys_rotate"]`          | JSON Keys      | `application["rotatekeys"]` |
 
-All addresses use `google_cloud_run_v2_job`. Preserve private state backups and verify the live job
-UIDs and accepted executions. Review and apply the legacy root's `removed` block first: only these
-three jobs may be forgotten, with `destroy=false`. No job is deleted. The existing schedules and
-invocation tags remain in that state and continue targeting the same names.
+The table's addresses use `google_cloud_run_v2_job`. JSON Keys gRPC moves from
+`google_cloud_run_v2_service.json_keys[0]` to `google_cloud_run_v2_service.api[0]` in its private root.
+Preserve private state backups and verify live UIDs and accepted executions. Review and apply the
+legacy root's `removed` blocks first: only these three jobs and the existing gRPC service may be
+forgotten, with `destroy=false`. No live resource is deleted. Existing schedules and invocation tags
+remain in that state and continue targeting the same names. Its read-only gRPC data source preserves
+the endpoint used by smoke checks. Disposable recovery still owns its separate probe services.
 
-Set `adopt_existing_jobs=true` in each selected private service's protected inputs. Review its saved
+Set `adopt_existing_jobs=true` in each selected private service's protected inputs and
+`adopt_existing_api=true` for JSON Keys. Review its saved
 plan for the exact imports and intended in-place identity/image changes; reject creation, replacement
 or unexpected changes. Apply, check the original UIDs, and require a zero-change plan before removing
 the adoption flag. A partial or uncertain handoff stops for state reconciliation, never job recreation
 or a blind retry. Keep backups and receipts; each live resource must have exactly one state owner.
+
+For the approved JSON Keys v2.8.0 upgrade, deploy Authentication v2.11.0 first: its verifier accepts
+both the historical EdDSA and new Ed25519 labels. Authentication v2.9.1 does not. Review the producer
+migration notes and check the Authentication candidate against the old signer before promotion.
+Then pause the existing hourly rotation schedule, reconcile accepted executions, and upgrade the
+JSON Keys gRPC and job family together. Verify the candidate before moving traffic, check token
+verification after promotion, and resume rotation only after those checks pass. Neither version
+comparison adds SQL migrations; database VM images and capacity remain outside this rollout.
+Authentication removed `jobs/init` in v2.10.0. The manifest retains that slot only for historical
+releases; modern verification resolves its three published images without inventing an initializer
+or deploying a replacement maintenance job.
 
 Dedicated-project bootstrap remains create-only. Routine dispatch needs separate execution authority
 and migration/health verification; transferring a job definition neither runs it nor enables releases.

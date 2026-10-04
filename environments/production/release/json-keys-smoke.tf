@@ -23,11 +23,11 @@ resource "google_cloud_run_v2_job" "json_keys_smoke" {
         args    = ["-c", file("${path.module}/scripts/json-keys-smoke.sh")]
         env {
           name  = "JSON_KEYS_AUDIENCE"
-          value = google_cloud_run_v2_service.json_keys[0].uri
+          value = local.application_json_keys.uri
         }
         env {
           name  = "JSON_KEYS_CANDIDATE"
-          value = replace(google_cloud_run_v2_service.json_keys[0].uri, "https://", "https://candidate---")
+          value = replace(local.application_json_keys.uri, "https://", "https://candidate---")
         }
         resources {
           limits = { cpu = "1", memory = "512Mi" }

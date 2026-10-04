@@ -42,9 +42,6 @@ output "application_runtime" {
       for key, job in local.application_jobs : key => job.name
     }
     rotation_schedule = try(google_cloud_scheduler_job.json_keys_rotation[0].name, null)
-    json_keys = {
-      name = google_cloud_run_v2_service.json_keys[0].name
-      uri  = google_cloud_run_v2_service.json_keys[0].uri
-    }
+    json_keys         = local.application_json_keys
   }
 }

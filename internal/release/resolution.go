@@ -39,6 +39,9 @@ func ResolveManifest(source, output string, resolve func(SourceImage) (string, e
 		name := component(family.service)
 		for _, slot := range family.slots {
 			image := obj(manifest, "components", name, "images", slot)
+			if image == nil {
+				continue
+			}
 			digest, err := resolve(sourceImage(image, name, slot))
 			if err != nil {
 				return err

@@ -141,7 +141,7 @@
     "authenticationImages": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["database", "jobs/init", "jobs/migrations", "rest"],
+      "required": ["database", "jobs/migrations", "rest"],
       "properties": {
         "database": {
           "$ref": "#/$defs/image",
@@ -153,6 +153,7 @@
           }
         },
         "jobs/init": {
+          "description": "Historical releases only; Authentication removed this image in v2.10.0.",
           "$ref": "#/$defs/image",
           "type": "object",
           "properties": {

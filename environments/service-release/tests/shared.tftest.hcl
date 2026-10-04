@@ -67,15 +67,14 @@ run "authentication_private_jobs" {
   }
 }
 
-run "reject_job_adoption_with_api" {
+run "reject_api_adoption_without_api" {
   command = plan
   variables {
-    foundation          = run.documents.cases.json-keys.foundation
-    foundation_json     = run.documents.cases.json-keys.foundation_json
-    adopt_existing_jobs = true
-    api                 = run.documents.api.json-keys
+    foundation         = run.documents.cases.json-keys.foundation
+    foundation_json    = run.documents.cases.json-keys.foundation_json
+    adopt_existing_api = true
   }
-  expect_failures = [var.adopt_existing_jobs]
+  expect_failures = [var.adopt_existing_api]
 }
 
 run "json_keys_private_api" {
@@ -89,6 +88,10 @@ run "json_keys_private_api" {
     condition = (
       google_cloud_run_v2_service.api[0].ingress == "INGRESS_TRAFFIC_INTERNAL_ONLY" &&
       google_cloud_run_v2_service.api[0].invoker_iam_disabled == false &&
+      google_cloud_run_v2_service.api[0].deletion_protection &&
+      google_cloud_run_v2_service.api[0].scaling[0].min_instance_count == 1 &&
+      google_cloud_run_v2_service.api[0].scaling[0].max_instance_count == 3 &&
+      google_cloud_run_v2_service.api[0].template[0].containers[0].resources[0].limits == tomap({ cpu = "1", memory = "512Mi" }) &&
       google_cloud_run_v2_service.api[0].template[0].service_account == "agora-json-keys-private@agora-private-test.iam.gserviceaccount.com" &&
       google_cloud_run_v2_service.api[0].template[0].vpc_access[0].egress == "ALL_TRAFFIC" &&
       { for env in google_cloud_run_v2_service.api[0].template[0].containers[0].env : env.name => env.value_source[0].secret_key_ref[0]

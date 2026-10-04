@@ -161,6 +161,59 @@ func TestPrivateJobPlanPolicy(t *testing.T) {
 	}
 }
 
+func TestPrivateAPIPlanPolicy(t *testing.T) {
+	t.Parallel()
+	for _, testCase := range []struct {
+		name   string
+		mutate func(object)
+		code   int
+	}{
+		{"ImportWithJobs", nil, 0},
+		{"Update", func(p object) { delete(nested(resource(p), "change"), "importing") }, 0},
+		{"Converged", func(p object) { nested(resource(p), "change")["actions"] = []string{"no-op"} }, 0},
+		{"Create", func(p object) { nested(resource(p), "change")["actions"] = []string{"create"} }, 65},
+		{"Replace", func(p object) { nested(resource(p), "change")["actions"] = []string{"delete", "create"} }, 65},
+		{"Delete", func(p object) { nested(resource(p), "change")["actions"] = []string{"delete"} }, 65},
+		{"NotOptedIn", func(p object) { nested(p, "variables", "adopt_existing_api")["value"] = false }, 65},
+		{"PeerImport", func(p object) { nested(resource(p), "change", "importing")["id"] = privateValue }, 65},
+		{"Move", func(p object) { resource(p)["previous_address"] = privateValue }, 65},
+		{"Deposed", func(p object) { resource(p)["deposed"] = "abcd1234" }, 65},
+		{"OtherAddress", func(p object) { resource(p)["address"] = "google_cloud_run_v2_service.peer[0]" }, 65},
+		{"PeerName", func(p object) { nested(resource(p), "change", "after")["name"] = "agora-authentication-rest" }, 65},
+		{"PeerProject", func(p object) { nested(resource(p), "change", "after")["project"] = "agora-peer-test" }, 65},
+		{"Unprotected", func(p object) { nested(resource(p), "change", "after")["deletion_protection"] = false }, 65},
+		{"PublicIngress", func(p object) { nested(resource(p), "change", "after")["ingress"] = "INGRESS_TRAFFIC_ALL" }, 65},
+		{"Anonymous", func(p object) { nested(resource(p), "change", "after")["invoker_iam_disabled"] = true }, 65},
+		{"UnknownIngress", func(p object) { nested(resource(p), "change")["after_unknown"] = object{"ingress": true} }, 65},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			f := setup(t)
+			f.env["SERVICE_JOB_BOOTSTRAP"], f.env["ALLOW_RESOURCE_DELETION"] = "true", "true"
+			f.env["TOFU_STATE_SUFFIX"] = "workloads/production/private/agora-json-keys-test/json-keys"
+			plan := jobBootstrapPlan("json-keys", "no-op")
+			nested(plan, "variables")["zone"] = object{"value": "private"}
+			nested(plan, "variables")["adopt_existing_api"] = object{"value": true}
+			after := object{
+				"project": "agora-json-keys-test", "location": "europe-west1", "name": "agora-json-keys-grpc",
+				"deletion_protection": true, "ingress": "INGRESS_TRAFFIC_INTERNAL_ONLY", "invoker_iam_disabled": false,
+			}
+			api := object{
+				"mode": "managed", "type": "google_cloud_run_v2_service", "index": 0, "address": "google_cloud_run_v2_service.api[0]",
+				"change": object{
+					"actions": []string{"update"}, "before": after, "after": after,
+					"importing": object{"id": "projects/agora-json-keys-test/locations/europe-west1/services/agora-json-keys-grpc"},
+				},
+			}
+			plan["resource_changes"] = append([]any{api}, plan["resource_changes"].([]any)...)
+			if testCase.mutate != nil {
+				testCase.mutate(plan)
+			}
+			f.summary(t, "service-release", plan, testCase.code)
+		})
+	}
+}
+
 func TestJobBootstrapWorkflow(t *testing.T) {
 	t.Parallel()
 	for _, testCase := range []struct {

@@ -75,7 +75,9 @@ func VerificationImages(file, service string) ([]SourceImage, error) {
 		name := component(family.service)
 		if name == "service-"+service {
 			for _, slot := range family.slots {
-				images = append(images, sourceImage(obj(manifest, "components", name, "images", slot), name, slot))
+				if image := obj(manifest, "components", name, "images", slot); image != nil {
+					images = append(images, sourceImage(image, name, slot))
+				}
 			}
 		}
 	}

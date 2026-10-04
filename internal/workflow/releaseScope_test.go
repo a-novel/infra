@@ -66,7 +66,7 @@ func TestPrivateJobReleaseScope(t *testing.T) {
 			valid     bool
 		}{
 			{name: "RegisteredJobs", valid: true},
-			{name: "API", key: "api", value: map[string]string{"image": "fixture"}},
+			{name: "API", key: "api", value: map[string]string{"image": "fixture"}, valid: service == "json-keys"},
 			{name: "PeerProject", key: "project_id", value: "agora-peer-test"},
 			{name: "PeerRegion", key: "region", value: "us-central1"},
 			{name: "PublicZone", key: "zone", value: "public"},

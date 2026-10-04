@@ -5,7 +5,7 @@ import (
 	"errors"
 )
 
-// releaseScope selects public APIs or private jobs within protected registration.
+// releaseScope selects public APIs or private service workloads within protected registration.
 func releaseScope(data []byte, getenv func(string) string, bucket string) (string, error) {
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(data, &fields) != nil {
@@ -22,7 +22,9 @@ func releaseScope(data []byte, getenv func(string) string, bucket string) (strin
 		return "", invalid
 	}
 	if zone == "private" {
-		if fields["api"] != nil && string(fields["api"]) != "null" {
+		var service string
+		if json.Unmarshal(fields["service"], &service) != nil ||
+			(service != "json-keys" && fields["api"] != nil && string(fields["api"]) != "null") {
 			return "", invalid
 		}
 		return FoundationScope(data, getenv, bucket)

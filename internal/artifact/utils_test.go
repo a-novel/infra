@@ -98,7 +98,10 @@ func imageCalls(manifest object, service string) []call {
 			continue
 		}
 		for _, slot := range family.slots {
-			image := images(manifest, family.service)[slot].(object)
+			image, present := images(manifest, family.service)[slot].(object)
+			if !present {
+				continue
+			}
 			repository, digest := image["repository"].(string), image["digest"].(string)
 			producer := "a-novel/service-" + family.service
 			calls = append(calls,
