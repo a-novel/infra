@@ -1,14 +1,10 @@
 # Regional bindings make invocation authorization part of the applied resource graph.
 resource "google_tags_location_tag_binding" "application" {
-  for_each = google_cloud_run_v2_job.application
+  for_each = local.application_jobs
 
-  parent    = "//run.googleapis.com/projects/${each.value.project}/locations/${each.value.location}/jobs/${each.value.name}"
-  location  = each.value.location
-  tag_value = var.cloud_run_invocation_tags.values[local.application_jobs[each.key].invocation_class]
-
-  lifecycle {
-    replace_triggered_by = [google_cloud_run_v2_job.application[each.key].uid]
-  }
+  parent    = "//run.googleapis.com/projects/${var.workload_project_id}/locations/${var.region}/jobs/${each.value.name}"
+  location  = var.region
+  tag_value = var.cloud_run_invocation_tags.values[each.value.invocation_class]
 }
 
 resource "google_tags_location_tag_binding" "postgres_backup" {

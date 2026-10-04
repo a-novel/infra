@@ -181,11 +181,11 @@ resource "google_service_account_iam_member" "github" {
 }
 
 # Secret Manager Admin also controls versions and payload access. This custom
-# role deliberately owns only the secret-container control plane.
+# role owns secret containers and version metadata.
 resource "google_project_iam_custom_role" "secret_metadata" {
   role_id     = "infraSecretMetadataAdmin"
   title       = "Infra Secret Metadata Admin"
-  description = "Manage Secret Manager containers and their IAM policies without reading, adding, disabling, or destroying secret versions."
+  description = "Manage Secret Manager containers and their IAM policies, and inspect version metadata without accessing payloads or modifying versions."
   stage       = "GA"
 
   permissions = [
@@ -199,6 +199,7 @@ resource "google_project_iam_custom_role" "secret_metadata" {
     "secretmanager.secrets.list",
     "secretmanager.secrets.setIamPolicy",
     "secretmanager.secrets.update",
+    "secretmanager.versions.get",
   ]
 
   lifecycle {

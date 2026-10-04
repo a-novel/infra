@@ -27,70 +27,11 @@ locals {
     }
   }
 
-  declared_application_jobs = var.application_release == null ? {} : {
-    authentication_migrations = {
-      component        = "authentication"
-      environment      = local.application_database_environment.authentication
-      image            = var.application_release.authentication.images.migrations
-      invocation_class = "release"
-      max_retries      = 0
-      name             = "agora-authentication-migrations"
-      network_tag      = "agora-authentication"
-      role             = "migrations"
-      runtime_identity = var.runtime_service_accounts.authentication
-      secrets = {
-        POSTGRES_PASSWORD = {
-          secret  = "production-authentication-postgres-password"
-          version = var.application_release.authentication.secrets.postgres_password_version
-        }
-      }
-      timeout = "600s"
-    }
-    json_keys_migrations = {
-      component        = "json-keys"
-      environment      = local.application_database_environment.json_keys
-      image            = var.application_release.json_keys.images.migrations
-      invocation_class = "release"
-      max_retries      = 0
-      name             = "agora-json-keys-migrations"
-      network_tag      = "agora-json-keys"
-      role             = "migrations"
-      runtime_identity = var.runtime_service_accounts.json_keys
-      secrets = {
-        POSTGRES_PASSWORD = {
-          secret  = "production-json-keys-postgres-password"
-          version = var.application_release.json_keys.secrets.postgres_password_version
-        }
-      }
-      timeout = "600s"
-    }
-    json_keys_rotate = {
-      component        = "json-keys"
-      environment      = local.application_database_environment.json_keys
-      image            = var.application_release.json_keys.images.rotate_keys
-      invocation_class = "scheduled"
-      max_retries      = 1
-      name             = "agora-json-keys-rotatekeys"
-      network_tag      = "agora-json-keys"
-      role             = "rotatekeys"
-      runtime_identity = var.runtime_service_accounts.json_keys
-      secrets = {
-        APP_MASTER_KEY = {
-          secret  = "production-json-keys-app-master-key"
-          version = var.application_release.json_keys.secrets.app_master_key_version
-        }
-        POSTGRES_PASSWORD = {
-          secret  = "production-json-keys-postgres-password"
-          version = var.application_release.json_keys.secrets.postgres_password_version
-        }
-      }
-      timeout = "300s"
-    }
+  application_jobs = var.application_release == null || var.recovery_mode ? {} : {
+    authentication_migrations = { name = "agora-authentication-migrations", invocation_class = "release" }
+    json_keys_migrations      = { name = "agora-json-keys-migrations", invocation_class = "release" }
+    json_keys_rotate          = { name = "agora-json-keys-rotatekeys", invocation_class = "scheduled" }
   }
-
-  # Recovery restores an initialized database from an exact receipt. Recreating
-  # production mutation jobs would widen authority without a caller.
-  application_jobs = var.recovery_mode ? {} : local.declared_application_jobs
 }
 
 check "application_images_are_promoted" {
@@ -116,75 +57,10 @@ check "application_requires_database_release" {
   }
 }
 
-resource "google_cloud_run_v2_job" "application" {
-  for_each = local.application_jobs
-
-  project  = var.workload_project_id
-  location = var.region
-  name     = each.value.name
-
-  deletion_protection = false
-  labels = merge(local.labels, {
-    component = each.value.component
-    role      = each.value.role
-  })
-
-  template {
-    task_count  = 1
-    parallelism = 1
-
-    template {
-      service_account       = each.value.runtime_identity
-      max_retries           = each.value.max_retries
-      timeout               = each.value.timeout
-      execution_environment = "EXECUTION_ENVIRONMENT_GEN2"
-
-      containers {
-        name  = each.value.role
-        image = each.value.image
-
-        dynamic "env" {
-          for_each = each.value.environment
-
-          content {
-            name  = env.key
-            value = env.value
-          }
-        }
-
-        dynamic "env" {
-          for_each = each.value.secrets
-
-          content {
-            name = env.key
-
-            value_source {
-              secret_key_ref {
-                secret  = "projects/${var.management_project_id}/secrets/${env.value.secret}"
-                version = tostring(env.value.version)
-              }
-            }
-          }
-        }
-
-        resources {
-          limits = {
-            cpu    = "1"
-            memory = "512Mi"
-          }
-        }
-      }
-
-      vpc_access {
-        egress = "ALL_TRAFFIC"
-
-        network_interfaces {
-          network    = var.network_id
-          subnetwork = var.subnet_id
-          tags       = [each.value.network_tag]
-        }
-      }
-    }
+removed {
+  from = google_cloud_run_v2_job.application
+  lifecycle {
+    destroy = false
   }
 }
 
@@ -214,7 +90,7 @@ resource "google_cloud_scheduler_job" "json_keys_rotation" {
 
   http_target {
     http_method = "POST"
-    uri         = "https://run.googleapis.com/v2/projects/${var.workload_project_id}/locations/${var.region}/jobs/${google_cloud_run_v2_job.application["json_keys_rotate"].name}:run"
+    uri         = "https://run.googleapis.com/v2/projects/${var.workload_project_id}/locations/${var.region}/jobs/${local.application_jobs["json_keys_rotate"].name}:run"
     headers     = { "Content-Type" = "application/json" }
     body        = base64encode("{}")
 

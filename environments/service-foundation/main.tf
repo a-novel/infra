@@ -14,7 +14,10 @@ locals {
       ["production-json-keys-postgres-password"],
       var.zone == "public-api" ? [] : ["production-json-keys-app-master-key"],
     ))
-    authentication = toset(["production-authentication-postgres-password", "production-authentication-smtp-sender-password"])
+    authentication = toset(concat(
+      ["production-authentication-postgres-password"],
+      var.zone == "private" ? [] : ["production-authentication-smtp-sender-password"],
+    ))
   }
   job_secrets = {
     json-keys      = local.runtime_secrets.json-keys

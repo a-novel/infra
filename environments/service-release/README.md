@@ -1,4 +1,4 @@
-# Single-service release root (inactive)
+# Single-service release root
 
 This root owns one service component's Cloud Run jobs, API revisions and explicit traffic targets.
 In private or dedicated scope, JSON Keys has migrations and rotation; Authentication has migrations.
@@ -7,15 +7,17 @@ The shared resource pattern derives the application identity and
 database endpoint from the [foundation's published document](../service-foundation#published-coordinates).
 OpenTofu validates its checksum and service scope against independently approved inputs. Shared VPC
 coordinates, promoted image digests and numeric secret versions remain separate inputs. Neither this
-root nor its future caller needs foundation-state access.
+root nor its protected caller needs foundation-state access.
 
-**Code only:** trusted assessment and drift can inspect this root. The protected
+Trusted assessment and drift inspect initialized scopes. The protected
 [job bootstrap](../../docs/runbooks/provision-service-projects.md#protected-service-job-bootstrap)
 is disabled by default. Registered public-api deployment uses the same protected workflow,
 saved-plan custody and service guard. Its reviewed plans admit only the selected API's
-create, update or no-op actions; jobs, imports, replacements and deletions remain blocked.
+create, update or no-op actions. Private job plans allow exact imports and in-place updates;
+replacements and deletions remain blocked.
 Applying a job specification does not run it. With `api = null`, the root creates no API. Foundation
-owns databases, IAM, schedules and alerts. Existing production resources and state stay unchanged.
+owns databases and IAM. Existing schedules and invocation tags retain their current owner during
+the job handoff below.
 
 ## State and resource ownership
 
@@ -26,7 +28,7 @@ derives `services/PROJECT/release/` for dedicated scope or
 is accepted, with `default.tfstate` below that prefix. The provider uses that same project
 and region. Inputs contain numeric secret versions and approved coordinates, never payloads.
 
-The bucket check constrains its management-project naming convention, not its ownership. The future
+The bucket check constrains its management-project naming convention, not its ownership. The
 protected caller must authorize inputs against the published coordinates before initialization, use a
 fresh working directory, and prohibit backend overrides. Keep credentials in the approved federation
 environment. [GCS locking](https://opentofu.org/docs/language/settings/backends/gcs/) covers OpenTofu
@@ -41,8 +43,8 @@ sufficient; no bucket-wide object grant is required. Missing or unregistered fol
 
 The shared foundation's `service_release_zones` enrolls
 `workloads/production/ZONE/PROJECT/SERVICE/release/` folders for private/public-api boundaries.
-Enrollment accepts empty folders and exact saved-plan artifacts. Initialized public-api state
-requires matching converged inputs. Private state still requires an approved ownership handoff;
+Enrollment accepts empty folders and exact saved-plan artifacts. Initialized private and public-api
+state requires matching converged inputs. Private jobs require an approved ownership handoff;
 API registration never activates database jobs.
 The platform-only public zone cannot enroll these backend services. Historical public custody paths
 remain readable, but an old public registration must undergo an explicit ownership handoff rather
@@ -67,7 +69,7 @@ The existing `infra custody plan` command supports this root inside its existing
 only these exact artifact names beneath valid commit/sequence paths. Plans alone do not establish state.
 The same custody format supports shared release folders under
 `workloads/production/ZONE/PROJECT/SERVICE/release/`. Its exact scope remains bound in metadata;
-foundation and recovery roots cannot use that namespace. Guarded public-api apply publishes its
+foundation and recovery roots cannot use that namespace. Guarded service apply publishes its
 converged inputs within that same boundary. Standalone configuration publication remains blocked.
 
 For both service roots, `publish` and `fetch` require the private tfvars filename as their **last** argument,
@@ -83,8 +85,8 @@ arguments and removes the selected pair before apply. A failed or ambiguous cons
 must block mutation. The provider owns state locking. The protected workflow retains global
 infrastructure serialization and uses [guarded service-root apply](../../docs/service-operations.md#implemented-service-root-apply)
 through convergence, configuration and completion publication. Standalone service configuration
-publication is refused. Rotation uses the same guard; shared-root ownership transfer and
-interrupted job recovery remain separate work.
+publication is refused. The existing hourly rotation schedule remains unchanged; routine rollout
+must reconcile accepted executions before changing job specifications.
 
 Metadata enforces the 24-hour apply deadline. Bootstrap declares native
 [plan cleanup](../../bootstrap/README.md#plan-artifact-expiration) after age 2 days, with separate
@@ -93,10 +95,11 @@ the two artifact suffixes. Cleanup is asynchronous and keeps seven-day soft dele
 [plan policy](../../ops/README.md#protected-workflow-operations) requires existing Delete rules to stay
 unchanged; deletion approval cannot bypass that protection.
 Protected bootstrap apply and live verification remain prerequisites before writer activation.
-`SERVICE_JOB_BOOTSTRAP_ENABLED=true` permits create/no-op plans for this service's exact
-application jobs, or create/update/no-op plans for its registered public-api service.
-Imports, moves, replacements, deletions and other resources fail regardless of deletion approval.
-Routine job updates remain disabled.
+`SERVICE_JOB_BOOTSTRAP_ENABLED=true` permits dedicated-project job creation, registered public-api
+creation/updates, or shared-private job adoption/updates. Private imports additionally require
+`adopt_existing_jobs=true` and the exact derived project, region and job name. Moves, replacements,
+deletions and unrelated resources fail regardless of deletion approval. The routine release
+dispatcher remains disabled.
 
 ## Approved foundation handoff
 
@@ -112,12 +115,12 @@ network must also belong to that project. Both JSON Keys APIs consume one privat
 Authentication consumes its own. Public-api creates no database or job resources.
 The platform-only `public` zone is rejected.
 
-Existing private job names still have their legacy owner. Reconcile their exact resource/state
-ownership before applying private release state. Public-api owns newly created APIs in its own
+Reconcile existing private jobs' exact resource/state ownership before applying private release
+state. Public-api owns newly created APIs in its own
 state and cannot claim private jobs or database resources.
 The following dedicated-project handoff remains unchanged when `zone = null`.
 
-The inactive root accepts three independently authorized selectors: `project_id`, `service` and
+The root accepts three independently authorized selectors: `project_id`, `service` and
 `region`. Its `foundation` input is the exact version-1 reference returned by foundation: `bucket`,
 `object`, `generation` and `sha256`. `foundation_json` is that object's original JSON text, not a
 reconstructed subset. The earlier standalone `runtime` and `database_private_ip` inputs are removed;
@@ -156,8 +159,8 @@ Automatic reference approval remains deliberately absent.
 | `google_cloud_run_v2_job.application["rotatekeys"]` | JSON Keys only; rotation specification, independent of its foundation-owned schedule. |
 
 Both jobs have provider deletion protection and `prevent_destroy`. Updating a specification affects
-subsequent executions, not already-running tasks. The inactive root allocates nothing today; once
-activated, job execution and logging incur costs. Its version-1 `jobs` output contains names, UIDs and
+subsequent executions, not already-running tasks. Job execution and logging incur costs.
+Its version-1 `jobs` output contains names, UIDs and
 images, not execution or health evidence. Dispatchers must inspect live definitions and retain native
 operation/execution identities.
 
@@ -194,23 +197,36 @@ needs live prerequisite verification and health evidence before replacing its ex
 
 ## Bootstrap before routine release
 
-A separately reviewed protected bootstrap must create the jobs **in this destination state** after
-the project, runtime, registry, network and database prerequisites exist. Then protected foundation
-installs [exact-job access](../../modules/service-job-access), the paused rotation schedule and alerts.
-Verify effective allowed/denied operations, remove temporary bootstrap authority, and prove a
-zero-change plan with the routine release identity before enabling its caller.
+Existing shared-private jobs move through native OpenTofu
+[removal](https://opentofu.org/docs/language/resources/syntax/#removing-resources) and
+[import](https://opentofu.org/docs/language/import/) blocks. Keep the legacy deployment dispatcher
+disabled throughout. Register each private service and apply its foundation prerequisites using the
+existing database handoff, then promote the already reviewed image digests.
 
-Routine release can update existing jobs, not create replacements. A missing job or interrupted
-bootstrap stops for reconciliation of state, native job UIDs and accepted operations. Preserve a
-private state backup and exact reviewed plan at each ownership transition. If a pilot job is already
-managed elsewhere, review its state removal/import addresses before using this root; do not adopt it
-automatically. Import cannot relocate a job from the legacy workload project into a service project.
-Keep the legacy writer and retained receipts/backups until the separate workload cutover is proven.
+| Legacy release address suffix              | Service        | Destination address suffix  |
+| ------------------------------------------ | -------------- | --------------------------- |
+| `application["authentication_migrations"]` | Authentication | `application["migrations"]` |
+| `application["json_keys_migrations"]`      | JSON Keys      | `application["migrations"]` |
+| `application["json_keys_rotate"]`          | JSON Keys      | `application["rotatekeys"]` |
+
+All addresses use `google_cloud_run_v2_job`. Preserve private state backups and verify the live job
+UIDs and accepted executions. Review and apply the legacy root's `removed` block first: only these
+three jobs may be forgotten, with `destroy=false`. No job is deleted. The existing schedules and
+invocation tags remain in that state and continue targeting the same names.
+
+Set `adopt_existing_jobs=true` in each selected private service's protected inputs. Review its saved
+plan for the exact imports and intended in-place identity/image changes; reject creation, replacement
+or unexpected changes. Apply, check the original UIDs, and require a zero-change plan before removing
+the adoption flag. A partial or uncertain handoff stops for state reconciliation, never job recreation
+or a blind retry. Keep backups and receipts; each live resource must have exactly one state owner.
+
+Dedicated-project bootstrap remains create-only. Routine dispatch needs separate execution authority
+and migration/health verification; transferring a job definition neither runs it nor enables releases.
 
 The protected bootstrap workflow supplies selected-family provenance, exact job/API image binding,
 enabled job-secret metadata checks and private saved-plan custody. Activation still requires
 promoted image availability, effective runtime access, same-service exclusion and an isolated
-interruption drill. It never transfers an existing resource owner.
+interruption drill.
 
 ## Inputs and execution boundary
 

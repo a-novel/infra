@@ -67,6 +67,17 @@ run "authentication_private_jobs" {
   }
 }
 
+run "reject_job_adoption_with_api" {
+  command = plan
+  variables {
+    foundation          = run.documents.cases.json-keys.foundation
+    foundation_json     = run.documents.cases.json-keys.foundation_json
+    adopt_existing_jobs = true
+    api                 = run.documents.api.json-keys
+  }
+  expect_failures = [var.adopt_existing_jobs]
+}
+
 run "json_keys_private_api" {
   command = plan
   variables {

@@ -193,6 +193,9 @@ run "builds_the_protected_management_plane" {
         binding.bucket == google_storage_bucket.state.name && binding.role == "roles/storage.bucketViewer"
       ]) &&
       !contains(google_project_iam_custom_role.secret_metadata.permissions, "resourcemanager.projects.list") &&
+      toset([for permission in google_project_iam_custom_role.secret_metadata.permissions : permission
+        if startswith(permission, "secretmanager.versions.")
+      ]) == toset(["secretmanager.versions.get"]) &&
       toset(google_project_iam_custom_role.plan_metadata.permissions) == toset([
         "resourcemanager.projects.get",
         "resourcemanager.projects.getIamPolicy",

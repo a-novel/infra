@@ -117,6 +117,50 @@ func TestPublicAPIPlanPolicy(t *testing.T) {
 	}
 }
 
+func TestPrivateJobPlanPolicy(t *testing.T) {
+	t.Parallel()
+	for _, service := range []string{"json-keys", "authentication"} {
+		for _, testCase := range []struct {
+			name, action string
+			mutate       func(object)
+			code         int
+		}{
+			{"Import", "update", nil, 0},
+			{"ConvergedImport", "no-op", nil, 0},
+			{"Update", "update", func(p object) { delete(nested(resource(p), "change"), "importing") }, 0},
+			{"Create", "create", nil, 65},
+			{"Delete", "delete", nil, 65},
+			{"Replace", "update", func(p object) { nested(resource(p), "change")["actions"] = []string{"delete", "create"} }, 65},
+			{"PeerImport", "no-op", func(p object) { nested(resource(p), "change", "importing")["id"] = privateValue }, 65},
+			{"NotOptedIn", "no-op", func(p object) { nested(p, "variables", "adopt_existing_jobs")["value"] = false }, 65},
+			{"Move", "no-op", func(p object) { resource(p)["previous_address"] = privateValue }, 65},
+			{"API", "update", func(p object) { resource(p)["type"] = "google_cloud_run_v2_service" }, 65},
+			{"PeerProject", "update", func(p object) { nested(resource(p), "change", "after")["project"] = "agora-peer-test" }, 65},
+			{"Unprotected", "update", func(p object) { nested(resource(p), "change", "after")["deletion_protection"] = false }, 65},
+			{"UnknownName", "update", func(p object) { nested(resource(p), "change")["after_unknown"] = object{"name": true} }, 65},
+		} {
+			t.Run(service+"/"+testCase.name, func(t *testing.T) {
+				t.Parallel()
+				f := setup(t)
+				f.env["SERVICE_JOB_BOOTSTRAP"], f.env["ALLOW_RESOURCE_DELETION"] = "true", "true"
+				project := "agora-" + service + "-test"
+				f.env["TOFU_STATE_SUFFIX"] = "workloads/production/private/" + project + "/" + service
+				plan := jobBootstrapPlan(service, testCase.action)
+				nested(plan, "variables")["zone"] = object{"value": "private"}
+				nested(plan, "variables")["adopt_existing_jobs"] = object{"value": true}
+				for _, entry := range plan["resource_changes"].([]any) {
+					change := entry.(object)
+					nested(change, "change")["importing"] = object{"id": "projects/" + project + "/locations/europe-west1/jobs/agora-" + service + "-" + change["index"].(string)}
+				}
+				if testCase.mutate != nil {
+					testCase.mutate(plan)
+				}
+				f.summary(t, "service-release", plan, testCase.code)
+			})
+		}
+	}
+}
+
 func TestJobBootstrapWorkflow(t *testing.T) {
 	t.Parallel()
 	for _, testCase := range []struct {
