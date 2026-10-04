@@ -52,9 +52,26 @@ func versionValuesOnly(name, previous, next string) bool {
 	return slices.Equal(normalize(previous), normalize(next))
 }
 
+// releaseAged reports whether Renovate's newest release-age status on the commit is a success that
+// Renovate posted itself. Renovate evaluates each commit against the configuration on master.
+func (c client) releaseAged(ctx context.Context, sha string) (bool, error) {
+	statuses, err := list[commitStatus](ctx, c, "/commits/"+sha+"/statuses?per_page=100", "")
+	if err != nil {
+		return false, err
+	}
+	var latest commitStatus
+	for _, s := range statuses {
+		if s.Context == "renovate/stability-days" && s.ID > latest.ID {
+			latest = s
+		}
+	}
+	return latest.State == "success" && latest.Creator.Login == renovateBot && latest.Creator.Type == "Bot", nil
+}
+
 // verifyVersions reports whether the PR is a current Renovate update that changes only OpenTofu,
-// provider, or lock versions and has passed the same CI evidence as an image update. Its assessment
-// plans the candidate with the new upstream binaries; Renovate's release-age gate bounds that trust.
+// provider, or lock versions, whose releases passed Renovate's release-age gate, and that has the
+// same CI evidence as an image update. Its assessment plans the candidate with the new upstream
+// binaries, so the release age bounds that trust.
 func (c client) verifyVersions(ctx context.Context, t target) (bool, error) {
 	if !t.valid() {
 		return false, errors.New("invalid version-assessment coordinates")
@@ -95,6 +112,10 @@ func (c client) verifyVersions(ctx context.Context, t target) (bool, error) {
 		if err != nil || !versionValuesOnly(file.Filename, oldContent, newContent) {
 			return false, err
 		}
+	}
+	aged, err := c.releaseAged(ctx, t.Head)
+	if err != nil || !aged {
+		return false, err
 	}
 	return c.validated(ctx, t, p, c.renovateCandidate)
 }

@@ -15,6 +15,7 @@ const (
 	driftPath     = ".github/workflows/drift.yaml"
 	manifestPath  = "deploy/production/images.yaml"
 	deletionLabel = "allow-resource-deletion"
+	renovateBot   = "anovelbot-dependencies[bot]"
 	maxResponse   = 16 << 20
 )
 
@@ -72,6 +73,11 @@ type workflow struct {
 type changedFile struct {
 	Filename, Status string
 	PreviousFilename string `json:"previous_filename"`
+}
+type commitStatus struct {
+	ID             int64
+	Context, State string
+	Creator        struct{ Login, Type string }
 }
 type target struct {
 	Number     int64

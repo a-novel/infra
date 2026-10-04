@@ -81,7 +81,7 @@ func (c client) content(ctx context.Context, entry blob) (string, error) {
 // renovateCandidate reports whether the PR is the dependency bot's current, ready update from this repository.
 func (c client) renovateCandidate(p pull, t target) bool {
 	return t.current(p, c.repo) && p.Draft != nil && !*p.Draft && p.Head.Repo.FullName == c.repo &&
-		p.User.Login == "anovelbot-dependencies[bot]" && p.User.Type == "Bot"
+		p.User.Login == renovateBot && p.User.Type == "Bot"
 }
 
 func (c client) imageCandidate(p pull, t target) bool {

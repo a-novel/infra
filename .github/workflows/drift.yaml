@@ -305,7 +305,7 @@ jobs:
       # This check runs before credentials exist because the candidate plan can
       # execute providers and external data sources. A maintainer's dispatch
       # authorizes any candidate. A Renovate update is authorized when it changes
-      # only version values, whose releases Renovate holds back for a week.
+      # only version values and carries Renovate's passing release-age status.
       - name: Resolve the authorized exact candidate
         if: inputs.operation == 'assess-pull-request' || inputs.operation == 'assess-pending-foundation' || inputs.operation == 'assess-version-update'
         id: target

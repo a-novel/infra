@@ -133,6 +133,18 @@ func (f *fixture) versionUpdate() {
 	}
 	f.pull["changed_files"] = len(files)
 	f.routes["/pulls/42/files?per_page=100"] = pages("", files)
+	f.ageStatus(stability(1, "success", renovateBot))
+}
+
+const renovateBot = "anovelbot-dependencies[bot]"
+
+func stability(id int, state, creator string) object {
+	return object{"id": id, "context": "renovate/stability-days", "state": state, "creator": object{"login": creator, "type": "Bot"}}
+}
+
+// ageStatus sets the commit statuses Renovate's release-age gate reports on the candidate head.
+func (f *fixture) ageStatus(statuses ...object) {
+	f.routes["/commits/"+head+"/statuses?per_page=100"] = pages("", statuses)
 }
 
 func pages(key string, values []object) []any {
@@ -336,6 +348,15 @@ func TestVersionAssessment(t *testing.T) {
 		"draft":                      {mutate: func(f *fixture) { f.pull["draft"] = true }},
 		"failed validation":          {mutate: func(f *fixture) { f.jobs[0]["conclusion"] = "failure" }},
 		"master moved":               {mutate: func(f *fixture) { f.routes["/git/ref/heads/master"] = object{"object": object{"sha": trusted}} }},
+		"release age pending":        {mutate: func(f *fixture) { f.ageStatus(stability(1, "pending", renovateBot)) }},
+		"release age missing":        {mutate: func(f *fixture) { f.ageStatus() }},
+		"release age spoofed":        {mutate: func(f *fixture) { f.ageStatus(stability(1, "success", "github-actions[bot]")) }},
+		"release age reopened": {mutate: func(f *fixture) {
+			f.ageStatus(stability(1, "success", renovateBot), stability(2, "pending", renovateBot))
+		}},
+		"release age met later": {mutate: func(f *fixture) {
+			f.ageStatus(stability(2, "success", renovateBot), stability(1, "pending", renovateBot))
+		}, accept: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
