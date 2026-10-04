@@ -29,6 +29,7 @@ locals {
     "cloudscheduler.googleapis.com",
     "cloudquotas.googleapis.com",
     "cloudresourcemanager.googleapis.com",
+    "cloudtrace.googleapis.com",
     "compute.googleapis.com",
     "dns.googleapis.com",
     "iam.googleapis.com",
@@ -38,6 +39,7 @@ locals {
     "oslogin.googleapis.com",
     "run.googleapis.com",
     "serviceusage.googleapis.com",
+    "telemetry.googleapis.com",
   ])
 }
 

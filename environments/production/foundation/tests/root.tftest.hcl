@@ -979,12 +979,13 @@ run "builds_the_project_replacement_window" {
 
   assert {
     condition = (
-      length(google_project_service.workload) == 13 &&
+      length(google_project_service.workload) == 15 &&
       toset(keys(google_project_service.workload)) == toset([
         "artifactregistry.googleapis.com",
         "cloudscheduler.googleapis.com",
         "cloudquotas.googleapis.com",
         "cloudresourcemanager.googleapis.com",
+        "cloudtrace.googleapis.com",
         "compute.googleapis.com",
         "dns.googleapis.com",
         "iam.googleapis.com",
@@ -994,6 +995,7 @@ run "builds_the_project_replacement_window" {
         "oslogin.googleapis.com",
         "run.googleapis.com",
         "serviceusage.googleapis.com",
+        "telemetry.googleapis.com",
       ]) &&
       alltrue([
         for service in values(google_project_service.workload) :
@@ -1308,6 +1310,11 @@ run "builds_the_project_replacement_window" {
         "roles/monitoring.metricWriter",
       ]) &&
       length(google_project_iam_member.database_runtime_observability) == 4 &&
+      toset([for member in values(google_project_iam_member.application_telemetry) : member.role]) == toset(["roles/telemetry.writer"]) &&
+      toset([for member in values(google_project_iam_member.application_telemetry) : member.member]) == toset([
+        "serviceAccount:${google_service_account.runtime["authentication"].email}",
+        "serviceAccount:${google_service_account.runtime["json_keys"].email}",
+      ]) &&
       local.database_operator_project_roles == toset([
         "roles/compute.osAdminLogin",
         "roles/compute.viewer",
@@ -1949,6 +1956,7 @@ run "limits_disposable_recovery_authority_to_the_replacement_project" {
       length(google_project_iam_member.release_cloud_run_invoker) == 0 &&
       length(google_project_iam_member.scheduler_cloud_run_invoker) == 0 &&
       length(google_project_iam_member.json_keys_smoke_invoker) == 0 &&
+      length(google_project_iam_member.application_telemetry) == 2 &&
       length(google_project_iam_member.recovery_cloud_run_invoker) == 1 &&
       google_project_iam_member.recovery_cloud_run_invoker[0].role == "roles/run.jobsExecutor" &&
       length(google_project_iam_member.recovery_smoke_cloud_run_invoker) == 1 &&
