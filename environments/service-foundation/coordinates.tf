@@ -46,6 +46,8 @@ resource "google_storage_bucket_object" "coordinates" {
     google_artifact_registry_repository_iam_member.release,
     google_artifact_registry_repository_iam_member.recovery,
     google_service_account_iam_member.foundation_runtime,
+    google_project_iam_member.runtime_telemetry,
+    google_monitoring_alert_policy.api_error_rate,
     google_cloud_run_v2_service_iam_member.json_keys_invoker,
     google_secret_manager_secret_iam_member.database,
     google_artifact_registry_repository_iam_member.database,

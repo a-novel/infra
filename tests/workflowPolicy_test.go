@@ -402,7 +402,7 @@ func TestWorkflowBoundaries(t *testing.T) {
 
 	gate := main.Jobs["resource-deletion-gate"]
 	require.Contains(t, main.On, "merge_group")
-	require.ElementsMatch(t, []any{"opened", "reopened", "synchronize", "labeled", "unlabeled"}, nested(main.On, "pull_request")["types"])
+	require.ElementsMatch(t, []any{"opened", "reopened", "synchronize"}, nested(main.On, "pull_request")["types"])
 	checkout := gate.Steps[stepIndex(t, gate.Steps, "actions/checkout@")].With
 	require.Equal(t, false, checkout["persist-credentials"])
 	require.Contains(t, checkout["ref"], "pull_request.base.sha")

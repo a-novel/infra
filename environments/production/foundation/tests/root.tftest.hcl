@@ -1,7 +1,7 @@
 run "shared_release_disabled_by_default" {
   command = plan
   assert {
-    condition     = length(module.service_release) == 0 && output.service_release_boundaries == null && length(google_storage_bucket_object.database_coordinates) == 0 && length(output.database_coordinates) == 0
+    condition     = length(module.service_release) == 0 && output.service_release_boundaries == null && length(google_storage_bucket_object.database_coordinates) == 0 && length(output.database_coordinates) == 0 && length(google_project_iam_custom_role.foundation_public_api) == 0 && length(google_project_service.public_api_telemetry) == 0
     error_message = "Existing inputs must not create shared identities or database publications."
   }
 }
@@ -61,7 +61,7 @@ run "shared_release_private_without_public_shell" {
     service_release_zones = { json-keys = ["private"], authentication = ["private"] }
   }
   assert {
-    condition     = length(module.service_release) == 2 && length(module.public_api_project) == 0 && alltrue([for boundary in output.service_release_boundaries : boundary.project_id == "agora-production-test"])
+    condition     = length(module.service_release) == 2 && length(module.public_api_project) == 0 && alltrue([for boundary in output.service_release_boundaries : boundary.project_id == "agora-production-test"]) && length(google_project_iam_custom_role.foundation_public_api) == 0 && length(google_project_service.public_api_telemetry) == 0
     error_message = "Private release boundaries must not require or provision a public project."
   }
 }
@@ -73,6 +73,28 @@ run "production_release_boundary_selection" {
     public_api_project_id = "agora-api-test"
     public_project_id     = "agora-public-test"
     service_release_zones = { json-keys = ["private"], authentication = ["public-api"] }
+  }
+  assert {
+    condition = (
+      google_project_iam_member.public_api_network_viewer[0].project == var.workload_project_id &&
+      google_project_iam_member.public_api_network_viewer[0].role == "roles/compute.networkViewer" &&
+      google_project_iam_member.public_api_network_viewer[0].member == module.public_api_project["public-api"].service_agents["run.googleapis.com"] &&
+      google_compute_subnetwork_iam_member.public_api_run[0].project == var.workload_project_id &&
+      google_compute_subnetwork_iam_member.public_api_run[0].subnetwork == google_compute_subnetwork.production.name &&
+      google_compute_subnetwork_iam_member.public_api_run[0].region == var.region &&
+      google_compute_subnetwork_iam_member.public_api_run[0].role == "roles/compute.networkUser" &&
+      google_compute_subnetwork_iam_member.public_api_run[0].member == module.public_api_project["public-api"].service_agents["run.googleapis.com"] &&
+      google_project_iam_custom_role.foundation_public_api[0].project == var.public_api_project_id &&
+      toset(google_project_iam_custom_role.foundation_public_api[0].permissions) == toset(["run.services.create", "run.services.update"]) &&
+      google_project_iam_member.foundation_public_api[0].project == var.public_api_project_id &&
+      google_project_iam_member.foundation_public_api[0].member == "serviceAccount:infra-foundation@${var.management_project_id}.iam.gserviceaccount.com" &&
+      google_project_iam_member.foundation_public_api[0].role == google_project_iam_custom_role.foundation_public_api[0].name &&
+      toset(keys(google_project_service.public_api_telemetry)) == toset(["cloudtrace.googleapis.com", "telemetry.googleapis.com"]) &&
+      alltrue([for api in google_project_service.public_api_telemetry :
+        api.project == var.public_api_project_id && !api.disable_on_destroy && !api.disable_dependent_services
+      ])
+    )
+    error_message = "API provisioning and telemetry must remain in the enrolled public-api project, without private/platform deployment or service deletion authority."
   }
   assert {
     condition = (
