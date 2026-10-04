@@ -154,7 +154,8 @@ func inspectApply(ctx context.Context, client *storage.Service, expected applyIn
 	if expected.Scope != "" {
 		scopes, err := workflow.ReleaseScopes(getenv, guard.Bucket)
 		parts := strings.Split(intent.Scope, "/")
-		if err != nil || intent.SchemaVersion != 2 || intent.Root != "service-foundation" ||
+		if err != nil || intent.SchemaVersion != 2 || (intent.Root != "service-foundation" && intent.Root != "service-release") ||
+			(intent.Root == "service-release" && !strings.HasPrefix(intent.Scope, "workloads/production/public-api/")) ||
 			!foundationScopePattern.MatchString(intent.Scope) || scopes[intent.Scope] != intent.Service ||
 			len(parts) != 5 || parts[3] != intent.Project || parts[4] != intent.Service {
 			return intent, false, failure{70, "Shared operation does not match registered prerequisites."}

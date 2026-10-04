@@ -11,7 +11,9 @@ root nor its future caller needs foundation-state access.
 
 **Code only:** trusted assessment and drift can inspect this root. The protected
 [job bootstrap](../../docs/runbooks/provision-service-projects.md#protected-service-job-bootstrap)
-is disabled by default. Shared API deployment is not yet enrolled in the protected workflow.
+is disabled by default. Registered public-api deployment uses the same protected workflow,
+saved-plan custody and service guard. Its reviewed plans admit only the selected API's
+create, update or no-op actions; jobs, imports, replacements and deletions remain blocked.
 Applying a job specification does not run it. With `api = null`, the root creates no API. Foundation
 owns databases, IAM, schedules and alerts. Existing production resources and state stay unchanged.
 
@@ -39,15 +41,15 @@ sufficient; no bucket-wide object grant is required. Missing or unregistered fol
 
 The shared foundation's `service_release_zones` enrolls
 `workloads/production/ZONE/PROJECT/SERVICE/release/` folders for private/public-api boundaries.
-Enrollment accepts empty folders and exact saved-plan artifacts. Existing state, configuration or
-other objects stop inspection pending an approved ownership handoff. Protected mutation callers
-remain dedicated-project-only; an API registration never activates database jobs.
+Enrollment accepts empty folders and exact saved-plan artifacts. Initialized public-api state
+requires matching converged inputs. Private state still requires an approved ownership handoff;
+API registration never activates database jobs.
 The platform-only public zone cannot enroll these backend services. Historical public custody paths
 remain readable, but an old public registration must undergo an explicit ownership handoff rather
 than being silently reinterpreted as public-api.
 
-A confirmed empty folder is skipped. Initialized state requires its matching converged inputs at
-`services/PROJECT/release/config/RUN-ATTEMPT.tfvars.json`, using the existing zero-padded sequence format.
+A confirmed empty folder is skipped. Initialized state requires its matching converged inputs under
+the same release prefix at `config/RUN-ATTEMPT.tfvars.json`, using the existing zero-padded sequence format.
 Missing inputs, inputs without state, a held service-operation guard, unexpected workspaces/locks
 and denied reads stop inspection.
 The trusted coordinate guard validates each backend against registration before initialization with
@@ -65,8 +67,8 @@ The existing `infra custody plan` command supports this root inside its existing
 only these exact artifact names beneath valid commit/sequence paths. Plans alone do not establish state.
 The same custody format supports shared release folders under
 `workloads/production/ZONE/PROJECT/SERVICE/release/`. Its exact scope remains bound in metadata;
-foundation and recovery roots cannot use that namespace. Configuration reads support the same
-boundary, while configuration publication and shared-zone apply remain blocked.
+foundation and recovery roots cannot use that namespace. Guarded public-api apply publishes its
+converged inputs within that same boundary. Standalone configuration publication remains blocked.
 
 For both service roots, `publish` and `fetch` require the private tfvars filename as their **last** argument,
 after the existing arguments (`publish`: bucket, root, commit, plan ID, plan file, destructive marker;
@@ -91,9 +93,10 @@ the two artifact suffixes. Cleanup is asynchronous and keeps seven-day soft dele
 [plan policy](../../ops/README.md#protected-workflow-operations) requires existing Delete rules to stay
 unchanged; deletion approval cannot bypass that protection.
 Protected bootstrap apply and live verification remain prerequisites before writer activation.
-`SERVICE_JOB_BOOTSTRAP_ENABLED=true` permits only create/no-op plans for this service's exact
-application jobs. Updates, imports, moves, replacements, deletions and other resources fail regardless
-of deletion approval. Routine job updates remain disabled.
+`SERVICE_JOB_BOOTSTRAP_ENABLED=true` permits create/no-op plans for this service's exact
+application jobs, or create/update/no-op plans for its registered public-api service.
+Imports, moves, replacements, deletions and other resources fail regardless of deletion approval.
+Routine job updates remain disabled.
 
 ## Approved foundation handoff
 
@@ -109,9 +112,9 @@ network must also belong to that project. Both JSON Keys APIs consume one privat
 Authentication consumes its own. Public-api creates no database or job resources.
 The platform-only `public` zone is rejected.
 
-This contract is cloud-blind preparation: existing job names still have their legacy owner.
-Reconcile exact resource/state ownership and enroll the protected writer before applying it.
-The current bootstrap and routine mutation guards still reject shared release state.
+Existing private job names still have their legacy owner. Reconcile their exact resource/state
+ownership before applying private release state. Public-api owns newly created APIs in its own
+state and cannot claim private jobs or database resources.
 The following dedicated-project handoff remains unchanged when `zone = null`.
 
 The inactive root accepts three independently authorized selectors: `project_id`, `service` and
@@ -186,7 +189,8 @@ The `api` output provides Cloud Run's service and candidate URLs, not health evi
 Producer provenance, enabled secret versions, exact resource ownership, effective network access and
 successful migration remain prerequisites. The committed image manifest does not yet enroll JSON
 Keys REST; image preflight rejects that component until its producer family is explicitly added.
-No protected API writer or first-launch shortcut is enabled by this preparation.
+The protected writer requires explicit activation and approved component inputs. A new API still
+needs live prerequisite verification and health evidence before replacing its existing endpoint.
 
 ## Bootstrap before routine release
 

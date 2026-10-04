@@ -68,7 +68,7 @@ func foundationInputs(args []string, getenv func(string) string, stdout io.Write
 	if args[0] == "bind" {
 		return bindFoundation(args[1:], getenv, stdout)
 	}
-	if args[0] == "check" || args[0] == "check-foundation" {
+	if args[0] == "check" || args[0] == "check-foundation" || args[0] == "check-release" {
 		data, err := os.ReadFile(args[1])
 		if err != nil {
 			return err
@@ -76,6 +76,9 @@ func foundationInputs(args []string, getenv func(string) string, stdout io.Write
 		selectScope := ServiceScope
 		if args[0] == "check-foundation" {
 			selectScope = FoundationScope
+		}
+		if args[0] == "check-release" {
+			selectScope = releaseScope
 		}
 		suffix, err := selectScope(data, getenv, args[2])
 		if err != nil || suffix != args[3] {
@@ -159,6 +162,9 @@ func foundationInputs(args []string, getenv func(string) string, stdout io.Write
 		selectScope := ServiceScope
 		if root == "service-foundation" {
 			selectScope = FoundationScope
+		}
+		if root == "service-release" {
+			selectScope = releaseScope
 		}
 		suffix, err = selectScope(data, getenv, getenv("STATE_BUCKET"))
 		if err != nil {

@@ -46,14 +46,27 @@ func (i inspector) services(ctx context.Context, mode, root string, result *verd
 	if root != "service-release" {
 		// Admission belongs to the source service, including before foundation
 		// or disposable recovery state exists.
-		if _, err := i.serviceStates(ctx, "service-release", scopes); err != nil {
+		releases, err := i.serviceStates(ctx, "service-release", scopes)
+		if err != nil {
 			return err
+		}
+		for scope, initialized := range releases {
+			if !initialized {
+				return failure{70, "Service release inputs exist without state."}
+			}
+			file, code := i.config(ctx, "service-release", scope)
+			if code != 0 || workflow.FoundationInputs([]string{"check-release", file, i.bucket, scope}, getenv, io.Discard, io.Discard) != 0 {
+				return failure{70, "Service release state lacks matching converged inputs."}
+			}
 		}
 	}
 	check := workflow.FoundationInputs
 	checkAction := "check"
 	if root == "service-foundation" {
 		checkAction = "check-foundation"
+	}
+	if root == "service-release" {
+		checkAction = "check-release"
 	}
 	if root == "service-recovery" {
 		scopes, err = workflow.RecoveryScopes(getenv, i.bucket)
@@ -153,8 +166,8 @@ func (i inspector) serviceStates(ctx context.Context, root string, scopes map[st
 				if servicePlanObject.MatchString(object) {
 					continue
 				}
-				// Shared folders are enrolled before any runtime state handoff.
-				if strings.HasPrefix(scope, "workloads/") {
+				// Private resources retain their legacy state owner until an explicit handoff.
+				if strings.HasPrefix(scope, "workloads/") && !strings.HasPrefix(scope, "workloads/production/public-api/") {
 					return nil, failure{70, "Shared release state requires an approved ownership handoff; runtime inspection remains blocked."}
 				}
 			}

@@ -23,7 +23,11 @@ func foundationSource(config map[string]json.RawMessage, bucket, scope string) (
 		return foundationObject{}, invalid
 	}
 	var schema int
-	if json.Unmarshal(reference["schema_version"], &schema) != nil || schema != 1 {
+	expectedSchema := 1
+	if strings.HasPrefix(scope, "workloads/") {
+		expectedSchema = 2
+	}
+	if json.Unmarshal(reference["schema_version"], &schema) != nil || schema != expectedSchema {
 		return foundationObject{}, invalid
 	}
 	fields := make(map[string]string, 4)
@@ -53,7 +57,7 @@ func bindFoundation(args []string, getenv func(string) string, stdout io.Writer)
 	if err != nil {
 		return err
 	}
-	scope, err := serviceFoundationScope(data, getenv, getenv("STATE_BUCKET"))
+	scope, err := releaseScope(data, getenv, getenv("STATE_BUCKET"))
 	if err != nil {
 		return err
 	}

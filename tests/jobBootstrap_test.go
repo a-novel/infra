@@ -76,6 +76,47 @@ func TestJobBootstrapPolicy(t *testing.T) {
 	}
 }
 
+func TestPublicAPIPlanPolicy(t *testing.T) {
+	t.Parallel()
+	for _, testCase := range []struct {
+		name, action string
+		mutate       func(object)
+		code         int
+	}{
+		{"Create", "create", nil, 0},
+		{"Update", "update", nil, 0},
+		{"NoOp", "no-op", nil, 0},
+		{"Delete", "delete", nil, 65},
+		{"Replace", "create", func(p object) { nested(resource(p), "change")["actions"] = []string{"delete", "create"} }, 65},
+		{"Import", "no-op", func(p object) { nested(resource(p), "change")["importing"] = object{"id": privateValue} }, 65},
+		{"OtherResource", "create", func(p object) { resource(p)["type"] = "google_cloud_run_v2_job" }, 65},
+		{"PeerProject", "create", func(p object) { nested(resource(p), "change", "after")["project"] = "agora-peer-test" }, 65},
+		{"UnknownProject", "create", func(p object) { nested(resource(p), "change")["after_unknown"] = object{"project": true} }, 65},
+		{"Unprotected", "create", func(p object) { nested(resource(p), "change", "after")["deletion_protection"] = false }, 65},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			f := setup(t)
+			f.env["SERVICE_JOB_BOOTSTRAP"], f.env["ALLOW_RESOURCE_DELETION"] = "true", "true"
+			f.env["TOFU_STATE_SUFFIX"] = "workloads/production/public-api/agora-api-test/authentication"
+			after := object{"project": "agora-api-test", "location": "europe-west1", "name": "agora-authentication-rest", "deletion_protection": true}
+			before := any(nil)
+			if testCase.action != "create" {
+				before = after
+			}
+			plan := object{
+				"format_version":   "1.2",
+				"variables":        object{"project_id": object{"value": "agora-api-test"}, "service": object{"value": "authentication"}, "zone": object{"value": "public-api"}, "region": object{"value": "europe-west1"}},
+				"resource_changes": []any{object{"mode": "managed", "type": "google_cloud_run_v2_service", "index": 0, "address": "google_cloud_run_v2_service.api[0]", "change": object{"actions": []string{testCase.action}, "before": before, "after": after}}},
+			}
+			if testCase.mutate != nil {
+				testCase.mutate(plan)
+			}
+			f.summary(t, "service-release", plan, testCase.code)
+		})
+	}
+}
+
 func TestJobBootstrapWorkflow(t *testing.T) {
 	t.Parallel()
 	for _, testCase := range []struct {

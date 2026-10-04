@@ -155,6 +155,23 @@ func TestSharedOperationCannotClearSuccessor(t *testing.T) {
 	f.check(t, 70, "")
 }
 
+func TestSharedPublicAPIOperationInspection(t *testing.T) {
+	t.Parallel()
+	f := newSharedOperationInspection(t, "public-api")
+	scope := "workloads/production/public-api/agora-api-test/json-keys"
+	for _, record := range []string{"intent", "operation"} {
+		f.records[record]["root"] = "service-release"
+	}
+	config := scope + "/release/config/00000000000000000124-00001.tfvars.json"
+	f.records["configuration"]["object"] = config
+	f.config = "/b/" + f.args[2] + "/o/" + config
+	f.check(t, 0, "")
+	f.finish()
+	f.writer["display_title"] = "foundation apply service-release/json-keys by @operator"
+	f.deletes = 1
+	f.check(t, 0, "")
+}
+
 func TestSharedFoundationPlatformCustodyRejected(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
