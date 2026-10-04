@@ -37,9 +37,17 @@ resource "google_service_account" "runtime" {
     precondition {
       condition = var.zone == null || (
         var.database == null && var.pgbackrest_repository == null && var.database_runtime == null &&
-        var.rollout == null && !var.manage_job_access
+        !var.manage_job_access
       )
-      error_message = "Shared-zone prerequisites cannot enroll hosts, rollout or jobs before their ownership handoff."
+      error_message = "Shared-zone prerequisites cannot enroll hosts or application jobs before their ownership handoff."
+    }
+    precondition {
+      condition = var.rollout == null || var.zone == null ? true : try(
+        var.database_handoff != null &&
+        can(regex("^projects/${var.database_handoff.private_project_id}/global/networks/[a-z][a-z0-9-]+$", var.rollout.network)) &&
+        can(regex("^projects/${var.database_handoff.private_project_id}/regions/${var.region}/subnetworks/[a-z][a-z0-9-]+$", var.rollout.subnetwork)),
+      false)
+      error_message = "Shared rollout requires the approved existing-database handoff and a probe network/subnet in that private project and region."
     }
   }
 }

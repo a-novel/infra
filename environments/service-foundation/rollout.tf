@@ -1,5 +1,5 @@
 variable "rollout" {
-  description = "JSON Keys pilot configuration after verified image promotion and host-network setup; null provisions only prerequisites."
+  description = "Suspended API pipeline after reviewed image promotion and host-network setup; null leaves rollout unconfigured."
   type = object({
     verification_image = string
     network            = string
@@ -8,8 +8,8 @@ variable "rollout" {
   default = null
 
   validation {
-    condition     = var.rollout == null || var.service == "json-keys"
-    error_message = "The reviewed Cloud Deploy verifier supports only the JSON Keys pilot."
+    condition     = var.rollout == null || var.service == "json-keys" || var.zone == "public-api"
+    error_message = "Select JSON Keys gRPC/REST or Authentication REST; private Authentication and the dedicated Authentication pilot are not enrolled."
   }
 
   validation {
