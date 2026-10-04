@@ -32,6 +32,7 @@ run "json_keys_private_handoff" {
   }
   assert {
     condition = (
+      length(google_cloud_run_v2_service_iam_member.json_keys_invoker) == 0 &&
       jsondecode(google_storage_bucket_object.coordinates.content).database == jsondecode(var.database_handoff.document_json) &&
       jsondecode(google_storage_bucket_object.coordinates.content).database.schema_version == 2 &&
       jsonencode(jsondecode(google_storage_bucket_object.coordinates.content).database_source) == jsonencode(var.database_handoff.reference) &&
@@ -53,6 +54,7 @@ run "json_keys_public_api_handoff" {
   }
   assert {
     condition = (
+      length(google_cloud_run_v2_service_iam_member.json_keys_invoker) == 0 &&
       jsondecode(google_storage_bucket_object.coordinates.content).database == jsondecode(var.database_handoff.document_json) &&
       jsondecode(google_storage_bucket_object.coordinates.content).database.schema_version == 2 &&
       jsonencode(jsondecode(google_storage_bucket_object.coordinates.content).database_source) == jsonencode(var.database_handoff.reference) &&
@@ -74,6 +76,7 @@ run "authentication_private_handoff" {
   }
   assert {
     condition = (
+      length(google_cloud_run_v2_service_iam_member.json_keys_invoker) == 0 &&
       jsondecode(google_storage_bucket_object.coordinates.content).database == jsondecode(var.database_handoff.document_json) &&
       jsondecode(google_storage_bucket_object.coordinates.content).database.schema_version == 2 &&
       jsonencode(jsondecode(google_storage_bucket_object.coordinates.content).database_source) == jsonencode(var.database_handoff.reference) &&
@@ -92,6 +95,17 @@ run "authentication_public_api_handoff" {
     zone             = "public-api"
     project_id       = "agora-api-test"
     database_handoff = run.documents.cases.authentication
+  }
+  assert {
+    condition = (
+      length(google_cloud_run_v2_service_iam_member.json_keys_invoker) == 1 &&
+      google_cloud_run_v2_service_iam_member.json_keys_invoker[0].project == "agora-private-test" &&
+      google_cloud_run_v2_service_iam_member.json_keys_invoker[0].location == "europe-west1" &&
+      google_cloud_run_v2_service_iam_member.json_keys_invoker[0].name == "agora-json-keys-grpc" &&
+      google_cloud_run_v2_service_iam_member.json_keys_invoker[0].role == "roles/run.servicesInvoker" &&
+      google_cloud_run_v2_service_iam_member.json_keys_invoker[0].member == "serviceAccount:${google_service_account.runtime.email}"
+    )
+    error_message = "Authentication public-api may invoke only the existing private JSON Keys service using its own runtime identity."
   }
   assert {
     condition = (
@@ -213,4 +227,3 @@ run "reject_api_database_owner" {
   }
   expect_failures = [var.database_handoff]
 }
-

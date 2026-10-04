@@ -44,6 +44,16 @@ resource "google_service_account" "runtime" {
   }
 }
 
+resource "google_cloud_run_v2_service_iam_member" "json_keys_invoker" {
+  count = var.zone == "public-api" && var.service == "authentication" && var.database_handoff != null ? 1 : 0
+
+  project  = var.database_handoff.private_project_id
+  location = var.region
+  name     = "agora-json-keys-grpc"
+  role     = "roles/run.servicesInvoker"
+  member   = "serviceAccount:${google_service_account.runtime.email}"
+}
+
 resource "google_service_account_iam_member" "foundation_runtime" {
   service_account_id = google_service_account.runtime.name
   role               = "roles/iam.serviceAccountUser"

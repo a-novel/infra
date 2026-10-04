@@ -76,6 +76,10 @@ run "production_release_boundary_selection" {
   }
   assert {
     condition = (
+      toset(google_project_iam_custom_role.foundation_service_access[0].permissions) == toset(["run.services.getIamPolicy", "run.services.setIamPolicy"]) &&
+      google_project_iam_member.foundation_service_access[0].project == var.workload_project_id &&
+      google_project_iam_member.foundation_service_access[0].member == "serviceAccount:infra-foundation@${var.management_project_id}.iam.gserviceaccount.com" &&
+      google_project_iam_member.foundation_service_access[0].condition[0].expression == google_project_iam_member.internal_cloud_run_invoker.condition[0].expression &&
       toset(keys(module.service_release)) == toset(["json-keys/private", "authentication/public-api"]) &&
       output.service_release_boundaries["json-keys/private"].project_id == var.workload_project_id &&
       output.service_release_boundaries["authentication/public-api"].project_id == var.public_api_project_id &&
