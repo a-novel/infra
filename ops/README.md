@@ -163,8 +163,9 @@ Actions security boundary.
 Operational jobs build `infra` from the reviewed checkout before
 materializing protected inputs or obtaining cloud credentials. The shared build action disables
 cache restoration; the resulting binary embeds the unchanged schemas and needs no Node packages.
-Cloud-blind gate automation also uses `infra` and the authenticated GitHub CLI: `assess-images
-dispatch`, `assess-images verify`, and `refresh-deletion-gates`. It cannot grant deletion approval.
+Cloud-blind gate automation also uses `infra` and the authenticated GitHub CLI: `assess-updates
+dispatch`, `assess-images verify`, `assess-versions verify`, and `refresh-deletion-gates`. It cannot
+grant deletion approval.
 Use `go run ./cmd/infra <command>` for local fixture debugging. Tests are Go plus the remaining
 shell integration suite. Node runs third-party Renovate and Prettier only; the repository contains
 no authored JavaScript. Install development dependencies with `pnpm install --frozen-lockfile` before
@@ -172,16 +173,16 @@ running `a-novel test -y`: the Go suite exercises the pinned Renovate CLI agains
 That lookup checks extraction and update candidates; it does not create PRs or prove minimum group
 size enforcement. Separate policy and deployment-time image-family tests cover those boundaries.
 
-| Boundary                            | Scripts                                                                                                                                                                                         |
-| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Saved-plan creation and application | `tofu-gate.sh`, `create-reviewed-plan.sh`, `apply-reviewed-plan.sh`, `infra custody plan`, `plan-summary.sh`                                                                                    |
-| Configuration and receipt custody   | `infra custody config`, `infra custody receipt`, `infra receipt build`, `infra receipt validate`                                                                                                |
-| Read-only inspection                | `infra inspect drift`, `infra inspect assess`, `infra custody operation inspect` (private inputs, payload-free results)                                                                         |
-| Deletion authorization              | `infra assess-images`, `infra refresh-deletion-gates`, `resource-deletion-impact.sh`, `resolve-resource-deletion-assessment.sh`, `verify-resource-deletion-gate.sh`, `verify-deletion-label.sh` |
-| Release compilation and promotion   | `infra compile-release`, `infra validate-images`, `infra preflight images`, `infra promote release`, `infra promote service`, `preflight-release.sh`                                            |
-| Ordered release execution           | `release-orchestrator.sh`, `google-release-driver.sh`, `infra database-isolation`, `infra database-release`, `await-auth-initialization.sh`                                                     |
-| Recovery                            | `infra compile-recovery`, `verify-recovery-points.sh`, `infra promote recovery`, `infra custody recovery execute`, `infra custody recovery cleanup`, `infra custody recovery cleanup-project`   |
-| Health and root validation          | `infra check-health`, `check-root.sh`, `lib/roots.sh`                                                                                                                                           |
+| Boundary                            | Scripts                                                                                                                                                                                                                                          |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Saved-plan creation and application | `tofu-gate.sh`, `create-reviewed-plan.sh`, `apply-reviewed-plan.sh`, `infra custody plan`, `plan-summary.sh`                                                                                                                                     |
+| Configuration and receipt custody   | `infra custody config`, `infra custody receipt`, `infra receipt build`, `infra receipt validate`                                                                                                                                                 |
+| Read-only inspection                | `infra inspect drift`, `infra inspect assess`, `infra custody operation inspect` (private inputs, payload-free results)                                                                                                                          |
+| Deletion authorization              | `infra assess-updates`, `infra assess-images`, `infra assess-versions`, `infra refresh-deletion-gates`, `resource-deletion-impact.sh`, `resolve-resource-deletion-assessment.sh`, `verify-resource-deletion-gate.sh`, `verify-deletion-label.sh` |
+| Release compilation and promotion   | `infra compile-release`, `infra validate-images`, `infra preflight images`, `infra promote release`, `infra promote service`, `preflight-release.sh`                                                                                             |
+| Ordered release execution           | `release-orchestrator.sh`, `google-release-driver.sh`, `infra database-isolation`, `infra database-release`, `await-auth-initialization.sh`                                                                                                      |
+| Recovery                            | `infra compile-recovery`, `verify-recovery-points.sh`, `infra promote recovery`, `infra custody recovery execute`, `infra custody recovery cleanup`, `infra custody recovery cleanup-project`                                                    |
+| Health and root validation          | `infra check-health`, `check-root.sh`, `lib/roots.sh`                                                                                                                                                                                            |
 
 `infra custody` shares private file handling and official Google storage clients across
 configuration, receipts, and plans. It validates downloads before publishing owner-only local files

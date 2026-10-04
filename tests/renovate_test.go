@@ -60,12 +60,16 @@ func TestRenovatePolicy(t *testing.T) {
 		}
 		require.True(t, found, "manual review for %s", testCase.value)
 	}
-	blockedGoogleAPI, usesOpenTofuRegistry := false, false
+	blockedGoogleAPI, usesOpenTofuRegistry, agedVersionUpdates := false, false, false
 	for _, value := range rules {
 		rule := value.(object)
 		names, _ := rule["matchPackageNames"].([]any)
 		if slices.Contains(names, any("google.golang.org/api")) && rule["allowedVersions"] == "<0.299.0 || >0.299.0" {
 			blockedGoogleAPI = true
+		}
+		// Version-only updates of these files are assessed automatically; their release age bounds that trust.
+		if files, _ := rule["matchFileNames"].([]any); slices.Equal(files, []any{".opentofu-version", "**/versions.tf"}) && rule["minimumReleaseAge"] == "7 days" {
+			agedVersionUpdates = true
 		}
 		datasources, _ := rule["matchDatasources"].([]any)
 		registries, _ := rule["registryUrls"].([]any)
@@ -75,6 +79,7 @@ func TestRenovatePolicy(t *testing.T) {
 	}
 	require.True(t, blockedGoogleAPI)
 	require.True(t, usesOpenTofuRegistry)
+	require.True(t, agedVersionUpdates)
 	// The final rule must override any generic automation rule for these paths.
 	last := rules[len(rules)-1].(object)
 	require.Equal(t, false, last["automerge"])

@@ -105,8 +105,14 @@ A pull request that changes a production OpenTofu root, shared OpenTofu code or 
 the production image manifest needs a verdict for its exact head and current `master` base.
 Renovate version-only image updates are assessed automatically once the normal PR validation
 jobs pass. The automatic path reads current release metadata with trusted `master` code and never
-executes candidate code. Changes to image repositories, enabled components, or any other files need
-human assessment.
+executes candidate code.
+
+Renovate updates that change only OpenTofu, provider, or lock versions are also assessed
+automatically once those jobs pass. Their assessment plans the candidate with the new OpenTofu and
+provider binaries. Renovate holds those releases for a week, and the assessment requires
+Renovate's passing release-age status on the exact head commit, which bounds a compromised upstream
+release. Changes to image repositories or enabled components, any other
+change to a `versions.tf` or lock file, and changes to any other file need human assessment.
 
 For those changes, review the candidate OpenTofu code before authorizing its execution:
 

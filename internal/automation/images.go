@@ -78,9 +78,14 @@ func (c client) content(ctx context.Context, entry blob) (string, error) {
 	return string(data), nil
 }
 
-func (c client) imageCandidate(p pull, t target) bool {
+// renovateCandidate reports whether the PR is the dependency bot's current, ready update from this repository.
+func (c client) renovateCandidate(p pull, t target) bool {
 	return t.current(p, c.repo) && p.Draft != nil && !*p.Draft && p.Head.Repo.FullName == c.repo &&
-		p.ChangedFiles == 1 && p.User.Login == "anovelbot-dependencies[bot]" && p.User.Type == "Bot"
+		p.User.Login == renovateBot && p.User.Type == "Bot"
+}
+
+func (c client) imageCandidate(p pull, t target) bool {
+	return c.renovateCandidate(p, t) && p.ChangedFiles == 1
 }
 
 func (c client) verifyImages(ctx context.Context, t target) (bool, error) {
@@ -91,10 +96,7 @@ func (c client) verifyImages(ctx context.Context, t target) (bool, error) {
 	if err != nil || !c.imageCandidate(p, t) {
 		return false, err
 	}
-	files, err := list[struct {
-		Filename, Status string
-		PreviousFilename string `json:"previous_filename"`
-	}](ctx, c, fmt.Sprintf("/pulls/%d/files?per_page=100", t.Number), "")
+	files, err := list[changedFile](ctx, c, fmt.Sprintf("/pulls/%d/files?per_page=100", t.Number), "")
 	if err != nil || len(files) != 1 || files[0].Filename != manifestPath || files[0].Status != "modified" || files[0].PreviousFilename != "" {
 		return false, err
 	}
@@ -119,6 +121,12 @@ func (c client) verifyImages(ctx context.Context, t target) (bool, error) {
 	if err != nil || !imageValuesOnly(oldContent, newContent) {
 		return false, err
 	}
+	return c.validated(ctx, t, p, c.imageCandidate)
+}
+
+// validated reports whether the candidate's latest trusted CI run passed every validation job and the
+// PR and master still match the assessed tuple. candidate is the update kind's own shape check.
+func (c client) validated(ctx context.Context, t target, p pull, candidate func(pull, target) bool) (bool, error) {
 	w, err := fetch[workflow](ctx, c, "/actions/workflows/main.yaml")
 	if err != nil || !positiveID(w.ID) || w.Path != mainPath {
 		return false, err
@@ -165,14 +173,14 @@ func (c client) verifyImages(ctx context.Context, t target) (bool, error) {
 		return false, err
 	}
 	p, err = c.pull(ctx, t.Number)
-	if err != nil || !c.imageCandidate(p, t) {
+	if err != nil || !candidate(p, t) {
 		return false, err
 	}
 	master, err := c.master(ctx)
 	return master == t.Base, err
 }
 
-func (c client) dispatchImages(ctx context.Context, e event, base string) ([]int64, error) {
+func (c client) dispatchUpdates(ctx context.Context, e event, base string) ([]int64, error) {
 	if e.Action != "completed" || e.Repository.FullName != c.repo || !positiveID(e.WorkflowRun.ID) || !shaPattern.MatchString(base) {
 		return nil, nil
 	}
@@ -220,7 +228,12 @@ func (c client) dispatchImages(ctx context.Context, e event, base string) ([]int
 		}) {
 			continue
 		}
+		operation := "assess-image-update"
 		ok, err := c.verifyImages(ctx, t)
+		if err == nil && !ok {
+			operation = "assess-version-update"
+			ok, err = c.verifyVersions(ctx, t)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -229,7 +242,7 @@ func (c client) dispatchImages(ctx context.Context, e event, base string) ([]int
 		}
 		// One completion advances one request; failed tuples remain for human diagnosis.
 		err = c.request(ctx, "/actions/workflows/drift.yaml/dispatches", "POST", nil,
-			"-f", "ref=master", "-f", "inputs[operation]=assess-image-update",
+			"-f", "ref=master", "-f", "inputs[operation]="+operation,
 			"-f", "inputs[pull_request]="+strconv.FormatInt(t.Number, 10), "-f", "inputs[head_sha]="+t.Head, "-f", "inputs[base_sha]="+base)
 		if err != nil {
 			return nil, err
