@@ -109,7 +109,8 @@ executes candidate code.
 
 Renovate updates that change only OpenTofu, provider, or lock versions are also assessed
 automatically once those jobs pass. Their assessment plans the candidate with the new OpenTofu and
-provider binaries. Renovate holds those releases for a week, and the assessment requires
+provider binaries. Renovate holds major and minor releases for a week and patch releases for six
+hours, so fixes land quickly while new features wait out the longer window. The assessment requires
 Renovate's passing release-age status on the exact head commit, which bounds a compromised upstream
 release. Changes to image repositories or enabled components, any other
 change to a `versions.tf` or lock file, and changes to any other file need human assessment.
