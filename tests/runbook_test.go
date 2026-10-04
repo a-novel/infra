@@ -215,7 +215,7 @@ func TestOperatorDefaults(t *testing.T) {
 		"INFRA_SHARED_VPC_ENABLED":             "true",
 		"INFRA_PUBLIC_API_PROJECT_ID":          "a-novel-public-api-prod",
 		"INFRA_PUBLIC_PROJECT_ID":              "a-novel-public-prod",
-		"INFRA_SERVICE_RELEASE_ZONES":          "{}",
+		"INFRA_SERVICE_RELEASE_ZONES":          `{"json-keys":["private"],"authentication":["public-api"]}`,
 		"INFRA_PGBACKREST_REPOSITORY_SERVICES": "[]",
 	} {
 		require.Equal(t, expected, values[name], name)
