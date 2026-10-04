@@ -632,12 +632,12 @@ run "retains_private_json_keys_without_the_handed_off_public_api" {
       length(google_cloud_run_v2_service.authentication) == 0 &&
       length(google_tags_location_tag_binding.authentication) == 0 &&
       output.application_runtime.authentication == null &&
-      one([
+      length([
         for environment in one(one(google_cloud_run_v2_service.json_keys[0].template).containers).env : environment
         if environment.name == "OTEL"
-      ]).value == "true"
+      ]) == 0
     )
-    error_message = "Production Authentication belongs only to public-api; the legacy root retains JSON Keys telemetry."
+    error_message = "Retirement must not recreate Authentication or add an unapplied telemetry setting to the existing JSON Keys revision."
   }
 }
 
