@@ -101,6 +101,11 @@
       "automerge": false
     },
     {
+      "description": "Hold OpenTofu and provider releases for a week. Their version-only PRs are assessed automatically, which runs the new binaries with the read-only production plan identity, so the release age is what bounds a compromised upstream release.",
+      "matchFileNames": [".opentofu-version", "**/versions.tf"],
+      "minimumReleaseAge": "7 days"
+    },
+    {
       "description": "Refresh the operator module with the native Go manager.",
       "matchManagers": ["gomod"],
       "matchFileNames": ["go.mod"],

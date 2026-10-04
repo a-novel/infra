@@ -142,8 +142,8 @@ func TestWorkflowBoundaries(t *testing.T) {
 	}, refresh.On)
 	require.Empty(t, refresh.Permissions)
 	require.Contains(t, refresh.Jobs["refresh"].If, "allow-resource-deletion")
-	require.Equal(t, object{"group": "image-assessment-request", "cancel-in-progress": false}, refresh.Jobs["assess-images"].Concurrency)
-	for name, command := range map[string]string{"refresh": "infra refresh-deletion-gates", "assess-images": "infra assess-images dispatch"} {
+	require.Equal(t, object{"group": "update-assessment-request", "cancel-in-progress": false}, refresh.Jobs["assess-updates"].Concurrency)
+	for name, command := range map[string]string{"refresh": "infra refresh-deletion-gates", "assess-updates": "infra assess-updates dispatch"} {
 		job := refresh.Jobs[name]
 		require.Equal(t, map[string]string{"actions": "write", "contents": "read", "pull-requests": "read"}, job.Permissions)
 		require.Empty(t, job.Environment)
@@ -186,10 +186,11 @@ func TestWorkflowBoundaries(t *testing.T) {
 			auth = i
 		}
 		if s.With["path"] == "candidate" || strings.HasPrefix(s.Uses, "opentofu/") || strings.Contains(s.Run, "resolve-resource-deletion-assessment.sh") {
-			require.Equal(t, "inputs.operation == 'assess-pull-request' || inputs.operation == 'assess-pending-foundation'", s.If)
+			require.Equal(t, "inputs.operation == 'assess-pull-request' || inputs.operation == 'assess-pending-foundation' || inputs.operation == 'assess-version-update'", s.If)
 		}
 		if strings.Contains(s.Run, "resolve-resource-deletion-assessment.sh") {
 			authorize = i
+			require.Contains(t, s.Run, "infra assess-versions verify")
 		}
 		if s.With["path"] == "candidate" {
 			candidate = i

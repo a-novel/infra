@@ -19,6 +19,7 @@ on:
             assess-pull-request,
             assess-pending-foundation,
             assess-image-update,
+            assess-version-update,
             observe-rollout,
             inspect-operation,
           ]
@@ -58,7 +59,7 @@ run-name: >-
   format('inspect operation {0}/{1} by @{2}', inputs.service, inputs.guard_generation || 'live', github.actor) ||
   inputs.operation == 'observe-rollout' &&
   format('observe rollout {0}/{1}/{2} by @{3}', inputs.service, inputs.release_id, inputs.rollout_id, github.actor) ||
-  (inputs.operation == 'assess-pull-request' || inputs.operation == 'assess-pending-foundation' || inputs.operation == 'assess-image-update') &&
+  (inputs.operation == 'assess-pull-request' || inputs.operation == 'assess-pending-foundation' || inputs.operation == 'assess-image-update' || inputs.operation == 'assess-version-update') &&
   format('resource-deletion assessment PR #{0} {1} onto {2}', inputs.pull_request, inputs.head_sha, inputs.base_sha) ||
   'production drift' }}
 
@@ -267,7 +268,7 @@ jobs:
     if: >-
       github.ref == 'refs/heads/master' &&
       github.event_name == 'workflow_dispatch' &&
-      (inputs.operation == 'assess-pull-request' || inputs.operation == 'assess-pending-foundation' || inputs.operation == 'assess-image-update')
+      (inputs.operation == 'assess-pull-request' || inputs.operation == 'assess-pending-foundation' || inputs.operation == 'assess-image-update' || inputs.operation == 'assess-version-update')
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     # Only partial-operation assessment may read pending protected inputs.
@@ -302,24 +303,32 @@ jobs:
           infra assess-images verify
 
       # This check runs before credentials exist because the candidate plan can
-      # execute providers and external data sources.
-      - name: Resolve maintainer-approved exact candidate
-        if: inputs.operation == 'assess-pull-request' || inputs.operation == 'assess-pending-foundation'
+      # execute providers and external data sources. A maintainer's dispatch
+      # authorizes any candidate. A Renovate update is authorized when it changes
+      # only version values and carries Renovate's passing release-age status.
+      - name: Resolve the authorized exact candidate
+        if: inputs.operation == 'assess-pull-request' || inputs.operation == 'assess-pending-foundation' || inputs.operation == 'assess-version-update'
         id: target
         shell: bash
         env:
+          ASSESSMENT_OPERATION: ${{ inputs.operation }}
           BASE_SHA: ${{ inputs.base_sha }}
           GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ inputs.head_sha }}
           PULL_REQUEST: ${{ inputs.pull_request }}
         run: |
           set -euo pipefail
-          repository="$(./trusted/ops/resolve-resource-deletion-assessment.sh \
-            "${GITHUB_REPOSITORY}" "${PULL_REQUEST}" "${HEAD_SHA}" "${BASE_SHA}")"
+          if [ "${ASSESSMENT_OPERATION}" = assess-version-update ]; then
+            infra assess-versions verify
+            repository="${GITHUB_REPOSITORY}"
+          else
+            repository="$(./trusted/ops/resolve-resource-deletion-assessment.sh \
+              "${GITHUB_REPOSITORY}" "${PULL_REQUEST}" "${HEAD_SHA}" "${BASE_SHA}")"
+          fi
           printf 'repository=%s\n' "${repository}" >>"${GITHUB_OUTPUT}"
 
       - name: Check out the exact candidate without running it
-        if: inputs.operation == 'assess-pull-request' || inputs.operation == 'assess-pending-foundation'
+        if: inputs.operation == 'assess-pull-request' || inputs.operation == 'assess-pending-foundation' || inputs.operation == 'assess-version-update'
         uses: actions/checkout@v7.0.1
         with:
           path: candidate
@@ -341,7 +350,7 @@ jobs:
           version: "581.0.0"
 
       - name: Install OpenTofu
-        if: inputs.operation == 'assess-pull-request' || inputs.operation == 'assess-pending-foundation'
+        if: inputs.operation == 'assess-pull-request' || inputs.operation == 'assess-pending-foundation' || inputs.operation == 'assess-version-update'
         uses: opentofu/setup-opentofu@v2.0.2
         with:
           tofu_version_file: candidate/.opentofu-version
