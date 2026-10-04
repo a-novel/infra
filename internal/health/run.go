@@ -48,23 +48,13 @@ func Run(ctx context.Context, args []string, execute func(context.Context, io.Wr
 		}
 		url = strings.TrimRight(output.String(), "\r\n")
 	}
-	if !regexp.MustCompile(`^https://[a-z0-9]([a-z0-9.-]*[a-z0-9])?\.run\.app$`).MatchString(url) {
+	if !validURL(url) {
 		return stop(70, "The Authentication service URL could not be resolved safely.")
 	}
-	if transport == nil {
-		connection := http.DefaultTransport.(*http.Transport).Clone()
-		connection.DialContext = (&net.Dialer{Timeout: connectTimeout}).DialContext
-		connection.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
-		connection.DisableCompression = true
-		transport = connection
-		defer connection.CloseIdleConnections()
-	}
-	client := &http.Client{
-		Transport: transport, Timeout: timeout,
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-	}
+	client := newClient(transport, connectTimeout, timeout)
+	defer client.CloseIdleConnections()
 	for attempt := 1; attempt <= attempts; attempt++ {
-		down, err := check(ctx, client, url, stderr)
+		down, err := check(ctx, client, "authentication", url, stderr)
 		if err != nil {
 			return stop(70, err.Error())
 		}
@@ -86,44 +76,65 @@ func Run(ctx context.Context, args []string, execute func(context.Context, io.Wr
 	return stop(70, "Authentication or one of its declared dependencies is unhealthy.")
 }
 
+func validURL(url string) bool {
+	return len(url) <= 253 && regexp.MustCompile(`^https://[a-z0-9]([a-z0-9.-]*[a-z0-9])?\.run\.app$`).MatchString(url)
+}
+
+func newClient(transport http.RoundTripper, connectTimeout, timeout time.Duration) *http.Client {
+	if transport == nil {
+		connection := http.DefaultTransport.(*http.Transport).Clone()
+		connection.DialContext = (&net.Dialer{Timeout: connectTimeout}).DialContext
+		connection.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+		connection.DisableCompression = true
+		transport = connection
+	}
+	return &http.Client{
+		Transport: transport, Timeout: timeout,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+}
+
 // check permits retries only for the validated dependency-down contract.
-func check(ctx context.Context, client *http.Client, url string, stderr io.Writer) (bool, error) {
+func check(ctx context.Context, client *http.Client, service, url string, stderr io.Writer) (bool, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url+"/v2/healthcheck", nil)
 	if err != nil {
-		return false, errors.New("authentication health request is invalid")
+		return false, errors.New("service health request is invalid")
 	}
 	request.Header.Set("Accept", "application/json")
 	response, err := client.Do(request)
 	if err != nil {
-		return false, errors.New("authentication HTTPS request failed or exceeded its limits")
+		return false, errors.New("service HTTPS request failed or exceeded its limits")
 	}
 	defer func() { _ = response.Body.Close() }() // No response data is used after the bounded read.
 	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusServiceUnavailable {
-		return false, fmt.Errorf("authentication endpoint returned HTTP %d", response.StatusCode)
+		return false, fmt.Errorf("service endpoint returned HTTP %d", response.StatusCode)
 	}
 	data, err := io.ReadAll(io.LimitReader(response.Body, 4097))
 	if err != nil || len(data) > 4096 {
-		return false, errors.New("authentication health response failed or exceeded its limits")
+		return false, errors.New("service health response failed or exceeded its limits")
 	}
 	var dependencies map[string]map[string]string
 	components := []string{"api:jsonKeys", "client:postgres", "client:smtp"}
+	if service == "json-keys" {
+		components = []string{"client:postgres"}
+	}
 	if json.Unmarshal(data, &dependencies) != nil || len(dependencies) != len(components) {
-		return false, errors.New("authentication returned an unexpected health response schema")
+		return false, errors.New("service returned an unexpected health response schema")
 	}
 	down := false
 	for _, component := range components {
 		dependency := dependencies[component]
 		if len(dependency) != 1 || (dependency["status"] != "up" && dependency["status"] != "down") {
-			return false, errors.New("authentication returned an unexpected health response schema")
+			return false, errors.New("service returned an unexpected health response schema")
 		}
 		down = down || dependency["status"] == "down"
 	}
 	if !down && response.StatusCode != http.StatusOK {
-		return false, errors.New("authentication endpoint returned HTTP 503 with healthy dependencies")
+		return false, errors.New("service endpoint returned HTTP 503 with healthy dependencies")
 	}
 	if down {
 		for _, component := range components {
-			_, _ = fmt.Fprintf(stderr, "Authentication health: %s=%s\n", component, dependencies[component]["status"]) // Validated fixed names and enums only.
+			_, _ = fmt.Fprintf(stderr, "%s health: %s=%s\n", service, component, dependencies[component]["status"]) // Validated fixed names and enums only.
 		}
 	}
 	return down, nil

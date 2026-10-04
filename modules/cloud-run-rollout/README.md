@@ -125,10 +125,14 @@ the image; publication requires a separate opt-in and approval. Verified provena
 into the selected project's registry remain activation prerequisites. A dummy successful container
 would defeat the gate.
 
-The current verifier supports the dedicated JSON Keys private gRPC pilot only. The shared permission
-definitions do not expand that executable contract. Service-specific image namespaces, other API
-protocols and shared submission inputs must be reviewed before enrollment; the shared-root guard
-and suspended pipeline remain in place meanwhile.
+The verifier supports the dedicated JSON Keys gRPC pilot and shared private JSON Keys gRPC or
+public-api JSON Keys/Authentication REST. `EXPECTED_ZONE` selects exact service-specific image
+repositories and probe identities; an empty value retains dedicated naming. Private gRPC requires
+internal ingress and the Invoker IAM check. Public REST requires public ingress and the disabled
+Invoker IAM check used by the existing REST deployment. Its health request sends no credentials,
+follows no redirects and checks the complete declared dependency set. Authentication private gRPC
+and platform workloads are unsupported. The shared-root guard and suspended pipeline remain in
+place; manifest/submission enrollment, image promotion and ownership reconciliation precede activation.
 
 The verifier must:
 

@@ -26,9 +26,13 @@ func TestVerify(t *testing.T) {
 	t.Parallel()
 	for _, testCase := range []struct {
 		name                                string
+		service, zone                       string
 		dispatchFailure, interrupt, changed bool
 	}{
 		{name: "Success"},
+		{name: "Success/SharedPrivate", service: "agora-json-keys-grpc", zone: "private"},
+		{name: "Success/JSONKeysREST", service: "agora-json-keys-rest", zone: "public-api"},
+		{name: "Success/AuthenticationREST", service: "agora-authentication-rest", zone: "public-api"},
 		{name: "Error/AmbiguousInvocation", dispatchFailure: true},
 		{name: "Error/InterruptedWait", interrupt: true},
 		{name: "Error/TrafficChangedAfterProbe", changed: true},
@@ -36,6 +40,9 @@ func TestVerify(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 			config, state, job := fixture(t)
+			if testCase.service != "" {
+				config, state, job = scopedFixture(t, testCase.service, testCase.zone)
+			}
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			var dispatches atomic.Int32
@@ -115,7 +122,7 @@ func TestVerify(t *testing.T) {
 			var output bytes.Buffer
 			err := rollout.Verify(ctx, config, &output, option.WithEndpoint(server.URL), option.WithoutAuthentication())
 			require.EqualValues(t, 1, dispatches.Load(), "an uncertain dispatch must not start a second execution")
-			if testCase.name == "Success" {
+			if strings.HasPrefix(testCase.name, "Success") {
 				require.NoError(t, err)
 				require.Contains(t, output.String(), "execution="+job.Name+"/executions/probe-1")
 			} else {

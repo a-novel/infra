@@ -67,6 +67,7 @@ resource "google_clouddeploy_delivery_pipeline" "service" {
                     EXPECTED_PROJECT_ID     = var.project_id
                     EXPECTED_REGION         = var.region
                     EXPECTED_SERVICE        = var.name
+                    EXPECTED_ZONE           = var.scope == null ? "" : var.scope.zone
                     EXPECTED_PROBE_ACCOUNT  = google_service_account.execution["probe"].email
                     EXPECTED_VERIFIER_IMAGE = var.verification_image
                     EXPECTED_PROBE_NETWORK  = var.probe.network

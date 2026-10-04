@@ -5,6 +5,7 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY cmd/rollout-verifier ./cmd/rollout-verifier
+COPY internal/health ./internal/health
 COPY internal/rollout ./internal/rollout
 RUN go build -ldflags="-s -w" -trimpath -o /rollout-verifier ./cmd/rollout-verifier
 

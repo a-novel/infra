@@ -14,18 +14,24 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/oauth"
 	"google.golang.org/protobuf/types/known/emptypb"
+
+	"github.com/a-novel/infra/internal/health"
 )
 
 // Probe is the payload-free request retained in the exact Cloud Run execution.
 type Probe struct {
 	URL, Audience, Phase, Revision, Image, JobRun string
+	// Service binds the health protocol; empty accepts retained private pilot requests.
+	Service string `json:",omitempty"`
 }
 
 // Validate confines token use to the selected service's serving or candidate URL.
 func (probe Probe) Validate() error {
-	if !regexp.MustCompile(`^https://agora-json-keys-grpc-[a-z0-9.-]+\.run\.app$`).MatchString(probe.Audience) ||
+	service := probe.service()
+	workload, _ := component(service)
+	if workload == "" || !regexp.MustCompile(`^https://`+regexp.QuoteMeta(service)+`-[a-z0-9.-]+\.run\.app$`).MatchString(probe.Audience) ||
 		len(probe.Audience) > 253 || probe.Revision == "" || probe.Image == "" || probe.JobRun == "" {
-		return errors.New("invalid private probe binding")
+		return errors.New("invalid probe binding")
 	}
 	expected := probe.Audience
 	if probe.Phase == "canary-0" {
@@ -39,7 +45,14 @@ func (probe Probe) Validate() error {
 	return nil
 }
 
-// RunProbe authenticates from the job's invoker-only identity and checks dependency health.
+func (probe Probe) service() string {
+	if probe.Service == "" {
+		return "agora-json-keys-grpc"
+	}
+	return probe.Service
+}
+
+// RunProbe checks dependency health; only the private gRPC API receives an identity token.
 func RunProbe(ctx context.Context, input string) error {
 	var probe Probe
 	if len(input) > 4096 || json.Unmarshal([]byte(input), &probe) != nil {
@@ -50,6 +63,10 @@ func RunProbe(ctx context.Context, input string) error {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
+	workload, protocol := component(probe.service())
+	if protocol == "rest" {
+		return health.Check(ctx, workload, probe.URL, nil)
+	}
 	tokenSource, err := idtoken.NewTokenSource(ctx, probe.Audience)
 	if err != nil {
 		return errors.New("probe identity unavailable")
