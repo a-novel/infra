@@ -389,6 +389,20 @@ resource "google_project_iam_member" "internal_cloud_run_invoker" {
   }
 }
 
+resource "google_project_iam_member" "public_api_internal_invoker" {
+  count = contains(keys(local.service_release_boundaries), "authentication/public-api") ? 1 : 0
+
+  project = google_project.workload.project_id
+  role    = "roles/run.servicesInvoker"
+  member  = "serviceAccount:agora-authentication-api@${var.public_api_project_id}.iam.gserviceaccount.com"
+
+  condition {
+    title       = "InternalCloudRunOnly"
+    description = "Authentication may invoke only private internal services."
+    expression  = "resource.matchTagId('${google_tags_tag_key.cloud_run_invocation.id}', '${google_tags_tag_value.cloud_run_invocation["internal"].id}')"
+  }
+}
+
 resource "google_project_iam_member" "recovery_cloud_run_invoker" {
   count = var.recovery_mode ? 1 : 0
 
