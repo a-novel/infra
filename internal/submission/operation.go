@@ -58,7 +58,7 @@ func operate(ctx context.Context, args []string, getenv func(string) string, exe
 	if err != nil {
 		return err
 	}
-	archive, err := sourceArchive(ctx, *directory, request.Release.Annotations["source-commit"])
+	archive, err := input.scope().sourceArchive(ctx, *directory, request.Release.Annotations["source-commit"])
 	if err != nil {
 		return err
 	}

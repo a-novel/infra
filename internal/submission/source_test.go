@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -22,6 +23,25 @@ import (
 
 func TestSource(t *testing.T) {
 	t.Parallel()
+	for _, component := range []struct {
+		name, service, zone string
+		waitlist            bool
+	}{
+		{"Legacy", "", "", false},
+		{"Private", "json-keys", "private", false},
+		{"PublicKeys", "json-keys", "public-api", false},
+		{"Authentication", "authentication", "public-api", false},
+		{"Waitlist", "authentication", "public-api", true},
+	} {
+		t.Run(component.name, func(t *testing.T) {
+			t.Parallel()
+			testSource(t, component.service, component.zone, component.waitlist)
+		})
+	}
+}
+
+func testSource(t *testing.T, service, zone string, waitlist bool) {
+	t.Helper()
 	type outcome struct {
 		codes            []int
 		uploads, created int
@@ -48,10 +68,23 @@ func TestSource(t *testing.T) {
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
-			directory := sourceCheckout(t)
-			file := filepath.Join(directory, "deploy/cloud-deploy/json-keys/service.yaml")
+			source := "json-keys"
+			files := []string{"skaffold.yaml", "service.yaml"}
+			if zone == "public-api" {
+				source = service + "-rest"
+			}
+			if service == "authentication" {
+				files = append(files, "skaffold-waitlist.yaml", "service-waitlist.yaml")
+			}
+			directory := sourceCheckout(t, source)
+			manifest := "service.yaml"
+			if waitlist {
+				manifest = "service-waitlist.yaml"
+			}
+			sourcePath := "deploy/cloud-deploy/" + source + "/" + manifest
+			file := filepath.Join(directory, sourcePath)
 			expected := map[string]string{}
-			for _, name := range []string{"skaffold.yaml", "service.yaml"} {
+			for _, name := range files {
 				data, err := os.ReadFile(filepath.Join(filepath.Dir(file), name))
 				require.NoError(t, err)
 				expected[name] = string(data)
@@ -70,7 +103,7 @@ func TestSource(t *testing.T) {
 				require.NoError(t, os.WriteFile(file, bytes.Repeat([]byte("x"), 17<<10), 0o644))
 				commitSource(t, directory)
 			case "dirty", "replace":
-				original := gitSource(t, directory, "rev-parse", "HEAD:deploy/cloud-deploy/json-keys/service.yaml")
+				original := gitSource(t, directory, "rev-parse", "HEAD:"+sourcePath)
 				require.NoError(t, os.WriteFile(file, []byte("private-input"), 0o644))
 				require.NoError(t, os.WriteFile(filepath.Join(filepath.Dir(file), "untracked.json"), []byte("private-input"), 0o600))
 				if testCase.local == "replace" {
@@ -80,6 +113,15 @@ func TestSource(t *testing.T) {
 			}
 			request := fixture(t)
 			sourceName := bindSource(t, request, directory)
+			args := arguments(t, "publish-release-source", "", directory)
+			args = args[:len(args)-1]
+			if zone != "" {
+				var scopeArgs []string
+				request, scopeArgs = sharedFixture(t, directory, service, zone, waitlist)
+				sourceName = strings.TrimPrefix(request.Release.SkaffoldConfigUri, "gs://"+bucket+"/")
+				args = append([]string{"publish-release-source"}, scopeArgs...)
+				args = append(args, "--source-dir="+directory)
+			}
 			if testCase.local == "commit" {
 				// Keep a real, readable source commit while moving HEAD elsewhere: a
 				// missing-object failure must not mask the checkout-identity check.
@@ -88,6 +130,7 @@ func TestSource(t *testing.T) {
 			}
 			path := filepath.Join(t.TempDir(), "request.json")
 			require.NoError(t, os.WriteFile(path, wire(t, request), 0o600))
+			args = append(args, path)
 			var stored []byte
 			switch testCase.remote {
 			case "conflict":
@@ -137,9 +180,10 @@ func TestSource(t *testing.T) {
 			var codes []int
 			for range testCase.attempts {
 				var output bytes.Buffer
-				codes = append(codes, submission.Run(t.Context(), arguments(t, "publish-release-source", path, directory), &output, &output,
+				codes = append(codes, submission.Run(t.Context(), args, &output, &output,
 					option.WithEndpoint(server.URL), option.WithoutAuthentication()))
-				require.NotContains(t, output.String(), "private-")
+				require.NotContains(t, output.String(), "private-input")
+				require.NotContains(t, output.String(), "private-provider-detail")
 			}
 			mutex.Lock()
 			got.codes = codes

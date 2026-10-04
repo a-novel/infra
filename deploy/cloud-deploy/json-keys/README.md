@@ -72,7 +72,9 @@ definition is its recovery path. Verification incurs ordinary job/build/log usag
 The module owns deploy, verifier and probe identities, with the
 [execution grants and artifact storage](../../../modules/cloud-run-rollout/README.md#execution-authority-and-storage)
 declared in HCL. Application runtime and release submission identities remain separately owned.
-API deployment/invocation is project-scoped; this must be a JSON Keys-only workload project.
+API deployment/invocation is service-scoped. Shared-project source preparation uses the
+[service and trust-zone contract](../../../docs/runbooks/submit-release.md#shared-zone-source-preparation);
+the protected caller described here still accepts only the dedicated pilot.
 Probe execution is job-scoped, and the probe has no direct database, secret or storage access.
 Effective inherited access still needs inspection and negative live tests.
 The network/subnet pair comes from the foundation-owned Shared VPC host, not a duplicate service VPC.

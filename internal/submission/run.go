@@ -17,12 +17,14 @@ import (
 	"google.golang.org/api/storage/v1"
 )
 
-// Run publishes source and reconciles recorded outcomes without dispatching native work.
+// Run validates or publishes source and reconciles outcomes without dispatching native work.
 // Migration reconciliation may publish execution evidence; guard cleanup remains separately protected.
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer, options ...option.ClientOption) int {
 	if err := run(ctx, args, stdout, options...); err != nil {
 		_, _ = fmt.Fprintln(stderr, err)
-		if len(args) > 0 && args[0] == "publish-release-source" {
+		if len(args) > 0 && args[0] == "validate-release-source" {
+			_, _ = fmt.Fprintln(stderr, "Stop. Correct the selected source or request; offline validation has not contacted Google.")
+		} else if len(args) > 0 && args[0] == "publish-release-source" {
 			_, _ = fmt.Fprintln(stderr, "Stop. Inspect the source object and checkout; retry only publication with the same inputs. Never delete or overwrite conflicting source. No release submitted. See docs/runbooks/submit-release.md.")
 		} else {
 			_, _ = fmt.Fprintln(stderr, "Stop. Reconcile the same release identity; do not delete intent, change IDs, or rerun migrations. See docs/runbooks/submit-release.md.")
@@ -34,7 +36,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, options .
 
 func run(ctx context.Context, args []string, output io.Writer, options ...option.ClientOption) error {
 	if len(args) == 0 || !slices.Contains([]string{
-		"publish-release-source", "reconcile-release", "reconcile-rollout", "reconcile-migration",
+		"validate-release-source", "publish-release-source", "reconcile-release", "reconcile-rollout", "reconcile-migration",
 	}, args[0]) {
 		return errors.New("expected source publication or reconciliation; deployment requires the protected service-release caller")
 	}
@@ -45,7 +47,9 @@ func run(ctx context.Context, args []string, output io.Writer, options ...option
 	flags.StringVar(&scope.ProjectNumber, "project-number", "", "reviewed service project number")
 	flags.StringVar(&scope.Region, "region", "", "reviewed region")
 	flags.StringVar(&scope.ReceiptBucket, "receipt-bucket", "", "private management receipt bucket")
-	fromFile := args[0] == "publish-release-source"
+	flags.StringVar(&scope.Service, "service", "", "reviewed service repository in shared scope")
+	flags.StringVar(&scope.Zone, "zone", "", "reviewed private or public-api trust zone")
+	fromFile := args[0] == "publish-release-source" || args[0] == "validate-release-source"
 	var sourceDirectory string
 	if fromFile {
 		flags.StringVar(&sourceDirectory, "source-dir", ".", "trusted checkout at the exact source commit")
@@ -56,6 +60,9 @@ func run(ctx context.Context, args []string, output io.Writer, options ...option
 	}
 	if err := scope.validate(); err != nil {
 		return err
+	}
+	if scope.Zone != "" && args[0] != "validate-release-source" && args[0] != "publish-release-source" && args[0] != "reconcile-release" {
+		return errors.New("shared rollout and migration reconciliation require the private-owner handoff")
 	}
 	if *timeout <= 0 || *timeout > 30*time.Minute {
 		return errors.New("timeout must be positive and at most 30m")
@@ -79,7 +86,7 @@ func run(ctx context.Context, args []string, output io.Writer, options ...option
 		if err != nil {
 			return err
 		}
-		archive, err = sourceArchive(ctx, sourceDirectory, request.Release.Annotations["source-commit"])
+		archive, err = scope.sourceArchive(ctx, sourceDirectory, request.Release.Annotations["source-commit"])
 		if err != nil {
 			return err
 		}
@@ -87,6 +94,10 @@ func run(ctx context.Context, args []string, output io.Writer, options ...option
 	}
 	if !releasePattern.MatchString(id) {
 		return errors.New("expected a single exact release ID")
+	}
+	if args[0] == "validate-release-source" {
+		_, err := fmt.Fprintln(output, "PASS exact committed API source and native request; no cloud client initialized or work dispatched.")
+		return err
 	}
 	if _, err := fmt.Fprintf(output, "Release: %s/releases/%s\nIntent: gs://%s/%s\n", scope.parent(), id, scope.ReceiptBucket, scope.intentName(id)); err != nil {
 		return errors.New("cannot record selected release identity")

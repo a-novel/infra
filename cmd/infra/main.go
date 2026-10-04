@@ -94,7 +94,7 @@ func main() {
 	} else if len(os.Args) > 1 && os.Args[1] == "service-release" {
 		code = submission.Operation(ctx, os.Args[2:], os.Getenv, quiet, artifact.NewClient(), os.Stdout, os.Stderr)
 	} else if len(os.Args) > 1 && slices.Contains([]string{
-		"publish-release-source", "reconcile-release", "reconcile-rollout", "reconcile-migration",
+		"validate-release-source", "publish-release-source", "reconcile-release", "reconcile-rollout", "reconcile-migration",
 	}, os.Args[1]) {
 		code = submission.Run(ctx, os.Args[1:], os.Stdout, os.Stderr)
 	} else if len(os.Args) > 1 && os.Args[1] == "check-health" {
