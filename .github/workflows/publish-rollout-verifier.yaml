@@ -1,4 +1,4 @@
-# The filename is part of the existing verifier's attestation signer identity.
+# Preserve the filename: it is part of the retained host tools' attestation signer identity.
 name: publish infrastructure tooling
 
 on:
@@ -7,9 +7,8 @@ on:
       tool:
         description: Reviewed tooling image to build
         type: choice
-        default: rollout-verifier
+        default: host-credentials
         options:
-          - rollout-verifier
           - host-credentials
           - native-restore
       publish:
@@ -25,7 +24,7 @@ env:
   TOOL: ${{ inputs.tool }}
 
 concurrency:
-  group: rollout-verifier-publication
+  group: infrastructure-tooling-publication
   cancel-in-progress: false
 
 jobs:
@@ -41,9 +40,8 @@ jobs:
       - name: Reject an unapproved publication context
         if: >-
           github.repository != 'a-novel/infra' || github.ref != 'refs/heads/master' ||
-          !contains(fromJSON('["rollout-verifier", "host-credentials", "native-restore"]'), inputs.tool) ||
+          !contains(fromJSON('["host-credentials", "native-restore"]'), inputs.tool) ||
           (inputs.publish && !(
-            (inputs.tool == 'rollout-verifier' && vars.ROLLOUT_VERIFIER_PUBLICATION_ENABLED == 'true') ||
             (inputs.tool == 'host-credentials' && vars.HOST_CREDENTIALS_PUBLICATION_ENABLED == 'true') ||
             (inputs.tool == 'native-restore' && vars.NATIVE_RESTORE_PUBLICATION_ENABLED == 'true')
           ))
@@ -77,13 +75,12 @@ jobs:
     needs: build
     if: >-
       inputs.publish && github.repository == 'a-novel/infra' && github.ref == 'refs/heads/master' && (
-        (inputs.tool == 'rollout-verifier' && vars.ROLLOUT_VERIFIER_PUBLICATION_ENABLED == 'true') ||
         (inputs.tool == 'host-credentials' && vars.HOST_CREDENTIALS_PUBLICATION_ENABLED == 'true') ||
         (inputs.tool == 'native-restore' && vars.NATIVE_RESTORE_PUBLICATION_ENABLED == 'true')
       )
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    environment: ${{ inputs.tool == 'rollout-verifier' && 'rollout-artifacts' || 'host-artifacts' }}
+    environment: host-artifacts
     permissions:
       contents: read
       packages: write

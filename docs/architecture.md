@@ -14,8 +14,10 @@ uses the same layered idea at organization scale, and its
 separates foundation, infrastructure, and application pipelines.
 
 This repository keeps the parts that reduce risk for a small team and leaves out the enterprise
-fleet. It has one production environment, two projects, three state roots, and no permanent staging,
-central policy engine, organization hierarchy, shared-VPC fleet, or Kubernetes control plane.
+fleet. Production uses a management project and three workload trust zones: private, public-api and
+public. JSON Keys and Authentication each keep one database VM in private; API components of the same
+service share that database. Public is reserved for platforms and has no private network attachment.
+Staging and Kubernetes remain deferred.
 
 | Principle                                | How this repository applies it                                                                                   | Primary reference                                                                                                                              |
 | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -33,12 +35,16 @@ workflows apply accepted desired state and a scheduled read-only drift check det
 This is a GitOps-style delivery model, not strict OpenGitOps conformance: no continuously pulling
 controller currently reconciles the platform.
 
-The [service-owned Cloud Deploy pilot](../modules/cloud-run-rollout/README.md) is inactive. It
-declares a future API rollout owner without changing any production root, service, or workflow.
-The [service-operation contract](./service-operations.md) covers admission, ownership and interruption
-recovery across the whole deployment path. Guarded service-root apply is implemented; native callers,
-scheduled work and protected recovery are not yet enrolled, so end-to-end exclusion remains a gate.
-The ownership descriptions below still describe the active production path.
+The [service-release root](../environments/service-release) declares API revisions, traffic and jobs
+directly in HCL. Its shared API writer remains disabled pending resource ownership handoff. The
+[release sequence](./runbooks/submit-release.md) uses native Cloud Run traffic targets and retains
+migration, health and private-plan checks. The working production path described below remains
+the owner until that handoff is proven.
+
+The maintenance rule is one owner per concern: HCL for resources, protected GitHub Actions for the
+sequence, and systemd/pgBackRest for database processes and recovery. Custom code is limited to gaps
+those native mechanisms do not cover, such as provenance, private plan custody and uncertain job
+outcomes. The [service-operation contract](./service-operations.md) explains those retained boundaries.
 
 ## Vocabulary
 

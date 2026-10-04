@@ -207,15 +207,15 @@ tooling into protected `master` before using this mode for a candidate PR.
 
 - The [project module](../../modules/workload-project/README.md) creates protected project shells,
   enables APIs, deprivileges default accounts, grants foundation maintenance and plan inspection,
-  creates the Google-managed Run/Build/Deploy/Scheduler/Compute agents with their documented roles, and bounds default
+  creates the Google-managed Run/Build/Scheduler/Compute agents with their documented roles, and bounds default
   logs. Each service also gets a keyless release account, an exact federation
   provider, and managed folders for its state and receipts in the management buckets.
 - Foundation enables the existing workload project as a Shared VPC host and attaches each shell.
   It owns the VPC, subnet, routes, firewall rules, and DNS. Both host and attachment have deletion
   guards. The Cloud Run agent receives host Network Viewer; Cloud Run, the Google APIs MIG agent
   and protected foundation receive Network User on the exact production subnet. The MIG agent gets
-  its documented instance-management role only in its service project. The secret-free rollout probe tag joins the existing restricted Google HTTPS
-  allow; it gains no database egress.
+  its documented instance-management role only in its service project. Service registration does not widen
+  the existing HTTPS or database egress rules.
 - The existing production budget includes the new project numbers. Its amount, thresholds, and
   notification channels remain unchanged. No paid runtime or network appliance is provisioned.
 
@@ -274,8 +274,8 @@ registry, runtime, database, secrets, backups, retained receipts, and health/rol
 shared foundation remains privileged, and release concurrency stays serialized until those service
 boundaries have been verified.
 
-The inactive [service foundation root](../../environments/service-foundation) composes the runtime,
-rollout control plane and application-job access using those published project coordinates. Its
+The inactive [service foundation root](../../environments/service-foundation) composes runtime
+identities and application-job access using those published project coordinates. Its
 bootstrap sequence keeps prerequisites separate from activation. Its protected planning path below
 is disabled by default, as is the separate job bootstrap below. This runbook does
 not authorize provisioning either root.
@@ -339,7 +339,7 @@ runtime-only entry; use reviewed real coordinates before publication:
 }
 ```
 
-Keep payloads out of this document. Optional database/rollout/job-access inputs follow the
+Keep payloads out of this document. Optional database/job-access inputs follow the
 [root's bootstrap sequence](../../environments/service-foundation#bootstrap-sequence). The selected
 service/project must match `FOUNDATION_TFVARS_JSON.service_projects`; management and region must
 match the same protected document. Management and bucket must also match the published repository
@@ -382,7 +382,7 @@ releasing the service. After failure or interruption, preserve the guard and ins
 state and accepted cloud operations. A fresh plan does not unlock the service; protected recovery
 must establish that the previous writer can no longer mutate it. No automatic unlock is available.
 Never replay a consumed plan or assume a failed run made no changes. This path does
-not transfer an existing resource owner, start PostgreSQL, run a migration or activate Cloud Deploy.
+not transfer an existing resource owner, start PostgreSQL, run a migration or deploy an API.
 The root also publishes [content-addressed coordinates](../../environments/service-foundation#published-coordinates)
 using the native storage provider. Only its service's release account gets read access to the
 coordinate folder; its foundation state stays private. Record the `coordinates` output from the
@@ -414,7 +414,7 @@ Prepare `SERVICE_JOB_BOOTSTRAPS_JSON` for `production-foundation`, keyed by `jso
 `authentication`, like the service-foundation map above. Each entry contains the
 [release root's native inputs](../../environments/service-release#inputs-and-execution-boundary),
 including its independently approved service/project/region/backend, network, promoted job digests,
-numeric secret versions and exact `foundation` reference. Omit `foundation_json` and leave `rollout`
+numeric secret versions and exact `foundation` reference. Omit `foundation_json` and leave `api`
 unset. Preserve other service entries. After separate authorization, publish the reviewed private file:
 
 ```sh
@@ -473,7 +473,7 @@ Assessment stops while the guard exists or state lacks converged inputs.
 After success, disable bootstrap, verify the jobs without executing them, and install exact-job access
 through the separate service-foundation plan. Prove a zero-change plan with the routine identity and
 complete the interruption/IAM-denial checks before connecting routine release. Migration execution,
-rotation activation, Cloud Deploy submission and workload cutover remain separately approved work.
+rotation activation, API deployment and workload cutover remain separately approved work.
 
 ## Protected service image publication
 

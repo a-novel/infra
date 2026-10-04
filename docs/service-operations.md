@@ -1,25 +1,21 @@
 # Service-operation contract
 
-**Contract for the inactive service-owned pilot, not a production guarantee.**
-This contract advances [interrupted-release recovery](https://github.com/a-novel/infra/issues/189)
-and [ownership transfer](https://github.com/a-novel/infra/issues/187). Implementation and live
-activation remain separate review gates.
+This document covers exclusion and interruption recovery for protected infrastructure operations.
+Implementation and live activation remain separate review gates.
 
 ## What exists, and what is missing
 
 The current [foundation](../.github/workflows/foundation.yaml) and
 [release](../.github/workflows/release.yaml) workflows serialize production writes through
 `production-infrastructure`. Keep that working boundary until every replacement writer participates.
-The pilot's [guarded caller](runbooks/submit-release.md#guarded-established-release) preserves immutable
-intent and dispatches native work under the same service guard as service-root applies and native
-rotation. Standalone commands only publish source or reconcile recorded outcomes. Unenrolled
-legacy/shared-root writers and recovery execution still prevent activation. Native recovery host
-preparation, file restoration and optional offline SQL verification participate as described below.
+Service-root applies, native rotation and disposable recovery use the persistent guard described
+below. Shared API releases are not yet enrolled. The [HCL release sequence](runbooks/submit-release.md)
+must retain migration admission and evidence before replacing the working production path.
 
 An **operation** is one reviewed change to one service, including the work needed to leave it in a
 known state. A **guard** admits that operation and blocks another. A **request intent** prevents replay
 of one mutation. Native **execution evidence** establishes what actually happened. None substitutes
-for the others, and successful rendering is not a completed deployment.
+for the others, and a successful plan is not a completed deployment.
 
 ### Implemented: service-root apply
 
@@ -53,9 +49,8 @@ receipt bucket. Both zones of one service share
 existing foundation reader/writer grants. Read-only assessment inventories every registered
 prerequisite scope and blocks on held or orphaned guards. The existing logical-service inspect
 and finish commands resolve this common guard without selecting a current zone configuration.
-Suspended API pipeline setup also uses this path, with the exact private database handoff and
-private-project probe network. It does not create APIs or dispatch releases. Database/repository
-hosts, application jobs and shared runtime submissions remain blocked pending their ownership handoff.
+Database/repository hosts, application jobs and shared runtime deployment remain blocked pending
+their ownership handoff.
 
 ### Implemented: disposable native host preparation
 
@@ -97,25 +92,6 @@ After writer termination, the finisher can repair missing completion by reading 
 The foundation finisher needs separately reviewed project-read permission only. Failed or uncertain
 restores remain outside normal cleanup; do not delete their guard or destination to bypass reconciliation.
 
-### Implemented: guarded native release
-
-Protected applies and the [native rotation dispatcher](../modules/service-job-access#guarded-rotation)
-now share admission with the [guarded established-release caller](runbooks/submit-release.md#guarded-established-release).
-It holds the guard through source/render, one-shot migration, human approval/advancement, native
-verification, actual-traffic checks and immutable native completion. It leaves guarded rotation's
-schedule unchanged instead of adding another pause/resume controller.
-
-Native completion has a distinct `native-success/RELEASE_ID.json` namespace in the service receipt
-folder. The validated guard supplies the exact record name; the inspector pins its Storage generation
-and verifies that the record belongs to that guard and configuration. The protected finisher can
-clean up the guard after the original writer ends, including after a lost completion-write acknowledgement.
-If native completion is missing, that same finisher can prove exact native success and publish it
-without replaying deployment. These are not legacy recovery receipts; restore consumption still
-requires implementation, and live activation requires an approved drill.
-
-All pilot activation flags remain off by default; legacy production retains its existing global
-serialization and configuration/receipt owners. Do not activate competing writers on this basis.
-
 <a id="inspect-an-interrupted-apply"></a>
 
 ### Inspect an interrupted operation
@@ -146,14 +122,14 @@ infra custody operation inspect <state-bucket> <registered-operation-scope> [gua
 The operation scope is the project ID for dedicated registrations or
 `workloads/production/SERVICE` for shared registrations. Omit the generation to inspect the live guard.
 After a lost removal acknowledgement, supply the
-guard generation acknowledged in the apply, native-release or rotation record; removed versions remain readable
+guard generation acknowledged in the apply or rotation record; removed versions remain readable
 subject to the bucket's retention/lifecycle policies. If admission itself was not acknowledged, inspect the live guard
 without treating its presence as permission to adopt it. Do not substitute configuration from
 candidate code or print the protected registration.
 
 The command uses Google's existing authentication/client and needs only object reads on the selected
-guard, completion and configuration records. Native release and rotation records also need the declared
-service-local `native-success/` and `rotations/` read grants, provisioned by a separately approved foundation apply.
+guard, completion and configuration records. Rotation records also need the declared
+service-local `rotations/` read grant, provisioned by a separately approved foundation apply.
 The inspector requests read-only Storage scope, checks registration
 before credentials, and never requests write authority.
 
@@ -162,16 +138,6 @@ bytes/generation, completion intent, and referenced configuration generation/has
 bounded and generation-pinned; denied, malformed, missing referenced versions or changing guard
 observations return non-success without private payloads. A successfully observed missing completion
 is reported as incomplete, not as proof that no resources changed.
-
-For `native-release`, the report identifies the original workflow attempt and exact release/rollout.
-It checks the stored configuration hash, completion's guard generation, native request identity,
-and recorded render, approval, candidate and stable verification. Inspection works with the writer
-disabled and a newer master commit; it uses the recorded source commit. It does not fetch current
-Cloud Deploy/Run status or migration executions. Use the separately authorized
-[rollout observer](runbooks/submit-release.md) for current native progress. A missing native completion
-record leaves the operation incomplete. Earlier native records retain the same schema; their separate
-`operations/` pointers are no longer read or written. Existing pointers remain stored, and apply
-completion records in that namespace keep their current contract.
 
 For `scheduled-rotation`, inspection binds the JSON Keys dispatcher execution/revision and guard
 generation to `rotations/WORKFLOW_EXECUTION_ID/success.json`. It validates the recorded native operation,
@@ -190,10 +156,9 @@ repairs evidence or retries apply. See [Storage version selection](https://docs.
 
 ### Finish a successful operation
 
-This **off-by-default** path finishes converged service-root applies, successful native JSON Keys
-releases, successful rotations, recorded native recovery and observed native project deletion.
-Native releases, acknowledged rotations and project cleanup can reconstruct a missing completion
-record from their exact native outcome. Applies without recorded convergence,
+This **off-by-default** path finishes converged service-root applies, successful rotations, recorded
+native recovery and observed native project deletion. Acknowledged rotations and project cleanup can
+reconstruct a missing completion record from their exact native outcome. Applies without recorded convergence,
 unacknowledged rotations and unknown record kinds remain blocked.
 
 After inspecting the exact generation, separately approve `SERVICE_OPERATION_RECOVERY_ENABLED=true`
@@ -207,12 +172,11 @@ go run ./cmd/infra foundation finish-operation <service> <guard-generation> 'FIN
 The operation kind and any apply root come from the verified record. Direct workflow dispatches must
 leave `root=none` and `plan_id` empty; extra selectors fail before authentication.
 Approve the protected run. It uses the existing foundation identity and writer concurrency; it does
-not run OpenTofu, publish configuration, execute jobs or mutate Cloud Deploy/Run. Current bootstrap inputs,
+not run OpenTofu, publish configuration, execute jobs or mutate Cloud Run. Current bootstrap inputs,
 images and secret availability are not needed. It verifies the same immutable evidence as inspection.
-Applies and native releases then require the [original GitHub run attempt](https://docs.github.com/en/rest/actions/workflow-runs#get-a-workflow-run-attempt)
+Applies then require the [original GitHub run attempt](https://docs.github.com/en/rest/actions/workflow-runs#get-a-workflow-run-attempt)
 to be completed and bound to the recorded commit and protected workflow action. Apply records bind
-the root/service to `foundation apply`; native records bind the exact `release.yaml` attempt to
-`production deploy-service`. The attempt may have failed after recording success; its conclusion
+the root/service to `foundation apply`. The attempt may have failed after recording success; its conclusion
 is not used as completion evidence.
 
 Rotation instead reads the [exact Workflows execution](https://docs.cloud.google.com/workflows/docs/reference/executions/rest/v1/projects.locations.workflows.executions/get),
@@ -241,16 +205,6 @@ When completion already exists, the only write is deleting the current guard wit
 already-absent guard is a verified no-op. This path checks historical success and writer termination,
 not current application health.
 
-When native completion is missing, the original guard must still be live. Before any write, the shared
-completion proof checks the exact saved request and native release/rollout, successful candidate and
-stable verification, settled private service with all ordinary traffic on the verified revision,
-approved live job UIDs/templates and saved successful migration evidence matching that approved job.
-The finisher then creates the same `native-success/RELEASE_ID.json` with `ifGenerationMatch=0`, and only
-an acknowledged write permits exact guard deletion. It neither overwrites completion nor reconstructs
-missing migration evidence. The existing foundation role declares the three additional metadata reads
-(`clouddeploy.releases.get`, `clouddeploy.rollouts.get`, `run.services.get`) in the selected workload
-project; a separately approved foundation apply and effective-permission check must precede live use.
-
 A successor/absent guard cannot repair missing completion. Active/unknown original attempts, native
 failures or identity conflicts, unavailable evidence and uncertain writes leave admission blocked.
 Reinspect the same generation after an uncertain result: a lost publication acknowledgement may have
@@ -264,17 +218,17 @@ native API normalization and interruption recovery still require a human-approve
 
 ## One owner for each responsibility
 
-| Responsibility                                                         | Owner                          | Boundary                                                                                                    |
-| ---------------------------------------------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| Projects, IAM, private networking, database hosts/disks                | Protected OpenTofu foundation  | Participates in exclusion for every affected service; not routine release authority.                        |
-| Selected application job specifications                                | OpenTofu service-release state | Bootstrap is create-only today; routine updates need an explicit writer handoff.                            |
-| Rotation schedule definition and invocation IAM                        | OpenTofu service foundation    | Creates paused; later pause/resume belongs to operational control, not foundation convergence.              |
-| Scheduled rotation admission, dispatch and completion                  | Google Workflows               | Fixed service/job; same persistent guard, single submission, immutable evidence before release.             |
-| Migrations and rotation executions                                     | Cloud Run Jobs                 | Caller controls admission and records exact execution evidence; migrations remain outside retry hooks.      |
-| Complete API specification, revisions, traffic, deploy/verify progress | Cloud Deploy                   | Sole API writer after handoff; no parallel Go traffic controller.                                           |
-| Admission and final evidence                                           | Small trusted Go caller        | Reuses native adapters; no duplicate rollout controller or schedule toggle loop.                            |
-| Review, bounded tracking and operator handoff                          | GitHub Actions                 | Waits for the exact deployment and verification; reports required action or unknown outcome as non-success. |
-| Alerts when the runner is unavailable                                  | Native Google Cloud monitoring | Notification is not recovery evidence or authority to release a guard.                                      |
+| Responsibility                                          | Owner                          | Boundary                                                                                                    |
+| ------------------------------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| Projects, IAM, private networking, database hosts/disks | Protected OpenTofu foundation  | Participates in exclusion for every affected service; not routine release authority.                        |
+| Selected application job specifications                 | OpenTofu service-release state | Bootstrap is create-only today; routine updates need an explicit writer handoff.                            |
+| Rotation schedule definition and invocation IAM         | OpenTofu service foundation    | Creates paused; later pause/resume belongs to operational control, not foundation convergence.              |
+| Scheduled rotation admission, dispatch and completion   | Google Workflows               | Fixed service/job; same persistent guard, single submission, immutable evidence before release.             |
+| Migrations and rotation executions                      | Cloud Run Jobs                 | Caller controls admission and records exact execution evidence; migrations remain outside retry hooks.      |
+| API specification, revisions and traffic                | OpenTofu service-release state | Sole API writer after handoff; health checks precede a reviewed traffic-only plan.                          |
+| Admission and final evidence                            | Small trusted Go caller        | Reuses native adapters; no duplicate rollout controller or schedule toggle loop.                            |
+| Review, bounded tracking and operator handoff           | GitHub Actions                 | Waits for the exact deployment and verification; reports required action or unknown outcome as non-success. |
+| Alerts when the runner is unavailable                   | Native Google Cloud monitoring | Notification is not recovery evidence or authority to release a guard.                                      |
 
 The dormant pilot database is still foundation-owned. This contract does not authorize a routine
 writer to change its metadata or declare it ready. Database activation, backup proof and maintenance
@@ -283,12 +237,12 @@ Application compensation never restores an old database backup or reverses concu
 
 ## Use existing mechanics; add only service admission
 
-| Existing mechanism                                                                                                                      | Keep it for                                | Why it does not cover the whole operation                                        |
-| --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------- |
-| [GitHub concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency) | Serializing live trusted writer jobs       | Its lifecycle is the GitHub job/run, not accepted work still running in Google.  |
-| OpenTofu backend lock                                                                                                                   | Protecting one state transaction           | Separate roots and post-apply migrations/rollouts are outside that lock.         |
-| [Cloud Deploy](https://docs.cloud.google.com/deploy/docs/architecture)                                                                  | Native rollout execution and recovery      | It does not own foundation changes, external migrations or our recovery receipt. |
-| Immutable release/request intents                                                                                                       | One-shot dispatch and later reconciliation | Another release ID can reserve different intents for the same service.           |
+| Existing mechanism                                                                                                                      | Keep it for                                | Why it does not cover the whole operation                                       |
+| --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------- |
+| [GitHub concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency) | Serializing live trusted writer jobs       | Its lifecycle is the GitHub job/run, not accepted work still running in Google. |
+| OpenTofu backend lock                                                                                                                   | Protecting one state transaction           | Separate roots and post-apply migrations/rollouts are outside that lock.        |
+| [Cloud Run](https://docs.cloud.google.com/run/docs/rollouts-rollbacks-traffic-migration)                                                | Revision convergence and traffic targets   | It does not prove database migration completion or recovery evidence.           |
+| Immutable release/request intents                                                                                                       | One-shot dispatch and later reconciliation | Another release ID can reserve different intents for the same service.          |
 
 The admission primitive is **one persistent guard object per service**, using the existing official
 Storage client. Dedicated registrations use `services/PROJECT_ID/release/operation.json`; shared
@@ -310,7 +264,7 @@ inspecting that generation and its completion evidence, never by deleting the cu
 Native generation checks provide the storage primitive; Agora retains only the admission policy.
 
 This is a cooperative trusted-tooling boundary, **not fencing of other cloud APIs**: a GCS generation
-cannot invalidate a delayed Cloud Run or Cloud Deploy request. All conflicting mutating callers must participate.
+cannot invalidate a delayed Cloud Run request. All conflicting mutating callers must participate.
 Privileged console access and IAM administrators remain explicit human coordination boundaries.
 
 ### Native online backups
@@ -380,8 +334,8 @@ gates. See the [prepared backup path](../environments/service-foundation/README.
    one empty execution list proves quiescence. Never touch an unrelated service's schedule.
 3. **Execute through the existing owners.** Apply only the selected reviewed plan; bind submission
    to its converged job configuration. Persist request intent, dispatch a migration once, then require
-   its exact successful evidence before rollout. Cloud Deploy owns deployment/verification/traffic;
-   approval and advancement stay within this operation's exclusion. Unknown outcomes stop progression.
+   its exact successful evidence before promotion. OpenTofu owns API revisions and traffic;
+   health checks and promotion stay within this operation's exclusion. Unknown outcomes stop progression.
 4. **Record and finish.** Verify the exact candidate and stable phases, publish the immutable recovery
    receipt, then confirm the intended compatible schedule state. Publish immutable operation-completion
    evidence binding the guard generation to the settled native work and receipt. Only then release
@@ -440,12 +394,12 @@ force-unlock merely because a run is old or a health check currently passes.
 ## Implementation and retirement gates
 
 Deliver admission and completion with all participating callers, not another standalone helper that
-leaves safety to undocumented callers. Keep native SDK waiting and Cloud Deploy recovery; test the
+leaves safety to undocumented callers. Keep native SDK waiting and provider convergence; test the
 small decision boundary with table cases for competing owners, lost acknowledgements, ambiguous
 execution, missing receipts and stale-generation cleanup. Do not recreate a fake cloud in unit tests.
 
-The inactive JSON Keys workflow now connects the native path without activating it. Its native
-completion still needs restore consumption; unacknowledged rotations and incomplete applies need separate reconciliation.
+Shared API deployment remains disabled until its HCL plan, migration and health evidence are connected
+under one guard. Unacknowledged rotations and incomplete applies need separate reconciliation.
 Recorded-success cleanup uses the protected finisher above. A separately approved
 interruption/cutover drill must prove service isolation, scheduled-work exclusion,
 credential boundaries, operator recovery and receipt repair. Only that evidence permits replacing

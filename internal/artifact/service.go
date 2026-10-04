@@ -14,14 +14,18 @@ import (
 // resource contract; the protected workflow authorizes project/backend ownership.
 type serviceInputs struct {
 	Service    string            `json:"service"`
+	Zone       string            `json:"zone"`
 	Project    string            `json:"project_id"`
 	Management string            `json:"management_project_id"`
 	Region     string            `json:"region"`
 	Images     map[string]string `json:"images"`
 	Secrets    map[string]int64  `json:"secret_versions"`
-	Rollout    *struct {
+	API        *struct {
 		Image string `json:"image"`
-	} `json:"rollout"`
+	} `json:"api"`
+	Authentication *struct {
+		WaitlistURL *string `json:"waitlist_url"`
+	} `json:"authentication"`
 }
 
 func readService(file string) (serviceInputs, error) {
@@ -45,13 +49,22 @@ func parseService(data []byte) (serviceInputs, error) {
 		!regexp.MustCompile(`^[a-z]+-[a-z]+[1-9][0-9]*$`).MatchString(inputs.Region) {
 		return inputs, errors.New("invalid service coordinates")
 	}
+	if inputs.Zone != "" && inputs.Zone != "private" && inputs.Zone != "public-api" {
+		return inputs, errors.New("invalid selected zone")
+	}
+	if inputs.API != nil && inputs.Service == "authentication" && inputs.Zone != "public-api" {
+		return inputs, errors.New("authentication API belongs in public-api")
+	}
+	if (inputs.Authentication != nil) != (inputs.Zone == "public-api" && inputs.Service == "authentication" && inputs.API != nil) {
+		return inputs, errors.New("invalid Authentication API settings")
+	}
 	secrets := inputs.secretKeys()
 	if len(inputs.Secrets) != len(secrets) {
-		return inputs, errors.New("invalid job secret inventory")
+		return inputs, errors.New("invalid component secret inventory")
 	}
 	for _, key := range secrets {
 		if inputs.Secrets[key] < 1 {
-			return inputs, errors.New("invalid job secret version")
+			return inputs, errors.New("invalid component secret version")
 		}
 	}
 	return inputs, nil
@@ -59,8 +72,14 @@ func parseService(data []byte) (serviceInputs, error) {
 
 func (inputs serviceInputs) secretKeys() []string {
 	keys := []string{"postgres-password"}
-	if inputs.Service == "json-keys" {
+	if inputs.Service == "json-keys" && inputs.Zone != "public-api" {
 		keys = append(keys, "app-master-key")
+	}
+	if inputs.Zone == "public-api" && inputs.Service == "authentication" {
+		keys = append(keys, "smtp-sender-password")
+		if inputs.Authentication != nil && inputs.Authentication.WaitlistURL != nil {
+			keys = append(keys, "waitlist-secret")
+		}
 	}
 	return keys
 }
@@ -69,6 +88,9 @@ func (inputs serviceInputs) bindImages(images []release.SourceImage) error {
 	roles, api := []string{"migrations"}, "rest"
 	if inputs.Service == "json-keys" {
 		roles, api = append(roles, "rotatekeys"), "grpc"
+	}
+	if inputs.Zone == "public-api" {
+		roles, api = nil, "rest"
 	}
 	expected := map[string]string{}
 	for _, image := range images {
@@ -83,13 +105,21 @@ func (inputs serviceInputs) bindImages(images []release.SourceImage) error {
 			return invalid
 		}
 	}
-	if inputs.Rollout != nil && inputs.Rollout.Image != expected[api] {
+	if inputs.API != nil && (expected[api] == "" || inputs.API.Image != expected[api]) {
 		return invalid
 	}
 	return nil
 }
 
 func (inputs serviceInputs) destination(image release.SourceImage) string {
-	return inputs.Region + "-docker.pkg.dev/" + inputs.Project + "/agora-production/" +
+	repository := "agora-production"
+	if inputs.Zone != "" {
+		scope := inputs.Zone
+		if scope == "public-api" {
+			scope = "api"
+		}
+		repository = "agora-" + inputs.Service + "-" + scope + "-production"
+	}
+	return inputs.Region + "-docker.pkg.dev/" + inputs.Project + "/" + repository + "/" +
 		strings.TrimPrefix(image.Repository, "ghcr.io/a-novel/")
 }

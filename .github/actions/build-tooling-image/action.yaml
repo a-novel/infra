@@ -3,7 +3,7 @@ description: Export one credential-free linux/amd64 image for CI inspection or p
 inputs:
   image_name:
     description: Reviewed Dockerfile basename under builds
-    default: rollout-verifier
+    default: host-credentials
 runs:
   using: composite
   steps:

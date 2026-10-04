@@ -49,11 +49,6 @@ variable "database" {
     ]), false)
     error_message = "Select a reviewed e2 profile, leave 1 GiB and 0.5 vCPU for COS, and use bounded disk/connection capacity."
   }
-
-  validation {
-    condition     = var.database == null || var.rollout == null ? true : var.database.subnetwork == var.rollout.subnetwork
-    error_message = "The database and configured rollout must use the same published service subnet."
-  }
 }
 
 resource "google_compute_disk" "database" {

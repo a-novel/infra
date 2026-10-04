@@ -22,10 +22,6 @@ variables {
 run "isolated_application_assets" {
   command = plan
 
-  assert {
-    condition     = length(module.rollout) == 0 && output.rollout == null
-    error_message = "The default foundation must not provision the rollout pilot before bootstrap."
-  }
 
   assert {
     condition     = [google_service_account.runtime.project, google_service_account.runtime.account_id] == [var.project_id, "agora-json-keys"]
@@ -192,8 +188,8 @@ run "authentication_runtime_contract" {
   }
 
   assert {
-    condition     = length(module.rollout) == 0 && output.runtime.service_account == "agora-authentication@agora-authentication-test.iam.gserviceaccount.com"
-    error_message = "Authentication can manage its bootstrapped migration access without selecting the JSON Keys pilot."
+    condition     = output.runtime.service_account == "agora-authentication@agora-authentication-test.iam.gserviceaccount.com"
+    error_message = "Authentication must retain its own runtime identity."
   }
 
   assert {
@@ -212,54 +208,6 @@ run "authentication_runtime_contract" {
   }
 }
 
-run "json_keys_composition" {
-  command = plan
-  variables {
-    manage_job_access = true
-    rollout = {
-      verification_image = "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-tooling/verify@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      network            = "projects/agora-network-test/global/networks/agora-production"
-      subnetwork         = "projects/agora-network-test/regions/europe-west1/subnetworks/agora-production-europe-west1"
-    }
-  }
-
-  assert {
-    condition     = length(module.rollout) == 1 && output.rollout != null
-    error_message = "The protected owner must publish the configured pilot's native rollout coordinates."
-  }
-
-  assert {
-    condition = google_storage_bucket_object.coordinates.content == jsonencode({
-      schema_version = 1, runtime = output.runtime, database = null, rollout = output.rollout,
-    })
-    error_message = "Publish the configured native rollout coordinates without claiming that the pipeline is active."
-  }
-}
-
-run "reject_authentication_pilot" {
-  command = plan
-  variables {
-    service = "authentication"
-    rollout = {
-      verification_image = "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-tooling/verify@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      network            = "projects/agora-network-test/global/networks/agora-production"
-      subnetwork         = "projects/agora-network-test/regions/europe-west1/subnetworks/agora-production-europe-west1"
-    }
-  }
-  expect_failures = [var.rollout]
-}
-
-run "reject_application_owned_verifier" {
-  command = plan
-  variables {
-    rollout = {
-      verification_image = "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-production/verify@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      network            = "projects/agora-network-test/global/networks/agora-production"
-      subnetwork         = "projects/agora-network-test/regions/europe-west1/subnetworks/agora-production-europe-west1"
-    }
-  }
-  expect_failures = [var.rollout]
-}
 
 run "reject_foreign_state_bucket" {
   command = plan

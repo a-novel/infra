@@ -15,7 +15,6 @@ func TestRun(t *testing.T) {
 		output       string
 	}{
 		{[]string{"drift"}, []string{"operation=drift"}, "202"},
-		{[]string{"drift", "observe-rollout", "json-keys", "release-123", "production"}, []string{"operation=observe-rollout", "service=json-keys", "release_id=release-123", "rollout_id=production"}, "202"},
 		{[]string{"drift", "inspect-operation", "json-keys"}, []string{"operation=inspect-operation", "service=json-keys"}, "202"},
 		{[]string{"drift", "inspect-operation", "authentication", "123"}, []string{"operation=inspect-operation", "service=authentication", "guard_generation=123"}, "202"},
 		{[]string{"drift", "assess-pull-request", "93"}, []string{"operation=assess-pull-request", "pull_request=93", "head_sha=" + head, "base_sha=" + sha}, "202"},
@@ -139,7 +138,6 @@ func TestRunInvalidIntent(t *testing.T) {
 func TestRunObservationConcurrency(t *testing.T) {
 	t.Parallel()
 	for _, args := range [][]string{
-		{"drift", "observe-rollout", "json-keys", "release-123", "production"},
 		{"drift", "inspect-operation", "json-keys"},
 	} {
 		t.Run(args[1], func(t *testing.T) {

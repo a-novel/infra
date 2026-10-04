@@ -1,11 +1,10 @@
 locals {
   runtime = merge({
-    schema_version  = local.coordinates_version
-    project_id      = var.project_id
-    service         = var.service
-    region          = var.region
-    service_account = google_service_account.runtime.email
-    # Monitoring accepts project numbers too; the rollout contract uses project IDs.
+    schema_version        = local.coordinates_version
+    project_id            = var.project_id
+    service               = var.service
+    region                = var.region
+    service_account       = google_service_account.runtime.email
     notification_channels = toset(["projects/${var.project_id}/notificationChannels/${basename(google_monitoring_notification_channel.operations.name)}"])
     repositories = { for name, repository in google_artifact_registry_repository.images : name =>
       "${repository.location}-docker.pkg.dev/${repository.project}/${repository.repository_id}"
@@ -22,9 +21,4 @@ output "runtime" {
     google_artifact_registry_repository_iam_member.release,
     google_service_account_iam_member.foundation_runtime,
   ]
-}
-
-output "rollout" {
-  description = "Native pilot identities when configured; the pipeline remains suspended."
-  value       = try(module.rollout["api"].rollout, null)
 }

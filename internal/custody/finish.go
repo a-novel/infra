@@ -13,10 +13,10 @@ import (
 )
 
 // finishOperation verifies success and writer termination before exact guard deletion.
-// Native releases, acknowledged rotations and observed project deletion can
-// reconstruct missing completion without repeating the original mutation.
+// Acknowledged rotations and observed project deletion can reconstruct missing
+// completion without repeating the original mutation.
 func (custody store) finishOperation(ctx context.Context, client *storage.Service, evidence operationEvidence, output io.Writer, options []option.ClientOption) error {
-	if !evidence.completed && ((evidence.native == nil && evidence.rotation == nil && evidence.cleanup == nil) || evidence.live == 0) {
+	if !evidence.completed && ((evidence.rotation == nil && evidence.cleanup == nil) || evidence.live == 0) {
 		return failure{70, "Completion is missing; this operation cannot be safely reconciled here."}
 	}
 	guard := evidence.guard
@@ -37,8 +37,6 @@ func (custody store) finishOperation(ctx context.Context, client *storage.Servic
 			err = evidence.cleanup.reconcile(ctx, client, guard, options)
 		} else if evidence.rotation != nil {
 			err = evidence.rotation.recordCompletion(ctx, client, guard, options)
-		} else {
-			err = evidence.native.RecordCompletion(ctx, options...)
 		}
 		if err != nil {
 			return failure{70, "Native completion unconfirmed; guard retained. " + err.Error()}
@@ -62,10 +60,6 @@ func (custody store) completedWriter(ctx context.Context, evidence operationEvid
 	path, prefix := ".github/workflows/foundation.yaml", "foundation apply "+intent.Root+"/"+intent.Service+" by @"
 	if intent.Root == "service-recovery" {
 		path, prefix = ".github/workflows/recovery.yaml", "recovery apply-native "+intent.Project+" by @"
-	}
-	if native := evidence.native; native != nil {
-		runID, attempt, commit = native.RunID, native.RunAttempt, native.Commit
-		path, prefix = ".github/workflows/release.yaml", "production deploy-service by @"
 	}
 	if restore := evidence.restore; restore != nil {
 		runID, attempt, commit = restore.RunID, restore.RunAttempt, restore.Commit

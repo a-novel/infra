@@ -22,36 +22,70 @@ run "documents" {
   variables { zone = "public-api" }
 }
 
-run "json_keys_request" {
+run "json_keys_api" {
   command = plan
   variables {
     foundation      = run.documents.cases.json-keys.foundation
     foundation_json = run.documents.cases.json-keys.foundation_json
-    rollout         = run.documents.rollout.json-keys
+    api             = run.documents.api.json-keys
   }
   assert {
     condition = (
-      jsonencode(output.release_request) == jsonencode(yamldecode(file("../../internal/submission/testdata/sharedRequests.yaml"))["public-api/json-keys"]) &&
-      length(google_cloud_run_v2_job.application) == 0 && output.release_operation == null
+      length(google_cloud_run_v2_job.application) == 0 &&
+      google_cloud_run_v2_service.api[0].project == var.project_id &&
+      google_cloud_run_v2_service.api[0].ingress == "INGRESS_TRAFFIC_ALL" &&
+      google_cloud_run_v2_service.api[0].invoker_iam_disabled == true &&
+      google_cloud_run_v2_service.api[0].template[0].service_account == "agora-json-keys-api@agora-public-api-test.iam.gserviceaccount.com" &&
+      google_cloud_run_v2_service.api[0].scaling[0].min_instance_count == 0 &&
+      google_cloud_run_v2_service.api[0].scaling[0].max_instance_count == 3 &&
+      google_cloud_run_v2_service.api[0].template[0].containers[0].image == var.api.image &&
+      google_cloud_run_v2_service.api[0].template[0].containers[0].resources[0].limits == tomap({ cpu = "1", memory = "512Mi" }) &&
+      { for env in google_cloud_run_v2_service.api[0].template[0].containers[0].env : env.name => env.value_source[0].secret_key_ref[0]
+        if length(env.value_source) > 0
+      } == { POSTGRES_PASSWORD = { secret = "projects/agora-management-test/secrets/production-json-keys-postgres-password", version = "17" } }
     )
-    error_message = "REST must use its own identity and source, the existing private database and only its database secret, with no jobs or executable operation."
+    error_message = "REST must use its own identity, bounded scale-to-zero capacity and only the database credential; no master key or jobs."
+  }
+  assert {
+    condition = (
+      google_cloud_run_v2_service.api[0].template[0].vpc_access[0].egress == "PRIVATE_RANGES_ONLY" &&
+      google_cloud_run_v2_service.api[0].template[0].vpc_access[0].network_interfaces[0].network == var.network.network &&
+      { for env in google_cloud_run_v2_service.api[0].template[0].containers[0].env : env.name => env.value
+        if contains(["POSTGRES_HOST", "POSTGRES_PORT"], env.name)
+      } == { POSTGRES_HOST = "10.20.0.5", POSTGRES_PORT = "5432" } &&
+      { for traffic in google_cloud_run_v2_service.api[0].traffic : traffic.revision => traffic.percent } == {
+        agora-json-keys-rest-active = 100, agora-json-keys-rest-candidate = 0
+      } &&
+      one([for traffic in google_cloud_run_v2_service.api[0].traffic : traffic.tag if traffic.percent == 0]) == "candidate"
+    )
+    error_message = "The candidate must retain the shared private database and leave all normal traffic on the healthy revision."
   }
 }
 
-run "authentication_request" {
+run "authentication_api" {
   command = plan
   variables {
     service         = "authentication"
     foundation      = run.documents.cases.authentication.foundation
     foundation_json = run.documents.cases.authentication.foundation_json
-    rollout         = run.documents.rollout.authentication
+    api             = run.documents.api.authentication
     authentication  = run.documents.authentication
     secret_versions = { postgres-password = 17, smtp-sender-password = 21 }
   }
   assert {
     condition = (
-      jsonencode(output.release_request) == jsonencode(yamldecode(file("../../internal/submission/testdata/sharedRequests.yaml"))["public-api/authentication"]) &&
-      length(google_cloud_run_v2_job.application) == 0 && output.release_operation == null
+      length(google_cloud_run_v2_job.application) == 0 &&
+      google_cloud_run_v2_service.api[0].template[0].containers[0].resources[0].cpu_idle == false &&
+      google_cloud_run_v2_service.api[0].scaling[0].min_instance_count == 1 &&
+      { for env in google_cloud_run_v2_service.api[0].template[0].containers[0].env : env.name => env.value
+        if contains(["POSTGRES_HOST", "POSTGRES_PORT", "SERVICE_JSON_KEYS_HOST", "REST_TIMEOUT_SHUTDOWN"], env.name)
+        } == {
+        POSTGRES_HOST          = "10.20.0.6", POSTGRES_PORT = "5433",
+        SERVICE_JSON_KEYS_HOST = var.authentication.json_keys_host, REST_TIMEOUT_SHUTDOWN = "9s",
+      } &&
+      toset([for env in google_cloud_run_v2_service.api[0].template[0].containers[0].env : env.name
+        if length(env.value_source) > 0
+      ]) == toset(["POSTGRES_PASSWORD", "SMTP_SENDER_PASSWORD"])
     )
     error_message = "Authentication must retain its separate private database and SMTP configuration without adding a job owner or waitlist access."
   }
@@ -63,21 +97,67 @@ run "authentication_waitlist" {
     service         = "authentication"
     foundation      = run.documents.cases.authentication.foundation
     foundation_json = run.documents.cases.authentication.foundation_json
-    rollout         = run.documents.rollout.authentication
+    api             = run.documents.api.authentication
     authentication  = merge(run.documents.authentication, { waitlist_url = "https://waitlist.example.test" })
     secret_versions = { postgres-password = 17, smtp-sender-password = 21, waitlist-secret = 31 }
   }
   assert {
-    condition = jsonencode(output.release_request) == jsonencode(merge(yamldecode(file("../../internal/submission/testdata/sharedRequests.yaml"))["public-api/authentication"], {
-      release = merge(yamldecode(file("../../internal/submission/testdata/sharedRequests.yaml"))["public-api/authentication"].release, {
-        skaffoldConfigPath = "skaffold-waitlist.yaml"
-        deployParameters = merge(yamldecode(file("../../internal/submission/testdata/sharedRequests.yaml"))["public-api/authentication"].release.deployParameters, {
-          waitlistURL = "https://waitlist.example.test", waitlistSecretVersion = "31",
-        })
-      })
-    })) && length(google_cloud_run_v2_job.application) == 0
-    error_message = "Explicit waitlist configuration must pair its HTTPS endpoint, exact secret version and reviewed manifest."
+    condition = (
+      one([for env in google_cloud_run_v2_service.api[0].template[0].containers[0].env : env.value if env.name == "WAITLIST_URL"]) == "https://waitlist.example.test" &&
+      one([for env in google_cloud_run_v2_service.api[0].template[0].containers[0].env : env.value_source[0].secret_key_ref[0] if env.name == "WAITLIST_SECRET"]) == {
+        secret = "projects/agora-management-test/secrets/production-authentication-waitlist-secret", version = "31"
+      }
+    )
+    error_message = "Waitlist access must pair the approved endpoint and exact secret version."
   }
+}
+
+run "promote_verified_candidate" {
+  command = plan
+  variables {
+    foundation      = run.documents.cases.json-keys.foundation
+    foundation_json = run.documents.cases.json-keys.foundation_json
+    api             = merge(run.documents.api.json-keys, { serving_revision = run.documents.api.json-keys.revision })
+  }
+  assert {
+    condition = (
+      length(google_cloud_run_v2_service.api[0].traffic) == 1 &&
+      google_cloud_run_v2_service.api[0].traffic[0].revision == var.api.revision &&
+      google_cloud_run_v2_service.api[0].traffic[0].percent == 100 &&
+      google_cloud_run_v2_service.api[0].traffic[0].type == "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION"
+    )
+    error_message = "Promotion must route to one explicit revision, never a moving latest selector."
+  }
+}
+
+run "reject_peer_revision" {
+  command = plan
+  variables {
+    foundation      = run.documents.cases.json-keys.foundation
+    foundation_json = run.documents.cases.json-keys.foundation_json
+    api             = merge(run.documents.api.json-keys, { serving_revision = "agora-authentication-rest-active" })
+  }
+  expect_failures = [var.api]
+}
+
+run "reject_latest_revision" {
+  command = plan
+  variables {
+    foundation      = run.documents.cases.json-keys.foundation
+    foundation_json = run.documents.cases.json-keys.foundation_json
+    api             = merge(run.documents.api.json-keys, { serving_revision = "latest" })
+  }
+  expect_failures = [var.api]
+}
+
+run "reject_mutable_image" {
+  command = plan
+  variables {
+    foundation      = run.documents.cases.json-keys.foundation
+    foundation_json = run.documents.cases.json-keys.foundation_json
+    api             = merge(run.documents.api.json-keys, { image = "europe-west1-docker.pkg.dev/agora-public-api-test/agora-json-keys-api-production/service-json-keys/rest:latest" })
+  }
+  expect_failures = [var.api]
 }
 
 run "reject_job_images" {
@@ -85,7 +165,7 @@ run "reject_job_images" {
   variables {
     foundation      = run.documents.cases.json-keys.foundation
     foundation_json = run.documents.cases.json-keys.foundation_json
-    rollout         = run.documents.rollout.json-keys
+    api             = run.documents.api.json-keys
     images          = { migrations = "europe-west1-docker.pkg.dev/agora-public-api-test/agora-json-keys-api-production/service-json-keys/jobs/migrations@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
   }
   expect_failures = [var.images]
@@ -96,7 +176,7 @@ run "reject_master_key" {
   variables {
     foundation      = run.documents.cases.json-keys.foundation
     foundation_json = run.documents.cases.json-keys.foundation_json
-    rollout         = run.documents.rollout.json-keys
+    api             = run.documents.api.json-keys
     secret_versions = { postgres-password = 17, app-master-key = 29 }
   }
   expect_failures = [var.secret_versions]
@@ -107,7 +187,7 @@ run "reject_unpinned_secret" {
   variables {
     foundation      = run.documents.cases.json-keys.foundation
     foundation_json = run.documents.cases.json-keys.foundation_json
-    rollout         = run.documents.rollout.json-keys
+    api             = run.documents.api.json-keys
     secret_versions = { postgres-password = 0 }
   }
   expect_failures = [var.secret_versions]
@@ -118,7 +198,7 @@ run "reject_peer_scope" {
   variables {
     foundation      = run.documents.cases.peer_scope.foundation
     foundation_json = run.documents.cases.peer_scope.foundation_json
-    rollout         = run.documents.rollout.json-keys
+    api             = run.documents.api.json-keys
   }
   expect_failures = [var.foundation_json]
 }
@@ -128,7 +208,7 @@ run "reject_peer_runtime" {
   variables {
     foundation      = run.documents.cases.peer_runtime.foundation
     foundation_json = run.documents.cases.peer_runtime.foundation_json
-    rollout         = run.documents.rollout.json-keys
+    api             = run.documents.api.json-keys
   }
   expect_failures = [var.foundation_json]
 }
@@ -138,7 +218,7 @@ run "reject_peer_database" {
   variables {
     foundation      = run.documents.cases.peer_database.foundation
     foundation_json = run.documents.cases.peer_database.foundation_json
-    rollout         = run.documents.rollout.json-keys
+    api             = run.documents.api.json-keys
   }
   expect_failures = [var.foundation_json]
 }
@@ -148,7 +228,7 @@ run "reject_public_database" {
   variables {
     foundation      = run.documents.cases.public_database.foundation
     foundation_json = run.documents.cases.public_database.foundation_json
-    rollout         = run.documents.rollout.json-keys
+    api             = run.documents.api.json-keys
   }
   expect_failures = [var.foundation_json]
 }
@@ -158,7 +238,7 @@ run "reject_peer_project" {
   variables {
     foundation      = run.documents.cases.peer_project.foundation
     foundation_json = run.documents.cases.peer_project.foundation_json
-    rollout         = run.documents.rollout.json-keys
+    api             = run.documents.api.json-keys
   }
   expect_failures = [var.foundation_json]
 }
@@ -168,7 +248,7 @@ run "reject_missing_source" {
   variables {
     foundation      = run.documents.cases.missing_source.foundation
     foundation_json = run.documents.cases.missing_source.foundation_json
-    rollout         = run.documents.rollout.json-keys
+    api             = run.documents.api.json-keys
   }
   expect_failures = [var.foundation_json]
 }
@@ -178,7 +258,7 @@ run "reject_peer_source" {
   variables {
     foundation      = run.documents.cases.peer_source.foundation
     foundation_json = run.documents.cases.peer_source.foundation_json
-    rollout         = run.documents.rollout.json-keys
+    api             = run.documents.api.json-keys
   }
   expect_failures = [var.foundation_json]
 }
@@ -188,7 +268,7 @@ run "reject_peer_registry" {
   variables {
     foundation      = run.documents.cases.peer_registry.foundation
     foundation_json = run.documents.cases.peer_registry.foundation_json
-    rollout         = run.documents.rollout.json-keys
+    api             = run.documents.api.json-keys
   }
   expect_failures = [var.foundation_json]
 }
@@ -198,47 +278,20 @@ run "reject_latest_source" {
   variables {
     foundation      = run.documents.cases.latest_source.foundation
     foundation_json = run.documents.cases.latest_source.foundation_json
-    rollout         = run.documents.rollout.json-keys
+    api             = run.documents.api.json-keys
   }
   expect_failures = [var.foundation_json]
 }
 
-run "reject_peer_pipeline" {
-  command = plan
-  variables {
-    foundation      = run.documents.cases.peer_pipeline.foundation
-    foundation_json = run.documents.cases.peer_pipeline.foundation_json
-    rollout         = run.documents.rollout.json-keys
-  }
-  expect_failures = [var.rollout]
-}
 
-run "reject_peer_target" {
-  command = plan
-  variables {
-    foundation      = run.documents.cases.peer_target.foundation
-    foundation_json = run.documents.cases.peer_target.foundation_json
-    rollout         = run.documents.rollout.json-keys
-  }
-  expect_failures = [var.rollout]
-}
 
-run "reject_no_rollout" {
-  command = plan
-  variables {
-    foundation      = run.documents.cases.no_rollout.foundation
-    foundation_json = run.documents.cases.no_rollout.foundation_json
-    rollout         = run.documents.rollout.json-keys
-  }
-  expect_failures = [var.rollout]
-}
 
 run "reject_missing_private_project" {
   command = plan
   variables {
     foundation         = run.documents.cases.json-keys.foundation
     foundation_json    = run.documents.cases.json-keys.foundation_json
-    rollout            = run.documents.rollout.json-keys
+    api                = run.documents.api.json-keys
     private_project_id = null
   }
   expect_failures = [var.private_project_id]
@@ -249,7 +302,7 @@ run "reject_private_project_equals_api" {
   variables {
     foundation         = run.documents.cases.json-keys.foundation
     foundation_json    = run.documents.cases.json-keys.foundation_json
-    rollout            = run.documents.rollout.json-keys
+    api                = run.documents.api.json-keys
     private_project_id = "agora-public-api-test"
   }
   expect_failures = [var.private_project_id]
@@ -260,7 +313,7 @@ run "reject_peer_network" {
   variables {
     foundation      = run.documents.cases.json-keys.foundation
     foundation_json = run.documents.cases.json-keys.foundation_json
-    rollout         = run.documents.rollout.json-keys
+    api             = run.documents.api.json-keys
     network         = { network = "projects/agora-peer-test/global/networks/agora-production", subnetwork = "projects/agora-peer-test/regions/europe-west1/subnetworks/agora-production-europe-west1" }
   }
   expect_failures = [var.network]
@@ -271,21 +324,11 @@ run "reject_private_image" {
   variables {
     foundation      = run.documents.cases.json-keys.foundation
     foundation_json = run.documents.cases.json-keys.foundation_json
-    rollout         = merge(run.documents.rollout.json-keys, { image = "europe-west1-docker.pkg.dev/agora-private-test/agora-json-keys-private-production/service-json-keys/grpc@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" })
+    api             = merge(run.documents.api.json-keys, { image = "europe-west1-docker.pkg.dev/agora-private-test/agora-json-keys-private-production/service-json-keys/grpc@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" })
   }
-  expect_failures = [var.rollout]
+  expect_failures = [var.api]
 }
 
-run "reject_shared_operation" {
-  command = plan
-  variables {
-    foundation        = run.documents.cases.json-keys.foundation
-    foundation_json   = run.documents.cases.json-keys.foundation_json
-    rollout           = run.documents.rollout.json-keys
-    release_operation = { predecessor = "previous", rollout_request_id = "33333333-3333-4333-8333-333333333333" }
-  }
-  expect_failures = [var.release_operation]
-}
 
 run "reject_missing_authentication" {
   command = plan
@@ -293,7 +336,7 @@ run "reject_missing_authentication" {
     service         = "authentication"
     foundation      = run.documents.cases.authentication.foundation
     foundation_json = run.documents.cases.authentication.foundation_json
-    rollout         = run.documents.rollout.authentication
+    api             = run.documents.api.authentication
     authentication  = null
     secret_versions = { postgres-password = 17, smtp-sender-password = 21 }
   }
@@ -306,7 +349,7 @@ run "reject_invalid_json_keys_endpoint" {
     service         = "authentication"
     foundation      = run.documents.cases.authentication.foundation
     foundation_json = run.documents.cases.authentication.foundation_json
-    rollout         = run.documents.rollout.authentication
+    api             = run.documents.api.authentication
     authentication  = merge(run.documents.authentication, { json_keys_host = "unexpected.example.test" })
     secret_versions = { postgres-password = 17, smtp-sender-password = 21 }
   }
@@ -319,7 +362,7 @@ run "reject_waitlist_missing_secret" {
     service         = "authentication"
     foundation      = run.documents.cases.authentication.foundation
     foundation_json = run.documents.cases.authentication.foundation_json
-    rollout         = run.documents.rollout.authentication
+    api             = run.documents.api.authentication
     authentication  = merge(run.documents.authentication, { waitlist_url = "https://waitlist.example.test" })
     secret_versions = { postgres-password = 17, smtp-sender-password = 21 }
   }
@@ -332,7 +375,7 @@ run "reject_waitlist_without_endpoint" {
     service         = "authentication"
     foundation      = run.documents.cases.authentication.foundation
     foundation_json = run.documents.cases.authentication.foundation_json
-    rollout         = run.documents.rollout.authentication
+    api             = run.documents.api.authentication
     authentication  = run.documents.authentication
     secret_versions = { postgres-password = 17, smtp-sender-password = 21, waitlist-secret = 31 }
   }
@@ -345,7 +388,7 @@ run "reject_insecure_waitlist" {
     service         = "authentication"
     foundation      = run.documents.cases.authentication.foundation
     foundation_json = run.documents.cases.authentication.foundation_json
-    rollout         = run.documents.rollout.authentication
+    api             = run.documents.api.authentication
     authentication  = merge(run.documents.authentication, { waitlist_url = "http://waitlist.example.test" })
     secret_versions = { postgres-password = 17, smtp-sender-password = 21, waitlist-secret = 31 }
   }
@@ -358,7 +401,7 @@ run "reject_invalid_smtp" {
     service         = "authentication"
     foundation      = run.documents.cases.authentication.foundation
     foundation_json = run.documents.cases.authentication.foundation_json
-    rollout         = run.documents.rollout.authentication
+    api             = run.documents.api.authentication
     authentication  = merge(run.documents.authentication, { smtp_username = "unsafe\nvalue" })
     secret_versions = { postgres-password = 17, smtp-sender-password = 21 }
   }

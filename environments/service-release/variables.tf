@@ -32,7 +32,7 @@ variable "service" {
 }
 
 variable "zone" {
-  description = "Shared private jobs/API or public-api request-only contract; null preserves dedicated-service inputs. Protected shared writers remain disabled."
+  description = "Private jobs/API or public-api scope; null preserves dedicated-service state until ownership is migrated."
   type        = string
   default     = null
 

@@ -115,7 +115,7 @@ func TestSharedOperationScopes(t *testing.T) {
 	}
 }
 
-func TestSharedRolloutPrerequisites(t *testing.T) {
+func TestSharedDatabaseHandoff(t *testing.T) {
 	t.Parallel()
 	for _, testCase := range []struct {
 		name, service, zone string
@@ -126,15 +126,11 @@ func TestSharedRolloutPrerequisites(t *testing.T) {
 		{name: "PrivateJSONKeys", service: "json-keys", zone: "private", valid: true},
 		{name: "JSONKeysAPI", service: "json-keys", zone: "public-api", valid: true},
 		{name: "AuthenticationAPI", service: "authentication", zone: "public-api", valid: true},
-		{name: "PrivateAuthentication", service: "authentication", zone: "private"},
-		{name: "MissingHandoff", field: "database_handoff"},
+		{name: "PrivateAuthentication", service: "authentication", zone: "private", valid: true},
+		{name: "MissingHandoff", field: "database_handoff", valid: true},
 		{name: "PeerHandoff", field: "database_handoff", value: map[string]any{"private_project_id": "agora-peer-test"}},
 		{name: "InvalidRollout", field: "rollout", value: "invalid"},
 		{name: "MissingProbe", field: "rollout", value: map[string]any{}},
-		{name: "PeerNetwork", field: "network", value: "projects/agora-peer-test/global/networks/agora-production"},
-		{name: "APINetwork", field: "network", value: "projects/agora-api-test/global/networks/agora-production"},
-		{name: "PeerSubnet", field: "subnetwork", value: "projects/agora-peer-test/regions/europe-west1/subnetworks/agora-production"},
-		{name: "PeerRegion", field: "subnetwork", value: "projects/agora-private-test/regions/us-central1/subnetworks/agora-production"},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
@@ -146,20 +142,12 @@ func TestSharedRolloutPrerequisites(t *testing.T) {
 				project = "agora-private-test"
 			}
 			bucket := "agora-management-test-123-tofu-state"
-			rollout := map[string]any{
-				"network":    "projects/agora-private-test/global/networks/agora-production",
-				"subnetwork": "projects/agora-private-test/regions/europe-west1/subnetworks/agora-production",
-			}
 			config := map[string]any{
 				"service": service, "zone": zone, "project_id": project, "region": "europe-west1",
 				"management_project_id": "agora-management-test", "state_bucket": bucket,
-				"database_handoff": map[string]any{"private_project_id": "agora-private-test"}, "rollout": rollout,
+				"database_handoff": map[string]any{"private_project_id": "agora-private-test"},
 			}
-			switch testCase.field {
-			case "network", "subnetwork":
-				rollout[testCase.field] = testCase.value
-			case "":
-			default:
+			if testCase.field != "" {
 				config[testCase.field] = testCase.value
 			}
 			data, err := json.Marshal(config)
@@ -172,7 +160,7 @@ func TestSharedRolloutPrerequisites(t *testing.T) {
 				require.Equal(t, "workloads/production/"+zone+"/"+project+"/"+service, scope)
 			}
 			_, err = workflow.ServiceScope(data, getenv, bucket)
-			require.Error(t, err, "pipeline setup does not admit shared runtime writers")
+			require.Error(t, err, "foundation setup does not admit shared runtime writers")
 		})
 	}
 }

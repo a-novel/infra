@@ -27,10 +27,7 @@ locals {
     }
   }
 
-  private_egress_tags = toset(concat(
-    values(local.network_tags),
-    length(var.service_projects) == 0 ? [] : ["agora-rollout-probe"],
-  ))
+  private_egress_tags = toset(values(local.network_tags))
 
   restricted_google_api_ranges = toset([
     "199.36.153.4/30",

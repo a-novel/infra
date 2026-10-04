@@ -31,8 +31,8 @@ relative to `module.project`. Release and storage addresses are relative to `mod
 | Resource                                                                                                                                           | Contract                                                                                                                                                                                               |
 | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `google_project.service`                                                                                                                           | One explicit project ID, exactly one organization/folder parent, no default VPC, and persistent provider deletion prevention.                                                                          |
-| `google_project_service.api`                                                                                                                       | Foundation owns the declared APIs, including Cloud Build, Cloud Deploy and Storage; removing an entry leaves the API enabled for retained workloads and recovery.                                      |
-| `google_project_service_identity.agent` and `google_project_iam_member.service_agent`                                                              | Create the Google-managed Run, Build, Deploy, Scheduler, Workflows and Compute agents with their documented project roles.                                                                             |
+| `google_project_service.api`                                                                                                                       | Foundation owns the declared APIs, including Cloud Build and Storage; removing an entry leaves the API enabled for retained workloads and recovery.                                                    |
+| `google_project_service_identity.agent` and `google_project_iam_member.service_agent`                                                              | Create the Google-managed Run, Build, Scheduler, Workflows and Compute agents with their documented project roles.                                                                                     |
 | `google_project_default_service_accounts.service`                                                                                                  | Deprivilege default accounts after API activation. This is a creation-time repair; effective organization policies prevent future automatic grants and user-managed keys.                              |
 | `google_project_iam_member.foundation`, `.metadata`, and `google_project_iam_custom_role.metadata`                                                 | Project and service-account maintenance for the protected foundation identity. This is privileged IAM administration, not a service deployment role.                                                   |
 | `google_project_iam_member.plan`                                                                                                                   | Metadata assessment by the existing read-only plan identity. No payload access is declared.                                                                                                            |
@@ -60,8 +60,7 @@ API activation does not guarantee that a service agent already exists. The offic
 provider creates these identities before their role bindings; every other resource uses `google`.
 Foundation pins both providers to the same version and Renovate groups their updates. The service
 identity resource's delete operation is a no-op: it cannot remove a Google agent. Role bindings still
-have their own lifecycle. Default Compute/Build execution accounts stay deprivileged; the rollout
-module selects dedicated execution identities. No primitive Owner or Editor grant is added here.
+have their own lifecycle. Default Compute/Build execution accounts stay deprivileged. No primitive Owner or Editor grant is added here.
 
 `google_project_iam_member.mig_agent` gives the project's Google APIs agent
 (`PROJECT_NUMBER@cloudservices.gserviceaccount.com`) the documented Instance Group Manager Service
@@ -73,11 +72,10 @@ deprivileging does not establish that this separate agent has only its declared 
 ## Protected provisioning authority
 
 `../project-shell/foundation.tf` declares configuration permissions for the inactive service foundation. Only the
-protected foundation account receives its control-plane role. Cloud Deploy pipeline/target management,
-Cloud Run job specifications/IAM, paused Scheduler and Workflows definitions, and artifact-bucket metadata/IAM stay
+protected foundation account receives its control-plane role. Cloud Run job specifications/IAM, paused Scheduler and Workflows definitions, and artifact-bucket metadata/IAM stay
 with that administrator. The role adds no direct job execution, rollout submission/approval, schedule
 resume, Workflows execution, API service writes, object payload access or token minting.
-Release, rollout, service and Workflows execution metadata reads support the existing protected
+Service and Workflows execution metadata reads support the existing protected
 [completion finisher](../../docs/service-operations.md#finish-a-successful-operation). It reuses the
 foundation identity's existing management-bucket custody and selected-project job reads; no native
 mutation permission is added for completion repair.
@@ -100,8 +98,7 @@ role: it can manage instances. Routine release receives none of this authority. 
 the exact host identity and retain private saved plans/deletion protection. Google's MIG agent also
 needs Shared VPC subnet use; see [Shared VPC provisioning](https://docs.cloud.google.com/vpc/docs/provisioning-shared-vpc#sa-as-spa).
 
-References: [Cloud Deploy permissions](https://docs.cloud.google.com/deploy/docs/iam-roles-permissions),
-[Run permissions](https://docs.cloud.google.com/run/docs/reference/iam/permissions),
+References: [Run permissions](https://docs.cloud.google.com/run/docs/reference/iam/permissions),
 [Scheduler permissions](https://docs.cloud.google.com/iam/docs/roles-permissions/cloudscheduler), and
 [Storage permissions](https://docs.cloud.google.com/storage/docs/access-control/iam-permissions).
 
@@ -122,7 +119,7 @@ grants must also be checked during live verification.
 
 The plan identity's existing state-folder read grant covers guards and published configuration.
 A conditional Object Viewer binding adds only exact-object reads under
-`services/<project-id>/production/{operations,native-success,rotations}/`
+`services/<project-id>/production/{operations,rotations}/`
 in the receipt bucket for [operation inspection](../../docs/service-operations.md#inspect-an-interrupted-operation).
 The [object-name condition](https://docs.cloud.google.com/storage/docs/access-control/iam#conditions)
 does not authorize bucket listing or reads of other receipt prefixes. Apply and verify this grant

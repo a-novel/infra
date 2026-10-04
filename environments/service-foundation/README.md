@@ -1,8 +1,7 @@
 # Single-service foundation root (inactive)
 
-This protected root assembles one service's runtime prerequisites, Cloud Deploy control plane and
-application-job access. It supports JSON Keys and Authentication; rollout profiles cover JSON Keys
-gRPC/REST and shared Authentication REST. The manual foundation workflow can select this root after separately approved
+This protected root assembles runtime prerequisites and application-job access for JSON Keys and
+Authentication. API specifications and traffic belong to the service-release root. The manual foundation workflow can select this root after separately approved
 configuration and activation. **Plan/apply fails before authentication unless `SERVICE_FOUNDATIONS_ENABLED=true`.**
 Read-only drift and trusted PR assessment still cover initialized scopes while that writer flag is off,
 using the last converged shared-foundation registration and each scope's private configuration.
@@ -25,8 +24,7 @@ folders include the full production scope. The `public` platform zone is rejecte
 These grants preserve the existing API/ORM contracts. They do not prove database-role restrictions
 or remove inherited IAM; verify both before activation. Shared profiles grant no job-secret metadata
 access and reject database/repository hosts and application-job access until ownership is
-reconciled. Existing hosts and backups stay with their current owner. Optional rollout setup remains
-suspended and requires the existing private database handoff described below.
+reconciled. Existing hosts and backups stay with their current owner.
 
 Shared runtime accounts use `agora-SERVICE-private` or `agora-SERVICE-api`. Each owns separate
 `agora-SERVICE-SUFFIX-production` and `agora-SERVICE-SUFFIX-tooling` repositories. The matching
@@ -76,37 +74,17 @@ this root owns no shared database host. Keep `database`, `database_runtime` and
 `pgbackrest_repository` inputs null. API/ORM behavior and current backup ownership stay unchanged.
 Runtime activation still requires effective network, database-role and inherited-IAM checks.
 
-### Suspended shared API setup
-
-After approving the database handoff, `rollout` may select the existing module for private JSON Keys
-gRPC or public-api JSON Keys/Authentication REST. The root derives each API name, scope-specific
-identities, artifact bucket and repositories. Supply a reviewed verifier digest from that component's
-tooling repository and canonical probe network/subnet IDs in the retained private project and region.
-Private Authentication has no reviewed gRPC rollout profile and remains rejected.
-
-The module creates a suspended pipeline and approval-gated target; it neither creates the application
-service nor changes its specification or traffic. Its exact-service IAM requires an existing API.
-A missing API therefore needs separately reviewed first-launch provisioning. Before adopting existing
-control-plane resources, reconcile their sole state owner and any pending native work. Google notes
-that [suspension does not cancel queued or running rollouts](https://docs.cloud.google.com/deploy/docs/suspend-pipeline).
-
-This setup can publish rollout coordinates alongside the unchanged database reference. It does not
-enable shared release submission, migration jobs or host ownership. Keep those writers disabled until
-the existing API writer is handed off and effective access, network and cost checks pass. A pipeline
-setup plan/apply still uses protected private custody and the same service guard as both API zones.
-
 ### Dedicated-project preparation
 
 The remaining sections describe the unchanged dedicated-project path (`zone = null`).
 
 ## Owners and state
 
-| Owner                                                                    | Resources                                                                                                                              |
-| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Shared foundation and [workload project](../../modules/workload-project) | Projects, APIs, Google agents, release identity, storage namespaces, Shared VPC and host network policy.                               |
-| This root                                                                | Application assets, optional private database and repository hosts/identities, and the optionally composed rollout/job-access modules. |
-| [Service release](../service-release)                                    | Application job specifications, bootstrapped directly in their destination state.                                                      |
-| Cloud Deploy                                                             | API specification, revisions and traffic after an approved handoff.                                                                    |
+| Owner                                                                    | Resources                                                                                                |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| Shared foundation and [workload project](../../modules/workload-project) | Projects, APIs, Google agents, release identity, storage namespaces, Shared VPC and host network policy. |
+| This root                                                                | Application assets, optional private database and repository hosts/identities, and job access.           |
+| [Service release](../service-release)                                    | Application jobs, API revisions and explicit traffic targets, after a reviewed ownership handoff.        |
 
 The native backend uses the published management `state_bucket` and
 `foundation/services/PROJECT/default.tfstate`. Only the default workspace is accepted. The existing
@@ -135,9 +113,9 @@ These additive grants leave the shared container-administration role unchanged. 
 shared, trusted administrator; verify inherited permissions separately before activation.
 
 `agora-production` holds application images and grants the project-local release identity Writer.
-`agora-tooling` keeps verifier publication separate. Both repositories have immutable tags, deletion
+`agora-tooling` keeps host tooling publication separate. Both repositories have immutable tags, deletion
 guards and no age-based cleanup; recovery can read retained images. A separately approved publisher
-must promote and verify the tooling digest. No verifier writer is granted here.
+must promote and verify the tooling digest. No tooling publisher is granted here.
 
 The version-1 `runtime` output supplies the published document and the child modules' identity and
 operations channel; callers cannot override those with a peer's coordinates. Its output waits for
@@ -149,9 +127,9 @@ the exact application account for approved job bootstrap.
 
 `coordinates.tf` publishes one JSON document in the management state bucket at
 `foundation/coordinates/PROJECT/SHA256.json`. Its version-1 envelope contains only the existing
-`runtime`, optional `database` and optional `rollout` outputs. It excludes private inputs, secret
-versions/payloads and peer state. Database coordinates describe an **idle** host; rollout coordinates
-identify a **suspended** pipeline. These are configuration snapshots, not readiness evidence.
+`runtime` and optional `database` fields. The retired `rollout` field stays null so existing coordinate
+hashes remain stable. It excludes private inputs, secret versions/payloads and peer state. Database
+coordinates describe an **idle** host. These are configuration snapshots, not readiness evidence.
 
 The selected project's release account gets Object Viewer on that exact managed folder. It gains no
 foundation-state access or write permission. The foundation administrator and plan reader retain their
@@ -184,31 +162,17 @@ bootstrap, execute a job or activate the pilot. Keep each enabled configuration 
 inputs; dropping it is resource removal, subject to its lifecycle guards and deletion review.
 
 1. Establish the service project, agents, host network grants and approved foundation executor.
-   Apply this root with `database = null`, `rollout = null` and `manage_job_access = false` to create runtime prerequisites.
-2. After reviewed verifier promotion, supply `rollout` with `verification_image`, `network` and
-   `subnetwork`. The root derives the fixed JSON Keys API name, service-local artifact bucket and
-   management receipt bucket. The image must belong to this project's separate tooling repository.
-   The [rollout module](../../modules/cloud-run-rollout) remains hard-suspended, with target approval
-   required. Authentication rejects this opt-in until its own verifier is implemented.
-3. After the selected database and approved images exist, protected bootstrap creates application jobs
+   Apply this root with `database = null` and `manage_job_access = false` to create runtime prerequisites.
+2. After the selected database and approved images exist, protected bootstrap creates application jobs
    in [service-release state](../service-release#bootstrap-before-routine-release). Reconcile exact
    job UIDs and state before setting `manage_job_access = true`. The [job-access module](../../modules/service-job-access)
-   installs exact-job authority, monitoring and JSON Keys' initially paused Scheduler → Workflows
-   rotation path. The dispatcher shares service admission with protected applies. Foundation owns
-   neither subsequent pause/resume decisions nor job specifications. A missing job fails its IAM
-   operation; it is not recreated here.
-4. Verify allowed/denied IAM and network paths, remove temporary bootstrap authority and prove
-   zero-change convergence before connecting routine release. Neither switch unsuspends Cloud Deploy
-   nor resumes rotation. Their separate activation and interruption drills remain required.
+   installs exact-job authority, monitoring and JSON Keys' initially paused scheduled rotation.
+3. Verify allowed/denied IAM and network paths, remove temporary bootstrap authority and prove
+   zero-change convergence before connecting routine release. Rotation activation remains explicit.
 
-Steps 2 and 3 consume different prerequisites and can be reviewed independently. OpenTofu composes
-the dependency graph; there is no setup script, `-target` bootstrap or automatic existence discovery.
-The [workload project](../../modules/workload-project#protected-provisioning-authority) declares the
-protected executor's project permissions and the plan reader's policy access. This root derives the
-executor as `infra-foundation@MANAGEMENT_PROJECT.iam.gserviceaccount.com`; child modules grant attachment
-on their exact identities before creating targets, probes or schedules. Check that this is the same
-executor used by shared foundation. Management secret-IAM maintenance, state/receipt bucket access
-and host-network grants remain separate bootstrap prerequisites.
+OpenTofu owns the dependency graph. The [workload project](../../modules/workload-project#protected-provisioning-authority)
+declares the protected executor's permissions and the plan reader's policy access. Management
+secret-IAM maintenance, state/receipt bucket access and host-network grants remain bootstrap prerequisites.
 
 An existing pilot owner requires a private state backup and explicit removal/import map before this
 root adopts its resources. Import cannot move a legacy workload into another project. Keep the old

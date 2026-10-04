@@ -1,6 +1,6 @@
 mock_provider "google-beta" {
   mock_resource "google_project_service_identity" {
-    defaults = { member = "serviceAccount:mock-agent@gcp-sa-clouddeploy.iam.gserviceaccount.com" }
+    defaults = { member = "serviceAccount:mock-agent@gcp-sa-cloudscheduler.iam.gserviceaccount.com" }
   }
 }
 

@@ -137,9 +137,6 @@ jobs:
           # renovate: datasource=github-releases depName=aquasecurity/trivy
           version: v0.75.0
 
-      - name: Build and scan the rollout verifier without credentials
-        uses: $/.github/actions/build-tooling-image
-
       - name: Build and scan the inactive host credential loader
         uses: $/.github/actions/build-tooling-image
         with:
