@@ -2,6 +2,7 @@ package rollout_test
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,54 +16,76 @@ import (
 
 func TestConfig(t *testing.T) {
 	t.Parallel()
-	for _, testCase := range []struct {
-		name   string
-		change func(*rollout.Config, *rollout.Snapshot)
-	}{
-		{name: "Success/Candidate"},
-		{name: "Success/Stable", change: func(config *rollout.Config, state *rollout.Snapshot) {
-			config.Phase = "stable"
-			state.JobRun.PhaseId = "stable"
-			state.Service.TrafficStatuses = []*runpb.TrafficTargetStatus{{Revision: config.Revision, Percent: 100, Tag: "stable"}}
-		}},
-		{name: "Error/PeerProject", change: func(_ *rollout.Config, state *rollout.Snapshot) {
-			state.Service.Name = "projects/peer/locations/europe-west1/services/agora-json-keys-grpc"
-		}},
-		{name: "Error/StaleTag", change: func(_ *rollout.Config, state *rollout.Snapshot) { state.Service.TrafficStatuses[1].Revision = "old" }},
-		{name: "Error/ServingCandidate", change: func(_ *rollout.Config, state *rollout.Snapshot) {
-			state.Service.TrafficStatuses[0].Percent = 99
-			state.Service.TrafficStatuses[1].Percent = 1
-		}},
-		{name: "Error/WrongImage", change: func(_ *rollout.Config, state *rollout.Snapshot) { state.Revision.Containers[0].Image += "changed" }},
-		{name: "Error/FloatingImage", change: func(_ *rollout.Config, state *rollout.Snapshot) {
-			state.Release.BuildArtifacts[0].Tag = "service-json-keys:latest"
-		}},
-		{name: "Error/StalePhase", change: func(_ *rollout.Config, state *rollout.Snapshot) { state.JobRun.PhaseId = "stable" }},
-		{name: "Error/Cancelled", change: func(_ *rollout.Config, state *rollout.Snapshot) { state.Rollout.State = deploypb.Rollout_CANCELLED }},
-		{name: "Error/Unready", change: func(_ *rollout.Config, state *rollout.Snapshot) { state.Revision.Conditions = nil }},
-		{name: "Error/PublicIngress", change: func(_ *rollout.Config, state *rollout.Snapshot) {
-			state.Service.Ingress = runpb.IngressTraffic_INGRESS_TRAFFIC_ALL
-		}},
-		{name: "Error/Unreconciled", change: func(_ *rollout.Config, state *rollout.Snapshot) { state.Service.Generation++ }},
-		{name: "Error/TokenDestination", change: func(_ *rollout.Config, state *rollout.Snapshot) {
-			state.Service.TrafficStatuses[1].Uri = "https://other.run.app"
-		}},
+	for _, scope := range []struct{ service, zone string }{
+		{"agora-json-keys-grpc", ""},
+		{"agora-json-keys-grpc", "private"},
+		{"agora-json-keys-rest", "public-api"},
+		{"agora-authentication-rest", "public-api"},
 	} {
-		t.Run(testCase.name, func(t *testing.T) {
+		t.Run(scope.service+"/"+scope.zone, func(t *testing.T) {
 			t.Parallel()
-			config, state, _ := fixture(t)
-			if testCase.change != nil {
-				testCase.change(&config, &state)
+			for _, testCase := range []struct {
+				name   string
+				change func(*rollout.Config, *rollout.Snapshot)
+			}{
+				{name: "Success/Candidate"},
+				{name: "Success/Stable", change: func(config *rollout.Config, state *rollout.Snapshot) {
+					config.Phase = "stable"
+					state.JobRun.PhaseId = "stable"
+					state.Service.TrafficStatuses = []*runpb.TrafficTargetStatus{{Revision: config.Revision, Percent: 100, Tag: "stable"}}
+				}},
+				{name: "Error/PeerProject", change: func(_ *rollout.Config, state *rollout.Snapshot) {
+					state.Service.Name = "projects/peer/locations/europe-west1/services/agora-json-keys-grpc"
+				}},
+				{name: "Error/StaleTag", change: func(_ *rollout.Config, state *rollout.Snapshot) { state.Service.TrafficStatuses[1].Revision = "old" }},
+				{name: "Error/ServingCandidate", change: func(_ *rollout.Config, state *rollout.Snapshot) {
+					state.Service.TrafficStatuses[0].Percent = 99
+					state.Service.TrafficStatuses[1].Percent = 1
+				}},
+				{name: "Error/WrongImage", change: func(_ *rollout.Config, state *rollout.Snapshot) { state.Revision.Containers[0].Image += "changed" }},
+				{name: "Error/FloatingImage", change: func(_ *rollout.Config, state *rollout.Snapshot) {
+					state.Release.BuildArtifacts[0].Tag = "service-json-keys:latest"
+				}},
+				{name: "Error/PeerImage", change: func(_ *rollout.Config, state *rollout.Snapshot) {
+					state.Release.BuildArtifacts[0].Tag = strings.Replace(state.Release.BuildArtifacts[0].Tag, "/agora-", "/peer-", 1)
+					state.Revision.Containers[0].Image = state.Release.BuildArtifacts[0].Tag
+				}},
+				{name: "Error/StalePhase", change: func(_ *rollout.Config, state *rollout.Snapshot) { state.JobRun.PhaseId = "stable" }},
+				{name: "Error/Cancelled", change: func(_ *rollout.Config, state *rollout.Snapshot) { state.Rollout.State = deploypb.Rollout_CANCELLED }},
+				{name: "Error/Unready", change: func(_ *rollout.Config, state *rollout.Snapshot) { state.Revision.Conditions = nil }},
+				{name: "Error/Ingress", change: func(config *rollout.Config, state *rollout.Snapshot) {
+					if config.Zone == "public-api" {
+						state.Service.Ingress = runpb.IngressTraffic_INGRESS_TRAFFIC_INTERNAL_ONLY
+					} else {
+						state.Service.Ingress = runpb.IngressTraffic_INGRESS_TRAFFIC_ALL
+					}
+				}},
+				{name: "Error/InvokerBoundary", change: func(_ *rollout.Config, state *rollout.Snapshot) {
+					state.Service.InvokerIamDisabled = !state.Service.InvokerIamDisabled
+				}},
+				{name: "Error/Unreconciled", change: func(_ *rollout.Config, state *rollout.Snapshot) { state.Service.Generation++ }},
+				{name: "Error/TokenDestination", change: func(_ *rollout.Config, state *rollout.Snapshot) {
+					state.Service.TrafficStatuses[1].Uri = "https://other.run.app"
+				}},
+			} {
+				t.Run(testCase.name, func(t *testing.T) {
+					t.Parallel()
+					config, state, _ := scopedFixture(t, scope.service, scope.zone)
+					if testCase.change != nil {
+						testCase.change(&config, &state)
+					}
+					probe, err := config.Check(state)
+					if testCase.name[:5] == "Error" {
+						require.Error(t, err)
+						return
+					}
+					require.NoError(t, err)
+					require.Equal(t, state.JobRun.Name, probe.JobRun)
+					require.Equal(t, state.Revision.Name, probe.Revision)
+					require.Equal(t, config.Service, probe.Service)
+					require.NoError(t, probe.Validate())
+				})
 			}
-			probe, err := config.Check(state)
-			if testCase.name[:5] == "Error" {
-				require.Error(t, err)
-				return
-			}
-			require.NoError(t, err)
-			require.Equal(t, state.JobRun.Name, probe.JobRun)
-			require.Equal(t, state.Revision.Name, probe.Revision)
-			require.NoError(t, probe.Validate())
 		})
 	}
 }

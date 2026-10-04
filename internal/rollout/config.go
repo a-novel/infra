@@ -19,6 +19,8 @@ var (
 // Config binds one verification to the fixed target and platform-provided job run.
 type Config struct {
 	ProjectID, ProjectNumber, Region, Service string
+	// Zone selects shared private/public-api naming; empty retains the dedicated pilot.
+	Zone                                      string
 	Release, Rollout, JobRun, Revision, Phase string
 	ProbeAccount, VerifierImage               string
 	ProbeNetwork, ProbeSubnet                 string
@@ -29,13 +31,14 @@ func FromEnv(env func(string) string) (Config, error) {
 	config := Config{
 		ProjectID: env("EXPECTED_PROJECT_ID"), ProjectNumber: env("CLOUD_DEPLOY_PROJECT"),
 		Region: env("EXPECTED_REGION"), Service: env("EXPECTED_SERVICE"),
+		Zone:    env("EXPECTED_ZONE"),
 		Release: env("CLOUD_DEPLOY_RELEASE"), Rollout: env("CLOUD_DEPLOY_ROLLOUT"),
 		JobRun: env("CLOUD_DEPLOY_JOB_RUN"), Revision: env("CLOUD_RUN_REVISION"), Phase: env("CLOUD_DEPLOY_PHASE"),
 		ProbeAccount: env("EXPECTED_PROBE_ACCOUNT"), VerifierImage: env("EXPECTED_VERIFIER_IMAGE"),
 		ProbeNetwork: env("EXPECTED_PROBE_NETWORK"), ProbeSubnet: env("EXPECTED_PROBE_SUBNET"),
 	}
 	if !projectPattern.MatchString(config.ProjectID) || !numberPattern.MatchString(config.ProjectNumber) ||
-		!regionPattern.MatchString(config.Region) || config.Service != "agora-json-keys-grpc" ||
+		!regionPattern.MatchString(config.Region) || !config.validScope() ||
 		env("CLOUD_DEPLOY_PROJECT_ID") != config.ProjectID ||
 		(env("CLOUD_RUN_PROJECT") != config.ProjectID && env("CLOUD_RUN_PROJECT") != config.ProjectNumber) ||
 		env("CLOUD_RUN_LOCATION") != config.Region || env("CLOUD_DEPLOY_LOCATION") != config.Region ||
@@ -49,9 +52,13 @@ func FromEnv(env func(string) string) (Config, error) {
 			return Config{}, errors.New("invalid verification identity")
 		}
 	}
-	account := regexp.MustCompile(`^[a-z][a-z0-9-]{4,28}[a-z0-9]@` + regexp.QuoteMeta(config.ProjectID) + `\.iam\.gserviceaccount\.com$`)
+	account := "rollout-probe"
+	if config.Zone != "" {
+		workload, _ := component(config.Service)
+		account = "probe-" + workload + "-" + config.zoneSuffix()
+	}
 	network := networkPattern.FindStringSubmatch(config.ProbeNetwork)
-	if !account.MatchString(config.ProbeAccount) || !config.image(config.VerifierImage, "") ||
+	if config.ProbeAccount != account+"@"+config.ProjectID+".iam.gserviceaccount.com" || !config.image(config.VerifierImage, "") ||
 		len(network) != 2 {
 		return Config{}, errors.New("invalid probe identity or verifier digest")
 	}
@@ -88,8 +95,42 @@ func (config Config) jobRunName() string { return config.rolloutName() + "/jobRu
 
 func (config Config) image(image, repositoryPath string) bool {
 	prefix := config.Region + "-docker.pkg.dev/" + config.ProjectID + "/"
-	if repositoryPath != "" {
+	if config.Zone != "" {
+		workload, _ := component(config.Service)
+		prefix += "agora-" + workload + "-" + config.zoneSuffix()
+		if repositoryPath == "" {
+			prefix += "-tooling/"
+		} else {
+			prefix += "-production/" + repositoryPath
+		}
+	} else if repositoryPath != "" {
 		prefix += "agora-production/" + repositoryPath
 	}
 	return strings.HasPrefix(image, prefix) && digestPattern.MatchString(image[len(config.Region+"-docker.pkg.dev/"):])
+}
+
+func (config Config) validScope() bool {
+	_, protocol := component(config.Service)
+	return (config.Zone == "" || config.Zone == "private") && protocol == "grpc" ||
+		config.Zone == "public-api" && protocol == "rest"
+}
+
+func (config Config) zoneSuffix() string {
+	if config.Zone == "public-api" {
+		return "api"
+	}
+	return config.Zone
+}
+
+func component(service string) (workload, protocol string) {
+	switch service {
+	case "agora-json-keys-grpc":
+		return "json-keys", "grpc"
+	case "agora-json-keys-rest":
+		return "json-keys", "rest"
+	case "agora-authentication-rest":
+		return "authentication", "rest"
+	default:
+		return "", ""
+	}
 }

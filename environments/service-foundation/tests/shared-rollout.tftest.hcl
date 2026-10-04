@@ -30,6 +30,16 @@ run "private_json_keys_authority" {
   module { source = "../../modules/cloud-run-rollout" }
 
   assert {
+    condition = alltrue([for stage in google_clouddeploy_delivery_pipeline.service.serial_pipeline[0].stages :
+      alltrue([for task in stage.strategy[0].canary[0].canary_deployment[0].verify_config[0].tasks :
+        task.container[0].env["EXPECTED_ZONE"] == "private" &&
+        task.container[0].env["EXPECTED_SERVICE"] == "agora-json-keys-grpc"
+      ])
+    ])
+    error_message = "Protected verification must bind the private zone and exact gRPC service."
+  }
+
+  assert {
     condition = (
       { for key, account in google_service_account.execution : key => account.account_id } == {
         deploy = "deploy-json-keys-private", verify = "verify-json-keys-private", probe = "probe-json-keys-private",
@@ -107,6 +117,16 @@ run "public_authentication_authority" {
   }
 
   assert {
+    condition = alltrue([for stage in google_clouddeploy_delivery_pipeline.service.serial_pipeline[0].stages :
+      alltrue([for task in stage.strategy[0].canary[0].canary_deployment[0].verify_config[0].tasks :
+        task.container[0].env["EXPECTED_ZONE"] == "public-api" &&
+        task.container[0].env["EXPECTED_SERVICE"] == "agora-authentication-rest"
+      ])
+    ])
+    error_message = "Protected verification must bind Authentication REST to the API zone."
+  }
+
+  assert {
     condition = (
       { for key, account in google_service_account.execution : key => account.account_id } == {
         deploy = "deploy-authentication-api", verify = "verify-authentication-api", probe = "probe-authentication-api",
@@ -134,6 +154,15 @@ run "public_json_keys_authority" {
     runtime_service_account = "agora-json-keys-api@agora-private-test.iam.gserviceaccount.com"
     artifact_bucket         = "agora-private-test-json-keys-api-rollout"
     verification_image      = "europe-west1-docker.pkg.dev/agora-private-test/agora-json-keys-api-tooling/verify@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  }
+  assert {
+    condition = alltrue([for stage in google_clouddeploy_delivery_pipeline.service.serial_pipeline[0].stages :
+      alltrue([for task in stage.strategy[0].canary[0].canary_deployment[0].verify_config[0].tasks :
+        task.container[0].env["EXPECTED_ZONE"] == "public-api" &&
+        task.container[0].env["EXPECTED_SERVICE"] == "agora-json-keys-rest"
+      ])
+    ])
+    error_message = "Protected verification must bind JSON Keys REST to the API zone."
   }
   assert {
     condition = (

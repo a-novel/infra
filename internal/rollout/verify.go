@@ -22,6 +22,10 @@ type Snapshot struct {
 
 // Check requires the exact image and phase traffic, returning the endpoint to probe.
 func (config Config) Check(snapshot Snapshot) (Probe, error) {
+	if !config.validScope() {
+		return Probe{}, errors.New("unsupported verification scope")
+	}
+	workload, protocol := component(config.Service)
 	release, rollout, jobRun := snapshot.Release, snapshot.Rollout, snapshot.JobRun
 	metadata := rollout.GetMetadata().GetCloudRun()
 	if release.GetName() != config.releaseName() || release.GetRenderState() != deploypb.Release_SUCCEEDED ||
@@ -33,23 +37,27 @@ func (config Config) Check(snapshot Snapshot) (Probe, error) {
 		return Probe{}, errors.New("release, rollout or verification job identity mismatch")
 	}
 	artifacts := release.GetBuildArtifacts()
-	if len(artifacts) != 1 || artifacts[0].GetImage() != "service-json-keys" ||
-		!config.image(artifacts[0].GetTag(), "service-json-keys/grpc@sha256:") {
-		return Probe{}, errors.New("release must select one promoted JSON Keys API digest")
+	if len(artifacts) != 1 || artifacts[0].GetImage() != "service-"+workload ||
+		!config.image(artifacts[0].GetTag(), "service-"+workload+"/"+protocol+"@sha256:") {
+		return Probe{}, errors.New("release must select one promoted service API digest")
 	}
 	service, revision := snapshot.Service, snapshot.Revision
+	ingress := runpb.IngressTraffic_INGRESS_TRAFFIC_INTERNAL_ONLY
+	if protocol == "rest" {
+		ingress = runpb.IngressTraffic_INGRESS_TRAFFIC_ALL
+	}
 	if service.GetName() != config.serviceName() || service.GetReconciling() || service.GetDeleteTime() != nil ||
 		service.GetObservedGeneration() != service.GetGeneration() ||
 		service.GetTerminalCondition().GetState() != runpb.Condition_CONDITION_SUCCEEDED ||
-		service.GetIngress() != runpb.IngressTraffic_INGRESS_TRAFFIC_INTERNAL_ONLY || service.GetInvokerIamDisabled() ||
+		service.GetIngress() != ingress || service.GetInvokerIamDisabled() != (protocol == "rest") ||
 		revision.GetName() != config.revisionName() || revision.GetService() != config.serviceName() ||
 		revision.GetReconciling() || revision.GetDeleteTime() != nil ||
 		!slices.ContainsFunc(revision.GetConditions(), func(condition *runpb.Condition) bool {
 			return condition.GetType() == "Ready" && condition.GetState() == runpb.Condition_CONDITION_SUCCEEDED
 		}) || len(revision.GetContainers()) != 1 || revision.GetContainers()[0].GetImage() != artifacts[0].GetTag() {
-		return Probe{}, errors.New("private service revision is not ready at the release digest")
+		return Probe{}, errors.New("service revision is not ready at the release digest or ingress boundary")
 	}
-	probe := Probe{Audience: service.GetUri(), Phase: config.Phase, Revision: config.revisionName(), Image: artifacts[0].GetTag(), JobRun: config.jobRunName()}
+	probe := Probe{Service: config.Service, Audience: service.GetUri(), Phase: config.Phase, Revision: config.revisionName(), Image: artifacts[0].GetTag(), JobRun: config.jobRunName()}
 	tag := "candidate"
 	if config.Phase == "stable" {
 		tag = "stable"
