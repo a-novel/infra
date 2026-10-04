@@ -46,6 +46,8 @@ spec:
           env:
             - name: GCLOUD_PROJECT_ID
               value: pilot-unconfigured # from-param: ${projectId}
+            - name: OTEL
+              value: "true"
             - name: GRPC_PORT
               value: "8080"
             - name: POSTGRES_HOST

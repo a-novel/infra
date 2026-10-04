@@ -633,6 +633,17 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
   }
 
   assert {
+    condition = alltrue([
+      for service in [google_cloud_run_v2_service.json_keys[0], google_cloud_run_v2_service.authentication[0]] :
+      one([
+        for environment in one(one(service.template).containers).env : environment
+        if environment.name == "OTEL"
+      ]).value == "true"
+    ])
+    error_message = "Authentication and JSON Keys must export OpenTelemetry traces and logs."
+  }
+
+  assert {
     condition = (
       length(google_cloud_run_v2_service.authentication) == 1 &&
       google_cloud_run_v2_service.authentication[0].ingress == "INGRESS_TRAFFIC_ALL" &&

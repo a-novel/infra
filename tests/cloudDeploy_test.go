@@ -69,6 +69,7 @@ func TestCloudDeployManifest(t *testing.T) {
 			require.Equal(t, testCase.port, env["POSTGRES_PORT"]["value"])
 			require.Equal(t, testCase.user, env["POSTGRES_USER"]["value"])
 			require.Equal(t, testCase.user, env["POSTGRES_DATABASE"]["value"])
+			require.Equal(t, "true", env["OTEL"]["value"])
 			var secrets []string
 			for name, value := range env {
 				if _, secret := value["valueFrom"]; secret {
