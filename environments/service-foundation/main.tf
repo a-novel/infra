@@ -41,14 +41,6 @@ resource "google_service_account" "runtime" {
       )
       error_message = "Shared-zone prerequisites cannot enroll hosts or application jobs before their ownership handoff."
     }
-    precondition {
-      condition = var.rollout == null || var.zone == null ? true : try(
-        var.database_handoff != null &&
-        can(regex("^projects/${var.database_handoff.private_project_id}/global/networks/[a-z][a-z0-9-]+$", var.rollout.network)) &&
-        can(regex("^projects/${var.database_handoff.private_project_id}/regions/${var.region}/subnetworks/[a-z][a-z0-9-]+$", var.rollout.subnetwork)),
-      false)
-      error_message = "Shared rollout requires the approved existing-database handoff and a probe network/subnet in that private project and region."
-    }
   }
 }
 
@@ -92,7 +84,7 @@ resource "google_artifact_registry_repository" "images" {
     immutable_tags = true
   }
 
-  # Retained receipts and Cloud Deploy releases may reference any stored digest.
+  # Retained recovery receipts may reference any stored digest.
   cleanup_policy_dry_run = true
 
   lifecycle {

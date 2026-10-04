@@ -143,7 +143,7 @@ Leave the current production release flag and legacy backups unchanged.
 | Protected entry point                         | Setting required during parking                                                                                                 |
 | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | Service-foundation plans/applies              | `SERVICE_FOUNDATIONS_ENABLED=false`                                                                                             |
-| Application-job bootstrap and native release  | `SERVICE_JOB_BOOTSTRAP_ENABLED=false`, `SERVICE_NATIVE_RELEASE_ENABLED=false`                                                   |
+| Application-job bootstrap                     | `SERVICE_JOB_BOOTSTRAP_ENABLED=false`                                                                                           |
 | Native recovery preparation/execution/cleanup | `NATIVE_RECOVERY_PREPARATION_ENABLED=false`, `NATIVE_RECOVERY_EXECUTION_ENABLED=false`, `NATIVE_RECOVERY_CLEANUP_ENABLED=false` |
 | Completion repair                             | `SERVICE_OPERATION_RECOVERY_ENABLED=false`                                                                                      |
 

@@ -5,7 +5,7 @@ import (
 	"io"
 )
 
-// ObservationInputs authorizes a rollout or apply-evidence reader before
+// ObservationInputs authorizes an apply-evidence reader before
 // authentication. stdout carries only the selected scope for subsequent steps.
 func ObservationInputs(args []string, getenv func(string) string, stdout, stderr io.Writer) int {
 	stop := func(message string) int {
@@ -31,15 +31,5 @@ func ObservationInputs(args []string, getenv func(string) string, stdout, stderr
 		}
 		return stop("The selected service is not registered for inspection.")
 	}
-	if getenv("SERVICE_ROLLOUT_OBSERVATION_ENABLED") != "true" {
-		return stop("Rollout observation requires separate activation approval.")
-	}
-	parent := getenv("GCP_JSON_KEYS_ROLLOUT_PARENT")
-	if !matches(`projects/[1-9][0-9]*/locations/[a-z]+-[a-z]+[1-9][0-9]*/deliveryPipelines/agora-json-keys-grpc`, parent) {
-		return stop("Configure the approved numeric JSON Keys pipeline before observation.")
-	}
-	if _, err := fmt.Fprintf(stdout, "rollout=%s/releases/%s/rollouts/%s\n", parent, args[2], args[3]); err != nil {
-		return stop("Cannot record the authorized rollout identity.")
-	}
-	return 0
+	return stop("Select a supported operation inspection.")
 }

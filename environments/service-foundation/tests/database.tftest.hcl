@@ -222,14 +222,3 @@ run "reserve_host_cpu" {
   }
   expect_failures = [var.database]
 }
-run "reject_mismatched_rollout_subnet" {
-  command = plan
-  variables {
-    rollout = {
-      verification_image = "europe-west1-docker.pkg.dev/agora-json-keys-test/agora-tooling/verify@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      network            = "projects/agora-network-test/global/networks/agora-production"
-      subnetwork         = "projects/agora-network-test/regions/europe-west1/subnetworks/another-subnet"
-    }
-  }
-  expect_failures = [var.database]
-}

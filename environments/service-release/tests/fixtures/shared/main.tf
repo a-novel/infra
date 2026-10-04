@@ -25,10 +25,6 @@ locals {
     }
     database        = jsondecode(module.handoff.cases[replace(service, "-", "_")].document_json)
     database_source = module.handoff.cases[replace(service, "-", "_")].reference
-    rollout = {
-      pipeline = "projects/${local.project}/locations/europe-west1/deliveryPipelines/agora-${service}-${local.role}"
-      target   = "projects/${local.project}/locations/europe-west1/targets/agora-${service}-${local.role}"
-    }
   } }
   cases = merge(local.documents, {
     peer_scope      = merge(local.documents.json-keys, { scope = local.documents.authentication.scope })
@@ -42,9 +38,6 @@ locals {
     legacy_schema   = merge(local.documents.json-keys, { schema_version = 1 })
     api_runtime     = merge(local.documents.json-keys, { runtime = merge(local.documents.json-keys.runtime, { zone = "public-api" }) })
     peer_registry   = merge(local.documents.json-keys, { runtime = merge(local.documents.json-keys.runtime, { repositories = local.documents.authentication.runtime.repositories }) })
-    no_rollout      = merge(local.documents.json-keys, { rollout = null })
-    peer_pipeline   = merge(local.documents.json-keys, { rollout = merge(local.documents.json-keys.rollout, { pipeline = local.documents.authentication.rollout.pipeline }) })
-    peer_target     = merge(local.documents.json-keys, { rollout = merge(local.documents.json-keys.rollout, { target = local.documents.authentication.rollout.target }) })
     peer_project    = merge(local.documents.json-keys, { runtime = merge(local.documents.json-keys.runtime, { project_id = "agora-peer-test" }) })
   })
 }
@@ -62,30 +55,22 @@ output "cases" {
   } }
 }
 
-locals {
-  requests       = yamldecode(file("${path.module}/../../../../../internal/submission/testdata/sharedRequests.yaml"))
-  authentication = local.requests["public-api/authentication"].release.deployParameters
-}
-
-output "rollout" {
-  value = { for scope, request in local.requests : trimprefix(scope, "${var.zone}/") => {
-    project_number   = "123456"
-    image            = request.release.buildArtifacts[0].tag
-    release_id       = request.releaseId
-    request_id       = request.requestId
-    source_commit    = request.release.annotations.source-commit
-    skaffold_version = request.release.skaffoldVersion
-  } if startswith(scope, "${var.zone}/") }
+output "api" {
+  value = { for service in keys(local.documents) : service => {
+    image            = "europe-west1-docker.pkg.dev/${local.project}/agora-${service}-${local.suffix}-production/service-${service}/${local.role}@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    revision         = "agora-${service}-${local.role}-candidate"
+    serving_revision = "agora-${service}-${local.role}-active"
+  } }
 }
 
 output "authentication" {
   value = {
-    json_keys_host     = local.authentication.jsonKeysHost
-    platform_auth_url  = local.authentication.platformAuthURL
-    smtp_address       = local.authentication.smtpAddress
-    smtp_username      = local.authentication.smtpUsername
-    smtp_sender_domain = local.authentication.smtpSenderDomain
-    smtp_sender_email  = local.authentication.smtpSenderEmail
-    smtp_sender_name   = local.authentication.smtpSenderName
+    json_keys_host     = "agora-json-keys-grpc-123456.europe-west1.run.app"
+    platform_auth_url  = "https://auth.example.test"
+    smtp_address       = "smtp.example.test:587"
+    smtp_username      = "example"
+    smtp_sender_domain = "example.test"
+    smtp_sender_email  = "noreply@example.test"
+    smtp_sender_name   = "Example"
   }
 }

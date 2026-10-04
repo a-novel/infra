@@ -13,8 +13,8 @@ variable "authentication" {
   default = null
 
   validation {
-    condition     = (var.authentication != null) == (var.zone == "public-api" && var.service == "authentication" && var.rollout != null)
-    error_message = "Only a configured public Authentication API request requires Authentication settings."
+    condition     = (var.authentication != null) == (var.zone == "public-api" && var.service == "authentication" && var.api != null)
+    error_message = "Only a configured public Authentication API requires Authentication settings."
   }
   validation {
     condition = var.authentication == null ? true : try(alltrue([
@@ -39,17 +39,19 @@ variable "authentication" {
 }
 
 locals {
-  authentication_parameters = merge({
-    jsonKeysHost        = try(var.authentication.json_keys_host, "")
-    platformAuthURL     = try(var.authentication.platform_auth_url, "")
-    smtpAddress         = try(var.authentication.smtp_address, "")
-    smtpUsername        = try(var.authentication.smtp_username, "")
-    smtpSenderDomain    = try(var.authentication.smtp_sender_domain, "")
-    smtpSenderEmail     = try(var.authentication.smtp_sender_email, "")
-    smtpSenderName      = try(var.authentication.smtp_sender_name, "")
-    smtpPasswordVersion = tostring(lookup(var.secret_versions, "smtp-sender-password", 0))
+  authentication_environment = merge({
+    SERVICE_JSON_KEYS_HOST = try(var.authentication.json_keys_host, "")
+    SERVICE_JSON_KEYS_PORT = "443"
+    PLATFORM_AUTH_URL      = try(var.authentication.platform_auth_url, "")
+    REST_TIMEOUT_SHUTDOWN  = "9s"
+    SMTP_ADDR              = try(var.authentication.smtp_address, "")
+    SMTP_USERNAME          = try(var.authentication.smtp_username, "")
+    SMTP_SENDER_DOMAIN     = try(var.authentication.smtp_sender_domain, "")
+    SMTP_SENDER_EMAIL      = try(var.authentication.smtp_sender_email, "")
+    SMTP_SENDER_NAME       = try(var.authentication.smtp_sender_name, "")
+    SMTP_MAX_CONCURRENT    = "8"
+    SMTP_TIMEOUT           = "5s"
     }, try(var.authentication.waitlist_url, null) == null ? {} : {
-    waitlistURL           = var.authentication.waitlist_url
-    waitlistSecretVersion = tostring(lookup(var.secret_versions, "waitlist-secret", 0))
+    WAITLIST_URL = var.authentication.waitlist_url
   })
 }

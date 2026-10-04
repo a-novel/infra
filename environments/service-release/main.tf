@@ -25,6 +25,13 @@ locals {
     ) : [],
   )) : toset(flatten([for job in values(local.jobs) : values(job.secrets)]))
   database_user = "agora_${replace(var.service, "-", "_")}"
+  database_environment = {
+    POSTGRES_HOST        = try(local.coordinates.database.private_ip, "")
+    POSTGRES_PORT        = try(tostring(local.coordinates.database.port), "")
+    POSTGRES_USER        = local.database_user
+    POSTGRES_DATABASE    = local.database_user
+    POSTGRES_TLS_ENABLED = "false"
+  }
 }
 
 resource "google_cloud_run_v2_job" "application" {
@@ -51,13 +58,7 @@ resource "google_cloud_run_v2_job" "application" {
         image = lookup(var.images, each.key, "")
 
         dynamic "env" {
-          for_each = {
-            POSTGRES_HOST        = try(local.coordinates.database.private_ip, "")
-            POSTGRES_PORT        = try(tostring(local.coordinates.database.port), "")
-            POSTGRES_USER        = local.database_user
-            POSTGRES_DATABASE    = local.database_user
-            POSTGRES_TLS_ENABLED = "false"
-          }
+          for_each = local.database_environment
           content {
             name  = env.key
             value = env.value

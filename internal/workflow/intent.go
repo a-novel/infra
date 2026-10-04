@@ -13,7 +13,6 @@ import (
 const usage = `usage: go run ./cmd/infra
   drift
   drift assess-pull-request <pull-request-number>
-  drift observe-rollout json-keys <release-id> <rollout-id>
   drift inspect-operation <json-keys|authentication> [guard-generation]
   foundation plan <bootstrap|foundation>
   foundation apply <bootstrap|foundation> <plan-id>
@@ -72,20 +71,6 @@ func parse(args []string) (intent, error) {
 				return i, invalid
 			}
 			i.pullRequest = args[1]
-		case "observe-rollout":
-			if len(args) != 4 || args[1] != "json-keys" {
-				return i, invalid
-			}
-			for _, id := range args[2:] {
-				if !matches(`[a-z]([a-z0-9-]{0,61}[a-z0-9])?`, id) {
-					return i, invalid
-				}
-			}
-			i.observation = true
-			i.input("operation", "observe-rollout")
-			i.input("service", args[1])
-			i.input("release_id", args[2])
-			i.input("rollout_id", args[3])
 		case "inspect-operation":
 			if len(args) < 2 || len(args) > 3 || !slices.Contains([]string{"json-keys", "authentication"}, args[1]) {
 				return i, invalid

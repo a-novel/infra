@@ -80,10 +80,10 @@ run "private_json_keys_prerequisites" {
     condition = (
       length(google_secret_manager_secret_iam_member.foundation_job_metadata) == 0 &&
       length(google_compute_disk.database) == 0 && length(google_compute_instance.repository) == 0 &&
-      length(module.rollout) == 0 && length(module.job_access) == 0 &&
+      length(module.job_access) == 0 &&
       output.database == null && output.pgbackrest_repository == null && output.native_bringup == null
     )
-    error_message = "Shared prerequisites must not claim existing hosts or enable jobs, rollout or backup maintenance."
+    error_message = "Shared prerequisites must not claim existing hosts or enable jobs or backup maintenance."
   }
 }
 
@@ -119,7 +119,7 @@ run "public_api_json_keys_prerequisites" {
       google_storage_managed_folder.coordinates.name == "foundation/coordinates/workloads/production/public-api/agora-public-api-test/json-keys/" &&
       jsondecode(google_storage_bucket_object.coordinates.content).scope == "workloads/production/public-api/agora-public-api-test/json-keys" &&
       output.runtime.zone == "public-api" && output.runtime.schema_version == 2 &&
-      length(module.job_access) == 0 && length(module.rollout) == 0 && output.database == null
+      length(module.job_access) == 0 && output.database == null
     )
     error_message = "Public API resources and coordinates must use their own identity and namespace without a host or job writer."
   }
@@ -214,18 +214,6 @@ run "reject_shared_database" {
       zone       = "europe-west1-b"
       subnetwork = "projects/agora-network-test/regions/europe-west1/subnetworks/agora-production-europe-west1"
       cos_image  = "projects/cos-cloud/global/images/cos-129-19506-448-53"
-    }
-  }
-  expect_failures = [google_service_account.runtime]
-}
-
-run "reject_shared_rollout_without_handoff" {
-  command = plan
-  variables {
-    rollout = {
-      verification_image = "europe-west1-docker.pkg.dev/agora-private-test/agora-json-keys-private-tooling/verify@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      network            = "projects/agora-network-test/global/networks/agora-production"
-      subnetwork         = "projects/agora-network-test/regions/europe-west1/subnetworks/agora-production-europe-west1"
     }
   }
   expect_failures = [google_service_account.runtime]

@@ -37,7 +37,7 @@ func TestReadOnlyWorkflows(t *testing.T) {
 	require.NoError(t, yaml.Unmarshal(data, &document))
 	require.Empty(t, document.Permissions)
 	require.Equal(t, object{
-		"group":              "${{ inputs.operation == 'inspect-operation' && 'operation-inspection' || inputs.operation == 'observe-rollout' && 'rollout-observation' || 'production-infrastructure' }}",
+		"group":              "${{ inputs.operation == 'inspect-operation' && 'operation-inspection' || 'production-infrastructure' }}",
 		"cancel-in-progress": false,
 	}, document.Concurrency)
 	var raw map[string]any
@@ -47,16 +47,6 @@ func TestReadOnlyWorkflows(t *testing.T) {
 		timeout                                                int
 		scopeEnv, readerEnv, readerWith                        object
 	}{
-		{
-			name: "observe-rollout", timeout: 20, reader: "$/.github/actions/observe-rollout",
-			scopeCommand: "set -euo pipefail\ninfra observation-inputs observe-rollout \"${SELECTED_SERVICE}\" \"${RELEASE_ID}\" \"${ROLLOUT_ID}\" >>\"${GITHUB_OUTPUT}\"\n",
-			scopeEnv: object{
-				"SERVICE_ROLLOUT_OBSERVATION_ENABLED": "${{ vars.SERVICE_ROLLOUT_OBSERVATION_ENABLED }}",
-				"GCP_JSON_KEYS_ROLLOUT_PARENT":        "${{ vars.GCP_JSON_KEYS_ROLLOUT_PARENT }}",
-				"SELECTED_SERVICE":                    "${{ inputs.service }}", "RELEASE_ID": "${{ inputs.release_id }}", "ROLLOUT_ID": "${{ inputs.rollout_id }}",
-			},
-			readerWith: object{"rollout": "${{ steps.scope.outputs.rollout }}", "timeout": "10m"},
-		},
 		{
 			name: "inspect-operation", timeout: 10, environment: "production-foundation",
 			scopeCommand: "set -euo pipefail\nargs=(inspect-operation \"${SELECTED_SERVICE}\")\n" +
@@ -108,9 +98,6 @@ func TestReadOnlyWorkflows(t *testing.T) {
 			encoded, err := json.Marshal(raw["jobs"].(map[string]any)[testCase.name])
 			require.NoError(t, err)
 			require.NotRegexp(t, `continue-on-error|always\(\)|gcloud|opentofu|submit-release|submit-rollout`, string(encoded))
-			if testCase.name == "observe-rollout" {
-				require.NotContains(t, string(encoded), "secrets.")
-			}
 		})
 	}
 	for _, name := range []string{"inspect", "health", "assess-resource-deletion"} {

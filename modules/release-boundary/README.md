@@ -20,15 +20,15 @@ retain existing state ownership. `retirement` is available only for that compati
 
 ## Identity and storage contract
 
-| Coordinate         | Shared-zone contract                                                                                                                                                                          |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Service account    | `infra-<service>-<zone>` in the selected project, using `api` for the `public-api` suffix to stay within the 30-character account-ID limit; persistent deletion prevention.                   |
-| GitHub environment | `<environment>-<service>-<zone>-release`; configure required reviewers, protected branches and no admin bypass before creating federation.                                                    |
-| Provider           | Management's existing `github-actions` pool; stable `r-` plus 28 hex characters of the environment/project/service/zone scope hash.                                                           |
-| Federation         | Immutable repository and owner IDs, master, the exact release workflow and environment; a constant scope attribute selects the matching account.                                              |
-| State              | `workloads/<environment>/<zone>/<project>/<service>/release/` in the existing state bucket. Only this release account writes; the plan identity reads.                                        |
-| Receipts           | The sibling `production/` folder in the existing receipt bucket. Release can create/read, but not overwrite/delete. Planning reads only exact operation, native-success and rotation records. |
-| Output             | Schema 2 includes service, zone, project and identity/storage coordinates. Existing schema-1 consumers must not interpret it as runtime enrollment.                                           |
+| Coordinate         | Shared-zone contract                                                                                                                                                          |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Service account    | `infra-<service>-<zone>` in the selected project, using `api` for the `public-api` suffix to stay within the 30-character account-ID limit; persistent deletion prevention.   |
+| GitHub environment | `<environment>-<service>-<zone>-release`; configure required reviewers, protected branches and no admin bypass before creating federation.                                    |
+| Provider           | Management's existing `github-actions` pool; stable `r-` plus 28 hex characters of the environment/project/service/zone scope hash.                                           |
+| Federation         | Immutable repository and owner IDs, master, the exact release workflow and environment; a constant scope attribute selects the matching account.                              |
+| State              | `workloads/<environment>/<zone>/<project>/<service>/release/` in the existing state bucket. Only this release account writes; the plan identity reads.                        |
+| Receipts           | The sibling `production/` folder in the existing receipt bucket. Release can create/read, but not overwrite/delete. Planning reads only exact operation and rotation records. |
+| Output             | Schema 2 includes service, zone, project and identity/storage coordinates. Existing schema-1 consumers must not interpret it as runtime enrollment.                           |
 
 Managed-folder IAM is [additive](https://docs.cloud.google.com/storage/docs/managed-folders).
 The new `workloads/` namespace is a sibling of existing service and legacy namespaces, not a

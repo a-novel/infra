@@ -20,8 +20,6 @@ import (
 	"github.com/a-novel/infra/internal/isolation"
 	"github.com/a-novel/infra/internal/operator"
 	"github.com/a-novel/infra/internal/release"
-	"github.com/a-novel/infra/internal/rollout"
-	"github.com/a-novel/infra/internal/submission"
 	"github.com/a-novel/infra/internal/workflow"
 )
 
@@ -89,14 +87,6 @@ func main() {
 		code = database.Run(ctx, os.Args[2:], os.Getenv, quiet, os.Stdout, os.Stderr)
 	} else if len(os.Args) > 1 && os.Args[1] == "custody" {
 		code = custody.Run(ctx, os.Args[2:], os.Getenv, quiet, os.Stdout, os.Stderr)
-	} else if len(os.Args) > 1 && os.Args[1] == "observe-rollout" {
-		code = rollout.RunObserver(ctx, os.Args[2:], os.Stdout, os.Stderr)
-	} else if len(os.Args) > 1 && os.Args[1] == "service-release" {
-		code = submission.Operation(ctx, os.Args[2:], os.Getenv, quiet, artifact.NewClient(), os.Stdout, os.Stderr)
-	} else if len(os.Args) > 1 && slices.Contains([]string{
-		"validate-release-source", "publish-release-source", "reconcile-release", "reconcile-rollout", "reconcile-migration",
-	}, os.Args[1]) {
-		code = submission.Run(ctx, os.Args[1:], os.Stdout, os.Stderr)
 	} else if len(os.Args) > 1 && os.Args[1] == "check-health" {
 		code = health.Run(ctx, os.Args[2:], quiet, nil, os.Stdout, os.Stderr)
 	} else if len(os.Args) > 1 && slices.Contains([]string{"assess-updates", "assess-images", "assess-versions", "refresh-deletion-gates"}, os.Args[1]) {

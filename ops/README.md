@@ -67,7 +67,6 @@ registration; use `--ttl <duration>` to select a positive duration in seconds, m
 ```text
 go run ./cmd/infra drift
 go run ./cmd/infra drift assess-pull-request <pull-request-number>
-go run ./cmd/infra drift observe-rollout json-keys <release-id> <rollout-id>
 go run ./cmd/infra drift inspect-operation <json-keys|authentication> [guard-generation]
 
 go run ./cmd/infra foundation plan <bootstrap|foundation>
@@ -121,14 +120,11 @@ Progress and approval URLs go to stderr. Stdout contains only the promised opaqu
 another program can capture it without parsing logs. None of these commands prints workflow secrets,
 OpenTofu values, credentials, or authorization headers.
 
-The separately enabled [rollout observation](../docs/runbooks/observe-rollout.md#observation-only-workflow)
-uses read-only credentials and its own concurrency group, so tracking remains available during a
-deployment. It reports the exact rollout's verification outcome without submitting or replaying work.
 [Interrupted-apply inspection](../docs/service-operations.md#inspect-an-interrupted-apply) likewise uses
 read-only credentials and separate concurrency, with protected foundation registration and environment
 review. A successful inspection is not a successful deployment or permission to unlock/retry.
 The separately enabled [finish operation](../docs/service-operations.md#finish-an-already-recorded-operation)
-can remove only the exact live guard of a recorded converged apply or successful native release after
+can remove only the exact live guard of a recorded converged apply after
 its original workflow attempt completes. It never repeats deployment or repairs missing evidence,
 and uses writer concurrency.
 All other infrastructure operations retain their shared execution guard.

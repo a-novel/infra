@@ -1,9 +1,0 @@
-apiVersion: skaffold/v4beta7
-kind: Config
-metadata:
-  name: authentication-rest-waitlist
-manifests:
-  rawYaml:
-    - service-waitlist.yaml
-deploy:
-  cloudrun: {}

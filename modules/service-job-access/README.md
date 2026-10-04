@@ -14,7 +14,7 @@ job bootstrap opt-in; the service pilot remains disabled by default.
 | Service Account User                    | The selected application runtime only.                                  |
 
 Job creation/deletion and IAM changes remain protected operations. The release principal receives
-no API, scheduler or rollout-probe mutation grant here. Cloud Deploy workers receive no grants.
+no API or scheduler mutation grant here.
 The narrow custom roles complement Google's predefined invocation and identity-attachment roles;
 the existing provider owns policy convergence. There is no additional script or dependency.
 
@@ -43,7 +43,7 @@ probe/peer updates, creation/deletion, overrides, cancellation, IAM writes and a
 runtime. Additive IAM members preserve other grants; these declarations cannot prove effective denial.
 Use same-service exclusion for configuration, migrations and rollout. Reconcile an uncertain execution
 against native operation/execution records before any retry. Migration dispatch remains outside
-Cloud Deploy retry hooks.
+automatic retry hooks.
 
 ## Guarded rotation
 
@@ -174,7 +174,7 @@ incident closure and scheduler HTTP success are not proof of application recover
 also does not prove that a new key was needed or published.
 
 The [workload project](../workload-project) grants protected foundation `roles/monitoring.alertPolicyEditor`;
-it already owns channel administration. Release, application, scheduler and Cloud Deploy identities
+it already owns channel administration. Release, application and scheduler identities
 receive no alert/channel-administration grant here. Keep current production alerts until the explicit one-writer
 handoff. Deleting this policy removes monitoring, not jobs or evidence; the provider permits deletion
 through the reviewed plan gate. Recovery omits this entire module.

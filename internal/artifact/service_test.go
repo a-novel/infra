@@ -18,7 +18,7 @@ func TestServiceInputs(t *testing.T) {
 		{"InitializerJob", func(_, c object) { c["images"].(object)["init"] = "private-diagnostic" }},
 		{"ForeignJobPin", func(_, c object) { c["images"].(object)["rotatekeys"] = "private-diagnostic" }},
 		{"ForeignProject", func(_, c object) { c["project_id"] = "fixture-other" }},
-		{"WrongAPIPin", func(_, c object) { c["rollout"] = object{"image": "private-diagnostic"} }},
+		{"WrongAPIPin", func(_, c object) { c["api"] = object{"image": "private-diagnostic"} }},
 		{"UnknownService", func(_, c object) { c["service"] = "private-diagnostic" }},
 		{"InvalidRegion", func(_, c object) { c["region"] = "--private-diagnostic" }},
 	} {

@@ -145,7 +145,7 @@ run "shared_release_federation_and_permissions" {
       google_storage_managed_folder_iam_member.plan.managed_folder == google_storage_managed_folder.release["state"].name &&
       google_storage_bucket_iam_member.plan_operation_reader.role == "roles/storage.objectViewer" &&
       google_storage_bucket_iam_member.plan_operation_reader.member == "serviceAccount:${var.plan_service_account}" &&
-      google_storage_bucket_iam_member.plan_operation_reader.condition[0].expression == "resource.type == 'storage.googleapis.com/Object' && (resource.name.startsWith('projects/_/buckets/agora-management-test-123456789012-deployment-receipts/objects/workloads/production/public-api/agora-api-test/authentication/production/operations/') || resource.name.startsWith('projects/_/buckets/agora-management-test-123456789012-deployment-receipts/objects/workloads/production/public-api/agora-api-test/authentication/production/native-success/') || resource.name.startsWith('projects/_/buckets/agora-management-test-123456789012-deployment-receipts/objects/workloads/production/public-api/agora-api-test/authentication/production/rotations/'))"
+      google_storage_bucket_iam_member.plan_operation_reader.condition[0].expression == "resource.type == 'storage.googleapis.com/Object' && (resource.name.startsWith('projects/_/buckets/agora-management-test-123456789012-deployment-receipts/objects/workloads/production/public-api/agora-api-test/authentication/production/operations/') || resource.name.startsWith('projects/_/buckets/agora-management-test-123456789012-deployment-receipts/objects/workloads/production/public-api/agora-api-test/authentication/production/rotations/'))"
     )
     error_message = "Custody writes and evidence reads must remain bounded to sibling service/zone folders."
   }
@@ -400,7 +400,6 @@ run "protected_project_shell" {
   assert {
     condition = { for service, binding in google_project_iam_member.service_agent : service => binding.role } == {
       "cloudbuild.googleapis.com"     = "roles/cloudbuild.serviceAgent"
-      "clouddeploy.googleapis.com"    = "roles/clouddeploy.serviceAgent"
       "cloudscheduler.googleapis.com" = "roles/cloudscheduler.serviceAgent"
       "compute.googleapis.com"        = "roles/compute.serviceAgent"
       "run.googleapis.com"            = "roles/run.serviceAgent"
@@ -457,19 +456,14 @@ run "protected_project_shell" {
   assert {
     condition = google_project_iam_custom_role.foundation_control_plane.permissions == toset(flatten([
       for resource, actions in {
-        "clouddeploy.deliveryPipelines" = ["create", "delete", "get", "getIamPolicy", "setIamPolicy", "update"]
-        "clouddeploy.targets"           = ["create", "delete", "get", "getIamPolicy", "setIamPolicy", "update"]
-        "clouddeploy.operations"        = ["get"]
-        "clouddeploy.releases"          = ["get"]
-        "clouddeploy.rollouts"          = ["get"]
-        "cloudscheduler.jobs"           = ["create", "delete", "fullView", "get", "pause", "update"]
-        "run.jobs"                      = ["create", "delete", "get", "getIamPolicy", "setIamPolicy", "update"]
-        "run.operations"                = ["get"]
-        "run.services"                  = ["get", "getIamPolicy", "setIamPolicy"]
-        "storage.buckets"               = ["create", "delete", "get", "getIamPolicy", "setIamPolicy", "update"]
-        "workflows.executions"          = ["get"]
-        "workflows.operations"          = ["get"]
-        "workflows.workflows"           = ["create", "delete", "get", "update"]
+        "cloudscheduler.jobs"  = ["create", "delete", "fullView", "get", "pause", "update"]
+        "run.jobs"             = ["create", "delete", "get", "getIamPolicy", "setIamPolicy", "update"]
+        "run.operations"       = ["get"]
+        "run.services"         = ["get", "getIamPolicy", "setIamPolicy"]
+        "storage.buckets"      = ["create", "delete", "get", "getIamPolicy", "setIamPolicy", "update"]
+        "workflows.executions" = ["get"]
+        "workflows.operations" = ["get"]
+        "workflows.workflows"  = ["create", "delete", "get", "update"]
       } : [for action in actions : "${resource}.${action}"]
     ]))
     error_message = "Resource-policy administration must not add dispatch, promotion, API-specification mutation, schedule resume, payload or token minting."
@@ -478,7 +472,6 @@ run "protected_project_shell" {
   assert {
     condition = google_project_iam_custom_role.plan_policy.permissions == toset([
       "artifactregistry.repositories.getIamPolicy", "iam.roles.get", "iam.serviceAccounts.getIamPolicy",
-      "clouddeploy.deliveryPipelines.getIamPolicy", "clouddeploy.targets.getIamPolicy",
       "resourcemanager.projects.getIamPolicy", "run.jobs.getIamPolicy", "run.services.getIamPolicy", "storage.buckets.getIamPolicy",
     ])
     error_message = "Assessment needs policy refresh without payload access, identity attachment or mutation."
@@ -679,7 +672,7 @@ run "protected_legacy_release" {
       google_storage_bucket_iam_member.plan_operation_reader.bucket == "agora-management-test-123456789012-deployment-receipts" &&
       google_storage_bucket_iam_member.plan_operation_reader.member == "serviceAccount:${var.plan_service_account}" &&
       google_storage_bucket_iam_member.plan_operation_reader.role == "roles/storage.objectViewer" &&
-      google_storage_bucket_iam_member.plan_operation_reader.condition[0].expression == "resource.type == 'storage.googleapis.com/Object' && (resource.name.startsWith('projects/_/buckets/agora-management-test-123456789012-deployment-receipts/objects/services/agora-json-keys-test/production/operations/') || resource.name.startsWith('projects/_/buckets/agora-management-test-123456789012-deployment-receipts/objects/services/agora-json-keys-test/production/native-success/') || resource.name.startsWith('projects/_/buckets/agora-management-test-123456789012-deployment-receipts/objects/services/agora-json-keys-test/production/rotations/'))"
+      google_storage_bucket_iam_member.plan_operation_reader.condition[0].expression == "resource.type == 'storage.googleapis.com/Object' && (resource.name.startsWith('projects/_/buckets/agora-management-test-123456789012-deployment-receipts/objects/services/agora-json-keys-test/production/operations/') || resource.name.startsWith('projects/_/buckets/agora-management-test-123456789012-deployment-receipts/objects/services/agora-json-keys-test/production/rotations/'))"
     )
     error_message = "Inspection may read only exact service completion objects, without bucket-wide listing or mutation."
   }
@@ -897,12 +890,12 @@ run "two_service_projects_share_only_the_host" {
 
   assert {
     condition = (
-      contains(google_compute_firewall.allow_restricted_google_apis.target_tags, "agora-rollout-probe") &&
+      !contains(google_compute_firewall.allow_restricted_google_apis.target_tags, "agora-rollout-probe") &&
       google_compute_firewall.allow_restricted_google_apis.destination_ranges == local.restricted_google_api_ranges &&
       alltrue([for rule in google_compute_firewall.allow_restricted_google_apis.allow : rule.protocol == "tcp" && rule.ports == tolist(["443"])]) &&
       alltrue([for rule in google_compute_firewall.allow_postgres_egress : !contains(rule.target_tags, "agora-rollout-probe")])
     )
-    error_message = "The rollout probe can reach Google HTTPS destinations but gains no PostgreSQL egress."
+    error_message = "Service registration must not add a probe tag or widen restricted HTTPS and database egress."
   }
 }
 

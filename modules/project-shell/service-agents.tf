@@ -1,7 +1,6 @@
 locals {
   service_agent_roles = {
     "cloudbuild.googleapis.com"     = "roles/cloudbuild.serviceAgent"
-    "clouddeploy.googleapis.com"    = "roles/clouddeploy.serviceAgent"
     "cloudscheduler.googleapis.com" = "roles/cloudscheduler.serviceAgent"
     "compute.googleapis.com"        = "roles/compute.serviceAgent"
     "run.googleapis.com"            = "roles/run.serviceAgent"

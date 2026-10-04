@@ -16,7 +16,6 @@ import (
 	"google.golang.org/api/option"
 	"google.golang.org/api/storage/v1"
 
-	"github.com/a-novel/infra/internal/submission"
 	"github.com/a-novel/infra/internal/workflow"
 )
 
@@ -29,7 +28,6 @@ type operationEvidence struct {
 	guard     objectReference
 	live      int64
 	completed bool
-	native    *submission.OperationEvidence
 	rotation  *rotationIntent
 	restore   *restoreIntent
 	cleanup   *cleanupIntent
@@ -125,14 +123,6 @@ func readOperation(ctx context.Context, client *storage.Service, bucket string, 
 	switch header.Kind {
 	case "":
 		evidence.intent, evidence.completed, err = inspectApply(ctx, client, expected, guard, data, getenv)
-	case "native-release":
-		evidence.native, err = submission.InspectOperation(data, generation, bucket, expected.Project, getenv, func(name string) ([]byte, error) {
-			receipts := strings.TrimSuffix(bucket, "-tofu-state") + "-deployment-receipts"
-			return readCurrentObject(ctx, client, receipts, name)
-		})
-		if err == nil {
-			evidence.completed = evidence.native.Completed
-		}
 	case "scheduled-rotation":
 		evidence.rotation, evidence.completed, err = inspectRotation(ctx, client, expected, guard, data)
 	case "native-restore":
@@ -201,11 +191,6 @@ func (evidence operationEvidence) report(output io.Writer) error {
 		state = "held"
 	case 0:
 		state = "no live guard"
-	}
-	if evidence.native != nil {
-		_, err := fmt.Fprintf(output, "Service: %s (%s)\nGuard generation: %d (%s)\n%sEvidence only: not current health, settled native work, a recovery receipt, or permission to unlock or retry.\n",
-			evidence.intent.Service, evidence.intent.Project, evidence.guard.Generation, state, evidence.native.Report)
-		return err
 	}
 	if evidence.rotation != nil {
 		completion := "not recorded; rotation may still have run"

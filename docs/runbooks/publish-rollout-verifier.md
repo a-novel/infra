@@ -1,11 +1,11 @@
 # Publish infrastructure tooling
 
-This publishes one reviewed tooling image to GHCR. Cloud promotion and host/rollout activation
+This publishes one reviewed tooling image to GHCR. Cloud promotion and host activation
 require separate approval. The workflow has no Google Cloud credentials.
 
 The `scan-infrastructure` CI check builds and scans all tools on every PR. The manual
 `publish-rollout-verifier.yaml` workflow uses the same action, with publication off by default.
-Its filename remains stable because it identifies the verifier's provenance signer.
+Its filename remains stable because it identifies the retained tools' provenance signer.
 Its read-only build job exports one `linux/amd64` Docker image and fails on high/critical
 vulnerabilities or secrets. A separate publishing job receives that exact archive by artifact ID,
 checks its archive digest through GitHub's artifact action, pushes it without rebuilding, and attests
@@ -14,12 +14,10 @@ The publishing runner never checks out or executes repository code.
 
 ## Select the tool
 
-The workflow defaults to `rollout-verifier`. Each tool has an independent opt-in and approval
-environment; enabling the verifier does not authorize host credential publication.
+The workflow defaults to `host-credentials`. Each tool has an independent publication opt-in.
 
 | Tool               | Repository variable                    | Approval environment |
 | ------------------ | -------------------------------------- | -------------------- |
-| `rollout-verifier` | `ROLLOUT_VERIFIER_PUBLICATION_ENABLED` | `rollout-artifacts`  |
 | `host-credentials` | `HOST_CREDENTIALS_PUBLICATION_ENABLED` | `host-artifacts`     |
 | `native-restore`   | `NATIVE_RESTORE_PUBLICATION_ENABLED`   | `host-artifacts`     |
 
@@ -46,7 +44,7 @@ gh workflow run publish-rollout-verifier.yaml --repo a-novel/infra --ref master 
 
 This mode needs no environment approval, publication switch or cloud credentials. A passing scan
 establishes artifact buildability and the current scanner verdict. Host credential delivery,
-repository confinement and Cloud Deploy verification require their separately approved live proofs.
+repository confinement and SQL recovery require their separately approved live proofs.
 
 ## Enable publication once approved
 
@@ -100,8 +98,7 @@ also confirm the publication run succeeded: an attestation alone records origin,
 or the current vulnerability status.
 
 Promotion into the selected project's regional Artifact Registry is a separate approved operation.
-Preserve and verify the source digest in the selected consumer's reviewed runtime record. For the
-verifier, the worker and probe use that same destination digest. Host tooling still needs reviewed
+Preserve and verify the source digest in the selected consumer's reviewed runtime record. Host tooling needs reviewed
 distribution and startup configuration. Keep referenced images and attestations available for rollback.
 
 ## Interrupted publication

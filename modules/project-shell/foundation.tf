@@ -6,21 +6,6 @@ resource "google_project_iam_custom_role" "foundation_control_plane" {
   title       = "Foundation service control plane"
   description = "Maintain service provisioning resources without direct rollout, job or schedule execution."
   permissions = [
-    "clouddeploy.deliveryPipelines.create",
-    "clouddeploy.deliveryPipelines.delete",
-    "clouddeploy.deliveryPipelines.get",
-    "clouddeploy.deliveryPipelines.getIamPolicy",
-    "clouddeploy.deliveryPipelines.setIamPolicy",
-    "clouddeploy.deliveryPipelines.update",
-    "clouddeploy.operations.get",
-    "clouddeploy.releases.get",
-    "clouddeploy.rollouts.get",
-    "clouddeploy.targets.create",
-    "clouddeploy.targets.delete",
-    "clouddeploy.targets.get",
-    "clouddeploy.targets.getIamPolicy",
-    "clouddeploy.targets.setIamPolicy",
-    "clouddeploy.targets.update",
     "cloudscheduler.jobs.create",
     "cloudscheduler.jobs.delete",
     "cloudscheduler.jobs.fullView",
@@ -68,8 +53,6 @@ resource "google_project_iam_custom_role" "plan_policy" {
   description = "Refresh service-foundation IAM without changing policies or reading payloads."
   permissions = [
     "artifactregistry.repositories.getIamPolicy",
-    "clouddeploy.deliveryPipelines.getIamPolicy",
-    "clouddeploy.targets.getIamPolicy",
     "iam.roles.get",
     "iam.serviceAccounts.getIamPolicy",
     "resourcemanager.projects.getIamPolicy",

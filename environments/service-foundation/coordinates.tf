@@ -3,7 +3,7 @@ locals {
     schema_version = local.coordinates_version
     runtime        = local.runtime
     database       = local.database_coordinates
-    rollout        = try(module.rollout["api"].rollout, null)
+    rollout        = null
     }, var.zone == null ? {} : { scope = local.scope },
     var.database_handoff == null ? {} : { database = try(jsondecode(var.database_handoff.document_json), null) },
     var.database_handoff == null ? {} : { database_source = var.database_handoff.reference },
@@ -50,7 +50,6 @@ resource "google_storage_bucket_object" "coordinates" {
     google_artifact_registry_repository_iam_member.database,
     google_project_iam_member.database_telemetry,
     google_compute_disk_resource_policy_attachment.database,
-    module.rollout,
     module.job_access,
   ]
 }

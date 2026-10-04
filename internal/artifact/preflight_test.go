@@ -41,7 +41,7 @@ func TestRunImages(t *testing.T) {
 				}
 				inputs := serviceInputs(manifest, testCase.service)
 				if testCase.service == "json-keys" {
-					inputs["rollout"] = object{"image": "europe-west1-docker.pkg.dev/fixture-service/agora-production/service-json-keys/grpc@" + images(manifest, "json-keys")["grpc"].(object)["digest"].(string)}
+					inputs["api"] = object{"image": "europe-west1-docker.pkg.dev/fixture-service/agora-production/service-json-keys/grpc@" + images(manifest, "json-keys")["grpc"].(object)["digest"].(string)}
 				}
 				args = []string{"service-images", write(t, manifest), write(t, inputs)}
 			}

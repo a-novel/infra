@@ -69,5 +69,5 @@ Table-driven tests use the official client against a local HTTP server and
 ephemeral test certificates. They exercise delivery, integrity failures,
 certificate identity/usage failures, private output permissions, and concurrent
 no-overwrite publication without cloud access. The shared image action builds
-and scans both this loader and the existing rollout verifier; their shared
-publisher retains separate opt-ins and approval environments.
+and scans this loader and the native restore worker; their shared
+publisher retains separate opt-ins and protected approval.

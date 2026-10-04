@@ -115,38 +115,13 @@ func TestTemporaryToolingExceptions(t *testing.T) {
 	require.NotContains(t, imageScan.With, "trivyignores")
 }
 
-func TestNativeReleaseBoundary(t *testing.T) {
+func TestReleaseOwnership(t *testing.T) {
 	t.Parallel()
 	release := loadWorkflow(t, "workflows/release.yaml")
-	job := release.Jobs["native-service"]
-	selection := stepIndex(t, job.Steps, "service-release prepare")
-	preflight := stepIndex(t, job.Steps, "service-release preflight")
-	auth := stepIndex(t, job.Steps, "google-github-actions/auth@")
-	deploy := stepIndex(t, job.Steps, "service-release deploy")
-	privateDuringBuild := false
-	for _, value := range job.Env {
-		privateDuringBuild = privateDuringBuild || strings.Contains(value, "secrets.")
-	}
-	for _, testCase := range []struct {
-		name      string
-		got, want any
-	}{
-		{"ProtectedEnvironment", job.Environment, "production-json-keys-release"},
-		{"GlobalSerialization", release.Concurrency, object{"group": "production-infrastructure", "cancel-in-progress": false}},
-		{"NoGoogleCredentialsBeforeFamilyCheck", selection < preflight && preflight < auth && auth < deploy, true},
-		{"NoPrivateInputsDuringBuild", privateDuringBuild, false},
-		{"OffByDefault", strings.Contains(job.If, "vars.SERVICE_NATIVE_RELEASE_ENABLED == 'true'"), true},
-		{"ManualOnly", strings.Contains(job.If, "github.event_name == 'workflow_dispatch'"), true},
-		{"LegacyExcluded", strings.Contains(release.Jobs["release"].If, "inputs.action != 'deploy-service'"), true},
-		{"SelectedWriter", job.Steps[auth].With["service_account"], "${{ steps.operation.outputs.service_account }}"},
-		{"SelectedFederation", job.Steps[auth].With["workload_identity_provider"], "${{ steps.operation.outputs.provider }}"},
-		{"PreparedHash", job.Steps[deploy].Env["OPERATION_SHA256"], "${{ steps.operation.outputs.sha256 }}"},
-	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			t.Parallel()
-			require.Equal(t, testCase.want, testCase.got)
-		})
-	}
+	require.NotContains(t, release.Jobs, "native-service")
+	require.Equal(t, object{"group": "production-infrastructure", "cancel-in-progress": false}, release.Concurrency)
+	require.Contains(t, release.Jobs["release"].If, "vars.PRODUCTION_RELEASES_ENABLED == 'true'")
+	require.Equal(t, "production-release", release.Jobs["release"].Environment)
 }
 
 func TestToolingArtifact(t *testing.T) {
@@ -175,12 +150,12 @@ func TestToolingArtifact(t *testing.T) {
 		{"ManualOnly", len(publication.On), 1},
 		{"PublicationOffByDefault", nested(publication.On, "workflow_dispatch", "inputs", "publish")["default"], false},
 		{"ToolChoice", selection["type"], "choice"},
-		{"DefaultTool", selection["default"], "rollout-verifier"},
-		{"AllowedTools", selection["options"], []any{"rollout-verifier", "host-credentials", "native-restore"}},
+		{"DefaultTool", selection["default"], "host-credentials"},
+		{"AllowedTools", selection["options"], []any{"host-credentials", "native-restore"}},
 		{"CanonicalTool", publication.Env, map[string]string{"TOOL": "${{ inputs.tool }}"}},
 		{"NoInheritedAuthority", publication.Permissions, map[string]string{}},
 		{"ReadOnlyBuild", build.Permissions, map[string]string{"contents": "read"}},
-		{"Approval", publish.Environment, "${{ inputs.tool == 'rollout-verifier' && 'rollout-artifacts' || 'host-artifacts' }}"},
+		{"Approval", publish.Environment, "host-artifacts"},
 		{"PublishAuthority", publish.Permissions, map[string]string{"contents": "read", "packages": "write", "attestations": "write", "id-token": "write"}},
 		{"SameRunArtifact", publish.Needs, "build"},
 		{"ExactArtifactOutput", build.Outputs, map[string]string{"artifact_id": "${{ steps.archive.outputs.artifact-id }}", "tool": "${{ env.TOOL }}"}},
@@ -189,8 +164,8 @@ func TestToolingArtifact(t *testing.T) {
 		{"SelectedDestination", publish.Env["IMAGE"], "ghcr.io/a-novel/infra/${{ needs.build.outputs.tool }}:sha-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}"},
 		{"MissingArchiveFails", upload.With["if-no-files-found"], "error"},
 		{"NoBuildPush", image.With["push"], false},
-		{"DefaultPublicationImage", nested(tooling.Inputs, "image_name")["default"], "rollout-verifier"},
-		{"AllImagesScanned", ciImages, []string{"", "host-credentials", "native-restore"}},
+		{"DefaultPublicationImage", nested(tooling.Inputs, "image_name")["default"], "host-credentials"},
+		{"AllImagesScanned", ciImages, []string{"host-credentials", "native-restore"}},
 		{"PublicationUsesSelection", build.Steps[stepIndex(t, build.Steps, "build-tooling-image")].With["image_name"], "${{ env.TOOL }}"},
 		{"SinglePlatform", image.With["platforms"], "linux/amd64"},
 		{"ScannedArchive", image.With["outputs"], "type=docker,dest=" + scan.With["input"].(string)},
@@ -206,11 +181,10 @@ func TestToolingArtifact(t *testing.T) {
 	t.Run("TrustBoundary", func(t *testing.T) {
 		t.Parallel()
 		require.Equal(t, strings.Fields(`inputs.publish && github.repository == 'a-novel/infra' && github.ref == 'refs/heads/master' && (
-			(inputs.tool == 'rollout-verifier' && vars.ROLLOUT_VERIFIER_PUBLICATION_ENABLED == 'true') ||
 			(inputs.tool == 'host-credentials' && vars.HOST_CREDENTIALS_PUBLICATION_ENABLED == 'true') ||
 			(inputs.tool == 'native-restore' && vars.NATIVE_RESTORE_PUBLICATION_ENABLED == 'true')
 		)`), strings.Fields(publish.If))
-		require.Contains(t, build.Steps[0].If, `!contains(fromJSON('["rollout-verifier", "host-credentials", "native-restore"]'), inputs.tool)`)
+		require.Contains(t, build.Steps[0].If, `!contains(fromJSON('["host-credentials", "native-restore"]'), inputs.tool)`)
 		encoded, err := json.Marshal(publish)
 		require.NoError(t, err)
 		require.NotRegexp(t, `checkout@|google-github-actions|secrets\.|build-push-action|docker (build|run)|go run|go build`, string(encoded))
@@ -254,7 +228,6 @@ func TestWorkflowCredentials(t *testing.T) {
 	t.Parallel()
 	for _, testCase := range []struct{ file, job string }{
 		{"release", "release"},
-		{"release", "native-service"},
 		{"release", "database-isolation"},
 		{"recovery", "recover"},
 		{"recovery", "prepare-native"},
@@ -262,7 +235,6 @@ func TestWorkflowCredentials(t *testing.T) {
 		{"drift", "health"},
 		{"drift", "inspect"},
 		{"drift", "assess-resource-deletion"},
-		{"drift", "observe-rollout"},
 		{"drift", "inspect-operation"},
 	} {
 		t.Run(testCase.file+"/"+testCase.job, func(t *testing.T) {

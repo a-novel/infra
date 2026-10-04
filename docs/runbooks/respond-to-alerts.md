@@ -289,7 +289,7 @@ retrying. For rotation, distinguish rejected dispatch, accepted but unfinished e
 execution, and successful execution whose metric has not arrived. Do not replay work or resume a
 paused schedule just because an incident closed or disappeared. Require the exact successful native
 execution, fresh success metric and intended notification delivery as recovery evidence. This policy
-does not replace separate backup/recovery monitoring or Cloud Deploy rollout alerts.
+does not replace separate backup/recovery monitoring or application health checks.
 
 Activation and notification drills remain human-approved under the
 [service scheduling gates](./provision-service-projects.md#service-scheduling-activation).

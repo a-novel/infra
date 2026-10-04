@@ -1,8 +1,8 @@
 # Single-service release root (inactive)
 
-This root owns one service's Cloud Run job specifications and can output its native API release request.
+This root owns one service component's Cloud Run jobs, API revisions and explicit traffic targets.
 In private or dedicated scope, JSON Keys has migrations and rotation; Authentication has migrations.
-Public-api scope prepares API requests and owns no jobs.
+Public-api scope owns its API and no jobs.
 The shared resource pattern derives the application identity and
 database endpoint from the [foundation's published document](../service-foundation#published-coordinates).
 OpenTofu validates its checksum and service scope against independently approved inputs. Shared VPC
@@ -11,11 +11,9 @@ root nor its future caller needs foundation-state access.
 
 **Code only:** trusted assessment and drift can inspect this root. The protected
 [job bootstrap](../../docs/runbooks/provision-service-projects.md#protected-service-job-bootstrap)
-and [guarded native release](../../docs/runbooks/submit-release.md#guarded-established-release)
-are disabled by default.
-Applying a job specification does not run it. The root creates no API, initializer, scheduler, identity or IAM grant.
-Cloud Deploy owns API specifications and traffic; protected foundation owns databases, IAM, schedules
-and alerts. Existing production resources and state stay unchanged.
+is disabled by default. Shared API deployment is not yet enrolled in the protected workflow.
+Applying a job specification does not run it. With `api = null`, the root creates no API. Foundation
+owns databases, IAM, schedules and alerts. Existing production resources and state stay unchanged.
 
 ## State and resource ownership
 
@@ -30,7 +28,7 @@ The bucket check constrains its management-project naming convention, not its ow
 protected caller must authorize inputs against the published coordinates before initialization, use a
 fresh working directory, and prohibit backend overrides. Keep credentials in the approved federation
 environment. [GCS locking](https://opentofu.org/docs/language/settings/backends/gcs/) covers OpenTofu
-operations; migrations and Cloud Deploy still require the broader same-service exclusion.
+operations; migrations and traffic promotion still require the broader same-service exclusion.
 
 ## Read-only assessment and drift
 
@@ -83,8 +81,8 @@ arguments and removes the selected pair before apply. A failed or ambiguous cons
 must block mutation. The provider owns state locking. The protected workflow retains global
 infrastructure serialization and uses [guarded service-root apply](../../docs/service-operations.md#implemented-service-root-apply)
 through convergence, configuration and completion publication. Standalone service configuration
-publication is refused. The inactive native release and rotation callers use the same guard;
-shared-root ownership transfer and interrupted-native-operation recovery remain separate work.
+publication is refused. Rotation uses the same guard; shared-root ownership transfer and
+interrupted job recovery remain separate work.
 
 Metadata enforces the 24-hour apply deadline. Bootstrap declares native
 [plan cleanup](../../bootstrap/README.md#plan-artifact-expiration) after age 2 days, with separate
@@ -103,8 +101,8 @@ of deletion approval. Routine job updates remain disabled.
 [existing-database handoff](../service-foundation#existing-private-database-handoff) only through
 that private scope's approved runtime document. The native backend derives
 `workloads/production/private/PROJECT/SERVICE/release/`; application images use
-`agora-SERVICE-private-production`, and jobs attach `agora-SERVICE-private`.
-Its optional request prepares JSON Keys gRPC. `zone = "public-api"` prepares JSON Keys REST
+`agora-SERVICE-private-production`, and jobs attach the existing `agora-SERVICE` network tag.
+Its optional `api` selects JSON Keys gRPC. `zone = "public-api"` prepares JSON Keys REST
 or Authentication REST and requires an independently approved `private_project_id`.
 The database reference must belong to that private project and the same service; its Shared VPC
 network must also belong to that project. Both JSON Keys APIs consume one private database;
@@ -133,8 +131,7 @@ Protected bootstrap uses the following handoff:
 3. Pass the original JSON text as `foundation_json`, without pretty-printing, trimming or re-encoding it.
    HCL verifies the approved checksum, reference namespace, document/runtime/database versions, exact
    service scope, runtime identity and private database endpoint. It requires a database contract;
-   foundation snapshots taken before database provisioning are rejected. Configuring the optional API
-   request also requires the document's exact service/zone pipeline and target.
+   foundation snapshots taken before database provisioning are rejected.
 4. Preserve the approved reference and inputs with the private saved plan, then use the existing
    convergence and serialized execution boundaries. A saved plan owns its captured
    values; changing the input document requires a new reviewed plan, not an apply-time substitution.
@@ -161,61 +158,35 @@ activated, job execution and logging incur costs. Its version-1 `jobs` output co
 images, not execution or health evidence. Dispatchers must inspect live definitions and retain native
 operation/execution identities.
 
-## Native API request
+## API revisions and traffic
 
-`rollout` defaults to `null`, leaving both service job contracts unchanged. Opting in requires
-`project_number`, `image`, `release_id`, `request_id`, `source_commit` and `skaffold_version`.
-Private/dedicated JSON Keys uses its promoted gRPC digest. Public-api uses the selected service's
-promoted REST digest. Shared images come from `agora-SERVICE-private-production` or
-`agora-SERVICE-api-production` respectively. Release/source/Skaffold pins must satisfy the
-[native submitter contract](../../docs/runbooks/submit-release.md#the-private-request).
-Choose and retain the release ID and UUID before planning, never with `uuid()`, `timestamp()` or a
-retry-time replacement. Independently authorize the numeric service project and its ID relationship.
+`api = null` keeps the existing jobs-only behavior. To prepare an API, provide its promoted `image`
+digest, exact candidate `revision`, and exact healthy `serving_revision`. Private JSON Keys uses gRPC;
+public-api uses REST. Shared images belong to `agora-SERVICE-private-production` or
+`agora-SERVICE-api-production`, with the selected component's runtime identity and existing database.
 
-The approved foundation document must name this project's exact regional `agora-SERVICE-grpc/rest`
-pipeline and target. Google project-ID and numeric resource names are accepted only within that
-authorized pair; the output uses the numeric name required by the SDK boundary. Deployment parameters
-use the approved database, application identity, network and component-specific secret pins. The management project number
-and receipt bucket derive from the already validated `MANAGEMENT_ID-NUMBER-tofu-state` convention,
-not a second copied parameter map. Shared source archives use their service/zone custody prefix.
-No API resource, renderer, provisioner or submission is added.
+OpenTofu owns the service specification and traffic in one state. A different candidate receives
+zero ordinary traffic and the `candidate` tag; the named serving revision retains 100%. After
+candidate health and migration checks, a separate reviewed plan sets `serving_revision = revision`.
+Rollback selects the previous compatible serving revision. It never restores database contents.
+The [release runbook](../../docs/runbooks/submit-release.md) describes this ownership boundary.
 
-Public JSON Keys accepts only `postgres-password`; master-key versions are rejected.
-Public Authentication also requires `smtp-sender-password` and the non-secret `authentication`
-settings matching its native manifest. Optional `waitlist_url` must be paired with
-`waitlist-secret`; that pair selects the reviewed `skaffold-waitlist.yaml` variant.
-Private jobs cannot receive those API settings. Public-api requires an empty `images` map.
+Private gRPC retains internal ingress and IAM authentication. REST exposes only its application API;
+neither project membership nor a traffic tag authorizes access to the database or secrets.
+Public JSON Keys receives only `postgres-password`. Authentication also requires
+`smtp-sender-password` and its non-secret `authentication` settings. Optional `waitlist_url`
+requires `waitlist-secret`. Public-api requires an empty job `images` map.
 
-The sensitive `release_request` output is a native `CreateReleaseRequest` object. After separately
-approved activation, the trusted caller can export it with `tofu output -json release_request` to a
-private file and pass that file unchanged to the existing source publisher and submitter. JSON output
-reveals sensitive values; keep the file, saved plan and state private and out of public logs. The caller
-must select the exact reviewed configuration/state, not read the newest output during a concurrent release.
+Capacity remains bounded at three instances, one CPU and 512 MiB per instance. Authentication keeps
+instance-based CPU for accepted email work and its existing one-instance minimum. Private JSON Keys
+keeps one warm instance; the prepared public JSON Keys API can scale to zero. Candidates and project
+moves can still incur overlap cost: inspect existing capacity and the exact plan before activation.
 
-This object describes configuration, not persisted submission intent, successful job execution or
-approval. Complete-family/provenance and enabled-version checks, database/migration readiness,
-same-service exclusion and the native submission reservation remain separate gates. A failed or
-ambiguous submission never authorizes regenerating IDs or replaying migrations. There is still no
-live shared caller; production ownership transfer remains separate work.
-
-## Guarded operation output
-
-`release_operation` defaults to `null` and is rejected in shared scope. Dedicated scope,
-alongside `rollout`, accepts the predetermined
-`predecessor` release ID and a distinct nonzero `rollout_request_id`. After convergence, its sensitive
-output adds the jobs' exact UIDs/native task templates to the existing request, image pins, secret
-references and foundation handoff. There is no second resource specification or Go renderer.
-
-The separately approved output becomes `SERVICE_RELEASE_OPERATION_JSON` in the protected
-`production-json-keys-release` environment. Leave it unset and `SERVICE_NATIVE_RELEASE_ENABLED`
-off until activation review. Do not export unknown planned UIDs, use newest-state selection, or
-hand-edit a request to bypass convergence. The caller rejects live UID/template drift and requires
-the exact predecessor's verified revision to own all ordinary traffic before migrating.
-
-This first routine path executes existing jobs without changing them, then hands API deployment to
-Cloud Deploy and records native completion. It does not bootstrap an API, update jobs/databases,
-approve/advance rollouts, or produce a legacy recovery receipt. See the
-[guarded caller contract](../../docs/runbooks/submit-release.md#guarded-established-release).
+The `api` output provides Cloud Run's service and candidate URLs, not health evidence.
+Producer provenance, enabled secret versions, exact resource ownership, effective network access and
+successful migration remain prerequisites. The committed image manifest does not yet enroll JSON
+Keys REST; image preflight rejects that component until its producer family is explicitly added.
+No protected API writer or first-launch shortcut is enabled by this preparation.
 
 ## Bootstrap before routine release
 
@@ -242,7 +213,7 @@ interruption drill. It never transfers an existing resource owner.
 In private/dedicated scope, `images` contains `migrations` and, for JSON Keys, `rotatekeys`.
 Each image uses its exact service/job path in the selected scope's regional production repository.
 Those job scopes require `postgres-password` and, for JSON Keys, `app-master-key`.
-Public-api follows the request-only contract above. All secret versions are positive integers.
+Public-api follows the API contract above. All secret versions are positive integers.
 These HCL syntax checks do not establish producer provenance, enabled versions or ownership of an
 address/subnet. The [bootstrap preflight](../../docs/runbooks/provision-service-projects.md#protected-service-job-bootstrap)
 checks artifact evidence and secret metadata against protected inputs; network ownership and runtime
@@ -261,11 +232,9 @@ does not prevent two separately dispatched executions. Keep same-service exclusi
 updates, migrations, API rollout and receipt publication. Once every rotation dispatcher holds the
 same guard until completion, the routine release can leave scheduling unchanged; existing direct
 dispatch paths must first be retired and their accepted work reconciled.
-Migrations remain outside Cloud Deploy retry hooks. An ambiguous dispatch requires reconciliation of
-its exact execution; neither a timeout nor a missing receipt permits replay.
-The inactive JSON Keys [guarded caller](../../docs/runbooks/submit-release.md#guarded-established-release)
-reserves migration intent, saves exact execution evidence and requires that evidence before rollout.
-Standalone commands cannot dispatch these stages. The ownership-transfer and recovery drill remain
+An ambiguous migration dispatch requires reconciliation of its exact execution; neither a timeout
+nor a missing receipt permits replay. Shared deployment remains disabled until the existing guard
+and native execution evidence protect that boundary. Ownership transfer and recovery drills remain
 activation prerequisites.
 
 Both job types use all-traffic Direct VPC egress and their service's network tag. The host foundation
@@ -290,9 +259,8 @@ tofu -chdir=environments/service-release validate
 tofu -chdir=environments/service-release test
 ```
 
-The API output is compared as a whole to the same native request fixtures exercised by the Go/SDK
-submission tests. These tests
-provide no live IAM, database readiness or migration-recovery proof. The
+API tests inspect actual resource arguments, candidate/promotion traffic, secret separation and
+capacity limits. They provide no live IAM, database readiness or migration-recovery proof. The
 [pinned provider resource](https://github.com/hashicorp/terraform-provider-google/blob/v8.2.0/website/docs/r/cloud_run_v2_job.html.markdown)
 owns configuration convergence. OpenTofu's [backend variables](https://opentofu.org/docs/language/settings/backends/configuration/#variables-and-locals)
 bind the state prefix directly to the selected project without a backend-file generator.

@@ -23,7 +23,7 @@ the reusable [workload-project module](../../../modules/workload-project/README.
 root's existing network through Shared VPC, and join the existing budget. These new projects and
 the Shared VPC host/attachments retain deletion guards independently of the legacy replacement
 window above. Foundation also prepares each service's release identity and isolated state/receipt
-folders in the management plane, creates the Google-managed rollout agents, and grants the Cloud Run
+folders in the management plane, creates the required Google-managed service agents, and grants the Cloud Run
 agent access to the exact foundation subnet. Application authority and active workflows are unchanged.
 No existing workload or deployment authority moves with this change. Follow the
 [service-project onboarding boundary](../../../docs/runbooks/provision-service-projects.md) before activation.
@@ -163,9 +163,8 @@ and [Shared VPC overview](https://cloud.google.com/vpc/docs/shared-vpc).
 
 `google_project_iam_member.service_run_network_viewer` grants each service project's Cloud Run agent
 network visibility in the host; `google_compute_subnetwork_iam_member.service_run` limits Network User
-to the production subnet. With service projects selected, the existing restricted-API rule also permits
-the secret-free `agora-rollout-probe` tag on HTTPS. It gains no PostgreSQL egress; the VPC-wide deny
-still applies. Empty-map and recovery plans add none of these grants or probe access. Live verification
+to the production subnet. Service registration does not extend the existing HTTPS or database
+egress tags; the VPC-wide deny still applies. Empty-map and recovery plans add none of these grants. Live verification
 must test [Shared VPC Direct VPC access](https://docs.cloud.google.com/run/docs/configuring/shared-vpc-direct-vpc)
 and denied database reachability before activation.
 
