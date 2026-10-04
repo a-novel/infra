@@ -1,5 +1,5 @@
 variable "rollout" {
-  description = "Optional JSON Keys API request pins, independently authorized and retained with the private plan; null keeps this root jobs-only."
+  description = "Optional native API request pins, independently authorized and retained with the private plan; no deployment is dispatched."
   type = object({
     project_number   = string
     image            = string
@@ -11,8 +11,8 @@ variable "rollout" {
   default = null
 
   validation {
-    condition     = var.rollout == null ? true : var.service == "json-keys" && var.zone == null
-    error_message = "Only the dedicated JSON Keys API pilot is supported; shared-zone rollout remains disabled."
+    condition     = var.rollout == null ? true : var.service == "json-keys" || var.zone == "public-api"
+    error_message = "Prepare private JSON Keys or public-api JSON Keys/Authentication requests only."
   }
   validation {
     condition = var.rollout == null ? true : (
@@ -25,16 +25,16 @@ variable "rollout" {
     condition = var.rollout == null ? true : alltrue([
       for field, collection in { pipeline = "deliveryPipelines", target = "targets" } : try(contains([
         for project in [var.project_id, var.rollout.project_number] :
-        "projects/${project}/locations/${var.region}/${collection}/agora-json-keys-grpc"
+        "projects/${project}/locations/${var.region}/${collection}/${local.rollout_target}"
       ], local.coordinates.rollout[field]), false)
     ])
-    error_message = "The approved foundation document must contain this service project's exact regional JSON Keys pipeline and target."
+    error_message = "The approved foundation document must contain the exact regional service/zone pipeline and target."
   }
   validation {
     condition = var.rollout == null ? true : can(regex(
-      "^${var.region}-docker\\.pkg\\.dev/${var.project_id}/agora-production/service-json-keys/grpc@sha256:[a-f0-9]{64}$", var.rollout.image,
+      "^${replace(local.production_repository, ".", "\\.")}/service-${var.service}/${local.api_role}@sha256:[a-f0-9]{64}$", var.rollout.image,
     ))
-    error_message = "Pin this service project's promoted JSON Keys gRPC image by SHA-256 digest."
+    error_message = "Pin the selected service/zone's promoted API image by SHA-256 digest."
   }
   validation {
     condition = var.rollout == null ? true : (
@@ -56,7 +56,10 @@ variable "rollout" {
 locals {
   management_bucket_prefix = trimsuffix(var.state_bucket, "-tofu-state")
   rollout_receipt_bucket   = "${local.management_bucket_prefix}-deployment-receipts"
-  rollout_parent           = var.rollout == null ? null : "projects/${var.rollout.project_number}/locations/${var.region}/deliveryPipelines/agora-json-keys-grpc"
+  api_role                 = var.zone == "public-api" ? "rest" : "grpc"
+  rollout_target           = "agora-${var.service}-${local.api_role}"
+  rollout_parent           = var.rollout == null ? null : "projects/${var.rollout.project_number}/locations/${var.region}/deliveryPipelines/${local.rollout_target}"
+  source_prefix            = var.zone == null ? "services/${var.project_id}/production" : "${local.coordinate_scope}/production"
 }
 
 locals {
@@ -70,20 +73,21 @@ locals {
         request-id    = var.rollout.request_id
         source-commit = var.rollout.source_commit
       }
-      skaffoldConfigUri  = "gs://${local.rollout_receipt_bucket}/services/${var.project_id}/production/sources/${var.rollout.source_commit}.tar.gz"
-      skaffoldConfigPath = "skaffold.yaml"
+      skaffoldConfigUri  = "gs://${local.rollout_receipt_bucket}/${local.source_prefix}/sources/${var.rollout.source_commit}.tar.gz"
+      skaffoldConfigPath = try(var.authentication.waitlist_url, null) == null ? "skaffold.yaml" : "skaffold-waitlist.yaml"
       skaffoldVersion    = var.rollout.skaffold_version
-      buildArtifacts     = [{ image = "service-json-keys", tag = var.rollout.image }]
-      deployParameters = {
+      buildArtifacts     = [{ image = "service-${var.service}", tag = var.rollout.image }]
+      deployParameters = merge({
         projectId               = var.project_id
         network                 = var.network.network
         subnetwork              = var.network.subnetwork
         runtimeServiceAccount   = try(local.coordinates.runtime.service_account, "")
         databasePrivateIP       = try(local.coordinates.database.private_ip, "")
         managementProjectNumber = trimprefix(local.management_bucket_prefix, "${var.management_project_id}-")
-        masterKeyVersion        = tostring(lookup(var.secret_versions, "app-master-key", 0))
         postgresPasswordVersion = tostring(lookup(var.secret_versions, "postgres-password", 0))
-      }
+        }, var.zone == "public-api" ? {} : { masterKeyVersion = tostring(lookup(var.secret_versions, "app-master-key", 0)) },
+        var.authentication == null ? {} : local.authentication_parameters,
+      )
     }
   }
 }
