@@ -122,6 +122,42 @@ func (c client) changedAt(ctx context.Context, t target, createdAt string) (time
 	return changed, nil
 }
 
+const (
+	// assessmentPoll paces the wait for a requested assessment, which usually takes a few minutes.
+	assessmentPoll = 10 * time.Second
+	// assessmentWait outlasts the assessment job's 45-minute timeout.
+	assessmentWait = 50 * time.Minute
+)
+
+// awaitAssessment waits for the assessment requested for t to finish, then refreshes the gate as the
+// completion notification would. GitHub notifies no workflow when a run started by the workflow
+// token completes, so the requesting job delivers that notification itself.
+func (c client) awaitAssessment(ctx context.Context, t target, trustedMain string) ([]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, assessmentWait)
+	defer cancel()
+	for {
+		runs, err := list[run](ctx, c, "/actions/workflows/drift.yaml/runs?branch=master&event=workflow_dispatch&head_sha="+t.Base+"&per_page=100", "workflow_runs")
+		if err != nil {
+			return nil, err
+		}
+		var requested run
+		for _, r := range runs {
+			if r.Title == t.title() && r.ID > requested.ID {
+				requested = r
+			}
+		}
+		if requested.Status == "completed" {
+			completion := event{Action: "completed", Repository: repository{FullName: c.repo}, WorkflowRun: run{ID: requested.ID}}
+			return c.refreshGates(ctx, "workflow_run", completion, trustedMain)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, errors.New("the requested assessment did not finish before the job ended")
+		case <-time.After(assessmentPoll):
+		}
+	}
+}
+
 func (c client) refreshGates(ctx context.Context, eventName string, e event, trustedMain string) ([]string, error) {
 	if e.Repository.FullName != c.repo || !shaPattern.MatchString(trustedMain) {
 		return nil, errors.New("invalid refresh repository or trusted workflow")

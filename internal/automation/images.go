@@ -180,13 +180,13 @@ func (c client) validated(ctx context.Context, t target, p pull, candidate func(
 	return master == t.Base, err
 }
 
-func (c client) dispatchUpdates(ctx context.Context, e event, base string) ([]int64, error) {
+func (c client) dispatchUpdates(ctx context.Context, e event, base string) (target, error) {
 	if e.Action != "completed" || e.Repository.FullName != c.repo || !positiveID(e.WorkflowRun.ID) || !shaPattern.MatchString(base) {
-		return nil, nil
+		return target{}, nil
 	}
 	r, err := c.run(ctx, e.WorkflowRun.ID)
 	if err != nil {
-		return nil, err
+		return target{}, err
 	}
 	assessment := r.Path == driftPath && r.Event == "workflow_dispatch" && r.HeadBranch == "master"
 	name, path := "main", mainPath
@@ -195,27 +195,27 @@ func (c client) dispatchUpdates(ctx context.Context, e event, base string) ([]in
 	}
 	w, err := fetch[workflow](ctx, c, "/actions/workflows/"+name+".yaml")
 	if err != nil || w.Path != path || !r.trusted(c.repo, w) || !shaPattern.MatchString(r.HeadSHA) {
-		return nil, err
+		return target{}, err
 	}
 	if !assessment && (!slices.Contains([]string{"push", "pull_request"}, r.Event) ||
 		(r.HeadBranch == "master" && (r.Event != "push" || r.HeadSHA != base || r.Conclusion != "success"))) {
-		return nil, nil
+		return target{}, nil
 	}
 	master, err := c.master(ctx)
 	if err != nil || master != base {
-		return nil, err
+		return target{}, err
 	}
 	pulls, err := list[pull](ctx, c, "/pulls?state=open&base=master&per_page=100", "")
 	if err != nil {
-		return nil, err
+		return target{}, err
 	}
 	assessments, err := list[run](ctx, c, "/actions/workflows/drift.yaml/runs?branch=master&event=workflow_dispatch&per_page=100", "workflow_runs")
 	if err != nil {
-		return nil, err
+		return target{}, err
 	}
 	for _, a := range assessments {
 		if slices.Contains([]string{"queued", "in_progress", "waiting", "pending", "requested"}, a.Status) {
-			return nil, nil
+			return target{}, nil
 		}
 	}
 	for _, p := range pulls {
@@ -235,7 +235,7 @@ func (c client) dispatchUpdates(ctx context.Context, e event, base string) ([]in
 			ok, err = c.verifyVersions(ctx, t)
 		}
 		if err != nil {
-			return nil, err
+			return target{}, err
 		}
 		if !ok {
 			continue
@@ -245,9 +245,9 @@ func (c client) dispatchUpdates(ctx context.Context, e event, base string) ([]in
 			"-f", "ref=master", "-f", "inputs[operation]="+operation,
 			"-f", "inputs[pull_request]="+strconv.FormatInt(t.Number, 10), "-f", "inputs[head_sha]="+t.Head, "-f", "inputs[base_sha]="+base)
 		if err != nil {
-			return nil, err
+			return target{}, err
 		}
-		return []int64{t.Number}, nil
+		return t, nil
 	}
-	return nil, nil
+	return target{}, nil
 }

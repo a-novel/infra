@@ -76,29 +76,39 @@ func (c client) command(ctx context.Context, mode string, getenv func(string) st
 	if readErr != nil || closeErr != nil || len(data) > maxResponse || json.Unmarshal(data, &e) != nil {
 		return "", errors.New("invalid GitHub event")
 	}
-	revision := "HEAD"
-	if mode == "refresh-deletion-gates" {
-		revision += ":" + mainPath
+	resolve := func(revision string) (string, error) {
+		var out limitedOutput
+		if err := c.execute(ctx, &out, "git", "rev-parse", revision); err != nil {
+			return "", errors.New("could not resolve the trusted checkout")
+		}
+		return strings.TrimSpace(out.String()), nil
 	}
-	var out limitedOutput
-	if err := c.execute(ctx, &out, "git", "rev-parse", revision); err != nil {
-		return "", errors.New("could not resolve the trusted checkout")
+	trustedMain, err := resolve("HEAD:" + mainPath)
+	if err != nil {
+		return "", err
 	}
-	trusted := strings.TrimSpace(out.String())
 	if mode == "assess-updates dispatch" {
 		if getenv("GITHUB_EVENT_NAME") != "workflow_run" {
 			return "", errors.New("update assessment dispatch requires a workflow completion")
 		}
-		ids, err := c.dispatchUpdates(ctx, e, trusted)
+		trusted, err := resolve("HEAD")
 		if err != nil {
 			return "", err
 		}
-		if len(ids) == 0 {
+		t, err := c.dispatchUpdates(ctx, e, trusted)
+		if err != nil {
+			return "", err
+		}
+		if !t.valid() {
 			return "No Renovate update assessment needs requesting.", nil
 		}
-		return fmt.Sprintf("Requested a Renovate update assessment for PR #%d.", ids[0]), nil
+		lines, err := c.awaitAssessment(ctx, t, trustedMain)
+		if err != nil {
+			return "", err
+		}
+		return strings.Join(append([]string{fmt.Sprintf("Requested a Renovate update assessment for PR #%d.", t.Number)}, lines...), "\n"), nil
 	}
-	lines, err := c.refreshGates(ctx, getenv("GITHUB_EVENT_NAME"), e, trusted)
+	lines, err := c.refreshGates(ctx, getenv("GITHUB_EVENT_NAME"), e, trustedMain)
 	if err != nil {
 		return "", err
 	}
