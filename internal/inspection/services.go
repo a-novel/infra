@@ -2,6 +2,7 @@ package inspection
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"maps"
@@ -39,8 +40,8 @@ func (i inspector) services(ctx context.Context, mode, root string, result *verd
 	}
 	// A shared guard excludes both zones of the same service. Even an orphaned
 	// guard blocks assessment; registration removal cannot silently abandon it.
-	guards, err := i.execute(ctx, nil, "gcloud", "storage", "objects", "list", "gs://"+i.bucket+"/foundation/operations/production/**", "--format=value(name)")
-	if err != nil || strings.TrimSpace(string(guards)) != "" {
+	guards, err := i.liveObjects(ctx, "foundation/operations/production/")
+	if err != nil || len(guards) != 0 {
 		return failure{70, "Shared operation inventory is unreadable or held; reconcile it before assessment."}
 	}
 	if root != "service-release" {
@@ -136,14 +137,11 @@ func (i inspector) serviceStates(ctx context.Context, root string, scopes map[st
 	}
 	states := map[string]bool{}
 	for _, prefix := range prefixes {
-		data, err := i.execute(ctx, nil, "gcloud", "storage", "objects", "list", "gs://"+i.bucket+"/"+prefix+"**", "--format=value(name)")
+		names, err := i.liveObjects(ctx, prefix)
 		if err != nil {
 			return nil, failure{70, "Could not inventory service state."}
 		}
-		for name := range strings.FieldsSeq(string(data)) {
-			if !strings.HasPrefix(name, prefix) {
-				return nil, failure{70, "Unexpected service state metadata."}
-			}
+		for _, name := range names {
 			scope, object := strings.TrimSuffix(prefix, "/release/"), strings.TrimPrefix(name, prefix)
 			if root != "service-release" {
 				length := 3
@@ -178,4 +176,23 @@ func (i inspector) serviceStates(ctx context.Context, root string, scopes map[st
 		}
 	}
 	return states, nil
+}
+
+// liveObjects excludes retained generations from the active state and lock inventory.
+func (i inspector) liveObjects(ctx context.Context, prefix string) ([]string, error) {
+	data, err := i.execute(ctx, nil, "gcloud", "storage", "objects", "list", "gs://"+i.bucket+"/"+prefix+"**", "--raw", "--format=json(name,timeDeleted)")
+	var objects []struct{ Name, TimeDeleted string }
+	if err != nil || json.Unmarshal(data, &objects) != nil || objects == nil {
+		return nil, failure{70, "Could not inventory live storage objects."}
+	}
+	names := []string{}
+	for _, object := range objects {
+		if !strings.HasPrefix(object.Name, prefix) {
+			return nil, failure{70, "Unexpected storage object metadata."}
+		}
+		if object.TimeDeleted == "" {
+			names = append(names, object.Name)
+		}
+	}
+	return names, nil
 }
