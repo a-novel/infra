@@ -1,7 +1,7 @@
 run "shared_release_disabled_by_default" {
   command = plan
   assert {
-    condition     = length(module.service_release) == 0 && output.service_release_boundaries == null && length(google_storage_bucket_object.database_coordinates) == 0 && length(output.database_coordinates) == 0 && length(google_project_iam_member.public_api_internal_invoker) == 0
+    condition     = length(module.service_release) == 0 && output.service_release_boundaries == null && length(google_storage_bucket_object.database_coordinates) == 0 && length(output.database_coordinates) == 0
     error_message = "Existing inputs must not create shared identities or database publications."
   }
 }
@@ -61,7 +61,7 @@ run "shared_release_private_without_public_shell" {
     service_release_zones = { json-keys = ["private"], authentication = ["private"] }
   }
   assert {
-    condition     = length(module.service_release) == 2 && length(module.public_api_project) == 0 && alltrue([for boundary in output.service_release_boundaries : boundary.project_id == "agora-production-test"]) && length(google_project_iam_member.public_api_internal_invoker) == 0
+    condition     = length(module.service_release) == 2 && length(module.public_api_project) == 0 && alltrue([for boundary in output.service_release_boundaries : boundary.project_id == "agora-production-test"])
     error_message = "Private release boundaries must not require or provision a public project."
   }
 }
@@ -76,6 +76,10 @@ run "production_release_boundary_selection" {
   }
   assert {
     condition = (
+      toset(google_project_iam_custom_role.foundation_service_access[0].permissions) == toset(["run.services.getIamPolicy", "run.services.setIamPolicy"]) &&
+      google_project_iam_member.foundation_service_access[0].project == var.workload_project_id &&
+      google_project_iam_member.foundation_service_access[0].member == "serviceAccount:infra-foundation@${var.management_project_id}.iam.gserviceaccount.com" &&
+      google_project_iam_member.foundation_service_access[0].condition[0].expression == google_project_iam_member.internal_cloud_run_invoker.condition[0].expression &&
       toset(keys(module.service_release)) == toset(["json-keys/private", "authentication/public-api"]) &&
       output.service_release_boundaries["json-keys/private"].project_id == var.workload_project_id &&
       output.service_release_boundaries["authentication/public-api"].project_id == var.public_api_project_id &&
@@ -86,17 +90,6 @@ run "production_release_boundary_selection" {
       length(module.service_project) == 0 && length(var.pgbackrest_repository_services) == 0
     )
     error_message = "Register only the existing components' destination boundaries while retaining both private database owners."
-  }
-  assert {
-    condition = (
-      length(google_project_iam_member.public_api_internal_invoker) == 1 &&
-      google_project_iam_member.public_api_internal_invoker[0].project == var.workload_project_id &&
-      google_project_iam_member.public_api_internal_invoker[0].role == "roles/run.servicesInvoker" &&
-      google_project_iam_member.public_api_internal_invoker[0].member == "serviceAccount:agora-authentication-api@agora-api-test.iam.gserviceaccount.com" &&
-      google_project_iam_member.public_api_internal_invoker[0].condition == google_project_iam_member.internal_cloud_run_invoker.condition &&
-      google_project_iam_member.internal_cloud_run_invoker.member == "serviceAccount:${google_service_account.runtime["authentication"].email}"
-    )
-    error_message = "The new Authentication identity must inherit only the tagged internal-service invocation scope while the legacy identity remains available during migration."
   }
 }
 

@@ -20,5 +20,6 @@ output "runtime" {
     google_secret_manager_secret_iam_member.foundation_job_metadata,
     google_artifact_registry_repository_iam_member.release,
     google_service_account_iam_member.foundation_runtime,
+    google_cloud_run_v2_service_iam_member.json_keys_invoker,
   ]
 }
