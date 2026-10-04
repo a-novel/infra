@@ -179,7 +179,14 @@ func TestSharedRequestBoundary(t *testing.T) {
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
-			request, args := sharedFixture(t, directory, testCase.service, testCase.zone, testCase.waitlist)
+			service, zone := testCase.service, testCase.zone
+			switch service + "/" + zone {
+			case "json-keys/public-api", "authentication/public-api":
+			default:
+				service, zone = "json-keys", "public-api"
+			}
+			request, args := sharedFixture(t, directory, service, zone, testCase.waitlist)
+			args = append(args, "--service="+testCase.service, "--zone="+testCase.zone)
 			if testCase.change != nil {
 				testCase.change(request)
 			}
