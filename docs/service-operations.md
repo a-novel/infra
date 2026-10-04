@@ -53,7 +53,9 @@ receipt bucket. Both zones of one service share
 existing foundation reader/writer grants. Read-only assessment inventories every registered
 prerequisite scope and blocks on held or orphaned guards. The existing logical-service inspect
 and finish commands resolve this common guard without selecting a current zone configuration.
-Database/repository hosts, jobs, rollout and other shared runtime operations remain blocked.
+Suspended API pipeline setup also uses this path, with the exact private database handoff and
+private-project probe network. It does not create APIs or dispatch releases. Database/repository
+hosts, application jobs and shared runtime submissions remain blocked pending their ownership handoff.
 
 ### Implemented: disposable native host preparation
 
