@@ -46,31 +46,31 @@ variable "foundation_json" {
       jsondecode(var.foundation_json).runtime.project_id == var.project_id &&
       jsondecode(var.foundation_json).runtime.service == var.service &&
       jsondecode(var.foundation_json).runtime.region == var.region &&
-      jsondecode(var.foundation_json).runtime.service_account == "agora-${var.service}${var.zone == null ? "" : "-private"}@${var.project_id}.iam.gserviceaccount.com",
+      jsondecode(var.foundation_json).runtime.service_account == "agora-${var.service}${var.zone == null ? "" : "-${local.zone_suffix}"}@${var.project_id}.iam.gserviceaccount.com",
     false)
     error_message = "The runtime must match the independently approved project, service, region and application identity."
   }
   validation {
     condition = var.zone == null ? true : try(
       jsondecode(var.foundation_json).scope == local.coordinate_scope &&
-      jsondecode(var.foundation_json).runtime.zone == "private" &&
+      jsondecode(var.foundation_json).runtime.zone == var.zone &&
       jsondecode(var.foundation_json).runtime.repositories["agora-production"] == local.production_repository &&
       jsondecode(var.foundation_json).database_source.schema_version == 2 &&
       jsondecode(var.foundation_json).database_source.bucket == var.state_bucket &&
-      jsondecode(var.foundation_json).database_source.object == "foundation/database-coordinates/production/${var.project_id}/${var.service}/${jsondecode(var.foundation_json).database_source.sha256}.json" &&
+      jsondecode(var.foundation_json).database_source.object == "foundation/database-coordinates/production/${local.database_project}/${var.service}/${jsondecode(var.foundation_json).database_source.sha256}.json" &&
       can(regex("^[1-9][0-9]*$", jsondecode(var.foundation_json).database_source.generation)) &&
       can(regex("^[a-f0-9]{64}$", jsondecode(var.foundation_json).database_source.sha256)),
     false)
-    error_message = "Shared jobs require their private service scope, registry and exact existing-database source reference."
+    error_message = "Shared releases require their exact service/zone, registry and approved private database source reference."
   }
   validation {
     condition = try(
-      jsondecode(var.foundation_json).database.project_id == var.project_id &&
+      jsondecode(var.foundation_json).database.project_id == local.database_project &&
       jsondecode(var.foundation_json).database.service == var.service &&
       can(regex("^${var.region}-[a-z]$", jsondecode(var.foundation_json).database.zone)) &&
       jsondecode(var.foundation_json).database.port == (var.service == "json-keys" ? 5432 : 5433),
     false)
-    error_message = "The database must belong to this service project and region, with its expected PostgreSQL port."
+    error_message = "The database must belong to the selected private project, service and region, with its expected PostgreSQL port."
   }
   validation {
     condition = try(
@@ -84,6 +84,8 @@ variable "foundation_json" {
 locals {
   coordinates           = try(jsondecode(var.foundation_json), null)
   coordinates_version   = var.zone == null ? 1 : 2
-  coordinate_scope      = var.zone == null ? var.project_id : "workloads/production/private/${var.project_id}/${var.service}"
-  production_repository = "${var.region}-docker.pkg.dev/${var.project_id}/${var.zone == null ? "agora-production" : "agora-${var.service}-private-production"}"
+  coordinate_scope      = var.zone == null ? var.project_id : "workloads/production/${var.zone}/${var.project_id}/${var.service}"
+  zone_suffix           = var.zone == "public-api" ? "api" : "private"
+  database_project      = var.zone == "public-api" ? coalesce(var.private_project_id, "unconfigured") : var.project_id
+  production_repository = "${var.region}-docker.pkg.dev/${var.project_id}/${var.zone == null ? "agora-production" : "agora-${var.service}-${local.zone_suffix}-production"}"
 }

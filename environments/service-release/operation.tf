@@ -7,6 +7,11 @@ variable "release_operation" {
   default = null
 
   validation {
+    condition     = var.release_operation == null || var.zone == null
+    error_message = "Shared native execution remains disabled; prepared API requests are not executable operations."
+  }
+
+  validation {
     condition = var.release_operation == null ? true : try(
       var.rollout != null &&
       can(regex("^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$", var.release_operation.predecessor)) &&
@@ -22,7 +27,7 @@ variable "release_operation" {
 output "release_operation" {
   description = "Prepared native operation for independent protected approval after convergence; not evidence of execution or readiness."
   sensitive   = true
-  value = var.release_operation == null || var.rollout == null ? null : {
+  value = var.release_operation == null || var.rollout == null || var.zone != null ? null : {
     schema_version        = 1
     service               = var.service
     project_id            = var.project_id

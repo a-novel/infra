@@ -67,6 +67,33 @@ run "authentication_private_jobs" {
   }
 }
 
+run "json_keys_private_request" {
+  command = plan
+  variables {
+    foundation      = run.documents.cases.json-keys.foundation
+    foundation_json = run.documents.cases.json-keys.foundation_json
+    rollout         = run.documents.rollout.json-keys
+  }
+  assert {
+    condition     = jsonencode(output.release_request) == jsonencode(yamldecode(file("../../internal/submission/testdata/sharedRequests.yaml"))["private/json-keys"]) && output.release_operation == null
+    error_message = "Private JSON Keys must prepare its native request from the same approved database as its jobs without enabling execution."
+  }
+}
+
+run "reject_shared_operation" {
+  command = plan
+  variables {
+    foundation      = run.documents.cases.json-keys.foundation
+    foundation_json = run.documents.cases.json-keys.foundation_json
+    rollout         = run.documents.rollout.json-keys
+    release_operation = {
+      predecessor        = "previous"
+      rollout_request_id = "33333333-3333-4333-8333-333333333333"
+    }
+  }
+  expect_failures = [var.release_operation]
+}
+
 run "reject_peer_scope" {
   command = plan
   variables {
@@ -166,16 +193,6 @@ run "reject_peer_registry" {
   expect_failures = [var.foundation_json]
 }
 
-run "reject_public_api_jobs" {
-  command = plan
-  variables {
-    zone            = "public-api"
-    foundation      = run.documents.cases.json-keys.foundation
-    foundation_json = run.documents.cases.json-keys.foundation_json
-  }
-  expect_failures = [var.zone]
-}
-
 run "reject_public_jobs" {
   command = plan
   variables {
@@ -204,7 +221,7 @@ run "reject_dedicated_folder" {
   expect_failures = [var.foundation]
 }
 
-run "reject_shared_rollout" {
+run "reject_unapproved_shared_rollout" {
   command = plan
   variables {
     foundation      = run.documents.cases.json-keys.foundation
