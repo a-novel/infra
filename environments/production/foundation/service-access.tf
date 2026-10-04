@@ -34,6 +34,32 @@ resource "google_project_iam_custom_role" "foundation_public_api" {
   depends_on = [module.public_api_project]
 }
 
+resource "google_project_iam_custom_role" "foundation_private_release" {
+  count = anytrue([for boundary in local.service_release_boundaries : boundary.zone == "private"]) ? 1 : 0
+
+  project     = google_project.workload.project_id
+  role_id     = "infraFoundationPrivateRelease"
+  title       = "Foundation private workload updates"
+  description = "Inspect and update existing private application definitions through protected native plans."
+  permissions = ["run.services.get", "run.services.update", "run.jobs.get", "run.jobs.update"]
+}
+
+resource "google_project_iam_member" "foundation_private_release" {
+  count = length(google_project_iam_custom_role.foundation_private_release)
+
+  project = google_project.workload.project_id
+  role    = google_project_iam_custom_role.foundation_private_release[0].name
+  member  = "serviceAccount:${local.automation_service_accounts.foundation}"
+
+  condition {
+    title       = "PrivateApplicationUpdatesOnly"
+    description = "Existing internal APIs and application jobs only; backup safety jobs remain excluded."
+    expression = "(${join(" || ", [for class in ["internal", "release", "scheduled"] :
+      "resource.matchTagId('${google_tags_tag_key.cloud_run_invocation.id}', '${google_tags_tag_value.cloud_run_invocation[class].id}')"
+    ])}) && !resource.matchTag('${var.workload_project_id}/agora-backup-maintenance', 'enabled')"
+  }
+}
+
 resource "google_project_iam_member" "foundation_public_api" {
   count = length(google_project_iam_custom_role.foundation_public_api)
 
