@@ -147,7 +147,7 @@ func TestWorkflowBoundaries(t *testing.T) {
 		job := refresh.Jobs[name]
 		require.Equal(t, map[string]string{"actions": "write", "contents": "read", "pull-requests": "read"}, job.Permissions)
 		require.Empty(t, job.Environment)
-		require.Equal(t, 5, job.Timeout)
+		require.Equal(t, map[string]int{"refresh": 5, "assess-updates": 55}[name], job.Timeout)
 		require.Len(t, job.Steps, 3)
 		require.Contains(t, job.Steps[0].Uses, "actions/checkout@")
 		require.Equal(t, object{"ref": "master", "persist-credentials": false}, job.Steps[0].With)

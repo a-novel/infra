@@ -23,7 +23,9 @@ jobs:
         github.event.workflow_run.event == 'workflow_dispatch' &&
         github.event.workflow_run.head_branch == 'master'))
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    # Requesting an assessment includes awaiting it to refresh the gate, since its
+    # completion notifies no workflow.
+    timeout-minutes: 55
     concurrency:
       group: update-assessment-request
       cancel-in-progress: false

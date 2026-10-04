@@ -42,6 +42,9 @@ type fixture struct {
 	posts                       []string
 	before                      func(string, string) error
 	reads                       map[string]int
+	// requested is the status GitHub reports for an assessment run the code dispatches.
+	requested string
+	ctx       context.Context
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -64,7 +67,7 @@ func newFixture(t *testing.T) *fixture {
 		"display_title": "resource-deletion assessment PR #42 " + head + " onto " + base,
 	}
 	f := &fixture{
-		t: t, pull: pull, ci: ci, assessment: assessment, routes: make(map[string]any), reads: make(map[string]int),
+		t: t, pull: pull, ci: ci, assessment: assessment, routes: make(map[string]any), reads: make(map[string]int), requested: "completed",
 		env: map[string]string{
 			"GITHUB_REPOSITORY": "a-novel/infra", "GITHUB_EVENT_NAME": "workflow_run", "GITHUB_REF": "refs/heads/master", "GITHUB_SHA": base,
 			"PULL_REQUEST": "42", "HEAD_SHA": head, "BASE_SHA": base, "GITHUB_EVENT_PATH": filepath.Join(t.TempDir(), "event.json"),
@@ -198,6 +201,9 @@ func (f *fixture) execute(_ context.Context, output io.Writer, name string, args
 	}
 	if method == "POST" {
 		f.posts = append(f.posts, strings.Join(args[1:], " "))
+		if path == "/actions/workflows/drift.yaml/dispatches" {
+			f.dispatched(args)
+		}
 		return nil
 	}
 	require.Equal(f.t, "GET", method)
@@ -213,13 +219,33 @@ func (f *fixture) execute(_ context.Context, output io.Writer, name string, args
 	return json.NewEncoder(output).Encode(value)
 }
 
+// dispatched creates the assessment run GitHub starts for a dispatch request.
+func (f *fixture) dispatched(args []string) {
+	f.t.Helper()
+	inputs := make(map[string]string)
+	for _, arg := range args {
+		if key, value, ok := strings.Cut(arg, "="); ok && strings.HasPrefix(key, "inputs[") {
+			inputs[strings.TrimSuffix(strings.TrimPrefix(key, "inputs["), "]")] = value
+		}
+	}
+	requested := maps.Clone(f.assessment)
+	requested["id"], requested["status"] = 301, f.requested
+	requested["display_title"] = "resource-deletion assessment PR #" + inputs["pull_request"] + " " + inputs["head_sha"] + " onto " + inputs["base_sha"]
+	f.routes["/actions/runs/301"] = requested
+	f.routes["/actions/workflows/drift.yaml/runs?branch=master&event=workflow_dispatch&head_sha="+base+"&per_page=100"] = pages("workflow_runs", []object{f.assessment, requested})
+}
+
 func (f *fixture) run(args ...string) (int, string) {
 	f.t.Helper()
 	data, err := json.Marshal(f.event)
 	require.NoError(f.t, err)
 	require.NoError(f.t, os.WriteFile(f.env["GITHUB_EVENT_PATH"], data, 0o600))
 	var stdout, stderr bytes.Buffer
-	code := automation.Run(f.t.Context(), args, func(key string) string { return f.env[key] }, f.execute, &stdout, &stderr)
+	ctx := f.t.Context()
+	if f.ctx != nil {
+		ctx = f.ctx
+	}
+	code := automation.Run(ctx, args, func(key string) string { return f.env[key] }, f.execute, &stdout, &stderr)
 	return code, stdout.String() + stderr.String()
 }
 
@@ -378,8 +404,15 @@ func TestAssessmentDispatch(t *testing.T) {
 		mutate    func(*fixture)
 		count     int
 		operation string
+		running   bool
 	}{
-		"validated":      {count: 1},
+		"validated": {count: 1},
+		"assessment outlasts the job": {mutate: func(f *fixture) {
+			f.requested = "in_progress"
+			ctx, cancel := context.WithCancel(f.t.Context())
+			cancel()
+			f.ctx = ctx
+		}, count: 1, running: true},
 		"version update": {mutate: func(f *fixture) { f.versionUpdate() }, count: 1, operation: "assess-version-update"},
 		"neither update kind": {mutate: func(f *fixture) {
 			f.versionUpdate()
@@ -412,15 +445,21 @@ func TestAssessmentDispatch(t *testing.T) {
 				tt.mutate(f)
 			}
 			code, output := f.run("assess-updates", "dispatch")
-			require.Zero(t, code, output)
-			require.Len(t, f.posts, tt.count)
-			if tt.count == 1 {
-				operation := tt.operation
-				if operation == "" {
-					operation = "assess-image-update"
-				}
-				require.Equal(t, "repos/a-novel/infra/actions/workflows/drift.yaml/dispatches --method POST -f ref=master -f inputs[operation]="+operation+" -f inputs[pull_request]=42 -f inputs[head_sha]="+head+" -f inputs[base_sha]="+base, f.posts[0])
+			require.Equal(t, tt.running, code != 0, output)
+			if tt.count == 0 {
+				require.Empty(t, f.posts)
+				return
 			}
+			operation := tt.operation
+			if operation == "" {
+				operation = "assess-image-update"
+			}
+			expected := []string{"repos/a-novel/infra/actions/workflows/drift.yaml/dispatches --method POST -f ref=master -f inputs[operation]=" + operation + " -f inputs[pull_request]=42 -f inputs[head_sha]=" + head + " -f inputs[base_sha]=" + base}
+			// The completed assessment notifies no workflow, so the dispatcher refreshes the stale gate itself.
+			if !tt.running {
+				expected = append(expected, "repos/a-novel/infra/actions/jobs/1003/rerun --method POST")
+			}
+			require.Equal(t, expected, f.posts)
 		})
 	}
 }
