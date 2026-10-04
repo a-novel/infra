@@ -340,7 +340,7 @@ run "builds_the_two_database_recovery_contracts" {
   }
 }
 
-run "builds_the_private_json_keys_and_public_authentication_runtime" {
+run "retains_private_json_keys_without_the_handed_off_public_api" {
   command = plan
 
   variables {
@@ -559,12 +559,7 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
         for environment in one(one(google_cloud_run_v2_service.json_keys[0].template).containers).env :
         environment.name => environment.value
         if contains(keys(local.application_database_environment.json_keys), environment.name) && length(environment.value_source) == 0
-      } == local.application_database_environment.json_keys &&
-      {
-        for environment in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env :
-        environment.name => environment.value
-        if contains(keys(local.application_database_environment.authentication), environment.name) && length(environment.value_source) == 0
-      } == local.application_database_environment.authentication
+      } == local.application_database_environment.json_keys
     )
     error_message = "Every application runtime must receive its exact discrete private-database settings."
   }
@@ -633,117 +628,22 @@ run "builds_the_private_json_keys_and_public_authentication_runtime" {
   }
 
   assert {
-    condition = alltrue([
-      for service in [google_cloud_run_v2_service.json_keys[0], google_cloud_run_v2_service.authentication[0]] :
+    condition = (
+      length(google_cloud_run_v2_service.authentication) == 0 &&
+      length(google_tags_location_tag_binding.authentication) == 0 &&
+      output.application_runtime.authentication == null &&
       one([
-        for environment in one(one(service.template).containers).env : environment
+        for environment in one(one(google_cloud_run_v2_service.json_keys[0].template).containers).env : environment
         if environment.name == "OTEL"
       ]).value == "true"
-    ])
-    error_message = "Authentication and JSON Keys must export OpenTelemetry traces and logs."
-  }
-
-  assert {
-    condition = (
-      length(google_cloud_run_v2_service.authentication) == 1 &&
-      google_cloud_run_v2_service.authentication[0].ingress == "INGRESS_TRAFFIC_ALL" &&
-      google_cloud_run_v2_service.authentication[0].invoker_iam_disabled &&
-      length(google_tags_location_tag_binding.authentication) == 0 &&
-      !google_cloud_run_v2_service.authentication[0].deletion_protection &&
-      one(google_cloud_run_v2_service.authentication[0].scaling).min_instance_count == 1 &&
-      length(one(google_cloud_run_v2_service.authentication[0].template).scaling) == 0 &&
-      one(google_cloud_run_v2_service.authentication[0].scaling).max_instance_count == 3 &&
-      one(google_cloud_run_v2_service.authentication[0].template).service_account == var.runtime_service_accounts.authentication &&
-      one(google_cloud_run_v2_service.authentication[0].template).timeout == "60s" &&
-      one(google_cloud_run_v2_service.authentication[0].template).max_instance_request_concurrency == 20 &&
-      one(one(google_cloud_run_v2_service.authentication[0].template).containers).image == var.application_release.authentication.images.rest &&
-      !one(one(google_cloud_run_v2_service.authentication[0].template).containers).resources[0].cpu_idle &&
-      one(one(google_cloud_run_v2_service.authentication[0].template).containers).resources[0].limits == tomap({
-        cpu    = "1"
-        memory = "512Mi"
-      }) &&
-      one(one(google_cloud_run_v2_service.authentication[0].template).containers).startup_probe[0].http_get[0].path == "/v2/ping" &&
-      one(one(google_cloud_run_v2_service.authentication[0].template).containers).startup_probe[0].initial_delay_seconds == 0 &&
-      one(one(google_cloud_run_v2_service.authentication[0].template).containers).startup_probe[0].timeout_seconds == 1 &&
-      one(one(google_cloud_run_v2_service.authentication[0].template).containers).startup_probe[0].period_seconds == 3 &&
-      one(one(google_cloud_run_v2_service.authentication[0].template).containers).startup_probe[0].failure_threshold == 80 &&
-      one(one(google_cloud_run_v2_service.authentication[0].template).containers).liveness_probe[0].http_get[0].path == "/v2/ping" &&
-      one(one(google_cloud_run_v2_service.authentication[0].template).vpc_access).egress == "PRIVATE_RANGES_ONLY" &&
-      toset(one(one(google_cloud_run_v2_service.authentication[0].template).vpc_access).network_interfaces[0].tags) == toset(["agora-authentication"]) &&
-      one(google_cloud_run_v2_service.authentication[0].template).revision == var.application_release.authentication.revision &&
-      one(google_cloud_run_v2_service.authentication[0].traffic).percent == 100
     )
-    error_message = "Authentication must remain public, keep one service-level warm instance, drain background mail, and split private from managed public egress."
-  }
-
-  assert {
-    condition = (
-      one([
-        for environment in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env : environment
-        if environment.name == "GCLOUD_PROJECT_ID"
-      ]).value == var.workload_project_id &&
-      one([
-        for environment in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env : environment
-        if environment.name == "SERVICE_JSON_KEYS_HOST"
-      ]).value == "agora-json-keys-grpc-test.europe-west1.run.app" &&
-      one([
-        for environment in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env : environment
-        if environment.name == "SERVICE_JSON_KEYS_PORT"
-      ]).value == "443" &&
-      one([
-        for environment in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env : environment
-        if environment.name == "REST_TIMEOUT_SHUTDOWN"
-      ]).value == "9s" &&
-      one([
-        for environment in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env : environment
-        if environment.name == "PLATFORM_AUTH_URL"
-      ]).value == "https://www.example.com" &&
-      one([
-        for environment in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env : environment
-        if environment.name == "SMTP_TIMEOUT"
-      ]).value == "5s" &&
-      one([
-        for environment in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env : environment
-        if environment.name == "SMTP_USERNAME"
-      ]).value == "smtp-login@example.com" &&
-      toset([
-        for environment in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env : environment.name
-        if length(environment.value_source) == 1
-      ]) == toset(["POSTGRES_PASSWORD", "SMTP_SENDER_PASSWORD"]) &&
-      one([
-        for environment in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env : environment
-        if environment.name == "POSTGRES_PASSWORD"
-        ]).value_source[0].secret_key_ref[0] == {
-        secret  = "projects/agora-management-test/secrets/production-authentication-postgres-password"
-        version = "11"
-      } &&
-      one([
-        for environment in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env : environment
-        if environment.name == "SMTP_SENDER_PASSWORD"
-        ]).value_source[0].secret_key_ref[0] == {
-        secret  = "projects/agora-management-test/secrets/production-authentication-smtp-sender-password"
-        version = "12"
-      } &&
-      length([
-        for environment in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env : environment
-        if environment.name == "SUPER_ADMIN_PASSWORD"
-      ]) == 0
-    )
-    error_message = "Authentication must use the exact JSON Keys audience host, bounded shutdown/mail, and only its REST secrets."
+    error_message = "Production Authentication belongs only to public-api; the legacy root retains JSON Keys telemetry."
   }
 }
 
 run "routes_a_first_release_to_its_only_revisions" {
   command = plan
 
-  # This fixture deliberately omits web_client_url, as pre-upgrade receipts do.
-  assert {
-    condition = length([
-      for environment in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env : environment
-      if environment.name == "PLATFORM_AUTH_URL"
-    ]) == 0
-    error_message = "Legacy receipts must retain their exact environment without a new URL default."
-  }
 
   variables {
     database_releases = {
@@ -801,7 +701,6 @@ run "routes_a_first_release_to_its_only_revisions" {
     condition = alltrue([
       for service in [
         google_cloud_run_v2_service.json_keys[0],
-        google_cloud_run_v2_service.authentication[0],
         ] : (
         one(service.scaling).min_instance_count == 1 &&
         one(service.scaling).max_instance_count == 3 &&
@@ -819,6 +718,15 @@ run "routes_a_first_release_to_its_only_revisions" {
 
 run "builds_restore_only_contracts_in_a_disposable_recovery_state" {
   command = plan
+
+  # This fixture deliberately omits web_client_url, as pre-upgrade receipts do.
+  assert {
+    condition = length([
+      for environment in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env : environment
+      if environment.name == "PLATFORM_AUTH_URL"
+    ]) == 0
+    error_message = "Legacy receipts must retain their exact environment without a new URL default."
+  }
 
   variables {
     recovery_mode                = true

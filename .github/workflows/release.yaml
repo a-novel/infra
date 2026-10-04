@@ -8,11 +8,13 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: Deploy, recover, exercise database isolation, or check release storage permissions.
+        description: Plan/apply the retained release root, deploy, recover, or check permissions.
         required: true
         type: choice
         options:
           - deploy
+          - plan
+          - apply
           - check-release-permissions
           - rollback
           - recover-first-launch
@@ -20,6 +22,10 @@ on:
           - restore-database-isolation
       target_receipt:
         description: Rollback or isolation; immutable run-id-attempt from the receipt inventory.
+        required: false
+        type: string
+      plan_id:
+        description: Apply only; exact run-id-attempt from a reviewed private plan.
         required: false
         type: string
       failed_run_id:
@@ -45,14 +51,90 @@ env:
   RELEASE_ACTION: ${{ github.event_name == 'push' && 'deploy' || inputs.action }}
 
 jobs:
+  native:
+    if: >-
+      github.ref == 'refs/heads/master' &&
+      github.event_name == 'workflow_dispatch' &&
+      vars.PRODUCTION_RELEASES_ENABLED != 'true' &&
+      (inputs.action == 'plan' || inputs.action == 'apply')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: production-release
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: read
+    steps:
+      - name: Check out the exact master commit
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build reviewed infra tooling
+        uses: $/.github/actions/setup-infra
+
+      - name: Authenticate as the release boundary
+        uses: google-github-actions/auth@v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_RELEASE_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_RELEASE_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Install the pinned Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v3.0.1
+        with:
+          version: "581.0.0"
+
+      - name: Install OpenTofu
+        uses: opentofu/setup-opentofu@v2.0.2
+        with:
+          tofu_version_file: .opentofu-version
+          tofu_wrapper: false
+          cache: true
+
+      - name: Read the last converged release configuration
+        shell: bash
+        env:
+          STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
+        run: |
+          set -euo pipefail
+          umask 077
+          infra custody operation check-legacy "${STATE_BUCKET}"
+          infra custody config fetch "${STATE_BUCKET}" release "${RUNNER_TEMP}/release.json"
+
+      - name: Create the exact private plan
+        if: inputs.action == 'plan'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
+        run: |
+          set -euo pipefail
+          plan_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          ./ops/create-reviewed-plan.sh release "${STATE_BUCKET}" "${GITHUB_SHA}" \
+            "${plan_id}" "${RUNNER_TEMP}/release.json"
+          printf 'Plan ID: %s\n' "${plan_id}" >>"${GITHUB_STEP_SUMMARY}"
+
+      - name: Apply only the selected private plan
+        if: inputs.action == 'apply'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
+          PLAN_ID: ${{ inputs.plan_id }}
+        run: |
+          set -euo pipefail
+          infra custody plan apply "${STATE_BUCKET}" release "${GITHUB_SHA}" \
+            "${PLAN_ID}" "${RUNNER_TEMP}/release.json"
+
   release:
     # The repository switch prevents an unbootstrapped clone from creating an
     # unprotected environment merely by merging its first image manifest.
     if: >-
       github.ref == 'refs/heads/master' &&
       vars.PRODUCTION_RELEASES_ENABLED == 'true' &&
-      inputs.action != 'check-release-permissions' &&
-      !endsWith(inputs.action, '-database-isolation')
+      (github.event_name == 'push' || contains(fromJSON('["deploy", "rollback", "recover-first-launch"]'), inputs.action))
     runs-on: ubuntu-24.04
     # Sequential database safety checks and clean restores each keep their own
     # bounded timeout; the workflow ceiling must not cancel a valid slow run.

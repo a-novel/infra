@@ -122,6 +122,26 @@ func TestReleaseOwnership(t *testing.T) {
 	require.Equal(t, object{"group": "production-infrastructure", "cancel-in-progress": false}, release.Concurrency)
 	require.Contains(t, release.Jobs["release"].If, "vars.PRODUCTION_RELEASES_ENABLED == 'true'")
 	require.Equal(t, "production-release", release.Jobs["release"].Environment)
+	native := release.Jobs["native"]
+	require.Contains(t, native.If, "github.event_name == 'workflow_dispatch'")
+	require.Contains(t, native.If, "github.ref == 'refs/heads/master'")
+	require.Contains(t, native.If, "vars.PRODUCTION_RELEASES_ENABLED != 'true'")
+	require.Contains(t, native.If, "inputs.action == 'plan' || inputs.action == 'apply'")
+	require.Equal(t, "production-release", native.Environment)
+	require.Equal(t, map[string]string{"contents": "read", "id-token": "write", "pull-requests": "read"}, native.Permissions)
+	auth := native.Steps[stepIndex(t, native.Steps, "google-github-actions/auth@")]
+	require.Equal(t, "${{ vars.GCP_RELEASE_SERVICE_ACCOUNT }}", auth.With["service_account"])
+	var commands string
+	for _, step := range native.Steps {
+		commands += step.Run
+		require.NotContains(t, step.Run, "${{")
+	}
+	require.Contains(t, commands, "infra custody operation check-legacy")
+	require.Contains(t, commands, "infra custody config fetch")
+	require.Contains(t, commands, "./ops/create-reviewed-plan.sh release")
+	require.Contains(t, commands, "infra custody plan apply")
+	require.NotContains(t, commands, "release-orchestrator")
+	require.NotContains(t, commands, "jobs execute")
 }
 
 func TestToolingArtifact(t *testing.T) {

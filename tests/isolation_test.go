@@ -289,7 +289,7 @@ func TestIsolationWorkflow(t *testing.T) {
 	require.Equal(t, object{"contents": "read", "id-token": "write"}, job["permissions"])
 	require.Contains(t, job["if"], "github.event_name == 'workflow_dispatch'")
 	require.Contains(t, job["if"], "refs/heads/master")
-	require.Contains(t, nested(workflow, "jobs", "release")["if"], "!endsWith(inputs.action, '-database-isolation')")
+	require.Contains(t, nested(workflow, "jobs", "release")["if"], `contains(fromJSON('["deploy", "rollback", "recover-first-launch"]'), inputs.action)`)
 	encoded := jsonText(t, job)
 	require.Contains(t, encoded, "infra database-isolation")
 	for _, forbidden := range []string{"tofu", "compute ssh", "add-iam", "infra custody receipt publish"} {

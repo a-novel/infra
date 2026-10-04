@@ -108,6 +108,8 @@ func TestRunRejectsUnsafeInputs(t *testing.T) {
 		{"URL", "candidate", "http://private-payload.run.app", 70, 0},
 		{"Config", "deployed", `{"workload_project_id":"private-payload","region":"--private-payload"}`, 65, 0},
 		{"Discovery", "deployed", `{"workload_project_id":"fixture-project","region":"europe-west1"}`, 70, 1},
+		{"MissingPublicAPI", "deployed", `{"workload_project_id":"fixture-project","region":"europe-west1","service_release_zones":{"authentication":["public-api"]}}`, 65, 0},
+		{"InvalidPublicAPI", "deployed", `{"public_api_project_id":"--private-payload","region":"europe-west1","service_release_zones":{"authentication":["public-api"]}}`, 65, 0},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
@@ -131,6 +133,33 @@ func TestRunRejectsUnsafeInputs(t *testing.T) {
 			require.Equal(t, testCase.cloudCalls, cloudCalls)
 			require.Zero(t, connections)
 			require.NotContains(t, output.String(), "private-payload")
+		})
+	}
+}
+
+func TestDeployedProject(t *testing.T) {
+	t.Parallel()
+	for _, testCase := range []struct{ name, zones, project string }{
+		{"Legacy", `{}`, "private-project"},
+		{"UnrelatedService", `{"json-keys":["public-api"]}`, "private-project"},
+		{"PrivateAuthentication", `{"authentication":["private"]}`, "private-project"},
+		{"PublicAPI", `{"authentication":["public-api"]}`, "api-project"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			config := filepath.Join(t.TempDir(), "foundation.json")
+			require.NoError(t, os.WriteFile(config, []byte(fmt.Sprintf(
+				`{"workload_project_id":"private-project","public_api_project_id":"api-project","region":"europe-west1","service_release_zones":%s}`,
+				testCase.zones)), 0o600))
+			calls := 0
+			execute := func(_ context.Context, _ io.Writer, command string, args ...string) error {
+				calls++
+				require.Equal(t, "gcloud", command)
+				require.Contains(t, args, "--project="+testCase.project)
+				return fmt.Errorf("stop after discovery")
+			}
+			require.Equal(t, 70, health.Run(t.Context(), []string{"deployed", config}, execute, nil, io.Discard, io.Discard))
+			require.Equal(t, 1, calls)
 		})
 	}
 }

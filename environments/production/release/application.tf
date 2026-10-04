@@ -1,7 +1,4 @@
 locals {
-  # Clean-room recovery must never write to the production invitation list.
-  authentication_waitlist = var.recovery_mode ? null : try(var.application_release.authentication.waitlist, null)
-
   application_candidate = {
     for service in ["json_keys", "authentication"] : service => (
       var.application_release == null ? false :
@@ -385,22 +382,20 @@ resource "google_cloud_run_v2_service" "json_keys" {
 }
 
 resource "google_cloud_run_v2_service" "authentication" {
-  count = var.application_release == null ? 0 : 1
+  count = var.recovery_mode && var.application_release != null ? 1 : 0
 
   project  = var.workload_project_id
   location = var.region
   name     = "agora-authentication-rest"
 
-  ingress = var.recovery_mode ? "INGRESS_TRAFFIC_INTERNAL_ONLY" : "INGRESS_TRAFFIC_ALL"
-  # Google recommends disabling the Invoker IAM check for a public service.
-  # Authentication keeps authorization in the application without an allUsers
-  # IAM binding that conflicts with domain-restricted sharing policies.
-  invoker_iam_disabled = var.recovery_mode ? false : true
+  # Production belongs to service-release/public-api; this is a recovery probe only.
+  ingress              = "INGRESS_TRAFFIC_INTERNAL_ONLY"
+  invoker_iam_disabled = false
   deletion_protection  = false
   labels               = merge(local.labels, { component = "authentication", role = "rest" })
 
   scaling {
-    min_instance_count = var.recovery_mode ? 0 : 1
+    min_instance_count = 0
     max_instance_count = 3
   }
 
@@ -469,30 +464,6 @@ resource "google_cloud_run_v2_service" "authentication" {
       env {
         name  = "REST_TIMEOUT_SHUTDOWN"
         value = "9s"
-      }
-
-      dynamic "env" {
-        for_each = local.authentication_waitlist == null ? [] : [local.authentication_waitlist]
-
-        content {
-          name  = "WAITLIST_URL"
-          value = env.value.url
-        }
-      }
-
-      dynamic "env" {
-        for_each = local.authentication_waitlist == null ? [] : [local.authentication_waitlist]
-
-        content {
-          name = "WAITLIST_SECRET"
-
-          value_source {
-            secret_key_ref {
-              secret  = "projects/${var.management_project_id}/secrets/production-authentication-waitlist-secret"
-              version = tostring(env.value.secret_version)
-            }
-          }
-        }
       }
 
       env {
@@ -613,33 +584,8 @@ resource "google_cloud_run_v2_service" "authentication" {
     }
   }
 
-  dynamic "traffic" {
-    for_each = local.application_candidate.authentication && var.application_release.authentication.active_revision != null ? [1] : []
-
-    content {
-      type     = "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION"
-      revision = var.application_release.authentication.active_revision
-      percent  = 100
-    }
-  }
-
-  dynamic "traffic" {
-    for_each = local.application_candidate.authentication ? [1] : []
-
-    content {
-      type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
-      percent = var.application_release.authentication.active_revision == null ? 100 : 0
-      tag     = var.application_release.rollout.candidate_tag
-    }
-  }
-
-  dynamic "traffic" {
-    for_each = !local.application_candidate.authentication ? [1] : []
-
-    content {
-      type     = var.recovery_mode ? "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST" : "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION"
-      revision = var.recovery_mode ? null : var.application_release.authentication.active_revision
-      percent  = 100
-    }
+  traffic {
+    type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
+    percent = 100
   }
 }
