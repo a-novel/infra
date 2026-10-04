@@ -2,16 +2,15 @@
 
 The service-release root declares Cloud Run jobs, API revisions and traffic directly in HCL.
 Protected GitHub Actions owns the sequence; Cloud Run owns job execution and revision convergence.
-Authentication now runs in public-api through the protected foundation workflow's service-release
-plan/apply path. Its private database is unchanged. The retained release root still owns JSON Keys
-gRPC and the existing migration, rotation and backup jobs. The old deployment orchestrator stays disabled.
+Authentication runs in public-api; JSON Keys gRPC and the three existing migration and rotation jobs
+run in private. Their service-release roots own these resources through the protected foundation
+workflow's plan/apply path. The retained release root owns the existing scheduler, smoke and backup
+resources. The old deployment orchestrator stays disabled.
 
 The production release workflow's manual `plan` and `apply` actions reconcile that retained root
 from its last converged private inputs, without running migrations or the old rollout machinery.
 They share production concurrency, protected approval and saved-plan custody. Review the full plan
-before applying; the Authentication handoff must delete only the old private-project REST service.
-Its replacement must pass the deep health check first. Do not re-enable the old orchestrator after
-this handoff. Scheduled health checks select the registered public-api project.
+before applying. Scheduled health checks select the registered public-api project.
 
 ## Ownership
 

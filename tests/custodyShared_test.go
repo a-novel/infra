@@ -84,7 +84,12 @@ func TestCustodySharedFoundation(t *testing.T) {
 
 func TestCustodySharedOperationInspection(t *testing.T) {
 	t.Parallel()
-	for _, zone := range []string{"private", "public-api"} {
+	for _, scope := range []struct{ root, zone string }{
+		{"service-foundation", "private"},
+		{"service-foundation", "public-api"},
+		{"service-release", "private"},
+		{"service-release", "public-api"},
+	} {
 		for _, testCase := range []struct {
 			name, field string
 			value       any
@@ -98,15 +103,18 @@ func TestCustodySharedOperationInspection(t *testing.T) {
 			{name: "PeerService", field: "service", value: "authentication", code: 70},
 			{name: "PeerScope", field: "scope", value: "workloads/production/public-api/agora-api-test/authentication", code: 70},
 			{name: "WrongScopeProject", field: "scope", value: "workloads/production/private/agora-peer-test/json-keys", code: 70},
-			{name: "RuntimeRoot", field: "root", value: "service-release", code: 70},
+			{name: "UnsupportedRoot", field: "root", value: "bootstrap", code: 70},
+			{name: "UnregisteredZone", field: "scope", value: "workloads/production/public/agora-public-test/json-keys", code: 70},
+			{name: "InvalidPlanHash", field: "planSha256", value: "invalid", code: 70},
 			{name: "WrongSource", field: "source_project", value: "agora-private-test", code: 70},
 			{name: "NativeOperation", field: "kind", value: "native-release", code: 70},
 			{name: "Denied", fault: "denied-completion", code: 70},
 			{name: "ChangedGuard", fault: "changed-guard", code: 70},
+			{name: "ChangedConfiguration", fault: "changed-configuration", code: 70},
 		} {
-			t.Run(zone+"/"+testCase.name, func(t *testing.T) {
+			t.Run(scope.root+"/"+scope.zone+"/"+testCase.name, func(t *testing.T) {
 				t.Parallel()
-				f := newSharedOperationInspection(t, zone)
+				f := newSharedOperationInspection(t, scope.root, scope.zone)
 				f.fault = testCase.fault
 				if testCase.field != "" {
 					f.records["intent"][testCase.field] = testCase.value
@@ -126,9 +134,9 @@ func TestCustodySharedOperationInspection(t *testing.T) {
 	}
 }
 
-func newSharedOperationInspection(t *testing.T, zone string) *operationInspection {
+func newSharedOperationInspection(t *testing.T, root, zone string) *operationInspection {
 	t.Helper()
-	f := newOperationInspection(t, "service-foundation")
+	f := newOperationInspection(t, root)
 	project := "agora-private-test"
 	if zone == "public-api" {
 		project = "agora-api-test"
@@ -141,6 +149,9 @@ func newSharedOperationInspection(t *testing.T, zone string) *operationInspectio
 	}
 	guard := "foundation/operations/production/json-keys/operation.json"
 	config := "foundation/" + scope + "/config/00000000000000000124-00001.tfvars.json"
+	if root == "service-release" {
+		config = scope + "/release/config/00000000000000000124-00001.tfvars.json"
+	}
 	f.records["guard"]["object"], f.records["configuration"]["object"] = guard, config
 	f.guard, f.config = "/b/"+f.args[2]+"/o/"+guard, "/b/"+f.args[2]+"/o/"+config
 	f.completion = "/b/agora-management-test-123-deployment-receipts/o/" + scope + "/production/operations/42.json"
@@ -149,27 +160,10 @@ func newSharedOperationInspection(t *testing.T, zone string) *operationInspectio
 
 func TestSharedOperationCannotClearSuccessor(t *testing.T) {
 	t.Parallel()
-	f := newSharedOperationInspection(t, "public-api")
+	f := newSharedOperationInspection(t, "service-foundation", "public-api")
 	f.finish()
 	f.live = "45"
 	f.check(t, 70, "")
-}
-
-func TestSharedPublicAPIOperationInspection(t *testing.T) {
-	t.Parallel()
-	f := newSharedOperationInspection(t, "public-api")
-	scope := "workloads/production/public-api/agora-api-test/json-keys"
-	for _, record := range []string{"intent", "operation"} {
-		f.records[record]["root"] = "service-release"
-	}
-	config := scope + "/release/config/00000000000000000124-00001.tfvars.json"
-	f.records["configuration"]["object"] = config
-	f.config = "/b/" + f.args[2] + "/o/" + config
-	f.check(t, 0, "")
-	f.finish()
-	f.writer["display_title"] = "foundation apply service-release/json-keys by @operator"
-	f.deletes = 1
-	f.check(t, 0, "")
 }
 
 func TestSharedFoundationPlatformCustodyRejected(t *testing.T) {
