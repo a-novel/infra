@@ -34,10 +34,10 @@ output "postgres_recovery" {
 output "application_runtime" {
   description = "Cloud Run services and explicit deploy-time jobs for the enabled application release."
   value = var.application_release == null ? null : {
-    authentication = {
+    authentication = var.recovery_mode ? {
       name = google_cloud_run_v2_service.authentication[0].name
       uri  = google_cloud_run_v2_service.authentication[0].uri
-    }
+    } : null
     jobs = {
       for key, job in google_cloud_run_v2_job.application : key => job.name
     }

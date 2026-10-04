@@ -51,15 +51,12 @@ run "active_baseline" {
     application_release = jsondecode(file("../../../tests/fixtures/application-release.json"))
   }
   assert {
-    condition = alltrue([
-      for env in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env :
-      !startswith(env.name, "WAITLIST_")
-    ])
-    error_message = "Historical receipts must keep waitlist configuration absent."
+    condition     = length(google_cloud_run_v2_service.authentication) == 0
+    error_message = "Historical receipts must not recreate the retired private-project API."
   }
 }
 
-run "waitlist_uses_exact_secret_only_on_authentication" {
+run "retained_waitlist_settings_cannot_leak_into_private_runtimes" {
   command = plan
   variables {
     application_release = merge(jsondecode(file("../../../tests/fixtures/application-release.json")), {
@@ -70,17 +67,13 @@ run "waitlist_uses_exact_secret_only_on_authentication" {
   }
   assert {
     condition = (
-      one([for env in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env : env if env.name == "WAITLIST_URL"]).value == var.application_release.authentication.waitlist.url &&
-      one([for env in one(one(google_cloud_run_v2_service.authentication[0].template).containers).env : env if env.name == "WAITLIST_SECRET"]).value_source[0].secret_key_ref[0] == {
-        secret  = "projects/agora-management-test/secrets/production-authentication-waitlist-secret"
-        version = "14"
-      } &&
+      length(google_cloud_run_v2_service.authentication) == 0 &&
       alltrue([for env in one(one(google_cloud_run_v2_service.json_keys[0].template).containers).env : !startswith(env.name, "WAITLIST_")]) &&
       alltrue(flatten([for job in values(google_cloud_run_v2_job.application) : [
         for env in one(one(one(job.template).template).containers).env : !startswith(env.name, "WAITLIST_")
       ]]))
     )
-    error_message = "Only Authentication REST may mount the pinned waitlist key and endpoint."
+    error_message = "Neither JSON Keys nor retained jobs may mount the public API's waitlist settings."
   }
 }
 
@@ -117,8 +110,7 @@ run "authentication_candidate_leaves_json_keys_active" {
   }
   assert {
     condition = (
-      length(google_cloud_run_v2_service.authentication[0].traffic) == 2 &&
-      one([for traffic in google_cloud_run_v2_service.authentication[0].traffic : traffic if traffic.percent == 0]).tag == "c-0123456789abcdef" &&
+      length(google_cloud_run_v2_service.authentication) == 0 &&
       one(google_cloud_run_v2_service.json_keys[0].traffic).percent == 100 &&
       one(google_cloud_run_v2_service.json_keys[0].traffic).revision == var.application_release.json_keys.active_revision &&
       one(google_cloud_run_v2_service.json_keys[0].template).revision == var.application_release.json_keys.revision &&
@@ -128,7 +120,7 @@ run "authentication_candidate_leaves_json_keys_active" {
   }
 }
 
-run "json_keys_candidate_leaves_authentication_active" {
+run "json_keys_candidate_does_not_recreate_authentication" {
   command = plan
   variables {
     application_release = merge(jsondecode(file("../../../tests/fixtures/application-release.json")), {
@@ -153,11 +145,9 @@ run "json_keys_candidate_leaves_authentication_active" {
     condition = (
       length(google_cloud_run_v2_service.json_keys[0].traffic) == 2 &&
       one([for traffic in google_cloud_run_v2_service.json_keys[0].traffic : traffic if traffic.percent == 0]).tag == "candidate" &&
-      one(google_cloud_run_v2_service.authentication[0].traffic).percent == 100 &&
-      one(google_cloud_run_v2_service.authentication[0].traffic).revision == var.application_release.authentication.active_revision &&
-      one(google_cloud_run_v2_service.authentication[0].template).revision == var.application_release.authentication.revision &&
+      length(google_cloud_run_v2_service.authentication) == 0 &&
       google_cloud_scheduler_job.json_keys_rotation[0].paused
     )
-    error_message = "JSON Keys candidates must preserve Authentication traffic and revision while pausing only key rotation."
+    error_message = "JSON Keys candidates must not own Authentication and must pause only key rotation."
   }
 }

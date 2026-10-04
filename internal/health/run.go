@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 )
@@ -32,12 +33,19 @@ func Run(ctx context.Context, args []string, execute func(context.Context, io.Wr
 	if args[0] == "deployed" {
 		attempts, connectTimeout, timeout = 1, 10*time.Second, 30*time.Second
 		var config struct {
-			Project string `json:"workload_project_id"`
-			Region  string `json:"region"`
+			Project      string              `json:"workload_project_id"`
+			PublicAPI    string              `json:"public_api_project_id"`
+			ReleaseZones map[string][]string `json:"service_release_zones"`
+			Region       string              `json:"region"`
 		}
 		data, err := os.ReadFile(args[1])
-		if err != nil || json.Unmarshal(data, &config) != nil ||
-			!regexp.MustCompile(`^[a-z][a-z0-9-]{4,28}[a-z0-9]$`).MatchString(config.Project) ||
+		if err != nil || json.Unmarshal(data, &config) != nil {
+			return stop(65, "The private foundation configuration has invalid service coordinates.")
+		}
+		if slices.Contains(config.ReleaseZones["authentication"], "public-api") {
+			config.Project = config.PublicAPI
+		}
+		if !regexp.MustCompile(`^[a-z][a-z0-9-]{4,28}[a-z0-9]$`).MatchString(config.Project) ||
 			!regexp.MustCompile(`^[a-z]+-[a-z]+[0-9]+$`).MatchString(config.Region) {
 			return stop(65, "The private foundation configuration has invalid service coordinates.")
 		}
