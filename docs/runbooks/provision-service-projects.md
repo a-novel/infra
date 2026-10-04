@@ -120,6 +120,27 @@ access and the zone-specific secret restrictions above. Apply and verify the dec
 public-api rule, through protected bootstrap before enabling a writer. Keep existing release and backup
 owners unchanged until those checks pass; no state transfer or resource migration happens here.
 
+### Protected storage permission checks
+
+After registration converges, dispatch `production release` on master with
+`action=check-release-permissions`. Approve its two existing service/zone environments. The fixed
+identities exercise their own release storage and append-only receipt grants using tiny synthetic
+objects, then require explicit IAM denials for peer reads and creates. This action runs independently
+of deployment switches and cannot select a deployment job. It reads no secret payload or peer object
+contents and changes no cloud permission or runtime resource.
+
+Each run prints its exact probe paths and acknowledged generations. Temporary state generations are
+deleted using generation preconditions. One synthetic receipt record remains under each scope's
+`production/permission-checks/<commit>/<run-id>-<attempt>/probe.json`; these record probe inputs, not
+deployment success. The successful job summary is the result. Denials count only when Google returns
+403 naming the expected missing object permission. A 404, authentication failure, retention block or
+timeout is a failed check.
+
+If interrupted or cleanup is unconfirmed, inspect only the printed synthetic paths before retrying.
+Reconcile uncertain generations through the existing privileged operator path; never recursively
+delete a folder. Leftover state probes remain subject to the normal foundation inventory gate.
+These checks do not establish runtime secret isolation or transfer resource ownership.
+
 ## Dedicated-service compatibility configuration
 
 The reviewed `.envrc` declares a JSON object mapping service names to project IDs. For example, these

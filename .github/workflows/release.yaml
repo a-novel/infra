@@ -8,12 +8,13 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: Deploy, roll back, recover first launch, or exercise database isolation.
+        description: Deploy, recover, exercise database isolation, or check release storage permissions.
         required: true
         type: choice
         options:
           - deploy
           - deploy-service
+          - check-release-permissions
           - rollback
           - recover-first-launch
           - drill-database-isolation
@@ -52,6 +53,7 @@ jobs:
       github.ref == 'refs/heads/master' &&
       vars.PRODUCTION_RELEASES_ENABLED == 'true' &&
       inputs.action != 'deploy-service' &&
+      inputs.action != 'check-release-permissions' &&
       !endsWith(inputs.action, '-database-isolation')
     runs-on: ubuntu-24.04
     # Sequential database safety checks and clean restores each keep their own
@@ -334,6 +336,58 @@ jobs:
           OPERATION_FILE: ${{ steps.operation.outputs.file }}
           OPERATION_SHA256: ${{ steps.operation.outputs.sha256 }}
         run: infra service-release deploy "${OPERATION_FILE}" "${OPERATION_SHA256}"
+
+  release-permissions:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/master' &&
+      inputs.action == 'check-release-permissions'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - environment: production-json-keys-private-release
+            account: infra-json-keys-private@a-novel-production-prod.iam.gserviceaccount.com
+            provider: r-fa8fb0969708fa1eae6efbaa7182
+            scope: workloads/production/private/a-novel-production-prod/json-keys
+            peer: workloads/production/public-api/a-novel-public-api-prod/authentication
+          - environment: production-authentication-public-api-release
+            account: infra-authentication-api@a-novel-public-api-prod.iam.gserviceaccount.com
+            provider: r-c4ce9a8eb5aa6471505b4ef23ae7
+            scope: workloads/production/public-api/a-novel-public-api-prod/authentication
+            peer: workloads/production/private/a-novel-production-prod/json-keys
+    environment: ${{ matrix.environment }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out the exact master commit
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build reviewed release tooling
+        uses: $/.github/actions/setup-infra
+      - name: Authenticate as the reviewed release boundary
+        uses: google-github-actions/auth@v3.0.0
+        with:
+          workload_identity_provider: projects/232403541574/locations/global/workloadIdentityPools/github-actions/providers/${{ matrix.provider }}
+          service_account: ${{ matrix.account }}
+          create_credentials_file: true
+          export_environment_variables: true
+      - name: Check synthetic storage permissions
+        shell: bash
+        env:
+          PERMISSION_CHECK_ENVIRONMENT: ${{ matrix.environment }}
+          OWN_SCOPE: ${{ matrix.scope }}
+          PEER_SCOPE: ${{ matrix.peer }}
+        run: |
+          set -euo pipefail
+          infra custody permissions check \
+            a-novel-management-prod-232403541574-tofu-state \
+            "${OWN_SCOPE}" "${PEER_SCOPE}"
+          printf 'PASS: own synthetic state create/read/replace/delete, append-only receipt, and peer get/create denials. No deployment or secret payload access.\n' >>"${GITHUB_STEP_SUMMARY}"
 
   database-isolation:
     if: >-
