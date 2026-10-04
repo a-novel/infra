@@ -106,6 +106,12 @@
       "minimumReleaseAge": "7 days"
     },
     {
+      "description": "Let patch releases through after six hours so fixes land quickly. Renovate classifies each candidate against the current version, so a release that changes the minor or major version keeps the week-long hold even when it is itself a patch, such as 1.1.2 to 1.2.2.",
+      "matchFileNames": [".opentofu-version", "**/versions.tf"],
+      "matchUpdateTypes": ["patch"],
+      "minimumReleaseAge": "6 hours"
+    },
+    {
       "description": "Refresh the operator module with the native Go manager.",
       "matchManagers": ["gomod"],
       "matchFileNames": ["go.mod"],

@@ -60,16 +60,23 @@ func TestRenovatePolicy(t *testing.T) {
 		}
 		require.True(t, found, "manual review for %s", testCase.value)
 	}
-	blockedGoogleAPI, usesOpenTofuRegistry, agedVersionUpdates := false, false, false
-	for _, value := range rules {
+	blockedGoogleAPI, usesOpenTofuRegistry := false, false
+	agedReleases, agedPatches := -1, -1
+	for index, value := range rules {
 		rule := value.(object)
 		names, _ := rule["matchPackageNames"].([]any)
 		if slices.Contains(names, any("google.golang.org/api")) && rule["allowedVersions"] == "<0.299.0 || >0.299.0" {
 			blockedGoogleAPI = true
 		}
 		// Version-only updates of these files are assessed automatically; their release age bounds that trust.
-		if files, _ := rule["matchFileNames"].([]any); slices.Equal(files, []any{".opentofu-version", "**/versions.tf"}) && rule["minimumReleaseAge"] == "7 days" {
-			agedVersionUpdates = true
+		if files, _ := rule["matchFileNames"].([]any); slices.Equal(files, []any{".opentofu-version", "**/versions.tf"}) {
+			types, _ := rule["matchUpdateTypes"].([]any)
+			switch {
+			case types == nil && rule["minimumReleaseAge"] == "7 days":
+				agedReleases = index
+			case slices.Equal(types, []any{"patch"}) && rule["minimumReleaseAge"] == "6 hours":
+				agedPatches = index
+			}
 		}
 		datasources, _ := rule["matchDatasources"].([]any)
 		registries, _ := rule["registryUrls"].([]any)
@@ -79,7 +86,9 @@ func TestRenovatePolicy(t *testing.T) {
 	}
 	require.True(t, blockedGoogleAPI)
 	require.True(t, usesOpenTofuRegistry)
-	require.True(t, agedVersionUpdates)
+	// The later rule wins, so the patch window must follow the week-long default.
+	require.GreaterOrEqual(t, agedReleases, 0)
+	require.Greater(t, agedPatches, agedReleases)
 	// The final rule must override any generic automation rule for these paths.
 	last := rules[len(rules)-1].(object)
 	require.Equal(t, false, last["automerge"])
@@ -97,12 +106,33 @@ func TestRenovateLookup(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(registryResponse))
 	t.Cleanup(server.Close)
 	registry := strings.TrimPrefix(server.URL, "http://")
+	// OpenTofu releases aged around both release-age windows. 1.2.2 changes the minor version while
+	// keeping 1.1.2's patch number, so it must wait the week like any minor.
+	now := time.Now()
+	releases := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		age := func(elapsed time.Duration) string { return now.Add(-elapsed).UTC().Format(time.RFC3339) }
+		_ = json.NewEncoder(w).Encode(object{"releases": []object{
+			{"version": "1.1.2", "releaseTimestamp": age(30 * 24 * time.Hour)},
+			{"version": "1.1.9", "releaseTimestamp": age(8 * time.Hour)},
+			{"version": "1.1.10", "releaseTimestamp": age(time.Hour)},
+			{"version": "1.2.2", "releaseTimestamp": age(8 * time.Hour)},
+			{"version": "2.0.1", "releaseTimestamp": age(8 * 24 * time.Hour)},
+		}})
+	}))
+	t.Cleanup(releases.Close)
 	config := readJSON(t, "../renovate.json")
 	delete(config, "extends")
+	for _, value := range config["customManagers"].([]any) {
+		if manager := value.(object); manager["description"] == "Update the OpenTofu version file." {
+			manager["datasourceTemplate"] = "custom.opentofu"
+			delete(manager, "extractVersionTemplate")
+		}
+	}
+	config["customDatasources"] = object{"opentofu": object{"defaultRegistryUrlTemplate": releases.URL}}
 	const workflowFile = ".github/workflows/main.yaml"
 	files := []string{workflowFile, "go.mod", "golangci-lint.mod"}
 	config["enabledManagers"] = []string{"custom.regex", "gomod"}
-	config["includePaths"] = append([]string{"deploy/production/images.yaml"}, files...)
+	config["includePaths"] = append([]string{"deploy/production/images.yaml", ".opentofu-version"}, files...)
 	config["onboarding"], config["requireConfig"], config["fetchChangeLogs"] = false, "required", "off"
 	config["hostRules"] = []object{{"hostType": "docker", "matchHost": registry, "insecureRegistry": true}}
 	rules := config["packageRules"].([]any)
@@ -140,6 +170,7 @@ func TestRenovateLookup(t *testing.T) {
 	}
 	manifestBytes, err := yaml.Marshal(manifest)
 	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(f.dir, ".opentofu-version"), []byte("1.1.2\n"), 0o600))
 	manifestPath := filepath.Join(f.dir, "deploy/production/images.yaml")
 	require.NoError(t, os.MkdirAll(filepath.Dir(manifestPath), 0o700))
 	require.NoError(t, os.WriteFile(manifestPath, manifestBytes, 0o600))
@@ -147,7 +178,7 @@ func TestRenovateLookup(t *testing.T) {
 	f.root = f.dir
 	for _, args := range [][]string{
 		{"init", "--quiet", "--initial-branch=master"},
-		{"add", "renovate.json", "deploy", ".github", "go.mod", "golangci-lint.mod"},
+		{"add", "renovate.json", "deploy", ".github", "go.mod", "golangci-lint.mod", ".opentofu-version"},
 		{"-c", "user.name=Renovate fixture", "-c", "user.email=fixture@example.invalid", "commit", "--quiet", "-m", "test: fixture"},
 	} {
 		code, output := f.run(t, "git", args...)
@@ -169,7 +200,10 @@ func TestRenovateLookup(t *testing.T) {
 		PackageFile string
 		Deps        []struct {
 			DepName, Datasource, CurrentValue string
-			Updates                           []struct{ BranchName, NewValue, UpdateType string }
+			Updates                           []struct {
+				BranchName, NewValue, UpdateType string
+				PendingChecks                    bool
+			}
 		}
 	}
 	var loggerErrors []string
@@ -218,7 +252,12 @@ func TestRenovateLookup(t *testing.T) {
 				require.Empty(t, dep.Updates)
 			}
 			for _, update := range dep.Updates {
-				groups[update.BranchName] = append(groups[update.BranchName], update.UpdateType+":"+update.NewValue)
+				entry := update.UpdateType + ":" + update.NewValue
+				if update.PendingChecks {
+					// Renovate lists the newest release but creates no branch until it passes the release age.
+					entry += " pending"
+				}
+				groups[update.BranchName] = append(groups[update.BranchName], entry)
 				require.NotEqual(t, "digest", update.UpdateType)
 			}
 		}
@@ -229,9 +268,12 @@ func TestRenovateLookup(t *testing.T) {
 		require.Contains(t, extracted, strings.Join(annotation[1:], " "))
 	}
 	// Lookup does not create PRs; minimum group size is checked in TestRenovatePolicy.
+	// OpenTofu skips the young patch and the young minor, taking the aged patch and the aged major.
 	require.Equal(t, map[string][]string{
 		"renovate/service-json-keys-images":       {"minor:v2.6.0", "minor:v2.6.0", "minor:v2.6.0", "minor:v2.6.0"},
 		"renovate/major-service-json-keys-images": {"major:v3.0.0", "major:v3.0.0", "major:v3.0.0", "major:v3.0.0"},
+		"renovate/opentofu":                       {"patch:1.1.9"},
+		"renovate/major-opentofu":                 {"major:2.0.1"},
 	}, groups)
 }
 
