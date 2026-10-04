@@ -135,7 +135,10 @@ The latest label action must be a human repository maintainer, and the label mus
 at merge. A new candidate commit, a moved base, a failed or expired assessment, or label removal
 blocks immediately. Eligible image PRs are reassessed after CI completes on a new head or `master`;
 other changes require rerunning the command for the new tuple. Failed assessments require diagnosis
-and a manual retry. The same decision is reevaluated on the merge queue. Protected apply and post-merge verification retain their own deletion check.
+and a manual retry. The same decision is reevaluated on the merge queue. There, the gate also
+accepts the head's latest assessment onto an earlier base when no commit since that base can change
+a production plan, so an unrelated pull request merging ahead does not force a new assessment.
+Protected apply and post-merge verification retain their own deletion check.
 
 The deletion checks refresh automatically after an assessment completes or the approval label
 changes. Both push and pull-request checks are refreshed; active CI catches up when it finishes.
