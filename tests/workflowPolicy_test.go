@@ -477,7 +477,7 @@ func TestWorkflowBoundaries(t *testing.T) {
 	}
 
 	health := drift.Jobs["health"]
-	require.Contains(t, health.If, "vars.PRODUCTION_RELEASES_ENABLED == 'true'")
+	require.NotContains(t, health.If, "PRODUCTION_RELEASES_ENABLED")
 	require.Equal(t, "${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}", health.Steps[stepIndex(t, health.Steps, "google-github-actions/auth@")].With["service_account"])
 	check := health.Steps[stepIndex(t, health.Steps, "infra check-health deployed")]
 	require.Contains(t, check.Run, "infra custody config fetch")
