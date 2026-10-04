@@ -137,8 +137,8 @@ func TestFoundation(t *testing.T) {
 	t.Run("ReleaseZones", func(t *testing.T) {
 		t.Parallel()
 		for _, tc := range []struct {
-			name, value, flag, public, shared, projects, repository, retirement string
-			valid                                                               bool
+			name, value, flag, public, shared, projects, repository string
+			valid                                                   bool
 		}{
 			{name: "Disabled", valid: true},
 			{name: "Empty", value: "{}", valid: true},
@@ -161,7 +161,6 @@ func TestFoundation(t *testing.T) {
 			{name: "MissingHost", value: `{"json-keys":["private"]}`},
 			{name: "Dedicated", value: `{"json-keys":["private"]}`, shared: "true", projects: `{"json-keys":"agora-json-keys-test"}`},
 			{name: "NativeRepository", value: `{"json-keys":["private"]}`, shared: "true", repository: `["json-keys"]`},
-			{name: "Retirement", value: `{"json-keys":["private"]}`, shared: "true", retirement: "true"},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
@@ -169,7 +168,6 @@ func TestFoundation(t *testing.T) {
 				writes := f.configuration()
 				f.env["INFRA_SERVICE_RELEASE_ZONES"] = tc.value
 				f.env["INFRA_PUBLIC_API_PROJECT_ID"], f.env["INFRA_SHARED_VPC_ENABLED"] = tc.public, tc.shared
-				f.env["INFRA_RETIRE_JSON_KEYS_PROJECT"] = tc.retirement
 				for key, value := range map[string]string{"INFRA_SERVICE_PROJECTS": tc.projects, "INFRA_PGBACKREST_REPOSITORY_SERVICES": tc.repository} {
 					if value != "" {
 						f.env[key] = value
@@ -203,28 +201,27 @@ func TestFoundation(t *testing.T) {
 	t.Run("TrustZones", func(t *testing.T) {
 		t.Parallel()
 		for _, tc := range []struct {
-			name, public, shared, services, retirement string
-			args                                       []string
-			valid                                      bool
+			name, public, shared, services string
+			args                           []string
+			valid                          bool
 		}{
-			{"Disabled", "", "", "{}", "", nil, true},
-			{"RetainHost", "", "true", "{}", "", nil, true},
-			{"Public", "agora-public-test", "true", "{}", "", nil, true},
-			{"Explicit", "", "", "{}", "", []string{"--shared-vpc-enabled", "--public-project-id=agora-public-test"}, true},
-			{"Management", "management-project-prod", "true", "{}", "", nil, false},
-			{"Workload", "workload-project-prod", "true", "{}", "", nil, false},
-			{"InvalidID", "INVALID", "true", "{}", "", nil, false},
-			{"NoHost", "agora-public-test", "false", "{}", "", nil, true},
-			{"MalformedHost", "", "yes", "{}", "", nil, false},
-			{"DedicatedService", "agora-public-test", "true", `{"json-keys":"json-keys-project-prod"}`, "", nil, false},
-			{"Retirement", "agora-public-test", "true", "{}", "true", nil, false},
+			{"Disabled", "", "", "{}", nil, true},
+			{"RetainHost", "", "true", "{}", nil, true},
+			{"Public", "agora-public-test", "true", "{}", nil, true},
+			{"Explicit", "", "", "{}", []string{"--shared-vpc-enabled", "--public-project-id=agora-public-test"}, true},
+			{"Management", "management-project-prod", "true", "{}", nil, false},
+			{"Workload", "workload-project-prod", "true", "{}", nil, false},
+			{"InvalidID", "INVALID", "true", "{}", nil, false},
+			{"NoHost", "agora-public-test", "false", "{}", nil, true},
+			{"MalformedHost", "", "yes", "{}", nil, false},
+			{"DedicatedService", "agora-public-test", "true", `{"json-keys":"json-keys-project-prod"}`, nil, false},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
 				f := foundationCase()
 				writes := f.configuration()
 				f.env["INFRA_PUBLIC_PROJECT_ID"], f.env["INFRA_SHARED_VPC_ENABLED"] = tc.public, tc.shared
-				f.env["INFRA_SERVICE_PROJECTS"], f.env["INFRA_RETIRE_JSON_KEYS_PROJECT"] = tc.services, tc.retirement
+				f.env["INFRA_SERVICE_PROJECTS"] = tc.services
 				code, out := f.run(t, append([]string{"configure"}, tc.args...)...)
 				if !tc.valid {
 					require.Equal(t, 64, code, out)
@@ -399,72 +396,13 @@ func TestFoundation(t *testing.T) {
 			})
 		}
 	})
-	t.Run("Retirement", func(t *testing.T) {
+	t.Run("RejectRetiredOption", func(t *testing.T) {
 		t.Parallel()
-		for _, tc := range []struct {
-			name, selection, environment string
-			args                         []string
-			valid, enabled               bool
-		}{
-			{"Prepare", `{"json-keys":"a-novel-json-keys-prod"}`, "true", nil, true, true},
-			{"Remove", `{}`, "true", nil, true, true},
-			{"Explicit", `{}`, "", []string{"--retire-json-keys-project"}, true, true},
-			{"Disabled", `{}`, "true", []string{"--retire-json-keys-project=false"}, true, false},
-			{"WrongProject", `{"json-keys":"different-project"}`, "true", nil, false, false},
-			{"Peer", `{"authentication":"a-novel-json-keys-prod"}`, "true", nil, false, false},
-			{"Multiple", `{"json-keys":"a-novel-json-keys-prod","authentication":"different-project"}`, "true", nil, false, false},
-			{"Malformed", `{}`, "yes", nil, false, false},
-		} {
-			t.Run(tc.name, func(t *testing.T) {
+		for _, value := range []string{"true", "false"} {
+			t.Run(value, func(t *testing.T) {
 				t.Parallel()
 				f := foundationCase()
-				f.configuration()
-				replace := strings.NewReplacer("management-project-prod", "a-novel-management-prod", "workload-project-prod", "a-novel-production-prod")
-				replies := make(map[string][]string, len(f.replies))
-				for command, values := range f.replies {
-					for _, value := range values {
-						replies[replace.Replace(command)] = append(replies[replace.Replace(command)], replace.Replace(value))
-					}
-				}
-				f.replies = replies
-				f.env["INFRA_MANAGEMENT_PROJECT_ID"] = "a-novel-management-prod"
-				f.env["INFRA_WORKLOAD_PROJECT_ID"] = "a-novel-production-prod"
-				f.env["INFRA_SERVICE_PROJECTS"] = tc.selection
-				f.env["INFRA_RETIRE_JSON_KEYS_PROJECT"] = tc.environment
-				code, out := f.run(t, append([]string{"configure"}, tc.args...)...)
-				if !tc.valid {
-					require.Equal(t, 64, code, out)
-					require.Empty(t, f.calls)
-					return
-				}
-				require.Zero(t, code, out)
-				require.Len(t, f.secrets, 2)
-				require.Equal(t, f.secrets[0], f.secrets[1])
-				var config map[string]json.RawMessage
-				require.NoError(t, json.Unmarshal(f.secrets[0], &config))
-				if tc.enabled {
-					require.JSONEq(t, "true", string(config["retire_json_keys_project"]))
-				} else {
-					require.NotContains(t, config, "retire_json_keys_project")
-				}
-			})
-		}
-	})
-	t.Run("RetirementBoundary", func(t *testing.T) {
-		t.Parallel()
-		for _, tc := range []struct{ name, key, value string }{
-			{"Management", "INFRA_MANAGEMENT_PROJECT_ID", "other-management"},
-			{"Workload", "INFRA_WORKLOAD_PROJECT_ID", "other-production"},
-			{"Repository", "INFRA_PGBACKREST_REPOSITORY_SERVICES", `["json-keys"]`},
-		} {
-			t.Run(tc.name, func(t *testing.T) {
-				t.Parallel()
-				f := foundationCase()
-				f.env["INFRA_MANAGEMENT_PROJECT_ID"] = "a-novel-management-prod"
-				f.env["INFRA_WORKLOAD_PROJECT_ID"] = "a-novel-production-prod"
-				f.env["INFRA_RETIRE_JSON_KEYS_PROJECT"] = "true"
-				f.env[tc.key] = tc.value
-				code, out := f.run(t, "configure")
+				code, out := f.run(t, "configure", "--retire-json-keys-project="+value)
 				require.Equal(t, 64, code, out)
 				require.Empty(t, f.calls)
 			})

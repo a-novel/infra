@@ -52,12 +52,12 @@ run "disabled_by_default" {
   }
 }
 
-run "retain_host_without_retirement" {
+run "retain_host_without_dedicated_projects" {
   command = plan
   variables { shared_vpc_enabled = true }
   assert {
     condition     = length(module.public_project) == 0 && google_compute_shared_vpc_host_project.production[0].project == var.workload_project_id && google_compute_shared_vpc_host_project.production[0].deletion_policy == "PREVENT"
-    error_message = "Shared VPC retention must be independent of dedicated projects and retirement."
+    error_message = "Shared VPC retention must be independent of dedicated projects."
   }
 }
 
@@ -127,20 +127,6 @@ run "reject_dedicated_registration" {
     shared_vpc_enabled = true
     public_project_id  = "agora-public-test"
     service_projects   = { json-keys = "agora-json-keys-test" }
-  }
-  expect_failures = [var.public_project_id]
-}
-
-run "reject_retirement" {
-  command = plan
-  variables {
-    management_project_id    = "a-novel-management-prod"
-    workload_project_id      = "a-novel-production-prod"
-    backup_bucket_name       = "a-novel-management-prod-123456789012-backups"
-    organization_id          = "1031663934757"
-    retire_json_keys_project = true
-    shared_vpc_enabled       = true
-    public_project_id        = "agora-public-test"
   }
   expect_failures = [var.public_project_id]
 }

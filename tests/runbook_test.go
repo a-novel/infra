@@ -211,7 +211,6 @@ func TestOperatorDefaults(t *testing.T) {
 		"INFRA_MANAGEMENT_PROJECT_ID":          "a-novel-management-prod",
 		"INFRA_WORKLOAD_PROJECT_ID":            "a-novel-production-prod",
 		"INFRA_SERVICE_PROJECTS":               "{}",
-		"INFRA_RETIRE_JSON_KEYS_PROJECT":       "false",
 		"INFRA_SHARED_VPC_ENABLED":             "true",
 		"INFRA_PUBLIC_API_PROJECT_ID":          "a-novel-public-api-prod",
 		"INFRA_PUBLIC_PROJECT_ID":              "a-novel-public-prod",

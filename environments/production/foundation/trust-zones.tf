@@ -19,11 +19,11 @@ variable "public_api_project_id" {
     condition = var.public_api_project_id == null || (
       can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", var.public_api_project_id)) &&
       !contains([var.management_project_id, var.workload_project_id, var.public_project_id], var.public_api_project_id) &&
-      !var.recovery_mode && !var.retire_json_keys_project && var.shared_vpc_enabled &&
+      !var.recovery_mode && var.shared_vpc_enabled &&
       length(var.service_projects) == 0 && length(var.service_recovery_projects) == 0 &&
       length(var.pgbackrest_repository_services) == 0
     )
-    error_message = "The API shell requires a distinct valid project, an explicit production Shared VPC host, and no dedicated-service, retirement or recovery registration."
+    error_message = "The API shell requires a distinct valid project, an explicit production Shared VPC host, and no dedicated-service or recovery registration."
   }
 }
 
@@ -36,11 +36,11 @@ variable "public_project_id" {
     condition = var.public_project_id == null || (
       can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", var.public_project_id)) &&
       !contains([var.management_project_id, var.workload_project_id], var.public_project_id) &&
-      !var.recovery_mode && !var.retire_json_keys_project &&
+      !var.recovery_mode &&
       length(var.service_projects) == 0 && length(var.service_recovery_projects) == 0 &&
       length(var.pgbackrest_repository_services) == 0
     )
-    error_message = "The platform shell requires a distinct valid project and no dedicated-service, retirement or recovery registration."
+    error_message = "The platform shell requires a distinct valid project and no dedicated-service or recovery registration."
   }
 }
 

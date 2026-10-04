@@ -2,8 +2,7 @@
 
 Service projects are opt-in project shells with separate release identities and private storage
 folders. Production still runs in the existing workload project, under the existing release identity.
-The reviewed `.envrc` selects two production trust-zone shells after the bounded
-[obsolete JSON Keys retirement](./retire-json-keys-project.md), retaining the existing Shared VPC
+The reviewed `.envrc` selects two production trust-zone shells, retaining the existing Shared VPC
 host. Dedicated service projects require a separate justification. The defaults also select release
 boundaries for the two existing components; runtime and repository-network activation remain disabled.
 Merging configuration does not publish the private configuration, create a project or move a workload.
@@ -31,14 +30,14 @@ Viewer or subnet use. No VM, disk, application, database or network appliance is
 existing budget without changing the amount or thresholds; a budget is an alert, not a spending cap.
 
 The configuration publisher accepts `INFRA_SHARED_VPC_ENABLED=true` / `--shared-vpc-enabled` to
-retain the existing Shared VPC host independently of the obsolete-project retirement switch.
+retain the existing Shared VPC host independently of dedicated service-project registration.
 `INFRA_PUBLIC_API_PROJECT_ID` / `--public-api-project-id` selects the API shell;
 `INFRA_PUBLIC_PROJECT_ID` / `--public-project-id` selects the platform shell. These inputs are omitted
 from the published document when empty. The reviewed `.envrc` selects `a-novel-public-api-prod` and
-`a-novel-public-prod`, respectively, with explicit Shared VPC retention and retirement disabled.
+`a-novel-public-prod`, respectively, with explicit Shared VPC retention.
 Project IDs must be valid and distinct from each other, management and workload. Only the API shell
 requires explicit Shared VPC retention.
-Retirement, dedicated-service maps, repository-network selection and recovery registration must be
+Dedicated-service maps, repository-network selection and recovery registration must be
 absent before selecting either shell. Recovery compilation removes both project selectors and the
 Shared VPC selection; recovery/cleanup checks reject either registered project as a disposable target.
 
@@ -86,7 +85,7 @@ Only the two deployed backend services and nonempty private/public-api zone sets
 relocated. Historical custody paths remain readable, but selecting new coordinates does not migrate
 their state or grants. Shared VPC must be explicitly retained; API selections require
 `public_api_project_id`. Dedicated-service registration,
-retirement, repository-network selection and recovery registration cannot be combined with this input.
+repository-network selection and recovery registration cannot be combined with this input.
 The publisher validates before external commands and writes the complete configuration, not a merge;
 preserve any approved selection in the reviewed `.envrc`. Legacy recovery compilation removes it,
 and recovery-mode HCL rejects it.
@@ -151,8 +150,7 @@ export INFRA_SERVICE_PROJECTS='{"json-keys":"agora-json-keys-test","authenticati
 ```
 
 Use one entry per independently operated service and environment, not per image, job, or revision.
-This compatibility path is not the default placement model for future services. Clear the retirement
-selection only through a reviewed successor configuration that preserves the existing Shared VPC host.
+This compatibility path is not the default placement model for future services.
 Clear both trust-zone project selectors before selecting this dedicated-service compatibility path;
 it must not be combined with the current production shell defaults.
 Project IDs must differ from each other, management, and the existing workload project. A production

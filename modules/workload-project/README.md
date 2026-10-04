@@ -132,14 +132,9 @@ separate service-lifecycle rollout, not this boundary module.
 
 ## Validation and rollout
 
-`retirement` defaults to false. Persistent provider `PREVENT` policies protect the project,
-release identity, federation provider, log bucket and custody folders even when a caller removes
-a module instance. These are apply-time protections; the saved-plan deletion gate also remains
-required. Retirement preparation must first apply explicit `DELETE` policies to the empty project
-and disabled release identity/provider, and `ABANDON` to logs and management custody folders.
-Removing the registration in a second reviewed plan then preserves those folders and their
-objects while revoking the module-owned access. The production caller permits this only for the
-audited obsolete JSON Keys shell; see the [retirement runbook](../../docs/runbooks/retire-json-keys-project.md).
+Persistent provider `PREVENT` policies protect the project, release identity, federation provider,
+log bucket and custody folders even when a caller removes a module instance. These apply-time
+protections complement the saved-plan deletion gate.
 
 The foundation's native mocked tests exercise this module and its caller through the existing
 `validate-opentofu` check. No cloud credentials are needed. Mocked results establish configuration

@@ -2,7 +2,6 @@ module "project" {
   source = "../project-shell"
 
   project_id                 = var.project_id
-  retirement                 = var.retirement
   billing_account_id         = var.billing_account_id
   organization_id            = var.organization_id
   folder_id                  = var.folder_id

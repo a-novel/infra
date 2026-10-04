@@ -21,7 +21,6 @@ type foundationOptions struct {
 	command, name, region, zone, subnet, costEmail, operationsEmail string
 	parent                                                          *projectParent
 	adopt, legacyBackupAccess                                       bool
-	retireJSONKeys                                                  bool
 	sharedVPC                                                       bool
 	publicProject, publicAPIProject                                 string
 	databaseOperators, initializers                                 []string
@@ -108,11 +107,6 @@ func foundationFlags(args []string, getenv func(string) string) (foundationOptio
 		flags.BoolVar(&o.sharedVPC, "shared-vpc-enabled", sharedVPC == "true", "Retain the production Shared VPC host independently of service projects")
 		flags.StringVar(&o.publicProject, "public-project-id", getenv("INFRA_PUBLIC_PROJECT_ID"), "Optional production platform shell without private network attachment; empty selects none")
 		flags.StringVar(&o.publicAPIProject, "public-api-project-id", getenv("INFRA_PUBLIC_API_PROJECT_ID"), "Optional production API shell using Shared VPC; empty selects none")
-		retirement := getenv("INFRA_RETIRE_JSON_KEYS_PROJECT")
-		if retirement != "" && retirement != "true" && retirement != "false" {
-			return o, errors.New("JSON Keys retirement must be true or false")
-		}
-		flags.BoolVar(&o.retireJSONKeys, "retire-json-keys-project", retirement == "true", "Prepare the audited obsolete JSON Keys project for retirement and retain the production Shared VPC host")
 		flags.BoolVar(&o.legacyBackupAccess, "legacy-backup-job-access", false, "Enable maintenance tagging and access only after all five legacy backup jobs exist")
 		flags.StringVar(&serviceProjects, "service-projects", serviceProjects, "JSON object mapping service names to project IDs; use {} for none")
 		flags.StringVar(&serviceReleaseZones, "service-release-zones", serviceReleaseZones, "JSON object mapping services to private/public-api release zones; use {} to leave disabled")
@@ -144,17 +138,12 @@ func foundationFlags(args []string, getenv func(string) string) (foundationOptio
 		for _, project := range []string{o.publicProject, o.publicAPIProject} {
 			if project != "" && (!matches(`[a-z][a-z0-9-]{4,28}[a-z0-9]`, project) ||
 				project == getenv("INFRA_MANAGEMENT_PROJECT_ID") || project == getenv("INFRA_WORKLOAD_PROJECT_ID") ||
-				o.retireJSONKeys || len(o.serviceProjects) != 0 || len(o.repositoryServices) != 0) {
-				return o, errors.New("zone projects require distinct valid IDs and no dedicated-service or retirement selection")
+				len(o.serviceProjects) != 0 || len(o.repositoryServices) != 0) {
+				return o, errors.New("zone projects require distinct valid IDs and no dedicated-service or native-repository selection")
 			}
 		}
 		if o.publicAPIProject != "" && (!o.sharedVPC || o.publicAPIProject == o.publicProject) {
 			return o, errors.New("public-api requires shared VPC and a project distinct from the platform")
-		}
-		if o.retireJSONKeys && (getenv("INFRA_MANAGEMENT_PROJECT_ID") != "a-novel-management-prod" ||
-			getenv("INFRA_WORKLOAD_PROJECT_ID") != "a-novel-production-prod" || len(o.repositoryServices) != 0 ||
-			len(o.serviceProjects) > 1 || len(o.serviceProjects) == 1 && o.serviceProjects["json-keys"] != "a-novel-json-keys-prod") {
-			return o, errors.New("retirement is limited to the obsolete JSON Keys shell with native repository networking disabled")
 		}
 		if len(o.repositoryServices) > 0 && (!slices.Equal(o.repositoryServices, []string{"json-keys"}) || o.serviceProjects["json-keys"] == "") {
 			return o, errors.New("repository networking supports only one declared json-keys service")
@@ -300,9 +289,6 @@ func (f foundation) configure(ctx context.Context, o foundationOptions, getenv f
 	}
 	if o.legacyBackupAccess {
 		config["legacy_backup_job_access"] = true
-	}
-	if o.retireJSONKeys {
-		config["retire_json_keys_project"] = true
 	}
 	if o.sharedVPC {
 		config["shared_vpc_enabled"] = true

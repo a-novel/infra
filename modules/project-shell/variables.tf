@@ -1,10 +1,3 @@
-variable "retirement" {
-  description = "Prepare the audited empty project for a separately approved removal while preserving its logs until project shutdown."
-  type        = bool
-  default     = false
-  nullable    = false
-}
-
 variable "project_id" {
   description = "Globally unique ID for the protected project."
   type        = string

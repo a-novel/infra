@@ -16,7 +16,7 @@ workflow registration, single-writer state handoff and runtime permissions are r
 
 `workload-project` also uses this module with `zone = null` for dedicated-project compatibility.
 That profile preserves the existing identity, grants and schema-1 output; its relative moves
-retain existing state ownership. `retirement` is available only for that compatibility profile.
+retain existing state ownership.
 
 ## Identity and storage contract
 

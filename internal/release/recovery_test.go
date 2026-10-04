@@ -12,7 +12,7 @@ import (
 
 func TestCompilerRecovery(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"Release", "Foundation", "Retirement", "FoundationRetirement", "PublicProject", "FoundationPublicProject", "PublicProjectTarget", "InvalidPublicProject", "APIProject", "FoundationAPIProject", "APIProjectTarget", "InvalidAPIProject", "ServiceProjects", "FoundationServiceProjects", "ServiceProjectTarget", "InvalidServiceProjects", "InvalidServiceProjectID", "LegacyHost", "CustomQuotas", "SourceTarget", "ManagementTarget", "WrongSource", "WrongOutputProject", "MissingOutput", "BadAttempt", "ForeignImage", "DuplicateImage"} {
+	for _, name := range []string{"Release", "Foundation", "PublicProject", "FoundationPublicProject", "PublicProjectTarget", "InvalidPublicProject", "APIProject", "FoundationAPIProject", "APIProjectTarget", "InvalidAPIProject", "ServiceProjects", "FoundationServiceProjects", "ServiceProjectTarget", "InvalidServiceProjects", "InvalidServiceProjectID", "LegacyHost", "CustomQuotas", "SourceTarget", "ManagementTarget", "WrongSource", "WrongOutputProject", "MissingOutput", "BadAttempt", "ForeignImage", "DuplicateImage"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			fixture := setup(t)
@@ -50,11 +50,6 @@ func TestCompilerRecovery(t *testing.T) {
 				}
 				if strings.HasPrefix(name, "Invalid") {
 					config[key], invalid = 123, true
-				}
-			case "Retirement", "FoundationRetirement":
-				config["retire_json_keys_project"] = true
-				if name == "FoundationRetirement" {
-					files[6] = "foundation"
 				}
 			case "ServiceProjects", "FoundationServiceProjects", "ServiceProjectTarget":
 				config["service_projects"] = object{"json-keys": "json-keys-project-prod", "authentication": "authentication-prod"}
@@ -117,7 +112,6 @@ func TestCompilerRecovery(t *testing.T) {
 			require.Equal(t, "agora-recovery-test", foundation["workload_project_id"])
 			require.Equal(t, true, foundation["recovery_mode"])
 			require.Equal(t, object{}, foundation["service_projects"])
-			require.NotContains(t, foundation, "retire_json_keys_project")
 			require.NotContains(t, foundation, "public_project_id")
 			require.NotContains(t, foundation, "public_api_project_id")
 			require.NotContains(t, foundation, "service_release_zones")
