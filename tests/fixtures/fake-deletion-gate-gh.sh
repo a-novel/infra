@@ -218,6 +218,16 @@ if [ "${1:-}" = api ]; then
         repos/a-novel/infra/collaborators/*/permission)
             printf '%s\n' "${FAKE_GATE_PERMISSION:-admin}"
             ;;
+        "repos/a-novel/infra/compare/${BASE_SHA}..."*)
+            case "${FAKE_GATE_COMPARE:-unexpected}" in
+                plan-neutral) jq -n '{status: "ahead", files: [{filename: "package.json"}, {filename: "ops/README.md"}]}' ;;
+                production) jq -n '{status: "ahead", files: [{filename: "package.json"}, {filename: "environments/production/foundation/main.tf"}]}' ;;
+                diverged) jq -n '{status: "diverged", files: [{filename: "package.json"}]}' ;;
+                truncated) jq -n '{status: "ahead", files: [range(300) | {filename: "docs/\(.).md"}]}' ;;
+                failed) exit 1 ;;
+                *) exit 64 ;;
+            esac
+            ;;
         *)
             printf 'Unsupported fake GitHub endpoint: %s\n' "${endpoint}" >&2
             exit 64

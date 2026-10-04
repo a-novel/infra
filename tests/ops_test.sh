@@ -280,6 +280,8 @@ assert_resource_gate_code() {
     local pull_request_head="${8:-${DELETION_HEAD}}"
     local live_base="${9:-${DELETION_BASE}}"
     local queue_group="${10:-${DELETION_GROUP}}"
+    local merge_base="${11:-${DELETION_BASE}}"
+    local compare="${12:-unexpected}"
     local gate_head="${DELETION_HEAD}"
     local check_sha="${DELETION_HEAD}"
     local merge_ref=""
@@ -293,14 +295,16 @@ assert_resource_gate_code() {
     PATH="${DELETION_GATE_BIN}:${PATH}" \
         FAKE_GATE_ASSESSMENT_FILE="${assessment}" \
         FAKE_GATE_BASE="${DELETION_BASE}" \
+        FAKE_GATE_COMPARE="${compare}" \
         FAKE_GATE_FILES="${files}" \
         FAKE_GATE_HEAD="${pull_request_head}" \
         FAKE_GATE_GROUP="${DELETION_GROUP}" \
         FAKE_GATE_LABEL_MODE="${label_mode}" \
         FAKE_GATE_LIVE_BASE="${live_base}" \
+        FAKE_GATE_QUEUE_BASE="${merge_base}" \
         FAKE_GATE_QUEUE_GROUP="${queue_group}" \
         FAKE_GATE_RUN_MODE="${run_mode}" \
-        GATE_BASE_SHA="${DELETION_BASE}" \
+        GATE_BASE_SHA="${merge_base}" \
         FAKE_GATE_PERMISSION="${permission}" \
         GATE_HEAD_SHA="${gate_head}" \
         GATE_MERGE_HEAD_REF="${merge_ref}" \
@@ -329,6 +333,19 @@ assert_resource_gate_code 77 image success missing "${SAFE_ASSESSMENT}" pull_req
 assert_resource_gate_code 0 image success missing "${SAFE_ASSESSMENT}" merge_group
 assert_resource_gate_code 0 image success missing "${SAFE_ASSESSMENT}" merge_group admin "${DELETION_HEAD}" "${DELETION_LIVE_BASE}"
 assert_resource_gate_code 77 image success missing "${SAFE_ASSESSMENT}" merge_group admin "${DELETION_HEAD}" "${DELETION_BASE}" "${DELETION_OTHER_GROUP}"
+
+# A merge group reuses the head's assessment onto an earlier base only across commits that cannot
+# change a production plan; deletion approval still applies, and pull-request events stay exact.
+QUEUED=(admin "${DELETION_HEAD}" "${DELETION_BASE}" "${DELETION_GROUP}" "${DELETION_LIVE_BASE}")
+assert_resource_gate_code 0 image success missing "${SAFE_ASSESSMENT}" merge_group "${QUEUED[@]}" plan-neutral
+assert_resource_gate_code 77 image success missing "${SAFE_ASSESSMENT}" merge_group "${QUEUED[@]}" production
+assert_resource_gate_code 77 image success missing "${SAFE_ASSESSMENT}" merge_group "${QUEUED[@]}" diverged
+assert_resource_gate_code 77 image success missing "${SAFE_ASSESSMENT}" merge_group "${QUEUED[@]}" truncated
+assert_resource_gate_code 70 image success missing "${SAFE_ASSESSMENT}" merge_group "${QUEUED[@]}" failed
+assert_resource_gate_code 77 image failed missing "${SAFE_ASSESSMENT}" merge_group "${QUEUED[@]}" plan-neutral
+assert_resource_gate_code 77 image success missing "${DESTRUCTIVE_ASSESSMENT}" merge_group "${QUEUED[@]}" plan-neutral
+assert_resource_gate_code 0 image success approved "${DESTRUCTIVE_ASSESSMENT}" merge_group "${QUEUED[@]}" plan-neutral
+assert_resource_gate_code 77 image success missing "${SAFE_ASSESSMENT}" pull_request admin "${DELETION_HEAD}" "${DELETION_LIVE_BASE}" "${DELETION_GROUP}" "${DELETION_LIVE_BASE}" plan-neutral
 
 # The trusted dispatcher check accepts human maintainers and fork candidates,
 # while a first release with no converged input record always needs approval.

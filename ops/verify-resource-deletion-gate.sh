@@ -185,12 +185,47 @@ RUN="$(jq --compact-output --arg title "${RUN_TITLE}" '
   | sort_by(.id)
   | last // empty
 ' <<<"${RUN_PAGES}")"
+
+# A merge group builds on the pull requests queued ahead of it. The latest assessment of the same
+# head onto an earlier base still holds when no commit since that base can change a production
+# plan, by the classification that lets such pull requests merge without any assessment.
+ASSESSED_BASE="${BASE_SHA}"
+if [ -z "${RUN}" ] && [ "${EVENT_NAME}" = merge_group ]; then
+    PREFIX="resource-deletion assessment PR #${PULL_REQUEST} ${HEAD_SHA} onto "
+    RUN="$(jq --compact-output --arg prefix "${PREFIX}" '
+      [
+        .[]
+        | .workflow_runs[]?
+        | select(.display_title | startswith($prefix))
+      ]
+      | sort_by(.id)
+      | last // empty
+    ' <<<"${RUN_PAGES}")"
+    if [ -n "${RUN}" ]; then
+        ASSESSED_BASE="$(jq --raw-output --arg prefix "${PREFIX}" '.display_title | ltrimstr($prefix)' <<<"${RUN}")"
+        if ! [[ "${ASSESSED_BASE}" =~ ^[a-f0-9]{40}$ ]]; then
+            RUN=''
+        elif ! COMPARISON="$(gh api "repos/${REPOSITORY}/compare/${ASSESSED_BASE}...${BASE_SHA}" 2>/dev/null)"; then
+            printf 'Could not compare the assessed base with the merge-group base.\n' >&2
+            exit 70
+        # GitHub lists at most 300 files, so a full page cannot prove the comparison complete.
+        elif ! jq --exit-status '.status == "ahead" and (.files | type == "array" and length < 300)' \
+            <<<"${COMPARISON}" >/dev/null ||
+            ! jq '.files' <<<"${COMPARISON}" >"${TEMP_DIR}/intervening.json" ||
+            [ "$(jq --raw-output '.required' <<<"$("${SCRIPT_DIR}/resource-deletion-impact.sh" "${TEMP_DIR}/intervening.json")")" != false ]; then
+            RUN=''
+        else
+            printf 'The assessment onto %s holds: no commit up to the merge-group base can change a production OpenTofu plan.\n' \
+                "${ASSESSED_BASE}"
+        fi
+    fi
+fi
 if [ -z "${RUN}" ]; then
     printf 'The exact pull-request head and base need a trusted resource-deletion assessment.\n' >&2
     exit 77
 fi
 
-if ! jq --exit-status --arg base "${BASE_SHA}" '
+if ! jq --exit-status --arg base "${ASSESSED_BASE}" '
   .path == ".github/workflows/drift.yaml" and
   .event == "workflow_dispatch" and
   .head_branch == "master" and
@@ -235,7 +270,7 @@ if [ ! -f "${ASSESSMENT_FILE}" ] ||
         --arg repository "${REPOSITORY}" \
         --argjson pull_request "${PULL_REQUEST}" \
         --arg head "${HEAD_SHA}" \
-        --arg base "${BASE_SHA}" '
+        --arg base "${ASSESSED_BASE}" '
       type == "object" and
       (keys | sort) == ([
         "approvalRequired", "baseSha", "firstLaunch", "headSha",
