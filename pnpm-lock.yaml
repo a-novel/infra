@@ -176,8 +176,8 @@ importers:
         specifier: 3.9.9
         version: 3.9.9
       renovate:
-        specifier: 44.127.1
-        version: 44.127.1(supports-color@7.2.0)(typanion@3.14.0)
+        specifier: 44.128.2
+        version: 44.128.2(supports-color@7.2.0)(typanion@3.14.0)
 
 packages:
 
@@ -1897,8 +1897,8 @@ packages:
   once@1.4.0:
     resolution: {integrity: sha512-lNaJgI+2Q5URQBkccEKHTQOPaXdUxnZZElQTZY0MFUAuaEqe1E+Nyvgdz/aIyNi6Z9MzO5dv1H8n58/GELp3+w==}
 
-  openpgp@6.3.1:
-    resolution: {integrity: sha512-7oSPvmlKPojxFoyelT5DWPIAVmqWZh4qU/5pO6bdoShEtRpCw9Sye9IXUQj6EFM3XpgGssqccAr705YtTcLNQw==}
+  openpgp@6.3.2:
+    resolution: {integrity: sha512-wcZTzHz41LV8Y48zH/JlD1JT8YdNmpWOuMAjQ/podvvCwsjBEU37K3znJh4UQcj3hksE5z9TzvhbUbwzsGvlLQ==}
     engines: {node: '>= 18.0.0', typescript: '>= 5.0.0'}
     peerDependencies:
       '@openpgp/web-stream-tools': ~0.3.0
@@ -2082,8 +2082,8 @@ packages:
   remark@15.0.1:
     resolution: {integrity: sha512-Eht5w30ruCXgFmxVUSlNWQ9iiimq07URKeFS3hNc8cUWy1llX4KDWfyEDZRycMc+znsN9Ux5/tJ/BFdgdOwA3A==}
 
-  renovate@44.127.1:
-    resolution: {integrity: sha512-UjJmpW0nuwDf5j2yoYDdcyOx5W/b61Gj77f7dKocuhJdsvCcUmF+s7QHL1/SxivpCWKo1tPGcGlaNKUR33oUhQ==}
+  renovate@44.128.2:
+    resolution: {integrity: sha512-hKvvM2GJ8cagtQ9zaURZNbtf0l90BsUN4BvOpvHB90UVlA1pSW+88pfboSVTI2Unz4V151gEPcAQKDaNMHh9Ug==}
     engines: {node: ^24.11.0, pnpm: ^11.0.0}
     hasBin: true
 
@@ -4618,7 +4618,7 @@ snapshots:
     dependencies:
       wrappy: 1.0.2
 
-  openpgp@6.3.1:
+  openpgp@6.3.2:
     optional: true
 
   p-all@5.0.1:
@@ -4813,7 +4813,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  renovate@44.127.1(supports-color@7.2.0)(typanion@3.14.0):
+  renovate@44.128.2(supports-color@7.2.0)(typanion@3.14.0):
     dependencies:
       '@aws-sdk/client-codecommit': 3.1139.0
       '@aws-sdk/client-ec2': 3.1139.0
@@ -4939,7 +4939,7 @@ snapshots:
       yauzl: 3.4.0
       zod: 4.6.5
     optionalDependencies:
-      openpgp: 6.3.1
+      openpgp: 6.3.2
       re2: 1.26.1
     transitivePeerDependencies:
       - '@node-rs/xxhash'
