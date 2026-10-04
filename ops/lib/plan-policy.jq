@@ -121,8 +121,8 @@ def protections($plan):
       (keep(["paused"]; false) or ($resource | candidate_schedule_pause($plan)))
     else true end);
 
-# Bootstrap creates jobs in their final state. Existing jobs belong to routine
-# release; imports and address moves require separately reviewed reconciliation.
+# Shared private jobs are adopted by exact ID; bootstrap cannot replace them.
+# Dedicated projects retain their create-only bootstrap contract.
 def service_job_bootstrap:
   if .variables.zone.value == "public-api" then
     .variables.project_id.value as $project | .variables.service.value as $service |
@@ -141,16 +141,24 @@ def service_job_bootstrap:
     )
   else
   .variables.project_id.value as $project | .variables.service.value as $service |
-  .variables.region.value as $region |
+  .variables.region.value as $region | (.variables.zone.value == "private") as $private |
+  (.variables.adopt_existing_jobs.value == true) as $adopt |
   (if $service == "json-keys" then ["migrations", "rotatekeys"]
    elif $service == "authentication" then ["migrations"] else [] end) as $roles |
-  ($roles | length > 0) and $ENV.TOFU_STATE_SUFFIX == "services/" + $project and
+  ($roles | length > 0) and
+  $ENV.TOFU_STATE_SUFFIX == (if $private then "workloads/production/private/" + $project + "/" + $service else "services/" + $project end) and
   all((.resource_changes // [])[];
     .mode == "managed" and .type == "google_cloud_run_v2_job" and
     (.index as $role | $roles | index($role) != null) and
     .address == "google_cloud_run_v2_job.application[" + (.index | tojson) + "]" and
-    .previous_address == null and .deposed == null and .change.importing == null and
-    (.change.actions == ["create"] or .change.actions == ["no-op"]) and
+    .previous_address == null and .deposed == null and
+    (if $private then
+      (.change.actions == ["update"] or .change.actions == ["no-op"]) and
+      (.change.importing == null or ($adopt and
+        .change.importing.id == "projects/" + $project + "/locations/" + $region + "/jobs/agora-" + $service + "-" + .index))
+    else
+      .change.importing == null and (.change.actions == ["create"] or .change.actions == ["no-op"])
+    end) and
     .change.after.name == "agora-" + $service + "-" + .index and
     (.change | . as $change | .after.project == $project and .after.location == $region and
       .after.deletion_protection == true and

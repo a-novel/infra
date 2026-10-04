@@ -164,10 +164,6 @@ func (i inspector) serviceStates(ctx context.Context, root string, scopes map[st
 				if servicePlanObject.MatchString(object) {
 					continue
 				}
-				// Private resources retain their legacy state owner until an explicit handoff.
-				if strings.HasPrefix(scope, "workloads/") && !strings.HasPrefix(scope, "workloads/production/public-api/") {
-					return nil, failure{70, "Shared release state requires an approved ownership handoff; runtime inspection remains blocked."}
-				}
 			}
 			if object != "default.tfstate" && !strings.HasPrefix(object, "config/") {
 				return nil, failure{70, "Unexpected workspace or lock in service state."}

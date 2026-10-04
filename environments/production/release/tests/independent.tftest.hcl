@@ -68,12 +68,9 @@ run "retained_waitlist_settings_cannot_leak_into_private_runtimes" {
   assert {
     condition = (
       length(google_cloud_run_v2_service.authentication) == 0 &&
-      alltrue([for env in one(one(google_cloud_run_v2_service.json_keys[0].template).containers).env : !startswith(env.name, "WAITLIST_")]) &&
-      alltrue(flatten([for job in values(google_cloud_run_v2_job.application) : [
-        for env in one(one(one(job.template).template).containers).env : !startswith(env.name, "WAITLIST_")
-      ]]))
+      alltrue([for env in one(one(google_cloud_run_v2_service.json_keys[0].template).containers).env : !startswith(env.name, "WAITLIST_")])
     )
-    error_message = "Neither JSON Keys nor retained jobs may mount the public API's waitlist settings."
+    error_message = "Private JSON Keys must not mount the public API's waitlist settings."
   }
 }
 

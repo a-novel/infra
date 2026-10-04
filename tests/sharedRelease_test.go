@@ -18,6 +18,7 @@ func TestSharedReleaseInspection(t *testing.T) {
 			code         int
 		}{
 			{name: "Empty"},
+			{name: "InitializedPrivate"},
 			{name: "SavedPlan", object: "plans/" + strings.Repeat("a", 40) + "/123-1/plan.tfplan"},
 			{name: "SavedMetadata", object: "plans/" + strings.Repeat("a", 40) + "/123-1/plan.metadata.json"},
 			{name: "StateRequiresHandoff", object: "default.tfstate", code: 70},
@@ -59,6 +60,13 @@ func TestSharedReleaseInspection(t *testing.T) {
 				}
 				storage := filepath.Join(f.env["FAKE_GCS_ROOT"], bucket)
 				writeJSON(t, filepath.Join(storage, "foundation/config/00000000000000000001-00001.tfvars.json"), registration)
+				if testCase.name == "InitializedPrivate" {
+					writeJSON(t, filepath.Join(storage, private, "default.tfstate"), object{})
+					writeJSON(t, filepath.Join(storage, private, "config/00000000000000000123-00001.tfvars.json"), object{
+						"zone": "private", "project_id": "agora-private-test", "service": "json-keys",
+						"region": "europe-west1", "management_project_id": "agora-management-test", "state_bucket": bucket,
+					})
+				}
 				if testCase.object != "" {
 					writeJSON(t, filepath.Join(storage, public, testCase.object), object{"private": privateValue})
 				}
@@ -74,7 +82,11 @@ func TestSharedReleaseInspection(t *testing.T) {
 				if err != nil {
 					require.ErrorIs(t, err, os.ErrNotExist)
 				}
-				require.NotContains(t, string(calls), " plan ")
+				if testCase.name == "InitializedPrivate" && root == "service-release" {
+					require.Equal(t, 1, strings.Count(string(calls), " plan "))
+				} else {
+					require.NotContains(t, string(calls), " plan ")
+				}
 				require.NotContains(t, string(calls), " apply ")
 				cloud := read(t, f.env["FAKE_GCS_CALLS"])
 				require.NotContains(t, cloud, "storage objects list gs://"+bucket+"/workloads/**")

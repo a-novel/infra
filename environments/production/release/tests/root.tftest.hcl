@@ -80,7 +80,7 @@ run "keeps_recovery_disabled_before_the_database_release" {
       length(google_cloud_scheduler_job.postgres_backup) == 0 &&
       length(google_cloud_scheduler_job.postgres_restore) == 0 &&
       length(google_cloud_scheduler_job.postgres_backup_monitor) == 0 &&
-      length(google_cloud_run_v2_job.application) == 0 &&
+      length(local.application_jobs) == 0 &&
       length(google_cloud_run_v2_job.json_keys_smoke) == 0 &&
       length(google_tags_location_tag_binding.json_keys_smoke) == 0 &&
       length(google_cloud_scheduler_job.json_keys_rotation) == 0 &&
@@ -400,71 +400,16 @@ run "retains_private_json_keys_without_the_handed_off_public_api" {
 
   assert {
     condition = (
-      length(google_cloud_run_v2_job.application) == 3 &&
-      toset(keys(google_cloud_run_v2_job.application)) == toset([
-        "authentication_migrations",
-        "json_keys_migrations",
-        "json_keys_rotate",
+      toset(keys(local.application_jobs)) == toset([
+        "authentication_migrations", "json_keys_migrations", "json_keys_rotate",
       ]) &&
-      alltrue([
-        for job in values(google_cloud_run_v2_job.application) :
-        !job.deletion_protection &&
-        one(job.template).task_count == 1 &&
-        one(job.template).parallelism == 1 &&
-        one(one(job.template).template).execution_environment == "EXECUTION_ENVIRONMENT_GEN2" &&
-        one(one(one(job.template).template).containers).resources[0].limits == tomap({
-          cpu    = "1"
-          memory = "512Mi"
-        }) &&
-        one(one(one(job.template).template).vpc_access).egress == "ALL_TRAFFIC" &&
-        one(one(one(job.template).template).vpc_access).network_interfaces[0].network == var.network_id &&
-        one(one(one(job.template).template).vpc_access).network_interfaces[0].subnetwork == var.subnet_id
+      alltrue([for key, job in local.application_jobs :
+        google_tags_location_tag_binding.application[key].parent == "//run.googleapis.com/projects/${var.workload_project_id}/locations/${var.region}/jobs/${job.name}" &&
+        google_tags_location_tag_binding.application[key].location == var.region &&
+        google_tags_location_tag_binding.application[key].tag_value == var.cloud_run_invocation_tags.values[job.invocation_class]
       ])
     )
-    error_message = "Application jobs must remain three singleton, bounded, scale-to-zero Direct VPC executions."
-  }
-
-  assert {
-    condition = {
-      for key, job in google_cloud_run_v2_job.application : key => {
-        binding_valid = (google_tags_location_tag_binding.application[key].parent == "//run.googleapis.com/projects/${var.workload_project_id}/locations/${var.region}/jobs/${job.name}" && google_tags_location_tag_binding.application[key].location == var.region)
-        identity      = one(one(job.template).template).service_account
-        max_retries   = one(one(job.template).template).max_retries
-        name          = job.name
-        timeout       = one(one(job.template).template).timeout
-        vpc_tag       = one(one(one(job.template).template).vpc_access).network_interfaces[0].tags[0]
-        invocation    = google_tags_location_tag_binding.application[key].tag_value
-      }
-      } == {
-      authentication_migrations = {
-        binding_valid = true
-        identity      = var.runtime_service_accounts.authentication
-        max_retries   = 0
-        name          = "agora-authentication-migrations"
-        timeout       = "600s"
-        vpc_tag       = "agora-authentication"
-        invocation    = var.cloud_run_invocation_tags.values.release
-      }
-      json_keys_migrations = {
-        binding_valid = true
-        identity      = var.runtime_service_accounts.json_keys
-        max_retries   = 0
-        name          = "agora-json-keys-migrations"
-        timeout       = "600s"
-        vpc_tag       = "agora-json-keys"
-        invocation    = var.cloud_run_invocation_tags.values.release
-      }
-      json_keys_rotate = {
-        binding_valid = true
-        identity      = var.runtime_service_accounts.json_keys
-        max_retries   = 1
-        name          = "agora-json-keys-rotatekeys"
-        timeout       = "300s"
-        vpc_tag       = "agora-json-keys"
-        invocation    = var.cloud_run_invocation_tags.values.scheduled
-      }
-    }
-    error_message = "Every application job must retain its exact identity, retry, timeout, name, and database path."
+    error_message = "Existing job invocation tags must survive the handoff to service-owned release states."
   }
 
   assert {
@@ -479,51 +424,6 @@ run "retains_private_json_keys_without_the_handed_off_public_api" {
       one(google_cloud_scheduler_job.json_keys_rotation[0].http_target).oauth_token[0].service_account_email == var.runtime_service_accounts.scheduler_invoker
     )
     error_message = "The tagged idempotent JSON Keys rotation job must remain scheduled hourly."
-  }
-
-  assert {
-    condition = (
-      one([
-        for environment in one(one(one(google_cloud_run_v2_job.application["authentication_migrations"].template).template).containers).env : environment
-        if environment.name == "POSTGRES_PASSWORD"
-      ]).value_source[0].secret_key_ref[0].secret == "projects/agora-management-test/secrets/production-authentication-postgres-password" &&
-      one([
-        for environment in one(one(one(google_cloud_run_v2_job.application["authentication_migrations"].template).template).containers).env : environment
-        if environment.name == "POSTGRES_PASSWORD"
-      ]).value_source[0].secret_key_ref[0].version == "11" &&
-      alltrue([
-        for key in ["json_keys_migrations", "json_keys_rotate"] :
-        one([
-          for environment in one(one(one(google_cloud_run_v2_job.application[key].template).template).containers).env : environment
-          if environment.name == "POSTGRES_PASSWORD"
-        ]).value_source[0].secret_key_ref[0].secret == "projects/agora-management-test/secrets/production-json-keys-postgres-password" &&
-        one([
-          for environment in one(one(one(google_cloud_run_v2_job.application[key].template).template).containers).env : environment
-          if environment.name == "POSTGRES_PASSWORD"
-        ]).value_source[0].secret_key_ref[0].version == "8"
-      ]) &&
-      toset([
-        for environment in one(one(one(google_cloud_run_v2_job.application["authentication_migrations"].template).template).containers).env : environment.name
-        if length(environment.value_source) == 1
-      ]) == toset(["POSTGRES_PASSWORD"]) &&
-      toset([
-        for environment in one(one(one(google_cloud_run_v2_job.application["json_keys_migrations"].template).template).containers).env : environment.name
-        if length(environment.value_source) == 1
-      ]) == toset(["POSTGRES_PASSWORD"]) &&
-      toset([
-        for environment in one(one(one(google_cloud_run_v2_job.application["json_keys_rotate"].template).template).containers).env : environment.name
-        if length(environment.value_source) == 1
-      ]) == toset(["APP_MASTER_KEY", "POSTGRES_PASSWORD"]) &&
-      !contains(keys(google_cloud_run_v2_job.application), "authentication_init") &&
-      one([
-        for environment in one(one(one(google_cloud_run_v2_job.application["json_keys_rotate"].template).template).containers).env : environment
-        if environment.name == "APP_MASTER_KEY"
-        ]).value_source[0].secret_key_ref[0] == {
-        secret  = "projects/agora-management-test/secrets/production-json-keys-app-master-key"
-        version = "7"
-      }
-    )
-    error_message = "Automated application jobs must receive only their declared exact secret versions; initialization stays absent."
   }
 
   assert {
@@ -544,17 +444,6 @@ run "retains_private_json_keys_without_the_handed_off_public_api" {
           POSTGRES_TLS_ENABLED = "false"
         }
       } &&
-      alltrue([
-        for key, expected in {
-          authentication_migrations = local.application_database_environment.authentication
-          json_keys_migrations      = local.application_database_environment.json_keys
-          json_keys_rotate          = local.application_database_environment.json_keys
-          } : {
-          for environment in one(one(one(google_cloud_run_v2_job.application[key].template).template).containers).env :
-          environment.name => environment.value
-          if contains(keys(expected), environment.name) && length(environment.value_source) == 0
-        } == expected
-      ]) &&
       {
         for environment in one(one(google_cloud_run_v2_service.json_keys[0].template).containers).env :
         environment.name => environment.value
@@ -808,7 +697,7 @@ run "builds_restore_only_contracts_in_a_disposable_recovery_state" {
       length(google_cloud_scheduler_job.postgres_restore) == 0 &&
       length(google_cloud_scheduler_job.postgres_backup_monitor) == 0 &&
       length(google_cloud_scheduler_job.json_keys_rotation) == 0 &&
-      length(google_cloud_run_v2_job.application) == 0 &&
+      length(local.application_jobs) == 0 &&
       google_cloud_run_v2_service.authentication[0].ingress == "INGRESS_TRAFFIC_INTERNAL_ONLY" &&
       !google_cloud_run_v2_service.authentication[0].invoker_iam_disabled &&
       google_tags_location_tag_binding.authentication[0].tag_value == var.cloud_run_invocation_tags.values.recovery &&

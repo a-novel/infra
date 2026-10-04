@@ -154,7 +154,7 @@ run "private_authentication_prerequisites" {
     condition = (
       google_service_account.runtime.account_id == "agora-authentication-private" &&
       toset(keys(google_secret_manager_secret_iam_member.runtime)) == toset([
-        "production-authentication-postgres-password", "production-authentication-smtp-sender-password",
+        "production-authentication-postgres-password",
       ]) &&
       alltrue([for binding in google_secret_manager_secret_iam_member.runtime :
         binding.member == "serviceAccount:agora-authentication-private@agora-private-test.iam.gserviceaccount.com"

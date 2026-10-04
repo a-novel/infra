@@ -56,3 +56,44 @@ func TestPublicAPIReleaseScope(t *testing.T) {
 		})
 	}
 }
+
+func TestPrivateJobReleaseScope(t *testing.T) {
+	t.Parallel()
+	for _, service := range []string{"authentication", "json-keys"} {
+		for _, testCase := range []struct {
+			name, key string
+			value     any
+			valid     bool
+		}{
+			{name: "RegisteredJobs", valid: true},
+			{name: "API", key: "api", value: map[string]string{"image": "fixture"}},
+			{name: "PeerProject", key: "project_id", value: "agora-peer-test"},
+			{name: "PeerRegion", key: "region", value: "us-central1"},
+			{name: "PublicZone", key: "zone", value: "public"},
+			{name: "DatabaseCreation", key: "database", value: map[string]any{}},
+			{name: "RepositoryCreation", key: "pgbackrest_repository", value: map[string]any{}},
+		} {
+			t.Run(service+"/"+testCase.name, func(t *testing.T) {
+				t.Parallel()
+				bucket := "agora-management-test-123-tofu-state"
+				config := map[string]any{
+					"service": service, "zone": "private", "project_id": "agora-private-test",
+					"management_project_id": "agora-management-test", "state_bucket": bucket, "region": "europe-west1",
+				}
+				if testCase.key != "" {
+					config[testCase.key] = testCase.value
+				}
+				data, err := json.Marshal(config)
+				require.NoError(t, err)
+				file := filepath.Join(t.TempDir(), "inputs.json")
+				require.NoError(t, os.WriteFile(file, data, 0o600))
+				env := sharedFoundationEnvironment()
+				var out, diagnostic bytes.Buffer
+				code := workflow.FoundationInputs([]string{
+					"check-release", file, bucket, "workloads/production/private/agora-private-test/" + service,
+				}, func(key string) string { return env[key] }, &out, &diagnostic)
+				require.Equal(t, testCase.valid, code == 0, diagnostic.String())
+			})
+		}
+	}
+}
