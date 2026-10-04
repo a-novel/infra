@@ -8,16 +8,16 @@ components:
     images:
       database:
         repository: ghcr.io/a-novel/service-json-keys/database
-        tag: v2.7.0
+        tag: v2.8.0
       grpc:
         repository: ghcr.io/a-novel/service-json-keys/grpc
-        tag: v2.7.0
+        tag: v2.8.0
       jobs/migrations:
         repository: ghcr.io/a-novel/service-json-keys/jobs/migrations
-        tag: v2.7.0
+        tag: v2.8.0
       jobs/rotatekeys:
         repository: ghcr.io/a-novel/service-json-keys/jobs/rotatekeys
-        tag: v2.7.0
+        tag: v2.8.0
   service-authentication:
     enabled: true
     images:
