@@ -118,6 +118,11 @@ allows ten seconds between `SIGTERM` and `SIGKILL`, including for warm and autos
 An alive Go context does not extend that window; unfinished in-memory mail can be lost on shutdown
 or a crash. See [Cloud Run's shutdown contract](https://docs.cloud.google.com/run/docs/container-contract#instance-shutdown).
 
+Both services set `OTEL=true`, so they export OpenTelemetry traces and logs over OTLP to Google's
+[Telemetry API](https://docs.cloud.google.com/stackdriver/docs/reference/telemetry/overview) under
+their runtime identities. Foundation grants those identities Cloud Telemetry Writer and must apply
+first: until it does, each export is rejected and reported on stderr while requests keep working.
+
 `application_release` is either absent or a complete six-image runtime unit. A non-null value is
 rejected unless both database release contracts are also present. Every image must be the exact
 regional Artifact Registry repository and immutable digest promoted from the reviewed manifest;

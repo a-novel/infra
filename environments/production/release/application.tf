@@ -267,6 +267,11 @@ resource "google_cloud_run_v2_service" "json_keys" {
       }
 
       env {
+        name  = "OTEL"
+        value = "true"
+      }
+
+      env {
         name  = "GRPC_PORT"
         value = "8080"
       }
@@ -418,6 +423,11 @@ resource "google_cloud_run_v2_service" "authentication" {
       env {
         name  = "GCLOUD_PROJECT_ID"
         value = var.workload_project_id
+      }
+
+      env {
+        name  = "OTEL"
+        value = "true"
       }
 
       env {

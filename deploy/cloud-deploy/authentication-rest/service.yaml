@@ -53,6 +53,8 @@ spec:
           env:
             - name: GCLOUD_PROJECT_ID
               value: unconfigured # from-param: ${projectId}
+            - name: OTEL
+              value: "true"
             - name: REST_PORT
               value: "8080"
             - name: REST_TIMEOUT_SHUTDOWN
