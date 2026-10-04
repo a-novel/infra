@@ -6,11 +6,9 @@ Labels describe the caller's ownership boundary; a service label is optional.
 Release identities, federation, state folders, workloads and Shared VPC attachment
 belong to callers.
 
-The current caller is the [workload-project compatibility module](../workload-project).
-Its declarative moves preserve existing resource identities while separating project
-ownership from service release authority. That caller still requires distinct projects
-per service. Shared trust-zone placement needs workload-scoped IAM, guards and storage
-coordinates before activation.
+The [production foundation](../../environments/production/foundation) uses this module for
+shared trust zones. The [workload-project compatibility module](../workload-project) retains
+dedicated-project addresses through declarative moves.
 
 Project deletion protection, default-account deprivileging and existing maintenance
 permissions are retained. Foundation remains a high-trust administrator with project
@@ -18,8 +16,9 @@ IAM and Compute instance administration. This module does not make shared worklo
 mutually isolated by itself.
 
 Protected foundation maintains Cloud Run job specifications and service IAM. The plan identity
-receives matching policy reads. This does not grant foundation API creation/update; first deployment
-and retained-private-project enrollment require their reviewed ownership handoff.
+receives matching policy reads. Production foundation separately grants service creation/update
+in the enrolled public-api project and enables its telemetry APIs. Private internal-service IAM
+uses its own tag-restricted grant. The platform shell receives neither grant.
 
 The foundation's mocked tests cover both direct project-shell use and compatibility
 outputs. Live provisioning requires a separately reviewed saved plan. Review owned
