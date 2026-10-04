@@ -4,9 +4,9 @@ Service projects are opt-in project shells with separate release identities and 
 folders. Production still runs in the existing workload project, under the existing release identity.
 The reviewed `.envrc` selects two production trust-zone shells after the bounded
 [obsolete JSON Keys retirement](./retire-json-keys-project.md), retaining the existing Shared VPC
-host. Dedicated service projects require a separate justification. Service release registration,
-runtime and repository-network activation remain disabled. Merging configuration does not publish
-the private configuration, create a project or move a workload.
+host. Dedicated service projects require a separate justification. The defaults also select release
+boundaries for the two existing components; runtime and repository-network activation remain disabled.
+Merging configuration does not publish the private configuration, create a project or move a workload.
 
 ## Production trust-zone foundation
 
@@ -44,7 +44,8 @@ Shared VPC selection; recovery/cleanup checks reject either registered project a
 
 Before authorized publication, review the complete successor configuration, preserving all unrelated
 settings, including `legacy_backup_job_access`, principals, alerts and project-parent/adoption options.
-Keep `service_projects = {}`, `service_release_zones = {}` and `pgbackrest_repository_services = []`.
+For a shell-only operation, explicitly keep `service_projects = {}`, `service_release_zones = {}`
+and `pgbackrest_repository_services = []`; the reviewed `.envrc` also selects the separate release-boundary batch below.
 Provision only through the protected foundation plan/apply workflow. Require the two shell modules,
 the API attachment and the existing budget's project filter to be the only changes; keep the existing
 Shared VPC host, deletion protection and all existing workloads unchanged. Reject new runtime,
@@ -66,16 +67,19 @@ state, receipt, guard or backup owner changes with this shell definition.
 ## Shared-project release boundaries
 
 `service_release_zones` prepares separate identities and custody folders within the selected
-trust-zone projects. It defaults to `{}` and is omitted by the publisher when empty. The reviewed
-`.envrc` explicitly keeps this selection empty. After separate configuration approval, the publisher accepts
-`INFRA_SERVICE_RELEASE_ZONES` or `--service-release-zones`, for example this inactive selection:
+trust-zone projects. The HCL input defaults to `{}` and the publisher omits it when empty. The reviewed
+`.envrc` selects only the two currently deployed components through `INFRA_SERVICE_RELEASE_ZONES`:
 
 ```json
 {
-  "json-keys": ["private", "public-api"],
-  "authentication": ["private", "public-api"]
+  "json-keys": ["private"],
+  "authentication": ["public-api"]
 }
 ```
+
+These are destination release boundaries, not current workload placement. Authentication remains in
+the private project until its separately verified cutover. JSON Keys REST is a cost-reviewed first
+launch and remains unselected, as do private Authentication and platform releases.
 
 Only the two deployed backend services and nonempty private/public-api zone sets are accepted.
 `public` is reserved for platforms: an old backend `public` selection is rejected, not silently
@@ -95,11 +99,23 @@ can use the existing protected foundation workflow with separate service/zone st
 per service across zones. Application release, database and recovery writers remain
 dedicated-project-only; the compatibility contract below does not activate them in shared projects.
 
-Before selecting or activating these boundaries, complete zone-aware workflow registration, runtime
-permission review, saved-plan expiration and the single-writer state handoff. Create each exact
-service/zone GitHub environment with required reviewers, protected branches and no admin bypass
-before federation. Live checks must prove permitted own-state access, immutable receipts, denied
-peer/legacy state access and the zone-specific secret restrictions above. Apply and verify the declared
+Before publishing this registration, verify the existing protected foundation's zone-aware scope
+selection and saved-plan cleanup, then create `production-json-keys-private-release` and
+`production-authentication-public-api-release` with required reviewers, protected branches and no admin
+bypass. Verify those protections before creating federation. Keep service foundation, native release,
+job bootstrap and image-promotion writer flags disabled, and leave their protected runtime inputs unset.
+
+Publish the complete successor configuration with unrelated settings preserved. Review the exact
+protected foundation plan: only the two `module.service_release` boundaries and the two retained
+`google_storage_bucket_object.database_coordinates` publications may change. Reject deletion,
+replacement, imports, moves, legacy writer-grant changes and new runtime/network resources. The existing
+foundation keeps sole ownership of database hosts, disks and backups; registration copies no state or
+receipt and grants no runtime secret or deployment access. Require successful convergence and a
+zero-change plan before using the published database references.
+
+Before enabling any runtime writer, complete runtime permission review and the single-writer state
+handoff. Live checks must prove permitted own-state access, immutable receipts, denied peer/legacy state
+access and the zone-specific secret restrictions above. Apply and verify the declared
 [saved-plan cleanup rules](../../bootstrap/README.md#plan-artifact-expiration), including the separate
 public-api rule, through protected bootstrap before enabling a writer. Keep existing release and backup
 owners unchanged until those checks pass; no state transfer or resource migration happens here.

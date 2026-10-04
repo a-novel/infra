@@ -66,6 +66,29 @@ run "shared_release_private_without_public_shell" {
   }
 }
 
+run "production_release_boundary_selection" {
+  command = plan
+  variables {
+    shared_vpc_enabled    = true
+    public_api_project_id = "agora-api-test"
+    public_project_id     = "agora-public-test"
+    service_release_zones = { json-keys = ["private"], authentication = ["public-api"] }
+  }
+  assert {
+    condition = (
+      toset(keys(module.service_release)) == toset(["json-keys/private", "authentication/public-api"]) &&
+      output.service_release_boundaries["json-keys/private"].project_id == var.workload_project_id &&
+      output.service_release_boundaries["authentication/public-api"].project_id == var.public_api_project_id &&
+      toset(keys(google_storage_bucket_object.database_coordinates)) == toset(["json-keys", "authentication"]) &&
+      alltrue([for service, coordinates in local.shared_database_coordinates : coordinates.project_id == var.workload_project_id]) &&
+      toset(keys(google_compute_instance_group_manager.database)) == toset(["json_keys", "authentication"]) &&
+      toset(keys(google_compute_disk.database)) == toset(["json_keys", "authentication"]) &&
+      length(module.service_project) == 0 && length(var.pgbackrest_repository_services) == 0
+    )
+    error_message = "Register only the existing components' destination boundaries while retaining both private database owners."
+  }
+}
+
 run "shared_release_federation_and_permissions" {
   command = plan
   module { source = "../../../modules/release-boundary" }
