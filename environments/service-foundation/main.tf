@@ -79,7 +79,7 @@ resource "google_secret_manager_secret_iam_member" "runtime" {
 }
 
 resource "google_secret_manager_secret_iam_member" "foundation_job_metadata" {
-  for_each = var.zone == null ? lookup(local.job_secrets, var.service, toset([])) : toset([])
+  for_each = var.zone == "public-api" ? lookup(local.runtime_secrets, var.service, toset([])) : var.zone == null ? lookup(local.job_secrets, var.service, toset([])) : toset([])
 
   project   = var.management_project_id
   secret_id = each.key

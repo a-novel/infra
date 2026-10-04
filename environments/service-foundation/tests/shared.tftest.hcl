@@ -118,9 +118,12 @@ run "public_api_json_keys_prerequisites" {
       google_service_account.runtime.account_id == "agora-json-keys-api" &&
       toset(keys(google_secret_manager_secret_iam_member.runtime)) == toset(["production-json-keys-postgres-password"]) &&
       google_secret_manager_secret_iam_member.runtime["production-json-keys-postgres-password"].member == "serviceAccount:agora-json-keys-api@agora-public-api-test.iam.gserviceaccount.com" &&
-      length(google_secret_manager_secret_iam_member.foundation_job_metadata) == 0
+      toset(keys(google_secret_manager_secret_iam_member.foundation_job_metadata)) == toset(["production-json-keys-postgres-password"]) &&
+      google_secret_manager_secret_iam_member.foundation_job_metadata["production-json-keys-postgres-password"].project == var.management_project_id &&
+      google_secret_manager_secret_iam_member.foundation_job_metadata["production-json-keys-postgres-password"].role == "roles/secretmanager.viewer" &&
+      google_secret_manager_secret_iam_member.foundation_job_metadata["production-json-keys-postgres-password"].member == "serviceAccount:infra-foundation@agora-management-test.iam.gserviceaccount.com"
     )
-    error_message = "The REST identity must retain its database credential without master-key or job-secret authority."
+    error_message = "JSON Keys REST receives only its database credential; foundation may inspect only that credential's metadata."
   }
   assert {
     condition = (
@@ -179,6 +182,19 @@ run "public_api_authentication_prerequisites" {
       email = "agora-authentication-api@agora-public-api-test.iam.gserviceaccount.com"
       name  = "projects/agora-public-api-test/serviceAccounts/agora-authentication-api@agora-public-api-test.iam.gserviceaccount.com"
     }
+  }
+  assert {
+    condition = (
+      toset(keys(google_secret_manager_secret_iam_member.foundation_job_metadata)) == toset([
+        "production-authentication-postgres-password", "production-authentication-smtp-sender-password",
+      ]) &&
+      alltrue([for binding in google_secret_manager_secret_iam_member.foundation_job_metadata :
+        binding.project == var.management_project_id &&
+        binding.role == "roles/secretmanager.viewer" &&
+        binding.member == "serviceAccount:infra-foundation@agora-management-test.iam.gserviceaccount.com"
+      ])
+    )
+    error_message = "Foundation may check enabled versions of only Authentication's API secrets, without payload access."
   }
   assert {
     condition = (

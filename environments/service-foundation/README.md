@@ -22,9 +22,10 @@ folders include the full production scope. The `public` platform zone is rejecte
 | Public API | Service PostgreSQL password only           | Service PostgreSQL and SMTP passwords |
 
 These grants preserve the existing API/ORM contracts. They do not prove database-role restrictions
-or remove inherited IAM; verify both before activation. Shared profiles grant no job-secret metadata
-access and reject database/repository hosts and application-job access until ownership is
-reconciled. Existing hosts and backups stay with their current owner.
+or remove inherited IAM; verify both before activation. For public APIs, foundation receives
+metadata-only access to those same secrets to check enabled release versions; private profiles
+grant none. Shared profiles reject database/repository hosts and application-job access until
+ownership is reconciled. Existing hosts and backups stay with their current owner.
 
 Shared runtime accounts use `agora-SERVICE-private` or `agora-SERVICE-api`. Each owns separate
 `agora-SERVICE-SUFFIX-production` and `agora-SERVICE-SUFFIX-tooling` repositories. The matching
