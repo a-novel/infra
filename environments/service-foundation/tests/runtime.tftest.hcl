@@ -22,6 +22,17 @@ variables {
 run "isolated_application_assets" {
   command = plan
 
+  assert {
+    condition = (
+      toset(keys(google_project_iam_member.runtime_telemetry)) == toset(["roles/telemetry.writer", "roles/serviceusage.serviceUsageConsumer"]) &&
+      alltrue([for role, binding in google_project_iam_member.runtime_telemetry :
+        binding.project == var.project_id && binding.role == role &&
+        binding.member == "serviceAccount:${google_service_account.runtime.email}"
+      ]) &&
+      length(google_monitoring_alert_policy.api_error_rate) == 0
+    )
+    error_message = "Runtime telemetry must use only its project and identity; dedicated scope must not enroll a public API alert."
+  }
 
   assert {
     condition     = [google_service_account.runtime.project, google_service_account.runtime.account_id] == [var.project_id, "agora-json-keys"]

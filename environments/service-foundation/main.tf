@@ -60,6 +60,14 @@ resource "google_service_account_iam_member" "foundation_runtime" {
   member             = "serviceAccount:${local.foundation_service_account}"
 }
 
+resource "google_project_iam_member" "runtime_telemetry" {
+  for_each = toset(["roles/telemetry.writer", "roles/serviceusage.serviceUsageConsumer"])
+
+  project = var.project_id
+  role    = each.value
+  member  = "serviceAccount:${google_service_account.runtime.email}"
+}
+
 # Payloads and numeric version selection belong to the operator and release contract.
 resource "google_secret_manager_secret_iam_member" "runtime" {
   for_each = lookup(local.runtime_secrets, var.service, toset([]))

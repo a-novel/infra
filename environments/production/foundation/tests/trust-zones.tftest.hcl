@@ -71,7 +71,7 @@ run "optional_public_shell" {
     values = { number = "222222222222" }
   }
   assert {
-    condition     = length(module.public_project) == 1 && length(module.public_api_project) == 0 && length(google_compute_shared_vpc_service_project.public_api) == 0 && length(google_compute_shared_vpc_host_project.production) == 0
+    condition     = length(module.public_project) == 1 && length(module.public_api_project) == 0 && length(google_compute_shared_vpc_service_project.public_api) == 0 && length(google_compute_shared_vpc_host_project.production) == 0 && length(google_project_iam_custom_role.foundation_public_api) == 0
     error_message = "A platform shell must neither attach to private Shared VPC nor require its host activation."
   }
   assert {
@@ -193,6 +193,7 @@ run "three_project_coordinates" {
   assert {
     condition = (
       length(module.service_release) == 0 && length(module.service_project) == 0 &&
+      length(google_project_iam_custom_role.foundation_public_api) == 0 && length(google_project_service.public_api_telemetry) == 0 &&
       length(google_compute_subnetwork_iam_member.service_run) == 0 &&
       length(google_compute_subnetwork_iam_member.service_mig) == 0 &&
       length(google_compute_subnetwork_iam_member.service_foundation) == 0 &&

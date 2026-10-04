@@ -24,6 +24,11 @@ run "private_json_keys_prerequisites" {
   command = plan
 
   assert {
+    condition     = length(google_monitoring_alert_policy.api_error_rate) == 0
+    error_message = "Private gRPC must not enroll a REST alert."
+  }
+
+  assert {
     condition = (
       google_service_account.runtime.account_id == "agora-json-keys-private" &&
       toset(keys(google_secret_manager_secret_iam_member.runtime)) == toset([
@@ -103,6 +108,13 @@ run "public_api_json_keys_prerequisites" {
 
   assert {
     condition = (
+      google_monitoring_alert_policy.api_error_rate[0].project == var.project_id &&
+      google_monitoring_alert_policy.api_error_rate[0].conditions[0].condition_threshold[0].filter == "resource.type = \"cloud_run_revision\" AND resource.label.service_name = \"agora-json-keys-rest\" AND resource.label.location = \"europe-west1\" AND metric.type = \"run.googleapis.com/request_count\" AND metric.label.response_code_class = \"5xx\""
+    )
+    error_message = "JSON Keys REST monitoring must not select its private gRPC sibling or Authentication."
+  }
+  assert {
+    condition = (
       google_service_account.runtime.account_id == "agora-json-keys-api" &&
       toset(keys(google_secret_manager_secret_iam_member.runtime)) == toset(["production-json-keys-postgres-password"]) &&
       google_secret_manager_secret_iam_member.runtime["production-json-keys-postgres-password"].member == "serviceAccount:agora-json-keys-api@agora-public-api-test.iam.gserviceaccount.com" &&
@@ -167,6 +179,28 @@ run "public_api_authentication_prerequisites" {
       email = "agora-authentication-api@agora-public-api-test.iam.gserviceaccount.com"
       name  = "projects/agora-public-api-test/serviceAccounts/agora-authentication-api@agora-public-api-test.iam.gserviceaccount.com"
     }
+  }
+  assert {
+    condition = (
+      alltrue([for binding in google_project_iam_member.runtime_telemetry :
+        binding.project == var.project_id && binding.member == "serviceAccount:agora-authentication-api@agora-public-api-test.iam.gserviceaccount.com"
+      ]) &&
+      google_monitoring_alert_policy.api_error_rate[0].project == var.project_id &&
+      google_monitoring_alert_policy.api_error_rate[0].enabled &&
+      google_monitoring_alert_policy.api_error_rate[0].severity == "ERROR" &&
+      google_monitoring_alert_policy.api_error_rate[0].combiner == "OR" &&
+      toset(google_monitoring_alert_policy.api_error_rate[0].notification_channels) == toset([google_monitoring_notification_channel.operations.name]) &&
+      google_monitoring_alert_policy.api_error_rate[0].conditions[0].condition_threshold[0].filter == "resource.type = \"cloud_run_revision\" AND resource.label.service_name = \"agora-authentication-rest\" AND resource.label.location = \"europe-west1\" AND metric.type = \"run.googleapis.com/request_count\" AND metric.label.response_code_class = \"5xx\"" &&
+      google_monitoring_alert_policy.api_error_rate[0].conditions[0].condition_threshold[0].denominator_filter == "resource.type = \"cloud_run_revision\" AND resource.label.service_name = \"agora-authentication-rest\" AND resource.label.location = \"europe-west1\" AND metric.type = \"run.googleapis.com/request_count\"" &&
+      google_monitoring_alert_policy.api_error_rate[0].conditions[0].condition_threshold[0].threshold_value == 0.10 &&
+      google_monitoring_alert_policy.api_error_rate[0].conditions[0].condition_threshold[0].duration == "300s" &&
+      google_monitoring_alert_policy.api_error_rate[0].conditions[0].condition_threshold[0].comparison == "COMPARISON_GT" &&
+      google_monitoring_alert_policy.api_error_rate[0].conditions[0].condition_threshold[0].evaluation_missing_data == "EVALUATION_MISSING_DATA_INACTIVE" &&
+      google_monitoring_alert_policy.api_error_rate[0].conditions[0].condition_threshold[0].aggregations == google_monitoring_alert_policy.api_error_rate[0].conditions[0].condition_threshold[0].denominator_aggregations &&
+      google_monitoring_alert_policy.api_error_rate[0].conditions[0].condition_threshold[0].aggregations[0].per_series_aligner == "ALIGN_DELTA" &&
+      google_monitoring_alert_policy.api_error_rate[0].conditions[0].condition_threshold[0].aggregations[0].cross_series_reducer == "REDUCE_SUM"
+    )
+    error_message = "Authentication REST must preserve project-local telemetry and its five-minute 10% 5xx alert using the existing operations channel."
   }
   assert {
     condition = (
