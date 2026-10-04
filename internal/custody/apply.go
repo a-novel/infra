@@ -47,6 +47,7 @@ func (storage store) apply(args []string, getenv func(string) string, output io.
 		}
 		if root == "service-release" {
 			enabled = "SERVICE_JOB_BOOTSTRAP_ENABLED"
+			checkAction = "check-release"
 		}
 		if root == "service-recovery" {
 			enabled, check = "NATIVE_RECOVERY_PREPARATION_ENABLED", workflow.RecoveryInputs

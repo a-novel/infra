@@ -159,6 +159,22 @@ def protections($plan):
 # Bootstrap creates jobs in their final state. Existing jobs belong to routine
 # release; imports and address moves require separately reviewed reconciliation.
 def service_job_bootstrap:
+  if .variables.zone.value == "public-api" then
+    .variables.project_id.value as $project | .variables.service.value as $service |
+    .variables.region.value as $region |
+    $ENV.TOFU_STATE_SUFFIX == "workloads/production/public-api/" + $project + "/" + $service and
+    all((.resource_changes // [])[];
+      .mode == "managed" and .type == "google_cloud_run_v2_service" and
+      .address == "google_cloud_run_v2_service.api[0]" and .index == 0 and
+      .previous_address == null and .deposed == null and .change.importing == null and
+      (.change.actions == ["create"] or .change.actions == ["update"] or .change.actions == ["no-op"]) and
+      .change.after.name == "agora-" + $service + "-rest" and
+      (.change | . as $change | .after.project == $project and .after.location == $region and
+        .after.deletion_protection == true and
+        all(["project", "location", "name", "deletion_protection"][];
+          . as $field | $change | known([$field])))
+    )
+  else
   .variables.project_id.value as $project | .variables.service.value as $service |
   .variables.region.value as $region |
   (if $service == "json-keys" then ["migrations", "rotatekeys"]
@@ -175,7 +191,7 @@ def service_job_bootstrap:
       .after.deletion_protection == true and
       all(["project", "location", "name", "deletion_protection"][];
         . as $field | $change | known([$field])))
-  );
+  ) end;
 
 # Host preparation is create-only. Maintenance, imports and cleanup are separate approvals.
 def native_recovery_preparation:

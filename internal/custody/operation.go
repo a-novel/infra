@@ -83,7 +83,7 @@ func (custody store) admit(args []string, inputs []byte, plan string, getenv fun
 		return nil, err
 	}
 	intent.SchemaVersion, intent.Root, intent.Commit, intent.PlanID = 1, args[0], args[1], args[2]
-	if args[0] == "service-foundation" && foundationScopePattern.MatchString(getenv("TOFU_STATE_SUFFIX")) {
+	if (args[0] == "service-foundation" || args[0] == "service-release") && foundationScopePattern.MatchString(getenv("TOFU_STATE_SUFFIX")) {
 		intent.SchemaVersion, intent.Scope = 2, getenv("TOFU_STATE_SUFFIX")
 	}
 	intent.RunID, intent.RunAttempt = getenv("GITHUB_RUN_ID"), getenv("GITHUB_RUN_ATTEMPT")
@@ -172,6 +172,9 @@ func (intent applyIntent) configurationName() (string, error) {
 		}
 		return "foundation/services/" + intent.Project + "/config/" + name, nil
 	case "service-release":
+		if intent.Scope != "" {
+			return intent.Scope + "/release/config/" + name, nil
+		}
 		return "services/" + intent.Project + "/release/config/" + name, nil
 	case "service-recovery":
 		if intent.SourceProject == "" || intent.SourceProject == intent.Project ||

@@ -24,6 +24,8 @@ func TestJobBootstrapInputs(t *testing.T) {
 		env         map[string]string
 	}{
 		{name: "ExactBytes"},
+		{name: "SharedAPI"},
+		{name: "SharedWrongSchema", stage: "prepare"},
 		{name: "Disabled", stage: "prepare", env: map[string]string{"SERVICE_JOB_BOOTSTRAP_ENABLED": ""}},
 		{name: "Apply", env: map[string]string{"FOUNDATION_OPERATION": "apply", "FOUNDATION_PLAN_ID": "123-1"}},
 		{name: "ImagesOnly", env: map[string]string{"FOUNDATION_OPERATION": "promote-images", "SERVICE_JOB_BOOTSTRAP_ENABLED": ""}},
@@ -64,6 +66,17 @@ func TestJobBootstrapInputs(t *testing.T) {
 				reference[testCase.field] = testCase.value
 			}
 			switch testCase.name {
+			case "SharedAPI", "SharedWrongSchema":
+				selected["project_id"], selected["zone"], selected["private_project_id"] = "agora-api-test", "public-api", "agora-private-test"
+				selected["images"], selected["api"] = map[string]string{}, map[string]string{"image": "fixture"}
+				for key, value := range sharedFoundationEnvironment() {
+					env[key] = value
+				}
+				object = "foundation/coordinates/workloads/production/public-api/agora-api-test/json-keys/" + hash + ".json"
+				reference["object"] = object
+				if testCase.name == "SharedAPI" {
+					reference["schema_version"] = 2
+				}
 			case "PeerProject":
 				selected["project_id"] = "agora-peer-test"
 			case "EmbeddedCoordinates":
@@ -110,7 +123,11 @@ func TestJobBootstrapInputs(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, json.Unmarshal(bound, &selected))
 			require.Equal(t, coordinates, selected["foundation_json"])
-			require.Equal(t, "file="+output+"\nstate_suffix=services/agora-json-keys-test\n", stdout.String())
+			scope := "services/agora-json-keys-test"
+			if testCase.name == "SharedAPI" {
+				scope = "workloads/production/public-api/agora-api-test/json-keys"
+			}
+			require.Equal(t, "file="+output+"\nstate_suffix="+scope+"\n", stdout.String())
 			require.Equal(t, 65, workflow.FoundationInputs(args, getenv, &stdout, &stderr), "cannot replace an existing destination")
 		})
 	}

@@ -69,6 +69,9 @@ if [[ "${ROOT_NAME}" = service-* ]]; then
     if [ "${ROOT_NAME}" = service-foundation ]; then
         INPUT_ACTION=check-foundation
     fi
+    if [ "${ROOT_NAME}" = service-release ]; then
+        INPUT_ACTION=check-release
+    fi
     if [ "${ROOT_NAME}" = service-recovery ]; then
         INPUT_COMMAND=recovery-inputs
         if [ "${ACTION}" != assess ] && [ "${ACTION}" != drift ]; then
