@@ -27,8 +27,11 @@ must preserve the Shared VPC host explicitly.
 Publish `retire_json_keys_project = true` while retaining
 `service_projects = { "json-keys": "a-novel-json-keys-prod" }` and an empty
 `pgbackrest_repository_services`. Source `.envrc`, then use the existing `foundation-setup configure`
-publisher with `--service-projects '{"json-keys":"a-novel-json-keys-prod"}'` and all existing
-configuration options. Do not publish a map-only replacement or infer absent settings.
+publisher with `--retire-json-keys-project`,
+`--service-projects '{"json-keys":"a-novel-json-keys-prod"}'`, `--public-api-project-id ''`,
+`--public-project-id ''` and all existing configuration options. The current `.envrc` selects the
+successor trust-zone shells, not this historical retirement operation. Do not use these overrides to
+retire an already provisioned trust-zone project, publish a map-only replacement or infer absent settings.
 
 Run the protected `foundation plan foundation` operation and inspect the exact private plan.
 Preparation may only change the obsolete project's persistent deletion policies and disable its

@@ -2,11 +2,11 @@
 
 Service projects are opt-in project shells with separate release identities and private storage
 folders. Production still runs in the existing workload project, under the existing release identity.
-The reviewed `.envrc` selects no service project and enables the bounded
-[obsolete JSON Keys retirement](./retire-json-keys-project.md). Complete its two reviewed stages
-before publishing the empty selection. Environment/trust-zone projects are the agreed direction;
-dedicated service projects require a separate justification. Runtime and repository-network
-activation remain disabled. Merging configuration does not move a workload or delete a project.
+The reviewed `.envrc` selects two production trust-zone shells after the bounded
+[obsolete JSON Keys retirement](./retire-json-keys-project.md), retaining the existing Shared VPC
+host. Dedicated service projects require a separate justification. Service release registration,
+runtime and repository-network activation remain disabled. Merging configuration does not publish
+the private configuration, create a project or move a workload.
 
 ## Production trust-zone foundation
 
@@ -34,17 +34,28 @@ The configuration publisher accepts `INFRA_SHARED_VPC_ENABLED=true` / `--shared-
 retain the existing Shared VPC host independently of the obsolete-project retirement switch.
 `INFRA_PUBLIC_API_PROJECT_ID` / `--public-api-project-id` selects the API shell;
 `INFRA_PUBLIC_PROJECT_ID` / `--public-project-id` selects the platform shell. These inputs are omitted
-from the published document by default; the reviewed `.envrc` selects neither shell. Project IDs must
-be valid and distinct from each other, management and workload. Only the API shell requires explicit
-Shared VPC retention.
+from the published document when empty. The reviewed `.envrc` selects `a-novel-public-api-prod` and
+`a-novel-public-prod`, respectively, with explicit Shared VPC retention and retirement disabled.
+Project IDs must be valid and distinct from each other, management and workload. Only the API shell
+requires explicit Shared VPC retention.
 Retirement, dedicated-service maps, repository-network selection and recovery registration must be
 absent before selecting either shell. Recovery compilation removes both project selectors and the
 Shared VPC selection; recovery/cleanup checks reject either registered project as a disposable target.
 
-Do not publish this selection yet. First finish and review the shared-project per-service
-permissions and component-placement contracts. Before provisioning, review the complete successor
-configuration, keep the existing Shared VPC address and deletion protection, and verify an exact
-protected plan. Existing APIs and ORMs remain unchanged: each API may use its own narrowly scoped
+Before authorized publication, review the complete successor configuration, preserving all unrelated
+settings, including `legacy_backup_job_access`, principals, alerts and project-parent/adoption options.
+Keep `service_projects = {}`, `service_release_zones = {}` and `pgbackrest_repository_services = []`.
+Provision only through the protected foundation plan/apply workflow. Require the two shell modules,
+the API attachment and the existing budget's project filter to be the only changes; keep the existing
+Shared VPC host, deletion protection and all existing workloads unchanged. Reject new runtime,
+database, disk or network-appliance resources. Save baseline policies before any separately approved
+temporary project-creation, billing-link or Shared VPC grants. After apply, verify the shell parents,
+billing, API enablement, default-account restrictions and attachment; remove the exact temporary
+bindings and any automatically assigned foundation Owner grants on the two new projects. Require
+a zero-change plan with only standing maintenance access before proceeding.
+
+Shell provisioning does not activate the shared-project per-service permissions or component-placement
+contracts below. Existing APIs and ORMs remain unchanged: each API may use its own narrowly scoped
 database credentials, but JSON Keys REST must not read master-key or private-key material. Platform
 identities must have neither database credentials nor direct private access. Verify these effective
 permissions and the intended permitted/denied network paths before moving workloads. Existing
@@ -56,7 +67,7 @@ state, receipt, guard or backup owner changes with this shell definition.
 
 `service_release_zones` prepares separate identities and custody folders within the selected
 trust-zone projects. It defaults to `{}` and is omitted by the publisher when empty. The reviewed
-`.envrc` remains unchanged. After separate configuration approval, the publisher accepts
+`.envrc` explicitly keeps this selection empty. After separate configuration approval, the publisher accepts
 `INFRA_SERVICE_RELEASE_ZONES` or `--service-release-zones`, for example this inactive selection:
 
 ```json
@@ -105,6 +116,8 @@ export INFRA_SERVICE_PROJECTS='{"json-keys":"agora-json-keys-test","authenticati
 Use one entry per independently operated service and environment, not per image, job, or revision.
 This compatibility path is not the default placement model for future services. Clear the retirement
 selection only through a reviewed successor configuration that preserves the existing Shared VPC host.
+Clear both trust-zone project selectors before selecting this dedicated-service compatibility path;
+it must not be combined with the current production shell defaults.
 Project IDs must differ from each other, management, and the existing workload project. A production
 service project requires the same organization/folder parent as the foundation. OpenTofu validates
 these constraints before apply.
