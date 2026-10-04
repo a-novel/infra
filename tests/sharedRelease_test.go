@@ -154,6 +154,10 @@ func TestSharedFoundationInspection(t *testing.T) {
 		plans int
 	}{
 		{name: "AllScopes", plans: 3},
+		{name: "RetainedHistory", plans: 3},
+		{name: "MalformedInventory", code: 70},
+		{name: "NullInventory", code: 70},
+		{name: "MissingObjectName", code: 70},
 		{name: "HeldGuard", code: 70},
 		{name: "OrphanGuard", code: 70},
 		{name: "OrphanState", code: 70},
@@ -200,6 +204,18 @@ func TestSharedFoundationInspection(t *testing.T) {
 				}
 			}
 			switch testCase.name {
+			case "RetainedHistory":
+				f.env["FAKE_GCS_NONCURRENT"] = `[
+					{"name":"foundation/operations/production/json-keys/operation.json","timeDeleted":"2026-10-04T15:53:35Z"},
+					{"name":"foundation/workloads/production/private/agora-private-test/json-keys/default.tflock","timeDeleted":"2026-10-04T15:53:35Z"},
+					{"name":"foundation/workloads/production/private/agora-peer-test/json-keys/default.tfstate","timeDeleted":"2026-10-04T15:53:35Z"}
+				]`
+			case "MalformedInventory":
+				f.env["FAKE_GCS_OBJECT_METADATA"] = "{"
+			case "NullInventory":
+				f.env["FAKE_GCS_OBJECT_METADATA"] = "null"
+			case "MissingObjectName":
+				f.env["FAKE_GCS_OBJECT_METADATA"] = "[{}]"
 			case "HeldGuard", "OrphanGuard":
 				service := "json-keys"
 				if testCase.name == "OrphanGuard" {

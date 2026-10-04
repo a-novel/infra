@@ -37,6 +37,22 @@ elif [ "$1 $2 $3" = "storage objects list" ]; then
         [[ "${OBJECT_PATTERN}" == workloads/production/*/agora-*-test/*/release/** ]] || exit 99
     fi
     PATTERN="$(local_path "${4%/**}")"
+    if [ "${5:-}" = --raw ]; then
+        [ "${6:-}" = '--format=json(name,timeDeleted)' ]
+        if [ "${FAKE_GCS_OBJECT_METADATA:-}" ]; then
+            printf '%s\n' "${FAKE_GCS_OBJECT_METADATA}"
+            exit 0
+        fi
+        {
+            if [ -d "${PATTERN}" ]; then
+                find "${PATTERN}" -type f | LC_ALL=C sort
+            fi
+        } | jq -Rn --arg prefix "${OBJECT_PATTERN%\*\*}" --arg root "${ROOT}/" \
+            --argjson history "${FAKE_GCS_NONCURRENT:-[]}" \
+            '[inputs | ltrimstr($root) | sub("^[^/]+/"; "") | {name: .}] +
+            ($history | map(select(.name | startswith($prefix))))'
+        exit 0
+    fi
     if [ -d "${PATTERN}" ]; then
         while IFS= read -r object; do
             relative="${object#"${ROOT}/"}"
