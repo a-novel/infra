@@ -2,7 +2,7 @@
 
 > **Superseded:** environment/trust-zone placement replaces this dedicated-project onboarding.
 > Do not execute the historical steps below. Follow the
-> [guarded retirement procedure](./retire-json-keys-project.md) for the existing shell.
+> [production trust-zone configuration](./provision-service-projects.md#production-trust-zone-foundation).
 
 This is the approved first service project, not another disposable proof. It will initially hold
 only synthetic rehearsal resources; creating its shell neither migrates production nor authorizes

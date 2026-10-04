@@ -6,7 +6,7 @@ resource "google_project" "service" {
   org_id              = var.organization_id
   folder_id           = var.folder_id
   auto_create_network = false
-  deletion_policy     = var.retirement ? "DELETE" : "PREVENT"
+  deletion_policy     = "PREVENT"
   labels              = var.labels
 
   lifecycle {
@@ -104,7 +104,7 @@ resource "google_logging_project_bucket_config" "default" {
   location        = "global"
   bucket_id       = "_Default"
   retention_days  = 30
-  deletion_policy = var.retirement ? "ABANDON" : "PREVENT"
+  deletion_policy = "PREVENT"
 
   depends_on = [google_project_service.api["logging.googleapis.com"]]
 }

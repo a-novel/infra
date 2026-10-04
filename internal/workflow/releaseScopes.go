@@ -54,7 +54,7 @@ func ReleaseScopes(getenv func(string) string, bucket string) (map[string]string
 	if publicAPI != "" && publicAPI == public {
 		return nil, invalid
 	}
-	for key, expected := range map[string]bool{"shared_vpc_enabled": true, "recovery_mode": false, "retire_json_keys_project": false} {
+	for key, expected := range map[string]bool{"shared_vpc_enabled": true, "recovery_mode": false} {
 		var actual bool
 		if data, exists := registration[key]; exists {
 			if string(data) == "null" || json.Unmarshal(data, &actual) != nil {

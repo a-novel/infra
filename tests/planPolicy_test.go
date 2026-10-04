@@ -97,80 +97,27 @@ func TestPlanProtections(t *testing.T) {
 	}
 }
 
-func TestPlanRetirement(t *testing.T) {
+func TestPlanRetiredExceptionRejected(t *testing.T) {
 	t.Parallel()
-	for _, testCase := range []struct {
-		name, root string
-		mutate     func(object)
-		code       int
-	}{
-		{"Success", "foundation", nil, 0},
-		{"Error/OtherRoot", "bootstrap", nil, 65},
-		{"Error/NoAuthorization", "foundation", func(p object) { delete(p, "variables") }, 65},
-		{"Error/Disabled", "foundation", func(p object) { nested(p, "variables", "retire_json_keys_project")["value"] = false }, 65},
-		{"Error/OtherManagement", "foundation", func(p object) { nested(p, "variables", "management_project_id")["value"] = "agora-other-test" }, 65},
-		{"Error/OtherWorkload", "foundation", func(p object) { nested(p, "variables", "workload_project_id")["value"] = "agora-other-test" }, 65},
-		{"Error/OtherOrganization", "foundation", func(p object) { nested(p, "variables", "organization_id")["value"] = "123456789012" }, 65},
-		{"Error/Folder", "foundation", func(p object) { nested(p, "variables", "folder_id")["value"] = "123456789012" }, 65},
-		{"Error/Recovery", "foundation", func(p object) { nested(p, "variables", "recovery_mode")["value"] = true }, 65},
-		{"Error/RemovedRegistration", "foundation", func(p object) { nested(p, "variables", "service_projects")["value"] = object{} }, 65},
-		{"Error/NativeRepository", "foundation", func(p object) {
-			nested(p, "variables", "pgbackrest_repository_services")["value"] = []string{"json-keys"}
-		}, 65},
-		{"Error/RecoveryRegistration", "foundation", func(p object) {
-			nested(p, "variables", "service_recovery_projects")["value"] = object{"agora-recovery-test": "json-keys"}
-		}, 65},
-		{"Error/OtherAddress", "foundation", func(p object) { resource(p)["address"] = privateValue }, 65},
-		{"Error/OtherIdentity", "foundation", func(p object) {
-			for _, side := range []string{"before", "after"} {
-				nested(resource(p), "change", side)["id"] = privateValue
-			}
-		}, 65},
-		{"Error/Moved", "foundation", func(p object) { resource(p)["previous_address"] = privateValue }, 65},
-		{"Error/Deposed", "foundation", func(p object) { resource(p)["deposed"] = privateValue }, 65},
-		{"Error/Imported", "foundation", func(p object) { nested(resource(p), "change")["importing"] = object{"id": privateValue} }, 65},
-		{"Error/Replacement", "foundation", func(p object) { nested(resource(p), "change")["actions"] = []string{"delete", "create"} }, 65},
-		{"Error/Unknown", "foundation", func(p object) { nested(resource(p), "change")["after_unknown"] = object{"id": true} }, 65},
-		{"Error/OtherChange", "foundation", func(p object) { nested(resource(p), "change", "after")["description"] = privateValue }, 65},
-		{"Error/RetainedAccess", "foundation", func(p object) { nested(resource(p), "change", "after")["disabled"] = false }, 65},
-		{"Error/OtherPolicy", "foundation", func(p object) { nested(resource(p), "change", "after")["deletion_policy"] = "OTHER" }, 65},
-		{"Error/ForceDestroy", "foundation", func(p object) { nested(resource(p), "change", "after")["force_destroy"] = true }, 65},
-		{"Error/UnrelatedResource", "foundation", func(p object) {
-			other := resource(plan("future_resource", object{"deletion_policy": "PREVENT"}, object{"deletion_policy": "DELETE"}))
-			p["resource_changes"] = append(p["resource_changes"].([]any), other)
-		}, 65},
-		{"DeletionStillRequiresApproval", "foundation", func(p object) {
-			nested(resource(p), "change")["actions"] = []string{"delete"}
-			nested(resource(p), "change")["after"] = nil
-		}, 3},
-	} {
-		t.Run(testCase.name, func(t *testing.T) {
+	fixture := fixtureYAML[struct {
+		Variables object
+		Resources []struct {
+			Type, Address, Policy string
+			Before                object
+		}
+	}](t, retirement)
+	for _, testCase := range fixture.Resources {
+		t.Run(testCase.Address, func(t *testing.T) {
 			t.Parallel()
-			fixture := fixtureYAML[struct {
-				Variables object
-				Resources []struct {
-					Type, Address, Policy string
-					Before                object
-				}
-			}](t, retirement)
-			for _, r := range fixture.Resources {
-				t.Run(r.Address, func(t *testing.T) {
-					t.Parallel()
-					after := maps.Clone(r.Before)
-					after["deletion_policy"] = r.Policy
-					if _, present := after["disabled"]; present {
-						after["disabled"] = true
-					}
-					value := plan(r.Type, r.Before, after)
-					// Each parallel case owns its nested inputs and resource values.
-					value["variables"] = fixtureYAML[object](t, retirement)["variables"]
-					resource(value)["address"] = r.Address
-					if testCase.mutate != nil {
-						testCase.mutate(value)
-					}
-					setup(t).summary(t, testCase.root, value, testCase.code)
-				})
+			after := maps.Clone(testCase.Before)
+			after["deletion_policy"] = testCase.Policy
+			if _, present := after["disabled"]; present {
+				after["disabled"] = true
 			}
+			value := plan(testCase.Type, testCase.Before, after)
+			value["variables"] = fixture.Variables
+			resource(value)["address"] = testCase.Address
+			setup(t).summary(t, "foundation", value, 65)
 		})
 	}
 }

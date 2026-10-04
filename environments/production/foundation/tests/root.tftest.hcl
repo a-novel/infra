@@ -273,20 +273,6 @@ run "shared_release_rejects_recovery" {
   expect_failures = [var.service_release_zones]
 }
 
-run "shared_release_rejects_retirement" {
-  command = plan
-  variables {
-    management_project_id    = "a-novel-management-prod"
-    backup_bucket_name       = "a-novel-management-prod-123456789012-backups"
-    workload_project_id      = "a-novel-production-prod"
-    organization_id          = "1031663934757"
-    retire_json_keys_project = true
-    shared_vpc_enabled       = true
-    service_release_zones    = { json-keys = ["private"] }
-  }
-  expect_failures = [var.service_release_zones]
-}
-
 mock_provider "google-beta" {
   mock_resource "google_project_service_identity" {
     defaults = { member = "serviceAccount:service-111111111111@serverless-robot-prod.iam.gserviceaccount.com" }
@@ -514,114 +500,6 @@ run "protected_project_shell" {
     ])
     error_message = "Bind administration and policy reading only to their protected owners in the selected project."
   }
-}
-
-run "retirement_prepares_project_without_deleting_logs" {
-  command = plan
-  module { source = "../../../modules/project-shell" }
-  variables {
-    project_id                 = "a-novel-json-keys-prod"
-    retirement                 = true
-    labels                     = { service = "json-keys", environment = "production" }
-    foundation_service_account = "infra-foundation@agora-management-test.iam.gserviceaccount.com"
-    plan_service_account       = "infra-plan@agora-management-test.iam.gserviceaccount.com"
-  }
-  assert {
-    condition     = google_project.service.deletion_policy == "DELETE" && google_logging_project_bucket_config.default.deletion_policy == "ABANDON"
-    error_message = "Preparation must persist project deletion consent while preserving logs until project shutdown."
-  }
-}
-
-run "retirement_disables_federation_and_preserves_custody" {
-  command = plan
-  module { source = "../../../modules/release-boundary" }
-  variables {
-    project_id           = "a-novel-json-keys-prod"
-    retirement           = true
-    labels               = { service = "json-keys", environment = "production" }
-    plan_service_account = "infra-plan@agora-management-test.iam.gserviceaccount.com"
-    management           = { project_id = "agora-management-test", project_number = "123456789012" }
-  }
-  assert {
-    condition     = google_service_account.release.disabled && google_service_account.release.deletion_policy == "DELETE" && google_iam_workload_identity_pool_provider.release.disabled && google_iam_workload_identity_pool_provider.release.deletion_policy == "DELETE" && alltrue([for folder in google_storage_managed_folder.release : folder.deletion_policy == "ABANDON" && !folder.force_destroy])
-    error_message = "Retirement must disable the unused release identity and retain all management-side custody data."
-  }
-}
-
-run "retirement_retains_production_shared_vpc_host" {
-  command = plan
-  variables {
-    management_project_id    = "a-novel-management-prod"
-    backup_bucket_name       = "a-novel-management-prod-123456789012-backups"
-    workload_project_id      = "a-novel-production-prod"
-    organization_id          = "1031663934757"
-    retire_json_keys_project = true
-    service_projects         = {}
-  }
-  assert {
-    condition     = length(module.service_project) == 0 && length(google_compute_shared_vpc_service_project.service) == 0 && length(google_compute_shared_vpc_host_project.production) == 1 && google_compute_shared_vpc_host_project.production[0].project == "a-novel-production-prod" && google_compute_shared_vpc_host_project.production[0].deletion_policy == "PREVENT"
-    error_message = "Removing the obsolete registration must retain the protected production Shared VPC host."
-  }
-}
-
-run "retirement_rejects_other_environment" {
-  command = plan
-  variables { retire_json_keys_project = true }
-  expect_failures = [var.retire_json_keys_project]
-}
-
-run "retirement_rejects_peer_registration" {
-  command = plan
-  variables {
-    management_project_id    = "a-novel-management-prod"
-    backup_bucket_name       = "a-novel-management-prod-123456789012-backups"
-    workload_project_id      = "a-novel-production-prod"
-    organization_id          = "1031663934757"
-    retire_json_keys_project = true
-    service_projects         = { authentication = "agora-authentication-test" }
-  }
-  expect_failures = [var.retire_json_keys_project]
-}
-
-run "retirement_preparation_keeps_the_existing_attachment" {
-  command = plan
-  variables {
-    management_project_id    = "a-novel-management-prod"
-    backup_bucket_name       = "a-novel-management-prod-123456789012-backups"
-    workload_project_id      = "a-novel-production-prod"
-    organization_id          = "1031663934757"
-    retire_json_keys_project = true
-    service_projects         = { json-keys = "a-novel-json-keys-prod" }
-  }
-  assert {
-    condition     = length(module.service_project) == 1 && google_compute_shared_vpc_service_project.service["json-keys"].service_project == "a-novel-json-keys-prod" && google_compute_shared_vpc_service_project.service["json-keys"].host_project == "a-novel-production-prod"
-    error_message = "Preparation must retain the exact obsolete attachment until the second reviewed plan."
-  }
-}
-
-run "retirement_rejects_native_repository" {
-  command = plan
-  variables {
-    management_project_id          = "a-novel-management-prod"
-    backup_bucket_name             = "a-novel-management-prod-123456789012-backups"
-    workload_project_id            = "a-novel-production-prod"
-    organization_id                = "1031663934757"
-    retire_json_keys_project       = true
-    service_projects               = { json-keys = "a-novel-json-keys-prod" }
-    pgbackrest_repository_services = ["json-keys"]
-  }
-  expect_failures = [var.retire_json_keys_project]
-}
-
-run "retirement_rejects_another_organization" {
-  command = plan
-  variables {
-    management_project_id    = "a-novel-management-prod"
-    backup_bucket_name       = "a-novel-management-prod-123456789012-backups"
-    workload_project_id      = "a-novel-production-prod"
-    retire_json_keys_project = true
-  }
-  expect_failures = [var.retire_json_keys_project]
 }
 
 run "protected_legacy_release" {

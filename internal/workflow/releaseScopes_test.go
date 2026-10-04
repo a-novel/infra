@@ -42,7 +42,6 @@ func TestReleaseScopes(t *testing.T) {
 		{name: "NullSharedVPC", key: "shared_vpc_enabled"},
 		{name: "InactiveSharedVPC", key: "shared_vpc_enabled", value: false},
 		{name: "RecoveryMode", key: "recovery_mode", value: true},
-		{name: "RetirementMode", key: "retire_json_keys_project", value: true},
 		{name: "NullDedicatedProjects", key: "service_projects"},
 		{name: "DedicatedProjects", key: "service_projects", value: map[string]string{"json-keys": "agora-json-keys-test"}},
 		{name: "RecoveryProjects", key: "service_recovery_projects", value: map[string]string{"agora-recovery-test": "json-keys"}},

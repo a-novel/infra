@@ -25,8 +25,8 @@ resource "google_service_account" "release" {
   account_id      = var.zone == null ? "infra-release" : "infra-${var.labels.service}-${var.zone == "public-api" ? "api" : var.zone}"
   display_name    = "Service release"
   description     = "Keyless release writer for ${var.project_id}."
-  disabled        = var.retirement
-  deletion_policy = var.retirement ? "DELETE" : "PREVENT"
+  disabled        = false
+  deletion_policy = "PREVENT"
 }
 
 resource "google_iam_workload_identity_pool_provider" "release" {
@@ -35,8 +35,8 @@ resource "google_iam_workload_identity_pool_provider" "release" {
   workload_identity_pool_provider_id = local.provider_id
   display_name                       = "Service release"
   description                        = "Trusts only the ${local.release_environment} release workflow on master."
-  deletion_policy                    = var.retirement ? "DELETE" : "PREVENT"
-  disabled                           = var.retirement
+  deletion_policy                    = "PREVENT"
+  disabled                           = false
 
   attribute_mapping = {
     # Keep the subject below Google's 127-byte limit for long service names.
@@ -73,7 +73,7 @@ resource "google_storage_managed_folder" "release" {
   bucket          = each.value.bucket
   name            = each.value.prefix
   force_destroy   = false
-  deletion_policy = var.retirement ? "ABANDON" : "PREVENT"
+  deletion_policy = "PREVENT"
 }
 
 resource "google_storage_managed_folder_iam_member" "release" {

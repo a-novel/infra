@@ -30,17 +30,6 @@ variable "zone" {
   }
 }
 
-variable "retirement" {
-  description = "Disable a dedicated-project identity for approved retirement while preserving custody folders."
-  type        = bool
-  default     = false
-  nullable    = false
-  validation {
-    condition     = !var.retirement || var.zone == null
-    error_message = "Shared-zone identities cannot use dedicated-project retirement."
-  }
-}
-
 variable "management" {
   description = "Bootstrap-owned management project coordinates."
   type = object({
