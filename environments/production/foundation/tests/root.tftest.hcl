@@ -1,7 +1,7 @@
 run "shared_release_disabled_by_default" {
   command = plan
   assert {
-    condition     = length(module.service_release) == 0 && output.service_release_boundaries == null && length(google_storage_bucket_object.database_coordinates) == 0 && length(output.database_coordinates) == 0 && length(google_project_iam_custom_role.foundation_public_api) == 0 && length(google_project_service.public_api_telemetry) == 0
+    condition     = length(module.service_release) == 0 && output.service_release_boundaries == null && length(google_storage_bucket_object.database_coordinates) == 0 && length(output.database_coordinates) == 0 && length(google_project_iam_custom_role.foundation_public_api) == 0 && length(google_project_service.public_api_telemetry) == 0 && length(google_project_iam_custom_role.foundation_private_release) == 0
     error_message = "Existing inputs must not create shared identities or database publications."
   }
 }
@@ -73,6 +73,19 @@ run "production_release_boundary_selection" {
     public_api_project_id = "agora-api-test"
     public_project_id     = "agora-public-test"
     service_release_zones = { json-keys = ["private"], authentication = ["public-api"] }
+  }
+  assert {
+    condition = (
+      google_project_iam_custom_role.foundation_private_release[0].project == var.workload_project_id &&
+      toset(google_project_iam_custom_role.foundation_private_release[0].permissions) == toset([
+        "run.services.get", "run.services.update", "run.jobs.get", "run.jobs.update",
+      ]) &&
+      google_project_iam_member.foundation_private_release[0].project == var.workload_project_id &&
+      google_project_iam_member.foundation_private_release[0].role == google_project_iam_custom_role.foundation_private_release[0].name &&
+      google_project_iam_member.foundation_private_release[0].member == "serviceAccount:infra-foundation@${var.management_project_id}.iam.gserviceaccount.com" &&
+      google_project_iam_member.foundation_private_release[0].condition[0].expression == "(resource.matchTagId('${google_tags_tag_key.cloud_run_invocation.id}', '${google_tags_tag_value.cloud_run_invocation["internal"].id}') || resource.matchTagId('${google_tags_tag_key.cloud_run_invocation.id}', '${google_tags_tag_value.cloud_run_invocation["release"].id}') || resource.matchTagId('${google_tags_tag_key.cloud_run_invocation.id}', '${google_tags_tag_value.cloud_run_invocation["scheduled"].id}')) && !resource.matchTag('${var.workload_project_id}/agora-backup-maintenance', 'enabled')"
+    )
+    error_message = "Private native handoff needs tagged application read/update only, without backup, creation, deletion, invocation or payload authority."
   }
   assert {
     condition = (
