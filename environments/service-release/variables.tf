@@ -32,13 +32,27 @@ variable "service" {
 }
 
 variable "zone" {
-  description = "Private shared-zone job contract; null preserves dedicated-service inputs. Protected shared job writers remain disabled."
+  description = "Shared private jobs/API or public-api request-only contract; null preserves dedicated-service inputs. Protected shared writers remain disabled."
   type        = string
   default     = null
 
   validation {
-    condition     = var.zone == null ? true : var.zone == "private"
-    error_message = "Database migrations and rotation belong only to private; public API and platform job placement is forbidden."
+    condition     = var.zone == null ? true : contains(["private", "public-api"], var.zone)
+    error_message = "Select private or public-api; platforms cannot prepare backend releases."
+  }
+}
+
+variable "private_project_id" {
+  description = "Independently approved database project for public-api; private and dedicated scopes retain their own project."
+  type        = string
+  default     = null
+
+  validation {
+    condition = var.zone == "public-api" ? try(
+      can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", var.private_project_id)) &&
+      var.private_project_id != var.project_id && var.private_project_id != var.management_project_id,
+    false) : var.private_project_id == null
+    error_message = "Only public-api must independently select its distinct private database project."
   }
 }
 
@@ -79,6 +93,10 @@ variable "network" {
     )
     error_message = "Use an exact network/subnet pair in one approved host project and the selected region."
   }
+  validation {
+    condition     = var.zone == "public-api" ? try(split("/", var.network.network)[1] == var.private_project_id, false) : true
+    error_message = "Public-api must attach to the independently approved private project's network."
+  }
 }
 
 variable "images" {
@@ -87,8 +105,8 @@ variable "images" {
   nullable    = false
 
   validation {
-    condition     = toset(keys(var.images)) == toset(keys(local.jobs))
-    error_message = "Supply migrations and, only for JSON Keys, rotatekeys; no initializer or peer job is accepted."
+    condition     = var.zone == "public-api" ? length(var.images) == 0 : toset(keys(var.images)) == toset(keys(local.jobs))
+    error_message = "Private/dedicated scope requires its job images; public-api requires an empty map and cannot own jobs."
   }
   validation {
     condition = alltrue([for role, image in var.images : can(regex(
@@ -99,13 +117,13 @@ variable "images" {
 }
 
 variable "secret_versions" {
-  description = "Enabled numeric versions keyed by postgres-password and, for JSON Keys, app-master-key; payloads are never inputs."
+  description = "Exact component's enabled numeric secret versions; payloads are never inputs and public JSON Keys excludes the master key."
   type        = map(number)
   nullable    = false
 
   validation {
     condition     = toset(keys(var.secret_versions)) == local.required_secrets
-    error_message = "Supply exactly this service's job-secret versions; no initializer, SMTP, backup or peer credential is accepted."
+    error_message = "Supply exactly the selected component's secret versions; no initializer, backup or peer credential is accepted."
   }
   validation {
     condition     = alltrue([for version in values(var.secret_versions) : try(version >= 1 && version == floor(version), false)])

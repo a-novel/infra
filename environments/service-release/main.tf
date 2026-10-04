@@ -17,10 +17,14 @@ locals {
     }
   }
   jobs = { for role, contract in local.job_contracts : role => contract
-    if role == "migrations" || var.service == "json-keys"
+    if var.zone != "public-api" && (role == "migrations" || var.service == "json-keys")
   }
-  required_secrets = toset(flatten([for job in values(local.jobs) : values(job.secrets)]))
-  database_user    = "agora_${replace(var.service, "-", "_")}"
+  required_secrets = var.zone == "public-api" ? toset(concat(
+    ["postgres-password"], var.service == "authentication" ? concat(
+      ["smtp-sender-password"], try(var.authentication.waitlist_url, null) == null ? [] : ["waitlist-secret"],
+    ) : [],
+  )) : toset(flatten([for job in values(local.jobs) : values(job.secrets)]))
+  database_user = "agora_${replace(var.service, "-", "_")}"
 }
 
 resource "google_cloud_run_v2_job" "application" {
