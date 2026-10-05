@@ -184,7 +184,7 @@ run "prepared_database_lifecycle" {
       google_compute_instance_template.database["host"].metadata["user-data"] == local.database_cloud_config.host,
       yamldecode(local.database_cloud_config.host).runcmd == [["systemctl", "daemon-reload"]],
       yamldecode(local.database_cloud_config.host).ssh_deletekeys == false,
-      length(yamldecode(local.database_cloud_config.host).write_files) == 12,
+      length(yamldecode(local.database_cloud_config.host).write_files) == 13,
       google_compute_instance_group_manager.database["host"].all_instances_config[0].metadata == tomap({
         agora-json-keys-database-image                   = var.pgbackrest_repository.runtime.server_image
         agora-json-keys-postgres-password-version        = "3"
@@ -227,7 +227,7 @@ run "prepared_database_lifecycle" {
         "source=/mnt/disks/agora-data/json-keys,target=/var/lib/postgresql,readonly",
         "source=/run/agora/postgresql,target=/var/run/postgresql,readonly",
         "source=/run/agora/pgbackrest-lock,target=/run/pgbackrest-lock",
-        "${var.pgbackrest_repository.runtime.server_image} --stanza=json-keys",
+        var.pgbackrest_repository.runtime.server_image,
         "ExecStop=-/usr/bin/docker stop", "ExecStopPost=-/usr/bin/docker kill",
         "--log-driver=json-file --log-opt=max-size=2m --log-opt=max-file=2 --log-opt=tag={{.Name}}",
       ] : strcontains(file.content, option)
@@ -245,6 +245,15 @@ run "prepared_database_lifecycle" {
       if file.path == "/etc/systemd/system/agora-backup-${name}.service"]), "--stanza=json-keys ${command}\n")
     ])
     error_message = "Each worker must use its native options; verification must emit a text report even when it exits zero."
+  }
+  assert {
+    condition = alltrue([for name in ["check", "full", "diff", "verify", "stanza-create"] :
+      strcontains(one([for file in yamldecode(local.database_cloud_config.host).write_files : file.content
+      if file.path == "/etc/systemd/system/agora-backup-${name}.service"]), "/etc/pgbackrest/check-backup.sh") == (name == "check")
+      ]) && one([for file in yamldecode(local.database_cloud_config.host).write_files : file.content
+      if file.path == "/etc/agora-database/check-backup.sh"
+    ]) == file("../../assets/database-host/check-backup.sh")
+    error_message = "Only the hourly check must forecast TLS expiry; backups and archive workers keep their native entrypoint."
   }
   assert {
     condition = alltrue([for file in yamldecode(local.database_cloud_config.host).write_files :

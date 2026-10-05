@@ -76,6 +76,23 @@ The data-disk policy uses COS used/free byte samples from the ext4 `noatime` mou
 database startup. Verify that mount's coverage after changes to the host filesystem configuration;
 boot-disk samples alone do not satisfy the policy.
 
+The hourly check first uses OpenSSL to verify the loaded client chain and the authenticated
+repository chain at a date 30 days ahead. An expiring endpoint or issuer fails the existing check
+unit and its failure alert; it does not disable full/differential backups or WAL archiving.
+Inspect that unit's log to distinguish certificate renewal from an archive failure. No separate
+certificate timer, exporter or cloud policy is required. This warning needs the check timer running;
+before unattended adoption, run it manually and verify the current certificate metadata.
+
+Renew before entering that 30-day window. Using the offline issuer, issue new endpoint keys and
+certificates with the same approved names and purposes, then publish new numeric secret versions.
+Review the exact version changes through protected foundation maintenance, retaining the data disk,
+capacity and old versions for rollback. Stop consumers before changing their loaded credentials,
+restart with the new versions and verify fingerprints, native authenticated access and a successful
+check. Confirm old credential files are removed before disabling superseded secret versions.
+For compromise, stop the affected endpoint and rotate trust/identities as required; disabling a
+Secret Manager version alone does not revoke a PEM already loaded by a running process. Keep issuer
+recovery custody separate from runtime and evidence; never upload its private key to either VM.
+
 ## 1. Approve the scope and cost
 
 Start with the [operator preflight](README.md#start-an-operation). Record the following privately

@@ -15,6 +15,7 @@ FROM ${DATABASE_SERVICE}
 COPY --from=builder /proof.test /proof.test
 COPY internal/recovery/data.sql /data.sql
 COPY assets/database-host/legacy-startup.sh /database-startup.sh
+COPY assets/database-host/check-backup.sh /check-backup.sh
 USER postgres
 ENV INFRA_PGBACKREST_PROOF=1
 ENTRYPOINT ["/proof.test", "-test.v", "-test.timeout=10m"]
