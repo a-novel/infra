@@ -1,13 +1,61 @@
+variable "shared_backup_alerts_enabled" {
+  description = "Monitor the existing shared JSON Keys database without owning it. Null leaves monitoring unenrolled; false prepares disabled policies; true enables them."
+  type        = bool
+  default     = null
+
+  validation {
+    condition = var.shared_backup_alerts_enabled == null || (
+      var.zone == "private" && var.service == "json-keys" &&
+      var.database_handoff != null && try(var.pgbackrest_repository.runtime != null, false)
+    )
+    error_message = "Shared native monitoring requires the private JSON Keys database handoff and prepared repository runtime."
+  }
+}
+
+data "google_compute_instance_group" "shared_backup_database" {
+  for_each = var.shared_backup_alerts_enabled == null || var.database_handoff == null ? {} : { host = var.database_handoff }
+
+  project = var.project_id
+  zone    = jsondecode(each.value.document_json).zone
+  name    = "agora-database-${var.service}"
+
+  lifecycle {
+    postcondition {
+      condition     = length(self.instances) == 1
+      error_message = "Native backup monitoring requires exactly one member in the selected database group."
+    }
+  }
+}
+
+data "google_compute_instance" "shared_backup_database" {
+  for_each = data.google_compute_instance_group.shared_backup_database
+
+  self_link = one(each.value.instances)
+}
+
 locals {
+  database_backup_targets = merge({
+    for key, runtime in local.database_runtime : key => {
+      instance_id = data.google_compute_instance.database[key].instance_id
+      enabled     = runtime.backup_alerts_enabled
+    }
+    }, { for key, host in data.google_compute_instance.shared_backup_database : key => {
+      instance_id = host.instance_id
+      enabled     = var.shared_backup_alerts_enabled
+  } })
   # Native verify can report damage or an empty repository with exit status zero.
   database_verify_failure_pattern = "(?m)^ *(status: error|no archives or backups exist in the repo) *$"
-  database_backup_log_scope = { for key, runtime in local.database_runtime : key => join(" AND ", [
+  database_backup_log_scope = { for key, target in local.database_backup_targets : key => join(" AND ", [
     "resource.type=\"gce_instance\"",
     "resource.labels.project_id=\"${var.project_id}\"",
-    "resource.labels.instance_id=\"${data.google_compute_instance.database[key].instance_id}\"",
+    "resource.labels.instance_id=\"${target.instance_id}\"",
   ]) }
-  database_backup_metric_scope = { for key, runtime in local.database_runtime : key =>
-    "monitored_resource=\"gce_instance\", project_id=\"${var.project_id}\", instance_id=\"${data.google_compute_instance.database[key].instance_id}\""
+  database_backup_metric_scope = { for key, target in local.database_backup_targets : key =>
+    "monitored_resource=\"gce_instance\", project_id=\"${var.project_id}\", instance_id=\"${target.instance_id}\""
+  }
+  # COS exports used/free bytes. The host's ext4 data mount uses noatime, unlike its boot filesystems.
+  database_data_disk_scope = { for key, scope in local.database_backup_metric_scope : key =>
+    "${scope}, fs_type=\"ext4\", mount_option=~\"(^|.*,)noatime(,.*|$)\""
   }
   database_backup_freshness = {
     full = {
@@ -18,7 +66,7 @@ locals {
     backup = { jobs = "agora-backup-(full|diff)", window = "24h45m", title = "No backup success in 24 hours 45 minutes", gate = "" }
     check  = { jobs = "agora-backup-check", window = "3h", title = "No archive check success in three hours", gate = "" }
   }
-  database_backup_health_rules = var.database_runtime == null ? {} : merge({
+  database_backup_health_rules = length(local.database_backup_targets) == 0 ? {} : merge({
     for name, rule in local.database_backup_freshness : name => {
       title = rule.title
       # Explicit zero handles never-seen/stopped hosts, unlike an absence condition.
@@ -28,15 +76,16 @@ locals {
     disk = {
       title = "Database disk above 85%, or disk telemetry missing for one hour"
       query = join(" or ", [
-        "max(max_over_time({\"compute.googleapis.com/guest/disk/percent_used\", ${local.database_backup_metric_scope["host"]}}[5m])) > 85",
-        "absent_over_time({\"compute.googleapis.com/guest/disk/percent_used\", ${local.database_backup_metric_scope["host"]}}[1h])",
+        "100 * sum by (device_name) ({\"compute.googleapis.com/guest/disk/bytes_used\", ${local.database_data_disk_scope["host"]}, state=\"used\"}) / sum by (device_name) ({\"compute.googleapis.com/guest/disk/bytes_used\", ${local.database_data_disk_scope["host"]}, state=~\"used|free\"}) > 85",
+        "absent_over_time({\"compute.googleapis.com/guest/disk/bytes_used\", ${local.database_data_disk_scope["host"]}, state=\"used\"}[1h])",
+        "absent_over_time({\"compute.googleapis.com/guest/disk/bytes_used\", ${local.database_data_disk_scope["host"]}, state=\"free\"}[1h])",
       ])
     }
   })
 }
 
 resource "google_logging_metric" "database_backup_success" {
-  for_each = local.database_runtime
+  for_each = local.database_backup_targets
 
   project     = var.project_id
   name        = "agora_${var.service}_backup_success"
@@ -61,12 +110,12 @@ resource "google_logging_metric" "database_backup_success" {
 }
 
 resource "google_monitoring_alert_policy" "database_backup_failure" {
-  for_each = local.database_runtime
+  for_each = local.database_backup_targets
 
   project               = var.project_id
   display_name          = "Agora ${var.service} native backup failed"
   combiner              = "OR"
-  enabled               = var.database_runtime.backup_alerts_enabled
+  enabled               = each.value.enabled
   severity              = "ERROR"
   notification_channels = [google_monitoring_notification_channel.operations.name]
   deletion_policy       = "DELETE"
@@ -98,7 +147,7 @@ resource "google_monitoring_alert_policy" "database_backup_health" {
   project               = var.project_id
   display_name          = "Agora ${var.service}: ${each.value.title}"
   combiner              = "OR"
-  enabled               = var.database_runtime.backup_alerts_enabled
+  enabled               = local.database_backup_targets["host"].enabled
   severity              = "ERROR"
   notification_channels = [google_monitoring_notification_channel.operations.name]
   deletion_policy       = "DELETE"
