@@ -88,7 +88,38 @@ run "reject_peer_repository" {
   expect_failures = [var.pgbackrest_repository]
 }
 
-run "reject_runtime" {
+run "prepared_runtime_stays_stopped" {
+  command = plan
+  variables {
+    database_handoff = run.documents.cases.json_keys
+    pgbackrest_repository = {
+      placement = run.documents.repository_placement
+      runtime = merge(jsondecode(file("tests/fixtures/repository-runtime.json")), {
+        server_image      = "europe-west1-docker.pkg.dev/agora-private-test/agora-json-keys-private-production/service-json-keys/database@sha256:${sha256("server")}"
+        credentials_image = "europe-west1-docker.pkg.dev/agora-private-test/agora-json-keys-private-tooling/host-credentials@sha256:${sha256("credentials")}"
+      })
+    }
+  }
+  assert {
+    condition = alltrue([
+      google_compute_instance.repository["host"].desired_status == "TERMINATED",
+      google_compute_instance.repository["host"].metadata["user-data"] == local.repository_cloud_config.host,
+      yamldecode(local.repository_cloud_config.host).runcmd == [["systemctl", "daemon-reload"]],
+      length(google_compute_instance_group_manager.database) == 0,
+      length(google_compute_disk.database) == 0,
+      output.native_bringup == null,
+      jsondecode(google_storage_bucket_object.coordinates.content).database == jsondecode(var.database_handoff.document_json),
+      alltrue([for key, binding in google_artifact_registry_repository_iam_member.repository_images :
+        binding.repository == google_artifact_registry_repository.images[key].repository_id &&
+        binding.member == "serviceAccount:${google_service_account.repository["host"].email}" &&
+        binding.role == "roles/artifactregistry.reader"
+      ]),
+    ])
+    error_message = "Shared runtime preparation installs a disabled unit and exact image-reader grants without starting or taking ownership of either database."
+  }
+}
+
+run "reject_unscoped_runtime_images" {
   command = plan
   variables {
     database_handoff = run.documents.cases.json_keys

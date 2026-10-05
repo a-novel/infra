@@ -3,17 +3,17 @@ locals {
     ca = {
       contract = "PGBACKREST_CA_PEM"
       purpose  = "JSON Keys native backup public TLS trust bundle"
-      readers  = ["agora-database", "agora-backup-repository"]
+      readers  = [local.pgbackrest_database, local.pgbackrest_repository]
     }
     database = {
       contract = "PGBACKREST_IDENTITY_PEM"
       purpose  = "JSON Keys database TLS client certificate and private key"
-      readers  = ["agora-database"]
+      readers  = [local.pgbackrest_database]
     }
     repository = {
       contract = "PGBACKREST_IDENTITY_PEM"
       purpose  = "JSON Keys repository TLS server certificate and private key"
-      readers  = ["agora-backup-repository"]
+      readers  = [local.pgbackrest_repository]
     }
   } : {}
 

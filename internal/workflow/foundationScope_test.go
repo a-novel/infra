@@ -125,7 +125,7 @@ func TestSharedRepositoryScope(t *testing.T) {
 		{name: "Success/Default", valid: true},
 		{name: "Success/Micro", field: "machine_type", value: "e2-micro", valid: true},
 		{name: "Success/NullRuntime", field: "runtime", valid: true},
-		{name: "Error/Runtime", field: "runtime", value: map[string]any{}},
+		{name: "Success/PreparedRuntime", field: "runtime", value: map[string]any{}, valid: true},
 		{name: "Error/LargerHost", field: "machine_type", value: "e2-small"},
 		{name: "Error/EmptyMachine", field: "machine_type", value: ""},
 		{name: "Error/MalformedMachine", field: "machine_type", value: 1},

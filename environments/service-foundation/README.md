@@ -83,11 +83,21 @@ the subnet must belong to the selected private project and region. This provisio
 e2-micro with a 20 GiB standard boot disk and the `agora-pgbr-json-keys` identity through the
 existing protected foundation plan/apply workflow.
 
-Shared preparation accepts no runtime or larger machine. It leaves database ownership, network
-policy and current backups unchanged. Only foundation receives identity attachment permission;
-bucket and TLS access remain separate activation work. Review the complete costed plan before
-provisioning; stopped disks remain billable. The [repository lifecycle](#optional-stopped-repository-host)
-describes the creation-time boot and activation requirements.
+Shared preparation retains the micro profile and existing database ownership. Optional
+`pgbackrest_repository.runtime` installs the [disabled native unit](#prepared-native-runtime);
+its image paths use `agora-json-keys-private-production` and `agora-json-keys-private-tooling`.
+The host remains stopped and `database_runtime` remains forbidden in this root.
+
+Bootstrap's `json_keys_pgbackrest.zone = "private"` selects this repository identity and the
+existing database identity for bucket/TLS custody. Shared foundation's
+`pgbackrest_repository_services = ["json-keys"]` requires that service's private release
+registration and grants only its database-to-repository channel, private Google API egress and
+IAP SSH. Public API identities receive no repository access.
+
+Review the complete costed plan before provisioning; stopped disks remain billable. Runtime
+preparation starts no unit, issues no certificate and changes no backup schedule. Before starting,
+verify matching pgBackRest versions against the deployed database image and complete the
+[repository lifecycle requirements](#optional-stopped-repository-host).
 
 ### Dedicated-project preparation
 
