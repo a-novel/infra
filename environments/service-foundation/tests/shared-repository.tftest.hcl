@@ -145,6 +145,7 @@ run "activate_existing_shared_repository" {
       google_compute_instance.repository["host"].machine_type == "e2-micro",
       yamldecode(local.repository_cloud_config.host).runcmd == [
         ["systemctl", "daemon-reload"],
+        ["ssh-keygen", "-lf", "/mnt/stateful_partition/etc/ssh/ssh_host_ed25519_key.pub", "-E", "sha256"],
         ["systemctl", "start", "agora-backup-repository.service"],
       ],
       strcontains(yamldecode(local.repository_cloud_config.host).write_files[2].content, "Restart=on-failure"),

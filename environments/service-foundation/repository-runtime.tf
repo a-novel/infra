@@ -1,7 +1,7 @@
 locals {
   repository_runtime = { for key, host in local.pgbackrest_repository : key => host.runtime if host.runtime != null }
   repository_cloud_config = { for key, runtime in local.repository_runtime : key => "#cloud-config\n${yamlencode({
-    # COS starts sshd before cloud-init; preserve the keys already loaded by sshd.
+    # COS serves persistent keys, not the /etc/ssh keys cloud-init reports.
     ssh_deletekeys = false
     write_files = [
       {
@@ -31,6 +31,7 @@ locals {
     ]
     # COS recreates /etc on every boot; activation must survive a host restart.
     runcmd = concat([["systemctl", "daemon-reload"]], var.pgbackrest_repository.active ? [
+      ["ssh-keygen", "-lf", "/mnt/stateful_partition/etc/ssh/ssh_host_ed25519_key.pub", "-E", "sha256"],
       ["systemctl", "start", "agora-backup-repository.service"],
     ] : [])
   })}" }
