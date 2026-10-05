@@ -25,7 +25,7 @@ resource "google_compute_instance" "recovery" {
     enable-oslogin           = "TRUE"
     serial-port-enable       = "FALSE"
     user-data = "#cloud-config\n${yamlencode({
-      # COS owns the host keys before cloud-init prepares recovery.
+      # COS serves persistent keys, not the /etc/ssh keys cloud-init reports.
       ssh_deletekeys = false
       write_files = concat([
         {

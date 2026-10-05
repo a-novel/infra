@@ -1,6 +1,6 @@
 output "cloud_config" {
   description = "COS preparation-only cloud-config; the protected owner starts the units."
-  # COS owns the host keys before cloud-init prepares the database units.
+  # COS serves persistent keys, not the /etc/ssh keys cloud-init reports.
   value = "#cloud-config\n${yamlencode({ ssh_deletekeys = false, write_files = local.files, runcmd = [["systemctl", "daemon-reload"]] })}"
 }
 

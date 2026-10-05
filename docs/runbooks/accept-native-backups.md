@@ -155,6 +155,12 @@ Inspect loaded units and bounded logs over approved IAP/OS Login access. Use sel
 properties (`LoadState`, `ActiveState`, `SubState`, `Result`, `ExecMainStatus`) and Docker
 state/image/health fields; do not dump container environment, metadata payloads or secret files.
 
+COS serves SSH keys from `/mnt/stateful_partition/etc/ssh`, not the temporary `/etc/ssh` keys
+in cloud-init's automatic console report. Shared repository activation prints the persistent
+ED25519 public-key fingerprint. Read it through the authenticated Compute Engine serial-output
+API for the exact instance and boot, compare it with the IAP endpoint, and pin that key before
+SSH access. Do not trust the unrelated cloud-init fingerprint or disable host-key verification.
+
 ### Park compute between attended windows
 
 This procedure is limited to the synthetic source with no API traffic, application jobs or scheduled
