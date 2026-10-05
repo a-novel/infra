@@ -235,15 +235,20 @@ resource "google_compute_instance_group_manager" "database" {
   }
 }
 
+locals {
+  # The group URL becomes known at creation and stays stable during template maintenance.
+  database_group_names = {
+    for service, group in google_compute_instance_group_manager.database : service => basename(group.instance_group)
+  }
+}
+
 # The generated instance name and live address are operator-facing outputs.
 data "google_compute_instance_group" "database" {
   for_each = local.database_hosts
 
   project = google_project.workload.project_id
   zone    = var.database_zone
-  name    = google_compute_instance_group_manager.database[each.key].name
-
-  depends_on = [google_compute_instance_group_manager.database]
+  name    = local.database_group_names[each.key]
 }
 
 data "google_compute_instance" "database" {
@@ -252,6 +257,4 @@ data "google_compute_instance" "database" {
   project = google_project.workload.project_id
   zone    = var.database_zone
   name    = basename(one(data.google_compute_instance_group.database[each.key].instances))
-
-  depends_on = [data.google_compute_instance_group.database]
 }
