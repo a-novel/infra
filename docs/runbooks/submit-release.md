@@ -57,7 +57,8 @@ promotion action, followed by `plan` and `apply`; no new deployment engine is in
 Before first native JSON Keys activation, back up both states, apply the retained release root's
 exact non-destructive probe removal, then import the same `agora-json-keys-smoke` job with
 `adopt_existing_jobs=true`. The plan policy rejects probe creation or replacement. Apply the
-foundation's scoped release-job permission first. Do not enable routine execution while two
+foundation's scoped release-job permission and the private service foundation's exact JSON Keys
+self-invocation grant first. Do not enable routine execution while two
 states still own the probe.
 
 Pause `agora-json-keys-rotation` before a JSON Keys release and wait for accepted executions to

@@ -48,7 +48,10 @@ resource "google_service_account" "runtime" {
 }
 
 resource "google_cloud_run_v2_service_iam_member" "json_keys_invoker" {
-  count = var.zone == "public-api" && var.service == "authentication" && var.database_handoff != null ? 1 : 0
+  count = var.database_handoff != null && (
+    (var.zone == "public-api" && var.service == "authentication") ||
+    (var.zone == "private" && var.service == "json-keys")
+  ) ? 1 : 0
 
   project  = var.database_handoff.private_project_id
   location = var.region

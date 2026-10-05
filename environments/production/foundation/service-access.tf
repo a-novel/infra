@@ -1,5 +1,5 @@
 resource "google_project_iam_custom_role" "foundation_service_access" {
-  count = contains(keys(local.service_release_boundaries), "authentication/public-api") ? 1 : 0
+  count = anytrue([for key in ["authentication/public-api", "json-keys/private"] : contains(keys(local.service_release_boundaries), key)]) ? 1 : 0
 
   project     = google_project.workload.project_id
   role_id     = "infraFoundationServiceAccess"
