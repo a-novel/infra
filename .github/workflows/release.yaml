@@ -1,35 +1,24 @@
-name: production release
+name: retained production operations
 
 on:
-  push:
-    branches: [master]
-    paths:
-      - deploy/production/images.yaml
   workflow_dispatch:
     inputs:
       action:
-        description: Plan/apply the retained release root, deploy, recover, or check permissions.
+        description: Plan/apply retained resources, check permissions, or reconcile database isolation.
         required: true
         type: choice
         options:
-          - deploy
           - plan
           - apply
           - check-release-permissions
-          - rollback
-          - recover-first-launch
           - drill-database-isolation
           - restore-database-isolation
       target_receipt:
-        description: Rollback or isolation; immutable run-id-attempt from the receipt inventory.
+        description: Isolation only; immutable run-id-attempt from the receipt inventory.
         required: false
         type: string
       plan_id:
         description: Apply only; exact run-id-attempt from a reviewed private plan.
-        required: false
-        type: string
-      failed_run_id:
-        description: First-launch recovery only; failed release workflow run ID.
         required: false
         type: string
       confirm_isolation:
@@ -37,7 +26,7 @@ on:
         required: false
         type: string
 
-run-name: "production ${{ github.event_name == 'push' && 'deploy' || inputs.action }} by @${{ github.actor }}"
+run-name: "production ${{ inputs.action }} by @${{ github.actor }}"
 
 permissions: {}
 
@@ -48,7 +37,7 @@ concurrency:
 env:
   TF_IN_AUTOMATION: "true"
   CLOUDSDK_CORE_DISABLE_PROMPTS: "1"
-  RELEASE_ACTION: ${{ github.event_name == 'push' && 'deploy' || inputs.action }}
+  RELEASE_ACTION: ${{ inputs.action }}
 
 jobs:
   native:
@@ -128,240 +117,6 @@ jobs:
           infra custody plan apply "${STATE_BUCKET}" release "${GITHUB_SHA}" \
             "${PLAN_ID}" "${RUNNER_TEMP}/release.json"
 
-  release:
-    # The repository switch prevents an unbootstrapped clone from creating an
-    # unprotected environment merely by merging its first image manifest.
-    if: >-
-      github.ref == 'refs/heads/master' &&
-      vars.PRODUCTION_RELEASES_ENABLED == 'true' &&
-      (github.event_name == 'push' || contains(fromJSON('["deploy", "rollback", "recover-first-launch"]'), inputs.action))
-    runs-on: ubuntu-24.04
-    # Sequential database safety checks and clean restores each keep their own
-    # bounded timeout; the workflow ceiling must not cancel a valid slow run.
-    timeout-minutes: 360
-    environment: production-release
-    permissions:
-      actions: read
-      attestations: read
-      contents: read
-      id-token: write
-      pull-requests: read
-    steps:
-      - name: Check out the exact master commit
-        uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Build reviewed release tooling
-        uses: $/.github/actions/setup-infra
-
-      - name: Materialize protected non-payload configuration
-        id: config
-        shell: bash
-        env:
-          RELEASE_CONFIG: ${{ secrets.RELEASE_CONFIG_JSON }}
-        run: |
-          set -euo pipefail
-          umask 077
-          file="${RUNNER_TEMP}/release-config.json"
-          printf '%s' "${RELEASE_CONFIG}" >"${file}"
-          jq --exit-status 'type == "object"' "${file}" >/dev/null
-          printf 'file=%s\n' "${file}" >>"${GITHUB_OUTPUT}"
-
-      - name: Verify the failed first-launch run
-        if: env.RELEASE_ACTION == 'recover-first-launch'
-        id: failed-release
-        shell: bash
-        env:
-          FAILED_RUN_ID: ${{ inputs.failed_run_id }}
-          GH_TOKEN: ${{ github.token }}
-          TARGET_RECEIPT: ${{ inputs.target_receipt }}
-        run: |
-          set -euo pipefail
-          if ! [[ "${FAILED_RUN_ID}" =~ ^[1-9][0-9]*$ ]] || [ -n "${TARGET_RECEIPT}" ]; then
-            printf 'First-launch recovery requires only a numeric failed run ID.\n' >&2
-            exit 64
-          fi
-          umask 077
-          file="${RUNNER_TEMP}/failed-release-run.json"
-          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${FAILED_RUN_ID}" >"${file}"
-          jq --exit-status --argjson run_id "${FAILED_RUN_ID}" '
-            .id == $run_id and
-            .path == ".github/workflows/release.yaml" and
-            .event == "workflow_dispatch" and
-            .head_branch == "master" and
-            .status == "completed" and
-            .conclusion == "failure" and
-            (.display_title | startswith("production deploy by @")) and
-            (.head_sha | test("^[a-f0-9]{40}$"))
-          ' "${file}" >/dev/null
-          printf 'revision=%s\n' "$(jq --raw-output '.head_sha' "${file}")" >>"${GITHUB_OUTPUT}"
-
-      # Verification happens before Google credentials exist. Remote manifest
-      # and config inspection never downloads layers or executes an entrypoint.
-      - name: Resolve source versions and verify provenance
-        if: env.RELEASE_ACTION == 'deploy'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          umask 077
-          infra preflight resolve-images \
-            deploy/production/images.yaml "${RUNNER_TEMP}/resolved-images.json"
-
-      - name: Authenticate as the release boundary
-        uses: google-github-actions/auth@v3.0.0
-        with:
-          workload_identity_provider: ${{ vars.GCP_RELEASE_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_RELEASE_SERVICE_ACCOUNT }}
-          create_credentials_file: true
-          export_environment_variables: true
-
-      - name: Install the pinned Google Cloud CLI
-        uses: google-github-actions/setup-gcloud@v3.0.1
-        with:
-          version: "581.0.0"
-
-      - name: Reject an unfinished legacy host maintenance operation
-        shell: bash
-        env:
-          STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
-        run: infra custody operation check-legacy "${STATE_BUCKET}"
-
-      - name: Install OpenTofu
-        if: env.RELEASE_ACTION != 'recover-first-launch'
-        uses: opentofu/setup-opentofu@v2.0.2
-        with:
-          tofu_version_file: .opentofu-version
-          tofu_wrapper: false
-          cache: true
-
-      - name: Authenticate Docker to the regional registry
-        if: env.RELEASE_ACTION != 'recover-first-launch'
-        shell: bash
-        env:
-          RELEASE_CONFIG_FILE: ${{ steps.config.outputs.file }}
-        run: |
-          set -euo pipefail
-          region="$(jq --raw-output '.region' "${RELEASE_CONFIG_FILE}")"
-          gcloud auth configure-docker "${region}-docker.pkg.dev" --quiet >/dev/null 2>&1
-
-      - name: Select the receipt-owned prior state
-        if: env.RELEASE_ACTION != 'recover-first-launch'
-        id: prior
-        shell: bash
-        env:
-          ACTION: ${{ env.RELEASE_ACTION }}
-          RECEIPT_BUCKET: ${{ vars.GCP_RECEIPT_BUCKET }}
-          TARGET_RECEIPT: ${{ inputs.target_receipt }}
-        run: |
-          set -euo pipefail
-          umask 077
-          file="${RUNNER_TEMP}/prior-receipt.json"
-          current="${RUNNER_TEMP}/current-receipt.json"
-          if [ "${ACTION}" = rollback ]; then
-            infra custody receipt fetch \
-              "${RECEIPT_BUCKET}" "${file}" "${TARGET_RECEIPT}"
-            # The selected receipt is the rollback destination; the latest
-            # receipt remains the state that preflight must observe as live.
-            infra custody receipt latest "${RECEIPT_BUCKET}" "${current}"
-            printf 'argument=%s\n' "${file}" >>"${GITHUB_OUTPUT}"
-            printf 'current=%s\n' "${current}" >>"${GITHUB_OUTPUT}"
-          else
-            set +e
-            infra custody receipt latest "${RECEIPT_BUCKET}" "${file}"
-            code=$?
-            set -e
-            if [ "${code}" -eq 0 ]; then
-              printf 'argument=%s\n' "${file}" >>"${GITHUB_OUTPUT}"
-              printf 'current=%s\n' "${file}" >>"${GITHUB_OUTPUT}"
-            elif [ "${code}" -eq 4 ]; then
-              printf 'argument=-\n' >>"${GITHUB_OUTPUT}"
-              printf 'current=-\n' >>"${GITHUB_OUTPUT}"
-            else
-              exit "${code}"
-            fi
-          fi
-
-      - name: Resolve the exact manifest for a legacy receipt
-        if: env.RELEASE_ACTION != 'recover-first-launch'
-        id: prior-images
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PRIOR_RECEIPT: ${{ steps.prior.outputs.argument }}
-        run: |
-          set -euo pipefail
-          umask 077
-          if [ "${PRIOR_RECEIPT}" != - ] && jq --exit-status '.activeTfvars.application_release != null and .imageManifest == null' "${PRIOR_RECEIPT}" >/dev/null; then
-            commit="$(jq --exit-status --raw-output '.source.commit | select(test("^[a-f0-9]{40}$"))' "${PRIOR_RECEIPT}")"
-            file="${RUNNER_TEMP}/prior-images.yaml"
-            gh api "repos/${GITHUB_REPOSITORY}/contents/deploy/production/images.yaml?ref=${commit}" --header 'Accept: application/vnd.github.raw+json' >"${file}"
-            printf 'file=%s\n' "${file}" >>"${GITHUB_OUTPUT}"
-          fi
-
-      - name: Validate the deployed family transition and compile exact inputs
-        if: env.RELEASE_ACTION != 'recover-first-launch'
-        shell: bash
-        env:
-          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
-          GITHUB_RUN_ID: ${{ github.run_id }}
-          GITHUB_SHA: ${{ github.sha }}
-          CURRENT_RECEIPT: ${{ steps.prior.outputs.current }}
-          PRIOR_RECEIPT: ${{ steps.prior.outputs.argument }}
-          PRIOR_IMAGE_MANIFEST: ${{ steps.prior-images.outputs.file }}
-          RELEASE_CONFIG_FILE: ${{ steps.config.outputs.file }}
-        run: |
-          set -euo pipefail
-          umask 077
-          manifest="deploy/production/images.yaml"
-          if [ "${RELEASE_ACTION}" = deploy ]; then
-            manifest="${RUNNER_TEMP}/resolved-images.json"
-          fi
-          infra compile-release \
-            "${manifest}" "${RELEASE_CONFIG_FILE}" \
-            "${PRIOR_RECEIPT}" "${RUNNER_TEMP}/release"
-
-      - name: Deploy the selected service scope
-        if: env.RELEASE_ACTION == 'deploy'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RECEIPT_BUCKET: ${{ vars.GCP_RECEIPT_BUCKET }}
-          RELEASE_DIRECTORY: ${{ runner.temp }}/release
-          STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
-        run: ./ops/release-orchestrator.sh ./ops/google-release-driver.sh "${RELEASE_DIRECTORY}/release.json"
-
-      - name: Restore the exact selected receipt
-        if: env.RELEASE_ACTION == 'rollback'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RECEIPT_BUCKET: ${{ vars.GCP_RECEIPT_BUCKET }}
-          RELEASE_DIRECTORY: ${{ runner.temp }}/release
-          STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
-        run: |
-          set -euo pipefail
-          ./ops/google-release-driver.sh preflight
-          ./ops/google-release-driver.sh rollback
-
-      - name: Recover the interrupted first launch
-        if: env.RELEASE_ACTION == 'recover-first-launch'
-        shell: bash
-        env:
-          FAILED_REVISION: ${{ steps.failed-release.outputs.revision }}
-          RECEIPT_BUCKET: ${{ vars.GCP_RECEIPT_BUCKET }}
-          RELEASE_CONFIG_FILE: ${{ steps.config.outputs.file }}
-        run: |
-          set -euo pipefail
-          project="$(jq --exit-status --raw-output '.workload_project_id | select(type == "string")' "${RELEASE_CONFIG_FILE}")"
-          zone="$(jq --exit-status --raw-output '.database_zone | select(type == "string")' "${RELEASE_CONFIG_FILE}")"
-          for service in json_keys authentication; do
-            disk_id="$(jq --exit-status --raw-output --arg service "${service}" '.database_hosts[$service].data_disk_id | select(type == "string")' "${RELEASE_CONFIG_FILE}")"
-            infra database-release recover-first-launch "${project}" "${zone}" "${service//_/-}" "${disk_id}" "${FAILED_REVISION}" "${RECEIPT_BUCKET}"
-          done
-
   release-permissions:
     if: >-
       github.event_name == 'workflow_dispatch' &&
@@ -438,11 +193,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TARGET_RECEIPT: ${{ inputs.target_receipt }}
           CONFIRMATION: ${{ inputs.confirm_isolation }}
-          FAILED_RUN_ID: ${{ inputs.failed_run_id }}
         run: |
           set -euo pipefail
           [[ "${TARGET_RECEIPT}" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]
-          [ -z "${FAILED_RUN_ID}" ]
           case "${RELEASE_ACTION}" in
             drill-database-isolation) [ "${CONFIRMATION}" = 'DRILL authentication' ] ;;
             restore-database-isolation) [ "${CONFIRMATION}" = 'RESTORE authentication' ] ;;

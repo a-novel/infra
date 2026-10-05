@@ -13,9 +13,9 @@ OpenTofu and GitOps definitions for Agora's low-cost Google Cloud production env
 
 ## What this is
 
-This repository defines the Google Cloud resources and deployment controls for Agora. The first production slice is designed to serve JSON Keys over private gRPC and Authentication over public HTTPS, backed by two PostgreSQL containers on one private, preserved data plane.
+This repository defines the Google Cloud resources and deployment controls for Agora. The first production slice is designed to serve JSON Keys over private gRPC and Authentication over public HTTPS, backed by one private PostgreSQL VM and preserved disk per service repository.
 
-The repository separates stable recovery resources, long-lived production infrastructure, and routine application deployments into three OpenTofu roots. That split keeps each automation identity limited to the resources it owns.
+The repository separates stable recovery resources, long-lived production infrastructure, and routine application deployments into lifecycle-scoped OpenTofu roots. That split keeps each automation identity limited to the resources it owns.
 
 The design is a small Google Cloud landing zone built from established infrastructure-as-code, least-privilege, immutable-artifact, and reviewed-deployment practices. The [architecture guide](./docs/architecture.md) records those principles and the deliberate limits that keep the platform proportionate to Agora's current scale.
 
@@ -34,12 +34,11 @@ and failure handling.
 Pull requests and branch pushes are cloud-blind and never deploy. The one-time management bootstrap
 is the only local apply and requires an explicitly authorized human. Every later cloud change runs
 from reviewed `master` through its protected workflow; agents never run `gcloud` or `tofu apply`.
-Keep `PRODUCTION_RELEASES_ENABLED=false` until the launch step explicitly changes it.
+Keep `PRODUCTION_RELEASES_ENABLED=false`; native API releases use the protected foundation workflow.
 
-The [architecture guide](./docs/architecture.md) explains the lifecycle and security model. The
-[release root contract](./environments/production/release/README.md#application-runtime-contract)
-defines the human-only Authentication initializer, scheduled JSON Keys rotation, runtime identities,
-per-service rollout scope, compensation, and receipt boundaries.
+The [native release procedure](./docs/runbooks/submit-release.md) covers image publication,
+migration, candidate verification and traffic promotion. Database maintenance and historical
+recovery remain separate from routine API releases.
 
 ### Review persistent operator inputs
 
@@ -236,9 +235,13 @@ a-novel test -y
 | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
 | [`bootstrap/`](./bootstrap/README.md)                                                   | Stable management project, remote state, recovery storage, GitHub federation, and secret metadata. |
 | [`environments/production/foundation/`](./environments/production/foundation/README.md) | Long-lived workload project, IAM, network, database host, backups, and monitoring controls.        |
-| [`environments/production/release/`](./environments/production/release/README.md)       | Routine image, job, revision, traffic, and database-container deployment.                          |
+| [`environments/production/release/`](./environments/production/release/README.md)       | Retained backup, scheduler, invocation-tag and historical recovery resources.                      |
 
-The three names form a security allowlist. Add a root only when a new lifecycle and automation authority require an independent state boundary.
+The [service foundation](./environments/service-foundation/README.md) and
+[service release](./environments/service-release/README.md) roots own registered service/zone
+resources and native API releases.
+
+The registered root names form a security allowlist. Add a root only when a new lifecycle and automation authority require an independent state boundary.
 
 ### Supporting paths
 
@@ -294,21 +297,17 @@ Preflight resolves application versions and verifies provenance before writing a
 Generated deployments and receipts retain those digests; rollback and recovery use saved evidence,
 not a fresh tag lookup. A published tag that differs from the preceding receipt is rejected.
 
-The production manifest selects two reviewed stable launch families, but this code alone still
-creates nothing. Foundation seeds empty group-level release metadata and the host remains idle until
-protected applies and the first release are authorized. The release root creates recovery jobs only
-when both database contracts are enabled together. Once the documented launch switch is true, a
-green human merge that changes the manifest starts the protected release workflow; the first launch
-and explicit retries can be dispatched manually from `master`. Source GHCR attestations must come
-from each producer's `release.yaml` on `master` using a GitHub-hosted runner. That signer policy,
-exact tag-to-digest resolution, family SemVer agreement, PostgreSQL major, numeric secret versions,
-quota grants, and fresh backups all fail closed before traffic changes. Deployment also compares the
-full family transition with the preceding receipt before runtime mutation, including after a forced
-merge. Only the changed service's candidate, migrations and traffic are advanced; shared database
-restarts and backup verification retain their existing scope. The release receipt records
-the exact promoted digests, secret-version identifiers, revisions, migration and rotation
-executions, five recovery-verification executions, first-launch initialization evidence, health
-gates, commit, and workflow run.
+The production manifest selects the two service image families. Merging an image update does not
+deploy it: routine releases use the protected, zone-specific foundation plan/apply path described in
+[Release APIs with OpenTofu](./docs/runbooks/submit-release.md). Source GHCR attestations must come
+from each producer's `release.yaml` on `master` using a GitHub-hosted runner. Provenance, immutable
+image pins, numeric secret versions and family compatibility are verified before runtime changes.
+
+Private migrations complete before candidate verification and a separate traffic-only promotion.
+The private completion receipt records the exact configuration, revisions, execution identities and
+health results. Routine API releases do not restart database hosts. Fresh activation and host
+maintenance require their own reviewed plan; retained backup jobs and historical recovery evidence
+remain available.
 
 ### Portability boundary
 

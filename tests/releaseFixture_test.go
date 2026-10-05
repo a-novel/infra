@@ -2,7 +2,6 @@ package tests_test
 
 import (
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -68,30 +67,6 @@ func (f *releaseFixture) compile(t *testing.T) object {
 	}
 	require.NoError(t, f.compiler.CompileRelease(f.files, f.identity, "deploy", "", ""))
 	return readJSON(t, filepath.Join(f.files[3], "release.json"))
-}
-
-func (f *releaseFixture) change(service string, database bool) {
-	for slot, value := range nested(f.manifest, "components", "service-"+strings.ReplaceAll(service, "_", "-"), "images") {
-		image := value.(object)
-		image["tag"] = "v4.0.0"
-		if slot != "database" || database {
-			image["digest"] = "sha256:3" + image["digest"].(string)[8:]
-		}
-	}
-}
-
-func (f *releaseFixture) driver(t *testing.T, step string, calls []invocation) {
-	t.Helper()
-	require.NoError(t, os.WriteFile(filepath.Join(f.dir, "driver.sh"), []byte(read(t, filepath.Join(f.root, "ops/google-release-driver.sh"))), 0o600))
-	for _, name := range []string{"gcloud", "infra", "create-reviewed-plan.sh", "apply-reviewed-plan.sh", "preflight-release.sh"} {
-		f.command(t, name)
-	}
-	f.env["RELEASE_DIRECTORY"], f.env["STATE_BUCKET"], f.env["RECEIPT_BUCKET"] = f.files[3], "fixture-state", "fixture-receipts"
-	f.env["GITHUB_SHA"], f.env["GITHUB_RUN_ID"], f.env["GITHUB_RUN_ATTEMPT"] = f.identity.Commit, f.identity.RunID, "1"
-	f.expect(t, calls)
-	code, out := f.run(t, "bash", filepath.Join(f.dir, "driver.sh"), step)
-	expectCode(t, 0, code, out)
-	require.JSONEq(t, "[]", read(t, f.env["INFRA_TEST_SEQUENCE"]))
 }
 
 type invocation struct {

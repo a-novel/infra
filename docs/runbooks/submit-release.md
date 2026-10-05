@@ -5,10 +5,9 @@ Protected GitHub Actions owns the sequence; Cloud Run owns job execution and rev
 Authentication runs in public-api; JSON Keys gRPC and the three existing migration and rotation jobs
 run in private. Their service-release roots own these resources through the protected foundation
 workflow's plan/apply path. Native releases also adopt the existing JSON Keys health probe.
-The retained release root owns its invocation tag, scheduler and backup resources. The old
-deployment orchestrator stays disabled.
+The retained release root owns its invocation tag, scheduler and backup resources. The superseded imperative deployment driver has been removed.
 
-The production release workflow's manual `plan` and `apply` actions reconcile that retained root
+The retained production operations workflow's manual `plan` and `apply` actions reconcile that retained root
 from its last converged private inputs, without running migrations or the old rollout machinery.
 They share production concurrency, protected approval and saved-plan custody. Review the full plan
 before applying. Scheduled health checks select the registered public-api project.

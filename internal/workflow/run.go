@@ -150,20 +150,18 @@ func Run(ctx context.Context, args []string, execute func(context.Context, io.Wr
 		return stop(70, identityFailure)
 	}
 	_, _ = fmt.Fprintln(stderr, "Workflow run:", dispatched.URL)
-	if !i.noWait {
-		if err := execute(ctx, stderr, "gh", "run", "watch", id, "--repo", repository, "--exit-status"); err != nil {
-			return stop(70, "Workflow watch did not succeed. Inspect "+dispatched.URL+" before retrying.")
-		}
-		r, ok := readRun()
-		if !ok {
-			return stop(70, identityFailure)
-		}
-		if r.Status != "completed" || r.Conclusion != "success" || r.Attempt < 1 {
-			return stop(70, "The workflow did not finish successfully with the expected identity.")
-		}
-		if i.attempt {
-			id += "-" + strconv.FormatInt(r.Attempt, 10)
-		}
+	if err := execute(ctx, stderr, "gh", "run", "watch", id, "--repo", repository, "--exit-status"); err != nil {
+		return stop(70, "Workflow watch did not succeed. Inspect "+dispatched.URL+" before retrying.")
+	}
+	r, ok := readRun()
+	if !ok {
+		return stop(70, identityFailure)
+	}
+	if r.Status != "completed" || r.Conclusion != "success" || r.Attempt < 1 {
+		return stop(70, "The workflow did not finish successfully with the expected identity.")
+	}
+	if i.attempt {
+		id += "-" + strconv.FormatInt(r.Attempt, 10)
 	}
 	if _, err := fmt.Fprintln(stdout, id); err != nil {
 		return stop(70, "Cannot write the workflow result. Inspect "+dispatched.URL+" before retrying.")

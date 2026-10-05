@@ -82,7 +82,7 @@ func TestSMTPRunbook(t *testing.T) {
 func smtpCommand(name string, args []string) (int, error) {
 	scenario := os.Getenv("SMTP_SCENARIO")
 	if name == "gcloud" {
-		if !slices.Equal(args, []string{"run", "services", "describe", "agora-authentication-rest", "--project=" + os.Getenv("INFRA_WORKLOAD_PROJECT_ID"), "--region=" + os.Getenv("INFRA_REGION"), "--format=value(status.url)"}) {
+		if !slices.Equal(args, []string{"run", "services", "describe", "agora-authentication-rest", "--project=" + os.Getenv("INFRA_PUBLIC_API_PROJECT_ID"), "--region=" + os.Getenv("INFRA_REGION"), "--format=value(status.url)"}) {
 			return 99, fmt.Errorf("unexpected SMTP service discovery")
 		}
 		if scenario == "denied" {

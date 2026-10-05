@@ -29,28 +29,28 @@ environment files, and command arguments. The test key stored locally is not use
 
 ## Configure the release
 
-Add `waitlist` inside `authentication` in the protected non-payload release configuration. Merge
-this fragment into the existing configuration; retain its other fields:
+Update the `authentication/public-api` entry in the protected native release configuration.
+Merge this fragment into the existing entry, preserving all other fields and secret references:
 
 ```json
 {
   "authentication": {
-    "waitlist": {
-      "url": "https://script.google.com/macros/s/REPLACE_WITH_PRODUCTION_DEPLOYMENT_ID/exec",
-      "secret_version": 1
-    }
+    "waitlist_url": "https://script.google.com/macros/s/REPLACE_WITH_PRODUCTION_DEPLOYMENT_ID/exec"
+  },
+  "secret_versions": {
+    "waitlist-secret": 1
   }
 }
 ```
 
 Replace the example URL with the production `/exec` URL and `1` with the uploaded version.
 The URL must have no query, fragment, credentials, or development `/dev` suffix. Keep the real
-URL in private operator inputs. No payload or additional `secret_versions` entry is needed.
+URL in private operator inputs. Only the numeric version belongs in `secret_versions`; never include the signing key.
 
-Store the merged configuration as `RELEASE_CONFIG_JSON` in the `production-release` environment,
+Store the complete map as `SERVICE_JOB_BOOTSTRAPS_JSON` in the `production-foundation` environment,
 following [the release configuration procedure](./deploy-production.md#4-store-the-protected-non-payload-release-configuration).
-Deploy through that runbook's protected release workflow. Configuration-only changes use its maintenance path;
-changes to another service's image family must not also change Authentication's configuration.
+Deploy and verify an Authentication candidate, then review its traffic promotion. Leave the other
+service's configuration unchanged.
 Preflight checks the selected secret version's metadata without reading its payload.
 
 Only Authentication REST receives `WAITLIST_URL` and `WAITLIST_SECRET`; its default request timeout
@@ -69,7 +69,7 @@ status/count evidence; keep sheet contents, signing keys, and signed requests ou
 The general healthcheck does not probe the waitlist. A healthy service therefore does not prove
 the script permissions, signing key, or sheet configuration are correct. Check the actual flow.
 
-Omit `authentication.waitlist`, or set it to `null`, to disable intake in a new release. Existing
+Omit `authentication.waitlist_url`, or set it to `null`, to disable intake in a new release. Existing
 release receipts preserve their endpoint and key version; rollback uses those exact values, and a
 receipt without waitlist configuration leaves it disabled. Preserve referenced key versions during
 the rollback window.

@@ -16,7 +16,6 @@ import (
 
 	"github.com/a-novel/infra/internal/custody"
 	"github.com/a-novel/infra/internal/inspection"
-	"github.com/a-novel/infra/internal/release"
 	infraworkflow "github.com/a-novel/infra/internal/workflow"
 )
 
@@ -78,50 +77,6 @@ func fixtureCommand(name string, args []string) (int, error) {
 			}, os.Stdout, os.Stderr, options...), nil
 		}
 		return 99, fmt.Errorf("unexpected infra command")
-	case "tofu-gate.sh", "create-reviewed-plan.sh", "apply-reviewed-plan.sh":
-		if os.Getenv("RELEASE_PLAN_SERVICES") != `["json_keys"]` {
-			return 99, fmt.Errorf("unexpected plan scope")
-		}
-		phase := "candidate"
-		if name == "tofu-gate.sh" {
-			phase = "active"
-			if strings.Contains(os.Getenv("TOFU_VAR_FILE"), "/rollback.") {
-				phase = "rollback"
-			}
-		}
-		if err := record(name + ":" + phase); err != nil {
-			return 99, err
-		}
-		if os.Getenv("FAIL_PHASE") == phase {
-			return 65, nil
-		}
-	case "gcloud":
-		if len(args) < 4 || !slices.Contains(args, "--project=fixture-project") || !slices.Contains(args, "--region=europe-west1") {
-			return 99, fmt.Errorf("unexpected cloud scope")
-		}
-		switch strings.Join(args[:3], " ") {
-		case "run revisions describe", "run services describe", "run jobs describe":
-			response, err := os.ReadFile(filepath.Join(os.Getenv("TMPDIR"), args[1]+".json"))
-			if err != nil {
-				return 99, err
-			}
-			_, err = os.Stdout.Write(response)
-			return 0, err
-		case "run jobs execute":
-			if args[3] != "agora-json-keys-smoke" || !slices.Contains(args, "--wait") || strings.Contains(strings.Join(args, " "), "override") {
-				return 99, fmt.Errorf("unexpected probe execution")
-			}
-			if err := record("probe"); err != nil {
-				return 99, err
-			}
-			if os.Getenv("FAILURE") == "unhealthy" {
-				return 1, nil
-			}
-			_, err := fmt.Fprintln(os.Stdout, "agora-json-keys-smoke-abcde")
-			return 0, err
-		default:
-			return 99, fmt.Errorf("unexpected cloud command: %v", args)
-		}
 	case "wget":
 		if !slices.Contains(args, "--header=Metadata-Flavor: Google") || !slices.Contains(args, "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity?audience=https://fixture.run.app") {
 			return 99, fmt.Errorf("unexpected metadata request")
@@ -142,11 +97,9 @@ func fixtureCommand(name string, args []string) (int, error) {
 	default:
 		return 99, fmt.Errorf("unexpected fixture command: %s", name)
 	}
-	return 0, nil
 }
 
-// expectedCommand consumes exact calls in order; receipt construction uses the
-// real Go entry point so compensation artifacts remain compiler-validated.
+// expectedCommand consumes exact calls in order.
 func expectedCommand(path, name string, args []string) (int, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -165,9 +118,6 @@ func expectedCommand(path, name string, args []string) (int, error) {
 	}
 	if err = os.WriteFile(path, remaining, 0o600); err != nil {
 		return 99, err
-	}
-	if name == "infra" && len(args) > 0 && args[0] == "receipt" {
-		return release.Run(args, os.Getenv, os.Stdout, os.Stderr), nil
 	}
 	_, err = fmt.Fprint(os.Stdout, calls[0].Output)
 	return calls[0].Code, err
