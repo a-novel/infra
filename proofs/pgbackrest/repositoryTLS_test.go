@@ -23,20 +23,25 @@ func TestRepositoryTLS(t *testing.T) {
 	config, err := os.ReadFile(p.config)
 	require.NoError(t, err)
 	serverConfig := filepath.Join(p.root, "server.conf")
-	run(t, "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
+	run(t, "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "90",
 		"-keyout", p.root+"/ca.key", "-out", p.root+"/ca.crt", "-subj", "/CN=proof-ca",
 		"-addext", "basicConstraints=critical,CA:TRUE")
-	for _, name := range []string{"client", "peer", "localhost"} {
+	issue := func(t *testing.T, name, days string) {
+		t.Helper()
 		path := filepath.Join(p.root, name)
-		run(t, "openssl", "req", "-new", "-newkey", "rsa:2048", "-nodes", "-keyout", path+".key",
-			"-out", path+".csr", "-subj", "/CN="+name, "-addext", "subjectAltName=DNS:"+name)
-		run(t, "openssl", "x509", "-req", "-in", path+".csr", "-out", path+".crt", "-days", "1", "-copy_extensions", "copy",
+		run(t, "openssl", "x509", "-req", "-in", path+".csr", "-out", path+".crt", "-days", days, "-copy_extensions", "copy",
 			"-CA", p.root+"/ca.crt", "-CAkey", p.root+"/ca.key", "-CAcreateserial")
 		certificate, err := os.ReadFile(path + ".crt")
 		require.NoError(t, err)
 		key, err := os.ReadFile(path + ".key")
 		require.NoError(t, err)
 		write(t, path+".pem", string(certificate)+string(key))
+	}
+	for _, name := range []string{"client", "peer", "localhost"} {
+		path := filepath.Join(p.root, name)
+		run(t, "openssl", "req", "-new", "-newkey", "rsa:2048", "-nodes", "-keyout", path+".key",
+			"-out", path+".csr", "-subj", "/CN="+name, "-addext", "subjectAltName=DNS:"+name)
+		issue(t, name, "90")
 	}
 	write(t, serverConfig, strings.Replace(string(config), "[global]", fmt.Sprintf(`[global]
 tls-server-address=127.0.0.1
@@ -54,11 +59,58 @@ repo1-host-cert-file=%[2]s/client.pem
 repo1-host-key-file=%[2]s/client.pem
 `, serverConfig, p.root), 1))
 	stop := startRepository(t, serverConfig)
+	restart := func() {
+		stop()
+		stop = startRepository(t, serverConfig)
+	}
+	check := func(t *testing.T, server string) (string, error) {
+		t.Helper()
+		out, err := exec.CommandContext(t.Context(), "bash", "/check-backup.sh", server,
+			p.root+"/ca.crt", p.root+"/client.pem", "--config="+p.config, "--stanza=proof", "repo-ls").CombinedOutput()
+		return string(out), err
+	}
 	var set string
 	for _, tc := range []struct {
 		name string
 		run  func(*testing.T)
 	}{
+		{"TLSDeadline", func(t *testing.T) {
+			out, err := check(t, "localhost")
+			require.NoError(t, err, out)
+			require.Contains(t, out, "remain valid for at least 30 days")
+			require.True(t, strings.HasSuffix(out, "archive\nbackup\n"), out)
+			out, err = check(t, "127.0.0.1")
+			require.Error(t, err, out)
+			require.Contains(t, out, "hostname mismatch")
+			for _, name := range []string{"client", "localhost", "ca"} {
+				passed := t.Run(name, func(t *testing.T) {
+					path := p.root + "/" + name + ".pem"
+					if name == "ca" {
+						path = p.root + "/ca.crt"
+					}
+					original, err := os.ReadFile(path)
+					require.NoError(t, err)
+					t.Cleanup(func() { require.NoError(t, os.WriteFile(path, original, 0o600)) })
+					if name == "ca" {
+						run(t, "openssl", "req", "-x509", "-key", p.root+"/ca.key", "-days", "1",
+							"-out", path, "-subj", "/CN=proof-ca", "-addext", "basicConstraints=critical,CA:TRUE")
+					} else {
+						issue(t, name, "1")
+					}
+					restart()
+					p.backrest(t, "repo-ls") // Still valid today: only the advance warning must fail.
+					out, err := check(t, "localhost")
+					require.Error(t, err, out)
+					require.Contains(t, out, "certificate has expired")
+				})
+				if !passed {
+					t.Fatal("stopping after unexpected TLS deadline behavior")
+				}
+				restart()
+				out, err := check(t, "localhost")
+				require.NoError(t, err, out)
+			}
+		}},
 		{"Limit/EmptyRepository", func(t *testing.T) {
 			report := p.backrest(t, "--output=text", "--verbose", "--log-level-console=error", "verify")
 			require.Contains(t, report, "no archives or backups exist in the repo")

@@ -45,13 +45,18 @@ locals {
       path        = "/etc/systemd/system/agora-backup-${name}.service"
       permissions = "0644"
       content = templatefile("${path.module}/templates/database-backup.service.tftpl", {
-        name    = name
-        command = command
-        image   = var.repository.server_image
+        name        = name
+        command     = command
+        image       = var.repository.server_image
+        server_name = var.repository.name
       })
       }], [for name, calendar in local.backup_calendars : {
       path        = "/etc/systemd/system/agora-backup-${name}.timer"
       permissions = "0644"
       content     = templatefile("${path.module}/templates/database-backup.timer.tftpl", { name = name, calendar = calendar })
+      }], [{
+      path        = "/etc/agora-database/check-backup.sh"
+      permissions = "0444"
+      content     = file("${path.module}/../../assets/database-host/check-backup.sh")
   }])
 }

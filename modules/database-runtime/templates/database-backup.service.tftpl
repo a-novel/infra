@@ -24,7 +24,12 @@ ExecStart=/usr/bin/docker run --name=agora-backup-${name} --pull=never \
     --mount=type=bind,source=/run/agora/pgbackrest-lock,target=/run/pgbackrest-lock \
     --mount=type=bind,source=/run/agora/pgbackrest/current,target=/run/pgbackrest,readonly \
     --mount=type=bind,source=/etc/agora-database/pgbackrest.conf,target=/etc/pgbackrest/pgbackrest.conf,readonly \
+%{ if name == "check" ~}
+    --mount=type=bind,source=/etc/agora-database/check-backup.sh,target=/etc/pgbackrest/check-backup.sh,readonly \
+    --entrypoint=/bin/bash ${image} /etc/pgbackrest/check-backup.sh ${server_name} /run/pgbackrest/ca.pem /run/pgbackrest/identity.pem --stanza=json-keys ${command}
+%{ else ~}
     --entrypoint=pgbackrest ${image} --stanza=json-keys ${command}
+%{ endif ~}
 ExecStop=-/usr/bin/docker stop --time=30 agora-backup-${name}
 # Preserve bounded logs for COS collection after failure, timeout or ordinary completion.
 ExecStopPost=-/usr/bin/docker kill agora-backup-${name}
