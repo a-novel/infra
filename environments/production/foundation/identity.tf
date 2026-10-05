@@ -583,6 +583,18 @@ resource "google_service_account_iam_member" "database_operator_act_as" {
   member             = each.value.principal
 }
 
+resource "google_service_account_iam_member" "repository_operator_act_as" {
+  for_each = {
+    for binding in setproduct(keys(local.pgbackrest_network), var.database_operator_principals) :
+    "${binding[0]}:${binding[1]}" => { service = binding[0], principal = binding[1] }
+    if try(contains(var.service_release_zones[binding[0]], "private"), false)
+  }
+
+  service_account_id = "projects/${var.workload_project_id}/serviceAccounts/${local.pgbackrest_network[each.value.service].repository}"
+  role               = "roles/iam.serviceAccountUser"
+  member             = each.value.principal
+}
+
 # Compute authorizes an all-instances metadata patch against the group's full
 # member specification. Separate bindings keep each supporting permission at
 # the narrowest resource scope Compute exposes.
