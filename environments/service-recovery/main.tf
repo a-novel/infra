@@ -25,6 +25,8 @@ resource "google_compute_instance" "recovery" {
     enable-oslogin           = "TRUE"
     serial-port-enable       = "FALSE"
     user-data = "#cloud-config\n${yamlencode({
+      # COS owns the host keys before cloud-init prepares recovery.
+      ssh_deletekeys = false
       write_files = concat([
         {
           path        = "/etc/agora-recovery/request.json"

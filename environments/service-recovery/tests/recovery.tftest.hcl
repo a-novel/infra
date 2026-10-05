@@ -32,6 +32,7 @@ run "selected_host" {
   assert {
     condition = alltrue([
       jsonencode(yamldecode(google_compute_instance.recovery["selected"].metadata["user-data"]).runcmd) == jsonencode([["systemctl", "daemon-reload"]]),
+      yamldecode(google_compute_instance.recovery["selected"].metadata["user-data"]).ssh_deletekeys == false,
       jsondecode(yamldecode(google_compute_instance.recovery["selected"].metadata["user-data"]).write_files[0].content) == local.requests["selected"],
       local.requests["selected"].repository_time == "2026-09-27T20:35:40Z",
       !local.requests["selected"].verify_sql,

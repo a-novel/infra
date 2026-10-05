@@ -24,6 +24,8 @@ ExecStartPre=/usr/bin/docker run --rm --name=agora-backup-credentials --pull=nev
     ${credentials_image} --management-project-number=${management_number} --workload-project=${project} \
     --endpoint=repository ${zone_argument}--ca-version=${ca_version} --identity-version=${identity_version} \
     --name=${server_name} --output=/credentials/current
+# COS blocks host-network listeners; VPC rules restrict this port to the database identity.
+ExecStartPre=/sbin/iptables -w 5 -I INPUT 1 -p tcp --dport 8432 -m comment --comment agora-backup-repository -j ACCEPT
 ExecStart=/usr/bin/docker run --rm --name=agora-backup-repository --pull=never \
     --network=host --read-only --user=999:999 --cap-drop=ALL --security-opt=no-new-privileges \
     --cpus=1 --memory=384m --pids-limit=64 --no-healthcheck --log-driver=none --ulimit=core=0 \
@@ -32,5 +34,6 @@ ExecStart=/usr/bin/docker run --rm --name=agora-backup-repository --pull=never \
     --mount=type=bind,source=/etc/agora-backup/pgbackrest.conf,target=/etc/pgbackrest/pgbackrest.conf,readonly \
     --entrypoint=pgbackrest ${server_image} server
 ExecStop=/usr/bin/docker stop --time=30 agora-backup-repository
+ExecStopPost=-/sbin/iptables -w 5 -D INPUT -p tcp --dport 8432 -m comment --comment agora-backup-repository -j ACCEPT
 # Also reap a loader interrupted before ExecStart; systemd then removes RuntimeDirectory.
 ExecStopPost=-/usr/bin/docker rm --force agora-backup-credentials agora-backup-repository

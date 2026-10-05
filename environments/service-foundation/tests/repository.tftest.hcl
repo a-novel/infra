@@ -114,6 +114,7 @@ run "prepared_runtime_stays_inactive" {
   assert {
     condition = alltrue([
       google_compute_instance.repository["host"].desired_status == "TERMINATED",
+      yamldecode(local.repository_cloud_config.host).ssh_deletekeys == false,
       yamldecode(local.repository_cloud_config.host).runcmd == [["systemctl", "daemon-reload"]],
       google_compute_instance.repository["host"].metadata["user-data"] == local.repository_cloud_config.host,
       length(yamldecode(local.repository_cloud_config.host).write_files) == 3,
@@ -147,6 +148,8 @@ run "prepared_runtime_stays_inactive" {
       "--endpoint=repository --ca-version=1 --identity-version=2",
       "--name=agora-pgbackrest-json-keys.europe-west1-b.c.agora-json-keys-test.internal",
       "--output=/credentials/current", "target=/run/credentials,readonly",
+      "ExecStartPre=/sbin/iptables -w 5 -I INPUT 1 -p tcp --dport 8432 -m comment --comment agora-backup-repository -j ACCEPT",
+      "ExecStopPost=-/sbin/iptables -w 5 -D INPUT -p tcp --dport 8432 -m comment --comment agora-backup-repository -j ACCEPT",
     ] : strcontains(yamldecode(local.repository_cloud_config.host).write_files[2].content, option)])
     error_message = "The service must use exact credential versions, private ephemeral delivery and stopped-consumer cleanup."
   }
@@ -180,6 +183,7 @@ run "prepared_database_lifecycle" {
       !contains(keys(google_compute_instance_template.database["host"].metadata), "shutdown-script"),
       google_compute_instance_template.database["host"].metadata["user-data"] == local.database_cloud_config.host,
       yamldecode(local.database_cloud_config.host).runcmd == [["systemctl", "daemon-reload"]],
+      yamldecode(local.database_cloud_config.host).ssh_deletekeys == false,
       length(yamldecode(local.database_cloud_config.host).write_files) == 12,
       google_compute_instance_group_manager.database["host"].all_instances_config[0].metadata == tomap({
         agora-json-keys-database-image                   = var.pgbackrest_repository.runtime.server_image
