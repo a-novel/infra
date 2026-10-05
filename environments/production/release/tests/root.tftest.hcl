@@ -81,7 +81,6 @@ run "keeps_recovery_disabled_before_the_database_release" {
       length(google_cloud_scheduler_job.postgres_restore) == 0 &&
       length(google_cloud_scheduler_job.postgres_backup_monitor) == 0 &&
       length(local.application_jobs) == 0 &&
-      length(google_cloud_run_v2_job.json_keys_smoke) == 0 &&
       length(google_tags_location_tag_binding.json_keys_smoke) == 0 &&
       length(google_cloud_scheduler_job.json_keys_rotation) == 0 &&
       length(google_cloud_run_v2_service.recovery_json_keys) == 0 &&

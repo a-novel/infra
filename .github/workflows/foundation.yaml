@@ -25,6 +25,12 @@ on:
         description: Required only for apply; use the run-id-attempt printed by plan.
         required: false
         type: string
+      zone:
+        description: Select service/zone protected inputs for a native release; none retains the existing service entry.
+        required: true
+        default: none
+        type: choice
+        options: [none, private, public-api]
       guard_generation:
         description: Required for finish-operation or recover-legacy; exact inspected guard generation.
         required: false
@@ -84,6 +90,7 @@ jobs:
           PRODUCTION_RELEASES_ENABLED: ${{ vars.PRODUCTION_RELEASES_ENABLED }}
           FOUNDATION_OPERATION: ${{ inputs.operation }}
           FOUNDATION_PLAN_ID: ${{ inputs.plan_id }}
+          FOUNDATION_ZONE: ${{ inputs.zone }}
           FOUNDATION_GUARD_GENERATION: ${{ inputs.guard_generation }}
           FOUNDATION_CONFIRM: ${{ inputs.confirm }}
           MANAGEMENT_PROJECT_ID: ${{ vars.GCP_MANAGEMENT_PROJECT_ID }}

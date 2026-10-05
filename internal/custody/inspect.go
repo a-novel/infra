@@ -251,7 +251,7 @@ func inspectCompletion(ctx context.Context, client *storage.Service, intent appl
 	}
 	expected := applyCompletion{SchemaVersion: 1, Outcome: intent.outcome(), Operation: intent, Guard: guard, Configuration: objectReference{
 		Bucket: guard.Bucket, Name: configName, Generation: completion.Configuration.Generation, SHA256: intent.InputsSHA256,
-	}, State: completion.State}
+	}, State: completion.State, Checks: completion.Checks}
 	if completion != expected || completion.Configuration.Generation <= 0 {
 		return false, failure{70, "Completion evidence does not match the exact operation and configuration."}
 	}

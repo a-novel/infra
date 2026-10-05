@@ -144,6 +144,7 @@ def service_job_bootstrap:
   .variables.region.value as $region | (.variables.zone.value == "private") as $private |
   (.variables.adopt_existing_jobs.value == true) as $adopt |
   (.variables.adopt_existing_api.value == true) as $adopt_api |
+  (.variables.migration_image.value != null) as $routine |
   (if $service == "json-keys" then ["migrations", "rotatekeys"]
    elif $service == "authentication" then ["migrations"] else [] end) as $roles |
   ($roles | length > 0) and
@@ -159,6 +160,13 @@ def service_job_bootstrap:
       .change.after.name == "agora-json-keys-grpc" and
       (.change | known(["ingress"]) and known(["invoker_iam_disabled"]) and
         .after.ingress == "INGRESS_TRAFFIC_INTERNAL_ONLY" and .after.invoker_iam_disabled == false)
+    elif .address == "google_cloud_run_v2_job.verification[0]" then
+      $private and $routine and $service == "json-keys" and
+      .type == "google_cloud_run_v2_job" and .index == 0 and
+      (.change.actions == ["update"] or .change.actions == ["no-op"]) and
+      (.change.importing == null or ($adopt and .change.importing.id ==
+        "projects/" + $project + "/locations/" + $region + "/jobs/agora-json-keys-smoke")) and
+      .change.after.name == "agora-json-keys-smoke"
     else
     .type == "google_cloud_run_v2_job" and
     (.index as $role | $roles | index($role) != null) and

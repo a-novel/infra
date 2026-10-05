@@ -16,6 +16,9 @@ func TestSharedServiceImages(t *testing.T) {
 		{"JSONKeysPrivateAPI", "json-keys", "private", nil, 0},
 		{"AuthenticationPrivate", "authentication", "private", nil, 0},
 		{"AuthenticationAPI", "authentication", "public-api", nil, 0},
+		{"NativePrivate", "json-keys", "private", nil, 0},
+		{"NativePublic", "authentication", "public-api", nil, 0},
+		{"NativeWrongFamily", "authentication", "public-api", func(c object) { c["migration_image"] = "wrong-digest" }, 65},
 		{"AuthenticationWithoutInitializerPrivate", "authentication", "private", nil, 0},
 		{"AuthenticationWithoutInitializerAPI", "authentication", "public-api", nil, 0},
 		{"PlatformZone", "authentication", "public", nil, 65},
@@ -57,6 +60,11 @@ func TestSharedServiceImages(t *testing.T) {
 					inputs["secret_versions"].(object)["smtp-sender-password"] = 4
 				}
 				inputs["api"] = object{"image": "europe-west1-docker.pkg.dev/fixture-service/" + repository + "/service-" + testCase.service + "/rest@" + digest.(object)["digest"].(string)}
+			}
+			if strings.HasPrefix(testCase.name, "Native") {
+				inputs["private_project_id"] = "fixture-service"
+				digest := images(manifest, testCase.service)["jobs/migrations"].(object)["digest"].(string)
+				inputs["migration_image"] = "europe-west1-docker.pkg.dev/fixture-service/agora-" + testCase.service + "-private-production/service-" + testCase.service + "/jobs/migrations@" + digest
 			}
 			if testCase.mutate != nil {
 				testCase.mutate(inputs)

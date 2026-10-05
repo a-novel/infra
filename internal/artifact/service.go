@@ -17,6 +17,8 @@ type serviceInputs struct {
 	Zone       string            `json:"zone"`
 	Project    string            `json:"project_id"`
 	Management string            `json:"management_project_id"`
+	Private    string            `json:"private_project_id"`
+	Migration  string            `json:"migration_image"`
 	Region     string            `json:"region"`
 	Images     map[string]string `json:"images"`
 	Secrets    map[string]int64  `json:"secret_versions"`
@@ -107,6 +109,22 @@ func (inputs serviceInputs) bindImages(images []release.SourceImage) error {
 	}
 	if inputs.API != nil && (expected[api] == "" || inputs.API.Image != expected[api]) {
 		return invalid
+	}
+	if inputs.Migration != "" {
+		private := inputs
+		if inputs.Zone == "public-api" {
+			private.Project = inputs.Private
+		}
+		private.Zone = "private"
+		matched := false
+		for _, image := range images {
+			if image.Slot == "jobs/migrations" {
+				matched = inputs.Migration == private.destination(image)+"@"+image.Digest
+			}
+		}
+		if !matched {
+			return invalid
+		}
 	}
 	return nil
 }

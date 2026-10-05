@@ -38,7 +38,8 @@ locals {
 }
 
 resource "google_cloud_run_v2_service" "api" {
-  count = var.api == null ? 0 : 1
+  depends_on = [google_cloud_run_v2_job.application]
+  count      = var.api == null ? 0 : 1
 
   project              = var.project_id
   location             = var.region
@@ -150,6 +151,7 @@ resource "google_cloud_run_v2_service" "api" {
     type     = "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION"
     revision = var.api.serving_revision
     percent  = 100
+    tag      = var.migration_image != null && var.api.revision == var.api.serving_revision ? "candidate" : null
   }
 
   dynamic "traffic" {

@@ -85,7 +85,17 @@ run "production_release_boundary_selection" {
       google_project_iam_member.foundation_private_release[0].member == "serviceAccount:infra-foundation@${var.management_project_id}.iam.gserviceaccount.com" &&
       google_project_iam_member.foundation_private_release[0].condition[0].expression == "(resource.matchTagId('${google_tags_tag_key.cloud_run_invocation.id}', '${google_tags_tag_value.cloud_run_invocation["internal"].id}') || resource.matchTagId('${google_tags_tag_key.cloud_run_invocation.id}', '${google_tags_tag_value.cloud_run_invocation["release"].id}') || resource.matchTagId('${google_tags_tag_key.cloud_run_invocation.id}', '${google_tags_tag_value.cloud_run_invocation["scheduled"].id}')) && !resource.matchTag('${var.workload_project_id}/agora-backup-maintenance', 'enabled')"
     )
-    error_message = "Private native handoff needs tagged application read/update only, without backup, creation, deletion, invocation or payload authority."
+    error_message = "Private definition updates must exclude backup, creation, deletion, invocation and payload authority."
+  }
+  assert {
+    condition = (
+      google_project_iam_custom_role.foundation_release_jobs[0].permissions == toset(["run.jobs.run"]) &&
+      google_project_iam_member.foundation_release_jobs[0].condition[0].expression ==
+      "resource.matchTagId('${google_tags_tag_key.cloud_run_invocation.id}', '${google_tags_tag_value.cloud_run_invocation["release"].id}') && !resource.matchTag('${var.workload_project_id}/agora-backup-maintenance', 'enabled')" &&
+      toset(google_project_iam_custom_role.foundation_release_observation[0].permissions) ==
+      toset(["run.executions.get", "run.executions.list", "cloudscheduler.jobs.get"])
+    )
+    error_message = "Release invocation must be separate and release-tag restricted; observation cannot mutate schedules or executions."
   }
   assert {
     condition = (

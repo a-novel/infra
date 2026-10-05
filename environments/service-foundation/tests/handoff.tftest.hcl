@@ -32,7 +32,12 @@ run "json_keys_private_handoff" {
   }
   assert {
     condition = (
-      length(google_cloud_run_v2_service_iam_member.json_keys_invoker) == 0 &&
+      length(google_cloud_run_v2_service_iam_member.json_keys_invoker) == 1 &&
+      google_cloud_run_v2_service_iam_member.json_keys_invoker[0].project == "agora-private-test" &&
+      google_cloud_run_v2_service_iam_member.json_keys_invoker[0].location == "europe-west1" &&
+      google_cloud_run_v2_service_iam_member.json_keys_invoker[0].name == "agora-json-keys-grpc" &&
+      google_cloud_run_v2_service_iam_member.json_keys_invoker[0].role == "roles/run.servicesInvoker" &&
+      google_cloud_run_v2_service_iam_member.json_keys_invoker[0].member == "serviceAccount:${google_service_account.runtime.email}" &&
       jsondecode(google_storage_bucket_object.coordinates.content).database == jsondecode(var.database_handoff.document_json) &&
       jsondecode(google_storage_bucket_object.coordinates.content).database.schema_version == 2 &&
       jsonencode(jsondecode(google_storage_bucket_object.coordinates.content).database_source) == jsonencode(var.database_handoff.reference) &&
