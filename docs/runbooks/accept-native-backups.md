@@ -72,6 +72,9 @@ ownership. Review a monitoring-only plan: one success metric and five policies u
 operations channel, with no host, disk, IAM or timer changes. Re-plan this scope after any database
 replacement that changes its numeric instance ID. Never-seen backup/check success intentionally
 alerts until the attended runs succeed; policy creation is not proof of notification delivery.
+The data-disk policy uses COS used/free byte samples from the ext4 `noatime` mount configured by
+database startup. Verify that mount's coverage after changes to the host filesystem configuration;
+boot-disk samples alone do not satisfy the policy.
 
 ## 1. Approve the scope and cost
 

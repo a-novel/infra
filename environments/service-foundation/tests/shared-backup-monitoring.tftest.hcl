@@ -94,6 +94,16 @@ run "enable_existing_native_policies" {
     ])
     error_message = "Explicit enrollment must enable all five native policies for the observed singleton, including never-seen success and missing disk telemetry."
   }
+  assert {
+    condition = alltrue([
+      strcontains(local.database_backup_health_rules.disk.query, "compute.googleapis.com/guest/disk/bytes_used"),
+      !strcontains(local.database_backup_health_rules.disk.query, "percent_used"),
+      strcontains(local.database_backup_health_rules.disk.query, "mount_option=~\"(^|.*,)noatime(,.*|$)\""),
+      strcontains(local.database_backup_health_rules.disk.query, "100 * sum by (device_name)"),
+      length(regexall("absent_over_time", local.database_backup_health_rules.disk.query)) == 2,
+    ])
+    error_message = "Use the built-in collector's used/free byte series and detect either missing data-disk state; boot telemetry must not mask its absence."
+  }
 }
 
 run "reject_empty_database_group" {

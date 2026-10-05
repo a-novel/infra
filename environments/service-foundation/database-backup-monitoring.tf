@@ -53,6 +53,10 @@ locals {
   database_backup_metric_scope = { for key, target in local.database_backup_targets : key =>
     "monitored_resource=\"gce_instance\", project_id=\"${var.project_id}\", instance_id=\"${target.instance_id}\""
   }
+  # COS exports used/free bytes. The host's ext4 data mount uses noatime, unlike its boot filesystems.
+  database_data_disk_scope = { for key, scope in local.database_backup_metric_scope : key =>
+    "${scope}, fs_type=\"ext4\", mount_option=~\"(^|.*,)noatime(,.*|$)\""
+  }
   database_backup_freshness = {
     full = {
       jobs = "agora-backup-full", window = "24h", title = "Sunday full backup missed its 04:00 UTC deadline"
@@ -72,8 +76,9 @@ locals {
     disk = {
       title = "Database disk above 85%, or disk telemetry missing for one hour"
       query = join(" or ", [
-        "max(max_over_time({\"compute.googleapis.com/guest/disk/percent_used\", ${local.database_backup_metric_scope["host"]}}[5m])) > 85",
-        "absent_over_time({\"compute.googleapis.com/guest/disk/percent_used\", ${local.database_backup_metric_scope["host"]}}[1h])",
+        "100 * sum by (device_name) ({\"compute.googleapis.com/guest/disk/bytes_used\", ${local.database_data_disk_scope["host"]}, state=\"used\"}) / sum by (device_name) ({\"compute.googleapis.com/guest/disk/bytes_used\", ${local.database_data_disk_scope["host"]}, state=~\"used|free\"}) > 85",
+        "absent_over_time({\"compute.googleapis.com/guest/disk/bytes_used\", ${local.database_data_disk_scope["host"]}, state=\"used\"}[1h])",
+        "absent_over_time({\"compute.googleapis.com/guest/disk/bytes_used\", ${local.database_data_disk_scope["host"]}, state=\"free\"}[1h])",
       ])
     }
   })
