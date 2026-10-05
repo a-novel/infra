@@ -1,5 +1,5 @@
 variable "json_keys_native_backup" {
-  description = "JSON Keys native lifecycle on the existing stateful host. Requires protected maintenance; defaults off and leaves logical backups and native timers unchanged."
+  description = "JSON Keys native lifecycle on the existing stateful host. Requires protected startup-only host replacement; defaults off and leaves logical backups and native timers unchanged."
   type = object({
     repository_ip     = string
     server_image      = string

@@ -42,6 +42,23 @@ Do not recreate the retired per-service project or run fault injection on a serv
 The remaining sections describe the independently approved synthetic destructive rehearsal.
 They are not authorization to move or damage the current shared deployment.
 
+### Review the shared-host maintenance commit
+
+Startup-only maintenance replaces the JSON Keys instance template and recreates its existing
+member with zero surge. The saved-plan gate requires `allow-resource-deletion` on the exact
+planning commit's pull request **before merge**, even when every data disk is preserved. Review
+that replacement scope with the pending protected configuration; adding the label after merge
+cannot authorize the plan. The protected apply still requires its own saved-plan review.
+
+Before publishing the opt-in, verify the repository over a pinned SSH host key: its attached
+identity, image digest, active unit, TLS listener and certificate fingerprint must match the
+reviewed inputs. Database operators need OS Login, IAP and Service Account User on the exact
+repository identity. The shared foundation owns that account-level binding.
+
+Keep the first `json_keys_native_backup.wal_archiving` value false. Reject a maintenance plan
+that changes Authentication, a data disk, an address, a machine size or release metadata.
+Leave native backup timers stopped and retain logical backups and snapshots through acceptance.
+
 ## 1. Approve the scope and cost
 
 Start with the [operator preflight](README.md#start-an-operation). Record the following privately
