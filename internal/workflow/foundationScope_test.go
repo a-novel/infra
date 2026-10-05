@@ -115,6 +115,61 @@ func TestSharedOperationScopes(t *testing.T) {
 	}
 }
 
+func TestSharedRepositoryScope(t *testing.T) {
+	t.Parallel()
+	for _, testCase := range []struct {
+		name, field string
+		value       any
+		valid       bool
+	}{
+		{name: "Success/Default", valid: true},
+		{name: "Success/Micro", field: "machine_type", value: "e2-micro", valid: true},
+		{name: "Success/NullRuntime", field: "runtime", valid: true},
+		{name: "Error/Runtime", field: "runtime", value: map[string]any{}},
+		{name: "Error/LargerHost", field: "machine_type", value: "e2-small"},
+		{name: "Error/EmptyMachine", field: "machine_type", value: ""},
+		{name: "Error/MalformedMachine", field: "machine_type", value: 1},
+		{name: "Error/NoPlacement", field: "placement"},
+		{name: "Error/MalformedPlacement", field: "placement", value: "invalid"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			repository := map[string]any{"placement": map[string]string{"zone": "europe-west1-b"}}
+			if testCase.field != "" {
+				repository[testCase.field] = testCase.value
+			}
+			bucket := "agora-management-test-123-tofu-state"
+			config := map[string]any{
+				"service": "json-keys", "zone": "private", "project_id": "agora-private-test", "region": "europe-west1",
+				"management_project_id": "agora-management-test", "state_bucket": bucket,
+				"database_handoff":      map[string]any{"private_project_id": "agora-private-test"},
+				"pgbackrest_repository": repository,
+			}
+			env := sharedFoundationEnvironment()
+			getenv := func(key string) string { return env[key] }
+			data, err := json.Marshal(config)
+			require.NoError(t, err)
+			_, err = workflow.FoundationScope(data, getenv, bucket)
+			require.Equal(t, testCase.valid, err == nil)
+			if !testCase.valid {
+				return
+			}
+			for field, value := range map[string]any{
+				"zone": "public-api", "service": "authentication", "database_handoff": nil,
+				"database": map[string]any{}, "database_runtime": map[string]any{},
+			} {
+				original := config[field]
+				config[field] = value
+				data, err = json.Marshal(config)
+				require.NoError(t, err)
+				_, err = workflow.FoundationScope(data, getenv, bucket)
+				require.Error(t, err, field)
+				config[field] = original
+			}
+		})
+	}
+}
+
 func TestSharedDatabaseHandoff(t *testing.T) {
 	t.Parallel()
 	for _, testCase := range []struct {

@@ -43,7 +43,6 @@ locals {
   database_runtime = var.database_runtime == null ? {} : {
     for key, runtime in local.repository_runtime : key => merge(runtime, var.database_runtime)
   }
-  repository_name = var.database == null ? "" : "agora-pgbackrest-json-keys.${var.database.zone}.c.${var.project_id}.internal"
   database_cloud_config = { for key, runtime in local.database_runtime : key => "#cloud-config\n${yamlencode({
     write_files = concat([
       {

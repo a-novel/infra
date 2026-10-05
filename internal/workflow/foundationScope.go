@@ -6,8 +6,7 @@ import (
 	"strings"
 )
 
-// FoundationScope authorizes prerequisites in a registered service/zone state.
-// Runtime writers continue to use the dedicated-service contract in ServiceScope.
+// FoundationScope authorizes prerequisites and stopped repository placement in a registered service/zone state.
 func FoundationScope(data []byte, getenv func(string) string, bucket string) (string, error) {
 	var fields, registration map[string]json.RawMessage
 	if json.Unmarshal(data, &fields) != nil {
@@ -38,8 +37,21 @@ func FoundationScope(data []byte, getenv func(string) string, bucket string) (st
 		selectedBucket != bucket || json.Unmarshal(registration["region"], &registeredRegion) != nil || region != registeredRegion {
 		return "", invalid
 	}
-	for _, key := range []string{"database", "database_runtime", "pgbackrest_repository", "rollout"} {
+	for _, key := range []string{"database", "database_runtime", "rollout"} {
 		if value, exists := fields[key]; exists && string(value) != "null" {
+			return "", invalid
+		}
+	}
+	if value, exists := fields["pgbackrest_repository"]; exists && string(value) != "null" {
+		var repository struct {
+			Placement   map[string]json.RawMessage `json:"placement"`
+			MachineType *string                    `json:"machine_type"`
+			Runtime     json.RawMessage            `json:"runtime"`
+		}
+		if service != "json-keys" || zone != "private" || json.Unmarshal(value, &repository) != nil ||
+			len(repository.Placement) == 0 || (repository.MachineType != nil && *repository.MachineType != "e2-micro") ||
+			(len(repository.Runtime) != 0 && string(repository.Runtime) != "null") ||
+			len(fields["database_handoff"]) == 0 || string(fields["database_handoff"]) == "null" {
 			return "", invalid
 		}
 	}

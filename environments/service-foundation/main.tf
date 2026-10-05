@@ -39,10 +39,10 @@ resource "google_service_account" "runtime" {
     }
     precondition {
       condition = var.zone == null || (
-        var.database == null && var.pgbackrest_repository == null && var.database_runtime == null &&
+        var.database == null && var.database_runtime == null &&
         !var.manage_job_access
       )
-      error_message = "Shared-zone prerequisites cannot enroll hosts or application jobs before their ownership handoff."
+      error_message = "Shared-zone foundations cannot take database ownership or activate database runtimes or application jobs."
     }
   }
 }
