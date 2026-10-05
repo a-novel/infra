@@ -161,6 +161,44 @@ func TestPrivateJobPlanPolicy(t *testing.T) {
 	}
 }
 
+func TestNativeProbePlanPolicy(t *testing.T) {
+	t.Parallel()
+	for _, testCase := range []struct {
+		name   string
+		mutate func(object)
+		code   int
+	}{
+		{"ExactImport", nil, 0},
+		{"AlreadyOwned", func(p object) { delete(nested(resource(p), "change"), "importing") }, 0},
+		{"Create", func(p object) { nested(resource(p), "change")["actions"] = []string{"create"} }, 65},
+		{"Delete", func(p object) { nested(resource(p), "change")["actions"] = []string{"delete"} }, 65},
+		{"Unprotected", func(p object) { nested(resource(p), "change", "after")["deletion_protection"] = false }, 65},
+		{"ForeignImport", func(p object) { nested(resource(p), "change", "importing")["id"] = "peer" }, 65},
+		{"Bootstrap", func(p object) { delete(nested(p, "variables"), "migration_image") }, 65},
+		{"NotAdopting", func(p object) { nested(p, "variables", "adopt_existing_jobs")["value"] = false }, 65},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			f := setup(t)
+			f.env["SERVICE_JOB_BOOTSTRAP"], f.env["ALLOW_RESOURCE_DELETION"] = "true", "true"
+			f.env["TOFU_STATE_SUFFIX"] = "workloads/production/private/agora-json-keys-test/json-keys"
+			plan := jobBootstrapPlan("json-keys", "update")
+			nested(plan, "variables")["zone"] = object{"value": "private"}
+			nested(plan, "variables")["migration_image"] = object{"value": "verified-image"}
+			nested(plan, "variables")["adopt_existing_jobs"] = object{"value": true}
+			probe := resource(plan)
+			probe["index"], probe["address"] = 0, "google_cloud_run_v2_job.verification[0]"
+			nested(probe, "change", "after")["name"] = "agora-json-keys-smoke"
+			nested(probe, "change")["importing"] = object{"id": "projects/agora-json-keys-test/locations/europe-west1/jobs/agora-json-keys-smoke"}
+			plan["resource_changes"] = []any{probe}
+			if testCase.mutate != nil {
+				testCase.mutate(plan)
+			}
+			f.summary(t, "service-release", plan, testCase.code)
+		})
+	}
+}
+
 func TestPrivateAPIPlanPolicy(t *testing.T) {
 	t.Parallel()
 	for _, testCase := range []struct {

@@ -14,8 +14,8 @@ import (
 	"github.com/a-novel/infra/internal/workflow"
 )
 
-// apply owns admission through configuration publication for the inactive service
-// roots. Legacy roots retain their existing external receipt/configuration owner.
+// apply owns admission through native verification and configuration publication.
+// Legacy roots retain their existing external receipt/configuration owner.
 func (storage store) apply(args []string, getenv func(string) string, output io.Writer, options []option.ClientOption) error {
 	if len(args) != 4 {
 		return failure{64, "Usage: infra custody plan apply <bucket> <root> <commit> <plan-id> <tfvars>"}
@@ -112,6 +112,9 @@ func (storage store) apply(args []string, getenv func(string) string, output io.
 			return err
 		}
 	}
+	if err := storage.releaseChecks(data, operation, true, options); err != nil {
+		return err
+	}
 	// No cleanup handler releases admission: providers can keep working after a lost runner.
 	if err := storage.plan("consume", args[:3], suffix); err != nil {
 		return err
@@ -153,6 +156,9 @@ func (storage store) apply(args []string, getenv func(string) string, output io.
 		}
 	}
 	if operation != nil {
+		if err := storage.releaseChecks(data, operation, false, options); err != nil {
+			return err
+		}
 		return operation.finish(storage.ctx, data)
 	}
 	return nil

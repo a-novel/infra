@@ -105,6 +105,62 @@ run "json_keys_private_api" {
   }
 }
 
+run "native_release" {
+  command = plan
+  variables {
+    foundation      = run.documents.cases.json-keys.foundation
+    foundation_json = run.documents.cases.json-keys.foundation_json
+    api             = run.documents.api.json-keys
+    migration_image = "europe-west1-docker.pkg.dev/agora-private-test/agora-json-keys-private-production/service-json-keys/jobs/migrations@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  }
+  assert {
+    condition = (
+      google_cloud_run_v2_job.application["migrations"].run_execution_token == substr(sha256(var.images.migrations), 0, 24) &&
+      google_cloud_run_v2_job.application["rotatekeys"].run_execution_token == null &&
+      google_cloud_run_v2_job.verification[0].name == "agora-json-keys-smoke" &&
+      google_cloud_run_v2_job.verification[0].deletion_protection &&
+      google_cloud_run_v2_job.verification[0].run_execution_token == substr(sha256(jsonencode(var.api)), 0, 24) &&
+      google_cloud_run_v2_job.verification[0].template[0].template[0].max_retries == 0 &&
+      google_cloud_run_v2_job.verification[0].template[0].template[0].timeout == "90s" &&
+      google_cloud_run_v2_job.verification[0].template[0].template[0].containers[0].image == var.api.image &&
+      google_cloud_run_v2_job.verification[0].template[0].template[0].service_account == "agora-json-keys-private@agora-private-test.iam.gserviceaccount.com" &&
+      google_cloud_run_v2_job.verification[0].template[0].template[0].vpc_access[0].egress == "ALL_TRAFFIC" &&
+      alltrue([for env in google_cloud_run_v2_job.verification[0].template[0].template[0].containers[0].env : length(env.value_source) == 0])
+    )
+    error_message = "Run only the exact migration and existing secret-free application probe, with stable native completion tokens."
+  }
+}
+
+run "native_promotion" {
+  command = plan
+  variables {
+    foundation      = run.documents.cases.json-keys.foundation
+    foundation_json = run.documents.cases.json-keys.foundation_json
+    api             = merge(run.documents.api.json-keys, { serving_revision = run.documents.api.json-keys.revision })
+    migration_image = "europe-west1-docker.pkg.dev/agora-private-test/agora-json-keys-private-production/service-json-keys/jobs/migrations@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  }
+  assert {
+    condition = (
+      length(google_cloud_run_v2_service.api[0].traffic) == 1 &&
+      one(google_cloud_run_v2_service.api[0].traffic).percent == 100 &&
+      one(google_cloud_run_v2_service.api[0].traffic).tag == "candidate" &&
+      google_cloud_run_v2_job.application["migrations"].run_execution_token == substr(sha256(var.images.migrations), 0, 24) &&
+      google_cloud_run_v2_job.verification[0].run_execution_token == substr(sha256(jsonencode(var.api)), 0, 24)
+    )
+    error_message = "Promotion reuses the migration token and verifies the now-serving candidate without adding capacity."
+  }
+}
+
+run "reject_unbound_migration" {
+  command = plan
+  variables {
+    foundation      = run.documents.cases.json-keys.foundation
+    foundation_json = run.documents.cases.json-keys.foundation_json
+    migration_image = "europe-west1-docker.pkg.dev/agora-private-test/agora-json-keys-private-production/service-json-keys/jobs/migrations@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  }
+  expect_failures = [var.migration_image]
+}
+
 
 run "reject_peer_scope" {
   command = plan

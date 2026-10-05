@@ -43,6 +43,9 @@ resource "google_cloud_run_v2_job" "application" {
   deletion_protection = true
   labels              = { environment = "production", component = var.service, role = each.key }
 
+  # Cloud Run keeps this job unready until the named execution completes.
+  run_execution_token = each.key == "migrations" ? local.migration_token : null
+
   template {
     task_count  = 1
     parallelism = 1

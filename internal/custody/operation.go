@@ -47,6 +47,7 @@ type applyCompletion struct {
 	Guard         objectReference  `json:"guard"`
 	Configuration objectReference  `json:"configuration"`
 	State         *objectReference `json:"state,omitempty"`
+	Checks        string           `json:"checks,omitempty"`
 }
 
 // The acknowledged generation stays in this process. There is deliberately no
@@ -55,6 +56,7 @@ type serviceOperation struct {
 	client *storage.Service
 	intent applyIntent
 	guard  objectReference
+	checks []string
 }
 
 func (custody store) admit(args []string, inputs []byte, plan string, getenv func(string) string, output io.Writer, options []option.ClientOption) (*serviceOperation, error) {
@@ -127,7 +129,7 @@ func (operation serviceOperation) finish(ctx context.Context, inputs []byte) err
 	if err != nil {
 		return failure{70, "Converged configuration publication unconfirmed; service guard retained."}
 	}
-	completion := applyCompletion{SchemaVersion: 1, Outcome: intent.outcome(), Operation: intent, Guard: operation.guard, Configuration: config}
+	completion := applyCompletion{SchemaVersion: 1, Outcome: intent.outcome(), Operation: intent, Guard: operation.guard, Configuration: config, Checks: strings.Join(operation.checks, "\n")}
 	if intent.Root == "service-recovery" {
 		name := "foundation/recovery/services/" + intent.Project + "/default.tfstate"
 		generation, err := liveGeneration(ctx, operation.client, operation.guard.Bucket, name)

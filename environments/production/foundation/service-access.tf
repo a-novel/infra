@@ -68,6 +68,45 @@ resource "google_project_iam_member" "foundation_public_api" {
   member  = "serviceAccount:${local.automation_service_accounts.foundation}"
 }
 
+# Cloud Run requires invocation permission when a job update requests an execution.
+resource "google_project_iam_custom_role" "foundation_release_jobs" {
+  count       = length(google_project_iam_custom_role.foundation_private_release)
+  project     = google_project.workload.project_id
+  role_id     = "infraFoundationReleaseJobs"
+  title       = "Foundation native release execution"
+  description = "Run existing release jobs without overrides, cancellation or creation."
+  permissions = ["run.jobs.run"]
+}
+
+resource "google_project_iam_member" "foundation_release_jobs" {
+  count   = length(google_project_iam_custom_role.foundation_release_jobs)
+  project = google_project.workload.project_id
+  role    = google_project_iam_custom_role.foundation_release_jobs[0].name
+  member  = "serviceAccount:${local.automation_service_accounts.foundation}"
+
+  condition {
+    title       = "ReleaseJobsOnly"
+    description = "Migration and application probe jobs; scheduled work, initialization and backups are excluded."
+    expression  = "resource.matchTagId('${google_tags_tag_key.cloud_run_invocation.id}', '${google_tags_tag_value.cloud_run_invocation["release"].id}') && !resource.matchTag('${var.workload_project_id}/agora-backup-maintenance', 'enabled')"
+  }
+}
+
+resource "google_project_iam_custom_role" "foundation_release_observation" {
+  count       = length(google_project_iam_custom_role.foundation_private_release)
+  project     = google_project.workload.project_id
+  role_id     = "infraFoundationReleaseObservation"
+  title       = "Foundation release observation"
+  description = "Read native executions and the rotation schedule before and after a guarded release."
+  permissions = ["run.executions.get", "run.executions.list", "cloudscheduler.jobs.get"]
+}
+
+resource "google_project_iam_member" "foundation_release_observation" {
+  count   = length(google_project_iam_custom_role.foundation_release_observation)
+  project = google_project.workload.project_id
+  role    = google_project_iam_custom_role.foundation_release_observation[0].name
+  member  = "serviceAccount:${local.automation_service_accounts.foundation}"
+}
+
 resource "google_project_service" "public_api_telemetry" {
   for_each = length(google_project_iam_custom_role.foundation_public_api) == 0 ? toset([]) : toset([
     "cloudtrace.googleapis.com", "telemetry.googleapis.com",

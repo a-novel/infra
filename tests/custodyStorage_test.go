@@ -32,6 +32,9 @@ func applyStorage(t *testing.T, f *sandbox, failure string) {
 	guardName := "services/agora-json-keys-test/release/operation.json"
 	if strings.HasPrefix(f.env["TOFU_STATE_SUFFIX"], "workloads/") {
 		guardName = "foundation/operations/production/json-keys/operation.json"
+		if f.env["SELECTED_SERVICE"] == "authentication" {
+			guardName = "foundation/operations/production/authentication/operation.json"
+		}
 	}
 	legacy := f.env["ROOT_NAME"] == "foundation" && f.env["TOFU_STATE_SUFFIX"] == ""
 	if legacy {

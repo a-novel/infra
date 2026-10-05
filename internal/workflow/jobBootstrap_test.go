@@ -25,6 +25,9 @@ func TestJobBootstrapInputs(t *testing.T) {
 	}{
 		{name: "ExactBytes"},
 		{name: "SharedAPI"},
+		{name: "SelectedZone"},
+		{name: "WrongSelectedZone", stage: "prepare"},
+		{name: "MissingSelectedZone", stage: "prepare"},
 		{name: "SharedWrongSchema", stage: "prepare"},
 		{name: "Disabled", stage: "prepare", env: map[string]string{"SERVICE_JOB_BOOTSTRAP_ENABLED": ""}},
 		{name: "Apply", env: map[string]string{"FOUNDATION_OPERATION": "apply", "FOUNDATION_PLAN_ID": "123-1"}},
@@ -66,7 +69,7 @@ func TestJobBootstrapInputs(t *testing.T) {
 				reference[testCase.field] = testCase.value
 			}
 			switch testCase.name {
-			case "SharedAPI", "SharedWrongSchema":
+			case "SharedAPI", "SharedWrongSchema", "SelectedZone", "WrongSelectedZone", "MissingSelectedZone":
 				selected["project_id"], selected["zone"], selected["private_project_id"] = "agora-api-test", "public-api", "agora-private-test"
 				selected["images"], selected["api"] = map[string]string{}, map[string]string{"image": "fixture"}
 				for key, value := range sharedFoundationEnvironment() {
@@ -74,7 +77,7 @@ func TestJobBootstrapInputs(t *testing.T) {
 				}
 				object = "foundation/coordinates/workloads/production/public-api/agora-api-test/json-keys/" + hash + ".json"
 				reference["object"] = object
-				if testCase.name == "SharedAPI" {
+				if testCase.name != "SharedWrongSchema" {
 					reference["schema_version"] = 2
 				}
 			case "PeerProject":
@@ -82,7 +85,18 @@ func TestJobBootstrapInputs(t *testing.T) {
 			case "EmbeddedCoordinates":
 				selected["foundation_json"] = coordinates
 			}
-			data, err := json.Marshal(map[string]any{"json-keys": selected})
+			configs := map[string]any{"json-keys": selected}
+			if strings.Contains(testCase.name, "SelectedZone") {
+				env["FOUNDATION_ZONE"] = "public-api"
+				configs = map[string]any{"json-keys/public-api": selected}
+				if testCase.name == "WrongSelectedZone" {
+					env["FOUNDATION_ZONE"] = "private"
+				}
+				if testCase.name == "MissingSelectedZone" {
+					configs = map[string]any{"json-keys": selected}
+				}
+			}
+			data, err := json.Marshal(configs)
 			require.NoError(t, err)
 			env["SERVICE_JOB_BOOTSTRAP_CONFIG"] = string(data)
 			getenv := func(key string) string { return env[key] }
@@ -124,7 +138,7 @@ func TestJobBootstrapInputs(t *testing.T) {
 			require.NoError(t, json.Unmarshal(bound, &selected))
 			require.Equal(t, coordinates, selected["foundation_json"])
 			scope := "services/agora-json-keys-test"
-			if testCase.name == "SharedAPI" {
+			if testCase.name == "SharedAPI" || testCase.name == "SelectedZone" {
 				scope = "workloads/production/public-api/agora-api-test/json-keys"
 			}
 			require.Equal(t, "file="+output+"\nstate_suffix="+scope+"\n", stdout.String())

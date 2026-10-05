@@ -1,0 +1,35 @@
+job:
+  uid: 479dc964-dd6f-47fc-a613-e77a22096b17
+  generation: "2"
+  observedGeneration: "2"
+  terminalCondition:
+    state: CONDITION_SUCCEEDED
+  template:
+    taskCount: 1
+    parallelism: 1
+    template: &task
+      timeout: 600s
+      maxRetries: 0
+      serviceAccount: runtime@example.test
+      containers:
+        - image: replaced-by-test
+execution:
+  uid: a0da4684-ff3a-4dac-a4ce-38a01f302011
+  completionTime: "2026-10-05T10:00:00Z"
+  taskCount: 1
+  parallelism: 1
+  succeededCount: 1
+  template: *task
+  conditions:
+    - type: Completed
+      state: CONDITION_SUCCEEDED
+api:
+  generation: "4"
+  observedGeneration: "4"
+  terminalCondition:
+    state: CONDITION_SUCCEEDED
+  uri: https://fixture-ew.a.run.app
+  template:
+    revision: replaced-by-test
+    containers:
+      - image: replaced-by-test

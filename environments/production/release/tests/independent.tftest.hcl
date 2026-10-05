@@ -124,17 +124,10 @@ run "json_keys_candidate_does_not_recreate_authentication" {
   }
   assert {
     condition = (
-      length(google_cloud_run_v2_job.json_keys_smoke) == 1 &&
-      one(one(google_cloud_run_v2_job.json_keys_smoke[0].template).template).service_account == var.runtime_service_accounts.json_keys &&
-      one(one(google_cloud_run_v2_job.json_keys_smoke[0].template).template).max_retries == 0 &&
-      one(one(google_cloud_run_v2_job.json_keys_smoke[0].template).template).timeout == "90s" &&
-      one(one(google_cloud_run_v2_job.json_keys_smoke[0].template).template).vpc_access[0].egress == "ALL_TRAFFIC" &&
-      one(one(one(google_cloud_run_v2_job.json_keys_smoke[0].template).template).containers).image == var.application_release.json_keys.images.grpc &&
-      one(one(one(one(google_cloud_run_v2_job.json_keys_smoke[0].template).template).containers).command) == "/bin/sh" &&
-      alltrue([for env in one(one(one(google_cloud_run_v2_job.json_keys_smoke[0].template).template).containers).env : length(env.value_source) == 0]) &&
+      google_tags_location_tag_binding.json_keys_smoke[0].parent == "//run.googleapis.com/projects/${var.workload_project_id}/locations/${var.region}/jobs/agora-json-keys-smoke" &&
       google_tags_location_tag_binding.json_keys_smoke[0].tag_value == var.cloud_run_invocation_tags.values.release
     )
-    error_message = "The private smoke job must reuse the selected image and existing caller without secrets, retries or scheduler authority."
+    error_message = "The legacy root retains the existing probe's invocation tag, not its workload definition."
   }
   assert {
     condition = (

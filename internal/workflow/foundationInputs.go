@@ -158,6 +158,18 @@ func foundationInputs(args []string, getenv func(string) string, stdout io.Write
 			return invalid
 		}
 		data = configs[service]
+		if zone := getenv("FOUNDATION_ZONE"); zone != "" && zone != "none" {
+			if root != "service-release" || (zone != "private" && zone != "public-api") {
+				return invalid
+			}
+			data = configs[service+"/"+zone]
+			var selected struct {
+				Zone string `json:"zone"`
+			}
+			if json.Unmarshal(data, &selected) != nil || selected.Zone != zone {
+				return invalid
+			}
+		}
 		var err error
 		selectScope := ServiceScope
 		if root == "service-foundation" {
