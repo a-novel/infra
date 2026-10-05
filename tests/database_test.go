@@ -193,7 +193,7 @@ func TestDatabaseProof(t *testing.T) {
 
 func TestDatabaseReadiness(t *testing.T) {
 	t.Parallel()
-	for _, scenario := range []string{"NewBoot", "OldBoot", "Absent", "Failed", "Cancelled", "MultipleHosts"} {
+	for _, scenario := range []string{"NewBoot", "OldBoot", "OldBootFailed", "OldBootFailedThenNew", "OldBootChangedRevision", "InitialBoot", "Absent", "Failed", "Cancelled", "MultipleHosts"} {
 		t.Run(scenario, func(t *testing.T) {
 			t.Parallel()
 			synctest.Test(t, func(t *testing.T) {
@@ -203,6 +203,16 @@ func TestDatabaseReadiness(t *testing.T) {
 				switch scenario {
 				case "OldBoot":
 					c.statuses = []string{previous}
+				case "OldBootFailed", "OldBootFailedThenNew":
+					c.statuses[0] = strings.Replace(previous, "healthy:", "failed:", 1)
+					if scenario == "OldBootFailed" {
+						c.statuses = c.statuses[:1]
+					}
+				case "OldBootChangedRevision":
+					c.statuses = []string{previous}
+					previous = strings.Replace(previous, c.metadata[isolationRevision], strings.Repeat("f", 40), 1)
+				case "InitialBoot":
+					previous = "absent"
 				case "Absent":
 					c.statuses = []string{"absent"}
 				case "Failed":
@@ -219,13 +229,16 @@ func TestDatabaseReadiness(t *testing.T) {
 				}
 				started := time.Now()
 				code := c.run(t, "wait", c.metadata[isolationRevision], previous)
-				require.Equal(t, scenario == "NewBoot", code == 0, c.output.String())
-				if scenario == "OldBoot" {
+				require.Equal(t, scenario == "NewBoot" || scenario == "OldBootFailedThenNew" || scenario == "InitialBoot", code == 0, c.output.String())
+				if scenario == "OldBoot" || scenario == "OldBootFailed" || scenario == "OldBootChangedRevision" {
 					require.Equal(t, 595*time.Second, time.Since(started))
 					require.Len(t, c.calls, 87)
 				}
-				if scenario == "NewBoot" {
+				if scenario == "NewBoot" || scenario == "OldBootFailedThenNew" {
 					require.Equal(t, 7*time.Second, time.Since(started))
+				}
+				if scenario == "Failed" || scenario == "InitialBoot" {
+					require.Zero(t, time.Since(started))
 				}
 			})
 		})

@@ -53,12 +53,14 @@ func (h host) wait(ctx context.Context, revision, previous string) error {
 	if revision == "none" {
 		prefix = "idle:none:"
 	}
+	previousBoot := previous[strings.LastIndex(previous, ":")+1:]
 	for attempt := range 86 {
 		status, err := h.status(ctx, instance)
 		if err != nil {
 			return err
 		}
-		if status != previous {
+		// Guest attributes can retain the previous boot's shutdown failure after recreation.
+		if status[strings.LastIndex(status, ":")+1:] != previousBoot {
 			if strings.HasPrefix(status, "failed:") {
 				return failure{70, "database host reported failed startup"}
 			}
