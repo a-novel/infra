@@ -467,6 +467,7 @@ start_database() {
             true) postgres_options=(-c archive_mode=on -c "archive_command=pgbackrest --stanza=json-keys archive-push %p") ;;
             *) printf 'error: WAL archiving must be true or false\n' >&2; return 1 ;;
         esac
+        postgres_options+=(-c "unix_socket_directories=/var/run/postgresql,/tmp")
     fi
 
     prepare_database_directory "${image}" "${data_directory}"
