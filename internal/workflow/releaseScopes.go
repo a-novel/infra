@@ -74,8 +74,13 @@ func ReleaseScopes(getenv func(string) string, bucket string) (map[string]string
 			}
 		}
 	}
-	if len(recoveries) != 0 || len(repositories) != 0 {
+	if len(recoveries) != 0 {
 		return nil, invalid
+	}
+	for _, service := range repositories {
+		if service != "json-keys" || !slices.Contains(zones[service], "private") {
+			return nil, invalid
+		}
 	}
 	for service, selections := range zones {
 		if !slices.Contains([]string{"json-keys", "authentication"}, service) || len(selections) == 0 || len(selections) > 2 {

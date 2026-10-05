@@ -130,9 +130,11 @@ review effective membership, sharing restrictions and storage usage separately f
 ## Disabled JSON Keys native-backup custody
 
 `json_keys_pgbackrest = null` creates no native-backup resources. The optional object's
-`workload_project_id` identifies the independently registered JSON Keys service project whose
-`agora-backup-repository` account already exists. This is syntax-checked, not discovered or authorized by HCL;
-the operator must reconcile it with the protected service registration before any opt-in.
+`workload_project_id` identifies the registered database project. Set `zone = "private"` for
+the shared private project's existing `agora-json-keys-database` and `agora-pgbr-json-keys`
+identities. Omitting `zone` retains the dedicated-project names `agora-database` and
+`agora-backup-repository`. Reconcile the project and identities with protected registration
+before applying; HCL validates syntax but does not discover that registration.
 Its optional `tls_credentials` flag defaults to false; storage custody alone creates no TLS secrets.
 The independent `noncurrent_cleanup` flag also defaults to false; its
 [retention policy](#disabled-noncurrent-cleanup) needs separate activation approval.
@@ -201,11 +203,11 @@ Version Manager grants cover these containers too. The seven default application
 their resource addresses stay unchanged. No secret version, signing service, certificate issuer or
 host delivery process is created; keep this flag off until separately approved provisioning.
 
-| Secret ID                                    | PEM payload contract                                                                       | Runtime readers in the selected service project |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------ | ----------------------------------------------- |
-| `production-json-keys-pgbackrest-ca`         | Public CA certificate bundle only (`PGBACKREST_CA_PEM`). Never the CA private key.         | `agora-database`, `agora-backup-repository`     |
-| `production-json-keys-pgbackrest-database`   | Client certificate/chain followed by its matching private key (`PGBACKREST_IDENTITY_PEM`). | `agora-database` only                           |
-| `production-json-keys-pgbackrest-repository` | Server certificate/chain followed by its matching private key (`PGBACKREST_IDENTITY_PEM`). | `agora-backup-repository` only                  |
+| Secret ID                                    | PEM payload contract                                                                       | Runtime readers                    |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------- |
+| `production-json-keys-pgbackrest-ca`         | Public CA certificate bundle only (`PGBACKREST_CA_PEM`). Never the CA private key.         | Database and repository identities |
+| `production-json-keys-pgbackrest-database`   | Client certificate/chain followed by its matching private key (`PGBACKREST_IDENTITY_PEM`). | Database identity only             |
+| `production-json-keys-pgbackrest-repository` | Server certificate/chain followed by its matching private key (`PGBACKREST_IDENTITY_PEM`). | Repository identity only           |
 
 The native TLS proof uses one PEM file for both pgBackRest certificate and key options. Keeping that
 pair in one secret version prevents delivery from mixing independently rotated versions; it requires

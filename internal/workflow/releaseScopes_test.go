@@ -15,6 +15,7 @@ func TestReleaseScopes(t *testing.T) {
 		name, key string
 		value     any
 		valid     bool
+		zones     map[string][]string
 	}{
 		{name: "Success", valid: true},
 		{name: "EmptyRecoveryRegistration", key: "service_recovery_projects", value: map[string]string{}, valid: true},
@@ -46,7 +47,10 @@ func TestReleaseScopes(t *testing.T) {
 		{name: "DedicatedProjects", key: "service_projects", value: map[string]string{"json-keys": "agora-json-keys-test"}},
 		{name: "RecoveryProjects", key: "service_recovery_projects", value: map[string]string{"agora-recovery-test": "json-keys"}},
 		{name: "NullRecoveryProjects", key: "service_recovery_projects"},
-		{name: "RepositoryServices", key: "pgbackrest_repository_services", value: []string{"json-keys"}},
+		{name: "RepositoryServices", key: "pgbackrest_repository_services", value: []string{"json-keys"}, valid: true},
+		{name: "PeerRepository", key: "pgbackrest_repository_services", value: []string{"authentication"}},
+		{name: "PublicRepository", key: "pgbackrest_repository_services", value: []string{"json-keys"}, zones: map[string][]string{"json-keys": {"public-api"}}},
+		{name: "UnregisteredRepository", key: "pgbackrest_repository_services", value: []string{"json-keys"}, zones: map[string][]string{"authentication": {"private"}}},
 		{name: "NullRepositoryServices", key: "pgbackrest_repository_services"},
 		{name: "WrongRepositoryType", key: "pgbackrest_repository_services", value: map[string]string{}},
 	} {
@@ -59,6 +63,9 @@ func TestReleaseScopes(t *testing.T) {
 			}
 			if testCase.key != "" {
 				registration[testCase.key] = testCase.value
+			}
+			if testCase.zones != nil {
+				registration["service_release_zones"] = testCase.zones
 			}
 			data, err := json.Marshal(registration)
 			require.NoError(t, err)

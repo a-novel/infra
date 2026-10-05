@@ -113,6 +113,44 @@ run "only_selected_database_reaches_its_repository" {
   }
 }
 
+run "shared_private_network" {
+  command = plan
+  variables {
+    shared_vpc_enabled             = true
+    public_api_project_id          = "agora-api-test"
+    public_project_id              = "agora-platform-test"
+    service_release_zones          = { json-keys = ["private", "public-api"], authentication = ["private", "public-api"] }
+    pgbackrest_repository_services = ["json-keys"]
+  }
+  assert {
+    condition = alltrue([
+      toset(keys(local.pgbackrest_network)) == toset(["json-keys"]),
+      google_compute_firewall.pgbackrest_database_egress["json-keys"].target_service_accounts == toset(["agora-json-keys-database@agora-production-test.iam.gserviceaccount.com"]),
+      google_compute_firewall.pgbackrest_repository_ingress["json-keys"].source_service_accounts == toset(["agora-json-keys-database@agora-production-test.iam.gserviceaccount.com"]),
+      alltrue([for rule in [
+        google_compute_firewall.pgbackrest_repository_ingress["json-keys"],
+        google_compute_firewall.pgbackrest_google_egress["json-keys"],
+        google_compute_firewall.pgbackrest_iap_ingress["json-keys"],
+      ] : rule.target_service_accounts == toset(["agora-pgbr-json-keys@agora-production-test.iam.gserviceaccount.com"])]),
+      google_compute_firewall.pgbackrest_repository_ingress["json-keys"].source_ranges == null,
+      one(google_compute_firewall.pgbackrest_repository_ingress["json-keys"].allow).ports == tolist(["8432"]),
+      length(google_compute_shared_vpc_service_project.service) == 0,
+    ])
+    error_message = "Only the selected private database may reach its repository; API identities and peer databases receive no rule."
+  }
+}
+
+run "public_only_service_is_rejected" {
+  command = plan
+  variables {
+    shared_vpc_enabled             = true
+    public_api_project_id          = "agora-api-test"
+    service_release_zones          = { json-keys = ["public-api"] }
+    pgbackrest_repository_services = ["json-keys"]
+  }
+  expect_failures = [var.pgbackrest_repository_services]
+}
+
 run "missing_service_project_is_rejected" {
   command = plan
   variables {

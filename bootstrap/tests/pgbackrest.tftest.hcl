@@ -192,6 +192,37 @@ run "isolated_tls_credentials" {
   }
 }
 
+run "shared_private_custody" {
+  command = plan
+  variables {
+    json_keys_pgbackrest = { workload_project_id = "agora-private-test", zone = "private", tls_credentials = true }
+  }
+  assert {
+    condition = (
+      google_storage_bucket_iam_member.pgbackrest_writer["json-keys"].member == "serviceAccount:agora-pgbr-json-keys@agora-private-test.iam.gserviceaccount.com" &&
+      output.json_keys_pgbackrest.writer == "agora-pgbr-json-keys@agora-private-test.iam.gserviceaccount.com" &&
+      google_service_account.pgbackrest_recovery["json-keys"].disabled &&
+      length(google_storage_bucket.pgbackrest["json-keys"].lifecycle_rule) == 0
+    )
+    error_message = "Shared custody grants only the repository identity write access, with recovery disabled and no automatic cleanup."
+  }
+  assert {
+    condition = { for key, binding in google_secret_manager_secret_iam_member.pgbackrest_tls : key => binding.member } == {
+      "ca:agora-json-keys-database"       = "serviceAccount:agora-json-keys-database@agora-private-test.iam.gserviceaccount.com"
+      "ca:agora-pgbr-json-keys"           = "serviceAccount:agora-pgbr-json-keys@agora-private-test.iam.gserviceaccount.com"
+      "database:agora-json-keys-database" = "serviceAccount:agora-json-keys-database@agora-private-test.iam.gserviceaccount.com"
+      "repository:agora-pgbr-json-keys"   = "serviceAccount:agora-pgbr-json-keys@agora-private-test.iam.gserviceaccount.com"
+    }
+    error_message = "Only the existing database and repository identities may read their own TLS identity and the public CA."
+  }
+}
+
+run "reject_public_custody" {
+  command = plan
+  variables { json_keys_pgbackrest = { workload_project_id = "agora-api-test", zone = "public-api" } }
+  expect_failures = [var.json_keys_pgbackrest]
+}
+
 run "reject_management_as_workload" {
   command = plan
   variables { json_keys_pgbackrest = { workload_project_id = "agora-management-test" } }

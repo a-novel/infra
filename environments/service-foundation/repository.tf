@@ -22,7 +22,7 @@ variable "pgbackrest_repository" {
       var.service == "json-keys" && (
         var.zone == null ? var.database != null && var.pgbackrest_repository.placement == null : try(
           var.zone == "private" && var.database == null &&
-          var.pgbackrest_repository.runtime == null && var.pgbackrest_repository.machine_type == "e2-micro" &&
+          var.pgbackrest_repository.machine_type == "e2-micro" &&
           var.pgbackrest_repository.placement.zone == jsondecode(var.database_handoff.document_json).zone &&
           can(regex("^projects/${var.project_id}/regions/${var.region}/subnetworks/[a-z][a-z0-9-]*$", var.pgbackrest_repository.placement.subnetwork)) &&
           can(regex("^projects/cos-cloud/global/images/cos-[0-9]+(-[0-9]+)+$", var.pgbackrest_repository.placement.cos_image)),
@@ -30,13 +30,13 @@ variable "pgbackrest_repository" {
         )
       ) && contains(["e2-micro", "e2-small"], var.pgbackrest_repository.machine_type)
     )
-    error_message = "The JSON Keys repository requires reviewed placement. Shared private scopes admit only a stopped micro host beside the published database, without database ownership or runtime activation."
+    error_message = "The JSON Keys repository requires reviewed placement. Shared private scopes admit only a stopped micro host beside the published database, without database ownership or host activation."
   }
 
   validation {
     condition = try(var.pgbackrest_repository.runtime, null) == null ? true : alltrue([
-      can(regex("^${var.region}-docker[.]pkg[.]dev/${var.project_id}/agora-production/service-json-keys/database@sha256:[0-9a-f]{64}$", var.pgbackrest_repository.runtime.server_image)),
-      can(regex("^${var.region}-docker[.]pkg[.]dev/${var.project_id}/agora-tooling/host-credentials@sha256:[0-9a-f]{64}$", var.pgbackrest_repository.runtime.credentials_image)),
+      can(regex("^${var.region}-docker[.]pkg[.]dev/${var.project_id}/${local.repository_image_prefix}-production/service-json-keys/database@sha256:[0-9a-f]{64}$", var.pgbackrest_repository.runtime.server_image)),
+      can(regex("^${var.region}-docker[.]pkg[.]dev/${var.project_id}/${local.repository_image_prefix}-tooling/host-credentials@sha256:[0-9a-f]{64}$", var.pgbackrest_repository.runtime.credentials_image)),
     ])
     error_message = "Repository runtime images must be approved promoted digests in this service project's application and tooling repositories."
   }
@@ -51,6 +51,7 @@ variable "pgbackrest_repository" {
 }
 
 locals {
+  repository_image_prefix = var.zone == null ? "agora" : "agora-json-keys-private"
   repository_placement = var.zone == null ? {
     zone       = try(var.database.zone, null)
     subnetwork = try(var.database.subnetwork, null)

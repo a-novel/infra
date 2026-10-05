@@ -1,7 +1,8 @@
 variable "json_keys_pgbackrest" {
-  description = "Opt-in native repository custody for the registered JSON Keys service project. Leave null until separately approved; this does not activate backups."
+  description = "Opt-in native repository custody for JSON Keys. zone=private selects shared-project identities; an omitted zone retains dedicated-project identities. This does not activate backups."
   type = object({
     workload_project_id = string
+    zone                = optional(string)
     tls_credentials     = optional(bool, false)
     noncurrent_cleanup  = optional(bool, false)
   })
@@ -12,12 +13,19 @@ variable "json_keys_pgbackrest" {
       can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", var.json_keys_pgbackrest.workload_project_id)) &&
       var.json_keys_pgbackrest.workload_project_id != var.management_project_id
     )
-    error_message = "Use the independently registered JSON Keys project, distinct from management."
+    error_message = "Use the registered JSON Keys database project, distinct from management."
+  }
+
+  validation {
+    condition     = var.json_keys_pgbackrest == null ? true : var.json_keys_pgbackrest.zone == null || var.json_keys_pgbackrest.zone == "private"
+    error_message = "Native backup custody belongs only to the private zone or a dedicated database project."
   }
 }
 
 locals {
-  pgbackrest = var.json_keys_pgbackrest == null ? {} : { "json-keys" = var.json_keys_pgbackrest }
+  pgbackrest_database   = try(var.json_keys_pgbackrest.zone, null) == "private" ? "agora-json-keys-database" : "agora-database"
+  pgbackrest_repository = try(var.json_keys_pgbackrest.zone, null) == "private" ? "agora-pgbr-json-keys" : "agora-backup-repository"
+  pgbackrest            = var.json_keys_pgbackrest == null ? {} : { "json-keys" = var.json_keys_pgbackrest }
   pgbackrest_permissions = var.json_keys_pgbackrest == null ? {} : {
     writer   = ["storage.objects.create", "storage.objects.get", "storage.objects.list", "storage.objects.delete"]
     recovery = ["storage.objects.create", "storage.objects.get", "storage.objects.list", "storage.objects.restore"]
@@ -103,7 +111,7 @@ resource "google_storage_bucket_iam_member" "pgbackrest_writer" {
 
   bucket = google_storage_bucket.pgbackrest[each.key].name
   role   = google_project_iam_custom_role.pgbackrest["writer"].name
-  member = "serviceAccount:agora-backup-repository@${each.value.workload_project_id}.iam.gserviceaccount.com"
+  member = "serviceAccount:${local.pgbackrest_repository}@${each.value.workload_project_id}.iam.gserviceaccount.com"
 }
 
 resource "google_storage_bucket_iam_member" "pgbackrest_recovery" {
@@ -122,7 +130,7 @@ output "json_keys_pgbackrest" {
     management_project = var.management_project_id
     workload_project   = var.json_keys_pgbackrest.workload_project_id
     bucket             = google_storage_bucket.pgbackrest["json-keys"].name
-    writer             = "agora-backup-repository@${var.json_keys_pgbackrest.workload_project_id}.iam.gserviceaccount.com"
+    writer             = "${local.pgbackrest_repository}@${var.json_keys_pgbackrest.workload_project_id}.iam.gserviceaccount.com"
     recovery           = google_service_account.pgbackrest_recovery["json-keys"].email
   }
 
