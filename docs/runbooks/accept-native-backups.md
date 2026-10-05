@@ -65,6 +65,14 @@ the deployed image's local clients use the second. Require a successful SQL conn
 the worker's socket as well as a healthy database container. Repair a missing socket through
 protected startup maintenance, then repeat this checkpoint before enabling WAL archiving.
 
+Enroll the existing native policies through `shared_backup_alerts_enabled` in the JSON Keys
+private service foundation: null leaves monitoring absent, false prepares disabled policies,
+and true enables them. This reads the current singleton database group without taking host
+ownership. Review a monitoring-only plan: one success metric and five policies using the existing
+operations channel, with no host, disk, IAM or timer changes. Re-plan this scope after any database
+replacement that changes its numeric instance ID. Never-seen backup/check success intentionally
+alerts until the attended runs succeed; policy creation is not proof of notification delivery.
+
 ## 1. Approve the scope and cost
 
 Start with the [operator preflight](README.md#start-an-operation). Record the following privately
