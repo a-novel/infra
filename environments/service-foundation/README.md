@@ -24,8 +24,8 @@ folders include the full production scope. The `public` platform zone is rejecte
 These grants preserve the existing API/ORM contracts. They do not prove database-role restrictions
 or remove inherited IAM; verify both before activation. For public APIs, foundation receives
 metadata-only access to those same secrets to check enabled release versions; private profiles
-grant none. Shared profiles reject database/repository hosts and application-job access until
-ownership is reconciled. Existing hosts and backups stay with their current owner.
+grant none. Shared profiles preserve existing database and application-job ownership. JSON Keys
+can separately prepare a [stopped private repository](#stopped-private-repository).
 
 Shared runtime accounts use `agora-SERVICE-private` or `agora-SERVICE-api`. Each owns separate
 `agora-SERVICE-SUFFIX-production` and `agora-SERVICE-SUFFIX-tooling` repositories. The matching
@@ -71,9 +71,23 @@ contract; a checksum alone does not prove origin or approve an interrupted publi
 
 Both prerequisite zones can publish their own database endpoint as `database`, retaining
 `database_source` in the schema-2 envelope. The standalone `database` output remains null because
-this root owns no shared database host. Keep `database`, `database_runtime` and
-`pgbackrest_repository` inputs null. API/ORM behavior and current backup ownership stay unchanged.
+this root owns no shared database host. Keep `database` and `database_runtime` inputs null.
+API/ORM behavior and current backup ownership stay unchanged.
 Runtime activation still requires effective network, database-role and inherited-IAM checks.
+
+### Stopped private repository
+
+JSON Keys in the private zone can opt into `pgbackrest_repository.placement`, supplying its
+`zone`, `subnetwork` and pinned `cos_image`. The zone must match the published database handoff;
+the subnet must belong to the selected private project and region. This provisions one stopped
+e2-micro with a 20 GiB standard boot disk and the `agora-pgbr-json-keys` identity through the
+existing protected foundation plan/apply workflow.
+
+Shared preparation accepts no runtime or larger machine. It leaves database ownership, network
+policy and current backups unchanged. Only foundation receives identity attachment permission;
+bucket and TLS access remain separate activation work. Review the complete costed plan before
+provisioning; stopped disks remain billable. The [repository lifecycle](#optional-stopped-repository-host)
+describes the creation-time boot and activation requirements.
 
 ### Dedicated-project preparation
 

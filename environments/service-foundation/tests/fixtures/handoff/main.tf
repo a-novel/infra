@@ -38,3 +38,11 @@ output "cases" {
     }
   } }
 }
+
+output "repository_placement" {
+  value = {
+    zone       = local.database.zone
+    subnetwork = "projects/${local.database.project_id}/regions/europe-west1/subnetworks/agora-production-europe-west1"
+    cos_image  = "projects/cos-cloud/global/images/cos-129-19506-505-8"
+  }
+}
