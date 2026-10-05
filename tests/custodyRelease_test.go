@@ -28,7 +28,7 @@ import (
 func TestCustodyRelease(t *testing.T) {
 	t.Parallel()
 	for _, service := range []string{"json-keys", "authentication"} {
-		for _, fault := range []string{"", "promote", "changed-promotion", "missing-prior", "apply", "converge", "job-denied", "job-token", "job-image", "job-reconciling", "execution-failed", "execution-template", "execution-pending", "api-image", "api-traffic", "health", "rotation-enabled", "rotation-active"} {
+		for _, fault := range []string{"", "promote", "changed-promotion", "missing-prior", "apply", "converge", "job-denied", "job-token", "job-image", "job-reconciling", "execution-failed", "execution-template", "execution-pending", "execution-job-uid", "execution-job-generation", "execution-job-name", "execution-name", "execution-retried", "execution-unobserved", "execution-owner-missing", "execution-denied", "api-image", "api-traffic", "health", "rotation-enabled", "rotation-active"} {
 			t.Run(service+"/"+fault, func(t *testing.T) {
 				t.Parallel()
 				if service == "authentication" && strings.HasPrefix(fault, "rotation-") {
@@ -74,8 +74,9 @@ func TestCustodyRelease(t *testing.T) {
 				token := fmt.Sprintf("%x", sha256.Sum256([]byte(migration)))[:24]
 				job["name"], job["runExecutionToken"] = migrationName, token
 				nested(job, "template", "template")["containers"] = []any{object{"image": migration}}
-				execution["job"], execution["name"] = migrationName, migrationName+"/executions/agora-"+service+"-migrations-"+token
-				execution["template"] = nested(job, "template", "template")
+				executionName := "agora-" + service + "-migrations-" + token
+				nested(execution, "metadata")["name"] = executionName
+				nested(execution, "metadata", "labels")["run.googleapis.com/job"] = "agora-" + service + "-migrations"
 				api["name"] = "projects/" + project + "/locations/europe-west1/services/" + apiName
 				nested(api, "template")["revision"] = nested(config, "api")["revision"]
 				nested(api, "template")["containers"] = []any{object{"image": image}}
@@ -91,11 +92,22 @@ func TestCustodyRelease(t *testing.T) {
 				case "job-reconciling":
 					job["reconciling"] = true
 				case "execution-failed":
-					execution["succeededCount"], execution["failedCount"] = 0, 1
+					nested(execution, "status")["succeededCount"], nested(execution, "status")["failedCount"] = 0, 1
 				case "execution-pending":
-					delete(execution, "completionTime")
+					delete(nested(execution, "status"), "completionTime")
 				case "execution-template":
-					execution["template"] = object{}
+					delete(execution, "spec")
+				case "execution-job-uid", "execution-job-generation", "execution-job-name":
+					label := map[string]string{"execution-job-uid": "jobUid", "execution-job-generation": "jobGeneration", "execution-job-name": "job"}[fault]
+					nested(execution, "metadata", "labels")["run.googleapis.com/"+label] = "different"
+				case "execution-owner-missing":
+					delete(execution, "metadata")
+				case "execution-name":
+					nested(execution, "metadata")["name"] = "different"
+				case "execution-retried":
+					nested(execution, "status")["retriedCount"] = 1
+				case "execution-unobserved":
+					nested(execution, "status")["observedGeneration"] = 0
 				case "api-image":
 					nested(api, "template")["containers"] = []any{object{"image": "different"}}
 				case "api-traffic":
@@ -108,7 +120,7 @@ func TestCustodyRelease(t *testing.T) {
 				probeToken := fmt.Sprintf("%x", sha256.Sum256(apiJSON))[:24]
 				proxy := httputil.NewSingleHostReverseProxy(storageURL)
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					if !strings.HasPrefix(r.URL.Path, "/v") {
+					if !strings.HasPrefix(r.URL.Path, "/v") && !strings.HasPrefix(r.URL.Path, "/apis/") {
 						proxy.ServeHTTP(w, r)
 						return
 					}
@@ -136,22 +148,32 @@ func TestCustodyRelease(t *testing.T) {
 							return
 						}
 						result = job
-					case r.URL.Path == "/v2/"+execution["name"].(string):
+					case r.URL.Path == "/apis/run.googleapis.com/v1/namespaces/agora-private-test/executions/"+executionName:
+						if fault == "execution-denied" {
+							http.Error(w, privateValue, http.StatusForbidden)
+							return
+						}
 						result = execution
 					case r.URL.Path == "/v2/"+api["name"].(string):
 						result = api
-					case strings.Contains(r.URL.Path, "/jobs/agora-json-keys-smoke"):
+					case strings.Contains(r.URL.Path, "/jobs/agora-json-keys-smoke") || strings.Contains(r.URL.Path, "/executions/agora-json-keys-smoke-"):
 						suffix := probeToken
 						name := "projects/agora-private-test/locations/europe-west1/jobs/agora-json-keys-smoke"
 						template := object{"containers": []any{object{"image": image}}}
 						if strings.Contains(r.URL.Path, "/executions/") {
 							result = object{
-								"name": name + "/executions/agora-json-keys-smoke-" + suffix, "job": name, "uid": "probe-execution",
-								"completionTime": "2026-10-05T10:00:00Z", "taskCount": 1, "parallelism": 1, "succeededCount": 1, "template": template,
-								"conditions": []any{object{"type": "Completed", "state": "CONDITION_SUCCEEDED"}},
+								"metadata": object{
+									"name": "agora-json-keys-smoke-" + suffix, "uid": "probe-execution", "generation": 1,
+									"labels": object{"run.googleapis.com/job": "agora-json-keys-smoke", "run.googleapis.com/jobUid": "probe-job", "run.googleapis.com/jobGeneration": "2"},
+								},
+								"spec": object{"taskCount": 1, "parallelism": 1},
+								"status": object{
+									"observedGeneration": 1, "completionTime": "2026-10-05T10:00:00Z", "succeededCount": 1,
+									"conditions": []any{object{"type": "Completed", "status": "True"}},
+								},
 							}
 							if fault == "health" {
-								result.(object)["failedCount"] = 1
+								nested(result.(object), "status")["failedCount"] = 1
 							}
 						} else {
 							result = object{
@@ -217,7 +239,7 @@ func TestCustodyRelease(t *testing.T) {
 					require.NoFileExists(t, guard)
 					require.Equal(t, []string{"apply", "converge"}, events[:2])
 					receipt := readJSON(t, filepath.Join(f.env["FAKE_GCS_ROOT"], "agora-management-test-123-deployment-receipts", scope, "production/operations/42.json"))
-					require.Contains(t, receipt["checks"], execution["name"])
+					require.Contains(t, receipt["checks"], migrationName+"/executions/"+executionName)
 				} else {
 					require.NotZero(t, code, out.String())
 					require.FileExists(t, guard)

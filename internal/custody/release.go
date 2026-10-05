@@ -5,10 +5,12 @@ import (
 	"io"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 
 	"google.golang.org/api/cloudscheduler/v1"
 	"google.golang.org/api/option"
+	runv1 "google.golang.org/api/run/v1"
 	cloudrun "google.golang.org/api/run/v2"
 )
 
@@ -93,7 +95,7 @@ func (storage store) releaseChecks(data []byte, operation *serviceOperation, bef
 		}
 	}
 	if !before || config.Zone == "public-api" {
-		proof, err := storage.completedReleaseJob(client, location+"/jobs/agora-"+intent.Service+"-migrations", config.Migration, checksum([]byte(config.Migration))[:24])
+		proof, err := storage.completedReleaseJob(client, location+"/jobs/agora-"+intent.Service+"-migrations", config.Migration, checksum([]byte(config.Migration))[:24], options)
 		if err != nil {
 			return err
 		}
@@ -130,7 +132,7 @@ func (storage store) releaseChecks(data []byte, operation *serviceOperation, bef
 		if err != nil {
 			return err
 		}
-		proof, err := storage.completedReleaseJob(client, location+"/jobs/agora-json-keys-smoke", config.API.Image, checksum(value)[:24])
+		proof, err := storage.completedReleaseJob(client, location+"/jobs/agora-json-keys-smoke", config.API.Image, checksum(value)[:24], options)
 		if err != nil {
 			return err
 		}
@@ -151,10 +153,11 @@ func (storage store) releaseChecks(data []byte, operation *serviceOperation, bef
 	return nil
 }
 
-func (storage store) completedReleaseJob(client *cloudrun.Service, name, image, token string) (string, error) {
+// completedReleaseJob binds the token-named immutable execution to its native job UID and generation.
+func (storage store) completedReleaseJob(client *cloudrun.Service, name, image, token string, options []option.ClientOption) (string, error) {
 	invalid := failure{70, "Exact native release execution is unavailable, changed or unsuccessful; guard retained. Never replay an uncertain migration."}
 	job, err := client.Projects.Locations.Jobs.Get(name).Context(storage.ctx).Do()
-	if err != nil || job.Reconciling || job.DeleteTime != "" || job.Uid == "" || job.Generation <= 0 || job.ObservedGeneration != job.Generation ||
+	if err != nil || job.Name != name || job.Reconciling || job.DeleteTime != "" || job.Uid == "" || job.Generation <= 0 || job.ObservedGeneration != job.Generation ||
 		job.RunExecutionToken != token || job.TerminalCondition == nil || job.TerminalCondition.State != "CONDITION_SUCCEEDED" ||
 		job.Template == nil || job.Template.Template == nil || len(job.Template.Template.Containers) != 1 || job.Template.Template.Containers[0].Image != image {
 		return "", invalid
@@ -164,14 +167,30 @@ func (storage store) completedReleaseJob(client *cloudrun.Service, name, image, 
 		return "", invalid
 	}
 	executionName := job.Name + "/executions/" + short + "-" + token
-	execution, err := client.Projects.Locations.Jobs.Executions.Get(executionName).Context(storage.ctx).Do()
-	if err != nil || execution.Name != executionName || execution.Job != job.Name || execution.Uid == "" || execution.CompletionTime == "" || execution.DeleteTime != "" || execution.Reconciling ||
-		execution.TaskCount != 1 || execution.Parallelism != 1 || execution.SucceededCount != 1 || execution.FailedCount != 0 || execution.CancelledCount != 0 || execution.RunningCount != 0 || execution.RetriedCount != 0 ||
-		!reflect.DeepEqual(execution.Template, job.Template.Template) ||
-		!slices.ContainsFunc(execution.Conditions, func(c *cloudrun.GoogleCloudRunV2Condition) bool {
-			return c.Type == "Completed" && c.State == "CONDITION_SUCCEEDED"
+	parts := strings.Split(job.Name, "/")
+	if len(parts) != 6 {
+		return "", invalid
+	}
+	// v1 exposes Google's job UID/generation labels, which v2 strips. This native
+	// binding survives platform image resolution and execution network normalization.
+	observer, err := runv1.NewService(storage.ctx, append([]option.ClientOption{option.WithEndpoint("https://" + parts[3] + "-run.googleapis.com/")}, options...)...)
+	if err != nil {
+		return "", invalid
+	}
+	execution, err := observer.Namespaces.Executions.Get("namespaces/" + parts[1] + "/executions/" + short + "-" + token).Context(storage.ctx).Do()
+	if err != nil || execution.Metadata == nil || execution.Spec == nil || execution.Status == nil {
+		return "", invalid
+	}
+	metadata, spec, status := execution.Metadata, execution.Spec, execution.Status
+	if metadata.Name != short+"-"+token || metadata.Uid == "" || metadata.DeletionTimestamp != "" || metadata.Generation <= 0 || status.ObservedGeneration != metadata.Generation ||
+		metadata.Labels["run.googleapis.com/job"] != short || metadata.Labels["run.googleapis.com/jobUid"] != job.Uid ||
+		metadata.Labels["run.googleapis.com/jobGeneration"] != strconv.FormatInt(job.Generation, 10) ||
+		status.CompletionTime == "" || spec.TaskCount != 1 || spec.Parallelism != 1 || status.SucceededCount != 1 ||
+		status.FailedCount != 0 || status.CancelledCount != 0 || status.RunningCount != 0 || status.RetriedCount != 0 ||
+		!slices.ContainsFunc(status.Conditions, func(c *runv1.GoogleCloudRunV1Condition) bool {
+			return c.Type == "Completed" && c.Status == "True"
 		}) {
 		return "", invalid
 	}
-	return execution.Name + "#" + execution.Uid, nil
+	return executionName + "#" + metadata.Uid, nil
 }
