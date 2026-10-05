@@ -59,6 +59,12 @@ Keep the first `json_keys_native_backup.wal_archiving` value false. Reject a mai
 that changes Authentication, a data disk, an address, a machine size or release metadata.
 Leave native backup timers stopped and retain logical backups and snapshots through acceptance.
 
+Before stanza creation, verify PostgreSQL listens on both `/var/run/postgresql` and `/tmp`.
+The native worker reaches the first socket through the shared `/run/agora/postgresql` mount;
+the deployed image's local clients use the second. Require a successful SQL connection through
+the worker's socket as well as a healthy database container. Repair a missing socket through
+protected startup maintenance, then repeat this checkpoint before enabling WAL archiving.
+
 ## 1. Approve the scope and cost
 
 Start with the [operator preflight](README.md#start-an-operation). Record the following privately
