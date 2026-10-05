@@ -12,16 +12,16 @@ removes that temporary authority.
 
 ## Human entry points
 
-| Command                                                    | Purpose                                                                                      | Cloud mutation                                                           |
-| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| [`go run ./cmd/infra verify-env`](../cmd/infra/)           | Validate the operator-selected management and workload project IDs.                          | No                                                                       |
-| [`verify-repository-gate.sh`](./verify-repository-gate.sh) | Verify required-check sources, bypass actors, and the release switch.                        | No                                                                       |
-| [`bootstrap-plan.sh`](./bootstrap-plan.sh)                 | Create or consume the one local bootstrap plan with commit and checksum custody.             | `apply` only                                                             |
-| [`go run ./cmd/infra foundation-setup`](../cmd/infra/)     | Configure, provision, and deprivilege the workload foundation from a fresh shell.            | Only the named `configure`, `grant*`, `revoke*`, and `finish` operations |
-| [`foundation-audit.sh`](./foundation-audit.sh)             | Check additive IAM, key, secret, registry, and network boundaries OpenTofu cannot close.     | No                                                                       |
-| [`go run ./cmd/infra`](../cmd/infra/)                      | Dispatch one semantic protected plan, apply, deploy, rollback, drift, or recovery operation. | Only inside the selected protected workflow                              |
-| [`go run ./cmd/infra database`](../cmd/infra/)             | Inspect the database host, prepare a local EC key, or connect through IAP.                   | OS Login public-key upload during `ssh` and `troubleshoot`               |
-| [`add-secret-version.sh`](./add-secret-version.sh)         | Add one Secret Manager version from hidden terminal input without echoing the payload.       | Yes                                                                      |
+| Command                                                    | Purpose                                                                                  | Cloud mutation                                                           |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| [`go run ./cmd/infra verify-env`](../cmd/infra/)           | Validate the operator-selected management and workload project IDs.                      | No                                                                       |
+| [`verify-repository-gate.sh`](./verify-repository-gate.sh) | Verify required-check sources, bypass actors, and the release switch.                    | No                                                                       |
+| [`bootstrap-plan.sh`](./bootstrap-plan.sh)                 | Create or consume the one local bootstrap plan with commit and checksum custody.         | `apply` only                                                             |
+| [`go run ./cmd/infra foundation-setup`](../cmd/infra/)     | Configure, provision, and deprivilege the workload foundation from a fresh shell.        | Only the named `configure`, `grant*`, `revoke*`, and `finish` operations |
+| [`foundation-audit.sh`](./foundation-audit.sh)             | Check additive IAM, key, secret, registry, and network boundaries OpenTofu cannot close. | No                                                                       |
+| [`go run ./cmd/infra`](../cmd/infra/)                      | Dispatch one semantic protected plan, apply, drift, or recovery operation.               | Only inside the selected protected workflow                              |
+| [`go run ./cmd/infra database`](../cmd/infra/)             | Inspect the database host, prepare a local EC key, or connect through IAP.               | OS Login public-key upload during `ssh` and `troubleshoot`               |
+| [`add-secret-version.sh`](./add-secret-version.sh)         | Add one Secret Manager version from hidden terminal input without echoing the payload.   | Yes                                                                      |
 
 Run these from the repository root in zsh or Bash; do not source the shell scripts.
 The Go commands and shell callers of `verify-env` require the Go version in `go.mod`.
@@ -76,9 +76,6 @@ go run ./cmd/infra foundation apply <service-foundation|service-release> <json-k
 go run ./cmd/infra foundation promote-images service-release <json-keys|authentication>
 go run ./cmd/infra foundation finish-operation <service> <guard-generation> 'FINISH <service> <guard-generation>'
 
-go run ./cmd/infra release deploy [--no-wait]
-go run ./cmd/infra release rollback <receipt-id>
-go run ./cmd/infra release recover-first-launch <failed-run-id>
 go run ./cmd/infra release drill-database-isolation <receipt-id> 'DRILL authentication'
 go run ./cmd/infra release restore-database-isolation <receipt-id> 'RESTORE authentication'
 
@@ -93,6 +90,10 @@ commands: apply queries the selected plan attempt, derives its reviewed commit, 
 unless that commit is the clean local and remote `master`. The private plan itself remains
 root-bound, hash-bound, one-use, and valid for 24 hours. Its creation already enforced the
 `allow-resource-deletion` decision for that commit.
+
+Native API releases select an explicit trust zone in `foundation.yaml`; follow the
+[native release procedure](../docs/runbooks/submit-release.md). The service-only helper above uses
+`zone=none` and must not be used for the registered zone-specific configurations.
 
 Service-foundation selection additionally binds the registered project and private backend scope.
 It is disabled until separate activation approval; follow the
@@ -130,7 +131,7 @@ and uses writer concurrency.
 All other infrastructure operations retain their shared execution guard.
 
 The launcher uses GitHub's dispatch response to identify its run and verifies the exact commit before
-returning or watching it. If dispatch cannot be confirmed, inspect the repository's Actions page before
+watching it to successful completion. If dispatch cannot be confirmed, inspect the repository's Actions page before
 retrying: the request may already have created a run. The launcher never resends an uncertain dispatch.
 
 `plan-summary.sh` enforces `lib/plan-policy.jq` during planning and again before saved-plan apply.
@@ -176,7 +177,7 @@ size enforcement. Separate policy and deployment-time image-family tests cover t
 | Read-only inspection                | `infra inspect drift`, `infra inspect assess`, `infra custody operation inspect` (private inputs, payload-free results)                                                                                                                          |
 | Deletion authorization              | `infra assess-updates`, `infra assess-images`, `infra assess-versions`, `infra refresh-deletion-gates`, `resource-deletion-impact.sh`, `resolve-resource-deletion-assessment.sh`, `verify-resource-deletion-gate.sh`, `verify-deletion-label.sh` |
 | Release compilation and promotion   | `infra compile-release`, `infra validate-images`, `infra preflight images`, `infra promote release`, `infra promote service`, `preflight-release.sh`                                                                                             |
-| Ordered release execution           | `release-orchestrator.sh`, `google-release-driver.sh`, `infra database-isolation`, `infra database-release`, `await-auth-initialization.sh`                                                                                                      |
+| Retained database operations        | `infra database-isolation`, `infra database-release`, `await-auth-initialization.sh`                                                                                                                                                             |
 | Recovery                            | `infra compile-recovery`, `verify-recovery-points.sh`, `infra promote recovery`, `infra custody recovery execute`, `infra custody recovery cleanup`, `infra custody recovery cleanup-project`                                                    |
 | Health and root validation          | `infra check-health`, `check-root.sh`, `lib/roots.sh`                                                                                                                                                                                            |
 
@@ -254,7 +255,7 @@ infra database-release recover-first-launch <project> <zone> <service> <disk-id>
 `DATABASE_CHANGE_PROOF` selects an exact, unexpired local proof; live metadata and disk identity
 are checked before restart. Restore consumes the receipt's database object (`null` means idle).
 First-launch recovery only clears the exact failed revision when no service-owned success receipt
-exists; it never reruns initialization. The release coordinator owns compensation after failures.
+exists; it never reruns initialization. Routine API releases do not call this database lifecycle; use the protected maintenance or recovery path.
 
 ## Change rules
 

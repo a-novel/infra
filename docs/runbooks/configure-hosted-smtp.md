@@ -60,7 +60,7 @@ SMTP_AUDIT_EXPIRY="$(date -u -d '+1 hour' +%Y-%m-%dT%H:%M:%SZ)"
 SMTP_AUDIT_CONDITION="expression=request.time < timestamp('${SMTP_AUDIT_EXPIRY}'),title=smtp-read-check"
 printf 'Read access for %s until %s\n' "$SMTP_AUDIT_MEMBER" "$SMTP_AUDIT_EXPIRY"
 for role in roles/run.viewer roles/logging.viewer; do
-gcloud projects add-iam-policy-binding "$INFRA_WORKLOAD_PROJECT_ID" --member="$SMTP_AUDIT_MEMBER" --role="$role" --condition="$SMTP_AUDIT_CONDITION" --format=none
+gcloud projects add-iam-policy-binding "$INFRA_PUBLIC_API_PROJECT_ID" --member="$SMTP_AUDIT_MEMBER" --role="$role" --condition="$SMTP_AUDIT_CONDITION" --format=none
 done
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
 ```
@@ -184,20 +184,15 @@ Verify that selection:
 gcloud secrets versions describe "${AUTH_SMTP_PASSWORD_VERSION:?Set the numeric version printed by the upload or selected from the metadata list}" --secret=production-authentication-smtp-sender-password --project="$INFRA_MANAGEMENT_PROJECT_ID" --format='yaml(name,state)'
 ```
 
-Require `ENABLED`. The [deployment runbook](./deploy-production.md) is the single configuration writer:
+Require `ENABLED`. Update only the `authentication/public-api` entry in the protected
+`SERVICE_JOB_BOOTSTRAPS_JSON` map in `production-foundation`, following the
+[native release procedure](./submit-release.md). Preserve the other service/zone entries.
 
-| Existing deployment | Action                                                              |
-| ------------------- | ------------------------------------------------------------------- |
-| Steps 1–2           | Load its operator context and collect foundation coordinates        |
-| Step 3              | Select this SMTP version; retain the other deployed secret versions |
-| Step 4              | Rebuild and store `RELEASE_CONFIG_JSON` with the selected values    |
-| Steps 5–7           | Review the image family, deploy, and verify the successful receipt  |
-
-That configuration sets `authentication.smtp.address` to `${SMTP_HOST}:587`, `sender_domain` to
-`SMTP_HOST` (the TLS/authentication server hostname, **not** the sending domain), the login and sender
-from `.envrc`, and `secret_versions.authentication_smtp_password` to the selected integer. The
-runtime resolves the password from Secret Manager. Authentication v2.7.0+ supplies the correct EHLO
-domain; keep the reviewed current image family.
+Set `authentication.smtp_address` to `${SMTP_HOST}:587`, `smtp_sender_domain` to
+`SMTP_HOST` (the TLS/authentication server hostname, not the sending domain), and the remaining
+`smtp_*` login/sender fields from `.envrc`. Set `secret_versions["smtp-sender-password"]`
+to the selected integer. The runtime resolves the password from Secret Manager.
+Review a candidate before traffic promotion; uploading configuration alone is not deployment.
 
 Changing `.envrc`, uploading a version, or updating GitHub configuration does not change the running
 service until deployment succeeds. For initial provisioning, resume [production setup](../setup-production.md)
@@ -214,7 +209,7 @@ After a successful release, reload `.envrc` (deployment setup may unset `SMTP_US
 setopt local_options err_return pipe_fail
 unsetopt err_exit nounset xtrace
 . ./.envrc
-AUTH_URL="$(gcloud run services describe agora-authentication-rest --project="$INFRA_WORKLOAD_PROJECT_ID" --region="$INFRA_REGION" --format='value(status.url)')"
+AUTH_URL="$(gcloud run services describe agora-authentication-rest --project="$INFRA_PUBLIC_API_PROJECT_ID" --region="$INFRA_REGION" --format='value(status.url)')"
 [[ "$AUTH_URL" =~ ^https://[a-z0-9.-]+\.run\.app$ ]]
 curl -q --silent --show-error --fail --connect-timeout 10 --max-time 60 "${AUTH_URL}/v2/healthcheck" | jq -e 'length > 0 and all(.[]; .status == "up")'
 } || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
@@ -270,7 +265,7 @@ The signup link must start with `${PLATFORM_AUTH_URL}/ext/account/create` (reset
 Read bounded delivery-event metadata after each test (no message bodies or exception details):
 
 ```sh
-gcloud logging read "resource.type=cloud_run_revision AND resource.labels.service_name=agora-authentication-rest AND timestamp>=\"${SMTP_TEST_STARTED_AT:?Run the mail test first}\" AND (jsonPayload.Body.Value=\"mail delivered\" OR jsonPayload.Body.Value=\"mail delivery failed\")" --project="$INFRA_WORKLOAD_PROJECT_ID" --order=asc --limit=20 --format='table(timestamp,jsonPayload.Body.Value,resource.labels.revision_name)'
+gcloud logging read "resource.type=cloud_run_revision AND resource.labels.service_name=agora-authentication-rest AND timestamp>=\"${SMTP_TEST_STARTED_AT:?Run the mail test first}\" AND (jsonPayload.Body.Value=\"mail delivered\" OR jsonPayload.Body.Value=\"mail delivery failed\")" --project="$INFRA_PUBLIC_API_PROJECT_ID" --order=asc --limit=20 --format='table(timestamp,jsonPayload.Body.Value,resource.labels.revision_name)'
 ```
 
 Allow log ingestion to catch up before repeating that read. Application success means the relay
@@ -284,12 +279,12 @@ only; never paste mail bodies, reset links, tokens, or SMTP transcripts.
 If validation fails, stop rollout/credential retirement and correct the current Workspace setup.
 Only roll back to a receipt whose credentials and relay configuration still work.
 
-After the deployment runbook's log audit, if you added the temporary grants above, remove
+After verifying delivery, if you added the temporary grants above, remove
 **those exact conditional bindings** in the same session; do not remove pre-existing unconditional roles. An administrator must run this cleanup:
 
 ```sh
-gcloud projects remove-iam-policy-binding "$INFRA_WORKLOAD_PROJECT_ID" --member="${SMTP_AUDIT_MEMBER:?Use the same session as the grant}" --role=roles/run.viewer --condition="${SMTP_AUDIT_CONDITION:?Use the same condition as the grant}" --format=none
-gcloud projects remove-iam-policy-binding "$INFRA_WORKLOAD_PROJECT_ID" --member="${SMTP_AUDIT_MEMBER:?Use the same session as the grant}" --role=roles/logging.viewer --condition="${SMTP_AUDIT_CONDITION:?Use the same condition as the grant}" --format=none
+gcloud projects remove-iam-policy-binding "$INFRA_PUBLIC_API_PROJECT_ID" --member="${SMTP_AUDIT_MEMBER:?Use the same session as the grant}" --role=roles/run.viewer --condition="${SMTP_AUDIT_CONDITION:?Use the same condition as the grant}" --format=none
+gcloud projects remove-iam-policy-binding "$INFRA_PUBLIC_API_PROJECT_ID" --member="${SMTP_AUDIT_MEMBER:?Use the same session as the grant}" --role=roles/logging.viewer --condition="${SMTP_AUDIT_CONDITION:?Use the same condition as the grant}" --format=none
 unset SMTP_TEST_EMAIL SMTP_TEST_STARTED_AT SMTP_AUDIT_MEMBER SMTP_AUDIT_EXPIRY SMTP_AUDIT_CONDITION
 ```
 

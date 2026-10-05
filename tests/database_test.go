@@ -448,26 +448,3 @@ func (c *databaseCloud) execute(ctx context.Context, out io.Writer, name string,
 	}
 	return nil
 }
-
-func TestDatabaseDriverProof(t *testing.T) {
-	t.Parallel()
-	for _, service := range []string{"authentication", "json_keys"} {
-		t.Run(service, func(t *testing.T) {
-			t.Parallel()
-			c := newDatabaseCloud(t, strings.ReplaceAll(service, "_", "-"))
-			c.change(service, true)
-			compiled := c.compile(t)
-			nested(compiled, "previousDatabase", "hosts", service)["releaseRevision"] = strings.Repeat("f", 40)
-			writeJSON(t, filepath.Join(c.files[3], "release.json"), compiled)
-			for _, name := range []string{"sha256sum", "cut"} {
-				path, err := exec.LookPath(name)
-				require.NoError(t, err)
-				c.link(t, name, path)
-			}
-			c.driver(t, "preflight", []invocation{
-				{Name: "preflight-release.sh", Args: []string{filepath.Join(c.files[3], "release.json")}},
-				{Name: "infra", Args: []string{"database-release", "prepare", c.project, c.zone, c.service, c.disk, c.identity.Commit, filepath.Join(c.files[3], "database-change-"+service+".json"), databaseHash(t, c.metadata)}},
-			})
-		})
-	}
-}

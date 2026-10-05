@@ -31,10 +31,6 @@ func TestRun(t *testing.T) {
 		{[]string{"foundation", "apply", "bootstrap", "101-3"}, []string{"operation=apply", "root=bootstrap", "plan_id=101-3"}, "202"},
 		{[]string{"foundation", "apply", "foundation", "101-3"}, []string{"operation=apply", "root=foundation", "plan_id=101-3"}, "202"},
 		{[]string{"foundation", "recover-legacy", "42", "RECOVER LEGACY 42"}, []string{"operation=recover-legacy", "root=foundation", "service=none", "guard_generation=42", "confirm=RECOVER LEGACY 42"}, "202"},
-		{[]string{"release", "deploy"}, []string{"action=deploy"}, "202"},
-		{[]string{"release", "deploy", "--no-wait"}, []string{"action=deploy"}, "202"},
-		{[]string{"release", "rollback", "101-3"}, []string{"action=rollback", "target_receipt=101-3"}, "202"},
-		{[]string{"release", "recover-first-launch", "678"}, []string{"action=recover-first-launch", "failed_run_id=678"}, "202"},
 		{[]string{"release", "drill-database-isolation", "101-3", "DRILL authentication"}, []string{"action=drill-database-isolation", "target_receipt=101-3", "confirm_isolation=DRILL authentication"}, "202"},
 		{[]string{"release", "restore-database-isolation", "101-3", "RESTORE authentication"}, []string{"action=restore-database-isolation", "target_receipt=101-3", "confirm_isolation=RESTORE authentication"}, "202"},
 		{[]string{"recovery", "plan-workload", "recovery-project-prod", "101-3"}, []string{"operation=plan-workload", "replacement_project_id=recovery-project-prod", "target_receipt=101-3"}, "202-3"},
@@ -48,13 +44,7 @@ func TestRun(t *testing.T) {
 	for _, testCase := range testCases {
 		t.Run(strings.Join(testCase.args, " "), func(t *testing.T) {
 			t.Parallel()
-			overrides := map[string]string{}
-			watches := 1
-			if testCase.args[len(testCase.args)-1] == "--no-wait" {
-				overrides["run.patch"] = `{"status":"queued","conclusion":null}`
-				watches = 0
-			}
-			r := invoke(t, testCase.args, overrides, "")
+			r := invoke(t, testCase.args, nil, "")
 			require.Zero(t, r.code, r.stderr.String())
 			require.Equal(t, testCase.output+"\n", r.stdout.String())
 			require.Contains(t, r.stderr.String(), runURL)
@@ -64,7 +54,7 @@ func TestRun(t *testing.T) {
 				command = append(command, "-f", "inputs["+key+"]="+value)
 			}
 			require.Equal(t, [][]string{command}, r.dispatches)
-			require.Equal(t, watches, r.watches)
+			require.Equal(t, 1, r.watches)
 		})
 	}
 }
@@ -113,6 +103,10 @@ func TestRunInvalidIntent(t *testing.T) {
 		{"foundation", "finish-operation", "service-release", "json-keys", "42", "FINISH json-keys 42"},
 		{"foundation", "finish-apply", "service-release", "json-keys", "42", "FINISH json-keys 42"},
 		{"release", "deploy", "--force"},
+		{"release", "deploy"},
+		{"release", "deploy", "--no-wait"},
+		{"release", "rollback", "101-3"},
+		{"release", "recover-first-launch", "678"},
 		{"release", "recover-first-launch", "invalid"},
 		{"release", "rollback", "101-0"},
 		{"release", "drill-database-isolation", "101-3", "DRILL json-keys"},
@@ -235,7 +229,7 @@ func TestRunUncertainDispatch(t *testing.T) {
 	for _, body := range bodies {
 		t.Run(body, func(t *testing.T) {
 			t.Parallel()
-			r := invoke(t, []string{"release", "deploy", "--no-wait"}, map[string]string{"dispatch": body}, "")
+			r := invoke(t, []string{"foundation", "plan", "foundation"}, map[string]string{"dispatch": body}, "")
 			require.Equal(t, 70, r.code)
 			require.Empty(t, r.stdout.String())
 			require.Len(t, r.dispatches, 1)

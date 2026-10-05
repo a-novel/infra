@@ -135,8 +135,7 @@ func TestReleaseOwnership(t *testing.T) {
 	release := loadWorkflow(t, "workflows/release.yaml")
 	require.NotContains(t, release.Jobs, "native-service")
 	require.Equal(t, object{"group": "production-infrastructure", "cancel-in-progress": false}, release.Concurrency)
-	require.Contains(t, release.Jobs["release"].If, "vars.PRODUCTION_RELEASES_ENABLED == 'true'")
-	require.Equal(t, "production-release", release.Jobs["release"].Environment)
+	require.NotContains(t, release.Jobs, "release")
 	native := release.Jobs["native"]
 	require.Contains(t, native.If, "github.event_name == 'workflow_dispatch'")
 	require.Contains(t, native.If, "github.ref == 'refs/heads/master'")
@@ -262,7 +261,8 @@ func stepIndex(t *testing.T, steps []workflowStep, match string) int {
 func TestWorkflowCredentials(t *testing.T) {
 	t.Parallel()
 	for _, testCase := range []struct{ file, job string }{
-		{"release", "release"},
+		{"release", "native"},
+		{"release", "release-permissions"},
 		{"release", "database-isolation"},
 		{"recovery", "recover"},
 		{"recovery", "prepare-native"},
@@ -370,7 +370,6 @@ func TestPrerequisiteBoundary(t *testing.T) {
 	t.Parallel()
 	for _, testCase := range []struct{ file, job, command, condition string }{
 		{"main", "validate-release", "infra preflight resolve-images", ""},
-		{"release", "release", "infra preflight resolve-images", "env.RELEASE_ACTION == 'deploy'"},
 		{"foundation", "execute", "infra preflight service-images", "inputs.root == 'service-release'"},
 	} {
 		t.Run(testCase.file, func(t *testing.T) {
@@ -498,21 +497,11 @@ func TestWorkflowBoundaries(t *testing.T) {
 	require.Contains(t, check.Run, "infra custody config fetch")
 	require.NotRegexp(t, `\b(cat|tee)\b|set -x`, check.Run)
 
-	job := release.Jobs["release"]
-	compile := stepIndex(t, job.Steps, `"${PRIOR_RECEIPT}" "${RUNNER_TEMP}/release"`)
-	require.Contains(t, job.Steps[compile].Run, "infra compile-release")
-	require.Less(t, compile, stepIndex(t, job.Steps, "release-orchestrator.sh"))
-	require.Equal(t, "${{ steps.prior.outputs.argument }}", job.Steps[compile].Env["PRIOR_RECEIPT"])
+	require.NotContains(t, release.Jobs, "release")
+	require.NotContains(t, release.On, "push")
 	require.Equal(t, object{"group": "production-infrastructure", "cancel-in-progress": false}, release.Concurrency)
-	require.Equal(t, map[string]string{"actions": "read", "attestations": "read", "contents": "read", "id-token": "write", "pull-requests": "read"}, job.Permissions)
-	verify := stepIndex(t, job.Steps, "actions/runs/${FAILED_RUN_ID}")
-	recoverIndex := stepIndex(t, job.Steps, "infra database-release recover-first-launch")
-	require.Less(t, verify, recoverIndex)
-	for _, index := range []int{verify, recoverIndex} {
-		require.Equal(t, "env.RELEASE_ACTION == 'recover-first-launch'", job.Steps[index].If)
-	}
-	require.Contains(t, job.Steps[verify].Run, `.conclusion == "failure"`)
-	require.Contains(t, job.Steps[verify].Run, "production deploy by @")
+	require.ElementsMatch(t, []any{"plan", "apply", "check-release-permissions", "drill-database-isolation", "restore-database-isolation"},
+		nested(release.On, "workflow_dispatch", "inputs", "action")["options"])
 
 	require.Len(t, renovate.On, 2)
 	require.Contains(t, renovate.On, "workflow_dispatch")

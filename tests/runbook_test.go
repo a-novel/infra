@@ -1,7 +1,6 @@
 package tests_test
 
 import (
-	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -50,7 +49,7 @@ func TestRunbookCommands(t *testing.T) {
 					switch {
 					case regexp.MustCompile(`^gcloud (auth|config|version|organizations|billing)\b|^gcloud resource-manager folders\b`).MatchString(command):
 					case strings.HasPrefix(command, "gcloud projects "):
-						require.Regexp(t, `^gcloud projects \S+ "\$\{?(INFRA_MANAGEMENT_PROJECT_ID|INFRA_WORKLOAD_PROJECT_ID|MANAGEMENT_PROJECT_ID|WORKLOAD_PROJECT_ID|SOURCE_PROJECT_ID|REPLACEMENT_PROJECT_ID)(:\?[^}]*)?\}?"`, command)
+						require.Regexp(t, `^gcloud projects \S+ "\$\{?(INFRA_MANAGEMENT_PROJECT_ID|INFRA_WORKLOAD_PROJECT_ID|INFRA_PUBLIC_API_PROJECT_ID|MANAGEMENT_PROJECT_ID|WORKLOAD_PROJECT_ID|SOURCE_PROJECT_ID|REPLACEMENT_PROJECT_ID)(:\?[^}]*)?\}?"`, command)
 					case strings.HasPrefix(command, "gcloud storage "):
 						require.Regexp(t, `gs://\$\{|"\$\{?STATE_OBJECT\}?("|#)`, command)
 					default:
@@ -139,40 +138,6 @@ func TestRunbookIAM(t *testing.T) {
 			require.Regexp(t, `gcloud projects `+operation+`-iam-policy-binding[^\n]+--condition="\$\{?`+testCase.condition, body)
 		}
 	}
-}
-
-func TestInitializerRunbook(t *testing.T) {
-	t.Parallel()
-	guide := read(t, "../docs/setup-production.md")
-	execute := regexp.MustCompile(`(?m)^gcloud run jobs execute agora-authentication-init (.+)$`).FindAllStringSubmatch(guide, -1)
-	require.Len(t, execute, 1)
-	require.Regexp(t, `--project="\$\{INFRA_WORKLOAD_PROJECT_ID:\?`, execute[0][1])
-	require.Regexp(t, `--region="\$\{REGION:\?`, execute[0][1])
-	require.True(t, strings.HasSuffix(execute[0][1], "--wait"))
-	require.NotRegexp(t, `--(args|command|update-env-vars|set-env-vars|tasks|task-timeout)`, execute[0][1])
-	require.Contains(t, read(t, "../ops/await-auth-initialization.sh"), "docs/setup-production.md#run-the-human-only-authentication-initializer")
-	filter := regexp.MustCompile(`\| jq '(\{secretAliases:[^\n]+)'`).FindStringSubmatch(guide)
-	require.Len(t, filter, 2)
-	inputs := []object{
-		{"name": "SUPER_ADMIN_PASSWORD", "value": privateValue},
-		{"name": "POSTGRES_PASSWORD", "valueFrom": object{"secretKeyRef": object{"name": "alias", "key": "2"}}},
-	}
-	payload := object{"spec": object{"template": object{
-		"metadata": object{"annotations": object{"run.googleapis.com/secrets": "alias:projects/123/secrets/auth-password"}},
-		"spec":     object{"template": object{"spec": object{"containers": []object{{"env": inputs}}}}},
-	}}}
-	code, output := setup(t).run(t, "jq", "-n", "--argjson", "payload", jsonText(t, payload), "$payload | "+filter[1])
-	expectCode(t, 0, code, output)
-	var report struct {
-		Inputs []struct {
-			HasValue  bool
-			SecretRef object
-		}
-	}
-	require.NoError(t, json.Unmarshal([]byte(output), &report))
-	require.Len(t, report.Inputs, 2)
-	require.True(t, report.Inputs[0].HasValue)
-	require.Equal(t, object{"name": "alias", "key": "2"}, report.Inputs[1].SecretRef)
 }
 
 func TestFirewallOrdering(t *testing.T) {

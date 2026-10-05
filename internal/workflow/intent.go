@@ -21,9 +21,6 @@ const usage = `usage: go run ./cmd/infra
   foundation promote-images service-release <json-keys|authentication>
   foundation finish-operation <service> <guard-generation> 'FINISH <service> <guard-generation>'
   foundation recover-legacy <guard-generation> 'RECOVER LEGACY <guard-generation>'
-  release deploy [--no-wait]
-  release rollback <receipt-id>
-  release recover-first-launch <failed-run-id>
   release drill-database-isolation <receipt-id> 'DRILL authentication'
   release restore-database-isolation <receipt-id> 'RESTORE authentication'
   recovery plan-workload <replacement-project-id> <receipt-id>
@@ -38,7 +35,7 @@ const usage = `usage: go run ./cmd/infra
 type intent struct {
 	workflow, planID, planPrefix, pullRequest string
 	inputs                                    []string
-	attempt, noWait, observation              bool
+	attempt, observation                      bool
 }
 
 func (i *intent) input(key, value string) {
@@ -150,12 +147,6 @@ func parse(args []string) (intent, error) {
 		}
 		i.input("action", args[0])
 		switch {
-		case args[0] == "deploy" && (len(args) == 1 || len(args) == 2 && args[1] == "--no-wait"):
-			i.noWait = len(args) == 2
-		case args[0] == "rollback" && len(args) == 2 && matches(attemptID, args[1]):
-			i.input("target_receipt", args[1])
-		case args[0] == "recover-first-launch" && len(args) == 2 && matches(runID, args[1]):
-			i.input("failed_run_id", args[1])
 		case len(args) == 3 && matches(attemptID, args[1]) &&
 			(args[0] == "drill-database-isolation" && args[2] == "DRILL authentication" ||
 				args[0] == "restore-database-isolation" && args[2] == "RESTORE authentication"):

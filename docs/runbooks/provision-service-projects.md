@@ -121,7 +121,7 @@ owners unchanged until those checks pass; no state transfer or resource migratio
 
 ### Protected storage permission checks
 
-After registration converges, dispatch `production release` on master with
+After registration converges, dispatch `retained production operations` (`release.yaml`) on master with
 `action=check-release-permissions`. Approve its two existing service/zone environments. The fixed
 identities exercise their own release storage and append-only receipt grants using tiny synthetic
 objects, then require explicit IAM denials for peer reads and creates. This action runs independently
