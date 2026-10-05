@@ -1,6 +1,7 @@
 output "cloud_config" {
   description = "COS preparation-only cloud-config; the protected owner starts the units."
-  value       = "#cloud-config\n${yamlencode({ write_files = local.files, runcmd = [["systemctl", "daemon-reload"]] })}"
+  # COS owns the host keys before cloud-init prepares the database units.
+  value = "#cloud-config\n${yamlencode({ ssh_deletekeys = false, write_files = local.files, runcmd = [["systemctl", "daemon-reload"]] })}"
 }
 
 output "startup_script" {

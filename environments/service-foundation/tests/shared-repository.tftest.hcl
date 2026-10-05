@@ -141,6 +141,7 @@ run "activate_existing_shared_repository" {
   assert {
     condition = alltrue([
       google_compute_instance.repository["host"].desired_status == "RUNNING",
+      yamldecode(local.repository_cloud_config.host).ssh_deletekeys == false,
       google_compute_instance.repository["host"].machine_type == "e2-micro",
       yamldecode(local.repository_cloud_config.host).runcmd == [
         ["systemctl", "daemon-reload"],
