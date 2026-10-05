@@ -20,14 +20,16 @@ RuntimeDirectoryPreserve=no
 Environment=PGBACKREST_REPOSITORY_NAME=${server_name}
 Environment=PGBACKREST_REPOSITORY_IP=${server_ip}
 Environment=PGBACKREST_WAL_ARCHIVING=${wal_archiving}
+Environment=PGBACKREST_DATABASE_IMAGE=${server_image}
 ExecStartPre=/usr/bin/docker --config=/etc/agora-database/docker pull ${credentials_image}
+ExecStartPre=/usr/bin/docker --config=/etc/agora-database/docker pull ${server_image}
 ExecStartPre=/usr/bin/install -d -o 999 -g 999 -m 0700 /run/agora/pgbackrest /run/agora/postgresql /run/agora/pgbackrest-lock
 ExecStartPre=/usr/bin/docker run --rm --name=agora-database-credentials --pull=never \
     --network=host --read-only --user=999:999 --cap-drop=ALL --security-opt=no-new-privileges \
     --cpus=1 --memory=256m --pids-limit=64 --no-healthcheck --log-driver=none --ulimit=core=0 \
     --mount=type=bind,source=/run/agora/pgbackrest,target=/credentials \
     ${credentials_image} --management-project-number=${management_number} --workload-project=${project} \
-    --endpoint=database --ca-version=${ca_version} --identity-version=${identity_version} \
+    --endpoint=database ${zone_argument}--ca-version=${ca_version} --identity-version=${identity_version} \
     --name=agora-database.${project} --output=/credentials/current
 ExecStart=/bin/bash /etc/agora-database/startup.sh --supervise
 ExecStop=/usr/bin/docker stop --time=60 agora-postgres-json-keys

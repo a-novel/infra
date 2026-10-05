@@ -10,6 +10,38 @@ units. The [September single-VM result](../../proofs/pgbackrest-gcs/result-20260
 [offline proofs](../../proofs/pgbackrest/README.md) cover different boundaries. Do not recreate that
 trial or substitute its simpler network, identity or entrypoint for this rehearsal.
 
+## Shared-host activation
+
+The approved shared-private deployment retains its existing database and logical backups.
+It does **not** use the synthetic-source provisioning or destructive exercises below.
+Do not recreate the retired per-service project or run fault injection on a serving database.
+
+1. Bind the existing database group/member, preserved data-disk ID, repository host, attached
+   identities and current image digest to fresh read-only evidence. Keep PostgreSQL, client,
+   workers and repository on the exact deployed database artifact. Promote the same bytes to
+   the service-specific registry; do not silently use the newer application release's database.
+2. Settle issuer custody, names, validity, expiry notification and renewal/revocation before
+   uploading numeric TLS versions. Keep the issuer key off both VMs, state and logs. A successful
+   loader test is not an operational certificate lifecycle.
+3. Through service foundation, prepare the repository runtime and exact image-reader grants.
+   Start the existing micro only through its reviewed `active` setting. Verify the loaded
+   image/certificates and TLS service; no database disk belongs to this root.
+4. Through shared foundation, review `json_keys_native_backup` using the **existing protected
+   database-maintenance** workflow. Require its fresh logical backup and clean restore check,
+   same disks/addresses/capacity, no surge and no peer changes. The shared HCL renderer starts
+   only the selected database; it does not activate native timers or expiration.
+5. Keep initial WAL/backup verification attended. Prove exact identities, metadata isolation,
+   authenticated repository access, stanza creation, archiving, a full/differential chain and
+   an isolated SQL restore. Never restore over the serving disk. Obtain separate approval if
+   the available isolation requires additional compute or recovery authority.
+6. Before unattended native scheduling, bind and prove failure/freshness/disk/TLS-expiry
+   notifications, certificate rotation and actual cost/storage measurements. Retain logical
+   backups and snapshots until recovery acceptance is complete. Configuration convergence,
+   an active unit and a successful backup command alone do not close this initiative.
+
+The remaining sections describe the independently approved synthetic destructive rehearsal.
+They are not authorization to move or damage the current shared deployment.
+
 ## 1. Approve the scope and cost
 
 Start with the [operator preflight](README.md#start-an-operation). Record the following privately

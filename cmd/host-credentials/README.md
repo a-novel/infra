@@ -1,19 +1,19 @@
 # Native-backup host credentials
 
-Inactive JSON Keys pilot component. CI builds and scans this image. Its
+JSON Keys pilot component. CI builds and scans this image. Its
 [protected publisher](../../docs/runbooks/publish-rollout-verifier.md) requires
-separate activation and approval. No host starts it, no secret is populated,
-and existing backups are unchanged.
+separate activation and approval. Publishing the image populates no secret
+and changes no running host or backup schedule.
 
 The one-shot command uses Google's Secret Manager client and the VM's attached
 identity. It does not use local ADC, issue certificates, rotate credentials, or
 run a credential service. The disabled [repository](../../environments/service-foundation/README.md#prepared-native-runtime)
-and [database](../../environments/service-foundation/README.md#prepared-database-lifecycle) units own
-ordering and lifecycle. Neither starts automatically.
+and [database](../../modules/database-runtime/README.md) units own
+ordering and lifecycle. Their foundation owners control activation.
 
 ## Contract
 
-All arguments are required; `--help` describes them. The management project must
+All arguments except `--zone` are required; `--help` describes them. The management project must
 be its **numeric project number**, matching Secret Manager's canonical response
 name. CA and identity versions must be positive numeric versions, never aliases.
 
@@ -21,6 +21,11 @@ name. CA and identity versions must be positive numeric versions, never aliases.
 | ------------ | ----------------------------------------- | -------------------------------------------- | ---------------------------------------- |
 | `database`   | `agora-database`                          | `production-json-keys-pgbackrest-database`   | Authorized client certificate CN         |
 | `repository` | `agora-backup-repository`                 | `production-json-keys-pgbackrest-repository` | Server DNS name used by database clients |
+
+Without `--zone`, these dedicated-project identities are unchanged. `--zone=private`
+requires `agora-json-keys-database` for the database or `agora-pgbr-json-keys`
+for the repository, in the same workload project. Other zones are rejected.
+The attached metadata identity must match exactly; callers cannot supply an arbitrary account.
 
 Both endpoints read `production-json-keys-pgbackrest-ca`. The CA payload contains
 public CA certificates only. The identity payload contains the endpoint's leaf

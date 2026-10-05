@@ -1,7 +1,8 @@
 variable "pgbackrest_repository" {
-  description = "Optional JSON Keys repository host, stopped unless guarded bring-up is selected. Runtime installs a disabled service."
+  description = "Optional JSON Keys repository host. Shared activation explicitly starts the existing micro host and its native systemd service."
   type = object({
     machine_type = optional(string, "e2-micro")
+    active       = optional(bool, false)
     # Shared projects place the repository without taking ownership of the database.
     placement = optional(object({
       zone       = string
@@ -30,7 +31,14 @@ variable "pgbackrest_repository" {
         )
       ) && contains(["e2-micro", "e2-small"], var.pgbackrest_repository.machine_type)
     )
-    error_message = "The JSON Keys repository requires reviewed placement. Shared private scopes admit only a stopped micro host beside the published database, without database ownership or host activation."
+    error_message = "The JSON Keys repository requires reviewed placement. Shared private scopes admit only a micro host beside the published database, without database ownership."
+  }
+
+  validation {
+    condition = try(var.pgbackrest_repository.active, false) ? (
+      var.zone == "private" && try(var.pgbackrest_repository.runtime, null) != null
+    ) : true
+    error_message = "Shared repository activation requires the private scope and a pinned TLS runtime; dedicated hosts retain guarded bring-up."
   }
 
   validation {
@@ -88,7 +96,7 @@ resource "google_compute_instance" "repository" {
   zone                      = local.repository_placement.zone
   name                      = "agora-pgbackrest-${var.service}"
   machine_type              = each.value.machine_type
-  desired_status            = var.zone == null && local.native_host_bringup ? "RUNNING" : "TERMINATED"
+  desired_status            = each.value.active || (var.zone == null && local.native_host_bringup) ? "RUNNING" : "TERMINATED"
   allow_stopping_for_update = false
   deletion_protection       = true
   can_ip_forward            = false

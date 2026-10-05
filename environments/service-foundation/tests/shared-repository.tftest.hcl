@@ -114,9 +114,54 @@ run "prepared_runtime_stays_stopped" {
         binding.member == "serviceAccount:${google_service_account.repository["host"].email}" &&
         binding.role == "roles/artifactregistry.reader"
       ]),
+      length(google_artifact_registry_repository_iam_member.shared_database_images) == 2,
+      alltrue([for binding in google_artifact_registry_repository_iam_member.shared_database_images :
+        binding.member == "serviceAccount:agora-json-keys-database@agora-private-test.iam.gserviceaccount.com" &&
+        binding.role == "roles/artifactregistry.reader"
+      ]),
+      strcontains(yamldecode(local.repository_cloud_config.host).write_files[2].content, "--endpoint=repository --zone=private "),
     ])
     error_message = "Shared runtime preparation installs a disabled unit and exact image-reader grants without starting or taking ownership of either database."
   }
+}
+
+run "activate_existing_shared_repository" {
+  command = plan
+  variables {
+    database_handoff = run.documents.cases.json_keys
+    pgbackrest_repository = {
+      active    = true
+      placement = run.documents.repository_placement
+      runtime = merge(jsondecode(file("tests/fixtures/repository-runtime.json")), {
+        server_image      = "europe-west1-docker.pkg.dev/agora-private-test/agora-json-keys-private-production/service-json-keys/database@sha256:${sha256("server")}"
+        credentials_image = "europe-west1-docker.pkg.dev/agora-private-test/agora-json-keys-private-tooling/host-credentials@sha256:${sha256("credentials")}"
+      })
+    }
+  }
+  assert {
+    condition = alltrue([
+      google_compute_instance.repository["host"].desired_status == "RUNNING",
+      google_compute_instance.repository["host"].machine_type == "e2-micro",
+      yamldecode(local.repository_cloud_config.host).runcmd == [
+        ["systemctl", "daemon-reload"],
+        ["systemctl", "start", "agora-backup-repository.service"],
+      ],
+      strcontains(yamldecode(local.repository_cloud_config.host).write_files[2].content, "Restart=on-failure"),
+      length(google_compute_instance_group_manager.database) == 0,
+      length(google_compute_disk.database) == 0,
+      output.native_bringup == null,
+    ])
+    error_message = "Explicit activation starts only the existing private repository and keeps database ownership in its original state."
+  }
+}
+
+run "reject_activation_without_runtime" {
+  command = plan
+  variables {
+    database_handoff      = run.documents.cases.json_keys
+    pgbackrest_repository = { active = true, placement = run.documents.repository_placement }
+  }
+  expect_failures = [var.pgbackrest_repository]
 }
 
 run "reject_unscoped_runtime_images" {

@@ -118,8 +118,8 @@ resource "google_compute_instance_template" "database" {
     shutdown-script                    = file("${path.module}/../../../assets/database-host/shutdown.sh")
   }
 
-  # Legacy script changes replace these templates and require approved host maintenance.
-  metadata_startup_script = file("${path.module}/../../../assets/database-host/legacy-startup.sh")
+  # The existing maintenance gate permits only this script to replace the host template.
+  metadata_startup_script = each.key == "json_keys" && var.json_keys_native_backup != null ? module.json_keys_native_backup[0].startup_script : file("${path.module}/../../../assets/database-host/legacy-startup.sh")
 
   disk {
     auto_delete  = true

@@ -192,6 +192,26 @@ denial checks remain activation prerequisites. See [Google's account selectors a
 the [pinned provider resource](https://github.com/hashicorp/terraform-provider-google/blob/v8.2.0/website/docs/r/compute_firewall.html.markdown),
 and [pgBackRest's TLS port](https://pgbackrest.org/configuration.html#section-repository/option-repo-host-port).
 
+### Shared native database
+
+`json_keys_native_backup = null` retains the existing startup path. The explicit JSON Keys
+opt-in supplies the private repository IP, service-scoped database/credential image digests,
+numeric CA/database identity versions and `wal_archiving` (default false). It reuses
+the [database-runtime module](../../../modules/database-runtime/README.md) through this
+root's existing instance template, singleton group and preserved data disk.
+
+Apply this startup-script change only through protected database maintenance, including
+its fresh logical backup, restore check and exact no-surge replacement review. Authentication,
+database metadata/image, disks, addresses and VM sizes must remain unchanged. The entrypoint
+requires the deployed database digest to equal the repository/worker digest. This is not a
+database upgrade or ownership transfer to service foundation.
+
+Boot starts PostgreSQL under systemd and leaves native timers stopped. Existing logical
+backup jobs and snapshots are unaffected. TLS issuance, runtime identity/egress checks,
+native backup/SQL-restore proof and monitoring remain activation requirements; see
+[shared-host activation](../../../docs/runbooks/accept-native-backups.md#shared-host-activation).
+Do not apply this opt-in to a recovery copy.
+
 Both Google providers are pinned in [`versions.tf`](./versions.tf); only service-agent creation uses
 `google-beta`. Rows group repeated resources that share a
 single boundary; their `for_each` keys are part of the reviewed configuration and mocked tests.

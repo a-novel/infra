@@ -22,12 +22,26 @@ locals {
           project           = var.project_id
           management_number = trimprefix(trimsuffix(var.state_bucket, "-tofu-state"), "${var.management_project_id}-")
           server_name       = local.repository_name
+          zone_argument     = var.zone == null ? "" : "--zone=private "
+          restart           = var.pgbackrest_repository.active ? "on-failure" : "no"
         }))
       },
     ]
-    # COS recreates /etc on every boot. Register the unit without starting or enabling it.
-    runcmd = [["systemctl", "daemon-reload"]]
+    # COS recreates /etc on every boot; activation must survive a host restart.
+    runcmd = concat([["systemctl", "daemon-reload"]], var.pgbackrest_repository.active ? [
+      ["systemctl", "start", "agora-backup-repository.service"],
+    ] : [])
   })}" }
+}
+
+resource "google_artifact_registry_repository_iam_member" "shared_database_images" {
+  for_each = var.zone == "private" && length(local.repository_runtime) > 0 ? google_artifact_registry_repository.images : {}
+
+  project    = var.project_id
+  location   = each.value.location
+  repository = each.value.repository_id
+  role       = "roles/artifactregistry.reader"
+  member     = "serviceAccount:agora-json-keys-database@${var.project_id}.iam.gserviceaccount.com"
 }
 
 resource "google_artifact_registry_repository_iam_member" "repository_images" {
