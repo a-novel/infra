@@ -61,6 +61,18 @@ foundation's scoped release-job permission and the private service foundation's 
 self-invocation grant first. Do not enable routine execution while two
 states still own the probe.
 
+The retained-root plan must contain exactly one `forget` for
+`google_cloud_run_v2_job.json_keys_smoke[0]`. The native private JSON Keys plan imports that same
+`agora-json-keys-smoke` job as `google_cloud_run_v2_job.verification[0]`; reject creation,
+replacement or deletion. Record its Cloud Run UID before removal and confirm the UID after import.
+Its invocation tag stays in the retained root. Preserve both state backups until the native
+probe has completed successfully and the new root converges.
+
+State removal requires `allow-resource-deletion` on the PR that produced the workflow's exact
+master commit, present before that PR merged. Finish pending dependency merges before landing
+the approved handoff PR and creating its plan. If master advances again, obtain approval through
+a reviewed PR on the new base; adding a label after merge cannot authorize that commit.
+
 Pause `agora-json-keys-rotation` before a JSON Keys release and wait for accepted executions to
 finish. The guarded apply verifies that the schedule is paused and every listed execution has
 finished. Leave it paused between candidate and promotion, or after failure; resume it only after
