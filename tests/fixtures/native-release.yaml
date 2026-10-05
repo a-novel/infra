@@ -7,22 +7,33 @@ job:
   template:
     taskCount: 1
     parallelism: 1
-    template: &task
+    template:
       timeout: 600s
       maxRetries: 0
       serviceAccount: runtime@example.test
       containers:
         - image: replaced-by-test
 execution:
-  uid: a0da4684-ff3a-4dac-a4ce-38a01f302011
-  completionTime: "2026-10-05T10:00:00Z"
-  taskCount: 1
-  parallelism: 1
-  succeededCount: 1
-  template: *task
-  conditions:
-    - type: Completed
-      state: CONDITION_SUCCEEDED
+  metadata:
+    uid: a0da4684-ff3a-4dac-a4ce-38a01f302011
+    generation: 1
+    labels:
+      run.googleapis.com/jobUid: 479dc964-dd6f-47fc-a613-e77a22096b17
+      run.googleapis.com/jobGeneration: "2"
+  spec:
+    taskCount: 1
+    parallelism: 1
+    template:
+      spec:
+        containers:
+          - image: platform-manifest-resolved-by-cloud-run
+  status:
+    observedGeneration: 1
+    completionTime: "2026-10-05T10:00:00Z"
+    succeededCount: 1
+    conditions:
+      - type: Completed
+        status: "True"
 api:
   generation: "4"
   observedGeneration: "4"
