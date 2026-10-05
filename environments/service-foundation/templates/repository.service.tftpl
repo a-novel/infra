@@ -1,12 +1,13 @@
 [Unit]
-Description=Agora JSON Keys native backup repository (manual activation)
+Description=Agora JSON Keys native backup repository
 BindsTo=docker.service
 Wants=network-online.target gcr-online.target
 After=docker.service network-online.target gcr-online.target
 
 [Service]
 Type=exec
-Restart=no
+Restart=${restart}
+RestartSec=30
 TimeoutStartSec=240
 TimeoutStopSec=60
 UMask=0077
@@ -21,7 +22,7 @@ ExecStartPre=/usr/bin/docker run --rm --name=agora-backup-credentials --pull=nev
     --cpus=1 --memory=256m --pids-limit=64 --no-healthcheck --log-driver=none \
     --ulimit=core=0 --mount=type=bind,source=/run/agora-backup-repository/credentials,target=/credentials \
     ${credentials_image} --management-project-number=${management_number} --workload-project=${project} \
-    --endpoint=repository --ca-version=${ca_version} --identity-version=${identity_version} \
+    --endpoint=repository ${zone_argument}--ca-version=${ca_version} --identity-version=${identity_version} \
     --name=${server_name} --output=/credentials/current
 ExecStart=/usr/bin/docker run --rm --name=agora-backup-repository --pull=never \
     --network=host --read-only --user=999:999 --cap-drop=ALL --security-opt=no-new-privileges \

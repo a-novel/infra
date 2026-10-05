@@ -86,7 +86,9 @@ existing protected foundation plan/apply workflow.
 Shared preparation retains the micro profile and existing database ownership. Optional
 `pgbackrest_repository.runtime` installs the [disabled native unit](#prepared-native-runtime);
 its image paths use `agora-json-keys-private-production` and `agora-json-keys-private-tooling`.
-The host remains stopped and `database_runtime` remains forbidden in this root.
+The host remains stopped by default and `database_runtime` remains forbidden in this root.
+Runtime preparation grants the repository and existing JSON Keys database identities Reader
+on these two exact registries; it grants neither identity access to a peer service's images.
 
 Bootstrap's `json_keys_pgbackrest.zone = "private"` selects this repository identity and the
 existing database identity for bucket/TLS custody. Shared foundation's
@@ -98,6 +100,14 @@ Review the complete costed plan before provisioning; stopped disks remain billab
 preparation starts no unit, issues no certificate and changes no backup schedule. Before starting,
 verify matching pgBackRest versions against the deployed database image and complete the
 [repository lifecycle requirements](#optional-stopped-repository-host).
+
+After those checks, `pgbackrest_repository.active = true` converges the existing micro host to
+`RUNNING`. Its cloud-init starts the repository's systemd unit on each boot, with bounded
+failure restarts. Dedicated-project hosts retain their existing guarded bring-up contract.
+Metadata changes do not reload a running daemon: pin changes require a stopped-consumer
+window and verification of the actually loaded configuration. This flag starts no database
+and enables no backup timer. The existing shared database owner uses
+[`json_keys_native_backup`](../production/foundation/README.md#shared-native-database).
 
 ### Dedicated-project preparation
 

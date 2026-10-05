@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# COS reconstructs /etc on boot; systemd owns the database process thereafter.
+set -euo pipefail
+umask 077
+
+%{ for file in files ~}
+install -d -m 0755 '${dirname(file.path)}'
+printf '%s' '${base64encode(file.content)}' | base64 -d > '${file.path}'
+chmod '${file.permissions}' '${file.path}'
+%{ endfor ~}
+systemctl daemon-reload
+systemctl start agora-database.service

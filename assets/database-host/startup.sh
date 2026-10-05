@@ -141,6 +141,13 @@ require_promoted_image() {
         printf 'error: database image must use an immutable sha256 digest\n' >&2
         exit 1
     fi
+
+    # The repository and local backup workers must use the database's exact pgBackRest build.
+    if [ "${DATABASE_SUPERVISED}" = true ] &&
+        [ "${digest}" != "${PGBACKREST_DATABASE_IMAGE##*@sha256:}" ]; then
+        printf 'error: native backup image differs from the selected database image\n' >&2
+        exit 1
+    fi
 }
 
 fetch_secret() {

@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// FoundationScope authorizes prerequisites and stopped repository placement in a registered service/zone state.
+// FoundationScope authorizes prerequisites and the repository host in a registered service/zone state.
 func FoundationScope(data []byte, getenv func(string) string, bucket string) (string, error) {
 	var fields, registration map[string]json.RawMessage
 	if json.Unmarshal(data, &fields) != nil {

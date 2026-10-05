@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"regexp"
 	"syscall"
 	"time"
 
@@ -24,9 +23,10 @@ import (
 
 func main() {
 	var config hostcredentials.Config
-	var workload string
+	var workload, zone string
 	flag.StringVar(&config.ProjectNumber, "management-project-number", "", "numeric project owning TLS secrets")
 	flag.StringVar(&workload, "workload-project", "", "project owning the attached endpoint identity")
+	flag.StringVar(&zone, "zone", "", "private for shared-project identities; empty for dedicated projects")
 	flag.StringVar(&config.Endpoint, "endpoint", "", "database or repository")
 	flag.StringVar(&config.CAVersion, "ca-version", "", "numeric public-trust secret version")
 	flag.StringVar(&config.IdentityVersion, "identity-version", "", "numeric endpoint secret version")
@@ -35,7 +35,7 @@ func main() {
 	flag.Parse()
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	ctx, deadline := context.WithTimeout(ctx, 2*time.Minute)
-	err := run(ctx, config, workload)
+	err := run(ctx, config, workload, zone)
 	deadline()
 	cancel()
 	if err != nil {
@@ -44,19 +44,19 @@ func main() {
 	}
 }
 
-func run(ctx context.Context, config hostcredentials.Config, workload string) error {
+func run(ctx context.Context, config hostcredentials.Config, workload, zone string) error {
 	if err := config.Validate(); err != nil {
 		return err
 	}
-	if flag.NArg() != 0 || !regexp.MustCompile(`^[a-z][a-z0-9-]{4,28}[a-z0-9]$`).MatchString(workload) || os.Getenv("GCE_METADATA_HOST") != "" {
+	if flag.NArg() != 0 || os.Getenv("GCE_METADATA_HOST") != "" {
 		return errors.New("invalid workload scope, extra arguments or metadata override")
 	}
-	account := "agora-database"
-	if config.Endpoint == "repository" {
-		account = "agora-backup-repository"
+	account, err := hostcredentials.ServiceAccount(workload, config.Endpoint, zone)
+	if err != nil {
+		return err
 	}
 	actual, err := metadata.NewClient(nil).EmailWithContext(ctx, "default")
-	if err != nil || actual != account+"@"+workload+".iam.gserviceaccount.com" {
+	if err != nil || actual != account {
 		return errors.New("attached VM identity does not match the selected endpoint")
 	}
 	client, err := secretmanager.NewClient(ctx,
