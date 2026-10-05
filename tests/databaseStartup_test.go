@@ -78,6 +78,7 @@ if [ "$DATABASE_SUPERVISED" = true ]; then supervise_database; fi
 			require.Contains(t, args, "--restart "+restart)
 			archiving := native && tc.wal == "true"
 			for option, want := range map[string]bool{
+				"unix_socket_directories=/var/run/postgresql,/tmp": native,
 				"archive_mode=off": native && !archiving,
 				"archive_mode=on":  archiving,
 				"archive_command=pgbackrest --stanza=json-keys archive-push %p": archiving,
