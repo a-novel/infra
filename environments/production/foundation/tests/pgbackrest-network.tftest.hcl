@@ -30,6 +30,11 @@ run "default_network_is_unchanged" {
   command = plan
 
   assert {
+    condition     = length(google_service_account_iam_member.repository_operator_act_as) == 0
+    error_message = "Disabled repositories must not grant operator attachment authority."
+  }
+
+  assert {
     condition = alltrue([for rules in [
       google_compute_firewall.pgbackrest_database_egress, google_compute_firewall.pgbackrest_repository_ingress,
       google_compute_firewall.pgbackrest_google_egress, google_compute_firewall.pgbackrest_iap_ingress,
@@ -47,6 +52,11 @@ run "only_selected_database_reaches_its_repository" {
       authentication = "agora-authentication-test"
     }
     pgbackrest_repository_services = ["json-keys"]
+  }
+
+  assert {
+    condition     = length(google_service_account_iam_member.repository_operator_act_as) == 0
+    error_message = "Shared-project operator access must not alter dedicated-project permissions."
   }
 
   assert {
@@ -123,6 +133,18 @@ run "shared_private_network" {
     pgbackrest_repository_services = ["json-keys"]
   }
   assert {
+    condition = {
+      for key, binding in google_service_account_iam_member.repository_operator_act_as :
+      key => [binding.service_account_id, binding.role, binding.member]
+      } == {
+      "json-keys:group:infra-operators@example.com" = [
+        "projects/agora-production-test/serviceAccounts/agora-pgbr-json-keys@agora-production-test.iam.gserviceaccount.com",
+        "roles/iam.serviceAccountUser", "group:infra-operators@example.com",
+      ]
+    }
+    error_message = "Only existing database operators receive OS Login attachment authority on the selected repository identity."
+  }
+  assert {
     condition = alltrue([
       toset(keys(local.pgbackrest_network)) == toset(["json-keys"]),
       google_compute_firewall.pgbackrest_database_egress["json-keys"].target_service_accounts == toset(["agora-json-keys-database@agora-production-test.iam.gserviceaccount.com"]),
@@ -174,6 +196,10 @@ run "recovery_ignores_copied_production_opt_in" {
     recovery_mode                  = true
     workload_project_id            = "agora-recovery-test"
     pgbackrest_repository_services = ["json-keys"]
+  }
+  assert {
+    condition     = length(google_service_account_iam_member.repository_operator_act_as) == 0
+    error_message = "Recovery copies must not inherit production repository operator permissions."
   }
   assert {
     condition = alltrue([for rules in [
