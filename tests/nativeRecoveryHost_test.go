@@ -56,7 +56,7 @@ func newRecoveryHost(t *testing.T, request recovery.Request) *recoveryHostFixtur
 			"sudo -n lsblk --json --bytes --output TYPE,SIZE,FSTYPE,MOUNTPOINTS /dev/disk/by-id/google-agora-native-recovery-data": `{"blockdevices":[{"type":"disk","size":10737418240,"fstype":null,"mountpoints":[null]}]}`,
 			"sudo -n wipefs --no-act --json --output TYPE /dev/disk/by-id/google-agora-native-recovery-data":                       `{"signatures":[]}`,
 			"sudo -n cat /mnt/disks/agora-recovery/work/attempt/request.json":                                                      string(requestJSON),
-			"sudo -n cat /mnt/disks/agora-recovery/work/attempt/catalog.json":                                                      fmt.Sprintf(`[{"name":"json-keys","status":{"code":0},"db":[{"id":1,"repo-key":1,"system-id":%s,"version":"18"}],"backup":[{"label":%q,"error":false,"database":{"id":1,"repo-key":1}}]}]`, request.SystemID, request.Set),
+			"sudo -n cat /mnt/disks/agora-recovery/work/attempt/catalog.json":                                                      fmt.Sprintf(`[{"name":%q,"status":{"code":0},"db":[{"id":1,"repo-key":1,"system-id":%s,"version":"18"}],"backup":[{"label":%q,"error":false,"database":{"id":1,"repo-key":1}}]}]`, request.Service, request.SystemID, request.Set),
 			"sudo -n cat /mnt/disks/agora-recovery/work/attempt/restore.log":                                                       privateValue,
 			"sudo -n cat /mnt/disks/agora-recovery/work/attempt/files-restored.json":                                               fmt.Sprintf(`{"system_id":%q,"set":%q,"postgresql_started":false}`, request.SystemID, request.Set),
 		},

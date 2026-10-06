@@ -161,7 +161,7 @@ func recoverySource(host workflow.RecoveryHost, getenv func(string) string, buck
 	if err != nil {
 		return applyIntent{}, err
 	}
-	source := applyIntent{Project: host.SourceProject, Service: "json-keys", Region: host.Region}
+	source := applyIntent{Project: host.SourceProject, Service: host.Request().Service, Region: host.Region}
 	if strings.HasPrefix(scope, "workloads/") {
 		source.Scope = scope
 	}
@@ -232,7 +232,7 @@ func inspectRestore(ctx context.Context, client *storage.Service, expected apply
 	if err := decodeRecord(data, &intent); err != nil {
 		return nil, false, err
 	}
-	source, err := recoverySource(workflow.RecoveryHost{SourceProject: intent.Target.Request.SourceProject, ManagementProject: intent.Target.Request.ManagementProject, Region: expected.Region}, getenv, guard.Bucket)
+	source, err := recoverySource(workflow.RecoveryHost{Service: intent.Target.Request.Service, SourceProject: intent.Target.Request.SourceProject, ManagementProject: intent.Target.Request.ManagementProject, Region: expected.Region}, getenv, guard.Bucket)
 	version := 1
 	if source.Scope != "" {
 		version = 2

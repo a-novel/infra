@@ -5,13 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"time"
 )
 
 // Request is the private, reviewed selection supplied to a disposable recovery host.
 // Its database identity must come from independent source evidence, not the catalog being checked.
 type Request struct {
-	// Service owns both the stanza and repository prefix. The pilot supports JSON Keys.
+	// Service owns both the stanza and repository prefix.
 	Service string `json:"service"`
 	// SourceProject owns the original database, outside the disposable target.
 	SourceProject string `json:"source_project"`
@@ -31,7 +32,7 @@ type Request struct {
 	RepositoryTime string `json:"repository_time,omitempty"`
 	// VerifySQL requests offline validation after restoring consistency WAL with the backup.
 	VerifySQL bool `json:"verify_sql,omitempty"`
-	// ExpectedDataSHA256 is captured independently from quiesced source rows with data.sql.
+	// ExpectedDataSHA256 is captured independently from quiesced source rows with the service's data query.
 	// An absent expectation retains schema-only verification, not proof of data fidelity.
 	ExpectedDataSHA256 string `json:"expected_data_sha256,omitempty"`
 }
@@ -60,8 +61,8 @@ func (r Request) Validate() error {
 			return errors.New("invalid recovery project")
 		}
 	}
-	if r.Service != "json-keys" || r.Major != 18 {
-		return errors.New("recovery requires the JSON Keys PostgreSQL 18 image")
+	if !slices.Contains([]string{"json-keys", "authentication"}, r.Service) || r.Major != 18 {
+		return errors.New("recovery requires a supported PostgreSQL 18 service")
 	}
 	if r.Project == r.SourceProject || r.Project == r.ManagementProject || !matches(`a-novel-recovery-[a-z0-9-]+`, r.Project) {
 		return errors.New("recovery requires an independent disposable project")
@@ -85,7 +86,7 @@ func (r Request) Validate() error {
 
 // Identity is the separately enabled management-owned recovery account.
 func (r Request) Identity() string {
-	return "pgbr-json-keys-recovery@" + r.ManagementProject + ".iam.gserviceaccount.com"
+	return "pgbr-" + r.Service + "-recovery@" + r.ManagementProject + ".iam.gserviceaccount.com"
 }
 
 // Arguments keeps native configuration explicit and independent of inherited config files.

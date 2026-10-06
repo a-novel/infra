@@ -14,6 +14,7 @@ RUN go test -c -trimpath -o /proof.test ./proofs/pgbackrest
 FROM ${DATABASE_SERVICE}
 COPY --from=builder /proof.test /proof.test
 COPY internal/recovery/data.sql /data.sql
+COPY internal/recovery/authenticationData.sql /authenticationData.sql
 COPY assets/database-host/legacy-startup.sh /database-startup.sh
 COPY assets/database-host/check-backup.sh /check-backup.sh
 USER postgres

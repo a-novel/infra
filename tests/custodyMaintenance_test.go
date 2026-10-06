@@ -30,6 +30,9 @@ func TestCustodyMaintenance(t *testing.T) {
 		code int
 	}{
 		{"Ready", 0},
+		{"Authentication", 0},
+		{"AuthenticationPeer", 65},
+		{"RemainingAuthenticationContainer", 70},
 		{"NoOp", 0},
 		{"MonitoringOnly", 0},
 		{"InitialCreation", 0},
@@ -75,6 +78,11 @@ func TestCustodyMaintenance(t *testing.T) {
 			bringup := strings.HasPrefix(testCase.name, "BringUp/")
 			f, args, metadataFile := planFixture(t, "service-foundation", "services/agora-json-keys-test")
 			config := readJSON(t, args[5])
+			service := "json-keys"
+			if strings.Contains(testCase.name, "Authentication") {
+				service = "authentication"
+			}
+			config["service"] = service
 			config["database_runtime"] = object{"revision": strings.Repeat("b", 40), "bring_up": bringup}
 			writeJSON(t, args[5], config)
 			metadata := readJSON(t, metadataFile)
@@ -86,14 +94,14 @@ func TestCustodyMaintenance(t *testing.T) {
 			f.env["GITHUB_REPOSITORY"], f.env["GITHUB_EVENT_NAME"] = "a-novel/infra", "workflow_dispatch"
 			f.env["GITHUB_WORKFLOW_REF"] = "a-novel/infra/.github/workflows/foundation.yaml@refs/heads/master"
 			f.env["MANAGEMENT_PROJECT_ID"] = "agora-management-test"
-			f.env["FOUNDATION_CONFIG"] = `{"management_project_id":"agora-management-test","workload_project_id":"agora-production-test","region":"europe-west1","service_projects":{"json-keys":"agora-json-keys-test"}}`
+			f.env["FOUNDATION_CONFIG"] = `{"management_project_id":"agora-management-test","workload_project_id":"agora-production-test","region":"europe-west1","service_projects":{"` + service + `":"agora-json-keys-test"}}`
 			applyStorage(t, f, "")
 			remotePlan := filepath.Join(filepath.Dir(metadataFile), "plan.tfplan")
 			guard := filepath.Join(f.env["FAKE_GCS_ROOT"], args[0], "services/agora-json-keys-test/release/operation.json")
 
 			hosts := []object{
-				{"name": "agora-database-json-keys-abcd", "instance_id": "123", "metadata": object{"user-data": "/etc/systemd/system/agora-database.service"}},
-				{"name": "agora-pgbackrest-json-keys", "instance_id": "456", "metadata": object{"user-data": "/etc/systemd/system/agora-backup-repository.service"}},
+				{"name": "agora-database-" + service + "-abcd", "instance_id": "123", "metadata": object{"user-data": "/etc/systemd/system/agora-database.service"}},
+				{"name": "agora-pgbackrest-" + service, "instance_id": "456", "metadata": object{"user-data": "/etc/systemd/system/agora-backup-repository.service"}},
 			}
 			for _, host := range hosts {
 				host["project"], host["zone"] = "agora-json-keys-test", "europe-west1-b"
@@ -123,6 +131,8 @@ func TestCustodyMaintenance(t *testing.T) {
 				hosts[0]["metadata"] = object{"startup-script": privateValue}
 			case "PeerProject":
 				hosts[0]["project"] = "agora-authentication-test"
+			case "AuthenticationPeer":
+				hosts[1]["name"] = "agora-pgbackrest-json-keys"
 			}
 			plan := object{
 				"format_version": "1.2", "resource_changes": []object{change},
@@ -298,6 +308,10 @@ func TestCustodyMaintenance(t *testing.T) {
 						_, err := io.WriteString(output, result)
 						return err
 					case strings.Contains(remote, "docker ps "):
+						if testCase.name == "RemainingAuthenticationContainer" {
+							_, err := io.WriteString(output, "agora-postgres-authentication\n")
+							return err
+						}
 						if testCase.name == "RemainingContainer" {
 							_, err := io.WriteString(output, "agora-backup-full\n")
 							return err
@@ -324,7 +338,7 @@ func TestCustodyMaintenance(t *testing.T) {
 			switch testCase.code {
 			case 0:
 				want := []string{"apply", "converge"}
-				if testCase.name == "Ready" || testCase.name == "BringUp/Success" {
+				if testCase.name == "Ready" || testCase.name == "Authentication" || testCase.name == "BringUp/Success" {
 					want = append([]string{"agora-backup-full.timer", "agora-backup-stanza-create.service", "agora-database.service", "agora-backup-repository.service"}, want...)
 				}
 				if testCase.name == "BringUp/Success" || testCase.name == "BringUp/InitialCreation" {

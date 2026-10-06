@@ -29,7 +29,7 @@ type cleanupProject struct {
 
 func TestRecoveryCleanupNative(t *testing.T) {
 	t.Parallel()
-	for _, layout := range []string{"Dedicated", "Shared"} {
+	for _, layout := range []string{"Dedicated", "Shared", "SharedAuthentication"} {
 		for _, tc := range []struct {
 			name, fault   string
 			code, deletes int
@@ -39,6 +39,7 @@ func TestRecoveryCleanupNative(t *testing.T) {
 			{"Disabled", "disabled", 77, 0, false},
 			{"WrongNumber", "number", 70, 0, true},
 			{"UnrevokedAccess", "revoked", 77, 0, false},
+			{"WrongService", "service", 77, 0, false},
 			{"WrongRestoreGeneration", "generation", 70, 0, false},
 			{"MissingPrivateEvidence", "evidence", 70, 0, false},
 			{"MissingCompletion", "incomplete", 70, 0, false},
@@ -61,8 +62,12 @@ func TestRecoveryCleanupNative(t *testing.T) {
 				t.Parallel()
 				f := setup(t)
 				config := nativeInputs(t, f)
-				if layout == "Shared" {
-					sharedNativeInputs(t, f, config)
+				if strings.HasPrefix(layout, "Shared") {
+					service := "json-keys"
+					if layout == "SharedAuthentication" {
+						service = "authentication"
+					}
+					sharedNativeInputs(t, f, config, service)
 				}
 				input, err := json.Marshal(config)
 				require.NoError(t, err)
@@ -70,6 +75,7 @@ func TestRecoveryCleanupNative(t *testing.T) {
 				host, err := infraworkflow.RecoveryScope(input, getenv, f.env["STATE_BUCKET"])
 				require.NoError(t, err)
 				runtime := newRecoveryHost(t, host.Request())
+				service := host.Request().Service
 				project := &cleanupProject{project: host.Project, fault: tc.fault, state: "ACTIVE"}
 				if strings.HasPrefix(tc.fault, "reconcile-") {
 					project.fault = "delete-ack"
@@ -80,9 +86,9 @@ func TestRecoveryCleanupNative(t *testing.T) {
 				prefix := "foundation/recovery/services/" + host.Project + "/"
 				completionName := "services/" + host.SourceProject + "/production/operations/"
 				operationScope, sourceScope := host.SourceProject, ""
-				if layout == "Shared" {
-					operationScope, sourceScope = "workloads/production/json-keys", "workloads/production/private/agora-private-test/json-keys"
-					guardName, completionName = "foundation/operations/production/json-keys/operation.json", sourceScope+"/production/operations/"
+				if strings.HasPrefix(layout, "Shared") {
+					operationScope, sourceScope = "workloads/production/"+service, "workloads/production/private/agora-private-test/"+service
+					guardName, completionName = "foundation/operations/production/"+service+"/operation.json", sourceScope+"/production/operations/"
 				}
 				objects, live := map[string][]byte{}, map[string]string{}
 				put := func(bucket, name, generation string, value any) object {
@@ -92,8 +98,8 @@ func TestRecoveryCleanupNative(t *testing.T) {
 					objects[key+"#"+generation], live[key] = data, generation
 					return object{"bucket": bucket, "object": name, "generation": generation, "sha256": fmt.Sprintf("%x", sha256.Sum256(data))}
 				}
-				apply := object{"schemaVersion": 1, "root": "service-recovery", "project_id": host.Project, "source_project": host.SourceProject, "service": "json-keys", "region": host.Region, "commit": strings.Repeat("a", 40), "runId": "124", "runAttempt": "1", "planId": "123-1", "planSha256": strings.Repeat("b", 64), "inputsSha256": fmt.Sprintf("%x", sha256.Sum256(input))}
-				if layout == "Shared" {
+				apply := object{"schemaVersion": 1, "root": "service-recovery", "project_id": host.Project, "source_project": host.SourceProject, "service": service, "region": host.Region, "commit": strings.Repeat("a", 40), "runId": "124", "runAttempt": "1", "planId": "123-1", "planSha256": strings.Repeat("b", 64), "inputsSha256": fmt.Sprintf("%x", sha256.Sum256(input))}
+				if strings.HasPrefix(layout, "Shared") {
 					apply["schemaVersion"], apply["scope"] = 2, sourceScope
 				}
 				prepared := put(receipts, completionName+"42.json", "44", object{
@@ -102,7 +108,7 @@ func TestRecoveryCleanupNative(t *testing.T) {
 					"state":         put(bucket, prefix+"default.tfstate", "44", object{"outputs": object{"recovery": object{"value": object{"selected": runtime.host.Target}}}}),
 				})
 				restore := object{"schemaVersion": 1, "kind": "native-restore", "target": runtime.host.Target, "preparation": prepared, "commit": strings.Repeat("a", 40), "runId": "125", "runAttempt": "1"}
-				if layout == "Shared" {
+				if strings.HasPrefix(layout, "Shared") {
 					restore["schemaVersion"], restore["scope"] = 2, sourceScope
 				}
 				files := map[string]string{}
@@ -120,8 +126,13 @@ func TestRecoveryCleanupNative(t *testing.T) {
 				f.env["NATIVE_RECOVERY_CLEANUP_ENABLED"], f.env["RECOVERY_OPERATION"] = "true", "cleanup-native"
 				f.env["GITHUB_REPOSITORY"], f.env["GITHUB_SHA"] = "a-novel/infra", strings.Repeat("a", 40)
 				f.env["GITHUB_RUN_ID"], f.env["GITHUB_RUN_ATTEMPT"] = "126", "1"
-				authorization := object{"schemaVersion": 1, "replacementProject": host.Project, "projectNumber": "789", "service": "json-keys", "sourceProject": host.SourceProject, "restoreGeneration": "43", "crossProjectAccessRevoked": true}
+				authorization := object{"schemaVersion": 1, "replacementProject": host.Project, "projectNumber": "789", "service": service, "sourceProject": host.SourceProject, "restoreGeneration": "43", "crossProjectAccessRevoked": true}
 				switch tc.fault {
+				case "service":
+					authorization["service"] = "json-keys"
+					if service == "json-keys" {
+						authorization["service"] = "authentication"
+					}
 				case "disabled":
 					f.env["NATIVE_RECOVERY_CLEANUP_ENABLED"] = "false"
 				case "revoked":
@@ -248,7 +259,7 @@ func TestRecoveryCleanupNative(t *testing.T) {
 					}
 					f.env["SERVICE_OPERATION_RECOVERY_ENABLED"] = "true"
 					f.env["GITHUB_WORKFLOW_REF"] = "a-novel/infra/.github/workflows/foundation.yaml@refs/heads/master"
-					code = run("operation", "finish", bucket, operationScope, "100", "FINISH json-keys 100")
+					code = run("operation", "finish", bucket, operationScope, "100", "FINISH "+service+" 100")
 					expectCode(t, expected, code, output.String())
 					require.Equal(t, 1, project.deletes, "reconciliation must not repeat deletion")
 					require.Equal(t, expected != 0, live[bucket+"/"+guardName] != "")

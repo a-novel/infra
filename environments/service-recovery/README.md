@@ -1,6 +1,6 @@
 # Disposable native recovery — inactive
 
-This root prepares one isolated JSON Keys host for an exact full/differential pgBackRest restore.
+This root prepares one isolated host for an exact JSON Keys or Authentication full/differential pgBackRest restore.
 `recovery = null` creates nothing. A configured host is stopped, has no startup restore, and stops
 after four hours when explicitly started. The worker restores files to backup consistency and leaves
 PostgreSQL stopped. Optional offline SQL verification uses the same host, then stops PostgreSQL again.
@@ -26,8 +26,10 @@ old image/reader for existing backups and review compatibility against the selec
 Protected registration supplies the complete `protected_projects` set, original service project and
 management project/number. The approved recovery request selects an independently evidenced PostgreSQL
 system ID, exact completed set and optional repository-time cutoff. It must not learn the expected
-system ID from the catalog it is about to check. The current pilot is PostgreSQL 18, JSON Keys only,
-with an explicit `immediate` target (the selected backup's consistency point).
+system ID from the catalog it is about to check. Select `service = "json-keys"` or `"authentication"`
+with PostgreSQL 18 and an explicit `immediate` target (the selected backup's consistency point).
+Retained requests without a service field still select JSON Keys. The selected service determines
+the source guard, repository prefix, recovery identity and SQL checks; peer-service evidence is rejected.
 
 `restore_image` is the provenanced `native-restore` image promoted into the disposable project's
 `agora-tooling` repository, selected by its generated immutable digest. Its maintained Dockerfile uses
@@ -43,14 +45,16 @@ neither the source nor restored PostgreSQL was started by the worker.
 
 With protected `verify_sql = true`, a second container verifies SQL with **no network**. It reads
 the copied consistency WAL, ignores restored startup configuration, and pauses PostgreSQL at the
-selected backup's consistency point. It checks the independent system ID, JSON Keys tables, roles,
+selected backup's consistency point. It checks the independent system ID, selected service's tables, roles,
 constraints and UUID extension. `sql-verified` requires those checks plus confirmed PostgreSQL and
 VM shutdown; it is not continuous health, source fencing or application cutover evidence.
 
 To prove application data fidelity, also supply `expected_data_sha256`: the lowercase SHA-256
-captured independently using [data.sql](../../internal/recovery/data.sql) from the quiesced source.
+captured independently from the quiesced source using the [JSON Keys query](../../internal/recovery/data.sql)
+or [Authentication query](../../internal/recovery/authenticationData.sql).
 It requires `verify_sql = true` and is bound before preparation alongside the exact set/system ID.
-The worker compares persisted `public.keys` rows at backup consistency and records the observed
+The worker compares persisted `public.keys` rows for JSON Keys, or `public.credentials` and
+`public.short_codes` rows for Authentication, at backup consistency and records the observed
 `data_sha256` in its existing private SQL completion. A missing or different digest fails completion.
 Omitting the expectation preserves older schema-only requests; those cannot pass data-fidelity acceptance.
 Follow the [capture procedure](../../docs/runbooks/accept-native-backups.md#capture-independent-application-data)
@@ -64,7 +68,7 @@ object visible only under a newer generation: changing that cutoff is a new sele
 ## Guarded host preparation
 
 Protected `FOUNDATION_TFVARS_JSON` registers `service_recovery_projects` as a map from disposable
-project ID to `json-keys`. It creates no project or grant. `NATIVE_RECOVERY_TFVARS_JSON` maps each
+project ID to its selected service. It creates no project or grant. `NATIVE_RECOVERY_TFVARS_JSON` maps each
 destination to this root's complete `{ "state_bucket": "…", "recovery": { … } }` input. The nested
 fields are defined in [variables.tf](variables.tf); include management, legacy workload and every
 registered service project in `protected_projects`. Unknown fields, unregistered destinations,
@@ -156,7 +160,7 @@ cleanup is not an escape hatch from a held service guard.
 Before activation, independently review the whole disposable project's inventory and remove its
 temporary cross-project grants. Commit the exact target to
 [`native-recovery-cleanup.json`](../../deploy/production/native-recovery-cleanup.json):
-`replacementProject`, numeric `projectNumber` as a string, `service = "json-keys"`, `sourceProject`,
+`replacementProject`, numeric `projectNumber` as a string, the selected `service`, `sourceProject`,
 `restoreGeneration` as a string, and `crossProjectAccessRevoked = true`. The generation selects
 the completed **restore's source guard**, not its preparation generation. Its retained evidence
 binds the exact preparation, input bytes, numeric VM/disk identities and selected recovery outcome.

@@ -19,11 +19,22 @@ var verificationSQL string
 //go:embed data.sql
 var dataSQL string
 
-// VerifySQL validates restored JSON Keys data in a separately supervised, networkless
+//go:embed authenticationVerify.sql
+var authenticationVerificationSQL string
+
+//go:embed authenticationData.sql
+var authenticationDataSQL string
+
+// VerifySQL validates restored service data in a separately supervised, networkless
 // container. It pauses at backup consistency, preserves failures and refuses replay.
 func VerifySQL(ctx context.Context, request Request, parent string, execute func(context.Context, io.Writer, string, ...string) ([]byte, error)) (err error) {
 	if request.Validate() != nil || !request.VerifySQL {
 		return errors.New("offline SQL verification was not selected")
+	}
+	role := "agora_" + strings.ReplaceAll(request.Service, "-", "_")
+	verificationQuery, dataQuery := verificationSQL, dataSQL
+	if request.Service == "authentication" {
+		verificationQuery, dataQuery = authenticationVerificationSQL, authenticationDataSQL
 	}
 	root := filepath.Join(parent, "attempt")
 	files := map[string]string{}
@@ -70,8 +81,8 @@ statement_timeout='30s'
 	for path, value := range map[string]string{
 		filepath.Join(data, "postgresql.auto.conf"):    "",
 		filepath.Join(verification, "postgresql.conf"): config,
-		filepath.Join(verification, "pg_hba.conf"):     "local all agora_json_keys peer map=verification\n",
-		filepath.Join(verification, "pg_ident.conf"):   "verification postgres agora_json_keys\n",
+		filepath.Join(verification, "pg_hba.conf"):     "local all " + role + " peer map=verification\n",
+		filepath.Join(verification, "pg_ident.conf"):   "verification postgres " + role + "\n",
 	} {
 		file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		if err != nil {
@@ -98,7 +109,7 @@ statement_timeout='30s'
 		return errors.New("offline PostgreSQL startup failed; inspect private diagnostics")
 	}
 	query := func(sql string) (string, error) {
-		out, err := command("psql", "-XqAt", "-v", "ON_ERROR_STOP=1", "-h", verification, "-U", "agora_json_keys", "-d", "agora_json_keys", "-c", sql)
+		out, err := command("psql", "-XqAt", "-v", "ON_ERROR_STOP=1", "-h", verification, "-U", role, "-d", role, "-c", sql)
 		return strings.TrimSpace(string(out)), err
 	}
 	// SQL readiness can precede the recovery target. Only the native paused state qualifies.
@@ -120,13 +131,13 @@ statement_timeout='30s'
 		case <-time.After(250 * time.Millisecond):
 		}
 	}
-	checks, err := query(verificationSQL)
+	checks, err := query(verificationQuery)
 	if err != nil || checks != "t" {
-		return errors.New("JSON Keys recovery checks failed; inspect private diagnostics")
+		return errors.New("service recovery checks failed; inspect private diagnostics")
 	}
 	result := sqlCompletion{SystemID: request.SystemID, Set: request.Set, Stopped: true}
 	if request.ExpectedDataSHA256 != "" {
-		result.DataSHA256, err = query(dataSQL)
+		result.DataSHA256, err = query(dataQuery)
 		if err != nil || result.DataSHA256 != request.ExpectedDataSHA256 {
 			return errors.New("recovered application data differs from the independent expectation or could not be read")
 		}

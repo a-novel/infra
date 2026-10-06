@@ -17,6 +17,8 @@ import (
 // RecoveryHost binds a disposable host to independently reviewed recovery inputs.
 // The source service owns admission; Project owns only this host's state.
 type RecoveryHost struct {
+	// Service defaults to JSON Keys for retained recovery records without an explicit service.
+	Service            string   `json:"service,omitempty"`
 	Project            string   `json:"project"`
 	SourceProject      string   `json:"source_project"`
 	ProtectedProjects  []string `json:"protected_projects"`
@@ -36,8 +38,12 @@ type RecoveryHost struct {
 
 // Request is the exact selection shared by the prepared host and its worker.
 func (host RecoveryHost) Request() recovery.Request {
+	service := host.Service
+	if service == "" {
+		service = "json-keys"
+	}
 	return recovery.Request{
-		Service: "json-keys", SourceProject: host.SourceProject, Project: host.Project,
+		Service: service, SourceProject: host.SourceProject, Project: host.Project,
 		ManagementProject: host.ManagementProject, ManagementNumber: host.ManagementNumber,
 		SystemID: host.SystemID, Major: 18, Set: host.Set, RepositoryTime: host.RepositoryTime, VerifySQL: host.VerifySQL,
 		ExpectedDataSHA256: host.ExpectedDataSHA256,
@@ -47,15 +53,16 @@ func (host RecoveryHost) Request() recovery.Request {
 // SourceScope binds recovery admission and receipts to the source's registered private boundary.
 // Dedicated service projects retain their historical paths.
 func (host RecoveryHost) SourceScope(getenv func(string) string, bucket string) (string, error) {
+	service := host.Request().Service
 	fields := map[string]string{
-		"project_id": host.SourceProject, "service": "json-keys", "region": host.Region,
+		"project_id": host.SourceProject, "service": service, "region": host.Region,
 		"management_project_id": host.ManagementProject, "state_bucket": bucket,
 	}
 	scopes, err := ReleaseScopes(getenv, bucket)
 	if err != nil {
 		return "", err
 	}
-	if scopes["workloads/production/private/"+host.SourceProject+"/json-keys"] == "json-keys" {
+	if scopes["workloads/production/private/"+host.SourceProject+"/"+service] == service {
 		fields["zone"] = "private"
 	}
 	data, err := json.Marshal(fields)
@@ -89,7 +96,7 @@ func RecoveryScopes(getenv func(string) string, bucket string) (map[string]strin
 	}
 	scopes := map[string]string{}
 	for project, service := range registered.Projects {
-		if registered.Legacy || service != "json-keys" || !matches(`a-novel-recovery-[a-z0-9-]{1,13}[a-z0-9]`, project) ||
+		if registered.Legacy || !slices.Contains([]string{"json-keys", "authentication"}, service) || !matches(`a-novel-recovery-[a-z0-9-]{1,13}[a-z0-9]`, project) ||
 			project == registered.Management || project == registered.Workload || project == registered.Public || project == registered.PublicAPI || services["services/"+project] != "" ||
 			!slices.Contains(slices.Collect(maps.Values(services)), service) {
 			return nil, errors.New("invalid recovery destination")
@@ -112,7 +119,7 @@ func RecoveryScope(data []byte, getenv func(string) string, bucket string) (Reco
 	}
 	host := *config.Recovery
 	scopes, err := RecoveryScopes(getenv, bucket)
-	if err != nil || scopes["services/"+host.Project] != "json-keys" {
+	if err != nil || scopes["services/"+host.Project] != host.Request().Service {
 		return host, invalid
 	}
 	if _, err := host.SourceScope(getenv, config.Bucket); err != nil {
