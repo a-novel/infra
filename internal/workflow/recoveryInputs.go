@@ -44,10 +44,31 @@ func (host RecoveryHost) Request() recovery.Request {
 	}
 }
 
+// SourceScope binds recovery admission and receipts to the source's registered private boundary.
+// Dedicated service projects retain their historical paths.
+func (host RecoveryHost) SourceScope(getenv func(string) string, bucket string) (string, error) {
+	fields := map[string]string{
+		"project_id": host.SourceProject, "service": "json-keys", "region": host.Region,
+		"management_project_id": host.ManagementProject, "state_bucket": bucket,
+	}
+	scopes, err := ReleaseScopes(getenv, bucket)
+	if err != nil {
+		return "", err
+	}
+	if scopes["workloads/production/private/"+host.SourceProject+"/json-keys"] == "json-keys" {
+		fields["zone"] = "private"
+	}
+	data, err := json.Marshal(fields)
+	if err != nil {
+		return "", err
+	}
+	return FoundationScope(data, getenv, bucket)
+}
+
 // RecoveryScopes lists approved destinations independently of mutation activation.
 // Missing registration means no enrolled destinations, not permission to infer them.
 func RecoveryScopes(getenv func(string) string, bucket string) (map[string]string, error) {
-	services, err := ServiceScopes(getenv, bucket)
+	services, err := ReleaseScopes(getenv, bucket)
 	if err != nil {
 		return nil, err
 	}
@@ -94,18 +115,10 @@ func RecoveryScope(data []byte, getenv func(string) string, bucket string) (Reco
 	if err != nil || scopes["services/"+host.Project] != "json-keys" {
 		return host, invalid
 	}
-	// Reuse the live service boundary for the source, region and management coordinates.
-	source, err := json.Marshal(map[string]string{
-		"project_id": host.SourceProject, "service": "json-keys", "region": host.Region,
-		"management_project_id": host.ManagementProject, "state_bucket": config.Bucket,
-	})
-	if err != nil {
-		return host, err
-	}
-	if _, err := ServiceScope(source, getenv, bucket); err != nil {
+	if _, err := host.SourceScope(getenv, config.Bucket); err != nil {
 		return host, invalid
 	}
-	if host.Request().Validate() != nil || bucket != host.ManagementProject+"-"+host.ManagementNumber+"-tofu-state" {
+	if host.Request().Validate() != nil || config.Bucket != bucket || bucket != host.ManagementProject+"-"+host.ManagementNumber+"-tofu-state" {
 		return host, invalid
 	}
 	var registration struct {

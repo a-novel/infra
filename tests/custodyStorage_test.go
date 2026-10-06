@@ -30,6 +30,9 @@ func applyStorage(t *testing.T, f *sandbox, failure string) {
 		planMetadata = filepath.Join(filepath.Dir(f.env["FAKE_TOFU_REQUIRE_ABSENT"]), "metadata.json")
 	}
 	guardName := "services/agora-json-keys-test/release/operation.json"
+	if selected := f.env["FAKE_SERVICE_GUARD"]; selected != "" {
+		guardName = selected
+	}
 	if strings.HasPrefix(f.env["TOFU_STATE_SUFFIX"], "workloads/") {
 		guardName = "foundation/operations/production/json-keys/operation.json"
 		if f.env["SELECTED_SERVICE"] == "authentication" {

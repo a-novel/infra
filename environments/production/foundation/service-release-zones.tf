@@ -15,10 +15,10 @@ variable "service_release_zones" {
   validation {
     condition = length(var.service_release_zones) == 0 || (
       !var.recovery_mode && var.shared_vpc_enabled &&
-      length(var.service_projects) == 0 && length(var.service_recovery_projects) == 0 &&
+      length(var.service_projects) == 0 &&
       (var.public_api_project_id != null || alltrue([for zones in var.service_release_zones : !try(contains(zones, "public-api"), false)]))
     )
-    error_message = "Shared release boundaries require explicit Shared VPC, an API shell for public-api selections, and no dedicated-service or recovery selection."
+    error_message = "Shared release boundaries require explicit Shared VPC, an API shell for public-api selections, and no dedicated-service selection."
   }
 }
 

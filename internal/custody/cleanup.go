@@ -21,6 +21,7 @@ import (
 type cleanupIntent struct {
 	SchemaVersion int             `json:"schemaVersion"`
 	Kind          string          `json:"kind"`
+	Scope         string          `json:"scope,omitempty"`
 	Target        projectDeletion `json:"target"`
 	Restore       objectReference `json:"restore"`
 	Commit        string          `json:"commit"`
@@ -48,6 +49,10 @@ func (custody store) cleanup(args []string, getenv func(string) string, output i
 	host, err := workflow.RecoveryScope(inputs, getenv, custody.bucket)
 	if err != nil || args[2] != "DELETE "+host.Project {
 		return failure{65, "Native cleanup scope or typed confirmation differs."}
+	}
+	expected, err := recoverySource(host, getenv, custody.bucket)
+	if err != nil {
+		return err
 	}
 	var authorization struct {
 		SchemaVersion int    `json:"schemaVersion"`
@@ -82,6 +87,9 @@ func (custody store) cleanup(args []string, getenv func(string) string, output i
 		SchemaVersion: 1, Kind: "native-cleanup", Target: projectDeletion{host.Project, authorization.Number},
 		Commit: getenv("GITHUB_SHA"), RunID: getenv("GITHUB_RUN_ID"), RunAttempt: getenv("GITHUB_RUN_ATTEMPT"),
 	}
+	if expected.Scope != "" {
+		intent.SchemaVersion, intent.Scope = 2, expected.Scope
+	}
 	if !sequencePattern.MatchString(intent.RunID + "-" + intent.RunAttempt) {
 		return failure{65, "Invalid cleanup workflow identity."}
 	}
@@ -91,7 +99,6 @@ func (custody store) cleanup(args []string, getenv func(string) string, output i
 	if err != nil {
 		return err
 	}
-	expected := applyIntent{Project: host.SourceProject, Service: "json-keys", Region: host.Region}
 	restored, err := readOperation(ctx, client, custody.bucket, expected, generation, getenv)
 	if err != nil {
 		return err
@@ -103,7 +110,7 @@ func (custody store) cleanup(args []string, getenv func(string) string, output i
 		return err
 	}
 	intent.Restore = restored.guard
-	preparation, _, err := preparedTarget(ctx, client, custody.bucket, host.SourceProject, restored.restore.Preparation)
+	preparation, _, err := preparedTarget(ctx, client, custody.bucket, expected, restored.restore.Preparation)
 	if err != nil || preparation.Operation.InputsSHA256 != checksum(inputs) {
 		return failure{65, "Cleanup inputs differ from the exact prepared host."}
 	}
@@ -159,21 +166,25 @@ func (intent cleanupIntent) record(ctx context.Context, client *storage.Service,
 	if err != nil {
 		return err
 	}
-	source := strings.TrimSuffix(strings.TrimPrefix(guard.Name, "services/"), "/release/operation.json")
+	source := applyIntent{Scope: intent.Scope, Project: strings.TrimSuffix(strings.TrimPrefix(guard.Name, "services/"), "/release/operation.json")}
 	receipts := strings.TrimSuffix(guard.Bucket, "-tofu-state") + "-deployment-receipts"
-	if _, err := createObject(ctx, client, receipts, completionName(source, guard.Generation), data); err != nil {
+	if _, err := createObject(ctx, client, receipts, source.completionName(guard.Generation), data); err != nil {
 		return failure{70, "Cleanup completion publication unconfirmed; guard retained. Reconcile without deletion replay."}
 	}
 	return nil
 }
 
-func inspectCleanup(ctx context.Context, client *storage.Service, expected applyIntent, guard objectReference, data []byte) (*cleanupIntent, bool, error) {
+func inspectCleanup(ctx context.Context, client *storage.Service, expected applyIntent, guard objectReference, data []byte, getenv func(string) string) (*cleanupIntent, bool, error) {
 	var intent cleanupIntent
 	if err := decodeRecord(data, &intent); err != nil {
 		return nil, false, err
 	}
 	invalid := failure{70, "Cleanup evidence does not match the exact completed recovery; guard retained."}
-	if intent.SchemaVersion != 1 || intent.Kind != "native-cleanup" || !projectNumberPattern.MatchString(intent.Target.Number) {
+	version := 1
+	if expected.Scope != "" {
+		version = 2
+	}
+	if intent.SchemaVersion != version || intent.Kind != "native-cleanup" || !projectNumberPattern.MatchString(intent.Target.Number) {
 		return nil, false, invalid
 	}
 	if !commitPattern.MatchString(intent.Commit) || !sequencePattern.MatchString(intent.RunID+"-"+intent.RunAttempt) {
@@ -189,8 +200,8 @@ func inspectCleanup(ctx context.Context, client *storage.Service, expected apply
 	if err != nil || checksum(data) != intent.Restore.SHA256 {
 		return nil, false, invalid
 	}
-	restored, completed, err := inspectRestore(ctx, client, expected, intent.Restore, data)
-	if err != nil || !completed || restored.Target.Project != intent.Target.Project {
+	restored, completed, err := inspectRestore(ctx, client, expected, intent.Restore, data, getenv)
+	if err != nil || !completed || restored.Target.Project != intent.Target.Project || intent.Scope != restored.Scope {
 		return nil, false, invalid
 	}
 	data, err = readCurrentObject(ctx, client, guard.Bucket, intent.attemptName())
@@ -198,7 +209,8 @@ func inspectCleanup(ctx context.Context, client *storage.Service, expected apply
 	if err != nil || decodeRecord(data, &reserved) != nil || reserved != intent {
 		return nil, false, failure{70, "Cleanup dispatch reservation absent or different; retain guard for manual reconciliation."}
 	}
-	data, err = readCurrentObject(ctx, client, strings.TrimSuffix(guard.Bucket, "-tofu-state")+"-deployment-receipts", completionName(expected.Project, guard.Generation))
+	source := applyIntent{Project: restored.Target.Request.SourceProject, Scope: restored.Scope}
+	data, err = readCurrentObject(ctx, client, strings.TrimSuffix(guard.Bucket, "-tofu-state")+"-deployment-receipts", source.completionName(guard.Generation))
 	if err != nil || data == nil {
 		return &intent, false, err
 	}
