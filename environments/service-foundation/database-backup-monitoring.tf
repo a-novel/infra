@@ -1,14 +1,14 @@
 variable "shared_backup_alerts_enabled" {
-  description = "Monitor the existing shared JSON Keys database without owning it. Null leaves monitoring unenrolled; false prepares disabled policies; true enables them."
+  description = "Monitor the service's existing shared database without owning it. Null leaves monitoring unenrolled; false prepares disabled policies; true enables them."
   type        = bool
   default     = null
 
   validation {
     condition = var.shared_backup_alerts_enabled == null || (
-      var.zone == "private" && var.service == "json-keys" &&
+      var.zone == "private" &&
       var.database_handoff != null && try(var.pgbackrest_repository.runtime != null, false)
     )
-    error_message = "Shared native monitoring requires the private JSON Keys database handoff and prepared repository runtime."
+    error_message = "Shared native monitoring requires the service's private database handoff and prepared repository runtime."
   }
 }
 

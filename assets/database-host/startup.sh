@@ -464,7 +464,7 @@ start_database() {
         # Override any archived settings on an existing disk unless foundation opts in.
         case "${PGBACKREST_WAL_ARCHIVING:-false}" in
             false) postgres_options=(-c archive_mode=off -c archive_command=) ;;
-            true) postgres_options=(-c archive_mode=on -c "archive_command=pgbackrest --stanza=json-keys archive-push %p") ;;
+            true) postgres_options=(-c archive_mode=on -c "archive_command=pgbackrest --stanza=${key} archive-push %p") ;;
             *) printf 'error: WAL archiving must be true or false\n' >&2; return 1 ;;
         esac
         postgres_options+=(-c "unix_socket_directories=/var/run/postgresql,/tmp")

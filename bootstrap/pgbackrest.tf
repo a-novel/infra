@@ -1,35 +1,40 @@
-variable "json_keys_pgbackrest" {
-  description = "Opt-in native repository custody for JSON Keys. zone=private selects shared-project identities; an omitted zone retains dedicated-project identities. This does not activate backups."
-  type = object({
+variable "native_backups" {
+  description = "Per-service native repository custody in the private project. Enrollment does not activate backups."
+  type = map(object({
     workload_project_id = string
-    zone                = optional(string)
+    zone                = string
     tls_credentials     = optional(bool, false)
     noncurrent_cleanup  = optional(bool, false)
-  })
-  default = null
+  }))
+  default  = {}
+  nullable = false
 
   validation {
-    condition = var.json_keys_pgbackrest == null ? true : (
-      can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", var.json_keys_pgbackrest.workload_project_id)) &&
-      var.json_keys_pgbackrest.workload_project_id != var.management_project_id
-    )
-    error_message = "Use the registered JSON Keys database project, distinct from management."
+    condition = alltrue([for service, config in var.native_backups :
+      contains(["json-keys", "authentication"], service) &&
+      can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", config.workload_project_id)) &&
+      config.workload_project_id != var.management_project_id
+    ])
+    error_message = "Select a supported service and its registered database project, distinct from management."
   }
 
   validation {
-    condition     = var.json_keys_pgbackrest == null ? true : var.json_keys_pgbackrest.zone == null || var.json_keys_pgbackrest.zone == "private"
-    error_message = "Native backup custody belongs only to the private zone or a dedicated database project."
+    condition     = alltrue([for config in var.native_backups : config.zone == "private"])
+    error_message = "Native backup custody belongs only to the private zone."
   }
 }
 
 locals {
-  pgbackrest_database   = try(var.json_keys_pgbackrest.zone, null) == "private" ? "agora-json-keys-database" : "agora-database"
-  pgbackrest_repository = try(var.json_keys_pgbackrest.zone, null) == "private" ? "agora-pgbr-json-keys" : "agora-backup-repository"
-  pgbackrest            = var.json_keys_pgbackrest == null ? {} : { "json-keys" = var.json_keys_pgbackrest }
-  pgbackrest_permissions = var.json_keys_pgbackrest == null ? {} : {
+  pgbackrest = var.native_backups
+  pgbackrest_permissions = {
     writer   = ["storage.objects.create", "storage.objects.get", "storage.objects.list", "storage.objects.delete"]
     recovery = ["storage.objects.create", "storage.objects.get", "storage.objects.list", "storage.objects.restore"]
   }
+  pgbackrest_roles = merge([for service in keys(var.native_backups) : {
+    for purpose, permissions in local.pgbackrest_permissions : "${service}:${purpose}" => {
+      service = service, purpose = purpose, permissions = permissions
+    }
+  }]...)
 }
 
 resource "google_storage_bucket" "pgbackrest" {
@@ -76,13 +81,13 @@ resource "google_storage_bucket" "pgbackrest" {
 }
 
 resource "google_project_iam_custom_role" "pgbackrest" {
-  for_each = local.pgbackrest_permissions
+  for_each = local.pgbackrest_roles
 
   project     = var.management_project_id
-  role_id     = "pgBackRest_json_keys_${each.key}"
-  title       = "JSON Keys native backup ${each.key}"
+  role_id     = "pgBackRest_${replace(each.value.service, "-", "_")}_${each.value.purpose}"
+  title       = "${each.value.service} native backup ${each.value.purpose}"
   stage       = "GA"
-  permissions = each.value
+  permissions = each.value.permissions
 
   lifecycle {
     prevent_destroy = true
@@ -96,7 +101,7 @@ resource "google_service_account" "pgbackrest_recovery" {
 
   project      = var.management_project_id
   account_id   = "pgbr-${each.key}-recovery"
-  display_name = "JSON Keys native backup recovery"
+  display_name = "${each.key} native backup recovery"
   disabled     = true
 
   lifecycle {
@@ -110,29 +115,29 @@ resource "google_storage_bucket_iam_member" "pgbackrest_writer" {
   for_each = local.pgbackrest
 
   bucket = google_storage_bucket.pgbackrest[each.key].name
-  role   = google_project_iam_custom_role.pgbackrest["writer"].name
-  member = "serviceAccount:${local.pgbackrest_repository}@${each.value.workload_project_id}.iam.gserviceaccount.com"
+  role   = google_project_iam_custom_role.pgbackrest["${each.key}:writer"].name
+  member = "serviceAccount:agora-pgbr-${each.key}@${each.value.workload_project_id}.iam.gserviceaccount.com"
 }
 
 resource "google_storage_bucket_iam_member" "pgbackrest_recovery" {
   for_each = local.pgbackrest
 
   bucket = google_storage_bucket.pgbackrest[each.key].name
-  role   = google_project_iam_custom_role.pgbackrest["recovery"].name
+  role   = google_project_iam_custom_role.pgbackrest["${each.key}:recovery"].name
   member = "serviceAccount:${google_service_account.pgbackrest_recovery[each.key].email}"
 }
 
-output "json_keys_pgbackrest" {
+output "native_backups" {
   description = "Optional native repository coordinates, not backup readiness or recovery authorization."
-  value = var.json_keys_pgbackrest == null ? null : {
+  value = { for service, config in var.native_backups : service => {
     schema_version     = 1
-    service            = "json-keys"
+    service            = service
     management_project = var.management_project_id
-    workload_project   = var.json_keys_pgbackrest.workload_project_id
-    bucket             = google_storage_bucket.pgbackrest["json-keys"].name
-    writer             = "${local.pgbackrest_repository}@${var.json_keys_pgbackrest.workload_project_id}.iam.gserviceaccount.com"
-    recovery           = google_service_account.pgbackrest_recovery["json-keys"].email
-  }
+    workload_project   = config.workload_project_id
+    bucket             = google_storage_bucket.pgbackrest[service].name
+    writer             = "agora-pgbr-${service}@${config.workload_project_id}.iam.gserviceaccount.com"
+    recovery           = google_service_account.pgbackrest_recovery[service].email
+  } }
 
   depends_on = [
     google_storage_bucket_iam_member.pgbackrest_writer,

@@ -5,15 +5,15 @@ repo1-host-port=8432
 repo1-host-ca-file=/run/pgbackrest/ca.pem
 repo1-host-cert-file=/run/pgbackrest/identity.pem
 repo1-host-key-file=/run/pgbackrest/identity.pem
-repo1-path=/json-keys
+repo1-path=/${service}
 expire-auto=n
 lock-path=/run/pgbackrest-lock
 process-max=1
 log-level-console=info
 log-level-file=off
 
-[json-keys]
+[${service}]
 pg1-path=/var/lib/postgresql/18/docker
 pg1-socket-path=/var/run/postgresql
-pg1-user=agora_json_keys
-pg1-database=agora_json_keys
+pg1-user=${database}
+pg1-database=${database}

@@ -25,24 +25,24 @@ run "default_has_no_native_custody" {
       length(local.management_buckets) == 3,
       length(google_secret_manager_secret.application) == 8,
       length(google_secret_manager_secret_iam_member.pgbackrest_tls) == 0,
-      output.json_keys_pgbackrest == null,
+      length(output.native_backups) == 0,
     ])
     error_message = "Existing inputs must create no native storage, identities or authority."
   }
 }
 
-run "explicit_null_has_no_native_custody" {
+run "empty_map_has_no_native_custody" {
   command = plan
-  variables { json_keys_pgbackrest = null }
+  variables { native_backups = {} }
   assert {
-    condition     = length(local.pgbackrest) == 0 && length(local.pgbackrest_permissions) == 0 && output.json_keys_pgbackrest == null
-    error_message = "An explicit null must preserve the disabled default."
+    condition     = length(local.pgbackrest) == 0 && length(local.pgbackrest_roles) == 0 && length(output.native_backups) == 0
+    error_message = "An empty map must preserve the disabled default."
   }
 }
 
 run "isolated_native_custody" {
   command = plan
-  variables { json_keys_pgbackrest = { workload_project_id = "agora-json-keys-test" } }
+  variables { native_backups = { "json-keys" = { workload_project_id = "agora-json-keys-test", zone = "private" } } }
 
   assert {
     condition = (
@@ -83,8 +83,8 @@ run "isolated_native_custody" {
 
   assert {
     condition = { for purpose, role in google_project_iam_custom_role.pgbackrest : purpose => toset(role.permissions) } == {
-      writer   = toset(["storage.objects.create", "storage.objects.get", "storage.objects.list", "storage.objects.delete"])
-      recovery = toset(["storage.objects.create", "storage.objects.get", "storage.objects.list", "storage.objects.restore"])
+      "json-keys:writer"   = toset(["storage.objects.create", "storage.objects.get", "storage.objects.list", "storage.objects.delete"])
+      "json-keys:recovery" = toset(["storage.objects.create", "storage.objects.get", "storage.objects.list", "storage.objects.restore"])
     }
     error_message = "Only recovery may repair generations; neither role may change policy and recovery cannot delete."
   }
@@ -98,11 +98,11 @@ run "isolated_native_custody" {
       role   = binding.role
       member = binding.member
       } } == { for purpose, member in {
-      writer   = "serviceAccount:agora-backup-repository@agora-json-keys-test.iam.gserviceaccount.com"
+      writer   = "serviceAccount:agora-pgbr-json-keys@agora-json-keys-test.iam.gserviceaccount.com"
       recovery = "serviceAccount:pgbr-json-keys-recovery@agora-management-test.iam.gserviceaccount.com"
       } : purpose => {
       bucket = google_storage_bucket.pgbackrest["json-keys"].name
-      role   = google_project_iam_custom_role.pgbackrest[purpose].name
+      role   = google_project_iam_custom_role.pgbackrest["json-keys:${purpose}"].name
       member = member
     } }
     error_message = "Bind each exact identity only to its native repository role."
@@ -114,8 +114,8 @@ run "isolated_native_custody" {
       google_service_account.pgbackrest_recovery["json-keys"].disabled,
       google_storage_bucket_iam_member.foundation_admin["pgbackrest-json-keys"].bucket == google_storage_bucket.pgbackrest["json-keys"].name,
       google_storage_bucket.backups.name != google_storage_bucket.pgbackrest["json-keys"].name,
-      output.json_keys_pgbackrest.service == "json-keys",
-      output.json_keys_pgbackrest.writer == "agora-backup-repository@agora-json-keys-test.iam.gserviceaccount.com",
+      output.native_backups["json-keys"].service == "json-keys",
+      output.native_backups["json-keys"].writer == "agora-pgbr-json-keys@agora-json-keys-test.iam.gserviceaccount.com",
     ])
     error_message = "Bind only the selected host and disabled recovery identity to native storage, with its existing administrator."
   }
@@ -124,7 +124,7 @@ run "isolated_native_custody" {
 run "noncurrent_cleanup_requires_separate_opt_in" {
   command = plan
   variables {
-    json_keys_pgbackrest = { workload_project_id = "agora-json-keys-test", noncurrent_cleanup = true }
+    native_backups = { "json-keys" = { workload_project_id = "agora-json-keys-test", zone = "private", noncurrent_cleanup = true } }
   }
 
   assert {
@@ -155,7 +155,7 @@ run "noncurrent_cleanup_requires_separate_opt_in" {
 run "isolated_tls_credentials" {
   command = plan
   variables {
-    json_keys_pgbackrest = { workload_project_id = "agora-json-keys-test", tls_credentials = true }
+    native_backups = { "json-keys" = { workload_project_id = "agora-json-keys-test", zone = "private", tls_credentials = true } }
   }
 
   assert {
@@ -165,10 +165,10 @@ run "isolated_tls_credentials" {
       role    = binding.role
       member  = binding.member
       } } == { for key, pair in {
-      "ca:agora-database"                  = ["ca", "agora-database"]
-      "ca:agora-backup-repository"         = ["ca", "agora-backup-repository"]
-      "database:agora-database"            = ["database", "agora-database"]
-      "repository:agora-backup-repository" = ["repository", "agora-backup-repository"]
+      "json-keys:ca:agora-json-keys-database"       = ["ca", "agora-json-keys-database"]
+      "json-keys:ca:agora-pgbr-json-keys"           = ["ca", "agora-pgbr-json-keys"]
+      "json-keys:database:agora-json-keys-database" = ["database", "agora-json-keys-database"]
+      "json-keys:repository:agora-pgbr-json-keys"   = ["repository", "agora-pgbr-json-keys"]
       } : key => {
       project = var.management_project_id
       secret  = "production-json-keys-pgbackrest-${pair[0]}"
@@ -195,12 +195,12 @@ run "isolated_tls_credentials" {
 run "shared_private_custody" {
   command = plan
   variables {
-    json_keys_pgbackrest = { workload_project_id = "agora-private-test", zone = "private", tls_credentials = true }
+    native_backups = { "json-keys" = { workload_project_id = "agora-private-test", zone = "private", tls_credentials = true } }
   }
   assert {
     condition = (
       google_storage_bucket_iam_member.pgbackrest_writer["json-keys"].member == "serviceAccount:agora-pgbr-json-keys@agora-private-test.iam.gserviceaccount.com" &&
-      output.json_keys_pgbackrest.writer == "agora-pgbr-json-keys@agora-private-test.iam.gserviceaccount.com" &&
+      output.native_backups["json-keys"].writer == "agora-pgbr-json-keys@agora-private-test.iam.gserviceaccount.com" &&
       google_service_account.pgbackrest_recovery["json-keys"].disabled &&
       length(google_storage_bucket.pgbackrest["json-keys"].lifecycle_rule) == 0
     )
@@ -208,10 +208,10 @@ run "shared_private_custody" {
   }
   assert {
     condition = { for key, binding in google_secret_manager_secret_iam_member.pgbackrest_tls : key => binding.member } == {
-      "ca:agora-json-keys-database"       = "serviceAccount:agora-json-keys-database@agora-private-test.iam.gserviceaccount.com"
-      "ca:agora-pgbr-json-keys"           = "serviceAccount:agora-pgbr-json-keys@agora-private-test.iam.gserviceaccount.com"
-      "database:agora-json-keys-database" = "serviceAccount:agora-json-keys-database@agora-private-test.iam.gserviceaccount.com"
-      "repository:agora-pgbr-json-keys"   = "serviceAccount:agora-pgbr-json-keys@agora-private-test.iam.gserviceaccount.com"
+      "json-keys:ca:agora-json-keys-database"       = "serviceAccount:agora-json-keys-database@agora-private-test.iam.gserviceaccount.com"
+      "json-keys:ca:agora-pgbr-json-keys"           = "serviceAccount:agora-pgbr-json-keys@agora-private-test.iam.gserviceaccount.com"
+      "json-keys:database:agora-json-keys-database" = "serviceAccount:agora-json-keys-database@agora-private-test.iam.gserviceaccount.com"
+      "json-keys:repository:agora-pgbr-json-keys"   = "serviceAccount:agora-pgbr-json-keys@agora-private-test.iam.gserviceaccount.com"
     }
     error_message = "Only the existing database and repository identities may read their own TLS identity and the public CA."
   }
@@ -219,18 +219,47 @@ run "shared_private_custody" {
 
 run "reject_public_custody" {
   command = plan
-  variables { json_keys_pgbackrest = { workload_project_id = "agora-api-test", zone = "public-api" } }
-  expect_failures = [var.json_keys_pgbackrest]
+  variables { native_backups = { "json-keys" = { workload_project_id = "agora-api-test", zone = "public-api" } } }
+  expect_failures = [var.native_backups]
 }
 
 run "reject_management_as_workload" {
   command = plan
-  variables { json_keys_pgbackrest = { workload_project_id = "agora-management-test" } }
-  expect_failures = [var.json_keys_pgbackrest]
+  variables { native_backups = { "json-keys" = { workload_project_id = "agora-management-test", zone = "private" } } }
+  expect_failures = [var.native_backups]
 }
 
 run "reject_member_injection" {
   command = plan
-  variables { json_keys_pgbackrest = { workload_project_id = "peer.iam.gserviceaccount.com" } }
-  expect_failures = [var.json_keys_pgbackrest]
+  variables { native_backups = { "json-keys" = { workload_project_id = "peer.iam.gserviceaccount.com", zone = "private" } } }
+  expect_failures = [var.native_backups]
+}
+
+run "both_services_have_separate_custody" {
+  command = plan
+  variables {
+    native_backups = {
+      json-keys      = { workload_project_id = "agora-private-test", zone = "private", tls_credentials = true }
+      authentication = { workload_project_id = "agora-private-test", zone = "private", tls_credentials = true }
+    }
+  }
+  assert {
+    condition = alltrue([
+      length(google_storage_bucket.pgbackrest) == 2,
+      length(google_project_iam_custom_role.pgbackrest) == 4,
+      length(google_service_account.pgbackrest_recovery) == 2,
+      length(google_secret_manager_secret_iam_member.pgbackrest_tls) == 8,
+      alltrue([for service in keys(var.native_backups) : alltrue([
+        google_storage_bucket.pgbackrest[service].name == "agora-management-test-123456789012-pgbr-${service}",
+        google_storage_bucket_iam_member.pgbackrest_writer[service].member == "serviceAccount:agora-pgbr-${service}@agora-private-test.iam.gserviceaccount.com",
+        google_storage_bucket_iam_member.pgbackrest_writer[service].role == google_project_iam_custom_role.pgbackrest["${service}:writer"].name,
+        google_service_account.pgbackrest_recovery[service].account_id == "pgbr-${service}-recovery",
+        google_service_account.pgbackrest_recovery[service].disabled,
+        google_secret_manager_secret_iam_member.pgbackrest_tls["${service}:database:agora-${service}-database"].secret_id == google_secret_manager_secret.application["production-${service}-pgbackrest-database"].secret_id,
+        google_secret_manager_secret_iam_member.pgbackrest_tls["${service}:database:agora-${service}-database"].member == "serviceAccount:agora-${service}-database@agora-private-test.iam.gserviceaccount.com",
+        google_secret_manager_secret_iam_member.pgbackrest_tls["${service}:repository:agora-pgbr-${service}"].member == "serviceAccount:agora-pgbr-${service}@agora-private-test.iam.gserviceaccount.com",
+      ])]),
+    ])
+    error_message = "Coexisting services must have separate buckets, recovery identities and exact-service TLS grants."
+  }
 }

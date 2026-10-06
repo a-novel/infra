@@ -5,9 +5,12 @@ import (
 	"regexp"
 )
 
-// ServiceAccount selects the exact JSON Keys endpoint identity before metadata authentication.
+// ServiceAccount selects the exact service endpoint identity before metadata authentication.
 // An empty zone retains dedicated-project identities; private selects shared-project identities.
-func ServiceAccount(project, endpoint, zone string) (string, error) {
+func ServiceAccount(project, service, endpoint, zone string) (string, error) {
+	if service != "json-keys" && service != "authentication" {
+		return "", errors.New("invalid service")
+	}
 	if !regexp.MustCompile(`^[a-z][a-z0-9-]{4,28}[a-z0-9]$`).MatchString(project) {
 		return "", errors.New("invalid workload project")
 	}
@@ -18,9 +21,9 @@ func ServiceAccount(project, endpoint, zone string) (string, error) {
 	case "/repository":
 		account = "agora-backup-repository"
 	case "private/database":
-		account = "agora-json-keys-database"
+		account = "agora-" + service + "-database"
 	case "private/repository":
-		account = "agora-pgbr-json-keys"
+		account = "agora-pgbr-" + service
 	default:
 		return "", errors.New("invalid endpoint or trust zone")
 	}

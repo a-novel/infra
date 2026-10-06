@@ -10,8 +10,8 @@ func (o *foundationOptions) releaseZones(value string) error {
 	if json.Unmarshal([]byte(value), &o.serviceReleaseZones) != nil || o.serviceReleaseZones == nil {
 		return errors.New("service release zones must be a JSON object")
 	}
-	if len(o.serviceReleaseZones) > 0 && (!o.sharedVPC || len(o.serviceProjects) != 0 || len(o.repositoryServices) != 0) {
-		return errors.New("shared release boundaries require shared VPC and no dedicated-service or native-repository selection")
+	if len(o.serviceReleaseZones) > 0 && (!o.sharedVPC || len(o.serviceProjects) != 0) {
+		return errors.New("shared release boundaries require shared VPC and no dedicated-service projects")
 	}
 	for service, zones := range o.serviceReleaseZones {
 		if !slices.Contains([]string{"json-keys", "authentication"}, service) || len(zones) == 0 || len(zones) > 2 {

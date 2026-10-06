@@ -80,13 +80,25 @@ run "reject_public_repository" {
   expect_failures = [var.pgbackrest_repository]
 }
 
-run "reject_peer_repository" {
+run "authentication_repository_is_independent" {
   command = plan
   variables {
     service          = "authentication"
     database_handoff = run.documents.cases.authentication
   }
-  expect_failures = [var.pgbackrest_repository]
+  assert {
+    condition = alltrue([
+      google_service_account.repository["host"].account_id == "agora-pgbr-authentication",
+      google_compute_instance.repository["host"].name == "agora-pgbackrest-authentication",
+      google_compute_instance.repository["host"].desired_status == "TERMINATED",
+      google_compute_instance.repository["host"].machine_type == "e2-micro",
+      google_compute_instance.repository["host"].boot_disk[0].initialize_params[0].size == 20,
+      length(google_compute_instance.repository["host"].attached_disk) == 0,
+      length(google_compute_disk.database) == 0,
+      length(google_compute_instance_template.database) == 0,
+    ])
+    error_message = "Authentication gets only its stopped bounded repository; it must not acquire another database."
+  }
 }
 
 run "prepared_runtime_stays_stopped" {
@@ -171,6 +183,52 @@ run "activate_existing_shared_repository" {
     ])
     error_message = "Explicit activation starts only the existing private repository and keeps database ownership in its original state."
   }
+}
+
+run "authentication_runtime_uses_only_its_own_credentials_and_storage" {
+  command = plan
+  variables {
+    service          = "authentication"
+    database_handoff = run.documents.cases.authentication
+    pgbackrest_repository = {
+      placement = run.documents.repository_placement
+      runtime = merge(jsondecode(file("tests/fixtures/repository-runtime.json")), {
+        server_image      = "europe-west1-docker.pkg.dev/agora-private-test/agora-authentication-private-production/service-authentication/database@sha256:${sha256("server")}"
+        credentials_image = "europe-west1-docker.pkg.dev/agora-private-test/agora-authentication-private-tooling/host-credentials@sha256:${sha256("credentials")}"
+        client_name       = "agora-authentication-database.agora-private-test"
+      })
+    }
+  }
+  assert {
+    condition = alltrue([
+      strcontains(yamldecode(local.repository_cloud_config.host).write_files[1].content, "repo1-gcs-bucket=agora-management-test-123456789012-pgbr-authentication"),
+      strcontains(yamldecode(local.repository_cloud_config.host).write_files[1].content, "repo1-path=/authentication"),
+      strcontains(yamldecode(local.repository_cloud_config.host).write_files[1].content, "tls-server-auth=agora-authentication-database.agora-private-test=authentication"),
+      strcontains(yamldecode(local.repository_cloud_config.host).write_files[2].content, "--service=authentication"),
+      !strcontains(local.repository_cloud_config.host, "json-keys"),
+      alltrue([for binding in google_artifact_registry_repository_iam_member.shared_database_images :
+        binding.member == "serviceAccount:agora-authentication-database@agora-private-test.iam.gserviceaccount.com"
+      ]),
+      google_compute_instance.repository["host"].desired_status == "TERMINATED",
+    ])
+    error_message = "Authentication must use its own stanza, bucket, TLS client and image readers, without activating the host."
+  }
+}
+
+run "reject_authentication_using_json_keys_images" {
+  command = plan
+  variables {
+    service          = "authentication"
+    database_handoff = run.documents.cases.authentication
+    pgbackrest_repository = {
+      placement = run.documents.repository_placement
+      runtime = merge(jsondecode(file("tests/fixtures/repository-runtime.json")), {
+        server_image      = "europe-west1-docker.pkg.dev/agora-private-test/agora-json-keys-private-production/service-json-keys/database@sha256:${sha256("server")}"
+        credentials_image = "europe-west1-docker.pkg.dev/agora-private-test/agora-json-keys-private-tooling/host-credentials@sha256:${sha256("credentials")}"
+      })
+    }
+  }
+  expect_failures = [var.pgbackrest_repository]
 }
 
 run "reject_activation_without_runtime" {

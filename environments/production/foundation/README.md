@@ -194,14 +194,14 @@ and [pgBackRest's TLS port](https://pgbackrest.org/configuration.html#section-re
 
 ### Shared native database
 
-`json_keys_native_backup = null` retains the existing startup path. The explicit JSON Keys
-opt-in supplies the private repository IP, service-scoped database/credential image digests,
+`native_backups = {}` retains the existing startup path. Each service entry supplies its private
+repository IP, service-scoped database/credential image digests, distinct TLS `client_name`,
 numeric CA/database identity versions and `wal_archiving` (default false). It reuses
 the [database-runtime module](../../../modules/database-runtime/README.md) through this
 root's existing instance template, singleton group and preserved data disk.
 
 Apply this startup-script change only through protected database maintenance, including
-its fresh logical backup, restore check and exact no-surge replacement review. Authentication,
+its fresh logical backup, restore check and exact no-surge replacement review. Peer services,
 database metadata/image, disks, addresses and VM sizes must remain unchanged. The entrypoint
 requires the deployed database digest to equal the repository/worker digest. This is not a
 database upgrade or ownership transfer to service foundation.
@@ -211,6 +211,13 @@ backup jobs and snapshots are unaffected. TLS issuance, runtime identity/egress 
 native backup/SQL-restore proof and monitoring remain activation requirements; see
 [shared-host activation](../../../docs/runbooks/accept-native-backups.md#shared-host-activation).
 Do not apply this opt-in to a recovery copy.
+
+For the existing JSON Keys installation, move the complete former `json_keys_native_backup`
+value to `native_backups["json-keys"]` and add its already-issued client name. Stage the protected
+input update with the code change before any plan: omitting the entry would select the old startup
+path. Migrate the service-foundation repository runtime to the same explicit client name. Keep
+all image digests, numeric TLS versions and WAL settings unchanged during this configuration move;
+publish and verify the service-aware credential-loader image before selecting it in a live plan.
 
 Both Google providers are pinned in [`versions.tf`](./versions.tf); only service-agent creation uses
 `google-beta`. Rows group repeated resources that share a

@@ -106,7 +106,7 @@ locals {
       contract = "POSTGRES_BACKUP_PASSWORD"
       purpose  = "JSON Keys database read-only backup password"
     }
-    }, { for endpoint, credential in local.pgbackrest_tls : "production-json-keys-pgbackrest-${endpoint}" => {
+    }, { for secret, credential in local.pgbackrest_tls : secret => {
       contract = credential.contract
       purpose  = credential.purpose
   } })

@@ -181,11 +181,11 @@ run "missing_service_project_is_rejected" {
   expect_failures = [var.pgbackrest_repository_services]
 }
 
-run "peer_activation_is_rejected" {
+run "unknown_service_is_rejected" {
   command = plan
   variables {
     service_projects               = { authentication = "agora-authentication-test" }
-    pgbackrest_repository_services = ["authentication"]
+    pgbackrest_repository_services = ["unknown"]
   }
   expect_failures = [var.pgbackrest_repository_services]
 }

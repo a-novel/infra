@@ -119,7 +119,7 @@ resource "google_compute_instance_template" "database" {
   }
 
   # The existing maintenance gate permits only this script to replace the host template.
-  metadata_startup_script = each.key == "json_keys" && var.json_keys_native_backup != null ? module.json_keys_native_backup[0].startup_script : file("${path.module}/../../../assets/database-host/legacy-startup.sh")
+  metadata_startup_script = contains(keys(var.native_backups), each.value.component) ? module.native_backup[each.value.component].startup_script : file("${path.module}/../../../assets/database-host/legacy-startup.sh")
 
   disk {
     auto_delete  = true

@@ -1,5 +1,5 @@
 [Unit]
-Description=Agora JSON Keys database (foundation maintenance only)
+Description=Agora ${service} database (foundation maintenance only)
 BindsTo=docker.service
 Wants=network-online.target gcr-online.target
 After=docker.service network-online.target gcr-online.target
@@ -29,10 +29,10 @@ ExecStartPre=/usr/bin/docker run --rm --name=agora-database-credentials --pull=n
     --cpus=1 --memory=256m --pids-limit=64 --no-healthcheck --log-driver=none --ulimit=core=0 \
     --mount=type=bind,source=/run/agora/pgbackrest,target=/credentials \
     ${credentials_image} --management-project-number=${management_number} --workload-project=${project} \
-    --endpoint=database ${zone_argument}--ca-version=${ca_version} --identity-version=${identity_version} \
-    --name=agora-database.${project} --output=/credentials/current
+    --service=${service} --endpoint=database ${zone_argument}--ca-version=${ca_version} --identity-version=${identity_version} \
+    --name=${client_name} --output=/credentials/current
 ExecStart=/bin/bash /etc/agora-database/startup.sh --supervise
-ExecStop=/usr/bin/docker stop --time=60 agora-postgres-json-keys
+ExecStop=/usr/bin/docker stop --time=60 agora-postgres-${service}
 # Reap interrupted startup too; systemd removes credentials only after consumers stop.
 ExecStopPost=-/usr/bin/docker kill ${backup_containers}
-ExecStopPost=-/usr/bin/docker rm --force agora-database-credentials agora-postgres-json-keys
+ExecStopPost=-/usr/bin/docker rm --force agora-database-credentials agora-postgres-${service}

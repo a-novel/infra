@@ -1,3 +1,13 @@
+variable "service" {
+  description = "Service owning the database, stanza and TLS secrets."
+  type        = string
+
+  validation {
+    condition     = contains(["json-keys", "authentication"], var.service)
+    error_message = "Select a supported database service."
+  }
+}
+
 variable "project_id" {
   description = "Project owning the database and repository hosts."
   type        = string
@@ -14,7 +24,7 @@ variable "management_number" {
 }
 
 variable "shared_private" {
-  description = "Select the shared private project's JSON Keys database identity."
+  description = "Select the service's database identity in the shared private project."
   type        = bool
   default     = false
 }
@@ -27,6 +37,7 @@ variable "repository" {
     server_image      = string
     credentials_image = string
     ca_version        = string
+    client_name       = string
   })
 }
 

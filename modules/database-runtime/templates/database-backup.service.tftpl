@@ -1,5 +1,5 @@
 [Unit]
-Description=Agora JSON Keys native backup (${name})
+Description=Agora ${service} native backup (${name})
 After=agora-database.service docker.service
 StopPropagatedFrom=agora-database.service docker.service
 
@@ -14,21 +14,21 @@ ExecStartPre=/usr/bin/systemctl is-active --quiet agora-database.service
 # Remove only an exited predecessor. A still-running container makes the next run fail closed.
 ExecStartPre=-/usr/bin/docker rm agora-backup-${name}
 ExecStart=/usr/bin/docker run --name=agora-backup-${name} --pull=never \
-    --network=container:agora-postgres-json-keys --read-only --user=999:999 \
+    --network=container:agora-postgres-${service} --read-only --user=999:999 \
     --cap-drop=ALL --security-opt=no-new-privileges --cpus=0.5 --memory=512m --memory-swap=512m \
     --pids-limit=64 --no-healthcheck --ulimit=core=0 --stop-signal=SIGTERM \
     --log-driver=json-file --log-opt=max-size=2m --log-opt=max-file=2 --log-opt=tag={{.Name}} \
     --tmpfs=/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777 \
-    --mount=type=bind,source=/mnt/disks/agora-data/json-keys,target=/var/lib/postgresql,readonly \
+    --mount=type=bind,source=/mnt/disks/agora-data/${service},target=/var/lib/postgresql,readonly \
     --mount=type=bind,source=/run/agora/postgresql,target=/var/run/postgresql,readonly \
     --mount=type=bind,source=/run/agora/pgbackrest-lock,target=/run/pgbackrest-lock \
     --mount=type=bind,source=/run/agora/pgbackrest/current,target=/run/pgbackrest,readonly \
     --mount=type=bind,source=/etc/agora-database/pgbackrest.conf,target=/etc/pgbackrest/pgbackrest.conf,readonly \
 %{ if name == "check" ~}
     --mount=type=bind,source=/etc/agora-database/check-backup.sh,target=/etc/pgbackrest/check-backup.sh,readonly \
-    --entrypoint=/bin/bash ${image} /etc/pgbackrest/check-backup.sh ${server_name} /run/pgbackrest/ca.pem /run/pgbackrest/identity.pem --stanza=json-keys ${command}
+    --entrypoint=/bin/bash ${image} /etc/pgbackrest/check-backup.sh ${server_name} /run/pgbackrest/ca.pem /run/pgbackrest/identity.pem --stanza=${service} ${command}
 %{ else ~}
-    --entrypoint=pgbackrest ${image} --stanza=json-keys ${command}
+    --entrypoint=pgbackrest ${image} --stanza=${service} ${command}
 %{ endif ~}
 ExecStop=-/usr/bin/docker stop --time=30 agora-backup-${name}
 # Preserve bounded logs for COS collection after failure, timeout or ordinary completion.

@@ -160,7 +160,10 @@ func TestFoundation(t *testing.T) {
 			{name: "MissingAPI", value: `{"json-keys":["public-api"]}`, shared: "true"},
 			{name: "MissingHost", value: `{"json-keys":["private"]}`},
 			{name: "Dedicated", value: `{"json-keys":["private"]}`, shared: "true", projects: `{"json-keys":"agora-json-keys-test"}`},
-			{name: "NativeRepository", value: `{"json-keys":["private"]}`, shared: "true", repository: `["json-keys"]`},
+			{name: "NativeRepository", value: `{"json-keys":["private"]}`, shared: "true", repository: `["json-keys"]`, valid: true},
+			{name: "BothNativeRepositories", value: `{"json-keys":["private","public-api"],"authentication":["private","public-api"]}`, shared: "true", public: "agora-api-test", repository: `["json-keys","authentication"]`, valid: true},
+			{name: "RepositoryWithoutPrivateZone", value: `{"authentication":["public-api"]}`, shared: "true", public: "agora-api-test", repository: `["authentication"]`},
+			{name: "DuplicateRepository", value: `{"json-keys":["private"]}`, shared: "true", repository: `["json-keys","json-keys"]`},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
@@ -325,7 +328,9 @@ func TestFoundation(t *testing.T) {
 			{"Object", "{}", "", "{}", false},
 			{"NonString", "[123]", "", "{}", false},
 			{"Duplicate", `["json-keys","json-keys"]`, "", `{"json-keys":"json-keys-project-prod"}`, false},
-			{"Peer", `["authentication"]`, "", `{"authentication":"authentication-prod"}`, false},
+			{"Authentication", `["authentication"]`, "", `{"authentication":"authentication-prod"}`, true},
+			{"Both", `["authentication","json-keys"]`, "", `{"authentication":"authentication-prod","json-keys":"json-keys-project-prod"}`, true},
+			{"Peer", `["peer"]`, "", `{"authentication":"authentication-prod"}`, false},
 			{"Unregistered", `["json-keys"]`, "", "{}", false},
 		} {
 			t.Run(tc.name, func(t *testing.T) {

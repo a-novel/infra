@@ -154,8 +154,14 @@ func TestSharedRepositoryScope(t *testing.T) {
 			if !testCase.valid {
 				return
 			}
+			config["service"] = "authentication"
+			data, err = json.Marshal(config)
+			require.NoError(t, err)
+			_, err = workflow.FoundationScope(data, getenv, bucket)
+			require.NoError(t, err)
+			config["service"] = "json-keys"
 			for field, value := range map[string]any{
-				"zone": "public-api", "service": "authentication", "database_handoff": nil,
+				"zone": "public-api", "service": "peer", "database_handoff": nil,
 				"database": map[string]any{}, "database_runtime": map[string]any{},
 			} {
 				original := config[field]

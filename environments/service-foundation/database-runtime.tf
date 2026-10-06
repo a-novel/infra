@@ -1,5 +1,5 @@
 variable "database_runtime" {
-  description = "JSON Keys lifecycle owned by foundation maintenance. Reuses the repository's image, loader and CA; bring-up, WAL archiving and backup alerts are separate opt-ins."
+  description = "Database lifecycle owned by foundation maintenance. Reuses the service's repository image, loader and CA; bring-up, WAL archiving and backup alerts are separate opt-ins."
   type = object({
     revision                = string
     password_version        = string
@@ -12,8 +12,8 @@ variable "database_runtime" {
   default = null
 
   validation {
-    condition     = var.database_runtime == null ? true : var.service == "json-keys" && try(var.pgbackrest_repository.runtime != null, false)
-    error_message = "The database lifecycle requires the prepared JSON Keys repository runtime."
+    condition     = var.database_runtime == null ? true : try(var.pgbackrest_repository.runtime != null, false)
+    error_message = "The database lifecycle requires the service's prepared repository runtime."
   }
   validation {
     condition = var.database_runtime == null ? true : alltrue([
@@ -39,6 +39,7 @@ module "database_runtime" {
   for_each = local.database_runtime
 
   project_id        = var.project_id
+  service           = var.service
   region            = var.region
   management_number = trimprefix(trimsuffix(var.state_bucket, "-tofu-state"), "${var.management_project_id}-")
   identity_version  = each.value.identity_version

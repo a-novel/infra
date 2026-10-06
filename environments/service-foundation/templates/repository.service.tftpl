@@ -1,5 +1,5 @@
 [Unit]
-Description=Agora JSON Keys native backup repository
+Description=Agora ${service} native backup repository
 BindsTo=docker.service
 Wants=network-online.target gcr-online.target
 After=docker.service network-online.target gcr-online.target
@@ -25,7 +25,7 @@ ExecStartPre=/usr/bin/docker run --rm --name=agora-backup-credentials --pull=nev
     --cpus=1 --memory=256m --pids-limit=64 --no-healthcheck --log-driver=none \
     --ulimit=core=0 --mount=type=bind,source=/run/agora-backup-repository/credentials,target=/credentials \
     ${credentials_image} --management-project-number=${management_number} --workload-project=${project} \
-    --endpoint=repository ${zone_argument}--ca-version=${ca_version} --identity-version=${identity_version} \
+    --service=${service} --endpoint=repository ${zone_argument}--ca-version=${ca_version} --identity-version=${identity_version} \
     --name=${server_name} --output=/credentials/current
 # COS blocks host-network listeners; VPC rules restrict this port to the database identity.
 ExecStartPre=/sbin/iptables -w 5 -I INPUT 1 -p tcp --dport 8432 -m comment --comment agora-backup-repository -j ACCEPT

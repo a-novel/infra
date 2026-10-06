@@ -13,8 +13,9 @@ locals {
         path        = "/etc/agora-backup/pgbackrest.conf"
         permissions = "0444"
         content = templatefile("${path.module}/templates/repository.conf.tftpl", {
-          bucket    = "${trimsuffix(var.state_bucket, "-tofu-state")}-pgbr-json-keys"
-          client_cn = "agora-database.${var.project_id}"
+          bucket    = "${trimsuffix(var.state_bucket, "-tofu-state")}-pgbr-${var.service}"
+          service   = var.service
+          client_cn = runtime.client_name
         })
       },
       {
@@ -22,6 +23,7 @@ locals {
         permissions = "0644"
         content = templatefile("${path.module}/templates/repository.service.tftpl", merge(runtime, {
           project           = var.project_id
+          service           = var.service
           management_number = trimprefix(trimsuffix(var.state_bucket, "-tofu-state"), "${var.management_project_id}-")
           server_name       = local.repository_name
           zone_argument     = var.zone == null ? "" : "--zone=private "
@@ -44,7 +46,7 @@ resource "google_artifact_registry_repository_iam_member" "shared_database_image
   location   = each.value.location
   repository = each.value.repository_id
   role       = "roles/artifactregistry.reader"
-  member     = "serviceAccount:agora-json-keys-database@${var.project_id}.iam.gserviceaccount.com"
+  member     = "serviceAccount:agora-${var.service}-database@${var.project_id}.iam.gserviceaccount.com"
 }
 
 resource "google_artifact_registry_repository_iam_member" "repository_images" {

@@ -1,6 +1,6 @@
 # Native-backup host credentials
 
-JSON Keys pilot component. CI builds and scans this image. Its
+One-shot TLS credential delivery for service-owned native backups. CI builds and scans this image. Its
 [protected publisher](../../docs/runbooks/publish-rollout-verifier.md) requires
 separate activation and approval. Publishing the image populates no secret
 and changes no running host or backup schedule.
@@ -13,27 +13,31 @@ ordering and lifecycle. Their foundation owners control activation.
 
 ## Contract
 
-All arguments except `--zone` are required; `--help` describes them. The management project must
+All arguments except `--zone` are required; `--help` describes them. `--service` selects
+`json-keys` or `authentication` and binds secret names and shared-project identities.
+The management project must
 be its **numeric project number**, matching Secret Manager's canonical response
 name. CA and identity versions must be positive numeric versions, never aliases.
 
 | Endpoint     | Required identity in `--workload-project` | Identity secret                              | `--name`                                 |
 | ------------ | ----------------------------------------- | -------------------------------------------- | ---------------------------------------- |
-| `database`   | `agora-database`                          | `production-json-keys-pgbackrest-database`   | Authorized client certificate CN         |
-| `repository` | `agora-backup-repository`                 | `production-json-keys-pgbackrest-repository` | Server DNS name used by database clients |
+| `database`   | `agora-database`                          | `production-<service>-pgbackrest-database`   | Authorized client certificate CN         |
+| `repository` | `agora-backup-repository`                 | `production-<service>-pgbackrest-repository` | Server DNS name used by database clients |
 
 Without `--zone`, these dedicated-project identities are unchanged. `--zone=private`
-requires `agora-json-keys-database` for the database or `agora-pgbr-json-keys`
+requires `agora-<service>-database` for the database or `agora-pgbr-<service>`
 for the repository, in the same workload project. Other zones are rejected.
 The attached metadata identity must match exactly; callers cannot supply an arbitrary account.
 
-Both endpoints read `production-json-keys-pgbackrest-ca`. The CA payload contains
+Both endpoints read `production-<service>-pgbackrest-ca`. The CA payload contains
 public CA certificates only. The identity payload contains the endpoint's leaf
 certificate, optional intermediate certificates, and exactly one unencrypted
 private key. The loader checks exact returned versions, CRC32C, certificate/key
 matching, trust, validity, usage, and the selected CN or DNS name before writing.
 The endpoint certificate must not be a CA. Google handles authentication,
 transport, and bounded request retries; the command has a two-minute deadline.
+When services share a CA, give their clients distinct CNs and authorize only the matching
+CN/stanza on each repository. Secret selection alone does not isolate TLS peers.
 
 ## Host integration prerequisites
 

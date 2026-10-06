@@ -5,8 +5,8 @@ variable "pgbackrest_repository_services" {
   nullable    = false
 
   validation {
-    condition     = length(setsubtract(var.pgbackrest_repository_services, ["json-keys"])) == 0
-    error_message = "Only the JSON Keys repository pilot is supported."
+    condition     = length(setsubtract(var.pgbackrest_repository_services, ["json-keys", "authentication"])) == 0
+    error_message = "Select supported database services for repository networking."
   }
 
   validation {

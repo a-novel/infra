@@ -19,6 +19,8 @@ import (
 
 // Config binds one endpoint to reviewed secret versions and its expected certificate identity.
 type Config struct {
+	// Service selects the service-owned credentials; endpoints never share secret names.
+	Service string
 	// ProjectNumber uses Secret Manager's canonical numeric project name.
 	ProjectNumber string
 	// Endpoint selects the database client or repository server secret.
@@ -40,6 +42,9 @@ var (
 
 // Validate rejects invalid scope before credentials or secret access are requested.
 func (c Config) Validate() error {
+	if c.Service != "json-keys" && c.Service != "authentication" {
+		return errors.New("service must be json-keys or authentication")
+	}
 	if c.Endpoint != "database" && c.Endpoint != "repository" {
 		return errors.New("endpoint must be database or repository")
 	}
@@ -53,7 +58,7 @@ func (c Config) Validate() error {
 }
 
 // Deliver publishes ca.pem and identity.pem together, without replacing an existing directory.
-// It reads only the JSON Keys pilot's two selected versions and never returns remote error payloads.
+// It reads only the selected service's two pinned versions and never returns remote error payloads.
 func Deliver(ctx context.Context, client *secretmanager.Client, config Config) (err error) {
 	if err := config.Validate(); err != nil {
 		return err
@@ -71,7 +76,7 @@ func Deliver(ctx context.Context, client *secretmanager.Client, config Config) (
 	}
 
 	read := func(endpoint, version string) ([]byte, error) {
-		resource := fmt.Sprintf("projects/%s/secrets/production-json-keys-pgbackrest-%s/versions/%s", config.ProjectNumber, endpoint, version)
+		resource := fmt.Sprintf("projects/%s/secrets/production-%s-pgbackrest-%s/versions/%s", config.ProjectNumber, config.Service, endpoint, version)
 		response, err := client.AccessSecretVersion(ctx, &secretmanagerpb.AccessSecretVersionRequest{Name: resource})
 		if err != nil {
 			// Upstream diagnostic bodies are not a safe secret-handling log surface.
