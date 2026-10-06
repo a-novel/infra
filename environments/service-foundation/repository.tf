@@ -89,6 +89,19 @@ resource "google_service_account_iam_member" "repository_attachment" {
   member             = "serviceAccount:${local.foundation_service_account}"
 }
 
+resource "google_project_iam_member" "repository_maintenance_iap" {
+  for_each = local.repository_runtime
+
+  project = var.project_id
+  role    = "roles/iap.tunnelResourceAccessor"
+  member  = "serviceAccount:${local.foundation_service_account}"
+
+  condition {
+    title      = "RepositoryMaintenanceSSH-${var.service}"
+    expression = "destination.port == 22 && destination.ip == '${google_compute_instance.repository[each.key].network_interface[0].network_ip}'"
+  }
+}
+
 resource "google_compute_instance" "repository" {
   for_each = local.pgbackrest_repository
 
