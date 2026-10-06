@@ -14,4 +14,4 @@ overrides:
   "undici@8": 8.11.2
 patchedDependencies:
   # Local lookup needs only Renovate's existing, explicit SSH command permission.
-  renovate@44.132.2: patches/renovate@44.132.2.patch
+  "renovate@*": patches/renovate-simple-git.patch

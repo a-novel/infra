@@ -170,7 +170,7 @@ overrides:
   undici@8: 8.11.2
 
 patchedDependencies:
-  renovate@44.132.2: 20b2723f1c4470a8f928d4291049ed7455769229dc305074f0264ef1c4e29897
+  renovate@*: 20b2723f1c4470a8f928d4291049ed7455769229dc305074f0264ef1c4e29897
 
 importers:
 
@@ -180,8 +180,8 @@ importers:
         specifier: 3.9.9
         version: 3.9.9
       renovate:
-        specifier: 44.132.2
-        version: 44.132.2(patch_hash=20b2723f1c4470a8f928d4291049ed7455769229dc305074f0264ef1c4e29897)(supports-color@7.2.0)(typanion@3.14.0)
+        specifier: 44.132.4
+        version: 44.132.4(patch_hash=20b2723f1c4470a8f928d4291049ed7455769229dc305074f0264ef1c4e29897)(supports-color@7.2.0)(typanion@3.14.0)
 
 packages:
 
@@ -2086,8 +2086,8 @@ packages:
   remark@15.0.1:
     resolution: {integrity: sha512-Eht5w30ruCXgFmxVUSlNWQ9iiimq07URKeFS3hNc8cUWy1llX4KDWfyEDZRycMc+znsN9Ux5/tJ/BFdgdOwA3A==}
 
-  renovate@44.132.2:
-    resolution: {integrity: sha512-RD5+d1UPhvTj55u6wbZUY/Fhb2LRkYfo9ZqymjH8XeiKub37aNdDNJPgksnOjsyHPMzLMh6DeMTrEBRnQzBgvA==}
+  renovate@44.132.4:
+    resolution: {integrity: sha512-XWjzHE2SXgYjQJ06nbR3xhMN1x+AoopE3tcyjVZrWa1B5E4IEh4jWeqsC1hO2c49xiV4u1A8v2tXE5hhYoAC0g==}
     engines: {node: ^24.11.0, pnpm: ^11.0.0}
     hasBin: true
 
@@ -4817,7 +4817,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  renovate@44.132.2(patch_hash=20b2723f1c4470a8f928d4291049ed7455769229dc305074f0264ef1c4e29897)(supports-color@7.2.0)(typanion@3.14.0):
+  renovate@44.132.4(patch_hash=20b2723f1c4470a8f928d4291049ed7455769229dc305074f0264ef1c4e29897)(supports-color@7.2.0)(typanion@3.14.0):
     dependencies:
       '@aws-sdk/client-codecommit': 3.1139.0
       '@aws-sdk/client-ec2': 3.1139.0
