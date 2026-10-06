@@ -104,7 +104,11 @@ func plannedMaintenance(path string, inputs []byte, getenv func(string) string) 
 		hosts = append(hosts, repository)
 	}
 	for _, host := range hosts {
-		if config.Service != "json-keys" || host.Project != config.Project || host.validate() != nil {
+		owned := strings.HasPrefix(host.Name, "agora-database-"+config.Service+"-")
+		if host.repository {
+			owned = host.Name == "agora-pgbackrest-"+config.Service
+		}
+		if !slices.Contains([]string{"json-keys", "authentication"}, config.Service) || !owned || host.Project != config.Project || host.validate() != nil {
 			return maintenance{}, failure{65, "Maintenance requires valid registered targets with prepared native units."}
 		}
 	}
@@ -214,7 +218,7 @@ func (storage store) quiesce(host maintenanceHost) error {
 		return err
 	}
 	for _, name := range strings.Fields(result) {
-		if strings.HasPrefix(name, "agora-backup-") || name == "agora-postgres-json-keys" || name == "agora-database-credentials" {
+		if strings.HasPrefix(name, "agora-backup-") || strings.HasPrefix(name, "agora-postgres-") || name == "agora-database-credentials" {
 			return errors.New("native container still running")
 		}
 	}
