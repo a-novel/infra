@@ -50,7 +50,7 @@ func (target Target) Validate() error {
 	return nil
 }
 
-// Host waits for SSH readiness before running a one-shot systemd worker.
+// Host waits for guest initialization before running a one-shot systemd worker.
 // Its caller must already hold admission and a create-only destination reservation.
 type Host struct {
 	Target  Target
@@ -78,11 +78,7 @@ func (host Host) Restore(ctx context.Context) (map[string]string, error) {
 	if err := host.check(ctx, "RUNNING"); err != nil {
 		return nil, err
 	}
-	if err := host.waitSSH(ctx); err != nil {
-		return nil, err
-	}
-	// Cloud-init installs the disabled unit. Waiting does not start it.
-	if _, err := host.ssh(ctx, "sudo -n cloud-init status --wait"); err != nil {
+	if err := host.waitReady(ctx); err != nil {
 		return nil, err
 	}
 	request, err := host.ssh(ctx, "sudo -n cat /etc/agora-recovery/request.json")
@@ -123,13 +119,16 @@ func (host Host) Restore(ctx context.Context) (map[string]string, error) {
 	return evidence, nil
 }
 
-// waitSSH probes only connectivity: Compute RUNNING precedes guest SSH readiness.
-// Disk preparation and worker commands must never enter this retry loop.
-func (host Host) waitSSH(ctx context.Context) error {
+// waitReady observes this boot's completed COS initialization through systemd.
+// Cloud-init's persisted status can still describe the preparation boot after SSH is ready.
+// Only this read-only probe is retried; disk preparation and workers remain one-shot.
+func (host Host) waitReady(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	for ctx.Err() == nil {
-		if _, err := host.ssh(ctx, "true"); err == nil {
+		states, err := host.ssh(ctx, "sudo -n systemctl is-active cloud-init-local.service cloud-init.service cloud-config.service cloud-final.service")
+		// is-active succeeds when any unit is active; every stage must have completed.
+		if err == nil && string(states) == "active\nactive\nactive\nactive\n" {
 			return ctx.Err()
 		}
 		timer := time.NewTimer(5 * time.Second)
@@ -139,7 +138,7 @@ func (host Host) waitSSH(ctx context.Context) error {
 		case <-timer.C:
 		}
 	}
-	return fmt.Errorf("recovery SSH readiness unconfirmed; retain guard: %w", ctx.Err())
+	return fmt.Errorf("recovery guest initialization unconfirmed; retain guard: %w", ctx.Err())
 }
 
 func (host Host) worker(ctx context.Context, name, network string) error {
