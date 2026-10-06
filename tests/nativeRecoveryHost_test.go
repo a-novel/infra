@@ -255,7 +255,8 @@ func TestNativeRecoveryHostReadiness(t *testing.T) {
 					require.False(t, slices.ContainsFunc(h.commands, func(command string) bool {
 						return strings.Contains(command, "cloud-init") || strings.Contains(command, "mkfs") || strings.Contains(command, "systemctl start")
 					}))
-					require.LessOrEqual(t, probes, 24)
+					// The final poll and context deadline can become runnable together.
+					require.LessOrEqual(t, probes, 25)
 				}
 			})
 		})
