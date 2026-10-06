@@ -34,13 +34,10 @@ Do not recreate the retired per-service project or run fault injection on a serv
    authenticated repository access, stanza creation, archiving, a full/differential chain and
    an isolated SQL restore. Never restore over the serving disk. Obtain separate approval if
    the available isolation requires additional compute or recovery authority.
-6. Before unattended native scheduling, bind and prove failure/freshness/disk/TLS-expiry
-   notifications, certificate rotation and actual cost/storage measurements. Retain logical
-   backups and snapshots until recovery acceptance is complete. Configuration convergence,
-   an active unit and a successful backup command alone do not close this initiative.
-
-The remaining sections describe the independently approved synthetic destructive rehearsal.
-They are not authorization to move or damage the current shared deployment.
+6. Before scheduling, prove the initial backup chain, isolated SQL restore, monitoring delivery
+   and certificate rotation. A separately approved [coexistence pilot](#coexistence-pilot)
+   can then collect scheduled outcomes and storage measurements while legacy protection remains.
+   Full recovery and cost acceptance still govern adoption and legacy retirement.
 
 ### Review the shared-host maintenance commit
 
@@ -57,7 +54,8 @@ repository identity. The shared foundation owns that account-level binding.
 
 Keep the first `json_keys_native_backup.wal_archiving` value false. Reject a maintenance plan
 that changes Authentication, a data disk, an address, a machine size or release metadata.
-Leave native backup timers stopped and retain logical backups and snapshots through acceptance.
+Bring-up leaves native backup timers stopped. Retain logical backups and snapshots through
+acceptance; restart an approved pilot only after the reconciliation below.
 
 Before stanza creation, verify PostgreSQL listens on both `/var/run/postgresql` and `/tmp`.
 The native worker reaches the first socket through the shared `/run/agora/postgresql` mount;
@@ -92,6 +90,46 @@ check. Confirm old credential files are removed before disabling superseded secr
 For compromise, stop the affected endpoint and rotate trust/identities as required; disabling a
 Secret Manager version alone does not revoke a PEM already loaded by a running process. Keep issuer
 recovery custody separate from runtime and evidence; never upload its private key to either VM.
+
+### Coexistence pilot
+
+The JSON Keys pilot runs the existing full, differential and archive-check timers alongside logical
+backups and snapshots. Automatic pgBackRest expiry and bucket lifecycle cleanup remain off.
+Authentication is outside this pilot. Record dated approvals, exact identities, backup labels,
+private evidence references and unresolved acceptance cases in #190; this runbook owns the procedure.
+
+Use Cloud Logging and repository metadata for routine observation. The calendars are hourly at
+`:30`, Monday–Saturday at `02:00 UTC` for differentials, and Sunday at `02:00 UTC` for full backups.
+Allow five minutes of jitter, one minute of timer accuracy and the installed worker's runtime bound
+(currently one hour) before calling a missing completion overdue. Investigate an explicit failure
+immediately. A worker's successful exit and corresponding native catalog/WAL evidence establish an
+outcome; a dispatched unit, synthetic event or manual run does not prove a scheduled deadline.
+
+Timers are static and nonpersistent. Stopping the database stops its timers and workers; a reboot or
+database restart does not resume timers or catch up missed runs. After protected maintenance:
+
+1. Verify completion and guard release, the intended database system/data disk, healthy PostgreSQL
+   and repository, loaded image/TLS versions, monitoring coverage and disk/WAL headroom.
+2. Reconcile any interrupted worker before retrying. Run the existing archive check and inspect its
+   completed result; retain historical backup labels and evidence.
+3. With the pilot approval still applicable, start only `agora-backup-full.timer`,
+   `agora-backup-diff.timer` and `agora-backup-check.timer`. Inspect their active/waiting states and
+   next UTC deadlines. Do not add boot enablement or alter calendars to shorten observation.
+4. Record the observation gap and resumption. Keep logical backups and snapshots active; a missed
+   native run does not authorize changing retention, deleting objects or restoring over serving data.
+
+The [cost worksheet](../costs/production.md#native-backup-coexistence) separates recurring native
+cost, overlap and eventual savings. Successful scheduled runs do not prove independent-authority
+recovery, source-loss recovery, later PITR or regional disaster recovery. Close those acceptance
+limits explicitly before replacing legacy protection. Retirement also requires migrating every
+release/maintenance consumer of the logical backup and restore-check jobs, retaining historical
+readers/images until their supported recovery points expire, and a separate snapshot decision.
+
+## Synthetic rehearsal boundary
+
+The numbered sections below require separately approved synthetic resources and destructive targets.
+They do not authorize moving, parking or damaging the serving shared-private deployment, recreating
+retired proof projects, or expanding the coexistence pilot.
 
 ## 1. Approve the scope and cost
 
