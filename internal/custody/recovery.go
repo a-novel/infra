@@ -20,6 +20,7 @@ import (
 type restoreIntent struct {
 	SchemaVersion int             `json:"schemaVersion"`
 	Kind          string          `json:"kind"`
+	Scope         string          `json:"scope,omitempty"`
 	Target        recovery.Target `json:"target"`
 	Preparation   objectReference `json:"preparation"`
 	Commit        string          `json:"commit"`
@@ -50,6 +51,10 @@ func (custody store) restore(args []string, getenv func(string) string, output i
 	if err != nil {
 		return failure{65, "Invalid native restore scope."}
 	}
+	source, err := recoverySource(host, getenv, custody.bucket)
+	if err != nil {
+		return err
+	}
 	if !workflow.RecoverySQLAllowed(host.VerifySQL, getenv) {
 		return failure{77, "Offline SQL verification is not activated."}
 	}
@@ -58,6 +63,9 @@ func (custody store) restore(args []string, getenv func(string) string, output i
 		return failure{65, "Exact preparation generation and selected recovery confirmation are required."}
 	}
 	intent := restoreIntent{SchemaVersion: 1, Kind: "native-restore", Commit: getenv("GITHUB_SHA"), RunID: getenv("GITHUB_RUN_ID"), RunAttempt: getenv("GITHUB_RUN_ATTEMPT")}
+	if source.Scope != "" {
+		intent.SchemaVersion, intent.Scope = 2, source.Scope
+	}
 	if !commitPattern.MatchString(intent.Commit) || !sequencePattern.MatchString(intent.RunID+"-"+intent.RunAttempt) {
 		return failure{65, "Invalid recovery workflow identity."}
 	}
@@ -67,7 +75,7 @@ func (custody store) restore(args []string, getenv func(string) string, output i
 	if err != nil {
 		return err
 	}
-	prepared, err := readOperation(ctx, client, custody.bucket, applyIntent{Project: host.SourceProject, Service: "json-keys", Region: host.Region}, generation, getenv)
+	prepared, err := readOperation(ctx, client, custody.bucket, source, generation, getenv)
 	if err != nil {
 		return err
 	}
@@ -77,11 +85,11 @@ func (custody store) restore(args []string, getenv func(string) string, output i
 	if err := custody.completedWriter(ctx, prepared); err != nil {
 		return err
 	}
-	intent.Preparation, err = currentReference(ctx, client, strings.TrimSuffix(custody.bucket, "-tofu-state")+"-deployment-receipts", completionName(host.SourceProject, generation))
+	intent.Preparation, err = currentReference(ctx, client, strings.TrimSuffix(custody.bucket, "-tofu-state")+"-deployment-receipts", source.completionName(generation))
 	if err != nil {
 		return err
 	}
-	preparation, target, err := preparedTarget(ctx, client, custody.bucket, host.SourceProject, intent.Preparation)
+	preparation, target, err := preparedTarget(ctx, client, custody.bucket, source, intent.Preparation)
 	if err != nil {
 		return err
 	}
@@ -96,7 +104,7 @@ func (custody store) restore(args []string, getenv func(string) string, output i
 	if err != nil {
 		return err
 	}
-	guard, err := createObject(ctx, client, custody.bucket, "services/"+host.SourceProject+"/release/operation.json", encoded)
+	guard, err := createObject(ctx, client, custody.bucket, source.guardName(), encoded)
 	if err != nil {
 		return failure{70, "Native restore admission unconfirmed; do not retry or adopt an existing guard."}
 	}
@@ -129,7 +137,7 @@ func (custody store) restore(args []string, getenv func(string) string, output i
 	if err != nil {
 		return err
 	}
-	if _, err := createObject(ctx, client, intent.Preparation.Bucket, completionName(host.SourceProject, guard.Generation), data); err != nil {
+	if _, err := createObject(ctx, client, intent.Preparation.Bucket, source.completionName(guard.Generation), data); err != nil {
 		return failure{70, "Restore completion publication unconfirmed; guard retained."}
 	}
 	if err := client.Objects.Delete(guard.Bucket, guard.Name).IfGenerationMatch(guard.Generation).Context(ctx).Do(); err != nil {
@@ -147,8 +155,17 @@ func (intent restoreIntent) evidenceName() string {
 	return "foundation/recovery/services/" + intent.Target.Project + "/" + intent.Target.Request.Outcome() + ".json"
 }
 
-func completionName(project string, generation int64) string {
-	return fmt.Sprintf("services/%s/production/operations/%d.json", project, generation)
+// recoverySource reuses the source service's admission and receipt paths for every recovery phase.
+func recoverySource(host workflow.RecoveryHost, getenv func(string) string, bucket string) (applyIntent, error) {
+	scope, err := host.SourceScope(getenv, bucket)
+	if err != nil {
+		return applyIntent{}, err
+	}
+	source := applyIntent{Project: host.SourceProject, Service: "json-keys", Region: host.Region}
+	if strings.HasPrefix(scope, "workloads/") {
+		source.Scope = scope
+	}
+	return source, nil
 }
 
 func currentReference(ctx context.Context, client *storage.Service, bucket, name string) (objectReference, error) {
@@ -162,7 +179,7 @@ func currentReference(ctx context.Context, client *storage.Service, bucket, name
 	return reference, err
 }
 
-func preparedTarget(ctx context.Context, client *storage.Service, bucket, source string, ref objectReference) (applyCompletion, recovery.Target, error) {
+func preparedTarget(ctx context.Context, client *storage.Service, bucket string, source applyIntent, ref objectReference) (applyCompletion, recovery.Target, error) {
 	var preparation applyCompletion
 	var target recovery.Target
 	invalid := failure{65, "Preparation lacks matching resource-state evidence; prepare and review a new host."}
@@ -174,11 +191,15 @@ func preparedTarget(ctx context.Context, client *storage.Service, bucket, source
 		return preparation, target, invalid
 	}
 	intent := preparation.Operation
-	if preparation.Guard.Bucket != bucket || preparation.Guard.Name != "services/"+source+"/release/operation.json" || preparation.Guard.Generation <= 0 {
+	version := 1
+	if source.Scope != "" {
+		version = 2
+	}
+	if preparation.Guard.Bucket != bucket || preparation.Guard.Name != source.guardName() || preparation.Guard.Generation <= 0 {
 		return preparation, target, invalid
 	}
-	if preparation.SchemaVersion != 1 || preparation.Outcome != "host-prepared" || intent.Root != "service-recovery" || intent.SourceProject != source ||
-		ref.Name != completionName(source, preparation.Guard.Generation) {
+	if preparation.SchemaVersion != 1 || intent.SchemaVersion != version || preparation.Outcome != "host-prepared" || intent.Root != "service-recovery" || intent.SourceProject != source.Project || intent.Scope != source.Scope ||
+		ref.Name != source.completionName(preparation.Guard.Generation) {
 		return preparation, target, invalid
 	}
 	name, err := intent.configurationName()
@@ -200,23 +221,28 @@ func preparedTarget(ctx context.Context, client *storage.Service, bucket, source
 		return preparation, target, invalid
 	}
 	target = state.Outputs.Recovery.Value["selected"]
-	if target.Validate() != nil || target.Project != intent.Project || target.Request.SourceProject != source {
+	if target.Validate() != nil || target.Project != intent.Project || target.Request.SourceProject != source.Project {
 		return preparation, target, invalid
 	}
 	return preparation, target, nil
 }
 
-func inspectRestore(ctx context.Context, client *storage.Service, expected applyIntent, guard objectReference, data []byte) (*restoreIntent, bool, error) {
+func inspectRestore(ctx context.Context, client *storage.Service, expected applyIntent, guard objectReference, data []byte, getenv func(string) string) (*restoreIntent, bool, error) {
 	var intent restoreIntent
 	if err := decodeRecord(data, &intent); err != nil {
 		return nil, false, err
 	}
-	if intent.SchemaVersion != 1 || intent.Kind != "native-restore" || intent.Target.Validate() != nil ||
-		intent.Target.Request.SourceProject != expected.Project || intent.Target.Request.Service != expected.Service ||
+	source, err := recoverySource(workflow.RecoveryHost{SourceProject: intent.Target.Request.SourceProject, ManagementProject: intent.Target.Request.ManagementProject, Region: expected.Region}, getenv, guard.Bucket)
+	version := 1
+	if source.Scope != "" {
+		version = 2
+	}
+	if err != nil || intent.SchemaVersion != version || intent.Scope != source.Scope || source.operationScope() != expected.operationScope() || source.guardName() != guard.Name ||
+		intent.Kind != "native-restore" || intent.Target.Validate() != nil || intent.Target.Request.Service != expected.Service ||
 		!commitPattern.MatchString(intent.Commit) || !sequencePattern.MatchString(intent.RunID+"-"+intent.RunAttempt) {
 		return nil, false, failure{70, "Invalid native restore operation evidence."}
 	}
-	data, err := readCurrentObject(ctx, client, strings.TrimSuffix(guard.Bucket, "-tofu-state")+"-deployment-receipts", completionName(expected.Project, guard.Generation))
+	data, err = readCurrentObject(ctx, client, strings.TrimSuffix(guard.Bucket, "-tofu-state")+"-deployment-receipts", source.completionName(guard.Generation))
 	if err != nil || data == nil {
 		return &intent, false, err
 	}
@@ -228,7 +254,7 @@ func inspectRestore(ctx context.Context, client *storage.Service, expected apply
 		completed.Attempt.Name != intent.attemptName() || completed.Evidence.Name != intent.evidenceName() {
 		return nil, false, failure{70, "Restore completion differs from the admitted operation."}
 	}
-	_, target, err := preparedTarget(ctx, client, guard.Bucket, expected.Project, intent.Preparation)
+	_, target, err := preparedTarget(ctx, client, guard.Bucket, source, intent.Preparation)
 	if err != nil || target != intent.Target {
 		return nil, false, failure{70, "Restore completion differs from prepared resource identities."}
 	}

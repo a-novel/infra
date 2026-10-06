@@ -165,6 +165,11 @@ func (i inspector) serviceStates(ctx context.Context, root string, scopes map[st
 					continue
 				}
 			}
+			if root == "service-recovery" && slices.Contains([]string{"restore-attempt.json", "files-restored.json", "sql-verified.json", "cleanup-attempt.json"}, object) {
+				// These permanent reservations and evidence are not active locks.
+				// Source admission above still blocks uncertain operations.
+				continue
+			}
 			if object != "default.tfstate" && !strings.HasPrefix(object, "config/") {
 				return nil, failure{70, "Unexpected workspace or lock in service state."}
 			}

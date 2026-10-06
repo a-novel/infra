@@ -62,9 +62,16 @@ recovery. `host-prepared` completion binds both projects and the reviewed plan/i
 a restored-database receipt or authority for cutover. The inspector and finisher recognize that
 outcome and the exact original recovery workflow attempt, without replaying provisioning.
 
+For shared-project JSON Keys, the registered `private` release boundary supplies the schema-2
+receipt scope and the common service guard used by preparation, restore and cleanup. Public API
+placement alone cannot authorize a database source. Dedicated-project recovery keeps its historical
+schema-1 paths. Registering a disposable destination does not create resources or grant recovery IAM.
+
 Assessment/drift also inspect the destination inventory with writes disabled. Unregistered state,
 missing converged inputs or a held source guard stop inspection. Effective source guard/receipt IAM
 and all recovery execution/fencing remain separate activation gates; merging enrollment grants no access.
+Known retained restore/cleanup reservations and result files are evidence, not active workspace locks;
+unknown objects and active locks still block assessment.
 
 ### Implemented: guarded native file restoration
 

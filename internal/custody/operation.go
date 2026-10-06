@@ -72,6 +72,11 @@ func (custody store) admit(args []string, inputs []byte, plan string, getenv fun
 		}
 		intent.Project, intent.SourceProject = host.Project, host.SourceProject
 		intent.Service, intent.Region = "json-keys", host.Region
+		source, err := recoverySource(host, getenv, custody.bucket)
+		if err != nil {
+			return nil, err
+		}
+		intent.Scope = source.Scope
 	} else {
 		// Match the case-sensitive fields already authorized against registration.
 		for name, target := range map[string]*string{"project_id": &intent.Project, "service": &intent.Service, "region": &intent.Region} {
@@ -85,6 +90,9 @@ func (custody store) admit(args []string, inputs []byte, plan string, getenv fun
 		return nil, err
 	}
 	intent.SchemaVersion, intent.Root, intent.Commit, intent.PlanID = 1, args[0], args[1], args[2]
+	if intent.Scope != "" {
+		intent.SchemaVersion = 2
+	}
 	if (args[0] == "service-foundation" || args[0] == "service-release") && foundationScopePattern.MatchString(getenv("TOFU_STATE_SUFFIX")) {
 		intent.SchemaVersion, intent.Scope = 2, getenv("TOFU_STATE_SUFFIX")
 	}

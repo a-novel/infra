@@ -27,6 +27,14 @@ func nativeInputs(t *testing.T, f *sandbox) object {
 	return object{"state_bucket": f.env["STATE_BUCKET"], "recovery": host}
 }
 
+func sharedNativeInputs(t *testing.T, f *sandbox, config object) {
+	t.Helper()
+	f.env["FOUNDATION_CONFIG"] = strings.TrimSuffix(sharedRegistration, "}") + `,"service_recovery_projects":{"a-novel-recovery-proof":"json-keys"}}`
+	host := nested(config, "recovery")
+	host["source_project"] = "agora-private-test"
+	host["protected_projects"] = []string{"agora-management-test", "agora-private-test", "agora-api-test"}
+}
+
 func TestNativeRecoveryInputs(t *testing.T) {
 	t.Parallel()
 	for _, testCase := range []struct {
@@ -34,6 +42,11 @@ func TestNativeRecoveryInputs(t *testing.T) {
 		valid                   bool
 	}{
 		{name: "Exact", valid: true},
+		{name: "Shared/Exact", valid: true},
+		{name: "Shared/PublicSource", field: "source_project", value: "agora-api-test"},
+		{name: "Shared/OldDedicatedSource", field: "source_project", value: "agora-json-keys-test"},
+		{name: "Shared/UnregisteredPrivate"},
+		{name: "Shared/WrongBucket"},
 		{name: "Restore/Exact", valid: true},
 		{name: "Restore/SQL/Exact", valid: true},
 		{name: "Restore/SQL/Data", field: "expected_data_sha256", value: strings.Repeat("a", 64), valid: true},
@@ -76,6 +89,15 @@ func TestNativeRecoveryInputs(t *testing.T) {
 			t.Parallel()
 			f := setup(t)
 			config := nativeInputs(t, f)
+			if strings.HasPrefix(testCase.name, "Shared/") {
+				sharedNativeInputs(t, f, config)
+			}
+			if testCase.name == "Shared/UnregisteredPrivate" {
+				f.env["FOUNDATION_CONFIG"] = strings.Replace(f.env["FOUNDATION_CONFIG"], `["private","public-api"]`, `["public-api"]`, 1)
+			}
+			if testCase.name == "Shared/WrongBucket" {
+				config["state_bucket"] = "agora-management-test-999999-tofu-state"
+			}
 			if strings.HasPrefix(testCase.name, "Cleanup/") {
 				f.env["NATIVE_RECOVERY_PREPARATION_ENABLED"] = "false"
 				f.env["NATIVE_RECOVERY_CLEANUP_ENABLED"], f.env["RECOVERY_OPERATION"] = "true", "cleanup-native"
@@ -150,56 +172,64 @@ func nativePlan(action string) object {
 
 func TestNativeRecoveryApply(t *testing.T) {
 	t.Parallel()
-	for _, testCase := range []struct {
-		name, fault string
-		code        int
-		guard       bool
-	}{
-		{"Prepared", "", 0, false},
-		{"CompetingSource", "busy", 70, true},
-		{"LostAdmission", "guard-ack", 70, true},
-		{"ConvergenceFailure", "converge", 1, true},
-		{"LostCompletion", "completion-ack", 70, true},
-		{"SuccessorGuard", "successor", 70, true},
-		{"RetiredDestination", "used", 70, true},
-	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			t.Parallel()
-			f := inspectionFixture(t)
-			input := nativeInputs(t, f)
-			config := filepath.Join(f.dir, "inputs.json")
-			writeJSON(t, config, input)
-			if testCase.fault == "used" {
-				writeJSON(t, filepath.Join(f.env["FAKE_GCS_ROOT"], f.env["STATE_BUCKET"], "foundation/recovery/services/a-novel-recovery-proof/restore-attempt.json"), object{})
-			}
-			writeJSON(t, filepath.Join(f.env["FAKE_GCS_ROOT"], f.env["STATE_BUCKET"], "foundation/recovery/services/a-novel-recovery-proof/default.tfstate"), object{"outputs": object{}})
-			bucket, commit := f.env["STATE_BUCKET"], strings.Repeat("a", 40)
-			f.env["GITHUB_REPOSITORY"], f.env["GITHUB_SHA"] = "a-novel/infra", commit
-			f.env["GITHUB_RUN_ID"], f.env["GITHUB_RUN_ATTEMPT"] = "124", "1"
-			f.env["ROOT_NAME"], f.env["RECOVERY_OPERATION"] = "service-recovery", "apply-native"
-			f.env["FAKE_TOFU_PLAN_JSON"], f.env["FAKE_TOFU_PLAN_CODE"] = filepath.Join(f.dir, "plan.json"), "2"
-			writeJSON(t, f.env["FAKE_TOFU_PLAN_JSON"], nativePlan("create"))
-			f.env["FAKE_TOFU_CLEAN_PLAN_JSON"] = filepath.Join(f.dir, "clean.json")
-			writeJSON(t, f.env["FAKE_TOFU_CLEAN_PLAN_JSON"], object{"format_version": "1.2", "variables": nativePlan("create")["variables"], "resource_changes": []any{}})
-			f.env["FAKE_TOFU_APPLIED"] = filepath.Join(f.dir, "applied")
-			f.env["FAKE_TOFU_REQUIRE_ABSENT"] = filepath.Join(f.env["FAKE_GCS_ROOT"], bucket, "foundation/plans/recovery", f.env["TOFU_STATE_SUFFIX"], commit, "123-1/plan.tfplan")
-			code, output := f.script(t, "create-reviewed-plan", "service-recovery", bucket, commit, "123-1", config)
-			expectCode(t, 0, code, output)
-			applyStorage(t, f, testCase.fault)
-			if testCase.fault == "converge" {
-				f.env["FAKE_TOFU_FAIL_ACTION"] = "plan"
-			}
-			f.custody(t, testCase.code, "plan", "apply", bucket, "service-recovery", commit, "123-1", config)
-			guard := filepath.Join(f.env["FAKE_GCS_ROOT"], bucket, "services/agora-json-keys-test/release/operation.json")
-			_, err := os.Stat(guard)
-			require.Equal(t, testCase.guard, err == nil)
-			if testCase.code == 0 {
-				completion := readJSON(t, filepath.Join(f.env["FAKE_GCS_ROOT"], strings.TrimSuffix(bucket, "-tofu-state")+"-deployment-receipts", "services/agora-json-keys-test/production/operations/42.json"))
-				require.Equal(t, []any{"host-prepared", "a-novel-recovery-proof", "agora-json-keys-test"},
-					[]any{completion["outcome"], nested(completion, "operation")["project_id"], nested(completion, "operation")["source_project"]})
-				f.custody(t, 66, "plan", "apply", bucket, "service-recovery", commit, "123-1", config)
-			}
-		})
+	for _, layout := range []string{"Dedicated", "Shared"} {
+		for _, testCase := range []struct {
+			name, fault string
+			code        int
+			guard       bool
+		}{
+			{"Prepared", "", 0, false},
+			{"CompetingSource", "busy", 70, true},
+			{"LostAdmission", "guard-ack", 70, true},
+			{"ConvergenceFailure", "converge", 1, true},
+			{"LostCompletion", "completion-ack", 70, true},
+			{"SuccessorGuard", "successor", 70, true},
+			{"RetiredDestination", "used", 70, true},
+		} {
+			t.Run(layout+"/"+testCase.name, func(t *testing.T) {
+				t.Parallel()
+				f := inspectionFixture(t)
+				input := nativeInputs(t, f)
+				source, guardName, receiptScope := "agora-json-keys-test", "services/agora-json-keys-test/release/operation.json", "services/agora-json-keys-test"
+				if layout == "Shared" {
+					sharedNativeInputs(t, f, input)
+					source, guardName, receiptScope = "agora-private-test", "foundation/operations/production/json-keys/operation.json", "workloads/production/private/agora-private-test/json-keys"
+				}
+				f.env["FAKE_SERVICE_GUARD"] = guardName
+				config := filepath.Join(f.dir, "inputs.json")
+				writeJSON(t, config, input)
+				if testCase.fault == "used" {
+					writeJSON(t, filepath.Join(f.env["FAKE_GCS_ROOT"], f.env["STATE_BUCKET"], "foundation/recovery/services/a-novel-recovery-proof/restore-attempt.json"), object{})
+				}
+				writeJSON(t, filepath.Join(f.env["FAKE_GCS_ROOT"], f.env["STATE_BUCKET"], "foundation/recovery/services/a-novel-recovery-proof/default.tfstate"), object{"outputs": object{}})
+				bucket, commit := f.env["STATE_BUCKET"], strings.Repeat("a", 40)
+				f.env["GITHUB_REPOSITORY"], f.env["GITHUB_SHA"] = "a-novel/infra", commit
+				f.env["GITHUB_RUN_ID"], f.env["GITHUB_RUN_ATTEMPT"] = "124", "1"
+				f.env["ROOT_NAME"], f.env["RECOVERY_OPERATION"] = "service-recovery", "apply-native"
+				f.env["FAKE_TOFU_PLAN_JSON"], f.env["FAKE_TOFU_PLAN_CODE"] = filepath.Join(f.dir, "plan.json"), "2"
+				writeJSON(t, f.env["FAKE_TOFU_PLAN_JSON"], nativePlan("create"))
+				f.env["FAKE_TOFU_CLEAN_PLAN_JSON"] = filepath.Join(f.dir, "clean.json")
+				writeJSON(t, f.env["FAKE_TOFU_CLEAN_PLAN_JSON"], object{"format_version": "1.2", "variables": nativePlan("create")["variables"], "resource_changes": []any{}})
+				f.env["FAKE_TOFU_APPLIED"] = filepath.Join(f.dir, "applied")
+				f.env["FAKE_TOFU_REQUIRE_ABSENT"] = filepath.Join(f.env["FAKE_GCS_ROOT"], bucket, "foundation/plans/recovery", f.env["TOFU_STATE_SUFFIX"], commit, "123-1/plan.tfplan")
+				code, output := f.script(t, "create-reviewed-plan", "service-recovery", bucket, commit, "123-1", config)
+				expectCode(t, 0, code, output)
+				applyStorage(t, f, testCase.fault)
+				if testCase.fault == "converge" {
+					f.env["FAKE_TOFU_FAIL_ACTION"] = "plan"
+				}
+				f.custody(t, testCase.code, "plan", "apply", bucket, "service-recovery", commit, "123-1", config)
+				guard := filepath.Join(f.env["FAKE_GCS_ROOT"], bucket, guardName)
+				_, err := os.Stat(guard)
+				require.Equal(t, testCase.guard, err == nil)
+				if testCase.code == 0 {
+					completion := readJSON(t, filepath.Join(f.env["FAKE_GCS_ROOT"], strings.TrimSuffix(bucket, "-tofu-state")+"-deployment-receipts", receiptScope+"/production/operations/42.json"))
+					require.Equal(t, []any{"host-prepared", "a-novel-recovery-proof", source},
+						[]any{completion["outcome"], nested(completion, "operation")["project_id"], nested(completion, "operation")["source_project"]})
+					f.custody(t, 66, "plan", "apply", bucket, "service-recovery", commit, "123-1", config)
+				}
+			})
+		}
 	}
 }
 
@@ -266,47 +296,66 @@ func TestNativeRecoveryWorkflow(t *testing.T) {
 
 func TestNativeRecoveryInspection(t *testing.T) {
 	t.Parallel()
-	for _, testCase := range []struct {
-		name, fault, mode string
-		code              int
-	}{
-		{"Assessment", "", "assess", 0},
-		{"Drift", "", "drift", 0},
-		{"MissingConfiguration", "config", "assess", 70},
-		{"UnregisteredState", "orphan", "assess", 70},
-		{"SourceGuard", "guard", "assess", 70},
-	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			t.Parallel()
-			f := inspectionFixture(t)
-			config := nativeInputs(t, f)
-			f.env["NATIVE_RECOVERY_PREPARATION_ENABLED"] = "false"
-			f.env["FAKE_GATE_FILES"] = "service-recovery"
-			store := filepath.Join(f.env["FAKE_GCS_ROOT"], f.env["STATE_BUCKET"])
-			var registration object
-			require.NoError(t, json.Unmarshal([]byte(f.env["FOUNDATION_CONFIG"]), &registration))
-			writeJSON(t, filepath.Join(store, "foundation/config/00000000000000000001-00001.tfvars.json"), registration)
-			destination := "a-novel-recovery-proof"
-			if testCase.fault == "orphan" {
-				destination = "a-novel-recovery-peer"
-			}
-			directory := filepath.Join(store, "foundation/recovery/services", destination)
-			writeJSON(t, filepath.Join(directory, "default.tfstate"), object{})
-			if testCase.fault != "config" {
-				writeJSON(t, filepath.Join(directory, "config/00000000000000000001-00001.tfvars.json"), config)
-			}
-			if testCase.fault == "guard" {
-				writeJSON(t, filepath.Join(store, "services/agora-json-keys-test/release/operation.json"), object{})
-			}
-			args := []string{"inspect", "assess", "a-novel/infra", "93", f.env["FAKE_GATE_HEAD"], f.env["FAKE_GATE_BASE"], f.dir, f.env["STATE_BUCKET"], filepath.Join(f.dir, "verdict.json")}
-			if testCase.mode == "drift" {
-				args = []string{"inspect", "drift", f.env["STATE_BUCKET"]}
-			}
-			code, output := f.run(t, "infra", args...)
-			expectCode(t, testCase.code, code, output)
-			if testCase.code == 0 {
-				require.Contains(t, read(t, f.env["FAKE_TOFU_CALLS"]), "/service-recovery plan ")
-			}
-		})
+	for _, layout := range []string{"Dedicated", "Shared"} {
+		for _, testCase := range []struct {
+			name, fault, mode string
+			code              int
+		}{
+			{"Assessment", "", "assess", 0},
+			{"Drift", "", "drift", 0},
+			{"MissingConfiguration", "config", "assess", 70},
+			{"UnregisteredState", "orphan", "assess", 70},
+			{"SourceGuard", "guard", "assess", 70},
+			{"RetainedEvidence", "evidence", "assess", 0},
+			{"LockedState", "default.tflock", "assess", 70},
+			{"UnknownEvidence", "unknown.json", "assess", 70},
+		} {
+			t.Run(layout+"/"+testCase.name, func(t *testing.T) {
+				t.Parallel()
+				f := inspectionFixture(t)
+				config := nativeInputs(t, f)
+				guardName := "services/agora-json-keys-test/release/operation.json"
+				if layout == "Shared" {
+					sharedNativeInputs(t, f, config)
+					guardName = "foundation/operations/production/json-keys/operation.json"
+					f.env["FAKE_GCS_MANAGED_FOLDERS"] = "workloads/production/private/agora-private-test/json-keys/release/\nworkloads/production/public-api/agora-api-test/json-keys/release/\nworkloads/production/public-api/agora-api-test/authentication/release/"
+				}
+				f.env["NATIVE_RECOVERY_PREPARATION_ENABLED"] = "false"
+				f.env["FAKE_GATE_FILES"] = "service-recovery"
+				store := filepath.Join(f.env["FAKE_GCS_ROOT"], f.env["STATE_BUCKET"])
+				var registration object
+				require.NoError(t, json.Unmarshal([]byte(f.env["FOUNDATION_CONFIG"]), &registration))
+				writeJSON(t, filepath.Join(store, "foundation/config/00000000000000000001-00001.tfvars.json"), registration)
+				destination := "a-novel-recovery-proof"
+				if testCase.fault == "orphan" {
+					destination = "a-novel-recovery-peer"
+				}
+				directory := filepath.Join(store, "foundation/recovery/services", destination)
+				writeJSON(t, filepath.Join(directory, "default.tfstate"), object{})
+				if testCase.fault != "config" {
+					writeJSON(t, filepath.Join(directory, "config/00000000000000000001-00001.tfvars.json"), config)
+				}
+				if testCase.fault == "guard" {
+					writeJSON(t, filepath.Join(store, guardName), object{})
+				}
+				if testCase.fault == "evidence" {
+					for _, name := range []string{"restore-attempt.json", "files-restored.json", "sql-verified.json", "cleanup-attempt.json"} {
+						writeJSON(t, filepath.Join(directory, name), object{})
+					}
+				}
+				if testCase.fault == "default.tflock" || testCase.fault == "unknown.json" {
+					writeJSON(t, filepath.Join(directory, testCase.fault), object{})
+				}
+				args := []string{"inspect", "assess", "a-novel/infra", "93", f.env["FAKE_GATE_HEAD"], f.env["FAKE_GATE_BASE"], f.dir, f.env["STATE_BUCKET"], filepath.Join(f.dir, "verdict.json")}
+				if testCase.mode == "drift" {
+					args = []string{"inspect", "drift", f.env["STATE_BUCKET"]}
+				}
+				code, output := f.run(t, "infra", args...)
+				expectCode(t, testCase.code, code, output)
+				if testCase.code == 0 {
+					require.Contains(t, read(t, f.env["FAKE_TOFU_CALLS"]), "/service-recovery plan ")
+				}
+			})
+		}
 	}
 }

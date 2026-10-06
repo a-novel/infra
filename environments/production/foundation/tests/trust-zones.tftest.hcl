@@ -201,6 +201,47 @@ run "reject_api_platform_collision" {
   expect_failures = [var.public_api_project_id]
 }
 
+run "shared_private_recovery_registration" {
+  command = plan
+  variables {
+    shared_vpc_enabled        = true
+    public_project_id         = "agora-public-test"
+    public_api_project_id     = "agora-api-test"
+    service_release_zones     = { json-keys = ["private", "public-api"] }
+    service_recovery_projects = { a-novel-recovery-test = "json-keys" }
+  }
+  assert {
+    condition = (
+      length(module.service_project) == 0 &&
+      keys(module.service_release) == ["json-keys/private", "json-keys/public-api"] &&
+      length(google_compute_shared_vpc_service_project.public_api) == 1
+    )
+    error_message = "Recovery registration must preserve the existing shared production layout without enrolling a dedicated service project."
+  }
+}
+
+run "reject_recovery_without_private_source" {
+  command = plan
+  variables {
+    shared_vpc_enabled        = true
+    public_api_project_id     = "agora-api-test"
+    service_release_zones     = { json-keys = ["public-api"] }
+    service_recovery_projects = { a-novel-recovery-test = "json-keys" }
+  }
+  expect_failures = [var.service_recovery_projects]
+}
+
+run "reject_recovery_live_project_collision" {
+  command = plan
+  variables {
+    shared_vpc_enabled        = true
+    public_api_project_id     = "a-novel-recovery-test"
+    service_release_zones     = { json-keys = ["private"] }
+    service_recovery_projects = { a-novel-recovery-test = "json-keys" }
+  }
+  expect_failures = [var.service_recovery_projects]
+}
+
 run "reject_api_management_collision" {
   command = plan
   variables {

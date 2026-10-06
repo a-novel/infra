@@ -117,7 +117,7 @@ func readOperation(ctx context.Context, client *storage.Service, bucket string, 
 	if jsonv2.Unmarshal(data, &header) != nil {
 		return operationEvidence{}, failure{70, "Malformed operation evidence."}
 	}
-	if expected.Scope != "" && header.Kind != "" {
+	if expected.Scope != "" && header.Kind != "" && header.Kind != "native-restore" && header.Kind != "native-cleanup" {
 		return operationEvidence{}, failure{70, "Shared runtime operations are not enrolled."}
 	}
 	switch header.Kind {
@@ -126,9 +126,9 @@ func readOperation(ctx context.Context, client *storage.Service, bucket string, 
 	case "scheduled-rotation":
 		evidence.rotation, evidence.completed, err = inspectRotation(ctx, client, expected, guard, data)
 	case "native-restore":
-		evidence.restore, evidence.completed, err = inspectRestore(ctx, client, expected, guard, data)
+		evidence.restore, evidence.completed, err = inspectRestore(ctx, client, expected, guard, data, getenv)
 	case "native-cleanup":
-		evidence.cleanup, evidence.completed, err = inspectCleanup(ctx, client, expected, guard, data)
+		evidence.cleanup, evidence.completed, err = inspectCleanup(ctx, client, expected, guard, data, getenv)
 	default:
 		err = failure{70, "Unsupported operation kind; retain the guard for protected reconciliation."}
 	}
@@ -154,9 +154,18 @@ func inspectApply(ctx context.Context, client *storage.Service, expected applyIn
 	if expected.Scope != "" {
 		scopes, err := workflow.ReleaseScopes(getenv, guard.Bucket)
 		parts := strings.Split(intent.Scope, "/")
-		if err != nil || intent.SchemaVersion != 2 || (intent.Root != "service-foundation" && intent.Root != "service-release") ||
+		project := intent.Project
+		if intent.Root == "service-recovery" {
+			destinations, destinationErr := workflow.RecoveryScopes(getenv, guard.Bucket)
+			if destinationErr != nil || destinations["services/"+intent.Project] != "json-keys" ||
+				intent.Scope != "workloads/production/private/"+intent.SourceProject+"/json-keys" {
+				return intent, false, failure{70, "Recovery does not match its registered private source."}
+			}
+			project = intent.SourceProject
+		}
+		if err != nil || intent.SchemaVersion != 2 || (intent.Root != "service-foundation" && intent.Root != "service-release" && intent.Root != "service-recovery") ||
 			!foundationScopePattern.MatchString(intent.Scope) || scopes[intent.Scope] != intent.Service ||
-			len(parts) != 5 || parts[3] != intent.Project || parts[4] != intent.Service {
+			len(parts) != 5 || parts[3] != project || parts[4] != intent.Service {
 			return intent, false, failure{70, "Shared operation does not match registered prerequisites."}
 		}
 	} else if intent.SchemaVersion != 1 || intent.Scope != "" {
