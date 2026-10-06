@@ -10,6 +10,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -124,6 +126,7 @@ func TestNativeRecoveryHost(t *testing.T) {
 		{"UsedDisk", "used", false, false},
 		{"MountedDisk", "mounted", false, false},
 		{"ExistingMount", "mkdir", false, false},
+		{"FailedInitialization", "cloud-init status", false, false},
 		{"UncertainWorker", "systemctl start", true, true},
 		{"MissingEvidence", "files-restored.json", true, true},
 		{"UncertainStop", "instances stop", true, true},
@@ -171,6 +174,15 @@ func TestNativeRecoveryHost(t *testing.T) {
 				h.fail = tc.fault
 			}
 			files, err := h.host.Restore(t.Context())
+			for _, once := range []string{"instances start", "mkfs.ext4", "systemctl start agora-native-restore", "cloud-init status"} {
+				calls := 0
+				for _, command := range h.commands {
+					if strings.Contains(command, once) {
+						calls++
+					}
+				}
+				require.LessOrEqual(t, calls, 1)
+			}
 			contains := func(value string) bool {
 				return slices.ContainsFunc(h.commands, func(command string) bool { return strings.Contains(command, value) })
 			}
@@ -181,6 +193,72 @@ func TestNativeRecoveryHost(t *testing.T) {
 			} else {
 				require.Nil(t, files)
 			}
+		})
+	}
+}
+
+func TestNativeRecoveryHostReadiness(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name       string
+		readyAfter int
+		cancel     bool
+		blocked    bool
+		elapsed    time.Duration
+		err        error
+	}{
+		{name: "Success", readyAfter: 1},
+		{name: "Success/DelayedSSH", readyAfter: 3, elapsed: 10 * time.Second},
+		{name: "Error/Unavailable", elapsed: 2 * time.Minute, err: context.DeadlineExceeded},
+		{name: "Error/Cancelled", cancel: true, err: context.Canceled},
+		{name: "Error/BlockedProbe", blocked: true, elapsed: 2 * time.Minute, err: context.DeadlineExceeded},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			synctest.Test(t, func(t *testing.T) {
+				f := setup(t)
+				inputs, err := json.Marshal(nativeInputs(t, f))
+				require.NoError(t, err)
+				var config struct{ Recovery recovery.Request }
+				require.NoError(t, json.Unmarshal(inputs, &config))
+				config.Recovery.Service, config.Recovery.Major = "json-keys", 18
+				h := newRecoveryHost(t, config.Recovery)
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				probes := 0
+				h.host.Execute = func(probeCtx context.Context, output io.Writer, binary string, args ...string) error {
+					if slices.Contains(args, "--command=true") {
+						probes++
+						if tc.cancel {
+							cancel()
+						}
+						if tc.blocked {
+							<-probeCtx.Done()
+						}
+						if probes != tc.readyAfter {
+							return errors.New(privateValue)
+						}
+					}
+					return h.execute(probeCtx, output, binary, args...)
+				}
+				started := time.Now()
+				files, err := h.host.Restore(ctx)
+				require.Equal(t, tc.elapsed, time.Since(started))
+				if tc.err == nil {
+					require.NoError(t, err)
+					require.Equal(t, tc.readyAfter, probes)
+					require.NoError(t, config.Recovery.CheckFiles(files))
+				} else {
+					require.ErrorIs(t, err, tc.err)
+					require.NotContains(t, err.Error(), privateValue)
+					require.Nil(t, files)
+					require.False(t, slices.ContainsFunc(h.commands, func(command string) bool {
+						return strings.Contains(command, "cloud-init") || strings.Contains(command, "mkfs") || strings.Contains(command, "systemctl start")
+					}))
+					// The final poll and context deadline can become runnable together.
+					require.LessOrEqual(t, probes, 25)
+				}
+			})
 		})
 	}
 }
