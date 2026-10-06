@@ -307,6 +307,7 @@ func (host Host) cloud(ctx context.Context, args ...string) ([]byte, error) {
 }
 
 func (host Host) ssh(ctx context.Context, command string) ([]byte, error) {
-	return host.cloud(ctx, "ssh", hostName, "--tunnel-through-iap", "--ssh-key-expire-after=1h",
+	// OS Login uses the prepared host's enabled API and quota project.
+	return host.cloud(ctx, "ssh", hostName, "--billing-project="+host.Target.Project, "--tunnel-through-iap", "--ssh-key-expire-after=1h",
 		"--ssh-key-file="+filepath.Join(host.Scratch, "recovery-key"), "--ssh-flag=-oConnectTimeout=10", "--ssh-flag=-oConnectionAttempts=12", "--command="+command)
 }

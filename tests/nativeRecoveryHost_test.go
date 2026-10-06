@@ -140,6 +140,12 @@ func TestNativeRecoveryHost(t *testing.T) {
 			require.NoError(t, json.Unmarshal(inputs, &config))
 			config.Recovery.Service, config.Recovery.Major = "json-keys", 18
 			h := newRecoveryHost(t, config.Recovery)
+			h.host.Execute = func(ctx context.Context, output io.Writer, binary string, args ...string) error {
+				if len(args) > 1 && args[1] == "ssh" {
+					require.Contains(t, args, "--billing-project="+config.Recovery.Project)
+				}
+				return h.execute(ctx, output, binary, args...)
+			}
 			switch tc.fault {
 			case "vm":
 				h.vm["id"] = "1003"
