@@ -171,8 +171,9 @@ func (storage store) hostSSH(host maintenanceHost, command string) (string, erro
 	var output bytes.Buffer
 	// Recheck the incarnation on the endpoint, closing name reuse between describe and SSH.
 	command = `test "$(curl -q --fail --silent --show-error --noproxy '*' --connect-timeout 5 --max-time 10 -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/id)" = '` + host.InstanceID + `' && ` + command
+	// OS Login must use the host's enabled API, not the caller's management project.
 	err := storage.execute(storage.ctx, &output, "gcloud", "compute", "ssh", host.Name,
-		"--project="+host.Project, "--zone="+host.Zone, "--quiet", "--tunnel-through-iap", "--ssh-key-expire-after=1h",
+		"--project="+host.Project, "--billing-project="+host.Project, "--zone="+host.Zone, "--quiet", "--tunnel-through-iap", "--ssh-key-expire-after=1h",
 		"--ssh-key-file="+filepath.Join(storage.scratch, "maintenance-key"), "--ssh-flag=-o ConnectTimeout=15",
 		"--ssh-flag=-o ConnectionAttempts=6", "--command="+command)
 	return output.String(), err

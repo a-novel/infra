@@ -1,0 +1,12 @@
+diff --git a/dist/util/git/config.js b/dist/util/git/config.js
+index 31fcb8c724edc193c9196563dec04104a6f46ebd..f51e342fd7b14ea91732b5cdcd8ea47dc3540122 100644
+--- a/dist/util/git/config.js
++++ b/dist/util/git/config.js
+@@ -19,6 +19,7 @@ function simpleGitConfig() {
+ 	};
+ 	if (getEnv().RENOVATE_X_CLEAR_HOOKS) unsafe.allowUnsafeHooksPath = true;
+ 	const config = {
++		allowEnvironment: ["GIT_SSH_COMMAND"],
+ 		completion: {
+ 			onClose: true,
+ 			onExit: false

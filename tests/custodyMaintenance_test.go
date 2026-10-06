@@ -241,6 +241,7 @@ func TestCustodyMaintenance(t *testing.T) {
 						return json.NewEncoder(output).Encode(vm)
 					}
 					assert.Contains(t, values, "--tunnel-through-iap")
+					require.Contains(t, values, "--billing-project=agora-json-keys-test")
 					remote := values[len(values)-1]
 					assert.Contains(t, remote, "instance/id)")
 					switch {
