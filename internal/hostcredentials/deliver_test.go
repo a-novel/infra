@@ -28,6 +28,8 @@ func TestConfig(t *testing.T) {
 		name   string
 		change func(*hostcredentials.Config)
 	}{
+		{"MissingService", func(c *hostcredentials.Config) { c.Service = "" }},
+		{"UnknownService", func(c *hostcredentials.Config) { c.Service = "peer" }},
 		{"Endpoint", func(c *hostcredentials.Config) { c.Endpoint = "peer" }},
 		{"ProjectAlias", func(c *hostcredentials.Config) { c.ProjectNumber = "example-management" }},
 		{"Latest", func(c *hostcredentials.Config) { c.CAVersion = "latest" }},
@@ -38,7 +40,7 @@ func TestConfig(t *testing.T) {
 	} {
 		t.Run("Error/"+tc.name, func(t *testing.T) {
 			t.Parallel()
-			config := hostcredentials.Config{ProjectNumber: "123456", Endpoint: "database", CAVersion: "3", IdentityVersion: "7", Name: "database", Output: "/run/credentials"}
+			config := hostcredentials.Config{Service: "json-keys", ProjectNumber: "123456", Endpoint: "database", CAVersion: "3", IdentityVersion: "7", Name: "database", Output: "/run/credentials"}
 			tc.change(&config)
 			require.Error(t, config.Validate())
 		})
@@ -49,6 +51,7 @@ func TestDeliver(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name        string
+		service     string
 		endpoint    string
 		certificate func(*x509.Certificate)
 		response    func(*secretmanagerpb.AccessSecretVersionResponse)
@@ -57,6 +60,11 @@ func TestDeliver(t *testing.T) {
 	}{
 		{name: "Success/Database", endpoint: "database"},
 		{name: "Success/Repository", endpoint: "repository"},
+		{name: "Success/AuthenticationDatabase", service: "authentication", endpoint: "database"},
+		{name: "Success/AuthenticationRepository", service: "authentication", endpoint: "repository"},
+		{name: "Error/CrossedService", service: "authentication", endpoint: "database", response: func(r *secretmanagerpb.AccessSecretVersionResponse) {
+			r.Name = strings.Replace(r.Name, "production-authentication-", "production-json-keys-", 1)
+		}, wantError: "exact-version"},
 		{name: "Error/ReadDenied", endpoint: "database", prepare: "denied", wantError: "access database credential"},
 		{name: "Error/CrossedVersion", endpoint: "database", response: func(r *secretmanagerpb.AccessSecretVersionResponse) {
 			r.Name = strings.Replace(r.Name, "/versions/7", "/versions/8", 1)
@@ -80,7 +88,11 @@ func TestDeliver(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			ca, identity, expectedName := credentials(t, tc.endpoint, tc.certificate)
-			config := hostcredentials.Config{ProjectNumber: "123456", Endpoint: tc.endpoint, CAVersion: "3", IdentityVersion: "7", Name: expectedName, Output: filepath.Join(t.TempDir(), "credentials")}
+			service := tc.service
+			if service == "" {
+				service = "json-keys"
+			}
+			config := hostcredentials.Config{Service: service, ProjectNumber: "123456", Endpoint: tc.endpoint, CAVersion: "3", IdentityVersion: "7", Name: expectedName, Output: filepath.Join(t.TempDir(), "credentials")}
 			require.NoError(t, os.Chmod(filepath.Dir(config.Output), 0o700))
 			switch tc.prepare {
 			case "key":
@@ -174,7 +186,7 @@ func TestDeliver(t *testing.T) {
 			defer lock.Unlock()
 			var expectedRequests []string
 			if tc.prepare != "existing" && tc.prepare != "symlink" && tc.prepare != "public" {
-				expectedRequests = []string{"projects/123456/secrets/production-json-keys-pgbackrest-ca/versions/3", fmt.Sprintf("projects/123456/secrets/production-json-keys-pgbackrest-%s/versions/7", tc.endpoint)}
+				expectedRequests = []string{fmt.Sprintf("projects/123456/secrets/production-%s-pgbackrest-ca/versions/3", service), fmt.Sprintf("projects/123456/secrets/production-%s-pgbackrest-%s/versions/7", service, tc.endpoint)}
 			}
 			require.Equal(t, expectedRequests, requests)
 		})

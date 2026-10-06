@@ -25,13 +25,18 @@ locals {
     {
       path        = "/etc/agora-database/pgbackrest.conf"
       permissions = "0444"
-      content     = templatefile("${path.module}/templates/database-pgbackrest.conf.tftpl", { server_name = var.repository.name })
+      content = templatefile("${path.module}/templates/database-pgbackrest.conf.tftpl", {
+        server_name = var.repository.name
+        service     = var.service
+        database    = "agora_${replace(var.service, "-", "_")}"
+      })
     },
     {
       path        = "/etc/systemd/system/agora-database.service"
       permissions = "0644"
       content = templatefile("${path.module}/templates/database.service.tftpl", merge(var.repository, {
         project           = var.project_id
+        service           = var.service
         management_number = var.management_number
         server_name       = var.repository.name
         server_ip         = var.repository.ip
@@ -49,6 +54,7 @@ locals {
         command     = command
         image       = var.repository.server_image
         server_name = var.repository.name
+        service     = var.service
       })
       }], [for name, calendar in local.backup_calendars : {
       path        = "/etc/systemd/system/agora-backup-${name}.timer"

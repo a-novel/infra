@@ -77,22 +77,22 @@ Runtime activation still requires effective network, database-role and inherited
 
 ### Stopped private repository
 
-JSON Keys in the private zone can opt into `pgbackrest_repository.placement`, supplying its
+Each service in the private zone can opt into `pgbackrest_repository.placement`, supplying its
 `zone`, `subnetwork` and pinned `cos_image`. The zone must match the published database handoff;
 the subnet must belong to the selected private project and region. This provisions one stopped
-e2-micro with a 20 GiB standard boot disk and the `agora-pgbr-json-keys` identity through the
+e2-micro with a 20 GiB standard boot disk and the `agora-pgbr-SERVICE` identity through the
 existing protected foundation plan/apply workflow.
 
 Shared preparation retains the micro profile and existing database ownership. Optional
 `pgbackrest_repository.runtime` installs the [disabled native unit](#prepared-native-runtime);
-its image paths use `agora-json-keys-private-production` and `agora-json-keys-private-tooling`.
+its image paths use `agora-SERVICE-private-production` and `agora-SERVICE-private-tooling`.
 The host remains stopped by default and `database_runtime` remains forbidden in this root.
-Runtime preparation grants the repository and existing JSON Keys database identities Reader
+Runtime preparation grants the repository and existing selected database identities Reader
 on these two exact registries; it grants neither identity access to a peer service's images.
 
-Bootstrap's `json_keys_pgbackrest.zone = "private"` selects this repository identity and the
+Bootstrap's `native_backups[SERVICE].zone = "private"` selects this repository identity and the
 existing database identity for bucket/TLS custody. Shared foundation's
-`pgbackrest_repository_services = ["json-keys"]` requires that service's private release
+`pgbackrest_repository_services` requires each selected service's private release
 registration and grants only its database-to-repository channel, private Google API egress and
 IAP SSH. Public API identities receive no repository access.
 
@@ -107,7 +107,11 @@ failure restarts. Dedicated-project hosts retain their existing guarded bring-up
 Metadata changes do not reload a running daemon: pin changes require a stopped-consumer
 window and verification of the actually loaded configuration. This flag starts no database
 and enables no backup timer. The existing shared database owner uses
-[`json_keys_native_backup`](../production/foundation/README.md#shared-native-database).
+[`native_backups`](../production/foundation/README.md#shared-native-database).
+
+Set `runtime.client_name` to the exact service-specific database certificate common name. The
+repository authorizes that name for only its own stanza. Do not reuse one client name across
+services that share an issuer, even when the certificates and secrets are stored separately.
 
 ### Dedicated-project preparation
 

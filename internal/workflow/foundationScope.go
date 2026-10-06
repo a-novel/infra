@@ -47,7 +47,7 @@ func FoundationScope(data []byte, getenv func(string) string, bucket string) (st
 			Placement   map[string]json.RawMessage `json:"placement"`
 			MachineType *string                    `json:"machine_type"`
 		}
-		if service != "json-keys" || zone != "private" || json.Unmarshal(value, &repository) != nil ||
+		if zone != "private" || json.Unmarshal(value, &repository) != nil ||
 			len(repository.Placement) == 0 || (repository.MachineType != nil && *repository.MachineType != "e2-micro") ||
 			len(fields["database_handoff"]) == 0 || string(fields["database_handoff"]) == "null" {
 			return "", invalid

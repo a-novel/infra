@@ -1,6 +1,6 @@
 # Accept native backups before adoption
 
-This is the JSON Keys **human-run acceptance procedure**, not authorization to provision or operate
+This is the per-service **human-run acceptance procedure**, not authorization to provision or operate
 cloud resources. Preparation may merge with every native path disabled. Approval of a live batch
 names its exact targets, mutations, spending limit and stop conditions. Keep results in
 [#190](https://github.com/a-novel/infra/issues/190); merging this procedure closes no adoption gate.
@@ -26,7 +26,7 @@ Do not recreate the retired per-service project or run fault injection on a serv
 3. Through service foundation, prepare the repository runtime and exact image-reader grants.
    Start the existing micro only through its reviewed `active` setting. Verify the loaded
    image/certificates and TLS service; no database disk belongs to this root.
-4. Through shared foundation, review `json_keys_native_backup` using the **existing protected
+4. Through shared foundation, review `native_backups[SERVICE]` using the **existing protected
    database-maintenance** workflow. Require its fresh logical backup and clean restore check,
    same disks/addresses/capacity, no surge and no peer changes. The shared HCL renderer starts
    only the selected database; it does not activate native timers or expiration.
@@ -41,7 +41,7 @@ Do not recreate the retired per-service project or run fault injection on a serv
 
 ### Review the shared-host maintenance commit
 
-Startup-only maintenance replaces the JSON Keys instance template and recreates its existing
+Startup-only maintenance replaces the selected service's instance template and recreates its existing
 member with zero surge. The saved-plan gate requires `allow-resource-deletion` on the exact
 planning commit's pull request **before merge**, even when every data disk is preserved. Review
 that replacement scope with the pending protected configuration; adding the label after merge
@@ -52,8 +52,8 @@ identity, image digest, active unit, TLS listener and certificate fingerprint mu
 reviewed inputs. Database operators need OS Login, IAP and Service Account User on the exact
 repository identity. The shared foundation owns that account-level binding.
 
-Keep the first `json_keys_native_backup.wal_archiving` value false. Reject a maintenance plan
-that changes Authentication, a data disk, an address, a machine size or release metadata.
+Keep the first `native_backups[SERVICE].wal_archiving` value false. Reject a maintenance plan
+that changes a peer service, a data disk, an address, a machine size or release metadata.
 Bring-up leaves native backup timers stopped. Retain logical backups and snapshots through
 acceptance; restart an approved pilot only after the reconciliation below.
 
@@ -63,7 +63,7 @@ the deployed image's local clients use the second. Require a successful SQL conn
 the worker's socket as well as a healthy database container. Repair a missing socket through
 protected startup maintenance, then repeat this checkpoint before enabling WAL archiving.
 
-Enroll the existing native policies through `shared_backup_alerts_enabled` in the JSON Keys
+Enroll the existing native policies through `shared_backup_alerts_enabled` in the selected service's
 private service foundation: null leaves monitoring absent, false prepares disabled policies,
 and true enables them. This reads the current singleton database group without taking host
 ownership. Review a monitoring-only plan: one success metric and five policies using the existing

@@ -446,13 +446,20 @@ run "reject_missing_database" {
   expect_failures = [var.pgbackrest_repository]
 }
 
-run "reject_unreviewed_service" {
+run "authentication_has_a_separate_repository" {
   command = plan
   variables {
     service               = "authentication"
     pgbackrest_repository = {}
   }
-  expect_failures = [var.pgbackrest_repository]
+  assert {
+    condition = alltrue([
+      google_compute_instance.repository["host"].name == "agora-pgbackrest-authentication",
+      google_compute_instance.repository["host"].desired_status == "TERMINATED",
+      google_compute_instance.repository["host"].machine_type == "e2-micro",
+    ])
+    error_message = "The shared implementation must prepare Authentication's separate bounded repository."
+  }
 }
 
 run "reject_unbounded_profile" {

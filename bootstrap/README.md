@@ -127,13 +127,11 @@ That Google permission covers all platform folders in this dedicated Drive; cand
 limited to its own folder pair. The trusted workflow limits operations to its platform folders and repository. Workspace operators
 review effective membership, sharing restrictions and storage usage separately from Google Cloud IAM.
 
-## Disabled JSON Keys native-backup custody
+## Service-owned native-backup custody
 
-`json_keys_pgbackrest = null` creates no native-backup resources. The optional object's
-`workload_project_id` identifies the registered database project. Set `zone = "private"` for
-the shared private project's existing `agora-json-keys-database` and `agora-pgbr-json-keys`
-identities. Omitting `zone` retains the dedicated-project names `agora-database` and
-`agora-backup-repository`. Reconcile the project and identities with protected registration
+`native_backups = {}` creates no native-backup resources. Map keys select `json-keys` or
+`authentication`; each entry names its registered `workload_project_id` and `zone = "private"`.
+The matching identities are `agora-<service>-database` and `agora-pgbr-<service>`. Reconcile the project and identities with protected registration
 before applying; HCL validates syntax but does not discover that registration.
 Its optional `tls_credentials` flag defaults to false; storage custody alone creates no TLS secrets.
 The independent `noncurrent_cleanup` flag also defaults to false; its
@@ -141,11 +139,11 @@ The independent `noncurrent_cleanup` flag also defaults to false; its
 
 | Address                                                                                                       | Purpose and authority                                                                                                                | Lifecycle and cost                                                                                                                             |
 | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `google_storage_bucket.pgbackrest["json-keys"]`                                                               | Separate management-owned EU repository; private uniform access, versioning, seven-day unlocked retention and seven-day soft delete. | `prevent_destroy` and `force_destroy=false`; no age-based lifecycle deletion of physical chains. Every retained generation is billable.        |
-| `google_project_iam_custom_role.pgbackrest[writer/recovery]`                                                  | Writer has object create/get/list/delete. Recovery has create/get/list/restore, without delete or policy permissions.                | Deletion-protected role definitions in the bucket's management project; no project-wide role binding.                                          |
-| `google_service_account.pgbackrest_recovery["json-keys"]`                                                     | Separate management-side identity, created disabled.                                                                                 | Deletion-protected, keyless, with no federation, attachment or impersonation grants. Enabling it requires a separate reviewed recovery change. |
-| `google_storage_bucket_iam_member.pgbackrest_writer/pgbackrest_recovery["json-keys"]`                         | Only the dedicated repository host and recovery identity receive the corresponding role on the native bucket.                        | Additive grants; inspect inherited access separately. No grant on logical backups, peers, secrets or state.                                    |
-| `google_storage_bucket_iam_member.foundation_admin/operator_admin` with the `pgbackrest-json-keys` bucket key | Existing management administrators maintain this bucket through exact-bucket grants.                                                 | No new project-wide permission. Initial bucket creation still requires separately approved bootstrap authority.                                |
+| `google_storage_bucket.pgbackrest["<service>"]`                                                               | Separate management-owned EU repository; private uniform access, versioning, seven-day unlocked retention and seven-day soft delete. | `prevent_destroy` and `force_destroy=false`; no age-based lifecycle deletion of physical chains. Every retained generation is billable.        |
+| `google_project_iam_custom_role.pgbackrest["<service>:writer/recovery"]`                                      | Writer has object create/get/list/delete. Recovery has create/get/list/restore, without delete or policy permissions.                | Deletion-protected role definitions in the bucket's management project; no project-wide role binding.                                          |
+| `google_service_account.pgbackrest_recovery["<service>"]`                                                     | Separate management-side identity, created disabled.                                                                                 | Deletion-protected, keyless, with no federation, attachment or impersonation grants. Enabling it requires a separate reviewed recovery change. |
+| `google_storage_bucket_iam_member.pgbackrest_writer/pgbackrest_recovery["<service>"]`                         | Only the dedicated repository host and recovery identity receive the corresponding role on the native bucket.                        | Additive grants; inspect inherited access separately. No grant on logical backups, peers, secrets or state.                                    |
+| `google_storage_bucket_iam_member.foundation_admin/operator_admin` with the `pgbackrest-<service>` bucket key | Existing management administrators maintain this bucket through exact-bucket grants.                                                 | No new project-wide permission. Initial bucket creation still requires separately approved bootstrap authority.                                |
 
 Provider references: [bucket](https://registry.terraform.io/providers/hashicorp/google/8.2.0/docs/resources/storage_bucket),
 [custom role](https://registry.terraform.io/providers/hashicorp/google/8.2.0/docs/resources/google_project_iam_custom_role),
@@ -156,10 +154,17 @@ Google documents [retention](https://docs.cloud.google.com/storage/docs/bucket-l
 [object permissions](https://docs.cloud.google.com/storage/docs/access-control/iam-permissions) and
 [disabled identities](https://docs.cloud.google.com/iam/docs/service-accounts-disable-enable).
 
-The `json_keys_pgbackrest` output supplies non-secret coordinates after the declared grants. It is
+The `native_backups` output supplies non-secret coordinates after the declared grants. It is
 not published into service configuration and does not authorize recovery or attest backup health.
-The protected bootstrap input materializer already preserves this optional object; default omission
-needs no new CLI, workflow or state root. Keep it absent from protected inputs during code review.
+The protected bootstrap input materializer already preserves this service map; default omission
+needs no new CLI, workflow or state root. Keep new service entries absent until provisioning is approved.
+
+When migrating the existing JSON Keys installation, move the complete former `json_keys_pgbackrest`
+value into `native_backups["json-keys"]`, preserving `zone = "private"`, TLS enrollment and cleanup
+flags. Publish the protected input alongside the code revision, before planning. The native
+[`moved` blocks](./pgbackrest-moved.tf) retain the existing role and TLS-grant objects; buckets,
+secret names and account IDs do not change. Reject a plan that replaces or deletes them. Do not
+apply the new default empty map against an enrolled installation.
 
 The [service foundation](../environments/service-foundation/README.md#optional-stopped-repository-host)
 owns the repository identity and stopped VM. After separately approved provisioning, reconcile that
@@ -176,7 +181,7 @@ must be proven together before activation. No automatic expiry or retention lock
 
 ### Disabled noncurrent cleanup
 
-`json_keys_pgbackrest.noncurrent_cleanup = true` prepares one GCS lifecycle rule: delete only
+`native_backups["<service>"].noncurrent_cleanup = true` prepares one GCS lifecycle rule: delete only
 noncurrent generations at least seven days after they became noncurrent. It does not expire live
 objects, count newer versions, change IAM, or add a worker. pgBackRest alone owns live backup-chain
 and WAL expiry; automatic native expiry remains off.
@@ -196,18 +201,18 @@ before enabling either cleanup mechanism. Existing logical backups and snapshots
 
 ### Disabled TLS credential custody
 
-Setting `json_keys_pgbackrest.tls_credentials = true` additionally creates three protected containers
+Setting `native_backups["<service>"].tls_credentials = true` additionally creates three protected containers
 through `google_secret_manager_secret.application` and four exact-secret accessor bindings through
 `google_secret_manager_secret_iam_member.pgbackrest_tls`. The existing operator Accessor and
-Version Manager grants cover these containers too. The seven default application containers and
+Version Manager grants cover these containers too. The eight default application containers and
 their resource addresses stay unchanged. No secret version, signing service, certificate issuer or
 host delivery process is created; keep this flag off until separately approved provisioning.
 
 | Secret ID                                    | PEM payload contract                                                                       | Runtime readers                    |
 | -------------------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------- |
-| `production-json-keys-pgbackrest-ca`         | Public CA certificate bundle only (`PGBACKREST_CA_PEM`). Never the CA private key.         | Database and repository identities |
-| `production-json-keys-pgbackrest-database`   | Client certificate/chain followed by its matching private key (`PGBACKREST_IDENTITY_PEM`). | Database identity only             |
-| `production-json-keys-pgbackrest-repository` | Server certificate/chain followed by its matching private key (`PGBACKREST_IDENTITY_PEM`). | Repository identity only           |
+| `production-<service>-pgbackrest-ca`         | Public CA certificate bundle only (`PGBACKREST_CA_PEM`). Never the CA private key.         | Database and repository identities |
+| `production-<service>-pgbackrest-database`   | Client certificate/chain followed by its matching private key (`PGBACKREST_IDENTITY_PEM`). | Database identity only             |
+| `production-<service>-pgbackrest-repository` | Server certificate/chain followed by its matching private key (`PGBACKREST_IDENTITY_PEM`). | Repository identity only           |
 
 The native TLS proof uses one PEM file for both pgBackRest certificate and key options. Keeping that
 pair in one secret version prevents delivery from mixing independently rotated versions; it requires

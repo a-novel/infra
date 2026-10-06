@@ -106,6 +106,45 @@ run "enable_existing_native_policies" {
   }
 }
 
+run "authentication_monitoring_is_service_scoped" {
+  command = plan
+  variables {
+    service                      = "authentication"
+    database_handoff             = run.documents.cases.authentication
+    shared_backup_alerts_enabled = true
+    pgbackrest_repository = {
+      placement = run.documents.repository_placement
+      runtime = merge(jsondecode(file("tests/fixtures/repository-runtime.json")), {
+        server_image      = "europe-west1-docker.pkg.dev/agora-private-test/agora-authentication-private-production/service-authentication/database@sha256:${sha256("server")}"
+        credentials_image = "europe-west1-docker.pkg.dev/agora-private-test/agora-authentication-private-tooling/host-credentials@sha256:${sha256("credentials")}"
+        client_name       = "agora-authentication-database.agora-private-test"
+      })
+    }
+  }
+  override_data {
+    target = data.google_compute_instance_group.shared_backup_database["host"]
+    values = { instances = ["https://www.googleapis.com/compute/v1/projects/agora-private-test/zones/europe-west1-b/instances/agora-database-authentication-test"] }
+  }
+  override_data {
+    target = data.google_compute_instance.shared_backup_database["host"]
+    values = { instance_id = "987654321" }
+  }
+  assert {
+    condition = alltrue([
+      data.google_compute_instance_group.shared_backup_database["host"].name == "agora-database-authentication",
+      google_logging_metric.database_backup_success["host"].name == "agora_authentication_backup_success",
+      strcontains(google_logging_metric.database_backup_success["host"].filter, "resource.labels.instance_id=\"987654321\""),
+      google_monitoring_alert_policy.database_backup_failure["host"].display_name == "Agora authentication native backup failed",
+      alltrue([for policy in google_monitoring_alert_policy.database_backup_health :
+        policy.enabled && strcontains(policy.conditions[0].condition_prometheus_query_language[0].query, "instance_id=\"987654321\"")
+      ]),
+      length(google_compute_disk.database) == 0,
+      length(google_compute_instance_group_manager.database) == 0,
+    ])
+    error_message = "Authentication policies must observe its own singleton, not JSON Keys, without changing database ownership."
+  }
+}
+
 run "reject_empty_database_group" {
   command = plan
   variables {

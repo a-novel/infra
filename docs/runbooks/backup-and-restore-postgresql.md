@@ -462,14 +462,14 @@ these jobs without that design.
 
 ## Native backup preparation
 
-The accepted JSON Keys pgBackRest design is staged under [#190](https://github.com/a-novel/infra/issues/190).
-Its [bootstrap custody option](../../bootstrap/README.md#disabled-json-keys-native-backup-custody)
-defaults to null and is not a backup deployment. Keep it absent from `BOOTSTRAP_TFVARS_JSON` until
+The per-service pgBackRest design is staged under [#190](https://github.com/a-novel/infra/issues/190).
+Its [bootstrap custody map](../../bootstrap/README.md#service-owned-native-backup-custody)
+defaults to empty and is not a backup deployment. Keep new service entries absent from `BOOTSTRAP_TFVARS_JSON` until
 separate provisioning approval. Existing logical jobs, schedules, receipts and recovery objectives
 remain authoritative.
 
-Before any later opt-in, reconcile the proposed project with the protected JSON Keys service
-registration and existing `agora-backup-repository` identity from the
+Before any later opt-in, reconcile the project with the selected service's protected
+registration and existing `agora-pgbr-SERVICE` identity from the
 [stopped repository host](../../environments/service-foundation/README.md#optional-stopped-repository-host).
 Provision that identity through the separately reviewed service-foundation plan first. Review a private saved bootstrap plan with only
 the new native bucket, its two roles, disabled recovery account and exact-bucket bindings; no logical
@@ -477,7 +477,7 @@ bucket or peer changes are allowed. Initial bucket creation needs approved boots
 existing bucket-scoped administration cannot create another bucket. A partially completed apply
 requires state reconciliation and a fresh reviewed plan, never a broader role or blind replay.
 
-Keep `json_keys_pgbackrest.tls_credentials` false during storage-only provisioning. A later separate
+Keep `native_backups[SERVICE].tls_credentials` false during storage-only provisioning. A later separate
 opt-in adds only the [TLS credential containers and access contract](../../bootstrap/README.md#disabled-tls-credential-custody):
 three empty secrets, four exact-host reader bindings and the existing operator grants for those
 secrets. It issues no certificates, uploads no payloads and starts no host. Approve issuer custody,
@@ -515,7 +515,7 @@ storage and networking; subtract old costs only when their resources and retenti
 
 This is a future **human-only, separately approved** synthetic GCS drill, not permission to expire
 real backups. Keep automatic pgBackRest expiry and
-[`json_keys_pgbackrest.noncurrent_cleanup`](../../bootstrap/README.md#disabled-noncurrent-cleanup)
+[`native_backups[SERVICE].noncurrent_cleanup`](../../bootstrap/README.md#disabled-noncurrent-cleanup)
 off until its evidence is accepted. Use the deployed image, native transport and retention policy;
 the offline POSIX proof does not emulate GCS.
 

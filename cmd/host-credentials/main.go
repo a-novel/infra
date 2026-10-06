@@ -1,4 +1,4 @@
-// Command host-credentials prepares the JSON Keys pilot's pinned TLS files using its VM identity.
+// Command host-credentials prepares a service's pinned TLS files using its VM identity.
 package main
 
 import (
@@ -24,6 +24,7 @@ import (
 func main() {
 	var config hostcredentials.Config
 	var workload, zone string
+	flag.StringVar(&config.Service, "service", "", "json-keys or authentication")
 	flag.StringVar(&config.ProjectNumber, "management-project-number", "", "numeric project owning TLS secrets")
 	flag.StringVar(&workload, "workload-project", "", "project owning the attached endpoint identity")
 	flag.StringVar(&zone, "zone", "", "private for shared-project identities; empty for dedicated projects")
@@ -51,7 +52,7 @@ func run(ctx context.Context, config hostcredentials.Config, workload, zone stri
 	if flag.NArg() != 0 || os.Getenv("GCE_METADATA_HOST") != "" {
 		return errors.New("invalid workload scope, extra arguments or metadata override")
 	}
-	account, err := hostcredentials.ServiceAccount(workload, config.Endpoint, zone)
+	account, err := hostcredentials.ServiceAccount(workload, config.Service, config.Endpoint, zone)
 	if err != nil {
 		return err
 	}

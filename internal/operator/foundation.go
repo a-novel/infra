@@ -138,15 +138,19 @@ func foundationFlags(args []string, getenv func(string) string) (foundationOptio
 		for _, project := range []string{o.publicProject, o.publicAPIProject} {
 			if project != "" && (!matches(`[a-z][a-z0-9-]{4,28}[a-z0-9]`, project) ||
 				project == getenv("INFRA_MANAGEMENT_PROJECT_ID") || project == getenv("INFRA_WORKLOAD_PROJECT_ID") ||
-				len(o.serviceProjects) != 0 || len(o.repositoryServices) != 0) {
-				return o, errors.New("zone projects require distinct valid IDs and no dedicated-service or native-repository selection")
+				len(o.serviceProjects) != 0) {
+				return o, errors.New("zone projects require distinct valid IDs and no dedicated-service projects")
 			}
 		}
 		if o.publicAPIProject != "" && (!o.sharedVPC || o.publicAPIProject == o.publicProject) {
 			return o, errors.New("public-api requires shared VPC and a project distinct from the platform")
 		}
-		if len(o.repositoryServices) > 0 && (!slices.Equal(o.repositoryServices, []string{"json-keys"}) || o.serviceProjects["json-keys"] == "") {
-			return o, errors.New("repository networking supports only one declared json-keys service")
+		for index, service := range o.repositoryServices {
+			if !slices.Contains([]string{"json-keys", "authentication"}, service) ||
+				slices.Contains(o.repositoryServices[:index], service) ||
+				(o.serviceProjects[service] == "" && !slices.Contains(o.serviceReleaseZones[service], "private")) {
+				return o, errors.New("repository networking requires distinct registered private database services")
+			}
 		}
 		o.zone = cmp.Or(o.zone, o.region+"-c")
 		prefix, err := netip.ParsePrefix(o.subnet)

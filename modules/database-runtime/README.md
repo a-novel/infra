@@ -1,8 +1,13 @@
-# JSON Keys database runtime
+# Service database runtime
 
 This resource-free module renders the existing native PostgreSQL/pgBackRest units
 for both foundation owners. It owns no VM, disk, identity, secret version or schedule
 activation. Roots validate image provenance inputs, identity selection and placement.
+
+`service` selects `json-keys` or `authentication`. The same templates bind the service's
+database container, data mount, SQL database, pgBackRest stanza and credential secrets.
+`repository.client_name` is the exact client certificate CN authorized by its repository;
+services sharing an issuer must use distinct client names.
 
 - `cloud_config` prepares the dedicated-project host without starting its units.
 - `startup_script` starts the database on the shared foundation's existing stateful
