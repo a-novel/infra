@@ -71,7 +71,7 @@ func (custody store) admit(args []string, inputs []byte, plan string, getenv fun
 			return nil, failure{65, "Invalid native recovery apply scope."}
 		}
 		intent.Project, intent.SourceProject = host.Project, host.SourceProject
-		intent.Service, intent.Region = "json-keys", host.Region
+		intent.Service, intent.Region = host.Request().Service, host.Region
 		source, err := recoverySource(host, getenv, custody.bucket)
 		if err != nil {
 			return nil, err

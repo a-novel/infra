@@ -6,7 +6,7 @@ resource "google_compute_disk" "data" {
   name    = "agora-native-recovery-data"
   type    = "pd-ssd"
   size    = each.value.disk_gib
-  labels  = { purpose = "native-recovery", service = "json-keys" }
+  labels  = { purpose = "native-recovery", service = each.value.service }
 }
 
 resource "google_compute_instance" "recovery" {
@@ -18,7 +18,7 @@ resource "google_compute_instance" "recovery" {
   machine_type   = "e2-medium"
   desired_status = "TERMINATED"
   can_ip_forward = false
-  labels         = { purpose = "native-recovery", service = "json-keys" }
+  labels         = { purpose = "native-recovery", service = each.value.service }
   metadata = {
     block-project-ssh-keys   = "TRUE"
     disable-legacy-endpoints = "TRUE"
@@ -65,7 +65,7 @@ resource "google_compute_instance" "recovery" {
     subnetwork = google_compute_subnetwork.recovery[each.key].self_link
   }
   service_account {
-    email  = "pgbr-json-keys-recovery@${each.value.management_project}.iam.gserviceaccount.com"
+    email  = "pgbr-${each.value.service}-recovery@${each.value.management_project}.iam.gserviceaccount.com"
     scopes = ["cloud-platform"]
   }
   shielded_instance_config {

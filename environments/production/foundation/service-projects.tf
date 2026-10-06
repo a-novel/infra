@@ -30,11 +30,11 @@ variable "service_recovery_projects" {
 
   validation {
     condition = alltrue([for project, service in var.service_recovery_projects :
-      service == "json-keys" && (contains(keys(var.service_projects), service) || try(contains(var.service_release_zones[service], "private"), false)) &&
+      contains(["json-keys", "authentication"], service) && (contains(keys(var.service_projects), service) || try(contains(var.service_release_zones[service], "private"), false)) &&
       can(regex("^a-novel-recovery-[a-z0-9-]{1,13}[a-z0-9]$", project)) &&
       !contains(concat([var.management_project_id, var.workload_project_id, var.public_project_id, var.public_api_project_id], values(var.service_projects)), project)
     ]) && (!var.recovery_mode || length(var.service_recovery_projects) == 0)
-    error_message = "Register only disposable JSON Keys recovery destinations outside the complete live project set; legacy recovery cannot register them."
+    error_message = "Register only disposable recovery destinations for supported services outside the complete live project set; legacy recovery cannot register them."
   }
 }
 

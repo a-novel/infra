@@ -60,6 +60,31 @@ run "offline_sql" {
   }
 }
 
+run "authentication" {
+  command = plan
+  variables {
+    recovery = merge(jsondecode(file("tests/fixture.json")), { service = "authentication", verify_sql = true })
+  }
+  assert {
+    condition = alltrue([
+      local.requests["selected"].service == "authentication",
+      google_compute_instance.recovery["selected"].service_account[0].email == "pgbr-authentication-recovery@management-project.iam.gserviceaccount.com",
+      google_compute_instance.recovery["selected"].labels["service"] == "authentication",
+      google_compute_instance.recovery["selected"].desired_status == "TERMINATED",
+      length(google_compute_instance.recovery["selected"].network_interface[0].access_config) == 0,
+    ])
+    error_message = "Authentication recovery must bind its own service identity and remain stopped and private."
+  }
+}
+
+run "unknown_service" {
+  command = plan
+  variables {
+    recovery = merge(jsondecode(file("tests/fixture.json")), { service = "narrative-engine" })
+  }
+  expect_failures = [var.recovery]
+}
+
 run "data_without_sql" {
   command = plan
   variables {

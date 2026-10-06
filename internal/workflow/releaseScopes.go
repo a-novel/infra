@@ -75,7 +75,7 @@ func ReleaseScopes(getenv func(string) string, bucket string) (map[string]string
 		}
 	}
 	for project, service := range recoveries {
-		if service != "json-keys" || !slices.Contains(zones[service], "private") ||
+		if !slices.Contains([]string{"json-keys", "authentication"}, service) || !slices.Contains(zones[service], "private") ||
 			!matches(`a-novel-recovery-[a-z0-9-]{1,13}[a-z0-9]`, project) ||
 			slices.Contains([]string{management, private, public, publicAPI}, project) {
 			return nil, invalid

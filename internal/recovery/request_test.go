@@ -27,12 +27,13 @@ func TestRequest(t *testing.T) {
 		fail   bool
 	}{
 		{"Success", func(*recovery.Request) {}, false},
+		{"Success/Authentication", func(r *recovery.Request) { r.Service = "authentication" }, false},
 		{"Success/ExplicitCutoff", func(r *recovery.Request) { r.RepositoryTime = "2026-09-27T20:35:40Z" }, false},
 		{"Success/Data", func(r *recovery.Request) { r.VerifySQL, r.ExpectedDataSHA256 = true, strings.Repeat("a", 64) }, false},
 		{"Error/DataWithoutSQL", func(r *recovery.Request) { r.ExpectedDataSHA256 = strings.Repeat("a", 64) }, true},
 		{"Error/MalformedData", func(r *recovery.Request) { r.VerifySQL, r.ExpectedDataSHA256 = true, strings.Repeat("A", 64) }, true},
 		{"Error/ShortData", func(r *recovery.Request) { r.VerifySQL, r.ExpectedDataSHA256 = true, "a" }, true},
-		{"Error/Peer", func(r *recovery.Request) { r.Service = "authentication" }, true},
+		{"Error/UnknownService", func(r *recovery.Request) { r.Service = "narrative-engine" }, true},
 		{"Error/SourceTarget", func(r *recovery.Request) { r.Project = r.SourceProject }, true},
 		{"Error/ManagementTarget", func(r *recovery.Request) { r.Project = r.ManagementProject }, true},
 		{"Error/Major", func(r *recovery.Request) { r.Major = 17 }, true},
@@ -48,7 +49,9 @@ func TestRequest(t *testing.T) {
 			require.Equal(t, tc.fail, request.Validate() != nil)
 			if !tc.fail {
 				args := strings.Join(request.Arguments(), "\n")
-				require.Contains(t, args, "--repo1-gcs-bucket=management-project-123456789012-pgbr-json-keys")
+				require.Contains(t, args, "--repo1-gcs-bucket=management-project-123456789012-pgbr-"+request.Service)
+				require.Contains(t, args, "--stanza="+request.Service)
+				require.Equal(t, "pgbr-"+request.Service+"-recovery@management-project.iam.gserviceaccount.com", request.Identity())
 				if request.RepositoryTime != "" {
 					require.Contains(t, args, "--repo-target-time="+request.RepositoryTime)
 				}

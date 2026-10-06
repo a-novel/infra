@@ -157,8 +157,8 @@ func inspectApply(ctx context.Context, client *storage.Service, expected applyIn
 		project := intent.Project
 		if intent.Root == "service-recovery" {
 			destinations, destinationErr := workflow.RecoveryScopes(getenv, guard.Bucket)
-			if destinationErr != nil || destinations["services/"+intent.Project] != "json-keys" ||
-				intent.Scope != "workloads/production/private/"+intent.SourceProject+"/json-keys" {
+			if destinationErr != nil || destinations["services/"+intent.Project] != intent.Service ||
+				intent.Scope != "workloads/production/private/"+intent.SourceProject+"/"+intent.Service {
 				return intent, false, failure{70, "Recovery does not match its registered private source."}
 			}
 			project = intent.SourceProject

@@ -7,6 +7,7 @@ variable "state_bucket" {
 variable "recovery" {
   description = "Disabled by default. Private, independently approved disposable host inputs; never infer authorization from this object."
   type = object({
+    service              = optional(string, "json-keys")
     project              = string
     source_project       = string
     protected_projects   = set(string)
@@ -27,6 +28,7 @@ variable "recovery" {
 
   validation {
     condition = var.recovery == null ? true : alltrue([
+      contains(["json-keys", "authentication"], var.recovery.service),
       can(regex("^a-novel-recovery-[a-z0-9-]{1,13}[a-z0-9]$", var.recovery.project)),
       !contains(var.recovery.protected_projects, var.recovery.project),
       contains(var.recovery.protected_projects, var.recovery.source_project),
@@ -61,7 +63,7 @@ variable "recovery" {
 locals {
   hosts = var.recovery == null ? {} : { selected = var.recovery }
   requests = { for key, host in local.hosts : key => {
-    service              = "json-keys"
+    service              = host.service
     source_project       = host.source_project
     project              = host.project
     management_project   = host.management_project

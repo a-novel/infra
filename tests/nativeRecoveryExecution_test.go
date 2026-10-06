@@ -27,7 +27,7 @@ import (
 
 func TestNativeRecoveryExecution(t *testing.T) {
 	t.Parallel()
-	for _, layout := range []string{"Dedicated", "Shared"} {
+	for _, layout := range []string{"Dedicated", "Shared", "SharedAuthentication"} {
 		for _, tc := range []struct {
 			name, fault string
 			code        int
@@ -62,8 +62,12 @@ func TestNativeRecoveryExecution(t *testing.T) {
 				t.Parallel()
 				f := setup(t)
 				config := nativeInputs(t, f)
-				if layout == "Shared" {
-					sharedNativeInputs(t, f, config)
+				if strings.HasPrefix(layout, "Shared") {
+					service := "json-keys"
+					if layout == "SharedAuthentication" {
+						service = "authentication"
+					}
+					sharedNativeInputs(t, f, config, service)
 				}
 				verifySQL := strings.HasPrefix(tc.fault, "sql-")
 				if verifySQL {
@@ -79,6 +83,7 @@ func TestNativeRecoveryExecution(t *testing.T) {
 				require.NoError(t, err)
 				host, err := infraworkflow.RecoveryScope(input, getenv, f.env["STATE_BUCKET"])
 				require.NoError(t, err)
+				service := host.Request().Service
 				runtime := newRecoveryHost(t, host.Request())
 				if verifySQL {
 					runtime.fail = strings.TrimPrefix(tc.fault, "sql-")
@@ -96,8 +101,8 @@ func TestNativeRecoveryExecution(t *testing.T) {
 				bucket, receipts := f.env["STATE_BUCKET"], strings.TrimSuffix(f.env["STATE_BUCKET"], "-tofu-state")+"-deployment-receipts"
 				guardName := "services/" + host.SourceProject + "/release/operation.json"
 				receiptScope, operationScope := "services/"+host.SourceProject, host.SourceProject
-				if layout == "Shared" {
-					guardName, receiptScope, operationScope = "foundation/operations/production/json-keys/operation.json", "workloads/production/private/agora-private-test/json-keys", "workloads/production/json-keys"
+				if strings.HasPrefix(layout, "Shared") {
+					guardName, receiptScope, operationScope = "foundation/operations/production/"+service+"/operation.json", "workloads/production/private/agora-private-test/"+service, "workloads/production/"+service
 				}
 				prefix := "foundation/recovery/services/" + host.Project + "/"
 				objects := map[string][]byte{}
@@ -106,8 +111,8 @@ func TestNativeRecoveryExecution(t *testing.T) {
 					return object{"bucket": bucket, "object": name, "generation": generation, "sha256": fmt.Sprintf("%x", sha256.Sum256(data))}
 				}
 				encode := func(value any) []byte { data, err := json.Marshal(value); require.NoError(t, err); return data }
-				intent := object{"schemaVersion": 1, "root": "service-recovery", "project_id": host.Project, "source_project": host.SourceProject, "service": "json-keys", "region": host.Region, "commit": strings.Repeat("a", 40), "runId": "124", "runAttempt": "1", "planId": "123-1", "planSha256": strings.Repeat("b", 64), "inputsSha256": fmt.Sprintf("%x", sha256.Sum256(input))}
-				if layout == "Shared" {
+				intent := object{"schemaVersion": 1, "root": "service-recovery", "project_id": host.Project, "source_project": host.SourceProject, "service": service, "region": host.Region, "commit": strings.Repeat("a", 40), "runId": "124", "runAttempt": "1", "planId": "123-1", "planSha256": strings.Repeat("b", 64), "inputsSha256": fmt.Sprintf("%x", sha256.Sum256(input))}
+				if strings.HasPrefix(layout, "Shared") {
 					intent["schemaVersion"], intent["scope"] = 2, receiptScope
 				}
 				if tc.fault == "schema" {
@@ -283,7 +288,7 @@ func TestNativeRecoveryExecution(t *testing.T) {
 					require.Contains(t, stdout.String(), outcome)
 					f.env["SERVICE_OPERATION_RECOVERY_ENABLED"] = "true"
 					f.env["GITHUB_WORKFLOW_REF"] = "a-novel/infra/.github/workflows/foundation.yaml@refs/heads/master"
-					code = custody.Run(t.Context(), []string{"operation", "finish", bucket, operationScope, "100", "FINISH json-keys 100"}, getenv, execute, &stdout, &stderr, option.WithEndpoint(server.URL), option.WithoutAuthentication())
+					code = custody.Run(t.Context(), []string{"operation", "finish", bucket, operationScope, "100", "FINISH " + service + " 100"}, getenv, execute, &stdout, &stderr, option.WithEndpoint(server.URL), option.WithoutAuthentication())
 					expectCode(t, 0, code, stdout.String()+stderr.String())
 					require.Len(t, runtime.commands, calls, "inspection and finish must never replay host work")
 				}

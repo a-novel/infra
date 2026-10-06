@@ -27,10 +27,15 @@ func nativeInputs(t *testing.T, f *sandbox) object {
 	return object{"state_bucket": f.env["STATE_BUCKET"], "recovery": host}
 }
 
-func sharedNativeInputs(t *testing.T, f *sandbox, config object) {
+func sharedNativeInputs(t *testing.T, f *sandbox, config object, service string) {
 	t.Helper()
-	f.env["FOUNDATION_CONFIG"] = strings.TrimSuffix(sharedRegistration, "}") + `,"service_recovery_projects":{"a-novel-recovery-proof":"json-keys"}}`
+	registration := sharedRegistration
+	if service == "authentication" {
+		registration = strings.Replace(registration, `"authentication":["public-api"]`, `"authentication":["private","public-api"]`, 1)
+	}
+	f.env["FOUNDATION_CONFIG"] = strings.TrimSuffix(registration, "}") + `,"service_recovery_projects":{"a-novel-recovery-proof":"` + service + `"}}`
 	host := nested(config, "recovery")
+	host["service"] = service
 	host["source_project"] = "agora-private-test"
 	host["protected_projects"] = []string{"agora-management-test", "agora-private-test", "agora-api-test"}
 }
@@ -43,6 +48,9 @@ func TestNativeRecoveryInputs(t *testing.T) {
 	}{
 		{name: "Exact", valid: true},
 		{name: "Shared/Exact", valid: true},
+		{name: "Shared/Authentication", valid: true},
+		{name: "Shared/PeerService", field: "service", value: "authentication"},
+		{name: "Shared/UnknownService", field: "service", value: "narrative-engine"},
 		{name: "Shared/PublicSource", field: "source_project", value: "agora-api-test"},
 		{name: "Shared/OldDedicatedSource", field: "source_project", value: "agora-json-keys-test"},
 		{name: "Shared/UnregisteredPrivate"},
@@ -90,7 +98,11 @@ func TestNativeRecoveryInputs(t *testing.T) {
 			f := setup(t)
 			config := nativeInputs(t, f)
 			if strings.HasPrefix(testCase.name, "Shared/") {
-				sharedNativeInputs(t, f, config)
+				service := "json-keys"
+				if testCase.name == "Shared/Authentication" {
+					service = "authentication"
+				}
+				sharedNativeInputs(t, f, config, service)
 			}
 			if testCase.name == "Shared/UnregisteredPrivate" {
 				f.env["FOUNDATION_CONFIG"] = strings.Replace(f.env["FOUNDATION_CONFIG"], `["private","public-api"]`, `["public-api"]`, 1)
@@ -172,7 +184,7 @@ func nativePlan(action string) object {
 
 func TestNativeRecoveryApply(t *testing.T) {
 	t.Parallel()
-	for _, layout := range []string{"Dedicated", "Shared"} {
+	for _, layout := range []string{"Dedicated", "Shared", "SharedAuthentication"} {
 		for _, testCase := range []struct {
 			name, fault string
 			code        int
@@ -191,9 +203,13 @@ func TestNativeRecoveryApply(t *testing.T) {
 				f := inspectionFixture(t)
 				input := nativeInputs(t, f)
 				source, guardName, receiptScope := "agora-json-keys-test", "services/agora-json-keys-test/release/operation.json", "services/agora-json-keys-test"
-				if layout == "Shared" {
-					sharedNativeInputs(t, f, input)
-					source, guardName, receiptScope = "agora-private-test", "foundation/operations/production/json-keys/operation.json", "workloads/production/private/agora-private-test/json-keys"
+				if layout != "Dedicated" {
+					service := "json-keys"
+					if layout == "SharedAuthentication" {
+						service = "authentication"
+					}
+					sharedNativeInputs(t, f, input, service)
+					source, guardName, receiptScope = "agora-private-test", "foundation/operations/production/"+service+"/operation.json", "workloads/production/private/agora-private-test/"+service
 				}
 				f.env["FAKE_SERVICE_GUARD"] = guardName
 				config := filepath.Join(f.dir, "inputs.json")
@@ -316,7 +332,7 @@ func TestNativeRecoveryInspection(t *testing.T) {
 				config := nativeInputs(t, f)
 				guardName := "services/agora-json-keys-test/release/operation.json"
 				if layout == "Shared" {
-					sharedNativeInputs(t, f, config)
+					sharedNativeInputs(t, f, config, "json-keys")
 					guardName = "foundation/operations/production/json-keys/operation.json"
 					f.env["FAKE_GCS_MANAGED_FOLDERS"] = "workloads/production/private/agora-private-test/json-keys/release/\nworkloads/production/public-api/agora-api-test/json-keys/release/\nworkloads/production/public-api/agora-api-test/authentication/release/"
 				}

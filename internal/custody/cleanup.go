@@ -74,7 +74,7 @@ func (custody store) cleanup(args []string, getenv func(string) string, output i
 	if authorization.SchemaVersion != 1 || !authorization.Revoked {
 		return failure{77, "Committed cleanup must attest revoked cross-project access."}
 	}
-	if authorization.Project != host.Project || authorization.Service != "json-keys" || authorization.Source != host.SourceProject {
+	if authorization.Project != host.Project || authorization.Service != host.Request().Service || authorization.Source != host.SourceProject {
 		return failure{77, "Committed cleanup does not match the registered destination and source service."}
 	}
 	if _, err := cleanupBoundary(host.Project, getenv); err != nil {
