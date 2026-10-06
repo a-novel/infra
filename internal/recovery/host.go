@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"google.golang.org/api/compute/v1"
 )
@@ -49,7 +50,7 @@ func (target Target) Validate() error {
 	return nil
 }
 
-// Host uses native CLI waits and a one-shot systemd worker, never a retry loop.
+// Host waits for SSH readiness before running a one-shot systemd worker.
 // Its caller must already hold admission and a create-only destination reservation.
 type Host struct {
 	Target  Target
@@ -75,6 +76,9 @@ func (host Host) Restore(ctx context.Context) (map[string]string, error) {
 		return nil, err
 	}
 	if err := host.check(ctx, "RUNNING"); err != nil {
+		return nil, err
+	}
+	if err := host.waitSSH(ctx); err != nil {
 		return nil, err
 	}
 	// Cloud-init installs the disabled unit. Waiting does not start it.
@@ -117,6 +121,25 @@ func (host Host) Restore(ctx context.Context) (map[string]string, error) {
 		return nil, err
 	}
 	return evidence, nil
+}
+
+// waitSSH probes only connectivity: Compute RUNNING precedes guest SSH readiness.
+// Disk preparation and worker commands must never enter this retry loop.
+func (host Host) waitSSH(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	for ctx.Err() == nil {
+		if _, err := host.ssh(ctx, "true"); err == nil {
+			return ctx.Err()
+		}
+		timer := time.NewTimer(5 * time.Second)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+		case <-timer.C:
+		}
+	}
+	return fmt.Errorf("recovery SSH readiness unconfirmed; retain guard: %w", ctx.Err())
 }
 
 func (host Host) worker(ctx context.Context, name, network string) error {
@@ -284,6 +307,7 @@ func (host Host) cloud(ctx context.Context, args ...string) ([]byte, error) {
 }
 
 func (host Host) ssh(ctx context.Context, command string) ([]byte, error) {
-	return host.cloud(ctx, "ssh", hostName, "--tunnel-through-iap", "--ssh-key-expire-after=1h",
+	// OS Login uses the prepared host's enabled API and quota project.
+	return host.cloud(ctx, "ssh", hostName, "--billing-project="+host.Target.Project, "--tunnel-through-iap", "--ssh-key-expire-after=1h",
 		"--ssh-key-file="+filepath.Join(host.Scratch, "recovery-key"), "--ssh-flag=-oConnectTimeout=10", "--ssh-flag=-oConnectionAttempts=12", "--command="+command)
 }
