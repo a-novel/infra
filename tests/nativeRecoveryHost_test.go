@@ -26,6 +26,8 @@ type recoveryHostFixture struct {
 	fail     string
 }
 
+const recoveryBootProbe = "sudo -n systemctl is-active cloud-init-local.service cloud-init.service cloud-config.service cloud-final.service"
+
 func newRecoveryHost(t *testing.T, request recovery.Request) *recoveryHostFixture {
 	t.Helper()
 	base := "https://www.googleapis.com/compute/v1/projects/" + request.Project + "/"
@@ -49,6 +51,7 @@ func newRecoveryHost(t *testing.T, request recovery.Request) *recoveryHostFixtur
 		},
 		disk: object{"id": "1002", "name": name + "-data", "sizeGb": "10", "type": zonal + "diskTypes/pd-ssd", "users": []string{zonal + "instances/" + name}},
 		replies: map[string]string{
+			recoveryBootProbe: "active\nactive\nactive\nactive\n",
 			"sudo -n cat /etc/agora-recovery/request.json": string(requestJSON),
 			"sudo -n lsblk --json --bytes --output TYPE,SIZE,FSTYPE,MOUNTPOINTS /dev/disk/by-id/google-agora-native-recovery-data": `{"blockdevices":[{"type":"disk","size":10737418240,"fstype":null,"mountpoints":[null]}]}`,
 			"sudo -n wipefs --no-act --json --output TYPE /dev/disk/by-id/google-agora-native-recovery-data":                       `{"signatures":[]}`,
@@ -126,7 +129,6 @@ func TestNativeRecoveryHost(t *testing.T) {
 		{"UsedDisk", "used", false, false},
 		{"MountedDisk", "mounted", false, false},
 		{"ExistingMount", "mkdir", false, false},
-		{"FailedInitialization", "cloud-init status", false, false},
 		{"UncertainWorker", "systemctl start", true, true},
 		{"MissingEvidence", "files-restored.json", true, true},
 		{"UncertainStop", "instances stop", true, true},
@@ -180,7 +182,7 @@ func TestNativeRecoveryHost(t *testing.T) {
 				h.fail = tc.fault
 			}
 			files, err := h.host.Restore(t.Context())
-			for _, once := range []string{"instances start", "mkfs.ext4", "systemctl start agora-native-restore", "cloud-init status"} {
+			for _, once := range []string{"instances start", "mkfs.ext4", "systemctl start agora-native-restore"} {
 				calls := 0
 				for _, command := range h.commands {
 					if strings.Contains(command, once) {
@@ -210,11 +212,18 @@ func TestNativeRecoveryHostReadiness(t *testing.T) {
 		readyAfter int
 		cancel     bool
 		blocked    bool
+		unready    string
+		degraded   bool
 		elapsed    time.Duration
 		err        error
 	}{
 		{name: "Success", readyAfter: 1},
 		{name: "Success/DelayedSSH", readyAfter: 3, elapsed: 10 * time.Second},
+		{name: "Success/DelayedInitialization", readyAfter: 3, unready: "active\nactive\nactive\nactivating\n", elapsed: 10 * time.Second},
+		{name: "Success/DegradedCloudInitStatus", readyAfter: 1, degraded: true},
+		{name: "Error/FailedInitialization", unready: "active\nactive\nactive\nfailed\n", elapsed: 2 * time.Minute, err: context.DeadlineExceeded},
+		{name: "Error/SkippedInitialization", unready: "inactive\ninactive\ninactive\ninactive\n", elapsed: 2 * time.Minute, err: context.DeadlineExceeded},
+		{name: "Error/IncompleteObservation", unready: "active\n", elapsed: 2 * time.Minute, err: context.DeadlineExceeded},
 		{name: "Error/Unavailable", elapsed: 2 * time.Minute, err: context.DeadlineExceeded},
 		{name: "Error/Cancelled", cancel: true, err: context.Canceled},
 		{name: "Error/BlockedProbe", blocked: true, elapsed: 2 * time.Minute, err: context.DeadlineExceeded},
@@ -229,11 +238,14 @@ func TestNativeRecoveryHostReadiness(t *testing.T) {
 				require.NoError(t, json.Unmarshal(inputs, &config))
 				config.Recovery.Service, config.Recovery.Major = "json-keys", 18
 				h := newRecoveryHost(t, config.Recovery)
+				if tc.degraded {
+					h.fail = "cloud-init status"
+				}
 				ctx, cancel := context.WithCancel(t.Context())
 				defer cancel()
 				probes := 0
 				h.host.Execute = func(probeCtx context.Context, output io.Writer, binary string, args ...string) error {
-					if slices.Contains(args, "--command=true") {
+					if slices.Contains(args, "--command="+recoveryBootProbe) {
 						probes++
 						if tc.cancel {
 							cancel()
@@ -242,6 +254,10 @@ func TestNativeRecoveryHostReadiness(t *testing.T) {
 							<-probeCtx.Done()
 						}
 						if probes != tc.readyAfter {
+							if tc.unready != "" {
+								_, err := fmt.Fprint(output, tc.unready)
+								return err
+							}
 							return errors.New(privateValue)
 						}
 					}
@@ -259,7 +275,7 @@ func TestNativeRecoveryHostReadiness(t *testing.T) {
 					require.NotContains(t, err.Error(), privateValue)
 					require.Nil(t, files)
 					require.False(t, slices.ContainsFunc(h.commands, func(command string) bool {
-						return strings.Contains(command, "cloud-init") || strings.Contains(command, "mkfs") || strings.Contains(command, "systemctl start")
+						return strings.Contains(command, "cloud-init status") || strings.Contains(command, "mkfs") || strings.Contains(command, "systemctl start")
 					}))
 					// The final poll and context deadline can become runnable together.
 					require.LessOrEqual(t, probes, 25)
