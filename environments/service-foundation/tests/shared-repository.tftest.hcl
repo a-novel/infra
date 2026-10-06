@@ -164,6 +164,7 @@ run "activate_existing_shared_repository" {
         ["systemctl", "start", "agora-backup-repository.service"],
       ],
       strcontains(yamldecode(local.repository_cloud_config.host).write_files[2].content, "Restart=on-failure"),
+      strcontains(yamldecode(local.repository_cloud_config.host).write_files[2].content, "SuccessExitStatus=63\nRestartForceExitStatus=63\n"),
       length(google_compute_instance_group_manager.database) == 0,
       length(google_compute_disk.database) == 0,
       output.native_bringup == null,

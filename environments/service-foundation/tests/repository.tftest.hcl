@@ -143,7 +143,7 @@ run "prepared_runtime_stays_inactive" {
 
   assert {
     condition = alltrue([for option in [
-      "RuntimeDirectoryPreserve=no", "Restart=no", "ExecStopPost=",
+      "RuntimeDirectoryPreserve=no", "Restart=no", "SuccessExitStatus=63\n", "RestartForceExitStatus=\n", "ExecStopPost=",
       "--management-project-number=123456789012", "--workload-project=agora-json-keys-test",
       "--endpoint=repository --ca-version=1 --identity-version=2",
       "--name=agora-pgbackrest-json-keys.europe-west1-b.c.agora-json-keys-test.internal",
