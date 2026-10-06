@@ -1,4 +1,8 @@
 locals {
+  pgbackrest_database_accounts = {
+    json-keys      = "agora-json-keys-database"
+    authentication = "agora-auth-database"
+  }
   pgbackrest_tls_endpoints = {
     ca = {
       contract = "PGBACKREST_CA_PEM"
@@ -24,7 +28,7 @@ locals {
       service  = service
       endpoint = endpoint
       readers = [for reader in credential.readers :
-        "${reader == "database" ? "agora-${service}-database" : "agora-pgbr-${service}"}@${config.workload_project_id}.iam.gserviceaccount.com"
+        "${reader == "database" ? local.pgbackrest_database_accounts[service] : "agora-pgbr-${service}"}@${config.workload_project_id}.iam.gserviceaccount.com"
       ]
     }
   } if config.tls_credentials]...)

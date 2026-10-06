@@ -101,7 +101,7 @@ resource "google_service_account" "pgbackrest_recovery" {
 
   project      = var.management_project_id
   account_id   = "pgbr-${each.key}-recovery"
-  display_name = "${each.key} native backup recovery"
+  display_name = "${each.key == "json-keys" ? "JSON Keys" : each.key} native backup recovery"
   disabled     = true
 
   lifecycle {

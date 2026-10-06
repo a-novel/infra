@@ -21,7 +21,10 @@ func ServiceAccount(project, service, endpoint, zone string) (string, error) {
 	case "/repository":
 		account = "agora-backup-repository"
 	case "private/database":
-		account = "agora-" + service + "-database"
+		account = map[string]string{
+			"json-keys":      "agora-json-keys-database",
+			"authentication": "agora-auth-database",
+		}[service]
 	case "private/repository":
 		account = "agora-pgbr-" + service
 	default:
