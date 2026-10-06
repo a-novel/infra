@@ -7,6 +7,9 @@ After=docker.service network-online.target gcr-online.target
 [Service]
 Type=exec
 Restart=${restart}
+# pgBackRest returns 63 on signal shutdown; only active repositories restart unexpected exits.
+SuccessExitStatus=63
+RestartForceExitStatus=${restart == "no" ? "" : "63"}
 RestartSec=30
 TimeoutStartSec=240
 TimeoutStopSec=60
