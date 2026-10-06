@@ -52,6 +52,7 @@ run "independent_stopped_repository" {
       !contains(keys(google_compute_instance.repository["host"].metadata), "user-data"),
       google_compute_instance.repository["host"].metadata_startup_script == null,
       length(google_artifact_registry_repository_iam_member.repository_images) == 0,
+      length(google_project_iam_member.repository_maintenance_iap) == 0,
       length(google_compute_disk.database) == 0,
       length(google_compute_instance_template.database) == 0,
       length(google_compute_instance_group_manager.database) == 0,
@@ -90,6 +91,10 @@ run "reject_peer_repository" {
 
 run "prepared_runtime_stays_stopped" {
   command = plan
+  override_resource {
+    target = google_compute_instance.repository
+    values = { network_interface = { network_ip = "10.90.0.3" } }
+  }
   variables {
     database_handoff = run.documents.cases.json_keys
     pgbackrest_repository = {
@@ -122,6 +127,16 @@ run "prepared_runtime_stays_stopped" {
       strcontains(yamldecode(local.repository_cloud_config.host).write_files[2].content, "--endpoint=repository --zone=private "),
     ])
     error_message = "Shared runtime preparation installs a disabled unit and exact image-reader grants without starting or taking ownership of either database."
+  }
+  assert {
+    condition = alltrue([
+      length(google_project_iam_member.repository_maintenance_iap) == 1,
+      google_project_iam_member.repository_maintenance_iap["host"].project == var.project_id,
+      google_project_iam_member.repository_maintenance_iap["host"].member == "serviceAccount:infra-foundation@agora-management-test.iam.gserviceaccount.com",
+      google_project_iam_member.repository_maintenance_iap["host"].role == "roles/iap.tunnelResourceAccessor",
+      google_project_iam_member.repository_maintenance_iap["host"].condition[0].expression == "destination.port == 22 && destination.ip == '10.90.0.3'",
+    ])
+    error_message = "Protected maintenance may tunnel only to SSH on the prepared repository's private IP."
   }
 }
 
