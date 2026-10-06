@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "replacementProject": null,
-  "projectNumber": null,
+  "replacementProject": "a-novel-recovery-261006-jk4",
+  "projectNumber": "505427079158",
   "service": "json-keys",
-  "sourceProject": null,
-  "restoreGeneration": null,
-  "crossProjectAccessRevoked": false
+  "sourceProject": "a-novel-production-prod",
+  "restoreGeneration": "1791319294993956",
+  "crossProjectAccessRevoked": true
 }
