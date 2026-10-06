@@ -9,6 +9,11 @@ billing account, converts non-USD invoices at its applicable rates, and can chan
 the linked pages and the [Google Cloud Pricing Calculator](https://cloud.google.com/products/calculator)
 before the first apply and before any fixed-cost shape change.
 
+The launch tables are a baseline model, not an inventory of the current split-project deployment.
+The [native-backup coexistence](#native-backup-coexistence) calculation below is additional to that
+baseline. Live adoption evidence and remaining measurement limits belong in
+[#190](https://github.com/a-novel/infra/issues/190).
+
 ## Cost profiles
 
 | Profile          | What exists                                                                                                                                                                              | Expected USD/month before tax |
@@ -126,6 +131,51 @@ Incomplete attempts add a small variable overhead until lifecycle deletion. The 
 measures all retained objects and fails above 250 GiB. That corresponds to an aggregate current set
 of about 3 GiB and approximately USD 17.30/month, leaving headroom below the USD 20 design gate for
 partial attempts and small manifests.
+
+## Native-backup coexistence
+
+The approved JSON Keys pilot uses one existing `e2-micro` repository with a 20 GiB `pd-standard`
+boot disk in `europe-west1`, the existing database host, and a management-owned EU multi-region Standard
+bucket. It adds no database VM, repository data disk, public IP, NAT or Cloud Scheduler job.
+Logical backups and daily snapshots remain billable throughout coexistence. Authentication's
+protection is unchanged.
+
+Keep a dated EUR worksheet for the following quantities. Public default-consumption prices read on
+2026-10-06 give EUR 0.0352/GiB-month for standard persistent disk (SKU `D973-5D65-BAB2`) and
+EUR 0.02288/GiB-month for EU multi-region Standard storage (SKU `EC40-8747-D6FF`). These exclude operations,
+transfer and tax; verify the SKU region, tiers and billing-account terms before an apply.
+See Google's [Pricing API](https://docs.cloud.google.com/billing/docs/reference/pricing-api/rest/v2beta/skus.price/get),
+[VM pricing](https://cloud.google.com/products/compute/pricing/general-purpose) and
+[storage pricing](https://cloud.google.com/storage/pricing).
+
+```text
+gross native EUR/month = running repository hours × exact e2-micro hourly rate
+                       + 20 × standard-disk GiB-month rate
+                       + average retained GiB × EU-storage GiB-month rate
+                       + requests, transfers, secrets, registry and observability usage
+net additional EUR/month = gross native cost − verified retired legacy cost
+```
+
+The boot disk contributes approximately EUR 0.70/month at that rate. Each 100 average retained GiB
+adds approximately EUR 2.29/month for storage alone. No US free-tier disk credit is assumed.
+Revalidate the regional **shared-core machine
+price**; fractional CPU capacity is not an independently verified VM billing rate. The EUR 10–15
+additional per-service ceiling is an acceptance limit, not a verified bill or an automatic cap.
+
+Inventory live, noncurrent and soft-deleted bytes separately, including catalogs, WAL and incomplete
+attempts. Separate synthetic acceptance prefixes from production growth, but include both in the
+bill. Seven-day retention is a minimum protection window, not a seven-day storage ceiling:
+automatic expiry and lifecycle cleanup are off. Measure at least one full/differential cycle,
+WAL/day, durations and resource headroom; compare the estimate with actual billing before adoption.
+Include the existing custom log metric's shared ingestion allowance and current alert pricing.
+
+Credit no savings yet. Eventually count only the selected service's retired logical job executions,
+schedules, transfers and storage after retained objects expire. Database hosts, other services,
+shared monitoring and snapshots are not automatically removable backup costs. Replace the logical
+jobs' release/maintenance callers before retirement and preserve historical restore readers/images.
+Both deployed backup buckets use EU multi-region storage. Include replication writes and reads into
+`europe-west1`; do not price them as single-region Belgium buckets. Multi-region object storage alone
+does not establish a tested regional recovery procedure.
 
 ## Capacity-horizon formula
 
