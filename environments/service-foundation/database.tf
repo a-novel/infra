@@ -167,10 +167,9 @@ resource "google_compute_instance_group_manager" "database" {
   }
   all_instances_config {
     metadata = {
-      "agora-${var.service}-database-image"                   = try(local.database_runtime[each.key].server_image, "")
-      "agora-${var.service}-postgres-password-version"        = try(local.database_runtime[each.key].password_version, "0")
-      "agora-${var.service}-postgres-backup-password-version" = try(local.database_runtime[each.key].backup_password_version, "0")
-      agora-database-release-revision                         = try(local.database_runtime[each.key].revision, "")
+      "agora-${var.service}-database-image"            = try(local.database_runtime[each.key].server_image, "")
+      "agora-${var.service}-postgres-password-version" = try(local.database_runtime[each.key].password_version, "0")
+      agora-database-release-revision                  = try(local.database_runtime[each.key].revision, "")
     }
   }
   update_policy {

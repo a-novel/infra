@@ -236,28 +236,27 @@ nor a warm API provides database HA. Disk and group deletion are guarded, and th
 auto-deleted attachment. Native pgBackRest recovery requires separate repository enrollment,
 verified archiving and an accepted SQL restore; an idle host alone supplies no backup guarantee.
 
-The dedicated `agora-database` identity gets only its service's PostgreSQL owner and backup credentials,
+The dedicated `agora-database` identity gets only its service's PostgreSQL owner password,
 application repository Reader, and log/metric writers. It has no peer, SMTP, master-key, initializer or
 backup-object grant. Foundation and the project's Google APIs MIG agent may attach this exact identity.
 The project owner supplies Compute Instance Admin only to protected foundation and the documented roles
 to Google's Compute/MIG agents. Shared foundation supplies exact-subnet Network User to the caller and
 MIG agent; the VM runtime gets no network-administration role. Verify inherited authority separately.
 
-This root uses the [service-owned host adapter](../../assets/database-host/startup.sh); the shared
-foundation retains a [frozen legacy adapter](../../assets/database-host/README.md).
+Both this root and shared foundation use the [same host adapter](../../assets/database-host/startup.sh).
 Without `database_runtime`, this root owns **idle** group metadata: no image, credential versions or
-release revision are selected. The legacy production caller keeps its existing behavior. No routine
-release host mutation or automatic migration is granted here. This root must not adopt an active group
+release revision are selected. No routine release host mutation or automatic migration is granted here.
+This root must not adopt an active group
 or be paired with an external metadata writer.
 
 ### Prepared database lifecycle
 
-`database_runtime` opts the JSON Keys host into a **disabled** systemd lifecycle under protected
+`database_runtime` opts the selected service's host into a **disabled** systemd lifecycle under protected
 foundation maintenance. It requires `pgbackrest_repository.runtime` and reuses its `server_image`,
 `credentials_image` and `ca_version`, so client/server compatibility has one image selector. Supply
-`revision` (full reviewed commit), `password_version`, `backup_password_version` and `identity_version`
-(positive numeric versions of the database owner's password, logical-backup password and client TLS
-identity). No secret payload is stored in metadata. The tooling repository adds Reader only for the
+`revision` (full reviewed commit), `password_version` and `identity_version` (positive numeric versions
+of the database owner's password and client TLS identity). No secret payload is stored in metadata.
+The tooling repository adds Reader only for the
 database identity; TLS-secret access remains separate bootstrap custody.
 
 Cloud-init installs the shared adapter, client configuration and `agora-database.service`, then only

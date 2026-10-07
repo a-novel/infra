@@ -1,14 +1,13 @@
 variable "database_runtime" {
   description = "Database lifecycle owned by foundation maintenance. Reuses the service's repository image, loader and CA; bring-up, WAL archiving and backup alerts are separate opt-ins."
   type = object({
-    revision                = string
-    password_version        = string
-    backup_password_version = string
-    identity_version        = string
-    wal_archiving           = optional(bool, false)
-    schedules_enabled       = optional(bool, false)
-    bring_up                = optional(bool, false)
-    backup_alerts_enabled   = optional(bool, false)
+    revision              = string
+    password_version      = string
+    identity_version      = string
+    wal_archiving         = optional(bool, false)
+    schedules_enabled     = optional(bool, false)
+    bring_up              = optional(bool, false)
+    backup_alerts_enabled = optional(bool, false)
   })
   default = null
 
@@ -19,7 +18,7 @@ variable "database_runtime" {
   validation {
     condition = var.database_runtime == null ? true : alltrue([
       can(regex("^[0-9a-f]{40}$", var.database_runtime.revision)),
-      alltrue([for version in [var.database_runtime.password_version, var.database_runtime.backup_password_version, var.database_runtime.identity_version] :
+      alltrue([for version in [var.database_runtime.password_version, var.database_runtime.identity_version] :
         can(regex("^[1-9][0-9]{0,19}$", version))
       ]),
     ])
