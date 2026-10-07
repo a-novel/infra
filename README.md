@@ -149,7 +149,7 @@ The shared [plan policy](./ops/lib/plan-policy.jq) also blocks failed or unresol
 and updates that weaken existing protections. It preserves existing `deletion_protection`,
 `force_destroy`, and `deletion_policy` guards across resource types. For the configured Google
 resources it also protects bucket access, versioning and retention,
-secret destruction delays, preserved disks and IPs, snapshot policies, and scheduler cadence.
+secret destruction delays, preserved disks and IPs, native backup retention, and scheduler cadence.
 Unknown protected values block the plan. Unrelated updates and longer numeric retention remain
 allowed. Cleanup-rule, schedule, and secret-delay changes require a separate review of the policy
 because the gate does not infer their safety from arbitrary expressions.
@@ -323,7 +323,7 @@ Ingress and egress are independent. JSON Keys starts with private-only egress an
 
 The foundation code now enforces the VPC, subnet, restricted Google routes, firewall policy, private
 DNS, no-external-IP stateful database group, preserved disk/address, inbound-only database container
-networking, recovery identities, daily disk snapshots, and native recovery alerts in mocked tests.
+networking, recovery identities, native backup enrollment and recovery alerts in mocked tests.
 The release code gives backup and private application jobs only reviewed private database/API
 egress, gives restore jobs no database route or secret, sends every JSON Keys service connection
 through the deny-by-default VPC, and gives Authentication only split private VPC plus managed public

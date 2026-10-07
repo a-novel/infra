@@ -1,9 +1,7 @@
 package release
 
 import (
-	"encoding/json"
 	"errors"
-	"regexp"
 )
 
 // SourceImage binds a public tag and immutable digest to its producer and role.
@@ -15,51 +13,14 @@ type SourceImage struct {
 	Digest     string // Digest is resolved during preflight or retained in historical receipts.
 }
 
-// VerificationImages reads the existing compiled eight-image inventory when service
-// is empty. Otherwise it selects one complete family from the committed manifest.
+// VerificationImages selects one complete service family from the committed manifest.
 // Selection performs no registry or cloud requests.
 func VerificationImages(file, service string) ([]SourceImage, error) {
 	invalid := errors.New("invalid source image inventory")
-	if service == "" {
-		value, err := read(file, "compiled release", false)
-		if err != nil {
-			return nil, err
-		}
-		items, _ := value["images"].([]any)
-		schema, _ := value["schemaVersion"].(json.Number)
-		major, _ := value["postgresMajor"].(json.Number)
-		schemaVersion, _ := schema.Float64()
-		postgresMajor, _ := major.Float64()
-		if schemaVersion != 1 || postgresMajor != 18 || len(items) != 8 {
-			return nil, invalid
-		}
-		images, seen := []SourceImage{}, map[string]bool{}
-		versionPattern := regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
-		digestPattern := regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
-		for _, item := range items {
-			image := sourceImage(item, str(item, "component"), str(item, "slot"))
-			if image.Component != "service-json-keys" && image.Component != "service-authentication" {
-				return nil, invalid
-			}
-			if image.Repository != "ghcr.io/a-novel/"+image.Component+"/"+image.Slot {
-				return nil, invalid
-			}
-			if !versionPattern.MatchString(image.Tag) || !digestPattern.MatchString(image.Digest) {
-				return nil, invalid
-			}
-			digest := image.Repository + "@" + image.Digest
-			if seen[digest] || str(item, "sourceDigest") != digest || str(item, "source") != image.Repository+":"+image.Tag {
-				return nil, invalid
-			}
-			seen[digest] = true
-			images = append(images, image)
-		}
-		return images, nil
-	}
 	if service != "json-keys" && service != "authentication" {
 		return nil, invalid
 	}
-	compiler, err := NewCompiler()
+	compiler, err := newValidator()
 	if err != nil {
 		return nil, err
 	}

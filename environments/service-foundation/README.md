@@ -221,7 +221,7 @@ unfinished activation work. The active coordinator is retained until its replace
 
 ## Optional idle database host
 
-`database.tf`, `database-access.tf` and `database-snapshots.tf` directly own one private host in the
+`database.tf` and `database-access.tf` directly own one private host in the
 selected project; there is no fleet map or wrapper module. An explicit `database` object supplies the
 approved zone, canonical subnet ID and pinned COS image. Defaults retain the reviewed small profile:
 e2-medium (4 GiB host RAM), 50 GiB **pd-balanced SSD**, 0.75 container vCPU, 1,536 MiB container memory
@@ -233,8 +233,8 @@ The zonal stateful MIG has exactly one member, a preserved data disk and interna
 Shielded VM and OS Login. Template changes are opportunistic by default; the explicit guarded bring-up
 opt-in below selects proactive replacement. A crash/recreation can still interrupt this singleton database; neither preserved state
 nor a warm API provides database HA. Disk and group deletion are guarded, and the disk is never an
-auto-deleted attachment. Daily regional crash-consistent snapshots retain seven days; they do not replace
-the management-plane logical backups or a tested restore.
+auto-deleted attachment. Native pgBackRest recovery requires separate repository enrollment,
+verified archiving and an accepted SQL restore; an idle host alone supplies no backup guarantee.
 
 The dedicated `agora-database` identity gets only its service's PostgreSQL owner and backup credentials,
 application repository Reader, and log/metric writers. It has no peer, SMTP, master-key, initializer or

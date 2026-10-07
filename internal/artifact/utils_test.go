@@ -64,20 +64,6 @@ func serviceInputs(manifest object, service string) object {
 	return object{"service": service, "project_id": "fixture-service", "management_project_id": "fixture-management", "region": "europe-west1", "images": jobs, "secret_versions": secrets}
 }
 
-func compiledRelease(t *testing.T, manifest object) object {
-	t.Helper()
-	compiler, err := release.NewCompiler()
-	if err != nil {
-		panic(err)
-	}
-	directory := t.TempDir()
-	if err = compiler.CompileRelease([]string{write(t, manifest), "../../tests/fixtures/release-config.json", "-", directory},
-		release.Identity{Commit: strings.Repeat("a", 40), RunID: "123", RunAttempt: 1, Nonce: "fixture"}, "deploy", "", ""); err != nil {
-		panic(err)
-	}
-	return read(t, filepath.Join(directory, "release.json"))
-}
-
 type call struct {
 	name   string
 	args   []string

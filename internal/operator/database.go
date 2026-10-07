@@ -84,13 +84,11 @@ func (db database) inspect(ctx context.Context, h host, output io.Writer) error 
 		{"compute", "instance-groups", "managed", "describe", h.group, "--zone=" + h.zone, "--format=yaml(name,targetSize,instanceGroup,updatePolicy,statefulPolicy,status)"},
 		{"compute", "instances", "describe", h.instance, "--zone=" + h.zone, "--format=yaml(name,status,machineType,networkInterfaces,serviceAccounts,tags.items,shieldedInstanceConfig,disks.deviceName,disks.boot,disks.autoDelete,disks.mode,disks.source)"},
 		{"compute", "disks", "describe", "agora-data-" + h.service, "--zone=" + h.zone, "--format=yaml(name,status,sizeGb,type,physicalBlockSizeBytes,users,labels)"},
-		{"compute", "resource-policies", "describe", "agora-" + h.service + "-daily-snapshots", "--region=" + h.zone[:strings.LastIndex(h.zone, "-")], "--format=yaml(name,region,snapshotSchedulePolicy)"},
-		{"compute", "snapshots", "list", "--filter=labels.application=agora AND labels.environment=production AND labels.role=database-snapshot AND labels.component=" + h.service, "--sort-by=~creationTimestamp", "--limit=1", "--format=table(name,autoCreated,status,creationTimestamp,sourceDisk.basename(),storageLocations,labels.role)"},
 	}
 	for _, rule := range []string{"agora-allow-" + h.service + "-postgres-ingress", "agora-allow-json-keys-postgres-egress", "agora-allow-authentication-postgres-egress", "agora-allow-iap-ssh", "agora-deny-other-vpc-egress"} {
 		commands = append(commands, []string{"compute", "firewall-rules", "describe", rule, "--format=yaml(name,direction,priority,sourceRanges,destinationRanges,allowed,denied,targetTags)"})
 	}
-	for _, filter := range []string{`display_name:("Agora database")`, `display_name="Agora PostgreSQL recovery jobs unhealthy"`} {
+	for _, filter := range []string{`display_name:("Agora database")`, `display_name:("Agora ` + h.service + `")`} {
 		commands = append(commands, []string{"monitoring", "policies", "list", "--filter=" + filter, "--format=table(display_name,enabled,severity,conditions[0].display_name)"})
 	}
 	for _, args := range commands {

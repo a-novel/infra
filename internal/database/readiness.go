@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"os/exec"
-	"sort"
 	"strings"
 	"time"
 )
@@ -80,34 +79,4 @@ func (h host) wait(ctx context.Context, revision, previous string) error {
 		}
 	}
 	return failure{70, "database readiness timed out without the expected new boot"}
-}
-
-func (h host) restart(ctx context.Context, metadata map[string]string) error {
-	if err := h.checkDisk(ctx); err != nil {
-		return err
-	}
-	previous, err := h.current(ctx)
-	if err != nil {
-		return err
-	}
-	values := make([]string, 0, len(metadata))
-	for key, value := range metadata {
-		values = append(values, key+"="+value)
-	}
-	sort.Strings(values)
-	// OPPORTUNISTIC metadata needs an explicit update capped at RESTART.
-	for _, step := range [][]string{
-		{"all-instances-config", "update", h.group(), "--metadata=" + strings.Join(values, ","), "--quiet"},
-		{"update-instances", h.group(), "--all-instances", "--minimal-action=restart", "--most-disruptive-allowed-action=restart", "--quiet"},
-		{"wait-until", h.group(), "--stable", "--timeout=600", "--quiet"},
-	} {
-		if _, err = h.compute(ctx, append([]string{"instance-groups", "managed"}, step...)...); err != nil {
-			return failure{70, "database " + step[0] + " failed; reconcile the selected host before retrying"}
-		}
-	}
-	revision := metadata[revisionKey]
-	if revision == "" {
-		revision = "none"
-	}
-	return h.wait(ctx, revision, previous)
 }

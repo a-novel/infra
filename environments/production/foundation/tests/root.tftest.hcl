@@ -1274,7 +1274,6 @@ run "builds_the_project_replacement_window" {
         "compute.autoscalers.list",
         "compute.instanceGroupManagers.get",
         "compute.instanceGroupManagers.update",
-        "compute.snapshots.list",
         "compute.zoneOperations.get",
       ]) &&
       google_project_iam_member.database_release.member == "serviceAccount:infra-release@agora-management-test.iam.gserviceaccount.com" &&
@@ -1457,19 +1456,7 @@ run "builds_the_project_replacement_window" {
     error_message = "The database capacity alert set, thresholds, or stable instance-name selector changed."
   }
 
-  assert {
-    condition = (
-      google_compute_resource_policy.database_snapshots["authentication"].region == "europe-west1" &&
-      one(google_compute_resource_policy.database_snapshots["authentication"].snapshot_schedule_policy).schedule[0].daily_schedule[0].days_in_cycle == 1 &&
-      one(google_compute_resource_policy.database_snapshots["authentication"].snapshot_schedule_policy).schedule[0].daily_schedule[0].start_time == "02:00" &&
-      one(google_compute_resource_policy.database_snapshots["authentication"].snapshot_schedule_policy).retention_policy[0].max_retention_days == 7 &&
-      one(google_compute_resource_policy.database_snapshots["authentication"].snapshot_schedule_policy).retention_policy[0].on_source_disk_delete == "KEEP_AUTO_SNAPSHOTS" &&
-      !one(google_compute_resource_policy.database_snapshots["authentication"].snapshot_schedule_policy).snapshot_properties[0].guest_flush &&
-      toset(one(google_compute_resource_policy.database_snapshots["authentication"].snapshot_schedule_policy).snapshot_properties[0].storage_locations) == toset(["europe-west1"]) &&
-      google_compute_disk_resource_policy_attachment.database_snapshots["authentication"].disk == google_compute_disk.database["authentication"].name
-    )
-    error_message = "Same-region snapshot storage changed."
-  }
+
 
 
   assert {

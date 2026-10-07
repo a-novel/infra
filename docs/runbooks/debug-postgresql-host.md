@@ -29,7 +29,7 @@ export DATABASE_SERVICE=authentication
 go run ./cmd/infra database inspect "${DATABASE_SERVICE:?}"
 ```
 
-The command prints the private VM, preserved disk, snapshot policy, firewall rules, and alerts. It
+The command prints the private VM, preserved disk, firewall rules, and native/capacity alerts. It
 must end with `PASS database host inspection`. The final foundation audit is the IAM check.
 
 ## Create or reuse the SSH key

@@ -263,7 +263,6 @@ func TestWorkflowCredentials(t *testing.T) {
 	for _, testCase := range []struct{ file, job string }{
 		{"release", "native"},
 		{"release", "release-permissions"},
-		{"release", "database-isolation"},
 		{"recovery", "prepare-native"},
 		{"foundation", "execute"},
 		{"drift", "health"},
@@ -501,7 +500,7 @@ func TestWorkflowBoundaries(t *testing.T) {
 	require.NotContains(t, release.Jobs, "release")
 	require.NotContains(t, release.On, "push")
 	require.Equal(t, object{"group": "production-infrastructure", "cancel-in-progress": false}, release.Concurrency)
-	require.ElementsMatch(t, []any{"plan", "apply", "check-release-permissions", "drill-database-isolation", "restore-database-isolation"},
+	require.ElementsMatch(t, []any{"plan", "apply", "check-release-permissions"},
 		nested(release.On, "workflow_dispatch", "inputs", "action")["options"])
 
 	require.Len(t, renovate.On, 2)

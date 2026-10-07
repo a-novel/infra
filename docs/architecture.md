@@ -91,114 +91,58 @@ identity and routine automation.
 
 ## Stateful database ownership
 
-Each PostgreSQL database has its own private host. Foundation owns each SSD-backed data disk,
-SSD-backed COS boot disk, immutable template, one-member stateful managed instance group,
-preserved private address, runtime identity, firewall boundary, and daily snapshot policy.
-A foundation apply creates both hosts idle; each VM can read only its own owner/backup passwords.
+Foundation owns one private singleton database VM per service repository, with its immutable
+COS template, preserved data disk and address, runtime identity and firewall boundary. APIs
+from different trust zones share that repository's database; they do not create duplicate clusters.
 
-Each group has four release metadata keys: one Git revision, one database image, and two numeric
-password versions. The release workflow validates that complete map, the exact data-disk ID,
-a READY automatic snapshot from that disk incarnation no older than 26 hours, and a fresh logical
-backup for the selected non-empty database. Its cached proof is bound to the host, disk,
-metadata hash and ten-minute window; metadata is checked again before mutation.
+Routine application releases do not change database hosts. Database image and startup changes use
+the protected foundation workflow and an exact saved plan. It records a private maintenance hold,
+verifies a fresh native full backup and isolated SQL restore on the existing repository VM, then
+updates only the selected host. Startup replacement uses zero surge and preserves the data disk
+and address. Image changes cap disruption at restart and preserve the existing VM and boot disk.
+Both require a new healthy boot and exact identity checks before publishing completion evidence.
 
-Routine release caps the selected existing member at `RESTART` and waits for a new boot's
-healthy signal. It does not restart the other database VM or run the other service's
-backup/restore jobs. Authentication can still be affected by JSON Keys dependency downtime;
-host isolation is not dependency-level high availability.
+The groups remain `OPPORTUNISTIC`: changing a template target alone does not roll a member.
+OpenTofu owns the durable resources; the small tested maintenance helper handles this deliberate
+imperative boundary. It cannot treat a successful plan apply as proof of host adoption, replay a
+consumed plan after uncertainty, or clear a hold without matching completion evidence.
 
-The groups are `OPPORTUNISTIC` with zero surge. Applying a new foundation template target alone
-does not roll running members. Template-changing maintenance must first supply a reviewed,
-protected `REPLACE`/`RECREATE` step; the current foundation workflow does not implement that
-imperative rollout.
+There is no legacy release compiler, receipt-driven database deployment, isolation-drill workflow
+or logical-backup job prerequisite. Historical receipts remain readable as evidence, not executable
+deployment instructions. See [host maintenance](./runbooks/operate-postgresql-host.md) for admission,
+recovery and capacity limits.
 
-This small imperative edge is deliberate. The Google provider's
-[`google_compute_per_instance_config` create path](https://github.com/hashicorp/terraform-provider-google/blob/v7.45.0/google/services/compute/resource_compute_per_instance_config.go)
-calls `createInstances`; it creates a new MIG member and cannot safely adopt the existing
-foundation-owned member. Duplicating the MIG resource across two OpenTofu states would create
-overlapping ownership. Keeping the fixed command in versioned, tested code preserves one owner for
-the durable resource while the release identity receives group-manager read/update, zonal-operation
-polling, snapshot-metadata listing, and only the supporting checks Compute reauthorizes for the full
-member specification. Resource bindings fence those checks to the generated VM and boot-disk prefix,
-exact preserved disk, template, and subnet, plus a four-permission internal-address role. It cannot
-mutate snapshots or external addresses; delete VMs or disks; start or stop VMs; or change IAM. The
-protected release workflow is the helper's only authenticated caller, and its private receipt binds
-rollback to the exact preceding state.
+## Native database recovery
 
-```text
-foundation template + stateful disk/address + MIG
-                         |
-                         v
-              one generated VM
-                         ^
-                         |
-tested group metadata update, capped at RESTART
-                         ^
-                         |
-release commit + image digests + secret version IDs
-```
+Each database has a private pgBackRest repository host and a separate management-owned bucket.
+Native systemd workers and timers run archive checks, weekly full backups and daily differentials;
+the database lifecycle controls their activation. PostgreSQL hosts do not receive bucket-write
+authority. Mutually authenticated TLS protects the database/repository connection, and repository
+identity is scoped to its service's storage.
 
-This split keeps durable resource ownership in foundation while letting routine release converge
-the selected database container through the fixed helper and supporting resource checks above. Google's
-group-manager update permission is coarser than the four-field operation and can affect group
-lifecycle indirectly, so the fixed helper, resource-name condition, protected environment,
-committed manifest, audit log, health gate, and private receipt form the remaining controls. A
-compute rollback needs the reviewed maintenance replacement procedure, not just a template-target apply. An application rollback runs the same
-helper with the prior receipt. Neither rollback rewinds schema or data; that remains a separately
-approved restore.
+pgBackRest performs chain-aware expiration under the reviewed retention settings. Bucket retention,
+versioning and soft deletion are separate recovery and cost boundaries; they are not a substitute
+for verifying a complete restorable chain. Never apply age-only deletion to a live repository.
 
-## Database recovery layers
+Protected maintenance restores an exact backup set on existing bounded repository scratch space
+and verifies a networkless paused SQL instance. Independently provisioned disaster-recovery
+rehearsal, application-data verification, failure notifications and operational cost review have
+separate acceptance evidence. A successful scheduled backup alone proves none of those claims.
 
-Recovery uses two complementary layers and no always-running backup controller:
+The removed logical jobs and daily snapshots are not a second active recovery architecture.
+Historical objects subject to locked retention must remain until eligible for separately verified
+cleanup. Their presence does not authorize keeping old writers or deployment tooling.
 
-```text
-private PostgreSQL clusters
-      |                          preserved data disk
-      | pg_dump every 4h               | daily 02:00 UTC
-      v                                v
-create-only logical objects       crash-consistent snapshots
-      |                                |
-      v                                |
-management-project bucket              |
-      |                                |
-      | read-only                      |
-      v                                v
-fresh local restore drill       approved disk recovery only
-```
-
-Logical backups are portable and independently tested. Each backup uses the exact promoted database
-image, verifies that digest and PostgreSQL major against the running source, uses a restricted
-read-only PostgreSQL role and a unique object path, and uploads a manifest only
-after non-empty, archive-list, size, and checksum validation. The backup identity can create objects
-but cannot discover, read, overwrite, or delete them. The restore identity can read objects but has
-no database route, no secret, and no write permission. It restores into an ephemeral local-only
-cluster and runs service-specific integrity checks. An hourly job turns missing/stale manifests,
-RPO, object-size, and storage-cost violations into the same native Cloud Run completion-metric alert
-as a backup or restore failure. A metric-absence condition also reports when that hourly monitor has
-not completed for three hours.
-
-The bootstrap bucket retains every object for at least seven days and deletes it after 14 days. Its
-retention lock is deliberately enabled only through a reviewed irreversible code change after the
-first clean restore evidence. Globally scoped daily snapshots store their data in `europe-west1`,
-retain seven days while the source disk exists, and survive source-disk deletion; they are fast
-same-region crash-consistent recovery points, while the EU multi-region logical objects provide the
-regional-loss path and tested `pg_restore` evidence.
-
-The launch contract accepts one correlated Google Cloud failure domain. The management project
-separates routine workload authority, but an organization- or provider-wide compromise can still
-affect every recovery copy. A second provider adds credentials, billing, transfer, testing, and
-incident ownership; introduce it when revenue, compliance, or recovery commitments justify that
-operating cost.
-
-The [PostgreSQL recovery runbook](./runbooks/backup-and-restore-postgresql.md) owns first activation,
-retention locking, monthly RTO measurement, alert response, the one-time cross-project drill, and
-the measured thresholds that trigger a PITR design.
+The launch contract still accepts a correlated Google Cloud failure domain. Management-project
+separation limits workload authority, not organization- or provider-wide compromise. A second
+provider requires a separately justified credential, cost and incident-ownership decision.
+The [recovery runbook](./runbooks/backup-and-restore-postgresql.md) owns native restoration and
+retirement procedures; [acceptance](./runbooks/accept-native-backups.md) owns the evidence checklist.
 
 ## Proportionate observability and external SMTP
 
-Foundation uses the provider's existing signals before adding software. Eight policies use native
-Cloud Run, Compute Engine, and Container-Optimized OS metrics for 5xx ratio, job failure/absence,
-database capacity, and recovery health. The existing read-only drift workflow makes one public
+Foundation uses provider signals for application and database capacity alerts. Each service
+foundation owns its bounded native-backup log metric and failure/freshness policies. The existing read-only drift workflow makes one public
 `/v2/healthcheck` request every three hours and fails unless Authentication, private JSON Keys,
 private PostgreSQL, and hosted SMTP are all healthy. The production release switch gates this
 check, and the workflow reads the exact project and region from private configuration rather than
@@ -219,9 +163,8 @@ hours plus GitHub scheduling delay; this is not a page-grade SLO. Move mail to a
 queued path, or adopt provider-native faster probes, when traffic or on-call requirements justify
 that cost.
 
-This deliberately avoids an observability agent, custom metric, log-based metric, webhook, Pub/Sub
-topic, pager, dashboard fleet, and controller at launch. Each would add credentials, cost, failure
-modes, or an operator surface without improving the current two-service response path. The
+This avoids a separate observability agent, webhook, Pub/Sub topic, dashboard fleet or controller.
+The bounded backup log metric feeds native alert policies without another monitoring process. The
 [alert runbook](./runbooks/respond-to-alerts.md) supplies ownership and first bounded checks. Add a
 new alerting product only when response coverage or on-call requirements exceed monitored email and
 native GitHub workflow notifications.

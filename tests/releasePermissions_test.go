@@ -16,7 +16,6 @@ func TestReleasePermissions(t *testing.T) {
 		{"Manual", "github.event_name == 'workflow_dispatch'", job.If},
 		{"Master", "github.ref == 'refs/heads/master'", job.If},
 		{"Action", "inputs.action == 'check-release-permissions'", job.If},
-		{"IsolationExcluded", "inputs.action == 'drill-database-isolation' || inputs.action == 'restore-database-isolation'", release.Jobs["database-isolation"].If},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()

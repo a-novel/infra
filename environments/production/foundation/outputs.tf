@@ -59,7 +59,6 @@ output "database_hosts" {
       port                   = host.port
       private_ip             = one(data.google_compute_instance.database[service].network_interface).network_ip
       service_account        = google_service_account.runtime[host.identity].email
-      snapshot_policy        = google_compute_resource_policy.database_snapshots[service].name
       zone                   = var.database_zone
     }
   }

@@ -21,7 +21,7 @@ func versionInputs(manifest object) error {
 // ResolveManifest writes a private deployment snapshot after the entire family
 // inventory passes resolve. The callback owns registry and provenance checks.
 func ResolveManifest(source, output string, resolve func(SourceImage) (string, error)) error {
-	compiler, err := NewCompiler()
+	compiler, err := newValidator()
 	if err != nil {
 		return err
 	}
@@ -53,26 +53,4 @@ func ResolveManifest(source, output string, resolve func(SourceImage) (string, e
 		}
 	}
 	return writePrivate(output, manifest)
-}
-
-// bindReceiptImages keeps offline maintenance and rollback tied to receipt-owned
-// images. A new version must have been resolved by preflight before compilation.
-func bindReceiptImages(manifest, previous object) error {
-	for _, family := range families {
-		name := component(family.service)
-		for _, slot := range family.slots {
-			image := obj(manifest, "components", name, "images", slot)
-			prior := obj(previous, "components", name, "images", slot)
-			if image == nil {
-				return errors.New("missing image inventory")
-			}
-			if image["digest"] == nil && image["repository"] == prior["repository"] && image["tag"] == prior["tag"] {
-				image["digest"] = prior["digest"]
-			}
-			if !imageDigestPattern.MatchString(str(image, "digest")) {
-				return errors.New("resolve the image manifest before compiling a new release")
-			}
-		}
-	}
-	return nil
 }
