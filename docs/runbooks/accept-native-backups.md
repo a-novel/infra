@@ -118,7 +118,7 @@ database restart does not resume timers or catch up missed runs. After protected
 4. Record the observation gap and resumption. Keep logical backups and snapshots active; a missed
    native run does not authorize changing retention, deleting objects or restoring over serving data.
 
-The [cost worksheet](../costs/production.md#native-backup-coexistence) separates recurring native
+The [cost worksheet](../costs/production.md#calculation) separates recurring native
 cost, overlap and eventual savings. Successful scheduled runs do not prove independent-authority
 recovery, source-loss recovery, later PITR or regional disaster recovery. Close those acceptance
 limits explicitly before replacing legacy protection. Retirement also requires migrating every
