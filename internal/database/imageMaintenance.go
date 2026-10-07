@@ -6,6 +6,7 @@ import (
 	"io"
 	"maps"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -91,17 +92,11 @@ func (target maintenanceTarget) restartImage(ctx context.Context, execute func(c
 		if err := target.verifyImageHost(ctx, execute, false); err != nil {
 			return err
 		}
-		if err := h.snapshot(ctx); err != nil {
+		proof, err := target.nativeProof(ctx, execute, filepath.Dir(evidence))
+		if err != nil {
 			return err
 		}
-		for _, kind := range []string{"backup", "restore"} {
-			job := "agora-postgres-" + kind + "-" + target.Service
-			name, err := h.command(ctx, "run", "jobs", "execute", job, "--project="+h.project, "--region="+h.region(), "--wait", "--quiet", "--format=value(metadata.name)")
-			if err != nil || !matches(job+`-[a-z0-9]+`, name) {
-				return failure{70, "required backup or clean restore check failed; no host restarted"}
-			}
-			record[kind+"Execution"] = name
-		}
+		record["nativeBackup"] = proof
 		if err := target.verifyImageHost(ctx, execute, false); err != nil {
 			return err
 		}

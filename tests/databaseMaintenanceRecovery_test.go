@@ -24,7 +24,7 @@ func TestLegacyMaintenanceRecovery(t *testing.T) {
 			plan, inputs, targets := filepath.Join(cloud.dir, "plan.json"), filepath.Join(cloud.dir, "inputs.json"), filepath.Join(cloud.dir, "targets.json")
 			outputs, evidence := filepath.Join(cloud.dir, "outputs.json"), filepath.Join(cloud.dir, "evidence.json")
 			writeJSON(t, plan, cloud.plan(t))
-			writeJSON(t, inputs, object{"workload_project_id": cloud.hosts["json-keys"].project, "database_zone": cloud.hosts["json-keys"].zone, "legacy_backup_job_access": true})
+			writeJSON(t, inputs, object{"workload_project_id": cloud.hosts["json-keys"].project, "database_zone": cloud.hosts["json-keys"].zone, "native_backups": object{"json-keys": object{"wal_archiving": true}, "authentication": object{"wal_archiving": true}}})
 			var logs bytes.Buffer
 			expectCode(t, 0, database.Run(t.Context(), []string{"maintenance-plan", plan, inputs, targets}, getenv, cloud.execute, &logs, &logs), logs.String())
 			if scenario == "OlderHold" {
