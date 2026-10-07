@@ -8,24 +8,18 @@ import (
 	"io"
 	"os"
 	"regexp"
-	"strings"
-
-	"github.com/google/go-containerregistry/pkg/name"
 
 	"github.com/a-novel/infra/internal/release"
 )
 
 type promotion struct {
 	Source string `json:"source"`
-	Target string `json:"target"`
 	Tag    string `json:"tag"`
-	Digest string `json:"digest"`
 }
 
 // Promote copies reviewed images without applying resources or running jobs.
-// Legacy releases retain their preceding provenance preflight; recovery uses a
-// previously validated receipt. The standalone service path verifies its entire
-// family before the first copy.
+// Legacy releases retain their preceding provenance preflight. The standalone
+// service path verifies its entire family before the first copy.
 func Promote(ctx context.Context, args []string, execute func(context.Context, io.Writer, string, ...string) error, registry Registry, stdout, stderr io.Writer) int {
 	stop := func(code int, message string) int {
 		_, _ = fmt.Fprintln(stderr, message)
@@ -37,11 +31,6 @@ func Promote(ctx context.Context, args []string, execute func(context.Context, i
 	switch {
 	case len(args) >= 2 && len(args) <= 3 && args[0] == "release":
 		copies, err = releasePromotions(args[1], args[2:])
-	case len(args) == 2 && args[0] == "recovery":
-		err = readInventory(args[1], &copies)
-		if err == nil {
-			err = recoveryPromotions(copies)
-		}
 	case len(args) == 3 && args[0] == "service":
 		var inputs serviceInputs
 		inputs, err = readService(args[2])
@@ -58,7 +47,7 @@ func Promote(ctx context.Context, args []string, execute func(context.Context, i
 			copies = append(copies, promotion{Source: image.Repository + "@" + image.Digest, Tag: inputs.destination(image) + ":" + image.Tag})
 		}
 	default:
-		return stop(64, "Usage: infra promote release <compiled-release> [receipt-run-id] | recovery <images.json> | service <manifest> <tfvars>")
+		return stop(64, "Usage: infra promote release <compiled-release> [receipt-run-id] | service <manifest> <tfvars>")
 	}
 	if err != nil {
 		return stop(65, "Image promotion inputs are invalid; no copy attempted.")
@@ -134,40 +123,3 @@ func releasePromotions(file string, receipt []string) ([]promotion, error) {
 }
 
 var registryRepository = regexp.MustCompile(`^[a-z]+-[a-z]+[1-9][0-9]*-docker\.pkg\.dev/[a-z][a-z0-9-]{4,28}[a-z0-9]/agora-production/service-(json-keys/(database|grpc|jobs/(migrations|rotatekeys))|authentication/(database|rest|jobs/(init|migrations)))$`)
-
-func recoveryPromotions(copies []promotion) error {
-	invalid := errors.New("invalid recovery inventory")
-	if len(copies) != 8 {
-		return invalid
-	}
-	seen := map[string]bool{}
-	var scope string
-	for _, image := range copies {
-		source, sourceErr := name.NewDigest(image.Source, name.StrictValidation)
-		target, targetErr := name.NewDigest(image.Target, name.StrictValidation)
-		tag, tagErr := name.NewTag(image.Tag, name.StrictValidation)
-		if sourceErr != nil || targetErr != nil || tagErr != nil {
-			return invalid
-		}
-		if source.Name() != image.Source || target.Name() != image.Target || !strings.HasPrefix(image.Digest, "sha256:") {
-			return invalid
-		}
-		if source.DigestStr() != image.Digest || target.DigestStr() != image.Digest || tag.Context() != target.Context() {
-			return invalid
-		}
-		if !registryRepository.MatchString(source.Context().Name()) || !registryRepository.MatchString(target.Context().Name()) ||
-			!regexp.MustCompile(`^recovery-[1-9][0-9]*$`).MatchString(tag.TagStr()) {
-			return invalid
-		}
-		sourceParts, targetParts := strings.SplitN(source.Context().Name(), "/", 4), strings.SplitN(target.Context().Name(), "/", 4)
-		if sourceParts[3] != targetParts[3] || seen[targetParts[3]] || sourceParts[1] == targetParts[1] {
-			return invalid
-		}
-		current := strings.Join(sourceParts[:3], "/") + " " + strings.Join(targetParts[:3], "/") + " " + tag.TagStr()
-		if scope != "" && scope != current {
-			return invalid
-		}
-		scope, seen[targetParts[3]] = current, true
-	}
-	return nil
-}

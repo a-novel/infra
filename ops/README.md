@@ -79,10 +79,10 @@ go run ./cmd/infra foundation finish-operation <service> <guard-generation> 'FIN
 go run ./cmd/infra release drill-database-isolation <receipt-id> 'DRILL authentication'
 go run ./cmd/infra release restore-database-isolation <receipt-id> 'RESTORE authentication'
 
-go run ./cmd/infra recovery plan-workload <replacement-project-id> <receipt-id>
-go run ./cmd/infra recovery apply-workload <replacement-project-id> <receipt-id> <plan-id>
-go run ./cmd/infra recovery restore-data <replacement-project-id> <receipt-id> <json-attempt> <auth-attempt> <lost-window> <confirmation>
-go run ./cmd/infra recovery cleanup-project <replacement-project-id> <receipt-id> <confirmation>
+go run ./cmd/infra recovery plan-native <registered-destination>
+go run ./cmd/infra recovery apply-native <registered-destination> <plan-id>
+go run ./cmd/infra recovery restore-native <registered-destination> <preparation-generation> 'RESTORE-SQL <registered-destination> <preparation-generation>'
+go run ./cmd/infra recovery cleanup-native <registered-destination> 'DELETE <registered-destination>'
 ```
 
 A plan ID and a receipt ID both use `run-id-attempt` syntax. Plan/apply remains two explicit
@@ -178,7 +178,7 @@ size enforcement. Separate policy and deployment-time image-family tests cover t
 | Deletion authorization              | `infra assess-updates`, `infra assess-images`, `infra assess-versions`, `infra refresh-deletion-gates`, `resource-deletion-impact.sh`, `resolve-resource-deletion-assessment.sh`, `verify-resource-deletion-gate.sh`, `verify-deletion-label.sh` |
 | Release compilation and promotion   | `infra compile-release`, `infra validate-images`, `infra preflight images`, `infra promote release`, `infra promote service`, `preflight-release.sh`                                                                                             |
 | Retained database operations        | `infra database-isolation`, `infra database-release`, `await-auth-initialization.sh`                                                                                                                                                             |
-| Recovery                            | `infra compile-recovery`, `verify-recovery-points.sh`, `infra promote recovery`, `infra custody recovery execute`, `infra custody recovery cleanup`, `infra custody recovery cleanup-project`                                                    |
+| Recovery                            | `infra custody recovery execute`, `infra custody recovery cleanup`                                                                                                                                                                               |
 | Health and root validation          | `infra check-health`, `check-root.sh`, `lib/roots.sh`                                                                                                                                                                                            |
 
 `infra custody` shares private file handling and official Google storage clients across
@@ -218,7 +218,6 @@ Image promotion uses the same registry client, without a Docker daemon or Buildx
 
 ```text
 infra promote release <compiled-release.json> [receipt-run-id]
-infra promote recovery <compiled-images.json>
 infra promote service <manifest> <selected-service.tfvars.json>
 ```
 

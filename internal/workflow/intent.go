@@ -6,8 +6,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"unicode"
-	"unicode/utf8"
 )
 
 const usage = `usage: go run ./cmd/infra
@@ -23,14 +21,11 @@ const usage = `usage: go run ./cmd/infra
   foundation recover-legacy <guard-generation> 'RECOVER LEGACY <guard-generation>'
   release drill-database-isolation <receipt-id> 'DRILL authentication'
   release restore-database-isolation <receipt-id> 'RESTORE authentication'
-  recovery plan-workload <replacement-project-id> <receipt-id>
+
   recovery plan-native <registered-recovery-project>
   recovery apply-native <registered-recovery-project> <plan-id>
   recovery restore-native <registered-recovery-project> <preparation-generation> '<RESTORE-FILES|RESTORE-SQL> <project> <preparation-generation>'
-  recovery cleanup-native <registered-recovery-project> 'DELETE <project>'
-  recovery apply-workload <replacement-project-id> <receipt-id> <plan-id>
-  recovery restore-data <replacement-project-id> <receipt-id> <json-keys-attempt> <authentication-attempt> <lost-write-window> <confirmation>
-  recovery cleanup-project <replacement-project-id> <receipt-id> <confirmation>`
+  recovery cleanup-native <registered-recovery-project> 'DELETE <project>'`
 
 type intent struct {
 	workflow, planID, planPrefix, pullRequest string
@@ -183,33 +178,7 @@ func parse(args []string) (intent, error) {
 			}
 			break
 		}
-		if len(args) < 3 || !matches(`[a-z][a-z0-9-]{4,28}[a-z0-9]`, args[1]) || !matches(attemptID, args[2]) {
-			return i, invalid
-		}
-		i.input("operation", args[0])
-		i.input("replacement_project_id", args[1])
-		i.input("target_receipt", args[2])
-		switch {
-		case args[0] == "plan-workload" && len(args) == 3:
-			i.attempt = true
-		case args[0] == "apply-workload" && len(args) == 4 && matches(attemptID, args[3]):
-			i.planID, i.planPrefix = args[3], "recovery plan-workload "+args[1]+" by @"
-			i.input("plan_id", i.planID)
-		case args[0] == "restore-data" && len(args) == 7 &&
-			matches(`[0-9]+-[a-z0-9-]{1,63}-[0-9]+`, args[3]) &&
-			matches(`[0-9]+-[a-z0-9-]{1,63}-[0-9]+`, args[4]) && args[5] != "" &&
-			utf8.RuneCountInString(args[5]) <= 500 && strings.IndexFunc(args[5], unicode.IsControl) < 0 &&
-			args[6] == "RESTORE "+args[1]:
-			i.attempt = true
-			i.input("json_keys_attempt", args[3])
-			i.input("authentication_attempt", args[4])
-			i.input("lost_write_window", args[5])
-			i.input("confirm", args[6])
-		case args[0] == "cleanup-project" && len(args) == 4 && args[3] == "DELETE "+args[1]:
-			i.input("confirm", args[3])
-		default:
-			return i, invalid
-		}
+		return i, invalid
 	default:
 		return i, invalid
 	}

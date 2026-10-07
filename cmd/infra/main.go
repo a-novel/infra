@@ -101,7 +101,7 @@ func main() {
 			command.Env = append(os.Environ(), "CLOUDSDK_CORE_DISABLE_PROMPTS=1")
 			return command.Output()
 		}, os.Stdout, os.Stderr)
-	} else if len(os.Args) > 1 && (os.Args[1] == "compile-release" || os.Args[1] == "compile-recovery" || os.Args[1] == "validate-images" || os.Args[1] == "receipt") {
+	} else if len(os.Args) > 1 && (os.Args[1] == "compile-release" || os.Args[1] == "validate-images" || os.Args[1] == "receipt") {
 		syscall.Umask(0o077)
 		code = release.Run(os.Args[1:], os.Getenv, os.Stdout, os.Stderr)
 	} else {

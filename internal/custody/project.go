@@ -4,14 +4,11 @@ import (
 	"context"
 	jsonv2 "encoding/json/v2"
 	"io"
-	"os"
 	"regexp"
 	"slices"
-	"strings"
 	"time"
 
 	resourcemanager "google.golang.org/api/cloudresourcemanager/v3"
-	"google.golang.org/api/option"
 )
 
 var (
@@ -19,8 +16,8 @@ var (
 	projectNumberPattern = regexp.MustCompile(`^[1-9][0-9]{0,19}$`)
 )
 
-// projectDeletion is shared by both recovery paths. Resource Manager owns the
-// teardown; management-plane state and receipts are deliberately not destroyed.
+// projectDeletion binds Resource Manager teardown to an exact disposable project.
+// Management-plane state and receipts are retained.
 type projectDeletion struct {
 	Project string `json:"project"`
 	Number  string `json:"number"`
@@ -81,49 +78,6 @@ func (target projectDeletion) observe(ctx context.Context, client *resourcemanag
 		}
 	}
 	return failure{70, "Deletion-requested is not confirmed; retain evidence and reconcile without replay."}
-}
-
-func (custody store) legacyCleanup(args []string, getenv func(string) string, options []option.ClientOption) error {
-	if len(args) != 4 {
-		return failure{64, "Usage: infra custody recovery cleanup-project <state-bucket> <project> <receipt> <authorization> <confirmation>"}
-	}
-	project, receipt := args[0], args[1]
-	if !projectPattern.MatchString(project) || !sequencePattern.MatchString(receipt) || args[3] != "DELETE "+project {
-		return failure{65, "Invalid cleanup target or confirmation."}
-	}
-	var authorization struct {
-		SchemaVersion int    `json:"schemaVersion"`
-		Project       string `json:"replacementProject"`
-		Receipt       string `json:"sourceReceipt"`
-		Revoked       bool   `json:"crossProjectAccessRevoked"`
-	}
-	data, err := os.ReadFile(args[2])
-	if err != nil || decodeRecord(data, &authorization) != nil || authorization.SchemaVersion != 1 ||
-		authorization.Project != project || authorization.Receipt != receipt || !authorization.Revoked {
-		return failure{77, "Committed cleanup authorization does not match the selected target."}
-	}
-	management, err := cleanupBoundary(project, getenv)
-	if err != nil {
-		return err
-	}
-	if err := custody.cleanupLabel(getenv); err != nil {
-		return err
-	}
-	ctx, cancel := context.WithTimeout(custody.ctx, 2*time.Minute)
-	defer cancel()
-	client, err := resourcemanager.NewService(ctx, options...)
-	if err != nil {
-		return err
-	}
-	metadata, err := client.Projects.Get("projects/" + project).Context(ctx).Do()
-	if err != nil || metadata == nil || metadata.ProjectId != project {
-		return failure{70, "Disposable project identity unavailable."}
-	}
-	target := projectDeletion{project, strings.TrimPrefix(metadata.Name, "projects/")}
-	if err := target.authorize(ctx, client, management); err != nil {
-		return err
-	}
-	return target.dispatch(ctx, client)
 }
 
 func (custody store) cleanupLabel(getenv func(string) string) error {

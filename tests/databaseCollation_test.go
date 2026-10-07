@@ -69,38 +69,3 @@ prepare_database_collations database:test "$TMPDIR/data with spaces" owner datab
 		})
 	}
 }
-
-func TestPostgresArchiveValidation(t *testing.T) {
-	t.Parallel()
-	for _, tc := range []struct {
-		name, diagnostics, archive, restoreStatus string
-		code                                      int
-	}{
-		{"Success", "", "archive", "0", 0},
-		{"Error/Diagnostics", "private warning", "archive", "0", 1},
-		{"Error/Empty", "", "", "0", 1},
-		{"Error/Unreadable", "", "archive", "1", 1},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			f := setup(t)
-			f.env["RESTORE_STATUS"] = tc.restoreStatus
-			require.NoError(t, os.WriteFile(filepath.Join(f.dir, "dump.log"), []byte(tc.diagnostics), 0o600))
-			require.NoError(t, os.WriteFile(filepath.Join(f.dir, "database.dump"), []byte(tc.archive), 0o600))
-			_, body, found := strings.Cut(read(t, filepath.Join(f.root, "environments/production/release/scripts/postgres-backup.sh")), "# Treat a warning as an incomplete recovery point.")
-			require.True(t, found)
-			body, _, found = strings.Cut(body, "DUMP_SIZE_BYTES=")
-			require.True(t, found)
-			code, out := f.run(t, "bash", "-c", `set -eu
-PG_DUMP_LOG="$TMPDIR/dump.log"
-DUMP_FILE="$TMPDIR/database.dump"
-pg_restore() { printf 'private restore diagnostic\n' >&2; return "$RESTORE_STATUS"; }
-# Treat a warning as an incomplete recovery point.`+body)
-			expectCode(t, tc.code, code, out)
-			require.NotContains(t, out, "private")
-			if tc.code != 0 {
-				require.Contains(t, out, "error: PostgreSQL archive validation failed")
-			}
-		})
-	}
-}
