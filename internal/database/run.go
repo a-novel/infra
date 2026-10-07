@@ -100,15 +100,18 @@ func (h host) checkDisk(ctx context.Context) error {
 	return nil
 }
 
-func (h host) metadata(revision, image, password, backup string) map[string]string {
-	return map[string]string{revisionKey: revision, "agora-" + h.service + "-database-image": image, "agora-" + h.service + "-postgres-password-version": password, "agora-" + h.service + "-postgres-backup-password-version": backup}
-}
-
 func (h host) validRelease(metadata map[string]string) bool {
 	prefix := h.region() + "-docker.pkg.dev/" + h.project + "/agora-production/service-" + h.service + "/database@sha256:"
 	image := metadata["agora-"+h.service+"-database-image"]
-	return len(metadata) == 4 && matches(`[a-f0-9]{40}`, metadata[revisionKey]) && strings.HasPrefix(image, prefix) && matches(`[a-f0-9]{64}`, strings.TrimPrefix(image, prefix)) &&
-		matches(`[1-9][0-9]*`, metadata["agora-"+h.service+"-postgres-password-version"]) && matches(`[1-9][0-9]*`, metadata["agora-"+h.service+"-postgres-backup-password-version"])
+	backup, retained := metadata["agora-"+h.service+"-postgres-backup-password-version"]
+	// Retained operation evidence can still identify the former four-field contract.
+	fields := 3
+	if retained {
+		fields++
+	}
+	return len(metadata) == fields && (!retained || matches(`[1-9][0-9]*`, backup)) &&
+		matches(`[a-f0-9]{40}`, metadata[revisionKey]) && strings.HasPrefix(image, prefix) && matches(`[a-f0-9]{64}`, strings.TrimPrefix(image, prefix)) &&
+		matches(`[1-9][0-9]*`, metadata["agora-"+h.service+"-postgres-password-version"])
 }
 
 func (h host) liveMetadata(ctx context.Context) (map[string]string, error) {
@@ -125,18 +128,15 @@ func (h host) liveMetadata(ctx context.Context) (map[string]string, error) {
 		return nil, failure{70, "malformed database group"}
 	}
 	values := group.AllInstancesConfig.Properties.Metadata
-	if len(values) != 4 {
-		return nil, failure{70, "database metadata differs from the four-key contract"}
-	}
-	metadata := make(map[string]string, 4)
-	for key := range h.metadata("", "", "0", "0") {
-		if values[key] == nil {
-			return nil, failure{70, "database metadata differs from the four-key contract"}
+	metadata := make(map[string]string, len(values))
+	for key, value := range values {
+		if value == nil {
+			return nil, failure{70, "database release metadata is incomplete"}
 		}
-		metadata[key] = *values[key]
+		metadata[key] = *value
 	}
-	if metadata[revisionKey] != "" && !matches(`[a-f0-9]{40}`, metadata[revisionKey]) {
-		return nil, failure{70, "invalid live database revision"}
+	if !h.validRelease(metadata) {
+		return nil, failure{70, "invalid live database release"}
 	}
 	return metadata, nil
 }

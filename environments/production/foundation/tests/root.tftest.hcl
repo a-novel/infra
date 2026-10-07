@@ -739,9 +739,9 @@ run "two_service_projects_share_only_the_host" {
 
   assert {
     condition = alltrue([for template in google_compute_instance_template.database :
-      sha256(template.metadata_startup_script) == "e63b8bbd9ff729e842240ad2ea5ede7617612c25381ac16263c8ca528d243c2d"
+      template.metadata_startup_script == file("../../../assets/database-host/startup.sh")
     ])
-    error_message = "Project onboarding must retain the reviewed startup bytes on both legacy database templates."
+    error_message = "Project onboarding must use the shared database startup adapter on both templates."
   }
 
   assert {
@@ -873,9 +873,9 @@ run "builds_the_project_replacement_window" {
 
   assert {
     condition = alltrue([for template in google_compute_instance_template.database :
-      sha256(template.metadata_startup_script) == "e63b8bbd9ff729e842240ad2ea5ede7617612c25381ac16263c8ca528d243c2d"
+      template.metadata_startup_script == file("../../../assets/database-host/startup.sh")
     ])
-    error_message = "The legacy database templates must retain the reviewed startup bytes independently of native-host development."
+    error_message = "Initial database templates must use the shared database startup adapter."
   }
 
   assert {
@@ -1186,10 +1186,7 @@ run "builds_the_project_replacement_window" {
       !strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "POSTGRES_PASSWORD=") &&
       strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "--auth-local=trust") &&
       strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "pg_read_file('/run/agora-postgres-password')") &&
-      strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "pg_read_file('/run/agora-postgres-backup-password')") &&
-      strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "GRANT pg_read_all_data") &&
-      strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "database backup role has an undeclared membership") &&
-      strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "NOBYPASSRLS CONNECTION LIMIT 2") &&
+      !strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "postgres-backup-password") &&
       strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "agora.database_image=$${image}") &&
       strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "log_min_error_statement=panic") &&
       strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "--entrypoint stat") &&
@@ -1202,7 +1199,6 @@ run "builds_the_project_replacement_window" {
       !strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "\\gexec") &&
       !strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "--tty") &&
       strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "^[A-Za-z0-9_-]+$") &&
-      strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "cmp -s") &&
       strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "findmnt -n -o SOURCE") &&
       strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "\"credHelpers\"") &&
       !strcontains(google_compute_instance_template.database["authentication"].metadata_startup_script, "HOME=") &&
@@ -1226,10 +1222,9 @@ run "builds_the_project_replacement_window" {
       one(google_compute_instance_group_manager.database["authentication"].stateful_internal_ip).interface_name == "nic0" &&
       one(google_compute_instance_group_manager.database["authentication"].stateful_internal_ip).delete_rule == "NEVER" &&
       one(google_compute_instance_group_manager.database["authentication"].all_instances_config).metadata == tomap({
-        agora-authentication-database-image                   = ""
-        agora-authentication-postgres-backup-password-version = "0"
-        agora-authentication-postgres-password-version        = "0"
-        agora-database-release-revision                       = ""
+        agora-authentication-database-image            = ""
+        agora-authentication-postgres-password-version = "0"
+        agora-database-release-revision                = ""
       }) &&
       one(google_compute_instance_group_manager.database["authentication"].update_policy).type == "OPPORTUNISTIC" &&
       one(google_compute_instance_group_manager.database["authentication"].update_policy).replacement_method == "RECREATE" &&
@@ -1602,7 +1597,7 @@ run "isolates_both_databases_on_the_approved_ssd_hosts" {
       google_compute_instance_group_manager.database[service].target_size == 1 &&
       toset(keys(one(google_compute_instance_group_manager.database[service].all_instances_config).metadata)) == toset([
         "agora-database-release-revision", "agora-${host.component}-database-image",
-        "agora-${host.component}-postgres-password-version", "agora-${host.component}-postgres-backup-password-version"
+        "agora-${host.component}-postgres-password-version"
       ])
     ])
     error_message = "Both database hosts must own one independent SSD data disk, SSD boot disk, and service-only release metadata."

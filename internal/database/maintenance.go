@@ -20,6 +20,13 @@ func (target maintenanceTarget) host(execute func(context.Context, io.Writer, st
 	return host{target.Project, target.Zone, target.Service, target.DiskID, execute}
 }
 
+func (target maintenanceTarget) adopted() maintenanceTarget {
+	if target.DesiredMetadata != nil {
+		target.Metadata = target.DesiredMetadata
+	}
+	return target
+}
+
 func (target *maintenanceTarget) capture(ctx context.Context, execute func(context.Context, io.Writer, string, ...string) error) error {
 	h := target.host(execute)
 	metadata, err := h.liveMetadata(ctx)
@@ -136,6 +143,10 @@ func (target maintenanceTarget) observe(ctx context.Context, execute func(contex
 			return nil, failure{70, "instance release metadata differs from the group"}
 		}
 	}
+	backupKey := "agora-" + target.Service + "-postgres-backup-password-version"
+	if _, retained := target.Metadata[backupKey]; !retained && values[backupKey] != "" {
+		return nil, failure{70, "instance still contains the retired backup credential reference"}
+	}
 	expectedStartup := startupScript(target.Properties.Metadata)
 	if memberTemplate != target.Template {
 		expectedStartup = target.Startup
@@ -242,7 +253,7 @@ func maintenanceReplace(ctx context.Context, args []string, getenv func(string) 
 	for index, target := range targets {
 		h := target.host(execute)
 		selected := outputs.Templates.Value[strings.ReplaceAll(target.Service, "-", "_")]
-		if target.DesiredMetadata != nil {
+		if target.DesiredMetadata != nil && selected.URL == target.Template {
 			if len(targets) != 1 || selected.URL != target.Template || selected.ID != target.TemplateID {
 				return failure{65, "image maintenance requires one host and its unchanged template"}
 			}
@@ -255,6 +266,9 @@ func maintenanceReplace(ctx context.Context, args []string, getenv func(string) 
 			target.Instance == "" || target.Address == "" || target.Properties == nil || target.Startup == "" ||
 			selected.URL == target.Template || !matches(`[1-9][0-9]*`, selected.ID) {
 			return failure{65, "maintenance target is invalid or duplicated"}
+		}
+		if target.DesiredMetadata != nil && !h.backupCredentialRetirement(target.Metadata, target.DesiredMetadata) {
+			return failure{65, "startup maintenance metadata transition is invalid"}
 		}
 		seen[target.Service] = true
 		target.ReplacementID = selected.ID
@@ -272,7 +286,7 @@ func maintenanceReplace(ctx context.Context, args []string, getenv func(string) 
 		}
 		record := object{"service": target.Service, "diskId": target.DiskID, "privateAddress": target.Address, "oldInstanceId": target.InstanceID, "template": selected.URL, "templateId": selected.ID}
 		if recovery {
-			if instance, err := target.observe(ctx, execute, selected.URL, selected.URL); err == nil {
+			if instance, err := target.adopted().observe(ctx, execute, selected.URL, selected.URL); err == nil {
 				disk, diskErr := target.bootDisk(ctx, execute, instance)
 				boot, bootErr := h.current(ctx)
 				if diskErr != nil || bootErr != nil || boot == target.Boot || !strings.HasPrefix(boot, "healthy:"+target.Metadata[revisionKey]+":") {
@@ -283,13 +297,14 @@ func maintenanceReplace(ctx context.Context, args []string, getenv func(string) 
 					return failure{70, "boot disk does not prove recreation during the original operation"}
 				}
 				completed[target.Service] = true
+				targets[index] = target.adopted()
 				record["reconciled"], record["newInstanceId"], record["bootDiskId"] = true, strconv.FormatUint(instance.Id, 10), strconv.FormatUint(disk.Id, 10)
 				record["boot"] = boot
 				evidence = append(evidence, record)
 				continue
 			}
 		}
-		instance, err := target.observe(ctx, execute, selected.URL, target.Template)
+		instance, err := target.observe(ctx, execute, selected.URL, target.Template, target.adopted().Metadata)
 		if err != nil || strconv.FormatUint(instance.Id, 10) != target.InstanceID {
 			return failure{70, "the selected host changed before its recovery checks"}
 		}
@@ -313,7 +328,7 @@ func maintenanceReplace(ctx context.Context, args []string, getenv func(string) 
 		}
 		h := target.host(execute)
 		selected := outputs.Templates.Value[strings.ReplaceAll(target.Service, "-", "_")]
-		instance, err := target.observe(ctx, execute, selected.URL, target.Template)
+		instance, err := target.observe(ctx, execute, selected.URL, target.Template, target.adopted().Metadata)
 		boot, bootErr := h.current(ctx)
 		if err != nil || bootErr != nil || boot != target.Boot || strconv.FormatUint(instance.Id, 10) != target.InstanceID {
 			return failure{70, "host changed after backup checks; replacement blocked"}
@@ -333,6 +348,8 @@ func maintenanceReplace(ctx context.Context, args []string, getenv func(string) 
 		if err := h.wait(ctx, target.Metadata[revisionKey], target.Boot); err != nil {
 			return err
 		}
+		target = target.adopted()
+		targets[index] = target
 		instance, err = target.observe(ctx, execute, selected.URL, selected.URL)
 		if err != nil {
 			return failure{70, "replacement identity or preserved state is unconfirmed"}

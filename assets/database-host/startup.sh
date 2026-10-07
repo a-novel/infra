@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Prepares the service-owned disk and its selected PostgreSQL container.
-# No arguments: legacy boot. --supervise: native systemd lifecycle, with TLS client only.
+# No arguments: initial boot. --supervise: systemd lifecycle with native TLS backups.
 # Release metadata contains only immutable image references and numeric secret-version identifiers.
 
 set -euo pipefail
@@ -24,9 +24,7 @@ DATABASE_SUPERVISED=false
 
 remove_database_secret_files() {
     if [ -n "${DATABASE_COMPONENT}" ]; then
-        rm -f -- \
-            "${SECRETS_DIR}/${DATABASE_COMPONENT}-postgres-password" \
-            "${SECRETS_DIR}/${DATABASE_COMPONENT}-postgres-backup-password"
+        rm -f -- "${SECRETS_DIR}/${DATABASE_COMPONENT}-postgres-password"
     fi
 }
 
@@ -245,10 +243,8 @@ activate_database_credentials() {
     local database_user="$2"
     local database_name="$3"
 
-    # Both payloads stay inside the container. A local superuser session reads
-    # the files, quotes them server-side, and stores only SCRAM verifiers. The
-    # backup role is converged to PostgreSQL's read-all-data role and cannot
-    # create databases, roles, replication slots, or bypass row security.
+    # The owner payload stays inside the container and only its SCRAM verifier
+    # is stored. Native physical backups need no separate SQL password or login.
     if ! docker exec --interactive --user postgres \
             --env 'PGOPTIONS=-c log_statement=none -c log_min_messages=panic -c log_min_error_statement=panic -c log_min_duration_statement=-1 -c log_min_duration_sample=-1 -c log_transaction_sample_rate=0 -c log_error_verbosity=terse -c pgaudit.log=none -c auto_explain.log_min_duration=-1' \
             "${container_name}" \
@@ -259,36 +255,12 @@ activate_database_credentials() {
             --dbname "${database_name}" \
             >/dev/null 2>&1 <<'SQL'
 DO $activate_password$
-DECLARE
-    backup_role text := current_user || '_backup';
 BEGIN
     EXECUTE format(
         'ALTER ROLE %I PASSWORD %L',
         current_user,
         pg_read_file('/run/agora-postgres-password')
     );
-
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = backup_role) THEN
-        EXECUTE format('CREATE ROLE %I', backup_role);
-    END IF;
-
-    EXECUTE format(
-        'ALTER ROLE %I WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS CONNECTION LIMIT 2 PASSWORD %L',
-        backup_role,
-        pg_read_file('/run/agora-postgres-backup-password')
-    );
-    EXECUTE format('GRANT pg_read_all_data TO %I', backup_role);
-
-    IF EXISTS (
-        SELECT 1
-        FROM pg_auth_members membership
-        JOIN pg_roles granted_role ON granted_role.oid = membership.roleid
-        JOIN pg_roles member_role ON member_role.oid = membership.member
-        WHERE member_role.rolname = backup_role
-          AND granted_role.rolname <> 'pg_read_all_data'
-    ) THEN
-        RAISE EXCEPTION 'database backup role has an undeclared membership';
-    END IF;
 EXCEPTION WHEN OTHERS THEN
     RAISE EXCEPTION 'database credential activation failed';
 END
@@ -439,7 +411,6 @@ start_database() {
     local database_user="$4"
     local database_name="$5"
     local password_file="$6"
-    local backup_password_file="$7"
     local container_name="agora-postgres-${key}"
     local data_directory="${DATA_MOUNT}/${key}"
     local network_name="agora-database-${key}"
@@ -503,7 +474,6 @@ start_database() {
         --env "POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256 --auth-local=trust" \
         --mount "type=bind,source=${data_directory},target=/var/lib/postgresql" \
         --mount "type=bind,source=${password_file},target=/run/agora-postgres-password,readonly" \
-        --mount "type=bind,source=${backup_password_file},target=/run/agora-postgres-backup-password,readonly" \
         "${socket_options[@]}" \
         "${client_options[@]}" \
         "${image}" \
@@ -637,7 +607,7 @@ resize2fs "${DATA_DEVICE}" >/dev/null
 
 if [ -z "${RELEASE_REVISION}" ]; then
     # Foundation prepares and verifies storage but deliberately starts no
-    # database until its release supplies all four non-secret fields.
+    # database until its release supplies the image, revision and owner version.
     stop_database_containers
     remove_database_secret_files
     publish_database_status idle
@@ -659,13 +629,11 @@ CONTAINER_MEMORY_MB="$(attribute_get agora-database-container-memory-mb)"
 MAX_CONNECTIONS="$(attribute_get agora-database-max-connections)"
 DATABASE_IMAGE="$(attribute_get "agora-${DATABASE_COMPONENT}-database-image")"
 PASSWORD_VERSION="$(attribute_get "agora-${DATABASE_COMPONENT}-postgres-password-version")"
-BACKUP_PASSWORD_VERSION="$(attribute_get "agora-${DATABASE_COMPONENT}-postgres-backup-password-version")"
 
 require_cpu "${CONTAINER_CPU}"
 require_numeric "container memory" "${CONTAINER_MEMORY_MB}"
 require_numeric "maximum connections" "${MAX_CONNECTIONS}"
 require_numeric "owner password version" "${PASSWORD_VERSION}"
-require_numeric "backup password version" "${BACKUP_PASSWORD_VERSION}"
 require_promoted_image "${DATABASE_IMAGE}" "service-${DATABASE_COMPONENT}/database"
 
 # ---- Host-only credentials and images ----
@@ -686,15 +654,8 @@ printf 'header = "Authorization: Bearer %s"\n' "${ACCESS_TOKEN}" > "${TOKEN_CONF
 unset ACCESS_TOKEN
 
 PASSWORD_FILE="${SECRETS_DIR}/${DATABASE_COMPONENT}-postgres-password"
-BACKUP_PASSWORD_FILE="${SECRETS_DIR}/${DATABASE_COMPONENT}-postgres-backup-password"
 
 fetch_secret "production-${DATABASE_COMPONENT}-postgres-password" "${PASSWORD_VERSION}" "${PASSWORD_FILE}"
-fetch_secret "production-${DATABASE_COMPONENT}-postgres-backup-password" "${BACKUP_PASSWORD_VERSION}" "${BACKUP_PASSWORD_FILE}"
-
-if cmp -s "${PASSWORD_FILE}" "${BACKUP_PASSWORD_FILE}"; then
-    printf 'error: database owner and backup passwords must be distinct\n' >&2
-    exit 1
-fi
 
 # Docker invokes the standalone helper, which obtains short-lived credentials
 # from the attached VM identity. This file contains only the registry hostname
@@ -717,8 +678,7 @@ start_database \
     "${DATABASE_PORT}" \
     "${DATABASE_NAME}" \
     "${DATABASE_NAME}" \
-    "${PASSWORD_FILE}" \
-    "${BACKUP_PASSWORD_FILE}"
+    "${PASSWORD_FILE}"
 
 publish_database_status healthy
 printf 'Database release %s is healthy.\n' "${RELEASE_REVISION}"
