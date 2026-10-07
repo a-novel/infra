@@ -1,6 +1,7 @@
 package tests_test
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -36,6 +37,7 @@ func TestDeletionAssessment(t *testing.T) {
 			require.NoError(t, err)
 			f.link(t, "git", git)
 			candidate := filepath.Join(f.dir, "candidate")
+			require.NoError(t, os.MkdirAll(filepath.Join(candidate, "environments/production/release"), 0o700))
 			code, out := f.run(t, "git", "init", "-q", "-b", "master", candidate)
 			expectCode(t, 0, code, out)
 			code, out = f.run(t, "git", "-C", candidate, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "fixture")
@@ -89,6 +91,44 @@ func TestDeletionAssessment(t *testing.T) {
 			}
 			if testCase.files == "release" {
 				require.Contains(t, out, "release assess completed")
+			}
+		})
+	}
+}
+
+func TestRetiredReleaseAssessment(t *testing.T) {
+	t.Parallel()
+	for _, testCase := range []struct {
+		name, state string
+		code        int
+	}{
+		{"Success/EmptyState", `{"version":4,"resources":[]}`, 0},
+		{"Error/ServingResources", `{"version":4,"resources":[{"type":"google_cloud_run_v2_service"}]}`, 70},
+		{"Error/MissingResources", `{"version":4}`, 70},
+		{"Error/NullResources", `{"version":4,"resources":null}`, 70},
+		{"Error/InvalidVersion", `{"version":3,"resources":[]}`, 70},
+		{"Error/InvalidState", privateValue, 70},
+		{"Error/MissingState", "", 70},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			f := inspectionFixture(t)
+			f.env["FAKE_GATE_FILES"] = "release"
+			if testCase.state != "" {
+				file := filepath.Join(f.env["FAKE_GCS_ROOT"], "agora-state-test/release/default.tfstate")
+				require.NoError(t, os.MkdirAll(filepath.Dir(file), 0o700))
+				require.NoError(t, os.WriteFile(file, []byte(testCase.state), 0o600))
+			}
+			output := filepath.Join(f.dir, "assessment.json")
+			code, out := f.run(t, "infra", "inspect", "assess", "a-novel/infra", "93", f.env["FAKE_GATE_HEAD"], f.env["FAKE_GATE_BASE"], f.dir, "agora-state-test", output)
+			expectCode(t, testCase.code, code, out)
+			require.NotContains(t, out, privateValue)
+			require.NoFileExists(t, f.env["FAKE_TOFU_CALLS"])
+			if code == 0 {
+				require.Equal(t, true, readJSON(t, output)["approvalRequired"])
+				require.Equal(t, false, readJSON(t, output)["firstLaunch"])
+			} else {
+				require.NoFileExists(t, output)
 			}
 		})
 	}

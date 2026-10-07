@@ -100,6 +100,29 @@ func (i inspector) assess(ctx context.Context, args []string) error {
 		}
 	}
 	for _, root := range impact.Roots {
+		// Temporary bridge for removing the empty legacy root; remove with that root.
+		if root == "release" && !imageOnly {
+			_, err := os.Stat(filepath.Join(i.candidate, "environments/production/release"))
+			if errors.Is(err, os.ErrNotExist) {
+				file := filepath.Join(i.scratch, "retired-release.tfstate")
+				if _, err := i.execute(ctx, nil, "gcloud", "storage", "cp", "gs://"+i.bucket+"/release/default.tfstate", file, "--quiet"); err != nil {
+					return failure{70, "Retired release state could not be read."}
+				}
+				data, err := os.ReadFile(file)
+				var state struct {
+					Version   int
+					Resources []json.RawMessage
+				}
+				if err != nil || json.Unmarshal(data, &state) != nil || state.Version != 4 || state.Resources == nil || len(state.Resources) != 0 {
+					return failure{70, "Release root removal requires a verified empty state."}
+				}
+				v.ApprovalRequired = true
+				continue
+			}
+			if err != nil {
+				return failure{70, "Release root presence could not be checked."}
+			}
+		}
 		if root == "service-foundation" || root == "service-release" || root == "service-recovery" {
 			if err := i.services(ctx, "assess", root, &v); err != nil {
 				return err
