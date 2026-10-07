@@ -2,8 +2,8 @@ locals {
   backup_jobs = {
     stanza-create = "stanza-create"
     check         = "check"
-    full          = "--type=full --archive-copy --repo1-bundle --no-expire-auto backup"
-    diff          = "--type=diff --archive-copy --repo1-bundle --no-expire-auto backup"
+    full          = "--type=full --archive-copy --repo1-bundle backup"
+    diff          = "--type=diff --archive-copy --repo1-bundle backup"
     verify        = "--output=text --verbose --log-level-console=error verify"
   }
   backup_calendars = {
@@ -44,6 +44,7 @@ locals {
         wal_archiving     = var.wal_archiving
         zone_argument     = var.shared_private ? "--zone=private " : ""
         backup_containers = join(" ", [for name in keys(local.backup_jobs) : "agora-backup-${name}"])
+        backup_timers     = var.schedules_enabled ? join(" ", [for name in keys(local.backup_calendars) : "agora-backup-${name}.timer"]) : ""
       }))
     },
     ], [for name, command in local.backup_jobs : {
@@ -59,7 +60,7 @@ locals {
       }], [for name, calendar in local.backup_calendars : {
       path        = "/etc/systemd/system/agora-backup-${name}.timer"
       permissions = "0644"
-      content     = templatefile("${path.module}/templates/database-backup.timer.tftpl", { name = name, calendar = calendar })
+      content     = templatefile("${path.module}/templates/database-backup.timer.tftpl", { name = name, calendar = calendar, service = var.service })
       }], [{
       path        = "/etc/agora-database/check-backup.sh"
       permissions = "0444"

@@ -210,7 +210,8 @@ run "prepared_database_lifecycle" {
   assert {
     condition = alltrue([for option in [
       "repo1-host=${local.repository_name}", "repo1-host-type=tls", "repo1-host-port=8432",
-      "repo1-host-key-file=/run/pgbackrest/identity.pem", "expire-auto=n",
+      "repo1-host-key-file=/run/pgbackrest/identity.pem", "expire-auto=y",
+      "repo1-retention-full-type=time", "repo1-retention-full=14",
       "pg1-path=/var/lib/postgresql/18/docker", "pg1-user=agora_json_keys",
       "pg1-socket-path=/var/run/postgresql", "lock-path=/run/pgbackrest-lock", "process-max=1",
     ] : strcontains(yamldecode(local.database_cloud_config.host).write_files[2].content, option)])
@@ -238,8 +239,8 @@ run "prepared_database_lifecycle" {
     condition = alltrue([for name, command in {
       stanza-create = "stanza-create"
       check         = "check"
-      full          = "--type=full --archive-copy --repo1-bundle --no-expire-auto backup"
-      diff          = "--type=diff --archive-copy --repo1-bundle --no-expire-auto backup"
+      full          = "--type=full --archive-copy --repo1-bundle backup"
+      diff          = "--type=diff --archive-copy --repo1-bundle backup"
       verify        = "--output=text --verbose --log-level-console=error verify"
       } : strcontains(one([for file in yamldecode(local.database_cloud_config.host).write_files : file.content
       if file.path == "/etc/systemd/system/agora-backup-${name}.service"]), "--stanza=json-keys ${command}\n")
@@ -266,11 +267,11 @@ run "prepared_database_lifecycle" {
       full = "Sun *-*-* 02:00:00 UTC", diff = "Mon..Sat *-*-* 02:00:00 UTC", check = "*-*-* *:30:00 UTC",
       } : alltrue([for option in [
         "OnCalendar=${calendar}", "Unit=agora-backup-${name}.service", "Persistent=false",
-        "RandomizedDelaySec=5m", "StopPropagatedFrom=agora-database.service",
+        "RandomizedDelaySec=5m", "PartOf=agora-database.service",
         ] : strcontains(one([for file in yamldecode(local.database_cloud_config.host).write_files : file.content
       if file.path == "/etc/systemd/system/agora-backup-${name}.timer"]), option)])
     ])
-    error_message = "Only full, differential and checks get disabled UTC timers, with no catch-up or database restart coupling."
+    error_message = "Only full, differential and checks get UTC timers; they follow database restarts without replaying missed jobs."
   }
   assert {
     condition = alltrue([

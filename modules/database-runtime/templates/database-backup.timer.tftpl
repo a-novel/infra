@@ -1,7 +1,8 @@
 [Unit]
-Description=Agora JSON Keys native backup schedule (${name})
+Description=Agora ${service} native backup schedule (${name})
 After=agora-database.service
-StopPropagatedFrom=agora-database.service
+Requisite=agora-database.service
+PartOf=agora-database.service
 
 [Timer]
 OnCalendar=${calendar}

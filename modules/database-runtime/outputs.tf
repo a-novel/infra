@@ -5,6 +5,6 @@ output "cloud_config" {
 }
 
 output "startup_script" {
-  description = "COS startup script for the existing stateful group; starts the database but leaves backup timers stopped."
+  description = "COS startup script for the existing stateful group; starts the database and its approved schedules."
   value       = templatefile("${path.module}/templates/startup.sh.tftpl", { files = local.files })
 }

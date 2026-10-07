@@ -313,12 +313,15 @@ without weakening upstream constraints or adding a controller. Runtime/backup re
 
 ### Prepared native backup jobs
 
-The database lifecycle also installs five disabled `agora-backup-<operation>.service` units from one
-template: `stanza-create`, `check`, `full`, `diff` and `verify`. Three disabled timers prepare a weekly full
+The database lifecycle installs five `agora-backup-<operation>.service` units from one
+template: `stanza-create`, `check`, `full`, `diff` and `verify`. Three timers provide a weekly full
 (Sunday 02:00 UTC), differential (Monday–Saturday 02:00 UTC), and hourly archive check (:30 UTC),
-with up to five minutes of jitter. Nothing starts or enables them on boot. Missed runs do not catch
-up automatically; no timer creates the stanza or runs expiry. These are initial review settings,
-not a measured RPO or permission to activate scheduling.
+with up to five minutes of jitter. They remain inactive until `schedules_enabled = true`, after
+backup and isolated SQL-restore acceptance. This option belongs in `database_runtime` here or each
+service's `native_backups` entry in the shared foundation. It requires WAL archiving.
+Healthy database startup activates the timers; stopping or restarting the database propagates to
+them. An explicit timer pause lasts until the next database start. Missed calendar runs do not replay
+on restart; the backup-age alerts detect the gap. A timer cannot start a stopped database.
 After separate activation approval, foundation can set `database_runtime.wal_archiving = true` to
 enable PostgreSQL's native `pgbackrest --stanza=json-keys archive-push %p` command. This requires a
 database maintenance restart, not an API release. The default explicitly clears archiving on existing
@@ -333,14 +336,19 @@ read-only data mount is not a separate database trust boundary.
 systemd requires the database to be active without starting it. Jobs have a one-hour limit, bounded
 stop cleanup and no automatic retries. Database stop propagates to workers without replaying them on
 restart; database failure cleanup also reaps their exact container names before removing credentials.
-pgBackRest owns conflicting-operation locks, WAL checks and completion metadata. Automatic expiry is
-disabled in the shared configuration and each job. Failed jobs require inspection before explicit retry;
+pgBackRest owns conflicting-operation locks, WAL checks and completion metadata. Successful backups
+run native expiry with a fourteen-day, time-based full-backup retention window. Dependent differential
+backups and required WAL remain with their full chain. Extra manual full backups do not shorten this
+window. Bucket retention, versioning and soft deletion apply independently; GCS lifecycle rules must
+never delete current objects from a live chain. Review `expire --dry-run` and the retained catalog
+before first activation. Failed jobs require inspection before explicit retry;
 the next calendar event is an independent scheduled attempt, not an automatic command retry.
 
 Routine online backups/checks and continuous WAL archiving use native pgBackRest coordination rather
 than acquiring the service-wide deployment guard. Disruptive maintenance and recovery retain protected
 [service admission](../../docs/service-operations.md#native-online-backups). Stop all three timers and
-drain workers before maintenance; a database stop also stops them without restarting them afterward.
+drain workers before maintenance; a database stop also stops them. Accepted schedules resume with
+the next healthy database start; workers themselves are never replayed by restart propagation.
 Stopping timers does **not** stop PostgreSQL's continuous archiver. Work requiring exclusive repository
 access must quiesce that writer too. An API release must not control this lifecycle.
 
