@@ -57,13 +57,6 @@ locals {
       workflow_filename  = "foundation.yaml"
       environment        = "production-foundation"
     }
-    release = {
-      service_account_id = "infra-release"
-      display_name       = "Infra application release"
-      provider_id        = "github-release"
-      workflow_filename  = "release.yaml"
-      environment        = "production-release"
-    }
     recovery = {
       service_account_id = "infra-recovery"
       display_name       = "Infra disaster recovery"

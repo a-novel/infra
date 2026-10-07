@@ -200,17 +200,14 @@ func TestServiceInspection(t *testing.T) {
 func TestInspectionAuthorization(t *testing.T) {
 	t.Parallel()
 	for _, testCase := range []struct {
-		name, candidate, files, auth, config string
-		code                                 int
-		first                                bool
+		name, candidate, files, auth string
+		code                         int
 	}{
-		{"FirstImage", "--image-only", "image", "0", "", 0, true},
-		{"EmptyImage", "--image-only", "image", "0", `{"application_release":null}`, 0, true},
-		{"ActiveImage", "--image-only", "image", "0", `{"application_release":{}}`, 0, false},
-		{"UnauthorizedImage", "--image-only", "image", "77", "", 77, false},
-		{"ImageCannotPlan", "--image-only", "service", "0", "", 77, false},
-		{"DirtyCandidate", "dirty", "service", "0", "", 65, false},
-		{"StalePR", "stale", "service", "0", "", 77, false},
+		{"AuthorizedImage", "--image-only", "image", "0", 0},
+		{"UnauthorizedImage", "--image-only", "image", "77", 77},
+		{"ImageCannotPlan", "--image-only", "service", "0", 77},
+		{"DirtyCandidate", "dirty", "service", "0", 65},
+		{"StalePR", "stale", "service", "0", 77},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
@@ -223,18 +220,13 @@ func TestInspectionAuthorization(t *testing.T) {
 			if candidate == "stale" {
 				candidate, base = f.dir, strings.Repeat("c", 40)
 			}
-			if testCase.config != "" {
-				file := filepath.Join(f.env["FAKE_GCS_ROOT"], "agora-state-test/release/config/00000000000000000001-00001.tfvars.json")
-				require.NoError(t, os.MkdirAll(filepath.Dir(file), 0o700))
-				require.NoError(t, os.WriteFile(file, []byte(testCase.config), 0o600))
-			}
 			output := filepath.Join(f.dir, "assessment.json")
 			code, out := f.run(t, "infra", "inspect", "assess", "a-novel/infra", "93", f.env["FAKE_GATE_HEAD"], base, candidate, "agora-state-test", output)
 			expectCode(t, testCase.code, code, out)
 			require.NoFileExists(t, f.env["FAKE_TOFU_CALLS"])
 			if code == 0 {
 				result := readJSON(t, output)
-				require.Equal(t, []any{testCase.first, testCase.first}, []any{result["firstLaunch"], result["approvalRequired"]})
+				require.Equal(t, []any{false, false}, []any{result["firstLaunch"], result["approvalRequired"]})
 			} else {
 				require.NoFileExists(t, output)
 			}

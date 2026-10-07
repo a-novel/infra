@@ -64,7 +64,7 @@ Removing or broadening any rule requires another policy review.
 
 ## Automation trust boundaries
 
-The four infra providers trust GitHub issuer `https://token.actions.githubusercontent.com`, organization ID
+The three infra providers trust GitHub issuer `https://token.actions.githubusercontent.com`, organization ID
 `131281268`, repository ID `1344262359`, repository `a-novel/infra`, and
 `refs/heads/master`. Names are retained for audit readability; the numeric IDs prevent a renamed or
 re-created organization/repository from inheriting trust.
@@ -73,19 +73,15 @@ re-created organization/repository from inheriting trust.
 | ------------ | ----------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `plan`       | `.github/workflows/drift.yaml`      | None; pull-request jobs still receive no provider and no cloud identity. | Read resource, IAM, and bucket metadata plus each state prefix. It cannot create lock objects, mutate cloud resources, read backup or receipt objects, or read secret payloads.                                                                                                                                                                                                                                                             |
 | `foundation` | `.github/workflows/foundation.yaml` | `production-foundation`                                                  | Manage management-plane and workload foundations after approval, including IAM and bucket configuration. This high-trust identity has no standing secret-version grant, but its IAM authority is security-sensitive and therefore independently approved and audited.                                                                                                                                                                       |
-| `release`    | `.github/workflows/release.yaml`    | `production-release`                                                     | Write release-root state and receipts, read secret-version metadata without payloads, promote verified images, and operate only the declared release resources. It has no project IAM, backup-read, recovery, or secret-payload access.                                                                                                                                                                                                     |
 | `recovery`   | `.github/workflows/recovery.yaml`   | `production-recovery`                                                    | Read normal state for reconstruction, write only the four nested recovery state/plan prefixes, read only committed backup manifests, successful production receipts, and secret-version metadata without payloads, and write only `recovery/` evidence. It cannot rewrite management-project IAM. Production grants only source-registry read; a human adds exact replacement-runtime payload bindings and temporary parent/billing grants. |
 
 The workflow filenames are part of the cloud trust policy before the workflows exist. Renaming one is
 a security migration: update and apply the provider condition under foundation approval, land the
 new workflow, verify authentication, and only then remove the old path.
 
-These four providers and the pool remain bootstrap-owned. Opt-in
-[service projects](../modules/workload-project/README.md#release-boundary) add foundation-owned
-providers within that pool, project-local release accounts, and disjoint `services/<project-id>/`
-state/receipt folders in the existing buckets. Their service-specific environments and constant
-principal mappings cannot satisfy the legacy bindings. Bootstrap does not adopt these child
-resources, and current release/recovery paths remain unchanged. Foundation's bucket and federation
+These three providers and the pool remain bootstrap-owned. Service/zone
+[custody folders](../modules/service-custody/README.md) belong to foundation; they add no
+per-service automation account or federation provider. Foundation's bucket and federation
 administration remains an explicit high-trust exception to service isolation.
 
 The plan identity deliberately keeps Storage Object Viewer instead of a write-capable backend role.

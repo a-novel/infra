@@ -62,32 +62,27 @@ outcomes. The [service-operation contract](./service-operations.md) explains tho
 
 ## Root ownership
 
-```text
-bootstrap                         production foundation                   production release
-stable recovery authority   ->   durable workload authority       ->     routine deployment authority
-rare changes                     occasional changes                      frequent changes
-```
+Production uses five native OpenTofu roots with separate state:
 
-| Root                                                                            | Owns                                                                                                                                          | Authority boundary                                                                                                                                  |
-| ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`bootstrap/`](../bootstrap/)                                                   | Resources inside the manually created management project: state and recovery storage, federation, automation identities, and secret metadata. | May establish later automation identities. It does not create its own project or deploy application revisions.                                      |
-| [`environments/production/foundation/`](../environments/production/foundation/) | Workload project, IAM, VPC, private data plane, database host and disks, backups, monitoring, and stable runtime prerequisites.               | May change durable infrastructure after protected human approval. It does not select routine application versions.                                  |
-| [`environments/production/release/`](../environments/production/release/)       | Container images, jobs, revisions, traffic, and database container configuration described by the release manifest.                           | May deploy and compensate an application release. It cannot change project IAM, networking, state protection, preserved disks, or backup retention. |
+| Root                                                            | Owns                                                                                                    |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| [bootstrap](../bootstrap/)                                      | Management storage, federation, automation identities and secret containers                             |
+| [production foundation](../environments/production/foundation/) | Trust-zone projects, private network, per-service database hosts, invocation tags and rotation schedule |
+| [service foundation](../environments/service-foundation/)       | Each service/zone's runtime prerequisites, repositories and native-backup resources                     |
+| [service release](../environments/service-release/)             | API revisions, traffic and operational jobs                                                             |
+| [service recovery](../environments/service-recovery/)           | Explicitly approved isolated recovery resources                                                         |
 
-The roots apply in that order. A root consumes only the small set of outputs it needs from an earlier
-root and never embeds another root's credentials or state. The foundation automation identity is the
-deliberate high-trust exception to state isolation: after the human bootstrap, its protected workflow
-maintains both `bootstrap` and `foundation`. Release remains confined to its own state, while recovery
-can create isolated foundation/release recovery state without receiving IAM-administration authority
-on the surviving management or production project.
+The protected foundation workflow plans and applies the first four roots. Recovery has its own
+protected workflow and identity. The read-only plan identity assesses exact changes without
+state-write or secret-payload authority. Roots exchange narrow published coordinates rather than
+embedding another root's credentials or entire state.
 
-Routine Cloud Run deployment and job execution are separate permissions. Release receives a custom
-deployment role without execution, override, or IAM-policy authority. Foundation-owned conditional
-invoker bindings match permanent Resource Manager tags to release, scheduled, internal, and recovery
-workloads; release can attach only its three routine values. Authentication initialization remains a
-named-human action because it reconciles the first administrator's password and role. Only those
-humans can use its dedicated identity and tag, keeping the bootstrap password outside both the REST
-identity and routine automation.
+There is no separate release workflow or per-service deployment federation. Foundation is the
+explicit high-trust administrator; its approval boundary, saved plans, service guards and scoped
+runtime grants remain essential. Routine service releases cannot resize database hosts.
+Cloud Run definition changes and job execution are separate grants. Invocation classes distinguish
+migrations, scheduled jobs and internal calls. Authentication initialization remains a named-human
+action with its own identity and tag; routine automation cannot read its administrator password.
 
 ## Stateful database ownership
 

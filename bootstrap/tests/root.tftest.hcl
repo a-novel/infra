@@ -240,17 +240,6 @@ run "builds_the_protected_management_plane" {
     error_message = "Recovery receipt authority crossed its managed-folder boundary."
   }
 
-  assert {
-    condition = (
-      google_service_account.retiring_release.account_id == "infra-release" &&
-      google_service_account.retiring_release.disabled &&
-      google_iam_workload_identity_pool_provider.retiring_release.workload_identity_pool_provider_id == "github-release" &&
-      google_iam_workload_identity_pool_provider.retiring_release.disabled &&
-      google_iam_workload_identity_pool_provider.retiring_release.deletion_policy == "DELETE" &&
-      strcontains(google_iam_workload_identity_pool_provider.retiring_release.attribute_condition, "assertion.environment == 'production-release'")
-    )
-    error_message = "The obsolete release identity/provider must be disabled before their separate deletion."
-  }
 
   assert {
     condition = (

@@ -2,21 +2,20 @@
 
 This module provisions the project boundary for one independently operated service in one
 environment. The API, jobs, and database that belong to that service will share this project. It also
-prepares the service's release identity and private storage boundary, without activating a workflow.
+prepares private storage custody, without creating deployment identities or activating a workflow.
 The protected shared foundation owns this module; a service deployer must not own or apply it.
 
 This is the compatibility composition for existing service-project callers. The
 [project-shell module](../project-shell) now owns project provisioning under
-`module.project`; [release-boundary](../release-boundary) owns release resources
+`module.project`; [service-custody](../service-custody) owns retained storage
 under `module.release`. The relative moves in `moved.tf` retain every caller's
-project and release resources, including `for_each` instances. Keep these moves
-for existing states. Names, storage paths, grants and schema-1 outputs are unchanged;
-no manual state edits are needed for either extraction.
+project and storage resources, including `for_each` instances. Keep these moves
+for existing states. Storage paths and schema-1 custody coordinates are unchanged;
+obsolete release writers and their grants have been retired.
 
-Shared environment/trust-zone release identities are defined separately through
-`service_release_zones`, default empty. Existing workflow registration and operation
-guards still assume one project per service, so shared runtime enrollment remains
-disabled. Review owned obsolete projects and billing capacity before new provisioning.
+Production uses shared environment/trust-zone custody selected by `service_release_zones`.
+This compatibility module is not selected by the current production configuration. A future
+dedicated project requires an explicit exception review, not routine per-service onboarding.
 Public-admin, staging and Kubernetes remain deferred.
 
 The production caller is [foundation/service-projects.tf](../../environments/production/foundation/service-projects.tf).
@@ -28,25 +27,23 @@ Its empty `service_projects` map leaves the current deployment unchanged. See th
 The project, API, service-agent, logging and foundation IAM addresses below are
 relative to `module.project`. Release and storage addresses are relative to `module.release`.
 
-| Resource                                                                                                                                           | Contract                                                                                                                                                                                               |
-| -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `google_project.service`                                                                                                                           | One explicit project ID, exactly one organization/folder parent, no default VPC, and persistent provider deletion prevention.                                                                          |
-| `google_project_service.api`                                                                                                                       | Foundation owns the declared APIs, including Cloud Build and Storage; removing an entry leaves the API enabled for retained workloads and recovery.                                                    |
-| `google_project_service_identity.agent` and `google_project_iam_member.service_agent`                                                              | Create the Google-managed Run, Build, Scheduler, Workflows and Compute agents with their documented project roles.                                                                                     |
-| `google_project_default_service_accounts.service`                                                                                                  | Deprivilege default accounts after API activation. This is a creation-time repair; effective organization policies prevent future automatic grants and user-managed keys.                              |
-| `google_project_iam_member.foundation`, `.metadata`, and `google_project_iam_custom_role.metadata`                                                 | Project and service-account maintenance for the protected foundation identity. This is privileged IAM administration, not a service deployment role.                                                   |
-| `google_project_iam_member.plan`                                                                                                                   | Metadata assessment by the existing read-only plan identity. No payload access is declared.                                                                                                            |
-| `google_logging_project_bucket_config.default`                                                                                                     | Thirty-day default log retention and provider deletion prevention.                                                                                                                                     |
-| `google_service_account.release`, `google_iam_workload_identity_pool_provider.release`, and `google_service_account_iam_member.release_federation` | A project-local `infra-release` account trusts only its service environment and the exact master release workflow, via a provider in the bootstrap-owned pool. No key or outbound impersonation grant. |
-| `google_storage_managed_folder.release` and `.release` IAM members                                                                                 | Protected state and receipt folders in the existing management buckets. The matching release account can write state and create/read receipts, but cannot replace or delete receipts.                  |
-| `google_storage_bucket_iam_member.release_metadata` and `google_storage_managed_folder_iam_member.plan`                                            | Release reads state-bucket metadata only; the existing plan identity gains read-only access to the selected service's state folder. Neither grant permits bucket administration.                       |
-| `google_storage_bucket_iam_member.plan_operation_reader`                                                                                           | The plan identity reads only this service's operation, native-completion and rotation records; no receipt writes or bucket listing.                                                                    |
+| Resource                                                                                           | Contract                                                                                                                                                                         |
+| -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `google_project.service`                                                                           | One explicit project ID, exactly one organization/folder parent, no default VPC, and persistent provider deletion prevention.                                                    |
+| `google_project_service.api`                                                                       | Foundation owns the declared APIs, including Cloud Build and Storage; removing an entry leaves the API enabled for retained workloads and recovery.                              |
+| `google_project_service_identity.agent` and `google_project_iam_member.service_agent`              | Create the Google-managed Run, Build, Scheduler, Workflows and Compute agents with their documented project roles.                                                               |
+| `google_project_default_service_accounts.service`                                                  | Deprivilege default accounts after API activation. This is a creation-time repair; effective organization policies prevent future automatic grants and user-managed keys.        |
+| `google_project_iam_member.foundation`, `.metadata`, and `google_project_iam_custom_role.metadata` | Project and service-account maintenance for the protected foundation identity. This is privileged IAM administration, not a service deployment role.                             |
+| `google_project_iam_member.plan`                                                                   | Metadata assessment by the existing read-only plan identity. No payload access is declared.                                                                                      |
+| `google_logging_project_bucket_config.default`                                                     | Thirty-day default log retention and provider deletion prevention.                                                                                                               |
+| `google_storage_managed_folder.release` and `.release` IAM members                                 | Protected state and receipt folders in the existing management buckets. Only protected foundation writes; the plan identity reads the exact service state and operation records. |
+| `google_storage_bucket_iam_member.plan_operation_reader`                                           | The plan identity reads only this service's operation, native-completion and rotation records; no receipt writes or bucket listing.                                              |
 
 The caller owns Shared VPC attachment, exact-subnet access for Cloud Run/MIG agents and foundation, and budget scope. These grants
 provide network attachment, not secret access or application invocation. The module creates no workloads, runtime
 identities, keys, secret versions, registry, bucket, NAT, connector, or load balancer. Outputs contain
-the project ID/number and a versioned `release` object with only the identity, provider, environment,
-and storage coordinates, plus Google-managed IAM members for foundation wiring. Publish the release
+the project ID/number and a versioned `release` object with storage coordinates,
+plus Google-managed IAM members for foundation wiring. Publish the custody
 contract when activating a service; do not give a
 consumer access to foundation's state.
 
@@ -104,35 +101,19 @@ References: [Run permissions](https://docs.cloud.google.com/run/docs/reference/i
 
 ## Release boundary
 
-The provider `r-<project-id>` trusts immutable repository/owner IDs, `refs/heads/master`, the exact
-`release.yaml` workflow, and `<environment>-<service>-release`. Its constant `service_release`
-attribute selects only its matching account. GitHub's environment name alone is not approval:
-reviewers, branch restrictions, and no admin bypass must be configured before activation. The
-current `production-release` workflow cannot use this identity unchanged.
+This module now composes project provisioning with [service custody](../service-custody/README.md).
+The former release identity and federation provider are retired.
+Historical dedicated-project state remains under `services/<project-id>/release/`; evidence uses
+the sibling `production/` folder. The current production deployment uses trust-zone coordinates.
 
-State lives under `services/<project-id>/release/` and receipts under
-`services/<project-id>/production/`. These are siblings of the legacy `release/`, `production/`,
-and `recovery/` folders: managed-folder IAM is additive, so a child of a legacy folder would inherit
-its writers. The release account receives no project role, peer storage, secret access, or runtime
-permission. Foundation remains the explicit high-trust administrator; inherited project/organization
-grants must also be checked during live verification.
-
-The plan identity's existing state-folder read grant covers guards and published configuration.
-A conditional Object Viewer binding adds only exact-object reads under
-`services/<project-id>/production/{operations,rotations}/`
-in the receipt bucket for [operation inspection](../../docs/service-operations.md#inspect-an-interrupted-operation).
-The [object-name condition](https://docs.cloud.google.com/storage/docs/access-control/iam#conditions)
-does not authorize bucket listing or reads of other receipt prefixes. Apply and verify this grant
-separately before first use; inspection itself cannot repair missing access.
-
-Existing bucket protections and lifecycle policies still apply. Empty folders and keyless identities
-add no paid runtime; future object storage/operations are billable. Saved-plan location and expiry,
-service-specific runtime grants, state handoff, and interrupted-rollout handling belong to the
-separate service-lifecycle rollout, not this boundary module.
+The plan identity reads the exact state folder and operation/rotation evidence objects. It has no
+write authority through these grants. Foundation remains the high-trust administrator; inherited
+IAM must still be reviewed. Existing retention, versioning, soft delete and saved-plan expiration
+remain in force. No state or backup content is removed with an automation identity.
 
 ## Validation and rollout
 
-Persistent provider `PREVENT` policies protect the project, release identity, federation provider,
+Persistent provider `PREVENT` policies protect the project,
 log bucket and custody folders even when a caller removes a module instance. These apply-time
 protections complement the saved-plan deletion gate.
 

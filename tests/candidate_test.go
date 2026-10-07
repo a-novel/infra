@@ -35,7 +35,7 @@ func TestCandidateProbe(t *testing.T) {
 			f.command(t, "grpcurl")
 			f.env["JSON_KEYS_AUDIENCE"], f.env["JSON_KEYS_CANDIDATE"] = "https://fixture.run.app", "https://candidate---fixture.run.app"
 			f.env["RPC_CODE"] = strconv.Itoa(status)
-			code, out := f.run(t, "sh", filepath.Join(f.root, "environments/production/release/scripts/json-keys-smoke.sh"))
+			code, out := f.run(t, "sh", filepath.Join(f.root, "environments/service-release/scripts/json-keys-smoke.sh"))
 			expectCode(t, status, code, out)
 			require.Equal(t, status == 0, strings.Contains(out, "health passed"))
 		})

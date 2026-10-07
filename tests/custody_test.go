@@ -254,7 +254,7 @@ func TestCustodyPlanApply(t *testing.T) {
 				f.env["FOUNDATION_CONFIG"] = `{"management_project_id":"agora-management-test","workload_project_id":"agora-production-test","region":"europe-west1","service_projects":{"json-keys":"agora-json-keys-test"}}`
 				config = args[5]
 			}
-			code, out := f.script(t, "apply-reviewed-plan", args[1], args[0], args[2], args[3], config)
+			code, out := f.run(t, "infra", "custody", "plan", "apply", args[0], args[1], args[2], args[3], config)
 			expectCode(t, expected, code, out)
 			require.NotContains(t, out, "fixture-sensitive")
 			if testCase.action != "" {

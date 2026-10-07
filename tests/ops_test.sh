@@ -24,7 +24,9 @@ assert_absent() {
 
 assert_equal "$(resolve_root "${REPOSITORY_ROOT}" bootstrap)" "${REPOSITORY_ROOT}/bootstrap"
 assert_equal "$(resolve_root "${REPOSITORY_ROOT}" foundation)" "${REPOSITORY_ROOT}/environments/production/foundation"
-assert_equal "$(resolve_root "${REPOSITORY_ROOT}" release)" "${REPOSITORY_ROOT}/environments/production/release"
+if resolve_root "${REPOSITORY_ROOT}" release >/dev/null 2>&1; then
+    fail "retired release root remains executable"
+fi
 
 set +e
 resolve_root "${REPOSITORY_ROOT}" ../bootstrap >/dev/null 2>&1
@@ -222,9 +224,9 @@ while IFS='|' read -r filename previous_filename expected; do
 done <<'CASES'
 README.md||[false,[]]
 environments/production/foundation/main.tf||[true,["foundation"]]
-deploy/production/images.yaml||[true,["release"]]
+deploy/production/images.yaml||[true,[]]
 docs/old.md|bootstrap/main.tf|[true,["bootstrap"]]
-modules/shared/main.tf||[true,["bootstrap","foundation","release","service-foundation","service-release","service-recovery"]]
+modules/shared/main.tf||[true,["bootstrap","foundation","service-foundation","service-release","service-recovery"]]
 assets/database-host/startup.sh||[true,["foundation","service-foundation"]]
 docs/old.md|assets/database-host/shutdown.sh|[true,["foundation","service-foundation"]]
 environments/service-foundation/main.tf||[true,["service-foundation"]]

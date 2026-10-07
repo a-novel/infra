@@ -75,11 +75,6 @@ func run(ctx context.Context, args []string, getenv func(string) string, execute
 	defer func() { _ = os.RemoveAll(directory) }() // Best-effort private scratch cleanup.
 	storage := store{ctx, execute, args[2], directory}
 	switch args[0] {
-	case "permissions":
-		if args[1] != "check" {
-			return failure{64, "Unknown permission-check action."}
-		}
-		return storage.checkPermissions(args[3:], getenv, output, options)
 	case "recovery":
 		switch args[1] {
 		case "execute":

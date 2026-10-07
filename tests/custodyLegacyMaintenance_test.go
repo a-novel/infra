@@ -138,10 +138,4 @@ func TestLegacyMaintenanceWorkflowBoundary(t *testing.T) {
 		require.Equal(t, "${{ vars."+flag+" }}", recovery.Env[flag])
 	}
 	require.Equal(t, object{"group": "production-infrastructure", "cancel-in-progress": false}, foundation.Concurrency)
-	release := loadWorkflow(t, "workflows/release.yaml").Jobs["native"]
-	check := stepIndex(t, release.Steps, "infra custody operation check-legacy")
-	require.Less(t, stepIndex(t, release.Steps, "google-github-actions/auth@"), check)
-	for _, mutation := range []string{"create-reviewed-plan.sh", "infra custody plan apply"} {
-		require.Less(t, check, stepIndex(t, release.Steps, mutation))
-	}
 }

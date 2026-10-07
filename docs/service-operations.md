@@ -3,14 +3,13 @@
 This document covers exclusion and interruption recovery for protected infrastructure operations.
 Implementation and live activation remain separate review gates.
 
-## What exists, and what is missing
+## Operational boundary
 
-The current [foundation](../.github/workflows/foundation.yaml) and
-[release](../.github/workflows/release.yaml) workflows serialize production writes through
-`production-infrastructure`. Keep that working boundary until every replacement writer participates.
-Service-root applies, native rotation and disposable recovery use the persistent guard described
-below. Shared API releases are not yet enrolled. The [HCL release sequence](runbooks/submit-release.md)
-must retain migration admission and evidence before replacing the working production path.
+The [foundation](../.github/workflows/foundation.yaml) and
+[recovery](../.github/workflows/recovery.yaml) workflows serialize writes through
+`production-infrastructure`. Service-root applies and disposable recovery also use the persistent
+service guard described below. The [HCL release sequence](runbooks/submit-release.md) includes
+migration admission and health evidence. The old release workflow and its writer identities are retired.
 
 An **operation** is one reviewed change to one service, including the work needed to leave it in a
 known state. A **guard** admits that operation and blocks another. A **request intent** prevents replay
@@ -115,7 +114,7 @@ It selects the registered project before authentication and publishes only the p
 in the job summary. Its separate concurrency group remains available while a writer is blocked.
 
 Before first use, a separately approved foundation apply must establish the declared
-[completion-record read grant](../modules/workload-project/README.md#release-boundary).
+[completion-record read grant](../modules/service-custody/README.md#storage-contract).
 Merging this code does not provision that grant or activate any writer. Inspection needs no mutation
 enable flag; a service must already be registered in protected `FOUNDATION_TFVARS_JSON`.
 
@@ -393,8 +392,8 @@ force-unlock merely because a run is old or a health check currently passes.
   and ignores only subsequent `paused` changes. Preserve this ownership boundary and safe bootstrap
   ordering; prove accepted-request draining before enabling any operational resume authority.
 - Bind complete configuration/provenance, durable receipts and effective IAM in one protected caller.
-  The service release federation currently permits the exact `release.yaml` workflow; splitting
-  workflows requires a reviewed identity change, not just a new filename.
+  Foundation federation permits the exact `foundation.yaml` workflow; splitting workflows requires
+  a reviewed identity change, not just a new filename.
 - Keep first launch and state ownership transfer separate from routine release. Remove the old API
   specification/traffic writer only after its native replacement and recovery evidence are proven.
 
@@ -405,8 +404,8 @@ leaves safety to undocumented callers. Keep native SDK waiting and provider conv
 small decision boundary with table cases for competing owners, lost acknowledgements, ambiguous
 execution, missing receipts and stale-generation cleanup. Do not recreate a fake cloud in unit tests.
 
-Shared API deployment remains disabled until its HCL plan, migration and health evidence are connected
-under one guard. Unacknowledged rotations and incomplete applies need separate reconciliation.
+Shared API deployment uses its HCL plan, migration and health evidence under one service guard.
+Unacknowledged rotations and incomplete applies need separate reconciliation.
 Recorded-success cleanup uses the protected finisher above. A separately approved
 interruption/cutover drill must prove service isolation, scheduled-work exclusion,
 credential boundaries, operator recovery and receipt repair. Only that evidence permits replacing

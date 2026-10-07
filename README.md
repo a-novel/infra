@@ -235,7 +235,6 @@ a-novel test -y
 | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
 | [`bootstrap/`](./bootstrap/README.md)                                                   | Stable management project, remote state, recovery storage, GitHub federation, and secret metadata. |
 | [`environments/production/foundation/`](./environments/production/foundation/README.md) | Long-lived workload project, IAM, network, database host, backups, and monitoring controls.        |
-| [`environments/production/release/`](./environments/production/release/README.md)       | Retained backup, scheduler, invocation-tag and historical recovery resources.                      |
 
 The [service foundation](./environments/service-foundation/README.md) and
 [service release](./environments/service-release/README.md) roots own registered service/zone
@@ -270,11 +269,10 @@ variables, DSNs, and tokens stay out of public logs.
 
 `ops/tofu-gate.sh` is the protected live OpenTofu entry point. Human operators reach the one local
 bootstrap plan/apply through `ops/bootstrap-plan.sh`, which adds commit and checksum custody. The
-gate accepts only `bootstrap`, `foundation`,
-or `release`; uses the private GCS backend; and keeps raw provider diagnostics in runner-private
+gate accepts only the five registered bootstrap, foundation and service roots; uses the private GCS backend; and keeps raw provider diagnostics in runner-private
 files. A failed plan publishes only a fixed reason, resource type, configuration source, and count.
 `ops/create-reviewed-plan.sh` uploads the binary saved plan plus non-sensitive custody metadata with
-a create-only Cloud Storage precondition. `ops/apply-reviewed-plan.sh` rejects a different commit,
+a create-only Cloud Storage precondition. `infra custody plan apply` rejects a different commit,
 root, recovery state suffix, hash, destructive authorization, consumed plan, or plan older than 24
 hours. It consumes custody before applying and proves a zero-change convergence plan afterward. A
 failed apply therefore requires a fresh plan. GitHub artifacts and pull-request comments never carry
