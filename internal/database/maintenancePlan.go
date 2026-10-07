@@ -105,6 +105,16 @@ func maintenancePlan(ctx context.Context, args []string, getenv func(string) str
 		oldGroup, newGroup = maps.Clone(oldGroup), maps.Clone(newGroup)
 		delete(oldGroup, "version")
 		delete(newGroup, "version")
+		var oldMetadata, desiredMetadata map[string]string
+		if !reflect.DeepEqual(oldGroup["all_instances_config"], newGroup["all_instances_config"]) {
+			oldMetadata, desiredMetadata = plannedMetadata(oldGroup), plannedMetadata(newGroup)
+			if !h.backupCredentialRetirement(oldMetadata, desiredMetadata) {
+				return failure{65, "startup maintenance may only retire the obsolete backup password reference"}
+			}
+			oldConfig := maps.Clone(oldGroup["all_instances_config"].([]any)[0].(object))
+			oldConfig["metadata"] = get(newGroup, "all_instances_config").([]any)[0].(object)["metadata"]
+			oldGroup["all_instances_config"] = []any{oldConfig}
+		}
 		for _, field := range []string{"project", "zone", "name", "target_size", "update_policy", "stateful_disk", "stateful_internal_ip", "all_instances_config"} {
 			if oldGroup[field] == nil || !reflect.DeepEqual(oldGroup[field], newGroup[field]) {
 				return failure{65, "reviewed group preservation policy or release metadata changed"}
@@ -121,6 +131,7 @@ func maintenancePlan(ctx context.Context, args []string, getenv func(string) str
 		target := maintenanceTarget{
 			Project: h.project, Zone: h.zone, Service: service, DiskID: h.disk,
 			Template: text(before, "self_link"), TemplateID: text(before, "numeric_id"), Startup: text(change, "change", "after", "metadata_startup_script"),
+			Metadata: oldMetadata, DesiredMetadata: desiredMetadata,
 		}
 		if target.Startup == "" || !validTemplate(target.Template, h.project) || !matches(`[1-9][0-9]*`, target.TemplateID) {
 			return failure{65, "reviewed template identity or startup script is missing"}
@@ -144,15 +155,15 @@ func maintenancePlan(ctx context.Context, args []string, getenv func(string) str
 			}
 		}
 		for index := range targets {
-			if targets[index].DesiredMetadata != nil && len(targets) != 1 {
-				return failure{65, "review one database image transition separately from other maintenance"}
-			}
 			expected := targets[index].Metadata
 			if err := targets[index].capture(ctx, execute); err != nil {
 				return err
 			}
 			if expected != nil && !maps.Equal(expected, targets[index].Metadata) {
 				return failure{70, "live database release differs from the reviewed plan"}
+			}
+			if targets[index].DesiredMetadata != nil && targets[index].Startup == startupScript(targets[index].Properties.Metadata) && len(targets) != 1 {
+				return failure{65, "review one database image transition separately from other maintenance"}
 			}
 		}
 	} else {
@@ -168,6 +179,12 @@ func maintenancePlan(ctx context.Context, args []string, getenv func(string) str
 		return err
 	}
 	return os.WriteFile(args[2], data, 0o600)
+}
+
+func (h host) backupCredentialRetirement(before, after map[string]string) bool {
+	withoutBackup := maps.Clone(before)
+	delete(withoutBackup, "agora-"+h.service+"-postgres-backup-password-version")
+	return h.validRelease(before) && h.validRelease(after) && len(before) == 4 && len(after) == 3 && maps.Equal(withoutBackup, after)
 }
 
 // Provider-computed values are checked against the actual templates before any

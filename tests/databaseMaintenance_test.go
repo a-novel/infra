@@ -168,14 +168,15 @@ func TestLegacyMaintenance(t *testing.T) {
 }
 
 type maintenanceCloud struct {
-	t            *testing.T
-	dir          string
-	env          map[string]string
-	hosts        map[string]*databaseCloud
-	scenario     string
-	applied      bool
-	events       []string
-	imageUpdates map[string]map[string]string
+	t               *testing.T
+	dir             string
+	env             map[string]string
+	hosts           map[string]*databaseCloud
+	scenario        string
+	applied         bool
+	events          []string
+	imageUpdates    map[string]map[string]string
+	metadataUpdates map[string]map[string]string
 }
 
 func newMaintenanceCloud(t *testing.T) *maintenanceCloud {
@@ -285,6 +286,9 @@ func (cloud *maintenanceCloud) execute(ctx context.Context, output io.Writer, co
 	case "compute instance-groups managed":
 		switch args[3] {
 		case "describe":
+			if cloud.metadataUpdates[service] != nil && cloud.applied && cloud.scenario != "GroupMetadataDrift" {
+				metadata = cloud.metadataUpdates[service]
+			}
 			if imageUpdate && cloud.applied && cloud.scenario != "GroupMetadataDrift" {
 				metadata = cloud.imageUpdates[service]
 			}
@@ -339,6 +343,9 @@ func (cloud *maintenanceCloud) execute(ctx context.Context, output io.Writer, co
 				return errors.New(privateValue)
 			}
 			c.writes++
+			if cloud.metadataUpdates[service] != nil && cloud.scenario != "MemberMetadataDrift" {
+				c.metadata = maps.Clone(cloud.metadataUpdates[service])
+			}
 			if imageUpdate && cloud.scenario != "MemberMetadataDrift" {
 				c.metadata = maps.Clone(cloud.imageUpdates[service])
 			}

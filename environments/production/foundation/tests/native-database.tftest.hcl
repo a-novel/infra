@@ -34,7 +34,7 @@ run "default_preserves_existing_boot" {
   assert {
     condition = length(module.native_backup) == 0 && length(google_project_iam_member.database_maintenance_iap) == 0 && alltrue([
       for template in google_compute_instance_template.database :
-      template.metadata_startup_script == file("../../../assets/database-host/legacy-startup.sh")
+      template.metadata_startup_script == file("../../../assets/database-host/startup.sh")
     ])
     error_message = "Default inputs must leave both database templates unchanged."
   }
@@ -65,7 +65,7 @@ run "native_json_keys_reuses_existing_host" {
   assert {
     condition = alltrue([
       google_compute_instance_template.database["json_keys"].metadata_startup_script == module.native_backup["json-keys"].startup_script,
-      google_compute_instance_template.database["authentication"].metadata_startup_script == file("../../../assets/database-host/legacy-startup.sh"),
+      google_compute_instance_template.database["authentication"].metadata_startup_script == file("../../../assets/database-host/startup.sh"),
       length(google_compute_disk.database) == 2,
       length(google_compute_instance_group_manager.database) == 2,
       google_compute_instance_group_manager.database["json_keys"].target_size == 1,
@@ -136,7 +136,7 @@ run "authentication_uses_its_existing_host" {
   assert {
     condition = alltrue([
       google_compute_instance_template.database["authentication"].metadata_startup_script == module.native_backup["authentication"].startup_script,
-      google_compute_instance_template.database["json_keys"].metadata_startup_script == file("../../../assets/database-host/legacy-startup.sh"),
+      google_compute_instance_template.database["json_keys"].metadata_startup_script == file("../../../assets/database-host/startup.sh"),
       length(google_compute_disk.database) == 2,
       google_compute_instance_group_manager.database["authentication"].target_size == 1,
       one(google_compute_instance_group_manager.database["authentication"].stateful_disk).delete_rule == "NEVER",

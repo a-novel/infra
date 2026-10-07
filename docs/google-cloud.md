@@ -29,7 +29,7 @@ live application is a separate protected operation. Service foundation owns nati
 repository hosts, their scoped storage/TLS access, and backup failure/freshness alerts. Recovery mode omits production alert/budget resources and grants Project Deleter
 only inside the disposable project so reviewed cleanup cannot target production.
 
-Foundation seeds four empty non-secret release keys in each group's all-instances configuration.
+Foundation seeds three empty non-secret release keys in each group's all-instances configuration.
 The tested helper accepts only that complete service-specific map, checks the immutable disk ID,
 requires a fresh native full backup and exact-set isolated SQL restore for the selected database,
 then updates only its member through protected maintenance. Changing a template target never rolls the opportunistic group by itself.
@@ -148,14 +148,14 @@ A foundation target update alone does not prove replacement or application readi
 
 Each VM has one PostgreSQL container on its own fixed Docker bridge subnet. Port publishing needs a
 normal bridge; Docker's `--internal` mode would also block the required private inbound path. Two
-host firewall chains allow established replies and reject every connection initiated from its
-container subnet. A loopback-only DNS setting prevents Docker's embedded resolver from becoming a
-separate egress path. The containers therefore cannot call the peer database, host, metadata server,
-VPC workloads, Google APIs, or internet while approved clients can use the published private ports.
+host firewall chains allow established replies and native backup TLS to the service's exact
+repository address and port. A loopback-only DNS setting prevents Docker's embedded resolver from
+becoming a separate egress path. Other initiated connections, including peer databases, host,
+metadata server, Google APIs and internet, are rejected; approved clients use the published private ports.
 
-The startup script reads only exact numeric owner and backup password versions with the database runtime identity.
+The startup script reads the exact numeric owner password version with the database runtime identity.
 Payloads are root-owned files under `/run`, mounted read-only, and referenced through
-`POSTGRES_PASSWORD_FILE`. Each password must be a distinct 32–128 character URL-safe value. PostgreSQL
+`POSTGRES_PASSWORD_FILE`. The password must be a 32–128 character URL-safe value. PostgreSQL
 local-socket trust is confined to each container. A local superuser session reads the mounted file,
 quotes the value inside the server, and stores its SCRAM verifier. That session explicitly disables
 statement, duration, sampling, audit, and error logging; all client output is discarded, and failure

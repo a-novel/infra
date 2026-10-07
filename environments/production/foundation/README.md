@@ -89,23 +89,21 @@ only after resource creation has been explicitly authorized.
   across controlled boot-VM replacement. The host remains idle until a complete database release is
   enabled.
 - Each PostgreSQL image runs on its own fixed Docker bridge and publishes only one private host port.
-  Host firewall chains permit replies to private clients while rejecting every connection initiated
-  by either database container, including Docker DNS, peer-container, host, metadata, and internet
-  access. The server receives its running immutable image digest through the namespaced
-  `agora.database_image` startup marker; backup jobs compare that value with their own digest and
-  PostgreSQL major before publishing a recovery point.
-- The database service account reads only its two exact owner/backup password containers and the promoted image
-  repository, then writes logs and guest metrics. Password payloads live in root-owned `/run`
-  files and enter containers through `POSTGRES_PASSWORD_FILE`. A local server-side block reads and
-  quotes each value with statement, duration, audit, and error logging disabled for that session;
+  Host firewall chains permit replies to private clients and native backup TLS to the service's exact
+  repository address and port. They reject other connections initiated by either database container,
+  including Docker DNS, peer-container, host, metadata, and internet access. Native backup workers
+  must use the database's exact immutable image digest.
+- Startup reads the exact owner password version and promoted image with the database identity,
+  then writes logs and guest metrics. The password lives in a root-owned `/run`
+  file and enters the container through `POSTGRES_PASSWORD_FILE`. A local server-side block reads and
+  quotes the value with statement, duration, audit, and error logging disabled for that session;
   client output is discarded. Payloads never cross the Docker exec stream or appear in client SQL,
-  metadata, environment variables, process arguments, server logs, or OpenTofu state. The two
-  values must be distinct 32–128 character URL-safe strings. Startup creates one restricted
-  `pg_read_all_data` login per cluster for logical backups and refuses undeclared cluster-global
-  state.
+  metadata, environment variables, process arguments, server logs, or OpenTofu state. The
+  value must be a 32–128 character URL-safe string. Native physical backups use TLS identities
+  and the local PostgreSQL socket; startup creates no backup SQL login.
 - Named operators use OS Login through IAP on port `22`. Their account-level Service Account User
-  grant satisfies OS Login's `actAs` check but grants no token-minting role. The routine release
-  helper updates only the existing selected group's four-field metadata map. Compute reauthorizes the full
+  grant satisfies OS Login's `actAs` check but grants no token-minting role. Protected database
+  maintenance owns the selected group's image, revision and owner-version metadata. Compute reauthorizes the full
   member specification for that patch, so separate bindings grant group update at project scope,
   VM and boot-disk prerequisites only for the generated `agora-database-*` prefix, attachment only
   on the two named service data disks, template reads only on the exact template, and Network User only

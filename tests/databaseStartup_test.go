@@ -16,7 +16,7 @@ func TestDatabaseStartup(t *testing.T) {
 			name, supervised, wal, health, passwordStatus, exitStatus string
 			code                                                      int
 		}{
-			{"Success/Legacy", "false", "true", "healthy", "0", "0", 0},
+			{"Success/Initial", "false", "true", "healthy", "0", "0", 0},
 			{"Success/Supervised", "true", "", "healthy", "0", "0", 0},
 			{"Success/Archiving", "true", "true", "healthy", "0", "0", 0},
 			{"Error/ArchivingValue", "true", "invalid", "healthy", "0", "0", 1},
@@ -61,7 +61,7 @@ docker() {
         *) printf 'unexpected Docker call\n' >&2; return 90 ;;
     esac
 }
-start_database "$DATABASE_COMPONENT" image 5432 user database /password /backup-password
+start_database "$DATABASE_COMPONENT" image 5432 user database /password
 if [ "$DATABASE_SUPERVISED" = true ]; then supervise_database; fi
 `, "startup-test", tc.supervised, service)
 				expectCode(t, tc.code, code, out)
@@ -70,6 +70,7 @@ if [ "$DATABASE_SUPERVISED" = true ]; then supervise_database; fi
 					return
 				}
 				args := strings.ReplaceAll(read(t, filepath.Join(f.dir, "arguments")), "\n", " ")
+				require.NotContains(t, args, "backup-password")
 				require.Contains(t, out, "collations\n")
 				native := tc.supervised == "true"
 				restart := "on-failure:5"
@@ -92,6 +93,38 @@ if [ "$DATABASE_SUPERVISED" = true ]; then supervise_database; fi
 				require.Equal(t, native && tc.health == "healthy" && tc.passwordStatus == "0", strings.Contains(out, "credentials\nready\n"))
 			})
 		}
+	}
+}
+
+func TestDatabaseOwnerCredentialActivation(t *testing.T) {
+	t.Parallel()
+	for _, status := range []string{"0", "1"} {
+		t.Run(status, func(t *testing.T) {
+			t.Parallel()
+			f := setup(t)
+			f.env["PASSWORD_STATUS"] = status
+			code, out := f.run(t, "bash", "-c", `
+. assets/database-host/startup.sh
+docker() {
+    printf '%s\n' "$@" > "$TMPDIR/arguments"
+    cat > "$TMPDIR/activation.sql"
+    printf 'private database diagnostic\n' >&2
+    return "$PASSWORD_STATUS"
+}
+activate_database_credentials container owner database
+`)
+			want := 0
+			if status != "0" {
+				want = 1
+			}
+			expectCode(t, want, code, out)
+			require.NotContains(t, out, "private database diagnostic")
+			sql := read(t, filepath.Join(f.dir, "activation.sql"))
+			require.Contains(t, sql, "pg_read_file('/run/agora-postgres-password')")
+			require.NotContains(t, sql, "backup")
+			require.NotContains(t, sql, "GRANT")
+			require.Contains(t, read(t, filepath.Join(f.dir, "arguments")), "log_min_error_statement=panic")
+		})
 	}
 }
 

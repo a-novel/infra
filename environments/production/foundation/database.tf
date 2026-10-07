@@ -119,7 +119,7 @@ resource "google_compute_instance_template" "database" {
   }
 
   # The existing maintenance gate permits only this script to replace the host template.
-  metadata_startup_script = contains(keys(var.native_backups), each.value.component) ? module.native_backup[each.value.component].startup_script : file("${path.module}/../../../assets/database-host/legacy-startup.sh")
+  metadata_startup_script = contains(keys(var.native_backups), each.value.component) ? module.native_backup[each.value.component].startup_script : file("${path.module}/../../../assets/database-host/startup.sh")
 
   disk {
     auto_delete  = true
@@ -203,10 +203,9 @@ resource "google_compute_instance_group_manager" "database" {
   # OPPORTUNISTIC updates leave the reviewed restart to protected maintenance.
   all_instances_config {
     metadata = {
-      "agora-${each.value.component}-database-image"                   = try(var.database_releases[each.value.component].image, "")
-      "agora-${each.value.component}-postgres-backup-password-version" = try(var.database_releases[each.value.component].backup_password_version, "0")
-      "agora-${each.value.component}-postgres-password-version"        = try(var.database_releases[each.value.component].password_version, "0")
-      agora-database-release-revision                                  = try(var.database_releases[each.value.component].revision, "")
+      "agora-${each.value.component}-database-image"            = try(var.database_releases[each.value.component].image, "")
+      "agora-${each.value.component}-postgres-password-version" = try(var.database_releases[each.value.component].password_version, "0")
+      agora-database-release-revision                           = try(var.database_releases[each.value.component].revision, "")
     }
   }
 
