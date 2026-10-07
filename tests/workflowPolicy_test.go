@@ -264,7 +264,6 @@ func TestWorkflowCredentials(t *testing.T) {
 		{"release", "native"},
 		{"release", "release-permissions"},
 		{"release", "database-isolation"},
-		{"recovery", "recover"},
 		{"recovery", "prepare-native"},
 		{"foundation", "execute"},
 		{"drift", "health"},

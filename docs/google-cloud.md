@@ -218,7 +218,7 @@ The foundation and release tests must prove that:
 
 Human private-path debugging originates from the existing database VM through IAP and uses a named
 operator plus an exact service identity. The service does not open public ingress or add a proxy for
-debugging. See the [disaster-recovery runbook](./runbooks/disaster-recovery.md#6-verify-functionality-from-the-private-replacement-network).
+debugging. See the [private-host debugging runbook](./runbooks/debug-postgresql-host.md).
 
 ## Job execution boundaries
 

@@ -245,18 +245,18 @@ The registered root names form a security allowlist. Add a root only when a new 
 
 ### Supporting paths
 
-| Path                                      | Purpose                                                                        |
-| ----------------------------------------- | ------------------------------------------------------------------------------ |
-| `deploy/production/images.yaml`           | Enabled components and stable SemVer image tags.                               |
-| `deploy/production/recovery-cleanup.json` | Inactive-by-default exact authorization for one disposable recovery deletion.  |
-| [`ops/`](./ops/README.md)                 | Human operator commands and protected workflow internals.                      |
-| `cmd/infra/`, `internal/`                 | Go operator commands and their credential-free boundary tests.                 |
-| `tests/`                                  | Mocked OpenTofu, manifest, Renovate, allowlist, and sanitized plan fixtures.   |
-| `docs/architecture.md`                    | Lifecycle, authority, state, delivery, and portability decisions.              |
-| `docs/google-cloud.md`                    | Provider resource map, trust boundaries, and official Google Cloud references. |
-| `docs/runbooks/debug-postgresql-host.md`  | Private OS Login and IAP inspection procedure.                                 |
-| `docs/costs/production.md`                | Current unit assumptions and launch/capacity monthly cost ranges.              |
-| `docs/runbooks/`                          | Human recovery and deployment procedures with verifiable outcomes.             |
+| Path                                             | Purpose                                                                             |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| `deploy/production/images.yaml`                  | Enabled components and stable SemVer image tags.                                    |
+| `deploy/production/native-recovery-cleanup.json` | Inactive-by-default exact authorization for one completed native recovery deletion. |
+| [`ops/`](./ops/README.md)                        | Human operator commands and protected workflow internals.                           |
+| `cmd/infra/`, `internal/`                        | Go operator commands and their credential-free boundary tests.                      |
+| `tests/`                                         | Mocked OpenTofu, manifest, Renovate, allowlist, and sanitized plan fixtures.        |
+| `docs/architecture.md`                           | Lifecycle, authority, state, delivery, and portability decisions.                   |
+| `docs/google-cloud.md`                           | Provider resource map, trust boundaries, and official Google Cloud references.      |
+| `docs/runbooks/debug-postgresql-host.md`         | Private OS Login and IAP inspection procedure.                                      |
+| `docs/costs/production.md`                       | Current unit assumptions and launch/capacity monthly cost ranges.                   |
+| `docs/runbooks/`                                 | Human recovery and deployment procedures with verifiable outcomes.                  |
 
 Local modules begin only when two real call sites share a resource shape or one security invariant needs a single implementation. Singleton resources stay in their owning root.
 

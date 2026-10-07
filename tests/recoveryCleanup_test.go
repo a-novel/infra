@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -310,75 +309,4 @@ func (project *cleanupProject) serve(t *testing.T, w http.ResponseWriter, r *htt
 		t.Errorf("unexpected project method %s", r.Method)
 	}
 	assert.NoError(t, json.NewEncoder(w).Encode(reply))
-}
-
-func TestRecoveryCleanupLegacy(t *testing.T) {
-	t.Parallel()
-	for _, tc := range []struct {
-		name, fault   string
-		code, deletes int
-	}{
-		{"Success", "", 0, 1},
-		{"WrongConfirmation", "confirmation", 65, 0},
-		{"RevocationNotAttested", "revoked", 77, 0},
-		{"WrongReceipt", "receipt", 77, 0},
-		{"UnknownApprovalField", "unknown", 77, 0},
-		{"ProtectedManagement", "management", 77, 0},
-		{"ProtectedWorkload", "workload", 77, 0},
-		{"ProtectedService", "service", 77, 0},
-		{"ProtectedPublic", "public", 77, 0},
-		{"ProtectedAPI", "public-api", 77, 0},
-		{"MissingMergedLabel", "approval", 77, 0},
-		{"NotDisposable", "labels", 77, 0},
-		{"PeerIdentity", "peer", 70, 0},
-		{"NotActive", "state", 70, 0},
-		{"NoDeleter", "iam", 77, 0},
-		{"ConditionalDeleter", "condition", 77, 0},
-		{"LostDeleteAcknowledgment", "delete-ack", 70, 1},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			f := setup(t)
-			nativeInputs(t, f)
-			project := &cleanupProject{project: "a-novel-recovery-proof", fault: tc.fault, state: "ACTIVE"}
-			f.env["GITHUB_REPOSITORY"], f.env["GITHUB_SHA"] = "a-novel/infra", strings.Repeat("a", 40)
-			authorization := object{"schemaVersion": 1, "replacementProject": project.project, "sourceReceipt": "500-1", "crossProjectAccessRevoked": true}
-			confirm := "DELETE " + project.project
-			switch tc.fault {
-			case "confirmation":
-				confirm = "DELETE peer"
-			case "revoked":
-				authorization["crossProjectAccessRevoked"] = false
-			case "receipt":
-				authorization["sourceReceipt"] = "501-1"
-			case "unknown":
-				authorization["extra"] = true
-			case "state":
-				project.state = "DELETE_REQUESTED"
-			case "management", "workload":
-				f.env["FOUNDATION_CONFIG"] = strings.ReplaceAll(f.env["FOUNDATION_CONFIG"], "agora-"+map[string]string{"management": "management", "workload": "production"}[tc.fault]+"-test", project.project)
-			case "service":
-				f.env["FOUNDATION_CONFIG"] = strings.ReplaceAll(f.env["FOUNDATION_CONFIG"], "agora-authentication-test", project.project)
-			case "public":
-				f.env["FOUNDATION_CONFIG"] = strings.TrimSuffix(f.env["FOUNDATION_CONFIG"], "}") + `,"public_project_id":"` + project.project + `"}`
-			case "public-api":
-				f.env["FOUNDATION_CONFIG"] = strings.TrimSuffix(f.env["FOUNDATION_CONFIG"], "}") + `,"public_api_project_id":"` + project.project + `"}`
-			}
-			file := filepath.Join(f.dir, "authorization.json")
-			writeJSON(t, file, authorization)
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { project.serve(t, w, r) }))
-			t.Cleanup(server.Close)
-			execute := func(_ context.Context, _ io.Writer, command string, args ...string) error {
-				require.Equal(t, []string{"./ops/verify-deletion-label.sh", "a-novel/infra", strings.Repeat("a", 40)}, append([]string{command}, args...))
-				if tc.fault == "approval" {
-					return errors.New(privateValue)
-				}
-				return nil
-			}
-			var out bytes.Buffer
-			code := custody.Run(t.Context(), []string{"recovery", "cleanup-project", f.env["STATE_BUCKET"], project.project, "500-1", file, confirm}, func(k string) string { return f.env[k] }, execute, &out, &out, option.WithEndpoint(server.URL), option.WithoutAuthentication())
-			expectCode(t, tc.code, code, out.String())
-			require.Equal(t, tc.deletes, project.deletes)
-		})
-	}
 }
