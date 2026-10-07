@@ -244,7 +244,7 @@ summarize_failure() {
             (.diagnostic.range? // {}) as $range
             | ($range.filename? // "") as $raw_filename
             | (if ($raw_filename | type) == "string" then
-                 ($raw_filename | gsub("\\\\"; "/") | split("/") | last)
+                 ($raw_filename | gsub("\\\\"; "/") | split("/") | last // "")
                else ""
                end) as $filename
             | ($range.start.line? // 0) as $line

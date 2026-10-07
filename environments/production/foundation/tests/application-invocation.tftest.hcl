@@ -43,6 +43,24 @@ run "invocation_adoption_is_disabled_by_default" {
   }
 }
 
+run "prepares_permissions_before_importing_live_objects" {
+  command = plan
+  variables {
+    shared_vpc_enabled    = true
+    service_release_zones = { authentication = ["private"], json-keys = ["private"] }
+  }
+  assert {
+    condition = (
+      length(google_tags_location_tag_binding.application) == 0 &&
+      length(google_cloud_scheduler_job.json_keys_rotation) == 0 &&
+      length(google_project_iam_custom_role.foundation_scheduler) == 1 &&
+      length(google_project_iam_member.foundation_scheduler) == 1 &&
+      length(google_service_account_iam_member.foundation_scheduler_act_as) == 1
+    )
+    error_message = "Prepare the approved IAM prerequisites without importing or modifying the live invocation objects."
+  }
+}
+
 run "preserves_existing_application_invocation" {
   command = plan
   variables {

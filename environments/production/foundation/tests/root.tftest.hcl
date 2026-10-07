@@ -78,7 +78,8 @@ run "production_release_boundary_selection" {
     condition = (
       google_project_iam_custom_role.foundation_private_release[0].project == var.workload_project_id &&
       toset(google_project_iam_custom_role.foundation_private_release[0].permissions) == toset([
-        "run.services.get", "run.services.update", "run.jobs.get", "run.jobs.update",
+        "run.services.get", "run.services.update", "run.services.listTagBindings",
+        "run.jobs.get", "run.jobs.update", "run.jobs.listTagBindings",
       ]) &&
       google_project_iam_member.foundation_private_release[0].project == var.workload_project_id &&
       google_project_iam_member.foundation_private_release[0].role == google_project_iam_custom_role.foundation_private_release[0].name &&
