@@ -1,7 +1,6 @@
 package artifact_test
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,7 +15,6 @@ func TestRunImages(t *testing.T) {
 		name, service string
 		failure       int
 	}{
-		{"Success/Legacy", "", -1},
 		{"Success/JSONKeys", "json-keys", -1},
 		{"Success/Authentication", "authentication", -1},
 		{"Error/Provenance", "json-keys", 0},
@@ -27,24 +25,17 @@ func TestRunImages(t *testing.T) {
 			t.Parallel()
 			manifest := read(t, "../../tests/fixtures/manifests/valid.yaml")
 			calls := imageCalls(manifest, testCase.service)
-			var args []string
-			if testCase.service == "" {
-				compiled := compiledRelease(t, manifest)
-				compiled["schemaVersion"], compiled["postgresMajor"] = json.Number("1e0"), json.Number("18.0")
-				args = []string{"images", write(t, compiled)}
-			} else {
-				for name, definition := range manifest["components"].(object) {
-					if name != "service-"+testCase.service {
-						definition.(object)["enabled"] = false
-						definition.(object)["images"] = object{}
-					}
+			for name, definition := range manifest["components"].(object) {
+				if name != "service-"+testCase.service {
+					definition.(object)["enabled"] = false
+					definition.(object)["images"] = object{}
 				}
-				inputs := serviceInputs(manifest, testCase.service)
-				if testCase.service == "json-keys" {
-					inputs["api"] = object{"image": "europe-west1-docker.pkg.dev/fixture-service/agora-production/service-json-keys/grpc@" + images(manifest, "json-keys")["grpc"].(object)["digest"].(string)}
-				}
-				args = []string{"service-images", write(t, manifest), write(t, inputs)}
 			}
+			inputs := serviceInputs(manifest, testCase.service)
+			if testCase.service == "json-keys" {
+				inputs["api"] = object{"image": "europe-west1-docker.pkg.dev/fixture-service/agora-production/service-json-keys/grpc@" + images(manifest, "json-keys")["grpc"].(object)["digest"].(string)}
+			}
+			args := []string{"service-images", write(t, manifest), write(t, inputs)}
 			code := 0
 			if testCase.failure >= 0 {
 				code = 70

@@ -4,25 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: Plan/apply retained resources, check permissions, or reconcile database isolation.
+        description: Plan/apply retained resources or check release permissions.
         required: true
         type: choice
         options:
           - plan
           - apply
           - check-release-permissions
-          - drill-database-isolation
-          - restore-database-isolation
-      target_receipt:
-        description: Isolation only; immutable run-id-attempt from the receipt inventory.
-        required: false
-        type: string
       plan_id:
         description: Apply only; exact run-id-attempt from a reviewed private plan.
-        required: false
-        type: string
-      confirm_isolation:
-        description: Isolation only; DRILL authentication or RESTORE authentication.
         required: false
         type: string
 
@@ -168,69 +158,3 @@ jobs:
             a-novel-management-prod-232403541574-tofu-state \
             "${OWN_SCOPE}" "${PEER_SCOPE}"
           printf 'PASS: own synthetic state create/read/replace/delete, append-only receipt, and peer get/create denials. No deployment or secret payload access.\n' >>"${GITHUB_STEP_SUMMARY}"
-
-  database-isolation:
-    if: >-
-      github.event_name == 'workflow_dispatch' &&
-      github.ref == 'refs/heads/master' &&
-      (inputs.action == 'drill-database-isolation' || inputs.action == 'restore-database-isolation') &&
-      (vars.PRODUCTION_RELEASES_ENABLED == 'true' || inputs.action == 'restore-database-isolation')
-    runs-on: ubuntu-24.04
-    timeout-minutes: 90
-    environment: production-release
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - name: Check out the exact master commit
-        uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Validate the manual isolation request
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TARGET_RECEIPT: ${{ inputs.target_receipt }}
-          CONFIRMATION: ${{ inputs.confirm_isolation }}
-        run: |
-          set -euo pipefail
-          [[ "${TARGET_RECEIPT}" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]
-          case "${RELEASE_ACTION}" in
-            drill-database-isolation) [ "${CONFIRMATION}" = 'DRILL authentication' ] ;;
-            restore-database-isolation) [ "${CONFIRMATION}" = 'RESTORE authentication' ] ;;
-            *) exit 64 ;;
-          esac
-          [ "$(gh api "repos/${GITHUB_REPOSITORY}/commits/master" --jq .sha)" = "${GITHUB_SHA}" ]
-
-      - name: Build reviewed release tooling
-        uses: $/.github/actions/setup-infra
-
-      - name: Authenticate as the release boundary
-        uses: google-github-actions/auth@v3.0.0
-        with:
-          workload_identity_provider: ${{ vars.GCP_RELEASE_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_RELEASE_SERVICE_ACCOUNT }}
-          create_credentials_file: true
-          export_environment_variables: true
-
-      - name: Install the pinned Google Cloud CLI
-        uses: google-github-actions/setup-gcloud@v3.0.1
-        with:
-          version: "581.0.0"
-
-      - name: Exercise or restore Authentication database isolation
-        shell: bash
-        env:
-          RELEASE_CONFIG: ${{ secrets.RELEASE_CONFIG_JSON }}
-          RECEIPT_BUCKET: ${{ vars.GCP_RECEIPT_BUCKET }}
-          TARGET_RECEIPT: ${{ inputs.target_receipt }}
-          CONFIRMATION: ${{ inputs.confirm_isolation }}
-        run: |
-          set -euo pipefail
-          umask 077
-          file="${RUNNER_TEMP}/isolation-config.json"
-          trap 'rm -f -- "${file}"' EXIT
-          printf '%s' "${RELEASE_CONFIG}" >"${file}"
-          unset RELEASE_CONFIG
-          infra database-isolation "${RELEASE_ACTION%%-*}" "${TARGET_RECEIPT}" "${CONFIRMATION}" "${file}"

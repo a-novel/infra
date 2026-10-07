@@ -2,13 +2,11 @@ package release
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
@@ -19,18 +17,17 @@ import (
 
 type object = map[string]any
 
-// Compiler uses embedded schemas with format assertions and no external loaders.
-type Compiler struct {
+// validator uses embedded schemas with format assertions and no external loaders.
+type validator struct {
 	schemas map[string]*jsonschema.Schema
 }
 
-// NewCompiler checks the reviewed schemas before accepting private inputs.
-func NewCompiler() (*Compiler, error) {
-	validator := jsonschema.NewCompiler()
-	validator.AssertFormat()
-	validator.UseLoader(jsonschema.SchemeURLLoader{})
-	compiler := &Compiler{schemas: map[string]*jsonschema.Schema{}}
-	for _, file := range []string{"images.schema.json", "receipt.schema.json", "release-config.schema.yaml"} {
+func newValidator() (*validator, error) {
+	builder := jsonschema.NewCompiler()
+	builder.AssertFormat()
+	builder.UseLoader(jsonschema.SchemeURLLoader{})
+	compiler := &validator{schemas: map[string]*jsonschema.Schema{}}
+	for _, file := range []string{"images.schema.json", "receipt.schema.json"} {
 		data, err := production.Schemas.ReadFile(file)
 		if err != nil {
 			return nil, errors.New("embedded schema is unavailable")
@@ -40,10 +37,10 @@ func NewCompiler() (*Compiler, error) {
 			return nil, errors.New("embedded schema is invalid")
 		}
 		id := str(value, "$id")
-		if err = validator.AddResource(id, value); err != nil {
+		if err = builder.AddResource(id, value); err != nil {
 			return nil, errors.New("cannot register embedded schema")
 		}
-		schema, err := validator.Compile(id)
+		schema, err := builder.Compile(id)
 		if err != nil {
 			return nil, errors.New("cannot compile embedded schema")
 		}
@@ -85,7 +82,7 @@ func read(file, label string, isYAML bool) (object, error) {
 	return document, nil
 }
 
-func (compiler *Compiler) validate(name string, value any) error {
+func (compiler *validator) validate(name string, value any) error {
 	if err := compiler.schemas[name].Validate(value); err != nil {
 		// Only the embedded schema location is public; never print instance paths or values.
 		var invalid *jsonschema.ValidationError
@@ -100,7 +97,7 @@ func (compiler *Compiler) validate(name string, value any) error {
 	return nil
 }
 
-func (compiler *Compiler) load(file, schema string) (object, error) {
+func (compiler *validator) load(file, schema string) (object, error) {
 	value, err := read(file, schema, schema == "images")
 	if err != nil {
 		return nil, err
@@ -126,29 +123,6 @@ func str(value any, path ...string) string {
 	return result
 }
 
-func copyValue(value any) any {
-	switch typed := value.(type) {
-	case object:
-		result := object{}
-		for key, item := range typed {
-			result[key] = copyValue(item)
-		}
-		return result
-	case []any:
-		result := make([]any, len(typed))
-		for index, item := range typed {
-			result[index] = copyValue(item)
-		}
-		return result
-	default:
-		return value
-	}
-}
-
-func clone(value object) object { return copyValue(value).(object) }
-
-func hash(value string) string { return fmt.Sprintf("%x", sha256.Sum256([]byte(value))) }
-
 func writePrivate(file string, value any) error {
 	data, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
@@ -169,21 +143,6 @@ func writePrivate(file string, value any) error {
 	closeErr := output.Close()
 	if writeErr != nil || closeErr != nil {
 		return errors.New("cannot write private output")
-	}
-	return nil
-}
-
-func writeOutputs(directory string, values map[string]any) error {
-	if err := os.MkdirAll(directory, 0o700); err != nil {
-		return errors.New("cannot create private output directory")
-	}
-	if err := os.Chmod(directory, 0o700); err != nil {
-		return errors.New("cannot secure private output directory")
-	}
-	for name, value := range values {
-		if err := writePrivate(filepath.Join(directory, name), value); err != nil {
-			return err
-		}
 	}
 	return nil
 }

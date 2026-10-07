@@ -76,8 +76,6 @@ go run ./cmd/infra foundation apply <service-foundation|service-release> <json-k
 go run ./cmd/infra foundation promote-images service-release <json-keys|authentication>
 go run ./cmd/infra foundation finish-operation <service> <guard-generation> 'FINISH <service> <guard-generation>'
 
-go run ./cmd/infra release drill-database-isolation <receipt-id> 'DRILL authentication'
-go run ./cmd/infra release restore-database-isolation <receipt-id> 'RESTORE authentication'
 
 go run ./cmd/infra recovery plan-native <registered-destination>
 go run ./cmd/infra recovery apply-native <registered-destination> <plan-id>
@@ -173,11 +171,11 @@ size enforcement. Separate policy and deployment-time image-family tests cover t
 | Boundary                            | Scripts                                                                                                                                                                                                                                          |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Saved-plan creation and application | `tofu-gate.sh`, `create-reviewed-plan.sh`, `apply-reviewed-plan.sh`, `infra custody plan`, `plan-summary.sh`                                                                                                                                     |
-| Configuration and receipt custody   | `infra custody config`, `infra custody receipt`, `infra receipt build`, `infra receipt validate`                                                                                                                                                 |
+| Configuration and receipt custody   | `infra custody config`, `infra custody receipt`, `infra receipt validate`                                                                                                                                                                        |
 | Read-only inspection                | `infra inspect drift`, `infra inspect assess`, `infra custody operation inspect` (private inputs, payload-free results)                                                                                                                          |
 | Deletion authorization              | `infra assess-updates`, `infra assess-images`, `infra assess-versions`, `infra refresh-deletion-gates`, `resource-deletion-impact.sh`, `resolve-resource-deletion-assessment.sh`, `verify-resource-deletion-gate.sh`, `verify-deletion-label.sh` |
-| Release compilation and promotion   | `infra compile-release`, `infra validate-images`, `infra preflight images`, `infra promote release`, `infra promote service`, `preflight-release.sh`                                                                                             |
-| Retained database operations        | `infra database-isolation`, `infra database-release`, `await-auth-initialization.sh`                                                                                                                                                             |
+| Image validation and promotion      | `infra validate-images`, `infra preflight service-images`, `infra promote service`                                                                                                                                                               |
+| Retained database operations        | `infra database-release`, `await-auth-initialization.sh`                                                                                                                                                                                         |
 | Recovery                            | `infra custody recovery execute`, `infra custody recovery cleanup`                                                                                                                                                                               |
 | Health and root validation          | `infra check-health`, `check-root.sh`, `lib/roots.sh`                                                                                                                                                                                            |
 
@@ -203,58 +201,29 @@ registration authorizes the selected scope; exact object generations and hashes 
 Follow the [inspection contract](../docs/service-operations.md#inspect-an-interrupted-apply) for
 required inputs, read-only access and the distinction between evidence and permission to retry.
 
-`infra preflight resolve-images <manifest> <output.json>` resolves the version-only manifest,
-verifies all eight producer images and writes a private digest snapshot. Feed that snapshot to
-`infra compile-release`; it remains cloud-blind. `infra preflight images <compiled-release.json>`
-rechecks an already compiled inventory. Offline maintenance can reuse receipt-owned digests when
-all repository/version pairs still match; a new version requires preflight resolution.
-The protected job-bootstrap workflow uses `infra preflight service-images <manifest> <tfvars>`
-before cloud authentication and `infra preflight service-secrets <tfvars>` afterwards. Both image
-paths share GitHub CLI provenance verification and Google's registry client for tag/digest and
-PostgreSQL-major checks. The compiler remains cloud-blind; secret checks read
-metadata only. See the [bootstrap boundary](../docs/runbooks/provision-service-projects.md#protected-service-job-bootstrap).
-
-Image promotion uses the same registry client, without a Docker daemon or Buildx:
+Image preflight validates the selected native service family and verifies its producer attestations
+before any image copy. Secret preflight reads only the selected numeric versions' metadata:
 
 ```text
-infra promote release <compiled-release.json> [receipt-run-id]
+infra preflight service-images <manifest> <selected-service.tfvars.json>
+infra preflight service-secrets <selected-service.tfvars.json>
 infra promote service <manifest> <selected-service.tfvars.json>
 ```
 
-The first two replace the former promotion scripts inside their existing protected workflows;
-release promotion requires the preceding source-provenance preflight, and recovery requires the
-validated receipt-owned inventory. The service command verifies all four source images and their
-producer attestations before copying only that family into the configured service project. It is an
-explicit artifact write, not a plan, job execution, deployment, or activation approval. The foundation
-workflow calls it only for the separately enabled `promote-images service-release` operation, using
-authorized native inputs and the existing foundation administrator. Routine publication must use the
-separately reviewed service-local publisher, never a PR assessment credential.
+Promotion preserves OCI digests, verifies immutable destination tags, and stops after an
+unconfirmed copy. It grants no deployment or execution approval. The protected foundation
+workflow permits it only through the separately enabled service image-promotion operation.
 
-Authentication uses Google ADC (including the workflow's existing federation credentials) with
-the library's Google CLI fallback and Docker credential helpers. Tags are checked before copying;
-denied or ambiguous lookups fail instead of implying absence. Copies preserve the full OCI descriptor
-and confirm every destination, including receipt tags. An uncertain upload is read back; failure
-leaves existing artifacts intact and requires inspection, not deletion or an automatic command retry.
-Registry-enforced immutable tags remain the concurrent-write guard, and retention policy must protect
-receipt-referenced images. These commands do not make a multi-image transfer atomic.
+`infra preflight resolve-images <manifest> <output.json>` resolves and verifies a complete
+version-only manifest into a private digest snapshot when required by tooling. Historical
+receipts remain readable through custody and `infra receipt validate`; they cannot drive
+the retired deployment compiler, promotion or rollback commands.
 
-`infra database-release` consolidates preparation, bounded restart, restoration, and new-boot
-readiness for one service-owned host. Its protected command forms are:
-
-```text
-infra database-release current <project> <zone> <service>
-infra database-release wait <project> <zone> <service> <revision|none> <previous-status>
-infra database-release prepare <project> <zone> <service> <disk-id> <revision> [proof-file] [expected-metadata-sha256]
-infra database-release deploy <project> <zone> <service> <disk-id> <revision> <image> <password-version> <backup-password-version>
-infra database-release restore <project> <zone> <service> <disk-id> <database-json>
-infra database-release recover-first-launch <project> <zone> <service> <disk-id> <failed-revision> <receipt-bucket>
-```
-
-`service` is `authentication` or `json-keys`. Deploy prepares a fresh backup boundary unless
-`DATABASE_CHANGE_PROOF` selects an exact, unexpired local proof; live metadata and disk identity
-are checked before restart. Restore consumes the receipt's database object (`null` means idle).
-First-launch recovery only clears the exact failed revision when no service-owned success receipt
-exists; it never reruns initialization. Routine API releases do not call this database lifecycle; use the protected maintenance or recovery path.
+`infra database-release current` and `wait` inspect host readiness. Its
+`maintenance-plan`, `maintenance-replace` and `maintenance-recover` operations are internal
+steps of the protected foundation workflow, not standalone operator mutation commands.
+See [database maintenance](../docs/runbooks/operate-postgresql-host.md#protected-database-maintenance)
+for the exact native backup/SQL proof, preservation rules and interrupted-operation handling.
 
 ## Change rules
 

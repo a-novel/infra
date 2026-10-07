@@ -1,4 +1,3 @@
-// Package database owns the selected host's release metadata and restart boundary.
-// It requires recovery evidence before deployment and restores only metadata;
-// data restoration and release compensation remain caller-owned decisions.
+// Package database verifies and replaces singleton database hosts during protected
+// maintenance, preserving data disks and addresses after a native recovery proof.
 package database

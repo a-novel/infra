@@ -610,7 +610,6 @@ resource "google_project_iam_custom_role" "database_release" {
     "compute.autoscalers.list",
     "compute.instanceGroupManagers.get",
     "compute.instanceGroupManagers.update",
-    "compute.snapshots.list",
     "compute.zoneOperations.get",
   ]
 

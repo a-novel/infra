@@ -120,14 +120,6 @@ run "json_keys_private_idle_host" {
     error_message = "The host reports telemetry and reads owned images without registry writes or backup-object access."
   }
   assert {
-    condition = [
-      google_compute_resource_policy.database["host"].snapshot_schedule_policy[0].retention_policy[0].max_retention_days,
-      google_compute_resource_policy.database["host"].snapshot_schedule_policy[0].retention_policy[0].on_source_disk_delete,
-      google_compute_disk_resource_policy_attachment.database["host"].disk,
-    ] == [7, "KEEP_AUTO_SNAPSHOTS", "agora-data-json-keys"]
-    error_message = "Retain local crash-consistent snapshots independently of source-disk deletion."
-  }
-  assert {
     condition = [output.database.schema_version, output.database.project_id, output.database.service, output.database.group, output.database.port] == [
       1, var.project_id, "json-keys", "agora-database-json-keys", 5432,
     ]

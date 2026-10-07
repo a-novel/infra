@@ -19,8 +19,6 @@ const usage = `usage: go run ./cmd/infra
   foundation promote-images service-release <json-keys|authentication>
   foundation finish-operation <service> <guard-generation> 'FINISH <service> <guard-generation>'
   foundation recover-legacy <guard-generation> 'RECOVER LEGACY <guard-generation>'
-  release drill-database-isolation <receipt-id> 'DRILL authentication'
-  release restore-database-isolation <receipt-id> 'RESTORE authentication'
 
   recovery plan-native <registered-recovery-project>
   recovery apply-native <registered-recovery-project> <plan-id>
@@ -133,20 +131,6 @@ func parse(args []string) (intent, error) {
 		case args[0] == "apply" && len(args) == 3 && matches(attemptID, args[2]):
 			i.planID, i.planPrefix = args[2], "foundation plan "+scope+" by @"
 			i.input("plan_id", i.planID)
-		default:
-			return i, invalid
-		}
-	case "release":
-		if len(args) == 0 {
-			return i, invalid
-		}
-		i.input("action", args[0])
-		switch {
-		case len(args) == 3 && matches(attemptID, args[1]) &&
-			(args[0] == "drill-database-isolation" && args[2] == "DRILL authentication" ||
-				args[0] == "restore-database-isolation" && args[2] == "RESTORE authentication"):
-			i.input("target_receipt", args[1])
-			i.input("confirm_isolation", args[2])
 		default:
 			return i, invalid
 		}

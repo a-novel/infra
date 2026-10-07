@@ -85,8 +85,8 @@ func TestRun(t *testing.T) {
 					require.Zero(t, r.code, r.stderr.String())
 					if operation == "inspect" {
 						require.Contains(t, r.stdout.String(), "PASS database host inspection")
-						require.Len(t, r.calls, 15)
-						require.Contains(t, strings.Join(r.calls[7], " "), "labels.component="+service)
+						require.Len(t, r.calls, 13)
+						require.Contains(t, strings.Join(r.calls[12], " "), "Agora "+service)
 					} else {
 						expected := []string{"gcloud", "compute", "ssh", "agora-database-" + service + "-test", "--zone=europe-west1-d", "--ssh-key-file=" + key, "--ssh-key-expire-after=2h", "--tunnel-through-iap"}
 						if operation == "troubleshoot" {

@@ -5,5 +5,5 @@ import "embed"
 
 // Schemas travel with the executable built before protected inputs are loaded.
 //
-//go:embed *.schema.json *.schema.yaml
+//go:embed *.schema.json
 var Schemas embed.FS

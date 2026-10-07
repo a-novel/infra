@@ -3,70 +3,24 @@ package tests_test
 import (
 	"encoding/json"
 	"path/filepath"
-	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/a-novel/infra/internal/release"
 )
 
 type releaseFixture struct {
 	*sandbox
-	compiler                  *release.Compiler
-	files                     []string
-	identity                  release.Identity
-	manifest, config, receipt object
+	receiptFile string
+	receipt     object
 }
 
 func compiledFixture(t *testing.T) *releaseFixture {
 	t.Helper()
 	f := &releaseFixture{sandbox: setup(t)}
-	var err error
-	f.compiler, err = release.NewCompiler()
-	require.NoError(t, err)
-	f.manifest = fixtureYAML[object](t, []byte(read(t, filepath.Join(f.root, "tests/fixtures/manifests/valid.yaml"))))
-	f.config = readJSON(t, filepath.Join(f.root, "tests/fixtures/release-config.json"))
-	for index, key := range []string{
-		"authentication_postgres_password", "authentication_postgres_backup_password",
-		"authentication_smtp_password", "authentication_super_admin_password",
-		"json_keys_postgres_password", "json_keys_postgres_backup_password", "json_keys_app_master_key",
-	} {
-		nested(f.config, "secret_versions")[key] = index + 1
-	}
-	f.identity = release.Identity{Commit: strings.Repeat("a", 40), RunID: "123", RunAttempt: 1, Nonce: "first"}
-	f.files = []string{filepath.Join(f.dir, "images.yaml"), filepath.Join(f.dir, "config.json"), "-", filepath.Join(f.dir, "first")}
-	f.compile(t)
-	operations := object{"executions": object{}, "initialization": nil, "health": object{"jsonKeys": "passed", "authentication": "passed"}}
-	for _, key := range []string{
-		"jsonKeysMigrations", "jsonKeysRotation", "authenticationMigrations",
-		"postgresBackupJsonKeys", "postgresBackupAuthentication",
-		"postgresRestoreJsonKeys", "postgresRestoreAuthentication", "postgresBackupMonitor",
-	} {
-		nested(operations, "executions")[key] = nil
-	}
-	writeJSON(t, filepath.Join(f.dir, "operations.json"), operations)
-	f.files[2] = filepath.Join(f.dir, "receipt.json")
-	require.NoError(t, f.compiler.BuildReceipt([]string{
-		"deployment", filepath.Join(f.files[3], "release.json"),
-		filepath.Join(f.files[3], "active.tfvars.json"), filepath.Join(f.dir, "operations.json"), f.files[2],
-	}, time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC)))
-	f.receipt = readJSON(t, f.files[2])
-	f.identity = release.Identity{Commit: strings.Repeat("b", 40), RunID: "124", RunAttempt: 1, Nonce: "next"}
-	f.files[3] = filepath.Join(f.dir, "next")
+	f.receipt = readJSON(t, filepath.Join(f.root, "tests/fixtures/historical-receipt.json"))
+	f.receiptFile = filepath.Join(f.dir, "receipt.json")
+	writeJSON(t, f.receiptFile, f.receipt)
 	return f
-}
-
-func (f *releaseFixture) compile(t *testing.T) object {
-	t.Helper()
-	writeJSON(t, f.files[0], f.manifest)
-	writeJSON(t, f.files[1], f.config)
-	if f.receipt != nil {
-		writeJSON(t, f.files[2], f.receipt)
-	}
-	require.NoError(t, f.compiler.CompileRelease(f.files, f.identity, "deploy", "", ""))
-	return readJSON(t, filepath.Join(f.files[3], "release.json"))
 }
 
 type invocation struct {

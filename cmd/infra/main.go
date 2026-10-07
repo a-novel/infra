@@ -17,7 +17,6 @@ import (
 	"github.com/a-novel/infra/internal/database"
 	"github.com/a-novel/infra/internal/health"
 	"github.com/a-novel/infra/internal/inspection"
-	"github.com/a-novel/infra/internal/isolation"
 	"github.com/a-novel/infra/internal/operator"
 	"github.com/a-novel/infra/internal/release"
 	"github.com/a-novel/infra/internal/workflow"
@@ -69,19 +68,6 @@ func main() {
 		code = workflow.FoundationInputs(os.Args[2:], os.Getenv, os.Stdout, os.Stderr)
 	} else if len(os.Args) > 1 && os.Args[1] == "observation-inputs" {
 		code = workflow.ObservationInputs(os.Args[2:], os.Getenv, os.Stdout, os.Stderr)
-	} else if len(os.Args) > 1 && os.Args[1] == "database-isolation" {
-		// Stop the helper's entire local process group before attempting compensation.
-		execute := func(ctx context.Context, output io.Writer, name string, args ...string) error {
-			command := exec.CommandContext(ctx, name, args...)
-			command.Stdout = output
-			command.Env = append(os.Environ(), "CLOUDSDK_CORE_DISABLE_PROMPTS=1")
-			command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-			command.Cancel = func() error { return syscall.Kill(-command.Process.Pid, syscall.SIGKILL) }
-			command.WaitDelay = 5 * time.Second
-			return command.Run()
-		}
-		syscall.Umask(0o077)
-		code = isolation.Run(ctx, os.Args[2:], os.Getenv, execute, os.Stdout, os.Stderr)
 	} else if len(os.Args) > 1 && os.Args[1] == "database-release" {
 		syscall.Umask(0o077)
 		code = database.Run(ctx, os.Args[2:], os.Getenv, quiet, os.Stdout, os.Stderr)
@@ -101,9 +87,9 @@ func main() {
 			command.Env = append(os.Environ(), "CLOUDSDK_CORE_DISABLE_PROMPTS=1")
 			return command.Output()
 		}, os.Stdout, os.Stderr)
-	} else if len(os.Args) > 1 && (os.Args[1] == "compile-release" || os.Args[1] == "validate-images" || os.Args[1] == "receipt") {
+	} else if len(os.Args) > 1 && (os.Args[1] == "validate-images" || os.Args[1] == "receipt") {
 		syscall.Umask(0o077)
-		code = release.Run(os.Args[1:], os.Getenv, os.Stdout, os.Stderr)
+		code = release.Run(os.Args[1:], os.Stdout, os.Stderr)
 	} else {
 		code = workflow.Run(ctx, os.Args[1:], execute, os.Stdout, os.Stderr)
 	}

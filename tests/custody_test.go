@@ -31,7 +31,7 @@ func TestCustodyDocuments(t *testing.T) {
 			t.Parallel()
 			f := compiledFixture(t)
 			storageFixture(t, f.sandbox)
-			input, output := f.files[2], filepath.Join(f.dir, "download.json")
+			input, output := f.receiptFile, filepath.Join(f.dir, "download.json")
 			args, action := []string{kind, "publish", "fixture-bucket"}, "latest"
 			if kind == "config" {
 				args, action = append(args, "release"), "fetch"
@@ -104,15 +104,15 @@ func TestCustodyReceiptRetry(t *testing.T) {
 			f := compiledFixture(t)
 			storageFixture(t, f.sandbox)
 			f.env["FAKE_GCS_LOST_UPLOAD_RESPONSE"] = "true"
-			f.custody(t, 0, "receipt", "publish", "fixture-bucket", f.files[2], "123", "1")
-			original := read(t, f.files[2])
+			f.custody(t, 0, "receipt", "publish", "fixture-bucket", f.receiptFile, "123", "1")
+			original := read(t, f.receiptFile)
 			if testCase.change != nil {
 				testCase.change(f.receipt)
-				writeJSON(t, f.files[2], f.receipt)
+				writeJSON(t, f.receiptFile, f.receipt)
 			}
-			f.custody(t, testCase.code, "receipt", "publish", "fixture-bucket", f.files[2], "123", "1")
-			f.custody(t, 0, "receipt", "latest", "fixture-bucket", f.files[2])
-			require.Equal(t, original, read(t, f.files[2]))
+			f.custody(t, testCase.code, "receipt", "publish", "fixture-bucket", f.receiptFile, "123", "1")
+			f.custody(t, 0, "receipt", "latest", "fixture-bucket", f.receiptFile)
+			require.Equal(t, original, read(t, f.receiptFile))
 		})
 	}
 }

@@ -1,3 +1,3 @@
-// Package release compiles reviewed manifests and private configuration into
-// OpenTofu inputs and receipts. It performs no network or cloud operations.
+// Package release validates image manifests and retained historical receipts.
+// Registry resolution and provenance verification belong to the caller.
 package release

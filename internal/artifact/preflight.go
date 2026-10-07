@@ -13,8 +13,8 @@ import (
 	"github.com/a-novel/infra/internal/release"
 )
 
-// Run verifies a legacy inventory, one service's source images, or its exact component
-// secret versions. execute must suppress child diagnostics. Each read is bounded
+// Run verifies the source image manifest, a selected service family, or its exact
+// component secret versions. execute must suppress child diagnostics. Each read is bounded
 // and never retried here. Exit codes are 64 for usage, 65 for inputs, 70 for evidence.
 func Run(ctx context.Context, args []string, execute func(context.Context, io.Writer, string, ...string) error, registry Registry, stdout, stderr io.Writer) int {
 	stop := func(code int, message string) int {
@@ -22,7 +22,7 @@ func Run(ctx context.Context, args []string, execute func(context.Context, io.Wr
 		return code
 	}
 	if len(args) == 0 {
-		return stop(64, "Usage: infra preflight resolve-images <manifest> <output> | images <compiled-release> | service-images <manifest> <tfvars> | service-secrets <tfvars>")
+		return stop(64, "Usage: infra preflight resolve-images <manifest> <output> | service-images <manifest> <tfvars> | service-secrets <tfvars>")
 	}
 	var images []release.SourceImage
 	var inputs serviceInputs
@@ -38,8 +38,6 @@ func Run(ctx context.Context, args []string, execute func(context.Context, io.Wr
 		if err != nil {
 			return stop(70, err.Error())
 		}
-	case args[0] == "images" && len(args) == 2:
-		images, err = release.VerificationImages(args[1], "")
 	case args[0] == "service-images" && len(args) == 3:
 		inputs, err = readService(args[2])
 		if err == nil {

@@ -52,7 +52,6 @@ resource "google_storage_bucket_object" "coordinates" {
     google_secret_manager_secret_iam_member.database,
     google_artifact_registry_repository_iam_member.database,
     google_project_iam_member.database_telemetry,
-    google_compute_disk_resource_policy_attachment.database,
     module.job_access,
   ]
 }

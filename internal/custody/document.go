@@ -106,7 +106,7 @@ func (storage store) validateDocument(kind string, data []byte, sequence string,
 	if err := os.WriteFile(file, data, 0o600); err != nil {
 		return err
 	}
-	if release.Run([]string{"receipt", "validate", file}, func(string) string { return "" }, io.Discard, io.Discard) != 0 {
+	if release.Run([]string{"receipt", "validate", file}, io.Discard, io.Discard) != 0 {
 		return failure{65, "Invalid production receipt."}
 	}
 	if publishing {
