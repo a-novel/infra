@@ -138,3 +138,59 @@ run "no_recovery_grants" {
     error_message = "Legacy maintenance grants do not belong in disposable recovery roots."
   }
 }
+
+run "database_release_ownership" {
+  command = plan
+  variables {
+    database_releases = {
+      for service in ["json-keys", "authentication"] : service => {
+        image                   = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-${service}/database@sha256:${join("", [for i in range(64) : "a"])}"
+        revision                = join("", [for i in range(40) : "b"])
+        password_version        = "2"
+        backup_password_version = "3"
+      }
+    }
+  }
+
+  assert {
+    condition = alltrue([for key, group in google_compute_instance_group_manager.database :
+      one(group.all_instances_config).metadata == tomap({
+        "agora-${replace(key, "_", "-")}-database-image"                   = var.database_releases[replace(key, "_", "-")].image
+        "agora-${replace(key, "_", "-")}-postgres-password-version"        = "2"
+        "agora-${replace(key, "_", "-")}-postgres-backup-password-version" = "3"
+        "agora-database-release-revision"                                  = join("", [for i in range(40) : "b"])
+      }) && one(group.update_policy).type == "OPPORTUNISTIC" && group.target_size == 1
+    ])
+    error_message = "Foundation must own exact release metadata without automatically updating members or adding capacity."
+  }
+}
+
+run "reject_partial_database_releases" {
+  command = plan
+  variables {
+    database_releases = {
+      authentication = {
+        image                   = "europe-west1-docker.pkg.dev/agora-production-test/agora-production/service-authentication/database@sha256:${join("", [for i in range(64) : "a"])}"
+        revision                = join("", [for i in range(40) : "b"])
+        password_version        = "2"
+        backup_password_version = "3"
+      }
+    }
+  }
+  expect_failures = [var.database_releases]
+}
+
+run "reject_foreign_database_release" {
+  command = plan
+  variables {
+    database_releases = {
+      for service in ["json-keys", "authentication"] : service => {
+        image                   = "europe-west1-docker.pkg.dev/untrusted-project/agora-production/service-${service}/database@sha256:${join("", [for i in range(64) : "a"])}"
+        revision                = join("", [for i in range(40) : "b"])
+        password_version        = "2"
+        backup_password_version = "3"
+      }
+    }
+  }
+  expect_failures = [var.database_releases]
+}

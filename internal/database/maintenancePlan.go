@@ -20,6 +20,7 @@ type maintenanceTarget struct {
 	Instance, InstanceID, Address, Boot               string
 	BootDiskID                                        string
 	Metadata                                          map[string]string
+	DesiredMetadata                                   map[string]string `json:",omitempty"`
 	Properties                                        *compute.InstanceProperties
 }
 
@@ -60,6 +61,22 @@ func maintenancePlan(ctx context.Context, args []string, getenv func(string) str
 		key := `["` + strings.ReplaceAll(service, "-", "_") + `"]`
 		address := "google_compute_instance_template.database" + key
 		change := byAddress[address]
+		groupAddress := "google_compute_instance_group_manager.database" + key
+		group := byAddress[groupAddress]
+		disk := byAddress["google_compute_disk.database"+key]
+		if reflect.DeepEqual(get(change, "change", "actions"), []any{"no-op"}) &&
+			get(group, "change", "before") != nil && !reflect.DeepEqual(get(group, "change", "actions"), []any{"no-op"}) {
+			if !maintenanceEnabled(getenv) || get(config, "legacy_backup_job_access") != true {
+				return failure{77, "database image maintenance requires protected activation and paused releases"}
+			}
+			target, err := imageMaintenanceTarget(config, change, group, disk)
+			if err != nil {
+				return err
+			}
+			targets = append(targets, target)
+			allowed[groupAddress] = true
+			continue
+		}
 		if get(change, "change", "before") == nil || reflect.DeepEqual(get(change, "change", "actions"), []any{"no-op"}) {
 			continue
 		}
@@ -80,10 +97,7 @@ func maintenancePlan(ctx context.Context, args []string, getenv func(string) str
 			return failure{65, "template changes exceed the startup script"}
 		}
 		h := host{project: text(config, "workload_project_id"), zone: text(config, "database_zone"), service: service, execute: execute}
-		disk := byAddress["google_compute_disk.database"+key]
 		h.disk = text(disk, "change", "before", "disk_id")
-		groupAddress := "google_compute_instance_group_manager.database" + key
-		group := byAddress[groupAddress]
 		oldGroup, _ := get(group, "change", "before").(object)
 		newGroup, _ := get(group, "change", "after").(object)
 		if !sameKnown(oldGroup["version"], newGroup["version"], get(group, "change", "after_unknown", "version")) {
@@ -149,8 +163,15 @@ func maintenancePlan(ctx context.Context, args []string, getenv func(string) str
 			}
 		}
 		for index := range targets {
+			if targets[index].DesiredMetadata != nil && len(targets) != 1 {
+				return failure{65, "review one database image transition separately from other maintenance"}
+			}
+			expected := targets[index].Metadata
 			if err := targets[index].capture(ctx, execute); err != nil {
 				return err
+			}
+			if expected != nil && !maps.Equal(expected, targets[index].Metadata) {
+				return failure{70, "live database release differs from the reviewed plan"}
 			}
 		}
 	} else {

@@ -64,7 +64,7 @@ func (h host) template(ctx context.Context, name string) (*compute.InstanceTempl
 
 // observe fences each mutation with the singleton's preserved state and exact
 // release metadata. The group may target the new template while its member does not.
-func (target maintenanceTarget) observe(ctx context.Context, execute func(context.Context, io.Writer, string, ...string) error, groupTemplate, memberTemplate string) (*compute.Instance, error) {
+func (target maintenanceTarget) observe(ctx context.Context, execute func(context.Context, io.Writer, string, ...string) error, groupTemplate, memberTemplate string, groupMetadata ...map[string]string) (*compute.Instance, error) {
 	h := target.host(execute)
 	if err := h.checkDisk(ctx); err != nil {
 		return nil, err
@@ -86,7 +86,11 @@ func (target maintenanceTarget) observe(ctx context.Context, execute func(contex
 		return nil, failure{70, "maintenance requires no-surge RECREATE with disk and address preservation"}
 	}
 	metadata, err := h.liveMetadata(ctx)
-	if err != nil || !maps.Equal(metadata, target.Metadata) {
+	expectedMetadata := target.Metadata
+	if len(groupMetadata) > 0 {
+		expectedMetadata = groupMetadata[0]
+	}
+	if err != nil || !maps.Equal(metadata, expectedMetadata) {
 		return nil, failure{70, "release metadata changed during maintenance"}
 	}
 	data, err = h.compute(ctx, "instance-groups", "managed", "list-instances", h.group(), "--format=json")
@@ -238,6 +242,12 @@ func maintenanceReplace(ctx context.Context, args []string, getenv func(string) 
 	for index, target := range targets {
 		h := target.host(execute)
 		selected := outputs.Templates.Value[strings.ReplaceAll(target.Service, "-", "_")]
+		if target.DesiredMetadata != nil {
+			if len(targets) != 1 || selected.URL != target.Template || selected.ID != target.TemplateID {
+				return failure{65, "image maintenance requires one host and its unchanged template"}
+			}
+			return target.restartImage(ctx, execute, args[2], recovery, started, finished)
+		}
 		if (target.Service != "json-keys" && target.Service != "authentication") || seen[target.Service] ||
 			!matches(`[a-z][a-z0-9-]{4,28}[a-z0-9]`, target.Project) || !matches(`[a-z]+-[a-z]+[0-9]+-[a-z]`, target.Zone) ||
 			!matches(`[1-9][0-9]*`, target.DiskID) || !matches(`[1-9][0-9]*`, target.TemplateID) || !validTemplate(target.Template, target.Project) ||

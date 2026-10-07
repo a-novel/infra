@@ -200,16 +200,13 @@ resource "google_compute_instance_group_manager" "database" {
     delete_rule    = "NEVER"
   }
 
-  # Foundation seeds the four non-secret deployment keys, then deliberately
-  # leaves this one field to the protected release workflow. The Google
-  # provider's per-instance-config resource creates a new MIG member on its
-  # first apply, so it cannot safely attach metadata to this existing member.
+  # OPPORTUNISTIC updates leave the reviewed restart to protected maintenance.
   all_instances_config {
     metadata = {
-      "agora-${each.value.component}-database-image"                   = ""
-      "agora-${each.value.component}-postgres-backup-password-version" = "0"
-      "agora-${each.value.component}-postgres-password-version"        = "0"
-      agora-database-release-revision                                  = ""
+      "agora-${each.value.component}-database-image"                   = try(var.database_releases[each.value.component].image, "")
+      "agora-${each.value.component}-postgres-backup-password-version" = try(var.database_releases[each.value.component].backup_password_version, "0")
+      "agora-${each.value.component}-postgres-password-version"        = try(var.database_releases[each.value.component].password_version, "0")
+      agora-database-release-revision                                  = try(var.database_releases[each.value.component].revision, "")
     }
   }
 
@@ -228,11 +225,6 @@ resource "google_compute_instance_group_manager" "database" {
   wait_for_instances_status = "STABLE"
   deletion_policy           = "DELETE"
 
-  lifecycle {
-    # Routine deployment patches only allInstancesConfig and applies it with a
-    # restart-only ceiling. Foundation still owns every other MIG property.
-    ignore_changes = [all_instances_config]
-  }
 }
 
 locals {

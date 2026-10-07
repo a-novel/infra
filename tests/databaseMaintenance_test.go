@@ -169,13 +169,14 @@ func TestLegacyMaintenance(t *testing.T) {
 }
 
 type maintenanceCloud struct {
-	t        *testing.T
-	dir      string
-	env      map[string]string
-	hosts    map[string]*databaseCloud
-	scenario string
-	applied  bool
-	events   []string
+	t            *testing.T
+	dir          string
+	env          map[string]string
+	hosts        map[string]*databaseCloud
+	scenario     string
+	applied      bool
+	events       []string
+	imageUpdates map[string]map[string]string
 }
 
 func newMaintenanceCloud(t *testing.T) *maintenanceCloud {
@@ -187,6 +188,9 @@ func newMaintenanceCloud(t *testing.T) *maintenanceCloud {
 }
 
 func (cloud *maintenanceCloud) template(service string, updated bool) string {
+	if cloud.imageUpdates[service] != nil {
+		updated = false
+	}
 	version := "old"
 	if updated {
 		version = "new"
@@ -235,6 +239,13 @@ func (cloud *maintenanceCloud) execute(ctx context.Context, output io.Writer, co
 	if updated {
 		instanceID, script = "444", "new-script"
 	}
+	imageUpdate := cloud.imageUpdates[service] != nil
+	if imageUpdate {
+		instanceID, script = "333", "old-script"
+		if updated && cloud.scenario == "ReplacedInstance" {
+			instanceID = "444"
+		}
+	}
 	var value any
 	metadata := maps.Clone(c.metadata)
 	if cloud.scenario == "MetadataDrift" && cloud.applied {
@@ -271,6 +282,9 @@ func (cloud *maintenanceCloud) execute(ctx context.Context, output io.Writer, co
 	case "compute instance-groups managed":
 		switch args[3] {
 		case "describe":
+			if imageUpdate && cloud.applied && cloud.scenario != "GroupMetadataDrift" {
+				metadata = cloud.imageUpdates[service]
+			}
 			policy := object{"type": "OPPORTUNISTIC", "replacementMethod": "RECREATE", "minimalAction": "REPLACE", "mostDisruptiveAllowedAction": "REPLACE", "maxSurge": object{"fixed": 0}, "maxUnavailable": object{"fixed": 1}}
 			state := object{"disks": object{"agora-data": object{"autoDelete": "NEVER"}}, "internalIPs": object{"nic0": object{"autoDelete": "NEVER"}}}
 			if cloud.scenario == "PreservationDisabled" {
@@ -312,12 +326,19 @@ func (cloud *maintenanceCloud) execute(ctx context.Context, output io.Writer, co
 				value = []object{member, member}
 			}
 		case "update-instances":
-			require.Equal(t, []string{"--instances=" + name, "--minimal-action=replace", "--most-disruptive-allowed-action=replace", "--quiet", "--project=" + c.project, "--zone=" + c.zone}, args[5:])
-			cloud.events = append(cloud.events, "replace/"+service)
+			action := "replace"
+			if imageUpdate {
+				action = "restart"
+			}
+			require.Equal(t, []string{"--instances=" + name, "--minimal-action=" + action, "--most-disruptive-allowed-action=" + action, "--quiet", "--project=" + c.project, "--zone=" + c.zone}, args[5:])
+			cloud.events = append(cloud.events, action+"/"+service)
 			if cloud.scenario == "ReplaceFailure" {
 				return errors.New(privateValue)
 			}
 			c.writes++
+			if imageUpdate && cloud.scenario != "MemberMetadataDrift" {
+				c.metadata = maps.Clone(cloud.imageUpdates[service])
+			}
 			return nil
 		case "wait-until":
 			return c.execute(ctx, output, command, args...)
@@ -325,6 +346,14 @@ func (cloud *maintenanceCloud) execute(ctx context.Context, output io.Writer, co
 			t.Fatalf("unexpected maintenance mutation: %v", args)
 		}
 	case "compute instances describe":
+		if slices.Contains(args, "--format=value(lastStartTimestamp)") {
+			at := time.Now().Add(-20 * time.Minute)
+			if cloud.scenario == "OutsideInterval" {
+				at = time.Now().Add(-2 * time.Hour)
+			}
+			_, err := fmt.Fprintln(output, at.Format(time.RFC3339))
+			return err
+		}
 		items := []object{{"key": "startup-script", "value": script}}
 		for key, value := range metadata {
 			items = append(items, object{"key": key, "value": value})
@@ -361,6 +390,9 @@ func (cloud *maintenanceCloud) execute(ctx context.Context, output io.Writer, co
 				created = time.Now().Add(-24 * time.Hour)
 			}
 		}
+		if imageUpdate && cloud.scenario != "ReplacedBootDisk" {
+			id = "555"
+		}
 		value = object{"id": id, "selfLink": prefix + "/zones/" + c.zone + "/disks/" + name, "status": "READY", "creationTimestamp": created.Format(time.RFC3339), "users": []string{prefix + "/zones/" + c.zone + "/instances/" + name}}
 		if cloud.scenario == "InvalidBootDisk" && updated {
 			value.(object)["users"] = []string{"other-instance"}
@@ -380,6 +412,9 @@ func (cloud *maintenanceCloud) execute(ctx context.Context, output io.Writer, co
 	default:
 		if cloud.scenario == "StaleSnapshot" {
 			c.snapshot["creationTimestamp"] = "2000-01-01T00:00:00Z"
+		}
+		if imageUpdate && updated && cloud.scenario == "MemberMetadataDrift" {
+			c.statuses = []string{"healthy:" + cloud.imageUpdates[service][isolationRevision] + ":22222222-2222-2222-2222-222222222222"}
 		}
 		if cloud.scenario == "UnhealthySource" || (cloud.scenario == "ReadinessFailure" && updated) {
 			c.statuses = []string{"failed:" + c.metadata[isolationRevision] + ":11111111-1111-1111-1111-111111111111"}
