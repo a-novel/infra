@@ -16,7 +16,7 @@ import (
 
 func TestDatabaseImageMaintenance(t *testing.T) {
 	t.Parallel()
-	for _, scenario := range []string{"Success", "Disabled", "PasswordChange", "BackupPasswordChange", "ForeignImage", "SameRevision", "RevisionOnly", "ExtraMetadata", "ExtraLabels", "CapacityChange", "DiskChange", "MixedMaintenance", "LiveMetadataDrift", "GroupMetadataDrift", "MemberMetadataDrift", "ReplacedInstance", "ReplacedBootDisk", "StaleSnapshot", "BackupFailure", "RestoreFailure", "ReplaceFailure", "ReadinessFailure", "Recovery", "OutsideInterval", "RecoveryBeforeRestart"} {
+	for _, scenario := range []string{"Success", "Disabled", "PasswordChange", "BackupPasswordChange", "ForeignImage", "SameRevision", "RevisionOnly", "ExtraMetadata", "ExtraLabels", "CapacityChange", "DiskChange", "MixedMaintenance", "LiveMetadataDrift", "GroupMetadataDrift", "MemberMetadataDrift", "ReplacedInstance", "ReplacedBootDisk", "StaleBackup", "BackupFailure", "RestoreFailure", "ReplaceFailure", "ReadinessFailure", "Recovery", "OutsideInterval", "RecoveryBeforeRestart"} {
 		t.Run(scenario, func(t *testing.T) {
 			t.Parallel()
 			cloud := newMaintenanceCloud(t)
@@ -68,7 +68,7 @@ func TestDatabaseImageMaintenance(t *testing.T) {
 			planPath, inputs, targets := filepath.Join(cloud.dir, "plan.json"), filepath.Join(cloud.dir, "inputs.json"), filepath.Join(cloud.dir, "targets.json")
 			outputs, evidence := filepath.Join(cloud.dir, "outputs.json"), filepath.Join(cloud.dir, "evidence.json")
 			writeJSON(t, planPath, plan)
-			writeJSON(t, inputs, object{"workload_project_id": selected.project, "database_zone": selected.zone, "legacy_backup_job_access": true})
+			writeJSON(t, inputs, object{"workload_project_id": selected.project, "database_zone": selected.zone, "native_backups": object{"authentication": object{"wal_archiving": true}, "json-keys": object{"wal_archiving": true}}})
 			getenv := func(key string) string { return cloud.env[key] }
 			var logs bytes.Buffer
 			code := database.Run(t.Context(), []string{"maintenance-plan", planPath, inputs, targets}, getenv, cloud.execute, &logs, &logs)
@@ -111,7 +111,7 @@ func TestDatabaseImageMaintenance(t *testing.T) {
 			if isRecovery {
 				require.Empty(t, cloud.events, "recovery must never replay a restart")
 			}
-			if scenario == "StaleSnapshot" || scenario == "BackupFailure" || scenario == "RestoreFailure" {
+			if scenario == "StaleBackup" || scenario == "BackupFailure" || scenario == "RestoreFailure" {
 				require.Zero(t, selected.writes, "failed safety checks must not restart the database")
 			}
 			require.Zero(t, cloud.hosts["json-keys"].writes)

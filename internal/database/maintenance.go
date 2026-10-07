@@ -300,17 +300,11 @@ func maintenanceReplace(ctx context.Context, args []string, getenv func(string) 
 		// Older retained holds lack this field; pending hosts establish it before checks.
 		target.BootDiskID = strconv.FormatUint(disk.Id, 10)
 		targets[index] = target
-		if err := h.snapshot(ctx); err != nil {
+		proof, err := target.nativeProof(ctx, execute, filepath.Dir(args[2]))
+		if err != nil {
 			return err
 		}
-		for _, kind := range []string{"backup", "restore"} {
-			job := "agora-postgres-" + kind + "-" + target.Service
-			name, err := h.command(ctx, "run", "jobs", "execute", job, "--project="+h.project, "--region="+h.region(), "--wait", "--quiet", "--format=value(metadata.name)")
-			if err != nil || !matches(job+`-[a-z0-9]+`, name) {
-				return failure{70, "required backup or clean restore check failed; no host replaced"}
-			}
-			record[kind+"Execution"] = name
-		}
+		record["nativeBackup"] = proof
 		evidence = append(evidence, record)
 	}
 	for index, target := range targets {
@@ -327,9 +321,6 @@ func maintenanceReplace(ctx context.Context, args []string, getenv func(string) 
 		disk, err := target.bootDisk(ctx, execute, instance)
 		if err != nil || strconv.FormatUint(disk.Id, 10) != target.BootDiskID {
 			return failure{70, "boot disk changed after backup checks; replacement blocked"}
-		}
-		if err := h.snapshot(ctx); err != nil {
-			return err
 		}
 		for _, step := range [][]string{
 			{"update-instances", h.group(), "--instances=" + target.Instance, "--minimal-action=replace", "--most-disruptive-allowed-action=replace", "--quiet"},

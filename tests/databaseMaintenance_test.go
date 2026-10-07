@@ -27,7 +27,7 @@ func TestLegacyMaintenance(t *testing.T) {
 		"UnrelatedChange", "DiskChange", "GroupResize", "GroupVersion", "PermissionChange", "PolicyUnknown", "ImageChange", "RemovedField", "WrongReplacePath", "PriorTemplateReused",
 		"MissingMetadata", "UnhealthySource", "PublicAddress", "DiskAutoDelete", "PreservationDisabled", "WrongPreservedDisk", "WrongPreservedIP", "ProactiveGroup", "Surge",
 		"BusyMember", "MultipleMembers", "TemplateReused", "TemplateChangedImage", "TemplateChangedScript",
-		"StaleSnapshot", "BackupFailure", "RestoreFailure", "MetadataDrift", "ChangedInstance", "ReplaceFailure", "ReadinessFailure",
+		"StaleBackup", "InvalidCatalog", "WrongDatabase", "OversizedBackup", "AmbiguousBackup", "RepositoryPublic", "RepositoryStopped", "BackupFailure", "RestoreFailure", "MissingSQLProof", "MetadataDrift", "ChangedInstance", "ReplaceFailure", "ReadinessFailure",
 		"AddressDrift", "WrongAdoptedTemplate", "SameInstance", "SameBootDisk", "InvalidBootDisk", "WrongRuntime", "WrongLiveScript",
 	} {
 		t.Run(scenario, func(t *testing.T) {
@@ -55,9 +55,7 @@ func TestLegacyMaintenance(t *testing.T) {
 					actions = []string{"delete", "create"}
 				}
 				plan["resource_changes"] = append(changes, object{"address": `google_tags_location_tag_binding.legacy_backup["` + job + `"]`, "mode": "managed", "change": object{"actions": actions, "after": after}})
-				if scenario != "BackupTag" {
-					wantPlan = 65
-				}
+				wantPlan = 65
 			}
 			switch scenario {
 			case "JobAccessDisabled":
@@ -114,7 +112,7 @@ func TestLegacyMaintenance(t *testing.T) {
 			}
 			planPath, inputs, targets, outputs, evidence := filepath.Join(cloud.dir, "plan.json"), filepath.Join(cloud.dir, "inputs.json"), filepath.Join(cloud.dir, "targets.json"), filepath.Join(cloud.dir, "outputs.json"), filepath.Join(cloud.dir, "evidence.json")
 			writeJSON(t, planPath, plan)
-			writeJSON(t, inputs, object{"workload_project_id": cloud.hosts["json-keys"].project, "database_zone": cloud.hosts["json-keys"].zone, "legacy_backup_job_access": scenario != "JobAccessDisabled"})
+			writeJSON(t, inputs, object{"workload_project_id": cloud.hosts["json-keys"].project, "database_zone": cloud.hosts["json-keys"].zone, "native_backups": object{"json-keys": object{"wal_archiving": scenario != "JobAccessDisabled"}, "authentication": object{"wal_archiving": true}}})
 			var logs bytes.Buffer
 			getenv := func(key string) string { return cloud.env[key] }
 			code := database.Run(t.Context(), []string{"maintenance-plan", planPath, inputs, targets}, getenv, cloud.execute, &logs, &logs)
@@ -151,7 +149,8 @@ func TestLegacyMaintenance(t *testing.T) {
 					}
 					require.Equal(t, id, host["newInstanceId"])
 					require.Equal(t, "666", host["bootDiskId"])
-					require.NotEmpty(t, host["restoreExecution"])
+					require.Equal(t, true, nested(host, "nativeBackup")["sqlVerified"])
+					require.NotEmpty(t, nested(host, "nativeBackup")["systemId"])
 				}
 				info, err := os.Stat(evidence)
 				require.NoError(t, err)
@@ -160,7 +159,7 @@ func TestLegacyMaintenance(t *testing.T) {
 				expectCode(t, 70, code, logs.String())
 				require.NoFileExists(t, evidence)
 				require.NotContains(t, cloud.events, "replace/authentication", "peer must remain untouched after failure")
-				if slices.Contains([]string{"StaleSnapshot", "BackupFailure", "RestoreFailure", "MetadataDrift", "ChangedInstance", "TemplateReused", "TemplateChangedImage", "TemplateChangedScript"}, scenario) {
+				if slices.Contains([]string{"StaleBackup", "InvalidCatalog", "WrongDatabase", "OversizedBackup", "AmbiguousBackup", "RepositoryPublic", "RepositoryStopped", "MissingSQLProof", "BackupFailure", "RestoreFailure", "MetadataDrift", "ChangedInstance", "TemplateReused", "TemplateChangedImage", "TemplateChangedScript"}, scenario) {
 					require.NotContains(t, cloud.events, "replace/json-keys")
 				}
 			}
@@ -227,7 +226,11 @@ func (cloud *maintenanceCloud) execute(ctx context.Context, output io.Writer, co
 	t.Helper()
 	require.Equal(t, "gcloud", command)
 	service := "json-keys"
-	if strings.Contains(strings.Join(args, " "), "authentication") {
+	selection := strings.Join(args, " ")
+	if len(args) > 2 && args[0] == "compute" && args[1] == "ssh" {
+		selection = args[2]
+	}
+	if strings.Contains(selection, "authentication") {
 		service = "authentication"
 	}
 	c := cloud.hosts[service]
@@ -346,6 +349,17 @@ func (cloud *maintenanceCloud) execute(ctx context.Context, output io.Writer, co
 			t.Fatalf("unexpected maintenance mutation: %v", args)
 		}
 	case "compute instances describe":
+		if args[3] == "agora-pgbackrest-"+service {
+			nic := object{"networkIP": "10.20.0.7"}
+			status := "RUNNING"
+			if cloud.scenario == "RepositoryPublic" {
+				nic["accessConfigs"] = []object{{"natIP": "1.2.3.4"}}
+			}
+			if cloud.scenario == "RepositoryStopped" {
+				status = "TERMINATED"
+			}
+			return json.NewEncoder(output).Encode(object{"name": args[3], "id": "777", "status": status, "labels": object{"component": service, "role": "backup-repository"}, "networkInterfaces": []object{nic}})
+		}
 		if slices.Contains(args, "--format=value(lastStartTimestamp)") {
 			at := time.Now().Add(-20 * time.Minute)
 			if cloud.scenario == "OutsideInterval" {
@@ -397,22 +411,50 @@ func (cloud *maintenanceCloud) execute(ctx context.Context, output io.Writer, co
 		if cloud.scenario == "InvalidBootDisk" && updated {
 			value.(object)["users"] = []string{"other-instance"}
 		}
-	case "run jobs execute":
+	case "compute ssh " + args[2]:
 		kind := "backup"
-		if strings.Contains(args[3], "restore") {
+		if strings.HasPrefix(args[2], "agora-pgbackrest-") {
 			kind = "restore"
 		}
-		require.Equal(t, []string{"--project=" + c.project, "--region=europe-west1", "--wait", "--quiet", "--format=value(metadata.name)"}, args[4:])
+		require.Contains(t, args, "--tunnel-through-iap")
+		require.Contains(t, args, "--billing-project="+c.project)
+		require.Contains(t, args[len(args)-1], "http://metadata.google.internal/computeMetadata/v1/instance/id")
 		cloud.events = append(cloud.events, kind+"/"+service)
 		if (cloud.scenario == "BackupFailure" && kind == "backup") || (cloud.scenario == "RestoreFailure" && kind == "restore" && service == "authentication") {
 			return errors.New(privateValue)
 		}
-		_, err := fmt.Fprintln(output, args[3]+"-test")
-		return err
-	default:
-		if cloud.scenario == "StaleSnapshot" {
-			c.snapshot["creationTimestamp"] = "2000-01-01T00:00:00Z"
+		if kind == "restore" {
+			require.Contains(t, args[len(args)-1], "--network=none")
+			require.Contains(t, args[len(args)-1], "source=$scratch,target=/proof")
+			if cloud.scenario == "MissingSQLProof" {
+				return nil
+			}
+			_, err := fmt.Fprintln(output, "sql-verified:7685450249510117419:20261007-041158F")
+			return err
 		}
+		if cloud.scenario == "InvalidCatalog" {
+			_, err := fmt.Fprintln(output, "7685450249510117419\ninvalid")
+			return err
+		}
+		at, size, systemID := time.Now().Unix(), int64(67108864), "7685450249510117419"
+		if cloud.scenario == "StaleBackup" {
+			at -= 3600
+		}
+		if cloud.scenario == "OversizedBackup" {
+			size = 2 << 30
+		}
+		if cloud.scenario == "WrongDatabase" {
+			systemID = "7685450249510117400"
+		}
+		backups := []object{{"label": "20261007-041158F", "type": "full", "error": false, "database": object{"id": 1, "repo-key": 1}, "timestamp": object{"start": at, "stop": at}, "info": object{"size": size}}}
+		if cloud.scenario == "AmbiguousBackup" {
+			backups = append(backups, backups[0])
+		}
+		if _, err := fmt.Fprintln(output, "7685450249510117419"); err != nil {
+			return err
+		}
+		return json.NewEncoder(output).Encode([]object{{"name": service, "status": object{"code": 0}, "db": []object{{"id": 1, "repo-key": 1, "system-id": json.Number(systemID), "version": "18"}}, "backup": backups}})
+	default:
 		if imageUpdate && updated && cloud.scenario == "MemberMetadataDrift" {
 			c.statuses = []string{"healthy:" + cloud.imageUpdates[service][isolationRevision] + ":22222222-2222-2222-2222-222222222222"}
 		}

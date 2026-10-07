@@ -200,11 +200,25 @@ numeric CA/database identity versions and `wal_archiving` (default false). It re
 the [database-runtime module](../../../modules/database-runtime/README.md) through this
 root's existing instance template, singleton group and preserved data disk.
 
-Apply this startup-script change only through protected database maintenance, including
-its fresh logical backup, restore check and exact no-surge replacement review. Peer services,
+Apply startup-script changes only through protected database maintenance, including
+its fresh native backup, isolated SQL restore and exact no-surge replacement review. Peer services,
 database metadata/image, disks, addresses and VM sizes must remain unchanged. The entrypoint
 requires the deployed database digest to equal the repository/worker digest. This is not a
 database upgrade or ownership transfer to service foundation.
+
+Maintenance requires WAL archiving already active for every selected service. It runs the existing
+check/full workers, binds the new full backup to the source PostgreSQL system ID, and restores that
+exact set on the existing repository VM. The separate SQL container has no network or credentials;
+it pauses at backup consistency and checks the same schema/roles/extensions as disaster recovery.
+This routine check does not assert an independently captured application-data hash. Scratch restores
+are limited to backups below 2 GiB with three times their size plus 1 GiB free; larger databases stop
+for a capacity review rather than allocating resources automatically.
+
+All selected services pass before any replacement. A failure or uncertain SSH response preserves
+the maintenance hold and private diagnostics, with no automatic retry. Successful checks remove
+only their own stopped containers and scratch copies. The workflow uses its existing host authority
+and IAP access restricted to each database address on port 22. Old logical jobs and snapshots can
+remain during retirement, but they no longer authorize protected database maintenance.
 
 Boot starts PostgreSQL under systemd and leaves native timers stopped. Existing logical
 backup jobs and snapshots are unaffected. TLS issuance, runtime identity/egress checks,

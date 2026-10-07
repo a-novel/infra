@@ -32,7 +32,7 @@ variables {
 run "default_preserves_existing_boot" {
   command = plan
   assert {
-    condition = length(module.native_backup) == 0 && alltrue([
+    condition = length(module.native_backup) == 0 && length(google_project_iam_member.database_maintenance_iap) == 0 && alltrue([
       for template in google_compute_instance_template.database :
       template.metadata_startup_script == file("../../../assets/database-host/legacy-startup.sh")
     ])
@@ -52,6 +52,15 @@ run "native_json_keys_reuses_existing_host" {
       identity_version  = "2"
       wal_archiving     = true
     } }
+  }
+  assert {
+    condition = (
+      keys(google_project_iam_member.database_maintenance_iap) == ["json-keys"] &&
+      google_project_iam_member.database_maintenance_iap["json-keys"].role == "roles/iap.tunnelResourceAccessor" &&
+      google_project_iam_member.database_maintenance_iap["json-keys"].member == "serviceAccount:infra-foundation@agora-management-test.iam.gserviceaccount.com" &&
+      one(google_project_iam_member.database_maintenance_iap["json-keys"].condition).title == "NativeBackupMaintenanceSSH-json-keys"
+    )
+    error_message = "Native maintenance must grant conditional IAP access only to foundation for the enrolled service."
   }
   assert {
     condition = alltrue([

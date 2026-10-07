@@ -25,6 +25,18 @@ var authenticationVerificationSQL string
 //go:embed authenticationData.sql
 var authenticationDataSQL string
 
+// VerificationSQL shares the service schema contract with maintenance checks on existing capacity.
+func VerificationSQL(service string) (string, error) {
+	switch service {
+	case "json-keys":
+		return verificationSQL, nil
+	case "authentication":
+		return authenticationVerificationSQL, nil
+	default:
+		return "", errors.New("unsupported service verification")
+	}
+}
+
 // VerifySQL validates restored service data in a separately supervised, networkless
 // container. It pauses at backup consistency, preserves failures and refuses replay.
 func VerifySQL(ctx context.Context, request Request, parent string, execute func(context.Context, io.Writer, string, ...string) ([]byte, error)) (err error) {
@@ -32,9 +44,13 @@ func VerifySQL(ctx context.Context, request Request, parent string, execute func
 		return errors.New("offline SQL verification was not selected")
 	}
 	role := "agora_" + strings.ReplaceAll(request.Service, "-", "_")
-	verificationQuery, dataQuery := verificationSQL, dataSQL
+	verificationQuery, err := VerificationSQL(request.Service)
+	if err != nil {
+		return err
+	}
+	dataQuery := dataSQL
 	if request.Service == "authentication" {
-		verificationQuery, dataQuery = authenticationVerificationSQL, authenticationDataSQL
+		dataQuery = authenticationDataSQL
 	}
 	root := filepath.Join(parent, "attempt")
 	files := map[string]string{}

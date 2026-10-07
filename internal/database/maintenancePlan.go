@@ -8,7 +8,6 @@ import (
 	"maps"
 	"os"
 	"reflect"
-	"slices"
 	"strings"
 
 	"google.golang.org/api/compute/v1"
@@ -66,7 +65,7 @@ func maintenancePlan(ctx context.Context, args []string, getenv func(string) str
 		disk := byAddress["google_compute_disk.database"+key]
 		if reflect.DeepEqual(get(change, "change", "actions"), []any{"no-op"}) &&
 			get(group, "change", "before") != nil && !reflect.DeepEqual(get(group, "change", "actions"), []any{"no-op"}) {
-			if !maintenanceEnabled(getenv) || get(config, "legacy_backup_job_access") != true {
+			if !maintenanceEnabled(getenv) || get(config, "native_backups", service, "wal_archiving") != true {
 				return failure{77, "database image maintenance requires protected activation and paused releases"}
 			}
 			target, err := imageMaintenanceTarget(config, change, group, disk)
@@ -80,8 +79,8 @@ func maintenancePlan(ctx context.Context, args []string, getenv func(string) str
 		if get(change, "change", "before") == nil || reflect.DeepEqual(get(change, "change", "actions"), []any{"no-op"}) {
 			continue
 		}
-		if !maintenanceEnabled(getenv) || get(config, "legacy_backup_job_access") != true {
-			return failure{77, "Legacy host maintenance is disabled or releases are not explicitly paused."}
+		if !maintenanceEnabled(getenv) || get(config, "native_backups", service, "wal_archiving") != true {
+			return failure{77, "native backup maintenance is disabled or releases are not explicitly paused"}
 		}
 		if !reflect.DeepEqual(get(change, "change", "actions"), []any{"create", "delete"}) ||
 			!reflect.DeepEqual(get(change, "change", "replace_paths"), []any{[]any{"metadata_startup_script"}}) {
@@ -136,29 +135,11 @@ func maintenancePlan(ctx context.Context, args []string, getenv func(string) str
 		allowed[bindingAddress] = true
 	}
 	if len(targets) > 0 {
-		additions := []string{
-			"google_project_iam_custom_role.foundation_backup_jobs[0]", "google_project_iam_member.foundation_backup_jobs[0]",
-			"google_project_iam_custom_role.foundation_backup_observation[0]", "google_project_iam_member.foundation_backup_observation[0]",
-			"google_project_iam_custom_role.foundation_backup_tagging[0]", "google_project_iam_member.foundation_backup_tagging[0]",
-			"google_tags_tag_key.legacy_backup[0]", "google_tags_tag_value.legacy_backup[0]", "google_tags_tag_value_iam_member.foundation_backup_tag[0]",
-		}
-		for _, job := range []string{"agora-postgres-backup-json-keys", "agora-postgres-restore-json-keys", "agora-postgres-backup-authentication", "agora-postgres-restore-authentication", "agora-postgres-backup-monitor"} {
-			address := `google_tags_location_tag_binding.legacy_backup["` + job + `"]`
-			if change := byAddress[address]; change != nil && !reflect.DeepEqual(get(change, "change", "actions"), []any{"no-op"}) {
-				h := targets[0].host(execute)
-				parent := "//run.googleapis.com/projects/" + h.project + "/locations/" + h.region() + "/jobs/" + job
-				if text(change, "change", "after", "parent") != parent || text(change, "change", "after", "location") != h.region() {
-					return failure{65, "backup tag attachment has an unexpected job or region"}
-				}
-			}
-			additions = append(additions, address)
-		}
 		for address, change := range byAddress {
 			if text(change, "mode") == "data" || reflect.DeepEqual(get(change, "change", "actions"), []any{"no-op"}) {
 				continue
 			}
-			permission := slices.Contains(additions, address) && reflect.DeepEqual(get(change, "change", "actions"), []any{"create"})
-			if !allowed[address] && !permission {
+			if !allowed[address] {
 				return failure{65, "maintenance plan contains unrelated managed-resource changes"}
 			}
 		}
