@@ -1466,42 +1466,11 @@ run "builds_the_project_replacement_window" {
       one(google_compute_resource_policy.database_snapshots["authentication"].snapshot_schedule_policy).retention_policy[0].on_source_disk_delete == "KEEP_AUTO_SNAPSHOTS" &&
       !one(google_compute_resource_policy.database_snapshots["authentication"].snapshot_schedule_policy).snapshot_properties[0].guest_flush &&
       toset(one(google_compute_resource_policy.database_snapshots["authentication"].snapshot_schedule_policy).snapshot_properties[0].storage_locations) == toset(["europe-west1"]) &&
-      google_compute_disk_resource_policy_attachment.database_snapshots["authentication"].disk == google_compute_disk.database["authentication"].name &&
-      google_monitoring_alert_policy.postgres_recovery_job_failure[0].severity == "CRITICAL" &&
-      google_monitoring_alert_policy.postgres_recovery_job_failure[0].deletion_policy == "DELETE" &&
-      toset(google_monitoring_alert_policy.postgres_recovery_job_failure[0].notification_channels) == toset([google_monitoring_notification_channel.operations_email[0].name]) &&
-      length(google_monitoring_alert_policy.postgres_recovery_job_failure[0].conditions) == 2 &&
-      strcontains(one([
-        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure[0].conditions : condition
-        if length(condition.condition_threshold) == 1
-      ]).condition_threshold[0].filter, "run.googleapis.com/job/completed_execution_count") &&
-      strcontains(one([
-        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure[0].conditions : condition
-        if length(condition.condition_threshold) == 1
-      ]).condition_threshold[0].filter, "metric.label.result = \"failed\"") &&
-      strcontains(one([
-        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure[0].conditions : condition
-        if length(condition.condition_threshold) == 1
-      ]).condition_threshold[0].filter, "agora-postgres-") &&
-      one([
-        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure[0].conditions : condition
-        if length(condition.condition_absent) == 1
-      ]).condition_absent[0].duration == "10800s" &&
-      strcontains(one([
-        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure[0].conditions : condition
-        if length(condition.condition_absent) == 1
-      ]).condition_absent[0].filter, "resource.label.job_name = \"agora-postgres-backup-monitor\"") &&
-      !strcontains(one([
-        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure[0].conditions : condition
-        if length(condition.condition_absent) == 1
-      ]).condition_absent[0].filter, "metric.label.result") &&
-      one([
-        for condition in google_monitoring_alert_policy.postgres_recovery_job_failure[0].conditions : condition
-        if length(condition.condition_absent) == 1
-      ]).condition_absent[0].trigger[0].count == 1
+      google_compute_disk_resource_policy_attachment.database_snapshots["authentication"].disk == google_compute_disk.database["authentication"].name
     )
-    error_message = "Same-region snapshot storage or native failed/missing recovery-job alerting changed."
+    error_message = "Same-region snapshot storage changed."
   }
+
 
   assert {
     condition = (
@@ -1936,8 +1905,7 @@ run "limits_disposable_recovery_authority_to_the_replacement_project" {
       length(google_billing_budget.workload) == 0 &&
       length(google_monitoring_alert_policy.authentication_error_rate) == 0 &&
       length(google_monitoring_alert_policy.application_jobs_unhealthy) == 0 &&
-      length(google_monitoring_alert_policy.database_capacity) == 0 &&
-      length(google_monitoring_alert_policy.postgres_recovery_job_failure) == 0
+      length(google_monitoring_alert_policy.database_capacity) == 0
     )
     error_message = "A short-lived recovery project must not duplicate production budgets, notification channels, or alert policies."
   }

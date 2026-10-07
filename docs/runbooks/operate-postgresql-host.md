@@ -93,18 +93,12 @@ This path is disabled unless the protected foundation environment has
 approving the exact saved-plan apply, accepting downtime, and later retrying a release are separate
 human decisions. Leave it unset during ordinary operation. Do not dispatch a release concurrently.
 
-The private foundation configuration must also opt in with `legacy_backup_job_access=true`, only
-after the two backup jobs, two clean restore-check jobs and backup-monitor job already exist.
-The operator configuration command accepts `--legacy-backup-job-access`; preserve all other reviewed
-configuration when publishing it. The default is false, and disposable recovery ignores it. This
-opt-in adds an independent `agora-backup-maintenance=enabled` tag to those five existing jobs. Their
-`agora-invocation=scheduled` tags and existing scheduler/release access remain unchanged. The
-foundation plan owns the additional tags, so it can establish access before maintenance checks
-without deploying jobs or retrying a production release.
+The selected service must have `native_backups[SERVICE].wal_archiving=true` and a running,
+service-owned repository. Foundation's IAP access is restricted to each enrolled database's private
+address and SSH port; repository access is owned by its service foundation.
 
 The existing foundation `apply` operation inspects the saved plan before consuming it. A startup
-change accepts only template replacements, their template IAM and group target changes, and the
-initial maintenance-job tag and permission additions. Both hosts are selected when the shared
+change accepts only template replacements, their template IAM and group target changes. Both hosts are selected when the shared
 startup script changes. Images, credential versions, data disks, machine sizes, network configuration
 and stateful preservation rules remain unchanged. Unrelated managed-resource actions block admission.
 
@@ -112,35 +106,25 @@ The protected operation:
 
 1. Captures the current template, singleton, data and boot disk identities, private address, release metadata and
    healthy boot. Creates a private, create-only maintenance hold, then consumes the reviewed plan.
-2. Applies and checks convergence of the template targets and any approved safety-job permissions.
+2. Applies and checks convergence of the template targets.
    The verified `OPPORTUNISTIC` policy leaves running members alone. Newly granted IAM may need
    propagation; permission failure stops the operation, never authorizes an unchecked replacement.
-3. Requires each selected disk's scheduled snapshot to be within the existing 26-hour window and
-   runs both existing logical backup and clean restore-check jobs for every selected service.
-   All checks must succeed before replacing either host.
+3. Runs the selected database's native archive check and full backup. The helper independently reads
+   its PostgreSQL system identifier, selects only the full backup completed during this operation,
+   and restores that exact set on the existing service-owned repository VM. A networkless SQL
+   container must reach paused recovery consistency and verify the expected identity and schema.
+   The database is never promoted. Scratch capacity and CPU/memory are bounded; insufficient
+   capacity or uncertain execution retains the hold. Successful proof removes its scratch copies.
 4. Rechecks the original host and boot, then updates that exact member with `REPLACE`/`RECREATE`,
    zero surge and one unavailable member. Verifies a new boot disk incarnation and healthy boot on the
    same data disk and private address, with the reviewed template, image, identity and secret-version
    metadata. Google may retain the VM ID during recreation; that ID alone is not a replacement
    signal. It stops at the first failure; it does not continue to the peer or roll back automatically.
-5. Writes private completion evidence, including backup/restore execution names and old/new host
+5. Writes private completion evidence, including the native backup label, system identity, SQL verification and old/new host
    identities, before deleting only its acknowledged hold generation.
 
-The foundation invocation grant matches only the independent backup tag. The existing `scheduled`
-class also includes JSON Keys key rotation and is not an invocation boundary for maintenance.
-The new invocation role grants only `run.jobs.run`: no configuration overrides, cancellation,
-deployment or secret-payload access. Job/execution/operation metadata reads are project-scoped
-because operation polling does not carry the job tag.
-
-Foundation also receives tag administration on already-scheduled jobs and Tag User on the new value.
-This metadata authority is broader than the execution grant: the protected plan's exact five-job
-allowlist enforces its use. Foundation remains a trusted IAM administrator, not an unprivileged
-runtime identity. Review these grants and every attachment in the saved plan. Missing jobs or tags,
-IAM propagation failures and unexpected attachments stop the operation before host replacement.
-If a job is later deleted and recreated, refresh its foundation-owned tag through another reviewed
-plan before maintenance. No release workflow silently restores this permission. No new VM,
-disk, recurring job or schedule is added. An activated maintenance window runs existing jobs and
-therefore incurs their normal execution cost; this is not a zero-cost operation.
+Native proof uses the existing database and repository capacity. It adds no cloud resource.
+Backup storage and API requests incur normal usage charges.
 
 The hold is `gs://<state-bucket>/release/legacy-maintenance/operation.json`. Completion evidence is
 under `release/legacy-maintenance/completions/<hold-generation>.json` in the same private bucket.
@@ -174,8 +158,8 @@ rejects mixed template/image work, a second database transition, credential rota
 capacity or network change.
 
 After applying the group's metadata, the running member remains unchanged under `OPPORTUNISTIC`.
-The helper requires a fresh scheduled snapshot, executes the selected service's logical backup and
-clean restore check, then rechecks the original healthy boot. It applies the metadata to that exact
+The helper requires the same fresh native backup and isolated SQL restore, then rechecks the
+original healthy boot. It applies the metadata to that exact
 member with both the minimum action and disruption ceiling set to `RESTART`. Completion requires
 the same VM, boot disk, data disk, private address and template, with the new image/revision and a
 new healthy boot. A failed safety check leaves the original member running and retains the hold;
@@ -209,10 +193,10 @@ the new template is skipped only with a new healthy guest boot and a boot disk c
 original operation's interval, from hold creation through workflow completion. When the hold includes
 the old boot disk ID, that ID must differ too. Older holds can use the bounded disk creation time;
 they never require the VM ID to change. A pending host must retain its original instance and healthy
-boot; its boot disk is captured before fresh snapshot, backup and clean restore checks. Only pending
-hosts run those jobs and undergo replacement. All hosts are rechecked before completion.
+boot; its boot disk is captured before fresh native backup and isolated SQL restoration. Only pending
+hosts run that proof and undergo replacement. All hosts are rechecked before completion.
 
-Before any recovery jobs or replacement, a create-only record is stored at
+Before native proof or replacement, a create-only record is stored at
 `release/legacy-maintenance/recoveries/<hold-generation>.json`. After host verification, the workflow
 publishes the converged foundation configuration, writes completion evidence, then deletes only the
 acknowledged hold generation. Uncertain admission, replacement, publication or completion retains
@@ -221,7 +205,7 @@ apply to bypass a failure; reconcile the exact evidence through a separately rev
 
 After success, disable both maintenance flags. Release activation and retry still need independent
 approval and client-connectivity verification. Recovery creates no additional VM or recurring job;
-fresh safety jobs for pending hosts incur their existing execution costs.
+native proof for pending hosts incurs normal storage and request charges.
 
 ## Result and operating limits
 

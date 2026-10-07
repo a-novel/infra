@@ -21,7 +21,7 @@ import (
 
 func TestLegacyRecoveryCustody(t *testing.T) {
 	t.Parallel()
-	for _, scenario := range []string{"Success", "Disabled", "WrongGeneration", "WrongScope", "WrongInputs", "ActiveWriter", "RerunWriter", "WrongWriter", "GitHubUnavailable", "ExistingRecovery", "ExistingCompletion", "ConvergeFailed", "OutputFailed", "RecoveryFailed", "PublishFailed", "guard-ack", "completion-denied", "successor"} {
+	for _, scenario := range []string{"Success", "Disabled", "WrongGeneration", "WrongScope", "WrongInputs", "MissingEnrollment", "WALDisabled", "PeerEnrollment", "UnknownService", "ActiveWriter", "RerunWriter", "WrongWriter", "GitHubUnavailable", "ExistingRecovery", "ExistingCompletion", "ConvergeFailed", "OutputFailed", "RecoveryFailed", "PublishFailed", "guard-ack", "completion-denied", "successor"} {
 		t.Run(scenario, func(t *testing.T) {
 			t.Parallel()
 			f := setup(t)
@@ -38,7 +38,17 @@ func TestLegacyRecoveryCustody(t *testing.T) {
 			}
 			applyStorage(t, f, scenario)
 			inputs := filepath.Join(f.dir, "recovery-inputs.json")
-			config := object{"workload_project_id": "agora-production-test", "management_project_id": "agora-management-test", "database_zone": "europe-west1-d", "legacy_backup_job_access": true}
+			config := object{"workload_project_id": "agora-production-test", "management_project_id": "agora-management-test", "database_zone": "europe-west1-d", "native_backups": object{"json-keys": object{"wal_archiving": true}}}
+			switch scenario {
+			case "MissingEnrollment":
+				delete(config, "native_backups")
+			case "WALDisabled":
+				config["native_backups"] = object{"json-keys": object{"wal_archiving": false}}
+			case "PeerEnrollment":
+				config["native_backups"] = object{"authentication": object{"wal_archiving": true}}
+			case "UnknownService":
+				config["native_backups"] = object{"peer": object{"wal_archiving": true}}
+			}
 			writeJSON(t, inputs, config)
 			f.env["FOUNDATION_CONFIG"] = read(t, inputs)
 			prefix := filepath.Join(f.env["FAKE_GCS_ROOT"], bucket)
@@ -49,6 +59,9 @@ func TestLegacyRecoveryCustody(t *testing.T) {
 			targets := []object{{"Project": "agora-production-test", "Zone": "europe-west1-d", "Service": "json-keys"}}
 			if scenario == "WrongScope" {
 				targets[0]["Project"] = "peer-project"
+			}
+			if scenario == "UnknownService" {
+				targets[0]["Service"] = "peer"
 			}
 			writeJSON(t, guard, object{"schemaVersion": 1, "kind": "legacy-host-maintenance", "commit": strings.Repeat("a", 40), "planId": "122-1", "planSha256": strings.Repeat("c", 64), "runId": "123", "runAttempt": "1", "targets": targets})
 			original := object{"id": 123, "run_attempt": 1, "status": "completed", "head_branch": "master", "head_sha": strings.Repeat("a", 40), "event": "workflow_dispatch", "path": ".github/workflows/foundation.yaml", "display_title": "foundation apply foundation by @operator", "updated_at": time.Now().Add(-10 * time.Minute).Format(time.RFC3339), "repository": "a-novel/infra"}

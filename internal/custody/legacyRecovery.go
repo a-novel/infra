@@ -32,12 +32,14 @@ func (custody store) recoverLegacyMaintenance(args []string, getenv func(string)
 	}
 	inputs, err := os.ReadFile(args[2])
 	var config struct {
-		Project    string `json:"workload_project_id"`
-		Zone       string `json:"database_zone"`
-		Management string `json:"management_project_id"`
-		JobAccess  bool   `json:"legacy_backup_job_access"`
+		Project       string `json:"workload_project_id"`
+		Zone          string `json:"database_zone"`
+		Management    string `json:"management_project_id"`
+		NativeBackups map[string]struct {
+			WALArchiving bool `json:"wal_archiving"`
+		} `json:"native_backups"`
 	}
-	if err != nil || string(inputs) != getenv("FOUNDATION_CONFIG") || json.Unmarshal(inputs, &config) != nil || !config.JobAccess ||
+	if err != nil || string(inputs) != getenv("FOUNDATION_CONFIG") || json.Unmarshal(inputs, &config) != nil ||
 		config.Management != getenv("MANAGEMENT_PROJECT_ID") || custody.bucket != getenv("STATE_BUCKET") ||
 		!strings.HasPrefix(custody.bucket, config.Management+"-") || !strings.HasSuffix(custody.bucket, "-tofu-state") ||
 		config.Project == "" || config.Zone == "" || config.Management == "" ||
@@ -78,8 +80,9 @@ func (custody store) recoverLegacyMaintenance(args []string, getenv func(string)
 		return failure{70, "Original legacy maintenance identity is invalid."}
 	}
 	for _, data := range intent.Targets {
-		var target struct{ Project, Zone string }
-		if json.Unmarshal(data, &target) != nil || target.Project != config.Project || target.Zone != config.Zone {
+		var target struct{ Project, Zone, Service string }
+		if json.Unmarshal(data, &target) != nil || target.Project != config.Project || target.Zone != config.Zone ||
+			(target.Service != "json-keys" && target.Service != "authentication") || !config.NativeBackups[target.Service].WALArchiving {
 			return failure{70, "Held targets differ from the protected workload scope."}
 		}
 	}

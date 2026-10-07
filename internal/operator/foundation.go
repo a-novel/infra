@@ -20,7 +20,7 @@ type projectParent struct{ Type, ID string }
 type foundationOptions struct {
 	command, name, region, zone, subnet, costEmail, operationsEmail string
 	parent                                                          *projectParent
-	adopt, legacyBackupAccess                                       bool
+	adopt                                                           bool
 	sharedVPC                                                       bool
 	publicProject, publicAPIProject                                 string
 	databaseOperators, initializers                                 []string
@@ -107,7 +107,6 @@ func foundationFlags(args []string, getenv func(string) string) (foundationOptio
 		flags.BoolVar(&o.sharedVPC, "shared-vpc-enabled", sharedVPC == "true", "Retain the production Shared VPC host independently of service projects")
 		flags.StringVar(&o.publicProject, "public-project-id", getenv("INFRA_PUBLIC_PROJECT_ID"), "Optional production platform shell without private network attachment; empty selects none")
 		flags.StringVar(&o.publicAPIProject, "public-api-project-id", getenv("INFRA_PUBLIC_API_PROJECT_ID"), "Optional production API shell using Shared VPC; empty selects none")
-		flags.BoolVar(&o.legacyBackupAccess, "legacy-backup-job-access", false, "Enable maintenance tagging and access only after all five legacy backup jobs exist")
 		flags.StringVar(&serviceProjects, "service-projects", serviceProjects, "JSON object mapping service names to project IDs; use {} for none")
 		flags.StringVar(&serviceReleaseZones, "service-release-zones", serviceReleaseZones, "JSON object mapping services to private/public-api release zones; use {} to leave disabled")
 		flags.StringVar(&repositoryServices, "pgbackrest-repository-services", repositoryServices, "JSON array of declared services with native repository networking; use [] for none")
@@ -290,9 +289,6 @@ func (f foundation) configure(ctx context.Context, o foundationOptions, getenv f
 		"backup_bucket_name": bucket, "billing_account_id": f.billing, "organization_id": nil, "folder_id": nil,
 		"region": o.region, "database_zone": o.zone, "subnet_cidr": o.subnet, "adopt_existing_project": o.adopt,
 		"service_projects": o.serviceProjects, "pgbackrest_repository_services": o.repositoryServices,
-	}
-	if o.legacyBackupAccess {
-		config["legacy_backup_job_access"] = true
 	}
 	if o.sharedVPC {
 		config["shared_vpc_enabled"] = true
