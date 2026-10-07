@@ -132,8 +132,8 @@ run "builds_the_protected_management_plane" {
   }
 
   assert {
-    condition     = length(google_service_account.automation) == 4
-    error_message = "Exactly four automation trust-boundary identities are required."
+    condition     = toset(keys(google_service_account.automation)) == toset(["plan", "foundation", "recovery"])
+    error_message = "Only the three active automation trust-boundary identities are required."
   }
 
   assert {
@@ -144,6 +144,7 @@ run "builds_the_protected_management_plane" {
       strcontains(provider.attribute_condition, "assertion.ref == 'refs/heads/master'") &&
       strcontains(provider.attribute_condition, "a-novel/infra/.github/workflows/${local.trust_boundaries[name].workflow_filename}@refs/heads/master") &&
       provider.attribute_mapping["attribute.trust_boundary"] == "'${name}'" &&
+      provider.deletion_policy == "PREVENT" && !provider.disabled &&
       provider.oidc[0].allowed_audiences == null
     ])
     error_message = "A GitHub provider lost its immutable repository, branch, workflow, boundary, or canonical-audience restriction."
@@ -153,7 +154,6 @@ run "builds_the_protected_management_plane" {
     condition = (
       !strcontains(google_iam_workload_identity_pool_provider.github["plan"].attribute_condition, "assertion.environment") &&
       strcontains(google_iam_workload_identity_pool_provider.github["foundation"].attribute_condition, "assertion.environment == 'production-foundation'") &&
-      strcontains(google_iam_workload_identity_pool_provider.github["release"].attribute_condition, "assertion.environment == 'production-release'") &&
       strcontains(google_iam_workload_identity_pool_provider.github["recovery"].attribute_condition, "assertion.environment == 'production-recovery'")
     )
     error_message = "Protected workflow environments no longer match the three approved trust boundaries."
@@ -168,7 +168,7 @@ run "builds_the_protected_management_plane" {
       !contains(["roles/owner", "roles/editor"], binding.role)
       ]) && alltrue([
       for key in keys(google_project_iam_member.automation) :
-      startswith(key, "plan:") || startswith(key, "foundation:") || startswith(key, "release:") || startswith(key, "recovery:")
+      startswith(key, "plan:") || startswith(key, "foundation:") || startswith(key, "recovery:")
     ])
     error_message = "An automation identity received a primitive Owner or Editor role."
   }
@@ -179,7 +179,6 @@ run "builds_the_protected_management_plane" {
       !contains(local.plan_project_roles, "roles/logging.viewer") &&
       !contains(local.plan_project_roles, "roles/iam.securityReviewer") &&
       !contains(local.foundation_project_roles, "roles/logging.configWriter") &&
-      local.release_project_roles == toset(["roles/secretmanager.viewer"]) &&
       local.recovery_project_roles == toset(["roles/secretmanager.viewer"])
     )
     error_message = "Audit access must stay with operators, and automation must not receive broad logging or security-reviewer grants."
@@ -187,7 +186,7 @@ run "builds_the_protected_management_plane" {
 
   assert {
     condition = (
-      length(google_storage_bucket_iam_member.automation_bucket_viewer) == 2 &&
+      length(google_storage_bucket_iam_member.automation_bucket_viewer) == 1 &&
       alltrue([
         for binding in values(google_storage_bucket_iam_member.automation_bucket_viewer) :
         binding.bucket == google_storage_bucket.state.name && binding.role == "roles/storage.bucketViewer"
@@ -213,7 +212,6 @@ run "builds_the_protected_management_plane" {
 
   assert {
     condition = (
-      google_storage_managed_folder_iam_member.release_state.managed_folder == "release/" &&
       length(google_storage_managed_folder_iam_member.plan_state) == 3 &&
       length(google_storage_managed_folder_iam_member.recovery_state) == 4 &&
       toset([for binding in values(google_storage_managed_folder_iam_member.recovery_state) : binding.managed_folder]) == toset([
@@ -234,16 +232,24 @@ run "builds_the_protected_management_plane" {
 
   assert {
     condition = (
-      google_storage_managed_folder_iam_member.release_receipt_creator.managed_folder == "production/" &&
-      google_storage_managed_folder_iam_member.release_receipt_creator.role == "roles/storage.objectCreator" &&
-      google_storage_managed_folder_iam_member.release_receipt_viewer.managed_folder == "production/" &&
-      google_storage_managed_folder_iam_member.release_receipt_viewer.role == "roles/storage.objectViewer" &&
       google_storage_managed_folder_iam_member.recovery_receipt_viewer.managed_folder == "production/success/" &&
       google_storage_managed_folder_iam_member.recovery_receipt_viewer.role == "roles/storage.objectViewer" &&
       google_storage_managed_folder_iam_member.recovery_receipt_creator.managed_folder == "recovery/" &&
       google_storage_managed_folder_iam_member.recovery_receipt_creator.role == "roles/storage.objectCreator"
     )
-    error_message = "Release and recovery receipt authority crossed its managed-folder boundary."
+    error_message = "Recovery receipt authority crossed its managed-folder boundary."
+  }
+
+  assert {
+    condition = (
+      google_service_account.retiring_release.account_id == "infra-release" &&
+      google_service_account.retiring_release.disabled &&
+      google_iam_workload_identity_pool_provider.retiring_release.workload_identity_pool_provider_id == "github-release" &&
+      google_iam_workload_identity_pool_provider.retiring_release.disabled &&
+      google_iam_workload_identity_pool_provider.retiring_release.deletion_policy == "DELETE" &&
+      strcontains(google_iam_workload_identity_pool_provider.retiring_release.attribute_condition, "assertion.environment == 'production-release'")
+    )
+    error_message = "The obsolete release identity/provider must be disabled before their separate deletion."
   }
 
   assert {
