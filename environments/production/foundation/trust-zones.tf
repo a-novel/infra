@@ -4,10 +4,6 @@ variable "shared_vpc_enabled" {
   default     = false
   nullable    = false
 
-  validation {
-    condition     = !var.recovery_mode || !var.shared_vpc_enabled
-    error_message = "Disposable recovery must not enable a production Shared VPC host."
-  }
 }
 
 variable "public_api_project_id" {
@@ -19,7 +15,7 @@ variable "public_api_project_id" {
     condition = var.public_api_project_id == null || (
       can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", var.public_api_project_id)) &&
       !contains([var.management_project_id, var.workload_project_id, var.public_project_id], var.public_api_project_id) &&
-      !var.recovery_mode && var.shared_vpc_enabled &&
+      var.shared_vpc_enabled &&
       length(var.service_projects) == 0
     )
     error_message = "The API shell requires a distinct valid project, an explicit production Shared VPC host, and no dedicated-service registration."
@@ -35,7 +31,6 @@ variable "public_project_id" {
     condition = var.public_project_id == null || (
       can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", var.public_project_id)) &&
       !contains([var.management_project_id, var.workload_project_id], var.public_project_id) &&
-      !var.recovery_mode &&
       length(var.service_projects) == 0
     )
     error_message = "The platform shell requires a distinct valid project and no dedicated-service registration."
@@ -44,7 +39,7 @@ variable "public_project_id" {
 
 module "public_project" {
   source   = "../../../modules/project-shell"
-  for_each = var.public_project_id == null || var.recovery_mode ? {} : { public = var.public_project_id }
+  for_each = var.public_project_id == null ? {} : { public = var.public_project_id }
 
   project_id                 = each.value
   billing_account_id         = var.billing_account_id
@@ -57,7 +52,7 @@ module "public_project" {
 
 module "public_api_project" {
   source   = "../../../modules/project-shell"
-  for_each = var.public_api_project_id == null || var.recovery_mode ? {} : { public-api = var.public_api_project_id }
+  for_each = var.public_api_project_id == null ? {} : { public-api = var.public_api_project_id }
 
   project_id                 = each.value
   billing_account_id         = var.billing_account_id

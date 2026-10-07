@@ -1,6 +1,6 @@
 # The probe keeps the JSON Keys identity and its existing secret allowlist.
 resource "google_project_iam_member" "json_keys_smoke_invoker" {
-  count = var.recovery_mode ? 0 : 1
+  count = 1
 
   project = google_project.workload.project_id
   role    = "roles/run.servicesInvoker"

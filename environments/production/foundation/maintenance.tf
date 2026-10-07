@@ -1,5 +1,5 @@
 resource "google_project_iam_member" "database_maintenance_iap" {
-  for_each = { for service, config in var.native_backups : service => config if config.wal_archiving && !var.recovery_mode }
+  for_each = { for service, config in var.native_backups : service => config if config.wal_archiving }
 
   project = google_project.workload.project_id
   role    = "roles/iap.tunnelResourceAccessor"

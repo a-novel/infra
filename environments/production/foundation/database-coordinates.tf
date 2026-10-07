@@ -7,7 +7,7 @@ locals {
       zone           = var.database_zone
       private_ip     = one(data.google_compute_instance.database[replace(service, "-", "_")].network_interface).network_ip
       port           = local.database_ports[replace(service, "-", "_")]
-    } if contains(["json-keys", "authentication"], service) && !var.recovery_mode
+    } if contains(["json-keys", "authentication"], service)
   }
   shared_database_json = { for service, coordinates in local.shared_database_coordinates : service => jsonencode(coordinates) }
 }

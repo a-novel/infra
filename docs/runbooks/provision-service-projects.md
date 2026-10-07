@@ -125,10 +125,9 @@ if either fails, resolve the failure and rerun the same reviewed configuration b
 Publication changes no cloud resource. The existing protected foundation plan/apply path consumes
 the complete private configuration with its existing custody and serialization.
 
-Recovery retains the source project map only to reject a production service project as a replacement
-target. Its compiler always writes `service_projects = {}` into the disposable foundation inputs;
-the root also rejects a nonempty map in recovery mode. Older source configurations without the map
-remain supported.
+Recovery retains the source project map to reject a production service project as a replacement
+target. Disposable hosts use the isolated `service-recovery` root, never a copy of the production
+foundation. The foundation rejects the retired `recovery_mode=true` input.
 
 ### Assess a partial bootstrap or foundation operation
 
@@ -250,7 +249,7 @@ environments; it does not merge remote settings.
 
 The shared foundation's
 [`pgbackrest_repository_services` contract](../../environments/production/foundation#resource-inventory)
-owns the rules. Its recovery mode ignores the copied selection and creates no repository network.
+owns the production rules. Isolated recovery defines its own network in `service-recovery`.
 Publishing the input starts no host and applies no IAM or network change. Native TLS, the
 host/container allow-list and effective own-service/peer-denial checks remain activation gates.
 

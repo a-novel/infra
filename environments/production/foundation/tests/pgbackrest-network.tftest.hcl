@@ -227,23 +227,3 @@ run "unknown_service_is_rejected" {
   }
   expect_failures = [var.pgbackrest_repository_services]
 }
-
-run "recovery_ignores_copied_production_opt_in" {
-  command = plan
-  variables {
-    recovery_mode                  = true
-    workload_project_id            = "agora-recovery-test"
-    pgbackrest_repository_services = ["json-keys"]
-  }
-  assert {
-    condition     = length(google_service_account_iam_member.repository_operator_act_as) == 0
-    error_message = "Recovery copies must not inherit production repository operator permissions."
-  }
-  assert {
-    condition = alltrue([for rules in [
-      google_compute_firewall.pgbackrest_database_egress, google_compute_firewall.pgbackrest_repository_ingress,
-      google_compute_firewall.pgbackrest_google_egress, google_compute_firewall.pgbackrest_iap_ingress,
-    ] : length(rules) == 0])
-    error_message = "Copied production options must not add repository connectivity to a recovery project."
-  }
-}

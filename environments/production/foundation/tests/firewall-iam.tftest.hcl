@@ -42,21 +42,3 @@ run "grants_only_firewall_writes_to_foundation" {
     error_message = "Foundation needs a workload-project firewall-write grant without broader Compute security administration."
   }
 }
-
-run "grants_recovery_firewall_writes_only_in_the_replacement" {
-  command = plan
-
-  variables {
-    recovery_mode       = true
-    workload_project_id = "agora-recovery-test"
-  }
-
-  assert {
-    condition = (
-      google_project_iam_custom_role.foundation_firewall.project == "agora-recovery-test" &&
-      google_project_iam_member.foundation_firewall.project == "agora-recovery-test" &&
-      google_project_iam_member.foundation_firewall.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com"
-    )
-    error_message = "Recovery firewall authority must target only the replacement project and recovery identity."
-  }
-}

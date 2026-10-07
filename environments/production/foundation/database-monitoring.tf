@@ -44,7 +44,7 @@ locals {
 }
 
 resource "google_monitoring_alert_policy" "database_capacity" {
-  for_each = var.recovery_mode ? {} : local.database_alerts
+  for_each = local.database_alerts
 
   project      = google_project.workload.project_id
   display_name = "Agora database ${each.value.title}"
@@ -81,5 +81,8 @@ resource "google_monitoring_alert_policy" "database_capacity" {
   }
 
   notification_channels = [google_monitoring_notification_channel.operations_email[0].name]
-  deletion_policy       = "DELETE"
+  deletion_policy       = "PREVENT"
+  lifecycle {
+    prevent_destroy = true
+  }
 }

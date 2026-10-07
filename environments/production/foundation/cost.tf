@@ -21,7 +21,7 @@ locals {
 }
 
 data "google_billing_account" "workload" {
-  count = var.recovery_mode ? 0 : 1
+  count = 1
 
   billing_account = var.billing_account_id
   lookup_projects = false
@@ -29,7 +29,7 @@ data "google_billing_account" "workload" {
 }
 
 data "google_project" "management" {
-  count = var.recovery_mode ? 0 : 1
+  count = 1
 
   project_id = var.management_project_id
 }
@@ -58,7 +58,7 @@ resource "google_cloud_quotas_quota_preference" "cost_cap" {
 }
 
 resource "google_monitoring_notification_channel" "cost_email" {
-  count = var.recovery_mode ? 0 : 1
+  count = 1
 
   project = google_project.workload.project_id
 
@@ -69,13 +69,16 @@ resource "google_monitoring_notification_channel" "cost_email" {
   force_delete = false
   labels       = { email_address = var.cost_alert_email }
 
-  deletion_policy = "DELETE"
+  deletion_policy = "PREVENT"
 
   depends_on = [google_project_service.workload["monitoring.googleapis.com"]]
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "google_monitoring_notification_channel" "operations_email" {
-  count = var.recovery_mode ? 0 : 1
+  count = 1
 
   project = google_project.workload.project_id
 
@@ -86,13 +89,16 @@ resource "google_monitoring_notification_channel" "operations_email" {
   force_delete = false
   labels       = { email_address = var.operations_alert_email }
 
-  deletion_policy = "DELETE"
+  deletion_policy = "PREVENT"
 
   depends_on = [google_project_service.workload["monitoring.googleapis.com"]]
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "google_billing_budget" "workload" {
-  count = var.recovery_mode ? 0 : 1
+  count = 1
 
   billing_account = var.billing_account_id
   display_name    = "Agora production infrastructure"
@@ -165,7 +171,10 @@ resource "google_billing_budget" "workload" {
     ])
   }
 
-  deletion_policy = "DELETE"
+  deletion_policy = "PREVENT"
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "google_logging_project_bucket_config" "default" {
@@ -176,9 +185,12 @@ resource "google_logging_project_bucket_config" "default" {
   retention_days   = 30
   enable_analytics = false
   locked           = false
-  deletion_policy  = "DELETE"
+  deletion_policy  = "PREVENT"
 
   depends_on = [google_project_service.workload["logging.googleapis.com"]]
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # Keep failed health requests and every application/audit log. Only successful

@@ -21,7 +21,7 @@ locals {
     environment = "production"
     managed-by  = "opentofu"
     plane       = "workload"
-    recovery    = var.recovery_mode ? "true" : "false"
+    recovery    = "false"
   }
 
   required_services = toset([
@@ -53,17 +53,11 @@ resource "google_project" "workload" {
   # The provider deletes Google's default VPC while creating a project. An
   # imported project needs the explicit recovery resource declared separately.
   auto_create_network = false
-  # The provider enforces this policy from prior state during deletion, so the
-  # operator applies it before switching the project ID. Destructive plan
-  # custody still requires approval on the exact merge commit. Tracked in
-  # https://github.com/a-novel/.github/issues/289
-  deletion_policy = "DELETE"
-  labels          = local.labels
+  deletion_policy     = "PREVENT"
+  labels              = local.labels
 
   lifecycle {
-    # Allocate the globally unique replacement ID before Google receives the
-    # current project's deletion request.
-    create_before_destroy = true
+    prevent_destroy = true
 
     precondition {
       condition     = var.organization_id == null || var.folder_id == null

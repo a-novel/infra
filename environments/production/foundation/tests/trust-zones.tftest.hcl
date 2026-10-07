@@ -131,24 +131,6 @@ run "reject_dedicated_registration" {
   expect_failures = [var.public_project_id]
 }
 
-run "reject_recovery_host" {
-  command = plan
-  variables {
-    recovery_mode      = true
-    shared_vpc_enabled = true
-  }
-  expect_failures = [var.shared_vpc_enabled]
-}
-
-run "reject_recovery_public_project" {
-  command = plan
-  variables {
-    recovery_mode     = true
-    public_project_id = "agora-public-test"
-  }
-  expect_failures = [var.public_project_id]
-}
-
 run "three_project_coordinates" {
   command = plan
   variables {
@@ -265,15 +247,6 @@ run "reject_api_invalid_project" {
   variables {
     shared_vpc_enabled    = true
     public_api_project_id = "INVALID"
-  }
-  expect_failures = [var.public_api_project_id]
-}
-
-run "reject_recovery_api_project" {
-  command = plan
-  variables {
-    recovery_mode         = true
-    public_api_project_id = "agora-api-test"
   }
   expect_failures = [var.public_api_project_id]
 }

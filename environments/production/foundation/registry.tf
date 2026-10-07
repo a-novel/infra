@@ -44,15 +44,18 @@ resource "google_artifact_registry_repository" "production" {
     }
   }
 
-  deletion_policy = "DELETE"
+  deletion_policy = "PREVENT"
 
   depends_on = [google_project_service.workload["artifactregistry.googleapis.com"]]
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # Recovery can copy receipt-owned immutable manifests out of production, but
 # has no writer role there.
 resource "google_artifact_registry_repository_iam_member" "recovery_reader" {
-  count = var.recovery_mode ? 0 : 1
+  count = 1
 
   project    = google_project.workload.project_id
   location   = google_artifact_registry_repository.production.location
@@ -75,7 +78,7 @@ resource "google_artifact_registry_repository_iam_member" "database_reader" {
 }
 
 resource "google_artifact_registry_repository_iam_member" "authentication_initializer_reader" {
-  for_each = var.recovery_mode ? toset([]) : var.authentication_initializer_principals
+  for_each = var.authentication_initializer_principals
 
   project    = google_project.workload.project_id
   location   = google_artifact_registry_repository.production.location

@@ -1,5 +1,5 @@
 variable "pgbackrest_repository_services" {
-  description = "Opt-in native repository network for registered private services or dedicated service projects. Empty by default and ignored during recovery."
+  description = "Opt-in native repository network for registered private services or dedicated service projects. Empty by default."
   type        = set(string)
   default     = []
   nullable    = false
@@ -10,7 +10,7 @@ variable "pgbackrest_repository_services" {
   }
 
   validation {
-    condition = var.recovery_mode || length(setsubtract(var.pgbackrest_repository_services, setunion(
+    condition = length(setsubtract(var.pgbackrest_repository_services, setunion(
       toset(keys(var.service_projects)),
       toset([for service, zones in var.service_release_zones : service if try(contains(zones, "private"), false)]),
     ))) == 0
@@ -19,8 +19,7 @@ variable "pgbackrest_repository_services" {
 }
 
 locals {
-  # Recovery compiles a copy of production inputs with no service projects.
-  pgbackrest_network = var.recovery_mode ? {} : merge({
+  pgbackrest_network = merge({
     for service, project in var.service_projects : service => {
       database   = "agora-database@${project}.iam.gserviceaccount.com"
       repository = "agora-backup-repository@${project}.iam.gserviceaccount.com"

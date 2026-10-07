@@ -18,7 +18,7 @@ Data Access audit logging. Merging the code creates nothing. The project, billin
 private state-bucket seed and import, first apply, GitHub environment protection, optional
 organization policies, and temporary-access removal remain explicit human bootstrap actions.
 
-The foundation root now defines the replaceable workload project, required APIs, a custom VPC and
+The foundation root defines the protected private workload project, required APIs, a custom VPC and
 subnet, explicit restricted Google routes, firewall policy, private DNS, deprivileged default service
 accounts, purpose-specific keyless runtime identities, exact management-secret access, an immutable registry, a
 trust-zone production budget with current/forecast thresholds, separate cost and operations email
