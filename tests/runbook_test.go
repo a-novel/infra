@@ -90,43 +90,6 @@ func shellCommand(body string) string {
 
 func TestRunbookIAM(t *testing.T) {
 	t.Parallel()
-	guide := read(t, "../docs/runbooks/disaster-recovery.md")
-	queries := regexp.MustCompile(`gcloud storage buckets get-iam-policy[^\n]+ --format=json \|\njq --exit-status --arg member "\$RESTORE_RUNTIME" '\n([^']+)'`).FindAllStringSubmatch(guide, -1)
-	require.Len(t, queries, 2)
-	for _, query := range queries {
-		require.NotContains(t, query[0], "--filter")
-	}
-	mutations := regexp.MustCompile(`(?m)^gcloud storage buckets (add|remove)-iam-policy-binding (.+)$`).FindAllStringSubmatch(guide, -1)
-	require.Len(t, mutations, 2)
-	for _, command := range mutations {
-		require.Contains(t, command[2], "--condition=None")
-		require.Contains(t, command[2], `--member="$RESTORE_RUNTIME"`)
-		require.Contains(t, command[2], "--role=roles/storage.objectViewer")
-	}
-	const member = "serviceAccount:agora-restore@fixture-project.iam.gserviceaccount.com"
-	reader := object{"role": "roles/storage.objectViewer", "members": []string{member}}
-	unrelated := object{"role": "roles/storage.objectCreator", "members": []string{"serviceAccount:other"}, "condition": object{"title": "BackupsOnly"}}
-	for _, testCase := range []struct {
-		name     string
-		bindings []object
-		codes    []int
-	}{
-		{"Exact", []object{unrelated, reader}, []int{0, 1}},
-		{"Removed", []object{unrelated}, []int{1, 0}},
-		{"Empty", []object{}, []int{1, 0}},
-		{"Conditional", []object{{"role": reader["role"], "members": reader["members"], "condition": unrelated["condition"]}}, []int{1, 1}},
-		{"ExtraRole", []object{reader, {"role": "roles/storage.objectAdmin", "members": reader["members"]}}, []int{1, 1}},
-		{"WrongPrincipal", []object{{"role": reader["role"], "members": []string{member + "-different"}}}, []int{1, 0}},
-	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			t.Parallel()
-			f := setup(t)
-			for index, query := range queries {
-				code, output := f.run(t, "jq", "-en", "--arg", "member", member, "--argjson", "policy", jsonText(t, object{"bindings": testCase.bindings}), "$policy | "+query[1])
-				expectCode(t, testCase.codes[index], code, output)
-			}
-		})
-	}
 	for _, testCase := range []struct{ file, condition string }{
 		{"configure-hosted-smtp", "SMTP_AUDIT_CONDITION"},
 		{"repair-foundation-firewall-access", "FIREWALL_REPAIR_CONDITION"},

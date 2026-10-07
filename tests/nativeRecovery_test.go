@@ -298,7 +298,7 @@ func TestNativeRecoveryWorkflow(t *testing.T) {
 		{"BuildWithoutPrivateInputs", privateDuringBuild, false},
 		{"ExplicitActivation", job.Env["NATIVE_RECOVERY_PREPARATION_ENABLED"], "${{ vars.NATIVE_RECOVERY_PREPARATION_ENABLED }}"},
 		{"MasterOnly", strings.Contains(job.If, "github.ref == 'refs/heads/master'"), true},
-		{"LegacyExcluded", strings.Contains(recovery.Jobs["recover"].If, "!endsWith(inputs.operation, '-native')"), true},
+		{"NativeWorkflowOnly", len(recovery.Jobs), 1},
 		{"CleanupActivation", job.Env["NATIVE_RECOVERY_CLEANUP_ENABLED"], "${{ vars.NATIVE_RECOVERY_CLEANUP_ENABLED }}"},
 		{"CleanupSelection", job.Steps[stepIndex(t, job.Steps, "custody recovery cleanup")].If, "inputs.operation == 'cleanup-native'"},
 		{"BoundInputs", job.Steps[apply].Env["TOFU_VAR_FILE"], "${{ steps.scope.outputs.file }}"},

@@ -26,9 +26,6 @@ func fixtureCommand(name string, args []string) (int, error) {
 	if sequence := os.Getenv("INFRA_TEST_SEQUENCE"); sequence != "" {
 		return expectedCommand(sequence, name, args)
 	}
-	if os.Getenv("RESTORE_SCENARIO") != "" {
-		return restoreCommand(name, args)
-	}
 	if os.Getenv("SMTP_SCENARIO") != "" {
 		return smtpCommand(name, args)
 	}

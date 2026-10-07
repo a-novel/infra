@@ -13,7 +13,6 @@ func TestPromote(t *testing.T) {
 	}{
 		{"Legacy", "release", "", "", -1},
 		{"Retention", "release", "", "123", -1},
-		{"Recovery", "recovery", "", "", -1},
 		{"JSONKeys", "service", "json-keys", "", -1},
 		{"Authentication", "service", "authentication", "", -1},
 		{"RejectLaterProvenanceBeforeAnyCopy", "service", "json-keys", "", 6},
@@ -35,8 +34,6 @@ func TestPromote(t *testing.T) {
 				if testCase.receipt != "" {
 					args = append(args, testCase.receipt)
 				}
-			case "recovery":
-				args = append(args, write(t, recoveryInventory(compiled)))
 			}
 			for _, value := range compiled["images"].([]any) {
 				image := value.(object)
@@ -47,9 +44,6 @@ func TestPromote(t *testing.T) {
 						continue
 					}
 					tag = strings.Replace(tag, "/agora-production-test/", "/fixture-service/", 1)
-				case "recovery":
-					source = target
-					tag = strings.Split(strings.Replace(target, "/agora-production-test/", "/agora-recovery-test/", 1), "@")[0] + ":recovery-123"
 				}
 				calls = append(calls, call{"copy", []string{source, tag}, "", false})
 				if testCase.receipt != "" {
@@ -70,45 +64,17 @@ func TestPromoteInvalid(t *testing.T) {
 	t.Parallel()
 	for _, testCase := range []struct {
 		name, mode string
-		mutate     func(object, []object)
+		mutate     func(object)
 	}{
-		{"Release/Empty", "release", func(c object, _ []object) { c["images"] = []any{} }},
-		{"Release/ForeignTarget", "release", func(c object, _ []object) { c["images"].([]any)[7].(object)["promoted"] = "private-diagnostic" }},
-		{"Release/ForeignSource", "release", func(c object, _ []object) { c["images"].([]any)[0].(object)["repository"] = "private-diagnostic" }},
-		{"Recovery/Duplicate", "recovery", func(_ object, r []object) { r[7] = r[0] }},
-		{"Recovery/Digest", "recovery", func(_ object, r []object) { r[7]["digest"] = "private-diagnostic" }},
-		{"Recovery/Tag", "recovery", func(_ object, r []object) { r[7]["tag"] = "private-diagnostic" }},
-		{"Recovery/Project", "recovery", func(_ object, r []object) {
-			for _, key := range []string{"target", "tag"} {
-				r[7][key] = strings.Replace(r[7][key].(string), "/agora-recovery-test/", "/agora-foreign-test/", 1)
-			}
-		}},
-		{"Recovery/PeerRole", "recovery", func(_ object, r []object) {
-			for _, key := range []string{"target", "tag"} {
-				r[7][key] = strings.Replace(r[7][key].(string), "service-authentication/rest", "service-json-keys/grpc", 1)
-			}
-		}},
+		{"Release/Empty", "release", func(c object) { c["images"] = []any{} }},
+		{"Release/ForeignTarget", "release", func(c object) { c["images"].([]any)[7].(object)["promoted"] = "private-diagnostic" }},
+		{"Release/ForeignSource", "release", func(c object) { c["images"].([]any)[0].(object)["repository"] = "private-diagnostic" }},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 			compiled := compiledRelease(t, read(t, "../../tests/fixtures/manifests/valid.yaml"))
-			recovery := recoveryInventory(compiled)
-			testCase.mutate(compiled, recovery)
-			var value any = compiled
-			if testCase.mode == "recovery" {
-				value = recovery
-			}
-			checkCalls(t, []string{"promote", testCase.mode, write(t, value)}, nil, 65)
+			testCase.mutate(compiled)
+			checkCalls(t, []string{"promote", testCase.mode, write(t, compiled)}, nil, 65)
 		})
 	}
-}
-
-func recoveryInventory(compiled object) []object {
-	var inventory []object
-	for _, value := range compiled["images"].([]any) {
-		image := value.(object)
-		target := strings.Replace(image["promoted"].(string), "/agora-production-test/", "/agora-recovery-test/", 1)
-		inventory = append(inventory, object{"source": image["promoted"], "target": target, "tag": strings.Split(target, "@")[0] + ":recovery-123", "digest": image["digest"]})
-	}
-	return inventory
 }

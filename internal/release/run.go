@@ -16,7 +16,7 @@ func Run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 		_, _ = fmt.Fprintln(stderr, message) // Best effort if the diagnostic stream has closed.
 		return code
 	}
-	usage := "Usage: infra compile-release <manifest> <config> <prior-or-> <output-dir> | compile-recovery <foundation-config> <receipt> <outputs-or-> <project> <json-attempt> <auth-attempt> <foundation|release> <output-dir> | validate-images <previous> <next> | receipt <validate|build> ..."
+	usage := "Usage: infra compile-release <manifest> <config> <prior-or-> <output-dir> | validate-images <previous> <next> | receipt <validate|build> ..."
 	if len(args) == 0 {
 		return stop(64, usage)
 	}
@@ -24,10 +24,6 @@ func Run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 	switch command {
 	case "compile-release":
 		if len(files) != 4 {
-			return stop(64, usage)
-		}
-	case "compile-recovery":
-		if len(files) != 8 {
 			return stop(64, usage)
 		}
 	case "validate-images":
@@ -54,8 +50,6 @@ func Run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 			action = "deploy"
 		}
 		err = compiler.CompileRelease(files, identity, action, getenv("PRIOR_IMAGE_MANIFEST"), getenv("CURRENT_RECEIPT"))
-	case "compile-recovery":
-		err = compiler.CompileRecovery(files, identity)
 	case "validate-images":
 		var previous, next object
 		previous, err = compiler.load(files[0], "images")

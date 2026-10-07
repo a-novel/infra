@@ -86,8 +86,6 @@ func run(ctx context.Context, args []string, getenv func(string) string, execute
 			return storage.restore(args[3:], getenv, output, options)
 		case "cleanup":
 			return storage.cleanup(args[3:], getenv, output, options)
-		case "cleanup-project":
-			return storage.legacyCleanup(args[3:], getenv, options)
 		default:
 			return failure{64, "Unknown protected recovery action."}
 		}

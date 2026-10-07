@@ -307,40 +307,12 @@ machine type, container allocations, connection caps, or growth-only disk size i
 the host runbook owns outage planning and rollback. Never attach a public IP or open PostgreSQL for
 diagnosis.
 
-## PostgreSQL backups and restore drills
+<a id="native-backup-pilot"></a>
 
-**Signal:** `Agora PostgreSQL recovery jobs unhealthy`. Any `agora-postgres-*` execution failed, or
-the hourly backup monitor has not completed for three hours. This covers four-hour logical backups,
-monthly clean restores, and the RPO/storage monitor without a custom metric or log parser.
+## Native backups
 
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-for job in \
-  agora-postgres-backup-json-keys \
-  agora-postgres-backup-authentication \
-  agora-postgres-restore-json-keys \
-  agora-postgres-restore-authentication \
-  agora-postgres-backup-monitor; do
-  gcloud run jobs executions list --job="$job" \
-    --project="$INFRA_WORKLOAD_PROJECT_ID" --region="$REGION" --limit=5 \
-    --format='table(metadata.name,metadata.creationTimestamp,status.completionTime,status.conditions.type,status.conditions.status)'
-done
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-Continue with [Back up and restore PostgreSQL](./backup-and-restore-postgresql.md). It owns exact
-manifest inspection, schedules, six-hour RPO, retained-storage ceiling, clean restore, snapshot,
-and escalation checks. Freeze database-changing releases until both databases again have a fresh
-logical backup and the monitor succeeds. Do not delete a partial object, rewrite a completion
-manifest, or call a backup successful from object presence alone.
-
-## Native backup pilot
-
-**Inactive service-owned preparation, not current production monitoring.** The five prepared policies
-are disabled and use the selected service's operations channel. Existing logical-backup and snapshot
-protection remains unchanged.
+The service's five native policies use its operations channel and exact database instance ID.
+Follow [backup operations](./backup-and-restore-postgresql.md) for catalog, integrity and recovery checks.
 
 An error policy reports pgBackRest/WAL errors or warning journal events from its workers. The health
 policies report a missed Sunday full-backup deadline, missing daily-backup/hourly-check success,
@@ -350,7 +322,7 @@ full-chain age guarantee. A stopped host, failed collection and a missed job are
 No incident proves that a restore would succeed; `info` can be OK with a missing dependency.
 
 Inspect the exact project/VM bound in the policy, then the relevant `agora-backup-*.service` journal,
-its retained Docker logs and the three timers. The prepared units retain bounded logs until the next
+its retained Docker logs and the three timers. The units retain bounded logs until the next
 run; export relevant failure evidence first. Inspect native backup sets and archive progress without
 changing the selected recovery point. Do not run expiry, delete WAL, weaken retention or fall back
 silently to a different set/time. A failed archive can fill the database disk while the API still works.
@@ -359,7 +331,7 @@ Disruptive maintenance/recovery follows [service admission](../service-operation
 including stopping timers and draining workers. Stopping timers alone does not stop WAL archiving.
 After host replacement, reconcile the policies' numeric VM ID before resuming scheduled work.
 
-Before activation, the approved COS rehearsal must establish actual container/journal field mapping,
+Before enrolling a new service, its approved COS rehearsal must establish actual container/journal field mapping,
 first successful counters, no-data and zero-data behavior, UTC deadline boundaries, stopped-host
 detection, data-disk coverage and notification delivery. Check bounds against measured backup runtime
 and workload recovery objectives. Alerting resources/metrics must exist before collecting the baseline;

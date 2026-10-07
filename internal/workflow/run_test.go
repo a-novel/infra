@@ -33,13 +33,9 @@ func TestRun(t *testing.T) {
 		{[]string{"foundation", "recover-legacy", "42", "RECOVER LEGACY 42"}, []string{"operation=recover-legacy", "root=foundation", "service=none", "guard_generation=42", "confirm=RECOVER LEGACY 42"}, "202"},
 		{[]string{"release", "drill-database-isolation", "101-3", "DRILL authentication"}, []string{"action=drill-database-isolation", "target_receipt=101-3", "confirm_isolation=DRILL authentication"}, "202"},
 		{[]string{"release", "restore-database-isolation", "101-3", "RESTORE authentication"}, []string{"action=restore-database-isolation", "target_receipt=101-3", "confirm_isolation=RESTORE authentication"}, "202"},
-		{[]string{"recovery", "plan-workload", "recovery-project-prod", "101-3"}, []string{"operation=plan-workload", "replacement_project_id=recovery-project-prod", "target_receipt=101-3"}, "202-3"},
 		{[]string{"recovery", "plan-native", "a-novel-recovery-proof"}, []string{"operation=plan-native", "replacement_project_id=a-novel-recovery-proof"}, "202-3"},
 		{[]string{"recovery", "cleanup-native", "a-novel-recovery-proof", "DELETE a-novel-recovery-proof"}, []string{"operation=cleanup-native", "replacement_project_id=a-novel-recovery-proof", "confirm=DELETE a-novel-recovery-proof"}, "202"},
 		{[]string{"recovery", "apply-native", "a-novel-recovery-proof", "101-3"}, []string{"operation=apply-native", "replacement_project_id=a-novel-recovery-proof", "plan_id=101-3"}, "202"},
-		{[]string{"recovery", "apply-workload", "recovery-project-prod", "101-3", "101-3"}, []string{"operation=apply-workload", "replacement_project_id=recovery-project-prod", "target_receipt=101-3", "plan_id=101-3"}, "202"},
-		{[]string{"recovery", "restore-data", "recovery-project-prod", "101-3", "100-json-1", "101-auth-1", `@literal {value} = "no known lost writes"`, "RESTORE recovery-project-prod"}, []string{"operation=restore-data", "replacement_project_id=recovery-project-prod", "target_receipt=101-3", "json_keys_attempt=100-json-1", "authentication_attempt=101-auth-1", `lost_write_window=@literal {value} = "no known lost writes"`, "confirm=RESTORE recovery-project-prod"}, "202-3"},
-		{[]string{"recovery", "cleanup-project", "recovery-project-prod", "101-3", "DELETE recovery-project-prod"}, []string{"operation=cleanup-project", "replacement_project_id=recovery-project-prod", "target_receipt=101-3", "confirm=DELETE recovery-project-prod"}, "202"},
 	}
 	for _, testCase := range testCases {
 		t.Run(strings.Join(testCase.args, " "), func(t *testing.T) {
@@ -64,6 +60,10 @@ func TestRunInvalidIntent(t *testing.T) {
 	for _, args := range [][]string{
 		nil,
 		{"unknown"},
+		{"recovery", "plan-workload", "recovery-project-prod", "101-3"},
+		{"recovery", "apply-workload", "recovery-project-prod", "101-3", "101-3"},
+		{"recovery", "restore-data", "recovery-project-prod", "101-3", "100-json-1", "101-auth-1", "writes", "RESTORE recovery-project-prod"},
+		{"recovery", "cleanup-project", "recovery-project-prod", "101-3", "DELETE recovery-project-prod"},
 		{"drift", "observe-rollout", "authentication", "release-123", "production"},
 		{"drift", "observe-rollout", "json-keys", "release-123"},
 		{"drift", "observe-rollout", "json-keys", "release-123", "production", "extra"},

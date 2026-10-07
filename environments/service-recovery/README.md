@@ -10,16 +10,13 @@ The protected recovery workflow separates **host preparation** from **file resto
 unless their respective `NATIVE_RECOVERY_PREPARATION_ENABLED` / `NATIVE_RECOVERY_EXECUTION_ENABLED`
 flags are `true`. Assessment and drift inspect registered state without
 either mutation flag. Do not apply this root directly; see [preparation](#guarded-host-preparation)
-and the separate [activation gates](#activation-gates). Legacy logical recovery and current backups
-remain unchanged.
+and the separate [activation gates](#activation-gates).
 
 [Project cleanup](#guarded-project-cleanup) has its own disabled activation flag and committed
 authorization. Merging these paths does not provision resources, restore data or delete a project.
 
-The prepared image consumes the published Wolfi database patch. Its blocking image scan is unchanged;
-green scans and offline proofs do not authorize publication, provisioning or recovery execution.
-This is a fresh-database boundary, not an in-place upgrade of Debian data directories. Retain the
-old image/reader for existing backups and review compatibility against the selected backup evidence.
+Review the selected image and reader against the exact backup before preparation. Image scans and
+offline proofs do not authorize provisioning or recovery execution.
 
 ## Contract
 
@@ -152,8 +149,7 @@ review a fresh destination and its complete selection instead.
 
 ## Guarded project cleanup
 
-Cleanup uses the same Resource Manager deletion path as legacy drills, not an OpenTofu destroy
-or a second per-resource coordinator. It is limited to a **completed** native recovery with private
+Cleanup requests deletion through Resource Manager. It is limited to a **completed** native recovery with private
 evidence exported to management storage. Active, failed or uncertain work must first be reconciled;
 cleanup is not an escape hatch from a held service guard.
 
@@ -168,7 +164,7 @@ The revocation field is a human attestation, not an automated effective-IAM proo
 
 The authorization PR needs the existing human `allow-resource-deletion` label **before merge**.
 Separately approve `NATIVE_RECOVERY_CLEANUP_ENABLED=true` in `production-recovery`. The project must
-carry the five legacy recovery labels (`application=agora`, `environment=production`,
+carry the five recovery labels (`application=agora`, `environment=production`,
 `managed-by=opentofu`, `plane=workload`, `recovery=true`) and the exact unconditional project-local
 `roles/resourcemanager.projectDeleter` binding for `infra-recovery@MANAGEMENT.iam.gserviceaccount.com`.
 Those labels and permissions are activation prerequisites, not changes made by this implementation.

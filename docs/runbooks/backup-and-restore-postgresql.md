@@ -1,559 +1,109 @@
 # Back up and restore PostgreSQL
 
-This runbook operates the logical PostgreSQL backups, clean restore drills, and crash-consistent
-disk snapshots for JSON Keys and Authentication. It is the recovery procedure for database data;
-application rollback does not rewind schemas or rows.
-
-Google product behavior is documented by [Cloud Run jobs](https://cloud.google.com/run/docs/create-jobs),
-[Cloud Run ephemeral disk](https://cloud.google.com/run/docs/configuring/jobs/ephemeral-disk),
-[Cloud Storage retention policies](https://cloud.google.com/storage/docs/bucket-lock),
-[Cloud Storage lifecycle rules](https://cloud.google.com/storage/docs/lifecycle),
-[scheduled Persistent Disk snapshots](https://cloud.google.com/compute/docs/disks/about-snapshot-schedules),
-and PostgreSQL's [`pg_dump`](https://www.postgresql.org/docs/18/app-pgdump.html) and
-[`pg_restore`](https://www.postgresql.org/docs/18/app-pgrestore.html) references.
-
-## Operator context
-
-Load the published project coordinates, then run later blocks in the existing configured zsh
-session:
-
-```sh
-. ./.envrc
-go run ./cmd/infra verify-env --github
-```
-
-Paste this block once before selecting or invoking a recovery job:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-umask 077
-
-REPOSITORY='a-novel/infra'
-REGION='europe-west1'
-
-MANAGEMENT_PROJECT_ID="$INFRA_MANAGEMENT_PROJECT_ID"
-WORKLOAD_PROJECT_ID="$INFRA_WORKLOAD_PROJECT_ID"
-MANAGEMENT_PROJECT_NUMBER="$(gcloud projects describe "$INFRA_MANAGEMENT_PROJECT_ID" \
-  --format='value(projectNumber)')"
-BACKUP_BUCKET="${MANAGEMENT_PROJECT_ID}-${MANAGEMENT_PROJECT_NUMBER}-backups"
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-## Recovery objectives
-
-| Objective           | Contract                                                                                                                                            |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Logical-backup RPO  | At most six hours. Each database is dumped every four hours with a 30-minute job timeout.                                                           |
-| Logical-restore RTO | Measure every drill against 90 minutes. The automated restore job fails after 60 minutes so the target is missed before the objective is exhausted. |
-| Logical retention   | Six restore points per day for 14 days: 84 attempts per database, subject to successful completion.                                                 |
-| Snapshot retention  | One crash-consistent data-disk snapshot each day at 02:00 UTC, retained for seven days.                                                             |
-| Production writes   | Freeze when the latest logical backups or clean restore drills do not meet the contracts above.                                                     |
-
-A logical dump is the primary portable recovery point. A disk snapshot is a faster, crash-consistent
-host recovery point and does not replace a tested logical restore. Point-in-time recovery is
-deliberately deferred until one of the thresholds in [Escalate to PITR](#escalate-to-pitr) is met.
-
-## Implemented topology
-
-The release root creates five scale-to-zero Cloud Run jobs and five Cloud Scheduler entries when
-both database recovery contracts are enabled:
-
-| Job                                     | UTC schedule   | Purpose                                                                        | Maximum runtime |
-| --------------------------------------- | -------------- | ------------------------------------------------------------------------------ | --------------: |
-| `agora-postgres-backup-json-keys`       | `15 */4 * * *` | Dump JSON Keys and commit its completion manifest.                             |      30 minutes |
-| `agora-postgres-backup-authentication`  | `45 */4 * * *` | Dump Authentication and commit its completion manifest.                        |      30 minutes |
-| `agora-postgres-restore-json-keys`      | `15 3 1 * *`   | Restore the newest committed JSON Keys backup into a fresh local cluster.      |      60 minutes |
-| `agora-postgres-restore-authentication` | `45 3 1 * *`   | Restore the newest committed Authentication backup into a fresh local cluster. |      60 minutes |
-| `agora-postgres-backup-monitor`         | `5 * * * *`    | Check both manifests, RPO, object sizes, and retained bytes.                   |       5 minutes |
-
-Cloud Scheduler authenticates with `agora-scheduler-invoker`; that account receives only
-`roles/run.jobsExecutor` on these exact jobs. Scheduler starts an execution and does not wait for it. The
-native Cloud Run completion metric therefore remains authoritative: one condition detects failed
-executions and another detects three hours without a completed hourly monitor.
-
-The foundation root also attaches a service-specific daily snapshot policy to each preserved `agora-data-authentication` / `agora-data-json-keys`
-disk. The schedule stores snapshots in `europe-west1` for inexpensive fast local recovery and keeps
-them after source-disk deletion. Portable logical backups remain in the management project's EU
-multi-region bucket for regional-loss recovery.
-
-## Backup commit protocol
-
-Each backup job uses the exact promoted database image digest. This keeps `pg_dump`, `pg_restore`,
-the declared owner, extensions, and schema bootstrap at the same PostgreSQL major as production.
-
-The database container writes a custom-format, zstd-compressed archive to an ephemeral volume and
-refuses to continue unless all of these checks pass. Disk-backed `emptyDir` is a Cloud Run Preview
-feature; backup and restore declare the `BETA` launch stage and use its supported 10 GiB minimum so
-no quota increase is required. Retries, checksums, and monthly clean restores are the acceptance
-controls for this early-product tradeoff.
-
-- the archive is non-empty and `pg_restore --list` can read it;
-- `pg_dump` emitted no warning or diagnostic;
-- the source project, private host, port, database, owner, execution, and tool version match the
-  hardcoded contract;
-- the running PostgreSQL server reports the same immutable database-image digest and PostgreSQL
-  major as the backup container; an upgrade ordered ahead of its source backup therefore fails
-  closed instead of publishing a mislabeled recovery point;
-- no undeclared non-system role, role membership, database, tablespace, extension, or replication
-  slot exists; the current contract contains only `plpgsql` and `uuid-ossp` extensions;
-- the dedicated backup role is login-capable, non-privileged, and a member of
-  `pg_read_all_data`.
-
-A stock curl sidecar uploads the archive to a unique attempt path with
-`ifGenerationMatch=0`, then uploads the 18-line `completed.manifest`. The manifest is the commit
-record: an archive without that marker is never restorable. It records identifiers, source identity,
-image and tool versions, timestamps, size, and SHA-256 only—never credentials or row data.
-The non-root sidecar can read the root-owned `0444` files but cannot replace them: its only writable
-path is a separate write-only control directory used for the fixed success/failure signal.
-
-The host supplies the digest as the `agora.database_image` command-line startup marker. PostgreSQL
-explicitly accepts namespaced [custom two-part options](https://www.postgresql.org/docs/18/runtime-config-custom.html),
-so this consistency check needs no extension, table, file, or additional process. It detects an
-accidentally reversed deployment order under trusted host administration; image promotion and
-digest pinning remain the authenticity controls.
-
-Objects use this layout:
-
-```text
-v1/<database>/attempts/<started-epoch>-<execution>-<attempt>/database.dump
-v1/<database>/attempts/<started-epoch>-<execution>-<attempt>/completed.manifest
-```
-
-The bucket rejects public access, uses uniform IAM, prevents deletion, disables soft delete, keeps
-every object for at least seven days, and deletes objects after 14 days. Soft delete is intentionally
-off: retaining another billable hidden copy after lifecycle deletion would duplicate the reviewed
-retention policy.
-
-## Security boundaries
-
-| Identity                  | Data it can reach                                                                                                       | Deliberately cannot do                                                                                                                           |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `agora-backup`            | Read the two exact backup-password secrets; connect privately to both PostgreSQL ports; create new backup objects.      | List, read, overwrite, or delete backup objects; administer databases; use an owner credential; reach the public internet.                       |
-| `agora-restore`           | Read backup objects and supported restricted Google APIs.                                                               | Reach either production PostgreSQL port; read a secret; create, overwrite, or delete a backup; reach the public internet.                        |
-| `agora-scheduler-invoker` | Invoke the five exact recovery jobs.                                                                                    | Read backups or secrets; connect to a database; alter a job.                                                                                     |
-| `infra-release`           | Define the jobs and schedules; invoke the five exact recovery jobs during release verification; list snapshot metadata. | Run a job with overrides; create or delete a snapshot; read backup objects or secret payloads; change bucket retention, network, or project IAM. |
-
-Cloud Run jobs expose no request endpoint. All task traffic enters the deny-by-default VPC. Backup
-tasks receive the `agora-backup` tag, which allows only restricted Google APIs and the two private
-PostgreSQL ports. Restore and monitor tasks receive `agora-restore`, which allows restricted Google
-APIs but has no database egress rule. Production PostgreSQL still has no external address, public
-frontend, public DNS record, or public firewall path.
-
-The backup role in each cluster is separate from its owner. It has `LOGIN`, `INHERIT`,
-`pg_read_all_data`, and a connection limit of two; it has no superuser, database creation, role
-creation, replication, or row-security bypass authority. The host creates and rotates that role from
-the exact backup-password version in release metadata. All four owner and backup passwords must be
-distinct.
-
-## Preconditions and stop conditions
-
-Stop before any production mutation unless all of these statements are true:
-
-- the bootstrap and foundation runbooks have completed and their verification records are clean;
-- the protected foundation and release workflows exist on `master` and require their documented
-  GitHub environment approvals;
-- `production-json-keys-postgres-backup-password` and
-  `production-authentication-postgres-backup-password` each have an enabled numeric version created
-  through [the secret-version runbook](./secret-versions.md);
-- those values are distinct from one another and from both database-owner passwords;
-- both database images have been promoted to the production Artifact Registry with an immutable
-  digest and use the same PostgreSQL major as their source clusters;
-- the release input enables Authentication and JSON Keys together and pins both numeric backup
-  secret versions;
-- the alert notification channel is verified, and a named operator can receive its messages;
-- no incident, restore, migration, foundation apply, or second database release is already active.
-
-Do not use `latest`, a tag-only image, a branch image, a public database address, an owner password
-for backups, or a local `tofu apply` as a shortcut.
-
-## Select and verify the deployed boundary
-
-Run the following only from a private, non-recorded operator shell. These commands inspect metadata;
-they do not print secret values or backup payloads.
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-[[ "${MANAGEMENT_PROJECT_ID}" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
-[[ "${WORKLOAD_PROJECT_ID}" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
-[[ "${REGION}" =~ ^[a-z]+-[a-z]+[0-9]+$ ]]
-
-[[ "${MANAGEMENT_PROJECT_NUMBER}" =~ ^[0-9]+$ ]]
-
-gcloud storage buckets describe "gs://${BACKUP_BUCKET}" \
-  --format='yaml(name,location,storage_class,public_access_prevention,uniform_bucket_level_access,soft_delete_policy,retention_policy,lifecycle_config)'
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-Expected safe result: the bucket is `STANDARD` in `EU`, public access prevention and uniform access
-are enabled, soft-delete retention is zero, object lifecycle age is 14 days, and bucket retention is
-seven days with `isLocked` set to `true`.
-
-Verify the jobs and schedules without exporting their full environment or embedded scripts:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-gcloud run jobs list \
-  --project="$INFRA_WORKLOAD_PROJECT_ID" \
-  --region="${REGION}" \
-  --filter='metadata.name:agora-postgres-' \
-  --format='table(metadata.name,metadata.labels.role)'
-
-gcloud scheduler jobs list \
-  --project="$INFRA_WORKLOAD_PROJECT_ID" \
-  --location="${REGION}" \
-  --filter='name:agora-postgres-' \
-  --format='table(name.basename(),schedule,timeZone,state)'
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-Expected safe result: exactly the five jobs and five enabled UTC schedules in the topology table.
-If either count or any schedule differs, stop and reconcile the reviewed OpenTofu state; do not patch
-the live resource with `gcloud`.
-
-## Execute an immediate logical backup
-
-Use this as an operator-confirmed recovery point or when diagnosing a schedule. The protected
-database release and migration paths invoke the same jobs automatically.
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-for job in \
-  agora-postgres-backup-json-keys \
-  agora-postgres-backup-authentication; do
-  gcloud run jobs execute "${job}" \
-    --project="$INFRA_WORKLOAD_PROJECT_ID" \
-    --region="${REGION}" \
-    --wait \
-    --quiet \
-    --format='yaml(metadata.name,status.conditions,status.startTime,status.completionTime)'
-done
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-Expected safe result: each execution completes successfully within 30 minutes. A successful task has
-already uploaded a non-empty archive and its completion manifest. The command intentionally does not
-stream application logs.
-
-Independently list committed markers and their object metadata without downloading payloads:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-for database in json-keys authentication; do
-  gcloud storage ls --long \
-    "gs://${BACKUP_BUCKET}/v1/${database}/attempts/**/completed.manifest" \
-    | tail -n 1
-done
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-Expected safe result: one recent, non-zero completion manifest for each database. Treat the output as
-private operational metadata because it contains attempt identifiers. If an execution succeeded but
-no marker exists, declare the backup failed, inspect its private Cloud Run logs, and do not fabricate
-or upload a marker manually.
-
-## Run and measure a clean restore
-
-The restore job selects only the newest completion manifest, requires an exact 18-key schema,
-requires the exact workload project, private source address, database port, image, and PostgreSQL
-major, copies the archive to ephemeral storage, checks size and SHA-256, and runs
-`pg_restore --exit-on-error --single-transaction` into a newly
-initialized local cluster. The cluster listens only on a Unix socket and receives no production
-credential. Hardcoded service schema and integrity smoke checks must pass before success.
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-DRILL_STARTED_EPOCH="$(date -u +%s)"
-
-for job in \
-  agora-postgres-restore-json-keys \
-  agora-postgres-restore-authentication; do
-  gcloud run jobs execute "${job}" \
-    --project="$INFRA_WORKLOAD_PROJECT_ID" \
-    --region="${REGION}" \
-    --wait \
-    --quiet \
-    --format='yaml(metadata.name,status.conditions,status.startTime,status.completionTime)'
-done
-
-DRILL_COMPLETED_EPOCH="$(date -u +%s)"
-DRILL_SECONDS="$((DRILL_COMPLETED_EPOCH - DRILL_STARTED_EPOCH))"
-test "${DRILL_SECONDS}" -le 5400
-printf 'Both PostgreSQL clean restores completed in %s seconds.\n' "${DRILL_SECONDS}"
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-Expected safe result: each job succeeds in less than 60 minutes and the combined operator-observed
-drill remains within the 90-minute RTO. Record both execution names, start/completion times,
-duration, source attempt identifiers, image digests, operator, and outcome in the private recovery
-record.
-
-On failure, do not retry blindly. Classify the fixed error category in private logs:
-
-- missing or stale manifest: investigate the backup job, scheduler, IAM, and RPO alert;
-- image or PostgreSQL-major mismatch: retain the older image and run its matching restore contract;
-- size, checksum, or archive-list failure: quarantine that attempt and use the prior completed one
-  only through a reviewed recovery change;
-- `pg_restore` or service smoke failure: treat the current backup as unproven, block migrations and
-  production writes, and repair the schema or backup contract in code;
-- timeout: measure archive size and restore phases, then follow the PITR/scaling thresholds instead
-  of extending every timeout without evidence.
-
-## Pre-change recovery gate
-
-`infra database-release prepare` is mandatory before every database image update and every migration.
-It is called automatically by `infra database-release deploy`. A migration workflow must call it
-before the migration job and must not duplicate its checks.
-
-For an existing cluster, run the gate while the deployed backup jobs still use the current source
-image digests. Only after both source backups succeed may the host move to the new images; reconcile
-the recovery jobs to those new digests after the new clusters are healthy. Reversing that order
-fails closed because a backup job refuses a server-reported image marker that differs from its own.
-
-The gate:
-
-1. requires the exact seven-key foundation/release metadata map;
-2. finds the newest foundation-scheduled snapshot with the exact disk, labels, regional location, and
-   `READY` state;
-3. rejects a snapshot older than 26 hours or more than five minutes in the future;
-4. for a non-empty database release, executes both logical backup jobs synchronously;
-5. exits before any database metadata or migration can change.
-
-The release identity can list snapshots but cannot create or delete them. With one daily snapshot,
-the 26-hour window covers scheduler and readiness jitter without an on-demand snapshot controller
-or a second snapshot lifecycle.
-
-A service-only or platform-only deployment does not need a new dump. Its protected workflow must run
-`agora-postgres-backup-monitor` and require success, proving both committed backups are at most six
-hours old before traffic changes:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-gcloud run jobs execute agora-postgres-backup-monitor \
-  --project="$INFRA_WORKLOAD_PROJECT_ID" \
-  --region="${REGION}" \
-  --wait \
-  --quiet \
-  --format='yaml(metadata.name,status.conditions,status.startTime,status.completionTime)'
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-## Verify least privilege
-
-Inspect allow policies without requesting or printing access tokens:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-gcloud storage buckets get-iam-policy "gs://${BACKUP_BUCKET}" \
-  --format=json \
-  | jq --exit-status \
-      --arg backup "serviceAccount:agora-backup@${WORKLOAD_PROJECT_ID}.iam.gserviceaccount.com" \
-      --arg restore "serviceAccount:agora-restore@${WORKLOAD_PROJECT_ID}.iam.gserviceaccount.com" '
-        def roles_for($member): [.bindings[] | select(.members | index($member)) | .role] | sort;
-        (roles_for($backup) == ["roles/storage.objectCreator"]) and
-        (roles_for($restore) == ["roles/storage.objectViewer"])
-      '
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-Expected safe result: `true`. Also verify no user-managed keys exist:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-for account in agora-backup agora-restore agora-scheduler-invoker; do
-  gcloud iam service-accounts keys list \
-    --iam-account="${account}@${WORKLOAD_PROJECT_ID}.iam.gserviceaccount.com" \
-    --project="$INFRA_WORKLOAD_PROJECT_ID" \
-    --managed-by=user \
-    --format='value(name)'
-done
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-Expected safe result: no output. Any user-managed key is an incident: disable it, determine its use,
-remove it through the approved response, and verify WIF/runtime authentication before resuming.
-
-## Alerts and routine review
-
-`Agora PostgreSQL recovery jobs unhealthy` has two conditions on Cloud Run's native completion
-metric: any failed `agora-postgres-*` execution, or no completed
-`agora-postgres-backup-monitor` execution for three hours. Together they cover:
-
-- backup failure, missing completion marker, or the 30-minute backup duration ceiling;
-- restore absence, checksum/catalog mismatch, restore/smoke failure, or the 60-minute duration
-  ceiling;
-- an RPO older than six hours;
-- a missing, malformed, or mismatched completion manifest;
-- total retained backup objects above 250 GiB, leaving cost headroom below the USD 20/month design
-  gate after EU write replication and one monthly restore read;
-- a stopped monitor schedule or dispatch path that produces no monitor execution.
-
-The absence condition starts only after the first successful monitor measurement. Metric absence is
-not resource-deletion protection, so the reviewed deletion-label gate remains the control for
-removing the monitor or its schedule.
-
-The hourly monitor reads object metadata and manifests but never database payloads. After any alert:
-
-1. acknowledge only after a named operator owns the incident;
-2. freeze database changes and, if RPO is exceeded, nonessential production writes;
-3. inspect the failed execution privately and identify the fixed error category;
-4. execute a manual backup only after correcting the cause;
-5. run both clean restores when integrity, image compatibility, or retained data is in doubt;
-6. record actual RPO, restore duration, retained bytes, resolution, and whether a PITR threshold was
-   crossed.
-
-Review monthly restore executions every month even when no alert fires. Cloud Scheduler acceptance
-only proves that the API request was accepted; the Cloud Run execution result proves the restore.
-During the same review, run the non-mutating inventory in
-[Authentication synthetic health](./respond-to-alerts.md#authentication-synthetic-health) and
-confirm the scheduled workflow is active, its owner is current, and its last health job is newer
-than six hours. This catches GitHub's public-repository inactivity disablement without a second
-monitor.
-
-## Storage forecast
-
-Four-hour cadence over 14 days retains at most 84 completed logical archives per database, plus
-small manifests and any incomplete attempt objects until lifecycle deletion. Use:
-
-```text
-retained logical GiB = 84 × aggregate compressed GiB of one JSON Keys + Authentication backup
-logical USD/month ≈ (84 × 0.026 + 180 × 0.02 + 1 × 0.02) × aggregate compressed GiB
-                  ≈ 5.80 × aggregate compressed GiB
-```
-
-The formula includes steady EU multi-region Standard storage, about 180 aggregate writes per
-30-day month, and one aggregate monthly read into `europe-west1`. A combined 2 GiB current set
-retains about 168 GiB and costs about USD 11.60/month before partial attempts. The 250 GiB monitor
-threshold corresponds to about a 3 GiB current set and roughly USD 17.30/month. Track incomplete
-attempts and same-region snapshot delta storage separately. The hourly monitor measures all retained
-logical objects rather than estimating from only completed archives.
-
-## Escalate to PITR
-
-Open a PITR design epic when any one condition is measured:
-
-- a logical backup exceeds 30 minutes;
-- a clean restore exceeds 60 minutes;
-- one current compressed backup set exceeds 20 GiB in aggregate;
-- logical-backup storage exceeds USD 20/month;
-- the business requires an RPO below six hours; or
-- a managed database or backup commitment becomes acceptable.
-
-That epic must compare WAL archival, managed PostgreSQL, restore sequencing, encryption/key recovery,
-retention, monitoring, and the measured operator burden. Do not bolt continuous WAL shipping onto
-these jobs without that design.
+JSON Keys and Authentication use separate pgBackRest repositories in management-owned storage.
+Each database archives WAL from its existing private VM and runs bounded native backup workers.
+Application rollback does not rewind database schemas or rows.
+
+## Routine protection
+
+| Unit                       | UTC schedule          | Purpose                                          |
+| -------------------------- | --------------------- | ------------------------------------------------ |
+| `agora-backup-full.timer`  | Sunday 02:00          | Start a full backup.                             |
+| `agora-backup-diff.timer`  | Monday–Saturday 02:00 | Start a differential backup.                     |
+| `agora-backup-check.timer` | Hourly at :30         | Check archive delivery and certificate lifetime. |
+
+Timers allow five minutes of random delay plus one minute of accuracy. They do not catch up missed
+runs. When scheduling is enabled in the reviewed runtime configuration, the database service starts
+and stops its timers with its own lifecycle. A stopped database stays stopped when a backup is
+requested. Workers have a one-hour runtime limit, share pgBackRest's native lock and leave bounded
+logs for diagnosis.
+
+Confirm the selected service, source instance ID, PostgreSQL system ID, repository and immutable
+image before running an operation. Use [private host access](./debug-postgresql-host.md); do not open
+a public database or SSH port.
+
+## Run an attended backup
+
+On the selected, healthy database host, run the installed `agora-backup-check.service`, followed by
+`agora-backup-full.service` or `agora-backup-diff.service`. Wait for each worker to finish before the
+next step. A successful start request does not prove successful backup completion.
+
+Inspect the unit result, retained container logs and pgBackRest catalog. Record the exact set label,
+database epoch/system ID, completion time, WAL bounds and copied consistency WAL. Run
+`agora-backup-verify.service` to inspect the native integrity report; an empty repository or exit zero
+alone is insufficient. Preserve diagnostics before another run replaces the exited container.
+
+A manual run proves that operation, not a natural calendar firing. Record the trigger accurately.
+Do not change schedules just to manufacture scheduled-success evidence.
+
+## Restore and maintenance
+
+Use the [disposable recovery procedure](./disaster-recovery.md) for an independent exact-set restore,
+including compatible image selection, fresh storage, isolated SQL verification and cleanup.
+Schema verification and an independently captured application-data fingerprint establish different
+properties; record which was checked. Neither authorizes traffic cutover.
+
+Protected database maintenance takes a fresh native full backup and verifies that exact set through
+networkless SQL on the existing repository host before replacing the database host. Follow
+[database maintenance](./operate-postgresql-host.md) and
+[service admission](../service-operations.md#native-online-backups). Do not replace a held operation
+with a direct apply or silently select another backup after failure.
+
+## Retention and costs
+
+Reviewed native retention expires complete full/differential chains through pgBackRest. Storage
+versioning, retention and soft delete can preserve billable generations after native expiry.
+Inspect live, noncurrent and soft-deleted bytes separately; deleting a catalog entry does not prove
+storage reclamation. Never use an age-only lifecycle rule against live native backup dependencies.
+
+The accepted operating configuration uses a 14-day full-chain window. This is not a guarantee that
+every point remains recoverable: verify the actual catalog, dependencies and restore evidence.
+Changing retention, enabling noncurrent cleanup or deleting historical copies requires an exact
+review. Locked retention cannot be shortened to accelerate approved retirement.
+
+Track repository/WAL growth, retained generations, requests, networking and logs against the approved
+per-service allowance. Short acceptance runs do not establish long-term monthly cost.
+Follow [native backup alerts](./respond-to-alerts.md#native-backups) for missed runs, archive failure,
+disk pressure and certificate warnings.
 
 ## Native backup preparation
 
-The per-service pgBackRest design is staged under [#190](https://github.com/a-novel/infra/issues/190).
-Its [bootstrap custody map](../../bootstrap/README.md#service-owned-native-backup-custody)
-defaults to empty and is not a backup deployment. Keep new service entries absent from `BOOTSTRAP_TFVARS_JSON` until
-separate provisioning approval. Existing logical jobs, schedules, receipts and recovery objectives
-remain authoritative.
+New services stay disabled until separately approved. Follow the
+[bootstrap custody contract](../../bootstrap/README.md#service-owned-native-backup-custody),
+[repository host contract](../../environments/service-foundation/README.md#optional-stopped-repository-host)
+and [acceptance procedure](./accept-native-backups.md). Review the exact storage, TLS identities,
+network access, host capacity and cost before provisioning. Empty secret containers do not issue
+certificates or grant approval to upload them.
 
-Before any later opt-in, reconcile the project with the selected service's protected
-registration and existing `agora-pgbr-SERVICE` identity from the
-[stopped repository host](../../environments/service-foundation/README.md#optional-stopped-repository-host).
-Provision that identity through the separately reviewed service-foundation plan first. Review a private saved bootstrap plan with only
-the new native bucket, its two roles, disabled recovery account and exact-bucket bindings; no logical
-bucket or peer changes are allowed. Initial bucket creation needs approved bootstrap authority;
-existing bucket-scoped administration cannot create another bucket. A partially completed apply
-requires state reconciliation and a fresh reviewed plan, never a broader role or blind replay.
-
-Keep `native_backups[SERVICE].tls_credentials` false during storage-only provisioning. A later separate
-opt-in adds only the [TLS credential containers and access contract](../../bootstrap/README.md#disabled-tls-credential-custody):
-three empty secrets, four exact-host reader bindings and the existing operator grants for those
-secrets. It issues no certificates, uploads no payloads and starts no host. Approve issuer custody,
-numeric-version delivery, expiry alerting and renewal/revocation procedures before using it.
-
-After approved provisioning, independently inspect bucket policy, versioning, retention and inherited
-IAM. Prove intended own-bucket access and peer/policy denials before enabling a writer. Code-only
-tests prove neither effective access nor recoverability. Recovery remains disabled and receives no
-attachment/impersonation path in this slice. Retained objects are billable even without a running VM;
-do not enable continuous writes before expiry reconciliation and storage-cost monitoring are accepted.
-
-Runtime activation additionally requires reviewed container credential/egress access, service
-bootstrap, shutdown and admission behavior, native scheduling/monitoring, GCS verification, retention
-denial, catalog/WAL repair and source-loss recovery evidence. The
-[trial report](../../proofs/pgbackrest-gcs/result-20260927.md#remaining-adoption-gates) records the gaps.
-The [prepared native jobs](../../environments/service-foundation/README.md#prepared-native-backup-jobs)
-install disabled timers and leave WAL archiving off. The prepared
-[native alert policies](respond-to-alerts.md#native-backup-pilot) remain disabled too.
-Approve and prove archive-failure/WAL-growth alerts before the
-foundation opt-in: failed archiving retains WAL and can exhaust the source disk. A stopped database
-must stay stopped when a job is requested; test interruption and exact-container cleanup on COS
-before enabling schedules. Keep automatic expiry disabled until retention reconciliation is proven.
-After exact-generation object repair, recover only an explicitly approved set/target into an isolated
-empty destination and verify SQL/application health. The old repository-time cutoff may still fail;
-never remove it or choose a different set automatically. Preserve all supported logical readers until
-their final retained recovery points expire.
-
-Temporary coexistence is approved during this transition. Retire the selected custom backup jobs,
-schedules and redundant tooling only after native recovery, alert delivery and retention/expiry meet
-the accepted recovery objectives. Daily disk snapshots need a separate cost/recovery-speed review.
-The EUR 10–15 additional monthly per-service ceiling covers the whole replacement, including retained
-storage and networking; subtract old costs only when their resources and retention obligations end.
+Establish effective own-repository access and peer denials, disk and notification coverage, valid
+numeric certificate versions, and recoverable full/differential sets before enabling continuous
+writes and schedules. Keep native recovery preparation/execution disabled outside an approved
+attempt. Never infer live acceptance from mocked tests.
 
 ### Native expiry acceptance
 
-This is a future **human-only, separately approved** synthetic GCS drill, not permission to expire
-real backups. Keep automatic pgBackRest expiry and
-[`native_backups[SERVICE].noncurrent_cleanup`](../../bootstrap/README.md#disabled-noncurrent-cleanup)
-off until its evidence is accepted. Use the deployed image, native transport and retention policy;
-the offline POSIX proof does not emulate GCS.
+Use a separately approved synthetic repository and the deployed image/transport/retention policy.
+Keep automatic expiry and noncurrent cleanup disabled for new services until their evidence is
+accepted. Existing production acceptance does not authorize destructive experiments on its copies.
 
-1. Preserve a private catalog and generation inventory: object name, generation, live/noncurrent
-   state, bytes, noncurrent time, retention expiration and soft-delete/hard-delete times. Record
-   native full/differential dependencies and prove the retained sets through SQL before expiry.
-2. Run native dry-run expiry, inspect its selected chains and confirm no repository change. Then
-   execute only the reviewed native expiry. Capture its exit status, catalog, manifests and new
-   generation inventory even on failure; a failed expiry is not necessarily a rollback.
-3. Distinguish a successful name-based live-to-noncurrent transition from an actual generation
-   deletion blocked by retention. Record the exact denied operation and generation; do not weaken
-   retention or infer a denial from the mere presence of retained bytes. After review, reconcile
-   partial expiry with native tooling and restore retained full/differential sets through SQL.
-4. After separate lifecycle opt-in, verify that only eligible noncurrent generations enter soft
-   delete and that live dependencies remain. Observe actual completion, allowing lifecycle lag;
-   seven days noncurrent plus seven days soft-deleted is not an exact hard-deletion deadline.
-   Export retained-byte totals by state and compare actual storage/network costs with the agreed
-   per-service ceiling, including coexistence costs.
-5. Test an explicitly selected historical view and exact-set recovery after generation repair.
-   Preserve a failed original cutoff as evidence; never silently advance it. Record the accepted
-   recovery window and failure/expiry alert ownership before authorizing routine native expiry.
+1. Preserve a private catalog and generation inventory with retained-byte totals and dependency
+   chains. Verify the selected retained sets through SQL.
+2. Inspect native dry-run expiry, then execute only the reviewed expiry. Preserve exit status,
+   catalogs and generation inventories even on failure: failure is not proof of rollback.
+3. Distinguish live-to-noncurrent transitions from generation deletion denied by retention. Record
+   the exact denied operation; do not weaken retention. Reconcile partial expiry explicitly and
+   verify retained full/differential sets through SQL.
+4. After separate lifecycle approval, verify only eligible noncurrent generations enter soft delete.
+   Allow lifecycle lag and measure retained storage by state; elapsed age is not hard-deletion proof.
+5. Test an explicitly selected historical view after exact-generation repair. Keep any failed
+   original cutoff as evidence instead of silently advancing it.
 
-Do not invent catalog repair or blindly replay expiry after an unexpected result. Preserve evidence
-and stop for review. Legacy backup and snapshot retirement still requires its own acceptance.
+Do not invent catalog repair or replay an unexpected expiry. Preserve evidence and review the
+failure before proceeding.
 
-## Cleanup
+## Retirement
 
-Clear operator-shell identifiers when the procedure finishes:
-
-```zsh
-() {
-setopt local_options err_return pipe_fail
-unsetopt err_exit nounset xtrace
-unset MANAGEMENT_PROJECT_ID MANAGEMENT_PROJECT_NUMBER WORKLOAD_PROJECT_ID REGION BACKUP_BUCKET
-unset DRILL_STARTED_EPOCH DRILL_COMPLETED_EPOCH DRILL_SECONDS
-} || print -u2 'STOP: this command block failed; fix the reported error before continuing.'
-```
-
-Do not manually delete an archive, manifest, snapshot, schedule, job, bucket, or IAM binding. A
-planned deletion belongs in a reviewed pull request and requires the repository's explicit
-resource-deletion label gate. Locked retention can still postpone an approved object deletion.
+Resource deletion uses a reviewed saved plan and the repository's deletion-approval gate.
+Preserve the last verified native recovery copies. Separately inventory historical objects and
+snapshots, remove only the approved eligible copies, and record retention-blocked leftovers until
+they can be removed. Never weaken locked retention or erase private recovery evidence.

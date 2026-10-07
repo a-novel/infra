@@ -66,5 +66,5 @@ An active workflow must finish or be recovered before another production command
 | Rebuild after the workload project is untrusted        | [Recover production into a disposable project](./disaster-recovery.md) |
 | Recover an incorrect OpenTofu state object             | [Recover a prior state generation](./state-recovery.md)                |
 
-Application rollback uses an immutable release receipt. Data recovery uses logical backups.
+Application rollback uses an immutable release receipt. Data recovery uses exact pgBackRest backup sets.
 Clean-room recovery uses a new project. State recovery is a separate last-resort control.
