@@ -27,7 +27,7 @@ func TestLegacyMaintenance(t *testing.T) {
 		"UnrelatedChange", "DiskChange", "GroupResize", "GroupVersion", "PermissionChange", "PolicyUnknown", "ImageChange", "RemovedField", "WrongReplacePath", "PriorTemplateReused",
 		"MissingMetadata", "UnhealthySource", "PublicAddress", "DiskAutoDelete", "PreservationDisabled", "WrongPreservedDisk", "WrongPreservedIP", "ProactiveGroup", "Surge",
 		"BusyMember", "MultipleMembers", "TemplateReused", "TemplateChangedImage", "TemplateChangedScript",
-		"StaleBackup", "InvalidCatalog", "WrongDatabase", "OversizedBackup", "AmbiguousBackup", "RepositoryPublic", "RepositoryStopped", "BackupFailure", "RestoreFailure", "MissingSQLProof", "MetadataDrift", "ChangedInstance", "ReplaceFailure", "ReadinessFailure",
+		"StaleBackup", "InvalidCatalog", "WrongDatabase", "OversizedBackup", "AmbiguousBackup", "RepositoryPublic", "RepositoryStopped", "KeyGenerationFailure", "UnexpectedSSHOutput", "BackupFailure", "RestoreFailure", "MissingSQLProof", "MetadataDrift", "ChangedInstance", "ReplaceFailure", "ReadinessFailure",
 		"AddressDrift", "WrongAdoptedTemplate", "SameInstance", "SameBootDisk", "InvalidBootDisk", "WrongRuntime", "WrongLiveScript",
 	} {
 		t.Run(scenario, func(t *testing.T) {
@@ -134,6 +134,10 @@ func TestLegacyMaintenance(t *testing.T) {
 			writeJSON(t, outputs, object{"database_maintenance_templates": object{"value": values}})
 			code = database.Run(t.Context(), []string{"maintenance-replace", targets, outputs, evidence}, getenv, cloud.execute, &logs, &logs)
 			require.NotContains(t, logs.String(), privateValue)
+			keys, err := filepath.Glob(filepath.Join(cloud.dir, "native-key-*"))
+			require.NoError(t, err)
+			require.Empty(t, keys, "operation-local keys must be removed on success or failure")
+			require.NotContains(t, logs.String(), "Generating public/private")
 			require.NotContains(t, logs.String(), "sha256:")
 			if slices.Contains([]string{"Success", "NumericTemplate", "ComputedFields", "BackupTag", "SameInstance"}, scenario) {
 				expectCode(t, 0, code, logs.String())
@@ -159,7 +163,7 @@ func TestLegacyMaintenance(t *testing.T) {
 				expectCode(t, 70, code, logs.String())
 				require.NoFileExists(t, evidence)
 				require.NotContains(t, cloud.events, "replace/authentication", "peer must remain untouched after failure")
-				if slices.Contains([]string{"StaleBackup", "InvalidCatalog", "WrongDatabase", "OversizedBackup", "AmbiguousBackup", "RepositoryPublic", "RepositoryStopped", "MissingSQLProof", "BackupFailure", "RestoreFailure", "MetadataDrift", "ChangedInstance", "TemplateReused", "TemplateChangedImage", "TemplateChangedScript"}, scenario) {
+				if slices.Contains([]string{"StaleBackup", "InvalidCatalog", "WrongDatabase", "OversizedBackup", "AmbiguousBackup", "RepositoryPublic", "RepositoryStopped", "KeyGenerationFailure", "UnexpectedSSHOutput", "MissingSQLProof", "BackupFailure", "RestoreFailure", "MetadataDrift", "ChangedInstance", "TemplateReused", "TemplateChangedImage", "TemplateChangedScript"}, scenario) {
 					require.NotContains(t, cloud.events, "replace/json-keys")
 				}
 			}
@@ -225,6 +229,19 @@ func (cloud *maintenanceCloud) plan(t *testing.T) object {
 func (cloud *maintenanceCloud) execute(ctx context.Context, output io.Writer, command string, args ...string) error {
 	t := cloud.t
 	t.Helper()
+	if command == "ssh-keygen" {
+		require.Len(t, args, 7)
+		require.Equal(t, []string{"-q", "-t", "ed25519", "-N", "", "-f"}, args[:6])
+		require.True(t, strings.HasPrefix(args[6], cloud.dir+string(os.PathSeparator)))
+		_, err := fmt.Fprintln(output, "Generating public/private ed25519 key pair.")
+		require.NoError(t, err)
+		if cloud.scenario == "KeyGenerationFailure" {
+			return errors.New(privateValue)
+		}
+		require.NoFileExists(t, args[6])
+		require.NoError(t, os.WriteFile(args[6], []byte(privateValue), 0o600))
+		return os.WriteFile(args[6]+".pub", []byte("public-key-fixture"), 0o600)
+	}
 	require.Equal(t, "gcloud", command)
 	service := "json-keys"
 	selection := strings.Join(args, " ")
@@ -419,6 +436,14 @@ func (cloud *maintenanceCloud) execute(ctx context.Context, output io.Writer, co
 			value.(object)["users"] = []string{"other-instance"}
 		}
 	case "compute ssh " + args[2]:
+		for _, arg := range args {
+			if path, ok := strings.CutPrefix(arg, "--ssh-key-file="); ok {
+				if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) || cloud.scenario == "UnexpectedSSHOutput" {
+					_, err = fmt.Fprintln(output, "Generating public/private rsa key pair.")
+					require.NoError(t, err)
+				}
+			}
+		}
 		kind := "backup"
 		if strings.HasPrefix(args[2], "agora-pgbackrest-") {
 			kind = "restore"
