@@ -86,7 +86,7 @@ schema and available disk headroom before changing the sorting library. Preparat
 SQL error leaves the normal database container stopped; retain the maintenance hold and investigate
 instead of refreshing versions manually or accepting a warning-bearing backup.
 
-### Protected startup-only maintenance
+### Protected database maintenance
 
 This path is disabled unless the protected foundation environment has
 `LEGACY_DATABASE_MAINTENANCE_ENABLED=true` and `PRODUCTION_RELEASES_ENABLED=false`. Enabling it,
@@ -102,12 +102,11 @@ opt-in adds an independent `agora-backup-maintenance=enabled` tag to those five 
 foundation plan owns the additional tags, so it can establish access before maintenance checks
 without deploying jobs or retrying a production release.
 
-The existing foundation `apply` operation inspects the saved plan before consuming it. It accepts
-only startup-script replacements for the existing legacy templates, their template IAM and group
-target changes, and the initial maintenance-job tag and permission additions. Data disks, image selections,
-machine sizes, network configuration, stateful preservation rules and release metadata cannot
-change. Unrelated managed-resource actions block admission. Both hosts are selected when the shared
-startup script changes; there is no caller-supplied host name or broad replacement switch.
+The existing foundation `apply` operation inspects the saved plan before consuming it. A startup
+change accepts only template replacements, their template IAM and group target changes, and the
+initial maintenance-job tag and permission additions. Both hosts are selected when the shared
+startup script changes. Images, credential versions, data disks, machine sizes, network configuration
+and stateful preservation rules remain unchanged. Unrelated managed-resource actions block admission.
 
 The protected operation:
 
@@ -160,7 +159,29 @@ After successful verification, turn off `LEGACY_DATABASE_MAINTENANCE_ENABLED`. I
 client connectivity and the applicable release prerequisites before approving a production retry.
 Completion of maintenance does not re-enable releases.
 
-### Reconcile interrupted startup-only maintenance
+### Change one database image
+
+Foundation owns each group's image digest, revision and numeric credential versions through
+`database_releases`. Before adopting an existing fleet, populate **both** entries from verified live
+group metadata; an empty map is only for a fleet that has never started. Preserve every unrelated
+foundation input. Establish a zero-change plan before selecting a new image, and never reset a
+populated fleet to the empty default.
+
+For an image transition, change only one entry's promoted database digest and reviewed revision.
+Verify producer provenance, PostgreSQL compatibility and the collation preparation above. Use the
+same protected maintenance activation, saved-plan review and hold as startup maintenance. Admission
+rejects mixed template/image work, a second database transition, credential rotation or any disk,
+capacity or network change.
+
+After applying the group's metadata, the running member remains unchanged under `OPPORTUNISTIC`.
+The helper requires a fresh scheduled snapshot, executes the selected service's logical backup and
+clean restore check, then rechecks the original healthy boot. It applies the metadata to that exact
+member with both the minimum action and disruption ceiling set to `RESTART`. Completion requires
+the same VM, boot disk, data disk, private address and template, with the new image/revision and a
+new healthy boot. A failed safety check leaves the original member running and retains the hold;
+an uncertain restart also retains the hold. Never replay its consumed plan.
+
+### Reconcile interrupted maintenance
 
 After reviewing the exact retained hold and original failed run, a human may separately enable
 `LEGACY_DATABASE_RECOVERY_ENABLED=true` in `production-foundation`. Keep maintenance enabled and
@@ -176,6 +197,11 @@ It does not replay the consumed plan, apply infrastructure, alter IAM, or enable
 the current protected foundation configuration to converge with applied state before touching hosts.
 It verifies the hold's workload scope and original workflow identity, and rejects an active or rerun
 original writer. A completed run is not by itself evidence that its hosts completed maintenance.
+
+For an image-only hold, recovery is read-only: the exact original VM and disks must already run the
+reviewed metadata with a new healthy boot, and its last start must fall within the original workflow
+interval. Recovery never retries the restart. An image hold that failed before restart needs a
+separately reviewed reconciliation.
 
 For each host, the helper verifies the stable singleton, preserved data disk and address, exact
 release metadata, runtime identity, sizing, subnet and reviewed startup template. A host already on
