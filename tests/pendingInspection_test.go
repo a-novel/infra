@@ -22,6 +22,14 @@ func TestPendingFoundationInspection(t *testing.T) {
 		code, plans    int
 	}{
 		{"PendingFoundation", "", 0, 1},
+		{"PendingBootstrap", "bootstrap", 0, 1},
+		{"BootstrapConvergedFallback", "bootstrap-fallback", 0, 1},
+		{"BootstrapStandardIgnoresPending", "bootstrap-standard", 0, 1},
+		{"BootstrapDriftIgnoresPending", "bootstrap-drift", 0, 1},
+		{"BootstrapDeletionStillRequiresApproval", "bootstrap-deletion", 0, 1},
+		{"InvalidBootstrapJSON", "bootstrap-json", 65, 0},
+		{"NullBootstrap", "bootstrap-null", 65, 0},
+		{"InvalidBootstrapManagement", "bootstrap-management", 65, 0},
 		{"StandardIgnoresPending", "standard", 0, 1},
 		{"DriftIgnoresPending", "drift", 0, 1},
 		{"DeletionStillRequiresApproval", "deletion", 0, 1},
@@ -49,24 +57,29 @@ func TestPendingFoundationInspection(t *testing.T) {
 			f := inspectionFixture(t)
 			bucket := "agora-management-test-123-tofu-state"
 			storage := filepath.Join(f.env["FAKE_GCS_ROOT"], bucket)
+			root := "foundation"
+			if strings.HasPrefix(testCase.mutation, "bootstrap") {
+				root = "bootstrap"
+			}
 			converged := object{"management_project_id": "agora-management-test", "private": "converged-" + privateValue}
-			configFile := filepath.Join(storage, "foundation/config/00000000000000000001-00001.tfvars.json")
+			configFile := filepath.Join(storage, root, "config/00000000000000000001-00001.tfvars.json")
 			writeJSON(t, configFile, converged)
 			original := read(t, configFile)
 			pending := object{"management_project_id": "agora-management-test", "workload_project_id": "agora-legacy-test", "region": "europe-west1", "service_projects": object{"json-keys": "agora-json-keys-test"}, "private": privateValue}
+			bootstrap := object{"management_project_id": "agora-management-test", "private": "bootstrap-" + privateValue}
 			f.env["GITHUB_EVENT_NAME"] = "workflow_dispatch"
 			f.env["GITHUB_WORKFLOW_REF"] = "a-novel/infra/.github/workflows/drift.yaml@refs/heads/master"
 			f.env["GITHUB_SHA"] = f.env["FAKE_GATE_BASE"]
 			f.env["ASSESSMENT_OPERATION"] = "assess-pending-foundation"
-			f.env["FAKE_GATE_FILES"] = "foundation"
+			f.env["FAKE_GATE_FILES"] = root
 			f.env["FAKE_GCS_MANAGED_FOLDERS"] = "services/agora-json-keys-test/release/"
 			mode, candidate := "assess-pending-foundation", f.dir
 			serviceConfig := object{"service": "json-keys", "project_id": "agora-json-keys-test", "management_project_id": "agora-management-test", "region": "europe-west1", "state_bucket": bucket, "private": "service-" + privateValue}
 			switch testCase.mutation {
-			case "standard", "drift":
+			case "standard", "drift", "bootstrap-standard", "bootstrap-drift":
 				mode = "assess"
 				f.env["FAKE_GCS_MANAGED_FOLDERS"] = ""
-			case "deletion":
+			case "deletion", "bootstrap-deletion":
 				f.env["FAKE_TOFU_PLAN_CODE"] = "2"
 				f.env["FAKE_TOFU_PLAN_JSON"] = filepath.Join(f.root, "tests/fixtures/plans/protected.json")
 			case "service", "no-config", "guard", "orphan", "empty-service":
@@ -86,6 +99,8 @@ func TestPendingFoundationInspection(t *testing.T) {
 				}
 			case "management":
 				pending["management_project_id"] = "agora-other-test"
+			case "bootstrap-management":
+				bootstrap["management_project_id"] = "agora-other-test"
 			case "bucket":
 				bucket = "agora-other-test-123-tofu-state"
 			case "registration":
@@ -108,6 +123,9 @@ func TestPendingFoundationInspection(t *testing.T) {
 			data, err := json.Marshal(pending)
 			require.NoError(t, err)
 			f.env["PENDING_FOUNDATION_CONFIG"] = string(data)
+			data, err = json.Marshal(bootstrap)
+			require.NoError(t, err)
+			f.env["PENDING_BOOTSTRAP_CONFIG"] = string(data)
 			switch testCase.mutation {
 			case "missing":
 				f.env["PENDING_FOUNDATION_CONFIG"] = ""
@@ -115,10 +133,16 @@ func TestPendingFoundationInspection(t *testing.T) {
 				f.env["PENDING_FOUNDATION_CONFIG"] = privateValue
 			case "null":
 				f.env["PENDING_FOUNDATION_CONFIG"] = "null"
+			case "bootstrap-fallback":
+				f.env["PENDING_BOOTSTRAP_CONFIG"] = ""
+			case "bootstrap-json":
+				f.env["PENDING_BOOTSTRAP_CONFIG"] = privateValue
+			case "bootstrap-null":
+				f.env["PENDING_BOOTSTRAP_CONFIG"] = "null"
 			}
 			output := filepath.Join(f.dir, "assessment.json")
 			args := []string{mode, "a-novel/infra", "93", f.env["FAKE_GATE_HEAD"], f.env["FAKE_GATE_BASE"], candidate, bucket, output}
-			if testCase.mutation == "drift" {
+			if testCase.mutation == "drift" || testCase.mutation == "bootstrap-drift" {
 				args = []string{"drift", bucket}
 			}
 			var stdout, stderr bytes.Buffer
@@ -136,7 +160,10 @@ func TestPendingFoundationInspection(t *testing.T) {
 								require.NoError(t, err)
 								require.Equal(t, os.FileMode(0o600), stat.Mode().Perm())
 								expected := pending
-								if mode == "assess" {
+								if root == "bootstrap" {
+									expected = bootstrap
+								}
+								if mode == "assess" || testCase.mutation == "bootstrap-fallback" {
 									expected = converged
 								} else if testCase.mutation == "service" {
 									expected = serviceConfig
@@ -163,10 +190,10 @@ func TestPendingFoundationInspection(t *testing.T) {
 			}
 			require.Equal(t, original, read(t, configFile))
 			require.NotContains(t, stdout.String()+stderr.String(), privateValue)
-			if code == 0 && testCase.mutation != "drift" {
+			if code == 0 && !strings.HasSuffix(testCase.mutation, "drift") {
 				verdict := readJSON(t, output)
 				require.Len(t, verdict, 7)
-				require.Equal(t, testCase.mutation == "deletion", verdict["approvalRequired"])
+				require.Equal(t, strings.HasSuffix(testCase.mutation, "deletion"), verdict["approvalRequired"])
 			} else {
 				require.NoFileExists(t, output)
 			}
