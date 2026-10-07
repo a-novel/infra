@@ -13,6 +13,22 @@ mock_provider "google" {
   }
 }
 
+override_resource {
+  target = google_service_account.runtime["json_keys_database"]
+  values = {
+    email = "agora-json-keys-database@agora-production-test.iam.gserviceaccount.com"
+    name  = "projects/agora-production-test/serviceAccounts/agora-json-keys-database@agora-production-test.iam.gserviceaccount.com"
+  }
+}
+
+override_resource {
+  target = google_service_account.runtime["authentication_database"]
+  values = {
+    email = "agora-auth-database@agora-production-test.iam.gserviceaccount.com"
+    name  = "projects/agora-production-test/serviceAccounts/agora-auth-database@agora-production-test.iam.gserviceaccount.com"
+  }
+}
+
 variables {
   management_project_id                 = "agora-management-test"
   workload_project_id                   = "agora-production-test"
@@ -159,6 +175,28 @@ run "shared_private_network" {
       length(google_compute_shared_vpc_service_project.service) == 0,
     ])
     error_message = "Only the selected private database may reach its repository; API identities and peer databases receive no rule."
+  }
+}
+
+run "authentication_network_uses_existing_database_identity" {
+  command = plan
+  variables {
+    shared_vpc_enabled             = true
+    public_api_project_id          = "agora-api-test"
+    service_release_zones          = { json-keys = ["private", "public-api"], authentication = ["private", "public-api"] }
+    pgbackrest_repository_services = ["authentication"]
+  }
+  assert {
+    condition = alltrue([
+      toset(keys(local.pgbackrest_network)) == toset(["authentication"]),
+      google_service_account.runtime["authentication_database"].account_id == "agora-auth-database",
+      google_compute_firewall.pgbackrest_database_egress["authentication"].target_service_accounts == toset(["agora-auth-database@agora-production-test.iam.gserviceaccount.com"]),
+      google_compute_firewall.pgbackrest_repository_ingress["authentication"].source_service_accounts == toset(["agora-auth-database@agora-production-test.iam.gserviceaccount.com"]),
+      google_compute_firewall.pgbackrest_repository_ingress["authentication"].target_service_accounts == toset(["agora-pgbr-authentication@agora-production-test.iam.gserviceaccount.com"]),
+      google_compute_firewall.pgbackrest_repository_ingress["authentication"].source_ranges == null,
+      one(google_compute_firewall.pgbackrest_repository_ingress["authentication"].allow).ports == tolist(["8432"]),
+    ])
+    error_message = "Authentication repository traffic must use its allocated database identity, without granting peer connectivity."
   }
 }
 

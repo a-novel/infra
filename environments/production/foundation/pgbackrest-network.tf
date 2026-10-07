@@ -27,7 +27,7 @@ locals {
     } if contains(var.pgbackrest_repository_services, service)
     }, {
     for service, zones in var.service_release_zones : service => {
-      database   = "agora-${service}-database@${var.workload_project_id}.iam.gserviceaccount.com"
+      database   = google_service_account.runtime["${replace(service, "-", "_")}_database"].email
       repository = "agora-pgbr-${service}@${var.workload_project_id}.iam.gserviceaccount.com"
     } if try(contains(zones, "private"), false) && contains(var.pgbackrest_repository_services, service)
   })

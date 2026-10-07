@@ -207,7 +207,7 @@ run "authentication_runtime_uses_only_its_own_credentials_and_storage" {
       strcontains(yamldecode(local.repository_cloud_config.host).write_files[2].content, "--service=authentication"),
       !strcontains(local.repository_cloud_config.host, "json-keys"),
       alltrue([for binding in google_artifact_registry_repository_iam_member.shared_database_images :
-        binding.member == "serviceAccount:agora-authentication-database@agora-private-test.iam.gserviceaccount.com"
+        binding.member == "serviceAccount:agora-auth-database@agora-private-test.iam.gserviceaccount.com"
       ]),
       google_compute_instance.repository["host"].desired_status == "TERMINATED",
     ])

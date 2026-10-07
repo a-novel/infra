@@ -46,7 +46,7 @@ resource "google_artifact_registry_repository_iam_member" "shared_database_image
   location   = each.value.location
   repository = each.value.repository_id
   role       = "roles/artifactregistry.reader"
-  member     = "serviceAccount:agora-${var.service}-database@${var.project_id}.iam.gserviceaccount.com"
+  member     = "serviceAccount:${var.service == "authentication" ? "agora-auth-database" : "agora-json-keys-database"}@${var.project_id}.iam.gserviceaccount.com"
 }
 
 resource "google_artifact_registry_repository_iam_member" "repository_images" {

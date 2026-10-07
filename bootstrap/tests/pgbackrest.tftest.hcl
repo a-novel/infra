@@ -248,6 +248,7 @@ run "both_services_have_separate_custody" {
       length(google_storage_bucket.pgbackrest) == 2,
       length(google_project_iam_custom_role.pgbackrest) == 4,
       length(google_service_account.pgbackrest_recovery) == 2,
+      google_service_account.pgbackrest_recovery["json-keys"].display_name == "JSON Keys native backup recovery",
       length(google_secret_manager_secret_iam_member.pgbackrest_tls) == 8,
       alltrue([for service in keys(var.native_backups) : alltrue([
         google_storage_bucket.pgbackrest[service].name == "agora-management-test-123456789012-pgbr-${service}",
@@ -255,9 +256,12 @@ run "both_services_have_separate_custody" {
         google_storage_bucket_iam_member.pgbackrest_writer[service].role == google_project_iam_custom_role.pgbackrest["${service}:writer"].name,
         google_service_account.pgbackrest_recovery[service].account_id == "pgbr-${service}-recovery",
         google_service_account.pgbackrest_recovery[service].disabled,
-        google_secret_manager_secret_iam_member.pgbackrest_tls["${service}:database:agora-${service}-database"].secret_id == google_secret_manager_secret.application["production-${service}-pgbackrest-database"].secret_id,
-        google_secret_manager_secret_iam_member.pgbackrest_tls["${service}:database:agora-${service}-database"].member == "serviceAccount:agora-${service}-database@agora-private-test.iam.gserviceaccount.com",
         google_secret_manager_secret_iam_member.pgbackrest_tls["${service}:repository:agora-pgbr-${service}"].member == "serviceAccount:agora-pgbr-${service}@agora-private-test.iam.gserviceaccount.com",
+      ])]),
+      alltrue([for service, account in { json-keys = "agora-json-keys-database", authentication = "agora-auth-database" } : alltrue([
+        google_secret_manager_secret_iam_member.pgbackrest_tls["${service}:database:${account}"].secret_id == google_secret_manager_secret.application["production-${service}-pgbackrest-database"].secret_id,
+        google_secret_manager_secret_iam_member.pgbackrest_tls["${service}:database:${account}"].member == "serviceAccount:${account}@agora-private-test.iam.gserviceaccount.com",
+        google_secret_manager_secret_iam_member.pgbackrest_tls["${service}:ca:${account}"].member == "serviceAccount:${account}@agora-private-test.iam.gserviceaccount.com",
       ])]),
     ])
     error_message = "Coexisting services must have separate buckets, recovery identities and exact-service TLS grants."
