@@ -63,7 +63,7 @@ jobs:
       - name: Keep only the scanned image for publication
         id: archive
         if: inputs.publish
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: ${{ env.TOOL }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/${{ env.TOOL }}.tar
