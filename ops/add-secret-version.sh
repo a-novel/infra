@@ -15,13 +15,11 @@ fi
 is_declared_secret() {
     case "$1" in
         production-authentication-postgres-password | \
-            production-authentication-postgres-backup-password | \
             production-authentication-smtp-sender-password | \
             production-authentication-super-admin-password | \
             production-authentication-waitlist-secret | \
             production-json-keys-app-master-key | \
-            production-json-keys-postgres-password | \
-            production-json-keys-postgres-backup-password) return 0 ;;
+            production-json-keys-postgres-password) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -93,9 +91,7 @@ add_secret_version() {
             fi
             ;;
         production-authentication-postgres-password | \
-            production-authentication-postgres-backup-password | \
-            production-json-keys-postgres-password | \
-            production-json-keys-postgres-backup-password)
+            production-json-keys-postgres-password)
             if [ "${#secret_value}" -lt 32 ] || [ "${#secret_value}" -gt 128 ] || \
                 ! [[ "${secret_value}" =~ ^[A-Za-z0-9_-]+$ ]]; then
                 printf 'PostgreSQL passwords require 32-128 URL-safe characters.\n' >&2

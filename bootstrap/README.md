@@ -263,12 +263,6 @@ and master key. Each database host receives its owner password; native backup id
 separately scoped TLS credentials. The scheduler receives no payload access. Project-wide Secret
 Accessor grants are forbidden.
 
-The two obsolete logical-backup password containers are temporarily isolated in
-`retiring-secrets.tf` with native `moved` blocks. This first retirement apply changes only their
-deletion protection and removes their operator bindings; all active secrets keep every guard.
-After verifying that plan and live result, remove the two retiring resources in a separate reviewed
-apply. Do not recreate payload versions or weaken retention on any backup bucket.
-
 ## Operator procedures
 
 - [Bootstrap and verify the management plane](../docs/runbooks/bootstrap-management-plane.md)

@@ -154,6 +154,15 @@ assert_equal "${CREATED_MASTER_KEY_VERSION}" \
 assert_absent "${TEMP_DIR}/add-master-key.err" "${MASTER_KEY}"
 unset INVALID_MASTER_KEY INVALID_MASTER_KEY_CODE MASTER_KEY
 
+for RETIRED_SECRET in production-authentication-postgres-backup-password production-json-keys-postgres-backup-password; do
+    RETIRED_SECRET_CODE=0
+    PATH="${SECRET_MOCK_BIN}:${PATH}" \
+        "${REPOSITORY_ROOT}/ops/add-secret-version.sh" "$RETIRED_SECRET" \
+        >"${TEMP_DIR}/retired-secret.out" 2>"${TEMP_DIR}/retired-secret.err" || RETIRED_SECRET_CODE=$?
+    assert_equal "$RETIRED_SECRET_CODE" 65
+    grep -Fq 'Refusing undeclared secret ID' "${TEMP_DIR}/retired-secret.err"
+done
+
 set +e
 "${REPOSITORY_ROOT}/ops/add-secret-version.sh" \
     production-authentication-postgres-password \

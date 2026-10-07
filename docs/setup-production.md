@@ -63,7 +63,7 @@ gh run list --repo a-novel/infra --branch master --limit 20 --json databaseId,wo
 |    2 | [Provision the workload foundation](./runbooks/provision-workload-foundation.md).                  | The workload project and both protected roots converge; the final audit passes; temporary access is removed.                                            |
 |    3 | [Inspect the PostgreSQL hosts and prepare OS Login](./runbooks/debug-postgresql-host.md).          | Each database has its own private VM and preserved SSD disk; the local EC key is ready; bounded IAP logins succeed; no public path exists.              |
 |    4 | [Configure and persist hosted SMTP](#4-configure-and-persist-the-smtp-contract).                   | The Workspace relay, app password, domain, DKIM, SPF, DMARC, and non-secret contract pass.                                                              |
-|    5 | [Create the initial payload versions](#5-create-the-initial-payload-versions).                     | All seven live containers have one selected enabled numeric version; no payload was printed.                                                            |
+|    5 | [Create the initial payload versions](#5-create-the-initial-payload-versions).                     | All six application containers have one selected enabled numeric version; no payload was printed.                                                       |
 |    6 | [Activate production](#6-activate-production).                                                     | The reviewed release succeeds, the initializer is deleted, traffic is healthy, recovery jobs pass, rotation is scheduled, and the receipt is immutable. |
 |    7 | [Lock backup retention](#7-lock-backup-retention).                                                 | The seven-day bucket retention policy is irreversibly locked through reviewed code.                                                                     |
 |    8 | [Verify alert delivery](./runbooks/respond-to-alerts.md#verify-channels-without-adding-machinery). | Both channels and all policies have owners and deliver tests.                                                                                           |
@@ -92,37 +92,36 @@ password remains in the password manager until step 5.
 The foundation created empty Secret Manager containers. Prepare these values in the approved
 password manager; do not export them:
 
-| Secret                                               | Initial value                                                             |
-| ---------------------------------------------------- | ------------------------------------------------------------------------- |
-| `production-authentication-postgres-password`        | A random 64-character value using only `A-Z`, `a-z`, `0-9`, `_`, and `-`. |
-| `production-authentication-postgres-backup-password` | A different random value with the same contract.                          |
-| `production-json-keys-postgres-password`             | A third different random value with the same contract.                    |
-| `production-json-keys-postgres-backup-password`      | A fourth different random value with the same contract.                   |
-| `production-authentication-smtp-sender-password`     | The Google app password belonging to `SMTP_USERNAME`.                     |
-| `production-authentication-super-admin-password`     | A separate random 64-character password-manager value.                    |
-| `production-json-keys-app-master-key`                | Exactly 64 hexadecimal characters representing 32 random bytes.           |
+| Secret                                           | Initial value                                                                                            |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| `production-authentication-postgres-password`    | A random 64-character value using only `A-Z`, `a-z`, `0-9`, `_`, and `-`.                                |
+| `production-json-keys-postgres-password`         | A different random value with the same contract.                                                         |
+| `production-authentication-smtp-sender-password` | The Google app password belonging to `SMTP_USERNAME`.                                                    |
+| `production-authentication-super-admin-password` | A separate random 64-character password-manager value.                                                   |
+| `production-authentication-waitlist-secret`      | The invitation-list signing key, at least 32 characters, shared with the production Apps Script project. |
+| `production-json-keys-app-master-key`            | Exactly 64 hexadecimal characters representing 32 random bytes.                                          |
 
-Generate passwords with the password manager's cryptographic generator. Compare the four database
-passwords there and confirm they are all distinct. Do not generate or assemble a payload in the
+Generate passwords with the password manager's cryptographic generator. Compare the two database
+passwords there and confirm they are distinct. Do not generate or assemble a payload in the
 shell. Host, port, user, database, and TLS mode are derived from reviewed infrastructure; only the
 password is secret. The private VPC protects the non-TLS database path. A hybrid, external, or
 differently trusted network requires a reviewed PostgreSQL TLS design first.
 
-Create the seven immutable versions in dependency order. The script reads each value twice with
+Create the six immutable application versions in dependency order. Native-backup TLS enrollment uses
+the separate [certificate procedure](./runbooks/backup-and-restore-postgresql.md). The script reads each value twice with
 terminal echo disabled and prints only safe IDs and numeric versions:
 
 ```sh
 ./ops/add-secret-version.sh \
   production-authentication-postgres-password \
-  production-authentication-postgres-backup-password \
   production-json-keys-postgres-password \
-  production-json-keys-postgres-backup-password \
   production-authentication-smtp-sender-password \
   production-authentication-super-admin-password \
+  production-authentication-waitlist-secret \
   production-json-keys-app-master-key
 ```
 
-Expected: seven `Created <secret> version <number>` lines. If it stops partway, list version metadata
+Expected: six `Created <secret> version <number>` lines. If it stops partway, list version metadata
 and rerun only the remaining IDs. Never create duplicates to reproduce terminal output and never use
 the mutable `latest` alias.
 
@@ -222,15 +221,15 @@ review evidence belong in Git.
 
 ## Resume map
 
-| Existing evidence                                                     | Resume at                                                              |
-| --------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| Management bootstrap audit passes and temporary authority is removed. | Step 2.                                                                |
-| Foundation final audit passes and temporary access is removed.        | Step 3.                                                                |
-| Both idle private database hosts and SSD disks pass inspection.       | Step 4.                                                                |
-| SMTP domain and contract pass; no secret versions exist.              | Step 5.                                                                |
-| All seven numeric versions exist; no release configuration exists.    | Step 6, explicit activation review.                                    |
-| Fresh activation requires initialization.                             | [Run the initializer](#run-the-human-only-authentication-initializer). |
-| Release receipt and recovery evidence pass; retention is unlocked.    | Step 7.                                                                |
-| Retention, alerts, and clean-room drill pass.                         | Step 10.                                                               |
+| Existing evidence                                                            | Resume at                                                              |
+| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Management bootstrap audit passes and temporary authority is removed.        | Step 2.                                                                |
+| Foundation final audit passes and temporary access is removed.               | Step 3.                                                                |
+| Both idle private database hosts and SSD disks pass inspection.              | Step 4.                                                                |
+| SMTP domain and contract pass; no secret versions exist.                     | Step 5.                                                                |
+| All six application numeric versions exist; no release configuration exists. | Step 6, explicit activation review.                                    |
+| Fresh activation requires initialization.                                    | [Run the initializer](#run-the-human-only-authentication-initializer). |
+| Release receipt and recovery evidence pass; retention is unlocked.           | Step 7.                                                                |
+| Retention, alerts, and clean-room drill pass.                                | Step 10.                                                               |
 
 A successful workflow is evidence; do not rerun it merely to reproduce terminal output.
