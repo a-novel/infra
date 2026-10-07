@@ -469,6 +469,7 @@ func TestWorkflowBoundaries(t *testing.T) {
 	prepare := assessment.Steps[stepIndex(t, assessment.Steps, `infra inspect "${mode}"`)]
 	require.Equal(t, "${{ github.token }}", prepare.Env["GH_TOKEN"])
 	require.Equal(t, "${{ inputs.operation == 'assess-pending-foundation' && secrets.FOUNDATION_TFVARS_JSON || '' }}", prepare.Env["PENDING_FOUNDATION_CONFIG"])
+	require.Equal(t, "${{ inputs.operation == 'assess-pending-foundation' && secrets.BOOTSTRAP_TFVARS_JSON || '' }}", prepare.Env["PENDING_BOOTSTRAP_CONFIG"])
 	require.Contains(t, assessment.If, "inputs.operation == 'assess-pending-foundation'")
 	require.Contains(t, prepare.Run, "mode=assess-pending-foundation")
 	for _, command := range []string{"resolve-resource-deletion-assessment.sh", "setup-opentofu@"} {
@@ -477,6 +478,7 @@ func TestWorkflowBoundaries(t *testing.T) {
 	for _, name := range []string{"inspect", "health"} {
 		for _, step := range drift.Jobs[name].Steps {
 			require.NotContains(t, step.Env, "PENDING_FOUNDATION_CONFIG")
+			require.NotContains(t, step.Env, "PENDING_BOOTSTRAP_CONFIG")
 		}
 	}
 	for _, testCase := range []struct {

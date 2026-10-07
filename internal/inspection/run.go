@@ -18,7 +18,7 @@ type command func(context.Context, []string, string, ...string) ([]byte, error)
 
 type inspector struct {
 	bucket, trusted, candidate, scratch string
-	pendingFoundation                   string
+	pending                             map[string]string
 	getenv                              func(string) string
 	execute                             command
 	output                              io.Writer
@@ -121,8 +121,8 @@ func (i inspector) assessOrDrift(ctx context.Context, mode, root, file string, e
 }
 
 func (i inspector) config(ctx context.Context, root, scope string) (string, int) {
-	if root == "foundation" && scope == "" && i.pendingFoundation != "" {
-		return i.pendingFoundation, 0
+	if file := i.pending[root]; scope == "" && file != "" {
+		return file, 0
 	}
 	file := filepath.Join(i.scratch, strings.ReplaceAll(root+"-"+scope, "/", "-")+".json")
 	getenv := func(key string) string {
