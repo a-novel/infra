@@ -46,7 +46,7 @@ MANAGEMENT_PROJECT_ID="$INFRA_MANAGEMENT_PROJECT_ID"
 - Know the one exact secret ID and its runtime format.
 - A PostgreSQL password must contain 32–128 characters from `A-Z`, `a-z`, `0-9`, `_`, and `-` only.
   This printable contract makes byte-exact validation unambiguous.
-  Both owner passwords and both backup passwords must be four distinct values.
+  The two database owner passwords must be distinct.
 - For rotation, know every consumer and the currently pinned numeric version. Never configure a
   production consumer to use the mutable `latest` alias.
 - For the SMTP password, first complete the account, domain, relay, and credential
@@ -57,13 +57,11 @@ The allowed IDs are:
 
 ```text
 production-authentication-postgres-password
-production-authentication-postgres-backup-password
 production-authentication-smtp-sender-password
 production-authentication-super-admin-password
 production-authentication-waitlist-secret
 production-json-keys-app-master-key
 production-json-keys-postgres-password
-production-json-keys-postgres-backup-password
 ```
 
 The waitlist key is the same random value stored as `WAITLIST_SECRET` in the production Apps
@@ -113,10 +111,8 @@ coordinated rollout. Follow the PostgreSQL host runbook, schedule the documented
 database before its clients, and keep the previous numeric password version available for rollback. Credentials whose issuer supports two concurrently valid values can use a true overlap
 window instead.
 
-A backup password is also a coordinated database release. Add its new version, update the exact
-backup-version metadata, let host startup rotate the restricted role, and require an immediate backup
-plus clean restore before disabling the former version. The backup job and host must reference the
-same numeric version; never update only one side.
+Native backups use host-local PostgreSQL access and separately pinned pgBackRest TLS credentials.
+Follow the [native certificate procedure](./backup-and-restore-postgresql.md) for their rotation.
 
 Set `SECRET_ID` in the session to one exact allowed ID above, then add the replacement:
 
@@ -219,7 +215,7 @@ after final destruction the payload is irrecoverable.
 For an externally valid credential such as SMTP, disabling the Secret Manager version does not revoke
 the credential at its issuer. Follow the SMTP runbook: create/rotate at the provider, add the new
 Secret Manager version, deploy and verify health plus one controlled send, revoke the former
-provider credential, and only then disable its Secret Manager version. Database owner and backup
+provider credential, and only then disable its Secret Manager version. Database owner
 passwords likewise require a coordinated PostgreSQL credential change before the old Secret Manager
 version is disabled.
 

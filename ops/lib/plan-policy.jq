@@ -86,31 +86,11 @@ def candidate_schedule_pause($plan):
       .after.project == $plan.variables.workload_project_id.value and
       .after.region == $plan.variables.region.value);
 
-# Temporary retirement path for the two unused logical-backup credentials.
-# Remove after their reviewed deletion. Tracked in https://github.com/a-novel/infra/issues/190.
-def retire_backup_secret($plan):
-  .index as $secret
-  | $root_name == "bootstrap" and .type == "google_secret_manager_secret" and
-    ($secret == "production-authentication-postgres-backup-password" or
-     $secret == "production-json-keys-postgres-backup-password") and
-    .address == "google_secret_manager_secret.retiring_backup[\"" + $secret + "\"]" and
-    .previous_address == "google_secret_manager_secret.application[\"" + $secret + "\"]" and
-    .change.importing == null and .deposed == null and
-    (.change | .actions == ["update"] and known([]) and
-      .before.project == "a-novel-management-prod" and
-      .before.project == $plan.variables.management_project_id.value and
-      .before.secret_id == $secret and
-      .before.id == "projects/a-novel-management-prod/secrets/" + $secret and
-      .before.deletion_protection == true and .before.deletion_policy == "PREVENT" and
-      .before.version_destroy_ttl == "2592000s" and
-      .after == (.before + {deletion_protection: false, deletion_policy: "DELETE"}));
-
 def protections($plan):
   . as $resource | .type as $type | .change
-  | ((keep(["deletion_protection"]; true) and keep(["deletion_policy"]; "PREVENT")) or
-      ($resource | retire_backup_secret($plan))) and
+  | keep(["deletion_protection"]; true) and
     keep(["force_destroy"]; false) and
-    keep(["deletion_policy"]; "ABANDON") and
+    keep(["deletion_policy"]; "PREVENT") and keep(["deletion_policy"]; "ABANDON") and
     (if $type == "google_storage_bucket" then
       keep(["public_access_prevention"]; "enforced") and
       keep(["uniform_bucket_level_access"]; true) and
