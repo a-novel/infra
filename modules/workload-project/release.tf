@@ -1,5 +1,5 @@
 module "release" {
-  source = "../release-boundary"
+  source = "../service-custody"
 
   project_id           = module.project.project_id
   labels               = var.labels

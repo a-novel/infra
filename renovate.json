@@ -56,14 +56,6 @@
       "automerge": false
     },
     {
-      "description": "Accept only complete stable SemVer curl images for create-only backup uploads.",
-      "matchDatasources": ["docker"],
-      "matchFileNames": ["environments/production/release/variables.tf"],
-      "matchPackageNames": ["alpine/curl"],
-      "allowedVersions": "/^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$/",
-      "versioning": "semver"
-    },
-    {
       "description": "Update the JSON Keys image family as one deployment candidate.",
       "matchDatasources": ["docker"],
       "matchFileNames": ["deploy/production/images.yaml"],
@@ -182,18 +174,6 @@
       "managerFilePatterns": ["/^deploy/production/images\\.yaml$/"],
       "matchStrings": [
         "repository:\\s*(?<depName>[^\\s]+)\\s+tag:\\s*[\"']?(?<currentValue>v[0-9]+\\.[0-9]+\\.[0-9]+)[\"']?"
-      ],
-      "datasourceTemplate": "docker",
-      "versioningTemplate": "semver"
-    },
-    {
-      "customType": "regex",
-      "description": "Update the stable curl uploader version tag.",
-      "managerFilePatterns": [
-        "/^environments/production/release/variables\\.tf$/"
-      ],
-      "matchStrings": [
-        "# renovate: datasource=docker depName=(?<depName>[^\\s]+) versioning=semver\\s+default\\s*=\\s*\"docker\\.io/[^:\\s]+:(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\""
       ],
       "datasourceTemplate": "docker",
       "versioningTemplate": "semver"

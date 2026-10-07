@@ -10,7 +10,7 @@ import (
 func TestTofuGate(t *testing.T) {
 	t.Parallel()
 	for _, action := range []string{"plan", "assess", "apply", "converge", "drift"} {
-		for _, root := range []string{"foundation", "release"} {
+		for _, root := range []string{"bootstrap", "foundation"} {
 			t.Run(action+"/"+root, func(t *testing.T) {
 				t.Parallel()
 				f := setup(t)

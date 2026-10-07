@@ -1,12 +1,12 @@
 #!/bin/bash
 
 # Validates one reviewed OpenTofu root without configuring a backend or cloud credentials.
-# Usage: ./ops/check-root.sh <bootstrap|foundation|release>
+# Usage: ./ops/check-root.sh <root>
 
 set -euo pipefail
 
 if [ "$#" -ne 1 ]; then
-    printf "Usage: %s <bootstrap|foundation|release>\n" "$0" >&2
+    printf "Usage: %s <root>\n" "$0" >&2
     exit 64
 fi
 

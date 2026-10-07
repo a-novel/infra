@@ -1,5 +1,5 @@
 variable "service_release_zones" {
-  description = "Disabled-by-default service release identities and custody folders in shared production projects; no runtime enrollment."
+  description = "Service/zone registration and private custody folders in shared production projects; runtime resources use the service roots."
   type        = map(set(string))
   default     = {}
   nullable    = false
@@ -32,7 +32,7 @@ locals {
 }
 
 module "service_release" {
-  source   = "../../../modules/release-boundary"
+  source   = "../../../modules/service-custody"
   for_each = var.recovery_mode ? {} : local.service_release_boundaries
 
   project_id           = each.value.zone == "private" ? google_project.workload.project_id : module.public_api_project["public-api"].project_id
@@ -48,6 +48,6 @@ module "service_release" {
 }
 
 output "service_release_boundaries" {
-  description = "Schema-2 identities and custody coordinates, not runtime registration or migration evidence. Null when disabled."
+  description = "Private service/zone custody coordinates. Null when no service is registered."
   value       = length(module.service_release) == 0 ? null : { for key, boundary in module.service_release : key => boundary.release }
 }

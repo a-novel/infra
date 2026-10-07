@@ -75,11 +75,10 @@ locals {
   foundation_state_folders = toset(["bootstrap", "foundation"])
   recovery_state_folders   = local.recovery_state_prefixes
   state_bucket_viewers     = toset(["recovery"])
-  active_trust_boundaries  = { for name, boundary in local.trust_boundaries : name => boundary if name != "release" }
 }
 
 resource "google_service_account" "automation" {
-  for_each = local.active_trust_boundaries
+  for_each = local.trust_boundaries
 
   account_id   = each.value.service_account_id
   display_name = each.value.display_name
@@ -112,7 +111,7 @@ resource "google_iam_workload_identity_pool" "github" {
 }
 
 resource "google_iam_workload_identity_pool_provider" "github" {
-  for_each = local.active_trust_boundaries
+  for_each = local.trust_boundaries
 
   workload_identity_pool_id          = google_iam_workload_identity_pool.github.workload_identity_pool_id
   workload_identity_pool_provider_id = each.value.provider_id
@@ -162,7 +161,7 @@ resource "google_iam_workload_identity_pool_provider" "github" {
 }
 
 resource "google_service_account_iam_member" "github" {
-  for_each = local.active_trust_boundaries
+  for_each = local.trust_boundaries
 
   service_account_id = google_service_account.automation[each.key].name
   role               = "roles/iam.workloadIdentityUser"

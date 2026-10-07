@@ -109,7 +109,7 @@ func Run(ctx context.Context, args []string, execute func(context.Context, io.Wr
 		active, err := read("gh", "api", api+"/actions/runs?branch=master&per_page=100", "--jq", `
       .workflow_runs[] | select(.status != "completed")
       | select(.path == ".github/workflows/drift.yaml" or .path == ".github/workflows/foundation.yaml"
-        or .path == ".github/workflows/recovery.yaml" or .path == ".github/workflows/release.yaml")
+        or .path == ".github/workflows/recovery.yaml")
       | select(.path != ".github/workflows/drift.yaml" or
           (.display_title | startswith("observe rollout ") or startswith("inspect operation ") | not))
       | [.id, .name, .display_title, .status, .html_url] | @tsv`)

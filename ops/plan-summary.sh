@@ -3,12 +3,12 @@
 # Classifies an OpenTofu JSON plan without printing resource values or addresses.
 # Exit 3 requires deletion approval, including a permitted protection change.
 # Exit 65 rejects invalid plans, unresolved checks, or weakened protections.
-# Usage: ./ops/plan-summary.sh <bootstrap|foundation|release> <plan.json>
+# Usage: ./ops/plan-summary.sh <root> <plan.json>
 
 set -euo pipefail
 
 if [ "$#" -ne 2 ]; then
-    printf "Usage: %s <bootstrap|foundation|release> <plan.json>\n" "$0" >&2
+    printf "Usage: %s <root> <plan.json>\n" "$0" >&2
     exit 64
 fi
 

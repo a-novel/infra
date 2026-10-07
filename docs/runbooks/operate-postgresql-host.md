@@ -127,7 +127,7 @@ Backup storage and API requests incur normal usage charges.
 
 The hold is `gs://<state-bucket>/release/legacy-maintenance/operation.json`. Completion evidence is
 under `release/legacy-maintenance/completions/<hold-generation>.json` in the same private bucket.
-Foundation applies and retained release operations refuse an existing or unreadable hold. A lost
+Foundation applies and native service releases refuse an existing or unreadable hold. A lost
 runner, failed backup, failed convergence or uncertain replacement leaves it in place. Do not rerun
 the consumed plan, adopt the hold, clear it speculatively, or run `update-instances` by hand.
 

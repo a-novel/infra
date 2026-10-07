@@ -782,15 +782,11 @@ gh variable set GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER \
 gh variable set GCP_PLAN_SERVICE_ACCOUNT \
   --repo a-novel/infra --body "${PLAN_ACCOUNT}"
 
-for boundary in foundation release recovery; do
+for boundary in foundation recovery; do
   case "${boundary}" in
     foundation)
       environment='production-foundation'
       variable_prefix='GCP_FOUNDATION'
-      ;;
-    release)
-      environment='production-release'
-      variable_prefix='GCP_RELEASE'
       ;;
     recovery)
       environment='production-recovery'

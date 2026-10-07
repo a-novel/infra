@@ -49,14 +49,6 @@ resource "google_artifact_registry_repository" "production" {
   depends_on = [google_project_service.workload["artifactregistry.googleapis.com"]]
 }
 
-resource "google_artifact_registry_repository_iam_member" "release_writer" {
-  project    = google_project.workload.project_id
-  location   = google_artifact_registry_repository.production.location
-  repository = google_artifact_registry_repository.production.repository_id
-  role       = "roles/artifactregistry.writer"
-  member     = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "release"]}"
-}
-
 # Recovery can copy receipt-owned immutable manifests out of production, but
 # has no writer role there.
 resource "google_artifact_registry_repository_iam_member" "recovery_reader" {

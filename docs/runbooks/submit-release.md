@@ -5,12 +5,9 @@ Protected GitHub Actions owns the sequence; Cloud Run owns job execution and rev
 Authentication runs in public-api; JSON Keys gRPC and the three existing migration and rotation jobs
 run in private. Their service-release roots own these resources through the protected foundation
 workflow's plan/apply path. Native releases also adopt the existing JSON Keys health probe.
-The retained release root owns its invocation tag, scheduler and backup resources. The superseded imperative deployment driver has been removed.
-
-The retained production operations workflow's manual `plan` and `apply` actions reconcile that retained root
-from its last converged private inputs, without running migrations or the old rollout machinery.
-They share production concurrency, protected approval and saved-plan custody. Review the full plan
-before applying. Scheduled health checks select the registered public-api project.
+Foundation owns invocation tags and the existing rotation schedule. Native pgBackRest replaces the
+old backup jobs. The fleet release root, its workflow and the imperative deployment driver are retired.
+Review the selected native plan before applying. Scheduled health checks select the registered public-api project.
 
 ## Ownership
 
@@ -53,19 +50,10 @@ in the existing foundation workflow; `zone=none` retains the older service-only 
 selection. Each entry remains an ordinary service-release tfvars object. Use the existing image
 promotion action, followed by `plan` and `apply`; no new deployment engine is involved.
 
-Before first native JSON Keys activation, back up both states, apply the retained release root's
-exact non-destructive probe removal, then import the same `agora-json-keys-smoke` job with
-`adopt_existing_jobs=true`. The plan policy rejects probe creation or replacement. Apply the
-foundation's scoped release-job permission and the private service foundation's exact JSON Keys
-self-invocation grant first. Do not enable routine execution while two
-states still own the probe.
-
-The retained-root plan must contain exactly one `forget` for
-`google_cloud_run_v2_job.json_keys_smoke[0]`. The native private JSON Keys plan imports that same
-`agora-json-keys-smoke` job as `google_cloud_run_v2_job.verification[0]`; reject creation,
-replacement or deletion. Record its Cloud Run UID before removal and confirm the UID after import.
-Its invocation tag stays in the retained root. Preserve both state backups until the native
-probe has completed successfully and the new root converges.
+JSON Keys probe ownership has already moved to `google_cloud_run_v2_job.verification[0]` in its
+native private release state. Do not replay that handoff. The plan policy rejects probe creation
+or replacement; its invocation tag belongs to foundation. Any future ownership transfer needs
+its own exact state map, private backups and no-replacement plan.
 
 State removal requires `allow-resource-deletion` on the PR that produced the workflow's exact
 master commit, present before that PR merged. Finish pending dependency merges before landing
@@ -76,7 +64,7 @@ Pause `agora-json-keys-rotation` before a JSON Keys release and wait for accepte
 finish. The guarded apply verifies that the schedule is paused and every listed execution has
 finished. Leave it paused between candidate and promotion, or after failure; resume it only after
 successful promotion and serving verification. Retain the schedule's existing configuration owner
-and avoid reconciling that legacy root during this interval.
+and avoid reconciling the foundation schedule during this interval.
 
 The API candidate plan sets a new `api.revision` while preserving `api.serving_revision`.
 The promotion inputs must be byte-equivalent JSON values to the last checked candidate except

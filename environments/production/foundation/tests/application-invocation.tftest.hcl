@@ -16,7 +16,6 @@ mock_provider "google" {
 }
 
 variables {
-  import_application_invocation         = false
   management_project_id                 = "agora-management-test"
   workload_project_id                   = "agora-production-test"
   adopt_default_network                 = false
@@ -29,7 +28,7 @@ variables {
   authentication_initializer_principals = ["group:authentication-initializers@example.com"]
 }
 
-run "invocation_adoption_is_disabled_by_default" {
+run "unregistered_services_have_no_invocation_resources" {
   command = plan
   assert {
     condition = (
@@ -39,34 +38,15 @@ run "invocation_adoption_is_disabled_by_default" {
       length(google_project_iam_member.foundation_scheduler) == 0 &&
       length(google_service_account_iam_member.foundation_scheduler_act_as) == 0
     )
-    error_message = "Do not claim existing release objects or grant scheduler access before ownership is released."
-  }
-}
-
-run "prepares_permissions_before_importing_live_objects" {
-  command = plan
-  variables {
-    shared_vpc_enabled    = true
-    service_release_zones = { authentication = ["private"], json-keys = ["private"] }
-  }
-  assert {
-    condition = (
-      length(google_tags_location_tag_binding.application) == 0 &&
-      length(google_cloud_scheduler_job.json_keys_rotation) == 0 &&
-      length(google_project_iam_custom_role.foundation_scheduler) == 1 &&
-      length(google_project_iam_member.foundation_scheduler) == 1 &&
-      length(google_service_account_iam_member.foundation_scheduler_act_as) == 1
-    )
-    error_message = "Prepare the approved IAM prerequisites without importing or modifying the live invocation objects."
+    error_message = "Unregistered services must not create invocation objects or grant scheduler access."
   }
 }
 
 run "preserves_existing_application_invocation" {
   command = plan
   variables {
-    manage_application_invocation = true
-    shared_vpc_enabled            = true
-    service_release_zones         = { authentication = ["private"], json-keys = ["private"] }
+    shared_vpc_enabled    = true
+    service_release_zones = { authentication = ["private"], json-keys = ["private"] }
   }
   assert {
     condition = {
@@ -117,19 +97,17 @@ run "preserves_existing_application_invocation" {
   }
 }
 
-run "rejects_adoption_without_both_private_boundaries" {
+run "authentication_only_does_not_create_rotation" {
   command = plan
   variables {
-    manage_application_invocation = true
+    shared_vpc_enabled    = true
+    service_release_zones = { authentication = ["private"] }
   }
-  expect_failures = [var.manage_application_invocation]
-}
-
-run "rejects_recovery_adoption" {
-  command = plan
-  variables {
-    manage_application_invocation = true
-    recovery_mode                 = true
+  assert {
+    condition = (
+      toset(keys(google_tags_location_tag_binding.application)) == toset(["authentication_migrations"]) &&
+      length(google_cloud_scheduler_job.json_keys_rotation) == 0
+    )
+    error_message = "Authentication registration must not create JSON Keys invocation resources."
   }
-  expect_failures = [var.manage_application_invocation]
 }

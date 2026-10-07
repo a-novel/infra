@@ -87,7 +87,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, execute
 	if assess {
 		return i.assess(ctx, args[1:])
 	}
-	for _, root := range []string{"bootstrap", "foundation", "release"} {
+	for _, root := range []string{"bootstrap", "foundation"} {
 		file, code := i.config(ctx, root, "")
 		if code == 4 {
 			if _, err := fmt.Fprintf(output, "%s has no converged configuration; skipped.\n", root); err != nil {

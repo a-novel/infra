@@ -3,7 +3,6 @@ locals {
     foundation = "infra-foundation@${var.management_project_id}.iam.gserviceaccount.com"
     plan       = "infra-plan@${var.management_project_id}.iam.gserviceaccount.com"
     recovery   = "infra-recovery@${var.management_project_id}.iam.gserviceaccount.com"
-    release    = "infra-release@${var.management_project_id}.iam.gserviceaccount.com"
   }
 
   runtime_identities = {
@@ -54,22 +53,6 @@ locals {
   database_runtime_project_roles = toset([
     "roles/logging.logWriter",
     "roles/monitoring.metricWriter",
-  ])
-
-  release_application_project_roles = var.recovery_mode ? toset([
-    "roles/cloudquotas.viewer",
-    ]) : toset([
-    "roles/cloudscheduler.admin",
-    "roles/cloudquotas.viewer",
-  ])
-
-  release_runtime_identities = var.recovery_mode ? toset([
-    "authentication",
-    "json_keys",
-    ]) : toset([
-    "authentication",
-    "json_keys",
-    "scheduler_invoker",
   ])
 
   cloud_run_invocation_tag_values = {
@@ -267,14 +250,6 @@ resource "google_service_account_iam_member" "mig_database_act_as" {
   member             = "serviceAccount:${google_project.workload.number}@cloudservices.gserviceaccount.com"
 }
 
-resource "google_service_account_iam_member" "release_runtime_act_as" {
-  for_each = local.release_runtime_identities
-
-  service_account_id = google_service_account.runtime[each.value].name
-  role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "release"]}"
-}
-
 # Resource Manager tags are authorization attributes here, not inventory
 # labels. One project-level conditional binding replaces mutable per-job IAM
 # while keeping each caller inside its reviewed workload class.
@@ -294,37 +269,12 @@ resource "google_tags_tag_value" "cloud_run_invocation" {
   description = each.value.description
 }
 
-resource "google_tags_tag_value_iam_member" "release_tag_user" {
-  for_each = var.recovery_mode ? toset(["internal", "recovery"]) : toset(["internal", "release", "scheduled"])
-
-  tag_value = google_tags_tag_value.cloud_run_invocation[each.value].name
-  role      = "roles/resourcemanager.tagUser"
-  member    = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "release"]}"
-}
-
 resource "google_tags_tag_value_iam_member" "initializer_tag_user" {
   for_each = var.recovery_mode ? toset([]) : var.authentication_initializer_principals
 
   tag_value = google_tags_tag_value.cloud_run_invocation["initializer"].name
   role      = "roles/resourcemanager.tagUser"
   member    = each.value
-}
-
-resource "google_project_iam_member" "release_cloud_run_invoker" {
-  count = var.recovery_mode ? 0 : 1
-
-  project = google_project.workload.project_id
-  role    = "roles/run.jobsExecutor"
-  member  = "serviceAccount:${local.automation_service_accounts.release}"
-
-  condition {
-    title       = "ReleaseTaggedCloudRunOnly"
-    description = "Release may invoke only migration and scheduled operational workloads."
-    expression = join(" || ", [
-      "resource.matchTagId('${google_tags_tag_key.cloud_run_invocation.id}', '${google_tags_tag_value.cloud_run_invocation["release"].id}')",
-      "resource.matchTagId('${google_tags_tag_key.cloud_run_invocation.id}', '${google_tags_tag_value.cloud_run_invocation["scheduled"].id}')",
-    ])
-  }
 }
 
 resource "google_project_iam_member" "scheduler_cloud_run_invoker" {
@@ -403,56 +353,6 @@ resource "google_service_account_iam_member" "initializer_act_as" {
   member             = each.value
 }
 
-resource "google_project_iam_member" "release_application" {
-  for_each = local.release_application_project_roles
-
-  project = google_project.workload.project_id
-  role    = each.value
-  member  = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "release"]}"
-}
-
-# Cloud Run requires service-policy write authority to disable the invoker
-# check on public services. The release identity cannot read service policies,
-# execute by role, or override an execution.
-resource "google_project_iam_custom_role" "release_cloud_run_deployer" {
-  project = google_project.workload.project_id
-
-  role_id     = "infraReleaseCloudRunDeployer"
-  title       = "Infra Release Cloud Run Deployer"
-  description = "Manage release-owned Cloud Run definitions, approved invocation tags, and public service access without execution authority."
-  stage       = "GA"
-
-  permissions = [
-    "run.jobs.create",
-    "run.jobs.createTagBinding",
-    "run.jobs.delete",
-    "run.jobs.deleteTagBinding",
-    "run.jobs.get",
-    "run.jobs.list",
-    "run.jobs.listEffectiveTags",
-    "run.jobs.listTagBindings",
-    "run.jobs.update",
-    "run.executions.get",
-    "run.executions.list",
-    "run.locations.list",
-    "run.operations.get",
-    "run.revisions.get",
-    "run.revisions.list",
-    "run.services.create",
-    "run.services.createTagBinding",
-    "run.services.delete",
-    "run.services.deleteTagBinding",
-    "run.services.get",
-    "run.services.list",
-    "run.services.listEffectiveTags",
-    "run.services.listTagBindings",
-    "run.services.setIamPolicy",
-    "run.services.update",
-  ]
-
-  depends_on = [google_project_service.workload["iam.googleapis.com"]]
-}
-
 # This role is assigned only to named humans. Execution remains a separate,
 # initializer-tagged jobsExecutor grant, and overrides are never allowed.
 resource "google_project_iam_custom_role" "authentication_initializer_deployer" {
@@ -490,12 +390,6 @@ resource "google_project_iam_member" "authentication_initializer_deployer" {
   project = google_project.workload.project_id
   role    = google_project_iam_custom_role.authentication_initializer_deployer[0].name
   member  = each.value
-}
-
-resource "google_project_iam_member" "release_cloud_run_deployer" {
-  project = google_project.workload.project_id
-  role    = google_project_iam_custom_role.release_cloud_run_deployer.name
-  member  = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "release"]}"
 }
 
 resource "google_project_iam_member" "database_runtime_observability" {
@@ -557,155 +451,6 @@ resource "google_service_account_iam_member" "repository_operator_act_as" {
   service_account_id = "projects/${var.workload_project_id}/serviceAccounts/${local.pgbackrest_network[each.value.service].repository}"
   role               = "roles/iam.serviceAccountUser"
   member             = each.value.principal
-}
-
-# Compute authorizes an all-instances metadata patch against the group's full
-# member specification. Separate bindings keep each supporting permission at
-# the narrowest resource scope Compute exposes.
-resource "google_project_iam_custom_role" "database_release" {
-  project = google_project.workload.project_id
-
-  role_id     = "infraDatabaseRelease"
-  title       = "Infra Database Release"
-  description = "Read recovery metadata and apply release metadata to an existing managed database instance."
-  stage       = "GA"
-
-  permissions = [
-    "compute.autoscalers.list",
-    "compute.instanceGroupManagers.get",
-    "compute.instanceGroupManagers.update",
-    "compute.zoneOperations.get",
-  ]
-
-  depends_on = [google_project_service.workload["iam.googleapis.com"]]
-}
-
-resource "google_project_iam_member" "database_release" {
-  project = google_project.workload.project_id
-  role    = google_project_iam_custom_role.database_release.name
-  member  = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "release"]}"
-}
-
-resource "google_project_iam_custom_role" "database_release_member" {
-  project = google_project.workload.project_id
-
-  role_id     = "infraDatabaseReleaseMember"
-  title       = "Infra Database Release Member"
-  description = "Authorize the generated database VM and boot disk while applying group release metadata."
-  stage       = "GA"
-
-  permissions = [
-    "compute.disks.create",
-    "compute.instances.create",
-    "compute.instances.get",
-    "compute.instances.getGuestAttributes",
-    "compute.instances.setLabels",
-    "compute.instances.setMetadata",
-    "compute.instances.setTags",
-  ]
-
-  depends_on = [google_project_service.workload["iam.googleapis.com"]]
-}
-
-resource "google_project_iam_member" "database_release_member" {
-  project = google_project.workload.project_id
-  role    = google_project_iam_custom_role.database_release_member.name
-  member  = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "release"]}"
-
-  condition {
-    title       = "DatabaseReleaseMemberOnly"
-    description = "Limit member authorization to generated database VMs and boot disks."
-    expression = join(" || ", [
-      "resource.type == 'compute.googleapis.com/Instance' && resource.name.startsWith('projects/${google_project.workload.project_id}/zones/${var.database_zone}/instances/agora-database-')",
-      "resource.type == 'compute.googleapis.com/Disk' && resource.name.startsWith('projects/${google_project.workload.project_id}/zones/${var.database_zone}/disks/agora-database-')",
-    ])
-  }
-}
-
-resource "google_project_iam_custom_role" "database_release_data_disk" {
-  project = google_project.workload.project_id
-
-  role_id     = "infraDatabaseReleaseDataDisk"
-  title       = "Infra Database Release Data Disk"
-  description = "Attach the preserved database data disk while applying group release metadata."
-  stage       = "GA"
-
-  permissions = [
-    "compute.disks.get",
-    "compute.disks.use",
-  ]
-
-  depends_on = [google_project_service.workload["iam.googleapis.com"]]
-}
-
-resource "google_compute_disk_iam_member" "database_release" {
-  for_each = local.database_hosts
-
-  project = google_project.workload.project_id
-  zone    = var.database_zone
-  name    = google_compute_disk.database[each.key].name
-  role    = google_project_iam_custom_role.database_release_data_disk.name
-  member  = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "release"]}"
-}
-
-resource "google_project_iam_custom_role" "database_release_template" {
-  project = google_project.workload.project_id
-
-  role_id     = "infraDatabaseReleaseTemplate"
-  title       = "Infra Database Release Template"
-  description = "Read the database instance template while applying group release metadata."
-  stage       = "GA"
-
-  permissions = [
-    "compute.instanceTemplates.get",
-    "compute.instanceTemplates.useReadOnly",
-  ]
-
-  depends_on = [google_project_service.workload["iam.googleapis.com"]]
-}
-
-resource "google_compute_instance_template_iam_member" "database_release" {
-  for_each = local.database_hosts
-
-  project = google_project.workload.project_id
-  name    = google_compute_instance_template.database[each.key].name
-  role    = google_project_iam_custom_role.database_release_template.name
-  member  = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "release"]}"
-}
-
-# Stateful MIG patches authorize generated regional Address resources. Compute
-# Address has no resource IAM policy or condition resource attributes, so this
-# single-purpose project role is the narrowest available scope.
-resource "google_project_iam_custom_role" "database_release_address" {
-  project = google_project.workload.project_id
-
-  role_id     = "infraDatabaseReleaseAddress"
-  title       = "Infra Database Release Address"
-  description = "Authorize stateful internal-address checks during database group metadata patches."
-  stage       = "GA"
-
-  permissions = [
-    "compute.addresses.createInternal",
-    "compute.addresses.deleteInternal",
-    "compute.addresses.get",
-    "compute.addresses.useInternal",
-  ]
-
-  depends_on = [google_project_service.workload["iam.googleapis.com"]]
-}
-
-resource "google_project_iam_member" "database_release_address" {
-  project = google_project.workload.project_id
-  role    = google_project_iam_custom_role.database_release_address.name
-  member  = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "release"]}"
-}
-
-resource "google_compute_subnetwork_iam_member" "database_release" {
-  project    = google_project.workload.project_id
-  region     = var.region
-  subnetwork = google_compute_subnetwork.production.name
-  role       = "roles/compute.networkUser"
-  member     = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "release"]}"
 }
 
 # Secret payloads stay outside OpenTofu. These additive bindings expose only

@@ -130,34 +130,6 @@ func TestTemporaryToolingExceptions(t *testing.T) {
 	require.NotContains(t, imageScan.With, "trivyignores")
 }
 
-func TestReleaseOwnership(t *testing.T) {
-	t.Parallel()
-	release := loadWorkflow(t, "workflows/release.yaml")
-	require.NotContains(t, release.Jobs, "native-service")
-	require.Equal(t, object{"group": "production-infrastructure", "cancel-in-progress": false}, release.Concurrency)
-	require.NotContains(t, release.Jobs, "release")
-	native := release.Jobs["native"]
-	require.Contains(t, native.If, "github.event_name == 'workflow_dispatch'")
-	require.Contains(t, native.If, "github.ref == 'refs/heads/master'")
-	require.Contains(t, native.If, "vars.PRODUCTION_RELEASES_ENABLED != 'true'")
-	require.Contains(t, native.If, "inputs.action == 'plan' || inputs.action == 'apply'")
-	require.Equal(t, "production-release", native.Environment)
-	require.Equal(t, map[string]string{"contents": "read", "id-token": "write", "pull-requests": "read"}, native.Permissions)
-	auth := native.Steps[stepIndex(t, native.Steps, "google-github-actions/auth@")]
-	require.Equal(t, "${{ vars.GCP_RELEASE_SERVICE_ACCOUNT }}", auth.With["service_account"])
-	var commands string
-	for _, step := range native.Steps {
-		commands += step.Run
-		require.NotContains(t, step.Run, "${{")
-	}
-	require.Contains(t, commands, "infra custody operation check-legacy")
-	require.Contains(t, commands, "infra custody config fetch")
-	require.Contains(t, commands, "./ops/create-reviewed-plan.sh release")
-	require.Contains(t, commands, "infra custody plan apply")
-	require.NotContains(t, commands, "release-orchestrator")
-	require.NotContains(t, commands, "jobs execute")
-}
-
 func TestToolingArtifact(t *testing.T) {
 	t.Parallel()
 	publication := loadWorkflow(t, "workflows/publish-rollout-verifier.yaml")
@@ -261,8 +233,6 @@ func stepIndex(t *testing.T, steps []workflowStep, match string) int {
 func TestWorkflowCredentials(t *testing.T) {
 	t.Parallel()
 	for _, testCase := range []struct{ file, job string }{
-		{"release", "native"},
-		{"release", "release-permissions"},
 		{"recovery", "prepare-native"},
 		{"foundation", "execute"},
 		{"drift", "health"},
@@ -407,7 +377,6 @@ func TestWorkflowBoundaries(t *testing.T) {
 	t.Parallel()
 	main := loadWorkflow(t, "workflows/main.yaml")
 	drift := loadWorkflow(t, "workflows/drift.yaml")
-	release := loadWorkflow(t, "workflows/release.yaml")
 	renovate := loadWorkflow(t, "workflows/renovate.yaml")
 	for _, testCase := range []struct {
 		name        string
@@ -496,12 +465,6 @@ func TestWorkflowBoundaries(t *testing.T) {
 	check := health.Steps[stepIndex(t, health.Steps, "infra check-health deployed")]
 	require.Contains(t, check.Run, "infra custody config fetch")
 	require.NotRegexp(t, `\b(cat|tee)\b|set -x`, check.Run)
-
-	require.NotContains(t, release.Jobs, "release")
-	require.NotContains(t, release.On, "push")
-	require.Equal(t, object{"group": "production-infrastructure", "cancel-in-progress": false}, release.Concurrency)
-	require.ElementsMatch(t, []any{"plan", "apply", "check-release-permissions"},
-		nested(release.On, "workflow_dispatch", "inputs", "action")["options"])
 
 	require.Len(t, renovate.On, 2)
 	require.Contains(t, renovate.On, "workflow_dispatch")

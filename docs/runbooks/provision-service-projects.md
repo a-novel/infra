@@ -1,10 +1,10 @@
 # Service-project onboarding boundary
 
-Service projects are opt-in project shells with separate release identities and private storage
-folders. Production still runs in the existing workload project, under the existing release identity.
+Service projects are exceptional opt-in project shells with private storage folders.
+Production uses shared trust zones and the protected foundation deployment identity.
 The reviewed `.envrc` selects two production trust-zone shells, retaining the existing Shared VPC
 host. Dedicated service projects require a separate justification. The defaults also select release
-boundaries for the two existing components; runtime and repository-network activation remain disabled.
+boundaries for the two enrolled services. New service activation still needs explicit review.
 Merging configuration does not publish the private configuration, create a project or move a workload.
 
 ## Production trust-zone foundation
@@ -65,80 +65,28 @@ state, receipt, guard or backup owner changes with this shell definition.
 
 ## Shared-project release boundaries
 
-`service_release_zones` prepares separate identities and custody folders within the selected
-trust-zone projects. The HCL input defaults to `{}` and the publisher omits it when empty. The reviewed
-`.envrc` selects only the two currently deployed components through `INFRA_SERVICE_RELEASE_ZONES`:
+Production uses trust-zone projects, with per-service least privilege inside them.
+`service_release_zones` selects custody and runtime prerequisites. JSON Keys and Authentication
+use `private` for their internal jobs; Authentication REST uses `public-api`.
+The platform-only `public` project has no direct private-network attachment.
+Additional services and first launches require their own reviewed onboarding.
 
-```json
-{
-  "json-keys": ["private"],
-  "authentication": ["public-api"]
-}
-```
+The [custody module](../../modules/service-custody) creates protected state/evidence folders and
+read-only inspection grants, not deployment identities. The sole production writer is the existing
+`production-foundation` workflow and identity; do not create per-service release environments,
+providers or synthetic permission-check jobs.
 
-These are destination release boundaries, not current workload placement. Authentication remains in
-the private project until its separately verified cutover. JSON Keys REST is a cost-reviewed first
-launch and remains unselected, as do private Authentication and platform releases.
+Keep one database VM per service repository in the private project. API components across zones
+reuse that service's published database coordinates and their own scoped credentials. Neither
+project placement nor a folder name substitutes for effective IAM and network checks.
 
-Only the two deployed backend services and nonempty private/public-api zone sets are accepted.
-`public` is reserved for platforms: an old backend `public` selection is rejected, not silently
-relocated. Historical custody paths remain readable, but selecting new coordinates does not migrate
-their state or grants. Shared VPC must be explicitly retained; API selections require
-`public_api_project_id`. Dedicated-service registration,
-repository-network selection and recovery registration cannot be combined with this input.
-The publisher validates before external commands and writes the complete configuration, not a merge;
-preserve any approved selection in the reviewed `.envrc`. Legacy recovery compilation removes it,
-and recovery-mode HCL rejects it.
-
-The [release-boundary contract](../../modules/release-boundary) publishes schema-2 coordinates under
-`service_release_boundaries`, keyed by `service/zone`. Its identities and storage paths distinguish
-services sharing a project and components of one service in different zones. It creates no runtime
-permissions. Shared [prerequisite profiles](../../environments/service-foundation#shared-trust-zone-prerequisites)
-can use the existing protected foundation workflow with separate service/zone state and one guard
-per service across zones. Application release, database and recovery writers remain
-dedicated-project-only; the compatibility contract below does not activate them in shared projects.
-
-Before publishing this registration, verify the existing protected foundation's zone-aware scope
-selection and saved-plan cleanup, then create `production-json-keys-private-release` and
-`production-authentication-public-api-release` with required reviewers, protected branches and no admin
-bypass. Verify those protections before creating federation. Keep service foundation, native release,
-job bootstrap and image-promotion writer flags disabled, and leave their protected runtime inputs unset.
-
-Publish the complete successor configuration with unrelated settings preserved. Review the exact
-protected foundation plan: only the two `module.service_release` boundaries and the two retained
-`google_storage_bucket_object.database_coordinates` publications may change. Reject deletion,
-replacement, imports, moves, legacy writer-grant changes and new runtime/network resources. The existing
-foundation keeps sole ownership of database hosts, disks and backups; registration copies no state or
-receipt and grants no runtime secret or deployment access. Require successful convergence and a
-zero-change plan before using the published database references.
-
-Before enabling any runtime writer, complete runtime permission review and the single-writer state
-handoff. Live checks must prove permitted own-state access, immutable receipts, denied peer/legacy state
-access and the zone-specific secret restrictions above. Apply and verify the declared
-[saved-plan cleanup rules](../../bootstrap/README.md#plan-artifact-expiration), including the separate
-public-api rule, through protected bootstrap before enabling a writer. Keep existing release and backup
-owners unchanged until those checks pass; no state transfer or resource migration happens here.
-
-### Protected storage permission checks
-
-After registration converges, dispatch `retained production operations` (`release.yaml`) on master with
-`action=check-release-permissions`. Approve its two existing service/zone environments. The fixed
-identities exercise their own release storage and append-only receipt grants using tiny synthetic
-objects, then require explicit IAM denials for peer reads and creates. This action runs independently
-of deployment switches and cannot select a deployment job. It reads no secret payload or peer object
-contents and changes no cloud permission or runtime resource.
-
-Each run prints its exact probe paths and acknowledged generations. Temporary state generations are
-deleted using generation preconditions. One synthetic receipt record remains under each scope's
-`production/permission-checks/<commit>/<run-id>-<attempt>/probe.json`; these record probe inputs, not
-deployment success. The successful job summary is the result. Denials count only when Google returns
-403 naming the expected missing object permission. A 404, authentication failure, retention block or
-timeout is a failed check.
-
-If interrupted or cleanup is unconfirmed, inspect only the printed synthetic paths before retrying.
-Reconcile uncertain generations through the existing privileged operator path; never recursively
-delete a folder. Leftover state probes remain subject to the normal foundation inventory gate.
-These checks do not establish runtime secret isolation or transfer resource ownership.
+Preserve the complete protected configuration when changing registration. Review both the
+shared foundation and selected service-root saved plans before applying. The
+[service prerequisites](../../environments/service-foundation/README.md),
+[native release sequence](submit-release.md), and
+[operation contract](../service-operations.md) define the current deployment path.
+Old state and operation evidence remain readable; changing registration never authorizes
+silently dropping a guard, recreating a database or migrating state.
 
 ## Dedicated-service compatibility configuration
 
@@ -209,8 +157,7 @@ tooling into protected `master` before using this mode for a candidate PR.
 - The [project module](../../modules/workload-project/README.md) creates protected project shells,
   enables APIs, deprivileges default accounts, grants foundation maintenance and plan inspection,
   creates the Google-managed Run/Build/Scheduler/Compute agents with their documented roles, and bounds default
-  logs. Each service also gets a keyless release account, an exact federation
-  provider, and managed folders for its state and receipts in the management buckets.
+  logs. Each service also gets protected folders for its state and receipts in the management buckets.
 - Foundation enables the existing workload project as a Shared VPC host and attaches each shell.
   It owns the VPC, subnet, routes, firewall rules, and DNS. Both host and attachment have deletion
   guards. The Cloud Run agent receives host Network Viewer; Cloud Run, the Google APIs MIG agent
@@ -222,15 +169,15 @@ tooling into protected `master` before using this mode for a candidate PR.
 
 An attachment is not a network-security proof. Effective subnet permissions, firewall and
 egress policy, Cloud Run internal routing, and application authentication must be verified before
-deploying a service. Current deployers receive no new-project grants. New release accounts can write
-only their own state and create/read their own receipts; they cannot yet deploy a workload. Legacy
-state, receipts, secrets, and backups retain their existing owners and paths.
+deploying a service. The protected foundation remains the only deployment writer; this module creates
+no service-specific release account. Existing state, receipts, secrets and backups retain their owners
+and paths.
 
 ## First activation prerequisites
 
-Before the first apply creates federation, create each exact `<environment>-<service>-release`
-GitHub environment with required reviewers, protected-branch restriction, and admin bypass disabled.
-An environment name in a token does not prove those protections exist.
+Before provisioning, verify required reviewers, protected-branch restrictions and disabled admin
+bypass on the existing `production-foundation` environment. Dedicated projects do not introduce a
+separate release workflow or federation provider.
 
 The onboarding PR supplies the operator procedure; human activation must record successful
 sanitized results for:
@@ -241,7 +188,7 @@ sanitized results for:
 2. Publishing the reviewed selection with the command above. Do not replace the complete protected
    configuration with a map-only document or reuse the synthetic project IDs.
 3. The existing separate reviewed plan and apply runs. Inspect project creation, API/IAM changes,
-   Shared VPC attachment, release identity/folder grants, and budget scope; stop for workload changes
+   Shared VPC attachment, custody folder grants, and budget scope; stop for workload changes
    or legacy resource replacement.
 4. Verifying exact project parents/billing, no default VPC, enabled APIs, zero user-managed keys,
    effective organization policies, deprivileged default accounts, host attachment, and budget scope.
@@ -253,14 +200,14 @@ sanitized results for:
 5. Removing temporary Owner/project-creation/billing/Shared VPC grants and verifying that the
    standing maintenance identity can still produce a zero-change plan.
 
-Before a service workflow uses the new identity, its separate rollout must also:
+Before the protected workflow deploys a newly registered service, its rollout must also:
 
-- Recheck the environment protections and bind the reviewed workflow to the published `release`
+- Recheck the environment protections and bind the reviewed workflow to the published custody
   coordinates; never let an arbitrary workflow input choose a privileged identity.
-- Verify both permitted operations and denials: own-state read/write/locking, own-receipt
-  create/read, denied receipt overwrite/delete, and denied peer/legacy state, secret, and runtime
-  access. Review inherited IAM too. Check that a wrong repository, ref, workflow, or environment
-  cannot federate; mocked tests cannot establish these live results.
+- Verify the plan identity's exact state/evidence reads and absence of writes. Verify runtime
+  identity secret/network boundaries separately from the privileged foundation deployer. Review
+  inherited IAM and ensure wrong repository, ref, workflow or environment claims cannot federate;
+  mocked tests cannot establish these live results.
 - Select saved-plan storage/expiry and approve only versioned coordinate references, not foundation
   state. Preserve private plan custody, exact-commit approval, and a single writer during the
   transfer; a separate folder is not itself a migration or rollback plan.
@@ -275,11 +222,10 @@ registry, runtime, database, secrets, backups, retained receipts, and health/rol
 shared foundation remains privileged, and release concurrency stays serialized until those service
 boundaries have been verified.
 
-The inactive [service foundation root](../../environments/service-foundation) composes runtime
+The [service foundation root](../../environments/service-foundation) composes runtime
 identities and application-job access using those published project coordinates. Its
-bootstrap sequence keeps prerequisites separate from activation. Its protected planning path below
-is disabled by default, as is the separate job bootstrap below. This runbook does
-not authorize provisioning either root.
+bootstrap sequence keeps prerequisites separate from activation. New registrations remain
+disabled until explicitly configured and approved. This runbook does not itself authorize provisioning.
 
 Its optional [database host](../../environments/service-foundation#optional-idle-database-host) also
 requires a separately approved provisioning step: dedicated runtime/secret access, idle boot evidence,
@@ -385,12 +331,12 @@ must establish that the previous writer can no longer mutate it. No automatic un
 Never replay a consumed plan or assume a failed run made no changes. This path does
 not transfer an existing resource owner, start PostgreSQL, run a migration or deploy an API.
 The root also publishes [content-addressed coordinates](../../environments/service-foundation#published-coordinates)
-using the native storage provider. Only its service's release account gets read access to the
-coordinate folder; its foundation state stays private. Record the `coordinates` output from the
+using the native storage provider. Protected foundation reads the selected coordinate folder;
+runtime identities receive no state access. Record the `coordinates` output from the
 successful protected apply through an approved protected-input change before connecting any consumer.
 Pin its bucket, object, generation and SHA-256; do not select the newest object automatically.
 A document left by a failed or interrupted apply is not usable approval evidence. Retain referenced
-versions and verify inherited IAM before activation. The inactive [service-release root](../../environments/service-release#approved-foundation-handoff)
+versions and verify inherited IAM before activation. The [service-release root](../../environments/service-release#approved-foundation-handoff)
 validates this reference and its downloaded JSON. Approving the reference remains a human decision;
 the job bootstrap below does not discover or approve it automatically.
 

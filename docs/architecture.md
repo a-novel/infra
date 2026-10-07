@@ -19,16 +19,16 @@ public. JSON Keys and Authentication each keep one database VM in private; API c
 service share that database. Public is reserved for platforms and has no private network attachment.
 Staging and Kubernetes remain deferred.
 
-| Principle                                | How this repository applies it                                                                                   | Primary reference                                                                                                                              |
-| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| Layered cloud foundation                 | Bootstrap, durable foundation, and routine release changes have separate roots and identities.                   | [Google Cloud foundation deployment methodology](https://cloud.google.com/architecture/blueprints/security-foundations/deployment-methodology) |
-| Small state and lifecycle boundaries     | Each root has an independent backend object, lock, provider lock file, and change cadence.                       | [Google root-module practices](https://cloud.google.com/docs/terraform/best-practices/root-modules)                                            |
-| Least privilege and separation of duties | Each automation identity receives authority only for its root; workload identities are dedicated per use case.   | [Google service-account practices](https://cloud.google.com/iam/docs/best-practices-service-accounts)                                          |
-| Reviewed execution                       | A protected apply uses the saved plan that an operator reviewed.                                                 | [Google infrastructure operation practices](https://cloud.google.com/docs/terraform/best-practices/operations)                                 |
-| Flat composition                         | Resources stay in their root until reuse or one shared security invariant justifies a module.                    | [OpenTofu module composition](https://opentofu.org/docs/language/modules/develop/composition/)                                                 |
-| Versioned desired state                  | Infrastructure and release inputs are declarative, reviewed, and retained in Git history.                        | [OpenGitOps principles](https://opengitops.dev/)                                                                                               |
-| Immutable application artifacts          | Releases identify OCI images by digest and verify hosted-build provenance before deployment.                     | [OCI image specification](https://specs.opencontainers.org/image-spec/) and [SLSA provenance](https://slsa.dev/spec/v1.2/provenance)           |
-| Defense in depth                         | Network reachability, workload identity, IAM, protected automation, and recovery controls reinforce one another. | [Google security-by-design guidance](https://cloud.google.com/architecture/framework/security/implement-security-by-design)                    |
+| Principle                                | How this repository applies it                                                                                      | Primary reference                                                                                                                              |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Layered cloud foundation                 | Bootstrap, durable foundation, and routine release changes have separate roots under protected sequencing.          | [Google Cloud foundation deployment methodology](https://cloud.google.com/architecture/blueprints/security-foundations/deployment-methodology) |
+| Small state and lifecycle boundaries     | Each root has an independent backend object, lock, provider lock file, and change cadence.                          | [Google root-module practices](https://cloud.google.com/docs/terraform/best-practices/root-modules)                                            |
+| Least privilege and separation of duties | Planning is read-only, foundation is the protected writer, recovery is separate, and runtime identities are scoped. | [Google service-account practices](https://cloud.google.com/iam/docs/best-practices-service-accounts)                                          |
+| Reviewed execution                       | A protected apply uses the saved plan that an operator reviewed.                                                    | [Google infrastructure operation practices](https://cloud.google.com/docs/terraform/best-practices/operations)                                 |
+| Flat composition                         | Resources stay in their root until reuse or one shared security invariant justifies a module.                       | [OpenTofu module composition](https://opentofu.org/docs/language/modules/develop/composition/)                                                 |
+| Versioned desired state                  | Infrastructure and release inputs are declarative, reviewed, and retained in Git history.                           | [OpenGitOps principles](https://opengitops.dev/)                                                                                               |
+| Immutable application artifacts          | Releases identify OCI images by digest and verify hosted-build provenance before deployment.                        | [OCI image specification](https://specs.opencontainers.org/image-spec/) and [SLSA provenance](https://slsa.dev/spec/v1.2/provenance)           |
+| Defense in depth                         | Network reachability, workload identity, IAM, protected automation, and recovery controls reinforce one another.    | [Google security-by-design guidance](https://cloud.google.com/architecture/framework/security/implement-security-by-design)                    |
 
 The repository follows the declarative and versioned OpenGitOps principles today. Protected
 workflows apply accepted desired state and a scheduled read-only drift check detects divergence.
@@ -36,10 +36,9 @@ This is a GitOps-style delivery model, not strict OpenGitOps conformance: no con
 controller currently reconciles the platform.
 
 The [service-release root](../environments/service-release) declares API revisions, traffic and jobs
-directly in HCL. Its shared API writer remains disabled pending resource ownership handoff. The
+directly in HCL and owns the enrolled JSON Keys and Authentication workloads. The
 [release sequence](./runbooks/submit-release.md) uses native Cloud Run traffic targets and retains
-migration, health and private-plan checks. The working production path described below remains
-the owner until that handoff is proven.
+migration, health and private-plan checks. The former fleet release root and writer are retired.
 
 The maintenance rule is one owner per concern: HCL for resources, protected GitHub Actions for the
 sequence, and systemd/pgBackRest for database processes and recovery. Custom code is limited to gaps
@@ -48,46 +47,41 @@ outcomes. The [service-operation contract](./service-operations.md) explains tho
 
 ## Vocabulary
 
-| Term                 | Meaning here                                                                                                     |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Management project   | Stable recovery plane that holds state, federation, secret payloads, logical backups, and release receipts.      |
-| Workload project     | Replaceable production plane that holds the VPC, compute, services, operational storage, logs, and monitoring.   |
-| Root                 | Independently initialized OpenTofu working directory with its own state and automation authority.                |
-| Foundation           | Long-lived infrastructure that survives an ordinary application release.                                         |
-| Release              | Routine application state such as images, revisions, jobs, traffic, and database container configuration.        |
-| Ingress              | Connections accepted by a workload.                                                                              |
-| Egress               | Connections initiated by a workload. Ingress and egress are independent controls.                                |
-| Application rollback | Restoration of the prior release receipt while backward-compatible schema changes remain.                        |
-| Data restore         | Approved replacement of database contents from a named backup or snapshot, with an explicit lost-write boundary. |
+| Term                 | Meaning here                                                                                                      |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Management project   | Stable recovery plane that holds state, federation, secret payloads, native backup buckets, and release receipts. |
+| Workload project     | Replaceable production plane that holds the VPC, compute, services, operational storage, logs, and monitoring.    |
+| Root                 | Independently initialized OpenTofu working directory with its own state and automation authority.                 |
+| Foundation           | Long-lived infrastructure that survives an ordinary application release.                                          |
+| Release              | Routine application state such as images, revisions, jobs, traffic, and database container configuration.         |
+| Ingress              | Connections accepted by a workload.                                                                               |
+| Egress               | Connections initiated by a workload. Ingress and egress are independent controls.                                 |
+| Application rollback | Restoration of the prior release receipt while backward-compatible schema changes remain.                         |
+| Data restore         | Approved replacement of database contents from a named backup or snapshot, with an explicit lost-write boundary.  |
 
 ## Root ownership
 
-```text
-bootstrap                         production foundation                   production release
-stable recovery authority   ->   durable workload authority       ->     routine deployment authority
-rare changes                     occasional changes                      frequent changes
-```
+Production uses five native OpenTofu roots with separate state:
 
-| Root                                                                            | Owns                                                                                                                                          | Authority boundary                                                                                                                                  |
-| ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`bootstrap/`](../bootstrap/)                                                   | Resources inside the manually created management project: state and recovery storage, federation, automation identities, and secret metadata. | May establish later automation identities. It does not create its own project or deploy application revisions.                                      |
-| [`environments/production/foundation/`](../environments/production/foundation/) | Workload project, IAM, VPC, private data plane, database host and disks, backups, monitoring, and stable runtime prerequisites.               | May change durable infrastructure after protected human approval. It does not select routine application versions.                                  |
-| [`environments/production/release/`](../environments/production/release/)       | Container images, jobs, revisions, traffic, and database container configuration described by the release manifest.                           | May deploy and compensate an application release. It cannot change project IAM, networking, state protection, preserved disks, or backup retention. |
+| Root                                                            | Owns                                                                                                    |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| [bootstrap](../bootstrap/)                                      | Management storage, federation, automation identities and secret containers                             |
+| [production foundation](../environments/production/foundation/) | Trust-zone projects, private network, per-service database hosts, invocation tags and rotation schedule |
+| [service foundation](../environments/service-foundation/)       | Each service/zone's runtime prerequisites, repositories and native-backup resources                     |
+| [service release](../environments/service-release/)             | API revisions, traffic and operational jobs                                                             |
+| [service recovery](../environments/service-recovery/)           | Explicitly approved isolated recovery resources                                                         |
 
-The roots apply in that order. A root consumes only the small set of outputs it needs from an earlier
-root and never embeds another root's credentials or state. The foundation automation identity is the
-deliberate high-trust exception to state isolation: after the human bootstrap, its protected workflow
-maintains both `bootstrap` and `foundation`. Release remains confined to its own state, while recovery
-can create isolated foundation/release recovery state without receiving IAM-administration authority
-on the surviving management or production project.
+The protected foundation workflow plans and applies the first four roots. Recovery has its own
+protected workflow and identity. The read-only plan identity assesses exact changes without
+state-write or secret-payload authority. Roots exchange narrow published coordinates rather than
+embedding another root's credentials or entire state.
 
-Routine Cloud Run deployment and job execution are separate permissions. Release receives a custom
-deployment role without execution, override, or IAM-policy authority. Foundation-owned conditional
-invoker bindings match permanent Resource Manager tags to release, scheduled, internal, and recovery
-workloads; release can attach only its three routine values. Authentication initialization remains a
-named-human action because it reconciles the first administrator's password and role. Only those
-humans can use its dedicated identity and tag, keeping the bootstrap password outside both the REST
-identity and routine automation.
+There is no separate release workflow or per-service deployment federation. Foundation is the
+explicit high-trust administrator; its approval boundary, saved plans, service guards and scoped
+runtime grants remain essential. Routine service releases cannot resize database hosts.
+Cloud Run definition changes and job execution are separate grants. Invocation classes distinguish
+migrations, scheduled jobs and internal calls. Authentication initialization remains a named-human
+action with its own identity and tag; routine automation cannot read its administrator password.
 
 ## Stateful database ownership
 

@@ -71,8 +71,7 @@ gh api "repos/${REPOSITORY}/actions/runs?branch=master&per_page=100" --jq '[
   | select(
       .path == ".github/workflows/drift.yaml" or
       .path == ".github/workflows/foundation.yaml" or
-      .path == ".github/workflows/recovery.yaml" or
-      .path == ".github/workflows/release.yaml"
+      .path == ".github/workflows/recovery.yaml"
     )
   | {id, name, display_title, head_sha, status, html_url}
 ]'
@@ -238,8 +237,7 @@ ACTIVE_RUN_IDS="$(gh api "repos/${REPOSITORY}/actions/runs?branch=master&per_pag
   | select(
       .path == ".github/workflows/drift.yaml" or
       .path == ".github/workflows/foundation.yaml" or
-      .path == ".github/workflows/recovery.yaml" or
-      .path == ".github/workflows/release.yaml"
+      .path == ".github/workflows/recovery.yaml"
     )
   | .id
 ')"
@@ -299,7 +297,6 @@ git worktree add --detach "${RECOVERY_CHECKOUT}" "${CANDIDATE_GIT_SHA}"
 case "${STATE_ROOT}" in
   bootstrap) ROOT_DIRECTORY='bootstrap' ;;
   foundation) ROOT_DIRECTORY='environments/production/foundation' ;;
-  release) ROOT_DIRECTORY='environments/production/release' ;;
 esac
 
 export TF_DATA_DIR="${RECOVERY_TEMP_DIR}/tofu-data"
@@ -374,8 +371,7 @@ ACTIVE_RUN_IDS="$(gh api "repos/${REPOSITORY}/actions/runs?branch=master&per_pag
   | select(
       .path == ".github/workflows/drift.yaml" or
       .path == ".github/workflows/foundation.yaml" or
-      .path == ".github/workflows/recovery.yaml" or
-      .path == ".github/workflows/release.yaml"
+      .path == ".github/workflows/recovery.yaml"
     )
   | .id
 ')"

@@ -11,7 +11,7 @@ Use clean, current `master` and the registered service/zone configuration. Keep 
 documents and completion receipts private. The [operator command reference](../../ops/README.md)
 covers credentials and workflow inspection; database maintenance remains a separate operation.
 
-## 4. Store the protected non-payload release configuration
+## Store the protected non-payload release configuration
 
 Routine inputs live in `SERVICE_JOB_BOOTSTRAPS_JSON` in the protected `production-foundation`
 environment. Each service/zone entry is an ordinary
@@ -19,11 +19,10 @@ environment. Each service/zone entry is an ordinary
 Select immutable images and enabled numeric secret-version references; never include payloads.
 Review configuration changes as a candidate before promotion.
 
-The retained root still uses its last converged inputs for backup resources and historical
-recovery. Do not replace those inputs with native API configuration or replay an old whole-release
-receipt to change API traffic.
+Historical receipts remain evidence, not executable deployment inputs. Do not replay an old
+whole-release receipt to change API traffic. Native backup configuration belongs to the service foundation.
 
-## 7. Verify deployment and rotation
+## Verify deployment and rotation
 
 Require a successful exact apply, the intended revision at 100% traffic, healthy dependencies and
 its private completion record. Authentication runs in public-api; JSON Keys gRPC and migrations run

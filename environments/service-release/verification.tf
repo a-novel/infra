@@ -19,7 +19,7 @@ resource "google_cloud_run_v2_job" "verification" {
       containers {
         image   = var.api.image
         command = ["/bin/sh"]
-        args    = ["-c", file("${path.module}/../production/release/scripts/json-keys-smoke.sh")]
+        args    = ["-c", file("${path.module}/scripts/json-keys-smoke.sh")]
         env {
           name  = "JSON_KEYS_AUDIENCE"
           value = google_cloud_run_v2_service.api[0].uri
