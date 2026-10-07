@@ -6,6 +6,7 @@ variable "database_runtime" {
     backup_password_version = string
     identity_version        = string
     wal_archiving           = optional(bool, false)
+    schedules_enabled       = optional(bool, false)
     bring_up                = optional(bool, false)
     backup_alerts_enabled   = optional(bool, false)
   })
@@ -44,6 +45,7 @@ module "database_runtime" {
   management_number = trimprefix(trimsuffix(var.state_bucket, "-tofu-state"), "${var.management_project_id}-")
   identity_version  = each.value.identity_version
   wal_archiving     = each.value.wal_archiving
+  schedules_enabled = each.value.schedules_enabled
   repository = merge(each.value, {
     name = local.repository_name
     ip   = google_compute_instance.repository[each.key].network_interface[0].network_ip

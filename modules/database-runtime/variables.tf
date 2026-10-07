@@ -51,3 +51,14 @@ variable "wal_archiving" {
   type        = bool
   default     = false
 }
+
+variable "schedules_enabled" {
+  description = "Start the native schedules with a healthy database, after backup and isolated restore acceptance."
+  type        = bool
+  default     = false
+
+  validation {
+    condition     = !var.schedules_enabled || var.wal_archiving
+    error_message = "Scheduled backups require WAL archiving."
+  }
+}

@@ -2,6 +2,9 @@
 Description=Agora ${service} database (foundation maintenance only)
 BindsTo=docker.service
 Wants=network-online.target gcr-online.target
+%{ if backup_timers != "" ~}
+Wants=${backup_timers}
+%{ endif ~}
 After=docker.service network-online.target gcr-online.target
 StartLimitIntervalSec=600
 StartLimitBurst=3

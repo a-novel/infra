@@ -1,5 +1,5 @@
 variable "native_backups" {
-  description = "Per-service native lifecycle on existing stateful hosts. Requires protected startup-only replacement; enrollment does not start backup timers."
+  description = "Per-service native lifecycle on existing stateful hosts. Schedule activation follows isolated restore acceptance."
   type = map(object({
     repository_ip     = string
     server_image      = string
@@ -8,6 +8,7 @@ variable "native_backups" {
     ca_version        = string
     identity_version  = string
     wal_archiving     = optional(bool, false)
+    schedules_enabled = optional(bool, false)
   }))
   default  = {}
   nullable = false
@@ -46,6 +47,7 @@ module "native_backup" {
   shared_private    = true
   identity_version  = each.value.identity_version
   wal_archiving     = each.value.wal_archiving
+  schedules_enabled = each.value.schedules_enabled
   repository = merge(each.value, {
     name = "agora-pgbackrest-${each.key}.${var.database_zone}.c.${var.workload_project_id}.internal"
     ip   = each.value.repository_ip
