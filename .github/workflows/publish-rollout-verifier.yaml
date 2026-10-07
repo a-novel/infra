@@ -89,7 +89,7 @@ jobs:
     env:
       IMAGE: ghcr.io/a-novel/infra/${{ needs.build.outputs.tool }}:sha-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
-      - uses: actions/download-artifact@v8.0.1
+      - uses: actions/download-artifact@v8.0.2
         with:
           artifact-ids: ${{ needs.build.outputs.artifact_id || '0' }}
           path: ${{ runner.temp }}
