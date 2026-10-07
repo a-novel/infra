@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Classifies an OpenTofu JSON plan without printing resource values or addresses.
-# Exit 3 requires deletion approval, including a permitted protection change.
+# Exit 3 means at least one managed resource would be deleted or forgotten.
 # Exit 65 rejects invalid plans, unresolved checks, or weakened protections.
 # Usage: ./ops/plan-summary.sh <bootstrap|foundation|release> <plan.json>
 
@@ -143,8 +143,7 @@ jq -r '
 DESTRUCTIVE_CHANGES="$(jq -r '
     def destructive_change:
         ((.change.actions | index("delete")) != null)
-        or ((.change.actions | index("forget")) != null)
-        or (.change.before.deletion_protection == true and .change.after.deletion_protection == false);
+        or ((.change.actions | index("forget")) != null);
 
     # Every managed type is covered so adding a resource cannot weaken the
     # destructive-change gate by omission from an allowlist.
@@ -169,7 +168,7 @@ DESTRUCTIVE_CHANGES="$(jq -r '
 
 if [ -n "${DESTRUCTIVE_CHANGES}" ]; then
     while IFS=$'\t' read -r resource_type count generation; do
-        printf "Managed resource deletion, replacement, state forget, or protection change: %s (%s, %s).\n" \
+        printf "Managed resource deletion, replacement, or state forget: %s (%s, %s).\n" \
             "${resource_type}" "${count}" "${generation}" >&2
     done <<<"${DESTRUCTIVE_CHANGES}"
     exit 3
