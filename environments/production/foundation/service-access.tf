@@ -107,6 +107,30 @@ resource "google_project_iam_member" "foundation_release_observation" {
   member  = "serviceAccount:${local.automation_service_accounts.foundation}"
 }
 
+# Scheduler does not support resource-name conditions for these permissions.
+resource "google_project_iam_custom_role" "foundation_scheduler" {
+  count       = var.manage_application_invocation ? 1 : 0
+  project     = google_project.workload.project_id
+  role_id     = "infraFoundationScheduler"
+  title       = "Foundation existing schedule updates"
+  description = "Read and update existing schedules without creating, deleting or running jobs."
+  permissions = ["cloudscheduler.jobs.get", "cloudscheduler.jobs.fullView", "cloudscheduler.jobs.update"]
+}
+
+resource "google_project_iam_member" "foundation_scheduler" {
+  count   = length(google_project_iam_custom_role.foundation_scheduler)
+  project = google_project.workload.project_id
+  role    = google_project_iam_custom_role.foundation_scheduler[0].name
+  member  = "serviceAccount:${local.automation_service_accounts.foundation}"
+}
+
+resource "google_service_account_iam_member" "foundation_scheduler_act_as" {
+  count              = length(google_project_iam_custom_role.foundation_scheduler)
+  service_account_id = google_service_account.runtime["scheduler_invoker"].name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${local.automation_service_accounts.foundation}"
+}
+
 resource "google_project_service" "public_api_telemetry" {
   for_each = length(google_project_iam_custom_role.foundation_public_api) == 0 ? toset([]) : toset([
     "cloudtrace.googleapis.com", "telemetry.googleapis.com",
