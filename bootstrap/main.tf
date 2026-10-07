@@ -78,10 +78,6 @@ locals {
       contract = "POSTGRES_PASSWORD"
       purpose  = "Authentication database owner password"
     }
-    production-authentication-postgres-backup-password = {
-      contract = "POSTGRES_BACKUP_PASSWORD"
-      purpose  = "Authentication database read-only backup password"
-    }
     production-authentication-smtp-sender-password = {
       contract = "SMTP_SENDER_PASSWORD"
       purpose  = "Authentication service production SMTP credential"
@@ -101,10 +97,6 @@ locals {
     production-json-keys-postgres-password = {
       contract = "POSTGRES_PASSWORD"
       purpose  = "JSON Keys database owner password"
-    }
-    production-json-keys-postgres-backup-password = {
-      contract = "POSTGRES_BACKUP_PASSWORD"
-      purpose  = "JSON Keys database read-only backup password"
     }
     }, { for secret, credential in local.pgbackrest_tls : secret => {
       contract = credential.contract

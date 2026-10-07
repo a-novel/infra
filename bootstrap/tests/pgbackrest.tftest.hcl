@@ -23,7 +23,7 @@ run "default_has_no_native_custody" {
       length(google_storage_bucket_iam_member.pgbackrest_writer) == 0,
       length(google_storage_bucket_iam_member.pgbackrest_recovery) == 0,
       length(local.management_buckets) == 3,
-      length(google_secret_manager_secret.application) == 8,
+      length(google_secret_manager_secret.application) == 6,
       length(google_secret_manager_secret_iam_member.pgbackrest_tls) == 0,
       length(output.native_backups) == 0,
     ])
@@ -46,7 +46,7 @@ run "isolated_native_custody" {
 
   assert {
     condition = (
-      length(google_secret_manager_secret.application) == 8 &&
+      length(google_secret_manager_secret.application) == 6 &&
       length(google_secret_manager_secret_iam_member.pgbackrest_tls) == 0
     )
     error_message = "Storage custody alone must not create TLS credentials or payload grants."
@@ -180,8 +180,8 @@ run "isolated_tls_credentials" {
 
   assert {
     condition = (
-      length(google_secret_manager_secret.application) == 11 &&
-      length(google_secret_manager_secret_iam_member.operator) == 22 &&
+      length(google_secret_manager_secret.application) == 9 &&
+      length(google_secret_manager_secret_iam_member.operator) == 18 &&
       alltrue([for endpoint in ["ca", "database", "repository"] : alltrue([
         google_secret_manager_secret.application["production-json-keys-pgbackrest-${endpoint}"].deletion_protection,
         google_secret_manager_secret.application["production-json-keys-pgbackrest-${endpoint}"].deletion_policy == "PREVENT",
