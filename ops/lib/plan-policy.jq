@@ -86,11 +86,27 @@ def candidate_schedule_pause($plan):
       .after.project == $plan.variables.workload_project_id.value and
       .after.region == $plan.variables.region.value);
 
+# Remove with the retired provider. Tracked in https://github.com/a-novel/infra/issues/187.
+def retire_release_provider($plan):
+  $root_name == "bootstrap" and .type == "google_iam_workload_identity_pool_provider" and
+  .address == "google_iam_workload_identity_pool_provider.retiring_release" and
+  .previous_address == "google_iam_workload_identity_pool_provider.github[\"release\"]" and
+  .change.importing == null and .deposed == null and
+  (.change | .actions == ["update"] and known([]) and
+    .before.project == "a-novel-management-prod" and
+    .before.project == $plan.variables.management_project_id.value and
+    .before.id == "projects/a-novel-management-prod/locations/global/workloadIdentityPools/github-actions/providers/github-release" and
+    .before.workload_identity_pool_id == "github-actions" and
+    .before.workload_identity_pool_provider_id == "github-release" and
+    .before.deletion_policy == "PREVENT" and .before.disabled == false and
+    .after == (.before + {deletion_policy: "DELETE", disabled: true}));
+
 def protections($plan):
   . as $resource | .type as $type | .change
   | keep(["deletion_protection"]; true) and
     keep(["force_destroy"]; false) and
-    keep(["deletion_policy"]; "PREVENT") and keep(["deletion_policy"]; "ABANDON") and
+    (keep(["deletion_policy"]; "PREVENT") or ($resource | retire_release_provider($plan))) and
+    keep(["deletion_policy"]; "ABANDON") and
     (if $type == "google_storage_bucket" then
       keep(["public_access_prevention"]; "enforced") and
       keep(["uniform_bucket_level_access"]; true) and
