@@ -275,7 +275,7 @@ Only the selected repository IP on TCP 8432 is allowed out of the database bridg
 metadata and other initiated traffic remain blocked. Its certificate name is mapped explicitly, with
 container DNS still disabled and raw-packet capability removed. The read-only client credential mount
 contains no cloud token. WAL archiving defaults off; the prepared jobs below share this network.
-Daily logical backups remain unchanged.
+Enabling WAL does not itself retire another backup path; that requires accepted recovery evidence.
 
 `database_runtime.bring_up` defaults to false. With separately approved
 `NATIVE_BACKUP_MAINTENANCE_ENABLED` and `NATIVE_BACKUP_BRINGUP_ENABLED` workflow gates, it enrolls
@@ -470,8 +470,7 @@ Do not start this unit until publication/promotion, credential issuance and expi
 effective IAM/egress, operation admission, monitoring and a scoped COS lifecycle proof are approved.
 That proof must include failed credential delivery, interrupted startup, server stop and restart,
 and Docker/host failure. Unit-active is not backup readiness. Metadata updates do not reload a running
-service; changing versions requires a separately admitted stopped-consumer lifecycle. Existing
-backup writers and daily snapshots remain unchanged.
+service; changing versions requires a separately admitted stopped-consumer lifecycle.
 
 References: [COS cloud-init](https://docs.cloud.google.com/container-optimized-os/docs/how-to/create-configure-instance),
 [systemd service cleanup](https://github.com/systemd/systemd/blob/v257/man/systemd.service.xml),
@@ -480,8 +479,9 @@ References: [COS cloud-init](https://docs.cloud.google.com/container-optimized-o
 The design ceiling is EUR 10–15 additional per service per month, with minimum tested capacity as the
 target. Confirm local-currency compute/disk rates and budget storage generations, requests, networking,
 logs and temporary overlap before live approval. Compare the whole replacement against costs actually
-retired. Existing logical backups and daily snapshots remain active until their respective reviewed
-cutovers; retained logical recovery points keep their readers and images through expiration.
+retired. Both deployed services have completed native-backup acceptance and retired their logical
+jobs and snapshots. Retained logical recovery points keep their readers and images through expiration;
+see [the dated retirement follow-up](https://github.com/a-novel/infra/issues/638).
 
 Google documents the [native instance lifecycle](https://github.com/hashicorp/terraform-provider-google/blob/v8.2.0/website/docs/r/compute_instance.html.markdown)
 and [single attached service-account boundary](https://docs.cloud.google.com/compute/docs/access/service-accounts).

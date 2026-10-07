@@ -199,51 +199,27 @@ needs live prerequisite verification and health evidence before replacing its ex
 
 ## Bootstrap before routine release
 
-Existing shared-private jobs and JSON Keys gRPC move through native OpenTofu
-[removal](https://opentofu.org/docs/language/resources/syntax/#removing-resources) and
-[import](https://opentofu.org/docs/language/import/) blocks. Keep the legacy deployment dispatcher
-disabled throughout. Register each private service and apply its foundation prerequisites using the
-existing database handoff, then promote the already reviewed image digests.
+Register the service, apply its foundation prerequisites, and promote reviewed image digests
+before planning jobs or API revisions. The protected bootstrap path checks selected-family
+provenance, exact image bindings, enabled secret-version metadata and private saved-plan custody.
 
-| Legacy release address suffix              | Service        | Destination address suffix  |
-| ------------------------------------------ | -------------- | --------------------------- |
-| `application["authentication_migrations"]` | Authentication | `application["migrations"]` |
-| `application["json_keys_migrations"]`      | JSON Keys      | `application["migrations"]` |
-| `application["json_keys_rotate"]`          | JSON Keys      | `application["rotatekeys"]` |
+For resources already managed elsewhere, transfer ownership through reviewed OpenTofu
+[removal](https://opentofu.org/docs/language/resources/syntax/#removing-resources) with
+`destroy=false` and [import](https://opentofu.org/docs/language/import/) blocks.
+First quiesce the old writer and reconcile accepted work. Preserve state backups, import only
+the named resources, verify their original UIDs, and require a zero-change plan before removing
+`adopt_existing_jobs` or `adopt_existing_api`. An uncertain handoff stops for reconciliation,
+not recreation or a blind retry. Each live resource has exactly one state owner.
 
-The table's addresses use `google_cloud_run_v2_job`. JSON Keys gRPC moves from
-`google_cloud_run_v2_service.json_keys[0]` to `google_cloud_run_v2_service.api[0]` in its private root.
-Preserve private state backups and verify live UIDs and accepted executions. Review and apply the
-legacy root's `removed` blocks first: only these three jobs and the existing gRPC service may be
-forgotten, with `destroy=false`. No live resource is deleted. Existing schedules and invocation tags
-remain in that state and continue targeting the same names. Its read-only gRPC data source preserves
-the endpoint used by smoke checks. Disposable recovery still owns its separate probe services.
+The Authentication and JSON Keys handoff is complete. Its aggregate release root and dispatcher
+have been removed; do not replay that historical transition. Routine releases use the
+[selected-service operation](../../docs/runbooks/submit-release.md) and its existing guard.
+Review producer compatibility and migration requirements for each new image family.
+Historical receipt readers remain supported without reintroducing old deployment jobs.
 
-Set `adopt_existing_jobs=true` in each selected private service's protected inputs and
-`adopt_existing_api=true` for JSON Keys. Review its saved
-plan for the exact imports and intended in-place identity/image changes; reject creation, replacement
-or unexpected changes. Apply, check the original UIDs, and require a zero-change plan before removing
-the adoption flag. A partial or uncertain handoff stops for state reconciliation, never job recreation
-or a blind retry. Keep backups and receipts; each live resource must have exactly one state owner.
-
-For the approved JSON Keys v2.8.0 upgrade, deploy Authentication v2.11.0 first: its verifier accepts
-both the historical EdDSA and new Ed25519 labels. Authentication v2.9.1 does not. Review the producer
-migration notes and check the Authentication candidate against the old signer before promotion.
-Then pause the existing hourly rotation schedule, reconcile accepted executions, and upgrade the
-JSON Keys gRPC and job family together. Verify the candidate before moving traffic, check token
-verification after promotion, and resume rotation only after those checks pass. Neither version
-comparison adds SQL migrations; database VM images and capacity remain outside this rollout.
-Authentication removed `jobs/init` in v2.10.0. The manifest retains that slot only for historical
-releases; modern verification resolves its three published images without inventing an initializer
-or deploying a replacement maintenance job.
-
-Dedicated-project bootstrap remains create-only. Routine dispatch needs separate execution authority
-and migration/health verification; transferring a job definition neither runs it nor enables releases.
-
-The protected bootstrap workflow supplies selected-family provenance, exact job/API image binding,
-enabled job-secret metadata checks and private saved-plan custody. Activation still requires
-promoted image availability, effective runtime access, same-service exclusion and an isolated
-interruption drill.
+Dedicated-project bootstrap remains create-only. Creating a job definition neither executes it
+nor verifies effective access, service health or recovery. Those checks require separate live
+activation evidence.
 
 ## Inputs and execution boundary
 
@@ -270,9 +246,9 @@ updates, migrations, API rollout and receipt publication. Once every rotation di
 same guard until completion, the routine release can leave scheduling unchanged; existing direct
 dispatch paths must first be retired and their accepted work reconciled.
 An ambiguous migration dispatch requires reconciliation of its exact execution; neither a timeout
-nor a missing receipt permits replay. Shared deployment remains disabled until the existing guard
-and native execution evidence protect that boundary. Ownership transfer and recovery drills remain
-activation prerequisites.
+nor a missing receipt permits replay. The protected selected-service operation holds the guard
+through native execution and receipt completion. A newly enrolled service still needs its own
+ownership and recovery acceptance before activation.
 
 Both job types use all-traffic Direct VPC egress and their service's network tag. The host foundation
 must provide private database access, restricted Google API routing and the Cloud Run service-agent
