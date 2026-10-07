@@ -15,7 +15,7 @@ OpenTofu and GitOps definitions for Agora's low-cost Google Cloud production env
 
 This repository defines the Google Cloud resources and deployment controls for Agora. The first production slice is designed to serve JSON Keys over private gRPC and Authentication over public HTTPS, backed by one private PostgreSQL VM and preserved disk per service repository.
 
-The repository separates stable recovery resources, long-lived production infrastructure, and routine application deployments into lifecycle-scoped OpenTofu roots. That split keeps each automation identity limited to the resources it owns.
+The repository separates stable recovery resources, long-lived production infrastructure, and routine application deployments into lifecycle-scoped OpenTofu roots. Each resource has one state owner; the protected foundation workflow remains a shared administrative authority.
 
 The design is a small Google Cloud landing zone built from established infrastructure-as-code, least-privilege, immutable-artifact, and reviewed-deployment practices. The [architecture guide](./docs/architecture.md) records those principles and the deliberate limits that keep the platform proportionate to Agora's current scale.
 
@@ -218,14 +218,16 @@ pnpm install --frozen-lockfile
 
 ./ops/check-root.sh bootstrap
 ./ops/check-root.sh foundation
-./ops/check-root.sh release
+./ops/check-root.sh service-foundation
+./ops/check-root.sh service-release
+./ops/check-root.sh service-recovery
 
 ./tests/ops_test.sh
 pnpm lint
 a-novel test -y
 ```
 
-`check-root.sh` accepts only `bootstrap`, `foundation`, or `release`. It initializes with `-backend=false` and runs mocked tests, so this local path does not authenticate to or query Google Cloud.
+`check-root.sh` accepts the five root names above. It initializes with `-backend=false` and runs mocked tests, so this local path does not authenticate to or query Google Cloud.
 
 ## Repository reference
 
@@ -304,8 +306,8 @@ image pins, numeric secret versions and family compatibility are verified before
 Private migrations complete before candidate verification and a separate traffic-only promotion.
 The private completion receipt records the exact configuration, revisions, execution identities and
 health results. Routine API releases do not restart database hosts. Fresh activation and host
-maintenance require their own reviewed plan; retained backup jobs and historical recovery evidence
-remain available.
+maintenance require their own reviewed plan. Database maintenance verifies a fresh native backup
+and isolated SQL restore on the service's existing repository host before replacement.
 
 ### Portability boundary
 
@@ -322,12 +324,12 @@ Ingress and egress are independent. JSON Keys starts with private-only egress an
 The foundation code now enforces the VPC, subnet, restricted Google routes, firewall policy, private
 DNS, no-external-IP stateful database group, preserved disk/address, inbound-only database container
 networking, recovery identities, native backup enrollment and recovery alerts in mocked tests.
-The release code gives backup and private application jobs only reviewed private database/API
-egress, gives restore jobs no database route or secret, sends every JSON Keys service connection
-through the deny-by-default VPC, and gives Authentication only split private VPC plus managed public
-SMTP egress. It deliberately provisions no NAT, router, connector, load balancer, or public IP. The
-JSON Keys IAM allowlist contains only Authentication; release and recovery have no data-plane
-invocation grant.
+The release code gives private application jobs only their service's reviewed database/API egress,
+sends every JSON Keys service connection through the deny-by-default VPC, and gives Authentication
+split private VPC plus managed public SMTP egress. Database containers reach only their own native
+backup repository over TLS. Isolated recovery has no production database route. The code provisions
+no NAT, router, connector, load balancer, or public IP. JSON Keys invocation is limited to the
+approved Authentication and private smoke identities; deployment authority remains separate.
 Those definitions have no cloud effect until a protected apply is authorized; deployed
 allowed-and-denied path checks remain a release-workflow acceptance gate.
 

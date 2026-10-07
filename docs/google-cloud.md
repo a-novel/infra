@@ -26,8 +26,8 @@ channels, bounded logging, and one private stateful managed instance group with 
 boot/data disks per PostgreSQL database. Its pinned COS template, startup/shutdown scripts, stateful private address,
 operator access, metadata controls and capacity alerts have mocked security tests;
 live application is a separate protected operation. Service foundation owns native pgBackRest
-repository hosts, their scoped storage/TLS access, and backup failure/freshness alerts. Recovery mode omits production alert/budget resources and grants Project Deleter
-only inside the disposable project so reviewed cleanup cannot target production.
+repository hosts, their scoped storage/TLS access, and backup failure/freshness alerts. The separate
+service-recovery root declares only the reviewed disposable recovery resources.
 
 Foundation seeds three empty non-secret release keys in each group's all-instances configuration.
 The tested helper accepts only that complete service-specific map, checks the immutable disk ID,
@@ -93,13 +93,17 @@ Authentication Cloud Run service (public ingress, application authorization)
    v
 JSON Keys Cloud Run service (internal ingress, IAM allowlist)
 
-Cloud Run service and backup-job identities
+Cloud Run service and application-job identities
    |
    | Direct VPC egress + tagged allows on TCP 5432/5433
    v
 PostgreSQL containers on a VM internal address (no external IP or public frontend)
 
-Restore and backup-monitor jobs
+Database containers
+   |
+   `-- mutual TLS to their service's pgBackRest repository host
+
+Isolated recovery host
    |
    `-- restricted Google APIs only; no PostgreSQL route or public internet
 
@@ -117,10 +121,10 @@ targeted firewall access, database credentials, and service-owned database roles
 The database host has no external IP, public load balancer, forwarding rule, public DNS record, or
 public firewall path. JSON Keys publishes only TCP `5432` and Authentication only TCP `5433` on
 the VM's stateful internal address. Ingress accepts the production subnet and targets only the
-service-specific database-host network tag. Approved revisions and jobs carry caller-specific tags: JSON Keys can
-egress only to `5432`, Authentication only to `5433`, and backup jobs to both. Restore jobs have no
-database egress route. Each database
-keeps its own cluster, data directory, credentials, and role boundary.
+service-specific database-host network tag. Approved revisions and application jobs carry
+caller-specific tags: JSON Keys can egress only to `5432` and Authentication only to `5433`.
+Isolated recovery has no production database route. Each database keeps its own cluster, data
+directory, credentials, and role boundary.
 
 Google supports Direct VPC tags as firewall targets for Cloud Run egress, but not as source tags in
 ingress rules. The subnet source range is therefore intentional, not a substitute for caller
@@ -193,10 +197,12 @@ JSON Keys is a server, so it cannot be literally outbound-only: it must accept R
 internal workloads to provide a service. The contract is that no public or unauthenticated client can
 invoke it.
 
-The service uses Cloud Run `internal` ingress and end-to-end HTTP/2. Foundation grants
-`roles/run.servicesInvoker` to Authentication only when the target carries the permanent `internal`
-Resource Manager tag. Release can attach that value but cannot change the conditional IAM policy;
-recovery uses only control-plane readiness inspection in production. The policy grants neither
+The service uses Cloud Run `internal` ingress and end-to-end HTTP/2. Foundation owns its approved
+Authentication caller and private JSON Keys smoke grants. Tag-conditioned grants apply only to
+targets carrying the permanent `internal` Resource Manager tag; the public-api Authentication
+identity receives an exact service-level grant. The service-release root attaches the tag, while
+foundation owns invocation policy. Recovery uses only control-plane readiness inspection in
+production. The policy grants neither
 `allUsers` nor `allAuthenticatedUsers`, and it has no external load balancer or public custom domain. Google
 recommends combining
 [Cloud Run ingress restrictions](https://cloud.google.com/run/docs/securing/ingress) with
