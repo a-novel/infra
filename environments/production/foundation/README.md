@@ -22,7 +22,7 @@ Optional service-owned project shells are declared by `service_projects` (defaul
 the reusable [workload-project module](../../../modules/workload-project/README.md), attach to this
 root's existing network through Shared VPC, and join the existing budget. These new projects and
 the Shared VPC host/attachments retain deletion guards independently of the legacy replacement
-window above. Foundation also prepares each service's release identity and isolated state/receipt
+window above. Foundation also prepares each service's isolated state/receipt
 folders in the management plane, creates the required Google-managed service agents, and grants the Cloud Run
 agent access to the exact foundation subnet. Application authority and active workflows are unchanged.
 No existing workload or deployment authority moves with this change. Follow the
@@ -53,15 +53,11 @@ reviewed change enables it to import an audited empty default VPC without modify
 change disables it and carries the repository's deletion label. Review therefore never conflates
 state adoption with resource deletion.
 
-Foundation gives the protected release identity `actAs` only on Authentication, JSON Keys, backup,
-restore, and scheduler-invoker service accounts. A deployment-only Cloud Run custom role lets it
-manage release-owned definitions, attach only three approved invocation tags, and disable the
-invoker check required by public Authentication. It cannot read Cloud Run IAM policies, execute
-jobs by role, override executions, or hold Cloud Run Admin. Conditional project bindings match those
-tags to the release, scheduler, Authentication, and recovery callers. Named humans alone receive the
-initializer tag, initializer service identity, and conditional initializer invocation. Release has
-no direct Secret Manager payload access; Cloud Run resolves exact numeric versions as each dedicated
-runtime identity.
+Protected foundation owns native deployment authority and exact runtime attachment grants.
+Conditional invocation grants distinguish migration, scheduled and internal-service calls;
+the scheduler cannot deploy jobs or read secrets. Named humans alone receive initializer
+execution authority and access to its dedicated identity. Routine deployment has no direct
+Secret Manager payload access; Cloud Run resolves exact numeric versions as each dedicated runtime identity.
 
 Merging or validating this code creates nothing, and no operator should run this root manually. The
 protected workflow creates a private plan and applies that exact plan in separate approved runs from
@@ -114,14 +110,11 @@ only after resource creation has been explicitly authorized.
   boundary cannot mutate snapshots or external addresses. It has no VM/disk delete, start,
   stop, or IAM permission. Only the fixed protected helper may use the coarse
   group update.
-- Code deprivileges Google-created default service accounts, isolates eight runtime service accounts
+- Code deprivileges Google-created default service accounts, separates runtime identities
   by workload, and creates no user-managed keys. Authentication and JSON Keys may write OTLP traces
-  and logs through the Telemetry API. The release identity may attach only five
-  non-database runtime accounts and uses one exact custom role for Cloud Run definitions and approved
-  tags. Its service-policy setter disables the public Authentication invoker check; it cannot read
-  service policies or execute jobs. Twelve additive Secret Manager bindings grant only the seven
-  live management-project containers each runtime contract consumes. Create-only backup bucket IAM
-  and read-only restore IAM are separate. The runbook enforces
+  and logs through the Telemetry API. Exact Secret Manager bindings follow each runtime contract.
+  Native repository writes and separately disabled recovery reads use service-owned identities;
+  the former shared logical backup identities are retired. The runbook enforces
   default-role and key-creation/upload policies when an organization exists and records the
   zero-key fallback for standalone projects.
 - The Docker repository uses immutable tags and deletion prevention. Cleanup remains in dry-run
@@ -143,7 +136,7 @@ only after resource creation has been explicitly authorized.
 
 ## Resource inventory
 
-`module.service_project` owns each opt-in project's shell, release identity, federation provider,
+`module.service_project` owns each exceptional opt-in project's shell
 and state/receipt folder grants; its
 [module inventory](../../../modules/workload-project/README.md#ownership) lists the resources.
 `google_compute_shared_vpc_host_project.production` enables the existing workload project as the

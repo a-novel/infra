@@ -1,10 +1,10 @@
 # Service-project onboarding boundary
 
-Service projects are opt-in project shells with separate release identities and private storage
-folders. Production still runs in the existing workload project, under the existing release identity.
+Service projects are exceptional opt-in project shells with private storage folders.
+Production uses shared trust zones and the protected foundation deployment identity.
 The reviewed `.envrc` selects two production trust-zone shells, retaining the existing Shared VPC
 host. Dedicated service projects require a separate justification. The defaults also select release
-boundaries for the two existing components; runtime and repository-network activation remain disabled.
+boundaries for the two enrolled services. New service activation still needs explicit review.
 Merging configuration does not publish the private configuration, create a project or move a workload.
 
 ## Production trust-zone foundation
@@ -331,12 +331,12 @@ must establish that the previous writer can no longer mutate it. No automatic un
 Never replay a consumed plan or assume a failed run made no changes. This path does
 not transfer an existing resource owner, start PostgreSQL, run a migration or deploy an API.
 The root also publishes [content-addressed coordinates](../../environments/service-foundation#published-coordinates)
-using the native storage provider. Only its service's release account gets read access to the
-coordinate folder; its foundation state stays private. Record the `coordinates` output from the
+using the native storage provider. Protected foundation reads the selected coordinate folder;
+runtime identities receive no state access. Record the `coordinates` output from the
 successful protected apply through an approved protected-input change before connecting any consumer.
 Pin its bucket, object, generation and SHA-256; do not select the newest object automatically.
 A document left by a failed or interrupted apply is not usable approval evidence. Retain referenced
-versions and verify inherited IAM before activation. The inactive [service-release root](../../environments/service-release#approved-foundation-handoff)
+versions and verify inherited IAM before activation. The [service-release root](../../environments/service-release#approved-foundation-handoff)
 validates this reference and its downloaded JSON. Approving the reference remains a human decision;
 the job bootstrap below does not discover or approve it automatically.
 
