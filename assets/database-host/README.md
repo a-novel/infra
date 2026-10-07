@@ -1,13 +1,9 @@
 # Database host startup assets
 
-`startup.sh` serves the new service-owned foundation, including its native systemd lifecycle.
+`startup.sh` prepares the preserved service disk and owner credential. Its `--supervise` mode runs
+under systemd with native TLS backups; initial boot prepares an idle host until release metadata is
+complete. Both foundation roots use this adapter and `shutdown.sh`.
 
-`legacy-startup.sh` serves the existing shared-foundation hosts. Even comment changes replace its
-immutable instance templates, so edits require explicit host-maintenance approval. Foundation
-mocked plans check its reviewed digest for both databases, with and without project onboarding.
-
-Both ownership probes use `stat -c`, supported by GNU and BusyBox database images. Applying a
-legacy-script fix requires a separately reviewed foundation maintenance plan before retrying a
-release; merging the code alone does not update an existing host.
-
-Both paths use `shutdown.sh`.
+Startup changes replace immutable instance templates. Apply them through a reviewed protected
+maintenance plan with native backup and restore verification; merging code alone does not update a
+running host. File ownership checks use `stat -c`, supported by GNU and BusyBox images.
