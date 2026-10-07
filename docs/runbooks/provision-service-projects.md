@@ -182,16 +182,19 @@ target. Its compiler always writes `service_projects = {}` into the disposable f
 the root also rejects a nonempty map in recovery mode. Older source configurations without the map
 remain supported.
 
-### Assess a partial foundation operation
+### Assess a partial bootstrap or foundation operation
 
 A failed apply can leave resources in state while private custody still holds the last successfully
 applied configuration. Keep that converged record intact. After inspecting the partial operation and
-reviewing the complete pending `FOUNDATION_TFVARS_JSON` in `production-foundation`, a maintainer may
+reviewing the complete pending `FOUNDATION_TFVARS_JSON` and `BOOTSTRAP_TFVARS_JSON` in
+`production-foundation`, a maintainer may
 dispatch `production drift` on current `master` with operation `assess-pending-foundation` and the
 exact pull request, head SHA and base SHA. Approve that run through the existing foundation
 environment only after checking those inputs. The workflow uses the read-only plan identity.
 
-This explicit mode uses the pending document for the shared foundation and service registration.
+This explicit mode uses the pending documents for bootstrap and the shared foundation, including
+service registration. If no pending bootstrap document is configured, bootstrap retains its
+converged inputs. A configured but invalid document fails closed.
 Each initialized service root still requires its own converged inputs and state. Missing registration,
 denied inventory reads and held operation guards remain failures. Normal assessments, image-only
 checks and scheduled drift continue using converged inputs. There is no automatic fallback.

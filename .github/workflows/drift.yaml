@@ -312,6 +312,7 @@ jobs:
           HEAD_SHA: ${{ inputs.head_sha }}
           MANAGEMENT_PROJECT_ID: ${{ vars.GCP_MANAGEMENT_PROJECT_ID }}
           PENDING_FOUNDATION_CONFIG: ${{ inputs.operation == 'assess-pending-foundation' && secrets.FOUNDATION_TFVARS_JSON || '' }}
+          PENDING_BOOTSTRAP_CONFIG: ${{ inputs.operation == 'assess-pending-foundation' && secrets.BOOTSTRAP_TFVARS_JSON || '' }}
           PULL_REQUEST: ${{ inputs.pull_request }}
           STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
         run: |

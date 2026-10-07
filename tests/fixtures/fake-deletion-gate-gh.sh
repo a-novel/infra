@@ -135,6 +135,7 @@ if [ "${1:-}" = api ]; then
             case "${FAKE_GATE_FILES:-image}" in
                 docs) jq -n '[{filename: "README.md"}]' ;;
                 foundation) jq -n '[{filename: "environments/production/foundation/main.tf"}]' ;;
+                bootstrap) jq -n '[{filename: "bootstrap/main.tf"}]' ;;
                 service) jq -n '[{filename: "environments/service-foundation/main.tf"}]' ;;
                 service-release) jq -n '[{filename: "environments/service-release/main.tf"}]' ;;
                 service-recovery) jq -n '[{filename: "environments/service-recovery/main.tf"}]' ;;
