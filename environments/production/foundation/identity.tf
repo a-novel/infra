@@ -15,10 +15,6 @@ locals {
       account_id   = "agora-auth-initializer"
       display_name = "Agora Authentication initializer"
     }
-    backup = {
-      account_id   = "agora-backup"
-      display_name = "Agora PostgreSQL backup"
-    }
     authentication_database = {
       account_id   = "agora-auth-database"
       display_name = "Agora Authentication PostgreSQL host"
@@ -30,10 +26,6 @@ locals {
     json_keys = {
       account_id   = "agora-json-keys"
       display_name = "Agora JSON Keys runtime"
-    }
-    restore = {
-      account_id   = "agora-restore"
-      display_name = "Agora PostgreSQL restore"
     }
     scheduler_invoker = {
       account_id   = "agora-scheduler-invoker"
@@ -74,12 +66,9 @@ locals {
   release_runtime_identities = var.recovery_mode ? toset([
     "authentication",
     "json_keys",
-    "restore",
     ]) : toset([
     "authentication",
-    "backup",
     "json_keys",
-    "restore",
     "scheduler_invoker",
   ])
 
@@ -151,17 +140,9 @@ locals {
       identity = "authentication_database"
       secret   = "production-authentication-postgres-password"
     }
-    "database:authentication-backup-password" = {
-      identity = "authentication_database"
-      secret   = "production-authentication-postgres-backup-password"
-    }
     "database:json-keys-password" = {
       identity = "json_keys_database"
       secret   = "production-json-keys-postgres-password"
-    }
-    "database:json-keys-backup-password" = {
-      identity = "json_keys_database"
-      secret   = "production-json-keys-postgres-backup-password"
     }
     "json-keys:app-master-key" = {
       identity = "json_keys"
@@ -171,16 +152,7 @@ locals {
       identity = "json_keys"
       secret   = "production-json-keys-postgres-password"
     }
-    }, var.recovery_mode ? {
-    "restore:authentication-owner-password" = {
-      identity = "restore"
-      secret   = "production-authentication-postgres-password"
-    }
-    "restore:json-keys-owner-password" = {
-      identity = "restore"
-      secret   = "production-json-keys-postgres-password"
-    }
-    } : {
+    }, var.recovery_mode ? {} : {
     "authentication:waitlist-secret" = {
       identity = "authentication"
       secret   = "production-authentication-waitlist-secret"
@@ -192,14 +164,6 @@ locals {
     "authentication-initializer:super-admin-password" = {
       identity = "authentication_initializer"
       secret   = "production-authentication-super-admin-password"
-    }
-    "backup:authentication-backup-password" = {
-      identity = "backup"
-      secret   = "production-authentication-postgres-backup-password"
-    }
-    "backup:json-keys-backup-password" = {
-      identity = "backup"
-      secret   = "production-json-keys-postgres-backup-password"
     }
   })
 }
@@ -755,24 +719,4 @@ resource "google_secret_manager_secret_iam_member" "runtime" {
   secret_id = each.value.secret
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.runtime[each.value.identity].email}"
-}
-
-# Logical backups are committed by a create-only identity. It cannot discover,
-# read, overwrite, or delete a recovery point after the upload request returns.
-resource "google_storage_bucket_iam_member" "backup_runtime_creator" {
-  count = var.recovery_mode ? 0 : 1
-
-  bucket = var.backup_bucket_name
-  role   = "roles/storage.objectCreator"
-  member = "serviceAccount:${google_service_account.runtime["backup"].email}"
-}
-
-# Restore and freshness checks share one read-only identity. They can neither
-# create a forged completion marker nor modify or delete retained data.
-resource "google_storage_bucket_iam_member" "restore_runtime_viewer" {
-  count = var.recovery_mode ? 0 : 1
-
-  bucket = var.backup_bucket_name
-  role   = "roles/storage.objectViewer"
-  member = "serviceAccount:${google_service_account.runtime["restore"].email}"
 }
