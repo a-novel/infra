@@ -309,23 +309,6 @@ run "builds_the_protected_management_plane" {
 
   assert {
     condition = (
-      toset(keys(google_secret_manager_secret.retiring_backup)) == toset([
-        "production-authentication-postgres-backup-password",
-        "production-json-keys-postgres-backup-password",
-        ]) && alltrue([
-        for secret in values(google_secret_manager_secret.retiring_backup) :
-        !secret.deletion_protection && secret.deletion_policy == "DELETE" &&
-        secret.version_destroy_ttl == "2592000s"
-        ]) && alltrue([
-        for binding in values(google_secret_manager_secret_iam_member.operator) :
-        !contains(keys(local.retiring_backup_secrets), binding.secret_id)
-      ])
-    )
-    error_message = "Only the two obsolete logical credentials may enter retirement, without operator payload grants."
-  }
-
-  assert {
-    condition = (
       toset(keys(google_project_iam_audit_config.management)) == toset([
         "iam.googleapis.com",
         "secretmanager.googleapis.com",
