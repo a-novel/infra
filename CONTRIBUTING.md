@@ -16,7 +16,9 @@ a-novel test -y
 
 ./ops/check-root.sh bootstrap
 ./ops/check-root.sh foundation
-./ops/check-root.sh release
+./ops/check-root.sh service-foundation
+./ops/check-root.sh service-release
+./ops/check-root.sh service-recovery
 ./tests/ops_test.sh
 ```
 
@@ -24,7 +26,7 @@ The root checker never configures a backend. Its OpenTofu tests mock the Google 
 
 The operator launcher's Go tests inject the Git/GitHub command boundary; they never dispatch a
 workflow. `pnpm lint` checks both languages. Go formatting and linting use the isolated
-`golangci-lint.mod`; the operator command itself depends only on the standard library.
+`golangci-lint.mod`; runtime dependencies are pinned in `go.mod`.
 
 ---
 
@@ -34,7 +36,7 @@ The [architecture guide](./docs/architecture.md) explains the root, state, autho
 
 ### Keep authority with its root
 
-The `bootstrap`, `foundation`, and `release` roots have separate state and automation identities. Put a resource in the narrowest root whose lifecycle owns it. A routine release must not gain authority over project IAM, networking, preserved storage, backup retention, or state protection.
+The `bootstrap`, `foundation`, `service-foundation`, `service-release`, and `service-recovery` roots have separate state boundaries. The protected foundation workflow coordinates production changes as a shared administrative authority. Put a resource in the narrowest root whose lifecycle owns it; selected-service plan checks exclude unrelated resources and durable foundation changes from routine releases.
 
 `ops/lib/roots.sh` is the single allowlist for user-supplied root names. Extend it only with an approved state and authority boundary. Never accept an arbitrary path from workflow input.
 
