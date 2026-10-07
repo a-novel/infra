@@ -400,6 +400,7 @@ assert_equal "${FAILED_PLAN_CODE}" 1
 grep -Fq 'OpenTofu planning failed' "${TEMP_DIR}/failed-plan.err"
 grep -Fq $'PERMISSION_DENIED\tgoogle_project\tidentity.tf:47\t1' \
     "${TEMP_DIR}/failed-plan.err"
+grep -Fq $'PERMISSION_DENIED\t-\t-\t1' "${TEMP_DIR}/failed-plan.err"
 grep -Fq $'UNKNOWN\tgoogle_compute_disk\tcapacity.tf:82\t1' \
     "${TEMP_DIR}/failed-plan.err"
 grep -Fq $'CONFIGURATION\t-\tchecks.tf:7\t1' "${TEMP_DIR}/failed-plan.err"
@@ -422,6 +423,7 @@ FAILED_APPLY_CODE=$?
 set -e
 assert_equal "${FAILED_APPLY_CODE}" 1
 grep -Fq 'Protected OpenTofu apply failed' "${TEMP_DIR}/failed-apply.err"
+grep -Fq $'PERMISSION_DENIED\t-\t-\t1' "${TEMP_DIR}/failed-apply.err"
 grep -Fq $'ZONE_RESOURCE_POOL_EXHAUSTED\tgoogle_compute_disk\tdatabase.tf:54\t1' \
     "${TEMP_DIR}/failed-apply.err"
 assert_absent "${TEMP_DIR}/failed-apply.out" 'fixture-sensitive'

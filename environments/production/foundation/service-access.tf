@@ -41,7 +41,10 @@ resource "google_project_iam_custom_role" "foundation_private_release" {
   role_id     = "infraFoundationPrivateRelease"
   title       = "Foundation private workload updates"
   description = "Inspect and update existing private application definitions through protected native plans."
-  permissions = ["run.services.get", "run.services.update", "run.jobs.get", "run.jobs.update"]
+  permissions = [
+    "run.services.get", "run.services.update", "run.services.listTagBindings",
+    "run.jobs.get", "run.jobs.update", "run.jobs.listTagBindings",
+  ]
 }
 
 resource "google_project_iam_member" "foundation_private_release" {
@@ -109,7 +112,7 @@ resource "google_project_iam_member" "foundation_release_observation" {
 
 # Scheduler does not support resource-name conditions for these permissions.
 resource "google_project_iam_custom_role" "foundation_scheduler" {
-  count       = var.manage_application_invocation ? 1 : 0
+  count       = contains(keys(local.service_release_boundaries), "json-keys/private") ? 1 : 0
   project     = google_project.workload.project_id
   role_id     = "infraFoundationScheduler"
   title       = "Foundation existing schedule updates"
