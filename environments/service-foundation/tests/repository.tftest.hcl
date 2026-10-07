@@ -186,10 +186,9 @@ run "prepared_database_lifecycle" {
       yamldecode(local.database_cloud_config.host).ssh_deletekeys == false,
       length(yamldecode(local.database_cloud_config.host).write_files) == 13,
       google_compute_instance_group_manager.database["host"].all_instances_config[0].metadata == tomap({
-        agora-json-keys-database-image                   = var.pgbackrest_repository.runtime.server_image
-        agora-json-keys-postgres-password-version        = "3"
-        agora-json-keys-postgres-backup-password-version = "4"
-        agora-database-release-revision                  = var.database_runtime.revision
+        agora-json-keys-database-image            = var.pgbackrest_repository.runtime.server_image
+        agora-json-keys-postgres-password-version = "3"
+        agora-database-release-revision           = var.database_runtime.revision
       }),
       google_artifact_registry_repository_iam_member.database_tooling["host"].repository == "agora-tooling",
       google_artifact_registry_repository_iam_member.database_tooling["host"].role == "roles/artifactregistry.reader",

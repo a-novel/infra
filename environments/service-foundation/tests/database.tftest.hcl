@@ -87,19 +87,18 @@ run "json_keys_private_idle_host" {
   }
   assert {
     condition = google_compute_instance_group_manager.database["host"].all_instances_config[0].metadata == tomap({
-      agora-json-keys-database-image                   = ""
-      agora-json-keys-postgres-password-version        = "0"
-      agora-json-keys-postgres-backup-password-version = "0"
-      agora-database-release-revision                  = ""
+      agora-json-keys-database-image            = ""
+      agora-json-keys-postgres-password-version = "0"
+      agora-database-release-revision           = ""
     })
     error_message = "Foundation must leave the database idle without selecting credentials or a release."
   }
   assert {
     condition = { for secret, binding in google_secret_manager_secret_iam_member.database : secret => [binding.project, binding.role, binding.member] } == {
-      for secret in ["production-json-keys-postgres-password", "production-json-keys-postgres-backup-password"] : secret =>
+      for secret in ["production-json-keys-postgres-password"] : secret =>
       [var.management_project_id, "roles/secretmanager.secretAccessor", "serviceAccount:${google_service_account.database["host"].email}"]
     }
-    error_message = "The host can read only its owner's and backup reader's credentials, never peer/master/SMTP/initializer secrets."
+    error_message = "The host can read only its owner's password, never retired backup or peer/master/SMTP/initializer secrets."
   }
   assert {
     condition = { for owner, binding in google_service_account_iam_member.database_attachment : owner => [binding.service_account_id, binding.role, binding.member] } == {
@@ -148,7 +147,7 @@ run "authentication_uses_its_own_contract" {
   }
   assert {
     condition = toset(keys(google_secret_manager_secret_iam_member.database)) == toset([
-      "production-authentication-postgres-password", "production-authentication-postgres-backup-password",
+      "production-authentication-postgres-password",
       ]) && [google_compute_disk.database["host"].project, google_compute_disk.database["host"].name, output.database.port] == [
       var.project_id, "agora-data-authentication", 5433,
     ]

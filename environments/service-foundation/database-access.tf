@@ -35,7 +35,7 @@ resource "google_project_iam_member" "database_telemetry" {
 
 resource "google_secret_manager_secret_iam_member" "database" {
   for_each = var.database == null ? toset([]) : toset([
-    "production-${var.service}-postgres-password", "production-${var.service}-postgres-backup-password",
+    "production-${var.service}-postgres-password",
   ])
   project   = var.management_project_id
   secret_id = each.value

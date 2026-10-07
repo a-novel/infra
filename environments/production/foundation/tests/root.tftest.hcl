@@ -982,11 +982,9 @@ run "builds_the_project_replacement_window" {
       toset(["199.36.153.4/30", "34.126.0.0/18"]) &&
       toset(google_compute_firewall.allow_restricted_google_apis.target_tags) == toset([
         "agora-authentication",
-        "agora-backup",
         "agora-database-authentication",
         "agora-database-json-keys",
         "agora-json-keys",
-        "agora-restore",
       ]) &&
       one(google_compute_firewall.allow_restricted_google_apis.allow).protocol == "tcp" &&
       toset(one(google_compute_firewall.allow_restricted_google_apis.allow).ports) == toset(["443"]) &&
@@ -1008,6 +1006,7 @@ run "builds_the_project_replacement_window" {
         rule.priority == 810 &&
         toset(rule.target_tags) == local.database_egress_contracts[key].target_tags &&
         !contains(rule.target_tags, "agora-restore") &&
+        !contains(rule.target_tags, "agora-backup") &&
         one(rule.allow).protocol == "tcp" &&
         toset(one(rule.allow).ports) == toset([tostring(local.database_egress_contracts[key].port)])
       ]) &&
@@ -1049,24 +1048,22 @@ run "builds_the_project_replacement_window" {
     condition = (
       google_project_default_service_accounts.workload.project == "agora-production-test" &&
       google_project_default_service_accounts.workload.action == "DEPRIVILEGE" &&
-      length(google_service_account.runtime) == 8 &&
+      length(google_service_account.runtime) == 6 &&
       {
         for name, identity in local.runtime_identities : name => identity.account_id
         } == {
         authentication             = "agora-authentication"
         authentication_initializer = "agora-auth-initializer"
-        backup                     = "agora-backup"
         authentication_database    = "agora-auth-database"
         json_keys_database         = "agora-json-keys-database"
         json_keys                  = "agora-json-keys"
-        restore                    = "agora-restore"
         scheduler_invoker          = "agora-scheduler-invoker"
       } &&
       alltrue([
         for account in values(google_service_account.runtime) :
         account.deletion_policy == "DELETE"
       ]) &&
-      length(google_secret_manager_secret_iam_member.runtime) == 13 &&
+      length(google_secret_manager_secret_iam_member.runtime) == 9 &&
       local.runtime_secret_access == {
         "authentication:postgres-password" = {
           identity = "authentication"
@@ -1092,25 +1089,9 @@ run "builds_the_project_replacement_window" {
           identity = "authentication_database"
           secret   = "production-authentication-postgres-password"
         }
-        "database:authentication-backup-password" = {
-          identity = "authentication_database"
-          secret   = "production-authentication-postgres-backup-password"
-        }
         "database:json-keys-password" = {
           identity = "json_keys_database"
           secret   = "production-json-keys-postgres-password"
-        }
-        "database:json-keys-backup-password" = {
-          identity = "json_keys_database"
-          secret   = "production-json-keys-postgres-backup-password"
-        }
-        "backup:authentication-backup-password" = {
-          identity = "backup"
-          secret   = "production-authentication-postgres-backup-password"
-        }
-        "backup:json-keys-backup-password" = {
-          identity = "backup"
-          secret   = "production-json-keys-postgres-backup-password"
         }
         "json-keys:app-master-key" = {
           identity = "json_keys"
@@ -1354,24 +1335,16 @@ run "builds_the_project_replacement_window" {
       !contains(google_project_iam_custom_role.release_cloud_run_deployer.permissions, "run.jobs.setIamPolicy") &&
       !contains(google_project_iam_custom_role.release_cloud_run_deployer.permissions, "run.services.getIamPolicy") &&
       google_project_iam_member.release_cloud_run_deployer.member == "serviceAccount:infra-release@agora-management-test.iam.gserviceaccount.com" &&
-      length(google_service_account_iam_member.release_runtime_act_as) == 5 &&
+      length(google_service_account_iam_member.release_runtime_act_as) == 3 &&
       toset(keys(google_service_account_iam_member.release_runtime_act_as)) == toset([
         "authentication",
-        "backup",
         "json_keys",
-        "restore",
         "scheduler_invoker",
       ]) &&
       alltrue([
         for binding in values(google_project_iam_member.release_application) :
         binding.role != "roles/secretmanager.secretAccessor"
-      ]) &&
-      length(google_storage_bucket_iam_member.backup_runtime_creator) == 1 &&
-      google_storage_bucket_iam_member.backup_runtime_creator[0].bucket == "agora-management-test-123456789012-backups" &&
-      google_storage_bucket_iam_member.backup_runtime_creator[0].role == "roles/storage.objectCreator" &&
-      google_storage_bucket_iam_member.backup_runtime_creator[0].member == "serviceAccount:${google_service_account.runtime["backup"].email}" &&
-      google_storage_bucket_iam_member.restore_runtime_viewer[0].role == "roles/storage.objectViewer" &&
-      google_storage_bucket_iam_member.restore_runtime_viewer[0].member == "serviceAccount:${google_service_account.runtime["restore"].email}"
+      ])
     )
     error_message = "Database runtime, operator, service-agent, or release IAM escaped its reviewed boundary."
   }
@@ -1843,7 +1816,6 @@ run "limits_disposable_recovery_authority_to_the_replacement_project" {
       toset(keys(google_service_account_iam_member.release_runtime_act_as)) == toset([
         "authentication",
         "json_keys",
-        "restore",
       ]) &&
       length(google_tags_tag_value_iam_member.release_tag_user) == 2 &&
       length(google_tags_tag_value_iam_member.initializer_tag_user) == 0 &&
@@ -1866,16 +1838,14 @@ run "limits_disposable_recovery_authority_to_the_replacement_project" {
 
   assert {
     condition = (
-      contains(google_compute_firewall.allow_postgres_egress["authentication"].target_tags, "agora-restore") &&
-      contains(google_compute_firewall.allow_postgres_egress["json_keys"].target_tags, "agora-restore") &&
-      contains(keys(local.runtime_secret_access), "restore:authentication-owner-password") &&
-      contains(keys(local.runtime_secret_access), "restore:json-keys-owner-password") &&
+      !contains(google_compute_firewall.allow_postgres_egress["authentication"].target_tags, "agora-restore") &&
+      !contains(google_compute_firewall.allow_postgres_egress["json_keys"].target_tags, "agora-restore") &&
+      !contains(keys(local.runtime_identities), "backup") &&
+      !contains(keys(local.runtime_identities), "restore") &&
       !contains(keys(local.runtime_secret_access), "authentication:waitlist-secret") &&
-      length(google_secret_manager_secret_iam_member.runtime) == 0 &&
-      length(google_storage_bucket_iam_member.backup_runtime_creator) == 0 &&
-      length(google_storage_bucket_iam_member.restore_runtime_viewer) == 0
+      length(google_secret_manager_secret_iam_member.runtime) == 0
     )
-    error_message = "Recovery CI must create no management-plane secret or backup-payload IAM binding; the exact contract is human-applied."
+    error_message = "Foundation must never recreate retired logical recovery identities, routes, or management-plane payload grants."
   }
 
   assert {
