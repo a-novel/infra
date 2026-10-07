@@ -15,12 +15,6 @@ locals {
     "roles/serviceusage.serviceUsageAdmin",
   ])
 
-  release_project_roles = toset([
-    # Version metadata is required for preflight, but payload access remains
-    # exclusive to runtime identities and named human operators.
-    "roles/secretmanager.viewer",
-  ])
-
   recovery_project_roles = toset([
     # Version-state inspection rejects disabled receipt-owned versions. Secret
     # payloads are resolved only by replacement runtime identities.
@@ -44,12 +38,6 @@ locals {
     {
       for role in local.foundation_project_roles : "foundation:${role}" => {
         boundary = "foundation"
-        role     = role
-      }
-    },
-    {
-      for role in local.release_project_roles : "release:${role}" => {
-        boundary = "release"
         role     = role
       }
     },
@@ -86,11 +74,12 @@ locals {
   plan_state_folders       = local.state_prefixes
   foundation_state_folders = toset(["bootstrap", "foundation"])
   recovery_state_folders   = local.recovery_state_prefixes
-  state_bucket_viewers     = toset(["release", "recovery"])
+  state_bucket_viewers     = toset(["recovery"])
+  active_trust_boundaries  = { for name, boundary in local.trust_boundaries : name => boundary if name != "release" }
 }
 
 resource "google_service_account" "automation" {
-  for_each = local.trust_boundaries
+  for_each = local.active_trust_boundaries
 
   account_id   = each.value.service_account_id
   display_name = each.value.display_name
@@ -123,7 +112,7 @@ resource "google_iam_workload_identity_pool" "github" {
 }
 
 resource "google_iam_workload_identity_pool_provider" "github" {
-  for_each = local.trust_boundaries
+  for_each = local.active_trust_boundaries
 
   workload_identity_pool_id          = google_iam_workload_identity_pool.github.workload_identity_pool_id
   workload_identity_pool_provider_id = each.value.provider_id
@@ -173,7 +162,7 @@ resource "google_iam_workload_identity_pool_provider" "github" {
 }
 
 resource "google_service_account_iam_member" "github" {
-  for_each = local.trust_boundaries
+  for_each = local.active_trust_boundaries
 
   service_account_id = google_service_account.automation[each.key].name
   role               = "roles/iam.workloadIdentityUser"
@@ -315,13 +304,6 @@ resource "google_storage_managed_folder_iam_member" "foundation_state" {
   member         = "serviceAccount:${google_service_account.automation["foundation"].email}"
 }
 
-resource "google_storage_managed_folder_iam_member" "release_state" {
-  bucket         = google_storage_managed_folder.state["release"].bucket
-  managed_folder = google_storage_managed_folder.state["release"].name
-  role           = "roles/storage.objectAdmin"
-  member         = "serviceAccount:${google_service_account.automation["release"].email}"
-}
-
 resource "google_storage_managed_folder_iam_member" "recovery_state" {
   for_each = local.recovery_state_folders
 
@@ -329,20 +311,6 @@ resource "google_storage_managed_folder_iam_member" "recovery_state" {
   managed_folder = google_storage_managed_folder.recovery_state[each.value].name
   role           = "roles/storage.objectAdmin"
   member         = "serviceAccount:${google_service_account.automation["recovery"].email}"
-}
-
-resource "google_storage_managed_folder_iam_member" "release_receipt_creator" {
-  bucket         = google_storage_managed_folder.receipt["production"].bucket
-  managed_folder = google_storage_managed_folder.receipt["production"].name
-  role           = "roles/storage.objectCreator"
-  member         = "serviceAccount:${google_service_account.automation["release"].email}"
-}
-
-resource "google_storage_managed_folder_iam_member" "release_receipt_viewer" {
-  bucket         = google_storage_managed_folder.receipt["production"].bucket
-  managed_folder = google_storage_managed_folder.receipt["production"].name
-  role           = "roles/storage.objectViewer"
-  member         = "serviceAccount:${google_service_account.automation["release"].email}"
 }
 
 resource "google_storage_bucket_iam_member" "recovery_backup_viewer" {

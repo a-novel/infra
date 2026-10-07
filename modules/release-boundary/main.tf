@@ -19,24 +19,34 @@ locals {
   }
 }
 
-resource "google_service_account" "release" {
+moved {
+  from = google_service_account.release
+  to   = google_service_account.retiring_release
+}
+
+moved {
+  from = google_iam_workload_identity_pool_provider.release
+  to   = google_iam_workload_identity_pool_provider.retiring_release
+}
+
+resource "google_service_account" "retiring_release" {
   project = var.project_id
   # Authentication's full public-api suffix exceeds the 30-character account limit.
   account_id      = var.zone == null ? "infra-release" : "infra-${var.labels.service}-${var.zone == "public-api" ? "api" : var.zone}"
   display_name    = "Service release"
   description     = "Keyless release writer for ${var.project_id}."
-  disabled        = false
-  deletion_policy = "PREVENT"
+  disabled        = true
+  deletion_policy = "DELETE"
 }
 
-resource "google_iam_workload_identity_pool_provider" "release" {
+resource "google_iam_workload_identity_pool_provider" "retiring_release" {
   project                            = var.management.project_id
   workload_identity_pool_id          = "github-actions"
   workload_identity_pool_provider_id = local.provider_id
   display_name                       = "Service release"
   description                        = "Trusts only the ${local.release_environment} release workflow on master."
-  deletion_policy                    = "PREVENT"
-  disabled                           = false
+  deletion_policy                    = "DELETE"
+  disabled                           = true
 
   attribute_mapping = {
     # Keep the subject below Google's 127-byte limit for long service names.
@@ -60,11 +70,11 @@ resource "google_iam_workload_identity_pool_provider" "release" {
 }
 
 resource "google_service_account_iam_member" "release_federation" {
-  service_account_id = google_service_account.release.name
+  service_account_id = google_service_account.retiring_release.name
   role               = "roles/iam.workloadIdentityUser"
   member             = "principalSet://iam.googleapis.com/${local.identity_pool}/attribute.service_release/${local.scope}"
 
-  depends_on = [google_iam_workload_identity_pool_provider.release]
+  depends_on = [google_iam_workload_identity_pool_provider.retiring_release]
 }
 
 resource "google_storage_managed_folder" "release" {
@@ -86,13 +96,13 @@ resource "google_storage_managed_folder_iam_member" "release" {
   bucket         = google_storage_managed_folder.release[each.value.folder].bucket
   managed_folder = google_storage_managed_folder.release[each.value.folder].name
   role           = each.value.role
-  member         = "serviceAccount:${google_service_account.release.email}"
+  member         = "serviceAccount:${google_service_account.retiring_release.email}"
 }
 
 resource "google_storage_bucket_iam_member" "release_metadata" {
   bucket = google_storage_managed_folder.release["state"].bucket
   role   = "roles/storage.bucketViewer"
-  member = "serviceAccount:${google_service_account.release.email}"
+  member = "serviceAccount:${google_service_account.retiring_release.email}"
 }
 
 resource "google_storage_managed_folder_iam_member" "plan" {

@@ -151,25 +151,25 @@ run "shared_release_federation_and_permissions" {
   }
   assert {
     condition = (
-      google_service_account.release.project == "agora-api-test" &&
-      google_service_account.release.account_id == "infra-authentication-api" &&
-      google_service_account.release.deletion_policy == "PREVENT" && !google_service_account.release.disabled &&
-      google_iam_workload_identity_pool_provider.release.project == "agora-management-test" &&
-      google_iam_workload_identity_pool_provider.release.workload_identity_pool_id == "github-actions" &&
-      google_iam_workload_identity_pool_provider.release.workload_identity_pool_provider_id == "r-${substr(sha256("production:agora-api-test:authentication:public-api"), 0, 28)}" &&
-      google_iam_workload_identity_pool_provider.release.deletion_policy == "PREVENT" && !google_iam_workload_identity_pool_provider.release.disabled &&
-      google_iam_workload_identity_pool_provider.release.attribute_mapping["attribute.service_release"] == "'production:agora-api-test:authentication:public-api'" &&
-      google_iam_workload_identity_pool_provider.release.attribute_mapping["google.subject"] == "assertion.repository_id + ':' + assertion.environment" &&
-      google_iam_workload_identity_pool_provider.release.attribute_condition == join(" && ", [
+      google_service_account.retiring_release.project == "agora-api-test" &&
+      google_service_account.retiring_release.account_id == "infra-authentication-api" &&
+      google_service_account.retiring_release.deletion_policy == "DELETE" && google_service_account.retiring_release.disabled &&
+      google_iam_workload_identity_pool_provider.retiring_release.project == "agora-management-test" &&
+      google_iam_workload_identity_pool_provider.retiring_release.workload_identity_pool_id == "github-actions" &&
+      google_iam_workload_identity_pool_provider.retiring_release.workload_identity_pool_provider_id == "r-${substr(sha256("production:agora-api-test:authentication:public-api"), 0, 28)}" &&
+      google_iam_workload_identity_pool_provider.retiring_release.deletion_policy == "DELETE" && google_iam_workload_identity_pool_provider.retiring_release.disabled &&
+      google_iam_workload_identity_pool_provider.retiring_release.attribute_mapping["attribute.service_release"] == "'production:agora-api-test:authentication:public-api'" &&
+      google_iam_workload_identity_pool_provider.retiring_release.attribute_mapping["google.subject"] == "assertion.repository_id + ':' + assertion.environment" &&
+      google_iam_workload_identity_pool_provider.retiring_release.attribute_condition == join(" && ", [
         "assertion.repository_owner_id == '131281268'", "assertion.repository_id == '1344262359'",
         "assertion.ref == 'refs/heads/master'", "assertion.workflow_ref == 'a-novel/infra/.github/workflows/release.yaml@refs/heads/master'",
         "assertion.environment == 'production-authentication-public-api-release'"
       ]) &&
-      google_iam_workload_identity_pool_provider.release.oidc[0].issuer_uri == "https://token.actions.githubusercontent.com" &&
-      google_iam_workload_identity_pool_provider.release.oidc[0].allowed_audiences == null &&
+      google_iam_workload_identity_pool_provider.retiring_release.oidc[0].issuer_uri == "https://token.actions.githubusercontent.com" &&
+      google_iam_workload_identity_pool_provider.retiring_release.oidc[0].allowed_audiences == null &&
       google_service_account_iam_member.release_federation.member == "principalSet://iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/github-actions/attribute.service_release/production:agora-api-test:authentication:public-api" &&
       google_service_account_iam_member.release_federation.role == "roles/iam.workloadIdentityUser" &&
-      google_service_account_iam_member.release_federation.service_account_id == google_service_account.release.name
+      google_service_account_iam_member.release_federation.service_account_id == google_service_account.retiring_release.name
     )
     error_message = "Shared federation must select one bounded identity and its exact protected service/zone environment."
   }
@@ -183,13 +183,13 @@ run "shared_release_federation_and_permissions" {
         state_writer = "roles/storage.objectAdmin", receipt_creator = "roles/storage.objectCreator", receipt_reader = "roles/storage.objectViewer"
       } &&
       alltrue([for key, binding in google_storage_managed_folder_iam_member.release :
-        binding.member == "serviceAccount:${google_service_account.release.email}" &&
+        binding.member == "serviceAccount:${google_service_account.retiring_release.email}" &&
         binding.bucket == google_storage_managed_folder.release[key == "state_writer" ? "state" : "receipts"].bucket &&
         binding.managed_folder == google_storage_managed_folder.release[key == "state_writer" ? "state" : "receipts"].name
       ]) &&
       google_storage_bucket_iam_member.release_metadata.role == "roles/storage.bucketViewer" &&
       google_storage_bucket_iam_member.release_metadata.bucket == google_storage_managed_folder.release["state"].bucket &&
-      google_storage_bucket_iam_member.release_metadata.member == "serviceAccount:${google_service_account.release.email}" &&
+      google_storage_bucket_iam_member.release_metadata.member == "serviceAccount:${google_service_account.retiring_release.email}" &&
       google_storage_managed_folder_iam_member.plan.role == "roles/storage.objectViewer" &&
       google_storage_managed_folder_iam_member.plan.member == "serviceAccount:${var.plan_service_account}" &&
       google_storage_managed_folder_iam_member.plan.managed_folder == google_storage_managed_folder.release["state"].name &&
@@ -222,10 +222,10 @@ run "shared_release_private_identity" {
   }
   assert {
     condition = (
-      google_service_account.release.account_id == "infra-json-keys-private" &&
-      google_service_account.release.project == "agora-production-test" &&
-      google_iam_workload_identity_pool_provider.release.workload_identity_pool_provider_id == "r-${substr(sha256("production:agora-production-test:json-keys:private"), 0, 28)}" &&
-      google_iam_workload_identity_pool_provider.release.attribute_mapping["attribute.service_release"] == "'production:agora-production-test:json-keys:private'" &&
+      google_service_account.retiring_release.account_id == "infra-json-keys-private" &&
+      google_service_account.retiring_release.project == "agora-production-test" &&
+      google_iam_workload_identity_pool_provider.retiring_release.workload_identity_pool_provider_id == "r-${substr(sha256("production:agora-production-test:json-keys:private"), 0, 28)}" &&
+      google_iam_workload_identity_pool_provider.retiring_release.attribute_mapping["attribute.service_release"] == "'production:agora-production-test:json-keys:private'" &&
       output.release.environment == "production-json-keys-private-release"
     )
     error_message = "JSON Keys private release must not use another service or public-zone identity."
@@ -542,27 +542,27 @@ run "protected_legacy_release" {
 
   assert {
     condition = (
-      google_service_account.release.project == "agora-json-keys-test" &&
-      google_service_account.release.account_id == "infra-release" &&
-      google_service_account.release.deletion_policy == "PREVENT" && !google_service_account.release.disabled &&
-      google_iam_workload_identity_pool_provider.release.project == "agora-management-test" &&
-      google_iam_workload_identity_pool_provider.release.workload_identity_pool_id == "github-actions" &&
-      google_iam_workload_identity_pool_provider.release.workload_identity_pool_provider_id == "r-agora-json-keys-test" &&
-      google_iam_workload_identity_pool_provider.release.attribute_condition == join(" && ", [
+      google_service_account.retiring_release.project == "agora-json-keys-test" &&
+      google_service_account.retiring_release.account_id == "infra-release" &&
+      google_service_account.retiring_release.deletion_policy == "DELETE" && google_service_account.retiring_release.disabled &&
+      google_iam_workload_identity_pool_provider.retiring_release.project == "agora-management-test" &&
+      google_iam_workload_identity_pool_provider.retiring_release.workload_identity_pool_id == "github-actions" &&
+      google_iam_workload_identity_pool_provider.retiring_release.workload_identity_pool_provider_id == "r-agora-json-keys-test" &&
+      google_iam_workload_identity_pool_provider.retiring_release.attribute_condition == join(" && ", [
         "assertion.repository_owner_id == '131281268'",
         "assertion.repository_id == '1344262359'",
         "assertion.ref == 'refs/heads/master'",
         "assertion.workflow_ref == 'a-novel/infra/.github/workflows/release.yaml@refs/heads/master'",
         "assertion.environment == 'test-json-keys-release'",
       ]) &&
-      google_iam_workload_identity_pool_provider.release.attribute_mapping == tomap({
+      google_iam_workload_identity_pool_provider.retiring_release.attribute_mapping == tomap({
         "google.subject"            = "assertion.repository_id + ':' + assertion.environment"
         "attribute.service_release" = "'agora-json-keys-test'"
       }) &&
-      google_iam_workload_identity_pool_provider.release.oidc[0].issuer_uri == "https://token.actions.githubusercontent.com" &&
-      google_iam_workload_identity_pool_provider.release.oidc[0].allowed_audiences == null &&
-      google_iam_workload_identity_pool_provider.release.deletion_policy == "PREVENT" &&
-      google_service_account_iam_member.release_federation.service_account_id == google_service_account.release.name &&
+      google_iam_workload_identity_pool_provider.retiring_release.oidc[0].issuer_uri == "https://token.actions.githubusercontent.com" &&
+      google_iam_workload_identity_pool_provider.retiring_release.oidc[0].allowed_audiences == null &&
+      google_iam_workload_identity_pool_provider.retiring_release.deletion_policy == "DELETE" && google_iam_workload_identity_pool_provider.retiring_release.disabled &&
+      google_service_account_iam_member.release_federation.service_account_id == google_service_account.retiring_release.name &&
       google_service_account_iam_member.release_federation.role == "roles/iam.workloadIdentityUser" &&
       google_service_account_iam_member.release_federation.member == "principalSet://iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/github-actions/attribute.service_release/agora-json-keys-test"
     )
@@ -580,12 +580,12 @@ run "protected_legacy_release" {
         state_writer = "roles/storage.objectAdmin", receipt_creator = "roles/storage.objectCreator", receipt_reader = "roles/storage.objectViewer"
       } &&
       alltrue([for key, binding in google_storage_managed_folder_iam_member.release :
-        binding.member == "serviceAccount:${google_service_account.release.email}" &&
+        binding.member == "serviceAccount:${google_service_account.retiring_release.email}" &&
         binding.bucket == google_storage_managed_folder.release[key == "state_writer" ? "state" : "receipts"].bucket &&
         binding.managed_folder == google_storage_managed_folder.release[key == "state_writer" ? "state" : "receipts"].name
       ]) &&
       google_storage_bucket_iam_member.release_metadata.bucket == google_storage_managed_folder.release["state"].bucket &&
-      google_storage_bucket_iam_member.release_metadata.member == "serviceAccount:${google_service_account.release.email}" &&
+      google_storage_bucket_iam_member.release_metadata.member == "serviceAccount:${google_service_account.retiring_release.email}" &&
       google_storage_bucket_iam_member.release_metadata.role == "roles/storage.bucketViewer" &&
       google_storage_managed_folder_iam_member.plan.bucket == google_storage_managed_folder.release["state"].bucket &&
       google_storage_managed_folder_iam_member.plan.managed_folder == google_storage_managed_folder.release["state"].name &&
@@ -612,8 +612,8 @@ run "protected_legacy_release" {
       output.release.state == local.release_storage.state &&
       output.release.receipts == local.release_storage.receipts &&
       length(keys(output.release)) == 6 &&
-      output.release.service_account == google_service_account.release.email &&
-      output.release.workload_identity_provider == google_iam_workload_identity_pool_provider.release.name
+      output.release.service_account == google_service_account.retiring_release.email &&
+      output.release.workload_identity_provider == google_iam_workload_identity_pool_provider.retiring_release.name
     )
     error_message = "Compatibility release coordinates must preserve the exact schema-1 contract."
   }
