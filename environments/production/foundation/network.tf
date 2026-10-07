@@ -49,6 +49,9 @@ resource "google_compute_network" "production" {
   routing_mode                    = "REGIONAL"
 
   depends_on = [google_project_service.workload["compute.googleapis.com"]]
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "google_compute_subnetwork" "production" {
@@ -60,6 +63,9 @@ resource "google_compute_subnetwork" "production" {
   network                  = google_compute_network.production.id
   private_ip_google_access = true
   stack_type               = "IPV4_ONLY"
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # Deleting the catch-all route removes an accidental public path. These two
@@ -179,7 +185,7 @@ resource "google_dns_managed_zone" "googleapis" {
   description     = "Resolve supported Google APIs through the restricted.googleapis.com VIP."
   visibility      = "private"
   force_destroy   = false
-  deletion_policy = "DELETE"
+  deletion_policy = "PREVENT"
 
   private_visibility_config {
     networks {
@@ -188,6 +194,9 @@ resource "google_dns_managed_zone" "googleapis" {
   }
 
   depends_on = [google_project_service.workload["dns.googleapis.com"]]
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "google_dns_record_set" "restricted_googleapis" {
@@ -218,7 +227,7 @@ resource "google_dns_managed_zone" "private_google_domain" {
   description     = "Resolve ${each.value} through the restricted Google API VIP."
   visibility      = "private"
   force_destroy   = false
-  deletion_policy = "DELETE"
+  deletion_policy = "PREVENT"
 
   private_visibility_config {
     networks {
@@ -227,6 +236,9 @@ resource "google_dns_managed_zone" "private_google_domain" {
   }
 
   depends_on = [google_project_service.workload["dns.googleapis.com"]]
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "google_dns_record_set" "private_google_domain_apex" {

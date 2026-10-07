@@ -19,7 +19,7 @@ variable "native_backups" {
   }
   validation {
     condition = alltrue([for service, runtime in var.native_backups :
-      !var.recovery_mode && try(contains(var.service_release_zones[service], "private"), false) &&
+      try(contains(var.service_release_zones[service], "private"), false) &&
       contains(var.pgbackrest_repository_services, service) &&
       cidrcontains(var.subnet_cidr, runtime.repository_ip)
     ])

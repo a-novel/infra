@@ -248,15 +248,6 @@ run "shared_release_rejects_dedicated_registration" {
   expect_failures = [var.service_release_zones]
 }
 
-run "shared_release_rejects_recovery" {
-  command = plan
-  variables {
-    recovery_mode         = true
-    service_release_zones = { json-keys = ["private"] }
-  }
-  expect_failures = [var.service_release_zones]
-}
-
 mock_provider "google-beta" {
   mock_resource "google_project_service_identity" {
     defaults = { member = "serviceAccount:service-111111111111@serverless-robot-prod.iam.gserviceaccount.com" }
@@ -717,15 +708,6 @@ run "reject_legacy_project_adoption" {
   expect_failures = [var.service_projects]
 }
 
-run "reject_recovery_fleet_provisioning" {
-  command = plan
-  variables {
-    recovery_mode    = true
-    service_projects = { json-keys = "agora-json-keys-test" }
-  }
-  expect_failures = [var.service_projects]
-}
-
 run "reject_live_native_recovery_destination" {
   command = plan
   variables {
@@ -735,7 +717,7 @@ run "reject_live_native_recovery_destination" {
   expect_failures = [var.service_recovery_projects]
 }
 
-run "builds_the_project_replacement_window" {
+run "protects_the_production_foundation" {
   command = plan
 
   assert {
@@ -780,11 +762,11 @@ run "builds_the_project_replacement_window" {
   assert {
     condition = (
       google_project.workload.auto_create_network == false &&
-      google_project.workload.deletion_policy == "DELETE" &&
+      google_project.workload.deletion_policy == "PREVENT" &&
       google_project.workload.labels == tomap(local.labels) &&
       google_project.workload.billing_account == "ABCDEF-123456-ABCDEF"
     )
-    error_message = "The workload project replacement window lost billing, labels, automatic-network prevention, or its temporary deletion policy."
+    error_message = "The protected production project lost billing, labels, automatic-network prevention, or its deletion guard."
   }
 
   assert {
@@ -894,13 +876,13 @@ run "builds_the_project_replacement_window" {
     condition = (
       google_dns_managed_zone.googleapis.visibility == "private" &&
       google_dns_managed_zone.googleapis.dns_name == "googleapis.com." &&
-      google_dns_managed_zone.googleapis.deletion_policy == "DELETE" &&
+      google_dns_managed_zone.googleapis.deletion_policy == "PREVENT" &&
       length(google_dns_managed_zone.private_google_domain) == 2 &&
       toset([for zone in values(google_dns_managed_zone.private_google_domain) : zone.dns_name]) ==
       toset(["pkg.dev.", "run.app."]) &&
       alltrue([
         for zone in values(google_dns_managed_zone.private_google_domain) :
-        zone.deletion_policy == "DELETE"
+        zone.deletion_policy == "PREVENT"
       ]) &&
       google_dns_record_set.restricted_googleapis.rrdatas == tolist(local.restricted_google_vip_addresses) &&
       alltrue([
@@ -928,7 +910,7 @@ run "builds_the_project_replacement_window" {
       } &&
       alltrue([
         for account in values(google_service_account.runtime) :
-        account.deletion_policy == "DELETE"
+        account.deletion_policy == "PREVENT"
       ]) &&
       length(google_secret_manager_secret_iam_member.runtime) == 9 &&
       local.runtime_secret_access == {
@@ -1003,7 +985,6 @@ run "builds_the_project_replacement_window" {
         "resourcemanager.projects.get",
         "resourcemanager.projects.update",
       ]) &&
-      length(google_project_iam_member.recovery_project_deleter) == 0 &&
       length(google_project_iam_member.plan_viewer) == 1 &&
       google_project_iam_member.plan_viewer[0].role == "roles/viewer" &&
       google_project_iam_member.plan_viewer[0].member == "serviceAccount:infra-plan@agora-management-test.iam.gserviceaccount.com"
@@ -1016,7 +997,7 @@ run "builds_the_project_replacement_window" {
       google_compute_disk.database["authentication"].type == "pd-balanced" &&
       google_compute_disk.database["authentication"].size == 50 &&
       google_compute_disk.database["authentication"].physical_block_size_bytes == 4096 &&
-      google_compute_disk.database["authentication"].deletion_policy == "DELETE" &&
+      google_compute_disk.database["authentication"].deletion_policy == "PREVENT" &&
       google_compute_instance_template.database["authentication"].machine_type == "e2-medium" &&
       length(one(google_compute_instance_template.database["authentication"].network_interface).access_config) == 0 &&
       one(google_compute_instance_template.database["authentication"].service_account).email == google_service_account.runtime["authentication_database"].email &&
@@ -1064,7 +1045,7 @@ run "builds_the_project_replacement_window" {
         if disk.device_name == "agora-data"
       ]).source == google_compute_disk.database["authentication"].name &&
       google_compute_instance_group_manager.database["authentication"].target_size == 1 &&
-      google_compute_instance_group_manager.database["authentication"].deletion_policy == "DELETE" &&
+      google_compute_instance_group_manager.database["authentication"].deletion_policy == "PREVENT" &&
       one(google_compute_instance_group_manager.database["authentication"].stateful_disk).device_name == "agora-data" &&
       one(google_compute_instance_group_manager.database["authentication"].stateful_disk).delete_rule == "NEVER" &&
       one(google_compute_instance_group_manager.database["authentication"].stateful_internal_ip).interface_name == "nic0" &&
@@ -1136,8 +1117,6 @@ run "builds_the_project_replacement_window" {
       google_project_iam_member.json_keys_smoke_invoker[0].role == "roles/run.servicesInvoker" &&
       google_project_iam_member.json_keys_smoke_invoker[0].member == "serviceAccount:${google_service_account.runtime["json_keys"].email}" &&
       one(google_project_iam_member.json_keys_smoke_invoker[0].condition).expression == "resource.matchTagId('${google_tags_tag_key.cloud_run_invocation.id}', '${google_tags_tag_value.cloud_run_invocation["internal"].id}')" &&
-      length(google_project_iam_member.recovery_cloud_run_invoker) == 0 &&
-      length(google_project_iam_member.recovery_smoke_cloud_run_invoker) == 0 &&
       one(values(google_project_iam_member.initializer_cloud_run_invoker)).role == "roles/run.jobsExecutor" &&
       one(values(google_project_iam_member.initializer_cloud_run_invoker)).member == "group:authentication-initializers@example.com" &&
       one(values(google_service_account_iam_member.initializer_act_as)).service_account_id == google_service_account.runtime["authentication_initializer"].name &&
@@ -1179,7 +1158,7 @@ run "builds_the_project_replacement_window" {
       } &&
       alltrue([
         for policy in values(google_monitoring_alert_policy.database_capacity) :
-        policy.deletion_policy == "DELETE" &&
+        policy.deletion_policy == "PREVENT" &&
         strcontains(one(policy.conditions).condition_threshold[0].filter, "resource.label.zone = \"europe-west1-c\"") &&
         strcontains(one(policy.conditions).condition_threshold[0].filter, "metric.label.instance_name = starts_with(\"agora-database-\")") &&
         toset(policy.notification_channels) == toset([google_monitoring_notification_channel.operations_email[0].name]) &&
@@ -1189,21 +1168,18 @@ run "builds_the_project_replacement_window" {
     error_message = "The database capacity alert set, thresholds, or stable instance-name selector changed."
   }
 
-
-
-
   assert {
     condition = (
       length(google_monitoring_alert_policy.authentication_error_rate) == 1 &&
       google_monitoring_alert_policy.authentication_error_rate[0].severity == "ERROR" &&
-      google_monitoring_alert_policy.authentication_error_rate[0].deletion_policy == "DELETE" &&
+      google_monitoring_alert_policy.authentication_error_rate[0].deletion_policy == "PREVENT" &&
       toset(google_monitoring_alert_policy.authentication_error_rate[0].notification_channels) == toset([google_monitoring_notification_channel.operations_email[0].name]) &&
       one(google_monitoring_alert_policy.authentication_error_rate[0].conditions).condition_threshold[0].threshold_value == 0.10 &&
       one(google_monitoring_alert_policy.authentication_error_rate[0].conditions).condition_threshold[0].duration == "300s" &&
       strcontains(one(google_monitoring_alert_policy.authentication_error_rate[0].conditions).condition_threshold[0].filter, "metric.label.response_code_class = \"5xx\"") &&
       strcontains(one(google_monitoring_alert_policy.authentication_error_rate[0].conditions).condition_threshold[0].denominator_filter, "agora-authentication-rest") &&
       length(google_monitoring_alert_policy.application_jobs_unhealthy) == 1 &&
-      google_monitoring_alert_policy.application_jobs_unhealthy[0].deletion_policy == "DELETE" &&
+      google_monitoring_alert_policy.application_jobs_unhealthy[0].deletion_policy == "PREVENT" &&
       length(google_monitoring_alert_policy.application_jobs_unhealthy[0].conditions) == 2 &&
       strcontains(one([
         for condition in google_monitoring_alert_policy.application_jobs_unhealthy[0].conditions : condition
@@ -1231,7 +1207,7 @@ run "builds_the_project_replacement_window" {
       google_artifact_registry_repository.production.location == "europe-west1" &&
       google_artifact_registry_repository.production.docker_config[0].immutable_tags &&
       google_artifact_registry_repository.production.cleanup_policy_dry_run &&
-      google_artifact_registry_repository.production.deletion_policy == "DELETE" &&
+      google_artifact_registry_repository.production.deletion_policy == "PREVENT" &&
       {
         for policy in google_artifact_registry_repository.production.cleanup_policies :
         policy.id => policy.action
@@ -1275,14 +1251,14 @@ run "builds_the_project_replacement_window" {
       google_monitoring_notification_channel.cost_email[0].type == "email" &&
       google_monitoring_notification_channel.cost_email[0].enabled &&
       google_monitoring_notification_channel.cost_email[0].labels == tomap({ email_address = "infra@example.com" }) &&
-      google_monitoring_notification_channel.cost_email[0].deletion_policy == "DELETE" &&
+      google_monitoring_notification_channel.cost_email[0].deletion_policy == "PREVENT" &&
       length(google_monitoring_notification_channel.operations_email) == 1 &&
       google_monitoring_notification_channel.operations_email[0].labels == tomap({ email_address = "operations@example.com" }) &&
-      google_monitoring_notification_channel.operations_email[0].deletion_policy == "DELETE" &&
+      google_monitoring_notification_channel.operations_email[0].deletion_policy == "PREVENT" &&
       length(data.google_billing_account.workload) == 1 &&
       length(data.google_project.management) == 1 &&
       length(google_billing_budget.workload) == 1 &&
-      google_billing_budget.workload[0].deletion_policy == "DELETE" &&
+      google_billing_budget.workload[0].deletion_policy == "PREVENT" &&
       google_billing_budget.workload[0].amount[0].specified_amount[0].units == "60" &&
       google_billing_budget.workload[0].amount[0].specified_amount[0].currency_code == "EUR" &&
       toset(google_billing_budget.workload[0].budget_filter[0].projects) == toset([
@@ -1306,7 +1282,7 @@ run "builds_the_project_replacement_window" {
       !google_billing_budget.workload[0].all_updates_rule[0].enable_project_level_recipients &&
       length(google_billing_budget.workload[0].all_updates_rule[0].monitoring_notification_channels) == 2 &&
       google_logging_project_bucket_config.default.retention_days == 30 &&
-      google_logging_project_bucket_config.default.deletion_policy == "DELETE" &&
+      google_logging_project_bucket_config.default.deletion_policy == "PREVENT" &&
       strcontains(google_logging_project_exclusion.successful_healthchecks.filter, "httpRequest.status>=200") &&
       strcontains(google_logging_project_exclusion.successful_healthchecks.filter, "resource.labels.service_name=\"agora-authentication-rest\"") &&
       strcontains(google_logging_project_exclusion.successful_healthchecks.filter, "ping|healthcheck") &&
@@ -1517,90 +1493,14 @@ run "rejects_a_non_human_database_operator" {
   expect_failures = [var.database_operator_principals]
 }
 
-run "limits_disposable_recovery_authority_to_the_replacement_project" {
+run "rejects_retired_whole_production_recovery" {
   command = plan
 
   variables {
     recovery_mode = true
   }
 
-  assert {
-    condition = (
-      length(google_cloud_quotas_quota_preference.cost_cap) == 3 &&
-      google_cloud_quotas_quota_preference.cost_cap["cloud_run_cpu"].quota_id == "CpuAllocPerProjectRegion" &&
-      google_cloud_quotas_quota_preference.cost_cap["cloud_run_memory"].quota_id == "MemAllocPerProjectRegion" &&
-      google_cloud_quotas_quota_preference.cost_cap["compute_cpu"].quota_id == "CPUS-per-project-region" &&
-      google_cloud_quotas_quota_preference.cost_cap["cloud_run_cpu"].quota_config[0].preferred_value == "8000" &&
-      google_cloud_quotas_quota_preference.cost_cap["cloud_run_memory"].quota_config[0].preferred_value == "17179869184" &&
-      google_cloud_quotas_quota_preference.cost_cap["compute_cpu"].quota_config[0].preferred_value == "4" &&
-      alltrue([
-        for preference in values(google_cloud_quotas_quota_preference.cost_cap) :
-        preference.parent == "projects/agora-production-test" &&
-        preference.dimensions == tomap({ region = "europe-west1" }) &&
-        preference.ignore_safety_checks == "QUOTA_DECREASE_PERCENTAGE_TOO_HIGH"
-      ])
-    )
-    error_message = "Recovery must plan the same regional cost ceilings before the replacement APIs exist."
-  }
-
-  assert {
-    condition = (
-      alltrue([
-        for binding in values(google_project_iam_member.foundation) :
-        binding.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com"
-      ]) &&
-      !contains(local.foundation_project_roles, "roles/monitoring.alertPolicyEditor") &&
-      !contains(local.foundation_project_roles, "roles/monitoring.notificationChannelEditor") &&
-      google_project_iam_member.foundation_project_metadata.member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
-      length(google_project_iam_member.recovery_project_deleter) == 1 &&
-      google_project_iam_member.recovery_project_deleter[0].role == "roles/resourcemanager.projectDeleter" &&
-      google_project_iam_member.recovery_project_deleter[0].member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
-      google_service_account_iam_member.foundation_database_act_as["authentication"].member == "serviceAccount:infra-recovery@agora-management-test.iam.gserviceaccount.com" &&
-      length(google_compute_network.default_adoption) == 0 &&
-      length(google_project_iam_member.plan_viewer) == 0 &&
-      length(google_artifact_registry_repository_iam_member.recovery_reader) == 0 &&
-      length(google_artifact_registry_repository_iam_member.authentication_initializer_reader) == 0 &&
-      length(google_tags_tag_value_iam_member.initializer_tag_user) == 0 &&
-      length(google_project_iam_member.scheduler_cloud_run_invoker) == 0 &&
-      length(google_project_iam_member.json_keys_smoke_invoker) == 0 &&
-      length(google_project_iam_member.application_telemetry) == 2 &&
-      length(google_project_iam_member.recovery_cloud_run_invoker) == 1 &&
-      google_project_iam_member.recovery_cloud_run_invoker[0].role == "roles/run.jobsExecutor" &&
-      length(google_project_iam_member.recovery_smoke_cloud_run_invoker) == 1 &&
-      google_project_iam_member.recovery_smoke_cloud_run_invoker[0].role == "roles/run.servicesInvoker" &&
-      length(google_project_iam_member.initializer_cloud_run_invoker) == 0 &&
-      length(google_service_account_iam_member.initializer_act_as) == 0 &&
-      length(google_project_iam_custom_role.authentication_initializer_deployer) == 0 &&
-      length(google_project_iam_member.authentication_initializer_deployer) == 0
-    )
-    error_message = "A replacement project must grant every automation boundary only to recovery, never production foundation or release."
-  }
-
-  assert {
-    condition = (
-      !contains(google_compute_firewall.allow_postgres_egress["authentication"].target_tags, "agora-restore") &&
-      !contains(google_compute_firewall.allow_postgres_egress["json_keys"].target_tags, "agora-restore") &&
-      !contains(keys(local.runtime_identities), "backup") &&
-      !contains(keys(local.runtime_identities), "restore") &&
-      !contains(keys(local.runtime_secret_access), "authentication:waitlist-secret") &&
-      length(google_secret_manager_secret_iam_member.runtime) == 0
-    )
-    error_message = "Foundation must never recreate retired logical recovery identities, routes, or management-plane payload grants."
-  }
-
-  assert {
-    condition = (
-      length(google_monitoring_notification_channel.cost_email) == 0 &&
-      length(google_monitoring_notification_channel.operations_email) == 0 &&
-      length(data.google_billing_account.workload) == 0 &&
-      length(data.google_project.management) == 0 &&
-      length(google_billing_budget.workload) == 0 &&
-      length(google_monitoring_alert_policy.authentication_error_rate) == 0 &&
-      length(google_monitoring_alert_policy.application_jobs_unhealthy) == 0 &&
-      length(google_monitoring_alert_policy.database_capacity) == 0
-    )
-    error_message = "A short-lived recovery project must not duplicate production budgets, notification channels, or alert policies."
-  }
+  expect_failures = [var.recovery_mode]
 }
 
 run "rejects_a_non_human_authentication_initializer" {

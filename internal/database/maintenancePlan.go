@@ -64,7 +64,7 @@ func maintenancePlan(ctx context.Context, args []string, getenv func(string) str
 		group := byAddress[groupAddress]
 		disk := byAddress["google_compute_disk.database"+key]
 		if reflect.DeepEqual(get(change, "change", "actions"), []any{"no-op"}) &&
-			get(group, "change", "before") != nil && !reflect.DeepEqual(get(group, "change", "actions"), []any{"no-op"}) {
+			get(group, "change", "before") != nil && !reflect.DeepEqual(get(group, "change", "actions"), []any{"no-op"}) && !protectionOnly(group) {
 			if !maintenanceEnabled(getenv) || get(config, "native_backups", service, "wal_archiving") != true {
 				return failure{77, "database image maintenance requires protected activation and paused releases"}
 			}
@@ -169,7 +169,7 @@ func maintenancePlan(ctx context.Context, args []string, getenv func(string) str
 	} else {
 		for address, change := range byAddress {
 			if (strings.HasPrefix(address, "google_compute_instance_group_manager.database[") || strings.HasPrefix(address, "google_compute_disk.database[")) &&
-				get(change, "change", "before") != nil && !reflect.DeepEqual(get(change, "change", "actions"), []any{"no-op"}) {
+				get(change, "change", "before") != nil && !reflect.DeepEqual(get(change, "change", "actions"), []any{"no-op"}) && !protectionOnly(change) {
 				return failure{65, "existing database host changes require separate maintenance review"}
 			}
 		}
@@ -179,6 +179,22 @@ func maintenancePlan(ctx context.Context, args []string, getenv func(string) str
 		return err
 	}
 	return os.WriteFile(args[2], data, 0o600)
+}
+
+// Protection-only updates change provider bookkeeping, not the running host.
+// Require a fully known, exact strengthening; combined changes remain maintenance.
+func protectionOnly(resource object) bool {
+	before, _ := get(resource, "change", "before").(object)
+	after, _ := get(resource, "change", "after").(object)
+	unknown, _ := get(resource, "change", "after_unknown").(object)
+	if !reflect.DeepEqual(get(resource, "change", "actions"), []any{"update"}) ||
+		before["deletion_policy"] != "DELETE" || after["deletion_policy"] != "PREVENT" ||
+		unknown == nil || len(unknown) != 0 {
+		return false
+	}
+	before = maps.Clone(before)
+	before["deletion_policy"] = "PREVENT"
+	return reflect.DeepEqual(before, after)
 }
 
 func (h host) backupCredentialRetirement(before, after map[string]string) bool {

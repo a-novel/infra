@@ -32,7 +32,7 @@ locals {
     }
   }
 
-  foundation_project_roles = setunion(toset([
+  foundation_project_roles = toset([
     "roles/artifactregistry.admin",
     "roles/billing.projectManager",
     "roles/cloudquotas.admin",
@@ -45,10 +45,9 @@ locals {
     "roles/resourcemanager.projectIamAdmin",
     "roles/resourcemanager.tagAdmin",
     "roles/serviceusage.serviceUsageAdmin",
-    ]), var.recovery_mode ? toset([]) : toset([
     "roles/monitoring.alertPolicyEditor",
     "roles/monitoring.notificationChannelEditor",
-  ]))
+  ])
 
   database_runtime_project_roles = toset([
     "roles/logging.logWriter",
@@ -110,7 +109,7 @@ locals {
     }
   }
 
-  runtime_secret_access = merge({
+  runtime_secret_access = {
     "authentication:postgres-password" = {
       identity = "authentication"
       secret   = "production-authentication-postgres-password"
@@ -135,7 +134,6 @@ locals {
       identity = "json_keys"
       secret   = "production-json-keys-postgres-password"
     }
-    }, var.recovery_mode ? {} : {
     "authentication:waitlist-secret" = {
       identity = "authentication"
       secret   = "production-authentication-waitlist-secret"
@@ -148,7 +146,7 @@ locals {
       identity = "authentication_initializer"
       secret   = "production-authentication-super-admin-password"
     }
-  })
+  }
 }
 
 resource "google_project_iam_custom_role" "foundation_project_metadata" {
@@ -165,6 +163,9 @@ resource "google_project_iam_custom_role" "foundation_project_metadata" {
   ]
 
   depends_on = [google_project_service.workload["iam.googleapis.com"]]
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "google_project_iam_member" "foundation" {
@@ -172,30 +173,19 @@ resource "google_project_iam_member" "foundation" {
 
   project = google_project.workload.project_id
   role    = each.value
-  member  = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "foundation"]}"
+  member  = "serviceAccount:${local.automation_service_accounts.foundation}"
 }
 
 resource "google_project_iam_member" "foundation_project_metadata" {
   project = google_project.workload.project_id
   role    = google_project_iam_custom_role.foundation_project_metadata.name
-  member  = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "foundation"]}"
-}
-
-# The recovery identity may delete only the disposable project in which this
-# binding exists. Production never grants project-deletion authority.
-resource "google_project_iam_member" "recovery_project_deleter" {
-  count = var.recovery_mode ? 1 : 0
-
-  project = google_project.workload.project_id
-  role    = "roles/resourcemanager.projectDeleter"
-  member  = "serviceAccount:${local.automation_service_accounts.recovery}"
+  member  = "serviceAccount:${local.automation_service_accounts.foundation}"
 }
 
 # The scheduled drift workflow reads provider metadata but cannot lock or
-# write state and receives no data-access role. Recovery suffixes are inspected
-# only during an incident, so they do not grant this production plan identity.
+# write state and receives no data-access role.
 resource "google_project_iam_member" "plan_viewer" {
-  count = var.recovery_mode ? 0 : 1
+  count = 1
 
   project = google_project.workload.project_id
   role    = "roles/viewer"
@@ -229,9 +219,12 @@ resource "google_service_account" "runtime" {
   display_name = each.value.display_name
   description  = "Keyless production identity for the ${replace(each.key, "_", " ")} boundary."
 
-  deletion_policy = "DELETE"
+  deletion_policy = "PREVENT"
 
   depends_on = [google_project_service.workload["iam.googleapis.com"]]
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "google_service_account_iam_member" "foundation_database_act_as" {
@@ -239,7 +232,7 @@ resource "google_service_account_iam_member" "foundation_database_act_as" {
 
   service_account_id = google_service_account.runtime[each.value.identity].name
   role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "foundation"]}"
+  member             = "serviceAccount:${local.automation_service_accounts.foundation}"
 }
 
 resource "google_service_account_iam_member" "mig_database_act_as" {
@@ -259,6 +252,9 @@ resource "google_tags_tag_key" "cloud_run_invocation" {
   description = "Cloud Run invocation boundary managed by OpenTofu."
 
   depends_on = [google_project_service.workload["cloudresourcemanager.googleapis.com"]]
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "google_tags_tag_value" "cloud_run_invocation" {
@@ -267,10 +263,13 @@ resource "google_tags_tag_value" "cloud_run_invocation" {
   parent      = google_tags_tag_key.cloud_run_invocation.id
   short_name  = each.value.short_name
   description = each.value.description
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "google_tags_tag_value_iam_member" "initializer_tag_user" {
-  for_each = var.recovery_mode ? toset([]) : var.authentication_initializer_principals
+  for_each = var.authentication_initializer_principals
 
   tag_value = google_tags_tag_value.cloud_run_invocation["initializer"].name
   role      = "roles/resourcemanager.tagUser"
@@ -278,7 +277,7 @@ resource "google_tags_tag_value_iam_member" "initializer_tag_user" {
 }
 
 resource "google_project_iam_member" "scheduler_cloud_run_invoker" {
-  count = var.recovery_mode ? 0 : 1
+  count = 1
 
   project = google_project.workload.project_id
   role    = "roles/run.jobsExecutor"
@@ -303,36 +302,8 @@ resource "google_project_iam_member" "internal_cloud_run_invoker" {
   }
 }
 
-resource "google_project_iam_member" "recovery_cloud_run_invoker" {
-  count = var.recovery_mode ? 1 : 0
-
-  project = google_project.workload.project_id
-  role    = "roles/run.jobsExecutor"
-  member  = "serviceAccount:${local.automation_service_accounts.recovery}"
-
-  condition {
-    title       = "RecoveryTaggedCloudRunOnly"
-    description = "Recovery automation may invoke only disposable recovery jobs."
-    expression  = "resource.matchTagId('${google_tags_tag_key.cloud_run_invocation.id}', '${google_tags_tag_value.cloud_run_invocation["recovery"].id}')"
-  }
-}
-
-resource "google_project_iam_member" "recovery_smoke_cloud_run_invoker" {
-  count = var.recovery_mode ? 1 : 0
-
-  project = google_project.workload.project_id
-  role    = "roles/run.servicesInvoker"
-  member  = "serviceAccount:${google_service_account.runtime["authentication_database"].email}"
-
-  condition {
-    title       = "RecoverySmokeCloudRunOnly"
-    description = "The disposable database host may invoke only tagged recovery services."
-    expression  = "resource.matchTagId('${google_tags_tag_key.cloud_run_invocation.id}', '${google_tags_tag_value.cloud_run_invocation["recovery"].id}')"
-  }
-}
-
 resource "google_project_iam_member" "initializer_cloud_run_invoker" {
-  for_each = var.recovery_mode ? toset([]) : var.authentication_initializer_principals
+  for_each = var.authentication_initializer_principals
 
   project = google_project.workload.project_id
   role    = "roles/run.jobsExecutor"
@@ -346,7 +317,7 @@ resource "google_project_iam_member" "initializer_cloud_run_invoker" {
 }
 
 resource "google_service_account_iam_member" "initializer_act_as" {
-  for_each = var.recovery_mode ? toset([]) : var.authentication_initializer_principals
+  for_each = var.authentication_initializer_principals
 
   service_account_id = google_service_account.runtime["authentication_initializer"].name
   role               = "roles/iam.serviceAccountUser"
@@ -356,7 +327,7 @@ resource "google_service_account_iam_member" "initializer_act_as" {
 # This role is assigned only to named humans. Execution remains a separate,
 # initializer-tagged jobsExecutor grant, and overrides are never allowed.
 resource "google_project_iam_custom_role" "authentication_initializer_deployer" {
-  count = var.recovery_mode ? 0 : 1
+  count = 1
 
   project = google_project.workload.project_id
 
@@ -382,10 +353,13 @@ resource "google_project_iam_custom_role" "authentication_initializer_deployer" 
   ]
 
   depends_on = [google_project_service.workload["iam.googleapis.com"]]
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "google_project_iam_member" "authentication_initializer_deployer" {
-  for_each = var.recovery_mode ? toset([]) : var.authentication_initializer_principals
+  for_each = var.authentication_initializer_principals
 
   project = google_project.workload.project_id
   role    = google_project_iam_custom_role.authentication_initializer_deployer[0].name
@@ -456,9 +430,7 @@ resource "google_service_account_iam_member" "repository_operator_act_as" {
 # Secret payloads stay outside OpenTofu. These additive bindings expose only
 # the exact pre-created container each runtime contract consumes.
 resource "google_secret_manager_secret_iam_member" "runtime" {
-  # Replacement-project CI cannot rewrite surviving management-plane IAM.
-  # The recovery runbook grants these exact payload contracts as a human step.
-  for_each = var.recovery_mode ? {} : local.runtime_secret_access
+  for_each = local.runtime_secret_access
 
   project   = var.management_project_id
   secret_id = each.value.secret

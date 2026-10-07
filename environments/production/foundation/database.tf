@@ -78,9 +78,12 @@ resource "google_compute_disk" "database" {
 
   labels = merge(local.labels, { role = "database-data", component = each.value.component })
 
-  deletion_policy = "DELETE"
+  deletion_policy = "PREVENT"
 
   depends_on = [google_project_service.workload["compute.googleapis.com"]]
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "google_compute_instance_template" "database" {
@@ -222,8 +225,11 @@ resource "google_compute_instance_group_manager" "database" {
 
   wait_for_instances        = true
   wait_for_instances_status = "STABLE"
-  deletion_policy           = "DELETE"
+  deletion_policy           = "PREVENT"
 
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 locals {

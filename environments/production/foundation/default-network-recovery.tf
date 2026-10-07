@@ -1,7 +1,7 @@
 # Project imports skip the provider's create-only default-network cleanup.
 # This address puts the audited empty VPC behind the reviewed deletion gate.
 resource "google_compute_network" "default_adoption" {
-  count = var.adopt_default_network && !var.recovery_mode ? 1 : 0
+  count = var.adopt_default_network ? 1 : 0
 
   project = google_project.workload.project_id
   name    = "default"
@@ -18,7 +18,7 @@ resource "google_compute_network" "default_adoption" {
 }
 
 import {
-  for_each = var.adopt_default_network && !var.recovery_mode ? toset([var.workload_project_id]) : toset([])
+  for_each = var.adopt_default_network ? toset([var.workload_project_id]) : toset([])
 
   to = google_compute_network.default_adoption[0]
   id = "projects/${each.value}/global/networks/default"

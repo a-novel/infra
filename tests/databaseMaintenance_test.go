@@ -20,6 +20,69 @@ import (
 	"github.com/a-novel/infra/internal/database"
 )
 
+func TestDatabaseProtectionDoesNotRequireMaintenance(t *testing.T) {
+	t.Parallel()
+	for _, scenario := range []string{"Group", "Disk", "Both", "Weaken", "Resize", "DiskChange", "Unknown", "MissingMask", "Delete", "MissingBefore"} {
+		t.Run(scenario, func(t *testing.T) {
+			t.Parallel()
+			cloud := newMaintenanceCloud(t)
+			plan := cloud.plan(t)
+			changes := plan["resource_changes"].([]object)
+			for _, resource := range changes {
+				change := nested(resource, "change")
+				change["actions"] = []string{"no-op"}
+				change["after"] = maps.Clone(nested(change, "before"))
+			}
+			group, disk := nested(changes[1], "change"), nested(changes[2], "change")
+			for _, change := range []object{group, disk} {
+				change["actions"] = []string{"update"}
+				change["after_unknown"] = object{}
+				nested(change, "before")["deletion_policy"] = "DELETE"
+				nested(change, "after")["deletion_policy"] = "PREVENT"
+			}
+			want := 0
+			switch scenario {
+			case "Group":
+				disk["actions"] = []string{"no-op"}
+			case "Disk":
+				group["actions"] = []string{"no-op"}
+			case "Weaken":
+				nested(group, "before")["deletion_policy"], nested(group, "after")["deletion_policy"] = "PREVENT", "DELETE"
+				want = 77
+			case "Resize":
+				nested(group, "after")["target_size"], want = 2, 77
+			case "DiskChange":
+				nested(disk, "after")["disk_id"], want = "999", 65
+			case "Unknown":
+				group["after_unknown"], want = object{"version": true}, 77
+			case "MissingMask":
+				delete(group, "after_unknown")
+				want = 77
+			case "Delete":
+				group["actions"], want = []string{"delete"}, 77
+			case "MissingBefore":
+				delete(nested(group, "before"), "deletion_policy")
+				want = 77
+			}
+			planPath, inputs, targets := filepath.Join(cloud.dir, "plan.json"), filepath.Join(cloud.dir, "inputs.json"), filepath.Join(cloud.dir, "targets.json")
+			writeJSON(t, planPath, plan)
+			writeJSON(t, inputs, object{})
+			var logs bytes.Buffer
+			execute := func(context.Context, io.Writer, string, ...string) error {
+				t.Fatal("protection admission must not contact or change the hosts")
+				return nil
+			}
+			code := database.Run(t.Context(), []string{"maintenance-plan", planPath, inputs, targets}, func(string) string { return "" }, execute, &logs, &logs)
+			expectCode(t, want, code, logs.String())
+			if want == 0 {
+				require.Equal(t, "null", read(t, targets))
+			} else {
+				require.NoFileExists(t, targets)
+			}
+		})
+	}
+}
+
 func TestLegacyMaintenance(t *testing.T) {
 	t.Parallel()
 	for _, scenario := range []string{

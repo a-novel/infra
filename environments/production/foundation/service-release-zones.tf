@@ -14,7 +14,7 @@ variable "service_release_zones" {
 
   validation {
     condition = length(var.service_release_zones) == 0 || (
-      !var.recovery_mode && var.shared_vpc_enabled &&
+      var.shared_vpc_enabled &&
       length(var.service_projects) == 0 &&
       (var.public_api_project_id != null || alltrue([for zones in var.service_release_zones : !try(contains(zones, "public-api"), false)]))
     )
@@ -33,7 +33,7 @@ locals {
 
 module "service_release" {
   source   = "../../../modules/service-custody"
-  for_each = var.recovery_mode ? {} : local.service_release_boundaries
+  for_each = local.service_release_boundaries
 
   project_id           = each.value.zone == "private" ? google_project.workload.project_id : module.public_api_project["public-api"].project_id
   zone                 = each.value.zone

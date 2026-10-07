@@ -2,7 +2,7 @@
 # existing read-only drift workflow. This root owns provider-native operational
 # metrics; the release root owns the service's warm-instance configuration.
 resource "google_monitoring_alert_policy" "authentication_error_rate" {
-  count = var.recovery_mode ? 0 : 1
+  count = 1
 
   project      = google_project.workload.project_id
   display_name = "Agora Authentication 5xx error rate"
@@ -48,13 +48,16 @@ resource "google_monitoring_alert_policy" "authentication_error_rate" {
   }
 
   notification_channels = [google_monitoring_notification_channel.operations_email[0].name]
-  deletion_policy       = "DELETE"
+  deletion_policy       = "PREVENT"
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # One native Cloud Run metric covers every declared application job failure.
 # A second condition catches a stopped rotation schedule without a controller.
 resource "google_monitoring_alert_policy" "application_jobs_unhealthy" {
-  count = var.recovery_mode ? 0 : 1
+  count = 1
 
   project      = google_project.workload.project_id
   display_name = "Agora application jobs unhealthy"
@@ -109,5 +112,8 @@ resource "google_monitoring_alert_policy" "application_jobs_unhealthy" {
   }
 
   notification_channels = [google_monitoring_notification_channel.operations_email[0].name]
-  deletion_policy       = "DELETE"
+  deletion_policy       = "PREVENT"
+  lifecycle {
+    prevent_destroy = true
+  }
 }

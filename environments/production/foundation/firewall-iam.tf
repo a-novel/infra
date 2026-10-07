@@ -19,5 +19,5 @@ resource "google_project_iam_custom_role" "foundation_firewall" {
 resource "google_project_iam_member" "foundation_firewall" {
   project = google_project.workload.project_id
   role    = google_project_iam_custom_role.foundation_firewall.name
-  member  = "serviceAccount:${local.automation_service_accounts[var.recovery_mode ? "recovery" : "foundation"]}"
+  member  = "serviceAccount:${local.automation_service_accounts.foundation}"
 }

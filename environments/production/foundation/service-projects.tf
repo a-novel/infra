@@ -14,10 +14,6 @@ variable "service_projects" {
     error_message = "Service names must be valid labels and project IDs must be valid, unique, and separate from management and the current workload project."
   }
 
-  validation {
-    condition     = !var.recovery_mode || length(var.service_projects) == 0
-    error_message = "Recovery must not provision or attach production service projects."
-  }
 }
 
 # Consumed from converged private inputs by recovery dispatch and state inventory, not resources.
@@ -33,14 +29,14 @@ variable "service_recovery_projects" {
       contains(["json-keys", "authentication"], service) && (contains(keys(var.service_projects), service) || try(contains(var.service_release_zones[service], "private"), false)) &&
       can(regex("^a-novel-recovery-[a-z0-9-]{1,13}[a-z0-9]$", project)) &&
       !contains(concat([var.management_project_id, var.workload_project_id, var.public_project_id, var.public_api_project_id], values(var.service_projects)), project)
-    ]) && (!var.recovery_mode || length(var.service_recovery_projects) == 0)
-    error_message = "Register only disposable recovery destinations for supported services outside the complete live project set; legacy recovery cannot register them."
+    ])
+    error_message = "Register only disposable recovery destinations for supported services outside the complete live project set."
   }
 }
 
 module "service_project" {
   source   = "../../../modules/workload-project"
-  for_each = var.recovery_mode ? {} : var.service_projects
+  for_each = var.service_projects
 
   project_id                 = each.value
   billing_account_id         = var.billing_account_id

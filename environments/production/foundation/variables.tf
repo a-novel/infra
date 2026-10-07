@@ -293,8 +293,16 @@ variable "compute_cpu_quota" {
   }
 }
 
+# Keep a rejecting input so historical true values cannot silently become production plans.
+# tflint-ignore: terraform_unused_declarations
 variable "recovery_mode" {
-  description = "Whether this state suffix creates a disposable recovery workload with restore-only database access. Production must keep false."
+  description = "Reject the retired whole-production recovery profile. Use the isolated service-recovery root."
   type        = bool
   default     = false
+  nullable    = false
+
+  validation {
+    condition     = !var.recovery_mode
+    error_message = "Whole-production recovery is retired; use the isolated service-recovery root."
+  }
 }
