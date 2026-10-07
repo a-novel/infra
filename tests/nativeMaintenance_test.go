@@ -15,9 +15,7 @@ func TestNativeMaintenanceIAMBoundary(t *testing.T) {
 	// The live address is unknown in a cold mock plan; check the expression's
 	// ownership here while the HCL test covers enrollment and principal selection.
 	config := read(t, "../environments/production/foundation/maintenance.tf")
-	resource, _, ok := strings.Cut(config, `variable "legacy_backup_job_access"`)
-	require.True(t, ok)
-	require.Contains(t, resource, `expression  = "destination.port == 22 && destination.ip == '${one(data.google_compute_instance.database[replace(each.key, "-", "_")].network_interface).network_ip}'"`)
+	require.Contains(t, config, `expression  = "destination.port == 22 && destination.ip == '${one(data.google_compute_instance.database[replace(each.key, "-", "_")].network_interface).network_ip}'"`)
 }
 
 // TestNativeBackup exercises the actual host script with no cloud clients or Docker available.

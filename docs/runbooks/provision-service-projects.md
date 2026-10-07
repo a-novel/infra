@@ -42,7 +42,7 @@ absent before selecting either shell. Recovery compilation removes both project 
 Shared VPC selection; recovery/cleanup checks reject either registered project as a disposable target.
 
 Before authorized publication, review the complete successor configuration, preserving all unrelated
-settings, including `legacy_backup_job_access`, principals, alerts and project-parent/adoption options.
+settings, including native-backup enrollment, principals, alerts and project-parent/adoption options.
 For a shell-only operation, explicitly keep `service_projects = {}`, `service_release_zones = {}`
 and `pgbackrest_repository_services = []`; the reviewed `.envrc` also selects the separate release-boundary batch below.
 Provision only through the protected foundation plan/apply workflow. Require the two shell modules,
