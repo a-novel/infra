@@ -3,10 +3,10 @@ variable "images" {
   type        = map(string)
 
   validation {
-    condition = toset(keys(var.images)) == toset(["migrations", "rest"]) && alltrue([
+    condition = toset(keys(var.images)) == toset(["database", "migrations", "rest"]) && alltrue([
       for ref in values(var.images) : can(regex("^ghcr\\.io/a-novel/service-authentication/[^:@]+:v[0-9]+\\.[0-9]+\\.[0-9]+@sha256:[a-f0-9]{64}$", ref))
     ])
-    error_message = "Pin the migrations and rest images by release tag and digest."
+    error_message = "Pin the database, migrations and rest images by release tag and digest."
   }
 }
 
@@ -42,11 +42,10 @@ variable "waitlist_url" {
 }
 
 variable "backup_repository" {
-  description = "Backup repository VM image and the runtime it loads at boot."
+  description = "Backup repository VM image and the TLS runtime it loads at boot; the server runs the database image."
   type = object({
     cos_image = string
     runtime = object({
-      server_image      = string
       credentials_image = string
       client_name       = string
       ca_version        = string
