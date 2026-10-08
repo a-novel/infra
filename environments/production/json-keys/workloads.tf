@@ -11,8 +11,10 @@ locals {
     subnetwork = local.foundation.network.subnet_id
     tags       = [local.foundation.network.network_tags["json_keys"]]
   }
-  # Every workload gets the global window; each service decides whether it is listed.
-  downtime_env = var.downtime == "" ? {} : { DOWNTIME = var.downtime }
+  # A planned downtime listing one of this service's components stops it from its start, until
+  # the downtime is removed.
+  downtime     = try(jsondecode(var.downtime), null)
+  downtime_env = anytrue([for component in try(local.downtime.components, []) : startswith(component, "service-json-keys.")]) ? { DOWNTIME_START = local.downtime.start } : {}
   database_env = {
     POSTGRES_HOST        = local.database.private_ip
     POSTGRES_PORT        = tostring(local.database.port)

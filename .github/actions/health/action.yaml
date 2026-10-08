@@ -2,8 +2,8 @@ name: Production health
 description: >
   Fails unless Authentication reports PostgreSQL, SMTP and JSON Keys up. The caller must
   already hold Google credentials that can read the Cloud Run service, and set DOWNTIME to the
-  planned downtime window: while one is in progress, services refuse work on purpose and the
-  check is skipped.
+  planned downtime: once it starts, the listed services refuse work on purpose until it is
+  cleared, and the check is skipped.
 
 runs:
   using: composite
@@ -13,7 +13,7 @@ runs:
       run: |
         set -euo pipefail
         if [ -n "${DOWNTIME:-}" ] && [ "$(date -d "$(jq -r .start <<<"$DOWNTIME")" +%s)" -le "$(date +%s)" ]; then
-          echo "::notice::Planned downtime in progress for $(jq -r '.services | join(", ")' <<<"$DOWNTIME"); health check skipped."
+          echo "::notice::Planned downtime started for $(jq -r '.components | join(", ")' <<<"$DOWNTIME"); health check skipped."
           exit 0
         fi
         lookup() {

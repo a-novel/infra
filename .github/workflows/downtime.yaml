@@ -1,24 +1,25 @@
 name: downtime
 
-# Schedules, changes or clears the one planned downtime window, then applies it with a full
-# deploy. It is the only writer of the DOWNTIME variable, and only repository admins run it.
+# Schedules, changes or clears the one planned downtime, publishes it for the platform, then
+# applies it with a full deploy. It is the only writer of the DOWNTIME variable and of the
+# downtime branch, and only repository admins run it.
 on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Schedule (or replace) the window, or clear it.
+        description: Schedule (or replace) the downtime, or clear it.
         type: choice
         options: [schedule, clear]
-      services:
-        description: Comma-separated services the window stops, such as "json-keys,authentication".
+      components:
+        description: Comma-separated components it stops, such as "service-json-keys.database".
         type: string
         default: ""
       start:
-        description: When the services stop, in RFC 3339 UTC, such as 2026-10-12T06:00:00Z.
+        description: When their services stop, in RFC 3339 UTC, such as 2026-10-12T06:00:00Z.
         type: string
         default: ""
       end:
-        description: When service is expected back, in RFC 3339 UTC. Users see it; nothing enforces it.
+        description: When service is expected back, in RFC 3339 UTC. Users see it; services ignore it.
         type: string
         default: ""
 
@@ -34,7 +35,8 @@ jobs:
     timeout-minutes: 5
     permissions:
       actions: write
-      contents: read
+      # Publishes the document on the downtime branch.
+      contents: write
     steps:
       # workflow_dispatch is open to anyone with write access.
       - name: Require a repository admin
@@ -55,12 +57,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Build the window
+      - name: Build the downtime
         id: window
         shell: bash
         env:
           OPERATION: ${{ inputs.operation }}
-          SERVICES: ${{ inputs.services }}
+          COMPONENTS: ${{ inputs.components }}
           START: ${{ inputs.start }}
           END: ${{ inputs.end }}
         run: |
@@ -69,22 +71,22 @@ jobs:
             echo "window=" >>"$GITHUB_OUTPUT"
             exit 0
           fi
-          # Each service root is a service that can be stopped.
-          known="$(find environments/production -mindepth 1 -maxdepth 1 -type d ! -name foundation -printf '%f\n')"
-          for service in ${SERVICES//,/ }; do
-            if ! grep -qx "$service" <<<"$known"; then
-              echo "::error::Unknown service \"$service\"; known: $(paste -sd, <<<"$known")."
+          # Each service root has a database that can be stopped.
+          known="$(find environments/production -mindepth 1 -maxdepth 1 -type d ! -name foundation -printf 'service-%f.database\n')"
+          for component in ${COMPONENTS//,/ }; do
+            if ! grep -qx "$component" <<<"$known"; then
+              echo "::error::Unknown component \"$component\"; known: $(paste -sd, <<<"$known")."
               exit 1
             fi
           done
           rfc3339='^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'
-          if [ -z "${SERVICES//[, ]/}" ] || ! [[ $START =~ $rfc3339 && $END =~ $rfc3339 ]] ||
+          if [ -z "${COMPONENTS//[, ]/}" ] || ! [[ $START =~ $rfc3339 && $END =~ $rfc3339 ]] ||
             [ "$(date -d "$END" +%s)" -le "$(date -d "$START" +%s)" ]; then
-            echo "::error::A window needs services, and start and end in RFC 3339 UTC with the end after the start."
+            echo "::error::A downtime needs components, and start and end in RFC 3339 UTC with the end after the start."
             exit 1
           fi
-          window="$(jq -cn --arg services "$SERVICES" --arg start "$START" --arg end "$END" \
-            '{services: ($services | split(",") | map(select(. != ""))), start: $start, end: $end}')"
+          window="$(jq -cn --arg components "$COMPONENTS" --arg start "$START" --arg end "$END" \
+            '{components: ($components | split(",") | map(select(. != ""))), start: $start, end: $end}')"
           echo "window=$window" >>"$GITHUB_OUTPUT"
 
       # The workflow token can't write variables; the agent App can.
@@ -99,7 +101,7 @@ jobs:
           # this one it doesn't declare.
           permission-actions-variables: write
 
-      - name: Write DOWNTIME and deploy
+      - name: Write DOWNTIME, publish it, and deploy
         shell: bash
         env:
           APP_TOKEN: ${{ steps.token.outputs.token }}
@@ -114,11 +116,25 @@ jobs:
           elif [ -n "$PREVIOUS" ]; then
             GH_TOKEN="$APP_TOKEN" gh variable delete DOWNTIME --repo "$REPOSITORY"
           fi
+
+          # The platform reads downtime.json from the downtime branch: one orphan commit, replaced
+          # on every run, holding the downtime or null. Commits by this token start no workflow.
+          tree="$(jq -n --arg content "${WINDOW:-null}"$'\n' \
+            '{tree: [{path: "downtime.json", mode: "100644", type: "blob", content: $content}]}' |
+            gh api "repos/$REPOSITORY/git/trees" --input - --jq .sha)"
+          commit="$(gh api "repos/$REPOSITORY/git/commits" -f message="Planned downtime: ${WINDOW:-none}" \
+            -f tree="$tree" --jq .sha)"
+          if gh api "repos/$REPOSITORY/git/ref/heads/downtime" >/dev/null 2>&1; then
+            gh api -X PATCH "repos/$REPOSITORY/git/refs/heads/downtime" -f sha="$commit" -F force=true >/dev/null
+          else
+            gh api "repos/$REPOSITORY/git/refs" -f ref=refs/heads/downtime -f sha="$commit" >/dev/null
+          fi
+
           gh workflow run deploy.yaml --repo "$REPOSITORY" --ref master
           {
-            echo "Previous window: \`${PREVIOUS:-none}\`"
+            echo "Previous downtime: \`${PREVIOUS:-none}\`"
             echo
-            echo "New window: \`${WINDOW:-none}\`"
+            echo "New downtime: \`${WINDOW:-none}\`, published at https://raw.githubusercontent.com/$REPOSITORY/downtime/downtime.json"
             echo
             echo "A full deploy is applying it."
           } >>"$GITHUB_STEP_SUMMARY"

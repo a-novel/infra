@@ -80,19 +80,32 @@ run "requires_the_waitlist_secret_with_its_url" {
   expect_failures = [var.secret_versions]
 }
 
-run "passes_the_planned_downtime_window" {
+run "passes_the_planned_downtime_start" {
   command = plan
 
   variables {
-    downtime = "{\"services\":[\"json-keys\"],\"start\":\"2026-10-12T06:00:00Z\",\"end\":\"2026-10-12T07:00:00Z\"}"
+    downtime = "{\"components\":[\"service-json-keys.database\",\"service-authentication.database\"],\"start\":\"2026-10-12T06:00:00Z\",\"end\":\"2026-10-12T07:00:00Z\"}"
   }
 
   assert {
     condition = alltrue([for container in concat(
       google_cloud_run_v2_service.rest.template[0].containers,
       google_cloud_run_v2_job.migrations.template[0].template[0].containers,
-      ) : lookup({ for env in container.env : env.name => env.value }, "DOWNTIME", null) == var.downtime
+      ) : lookup({ for env in container.env : env.name => env.value }, "DOWNTIME_START", null) == "2026-10-12T06:00:00Z"
     ])
-    error_message = "The REST API and the migrations job must receive the planned downtime window."
+    error_message = "The REST API and the migrations job must receive the planned downtime start."
+  }
+}
+
+run "ignores_another_services_downtime" {
+  command = plan
+
+  variables {
+    downtime = "{\"components\":[\"service-json-keys.database\"],\"start\":\"2026-10-12T06:00:00Z\",\"end\":\"2026-10-12T07:00:00Z\"}"
+  }
+
+  assert {
+    condition     = !contains([for env in google_cloud_run_v2_service.rest.template[0].containers[0].env : env.name], "DOWNTIME_START")
+    error_message = "A downtime that lists no Authentication component must leave Authentication alone."
   }
 }
