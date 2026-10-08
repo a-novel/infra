@@ -79,3 +79,20 @@ run "requires_the_waitlist_secret_with_its_url" {
 
   expect_failures = [var.secret_versions]
 }
+
+run "passes_the_planned_downtime_window" {
+  command = plan
+
+  variables {
+    downtime = "{\"services\":[\"json-keys\"],\"start\":\"2026-10-12T06:00:00Z\",\"end\":\"2026-10-12T07:00:00Z\"}"
+  }
+
+  assert {
+    condition = alltrue([for container in concat(
+      google_cloud_run_v2_service.rest.template[0].containers,
+      google_cloud_run_v2_job.migrations.template[0].template[0].containers,
+      ) : lookup({ for env in container.env : env.name => env.value }, "DOWNTIME", null) == var.downtime
+    ])
+    error_message = "The REST API and the migrations job must receive the planned downtime window."
+  }
+}

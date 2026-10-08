@@ -1,0 +1,121 @@
+name: downtime
+
+# Schedules, changes or clears the one planned downtime window, then applies it with a full
+# deploy. It is the only writer of the DOWNTIME variable, and only repository admins run it.
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Schedule (or replace) the window, or clear it.
+        type: choice
+        options: [schedule, clear]
+      services:
+        description: Comma-separated services the window stops, such as "json-keys,authentication".
+        type: string
+        default: ""
+      start:
+        description: When the services stop, in RFC 3339 UTC, such as 2026-10-12T06:00:00Z.
+        type: string
+        default: ""
+      end:
+        description: When service is expected back, in RFC 3339 UTC. Users see it; nothing enforces it.
+        type: string
+        default: ""
+
+permissions: {}
+
+concurrency:
+  group: downtime
+  cancel-in-progress: false
+
+jobs:
+  downtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      # workflow_dispatch is open to anyone with write access.
+      - name: Require a repository admin
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          ACTOR: ${{ github.triggering_actor }}
+        run: |
+          set -euo pipefail
+          permission="$(gh api "repos/$REPOSITORY/collaborators/$ACTOR/permission" --jq .permission)"
+          if [ "$permission" != admin ]; then
+            echo "::error::downtime.yaml is admin-only; @$ACTOR has $permission."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the window
+        id: window
+        shell: bash
+        env:
+          OPERATION: ${{ inputs.operation }}
+          SERVICES: ${{ inputs.services }}
+          START: ${{ inputs.start }}
+          END: ${{ inputs.end }}
+        run: |
+          set -euo pipefail
+          if [ "$OPERATION" = clear ]; then
+            echo "window=" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Each service root is a service that can be stopped.
+          known="$(find environments/production -mindepth 1 -maxdepth 1 -type d ! -name foundation -printf '%f\n')"
+          for service in ${SERVICES//,/ }; do
+            if ! grep -qx "$service" <<<"$known"; then
+              echo "::error::Unknown service \"$service\"; known: $(paste -sd, <<<"$known")."
+              exit 1
+            fi
+          done
+          rfc3339='^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'
+          if [ -z "${SERVICES//[, ]/}" ] || ! [[ $START =~ $rfc3339 && $END =~ $rfc3339 ]] ||
+            [ "$(date -d "$END" +%s)" -le "$(date -d "$START" +%s)" ]; then
+            echo "::error::A window needs services, and start and end in RFC 3339 UTC with the end after the start."
+            exit 1
+          fi
+          window="$(jq -cn --arg services "$SERVICES" --arg start "$START" --arg end "$END" \
+            '{services: ($services | split(",") | map(select(. != ""))), start: $start, end: $end}')"
+          echo "window=$window" >>"$GITHUB_OUTPUT"
+
+      # The workflow token can't write variables; the agent App can.
+      - id: token
+        uses: actions/create-github-app-token@v3.2.0
+        with:
+          client-id: ${{ vars.AGENT_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.AGENT_BOT_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+
+      - name: Write DOWNTIME and deploy
+        shell: bash
+        env:
+          APP_TOKEN: ${{ steps.token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PREVIOUS: ${{ vars.DOWNTIME }}
+          WINDOW: ${{ steps.window.outputs.window }}
+        run: |
+          set -euo pipefail
+          if [ -n "$WINDOW" ]; then
+            GH_TOKEN="$APP_TOKEN" gh variable set DOWNTIME --repo "$REPOSITORY" --body "$WINDOW"
+          elif [ -n "$PREVIOUS" ]; then
+            GH_TOKEN="$APP_TOKEN" gh variable delete DOWNTIME --repo "$REPOSITORY"
+          fi
+          gh workflow run deploy.yaml --repo "$REPOSITORY" --ref master
+          {
+            echo "Previous window: \`${PREVIOUS:-none}\`"
+            echo
+            echo "New window: \`${WINDOW:-none}\`"
+            echo
+            echo "A full deploy is applying it."
+          } >>"$GITHUB_STEP_SUMMARY"

@@ -1,7 +1,9 @@
 name: Production health
 description: >
   Fails unless Authentication reports PostgreSQL, SMTP and JSON Keys up. The caller must
-  already hold Google credentials that can read the Cloud Run service.
+  already hold Google credentials that can read the Cloud Run service, and set DOWNTIME to the
+  planned downtime window: while one is in progress, services refuse work on purpose and the
+  check is skipped.
 
 runs:
   using: composite
@@ -10,6 +12,10 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
+        if [ -n "${DOWNTIME:-}" ] && [ "$(date -d "$(jq -r .start <<<"$DOWNTIME")" +%s)" -le "$(date +%s)" ]; then
+          echo "::notice::Planned downtime in progress for $(jq -r '.services | join(", ")' <<<"$DOWNTIME"); health check skipped."
+          exit 0
+        fi
         lookup() {
           gcloud run services describe agora-authentication-rest \
             --project=a-novel-public-api-prod --region=europe-west1 --format='value(status.url)'

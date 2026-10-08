@@ -12,6 +12,8 @@ permissions: {}
 
 env:
   TF_IN_AUTOMATION: "true"
+  # The planned downtime window, written only by downtime.yaml.
+  DOWNTIME: ${{ vars.DOWNTIME }}
 
 jobs:
   drift:
@@ -61,6 +63,17 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
+      # A window is only ever cleared by hand; a forgotten one keeps services refusing work.
+      - name: Fail when a planned downtime outlived its end
+        if: env.DOWNTIME != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          end="$(jq -r .end <<<"$DOWNTIME")"
+          if [ "$(date -d "$end" +%s)" -lt "$(date +%s)" ]; then
+            echo "::error::The planned downtime ended at $end but is still set. Clear it with downtime.yaml."
+            exit 1
+          fi
       - uses: google-github-actions/auth@v3.0.0
         with:
           workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}

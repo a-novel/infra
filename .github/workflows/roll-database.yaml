@@ -13,6 +13,10 @@ on:
 
 permissions: {}
 
+# The health check skips during a planned downtime.
+env:
+  DOWNTIME: ${{ vars.DOWNTIME }}
+
 concurrency:
   group: roll-database-${{ inputs.service }}
   cancel-in-progress: false

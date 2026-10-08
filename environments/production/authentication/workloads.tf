@@ -11,6 +11,8 @@ locals {
     subnetwork = local.foundation.network.subnet_id
     tags       = [local.foundation.network.network_tags["authentication"]]
   }
+  # Every workload gets the global window; each service decides whether it is listed.
+  downtime_env = var.downtime == "" ? {} : { DOWNTIME = var.downtime }
   database_env = {
     POSTGRES_HOST        = local.database.private_ip
     POSTGRES_PORT        = tostring(local.database.port)
@@ -49,7 +51,7 @@ resource "google_cloud_run_v2_job" "migrations" {
         image = local.image.migrations
 
         dynamic "env" {
-          for_each = local.database_env
+          for_each = merge(local.database_env, local.downtime_env)
           content {
             name  = env.key
             value = env.value
@@ -132,7 +134,7 @@ resource "google_cloud_run_v2_service" "rest" {
       }
 
       dynamic "env" {
-        for_each = merge(local.database_env, {
+        for_each = merge(local.database_env, local.downtime_env, {
           GCLOUD_PROJECT_ID       = local.api_project_id
           OTEL                    = "true"
           PLATFORM_AUTH_URL       = var.smtp.platform_auth_url

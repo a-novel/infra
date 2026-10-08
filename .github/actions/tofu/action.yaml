@@ -53,6 +53,8 @@ runs:
         ROOT: ${{ inputs.root }}
         # Only the writer may hold the state lock.
         LOCK: ${{ inputs.apply }}
+        # Service roots pass the planned downtime window to their workloads.
+        TF_VAR_downtime: ${{ env.DOWNTIME }}
       run: |
         set -euo pipefail
         tofu -chdir="$ROOT" init -input=false -lockfile=readonly -no-color >/dev/null

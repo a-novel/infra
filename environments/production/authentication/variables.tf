@@ -59,3 +59,14 @@ variable "alert_email" {
   type        = string
   sensitive   = true
 }
+
+variable "downtime" {
+  description = "The planned downtime window as JSON, from the DOWNTIME repository variable. Empty without one."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.downtime == "" || can(jsondecode(var.downtime).start)
+    error_message = "The downtime window must be JSON with services, start and end."
+  }
+}
