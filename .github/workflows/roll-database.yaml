@@ -1,0 +1,48 @@
+name: roll-database
+
+# Database hosts never restart on apply. This restarts a service's database
+# host, or replaces it when its template changed, keeping its disk and IP, then
+# restarts its backup repository host. Run it after that service's deploy.
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: Service whose database and backup hosts move onto their applied configuration.
+        type: choice
+        options: [json-keys, authentication]
+
+permissions: {}
+
+concurrency:
+  group: roll-database-${{ inputs.service }}
+  cancel-in-progress: false
+
+jobs:
+  roll:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: google-github-actions/auth@v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
+      - name: Roll the database and backup repository hosts
+        shell: bash
+        env:
+          SERVICE: ${{ inputs.service }}
+        run: |
+          set -euo pipefail
+          where=(--zone=europe-west1-d --project=a-novel-production-prod)
+          gcloud compute instance-groups managed update-instances "agora-database-$SERVICE" --all-instances \
+            --minimal-action=restart --most-disruptive-allowed-action=replace "${where[@]}"
+          gcloud compute instance-groups managed wait-until "agora-database-$SERVICE" --stable --timeout=900 "${where[@]}"
+          gcloud compute instances stop "agora-pgbackrest-$SERVICE" "${where[@]}"
+          gcloud compute instances start "agora-pgbackrest-$SERVICE" "${where[@]}"
+      - uses: $/.github/actions/health

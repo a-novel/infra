@@ -13,8 +13,8 @@ backups, Cloud Run services and their identities.
    the job summary.
 2. **Review the plan.** A plan that deletes, replaces or unprotects anything fails until a
    maintainer adds the `allow-resource-deletion` label.
-3. **Merge.** [`deploy.yaml`](.github/workflows/deploy.yaml) plans and applies
-   `bootstrap → foundation → json-keys → authentication`, then checks production health.
+3. **Merge.** [`deploy.yaml`](.github/workflows/deploy.yaml) applies the roots the merge changed:
+   `bootstrap → foundation → services in parallel`, then checks production health.
 
 Nobody applies by hand. To freeze production, run `gh workflow disable deploy.yaml`.
 

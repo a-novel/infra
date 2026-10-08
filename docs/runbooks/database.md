@@ -60,15 +60,15 @@ restart on apply.
    - **Startup, OS or TLS settings:** edit `environments/production/foundation/terraform.tfvars`
      (`native_backups`, `database_*`) or the service root's `backup_repository`.
 2. Take a full backup and verify it (above).
-3. In a quiet window, roll the hosts:
+3. In a quiet window, once the deploy finished, roll the hosts:
 
    ```bash
-   gh workflow run deploy.yaml --repo a-novel/infra -f roll_database=json-keys
+   gh workflow run roll-database.yaml --repo a-novel/infra -f service=json-keys
    ```
 
-   The run re-applies, then restarts the database host. When the template changed it replaces the
-   host instead; either way the data disk and IP are kept. It then restarts the repository VM and
-   checks health. The database is down for one to two minutes.
+   The run restarts the database host. When the template changed it replaces the host instead;
+   either way the data disk and IP are kept. It then restarts the repository VM and checks health.
+   The database is down for one to two minutes.
 
 4. If the new image fails to start, revert the pull request, merge, and roll again.
 

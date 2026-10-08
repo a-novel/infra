@@ -58,8 +58,9 @@ locals {
       display_name       = "Infra foundation deployment"
       provider_id        = "github-foundation"
       workflows = {
-        "deploy.yaml"   = "production"
-        "recovery.yaml" = "production"
+        "deploy.yaml"        = "production"
+        "roll-database.yaml" = "production"
+        "recovery.yaml"      = "production"
       }
       pull_requests = null
     }
