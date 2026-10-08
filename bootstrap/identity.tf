@@ -15,12 +15,6 @@ locals {
     "roles/serviceusage.serviceUsageAdmin",
   ])
 
-  recovery_project_roles = toset([
-    # Version-state inspection rejects disabled receipt-owned versions. Secret
-    # payloads are resolved only by replacement runtime identities.
-    "roles/secretmanager.viewer",
-  ])
-
   # Data Access audit entries are private logs. Human operators need the
   # private viewer role to investigate state and secret operations.
   operator_project_roles = setunion(
@@ -41,12 +35,6 @@ locals {
         role     = role
       }
     },
-    {
-      for role in local.recovery_project_roles : "recovery:${role}" => {
-        boundary = "recovery"
-        role     = role
-      }
-    },
   )
 
   operator_project_bindings = {
@@ -58,9 +46,8 @@ locals {
   }
 
   management_buckets = merge({
-    backups  = google_storage_bucket.backups.name
-    receipts = google_storage_bucket.receipts.name
-    state    = google_storage_bucket.state.name
+    backups = google_storage_bucket.backups.name
+    state   = google_storage_bucket.state.name
   }, { for service, bucket in google_storage_bucket.pgbackrest : "pgbackrest-${service}" => bucket.name })
 
   operator_bucket_bindings = {
@@ -70,10 +57,6 @@ locals {
       bucket    = local.management_buckets[binding[1]]
     }
   }
-
-  foundation_state_folders = toset(["bootstrap", "foundation"])
-  recovery_state_folders   = local.recovery_state_prefixes
-  state_bucket_viewers     = toset(["recovery"])
 }
 
 resource "google_service_account" "automation" {
@@ -117,8 +100,7 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   display_name                       = each.value.display_name
   description                        = "Trusts only ${local.github.repository} ${join(", ", keys(each.value.workflows))} on master${each.value.pull_requests == null ? "" : " and its own pull requests"}."
   disabled                           = false
-  # The recovery provider is unlocked for retirement in #666.
-  deletion_policy = each.key == "recovery" ? "DELETE" : "PREVENT"
+  deletion_policy                    = "PREVENT"
 
   attribute_mapping = merge(
     {
@@ -282,74 +264,12 @@ resource "google_storage_bucket_iam_member" "foundation_admin" {
   member = "serviceAccount:${google_service_account.automation["foundation"].email}"
 }
 
-resource "google_storage_bucket_iam_member" "automation_bucket_viewer" {
-  for_each = local.state_bucket_viewers
-
-  bucket = google_storage_bucket.state.name
-  role   = "roles/storage.bucketViewer"
-  member = "serviceAccount:${google_service_account.automation[each.key].email}"
-}
-
 # Read-only planning reads every root's state but cannot create .tflock
 # objects, so pull-request and drift plans run with -lock=false.
 resource "google_storage_bucket_iam_member" "plan_state" {
   bucket = google_storage_bucket.state.name
   role   = "roles/storage.objectViewer"
   member = "serviceAccount:${google_service_account.automation["plan"].email}"
-}
-
-resource "google_storage_managed_folder_iam_member" "foundation_state" {
-  for_each = local.foundation_state_folders
-
-  bucket         = google_storage_managed_folder.state[each.value].bucket
-  managed_folder = google_storage_managed_folder.state[each.value].name
-  role           = "roles/storage.objectAdmin"
-  member         = "serviceAccount:${google_service_account.automation["foundation"].email}"
-}
-
-resource "google_storage_managed_folder_iam_member" "recovery_state" {
-  for_each = local.recovery_state_folders
-
-  bucket         = google_storage_managed_folder.recovery_state[each.value].bucket
-  managed_folder = google_storage_managed_folder.recovery_state[each.value].name
-  role           = "roles/storage.objectAdmin"
-  member         = "serviceAccount:${google_service_account.automation["recovery"].email}"
-}
-
-resource "google_storage_bucket_iam_member" "recovery_backup_viewer" {
-  bucket = google_storage_bucket.backups.name
-  role   = "roles/storage.objectViewer"
-  member = "serviceAccount:${google_service_account.automation["recovery"].email}"
-
-  # The GitHub runner verifies only exact immutable manifest metadata. Backup
-  # dumps are read later by the replacement runtime, never by CI.
-  condition {
-    title       = "RecoveryManifestsOnly"
-    description = "Allow protected recovery to read only committed backup manifests, not database dumps."
-    expression  = "resource.type == 'storage.googleapis.com/Object' && resource.name.startsWith('projects/_/buckets/${google_storage_bucket.backups.name}/objects/v1/') && resource.name.endsWith('/completed.manifest')"
-  }
-}
-
-resource "google_storage_managed_folder_iam_member" "recovery_receipt_viewer" {
-  bucket         = google_storage_managed_folder.receipt["production/success"].bucket
-  managed_folder = google_storage_managed_folder.receipt["production/success"].name
-  role           = "roles/storage.objectViewer"
-  member         = "serviceAccount:${google_service_account.automation["recovery"].email}"
-}
-
-resource "google_storage_managed_folder_iam_member" "recovery_receipt_creator" {
-  bucket         = google_storage_managed_folder.receipt["recovery"].bucket
-  managed_folder = google_storage_managed_folder.receipt["recovery"].name
-  role           = "roles/storage.objectCreator"
-  member         = "serviceAccount:${google_service_account.automation["recovery"].email}"
-}
-
-# Receipt uploads inspect destination metadata before the create-only write.
-resource "google_storage_managed_folder_iam_member" "recovery_receipt_readback" {
-  bucket         = google_storage_managed_folder.receipt["recovery"].bucket
-  managed_folder = google_storage_managed_folder.receipt["recovery"].name
-  role           = "roles/storage.objectViewer"
-  member         = "serviceAccount:${google_service_account.automation["recovery"].email}"
 }
 
 resource "google_project_iam_audit_config" "management" {

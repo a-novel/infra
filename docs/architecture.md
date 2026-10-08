@@ -94,14 +94,11 @@ Workloads pin numeric versions in `terraform.tfvars`, never `latest`.
 All state lives in `a-novel-management-prod-232403541574-tofu-state`. The bucket keeps 90 days of
 versions and 7 days of soft-deleted objects.
 
-| Prefix                                    | Root                  |
-| ----------------------------------------- | --------------------- |
-| `bootstrap/`, `foundation/`               | bootstrap, foundation |
-| `json-keys/`, `authentication/`           | service roots         |
-| `foundation/recovery/services/<project>/` | one recovery drill    |
-
-Older prefixes (`release/`, `workloads/…`, `foundation/workloads/…`) hold historical states from
-before the per-service roots. Nothing reads them.
+| Prefix                          | Root                  |
+| ------------------------------- | --------------------- |
+| `bootstrap/`, `foundation/`     | bootstrap, foundation |
+| `json-keys/`, `authentication/` | service roots         |
+| `recovery/<project>/`           | one recovery drill    |
 
 ## Observability
 

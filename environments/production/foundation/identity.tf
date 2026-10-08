@@ -2,14 +2,9 @@ locals {
   automation_service_accounts = {
     foundation = "infra-foundation@${var.management_project_id}.iam.gserviceaccount.com"
     plan       = "infra-plan@${var.management_project_id}.iam.gserviceaccount.com"
-    recovery   = "infra-recovery@${var.management_project_id}.iam.gserviceaccount.com"
   }
 
   runtime_identities = {
-    authentication = {
-      account_id   = "agora-authentication"
-      display_name = "Agora Authentication runtime"
-    }
     authentication_initializer = {
       account_id   = "agora-auth-initializer"
       display_name = "Agora Authentication initializer"
@@ -21,10 +16,6 @@ locals {
     json_keys_database = {
       account_id   = "agora-json-keys-database"
       display_name = "Agora JSON Keys PostgreSQL host"
-    }
-    json_keys = {
-      account_id   = "agora-json-keys"
-      display_name = "Agora JSON Keys runtime"
     }
     scheduler_invoker = {
       account_id   = "agora-scheduler-invoker"
@@ -62,10 +53,6 @@ locals {
     internal = {
       short_name  = "internal"
       description = "Private service-to-service invocation."
-    }
-    recovery = {
-      short_name  = "recovery"
-      description = "Disposable clean-room recovery execution."
     }
     release = {
       short_name  = "release"
@@ -110,14 +97,6 @@ locals {
   }
 
   runtime_secret_access = {
-    "authentication:postgres-password" = {
-      identity = "authentication"
-      secret   = "production-authentication-postgres-password"
-    }
-    "authentication:smtp-password" = {
-      identity = "authentication"
-      secret   = "production-authentication-smtp-sender-password"
-    }
     "database:authentication-password" = {
       identity = "authentication_database"
       secret   = "production-authentication-postgres-password"
@@ -125,18 +104,6 @@ locals {
     "database:json-keys-password" = {
       identity = "json_keys_database"
       secret   = "production-json-keys-postgres-password"
-    }
-    "json-keys:app-master-key" = {
-      identity = "json_keys"
-      secret   = "production-json-keys-app-master-key"
-    }
-    "json-keys:postgres-password" = {
-      identity = "json_keys"
-      secret   = "production-json-keys-postgres-password"
-    }
-    "authentication:waitlist-secret" = {
-      identity = "authentication"
-      secret   = "production-authentication-waitlist-secret"
     }
     "authentication-initializer:postgres-password" = {
       identity = "authentication_initializer"
@@ -219,8 +186,7 @@ resource "google_service_account" "runtime" {
   display_name = each.value.display_name
   description  = "Keyless production identity for the ${replace(each.key, "_", " ")} boundary."
 
-  # The legacy runtime accounts are unlocked for retirement in #666.
-  deletion_policy = contains(["authentication", "json_keys"], each.key) ? "DELETE" : "PREVENT"
+  deletion_policy = "PREVENT"
 
   depends_on = [google_project_service.workload["iam.googleapis.com"]]
   lifecycle {
@@ -288,18 +254,6 @@ resource "google_project_iam_member" "scheduler_cloud_run_invoker" {
     title       = "ScheduledCloudRunOnly"
     description = "Scheduler may invoke only explicitly tagged idempotent jobs."
     expression  = "resource.matchTagId('${google_tags_tag_key.cloud_run_invocation.id}', '${google_tags_tag_value.cloud_run_invocation["scheduled"].id}')"
-  }
-}
-
-resource "google_project_iam_member" "internal_cloud_run_invoker" {
-  project = google_project.workload.project_id
-  role    = "roles/run.servicesInvoker"
-  member  = "serviceAccount:${google_service_account.runtime["authentication"].email}"
-
-  condition {
-    title       = "InternalCloudRunOnly"
-    description = "Authentication may invoke only private internal services."
-    expression  = "resource.matchTagId('${google_tags_tag_key.cloud_run_invocation.id}', '${google_tags_tag_value.cloud_run_invocation["internal"].id}')"
   }
 }
 
@@ -373,14 +327,6 @@ resource "google_project_iam_member" "database_runtime_observability" {
   project = google_project.workload.project_id
   role    = each.value.role
   member  = "serviceAccount:${google_service_account.runtime[each.value.identity].email}"
-}
-
-resource "google_project_iam_member" "application_telemetry" {
-  for_each = toset(["authentication", "json_keys"])
-
-  project = google_project.workload.project_id
-  role    = "roles/telemetry.writer"
-  member  = "serviceAccount:${google_service_account.runtime[each.key].email}"
 }
 
 resource "google_project_iam_member" "database_operator" {

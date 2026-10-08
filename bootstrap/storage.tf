@@ -1,13 +1,5 @@
 locals {
   bucket_name_prefix = "${var.management_project_id}-${data.google_project.management.number}"
-  state_prefixes     = toset(["bootstrap", "foundation", "release"])
-  recovery_state_prefixes = toset([
-    "foundation/recovery",
-    "foundation/plans/recovery",
-    "release/recovery",
-    "release/plans/recovery",
-  ])
-  receipt_prefixes = toset(["production", "production/success", "recovery"])
 }
 
 resource "google_storage_bucket" "state" {
@@ -40,103 +32,11 @@ resource "google_storage_bucket" "state" {
     }
   }
 
-  lifecycle_rule {
-    action {
-      type = "Delete"
-    }
-
-    # Metadata enforces a precise 24-hour expiry. This removes abandoned live
-    # plan objects on Cloud Storage's next daily lifecycle sweep.
-    condition {
-      age = 2
-      matches_prefix = [
-        "bootstrap/plans/",
-        "foundation/plans/",
-        "release/plans/",
-      ]
-    }
-  }
-
-  lifecycle_rule {
-    action {
-      type = "Delete"
-    }
-
-    # Plans share the service state folder; both name selectors must match.
-    condition {
-      age            = 2
-      matches_prefix = ["services/"]
-      matches_suffix = ["/plan.tfplan", "/plan.metadata.json"]
-      with_state     = "ANY"
-    }
-  }
-
-  lifecycle_rule {
-    action {
-      type = "Delete"
-    }
-
-    condition {
-      age = 2
-      matches_prefix = [
-        "workloads/production/private/",
-        "workloads/production/public/",
-      ]
-      matches_suffix = ["/plan.tfplan", "/plan.metadata.json"]
-      with_state     = "ANY"
-    }
-  }
-
-  lifecycle_rule {
-    action {
-      type = "Delete"
-    }
-
-    condition {
-      age            = 2
-      matches_prefix = ["workloads/production/public-api/"]
-      matches_suffix = ["/plan.tfplan", "/plan.metadata.json"]
-      with_state     = "ANY"
-    }
-  }
-
   lifecycle {
     prevent_destroy = true
   }
 
   depends_on = [google_project_service.management["storage.googleapis.com"]]
-}
-
-resource "google_storage_managed_folder" "state" {
-  for_each = local.state_prefixes
-
-  bucket = google_storage_bucket.state.name
-  name   = "${each.value}/"
-  # Unlocked for retirement in #666. Deleting a managed folder keeps its objects.
-  force_destroy   = true
-  deletion_policy = "DELETE"
-
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
-# Recovery writes only disposable state and plans. Nested managed folders keep
-# that incident boundary out of bootstrap and normal production state paths.
-resource "google_storage_managed_folder" "recovery_state" {
-  for_each = local.recovery_state_prefixes
-
-  bucket = google_storage_bucket.state.name
-  name   = "${each.value}/"
-  # Unlocked for retirement in #666. Deleting a managed folder keeps its objects.
-  force_destroy   = true
-  deletion_policy = "DELETE"
-
-  lifecycle {
-    prevent_destroy = true
-  }
-
-  depends_on = [google_storage_managed_folder.state]
 }
 
 resource "google_storage_bucket" "backups" {
@@ -178,57 +78,3 @@ resource "google_storage_bucket" "backups" {
   depends_on = [google_project_service.management["storage.googleapis.com"]]
 }
 
-resource "google_storage_bucket" "receipts" {
-  name          = "${local.bucket_name_prefix}-deployment-receipts"
-  location      = var.storage_location
-  storage_class = "STANDARD"
-
-  # Unlocked for retirement in #666, with its objects.
-  force_destroy               = true
-  public_access_prevention    = "enforced"
-  uniform_bucket_level_access = true
-
-  versioning {
-    enabled = true
-  }
-
-  soft_delete_policy {
-    retention_duration_seconds = 604800
-  }
-
-  lifecycle_rule {
-    action {
-      type = "Delete"
-    }
-
-    # Both conditions must match, preserving at least 20 receipt generations
-    # and every generation younger than one year.
-    condition {
-      days_since_noncurrent_time = 365
-      num_newer_versions         = 20
-    }
-  }
-
-  lifecycle {
-    prevent_destroy = true
-  }
-
-  depends_on = [google_project_service.management["storage.googleapis.com"]]
-}
-
-# Receipt paths are authorization boundaries, not naming conventions. Release
-# owns production evidence; recovery can read only successful production state
-# and can create evidence only beneath its separate recovery prefix.
-resource "google_storage_managed_folder" "receipt" {
-  for_each = local.receipt_prefixes
-
-  bucket = google_storage_bucket.receipts.name
-  name   = "${each.value}/"
-  # Unlocked for retirement in #666. Deleting a managed folder keeps its objects.
-  force_destroy   = true
-  deletion_policy = "DELETE"
-
-  lifecycle {
-    prevent_destroy = true
-  }
-}

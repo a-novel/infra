@@ -99,7 +99,7 @@ gcloud iam service-accounts remove-iam-policy-binding "pgbr-$SERVICE-recovery@$M
   --project="$MGMT" --role=roles/iam.serviceAccountUser \
   --member="serviceAccount:infra-foundation@$MGMT.iam.gserviceaccount.com"
 gcloud projects delete "$DRILL"
-gcloud storage rm -r "$STATE/foundation/recovery/services/$DRILL/"
+gcloud storage rm -r "$STATE/recovery/$DRILL/"
 ```
 
 A deleted project keeps billing its disks until Google purges it, which can take up to 30 days.
