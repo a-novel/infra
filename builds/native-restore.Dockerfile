@@ -1,4 +1,4 @@
-FROM docker.io/library/golang:1.27.1-alpine AS builder
+FROM docker.io/library/golang:1.27.2-alpine AS builder
 ENV CGO_ENABLED=0
 WORKDIR /app
 COPY go.mod go.sum ./
