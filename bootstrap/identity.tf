@@ -117,7 +117,8 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   display_name                       = each.value.display_name
   description                        = "Trusts only ${local.github.repository} ${join(", ", keys(each.value.workflows))} on master${each.value.pull_requests == null ? "" : " and its own pull requests"}."
   disabled                           = false
-  deletion_policy                    = "PREVENT"
+  # The recovery provider is unlocked for retirement in #666.
+  deletion_policy = each.key == "recovery" ? "DELETE" : "PREVENT"
 
   attribute_mapping = merge(
     {

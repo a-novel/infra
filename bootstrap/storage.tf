@@ -110,10 +110,11 @@ resource "google_storage_bucket" "state" {
 resource "google_storage_managed_folder" "state" {
   for_each = local.state_prefixes
 
-  bucket          = google_storage_bucket.state.name
-  name            = "${each.value}/"
-  force_destroy   = false
-  deletion_policy = "PREVENT"
+  bucket = google_storage_bucket.state.name
+  name   = "${each.value}/"
+  # Unlocked for retirement in #666. Deleting a managed folder keeps its objects.
+  force_destroy   = true
+  deletion_policy = "DELETE"
 
   lifecycle {
     prevent_destroy = true
@@ -125,10 +126,11 @@ resource "google_storage_managed_folder" "state" {
 resource "google_storage_managed_folder" "recovery_state" {
   for_each = local.recovery_state_prefixes
 
-  bucket          = google_storage_bucket.state.name
-  name            = "${each.value}/"
-  force_destroy   = false
-  deletion_policy = "PREVENT"
+  bucket = google_storage_bucket.state.name
+  name   = "${each.value}/"
+  # Unlocked for retirement in #666. Deleting a managed folder keeps its objects.
+  force_destroy   = true
+  deletion_policy = "DELETE"
 
   lifecycle {
     prevent_destroy = true
@@ -181,7 +183,8 @@ resource "google_storage_bucket" "receipts" {
   location      = var.storage_location
   storage_class = "STANDARD"
 
-  force_destroy               = false
+  # Unlocked for retirement in #666, with its objects.
+  force_destroy               = true
   public_access_prevention    = "enforced"
   uniform_bucket_level_access = true
 
@@ -219,10 +222,11 @@ resource "google_storage_bucket" "receipts" {
 resource "google_storage_managed_folder" "receipt" {
   for_each = local.receipt_prefixes
 
-  bucket          = google_storage_bucket.receipts.name
-  name            = "${each.value}/"
-  force_destroy   = false
-  deletion_policy = "PREVENT"
+  bucket = google_storage_bucket.receipts.name
+  name   = "${each.value}/"
+  # Unlocked for retirement in #666. Deleting a managed folder keeps its objects.
+  force_destroy   = true
+  deletion_policy = "DELETE"
 
   lifecycle {
     prevent_destroy = true
