@@ -49,7 +49,7 @@ jobs:
           tofu fmt -check -recursive -diff
           tflint --init --config="$GITHUB_WORKSPACE/.tflint.hcl"
           tflint --recursive --config="$GITHUB_WORKSPACE/.tflint.hcl" --format=compact
-          for dir in bootstrap environments/production/* environments/service-recovery $(dirname modules/*/tests | sort -u); do
+          for dir in bootstrap environments/production/* environments/recovery $(dirname modules/*/tests | sort -u); do
             echo "::group::$dir"
             tofu -chdir="$dir" init -backend=false -input=false -lockfile=readonly -no-color >/dev/null
             tofu -chdir="$dir" validate -no-color
@@ -76,7 +76,6 @@ jobs:
         with:
           scan-type: fs
           scan-ref: .
-          trivyignores: .trivyignore.yaml
           scanners: vuln,misconfig,secret
           severity: HIGH,CRITICAL
           exit-code: "1"
@@ -106,12 +105,9 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: pnpm/action-setup@v6.1.0
-
       - uses: actions/setup-node@v7.1.0
         with:
-          node-version-file: .node-version
-          cache: pnpm
+          node-version: "24"
 
       - uses: actions/setup-go@v7.0.0
         with:
@@ -120,10 +116,22 @@ jobs:
 
       - name: Lint formatting, Go and Renovate configuration
         shell: bash
+        env:
+          # renovate: datasource=npm depName=prettier
+          prettier_version: 3.9.9
+          # renovate: datasource=npm depName=renovate
+          renovate_version: 44.132.6
         run: |
           set -euo pipefail
-          pnpm install --frozen-lockfile
-          pnpm lint
+          npx --yes "prettier@$prettier_version" --no-config --no-editorconfig --check .
+          npx --yes --package "renovate@$renovate_version" -- renovate-config-validator --strict
+          go tool -modfile=golangci-lint.mod golangci-lint run ./...
+
+      - name: Lint shell scripts
+        uses: a-novel-kit/workflows/generic-actions/lint-shell@v1.38.4
+        with:
+          # renovate: datasource=github-releases depName=koalaman/shellcheck
+          version: "0.11.0"
 
       - name: Lint GitHub Actions syntax
         uses: raven-actions/actionlint@v2.2.0
@@ -169,16 +177,15 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Exercise the offline backup and restore proof
+      - name: Run the backup tests inside each database image
         shell: bash
         run: |
           set -euo pipefail
           for service in json-keys authentication; do
-            docker build -f builds/pgbackrest-proof.Dockerfile \
-              --build-arg DATABASE_SERVICE="$service" -t "pgbackrest-proof:$service" .
+            docker build -f builds/backup-test.Dockerfile --build-arg DATABASE_SERVICE="$service" -t "backup-test:$service" .
             docker run --rm --network=none --read-only --cap-drop=all \
               --security-opt=no-new-privileges --cpus=1 --memory=2g --pids-limit=128 \
-              --tmpfs=/tmp:rw,size=1g,mode=1777 "pgbackrest-proof:$service"
+              --tmpfs=/tmp:rw,size=1g,mode=1777 "backup-test:$service"
           done
 
   # Each root's plan is its own required check. GitHub issues no OIDC token to
