@@ -52,18 +52,6 @@ resource "google_artifact_registry_repository" "production" {
   }
 }
 
-# Recovery can copy receipt-owned immutable manifests out of production, but
-# has no writer role there.
-resource "google_artifact_registry_repository_iam_member" "recovery_reader" {
-  count = 1
-
-  project    = google_project.workload.project_id
-  location   = google_artifact_registry_repository.production.location
-  repository = google_artifact_registry_repository.production.repository_id
-  role       = "roles/artifactregistry.reader"
-  member     = "serviceAccount:infra-recovery@${var.management_project_id}.iam.gserviceaccount.com"
-}
-
 # The PostgreSQL VM pulls its pinned container directly. Cloud Run pulls
 # same-project images through Google's managed service agent instead of the
 # application runtime identity, so no redundant reader grant is added there.

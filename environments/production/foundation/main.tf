@@ -65,24 +65,10 @@ resource "google_project" "workload" {
     }
 
     precondition {
-      condition = (
-        var.adopt_existing_project ||
-        var.organization_id != null ||
-        var.folder_id != null
-      )
-      error_message = "Set adopt_existing_project when neither organization_id nor folder_id is configured."
+      condition     = var.organization_id != null || var.folder_id != null
+      error_message = "Set organization_id or folder_id."
     }
   }
-}
-
-# Adopt either the standalone project's human-created shell or a project that
-# Google created before an interrupted apply could persist it to remote state.
-# The import remains inside the saved-plan review/apply boundary.
-import {
-  for_each = var.adopt_existing_project ? toset([var.workload_project_id]) : toset([])
-
-  to = google_project.workload
-  id = each.value
 }
 
 resource "google_project_service" "workload" {

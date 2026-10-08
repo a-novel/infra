@@ -1,4 +1,3 @@
-adopt_existing_project = false
 authentication_initializer_principals = [
   "user:geoffroy.vincent@agorastoryverse.com",
 ]
@@ -20,7 +19,6 @@ pgbackrest_repository_services = [
 public_api_project_id = "a-novel-public-api-prod"
 public_project_id     = "a-novel-public-prod"
 region                = "europe-west1"
-service_projects      = {}
 service_release_zones = {
   authentication = [
     "private",
@@ -29,12 +27,6 @@ service_release_zones = {
   json-keys = [
     "private",
   ]
-}
-service_recovery_projects = {
-  a-novel-recovery-261006-jk  = "json-keys"
-  a-novel-recovery-261006-jk2 = "json-keys"
-  a-novel-recovery-261006-jk3 = "json-keys"
-  a-novel-recovery-261006-jk4 = "json-keys"
 }
 shared_vpc_enabled    = true
 subnet_cidr           = "10.20.0.0/24"
