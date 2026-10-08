@@ -25,8 +25,8 @@ var authenticationVerificationSQL string
 //go:embed authenticationData.sql
 var authenticationDataSQL string
 
-// VerificationSQL shares the service schema contract with maintenance checks on existing capacity.
-func VerificationSQL(service string) (string, error) {
+// schemaCheck returns the service's schema check.
+func schemaCheck(service string) (string, error) {
 	switch service {
 	case "json-keys":
 		return verificationSQL, nil
@@ -44,7 +44,7 @@ func VerifySQL(ctx context.Context, request Request, parent string, execute func
 		return errors.New("offline SQL verification was not selected")
 	}
 	role := "agora_" + strings.ReplaceAll(request.Service, "-", "_")
-	verificationQuery, err := VerificationSQL(request.Service)
+	verificationQuery, err := schemaCheck(request.Service)
 	if err != nil {
 		return err
 	}
@@ -174,19 +174,4 @@ type sqlCompletion struct {
 	Set        string `json:"set"`
 	Stopped    bool   `json:"postgresql_stopped"`
 	DataSHA256 string `json:"data_sha256,omitempty"`
-}
-
-// CheckEvidence requires the selected outcome; files-only success cannot authorize SQL completion.
-func (request Request) CheckEvidence(files map[string]string) error {
-	if err := request.CheckFiles(files); err != nil {
-		return err
-	}
-	if request.VerifySQL {
-		var result sqlCompletion
-		expected := sqlCompletion{SystemID: request.SystemID, Set: request.Set, Stopped: true, DataSHA256: request.ExpectedDataSHA256}
-		if json.Unmarshal([]byte(files["verification/sql-verified.json"]), &result) != nil || result != expected {
-			return errors.New("stopped, SQL-verified recovery is unconfirmed")
-		}
-	}
-	return nil
 }

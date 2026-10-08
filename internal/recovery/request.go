@@ -37,23 +37,6 @@ type Request struct {
 	ExpectedDataSHA256 string `json:"expected_data_sha256,omitempty"`
 }
 
-// Outcome identifies the evidence required before the recovery guard can be released.
-func (r Request) Outcome() string {
-	if r.VerifySQL {
-		return "sql-verified"
-	}
-	return "files-restored"
-}
-
-// Confirmation binds operator acknowledgement to the selected execution boundary.
-func (r Request) Confirmation(generation string) string {
-	action := "RESTORE-FILES"
-	if r.VerifySQL {
-		action = "RESTORE-SQL"
-	}
-	return action + " " + r.Project + " " + generation
-}
-
 // Validate limits the pilot to exact-set recovery to backup consistency, without promotion.
 func (r Request) Validate() error {
 	for _, project := range []string{r.SourceProject, r.Project, r.ManagementProject} {
@@ -152,4 +135,23 @@ func (r Request) CheckCatalog(data []byte) error {
 
 func matches(pattern, value string) bool {
 	return regexp.MustCompile("^(?:" + pattern + ")$").MatchString(value)
+}
+
+// CheckFiles verifies a worker's files-only completion, never database startup or SQL recovery.
+func (request Request) CheckFiles(files map[string]string) error {
+	var actual Request
+	var result struct {
+		SystemID string `json:"system_id"`
+		Set      string `json:"set"`
+		Started  *bool  `json:"postgresql_started"`
+	}
+	if json.Unmarshal([]byte(files["request.json"]), &actual) != nil || actual != request ||
+		request.CheckCatalog([]byte(files["catalog.json"])) != nil {
+		return errors.New("restore evidence differs from the selected database and backup")
+	}
+	if json.Unmarshal([]byte(files["files-restored.json"]), &result) != nil || result.Started == nil || *result.Started ||
+		result.SystemID != request.SystemID || result.Set != request.Set {
+		return errors.New("files-only completion is unconfirmed")
+	}
+	return nil
 }
