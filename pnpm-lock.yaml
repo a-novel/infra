@@ -180,8 +180,8 @@ importers:
         specifier: 3.9.9
         version: 3.9.9
       renovate:
-        specifier: 44.132.5
-        version: 44.132.5(patch_hash=20b2723f1c4470a8f928d4291049ed7455769229dc305074f0264ef1c4e29897)(supports-color@7.2.0)(typanion@3.14.0)
+        specifier: 44.132.6
+        version: 44.132.6(patch_hash=20b2723f1c4470a8f928d4291049ed7455769229dc305074f0264ef1c4e29897)(supports-color@7.2.0)(typanion@3.14.0)
 
 packages:
 
@@ -2086,8 +2086,8 @@ packages:
   remark@15.0.1:
     resolution: {integrity: sha512-Eht5w30ruCXgFmxVUSlNWQ9iiimq07URKeFS3hNc8cUWy1llX4KDWfyEDZRycMc+znsN9Ux5/tJ/BFdgdOwA3A==}
 
-  renovate@44.132.5:
-    resolution: {integrity: sha512-3bCOC/3fz5ILyaRyOQU5WYmxRMlJsDyRe1piozt14lBeQL0phqD3ixXpH9GtWjBE0zxp7jbzMvWReflHhg7f5A==}
+  renovate@44.132.6:
+    resolution: {integrity: sha512-/9jC2dLW0KqkyO6vf8V9kUTsBgHrXiwY51FgjH5Kz5I+q5ClmLGcb6PIR2gq2pWTMDS+0OqLdBhbgWAAHxirLQ==}
     engines: {node: ^24.11.0, pnpm: ^11.0.0}
     hasBin: true
 
@@ -4817,7 +4817,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  renovate@44.132.5(patch_hash=20b2723f1c4470a8f928d4291049ed7455769229dc305074f0264ef1c4e29897)(supports-color@7.2.0)(typanion@3.14.0):
+  renovate@44.132.6(patch_hash=20b2723f1c4470a8f928d4291049ed7455769229dc305074f0264ef1c4e29897)(supports-color@7.2.0)(typanion@3.14.0):
     dependencies:
       '@aws-sdk/client-codecommit': 3.1139.0
       '@aws-sdk/client-ec2': 3.1139.0
