@@ -35,7 +35,6 @@ workload_project_name = "Agora production"
 native_backups = {
   json-keys = {
     repository_ip     = "10.20.0.6"
-    server_image      = "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-json-keys-private-production/service-json-keys/database@sha256:d81116e5928bb9630185daf89d8918a56fb0ad6260eb87abfb7702c704a15374"
     credentials_image = "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-json-keys-private-tooling/host-credentials@sha256:a5e264fc51c824c52fb6fd59b035e14e52fdc9f77e47b0375b352d8ad9bfd00d"
     ca_version        = "1"
     identity_version  = "2"
@@ -45,7 +44,6 @@ native_backups = {
   }
   authentication = {
     repository_ip     = "10.20.0.7"
-    server_image      = "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-authentication-private-production/service-authentication/database@sha256:78bcd4cba6aa60c37e46fad0b8625c8424d118014fc5efa645e0bdee05a8d871"
     credentials_image = "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-authentication-private-tooling/host-credentials@sha256:a5e264fc51c824c52fb6fd59b035e14e52fdc9f77e47b0375b352d8ad9bfd00d"
     client_name       = "agora-authentication-database.a-novel-production-prod"
     ca_version        = "1"
@@ -56,13 +54,15 @@ native_backups = {
 }
 database_releases = {
   json-keys = {
-    image            = "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-production/service-json-keys/database@sha256:d81116e5928bb9630185daf89d8918a56fb0ad6260eb87abfb7702c704a15374"
     revision         = "13df9600c58d376562c1809782d0c533a10e91c5"
     password_version = "2"
   }
   authentication = {
-    image            = "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-production/service-authentication/database@sha256:78bcd4cba6aa60c37e46fad0b8625c8424d118014fc5efa645e0bdee05a8d871"
     revision         = "906476efeaeddef29b81dd7a32b9a6fa4e2ae0f6"
     password_version = "2"
   }
+}
+database_images = {
+  json-keys      = "ghcr.io/a-novel/service-json-keys/database:v2.6.6@sha256:d81116e5928bb9630185daf89d8918a56fb0ad6260eb87abfb7702c704a15374"
+  authentication = "ghcr.io/a-novel/service-authentication/database:v2.11.0@sha256:78bcd4cba6aa60c37e46fad0b8625c8424d118014fc5efa645e0bdee05a8d871"
 }

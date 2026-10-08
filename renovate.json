@@ -76,6 +76,15 @@
       "separateMajorMinor": true
     },
     {
+      "description": "Propose database images in their own pull request: merging updates the host templates, and rolling the hosts is a separate manual step.",
+      "matchDatasources": ["docker"],
+      "matchFileNames": ["environments/production/*/terraform.tfvars"],
+      "matchPackageNames": ["ghcr.io/a-novel/*/database"],
+      "groupName": "database images",
+      "groupSlug": "database-images",
+      "minimumGroupSize": 1
+    },
+    {
       "description": "Let the OpenTofu managers own required_version instead of treating it as HashiCorp Terraform.",
       "matchPackageNames": ["hashicorp/terraform"],
       "enabled": false

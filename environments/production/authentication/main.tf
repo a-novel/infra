@@ -59,7 +59,7 @@ module "backups" {
     subnetwork = local.foundation.network.subnet_id
     cos_image  = var.backup_repository.cos_image
   }
-  runtime                   = var.backup_repository.runtime
+  runtime                   = merge(var.backup_repository.runtime, { server_image = local.image.database })
   project_id                = local.private_project_id
   region                    = local.region
   bucket                    = "a-novel-management-prod-232403541574-pgbr-authentication"
