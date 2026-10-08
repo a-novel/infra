@@ -141,22 +141,29 @@ run "builds_the_protected_management_plane" {
       for name, provider in google_iam_workload_identity_pool_provider.github :
       strcontains(provider.attribute_condition, "assertion.repository_owner_id == '131281268'") &&
       strcontains(provider.attribute_condition, "assertion.repository_id == '1344262359'") &&
-      strcontains(provider.attribute_condition, "assertion.ref == 'refs/heads/master'") &&
-      strcontains(provider.attribute_condition, "a-novel/infra/.github/workflows/${local.trust_boundaries[name].workflow_filename}@refs/heads/master") &&
       provider.attribute_mapping["attribute.trust_boundary"] == "'${name}'" &&
       provider.deletion_policy == "PREVENT" && !provider.disabled &&
       provider.oidc[0].allowed_audiences == null
     ])
-    error_message = "A GitHub provider lost its immutable repository, branch, workflow, boundary, or canonical-audience restriction."
+    error_message = "A GitHub provider lost its immutable repository, boundary, or canonical-audience restriction."
   }
 
   assert {
     condition = (
-      !strcontains(google_iam_workload_identity_pool_provider.github["plan"].attribute_condition, "assertion.environment") &&
-      strcontains(google_iam_workload_identity_pool_provider.github["foundation"].attribute_condition, "assertion.environment == 'production-foundation'") &&
-      strcontains(google_iam_workload_identity_pool_provider.github["recovery"].attribute_condition, "assertion.environment == 'production-recovery'")
+      google_iam_workload_identity_pool_provider.github["plan"].attribute_condition == join("", [
+        "assertion.repository_owner_id == '131281268' && assertion.repository_id == '1344262359' && (",
+        "(assertion.ref == 'refs/heads/master' && assertion.workflow_ref == 'a-novel/infra/.github/workflows/drift.yaml@refs/heads/master') || ",
+        "(assertion.event_name == 'pull_request' && assertion.base_ref == 'master' && ",
+        "assertion.workflow_ref.startsWith('a-novel/infra/.github/workflows/main.yaml@refs/pull/')))",
+      ]) &&
+      google_iam_workload_identity_pool_provider.github["foundation"].attribute_condition == join("", [
+        "assertion.repository_owner_id == '131281268' && assertion.repository_id == '1344262359' && (",
+        "(assertion.ref == 'refs/heads/master' && assertion.workflow_ref == 'a-novel/infra/.github/workflows/deploy.yaml@refs/heads/master' && assertion.environment == 'production') || ",
+        "(assertion.ref == 'refs/heads/master' && assertion.workflow_ref == 'a-novel/infra/.github/workflows/foundation.yaml@refs/heads/master' && assertion.environment == 'production-foundation') || ",
+        "(assertion.ref == 'refs/heads/master' && assertion.workflow_ref == 'a-novel/infra/.github/workflows/recovery.yaml@refs/heads/master' && assertion.environment == 'production'))",
+      ])
     )
-    error_message = "Protected workflow environments no longer match the three approved trust boundaries."
+    error_message = "Only master workflows behind their environment may write, and only same-repository pull requests may plan."
   }
 
   assert {

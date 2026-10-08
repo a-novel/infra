@@ -116,7 +116,7 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   workload_identity_pool_id          = google_iam_workload_identity_pool.github.workload_identity_pool_id
   workload_identity_pool_provider_id = each.value.provider_id
   display_name                       = each.value.display_name
-  description                        = "Trusts only ${local.github.repository} ${each.value.workflow_filename} on master${each.value.environment == null ? "" : " through ${each.value.environment}"}."
+  description                        = "Trusts only ${local.github.repository} ${join(", ", keys(each.value.workflows))} on master${each.value.pull_requests == null ? "" : " and its own pull requests"}."
   disabled                           = false
   deletion_policy                    = "PREVENT"
 
@@ -132,22 +132,29 @@ resource "google_iam_workload_identity_pool_provider" "github" {
       # different CI service account after the provider accepts the token.
       "attribute.trust_boundary" = "'${each.key}'"
     },
-    each.value.environment == null ? {} : {
+    alltrue([for environment in values(each.value.workflows) : environment == null]) ? {} : {
       "attribute.environment" = "assertion.environment"
     },
   )
 
-  attribute_condition = join(" && ", concat(
-    [
-      "assertion.repository_owner_id == '${local.github.owner_id}'",
-      "assertion.repository_id == '${local.github.repository_id}'",
-      "assertion.ref == '${local.github.ref}'",
-      "assertion.workflow_ref == '${local.github.repository}/.github/workflows/${each.value.workflow_filename}@${local.github.ref}'",
-    ],
-    each.value.environment == null ? [] : [
-      "assertion.environment == '${each.value.environment}'",
-    ],
-  ))
+  attribute_condition = join(" && ", [
+    "assertion.repository_owner_id == '${local.github.owner_id}'",
+    "assertion.repository_id == '${local.github.repository_id}'",
+    "(${join(" || ", concat(
+      [for workflow, environment in each.value.workflows : "(${join(" && ", concat(
+        [
+          "assertion.ref == '${local.github.ref}'",
+          "assertion.workflow_ref == '${local.github.repository}/.github/workflows/${workflow}@${local.github.ref}'",
+        ],
+        environment == null ? [] : ["assertion.environment == '${environment}'"],
+      ))})"],
+      each.value.pull_requests == null ? [] : ["(${join(" && ", [
+        "assertion.event_name == 'pull_request'",
+        "assertion.base_ref == 'master'",
+        "assertion.workflow_ref.startsWith('${local.github.repository}/.github/workflows/${each.value.pull_requests}@refs/pull/')",
+      ])})"],
+    ))})",
+  ])
 
   oidc {
     # Omitting a custom audience keeps token acceptance pinned to Google's
@@ -283,8 +290,14 @@ resource "google_storage_bucket_iam_member" "automation_bucket_viewer" {
   member = "serviceAccount:${google_service_account.automation[each.key].email}"
 }
 
-# Read-only planning cannot create .tflock objects. The drift workflow must use
-# -lock=false and serialize each root with its writer instead of widening access.
+# Read-only planning reads every root's state but cannot create .tflock
+# objects, so pull-request and drift plans run with -lock=false.
+resource "google_storage_bucket_iam_member" "plan_state" {
+  bucket = google_storage_bucket.state.name
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:${google_service_account.automation["plan"].email}"
+}
+
 resource "google_storage_managed_folder_iam_member" "plan_state" {
   for_each = local.plan_state_folders
 

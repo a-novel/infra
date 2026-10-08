@@ -42,27 +42,34 @@ locals {
     ref           = "refs/heads/master"
   }
 
+  # Each boundary trusts exact master workflows, keyed to the GitHub
+  # environment they must run in (null for none). Plan also trusts pull requests
+  # from this repository; GitHub never issues OIDC tokens to fork pull requests.
   trust_boundaries = {
     plan = {
       service_account_id = "infra-plan"
       display_name       = "Infra plan and drift"
       provider_id        = "github-plan"
-      workflow_filename  = "drift.yaml"
-      environment        = null
+      workflows          = { "drift.yaml" = null }
+      pull_requests      = "main.yaml"
     }
     foundation = {
       service_account_id = "infra-foundation"
       display_name       = "Infra foundation deployment"
       provider_id        = "github-foundation"
-      workflow_filename  = "foundation.yaml"
-      environment        = "production-foundation"
+      workflows = {
+        "foundation.yaml" = "production-foundation"
+        "deploy.yaml"     = "production"
+        "recovery.yaml"   = "production"
+      }
+      pull_requests = null
     }
     recovery = {
       service_account_id = "infra-recovery"
       display_name       = "Infra disaster recovery"
       provider_id        = "github-recovery"
-      workflow_filename  = "recovery.yaml"
-      environment        = "production-recovery"
+      workflows          = { "recovery.yaml" = "production-recovery" }
+      pull_requests      = null
     }
   }
 
