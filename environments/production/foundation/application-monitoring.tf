@@ -11,7 +11,7 @@ resource "google_monitoring_alert_policy" "authentication_error_rate" {
   severity     = "ERROR"
 
   documentation {
-    content   = "Owner: production operator. More than 10% of Authentication requests returned 5xx for five minutes. Follow [Respond to production alerts](https://github.com/a-novel/infra/blob/master/docs/runbooks/respond-to-alerts.md#authentication-5xx-rate)."
+    content   = "Owner: production operator. More than 10% of Authentication requests returned 5xx for five minutes. Follow [the alert runbook](https://github.com/a-novel/infra/blob/master/docs/runbooks/alerts.md#authentication-5xx-rate)."
     mime_type = "text/markdown"
   }
 
@@ -66,7 +66,7 @@ resource "google_monitoring_alert_policy" "application_jobs_unhealthy" {
   severity     = "ERROR"
 
   documentation {
-    content   = "Owner: production operator. An Authentication or JSON Keys job failed, or JSON Keys rotation has not completed successfully for three hours. Follow [Respond to production alerts](https://github.com/a-novel/infra/blob/master/docs/runbooks/respond-to-alerts.md#application-jobs-and-key-rotation)."
+    content   = "Owner: production operator. An Authentication or JSON Keys job failed, or JSON Keys rotation has not completed successfully for three hours. Follow [the alert runbook](https://github.com/a-novel/infra/blob/master/docs/runbooks/alerts.md#application-jobs-and-key-rotation)."
     mime_type = "text/markdown"
   }
 

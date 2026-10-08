@@ -53,7 +53,7 @@ resource "google_monitoring_alert_policy" "database_capacity" {
   severity     = each.value.severity
 
   documentation {
-    content   = "Owner: production operator. The private PostgreSQL host crossed its reviewed ${lower(each.value.title)} threshold. Follow [Respond to production alerts](https://github.com/a-novel/infra/blob/master/docs/runbooks/respond-to-alerts.md#database-capacity) before changing capacity."
+    content   = "Owner: production operator. The private PostgreSQL host crossed its reviewed ${lower(each.value.title)} threshold. Follow [the alert runbook](https://github.com/a-novel/infra/blob/master/docs/runbooks/alerts.md#database-capacity) before changing capacity."
     mime_type = "text/markdown"
   }
 
