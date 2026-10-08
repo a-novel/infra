@@ -6,6 +6,12 @@ on:
   push:
     branches: [master]
   workflow_dispatch:
+    inputs:
+      roll_database:
+        description: Afterwards, move this service's database and backup hosts onto their applied configuration.
+        type: choice
+        default: none
+        options: [none, json-keys, authentication]
 
 permissions: {}
 
@@ -127,10 +133,37 @@ jobs:
           github_token: ${{ github.token }}
 
       # Authentication's health covers PostgreSQL, SMTP and the JSON Keys path.
-      - name: Check production health
+      - uses: $/.github/actions/health
+
+  # Database hosts never restart on apply. This manual step restarts the group
+  # member, or replaces it when its template changed, keeping its disk and IP.
+  roll-database:
+    if: github.event_name == 'workflow_dispatch' && inputs.roll_database != 'none'
+    needs: authentication
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: google-github-actions/auth@v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
+      - name: Roll the database and backup repository hosts
         shell: bash
+        env:
+          SERVICE: ${{ inputs.roll_database }}
         run: |
           set -euo pipefail
-          url="$(tofu -chdir=environments/production/authentication output -raw url)"
-          curl -sS --fail-with-body --retry 5 --retry-all-errors --retry-delay 10 --max-time 15 "$url/v2/healthcheck" |
-            tee /dev/stderr | jq -e 'length == 3 and all(.[]; .status == "up")' >/dev/null
+          where=(--zone=europe-west1-d --project=a-novel-production-prod)
+          gcloud compute instance-groups managed update-instances "agora-database-$SERVICE" --all-instances \
+            --minimal-action=restart --most-disruptive-allowed-action=replace "${where[@]}"
+          gcloud compute instance-groups managed wait-until "agora-database-$SERVICE" --stable --timeout=900 "${where[@]}"
+          gcloud compute instances stop "agora-pgbackrest-$SERVICE" "${where[@]}"
+          gcloud compute instances start "agora-pgbackrest-$SERVICE" "${where[@]}"
+      - uses: $/.github/actions/health
