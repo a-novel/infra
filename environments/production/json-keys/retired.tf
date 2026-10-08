@@ -10,13 +10,6 @@ resource "google_artifact_registry_repository_iam_member" "retired_recovery_read
   member     = "serviceAccount:infra-recovery@${local.management_project_id}.iam.gserviceaccount.com"
 }
 
-resource "google_artifact_registry_repository_iam_member" "retired_release_writer" {
-  location   = local.region
-  repository = module.runtime.repository_ids["production"]
-  role       = "roles/artifactregistry.writer"
-  member     = "serviceAccount:infra-json-keys-private@${local.project_id}.iam.gserviceaccount.com"
-}
-
 resource "google_project_iam_member" "retired_repository_ssh" {
   project = local.project_id
   role    = "roles/iap.tunnelResourceAccessor"

@@ -119,11 +119,6 @@ import {
 }
 
 import {
-  to = google_artifact_registry_repository_iam_member.retired_release_writer
-  id = "projects/a-novel-production-prod/locations/europe-west1/repositories/agora-json-keys-private-production roles/artifactregistry.writer serviceAccount:infra-json-keys-private@a-novel-production-prod.iam.gserviceaccount.com"
-}
-
-import {
   to = google_project_iam_member.retired_repository_ssh
   id = "a-novel-production-prod roles/iap.tunnelResourceAccessor serviceAccount:infra-foundation@a-novel-management-prod.iam.gserviceaccount.com RepositoryMaintenanceSSH-json-keys"
 }

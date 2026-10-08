@@ -114,11 +114,6 @@ import {
 }
 
 import {
-  to = google_artifact_registry_repository_iam_member.retired_private_release_writer
-  id = "projects/a-novel-production-prod/locations/europe-west1/repositories/agora-authentication-private-production roles/artifactregistry.writer serviceAccount:infra-authentication-private@a-novel-production-prod.iam.gserviceaccount.com"
-}
-
-import {
   to = google_project_iam_member.retired_private_repository_ssh
   id = "a-novel-production-prod roles/iap.tunnelResourceAccessor serviceAccount:infra-foundation@a-novel-management-prod.iam.gserviceaccount.com RepositoryMaintenanceSSH-authentication"
 }
@@ -176,11 +171,6 @@ import {
 import {
   to = google_artifact_registry_repository_iam_member.retired_api_recovery_readers["tooling"]
   id = "projects/a-novel-public-api-prod/locations/europe-west1/repositories/agora-authentication-api-tooling roles/artifactregistry.reader serviceAccount:infra-recovery@a-novel-management-prod.iam.gserviceaccount.com"
-}
-
-import {
-  to = google_artifact_registry_repository_iam_member.retired_api_release_writer
-  id = "projects/a-novel-public-api-prod/locations/europe-west1/repositories/agora-authentication-api-production roles/artifactregistry.writer serviceAccount:infra-authentication-api@a-novel-public-api-prod.iam.gserviceaccount.com"
 }
 
 import {

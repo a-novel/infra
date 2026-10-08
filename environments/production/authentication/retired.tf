@@ -11,14 +11,6 @@ resource "google_artifact_registry_repository_iam_member" "retired_private_recov
   member     = "serviceAccount:infra-recovery@${local.management_project_id}.iam.gserviceaccount.com"
 }
 
-resource "google_artifact_registry_repository_iam_member" "retired_private_release_writer" {
-  project    = local.private_project_id
-  location   = local.region
-  repository = module.private_runtime.repository_ids["production"]
-  role       = "roles/artifactregistry.writer"
-  member     = "serviceAccount:infra-authentication-private@${local.private_project_id}.iam.gserviceaccount.com"
-}
-
 resource "google_project_iam_member" "retired_private_repository_ssh" {
   project = local.private_project_id
   role    = "roles/iap.tunnelResourceAccessor"
@@ -38,14 +30,6 @@ resource "google_artifact_registry_repository_iam_member" "retired_api_recovery_
   repository = each.value
   role       = "roles/artifactregistry.reader"
   member     = "serviceAccount:infra-recovery@${local.management_project_id}.iam.gserviceaccount.com"
-}
-
-resource "google_artifact_registry_repository_iam_member" "retired_api_release_writer" {
-  project    = local.api_project_id
-  location   = local.region
-  repository = module.api_runtime.repository_ids["production"]
-  role       = "roles/artifactregistry.writer"
-  member     = "serviceAccount:infra-authentication-api@${local.api_project_id}.iam.gserviceaccount.com"
 }
 
 resource "google_secret_manager_secret_iam_member" "retired_secret_viewers" {
