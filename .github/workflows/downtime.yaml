@@ -95,6 +95,9 @@ jobs:
           private-key: ${{ secrets.AGENT_BOT_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: ${{ github.event.repository.name }}
+          # Variables only. The action forwards every permission-* input to GitHub, including
+          # this one it doesn't declare.
+          permission-actions-variables: write
 
       - name: Write DOWNTIME and deploy
         shell: bash
