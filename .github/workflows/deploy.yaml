@@ -1,20 +1,16 @@
 name: deploy
 
-# Every merge to master plans and applies the roots in dependency order.
-# Disable this workflow to freeze production changes.
+# Every merge to master applies the roots it changed. Service roots deploy in
+# parallel, so a change one service needs from another merges first, on its own.
+# A manual run applies every root. Disable this workflow to freeze production.
 on:
   push:
     branches: [master]
   workflow_dispatch:
-    inputs:
-      roll_database:
-        description: Afterwards, move this service's database and backup hosts onto their applied configuration.
-        type: choice
-        default: none
-        options: [none, json-keys, authentication]
 
 permissions: {}
 
+# A merge during a deploy waits for it; a newer merge replaces the waiting run.
 concurrency:
   group: deploy
   cancel-in-progress: false
@@ -23,29 +19,85 @@ env:
   TF_IN_AUTOMATION: "true"
 
 jobs:
-  deletion-label:
+  changes:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
+      actions: read
       contents: read
       pull-requests: read
     outputs:
-      allow: ${{ steps.label.outputs.allow }}
+      allow: ${{ steps.changes.outputs.allow }}
+      bootstrap: ${{ steps.changes.outputs.bootstrap }}
+      foundation: ${{ steps.changes.outputs.foundation }}
+      json_keys: ${{ steps.changes.outputs.json_keys }}
+      authentication: ${{ steps.changes.outputs.authentication }}
     steps:
-      - id: label
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: changes
         shell: bash
         env:
+          EVENT: ${{ github.event_name }}
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-          SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          allow="$(gh api "repos/$REPOSITORY/commits/$SHA/pulls" \
-            --jq '[.[] | select(.merged_at != null) | .labels[].name] | index("allow-resource-deletion") != null')"
-          echo "allow=$allow" >>"$GITHUB_OUTPUT"
+          # Diff against the last successful deploy, not the previous commit, so
+          # the changes of a failed or replaced run are deployed by the next one.
+          base="$(gh run list --repo "$REPOSITORY" --workflow deploy.yaml --branch master --status success \
+            --limit 1 --json headSha --jq '.[0].headSha // empty')"
+          if [ "$EVENT" = workflow_dispatch ] || [ -z "$base" ] || ! git merge-base --is-ancestor "$base" HEAD; then
+            all=true
+            commits="$(git rev-parse HEAD)"
+          else
+            all=false
+            commits="$(git rev-list "$base..HEAD")"
+          fi
+
+          # A root depends on the shared tooling, its directory and the local modules it calls.
+          deps() {
+            printf '%s\n' .opentofu-version .github/actions/ .github/workflows/deploy.yaml "$1/"
+            { grep -ho 'source *= *"\.[^"]*"' "$1"/*.tf || true; } | sed -E 's/.*"(.*)"/\1/' | while read -r source; do
+              deps "$(realpath --relative-to=. "$1/$source")"
+            done
+          }
+          changed() {
+            [ "$all" = true ] && return
+            # OpenTofu never reads Markdown, so documentation alone deploys nothing.
+            deps "$1" | awk 'NR == FNR { prefix[$0]; next } { for (p in prefix) if (index($0, p) == 1) found = 1 }
+              END { exit !found }' - <(git diff --name-only "$base" HEAD -- . ':(exclude)*.md')
+          }
+          deploy() { changed "$1" && echo true || echo false; }
+
+          # Service roots read foundation's outputs, so a foundation change re-plans them.
+          foundation="$(deploy environments/production/foundation)"
+          json_keys="$(deploy environments/production/json-keys)"
+          authentication="$(deploy environments/production/authentication)"
+          [ "$foundation" = true ] && json_keys=true authentication=true
+
+          # Deletions are allowed when any pull request in this deploy carried the label.
+          allow=false
+          for sha in $commits; do
+            labelled="$(gh api "repos/$REPOSITORY/commits/$sha/pulls" \
+              --jq '[.[] | select(.merged_at != null) | .labels[].name] | index("allow-resource-deletion") != null')"
+            [ "$labelled" = true ] && allow=true
+          done
+
+          tee -a "$GITHUB_OUTPUT" <<EOF
+          bootstrap=$(deploy bootstrap)
+          foundation=$foundation
+          json_keys=$json_keys
+          authentication=$authentication
+          allow=$allow
+          EOF
+          echo "Changes since ${base:-the first deploy}; every root: $all." >>"$GITHUB_STEP_SUMMARY"
 
   bootstrap:
-    needs: deletion-label
+    needs: changes
+    if: needs.changes.outputs.bootstrap == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: production
@@ -61,13 +113,14 @@ jobs:
         with:
           root: bootstrap
           apply: "true"
-          allow_deletion: ${{ needs.deletion-label.outputs.allow }}
+          allow_deletion: ${{ needs.changes.outputs.allow }}
           workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
           github_token: ${{ github.token }}
 
   foundation:
-    needs: [deletion-label, bootstrap]
+    needs: [changes, bootstrap]
+    if: ${{ !cancelled() && !failure() && needs.changes.outputs.foundation == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     environment: production
@@ -83,13 +136,14 @@ jobs:
         with:
           root: environments/production/foundation
           apply: "true"
-          allow_deletion: ${{ needs.deletion-label.outputs.allow }}
+          allow_deletion: ${{ needs.changes.outputs.allow }}
           workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
           github_token: ${{ github.token }}
 
   json-keys:
-    needs: [deletion-label, foundation]
+    needs: [changes, foundation]
+    if: ${{ !cancelled() && !failure() && needs.changes.outputs.json_keys == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: production
@@ -105,13 +159,14 @@ jobs:
         with:
           root: environments/production/json-keys
           apply: "true"
-          allow_deletion: ${{ needs.deletion-label.outputs.allow }}
+          allow_deletion: ${{ needs.changes.outputs.allow }}
           workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
           github_token: ${{ github.token }}
 
   authentication:
-    needs: [deletion-label, json-keys]
+    needs: [changes, foundation]
+    if: ${{ !cancelled() && !failure() && needs.changes.outputs.authentication == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: production
@@ -127,21 +182,17 @@ jobs:
         with:
           root: environments/production/authentication
           apply: "true"
-          allow_deletion: ${{ needs.deletion-label.outputs.allow }}
+          allow_deletion: ${{ needs.changes.outputs.allow }}
           workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
           github_token: ${{ github.token }}
 
-      # Authentication's health covers PostgreSQL, SMTP and the JSON Keys path.
-      - uses: $/.github/actions/health
-
-  # Database hosts never restart on apply. This manual step restarts the group
-  # member, or replaces it when its template changed, keeping its disk and IP.
-  roll-database:
-    if: github.event_name == 'workflow_dispatch' && inputs.roll_database != 'none'
-    needs: authentication
+  # Authentication's health covers PostgreSQL, SMTP and the JSON Keys path.
+  health:
+    needs: [json-keys, authentication]
+    if: ${{ !cancelled() && !failure() && contains(needs.*.result, 'success') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 10
     environment: production
     permissions:
       contents: read
@@ -154,16 +205,4 @@ jobs:
         with:
           workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
-      - name: Roll the database and backup repository hosts
-        shell: bash
-        env:
-          SERVICE: ${{ inputs.roll_database }}
-        run: |
-          set -euo pipefail
-          where=(--zone=europe-west1-d --project=a-novel-production-prod)
-          gcloud compute instance-groups managed update-instances "agora-database-$SERVICE" --all-instances \
-            --minimal-action=restart --most-disruptive-allowed-action=replace "${where[@]}"
-          gcloud compute instance-groups managed wait-until "agora-database-$SERVICE" --stable --timeout=900 "${where[@]}"
-          gcloud compute instances stop "agora-pgbackrest-$SERVICE" "${where[@]}"
-          gcloud compute instances start "agora-pgbackrest-$SERVICE" "${where[@]}"
       - uses: $/.github/actions/health

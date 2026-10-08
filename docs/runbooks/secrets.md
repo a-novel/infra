@@ -41,10 +41,10 @@ The database host reads its password at boot, using foundation's
 
 1. Add the version.
 2. In **one** pull request, bump both that value and the service root's `postgres-password`.
-3. Merge, then roll the host right away:
+3. Merge. As soon as the deploy finishes, roll the host:
 
    ```bash
-   gh workflow run deploy.yaml --repo a-novel/infra -f roll_database=<service>
+   gh workflow run roll-database.yaml --repo a-novel/infra -f service=<service>
    ```
 
 Database connections fail for a few minutes, between the deploy and the end of the roll.

@@ -8,7 +8,7 @@
    - the Cloud Run service and jobs change images;
    - the migration job gets a new `run_execution_token`;
    - provenance verification passed.
-3. Merge. Deploy then runs, in order:
+3. Merge. Deploy runs only that service's root:
    1. it copies the images;
    2. it applies, which runs the migration and waits for it;
    3. it moves traffic to the new revision once its startup probe passes;
@@ -17,6 +17,32 @@
 
 Migrations must stay backward compatible, because the previous revision keeps serving until the new
 one is ready.
+
+## What a deploy runs
+
+A deploy compares `master` with the last successful deploy. It runs only the roots whose files
+changed: the root's directory, the modules it calls, or the shared tooling (`.opentofu-version`,
+`.github/actions/`, `deploy.yaml`). Markdown changes deploy nothing. A foundation change also
+re-plans both services, which read its outputs.
+
+Bootstrap runs first, then foundation, then the services in parallel, then the health check.
+Services never wait for each other: when one service needs a change from another, merge that change
+first, in its own pull request.
+
+Running `deploy` by hand applies every root:
+
+```bash
+gh workflow run deploy.yaml --repo a-novel/infra
+```
+
+Use it after a freeze, or to undo drift that the daily check reported.
+
+## Merges during a deploy
+
+- A running deploy is never cancelled. A merge during it waits for it to finish.
+- GitHub keeps one waiting run. A newer merge replaces it, and the replaced run never starts.
+- Nothing is lost. The next run compares against the last _successful_ deploy, so it covers the
+  replaced or failed runs' changes and their deletion labels.
 
 ## Roll back
 
@@ -33,8 +59,8 @@ A plan that deletes, replaces or forgets a resource, or relaxes `deletion_protec
 If the change is intended:
 
 1. Add the `allow-resource-deletion` label. The checks re-run immediately.
-2. Merge with the label still on. Deploy checks the merged pull request's labels again before it
-   applies.
+2. Merge with the label still on. Before it applies, deploy checks again that a pull request in
+   the deploy carried the label.
 
 ## A deploy failed
 
@@ -65,8 +91,8 @@ gh workflow disable deploy.yaml --repo a-novel/infra
 gh workflow enable deploy.yaml --repo a-novel/infra
 ```
 
-The first command freezes deploys; the second resumes them. While frozen, merges still pass CI and
-deploy once you re-enable; re-run the last `deploy` run to catch up.
+The first command freezes deploys; the second resumes them. Merges still pass CI while frozen.
+After re-enabling, run `deploy` by hand to apply them.
 
 ## Other cases
 
