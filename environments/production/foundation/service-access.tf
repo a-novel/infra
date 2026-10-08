@@ -99,8 +99,9 @@ resource "google_project_iam_custom_role" "foundation_release_observation" {
   project     = google_project.workload.project_id
   role_id     = "infraFoundationReleaseObservation"
   title       = "Foundation release observation"
-  description = "Read native executions and the rotation schedule before and after a guarded release."
-  permissions = ["run.executions.get", "run.executions.list", "cloudscheduler.jobs.get"]
+  description = "Read native executions, Cloud Run operations and the rotation schedule around a release."
+  # Operations sit outside the tagged services and jobs, so the tag conditions cannot cover them.
+  permissions = ["run.executions.get", "run.executions.list", "run.operations.get", "cloudscheduler.jobs.get"]
 }
 
 resource "google_project_iam_member" "foundation_release_observation" {
