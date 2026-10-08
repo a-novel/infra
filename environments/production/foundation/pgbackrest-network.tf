@@ -1,5 +1,5 @@
 variable "pgbackrest_repository_services" {
-  description = "Opt-in native repository network for registered private services or dedicated service projects. Empty by default."
+  description = "Services whose backup repository host gets database network access."
   type        = set(string)
   default     = []
   nullable    = false
@@ -10,21 +10,15 @@ variable "pgbackrest_repository_services" {
   }
 
   validation {
-    condition = length(setsubtract(var.pgbackrest_repository_services, setunion(
-      toset(keys(var.service_projects)),
+    condition = length(setsubtract(var.pgbackrest_repository_services,
       toset([for service, zones in var.service_release_zones : service if try(contains(zones, "private"), false)]),
-    ))) == 0
-    error_message = "Repository networking requires a registered private service or dedicated service project."
+    )) == 0
+    error_message = "Repository networking requires a registered private service."
   }
 }
 
 locals {
-  pgbackrest_network = merge({
-    for service, project in var.service_projects : service => {
-      database   = "agora-database@${project}.iam.gserviceaccount.com"
-      repository = "agora-backup-repository@${project}.iam.gserviceaccount.com"
-    } if contains(var.pgbackrest_repository_services, service)
-    }, {
+  pgbackrest_network = merge({}, {
     for service, zones in var.service_release_zones : service => {
       database   = google_service_account.runtime["${replace(service, "-", "_")}_database"].email
       repository = "agora-pgbr-${service}@${var.workload_project_id}.iam.gserviceaccount.com"
@@ -51,7 +45,7 @@ resource "google_compute_firewall" "pgbackrest_database_egress" {
     ports    = ["8432"]
   }
 
-  depends_on = [google_project_iam_member.foundation_firewall, google_compute_shared_vpc_service_project.service]
+  depends_on = [google_project_iam_member.foundation_firewall]
 }
 
 resource "google_compute_firewall" "pgbackrest_repository_ingress" {
@@ -72,7 +66,7 @@ resource "google_compute_firewall" "pgbackrest_repository_ingress" {
     ports    = ["8432"]
   }
 
-  depends_on = [google_project_iam_member.foundation_firewall, google_compute_shared_vpc_service_project.service]
+  depends_on = [google_project_iam_member.foundation_firewall]
 }
 
 resource "google_compute_firewall" "pgbackrest_google_egress" {
@@ -92,7 +86,7 @@ resource "google_compute_firewall" "pgbackrest_google_egress" {
     ports    = ["443"]
   }
 
-  depends_on = [google_project_iam_member.foundation_firewall, google_compute_shared_vpc_service_project.service]
+  depends_on = [google_project_iam_member.foundation_firewall]
 }
 
 resource "google_compute_firewall" "pgbackrest_iap_ingress" {
@@ -112,5 +106,5 @@ resource "google_compute_firewall" "pgbackrest_iap_ingress" {
     ports    = ["22"]
   }
 
-  depends_on = [google_project_iam_member.foundation_firewall, google_compute_shared_vpc_service_project.service]
+  depends_on = [google_project_iam_member.foundation_firewall]
 }

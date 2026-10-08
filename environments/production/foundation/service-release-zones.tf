@@ -1,5 +1,5 @@
 variable "service_release_zones" {
-  description = "Service/zone registration and private custody folders in shared production projects; runtime resources use the service roots."
+  description = "Trust zones each service runs in; the service roots own the workloads."
   type        = map(set(string))
   default     = {}
   nullable    = false
@@ -15,10 +15,9 @@ variable "service_release_zones" {
   validation {
     condition = length(var.service_release_zones) == 0 || (
       var.shared_vpc_enabled &&
-      length(var.service_projects) == 0 &&
       (var.public_api_project_id != null || alltrue([for zones in var.service_release_zones : !try(contains(zones, "public-api"), false)]))
     )
-    error_message = "Shared release boundaries require explicit Shared VPC, an API shell for public-api selections, and no dedicated-service selection."
+    error_message = "Service zones require the Shared VPC and, for public-api, the API project."
   }
 }
 
@@ -31,23 +30,12 @@ locals {
   }
 }
 
-module "service_release" {
-  source   = "../../../modules/service-custody"
-  for_each = local.service_release_boundaries
+# The retired release tooling kept plans and receipts in these folders. They
+# still hold historical objects, so OpenTofu forgets them instead of deleting.
+removed {
+  from = module.service_release
 
-  project_id           = each.value.zone == "private" ? google_project.workload.project_id : module.public_api_project["public-api"].project_id
-  zone                 = each.value.zone
-  labels               = merge(local.labels, { service = each.value.service })
-  plan_service_account = local.automation_service_accounts.plan
-  management = {
-    project_id     = var.management_project_id
-    project_number = data.google_project.management[0].number
+  lifecycle {
+    destroy = false
   }
-
-  depends_on = [google_project_service.workload["iam.googleapis.com"], module.public_api_project]
-}
-
-output "service_release_boundaries" {
-  description = "Private service/zone custody coordinates. Null when no service is registered."
-  value       = length(module.service_release) == 0 ? null : { for key, boundary in module.service_release : key => boundary.release }
 }

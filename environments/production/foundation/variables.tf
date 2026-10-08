@@ -39,18 +39,6 @@ variable "workload_project_name" {
   }
 }
 
-variable "adopt_existing_project" {
-  description = "Import an existing project through the reviewed plan; required for standalone projects and interrupted project-creation recovery."
-  type        = bool
-  default     = false
-}
-
-variable "adopt_default_network" {
-  description = "Adopt an audited empty default VPC into state for a separately reviewed deletion."
-  type        = bool
-  default     = false
-}
-
 variable "billing_account_id" {
   description = "Cloud Billing account ID linked to the production projects and used for their combined budget."
   type        = string
@@ -293,16 +281,3 @@ variable "compute_cpu_quota" {
   }
 }
 
-# Keep a rejecting input so historical true values cannot silently become production plans.
-# tflint-ignore: terraform_unused_declarations
-variable "recovery_mode" {
-  description = "Reject the retired whole-production recovery profile. Use the isolated service-recovery root."
-  type        = bool
-  default     = false
-  nullable    = false
-
-  validation {
-    condition     = !var.recovery_mode
-    error_message = "Whole-production recovery is retired; use the isolated service-recovery root."
-  }
-}

@@ -15,8 +15,7 @@ variable "public_api_project_id" {
     condition = var.public_api_project_id == null || (
       can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", var.public_api_project_id)) &&
       !contains([var.management_project_id, var.workload_project_id, var.public_project_id], var.public_api_project_id) &&
-      var.shared_vpc_enabled &&
-      length(var.service_projects) == 0
+      var.shared_vpc_enabled
     )
     error_message = "The API shell requires a distinct valid project, an explicit production Shared VPC host, and no dedicated-service registration."
   }
@@ -30,8 +29,7 @@ variable "public_project_id" {
   validation {
     condition = var.public_project_id == null || (
       can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", var.public_project_id)) &&
-      !contains([var.management_project_id, var.workload_project_id], var.public_project_id) &&
-      length(var.service_projects) == 0
+      !contains([var.management_project_id, var.workload_project_id], var.public_project_id)
     )
     error_message = "The platform shell requires a distinct valid project and no dedicated-service registration."
   }
@@ -61,6 +59,19 @@ module "public_api_project" {
   labels                     = merge(local.labels, { "trust-zone" = "public-api" })
   foundation_service_account = local.automation_service_accounts.foundation
   plan_service_account       = local.automation_service_accounts.plan
+}
+
+resource "google_compute_shared_vpc_host_project" "production" {
+  count = var.shared_vpc_enabled ? 1 : 0
+
+  project         = google_project.workload.project_id
+  deletion_policy = "PREVENT"
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [google_project_service.workload["compute.googleapis.com"]]
 }
 
 resource "google_compute_shared_vpc_service_project" "public_api" {
