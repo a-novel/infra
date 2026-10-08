@@ -1,0 +1,137 @@
+name: OpenTofu root
+description: >
+  Plan one root and enforce the deletion policy. With apply set, also verify and copy the
+  root's release images, then apply the reviewed plan. Pull-request and drift callers pass
+  the read-only identity; the deploy workflow passes the writer.
+
+inputs:
+  root:
+    required: true
+    description: Root directory, such as environments/production/foundation.
+  apply:
+    required: false
+    default: "false"
+    description: When "true", copy the plan's images to Artifact Registry and apply the plan.
+  allow_deletion:
+    required: false
+    default: "false"
+    description: '"true" when the change carries the allow-resource-deletion label.'
+  workload_identity_provider:
+    required: true
+    description: Workload Identity Federation provider of the selected identity.
+  service_account:
+    required: true
+    description: Service account the workflow impersonates.
+  github_token:
+    required: true
+    description: Token used to verify the release images' GitHub attestations.
+
+outputs:
+  changes:
+    description: '"true" when the plan has changes.'
+    value: ${{ steps.plan.outputs.changes }}
+
+runs:
+  using: composite
+  steps:
+    - uses: opentofu/setup-opentofu@v2.0.2
+      with:
+        tofu_version_file: .opentofu-version
+        tofu_wrapper: false
+
+    - id: auth
+      uses: google-github-actions/auth@v3.0.0
+      with:
+        workload_identity_provider: ${{ inputs.workload_identity_provider }}
+        service_account: ${{ inputs.service_account }}
+        token_format: access_token
+
+    - name: Plan
+      id: plan
+      shell: bash
+      env:
+        ROOT: ${{ inputs.root }}
+        # Only the writer may hold the state lock.
+        LOCK: ${{ inputs.apply }}
+      run: |
+        set -euo pipefail
+        tofu -chdir="$ROOT" init -input=false -lockfile=readonly -no-color >/dev/null
+        status=0
+        tofu -chdir="$ROOT" plan -input=false -no-color -lock="$LOCK" -detailed-exitcode -out=tfplan >"$RUNNER_TEMP/plan.txt" || status=$?
+        if [ "$status" -eq 1 ]; then
+          cat "$RUNNER_TEMP/plan.txt"
+          exit 1
+        fi
+        tofu -chdir="$ROOT" show -json tfplan >"$RUNNER_TEMP/plan.json"
+        echo "changes=$([ "$status" -eq 2 ] && echo true || echo false)" >>"$GITHUB_OUTPUT"
+        # The log lists each change and the fields it touches; values stay in the job summary.
+        jq -r '.resource_changes[]? | select(.change.actions != ["no-op"]) | (.change.actions | join("+")) + " " + .address
+          + (if .change.actions == ["update"] then " (" + ([.change.before, .change.after] as [$b, $a]
+          | [$a | keys[] | select($b[.] != $a[.])] | join(", ")) + ")" else "" end)' "$RUNNER_TEMP/plan.json"
+        grep -E '^(Plan:|No changes)' "$RUNNER_TEMP/plan.txt" || true
+        {
+          echo "### \`$ROOT\`"
+          grep -E '^(Plan:|No changes)' "$RUNNER_TEMP/plan.txt" || true
+          echo '<details><summary>Plan</summary>'
+          echo
+          echo '```'
+          sed -n '/OpenTofu will perform/,$p' "$RUNNER_TEMP/plan.txt"
+          echo '```'
+          echo '</details>'
+        } >>"$GITHUB_STEP_SUMMARY"
+
+    - name: Enforce the deletion policy
+      shell: bash
+      env:
+        ALLOW_DELETION: ${{ inputs.allow_deletion }}
+        POLICY: ${{ github.action_path }}/policy.jq
+      run: |
+        set -euo pipefail
+        verdict="$(jq -f "$POLICY" "$RUNNER_TEMP/plan.json")"
+        if jq -e '.failed_checks | length > 0' <<<"$verdict" >/dev/null; then
+          echo "::error::Failing checks: $(jq -c .failed_checks <<<"$verdict")"
+          exit 1
+        fi
+        if jq -e '(.deletions + .weakened) | length > 0' <<<"$verdict" >/dev/null && [ "$ALLOW_DELETION" != "true" ]; then
+          echo "::error::This plan deletes or unprotects resources; it needs the allow-resource-deletion label: $(jq -c '.deletions + .weakened' <<<"$verdict")"
+          exit 1
+        fi
+
+    - name: Verify release provenance
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+      run: |
+        set -euo pipefail
+        jq -c '.planned_values.outputs.image_copies.value[]?' "$RUNNER_TEMP/plan.json" | while read -r image; do
+          source="$(jq -r .source <<<"$image")"
+          producer="$(jq -r .producer <<<"$image")"
+          gh attestation verify "oci://${source%%:*}@${source##*@}" --repo "$producer" \
+            --signer-workflow "$producer/.github/workflows/release.yaml" \
+            --source-ref refs/heads/master --deny-self-hosted-runners >/dev/null
+        done
+
+    - name: Copy release images to Artifact Registry
+      if: inputs.apply == 'true' && steps.plan.outputs.changes == 'true'
+      shell: bash
+      env:
+        ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+      run: |
+        set -euo pipefail
+        jq -c '.planned_values.outputs.image_copies.value[]?' "$RUNNER_TEMP/plan.json" | while read -r image; do
+          source="$(jq -r .source <<<"$image")"
+          target="$(jq -r .target <<<"$image")"
+          digest="${source##*@}"
+          skopeo login -u oauth2accesstoken --password-stdin "${target%%/*}" <<<"$ACCESS_TOKEN" >/dev/null
+          # Immutable tags make the copy fail if the tag already names another image.
+          if ! skopeo inspect --raw "docker://${target%:*}@$digest" >/dev/null 2>&1; then
+            skopeo copy --all --preserve-digests "docker://${source%%:*}@$digest" "docker://$target"
+          fi
+        done
+
+    - name: Apply
+      if: inputs.apply == 'true' && steps.plan.outputs.changes == 'true'
+      shell: bash
+      env:
+        ROOT: ${{ inputs.root }}
+      run: tofu -chdir="$ROOT" apply -input=false -no-color tfplan

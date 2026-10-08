@@ -4,7 +4,7 @@ terraform {
 
   backend "gcs" {
     bucket = "a-novel-management-prod-232403541574-tofu-state"
-    prefix = "bootstrap"
+    prefix = "authentication"
   }
 
   required_providers {

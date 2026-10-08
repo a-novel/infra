@@ -1,342 +1,79 @@
-name: production drift
+name: drift
 
 on:
   schedule:
     - cron: "17 5 * * *"
-    # Eight checks/day bound instance-based idle time while still detecting a
-    # launch outage without another monitoring service or credential.
+    # Eight checks a day bound the instance time a health request keeps
+    # Authentication billed; see docs/architecture.md.
     - cron: "43 */3 * * *"
   workflow_dispatch:
-    inputs:
-      operation:
-        description: Inspect drift or operation evidence, or assess a pull request.
-        required: true
-        default: drift
-        type: choice
-        options:
-          [
-            drift,
-            assess-pull-request,
-            assess-pending-foundation,
-            assess-image-update,
-            assess-version-update,
-            inspect-operation,
-          ]
-      service:
-        description: Observation only; native releases support JSON Keys, apply inspection supports either service.
-        required: false
-        default: none
-        type: choice
-        options: [none, json-keys, authentication]
-      guard_generation:
-        description: Operation inspection only; exact retained guard generation, or empty for the live guard.
-        required: false
-        type: string
-      pull_request:
-        description: Assessment only; pull request number.
-        required: false
-        type: string
-      head_sha:
-        description: Assessment only; exact candidate commit.
-        required: false
-        type: string
-      base_sha:
-        description: Assessment only; exact protected base commit.
-        required: false
-        type: string
-
-run-name: >-
-  ${{ inputs.operation == 'inspect-operation' &&
-  format('inspect operation {0}/{1} by @{2}', inputs.service, inputs.guard_generation || 'live', github.actor) ||
-  (inputs.operation == 'assess-pull-request' || inputs.operation == 'assess-pending-foundation' || inputs.operation == 'assess-image-update' || inputs.operation == 'assess-version-update') &&
-  format('resource-deletion assessment PR #{0} {1} onto {2}', inputs.pull_request, inputs.head_sha, inputs.base_sha) ||
-  'production drift' }}
 
 permissions: {}
 
-concurrency:
-  # Readers must not queue behind the deployment they need to inspect.
-  group: ${{ inputs.operation == 'inspect-operation' && 'operation-inspection' || 'production-infrastructure' }}
-  cancel-in-progress: false
-
 env:
   TF_IN_AUTOMATION: "true"
-  CLOUDSDK_CORE_DISABLE_PROMPTS: "1"
 
 jobs:
-  inspect-operation:
-    if: github.ref == 'refs/heads/master' && github.event_name == 'workflow_dispatch' && inputs.operation == 'inspect-operation'
+  drift:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '17 5 * * *'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      attestations: read
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        root:
+          - bootstrap
+          - environments/production/foundation
+          - environments/production/json-keys
+          - environments/production/authentication
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - id: tofu
+        uses: $/.github/actions/tofu
+        with:
+          root: ${{ matrix.root }}
+          allow_deletion: "true"
+          workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
+          github_token: ${{ github.token }}
+      - if: steps.tofu.outputs.changes == 'true'
+        shell: bash
+        env:
+          ROOT: ${{ matrix.root }}
+        run: |
+          echo "::error::$ROOT differs from master; see the job summary for the plan."
+          exit 1
+
+  health:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '43 */3 * * *'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    environment: production-foundation
     permissions:
       contents: read
       id-token: write
     steps:
-      - name: Check out the exact master commit
-        uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-
-      - name: Build reviewed infra tooling
-        uses: $/.github/actions/setup-infra
-
-      - name: Authorize the registered service before authentication
-        id: scope
-        shell: bash
-        env:
-          FOUNDATION_CONFIG: ${{ secrets.FOUNDATION_TFVARS_JSON }}
-          MANAGEMENT_PROJECT_ID: ${{ vars.GCP_MANAGEMENT_PROJECT_ID }}
-          STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
-          SELECTED_SERVICE: ${{ inputs.service }}
-          GUARD_GENERATION: ${{ inputs.guard_generation }}
-        run: |
-          set -euo pipefail
-          args=(inspect-operation "${SELECTED_SERVICE}")
-          if [[ -n "${GUARD_GENERATION}" ]]; then args+=("${GUARD_GENERATION}"); fi
-          infra observation-inputs "${args[@]}" >>"${GITHUB_OUTPUT}"
-
-      - name: Authenticate as the read-only plan boundary
-        uses: google-github-actions/auth@v3.0.0
-        with:
-          workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
-          create_credentials_file: true
-          export_environment_variables: true
-
-      - name: Inspect exact operation evidence without changing the operation
-        shell: bash
-        env:
-          FOUNDATION_CONFIG: ${{ secrets.FOUNDATION_TFVARS_JSON }}
-          MANAGEMENT_PROJECT_ID: ${{ vars.GCP_MANAGEMENT_PROJECT_ID }}
-          STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
-          SELECTED_PROJECT: ${{ steps.scope.outputs.project }}
-          GUARD_GENERATION: ${{ inputs.guard_generation }}
-        run: |
-          set -euo pipefail
-          args=(operation inspect "${STATE_BUCKET}" "${SELECTED_PROJECT}")
-          if [[ -n "${GUARD_GENERATION}" ]]; then args+=("${GUARD_GENERATION}"); fi
-          infra custody "${args[@]}" | tee "${GITHUB_STEP_SUMMARY}"
-
-  inspect:
-    if: >-
-      github.ref == 'refs/heads/master' &&
-      ((github.event_name == 'workflow_dispatch' && inputs.operation == 'drift') ||
-      github.event.schedule == '17 5 * * *')
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - name: Check out the exact master commit
-        uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Build reviewed infra tooling
-        uses: $/.github/actions/setup-infra
-
-      - name: Authenticate as the read-only plan boundary
-        uses: google-github-actions/auth@v3.0.0
-        with:
-          workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
-          create_credentials_file: true
-          export_environment_variables: true
-
-      - name: Install the pinned Google Cloud CLI
-        uses: google-github-actions/setup-gcloud@v3.0.1
-        with:
-          version: "581.0.0"
-
-      - name: Install OpenTofu
-        uses: opentofu/setup-opentofu@v2.0.2
+      - uses: opentofu/setup-opentofu@v2.0.2
         with:
           tofu_version_file: .opentofu-version
           tofu_wrapper: false
-          cache: true
-
-      # The plan identity cannot create lock objects. Global workflow
-      # concurrency serializes this read with all protected writers instead.
-      - name: Compare every initialized root with its current private inputs
-        shell: bash
-        env:
-          MANAGEMENT_PROJECT_ID: ${{ vars.GCP_MANAGEMENT_PROJECT_ID }}
-          STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
-        run: infra inspect drift "${STATE_BUCKET}"
-
-  health:
-    if: >-
-      github.ref == 'refs/heads/master' &&
-      ((github.event_name == 'workflow_dispatch' && inputs.operation == 'drift') ||
-      github.event.schedule == '43 */3 * * *')
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - name: Check out the exact master commit
-        uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Build reviewed infra tooling
-        uses: $/.github/actions/setup-infra
-
-      - name: Authenticate as the read-only plan boundary
-        uses: google-github-actions/auth@v3.0.0
+      - uses: google-github-actions/auth@v3.0.0
         with:
           workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
-          create_credentials_file: true
-          export_environment_variables: true
-
-      - name: Install the pinned Google Cloud CLI
-        uses: google-github-actions/setup-gcloud@v3.0.1
-        with:
-          version: "581.0.0"
-
       - name: Check Authentication and its dependencies
         shell: bash
-        env:
-          STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
         run: |
           set -euo pipefail
-          umask 077
-          config="${RUNNER_TEMP}/foundation-health.tfvars.json"
-          infra custody config fetch "${STATE_BUCKET}" foundation "${config}"
-          infra check-health deployed "${config}"
-
-  assess-resource-deletion:
-    if: >-
-      github.ref == 'refs/heads/master' &&
-      github.event_name == 'workflow_dispatch' &&
-      (inputs.operation == 'assess-pull-request' || inputs.operation == 'assess-pending-foundation' || inputs.operation == 'assess-image-update' || inputs.operation == 'assess-version-update')
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    # Only partial-operation assessment may read pending protected inputs.
-    environment: ${{ inputs.operation == 'assess-pending-foundation' && 'production-foundation' || '' }}
-    permissions:
-      actions: read
-      contents: read
-      id-token: write
-      pull-requests: read
-    steps:
-      - name: Check out trusted assessment tooling
-        uses: actions/checkout@v7.0.1
-        with:
-          path: trusted
-          persist-credentials: false
-
-      - name: Build reviewed infra tooling
-        uses: $/.github/actions/setup-infra
-        with:
-          working_directory: trusted
-
-      - name: Authorize the exact image-only update
-        if: inputs.operation == 'assess-image-update'
-        shell: bash
-        env:
-          BASE_SHA: ${{ inputs.base_sha }}
-          GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ inputs.head_sha }}
-          PULL_REQUEST: ${{ inputs.pull_request }}
-        run: |
-          set -euo pipefail
-          infra assess-images verify
-
-      # This check runs before credentials exist because the candidate plan can
-      # execute providers and external data sources. A maintainer's dispatch
-      # authorizes any candidate. A Renovate update is authorized when it changes
-      # only version values and carries Renovate's passing release-age status.
-      - name: Resolve the authorized exact candidate
-        if: inputs.operation == 'assess-pull-request' || inputs.operation == 'assess-pending-foundation' || inputs.operation == 'assess-version-update'
-        id: target
-        shell: bash
-        env:
-          ASSESSMENT_OPERATION: ${{ inputs.operation }}
-          BASE_SHA: ${{ inputs.base_sha }}
-          GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ inputs.head_sha }}
-          PULL_REQUEST: ${{ inputs.pull_request }}
-        run: |
-          set -euo pipefail
-          if [ "${ASSESSMENT_OPERATION}" = assess-version-update ]; then
-            infra assess-versions verify
-            repository="${GITHUB_REPOSITORY}"
-          else
-            repository="$(./trusted/ops/resolve-resource-deletion-assessment.sh \
-              "${GITHUB_REPOSITORY}" "${PULL_REQUEST}" "${HEAD_SHA}" "${BASE_SHA}")"
-          fi
-          printf 'repository=%s\n' "${repository}" >>"${GITHUB_OUTPUT}"
-
-      - name: Check out the exact candidate without running it
-        if: inputs.operation == 'assess-pull-request' || inputs.operation == 'assess-pending-foundation' || inputs.operation == 'assess-version-update'
-        uses: actions/checkout@v7.0.1
-        with:
-          path: candidate
-          persist-credentials: false
-          repository: ${{ steps.target.outputs.repository }}
-          ref: ${{ inputs.head_sha }}
-
-      - name: Authenticate as the read-only plan boundary
-        uses: google-github-actions/auth@v3.0.0
-        with:
-          workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
-          create_credentials_file: true
-          export_environment_variables: true
-
-      - name: Install the pinned Google Cloud CLI
-        uses: google-github-actions/setup-gcloud@v3.0.1
-        with:
-          version: "581.0.0"
-
-      - name: Install OpenTofu
-        if: inputs.operation == 'assess-pull-request' || inputs.operation == 'assess-pending-foundation' || inputs.operation == 'assess-version-update'
-        uses: opentofu/setup-opentofu@v2.0.2
-        with:
-          tofu_version_file: candidate/.opentofu-version
-          tofu_wrapper: false
-          cache: true
-
-      - name: Assess plans with current private inputs
-        shell: bash
-        working-directory: trusted
-        env:
-          ASSESSMENT_OPERATION: ${{ inputs.operation }}
-          BASE_SHA: ${{ inputs.base_sha }}
-          GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ inputs.head_sha }}
-          MANAGEMENT_PROJECT_ID: ${{ vars.GCP_MANAGEMENT_PROJECT_ID }}
-          PENDING_FOUNDATION_CONFIG: ${{ inputs.operation == 'assess-pending-foundation' && secrets.FOUNDATION_TFVARS_JSON || '' }}
-          PENDING_BOOTSTRAP_CONFIG: ${{ inputs.operation == 'assess-pending-foundation' && secrets.BOOTSTRAP_TFVARS_JSON || '' }}
-          PULL_REQUEST: ${{ inputs.pull_request }}
-          STATE_BUCKET: ${{ vars.GCP_STATE_BUCKET }}
-        run: |
-          set -euo pipefail
-          umask 077
-          mode=assess
-          candidate="${GITHUB_WORKSPACE}/candidate"
-          if [ "${ASSESSMENT_OPERATION}" = assess-image-update ]; then
-            candidate=--image-only
-          fi
-          if [ "${ASSESSMENT_OPERATION}" = assess-pending-foundation ]; then
-            mode=assess-pending-foundation
-          fi
-          infra inspect "${mode}" \
-            "${GITHUB_REPOSITORY}" "${PULL_REQUEST}" "${HEAD_SHA}" "${BASE_SHA}" \
-            "${candidate}" "${STATE_BUCKET}" \
-            "${RUNNER_TEMP}/resource-deletion/assessment.json"
-
-      # The artifact deliberately contains only the exact commit tuple and
-      # boolean verdict. Plans, state, and configuration stay on the runner.
-      - name: Publish the payload-free verdict
-        uses: actions/upload-artifact@v7.0.2
-        with:
-          name: resource-deletion-assessment-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/resource-deletion/assessment.json
-          if-no-files-found: error
-          retention-days: 7
+          tofu -chdir=environments/production/authentication init -input=false -lockfile=readonly -no-color >/dev/null
+          url="$(tofu -chdir=environments/production/authentication output -raw url)"
+          curl -sS --fail-with-body --retry 3 --retry-all-errors --retry-delay 10 --max-time 15 "$url/v2/healthcheck" |
+            tee /dev/stderr | jq -e 'length == 3 and all(.[]; .status == "up")' >/dev/null

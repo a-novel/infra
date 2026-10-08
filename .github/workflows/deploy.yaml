@@ -1,0 +1,136 @@
+name: deploy
+
+# Every merge to master plans and applies the roots in dependency order.
+# Disable this workflow to freeze production changes.
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  TF_IN_AUTOMATION: "true"
+
+jobs:
+  deletion-label:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      allow: ${{ steps.label.outputs.allow }}
+    steps:
+      - id: label
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          allow="$(gh api "repos/$REPOSITORY/commits/$SHA/pulls" \
+            --jq '[.[] | select(.merged_at != null) | .labels[].name] | index("allow-resource-deletion") != null')"
+          echo "allow=$allow" >>"$GITHUB_OUTPUT"
+
+  bootstrap:
+    needs: deletion-label
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: production
+    permissions:
+      attestations: read
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: $/.github/actions/tofu
+        with:
+          root: bootstrap
+          apply: "true"
+          allow_deletion: ${{ needs.deletion-label.outputs.allow }}
+          workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
+          github_token: ${{ github.token }}
+
+  foundation:
+    needs: [deletion-label, bootstrap]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: production
+    permissions:
+      attestations: read
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: $/.github/actions/tofu
+        with:
+          root: environments/production/foundation
+          apply: "true"
+          allow_deletion: ${{ needs.deletion-label.outputs.allow }}
+          workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
+          github_token: ${{ github.token }}
+
+  json-keys:
+    needs: [deletion-label, foundation]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: production
+    permissions:
+      attestations: read
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: $/.github/actions/tofu
+        with:
+          root: environments/production/json-keys
+          apply: "true"
+          allow_deletion: ${{ needs.deletion-label.outputs.allow }}
+          workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
+          github_token: ${{ github.token }}
+
+  authentication:
+    needs: [deletion-label, json-keys]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: production
+    permissions:
+      attestations: read
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: $/.github/actions/tofu
+        with:
+          root: environments/production/authentication
+          apply: "true"
+          allow_deletion: ${{ needs.deletion-label.outputs.allow }}
+          workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
+          github_token: ${{ github.token }}
+
+      # Authentication's health covers PostgreSQL, SMTP and the JSON Keys path.
+      - name: Check production health
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="$(tofu -chdir=environments/production/authentication output -raw url)"
+          curl -sS --fail-with-body --retry 5 --retry-all-errors --retry-delay 10 --max-time 15 "$url/v2/healthcheck" |
+            tee /dev/stderr | jq -e 'length == 3 and all(.[]; .status == "up")' >/dev/null

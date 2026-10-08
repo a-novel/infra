@@ -11,7 +11,7 @@
   },
   "packageRules": [
     {
-      "description": "Maintain container dependencies as published version tags; resolve digests only in generated deployment evidence.",
+      "description": "Keep tooling images on version tags; production service images carry their digest beside the tag.",
       "matchDatasources": ["docker"],
       "pinDigests": false
     },
@@ -48,30 +48,30 @@
       "versioning": "semver"
     },
     {
-      "description": "Accept only complete stable SemVer image tags in the production manifest.",
+      "description": "Accept only complete stable SemVer tags for production service images.",
       "matchDatasources": ["docker"],
-      "matchFileNames": ["deploy/production/images.yaml"],
+      "matchFileNames": ["environments/production/*/terraform.tfvars"],
       "allowedVersions": "/^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$/",
       "versioning": "semver",
       "automerge": false
     },
     {
-      "description": "Update the JSON Keys image family as one deployment candidate.",
+      "description": "Update the JSON Keys image family as one release.",
       "matchDatasources": ["docker"],
-      "matchFileNames": ["deploy/production/images.yaml"],
+      "matchFileNames": ["environments/production/*/terraform.tfvars"],
       "matchPackageNames": ["ghcr.io/a-novel/service-json-keys/**"],
       "groupName": "service-json-keys images",
-      "minimumGroupSize": 4,
+      "minimumGroupSize": 3,
       "groupSlug": "service-json-keys-images",
       "separateMajorMinor": true
     },
     {
-      "description": "Update the Authentication image family as one deployment candidate.",
+      "description": "Update the Authentication image family as one release.",
       "matchDatasources": ["docker"],
-      "matchFileNames": ["deploy/production/images.yaml"],
+      "matchFileNames": ["environments/production/*/terraform.tfvars"],
       "matchPackageNames": ["ghcr.io/a-novel/service-authentication/**"],
       "groupName": "service-authentication images",
-      "minimumGroupSize": 4,
+      "minimumGroupSize": 2,
       "groupSlug": "service-authentication-images",
       "separateMajorMinor": true
     },
@@ -93,7 +93,7 @@
       "automerge": false
     },
     {
-      "description": "Hold OpenTofu and provider releases for a week. Their version-only PRs are assessed automatically, which runs the new binaries with the read-only production plan identity, so the release age is what bounds a compromised upstream release.",
+      "description": "Hold OpenTofu and provider releases for a week. Pull-request plans run the new binaries with the read-only production identity, so the release age bounds a compromised upstream release.",
       "matchFileNames": [".opentofu-version", "**/versions.tf"],
       "minimumReleaseAge": "7 days"
     },
@@ -127,7 +127,6 @@
       "matchFileNames": [
         "bootstrap/**",
         "environments/production/**",
-        "deploy/production/**",
         "**/*.tf",
         "**/*.tf.json",
         "**/*.tofu",
@@ -170,10 +169,12 @@
     },
     {
       "customType": "regex",
-      "description": "Update stable version tags in the production manifest.",
-      "managerFilePatterns": ["/^deploy/production/images\\.yaml$/"],
+      "description": "Update production service images pinned as tag@digest.",
+      "managerFilePatterns": [
+        "/^environments/production/[^/]+/terraform\\.tfvars$/"
+      ],
       "matchStrings": [
-        "repository:\\s*(?<depName>[^\\s]+)\\s+tag:\\s*[\"']?(?<currentValue>v[0-9]+\\.[0-9]+\\.[0-9]+)[\"']?"
+        "\"(?<depName>ghcr\\.io/a-novel/[^:\"]+):(?<currentValue>v[0-9]+\\.[0-9]+\\.[0-9]+)@(?<currentDigest>sha256:[a-f0-9]{64})\""
       ],
       "datasourceTemplate": "docker",
       "versioningTemplate": "semver"

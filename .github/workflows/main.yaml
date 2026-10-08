@@ -5,7 +5,8 @@ on:
     branches: [master]
     tags-ignore: ["**"]
   pull_request:
-    types: [opened, reopened, synchronize]
+    # Label changes re-run the plans so the deletion label takes effect at once.
+    types: [opened, reopened, synchronize, labeled, unlabeled]
   merge_group:
 
 permissions: {}
@@ -18,94 +19,43 @@ env:
   TF_IN_AUTOMATION: "true"
 
 jobs:
-  resource-deletion-gate:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
-      actions: read
-      contents: read
-      pull-requests: read
-    steps:
-      # Only protected base-branch tooling may interpret the candidate's
-      # metadata or trusted assessment artifact.
-      - name: Check out trusted gate tooling
-        uses: actions/checkout@v7.0.1
-        with:
-          path: trusted
-          persist-credentials: false
-          ref: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || 'master' }}
-
-      - name: Verify exact assessment and current approval
-        shell: bash
-        env:
-          GATE_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
-          GATE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          GATE_MERGE_HEAD_REF: ${{ github.event.merge_group.head_ref }}
-          GATE_PULL_REQUEST: ${{ github.event.pull_request.number }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          if [ ! -x ./trusted/ops/verify-resource-deletion-gate.sh ]; then
-            printf '%s\n' \
-              'The gate activates after its trusted base implementation merges.'
-            exit 0
-          fi
-          ./trusted/ops/verify-resource-deletion-gate.sh "${GITHUB_REPOSITORY}"
-
   validate-opentofu:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: read
     steps:
-      - name: Check out the repository
-        uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - name: Install OpenTofu
-        uses: opentofu/setup-opentofu@v2.0.2
+      - uses: opentofu/setup-opentofu@v2.0.2
         with:
           tofu_version_file: .opentofu-version
           tofu_wrapper: false
-          cache: true
 
-      - name: Install TFLint
-        uses: terraform-linters/setup-tflint@v6.3.2
+      - uses: terraform-linters/setup-tflint@v6.3.2
         with:
           # renovate: datasource=github-releases depName=terraform-linters/tflint
           tflint_version: v0.64.0
           cache: true
 
-      - name: Validate reviewed roots
-        shell: bash
-        run: |
-          set -euo pipefail
-          for root in bootstrap foundation; do
-            ./ops/check-root.sh "$root"
-          done
-          tofu fmt -check -recursive modules
-          tflint --recursive --chdir=modules --config="${GITHUB_WORKSPACE}/.tflint.hcl" --format=compact
-
-      - name: Validate native service and proof roots without backends
+      - name: Format, validate, test and lint every root and tested module
         shell: bash
         env:
           GOOGLE_APPLICATION_CREDENTIALS: /dev/null
         run: |
           set -euo pipefail
-          for root in modules/database-runtime environments/service-foundation environments/service-release environments/service-recovery proofs/gcs-storage proofs/pgbackrest-gcs; do
-            tofu -chdir="$root" fmt -check -recursive -diff
-            tofu -chdir="$root" init -backend=false -input=false -lockfile=readonly -no-color
-            tofu -chdir="$root" validate -no-color
-            tofu -chdir="$root" test -no-color
-            tflint --chdir="$root" --config="${GITHUB_WORKSPACE}/.tflint.hcl" --format=compact
+          tofu fmt -check -recursive -diff
+          tflint --init --config="$GITHUB_WORKSPACE/.tflint.hcl"
+          tflint --recursive --config="$GITHUB_WORKSPACE/.tflint.hcl" --format=compact
+          for dir in bootstrap environments/production/* environments/service-recovery $(dirname modules/*/tests | sort -u); do
+            echo "::group::$dir"
+            tofu -chdir="$dir" init -backend=false -input=false -lockfile=readonly -no-color >/dev/null
+            tofu -chdir="$dir" validate -no-color
+            tofu -chdir="$dir" test -no-color
+            echo "::endgroup::"
           done
-
-      - name: Lint shell scripts
-        uses: a-novel-kit/workflows/generic-actions/lint-shell@v1.38.4
-        with:
-          # renovate: datasource=github-releases depName=koalaman/shellcheck
-          version: "0.11.0"
 
   scan-infrastructure:
     runs-on: ubuntu-24.04
@@ -113,12 +63,11 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Check out the repository
-        uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - name: Scan infrastructure and secrets
+      - name: Scan infrastructure, dependencies and secrets
         uses: aquasecurity/trivy-action@v0.36.0
         env:
           TRIVY_DISABLE_TELEMETRY: "true"
@@ -137,50 +86,44 @@ jobs:
           # renovate: datasource=github-releases depName=aquasecurity/trivy
           version: v0.75.0
 
-      - name: Build and scan the inactive host credential loader
+      - name: Build and scan the host credential loader
         uses: $/.github/actions/build-tooling-image
         with:
           image_name: host-credentials
 
-      - name: Build and scan the inactive native restore worker
+      - name: Build and scan the restore worker
         uses: $/.github/actions/build-tooling-image
         with:
           image_name: native-restore
 
-  lint-tooling:
+  lint-repository:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: read
     steps:
-      - name: Check out the repository
-        uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
-          fetch-depth: 0
           persist-credentials: false
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v6.1.0
+      - uses: pnpm/action-setup@v6.1.0
 
-      - name: Install Node.js
-        uses: actions/setup-node@v7.1.0
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version-file: .node-version
           cache: pnpm
 
-      - name: Install repository tooling
-        shell: bash
-        run: pnpm install --frozen-lockfile
-
-      - name: Install Go
-        uses: actions/setup-go@v7.0.0
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
           cache: false
 
-      - name: Validate repository configuration
+      - name: Lint formatting, Go and Renovate configuration
         shell: bash
-        run: pnpm lint
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm lint
 
       - name: Lint GitHub Actions syntax
         uses: raven-actions/actionlint@v2.2.0
@@ -203,42 +146,18 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Check out the repository
-        uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
-          fetch-depth: 0
           persist-credentials: false
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v6.1.0
-
-      - name: Install Node.js
-        uses: actions/setup-node@v7.1.0
+      - uses: actions/setup-go@v7.0.0
         with:
-          node-version-file: .node-version
-          cache: pnpm
+          go-version-file: go.mod
+          cache: false
 
-      - name: Install repository tooling
+      - name: Test the programs that run on the database and recovery hosts
         shell: bash
-        run: pnpm install --frozen-lockfile
-
-      - name: Build reviewed infra tooling
-        uses: $/.github/actions/setup-infra
-
-      - name: Install the operator runbook shell
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y zsh
-
-      - name: Test tooling, runbooks, and workflow boundaries without credentials
-        shell: bash
-        run: go test -race ./...
-
-      - name: Test the root, plan, and operator caller policies
-        shell: bash
-        run: ./tests/ops_test.sh
+        run: go test -race ./internal/hostcredentials/... ./internal/recovery/...
 
   test-backup:
     runs-on: ubuntu-24.04
@@ -246,13 +165,11 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Check out the repository
-        uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
-          fetch-depth: 0
           persist-credentials: false
 
-      - name: Exercise the disposable physical-backup proof offline
+      - name: Exercise the offline backup and restore proof
         shell: bash
         run: |
           set -euo pipefail
@@ -264,59 +181,88 @@ jobs:
               --tmpfs=/tmp:rw,size=1g,mode=1777 "pgbackrest-proof:$service"
           done
 
-  validate-release:
+  # Each root's plan is its own required check. GitHub issues no OIDC token to
+  # fork pull requests, so their plans fail until a maintainer pushes the branch.
+  plan-bootstrap:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       attestations: read
       contents: read
+      id-token: write
     steps:
-      - name: Check out the repository
-        uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
-          fetch-depth: 0
           persist-credentials: false
 
-      - name: Build reviewed infra tooling
-        uses: $/.github/actions/setup-infra
+      - uses: $/.github/actions/tofu
+        with:
+          root: bootstrap
+          allow_deletion: ${{ contains(github.event.pull_request.labels.*.name, 'allow-resource-deletion') }}
+          workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
+          github_token: ${{ github.token }}
 
-      - name: Validate the production image transition
-        if: github.event_name == 'pull_request'
-        shell: bash
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          set -euo pipefail
-          umask 077
-          if [[ ! "${BASE_SHA}" =~ ^[a-f0-9]{40}$ ]]; then
-            printf 'The pull-request base commit is invalid.\n' >&2
-            exit 65
-          fi
-          base_manifest="${RUNNER_TEMP}/base-images.yaml"
-          git show "${BASE_SHA}:deploy/production/images.yaml" >"${base_manifest}"
-          infra validate-images \
-            "${base_manifest}" deploy/production/images.yaml
-
-      # Native resource contracts run in validate-opentofu; historical compiler
-      # compatibility remains covered by test-go, not today's producer inventory.
-      - name: Resolve candidate versions and verify provenance
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: infra preflight resolve-images deploy/production/images.yaml "${RUNNER_TEMP}/resolved-images.json"
-
-  # Preserve the existing required check while its work runs independently.
-  lint-repository:
-    needs: [lint-tooling, test-go, test-backup, validate-release]
-    if: always()
+  plan-foundation:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
-    timeout-minutes: 2
-    permissions: {}
+    timeout-minutes: 20
+    permissions:
+      attestations: read
+      contents: read
+      id-token: write
     steps:
-      - name: Require every repository check to succeed
-        shell: bash
-        env:
-          CHECK_RESULTS: ${{ toJSON(needs) }}
-        run: |
-          set -euo pipefail
-          jq --exit-status 'all(.[]; .result == "success")' <<<"${CHECK_RESULTS}"
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: $/.github/actions/tofu
+        with:
+          root: environments/production/foundation
+          allow_deletion: ${{ contains(github.event.pull_request.labels.*.name, 'allow-resource-deletion') }}
+          workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
+          github_token: ${{ github.token }}
+
+  plan-json-keys:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      attestations: read
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: $/.github/actions/tofu
+        with:
+          root: environments/production/json-keys
+          allow_deletion: ${{ contains(github.event.pull_request.labels.*.name, 'allow-resource-deletion') }}
+          workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
+          github_token: ${{ github.token }}
+
+  plan-authentication:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      attestations: read
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: $/.github/actions/tofu
+        with:
+          root: environments/production/authentication
+          allow_deletion: ${{ contains(github.event.pull_request.labels.*.name, 'allow-resource-deletion') }}
+          workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
+          github_token: ${{ github.token }}
