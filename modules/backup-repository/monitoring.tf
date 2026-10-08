@@ -100,7 +100,7 @@ resource "google_monitoring_alert_policy" "backup_failure" {
   }
   documentation {
     mime_type = "text/markdown"
-    content   = "Inspect the selected worker's journal and retained Docker logs. Verify can exit zero with an error report; inspect its [integrity result](https://github.com/a-novel/infra/blob/master/environments/service-foundation/README.md#native-integrity-check). Do not disable WAL archiving, delete WAL, run expiry or retry a restore. Follow [native backup response](https://github.com/a-novel/infra/blob/master/docs/runbooks/respond-to-alerts.md#native-backup-pilot)."
+    content   = "Read the worker's journal on the database host. Verify can exit zero with an error report, so read its output. Never disable WAL archiving or delete WAL. Follow [the alert runbook](https://github.com/a-novel/infra/blob/master/docs/runbooks/alerts.md#backups)."
   }
 }
 
@@ -125,6 +125,6 @@ resource "google_monitoring_alert_policy" "backup_health" {
   }
   documentation {
     mime_type = "text/markdown"
-    content   = "Missing success includes collection failure, a stopped host and jobs that never ran. Inspect native info and archive/check logs; a command success is not restore verification. Disk pressure can include retained WAL after failed archiving. Rebind policies after host replacement and prove data-disk coverage and end-to-end notification before activation. Follow [native backup response](https://github.com/a-novel/infra/blob/master/docs/runbooks/respond-to-alerts.md#native-backup-pilot)."
+    content   = "No recent success means a stopped host, a failing job or missing logs. Disk pressure can come from WAL kept after failed archiving. Follow [the alert runbook](https://github.com/a-novel/infra/blob/master/docs/runbooks/alerts.md#backups)."
   }
 }
