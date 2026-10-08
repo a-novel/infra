@@ -1,7 +1,7 @@
 terraform {
   backend "gcs" {
     bucket = "a-novel-management-prod-232403541574-tofu-state"
-    prefix = "foundation/recovery/services/${var.recovery.project}"
+    prefix = "recovery/${var.recovery.project}"
   }
 
   # renovate: datasource=github-releases depName=opentofu/opentofu

@@ -63,13 +63,6 @@ locals {
       }
       pull_requests = null
     }
-    recovery = {
-      service_account_id = "infra-recovery"
-      display_name       = "Infra disaster recovery"
-      provider_id        = "github-recovery"
-      workflows          = { "recovery.yaml" = "production-recovery" }
-      pull_requests      = null
-    }
   }
 
   secret_definitions = merge({

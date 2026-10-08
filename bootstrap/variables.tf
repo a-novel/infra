@@ -20,7 +20,7 @@ variable "region" {
 }
 
 variable "storage_location" {
-  description = "Google Cloud multi-region for management state, backups, and deployment receipts."
+  description = "Google Cloud multi-region for management state and backups."
   type        = string
   default     = "EU"
 

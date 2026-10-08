@@ -23,21 +23,6 @@ output "backup_bucket_name" {
   value       = google_storage_bucket.backups.name
 }
 
-output "receipt_bucket_name" {
-  description = "Versioned GCS bucket containing deployment evidence."
-  value       = google_storage_bucket.receipts.name
-}
-
-output "state_prefixes" {
-  description = "Backend prefixes with independent managed-folder IAM boundaries."
-  value       = { for name, folder in google_storage_managed_folder.state : name => folder.name }
-}
-
-output "recovery_state_prefixes" {
-  description = "Nested backend prefixes writable only by protected recovery automation."
-  value       = { for name, folder in google_storage_managed_folder.recovery_state : name => folder.name }
-}
-
 output "automation_service_accounts" {
   description = "Keyless CI service-account emails, keyed by trust boundary."
   value       = { for name, account in google_service_account.automation : name => account.email }
