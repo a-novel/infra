@@ -1,6 +1,6 @@
 terraform {
   backend "gcs" {
-    bucket = var.state_bucket
+    bucket = "a-novel-management-prod-232403541574-tofu-state"
     prefix = "foundation/recovery/services/${var.recovery.project}"
   }
 

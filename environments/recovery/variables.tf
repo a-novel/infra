@@ -1,9 +1,3 @@
-variable "state_bucket" {
-  description = "Protected management state bucket; workflow registration validates the exact binding before initialization."
-  type        = string
-  default     = ""
-}
-
 variable "recovery" {
   description = "Disabled by default. Private, independently approved disposable host inputs; never infer authorization from this object."
   type = object({
