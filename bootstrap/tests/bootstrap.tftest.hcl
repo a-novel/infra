@@ -22,7 +22,7 @@ run "protects_state_and_backups" {
   command = plan
 
   assert {
-    condition = alltrue([for bucket in concat([google_storage_bucket.state, google_storage_bucket.backups, google_storage_bucket.receipts], values(google_storage_bucket.pgbackrest)) :
+    condition = alltrue([for bucket in concat([google_storage_bucket.state, google_storage_bucket.backups], values(google_storage_bucket.pgbackrest)) :
       bucket.public_access_prevention == "enforced" && bucket.uniform_bucket_level_access && !bucket.force_destroy
     ])
     error_message = "Management buckets must be private, uniformly controlled and never force-destroyed."

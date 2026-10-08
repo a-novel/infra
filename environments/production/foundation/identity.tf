@@ -219,7 +219,8 @@ resource "google_service_account" "runtime" {
   display_name = each.value.display_name
   description  = "Keyless production identity for the ${replace(each.key, "_", " ")} boundary."
 
-  deletion_policy = "PREVENT"
+  # The legacy runtime accounts are unlocked for retirement in #666.
+  deletion_policy = contains(["authentication", "json_keys"], each.key) ? "DELETE" : "PREVENT"
 
   depends_on = [google_project_service.workload["iam.googleapis.com"]]
   lifecycle {
