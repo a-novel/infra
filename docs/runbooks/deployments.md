@@ -38,12 +38,18 @@ If the change is intended:
 
 ## A deploy failed
 
+An apply that stops halfway keeps what it already applied. The state records it, and the next run
+plans only the rest.
+
 1. Open the failed job. The plan or apply output names the resource and the API error.
 2. Find the cause:
    - **Transient API error or timeout:** select **Re-run failed jobs**. Every job re-plans, so a
      re-run is safe.
    - **Configuration error:** fix it in a new pull request. Never edit resources in the console:
      drift reverts it, and the next plan fights it.
+   - **403 during apply:** the pull-request plan ran as the read-only identity, so it cannot catch
+     a permission the writer lacks. Grant it in the foundation root (bootstrap for the management
+     project), and merge; deploy applies the grant before it reaches the service roots.
    - **Migration failed** (the job exits non-zero): the old revision keeps serving. Read the
      execution logs in the Cloud Run console (`agora-<service>-migrations`), fix the service, and
      release again.
