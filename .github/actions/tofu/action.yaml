@@ -64,8 +64,11 @@ runs:
         fi
         tofu -chdir="$ROOT" show -json tfplan >"$RUNNER_TEMP/plan.json"
         echo "changes=$([ "$status" -eq 2 ] && echo true || echo false)" >>"$GITHUB_OUTPUT"
-        # The log keeps the addresses and totals; values stay in the job summary.
-        grep -E '^  # |^(Plan:|No changes)' "$RUNNER_TEMP/plan.txt" || true
+        # The log lists each change and the fields it touches; values stay in the job summary.
+        jq -r '.resource_changes[]? | select(.change.actions != ["no-op"]) | (.change.actions | join("+")) + " " + .address
+          + (if .change.actions == ["update"] then " (" + ([.change.before, .change.after] as [$b, $a]
+          | [$a | keys[] | select($b[.] != $a[.])] | join(", ")) + ")" else "" end)' "$RUNNER_TEMP/plan.json"
+        grep -E '^(Plan:|No changes)' "$RUNNER_TEMP/plan.txt" || true
         {
           echo "### \`$ROOT\`"
           grep -E '^(Plan:|No changes)' "$RUNNER_TEMP/plan.txt" || true
