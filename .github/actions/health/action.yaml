@@ -10,7 +10,11 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        url="$(gcloud run services describe agora-authentication-rest \
-          --project=a-novel-public-api-prod --region=europe-west1 --format='value(status.url)')"
+        lookup() {
+          gcloud run services describe agora-authentication-rest \
+            --project=a-novel-public-api-prod --region=europe-west1 --format='value(status.url)'
+        }
+        # gcloud re-fetches the GitHub OIDC token here, and that request can time out.
+        url="$(lookup || { sleep 15; lookup; })"
         curl -sS --fail-with-body --retry 5 --retry-all-errors --retry-delay 10 --max-time 15 "$url/v2/healthcheck" |
           tee /dev/stderr | jq -e 'length == 3 and all(.[]; .status == "up")' >/dev/null
