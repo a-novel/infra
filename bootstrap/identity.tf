@@ -71,7 +71,6 @@ locals {
     }
   }
 
-  plan_state_folders       = local.state_prefixes
   foundation_state_folders = toset(["bootstrap", "foundation"])
   recovery_state_folders   = local.recovery_state_prefixes
   state_bucket_viewers     = toset(["recovery"])
@@ -296,15 +295,6 @@ resource "google_storage_bucket_iam_member" "plan_state" {
   bucket = google_storage_bucket.state.name
   role   = "roles/storage.objectViewer"
   member = "serviceAccount:${google_service_account.automation["plan"].email}"
-}
-
-resource "google_storage_managed_folder_iam_member" "plan_state" {
-  for_each = local.plan_state_folders
-
-  bucket         = google_storage_managed_folder.state[each.value].bucket
-  managed_folder = google_storage_managed_folder.state[each.value].name
-  role           = "roles/storage.objectViewer"
-  member         = "serviceAccount:${google_service_account.automation["plan"].email}"
 }
 
 resource "google_storage_managed_folder_iam_member" "foundation_state" {
