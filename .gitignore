@@ -13,7 +13,8 @@ override.tf.json
 *.tfbackend
 *.tfvars
 *.tfvars.json
-!*.tfvars.example
+# Each root's reviewed production inputs; secret payloads never live here.
+!terraform.tfvars
 
 # Local credentials and environment files
 .env
