@@ -1,0 +1,16 @@
+name: Production health
+description: >
+  Fails unless Authentication reports PostgreSQL, SMTP and JSON Keys up. The caller must
+  already hold Google credentials that can read the Cloud Run service.
+
+runs:
+  using: composite
+  steps:
+    - name: Check Authentication and its dependencies
+      shell: bash
+      run: |
+        set -euo pipefail
+        url="$(gcloud run services describe agora-authentication-rest \
+          --project=a-novel-public-api-prod --region=europe-west1 --format='value(status.url)')"
+        curl -sS --fail-with-body --retry 5 --retry-all-errors --retry-delay 10 --max-time 15 "$url/v2/healthcheck" |
+          tee /dev/stderr | jq -e 'length == 3 and all(.[]; .status == "up")' >/dev/null

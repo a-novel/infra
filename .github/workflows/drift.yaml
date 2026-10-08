@@ -61,19 +61,8 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - uses: opentofu/setup-opentofu@v2.0.2
-        with:
-          tofu_version_file: .opentofu-version
-          tofu_wrapper: false
       - uses: google-github-actions/auth@v3.0.0
         with:
           workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
-      - name: Check Authentication and its dependencies
-        shell: bash
-        run: |
-          set -euo pipefail
-          tofu -chdir=environments/production/authentication init -input=false -lockfile=readonly -no-color >/dev/null
-          url="$(tofu -chdir=environments/production/authentication output -raw url)"
-          curl -sS --fail-with-body --retry 3 --retry-all-errors --retry-delay 10 --max-time 15 "$url/v2/healthcheck" |
-            tee /dev/stderr | jq -e 'length == 3 and all(.[]; .status == "up")' >/dev/null
+      - uses: $/.github/actions/health

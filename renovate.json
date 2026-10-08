@@ -76,12 +76,6 @@
       "separateMajorMinor": true
     },
     {
-      "description": "Keep repository tooling on the supported Node.js 24 LTS line.",
-      "matchPackageNames": ["node"],
-      "allowedVersions": ">=24.11.0 <25",
-      "groupName": "Node.js LTS"
-    },
-    {
       "description": "Let the OpenTofu managers own required_version instead of treating it as HashiCorp Terraform.",
       "matchPackageNames": ["hashicorp/terraform"],
       "enabled": false
@@ -104,7 +98,7 @@
       "minimumReleaseAge": "6 hours"
     },
     {
-      "description": "Refresh the operator module with the native Go manager.",
+      "description": "Refresh the host programs' module with the native Go manager.",
       "matchManagers": ["gomod"],
       "matchFileNames": ["go.mod"],
       "postUpdateOptions": ["gomodTidy"]

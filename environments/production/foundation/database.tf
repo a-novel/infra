@@ -118,11 +118,11 @@ resource "google_compute_instance_template" "database" {
     google-logging-enabled             = "true"
     google-monitoring-enabled          = "true"
     serial-port-enable                 = "FALSE"
-    shutdown-script                    = file("${path.module}/../../../assets/database-host/shutdown.sh")
+    shutdown-script                    = file("${path.module}/../../../modules/database-runtime/files/shutdown.sh")
   }
 
   # The existing maintenance gate permits only this script to replace the host template.
-  metadata_startup_script = contains(keys(var.native_backups), each.value.component) ? module.native_backup[each.value.component].startup_script : file("${path.module}/../../../assets/database-host/startup.sh")
+  metadata_startup_script = contains(keys(var.native_backups), each.value.component) ? module.native_backup[each.value.component].startup_script : file("${path.module}/../../../modules/database-runtime/files/startup.sh")
 
   disk {
     auto_delete  = true

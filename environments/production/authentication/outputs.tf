@@ -6,8 +6,3 @@ output "image_copies" {
     target   = "${image.runtime.repositories["production"]}/${image.path}:${image.tag}"
   }]
 }
-
-output "url" {
-  description = "Public REST API URL, used by the post-deploy health check."
-  value       = google_cloud_run_v2_service.rest.uri
-}
