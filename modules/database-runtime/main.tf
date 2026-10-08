@@ -20,7 +20,7 @@ locals {
     {
       path        = "/etc/agora-database/startup.sh"
       permissions = "0400"
-      content     = file("${path.module}/../../assets/database-host/startup.sh")
+      content     = file("${path.module}/files/startup.sh")
     },
     {
       path        = "/etc/agora-database/pgbackrest.conf"
@@ -64,6 +64,6 @@ locals {
       }], [{
       path        = "/etc/agora-database/check-backup.sh"
       permissions = "0444"
-      content     = file("${path.module}/../../assets/database-host/check-backup.sh")
+      content     = file("${path.module}/files/check-backup.sh")
   }])
 }

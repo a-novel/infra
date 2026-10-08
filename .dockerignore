@@ -1,10 +1,8 @@
 .git
-node_modules
 **/.terraform
 **/*_test.go
-!proofs/pgbackrest/*_test.go
+!tests/backup/*_test.go
 **/testdata
 **/*.tfstate*
-**/*.tfvars*
 **/*.tfplan
 **/gha-creds-*.json

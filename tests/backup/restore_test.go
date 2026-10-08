@@ -1,4 +1,4 @@
-package pgbackrest_test
+package backup_test
 
 import (
 	"context"
@@ -15,8 +15,8 @@ import (
 
 // TestNativeRestore exercises the production worker with native tools and local synthetic storage.
 func TestNativeRestore(t *testing.T) {
-	if os.Getenv("INFRA_PGBACKREST_PROOF") != "1" {
-		t.Skip("run the disposable pgbackrest-proof image")
+	if os.Getenv("BACKUP_TEST") != "1" {
+		t.Skip("run inside builds/backup-test.Dockerfile")
 	}
 	p := newProof(t, "json-keys")
 	p.backrest(t, "--type=full", "backup")

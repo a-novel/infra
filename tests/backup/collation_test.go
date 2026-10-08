@@ -1,4 +1,4 @@
-package pgbackrest_test
+package backup_test
 
 import (
 	"os"
@@ -12,8 +12,8 @@ import (
 // TestCollationPreparation executes the shipped SQL against disposable databases.
 // Synthetic version markers exercise mismatches without depending on an OS upgrade.
 func TestCollationPreparation(t *testing.T) {
-	if os.Getenv("INFRA_PGBACKREST_PROOF") != "1" {
-		t.Skip("run the disposable pgbackrest-proof image")
+	if os.Getenv("BACKUP_TEST") != "1" {
+		t.Skip("run inside builds/backup-test.Dockerfile")
 	}
 	asset, err := os.ReadFile("/database-startup.sh")
 	require.NoError(t, err)

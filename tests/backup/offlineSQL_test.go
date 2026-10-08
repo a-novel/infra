@@ -1,4 +1,4 @@
-package pgbackrest_test
+package backup_test
 
 import (
 	"context"
@@ -14,8 +14,8 @@ import (
 )
 
 func TestOfflineSQL(t *testing.T) {
-	if os.Getenv("INFRA_PGBACKREST_PROOF") != "1" {
-		t.Skip("run the disposable pgbackrest-proof image")
+	if os.Getenv("BACKUP_TEST") != "1" {
+		t.Skip("run inside builds/backup-test.Dockerfile")
 	}
 	// Each case owns a synthetic cluster; child cases evolve its full/differential chain.
 	for _, service := range []string{"json-keys", "authentication"} {

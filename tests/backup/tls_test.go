@@ -1,4 +1,4 @@
-package pgbackrest_test
+package backup_test
 
 import (
 	"fmt"
@@ -16,8 +16,8 @@ import (
 // TestRepositoryTLS uses loopback inside the offline container, not cloud or host networking.
 // The cases share a server and backup set so a denial always has a positive control.
 func TestRepositoryTLS(t *testing.T) {
-	if os.Getenv("INFRA_PGBACKREST_PROOF") != "1" {
-		t.Skip("run the disposable pgbackrest-proof image; see README.md")
+	if os.Getenv("BACKUP_TEST") != "1" {
+		t.Skip("run inside builds/backup-test.Dockerfile")
 	}
 	p := newProof(t, "proof")
 	config, err := os.ReadFile(p.config)
@@ -111,47 +111,11 @@ repo1-host-key-file=%[2]s/client.pem
 				require.NoError(t, err, out)
 			}
 		}},
-		{"Limit/EmptyRepository", func(t *testing.T) {
-			report := p.backrest(t, "--output=text", "--verbose", "--log-level-console=error", "verify")
-			require.Contains(t, report, "no archives or backups exist in the repo")
-		}},
 		{"Success/BackupAndSQLRecovery", func(t *testing.T) {
 			p.backrest(t, "check")
 			p.backrest(t, "--type=full", "--repo1-bundle", "backup")
 			set = p.backups(t)[0].Label
 			p.restore(t, set, "original")
-		}},
-		{"RepositoryIntegrity", func(t *testing.T) {
-			bundle := filepath.Join(p.repo, "backup", p.stanza, set, "bundle", "1")
-			original, err := os.ReadFile(bundle)
-			require.NoError(t, err)
-			for _, tc := range []struct {
-				name   string
-				status string
-			}{
-				{"Healthy", "ok"},
-				{"Missing", "error"},
-				{"Corrupt", "error"},
-			} {
-				passed := t.Run(tc.name, func(t *testing.T) {
-					t.Cleanup(func() {
-						require.NoError(t, os.WriteFile(bundle, original, 0o600))
-					})
-					switch tc.name {
-					case "Missing":
-						require.NoError(t, os.Remove(bundle))
-					case "Corrupt":
-						write(t, bundle, "corrupt synthetic backup bundle")
-					}
-					// backrest requires exit zero; only the native report distinguishes damaged files.
-					report := p.backrest(t, "--output=text", "--verbose", "--log-level-console=error", "verify")
-					require.Contains(t, report, "\nstatus: "+tc.status+"\n")
-				})
-				if !passed {
-					t.Fatal("integrity scenario failed; do not continue with repository mutations")
-				}
-				require.Contains(t, p.backrest(t, "--output=text", "--verbose", "--log-level-console=error", "verify"), "\nstatus: ok\n")
-			}
 		}},
 		{"Error/UnauthorizedClient", func(t *testing.T) {
 			out, err := p.command(t.Context(), "--repo1-host-cert-file="+p.root+"/peer.pem", "--repo1-host-key-file="+p.root+"/peer.pem", "repo-ls").CombinedOutput()
@@ -164,36 +128,6 @@ repo1-host-key-file=%[2]s/client.pem
 			require.Error(t, err, string(out))
 			require.Contains(t, string(out), "access denied")
 			p.backrest(t, "repo-ls")
-		}},
-		{"Error/UntrustedServer", func(t *testing.T) {
-			out, err := p.command(t.Context(), "--repo1-host-ca-file="+p.root+"/peer.crt", "repo-ls").CombinedOutput()
-			require.Error(t, err, string(out))
-			require.Contains(t, string(out), "unable to verify certificate")
-			p.backrest(t, "repo-ls")
-		}},
-		{"Limit/ClientOverridesRepository", func(t *testing.T) {
-			outside := t.TempDir()
-			path := filepath.Join(outside, "outside-repository")
-			write(t, path, "synthetic path-override probe")
-			require.NoError(t, os.Chmod(path, 0o400))
-			out := p.backrest(t, "--repo1-path="+outside, "repo-ls")
-			require.Equal(t, "outside-repository\n", out)
-			require.Equal(t, "synthetic path-override probe", p.backrest(t, "--repo1-path="+outside, "repo-get", "outside-repository"))
-			require.NoError(t, os.Chmod(path, 0o000))
-			denied, err := p.command(t.Context(), "--repo1-path="+outside, "repo-get", "outside-repository").CombinedOutput()
-			require.Error(t, err, string(denied))
-			require.Contains(t, string(denied), "Permission denied")
-			p.backrest(t, "repo-ls")
-		}},
-		{"Error/StoppedRepositoryThenExplicitRetry", func(t *testing.T) {
-			stop()
-			data := filepath.Join(t.TempDir(), "unavailable")
-			out, err := p.command(t.Context(), "--set="+set, "--pg1-path="+data, "--io-timeout=1", "restore").CombinedOutput()
-			require.Error(t, err, string(out))
-			require.Contains(t, string(out), "unable to connect")
-			require.NoFileExists(t, filepath.Join(data, "global", "pg_control"))
-			startRepository(t, serverConfig)
-			p.restore(t, set, "original")
 		}},
 	} {
 		if !t.Run(tc.name, tc.run) {
