@@ -70,6 +70,11 @@ run "serves_privately_from_pinned_images_and_secrets" {
     )
     error_message = "Only migrations run during apply."
   }
+
+  assert {
+    condition     = !contains([for env in google_cloud_run_v2_service.grpc.template[0].containers[0].env : env.name], "DOWNTIME_START")
+    error_message = "Without a planned downtime, the service receives no start."
+  }
 }
 
 run "rejects_an_unpinned_image" {
@@ -84,4 +89,44 @@ run "rejects_an_unpinned_image" {
   }
 
   expect_failures = [var.images]
+}
+
+run "passes_the_planned_downtime_start" {
+  command = plan
+
+  variables {
+    downtime = "{\"components\":[\"service-json-keys.database\"],\"start\":\"2026-10-12T06:00:00Z\",\"end\":\"2026-10-12T07:00:00Z\"}"
+  }
+
+  assert {
+    condition = alltrue([for container in concat(
+      google_cloud_run_v2_service.grpc.template[0].containers,
+      flatten([for job in google_cloud_run_v2_job.application : job.template[0].template[0].containers]),
+      ) : lookup({ for env in container.env : env.name => env.value }, "DOWNTIME_START", null) == "2026-10-12T06:00:00Z"
+    ])
+    error_message = "Every service and application job must receive the planned downtime start."
+  }
+}
+
+run "ignores_another_services_downtime" {
+  command = plan
+
+  variables {
+    downtime = "{\"components\":[\"service-authentication.database\"],\"start\":\"2026-10-12T06:00:00Z\",\"end\":\"2026-10-12T07:00:00Z\"}"
+  }
+
+  assert {
+    condition     = !contains([for env in google_cloud_run_v2_service.grpc.template[0].containers[0].env : env.name], "DOWNTIME_START")
+    error_message = "A downtime that lists no JSON Keys component must leave JSON Keys alone."
+  }
+}
+
+run "rejects_a_malformed_downtime_window" {
+  command = plan
+
+  variables {
+    downtime = "json-keys"
+  }
+
+  expect_failures = [var.downtime]
 }

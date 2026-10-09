@@ -17,6 +17,8 @@ concurrency:
 
 env:
   TF_IN_AUTOMATION: "true"
+  # The planned downtime window, written only by downtime.yaml.
+  DOWNTIME: ${{ vars.DOWNTIME }}
 
 jobs:
   validate-opentofu:

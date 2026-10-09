@@ -11,6 +11,10 @@ locals {
     subnetwork = local.foundation.network.subnet_id
     tags       = [local.foundation.network.network_tags["json_keys"]]
   }
+  # A planned downtime listing one of this service's components stops it from its start, until
+  # the downtime is removed.
+  downtime     = try(jsondecode(var.downtime), null)
+  downtime_env = anytrue([for component in try(local.downtime.components, []) : startswith(component, "service-json-keys.")]) ? { DOWNTIME_START = local.downtime.start } : {}
   database_env = {
     POSTGRES_HOST        = local.database.private_ip
     POSTGRES_PORT        = tostring(local.database.port)
@@ -54,7 +58,7 @@ resource "google_cloud_run_v2_job" "application" {
         image = local.image[each.key]
 
         dynamic "env" {
-          for_each = local.database_env
+          for_each = merge(local.database_env, local.downtime_env)
           content {
             name  = env.key
             value = env.value
@@ -124,7 +128,7 @@ resource "google_cloud_run_v2_service" "grpc" {
       }
 
       dynamic "env" {
-        for_each = merge(local.database_env, {
+        for_each = merge(local.database_env, local.downtime_env, {
           GCLOUD_PROJECT_ID       = local.project_id
           GRPC_PORT               = "8080"
           OTEL                    = "true"
