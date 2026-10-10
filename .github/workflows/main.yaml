@@ -130,7 +130,7 @@ jobs:
           go tool -modfile=golangci-lint.mod golangci-lint run ./...
 
       - name: Lint shell scripts
-        uses: a-novel-kit/workflows/generic-actions/lint-shell@v1.45.1
+        uses: a-novel-kit/workflows/generic-actions/lint-shell@v1.46.0
         with:
           # renovate: datasource=github-releases depName=koalaman/shellcheck
           version: "0.11.0"
@@ -145,7 +145,7 @@ jobs:
           pyflakes: false
 
       - name: Audit GitHub Actions security
-        uses: a-novel-kit/workflows/security-actions/lint-workflows@v1.45.1
+        uses: a-novel-kit/workflows/security-actions/lint-workflows@v1.46.0
         with:
           # renovate: datasource=docker depName=ghcr.io/zizmorcore/zizmor
           version: "1.30.1"
