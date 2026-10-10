@@ -112,7 +112,7 @@ jobs:
       - name: Mint approval token
         if: steps.pr.outputs.number != ''
         id: token
-        uses: actions/create-github-app-token@v3.2.0
+        uses: actions/create-github-app-token@v3
         with:
           client-id: ${{ vars.AGENT_BOT_CLIENT_ID }}
           private-key: ${{ secrets.AGENT_BOT_PRIVATE_KEY }}
