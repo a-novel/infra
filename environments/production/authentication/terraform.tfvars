@@ -1,5 +1,5 @@
 images = {
-  database   = "ghcr.io/a-novel/service-authentication/database:v2.11.0@sha256:78bcd4cba6aa60c37e46fad0b8625c8424d118014fc5efa645e0bdee05a8d871"
+  database   = "ghcr.io/a-novel/service-authentication/database:v2.11.1@sha256:2eac766d1912c24d382300864953798602c5bdcd073e42eb5677f3ca799ecf7d"
   migrations = "ghcr.io/a-novel/service-authentication/jobs/migrations:v2.11.1@sha256:2b44d82e3824aed7d297fd82c5716110cff6b449debaeda77189e8bbba7a66b9"
   rest       = "ghcr.io/a-novel/service-authentication/rest:v2.11.1@sha256:0695325c58b248c6df11a9b92dd26a801f48cc7548642993e28fbd2d3102f055"
 }
