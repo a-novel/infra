@@ -1,6 +1,11 @@
-# Remove after actionlint ships https://github.com/rhysd/actionlint/issues/711.
-# GitHub and zizmor validate this same-repository form; remote-action ref errors remain visible.
 paths:
   .github/workflows/*.yaml:
     ignore:
+      # Remove after actionlint ships https://github.com/rhysd/actionlint/issues/711.
+      # GitHub and zizmor validate this same-repository form; remote-action ref errors remain visible.
       - '^specifying action "\$/\.github/actions/[a-z0-9/-]+" in invalid format because ref is missing\.'
+      # Remove after actionlint ships https://github.com/rhysd/actionlint/pull/668. Its bundled
+      # metadata predates `client-id` in actions/create-github-app-token@v3, which the managed
+      # approval workflow uses; every other input error from the action stays visible.
+      - '^missing input "app-id" which is required by action "actions/create-github-app-token@v3"\.'
+      - '^input "client-id" is not defined in action "actions/create-github-app-token@v3"\.'
