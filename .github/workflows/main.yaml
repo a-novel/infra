@@ -120,7 +120,7 @@ jobs:
         shell: bash
         env:
           # renovate: datasource=npm depName=prettier
-          prettier_version: 3.9.9
+          prettier_version: 3.9.10
           # renovate: datasource=npm depName=renovate
           renovate_version: 44.149.2
         run: |
