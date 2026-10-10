@@ -192,6 +192,24 @@ jobs:
 
   # Each root's plan is its own required check. GitHub issues no OIDC token to
   # fork pull requests, so their plans fail until a maintainer pushes the branch.
+  # The deletion label approves the plans of the head it was added on. A push's plans ignore it, and
+  # this job removes it so a maintainer can add it again for the new head.
+  revoke-deletion-label:
+    if: >-
+      github.event.action == 'synchronize' &&
+      contains(github.event.pull_request.labels.*.name, 'allow-resource-deletion')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Remove the deletion label
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: gh pr edit "$PR" --repo "$GITHUB_REPOSITORY" --remove-label allow-resource-deletion
+
   plan-bootstrap:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
@@ -208,7 +226,7 @@ jobs:
       - uses: $/.github/actions/tofu
         with:
           root: bootstrap
-          allow_deletion: ${{ contains(github.event.pull_request.labels.*.name, 'allow-resource-deletion') }}
+          allow_deletion: ${{ github.event.action != 'synchronize' && contains(github.event.pull_request.labels.*.name, 'allow-resource-deletion') }}
           workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
           github_token: ${{ github.token }}
@@ -229,7 +247,7 @@ jobs:
       - uses: $/.github/actions/tofu
         with:
           root: environments/production/foundation
-          allow_deletion: ${{ contains(github.event.pull_request.labels.*.name, 'allow-resource-deletion') }}
+          allow_deletion: ${{ github.event.action != 'synchronize' && contains(github.event.pull_request.labels.*.name, 'allow-resource-deletion') }}
           workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
           github_token: ${{ github.token }}
@@ -250,7 +268,7 @@ jobs:
       - uses: $/.github/actions/tofu
         with:
           root: environments/production/json-keys
-          allow_deletion: ${{ contains(github.event.pull_request.labels.*.name, 'allow-resource-deletion') }}
+          allow_deletion: ${{ github.event.action != 'synchronize' && contains(github.event.pull_request.labels.*.name, 'allow-resource-deletion') }}
           workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
           github_token: ${{ github.token }}
@@ -271,7 +289,7 @@ jobs:
       - uses: $/.github/actions/tofu
         with:
           root: environments/production/authentication
-          allow_deletion: ${{ contains(github.event.pull_request.labels.*.name, 'allow-resource-deletion') }}
+          allow_deletion: ${{ github.event.action != 'synchronize' && contains(github.event.pull_request.labels.*.name, 'allow-resource-deletion') }}
           workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
           github_token: ${{ github.token }}

@@ -59,7 +59,9 @@ A plan that deletes, replaces or forgets a resource, or relaxes `deletion_protec
 If the change is intended:
 
 1. Add the `allow-resource-deletion` label. The checks re-run immediately.
-2. Merge with the label still on. Before it applies, deploy checks again that a pull request in
+2. A push removes the label, since it approved the previous head's plans. Review the new plans and
+   add it again.
+3. Merge with the label still on. Before it applies, deploy checks again that a pull request in
    the deploy carried the label.
 
 ## A deploy failed
