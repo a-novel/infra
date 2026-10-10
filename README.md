@@ -12,7 +12,8 @@ backups, Cloud Run services and their identities.
 1. **Open a pull request.** CI validates every root and posts a read-only `tofu plan` per root in
    the job summary.
 2. **Review the plan.** A plan that deletes, replaces or unprotects anything fails until a
-   maintainer adds the `allow-resource-deletion` label.
+   maintainer adds the `allow-resource-deletion` label. A push removes it, so each head's plans
+   get their own approval.
 3. **Merge.** [`deploy.yaml`](.github/workflows/deploy.yaml) applies the roots the merge changed:
    `bootstrap → foundation → services in parallel`, then checks production health.
 
