@@ -7,7 +7,7 @@ COPY cmd/native-restore ./cmd/native-restore
 COPY internal/recovery ./internal/recovery
 RUN go build -ldflags="-s -w" -trimpath -o /native-restore ./cmd/native-restore
 
-FROM ghcr.io/a-novel/service-json-keys/database:v2.9.0
+FROM ghcr.io/a-novel/service-json-keys/database:v2.9.1
 COPY --from=builder /native-restore /native-restore
 USER postgres
 HEALTHCHECK NONE
