@@ -17,6 +17,17 @@ gcloud compute ssh "$HOST" --zone="$ZONE" --project="$PROD" --tunnel-through-iap
 
 `gcloud` creates and registers an OS Login key on first use.
 
+A host presents new SSH host keys after it restarts, so `gcloud` then refuses to connect with
+"REMOTE HOST IDENTIFICATION HAS CHANGED". Compare the fingerprint it prints with the key the
+instance publishes, and drop the stale entry only when they match:
+
+```bash
+gcloud compute instances get-guest-attributes "$HOST" --zone="$ZONE" --project="$PROD" \
+  --query-path=hostkeys/ssh-ed25519 --format='value(value)' | sed 's/^/ssh-ed25519 /' | ssh-keygen -lf -
+ID="$(gcloud compute instances describe "$HOST" --zone="$ZONE" --project="$PROD" --format='value(id)')"
+ssh-keygen -R "compute.$ID" -f ~/.ssh/google_compute_known_hosts
+```
+
 On the host:
 
 ```bash
