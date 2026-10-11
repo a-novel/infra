@@ -74,6 +74,24 @@ module "backups" {
   notification_channel = module.private_runtime.notification_channel
 }
 
+# Keep failed health requests and every application and audit log. Only successful probes to the
+# two public health paths are dropped, in the project the service runs in.
+resource "google_logging_project_exclusion" "successful_healthchecks" {
+  project = local.api_project_id
+
+  name        = "successful-cloud-run-healthchecks"
+  description = "Exclude successful Cloud Run request logs for /v2/ping and /v2/healthcheck only."
+  disabled    = false
+  filter      = <<-EOT
+    resource.type="cloud_run_revision"
+    resource.labels.service_name="agora-authentication-rest"
+    log_id("run.googleapis.com/requests")
+    httpRequest.requestUrl=~"/v2/(ping|healthcheck)(\\?.*)?$"
+    httpRequest.status>=200
+    httpRequest.status<400
+  EOT
+}
+
 resource "google_monitoring_alert_policy" "rest_error_rate" {
   project      = local.api_project_id
   display_name = "Agora authentication REST 5xx error rate"

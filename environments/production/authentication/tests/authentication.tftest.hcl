@@ -46,6 +46,14 @@ run "splits_private_migrations_from_the_public_api" {
 
   assert {
     condition = (
+      google_logging_project_exclusion.successful_healthchecks.project == google_cloud_run_v2_service.rest.project &&
+      strcontains(google_logging_project_exclusion.successful_healthchecks.filter, "httpRequest.status<400")
+    )
+    error_message = "Only successful health checks are excluded, in the project the REST service runs in."
+  }
+
+  assert {
+    condition = (
       google_cloud_run_v2_job.migrations.project == "a-novel-production-prod" &&
       google_cloud_run_v2_service.rest.project == "a-novel-public-api-prod" &&
       google_cloud_run_v2_service.rest.ingress == "INGRESS_TRAFFIC_ALL" &&

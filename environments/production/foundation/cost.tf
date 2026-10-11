@@ -192,23 +192,3 @@ resource "google_logging_project_bucket_config" "default" {
     prevent_destroy = true
   }
 }
-
-# Keep failed health requests and every application/audit log. Only successful
-# probes to Authentication's two exact public health paths are dropped.
-resource "google_logging_project_exclusion" "successful_healthchecks" {
-  project = google_project.workload.project_id
-
-  name        = "successful-cloud-run-healthchecks"
-  description = "Exclude successful Cloud Run request logs for /v2/ping and /v2/healthcheck only."
-  disabled    = false
-  filter      = <<-EOT
-    resource.type="cloud_run_revision"
-    resource.labels.service_name="agora-authentication-rest"
-    log_id("run.googleapis.com/requests")
-    httpRequest.requestUrl=~"/v2/(ping|healthcheck)(\\?.*)?$"
-    httpRequest.status>=200
-    httpRequest.status<400
-  EOT
-
-  depends_on = [google_project_service.workload["logging.googleapis.com"]]
-}
