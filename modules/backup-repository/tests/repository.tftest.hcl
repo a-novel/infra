@@ -43,6 +43,11 @@ run "keeps_the_repository_private_and_hardened" {
   command = plan
 
   assert {
+    condition     = google_compute_instance.repository.labels["config"] == substr(sha256(google_compute_instance.repository.metadata["user-data"]), 0, 16)
+    error_message = "The config label must track the user-data the VM boots from, so the rollout sees a pending change."
+  }
+
+  assert {
     condition = (
       length(google_compute_instance.repository.network_interface[0].access_config) == 0 &&
       google_compute_instance.repository.deletion_protection &&

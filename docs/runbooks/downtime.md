@@ -51,7 +51,7 @@ Nothing else ends a downtime: until you clear it, the listed services keep refus
 - Check the work itself directly: database host logs and backup status.
 - Merge the database host changes it was planned for, with the `allow-downtime` label
   ([database host changes](deployments.md#database-host-changes)). Their release pull requests also
-  carry the service images: the deploy runs their migrations before the hosts roll.
+  carry the service images: the deploy runs their migrations, then rolls the hosts.
 
 ## Requirements
 

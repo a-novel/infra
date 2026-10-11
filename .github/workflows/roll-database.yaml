@@ -1,8 +1,8 @@
 name: roll-database
 
-# Database hosts never restart on apply. This restarts a service's database
-# host, or replaces it when its template changed, keeping its disk and IP, then
-# restarts its backup repository host. Run it after that service's deploy.
+# Database hosts never restart on apply, and deploy rolls them only during their planned downtime.
+# This manual fallback restarts a service's database host now, or replaces it when its template
+# changed, keeping its disk and IP, then restarts its backup repository host.
 on:
   workflow_dispatch:
     inputs:
@@ -37,16 +37,8 @@ jobs:
         with:
           workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
-      - name: Roll the database and backup repository hosts
-        shell: bash
-        env:
-          SERVICE: ${{ inputs.service }}
-        run: |
-          set -euo pipefail
-          where=(--zone=europe-west1-d --project=a-novel-production-prod)
-          gcloud compute instance-groups managed update-instances "agora-database-$SERVICE" --all-instances \
-            --minimal-action=restart --most-disruptive-allowed-action=replace "${where[@]}"
-          gcloud compute instance-groups managed wait-until "agora-database-$SERVICE" --stable --timeout=900 "${where[@]}"
-          gcloud compute instances stop "agora-pgbackrest-$SERVICE" "${where[@]}"
-          gcloud compute instances start "agora-pgbackrest-$SERVICE" "${where[@]}"
+      - uses: $/.github/actions/roll
+        with:
+          service: ${{ inputs.service }}
+          force: "true"
       - uses: $/.github/actions/health

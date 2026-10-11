@@ -73,10 +73,11 @@ rolled, so the change waits for a planned downtime of that service.
 1. [Schedule a planned downtime](downtime.md) listing `service-<root>.database`.
 2. Once it has started, add the `allow-downtime` label. The checks re-run immediately. Like the
    deletion label, a push removes it.
-3. Merge, then [roll the hosts](database.md#change-the-database-image-startup-or-os-image).
+3. Merge. The deploy's `rollout` job rolls the database host, then its backup repository VM.
 4. [Clear the downtime](downtime.md#clear-the-downtime) once the database answers again.
 
-A change merged without it, such as a force-merge, still applies; the hosts move only when rolled.
+A change merged without it, such as a force-merge, still applies. Every deploy reports its host as
+"rollout pending" until one runs during that service's planned downtime.
 
 ## A deploy failed
 

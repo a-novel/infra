@@ -1,0 +1,60 @@
+name: Database rollout
+description: >
+  Move a service's database host and backup repository VM onto their applied configuration. The
+  database host moves only when it differs and the service's planned downtime is in progress; the
+  repository VM moves when its config label differs from the running one, and after its database
+  host, so pgBackRest keeps one version on both. With force, both move now. The caller must hold
+  the foundation identity and set DOWNTIME.
+
+inputs:
+  service:
+    required: true
+    description: Service root whose hosts move, such as json-keys.
+  force:
+    required: false
+    default: "false"
+    description: '"true" to restart both hosts now, whatever their state and the downtime.'
+
+runs:
+  using: composite
+  steps:
+    - name: Roll the database and backup repository hosts
+      shell: bash
+      env:
+        SERVICE: ${{ inputs.service }}
+        FORCE: ${{ inputs.force }}
+      run: |
+        set -euo pipefail
+        where=(--zone=europe-west1-d --project=a-novel-production-prod)
+        group="agora-database-$SERVICE" repository="agora-pgbackrest-$SERVICE"
+        # Observed state, not this deploy's changes: a cancelled or force-merged deploy loses nothing.
+        database_pending="$(gcloud compute instance-groups managed describe "$group" "${where[@]}" --format=json |
+          jq '(.status.versionTarget.isReached and (.status.allInstancesConfig.effective // true)) | not')"
+        labels="$(gcloud compute instances describe "$repository" "${where[@]}" --format='json(labels)')"
+        config="$(jq -r '.labels.config // ""' <<<"$labels")"
+        repository_pending="$(jq '.labels.config != .labels["running-config"]' <<<"$labels")"
+        started=false
+        if [ -n "${DOWNTIME:-}" ] && jq -e --arg component "service-$SERVICE.database" '.components | index($component)' <<<"$DOWNTIME" >/dev/null \
+          && [ "$(date -d "$(jq -r .start <<<"$DOWNTIME")" +%s)" -le "$(date +%s)" ]; then
+          started=true
+        fi
+        if [ "$FORCE" = true ]; then database_pending=true repository_pending=true started=true; fi
+
+        if [ "$database_pending" = true ]; then
+          if [ "$started" != true ]; then
+            echo "::warning::Rollout pending: the $SERVICE database host waits for a planned downtime listing service-$SERVICE.database."
+            echo "- \`$SERVICE\`: database rollout pending until its planned downtime" >>"$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          gcloud compute instance-groups managed update-instances "$group" --all-instances \
+            --minimal-action=restart --most-disruptive-allowed-action=replace "${where[@]}"
+          gcloud compute instance-groups managed wait-until "$group" --stable --timeout=900 "${where[@]}"
+          echo "- \`$SERVICE\`: database host rolled" >>"$GITHUB_STEP_SUMMARY"
+          repository_pending=true
+        fi
+        if [ "$repository_pending" = true ]; then
+          gcloud compute instances stop "$repository" "${where[@]}"
+          gcloud compute instances start "$repository" "${where[@]}"
+          gcloud compute instances add-labels "$repository" --labels="running-config=$config" "${where[@]}"
+          echo "- \`$SERVICE\`: backup repository VM restarted" >>"$GITHUB_STEP_SUMMARY"
+        fi
