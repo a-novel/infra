@@ -1,6 +1,6 @@
-# Authentication's dependency endpoint is checked every three hours by the
-# existing read-only drift workflow. This root owns provider-native operational
-# metrics; the release root owns the service's warm-instance configuration.
+# Being retired: Authentication REST runs in the public-api project, whose metrics this project
+# cannot see. The authentication root's rest_error_rate alert watches them. This apply unlocks the
+# policy; the next one deletes it.
 resource "google_monitoring_alert_policy" "authentication_error_rate" {
   count = 1
 
@@ -48,10 +48,7 @@ resource "google_monitoring_alert_policy" "authentication_error_rate" {
   }
 
   notification_channels = [google_monitoring_notification_channel.operations_email[0].name]
-  deletion_policy       = "PREVENT"
-  lifecycle {
-    prevent_destroy = true
-  }
+  deletion_policy       = "DELETE"
 }
 
 # One native Cloud Run metric covers every declared application job failure.
