@@ -70,6 +70,7 @@ run "authentication" {
       local.requests["selected"].service == "authentication",
       google_compute_instance.recovery["selected"].service_account[0].email == "pgbr-authentication-recovery@management-project.iam.gserviceaccount.com",
       google_compute_instance.recovery["selected"].labels["service"] == "authentication",
+      strcontains(yamldecode(google_compute_instance.recovery["selected"].metadata["user-data"]).write_files[2].content, "Description=Agora authentication native restore"),
       google_compute_instance.recovery["selected"].desired_status == "TERMINATED",
       length(google_compute_instance.recovery["selected"].network_interface[0].access_config) == 0,
     ])

@@ -41,7 +41,7 @@ resource "google_compute_instance" "recovery" {
         ], [for name, network in { restore = "bridge", verify = "none" } : {
           path                             = "/etc/systemd/system/agora-native-${name}.service"
           permissions                      = "0644"
-          content                          = templatefile("${path.module}/restore.service.tftpl", { image = each.value.restore_image, name = name, network = network })
+          content                          = templatefile("${path.module}/restore.service.tftpl", { image = each.value.restore_image, name = name, network = network, service = each.value.service })
       }])
       # Creation boots briefly even with a stopped desired state; preparation must not start work.
       runcmd = [["systemctl", "daemon-reload"]]
