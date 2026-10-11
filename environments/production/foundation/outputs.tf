@@ -89,3 +89,11 @@ output "root_name" {
   description = "Stable root identifier used by repository validation."
   value       = local.root_name
 }
+
+output "cloud_run_cpu_quotas" {
+  description = "Regional Cloud Run CPU ceiling per trust zone, in milli-vCPU. Service roots check their instance caps against it."
+  value = merge(
+    { private = var.cloud_run_cpu_quota_millicpu },
+    { for zone in keys(local.shell_projects) : zone => var.shell_cloud_run_quotas[zone].cpu_millicpu },
+  )
+}

@@ -270,6 +270,26 @@ variable "cloud_run_memory_quota_bytes" {
   }
 }
 
+variable "shell_cloud_run_quotas" {
+  description = "Regional Cloud Run ceilings per shell project, in milli-vCPU and memory bytes. Each must fit its services' max instances plus one rollout instance."
+  type = map(object({
+    cpu_millicpu = number
+    memory_bytes = number
+  }))
+  default = {
+    public       = { cpu_millicpu = 2000, memory_bytes = 4294967296 }
+    "public-api" = { cpu_millicpu = 2000, memory_bytes = 4294967296 }
+  }
+
+  validation {
+    condition = alltrue([for quota in values(var.shell_cloud_run_quotas) :
+      quota.cpu_millicpu >= 2000 && quota.cpu_millicpu <= 64000 && quota.cpu_millicpu % 1000 == 0 &&
+      quota.memory_bytes >= 4294967296 && quota.memory_bytes <= 137438953472 && quota.memory_bytes % 1073741824 == 0
+    ])
+    error_message = "Each shell's Cloud Run quota must be 2,000-64,000 milli-vCPU in 1,000 increments and 4-128 GiB in whole GiB."
+  }
+}
+
 variable "compute_cpu_quota" {
   description = "Regional Compute Engine CPU ceiling for the stateful data plane."
   type        = number

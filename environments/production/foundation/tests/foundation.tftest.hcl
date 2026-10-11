@@ -111,3 +111,15 @@ run "copies_and_pins_host_credentials_by_digest" {
     error_message = "Each database host must run host-credentials from its service's tooling repository, by digest."
   }
 }
+
+run "caps_cloud_run_in_every_project" {
+  command = plan
+
+  assert {
+    condition = alltrue([for project in concat(["cloud_run"], [for zone in ["public", "public-api"] : "${zone}/cloud_run"]) :
+      google_cloud_quotas_quota_preference.cost_cap["${project}_cpu"].quota_id == "CpuAllocPerProjectRegion" &&
+      google_cloud_quotas_quota_preference.cost_cap["${project}_memory"].quota_id == "MemAllocPerProjectRegion"
+    ])
+    error_message = "Every project that runs Cloud Run services needs a CPU and a memory ceiling."
+  }
+}
