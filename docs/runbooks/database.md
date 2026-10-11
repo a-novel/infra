@@ -17,6 +17,17 @@ gcloud compute ssh "$HOST" --zone="$ZONE" --project="$PROD" --tunnel-through-iap
 
 `gcloud` creates and registers an OS Login key on first use.
 
+A host presents new SSH host keys after it restarts, so `gcloud` then refuses to connect with
+"REMOTE HOST IDENTIFICATION HAS CHANGED". Compare the fingerprint it prints with the key the
+instance publishes, and drop the stale entry only when they match:
+
+```bash
+gcloud compute instances get-guest-attributes "$HOST" --zone="$ZONE" --project="$PROD" \
+  --query-path=hostkeys/ssh-ed25519 --format='value(value)' | sed 's/^/ssh-ed25519 /' | ssh-keygen -lf -
+ID="$(gcloud compute instances describe "$HOST" --zone="$ZONE" --project="$PROD" --format='value(id)')"
+ssh-keygen -R "compute.$ID" -f ~/.ssh/google_compute_known_hosts
+```
+
 On the host:
 
 ```bash
@@ -39,11 +50,14 @@ Timers already take a full backup on Sundays, a differential the other days, and
 hour. To take one by hand, for example before maintenance, run on the database host:
 
 ```bash
-sudo systemctl start agora-backup-check.service
-sudo systemctl start agora-backup-full.service
-sudo systemctl start agora-backup-verify.service
+sudo systemctl start --wait agora-backup-check.service
+sudo systemctl start --wait agora-backup-full.service
+sudo systemctl start --wait agora-backup-verify.service
 sudo journalctl -u agora-backup-full.service -u agora-backup-verify.service --since=-2h
 ```
+
+Keep `--wait`. These units are `Type=exec`, so a plain `start` returns once the container launches:
+all three would run at once, and verify would read the repository before the new backup exists.
 
 A full backup ends with `backup command end: completed successfully`. The verify report must say
 `status: ok`: verify can exit 0 even when it reports an error, so read the output.
