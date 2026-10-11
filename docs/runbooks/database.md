@@ -132,8 +132,9 @@ power loss.
      size, and a foundation apply would restore it by creating a second host.
    - The new disk keeps the old name, so the group and the host attach it. OpenTofu ignores its
      source snapshot.
-   - The swap has not been practised yet
-     ([#721](https://github.com/a-novel/infra/issues/721)). Rehearse it on a throwaway group first.
+   - The detach waits for the host to stop, about two minutes.
+   - Rehearsed on a throwaway group ([#723](https://github.com/a-novel/infra/issues/723)): the host
+     keeps its name and IP, and a later rollout reattaches the restored disk.
 
 3. Wait until the database answers, then clear the downtime. The template records the data disk's
    ID, so the next foundation change rolls the host once more: it needs a planned downtime, like any
