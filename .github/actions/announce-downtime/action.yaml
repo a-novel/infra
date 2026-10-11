@@ -1,0 +1,46 @@
+name: Announce a planned downtime
+description: >
+  Posts one step of a planned downtime to the public a-novel-planned-downtime channel. Times are
+  Discord timestamps, so each reader sees their own time zone and how far away the time is.
+
+inputs:
+  webhook:
+    required: true
+    description: Discord webhook of the planned downtime channel. Empty skips the post.
+  window:
+    required: true
+    description: The downtime as DOWNTIME holds it, {components, start, end}.
+  title:
+    required: true
+    description: What happened, such as "Planned downtime in 1 day".
+  color:
+    required: true
+    description: The discord-post color naming the downtime's state.
+
+runs:
+  using: composite
+  steps:
+    - name: Describe the downtime
+      id: describe
+      shell: bash
+      env:
+        WINDOW: ${{ inputs.window }}
+      run: |
+        set -euo pipefail
+        start="$(date -d "$(jq -r .start <<<"$WINDOW")" +%s)"
+        end="$(date -d "$(jq -r .end <<<"$WINDOW")" +%s)"
+        delimiter="EOF_$(openssl rand -hex 8)"
+        {
+          echo "description<<$delimiter"
+          echo "**Affects** $(jq -r '.components | map("`\(.)`") | join(", ")' <<<"$WINDOW")"
+          echo "**Starts** <t:$start:F> (<t:$start:R>)"
+          echo "**Expected back** <t:$end:F> (<t:$end:R>)"
+          echo "$delimiter"
+        } >>"$GITHUB_OUTPUT"
+
+    - uses: a-novel-kit/workflows/generic-actions/discord-post@v1.48.0
+      with:
+        webhook: ${{ inputs.webhook }}
+        title: ${{ inputs.title }}
+        color: ${{ inputs.color }}
+        description: ${{ steps.describe.outputs.description }}

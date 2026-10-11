@@ -19,7 +19,7 @@ changed. `<root>` is the service root's directory under `environments/production
 `end` is only what users were told. A downtime lasts until you clear it, even past its `end`.
 
 There is at most one downtime at a time. It lives in the `DOWNTIME` repository variable as
-`{"components": [...], "start": "...", "end": "..."}`, and only `downtime.yaml` writes it. Two things
+`{"components": [...], "start": "...", "end": "..."}`, and only `downtime.yaml` writes it. Three things
 read it:
 
 - **the services.** At each deploy, a listed service receives `DOWNTIME_START` and stops on its own
@@ -27,6 +27,11 @@ read it:
 - **the platform.** It reads the whole downtime from
   `https://raw.githubusercontent.com/a-novel/infra/downtime/downtime.json`, which holds `null` when
   none is planned. The `downtime` branch holds only that file, replaced on every run.
+- **the Discord announcements.** `downtime.yaml` posts each change to the public
+  `a-novel-planned-downtime` channel: scheduled, rescheduled, extended (same start, later end), ended
+  or cancelled. `downtime-reminders.yaml` posts 1 week, 1 day, 6 hours and 30 minutes before `start`,
+  then at `start`. It runs every 10 minutes, so a reminder comes up to 10 minutes late, more when
+  GitHub delays its scheduled runs.
 
 Deploys, plans and drift checks read `DOWNTIME` too. A database host change merges only while a
 downtime listing that service has started, and the deploy rolls the host only then: see
