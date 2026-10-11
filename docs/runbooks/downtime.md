@@ -58,9 +58,8 @@ before `start`.** The rollout trusts `DOWNTIME` alone: if the services never rec
 ## While it runs
 
 - Merge the database host changes the downtime was planned for, with the `allow-downtime` label.
-  Their deploy runs a release's migrations, then rolls the hosts. Migrations and other deploy jobs
-  still run during a downtime; a JSON Keys release needs one extra step, described in
-  [Change a database host](database.md#steps).
+  Their deploy runs a release's migrations, then rolls the hosts. Migrations still run during a
+  downtime; the JSON Keys smoke check waits for the downtime to be cleared.
 - The deploy health check is skipped, since the listed services refuse work. Check the database hosts
   directly ([Inspect and connect](database.md#inspect-and-connect)).
 
@@ -72,7 +71,7 @@ gh workflow run downtime.yaml --repo a-novel/infra -f operation=clear
 
 Clear it once the work is done and verified. The workflow deletes `DOWNTIME`, publishes `null`, and
 runs a full deploy, which restarts the services without `DOWNTIME_START`. The health check runs
-again.
+again, and so does the JSON Keys smoke check when the downtime listed JSON Keys.
 
 A forgotten downtime keeps its services down. The drift workflow fails every three hours once `end`
 has passed, as a reminder to clear it or to schedule a later end.
