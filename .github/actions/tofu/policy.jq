@@ -17,6 +17,7 @@ def database_host_change:
 {
   deletions: [managed | select((.change.actions | index("delete") or index("forget")) and (template_replacement | not)) | .address],
   weakened: [managed | select(.change.actions == ["update"] and (.change | weakened)) | .address],
-  downtime_changes: [managed | select(database_host_change) | {address, service: .index}],
+  # Foundation keys its hosts by identity (json_keys); downtimes name the service root (json-keys).
+  downtime_changes: [managed | select(database_host_change) | {address, service: (.index | gsub("_"; "-"))}],
   failed_checks: [.checks[]? | select(.status == "fail" or .status == "error") | .address.to_display]
 }
