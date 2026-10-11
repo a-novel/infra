@@ -13,10 +13,9 @@ secret_versions = {
 backup_repository = {
   cos_image = "projects/cos-cloud/global/images/cos-129-19506-505-8"
   runtime = {
-    credentials_image = "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-json-keys-private-tooling/host-credentials@sha256:a5e264fc51c824c52fb6fd59b035e14e52fdc9f77e47b0375b352d8ad9bfd00d"
-    client_name       = "agora-database.a-novel-production-prod"
-    ca_version        = "1"
-    identity_version  = "2"
+    client_name      = "agora-database.a-novel-production-prod"
+    ca_version       = "1"
+    identity_version = "2"
   }
 }
 
