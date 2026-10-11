@@ -30,6 +30,7 @@ jobs:
       pull-requests: read
     outputs:
       allow: ${{ steps.changes.outputs.allow }}
+      deploys: ${{ steps.changes.outputs.deploys }}
       bootstrap: ${{ steps.changes.outputs.bootstrap }}
       foundation: ${{ steps.changes.outputs.foundation }}
       json_keys: ${{ steps.changes.outputs.json_keys }}
@@ -79,6 +80,7 @@ jobs:
           deploy() { changed "$1" && echo true || echo false; }
 
           # Service roots read foundation's outputs, so a foundation change re-plans them.
+          bootstrap="$(deploy bootstrap)"
           foundation="$(deploy environments/production/foundation)"
           json_keys="$(deploy environments/production/json-keys)"
           authentication="$(deploy environments/production/authentication)"
@@ -92,14 +94,41 @@ jobs:
             [ "$labelled" = true ] && allow=true
           done
 
+          # The announcement lists the roots this deploy applies, with each image's new tag.
+          roots="" deploys=false
+          for root in bootstrap foundation json_keys authentication; do
+            [ "${!root}" = true ] || continue
+            deploys=true
+            dir=environments/production/${root//_/-}
+            [ "$root" = bootstrap ] && dir=bootstrap
+            images=""
+            if [ "$all" = false ]; then
+              images="$(git diff --unified=0 "$base" HEAD -- "$dir/terraform.tfvars" |
+                sed -nE 's/^\+ *([a-z-]+) *= *"[^"]*:([^@"]+)@.*/\1 \2/p' | paste -sd, - | sed 's/,/, /g')"
+            fi
+            roots+="- \`${root//_/-}\`${images:+: $images}"$'\n'
+          done
+          delimiter="EOF_$(openssl rand -hex 8)"
+          printf 'roots<<%s\n%s%s\n' "$delimiter" "$roots" "$delimiter" >>"$GITHUB_OUTPUT"
+
           tee -a "$GITHUB_OUTPUT" <<EOF
-          bootstrap=$(deploy bootstrap)
+          deploys=$deploys
+          bootstrap=$bootstrap
           foundation=$foundation
           json_keys=$json_keys
           authentication=$authentication
           allow=$allow
           EOF
           echo "Changes since ${base:-the first deploy}; every root: $all." >>"$GITHUB_STEP_SUMMARY"
+      - name: Announce the deploy
+        if: steps.changes.outputs.deploys == 'true'
+        uses: a-novel-kit/workflows/generic-actions/discord-post@v1.48.0
+        with:
+          webhook: ${{ secrets.DEPLOY_WEBHOOK }}
+          color: started
+          title: a-novel/infra · deploy started
+          url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          description: ${{ steps.changes.outputs.roots }}
 
   bootstrap:
     needs: changes
@@ -223,6 +252,8 @@ jobs:
       - uses: $/.github/actions/roll
         with:
           service: ${{ matrix.service }}
+          webhook: ${{ secrets.DEPLOY_WEBHOOK }}
+          roles: ${{ vars.DISCORD_REPO_ROLES }}
 
   # Authentication's health covers PostgreSQL, SMTP and the JSON Keys path.
   health:
@@ -243,3 +274,49 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
       - uses: $/.github/actions/health
+
+  # Reports every deploy that applied a root, and any that failed. A failure pings a-novel/infra and
+  # the role of each service whose root failed to apply.
+  notify:
+    needs:
+      [
+        changes,
+        bootstrap,
+        foundation,
+        json-keys,
+        authentication,
+        rollout,
+        health,
+      ]
+    if: ${{ always() && (needs.changes.outputs.deploys == 'true' || contains(needs.*.result, 'failure')) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Summarize the outcome
+        id: outcome
+        shell: bash
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          ROLES: ${{ vars.DISCORD_REPO_ROLES }}
+        run: |
+          set -euo pipefail
+          [ -n "$ROLES" ] || ROLES='{}'
+          jq -r --argjson roles "$ROLES" '
+            [to_entries[] | select(.value.result == "failure") | .key] as $failed
+            | if $failed != [] then
+                "outcome=failed",
+                "description=Failed jobs: \($failed | map("`\(.)`") | join(", "))",
+                "roles=\(["a-novel/infra"] + ($failed | map(select(. == "json-keys" or . == "authentication") | "a-novel/service-\(.)"))
+                  | map($roles[.] // empty) | join(" "))"
+              elif any(.[]; .result == "cancelled") then "outcome=cancelled"
+              else "outcome=succeeded" end' <<<"$NEEDS" >>"$GITHUB_OUTPUT"
+      - name: Post the outcome
+        uses: a-novel-kit/workflows/generic-actions/discord-post@v1.48.0
+        with:
+          webhook: ${{ secrets.DEPLOY_WEBHOOK }}
+          color: ${{ steps.outcome.outputs.outcome }}
+          title: a-novel/infra · deploy ${{ steps.outcome.outputs.outcome }}
+          url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          description: ${{ steps.outcome.outputs.description }}
+          mention_roles: ${{ steps.outcome.outputs.roles }}

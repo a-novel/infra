@@ -41,4 +41,6 @@ jobs:
         with:
           service: ${{ inputs.service }}
           force: "true"
+          webhook: ${{ secrets.DEPLOY_WEBHOOK }}
+          roles: ${{ vars.DISCORD_REPO_ROLES }}
       - uses: $/.github/actions/health
