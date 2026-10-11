@@ -52,8 +52,8 @@ gh workflow run downtime.yaml --repo a-novel/infra -f operation=schedule \
 
 The workflow checks the components and dates, writes `DOWNTIME`, publishes the document, then runs a
 full deploy, which passes `DOWNTIME_START` to the listed services. **Check that this deploy succeeded
-before `start`.** The rollout trusts `DOWNTIME` alone: if the services never received
-`DOWNTIME_START`, a database host could restart while they still serve users.
+before `start`:** if it failed, the services keep serving at `start`. The rollout then refuses to
+restart their database hosts, until a deploy run by hand gives them `DOWNTIME_START`.
 
 ## While it runs
 

@@ -1,8 +1,8 @@
 name: Database rollout
 description: >
   Move a service's database host and backup repository VM onto their applied configuration. The
-  database host moves only when it differs and the service's planned downtime is in progress, after
-  a snapshot of its data disk; the repository VM moves when its config label differs from the
+  database host moves only when it differs and the service's planned downtime is in progress and
+  its service has taken it, after a snapshot of its data disk; the repository VM moves when its config label differs from the
   running one, and after its database host, so pgBackRest keeps one version on both. With force,
   both move now. The caller must hold the foundation identity and set DOWNTIME.
 
@@ -45,6 +45,22 @@ runs:
             echo "::warning::Rollout pending: the $SERVICE database host waits for a planned downtime listing service-$SERVICE.database."
             echo "- \`$SERVICE\`: database rollout pending until its planned downtime" >>"$GITHUB_STEP_SUMMARY"
             exit 0
+          fi
+          # DOWNTIME alone does not stop the services: only a deploy gives them DOWNTIME_START. Roll
+          # only once the serving revision is the latest one and carries this downtime's start.
+          if [ "$FORCE" != true ]; then
+            case "$SERVICE" in
+              json-keys) run=(agora-json-keys-grpc --project=a-novel-production-prod) ;;
+              authentication) run=(agora-authentication-rest --project=a-novel-public-api-prod) ;;
+              *) echo "::error::Unknown service $SERVICE."; exit 1 ;;
+            esac
+            stopped="$(gcloud run services describe "${run[@]}" --region=europe-west1 --format=json |
+              jq --arg start "$(jq -r .start <<<"$DOWNTIME")" '.status.latestReadyRevisionName == .status.latestCreatedRevisionName
+                and ([.spec.template.spec.containers[].env[]? | select(.name == "DOWNTIME_START") | .value] | index($start) != null)')"
+            if [ "$stopped" != true ]; then
+              echo "::error::The $SERVICE service has not taken the planned downtime yet; run a deploy by hand to apply it, which rolls the host."
+              exit 1
+            fi
           fi
           # The data and WAL share this disk, so PostgreSQL recovers the snapshot as after a power loss.
           snapshot="agora-data-$SERVICE-$(date -u +%Y%m%d-%H%M%S)"
