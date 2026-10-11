@@ -33,6 +33,7 @@ override_data {
           instance_group_manager = "agora-database-authentication"
           private_ip             = "10.20.0.4"
           repository_ip          = "10.20.0.7"
+          credentials_image      = "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-authentication-private-tooling/host-credentials@sha256:a5e264fc51c824c52fb6fd59b035e14e52fdc9f77e47b0375b352d8ad9bfd00d"
           port                   = 5433
           service_account        = "agora-auth-database@a-novel-production-prod.iam.gserviceaccount.com"
           zone                   = "europe-west1-d"

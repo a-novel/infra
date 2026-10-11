@@ -46,10 +46,9 @@ variable "backup_repository" {
   type = object({
     cos_image = string
     runtime = object({
-      credentials_image = string
-      client_name       = string
-      ca_version        = string
-      identity_version  = string
+      client_name      = string
+      ca_version       = string
+      identity_version = string
     })
   })
 }

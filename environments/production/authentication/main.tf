@@ -60,7 +60,7 @@ module "backups" {
     ip         = local.database.repository_ip
     cos_image  = var.backup_repository.cos_image
   }
-  runtime                   = merge(var.backup_repository.runtime, { server_image = local.image.database })
+  runtime                   = merge(var.backup_repository.runtime, { server_image = local.image.database, credentials_image = local.database.credentials_image })
   project_id                = local.private_project_id
   region                    = local.region
   bucket                    = "a-novel-management-prod-232403541574-pgbr-authentication"

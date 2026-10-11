@@ -57,11 +57,10 @@ Foundation pins the published image once, in `host_credentials_image`, as
 attestation against `publish-rollout-verifier.yaml` and copies it into each service's private tooling
 repository, `agora-<service>-private-tooling`. The hosts pull it from there, by digest.
 
-The service roots still pin that copy themselves, in `backup_repository.runtime.credentials_image`:
-`europe-west1-docker.pkg.dev/a-novel-production-prod/agora-<service>-private-tooling/host-credentials@<digest>`.
-Update all three values in one pull request.
+The service roots read that reference from foundation for their backup repository VMs, so this one
+value is the only pin.
 
-The foundation pin changes the database hosts, so merge the pull request as a
+A new pin changes the database hosts, so merge its pull request as a
 [database host change](database.md#change-a-database-host), during a planned downtime. The deploy
 copies the image before it applies, then the rollout restarts each database host, then its backup
 repository VM, which load the new version.
