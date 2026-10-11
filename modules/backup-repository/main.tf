@@ -72,6 +72,22 @@ resource "google_artifact_registry_repository_iam_member" "readers" {
   member     = each.value.member
 }
 
+# The database host reaches this VM at one fixed address, so the address is reserved.
+resource "google_compute_address" "repository" {
+  project      = var.project_id
+  region       = var.region
+  name         = "agora-pgbackrest-${var.service}"
+  description  = "Address of the ${var.service} backup repository VM, trusted by its database host."
+  address_type = "INTERNAL"
+  purpose      = "GCE_ENDPOINT"
+  subnetwork   = var.placement.subnetwork
+  address      = var.placement.ip
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
 resource "google_compute_instance" "repository" {
   project                   = var.project_id
   zone                      = var.placement.zone
@@ -101,6 +117,7 @@ resource "google_compute_instance" "repository" {
 
   network_interface {
     subnetwork = var.placement.subnetwork
+    network_ip = google_compute_address.repository.address
   }
 
   service_account {

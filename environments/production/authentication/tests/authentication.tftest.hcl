@@ -32,6 +32,7 @@ override_data {
         authentication = {
           instance_group_manager = "agora-database-authentication"
           private_ip             = "10.20.0.4"
+          repository_ip          = "10.20.0.7"
           port                   = 5433
           service_account        = "agora-auth-database@a-novel-production-prod.iam.gserviceaccount.com"
           zone                   = "europe-west1-d"

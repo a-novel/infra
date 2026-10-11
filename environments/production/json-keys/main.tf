@@ -41,6 +41,7 @@ module "backups" {
   placement = {
     zone       = local.database.zone
     subnetwork = local.foundation.network.subnet_id
+    ip         = local.database.repository_ip
     cos_image  = var.backup_repository.cos_image
   }
   runtime                   = merge(var.backup_repository.runtime, { server_image = local.image.database })

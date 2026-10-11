@@ -14,12 +14,18 @@ variable "region" {
 }
 
 variable "placement" {
-  description = "Repository VM zone, subnetwork, and pinned Container-Optimized OS image."
+  description = "Repository VM zone, subnetwork, internal address the database host trusts, and pinned Container-Optimized OS image."
   type = object({
     zone       = string
     subnetwork = string
+    ip         = string
     cos_image  = string
   })
+
+  validation {
+    condition     = can(regex("^[0-9]{1,3}([.][0-9]{1,3}){3}$", var.placement.ip))
+    error_message = "The repository VM needs a fixed internal IPv4 address."
+  }
 }
 
 variable "machine_type" {
