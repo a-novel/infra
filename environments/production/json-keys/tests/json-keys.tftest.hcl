@@ -75,6 +75,11 @@ run "serves_privately_from_pinned_images_and_secrets" {
     condition     = !contains([for env in google_cloud_run_v2_service.grpc.template[0].containers[0].env : env.name], "DOWNTIME_START")
     error_message = "Without a planned downtime, the service receives no start."
   }
+
+  assert {
+    condition     = google_cloud_run_v2_job.smoke.run_execution_token == substr(sha256(google_cloud_run_v2_service.grpc.template[0].containers[0].image), 0, 24)
+    error_message = "Without a planned downtime, the smoke check runs once per gRPC image."
+  }
 }
 
 run "rejects_an_unpinned_image" {
@@ -105,6 +110,16 @@ run "passes_the_planned_downtime_start" {
       ) : lookup({ for env in container.env : env.name => env.value }, "DOWNTIME_START", null) == "2026-10-12T06:00:00Z"
     ])
     error_message = "Every service and application job must receive the planned downtime start."
+  }
+
+  assert {
+    condition     = lookup({ for env in google_cloud_run_v2_job.smoke.template[0].template[0].containers[0].env : env.name => env.value }, "DOWNTIME_START", null) == "2026-10-12T06:00:00Z"
+    error_message = "The smoke check must know when the planned downtime starts, to skip during it."
+  }
+
+  assert {
+    condition     = google_cloud_run_v2_job.smoke.run_execution_token == substr(sha256("${google_cloud_run_v2_service.grpc.template[0].containers[0].image}2026-10-12T06:00:00Z"), 0, 24)
+    error_message = "A planned downtime must change the smoke token, so clearing it runs the check again."
   }
 }
 
