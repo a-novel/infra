@@ -58,8 +58,10 @@ output "database_hosts" {
       machine_type           = var.database_machine_type
       port                   = host.port
       private_ip             = one(data.google_compute_instance.database[service].network_interface).network_ip
-      service_account        = google_service_account.runtime[host.identity].email
-      zone                   = var.database_zone
+      # The backup repository VM's address, which the database host trusts.
+      repository_ip   = try(var.native_backups[host.component].repository_ip, null)
+      service_account = google_service_account.runtime[host.identity].email
+      zone            = var.database_zone
     }
   }
 }
