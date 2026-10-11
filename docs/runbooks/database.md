@@ -64,8 +64,13 @@ A full backup ends with `backup command end: completed successfully`. The verify
 
 ## Change the database image, startup or OS image
 
-Merging such a change only updates the instance template and metadata, because database hosts never
-restart on apply.
+Merging such a change only updates the instance template and metadata: database hosts never restart
+on apply. Every deploy's `rollout` job then compares each host with its applied configuration:
+
+- a **database host** that differs rolls only during that service's planned downtime; until then the
+  deploy warns "rollout pending";
+- a **backup repository VM** restarts whenever its `config` label differs from its `running-config`,
+  right after its database host when both changed, so pgBackRest stays on one version.
 
 1. Merge the change during a planned downtime of that service, with the `allow-downtime` label
    ([database host changes](deployments.md#database-host-changes)):
@@ -76,18 +81,18 @@ restart on apply.
      hosts and there is nothing to roll. A new digest updates the host templates.
    - **Startup, OS or TLS settings:** edit `environments/production/foundation/terraform.tfvars`
      (`native_backups`, `database_*`) or the service root's `backup_repository`.
-2. Take a full backup and verify it (above).
-3. Once the deploy finished, roll the hosts:
+2. Take a full backup and verify it (above), before the downtime starts.
+3. The deploy rolls the hosts. It restarts the database host, or replaces it when the template
+   changed; either way the data disk and IP are kept. The database is down for one to two minutes.
+   To roll by hand, for example when a deploy failed after apply:
 
    ```bash
    gh workflow run roll-database.yaml --repo a-novel/infra -f service=json-keys
    ```
 
-   The run restarts the database host. When the template changed it replaces the host instead;
-   either way the data disk and IP are kept. It then restarts the repository VM and checks health.
-   The database is down for one to two minutes.
+   It restarts both hosts at once, whatever the downtime.
 
-4. If the new image fails to start, revert the pull request, merge, and roll again.
+4. If the new image fails to start, revert the pull request and merge it during the downtime.
 5. Clear the downtime once the database answers again.
 
 PostgreSQL **major** upgrades (`PG_MAJOR`) cannot reuse the data directory. They need a

@@ -82,7 +82,13 @@ resource "google_compute_instance" "repository" {
   deletion_protection       = true
   can_ip_forward            = false
   tags                      = ["agora-pgbackrest-${var.service}"]
-  labels                    = { component = var.service, role = "backup-repository" }
+  # The config the VM boots from. The rollout restarts it while running-config, which it sets after
+  # each restart, differs; OpenTofu manages only the labels listed here.
+  labels = {
+    component = var.service
+    role      = "backup-repository"
+    config    = substr(sha256(local.cloud_config), 0, 16)
+  }
 
   boot_disk {
     auto_delete = true

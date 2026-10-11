@@ -190,6 +190,37 @@ jobs:
           github_token: ${{ github.token }}
 
   # Authentication's health covers PostgreSQL, SMTP and the JSON Keys path.
+  # Moves each service's hosts onto their applied configuration: the database host only during its
+  # planned downtime, the backup repository VM whenever its config changed. It reads the hosts, not
+  # this deploy's changes, so it runs on every deploy.
+  rollout:
+    needs: [json-keys, authentication]
+    if: ${{ !cancelled() && !failure() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: production
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [json-keys, authentication]
+    concurrency:
+      group: roll-database-${{ matrix.service }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: google-github-actions/auth@v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
+      - uses: $/.github/actions/roll
+        with:
+          service: ${{ matrix.service }}
+
   health:
     needs: [json-keys, authentication]
     if: ${{ !cancelled() && !failure() && contains(needs.*.result, 'success') }}
