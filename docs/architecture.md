@@ -67,8 +67,8 @@ Each service has its own **database host**:
   and 50 connections, supervised by systemd.
 
 Each service also has its own **backup repository VM**, an `e2-micro`: JSON Keys `10.20.0.6`,
-Authentication `10.20.0.7`. The database host finds it at the address set in foundation's
-`native_backups.<service>.repository_ip`.
+Authentication `10.20.0.7`. Foundation's `native_backups.<service>.repository_ip` sets that address:
+the service root reserves it for the VM, and the database host trusts it.
 
 - The database host archives WAL and runs backups with pgBackRest, over mutual TLS, to its
   repository VM.

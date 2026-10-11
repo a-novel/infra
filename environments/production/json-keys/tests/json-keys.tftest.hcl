@@ -26,6 +26,7 @@ override_data {
         json_keys = {
           instance_group_manager = "agora-database-json-keys"
           private_ip             = "10.20.0.5"
+          repository_ip          = "10.20.0.6"
           port                   = 5432
           service_account        = "agora-json-keys-database@a-novel-production-prod.iam.gserviceaccount.com"
           zone                   = "europe-west1-d"
