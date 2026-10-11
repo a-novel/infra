@@ -90,3 +90,24 @@ run "grants_no_basic_roles" {
     error_message = "Key rotation must stay scheduled."
   }
 }
+
+run "copies_and_pins_host_credentials_by_digest" {
+  command = plan
+
+  assert {
+    condition = alltrue([for service in ["json-keys", "authentication"] : contains(output.image_copies, {
+      source   = var.host_credentials_image
+      producer = "a-novel/infra"
+      workflow = "publish-rollout-verifier.yaml"
+      target   = "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-${service}-private-tooling/host-credentials:${regex(":([^@]+)@", var.host_credentials_image)[0]}"
+    })])
+    error_message = "Deploy must verify host-credentials against its publication workflow and copy it into each service's tooling repository."
+  }
+
+  assert {
+    condition = alltrue([for key, service in { json_keys = "json-keys", authentication = "authentication" } :
+      output.database_hosts[key].credentials_image == "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-${service}-private-tooling/host-credentials@${regex("@(sha256:[0-9a-f]{64})$", var.host_credentials_image)[0]}"
+    ])
+    error_message = "Each database host must run host-credentials from its service's tooling repository, by digest."
+  }
+}
