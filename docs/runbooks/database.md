@@ -39,11 +39,14 @@ Timers already take a full backup on Sundays, a differential the other days, and
 hour. To take one by hand, for example before maintenance, run on the database host:
 
 ```bash
-sudo systemctl start agora-backup-check.service
-sudo systemctl start agora-backup-full.service
-sudo systemctl start agora-backup-verify.service
+sudo systemctl start --wait agora-backup-check.service
+sudo systemctl start --wait agora-backup-full.service
+sudo systemctl start --wait agora-backup-verify.service
 sudo journalctl -u agora-backup-full.service -u agora-backup-verify.service --since=-2h
 ```
+
+Keep `--wait`. These units are `Type=exec`, so a plain `start` returns once the container launches:
+all three would run at once, and verify would read the repository before the new backup exists.
 
 A full backup ends with `backup command end: completed successfully`. The verify report must say
 `status: ok`: verify can exit 0 even when it reports an error, so read the output.
