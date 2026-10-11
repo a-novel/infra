@@ -35,17 +35,19 @@ contents need.
 
 - **JSON Keys gRPC** has internal ingress and IAM authentication. Only Authentication's API identity
   and JSON Keys' own private identity, shared by its gRPC service and its jobs, may invoke it.
-- **Authentication REST** has public ingress. Its egress reaches private ranges through the VPC, and
-  SMTP through Google's managed egress.
+- **Authentication REST** has public ingress and IAM authentication, under the custom audience
+  `agora-authentication-rest`. Only the platform and the deploy health check may invoke it, so it
+  trusts the visitor IP the platform sends in `X-Client-IP`. Its egress reaches private ranges
+  through the VPC, and SMTP through Google's managed egress.
 - **Invocation tags** (`agora-invocation`: `initializer`, `internal`, `release`, `scheduled`) gate
   who may invoke each Cloud Run service or job.
 
 ## Services
 
-| Service        | Cloud Run                                                                                          | Jobs                                                                                                                                         |
-| -------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| JSON Keys      | `agora-json-keys-grpc`: 1–3 instances, private ingress, CPU only during requests                   | `migrations` (runs at deploy), `rotatekeys` (Scheduler hourly at :10; the job keeps 24 h between rotations), `smoke` (probes each new image) |
-| Authentication | `agora-authentication-rest`: 1–3 instances, public ingress, CPU always allocated for detached mail | `migrations` (runs at deploy, in the private project)                                                                                        |
+| Service        | Cloud Run                                                                                                                              | Jobs                                                                                                                                         |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| JSON Keys      | `agora-json-keys-grpc`: 1–2 instances, private ingress, CPU only during requests                                                       | `migrations` (runs at deploy), `rotatekeys` (Scheduler hourly at :10; the job keeps 24 h between rotations), `smoke` (probes each new image) |
+| Authentication | `agora-authentication-rest`: 1 instance, which holds the in-memory rate limits; public ingress, CPU always allocated for detached mail | `migrations` (runs at deploy, in the private project)                                                                                        |
 
 Service images come from `ghcr.io/a-novel/*`. Each is pinned as `tag@digest` in the service root's
 `terraform.tfvars`, and its database image in foundation's too. Before applying, deploy verifies

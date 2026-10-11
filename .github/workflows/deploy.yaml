@@ -278,11 +278,17 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - uses: google-github-actions/auth@v3.0.0
+      # Authentication admits only IAM callers; the token names its custom audience.
+      - id: google
+        uses: google-github-actions/auth@v3.0.0
         with:
           workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
+          token_format: id_token
+          id_token_audience: agora-authentication-rest
       - uses: $/.github/actions/health
+        env:
+          ID_TOKEN: ${{ steps.google.outputs.id_token }}
 
   # Reports every deploy that applied a root, and any that failed. A failure pings a-novel/infra and
   # the role of each service whose root failed to apply.

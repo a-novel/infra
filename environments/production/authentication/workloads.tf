@@ -106,18 +106,23 @@ resource "google_cloud_run_v2_service_iam_member" "json_keys_invoker" {
   member   = module.api_runtime.member
 }
 
+# Only the platform and the deploy health check may call the REST API, so it can trust the visitor
+# IP the platform forwards. Their ID tokens name the custom audience, whatever the service URL.
 resource "google_cloud_run_v2_service" "rest" {
   project              = local.api_project_id
   name                 = "agora-authentication-rest"
   location             = local.region
   ingress              = "INGRESS_TRAFFIC_ALL"
-  invoker_iam_disabled = true
+  invoker_iam_disabled = false
+  custom_audiences     = ["agora-authentication-rest"]
   deletion_protection  = true
   labels               = { environment = "production", component = "authentication", role = "rest" }
 
+  # Rate limits count in memory, so one instance sees every request. Needing a second one is the
+  # trigger to move the counters to a shared store.
   scaling {
     min_instance_count = 1
-    max_instance_count = 3
+    max_instance_count = 1
   }
 
   template {
@@ -142,6 +147,7 @@ resource "google_cloud_run_v2_service" "rest" {
           PLATFORM_AUTH_URL       = var.smtp.platform_auth_url
           POSTGRES_MAX_IDLE_CONNS = "10"
           POSTGRES_MAX_OPEN_CONNS = "20"
+          REST_CLIENT_IP_HEADER   = "X-Client-IP"
           REST_PORT               = "8080"
           REST_TIMEOUT_SHUTDOWN   = "9s"
           SERVICE_JSON_KEYS_HOST  = trimprefix(data.google_cloud_run_v2_service.json_keys.uri, "https://")
@@ -225,5 +231,19 @@ resource "google_cloud_run_v2_service" "rest" {
 
   lifecycle {
     prevent_destroy = true
+
+    postcondition {
+      condition     = (self.scaling[0].max_instance_count + 1) * tonumber(self.template[0].containers[0].resources[0].limits.cpu) * 1000 <= local.foundation.cloud_run_cpu_quotas["public-api"]
+      error_message = "The maximum instances, plus one during a rollout, must fit the public-api Cloud Run CPU quota. Raise the quota in foundation first."
+    }
   }
+}
+
+# The deploy health check calls the REST API as the deploy identity.
+resource "google_cloud_run_v2_service_iam_member" "health_invoker" {
+  project  = local.api_project_id
+  name     = google_cloud_run_v2_service.rest.name
+  location = local.region
+  role     = "roles/run.servicesInvoker"
+  member   = "serviceAccount:${local.deployer}"
 }
