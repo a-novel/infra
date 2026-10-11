@@ -38,6 +38,19 @@ outputs:
 runs:
   using: composite
   steps:
+    # A re-run reuses its run's commit, so once master has moved on it would apply older code.
+    - name: Refuse to re-run a superseded apply
+      if: inputs.apply == 'true' && github.run_attempt != '1'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+      run: |
+        set -euo pipefail
+        if [ "$(gh api "repos/$GITHUB_REPOSITORY/commits/master" --jq .sha)" != "$GITHUB_SHA" ]; then
+          echo "::error::master has moved past this run's commit; run a deploy by hand instead of re-running this one."
+          exit 1
+        fi
+
     - uses: opentofu/setup-opentofu@v2.0.2
       with:
         tofu_version_file: .opentofu-version
