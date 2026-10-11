@@ -67,7 +67,8 @@ A full backup ends with `backup command end: completed successfully`. The verify
 Merging such a change only updates the instance template and metadata, because database hosts never
 restart on apply.
 
-1. Merge the change:
+1. Merge the change during a planned downtime of that service, with the `allow-downtime` label
+   ([database host changes](deployments.md#database-host-changes)):
    - **Database image:** the service's Renovate release pull request bumps the
      `ghcr.io/…/database:<tag>@<digest>` pin in foundation and in the service root. Deploy verifies
      the image and copies it to Artifact Registry. The hosts pin the digest alone, and the image
@@ -76,7 +77,7 @@ restart on apply.
    - **Startup, OS or TLS settings:** edit `environments/production/foundation/terraform.tfvars`
      (`native_backups`, `database_*`) or the service root's `backup_repository`.
 2. Take a full backup and verify it (above).
-3. In a quiet window, once the deploy finished, roll the hosts:
+3. Once the deploy finished, roll the hosts:
 
    ```bash
    gh workflow run roll-database.yaml --repo a-novel/infra -f service=json-keys
@@ -87,6 +88,7 @@ restart on apply.
    The database is down for one to two minutes.
 
 4. If the new image fails to start, revert the pull request, merge, and roll again.
+5. Clear the downtime once the database answers again.
 
 PostgreSQL **major** upgrades (`PG_MAJOR`) cannot reuse the data directory. They need a
 dump-and-restore plan of their own.
