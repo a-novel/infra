@@ -1,15 +1,21 @@
 # Secrets
 
-Secret containers live in the management project and are managed by OpenTofu. **Values** are added
-by humans with `gcloud`, so they never reach state, plans or Git. Workloads read the numeric version
-pinned in their root's `terraform.tfvars`.
+This runbook covers adding, rotating and auditing secret values. OpenTofu manages the secret
+containers, in the management project. Their **values** are added by humans with `gcloud`, so they
+never reach state, plans or Git. Each workload reads the numeric version pinned in its root's
+`terraform.tfvars`, so a new value takes effect only once a pull request pins it.
 
 ## Rotate a secret
+
+This is the general procedure. Database passwords, the SMTP password, the waitlist secret and the
+pgBackRest certificates have their own sections below, because something besides the service reads
+them. `production-json-keys-app-master-key` has no rotation procedure: it encrypts the signing keys
+JSON Keys stores, and a new value cannot decrypt them.
 
 1. Add a version. Paste the value at the prompt; it is not echoed.
 
    ```bash
-   SECRET=production-json-keys-postgres-password
+   SECRET=production-<service>-<name>
    read -rs VALUE && printf '%s' "$VALUE" | gcloud secrets versions add "$SECRET" --project="$MGMT" --data-file=- && unset VALUE
    gcloud secrets versions list "$SECRET" --project="$MGMT" --limit=3
    ```
@@ -36,18 +42,15 @@ there: the Google account, the database role, and so on.
 
 ### Database passwords
 
-The database host reads its password at boot, using foundation's
-`database_releases.<service>.password_version`.
+The database host sets its owner password at boot, from the version in foundation's
+`database_releases.<service>.password_version`. The service reads the same secret through
+`secret_versions.postgres-password` in its root.
 
 1. Add the version.
-2. In **one** pull request, bump both that value and the service root's `postgres-password`.
-3. Merge. As soon as the deploy finishes, roll the host:
-
-   ```bash
-   gh workflow run roll-database.yaml --repo a-novel/infra -f service=<service>
-   ```
-
-Database connections fail for a few minutes, between the deploy and the end of the roll.
+2. In **one** pull request, bump both values.
+3. Merge it as a [database host change](database.md#change-a-database-host), during a planned
+   downtime. The deploy gives the service the new version, then the rollout restarts the host, which
+   sets it. The services refuse work during the downtime, so nothing fails in between.
 
 ## SMTP (Google Workspace relay)
 
@@ -96,21 +99,33 @@ The hourly check fails 30 days before any certificate expires.
   `agora-authentication-database.a-novel-production-prod` for Authentication.
 - **Server DNS name:** `agora-pgbackrest-<service>.europe-west1-d.c.a-novel-production-prod.internal`.
 
+The CA's private key stays offline with its custodian, and never reaches a VM or Secret Manager.
+`host-credentials` checks each bundle when a host starts, and refuses it unless:
+
+- the CA secret holds only CA certificates, currently valid;
+- each identity secret holds one unencrypted private key and its certificate, plus any
+  intermediates, chaining to that CA and valid now;
+- a client certificate allows TLS client authentication and has the client CN above;
+- a server certificate allows TLS server authentication and has the server DNS name above;
+- neither identity certificate is a CA.
+
 To renew:
 
-1. Issue the certificates offline.
+1. Issue the certificates offline, with the same names and purposes.
 2. Upload each PEM file:
 
    ```bash
    gcloud secrets versions add production-<service>-pgbackrest-database --project="$MGMT" --data-file=database.pem
    ```
 
-3. Bump the versions:
+3. Bump the versions in one pull request:
    - for the database host: `native_backups.<service>.ca_version` / `identity_version` in
      foundation;
-   - for the repository: `backup_repository.runtime.ca_version` / `identity_version` in the
+   - for the repository VM: `backup_repository.runtime.ca_version` / `identity_version` in the
      service root.
-4. Merge, and [roll the hosts](database.md#change-the-database-image-startup-or-os-image).
+4. Merge it as a [database host change](database.md#change-a-database-host), during a planned
+   downtime. The rollout restarts the database host, then the repository VM, which load the new
+   certificates.
 
 Delete the local PEM files afterwards.
 

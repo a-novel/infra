@@ -1,21 +1,36 @@
 # Planned downtime
 
-A planned downtime stops the services of the components it lists. From its start, they refuse work
-and leave their database alone, which makes database host changes safe.
+A planned downtime is an announced period during which some services stop on purpose, so their
+database can be changed safely. This runbook covers how one is scheduled, what users and services
+see, and how it ends.
 
-| Phase   | When                       | What happens                                                                                                                         |
-| ------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Notice  | Before `start`             | Services work normally. The platform warns users with the dates.                                                                     |
-| Started | From `start` until cleared | Listed services answer `503` / `UNAVAILABLE` except their ping. Their jobs do nothing. The platform locks the affected features.     |
-| Cleared | When you clear it          | Services restart and work again. `end` is only what users were told: a downtime outlives it until you clear it, even if it overruns. |
+## How a downtime unfolds
 
-There is at most one downtime, held in the `DOWNTIME` repository variable as
-`{"components": [...], "start": "...", "end": "..."}`. Only `downtime.yaml` writes it. From it:
+A downtime lists **components**, `service-<root>.database`, one per service whose database will be
+changed. `<root>` is the service root's directory under `environments/production`: `json-keys` or
+`authentication`. It has a `start` and an `end`, and goes through three phases:
 
-- each listed service receives only `DOWNTIME_START`, at the next deploy;
-- the platform reads the whole downtime from
+| Phase   | When                       | What happens                                                                                                                                      |
+| ------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Notice  | Before `start`             | Services work normally. The platform warns users with the dates.                                                                                  |
+| Started | From `start` until cleared | Listed services answer `503` / `UNAVAILABLE`, except their liveness ping. JSON Keys skips key rotation. The platform locks the affected features. |
+| Cleared | When you clear it          | Services restart and work again.                                                                                                                  |
+
+`end` is only what users were told. A downtime lasts until you clear it, even past its `end`.
+
+There is at most one downtime at a time. It lives in the `DOWNTIME` repository variable as
+`{"components": [...], "start": "...", "end": "..."}`, and only `downtime.yaml` writes it. Two things
+read it:
+
+- **the services.** At each deploy, a listed service receives `DOWNTIME_START` and stops on its own
+  at that time. No deploy runs at `start`;
+- **the platform.** It reads the whole downtime from
   `https://raw.githubusercontent.com/a-novel/infra/downtime/downtime.json`, which holds `null` when
-  none is planned. The `downtime` branch holds that one file, replaced on every run.
+  none is planned. The `downtime` branch holds only that file, replaced on every run.
+
+Deploys, plans and drift checks read `DOWNTIME` too. A database host change merges only while a
+downtime listing that service has started, and the deploy rolls the host only then: see
+[Change a database host](database.md#change-a-database-host).
 
 ## Schedule or change a downtime
 
@@ -25,15 +40,29 @@ gh workflow run downtime.yaml --repo a-novel/infra -f operation=schedule \
   -f start=2026-10-12T06:00:00Z -f end=2026-10-12T07:00:00Z
 ```
 
-- Components are `service-<root>.database`, one per service root.
-- Times are RFC 3339 in UTC. Announce a downtime well before its start; users see it within minutes.
-- Running it again replaces the downtime. A new `end` only reaches users. A new `start` or new
-  components also restart the affected services.
-- **Include the services that depend on the one you stop.** Authentication signs tokens through
-  JSON Keys, so a JSON Keys downtime should list Authentication too.
-- Requests already running at `start` finish normally. Leave a margin before you stop a database.
+- Only repository admins can run it.
+- Times are RFC 3339 in UTC, and `end` must come after `start`. Announce a downtime well before its
+  start: users see it within minutes.
+- **List the services that depend on the one you stop.** Authentication signs its tokens through JSON
+  Keys, so a JSON Keys downtime should list Authentication too.
+- Requests already running at `start` finish normally. Leave a margin before the database host
+  restarts.
+- Running it again replaces the downtime. A new `end` only changes what users see. A new `start` or
+  new components also change when the services stop.
 
-The workflow validates the downtime, writes it, publishes the document, and runs a full deploy.
+The workflow checks the components and dates, writes `DOWNTIME`, publishes the document, then runs a
+full deploy, which passes `DOWNTIME_START` to the listed services. **Check that this deploy succeeded
+before `start`.** The rollout trusts `DOWNTIME` alone: if the services never received
+`DOWNTIME_START`, a database host could restart while they still serve users.
+
+## While it runs
+
+- Merge the database host changes the downtime was planned for, with the `allow-downtime` label.
+  Their deploy runs a release's migrations, then rolls the hosts. Migrations and other deploy jobs
+  still run during a downtime; a JSON Keys release needs one extra step, described in
+  [Change a database host](database.md#steps).
+- The deploy health check is skipped, since the listed services refuse work. Check the database hosts
+  directly ([Inspect and connect](database.md#inspect-and-connect)).
 
 ## Clear the downtime
 
@@ -41,20 +70,14 @@ The workflow validates the downtime, writes it, publishes the document, and runs
 gh workflow run downtime.yaml --repo a-novel/infra -f operation=clear
 ```
 
-Nothing else ends a downtime: until you clear it, the listed services keep refusing work, even past
-`end`. Clear it once the work is done and verified. The drift check fails every three hours once
-`end` has passed, as a reminder to clear it or to announce a later end.
+Clear it once the work is done and verified. The workflow deletes `DOWNTIME`, publishes `null`, and
+runs a full deploy, which restarts the services without `DOWNTIME_START`. The health check runs
+again.
 
-## While it runs
-
-- The deploy health check is skipped, since the services refuse work on purpose.
-- Check the work itself directly: database host logs and backup status.
-- Merge the database host changes it was planned for, with the `allow-downtime` label
-  ([database host changes](deployments.md#database-host-changes)). Their release pull requests also
-  carry the service images: the deploy runs their migrations, then rolls the hosts.
+A forgotten downtime keeps its services down. The drift workflow fails every three hours once `end`
+has passed, as a reminder to clear it or to schedule a later end.
 
 ## Requirements
 
 `downtime.yaml` writes the variable with the `anovelbot-agent` App, which needs **Variables: Read
-and write** on this repository. It publishes the document with the workflow token. Only repository
-admins can run it.
+and write** on this repository, and publishes the document with the workflow token.
