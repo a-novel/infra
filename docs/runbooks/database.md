@@ -54,9 +54,11 @@ Merging such a change only updates the instance template and metadata, because d
 restart on apply.
 
 1. Merge the change:
-   - **Database image:** Renovate's `database images` pull request bumps the
+   - **Database image:** the service's Renovate release pull request bumps the
      `ghcr.io/…/database:<tag>@<digest>` pin in foundation and in the service root. Deploy verifies
-     the image and copies it to Artifact Registry.
+     the image and copies it to Artifact Registry. The hosts pin the digest alone, and the image
+     builds reproducibly, so a release without a database change keeps it: nothing changes on the
+     hosts and there is nothing to roll. A new digest updates the host templates.
    - **Startup, OS or TLS settings:** edit `environments/production/foundation/terraform.tfvars`
      (`native_backups`, `database_*`) or the service root's `backup_repository`.
 2. Take a full backup and verify it (above).
