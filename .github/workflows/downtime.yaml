@@ -138,3 +138,39 @@ jobs:
             echo
             echo "A full deploy is applying it."
           } >>"$GITHUB_STEP_SUMMARY"
+
+      # Announces the change in the public planned downtime channel. Timestamps share one RFC 3339
+      # UTC format, so they compare as strings.
+      - name: Describe the change
+        id: change
+        shell: bash
+        env:
+          PREVIOUS: ${{ vars.DOWNTIME }}
+          WINDOW: ${{ steps.window.outputs.window }}
+        run: |
+          set -euo pipefail
+          if [ -n "$WINDOW" ] && [ -z "$PREVIOUS" ]; then
+            title="Planned downtime scheduled" color=upcoming window="$WINDOW"
+          elif [ -n "$WINDOW" ]; then
+            title="Planned downtime rescheduled" color=started window="$WINDOW"
+            if jq -e --argjson previous "$PREVIOUS" \
+              '.start == $previous.start and .components == $previous.components and .end > $previous.end' <<<"$WINDOW" >/dev/null; then
+              title="Planned downtime extended"
+            fi
+          elif [ -n "$PREVIOUS" ]; then
+            title="Planned downtime cancelled" color=cancelled window="$PREVIOUS"
+            if [ "$(date -d "$(jq -r .start <<<"$PREVIOUS")" +%s)" -le "$(date +%s)" ]; then
+              title="Planned downtime ended" color=succeeded
+            fi
+          else
+            exit 0
+          fi
+          { echo "title=$title"; echo "color=$color"; echo "window=$window"; } >>"$GITHUB_OUTPUT"
+
+      - if: steps.change.outputs.title != ''
+        uses: $/.github/actions/announce-downtime
+        with:
+          webhook: ${{ secrets.DOWNTIME_WEBHOOK }}
+          window: ${{ steps.change.outputs.window }}
+          title: ${{ steps.change.outputs.title }}
+          color: ${{ steps.change.outputs.color }}
