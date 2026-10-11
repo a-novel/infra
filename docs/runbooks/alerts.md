@@ -57,9 +57,7 @@ A failed `migrations` job blocks its own deploy; see [A deploy failed](deploymen
 | Memory or disk above 85% for five minutes | critical |
 
 Each service also alerts its own channel when its database host's disk is above 85%, or reports no
-disk data for an hour. That alert names the host's VM. After a rollout that replaced the VM, it keeps
-watching the old one until the service deploys again, at the latest when the downtime is cleared:
-its "no disk data" condition can fire in between.
+disk data for an hour. That alert finds the host by name, so it follows a replaced VM.
 
 [Connect to the host](database.md#inspect-and-connect) and look for the cause: long queries, the
 connection count, or WAL that is not being archived. Then plan a [capacity change](database.md#capacity).
@@ -73,6 +71,10 @@ One of these happened:
 - the Sunday full backup had not succeeded by 04:00 UTC;
 - no backup succeeded in 24 hours 45 minutes;
 - the hourly archive check has not succeeded in three hours.
+
+These alerts find the database host by its VM's ID. After a rollout that replaced the VM, they watch
+the old one until the service deploys again, at the latest when its downtime is cleared, and can fire
+falsely in between.
 
 ```bash
 # on the database host
