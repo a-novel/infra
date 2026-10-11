@@ -88,7 +88,13 @@ func (p proof) backups(t *testing.T) []backup {
 
 func (p proof) sql(t *testing.T, sql string) string {
 	t.Helper()
-	return run(t, "psql", "-XAt", "-h", p.root, "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-c", sql)
+	return query(t, p.root, sql)
+}
+
+// query runs SQL on the server listening in socket.
+func query(t *testing.T, socket, sql string) string {
+	t.Helper()
+	return run(t, "psql", "-XAt", "-h", socket, "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-c", sql)
 }
 
 func (p proof) start(t *testing.T, data, socket string) {
@@ -118,9 +124,9 @@ func (p proof) restore(t *testing.T, label, want string, options ...string) {
 	start := time.Now()
 	data := filepath.Join(t.TempDir(), "restore")
 	if len(options) == 0 {
-		options = []string{"--type=immediate"}
+		options = []string{"--type=immediate", "--target-action=promote"}
 	}
-	args := append([]string{"--set=" + label, "--pg1-path=" + data, "--target-action=promote", "--archive-mode=off"}, options...)
+	args := append([]string{"--set=" + label, "--pg1-path=" + data, "--archive-mode=off"}, options...)
 	p.backrest(t, append(args, "restore")...)
 	// Isolate restored sockets from the still-running source.
 	p.start(t, data, filepath.Dir(data))

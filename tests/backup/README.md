@@ -5,7 +5,9 @@ They prove the parts this repository owns:
 
 - the restore worker (`internal/recovery`) and its offline SQL check;
 - the startup collation step and `check-backup.sh`'s TLS checks from `modules/database-runtime/files`;
-- backup and restore through a mutually authenticated TLS repository, and its client and stanza denials.
+- backup and restore through a mutually authenticated TLS repository, and its client and stanza denials;
+- the switchover a database rollout relies on: a streaming standby's handoff, its promotion, and
+  archiving and restore across the new timeline.
 
 ```bash
 docker build -f builds/backup-test.Dockerfile --build-arg DATABASE_SERVICE=json-keys -t backup-test .
