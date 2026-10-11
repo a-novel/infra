@@ -22,8 +22,9 @@ locals {
     "resource.labels.project_id=\"${var.project_id}\"",
     "resource.labels.instance_id=\"${data.google_compute_instance.database.instance_id}\"",
   ])
-  metric_scope    = "monitored_resource=\"gce_instance\", project_id=\"${var.project_id}\", instance_id=\"${data.google_compute_instance.database.instance_id}\""
-  data_disk_scope = "${local.metric_scope}, fs_type=\"ext4\", mount_option=~\"(^|.*,)noatime(,.*|$)\""
+  metric_scope = "monitored_resource=\"gce_instance\", project_id=\"${var.project_id}\", instance_id=\"${data.google_compute_instance.database.instance_id}\""
+  # The VM's name, unlike its ID, survives a replacement: the group keeps its base name.
+  data_disk_scope = "monitored_resource=\"gce_instance\", project_id=\"${var.project_id}\", instance_name=~\"agora-database-${var.service}-[a-z0-9]+\", fs_type=\"ext4\", mount_option=~\"(^|.*,)noatime(,.*|$)\""
 
   freshness = {
     full = {

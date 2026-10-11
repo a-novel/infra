@@ -43,6 +43,14 @@ run "keeps_the_repository_private_and_hardened" {
   command = plan
 
   assert {
+    condition = (
+      strcontains(google_monitoring_alert_policy.backup_health["disk"].conditions[0].condition_prometheus_query_language[0].query, "instance_name=~\"agora-database-json-keys-[a-z0-9]+\"") &&
+      !strcontains(google_monitoring_alert_policy.backup_health["disk"].conditions[0].condition_prometheus_query_language[0].query, "instance_id")
+    )
+    error_message = "The disk alert must find the database host by name, which survives a VM replacement."
+  }
+
+  assert {
     condition     = google_compute_instance.repository.labels["config"] == substr(sha256(google_compute_instance.repository.metadata["user-data"]), 0, 16)
     error_message = "The config label must track the user-data the VM boots from, so the rollout sees a pending change."
   }
