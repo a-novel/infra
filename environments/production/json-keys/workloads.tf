@@ -208,7 +208,9 @@ resource "google_cloud_run_v2_job" "smoke" {
   location            = local.region
   deletion_protection = true
   labels              = { environment = "production", component = "json-keys", role = "smoke" }
-  run_execution_token = substr(sha256(local.image.grpc), 0, 24)
+  # A planned downtime skips the check, so its start is part of the token: clearing the downtime
+  # runs the check again against the restarted service.
+  run_execution_token = substr(sha256("${local.image.grpc}${try(local.downtime_env.DOWNTIME_START, "")}"), 0, 24)
 
   template {
     task_count  = 1
@@ -227,6 +229,13 @@ resource "google_cloud_run_v2_job" "smoke" {
         env {
           name  = "JSON_KEYS_URL"
           value = google_cloud_run_v2_service.grpc.uri
+        }
+        dynamic "env" {
+          for_each = local.downtime_env
+          content {
+            name  = env.key
+            value = env.value
+          }
         }
         resources {
           limits = { cpu = "1", memory = "512Mi" }
