@@ -1,12 +1,13 @@
 # Costs
 
-| Component      | Shape                                                                                          | Main cost driver                   |
-| -------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------- |
-| Database hosts | 2 × `e2-medium`, 50 GiB `pd-balanced` data + 20 GiB boot each                                  | VM hours and disks, even when idle |
-| Backup hosts   | 2 × `e2-micro`, 20 GiB `pd-standard` boot each                                                 | VM hours                           |
-| Backup storage | EU multi-region buckets, 14-day full chains, plus versioning and soft delete                   | Stored bytes, including WAL        |
-| Cloud Run      | JSON Keys and Authentication, 1 warm instance each, max 3; Authentication CPU always allocated | Instance time                      |
-| Control plane  | State, registries, secrets, private DNS (3 zones), logs (30 days), alerts                      | Small, usage-based                 |
+| Component         | Shape                                                                                          | Main cost driver                   |
+| ----------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------- |
+| Database hosts    | 2 × `e2-medium`, 50 GiB `pd-balanced` data + 20 GiB boot each                                  | VM hours and disks, even when idle |
+| Backup hosts      | 2 × `e2-micro`, 20 GiB `pd-standard` boot each                                                 | VM hours                           |
+| Backup storage    | EU multi-region buckets, 14-day full chains, plus versioning and soft delete                   | Stored bytes, including WAL        |
+| Rollout snapshots | Each rollout's data-disk snapshot, kept 14 days, in `europe-west1`                             | Stored bytes                       |
+| Cloud Run         | JSON Keys and Authentication, 1 warm instance each, max 3; Authentication CPU always allocated | Instance time                      |
+| Control plane     | State, registries, secrets, private DNS (3 zones), logs (30 days), alerts                      | Small, usage-based                 |
 
 There is no NAT, load balancer, public IP or Kubernetes.
 

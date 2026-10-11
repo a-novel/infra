@@ -62,6 +62,9 @@ Authentication `10.20.0.7`.
 Retention keeps full chains for 14 days. pgBackRest owns expiry; the buckets never age-delete live
 data. Restores go into a disposable project; see [recovery](runbooks/recovery.md).
 
+Each rollout snapshots the database host's data disk before restarting it, and keeps the snapshot
+14 days in `europe-west1`, so the rollout can be [undone](runbooks/database.md#undo-a-rollout).
+
 ## Secrets
 
 Secret containers live in the management project; values are added by humans, never by OpenTofu.

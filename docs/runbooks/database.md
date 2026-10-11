@@ -82,8 +82,9 @@ on apply. Every deploy's `rollout` job then compares each host with its applied 
    - **Startup, OS or TLS settings:** edit `environments/production/foundation/terraform.tfvars`
      (`native_backups`, `database_*`) or the service root's `backup_repository`.
 2. Take a full backup and verify it (above), before the downtime starts.
-3. The deploy rolls the hosts. It restarts the database host, or replaces it when the template
-   changed; either way the data disk and IP are kept. The database is down for one to two minutes.
+3. The deploy rolls the hosts. It snapshots the data disk, then restarts the database host, or
+   replaces it when the template changed; either way the data disk and IP are kept. The database is
+   down for one to two minutes.
    To roll by hand, for example when a deploy failed after apply:
 
    ```bash
@@ -92,11 +93,51 @@ on apply. Every deploy's `rollout` job then compares each host with its applied 
 
    It restarts both hosts at once, whatever the downtime.
 
-4. If the new image fails to start, revert the pull request and merge it during the downtime.
+4. If the rollout went wrong, [undo it](#undo-a-rollout) during the same downtime.
 5. Clear the downtime once the database answers again.
 
 PostgreSQL **major** upgrades (`PG_MAJOR`) cannot reuse the data directory. They need a
 dump-and-restore plan of their own.
+
+## Undo a rollout
+
+Before restarting a database host, the rollout snapshots its data disk as
+`agora-data-<service>-<UTC time>`, labelled `role=pre-rollout`, and keeps it 14 days. The deploy
+summary names it. The data and WAL share that disk, so PostgreSQL recovers the snapshot as after a
+power loss.
+
+1. Revert the pull request and merge it during the downtime. The deploy rolls the host back onto the
+   previous configuration. That is enough when the data is intact, for example when the new image
+   failed to start.
+2. If the data is damaged, put back the disk from the snapshot the faulty rollout took. The revert's
+   rollout just snapshotted the damaged disk too, so it stays available for inspection.
+
+   ```bash
+   SERVICE=json-keys SNAPSHOT=agora-data-json-keys-<UTC time of the faulty rollout>
+   where=(--zone=europe-west1-d --project=a-novel-production-prod)
+   group="agora-database-$SERVICE" disk="agora-data-$SERVICE"
+   instance="$(gcloud compute instance-groups managed list-instances "$group" "${where[@]}" --format='value(name)')"
+   gcloud compute disks describe "$disk" "${where[@]}" --format=json >"$disk.json"
+   gcloud compute instance-groups managed stop-instances "$group" --instances="$instance" "${where[@]}"
+   gcloud compute instances detach-disk "$instance" --device-name=agora-data "${where[@]}"
+   gcloud compute disks delete "$disk" --quiet "${where[@]}"
+   gcloud compute disks create "$disk" --source-snapshot="$SNAPSHOT" --type=pd-balanced \
+     --size="$(jq -r .sizeGb "$disk.json")GB" --description="$(jq -r .description "$disk.json")" \
+     --labels="$(jq -r '.labels | to_entries | map("\(.key)=\(.value)") | join(",")' "$disk.json")" "${where[@]}"
+   gcloud compute instances attach-disk "$instance" --disk="$disk" --device-name=agora-data "${where[@]}"
+   gcloud compute instance-groups managed start-instances "$group" --instances="$instance" "${where[@]}"
+   ```
+
+   - **Merge nothing into infra between the stop and the start.** Stopping lowers the group's target
+     size, and a foundation apply would restore it by creating a second host.
+   - The new disk keeps the old name, so the group and the host attach it. OpenTofu ignores its
+     source snapshot.
+   - The swap has not been practised yet
+     ([#721](https://github.com/a-novel/infra/issues/721)). Rehearse it on a throwaway group first.
+
+3. Wait until the database answers, then clear the downtime. The template records the data disk's
+   ID, so the next foundation change rolls the host once more: it needs a planned downtime, like any
+   database host change.
 
 ## Capacity
 

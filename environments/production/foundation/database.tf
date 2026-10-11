@@ -83,6 +83,8 @@ resource "google_compute_disk" "database" {
   depends_on = [google_project_service.workload["compute.googleapis.com"]]
   lifecycle {
     prevent_destroy = true
+    # Undoing a rollout recreates this disk under the same name from its pre-rollout snapshot.
+    ignore_changes = [snapshot]
   }
 }
 
