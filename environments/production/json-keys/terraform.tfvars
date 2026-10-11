@@ -1,5 +1,5 @@
 images = {
-  database   = "ghcr.io/a-novel/service-json-keys/database:v2.9.0@sha256:119b0d930dd05dafaaa3297d2ed3879ad8d09c49c620cc99b1935c7e51b7c301"
+  database   = "ghcr.io/a-novel/service-json-keys/database:v2.9.1@sha256:119b0d930dd05dafaaa3297d2ed3879ad8d09c49c620cc99b1935c7e51b7c301"
   grpc       = "ghcr.io/a-novel/service-json-keys/grpc:v2.9.1@sha256:108bcac7c8921b7fd9c9aed1c0caeea5b0091564e1e5b2d1c7a5d3d2aa0baa8a"
   migrations = "ghcr.io/a-novel/service-json-keys/jobs/migrations:v2.9.1@sha256:8b5494cc711fcc5cab26c260a1f53aa1cdde3926512ff80262a60ba279fc16a0"
   rotatekeys = "ghcr.io/a-novel/service-json-keys/jobs/rotatekeys:v2.9.1@sha256:20de27f2666620d97348a498206bdfd25bce113b72321010a50fa0ebf0193d24"
