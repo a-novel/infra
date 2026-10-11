@@ -41,9 +41,7 @@ gh workflow run deploy.yaml --repo a-novel/infra
 ```
 
 Use it after a freeze, to undo drift the daily check reported, or to roll a database host change
-that waits for a downtime that has since started. A deploy run by hand checks the deletion label
-only on the latest commit's pull request: a deletion merged earlier fails it, and needs that commit's
-pull request labelled, or a new pull request carrying the label.
+that waits for a downtime that has since started.
 
 ## Release a service
 
@@ -92,8 +90,8 @@ If the change is intended:
 2. **Add it again after each push.** A push removes it, because it approved the plans of the
    previous commit.
 3. **Merge with the label still on.** Before applying, the deploy checks that a pull request merged
-   since the last successful deploy carried it. A deploy run by hand checks only the latest
-   commit's pull request.
+   since the last successful deploy carried it, whether the deploy follows a merge or was run by
+   hand.
 
 ## Database host changes
 
@@ -108,9 +106,9 @@ plans only the rest.
 
 1. **Open the failed job.** The plan or apply output names the resource and the API error.
 2. **Find the cause:**
-   - **Transient API error or timeout:** select **Re-run failed jobs**, on the latest deploy run
-     only. Every job plans again, so that re-run is safe. An older run re-applies its own, older
-     commit: once a newer deploy exists, run a deploy by hand instead.
+   - **Transient API error or timeout:** select **Re-run failed jobs**. Every job plans again, so a
+     re-run is safe. A re-run applies only while its commit is still `master`'s head; once `master`
+     has moved on, it refuses, and a deploy run by hand applies the latest code instead.
    - **Configuration error:** fix it in a new pull request. Never fix resources in the console: the
      next plan reverts the change, and the drift check reports it.
    - **403 during apply:** pull-request plans run as the read-only identity, so they cannot catch a

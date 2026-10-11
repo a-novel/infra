@@ -51,13 +51,17 @@ jobs:
           # the changes of a failed or replaced run are deployed by the next one.
           base="$(gh run list --repo "$REPOSITORY" --workflow deploy.yaml --branch master --status success \
             --limit 1 --json headSha --jq '.[0].headSha // empty')"
-          if [ "$EVENT" = workflow_dispatch ] || [ -z "$base" ] || ! git merge-base --is-ancestor "$base" HEAD; then
-            all=true
-            commits="$(git rev-parse HEAD)"
-          else
+          if [ -n "$base" ] && git merge-base --is-ancestor "$base" HEAD; then
             all=false
             commits="$(git rev-list "$base..HEAD")"
+          else
+            all=true
+            commits=""
           fi
+          # A manual run applies every root, and still honours every pull request since the last
+          # successful deploy, plus the one that made HEAD.
+          [ "$EVENT" = workflow_dispatch ] && all=true
+          commits="$(printf '%s\n%s\n' "$commits" "$(git rev-parse HEAD)" | sort -u | sed '/^$/d')"
 
           # A root depends on the shared tooling, its directory and the local modules it calls.
           deps() {
