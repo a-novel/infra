@@ -98,12 +98,16 @@ which compares each host with its applied configuration:
 deploy:  roots applied ──► rollout (per service) ──► database host differs?
                                                        │ no  ─► nothing to do
                                                        │ yes ─► downtime started? ─ no ─► "rollout pending"
-                                                       │                          └ yes ─► snapshot the data disk
-                                                       │                                   restart or replace the host
+                                                       │                          └ yes ─► service took it? ─ no ─► fail
+                                                       │                                                   └ yes ─► snapshot the data disk
+                                                       │                                                            restart or replace the host
                                                        ▼
                                    backup repository VM differs? ─ yes ─► restart it, after the database host
 ```
 
+- Before restarting a database host, the job checks that its service took the downtime: the serving
+  revision must be the latest one and carry the downtime's start. Otherwise it fails, and a deploy
+  run by hand, which gives the service its `DOWNTIME_START`, rolls the host.
 - The job reads the hosts, not the changes in that deploy. A change applied by a cancelled,
   replaced or force-merged deploy still rolls at the next deploy that runs during the downtime.
 - The host keeps its data disk and IP. A template change replaces the VM; any other change restarts
