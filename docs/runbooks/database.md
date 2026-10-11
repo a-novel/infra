@@ -17,7 +17,7 @@ gcloud compute ssh "$HOST" --zone="$ZONE" --project="$PROD" --tunnel-through-iap
 
 `gcloud` creates and registers an OS Login key on first use.
 
-A host presents new SSH host keys after it restarts, so `gcloud` then refuses to connect with
+A rolled host can present new SSH host keys, and `gcloud` then refuses to connect with
 "REMOTE HOST IDENTIFICATION HAS CHANGED". Compare the fingerprint it prints with the key the
 instance publishes, and drop the stale entry only when they match:
 
