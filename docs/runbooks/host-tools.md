@@ -12,7 +12,7 @@ repositories.
 Their code is in `cmd/` and `internal/`, and their Dockerfiles in `builds/`. Every pull request
 builds and scans both images, runs their Go tests, and runs the [backup tests](../../tests/backup/README.md)
 inside both database images. Merging deploys neither: a new version reaches the VMs only once you
-publish it and pin its digest.
+publish it and pin it.
 
 ## Publish a version
 
@@ -52,34 +52,19 @@ attestation failed after the push, the pushed image is incomplete: publish again
 
 ## Pin `host-credentials`
 
-The hosts pull it from each service's private tooling repository in Artifact Registry,
-`agora-<service>-private-tooling`, by digest only. The copy keeps the digest; its tag only names the
-source commit. The deploy copies only service and database
-images, so a person copies this one. No standing human role may write there: an organization admin
-grants it for the copy, and removes it right after.
+Foundation pins the published image once, in `host_credentials_image`, as
+`ghcr.io/a-novel/infra/host-credentials:<tag>@<digest>` from the run summary. Each deploy verifies its
+attestation against `publish-rollout-verifier.yaml` and copies it into each service's private tooling
+repository, `agora-<service>-private-tooling`. The hosts pull it from there, by digest.
 
-```bash
-ME="user:$(gcloud config get-value account)"
-gcloud projects add-iam-policy-binding "$PROD" --role=roles/artifactregistry.writer --member="$ME" --condition=None
-for SERVICE in json-keys authentication; do
-  skopeo copy --all --preserve-digests --dest-creds="oauth2accesstoken:$(gcloud auth print-access-token)" \
-    "docker://ghcr.io/a-novel/infra/host-credentials@$TOOL_DIGEST" \
-    "docker://europe-west1-docker.pkg.dev/$PROD/agora-$SERVICE-private-tooling/host-credentials:$TOOL_COMMIT"
-done
-gcloud projects remove-iam-policy-binding "$PROD" --role=roles/artifactregistry.writer --member="$ME" --condition=None
-```
+The service roots still pin that copy themselves, in `backup_repository.runtime.credentials_image`:
+`europe-west1-docker.pkg.dev/a-novel-production-prod/agora-<service>-private-tooling/host-credentials@<digest>`.
+Update all three values in one pull request.
 
-Then pin the digest in four places, in one pull request:
-
-| Root           | Key                                                                                             |
-| -------------- | ----------------------------------------------------------------------------------------------- |
-| foundation     | `native_backups.json-keys.credentials_image`, `native_backups.authentication.credentials_image` |
-| json-keys      | `backup_repository.runtime.credentials_image`                                                   |
-| authentication | `backup_repository.runtime.credentials_image`                                                   |
-
-The foundation pins change the database hosts, so merge the pull request as a
-[database host change](database.md#change-a-database-host), during a planned downtime. The rollout
-restarts each database host, then its backup repository VM, which load the new version.
+The foundation pin changes the database hosts, so merge the pull request as a
+[database host change](database.md#change-a-database-host), during a planned downtime. The deploy
+copies the image before it applies, then the rollout restarts each database host, then its backup
+repository VM, which load the new version.
 
 ## Pin `native-restore`
 

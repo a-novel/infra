@@ -31,8 +31,8 @@ validator, shellcheck, actionlint, zizmor and a Trivy scan, which also builds bo
 - **Add a module** only for a second caller or a shared security invariant.
 - **Inputs go in `terraform.tfvars`.** Secret values never do: add them with `gcloud` (see
   [Secrets](docs/runbooks/secrets.md)).
-- **Pin images and secrets exactly.** Service and database images as `tag@digest`, host tools by
-  digest alone, secret versions as numbers, never `latest`.
+- **Pin images and secrets exactly.** Images as the `tag@digest` they were published under, copies
+  in Artifact Registry by digest, secret versions as numbers, never `latest`.
 - **Keep production-critical resources protected.** Use `prevent_destroy`, `deletion_protection`
   and `deletion_policy = "PREVENT"`. A plan that weakens `deletion_protection`, `deletion_policy` or
   `force_destroy` needs the `allow-resource-deletion` label. Removing `prevent_destroy` changes only

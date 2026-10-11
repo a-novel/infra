@@ -49,12 +49,18 @@ locals {
 }
 
 output "image_copies" {
-  description = "Database images the deploy workflow verifies and copies to Artifact Registry before apply."
-  value = flatten([for service, image in local.database_images : [
+  description = "Images the deploy workflow verifies against their producer's workflow and copies to Artifact Registry before apply."
+  value = concat(flatten([for service, image in local.database_images : [
     for repository in values(local.database_image_repositories[service]) : {
       source   = image.source
       producer = "a-novel/service-${service}"
+      workflow = "release.yaml"
       target   = "${repository}/${image.path}:${image.tag}"
     }
-  ]])
+    ]]), [for service, repository in local.host_credentials_repositories : {
+    source   = var.host_credentials_image
+    producer = "a-novel/infra"
+    workflow = "publish-rollout-verifier.yaml"
+    target   = "${repository}:${local.host_credentials.tag}"
+  }])
 }

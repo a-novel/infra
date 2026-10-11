@@ -144,8 +144,9 @@ runs:
         jq -c '.planned_values.outputs.image_copies.value[]?' "$RUNNER_TEMP/plan.json" | while read -r image; do
           source="$(jq -r .source <<<"$image")"
           producer="$(jq -r .producer <<<"$image")"
+          workflow="$(jq -r '.workflow // "release.yaml"' <<<"$image")"
           gh attestation verify "oci://${source%%:*}@${source##*@}" --repo "$producer" \
-            --signer-workflow "$producer/.github/workflows/release.yaml" \
+            --signer-workflow "$producer/.github/workflows/$workflow" \
             --source-ref refs/heads/master --deny-self-hosted-runners >/dev/null
         done
 

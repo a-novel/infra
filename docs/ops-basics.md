@@ -145,8 +145,7 @@ name these pieces:
 - **Native features first.**
   - Migrations run during apply through Cloud Run's `run_execution_token`.
   - Traffic moves only to a revision whose startup probe passes.
-  - Service and database images are pinned by digest, and copied only after their provenance is
-    verified.
+  - Images are pinned by digest, and copied only after their provenance is verified.
   - Custom code is limited to the two programs that run on the VMs.
 
 ## Local commands
