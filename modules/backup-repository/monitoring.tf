@@ -1,38 +1,19 @@
-# Backup jobs run on the database host, so every signal is scoped to that VM.
-data "google_compute_instance_group" "database" {
-  project = var.project_id
-  zone    = var.database.zone
-  name    = var.database.group
-
-  lifecycle {
-    postcondition {
-      condition     = length(self.instances) == 1
-      error_message = "Backup monitoring requires exactly one database host."
-    }
-  }
-}
-
-data "google_compute_instance" "database" {
-  self_link = one(data.google_compute_instance_group.database.instances)
-}
-
+# Backup jobs run on the database host. Their container names and the host's name carry the
+# service, unlike the VM's ID, so every signal follows a replaced host.
 locals {
-  log_scope = join(" AND ", [
-    "resource.type=\"gce_instance\"",
-    "resource.labels.project_id=\"${var.project_id}\"",
-    "resource.labels.instance_id=\"${data.google_compute_instance.database.instance_id}\"",
-  ])
-  metric_scope = "monitored_resource=\"gce_instance\", project_id=\"${var.project_id}\", instance_id=\"${data.google_compute_instance.database.instance_id}\""
-  # The VM's name, unlike its ID, survives a replacement: the group keeps its base name.
-  data_disk_scope = "monitored_resource=\"gce_instance\", project_id=\"${var.project_id}\", instance_name=~\"agora-database-${var.service}-[a-z0-9]+\", fs_type=\"ext4\", mount_option=~\"(^|.*,)noatime(,.*|$)\""
+  log_scope    = "resource.type=\"gce_instance\" AND resource.labels.project_id=\"${var.project_id}\""
+  metric_scope = "monitored_resource=\"gce_instance\", project_id=\"${var.project_id}\""
+  # The group keeps its base name across replacements.
+  data_disk_scope = "${local.metric_scope}, instance_name=~\"agora-database-${var.service}-[a-z0-9]+\", fs_type=\"ext4\", mount_option=~\"(^|.*,)noatime(,.*|$)\""
+  container       = "agora-backup-${var.service}"
 
   freshness = {
     full = {
-      jobs = "agora-backup-full", window = "24h", title = "Sunday full backup missed its 04:00 UTC deadline"
+      jobs = "${local.container}-full", window = "24h", title = "Sunday full backup missed its 04:00 UTC deadline"
       gate = " and (day_of_week() == 0) and (hour() >= 4)"
     }
-    backup = { jobs = "agora-backup-(full|diff)", window = "24h45m", title = "No backup success in 24 hours 45 minutes", gate = "" }
-    check  = { jobs = "agora-backup-check", window = "3h", title = "No archive check success in three hours", gate = "" }
+    backup = { jobs = "${local.container}-(full|diff)", window = "24h45m", title = "No backup success in 24 hours 45 minutes", gate = "" }
+    check  = { jobs = "${local.container}-check", window = "3h", title = "No archive check success in three hours", gate = "" }
   }
   health_rules = merge({
     for name, rule in local.freshness : name => {
@@ -58,7 +39,7 @@ resource "google_logging_metric" "backup_success" {
   filter = join(" AND ", [
     local.log_scope,
     "log_id(\"cos_containers\")",
-    "jsonPayload.\"cos.googleapis.com/container_name\"=(\"agora-backup-full\" OR \"agora-backup-diff\" OR \"agora-backup-check\")",
+    "jsonPayload.\"cos.googleapis.com/container_name\"=(\"${local.container}-full\" OR \"${local.container}-diff\" OR \"${local.container}-check\")",
     "jsonPayload.message=~\" (backup|check) command end: completed successfully\"",
   ])
 
@@ -88,9 +69,9 @@ resource "google_monitoring_alert_policy" "backup_failure" {
     display_name = "pgBackRest, WAL archiving or its systemd worker reported an error"
     condition_matched_log {
       filter = "${local.log_scope} AND (${join(" OR ", [
-        "(log_id(\"cos_containers\") AND jsonPayload.message=~\"(ERROR: \\\\[[0-9]+\\\\]:|archive command failed)\")",
-        "(log_id(\"cos_containers\") AND jsonPayload.\"cos.googleapis.com/container_name\"=\"agora-backup-verify\" AND jsonPayload.message=~\"(?m)^ *(status: error|no archives or backups exist in the repo) *$\")",
-        "(log_id(\"cos_journal_warning\") AND (jsonPayload.UNIT=~\"^agora-backup-.*[.]service$\" OR jsonPayload._SYSTEMD_UNIT=~\"^agora-backup-.*[.]service$\"))",
+        "(log_id(\"cos_containers\") AND jsonPayload.\"cos.googleapis.com/container_name\"=~\"^(${local.container}-.+|agora-postgres-${var.service})$\" AND jsonPayload.message=~\"(ERROR: \\\\[[0-9]+\\\\]:|archive command failed)\")",
+        "(log_id(\"cos_containers\") AND jsonPayload.\"cos.googleapis.com/container_name\"=\"${local.container}-verify\" AND jsonPayload.message=~\"(?m)^ *(status: error|no archives or backups exist in the repo) *$\")",
+        "(log_id(\"cos_journal_warning\") AND jsonPayload._HOSTNAME=~\"^agora-database-${var.service}-\" AND (jsonPayload.UNIT=~\"^agora-backup-.*[.]service$\" OR jsonPayload._SYSTEMD_UNIT=~\"^agora-backup-.*[.]service$\"))",
       ])})"
     }
   }

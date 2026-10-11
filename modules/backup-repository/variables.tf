@@ -56,10 +56,8 @@ variable "management_project_number" {
 }
 
 variable "database" {
-  description = "Database host group, zone, and service account, all owned by the foundation root."
+  description = "The database host's service account, owned by the foundation root."
   type = object({
-    group           = string
-    zone            = string
     service_account = string
   })
 }

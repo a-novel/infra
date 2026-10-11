@@ -6,9 +6,6 @@ mock_provider "google" {
       name   = "projects/agora-test/serviceAccounts/agora-pgbr-json-keys@agora-test.iam.gserviceaccount.com"
     }
   }
-  mock_data "google_compute_instance_group" {
-    defaults = { instances = ["projects/agora-test/zones/europe-west1-d/instances/agora-database-json-keys-test"] }
-  }
 }
 
 variables {
@@ -31,8 +28,6 @@ variables {
   bucket                    = "agora-management-test-1-pgbr-json-keys"
   management_project_number = "1"
   database = {
-    group           = "agora-database-json-keys"
-    zone            = "europe-west1-d"
     service_account = "agora-json-keys-database@agora-test.iam.gserviceaccount.com"
   }
   repository_ids       = { production = "agora-json-keys-private-production", tooling = "agora-json-keys-private-tooling" }
@@ -42,6 +37,17 @@ variables {
 
 run "keeps_the_repository_private_and_hardened" {
   command = plan
+
+  assert {
+    condition = (
+      strcontains(google_logging_metric.backup_success.filter, "\"agora-backup-json-keys-full\" OR \"agora-backup-json-keys-diff\" OR \"agora-backup-json-keys-check\"") &&
+      strcontains(google_monitoring_alert_policy.backup_failure.conditions[0].condition_matched_log[0].filter, "jsonPayload._HOSTNAME=~\"^agora-database-json-keys-\"") &&
+      !strcontains(google_logging_metric.backup_success.filter, "instance_id") &&
+      !strcontains(google_monitoring_alert_policy.backup_failure.conditions[0].condition_matched_log[0].filter, "instance_id") &&
+      alltrue([for policy in google_monitoring_alert_policy.backup_health : !strcontains(policy.conditions[0].condition_prometheus_query_language[0].query, "instance_id")])
+    )
+    error_message = "Backup signals must find the service by container and host name, which survive a VM replacement."
+  }
 
   assert {
     condition = (

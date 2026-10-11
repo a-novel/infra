@@ -66,8 +66,6 @@ module "backups" {
   bucket                    = "a-novel-management-prod-232403541574-pgbr-authentication"
   management_project_number = "232403541574"
   database = {
-    group           = local.database.instance_group_manager
-    zone            = local.database.zone
     service_account = local.database.service_account
   }
   repository_ids       = module.private_runtime.repository_ids
