@@ -9,16 +9,12 @@ backups, Cloud Run services and their identities.
 
 ## How a change reaches production
 
-1. **Open a pull request.** CI validates every root and posts a read-only `tofu plan` per root in
-   the job summary.
-2. **Review the plan.** A plan that deletes, replaces or unprotects anything fails until a
-   maintainer adds the `allow-resource-deletion` label. A plan that changes a database host fails
-   until a maintainer adds `allow-downtime` during that service's planned downtime. A push removes
-   either label, so each head's plans get their own approval.
-3. **Merge.** [`deploy.yaml`](.github/workflows/deploy.yaml) applies the roots the merge changed:
-   `bootstrap → foundation → services in parallel`, then checks production health.
-
-Nobody applies by hand. To freeze production, run `gh workflow disable deploy.yaml`.
+Every change is a pull request. CI plans each root with a read-only identity, a few kinds of change
+need a maintainer's label, and merging deploys the change: [`deploy.yaml`](.github/workflows/deploy.yaml)
+applies the changed roots, rolls the database hosts during their planned downtime, and checks
+production health. Nobody applies by hand, except bootstrap during a rebuild from nothing.
+[Ops basics](docs/ops-basics.md#from-a-pull-request-to-production) walks through it. To freeze
+production, run `gh workflow disable deploy.yaml`.
 
 ## Layout
 
@@ -37,11 +33,13 @@ Each root keeps its production inputs in `terraform.tfvars`. Secret values never
 
 ## Documentation
 
-- [Ops basics](docs/ops-basics.md): the concepts behind this repository, and why it is laid out
-  this way.
-- [Architecture](docs/architecture.md): what runs where in Google Cloud.
-- [Runbooks](docs/runbooks/README.md): every operation that stays manual.
-- [Costs](docs/costs.md).
+Read them in this order to understand the whole setup:
+
+1. [Ops basics](docs/ops-basics.md): the concepts behind this repository, how a change reaches
+   production, and how database changes stay safe.
+2. [Architecture](docs/architecture.md): what runs where in Google Cloud.
+3. [Runbooks](docs/runbooks/README.md): every operation that still needs a human.
+4. [Costs](docs/costs.md): what production pays for.
 
 ## Contributing
 

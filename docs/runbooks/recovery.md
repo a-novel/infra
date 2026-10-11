@@ -1,11 +1,18 @@
 # Recovery
 
-Restores always go into a **disposable project**. Production's disks and data are never touched.
-Use this to rehearse recovery, to inspect old data, or as the first step of a real data restore.
+This runbook restores a backup into a **disposable drill project**, and checks it there.
+Production's disks and data are never touched. Use it to rehearse recovery, to inspect old data, or
+as the first step of a real data restore. To undo a database host rollout, use its snapshot instead:
+[Undo a rollout](database.md#undo-a-rollout).
 
 ## 1. Pick the backup
 
-On the service's repository VM (see [Database hosts](database.md#inspect-and-connect)):
+Set the service, then list its backups on its repository VM (see
+[Database hosts](database.md#inspect-and-connect)):
+
+```bash
+SERVICE=json-keys
+```
 
 ```bash
 sudo docker exec agora-backup-repository pgbackrest --stanza="$SERVICE" --output=json info |
@@ -16,10 +23,17 @@ Note the `system_id` and the set label, for example `20261005-020001F`.
 
 ## 2. Create the drill project
 
-`DRILL` must match `a-novel-recovery-<id>`, with at most 30 characters.
+`DRILL` must match `a-novel-recovery-<id>`, with at most 30 characters. Creating it needs
+`roles/resourcemanager.projectCreator` on the organization, which organization admins can grant
+themselves for the drill and remove afterwards:
 
 ```bash
-DRILL=a-novel-recovery-261101 SERVICE=json-keys
+gcloud organizations add-iam-policy-binding 1031663934757 --role=roles/resourcemanager.projectCreator \
+  --member="user:$(gcloud config get-value account)" --condition=None
+```
+
+```bash
+DRILL=a-novel-recovery-261101
 gcloud projects create "$DRILL" --organization=1031663934757
 gcloud billing projects link "$DRILL" --billing-account=01BDFE-5B21E7-8393CB
 gcloud services enable compute.googleapis.com artifactregistry.googleapis.com dns.googleapis.com --project="$DRILL"
@@ -31,15 +45,20 @@ gcloud projects add-iam-policy-binding "$DRILL" --role=roles/artifactregistry.re
 gcloud iam service-accounts add-iam-policy-binding "pgbr-$SERVICE-recovery@$MGMT.iam.gserviceaccount.com" \
   --project="$MGMT" --role=roles/iam.serviceAccountUser \
   --member="serviceAccount:infra-foundation@$MGMT.iam.gserviceaccount.com"
+# The backup reader stays disabled outside drills.
+gcloud iam service-accounts enable "pgbr-$SERVICE-recovery@$MGMT.iam.gserviceaccount.com" --project="$MGMT"
 ```
 
-Copy the restore worker into the drill project. Its image is published by
-`publish-rollout-verifier.yaml` as `ghcr.io/a-novel/infra/native-restore`.
+The backup reader `pgbr-<service>-recovery` can read the service's backups and restore deleted
+objects, but not delete them. While it is enabled, the drift check reports bootstrap as drifted.
+
+Copy the restore worker into the drill project. Use a `native-restore` image published from the
+current `master` ([Host tools](host-tools.md#publish-a-version)), and
+[verify it](host-tools.md#verify-the-published-image) with the digest and commit of its run.
 
 ```bash
-DIGEST=sha256:<native-restore digest>
+DIGEST=sha256:<native-restore digest from the publication run>
 gcloud artifacts repositories create agora-tooling --repository-format=docker --location=europe-west1 --project="$DRILL"
-gh attestation verify "oci://ghcr.io/a-novel/infra/native-restore@$DIGEST" --repo a-novel/infra
 skopeo copy --all --preserve-digests --dest-creds="oauth2accesstoken:$(gcloud auth print-access-token)" \
   "docker://ghcr.io/a-novel/infra/native-restore@$DIGEST" \
   "docker://europe-west1-docker.pkg.dev/$DRILL/agora-tooling/native-restore:drill"
@@ -59,11 +78,16 @@ DRILL_JSON="$(jq -nc --arg project "$DRILL" --arg service "$SERVICE" --arg diges
     disk_gib: 20, system_id: $system_id, set: $set, verify_sql: true
   }')"
 gh workflow run recovery.yaml --repo a-novel/infra -f operation=plan -f drill="$DRILL_JSON"
+```
+
+`cos_image` is the repository VMs' image, `backup_repository.cos_image` in a service root. Read the
+plan in the run's summary. Once it shows only the drill host and its network, apply it:
+
+```bash
 gh workflow run recovery.yaml --repo a-novel/infra -f operation=apply -f drill="$DRILL_JSON"
 ```
 
-The first run plans and the second applies. The host is created **stopped**, with no external IP
-and no route to production.
+The host is created **stopped**, with no external IP and no route to production.
 
 ## 4. Restore
 
@@ -89,17 +113,24 @@ sudo cat /mnt/disks/agora-recovery/work/attempt/files-restored.json /mnt/disks/a
 - Neither one ever replays: to try again, start over with a new drill project.
 - The VM stops itself after four hours.
 
-Turning a verified restore into production data, such as a disk swap or a dump import, is its own
-reviewed change, not part of this runbook.
+Putting restored data back into production has no procedure yet. It is a one-off change, planned
+and reviewed on its own: for example a dump of the needed rows imported during a planned downtime,
+or a disk made from the drill's restored data and swapped in as in
+[Undo a rollout](database.md#undo-a-rollout).
 
 ## 5. Clean up
 
 ```bash
+gcloud iam service-accounts disable "pgbr-$SERVICE-recovery@$MGMT.iam.gserviceaccount.com" --project="$MGMT"
 gcloud iam service-accounts remove-iam-policy-binding "pgbr-$SERVICE-recovery@$MGMT.iam.gserviceaccount.com" \
   --project="$MGMT" --role=roles/iam.serviceAccountUser \
   --member="serviceAccount:infra-foundation@$MGMT.iam.gserviceaccount.com"
 gcloud projects delete "$DRILL"
 gcloud storage rm -r "$STATE/recovery/$DRILL/"
+gcloud organizations remove-iam-policy-binding 1031663934757 --role=roles/resourcemanager.projectCreator \
+  --member="user:$(gcloud config get-value account)" --condition=None
 ```
+
+Remove the project-creation role only if you granted it for this drill.
 
 A deleted project keeps billing its disks until Google purges it, which can take up to 30 days.

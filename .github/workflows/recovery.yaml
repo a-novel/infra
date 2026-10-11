@@ -1,7 +1,7 @@
 name: recovery
 
 # Prepares or removes the host of one disaster-recovery drill in a disposable
-# project. The drill itself follows docs/runbooks/disaster-recovery.md.
+# project. The drill itself follows docs/runbooks/recovery.md.
 on:
   workflow_dispatch:
     inputs:

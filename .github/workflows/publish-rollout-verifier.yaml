@@ -47,7 +47,7 @@ jobs:
           ))
         shell: bash
         run: |
-          printf '::error::Use a reviewed master commit. Publication also requires its explicit repository opt-in; see docs/runbooks/publish-rollout-verifier.md.\n'
+          printf '::error::Use a reviewed master commit. Publication also requires its explicit repository opt-in; see docs/runbooks/host-tools.md.\n'
           exit 1
 
       - uses: actions/checkout@v7.0.1

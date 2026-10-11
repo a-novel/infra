@@ -1,8 +1,12 @@
 # State
 
+This runbook covers OpenTofu's state: unlocking it, restoring an older version, and moving resources
+between addresses.
+
 Each root's state is one object in `$STATE/<prefix>/default.tfstate`: `bootstrap`, `foundation`,
-`json-keys` or `authentication`. The bucket keeps prior versions for 90 days and deleted objects for
-7 days. State holds no secret values, but it is private: never paste it anywhere.
+`json-keys`, `authentication`, or `recovery/<project>` for a drill. The bucket keeps an overwritten
+version until it is 90 days old and 50 newer versions exist, and a deleted object for 7 days. State
+holds no secret values, but it is private: never paste it anywhere.
 
 ## Remove a stale lock
 
@@ -15,7 +19,7 @@ acquiring the state lock".
    gh run list --repo a-novel/infra --workflow deploy.yaml --limit 3
    ```
 
-2. Delete the lock, then re-run the failed deploy:
+2. Delete the lock of the root named in the error, then re-run the failed deploy:
 
    ```bash
    gcloud storage rm "$STATE/foundation/default.tflock"

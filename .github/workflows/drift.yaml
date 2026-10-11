@@ -3,8 +3,8 @@ name: drift
 on:
   schedule:
     - cron: "17 5 * * *"
-    # Eight checks a day bound the instance time a health request keeps
-    # Authentication billed; see docs/architecture.md.
+    # Every three hours: Authentication's health, and a reminder to clear a planned
+    # downtime past its announced end.
     - cron: "43 */3 * * *"
   workflow_dispatch:
 
