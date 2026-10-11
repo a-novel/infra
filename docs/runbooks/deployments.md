@@ -55,6 +55,7 @@ Database migrations are **not** reverted. A data rollback is a [recovery](recove
 
 A plan that deletes, replaces or forgets a resource, or relaxes `deletion_protection`,
 `deletion_policy` or `force_destroy`, fails its check. The job summary lists the addresses.
+Replacing an instance template is not a deletion: templates hold no data.
 
 If the change is intended:
 
@@ -63,6 +64,19 @@ If the change is intended:
    add it again.
 3. Merge with the label still on. Before it applies, deploy checks again that a pull request in
    the deploy carried the label.
+
+## Database host changes
+
+A plan that changes a database host's template or group fails its check: the host restarts once
+rolled, so the change waits for a planned downtime of that service.
+
+1. [Schedule a planned downtime](downtime.md) listing `service-<root>.database`.
+2. Once it has started, add the `allow-downtime` label. The checks re-run immediately. Like the
+   deletion label, a push removes it.
+3. Merge, then [roll the hosts](database.md#change-the-database-image-startup-or-os-image).
+4. [Clear the downtime](downtime.md#clear-the-downtime) once the database answers again.
+
+A change merged without it, such as a force-merge, still applies; the hosts move only when rolled.
 
 ## A deploy failed
 

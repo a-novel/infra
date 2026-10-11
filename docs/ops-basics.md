@@ -40,9 +40,10 @@ Git is the source of truth for production.
 - A daily **drift** check re-plans every root and fails if the cloud differs from `master`. That
   catches manual console edits.
 
-Destructive changes are opt-in: a maintainer adds the `allow-resource-deletion` label. The policy
-lives in [`.github/actions/tofu/policy.jq`](../.github/actions/tofu/policy.jq) and is about ten
-lines long.
+Destructive changes are opt-in: a maintainer adds the `allow-resource-deletion` label. Database host
+changes wait for a planned downtime: a maintainer adds `allow-downtime` once it has started. The
+policy lives in [`.github/actions/tofu/policy.jq`](../.github/actions/tofu/policy.jq) and is about
+twenty lines long.
 
 ## Identities
 

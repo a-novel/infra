@@ -49,7 +49,9 @@ Nothing else ends a downtime: until you clear it, the listed services keep refus
 
 - The deploy health check is skipped, since the services refuse work on purpose.
 - Check the work itself directly: database host logs and backup status.
-- Don't merge new images of a listed service: their migrations need the database.
+- Merge the database host changes it was planned for, with the `allow-downtime` label
+  ([database host changes](deployments.md#database-host-changes)). Their release pull requests also
+  carry the service images: the deploy runs their migrations before the hosts roll.
 
 ## Requirements
 

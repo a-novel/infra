@@ -1,6 +1,6 @@
 name: OpenTofu root
 description: >
-  Plan one root and enforce the deletion policy. With apply set, also verify and copy the
+  Plan one root and enforce the deletion and downtime policies. With apply set, also verify and copy the
   root's release images, then apply the reviewed plan. Pull-request and drift callers pass
   the read-only identity; the deploy workflow passes the writer.
 
@@ -16,6 +16,10 @@ inputs:
     required: false
     default: "false"
     description: '"true" when the change carries the allow-resource-deletion label.'
+  allow_downtime:
+    required: false
+    default: "false"
+    description: '"true" when the change carries the allow-downtime label. Only pull-request plans enforce it.'
   workload_identity_provider:
     required: true
     description: Workload Identity Federation provider of the selected identity.
@@ -84,10 +88,11 @@ runs:
           echo '</details>'
         } >>"$GITHUB_STEP_SUMMARY"
 
-    - name: Enforce the deletion policy
+    - name: Enforce the deletion and downtime policies
       shell: bash
       env:
         ALLOW_DELETION: ${{ inputs.allow_deletion }}
+        ALLOW_DOWNTIME: ${{ inputs.allow_downtime }}
         POLICY: ${{ github.action_path }}/policy.jq
       run: |
         set -euo pipefail
@@ -100,6 +105,22 @@ runs:
           echo "::error::This plan deletes or unprotects resources; it needs the allow-resource-deletion label: $(jq -c '.deletions + .weakened' <<<"$verdict")"
           exit 1
         fi
+        # A merged database host change is applied regardless; deploy rolls it out only during a
+        # planned downtime. Pull requests are where it waits for one.
+        [ "$GITHUB_EVENT_NAME" = pull_request ] || exit 0
+        services="$(jq -r '[.downtime_changes[].service] | unique | .[]' <<<"$verdict")"
+        [ -n "$services" ] || exit 0
+        if [ "$ALLOW_DOWNTIME" != true ]; then
+          echo "::error::This plan changes the database hosts of $(paste -sd, <<<"$services"); it needs the allow-downtime label during their planned downtime."
+          exit 1
+        fi
+        for service in $services; do
+          if [ -z "${DOWNTIME:-}" ] || ! jq -e --arg component "service-$service.database" '.components | index($component)' <<<"$DOWNTIME" >/dev/null \
+            || [ "$(date -d "$(jq -r .start <<<"$DOWNTIME")" +%s)" -gt "$(date +%s)" ]; then
+            echo "::error::No planned downtime in progress lists service-$service.database; schedule one with downtime.yaml, then re-run this check."
+            exit 1
+          fi
+        done
 
     - name: Verify release provenance
       shell: bash
