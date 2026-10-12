@@ -12,8 +12,9 @@ override_data {
   target = data.terraform_remote_state.foundation
   values = {
     outputs = {
-      region              = "europe-west1"
-      workload_project_id = "a-novel-production-prod"
+      region               = "europe-west1"
+      cloud_run_cpu_quotas = { private = 8000 }
+      workload_project_id  = "a-novel-production-prod"
       network = {
         network_id   = "projects/a-novel-production-prod/global/networks/agora-production"
         subnet_id    = "projects/a-novel-production-prod/regions/europe-west1/subnetworks/agora-production-europe-west1"

@@ -109,7 +109,7 @@ resource "google_cloud_run_v2_service" "grpc" {
 
   scaling {
     min_instance_count = 1
-    max_instance_count = 3
+    max_instance_count = 2
   }
 
   template {
@@ -191,6 +191,11 @@ resource "google_cloud_run_v2_service" "grpc" {
 
   lifecycle {
     prevent_destroy = true
+
+    postcondition {
+      condition     = (self.scaling[0].max_instance_count + 1) * tonumber(self.template[0].containers[0].resources[0].limits.cpu) * 1000 <= local.foundation.cloud_run_cpu_quotas["private"]
+      error_message = "The maximum instances, plus one during a rollout, must fit the private Cloud Run CPU quota. Raise the quota in foundation first."
+    }
   }
 }
 

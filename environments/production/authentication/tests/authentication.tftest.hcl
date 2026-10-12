@@ -15,7 +15,8 @@ override_data {
   target = data.terraform_remote_state.foundation
   values = {
     outputs = {
-      region = "europe-west1"
+      region               = "europe-west1"
+      cloud_run_cpu_quotas = { private = 8000, "public-api" = 2000 }
       production_projects = {
         private      = { project_id = "a-novel-production-prod" }
         "public-api" = { project_id = "a-novel-public-api-prod" }
@@ -59,6 +60,15 @@ run "splits_private_migrations_from_the_public_api" {
       google_cloud_run_v2_service.rest.template[0].vpc_access[0].egress == "PRIVATE_RANGES_ONLY"
     )
     error_message = "Migrations stay private; only the REST API is public, and it reaches private ranges through the VPC only."
+  }
+
+  assert {
+    condition = (
+      !google_cloud_run_v2_service.rest.invoker_iam_disabled &&
+      lookup({ for env in google_cloud_run_v2_service.rest.template[0].containers[0].env : env.name => env.value }, "REST_CLIENT_IP_HEADER", null) == "X-Client-IP" &&
+      !contains([for env in google_cloud_run_v2_service.rest.template[0].containers[0].env : env.name], "REST_RATE_LIMITS_ENABLED")
+    )
+    error_message = "Only IAM-admitted callers may reach the REST API, since it trusts their visitor IP header, and its rate limits always stay on."
   }
 
   assert {
@@ -115,4 +125,40 @@ run "ignores_another_services_downtime" {
     condition     = !contains([for env in google_cloud_run_v2_service.rest.template[0].containers[0].env : env.name], "DOWNTIME_START")
     error_message = "A downtime that lists no Authentication component must leave Authentication alone."
   }
+}
+
+run "refuses_instances_beyond_the_quota" {
+  command = plan
+
+  override_data {
+    target = data.terraform_remote_state.foundation
+    values = {
+      outputs = {
+        region               = "europe-west1"
+        cloud_run_cpu_quotas = { private = 8000, "public-api" = 1000 }
+        production_projects = {
+          private      = { project_id = "a-novel-production-prod" }
+          "public-api" = { project_id = "a-novel-public-api-prod" }
+        }
+        network = {
+          network_id   = "projects/a-novel-production-prod/global/networks/agora-production"
+          subnet_id    = "projects/a-novel-production-prod/regions/europe-west1/subnetworks/agora-production-europe-west1"
+          network_tags = { authentication = "agora-authentication" }
+        }
+        database_hosts = {
+          authentication = {
+            instance_group_manager = "agora-database-authentication"
+            private_ip             = "10.20.0.4"
+            repository_ip          = "10.20.0.7"
+            credentials_image      = "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-authentication-private-tooling/host-credentials@sha256:a5e264fc51c824c52fb6fd59b035e14e52fdc9f77e47b0375b352d8ad9bfd00d"
+            port                   = 5433
+            service_account        = "agora-auth-database@a-novel-production-prod.iam.gserviceaccount.com"
+            zone                   = "europe-west1-d"
+          }
+        }
+      }
+    }
+  }
+
+  expect_failures = [google_cloud_run_v2_service.rest]
 }
