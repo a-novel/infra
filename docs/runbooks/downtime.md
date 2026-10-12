@@ -27,11 +27,12 @@ read it:
 - **the platform.** It reads the whole downtime from
   `https://raw.githubusercontent.com/a-novel/infra/downtime/downtime.json`, which holds `null` when
   none is planned. The `downtime` branch holds only that file, replaced on every run.
-- **the Discord announcements.** `downtime.yaml` posts each change to the public
-  `a-novel-planned-downtime` channel: scheduled, rescheduled, extended (same start, later end), ended
-  or cancelled. `downtime-reminders.yaml` posts 1 week, 1 day, 6 hours and 30 minutes before `start`,
-  then at `start`. It runs every 10 minutes, so a reminder comes up to 10 minutes late, more when
-  GitHub delays its scheduled runs.
+- **the Discord announcements** in the public `a-novel-planned-downtime` channel. Each
+  `downtime.yaml` run hands the `downtime-announcements` Cloud Workflow (management project) every
+  post the downtime still needs: the change now (scheduled, rescheduled, extended with the same start
+  and a later end, ended, or cancelled), then 1 week, 1 day, 6 hours and 30 minutes before `start`,
+  and at `start`. The workflow sleeps until each post, so they land on time, and reads the webhook
+  from `production-downtime-discord-webhook` only then. A new run replaces the pending one.
 
 Deploys, plans and drift checks read `DOWNTIME` too. A database host change merges only while a
 downtime listing that service has started, and the deploy rolls the host only then: see
