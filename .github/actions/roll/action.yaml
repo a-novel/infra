@@ -78,7 +78,7 @@ runs:
 
     - name: Announce the database rollout
       if: steps.check.outputs.database == 'true'
-      uses: a-novel-kit/workflows/generic-actions/discord-post@v1.48.0
+      uses: a-novel-kit/workflows/generic-actions/discord-post@v1.49.1
       with:
         webhook: ${{ inputs.webhook }}
         color: started
@@ -120,7 +120,7 @@ runs:
 
     - name: Report the database rollout
       if: always() && steps.check.outputs.database == 'true'
-      uses: a-novel-kit/workflows/generic-actions/discord-post@v1.48.0
+      uses: a-novel-kit/workflows/generic-actions/discord-post@v1.49.1
       with:
         webhook: ${{ inputs.webhook }}
         color: ${{ steps.roll.outcome == 'success' && 'succeeded' || 'failed' }}

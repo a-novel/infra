@@ -62,7 +62,7 @@ runs:
           echo "$delimiter"
         } >>"$GITHUB_OUTPUT"
 
-    - uses: a-novel-kit/workflows/generic-actions/discord-post@v1.48.0
+    - uses: a-novel-kit/workflows/generic-actions/discord-post@v1.49.1
       with:
         webhook: ${{ inputs.webhook }}
         title: ${{ inputs.title }}
