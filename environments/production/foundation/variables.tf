@@ -270,25 +270,23 @@ variable "cloud_run_memory_quota_bytes" {
   }
 }
 
-variable "shell_cloud_run_quotas" {
-  description = "Regional Cloud Run ceilings per shell project, in milli-vCPU and memory bytes. Each must fit its services' max instances plus one rollout instance."
-  type = map(object({
+variable "shell_cloud_run_quota" {
+  description = "Regional Cloud Run ceiling of each shell project, in milli-vCPU and memory bytes. It must fit each shell's services' max instances plus one rollout instance."
+  type = object({
     cpu_millicpu = number
     memory_bytes = number
-  }))
-  default = {
-    public = { cpu_millicpu = 2000, memory_bytes = 4294967296 }
-    # Google refuses a ceiling below recent usage, and Authentication ran 3 instances before its
-    # one-instance cap. Lower this to 2000 once that peak no longer counts.
-    "public-api" = { cpu_millicpu = 3000, memory_bytes = 4294967296 }
-  }
+  })
+  # Google refuses a ceiling below recent usage, and Authentication has used 3 vCPU.
+  default = { cpu_millicpu = 3000, memory_bytes = 4294967296 }
 
   validation {
-    condition = alltrue([for quota in values(var.shell_cloud_run_quotas) :
-      quota.cpu_millicpu >= 2000 && quota.cpu_millicpu <= 64000 && quota.cpu_millicpu % 1000 == 0 &&
-      quota.memory_bytes >= 4294967296 && quota.memory_bytes <= 137438953472 && quota.memory_bytes % 1073741824 == 0
-    ])
-    error_message = "Each shell's Cloud Run quota must be 2,000-64,000 milli-vCPU in 1,000 increments and 4-128 GiB in whole GiB."
+    condition = (
+      var.shell_cloud_run_quota.cpu_millicpu >= 2000 && var.shell_cloud_run_quota.cpu_millicpu <= 64000 &&
+      var.shell_cloud_run_quota.cpu_millicpu % 1000 == 0 &&
+      var.shell_cloud_run_quota.memory_bytes >= 4294967296 && var.shell_cloud_run_quota.memory_bytes <= 137438953472 &&
+      var.shell_cloud_run_quota.memory_bytes % 1073741824 == 0
+    )
+    error_message = "The shell Cloud Run quota must be 2,000-64,000 milli-vCPU in 1,000 increments and 4-128 GiB in whole GiB."
   }
 }
 
