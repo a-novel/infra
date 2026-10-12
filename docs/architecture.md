@@ -108,6 +108,7 @@ them. Operators may add and read versions of every secret.
 | `production-authentication-waitlist-secret`                | Authentication API, when the waitlist is on                      |
 | `production-authentication-super-admin-password`           | The initializer identity                                         |
 | `production-<service>-pgbackrest-{ca,database,repository}` | Database host and repository VM (TLS)                            |
+| `production-downtime-discord-webhook`                      | `downtime-announcer`, when it posts a planned downtime step      |
 
 Workloads pin numeric versions in `terraform.tfvars`, never `latest`.
 
@@ -123,6 +124,7 @@ Workloads pin numeric versions in `terraform.tfvars`, never `latest`.
 | `pgbr-<service>-recovery` (management)                                                | Recovery drill hosts: read and restore backups, never delete. Disabled outside drills.       |
 | `agora-scheduler-invoker`                                                             | Runs the rotation job, and only jobs tagged `scheduled`.                                     |
 | `studio-visual-ci`, `studio-visual-maintenance` (management)                          | `a-novel/platform-studio` CI: visual-test evidence in Google Drive, no Cloud Storage access. |
+| `downtime-announcer` (management)                                                     | Runs the planned downtime announcements; reads only the Discord webhook.                     |
 
 Data Access audit logs are on in the management project for IAM, Secret Manager, Cloud Storage and
 token exchange.
