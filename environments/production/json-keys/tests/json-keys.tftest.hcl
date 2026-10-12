@@ -65,10 +65,10 @@ run "serves_privately_from_pinned_images_and_secrets" {
 
   assert {
     condition = (
-      google_cloud_run_v2_job.application["migrations"].run_execution_token != null &&
+      terraform_data.migrations.triggers_replace == google_cloud_run_v2_job.application["migrations"].template[0].template[0].containers[0].image &&
       google_cloud_run_v2_job.application["rotatekeys"].run_execution_token == null
     )
-    error_message = "Only migrations run during apply."
+    error_message = "Only migrations run during apply, once per image change."
   }
 
   assert {
@@ -77,8 +77,8 @@ run "serves_privately_from_pinned_images_and_secrets" {
   }
 
   assert {
-    condition     = google_cloud_run_v2_job.smoke.run_execution_token == substr(sha256(google_cloud_run_v2_service.grpc.template[0].containers[0].image), 0, 24)
-    error_message = "Without a planned downtime, the smoke check runs once per gRPC image."
+    condition     = terraform_data.smoke.triggers_replace == [google_cloud_run_v2_service.grpc.template[0].containers[0].image, ""]
+    error_message = "Without a planned downtime, the smoke check runs once per gRPC image change."
   }
 }
 
@@ -118,8 +118,8 @@ run "passes_the_planned_downtime_start" {
   }
 
   assert {
-    condition     = google_cloud_run_v2_job.smoke.run_execution_token == substr(sha256("${google_cloud_run_v2_service.grpc.template[0].containers[0].image}2026-10-12T06:00:00Z"), 0, 24)
-    error_message = "A planned downtime must change the smoke token, so clearing it runs the check again."
+    condition     = terraform_data.smoke.triggers_replace == [google_cloud_run_v2_service.grpc.template[0].containers[0].image, "2026-10-12T06:00:00Z"]
+    error_message = "A planned downtime must replace the smoke trigger, so clearing it runs the check again."
   }
 }
 

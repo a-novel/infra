@@ -32,6 +32,13 @@ locals {
   }
 }
 
+# Cloud Run names an execution after its job and token, and refuses a name it has used before. A
+# token taken from a replaced terraform_data is new on every change, a revert to an older image
+# included. It is hashed to fit the 63-character execution name.
+resource "terraform_data" "migrations" {
+  triggers_replace = local.image.migrations
+}
+
 resource "google_cloud_run_v2_job" "application" {
   for_each = local.jobs
 
@@ -40,8 +47,8 @@ resource "google_cloud_run_v2_job" "application" {
   deletion_protection = true
   labels              = { environment = "production", component = "json-keys", role = each.key }
 
-  # Apply runs the migration once per image and fails until it succeeds.
-  run_execution_token = each.key == "migrations" ? substr(sha256(local.image.migrations), 0, 24) : null
+  # Apply runs the migration once per image change and fails until it succeeds.
+  run_execution_token = each.key == "migrations" ? substr(sha256(terraform_data.migrations.id), 0, 24) : null
 
   template {
     task_count  = 1
@@ -208,14 +215,18 @@ resource "google_cloud_run_v2_service_iam_member" "smoke_invoker" {
   member   = module.runtime.member
 }
 
+# A planned downtime skips the check, so its start is a trigger: clearing the downtime runs the check
+# again against the restarted service.
+resource "terraform_data" "smoke" {
+  triggers_replace = [local.image.grpc, try(local.downtime_env.DOWNTIME_START, "")]
+}
+
 resource "google_cloud_run_v2_job" "smoke" {
   name                = "agora-json-keys-smoke"
   location            = local.region
   deletion_protection = true
   labels              = { environment = "production", component = "json-keys", role = "smoke" }
-  # A planned downtime skips the check, so its start is part of the token: clearing the downtime
-  # runs the check again against the restarted service.
-  run_execution_token = substr(sha256("${local.image.grpc}${try(local.downtime_env.DOWNTIME_START, "")}"), 0, 24)
+  run_execution_token = substr(sha256(terraform_data.smoke.id), 0, 24)
 
   template {
     task_count  = 1

@@ -28,6 +28,13 @@ locals {
   )
 }
 
+# Cloud Run names an execution after its job and token, and refuses a name it has used before. A
+# token taken from a replaced terraform_data is new on every change, a revert to an older image
+# included. It is hashed to fit the 63-character execution name.
+resource "terraform_data" "migrations" {
+  triggers_replace = local.image.migrations
+}
+
 resource "google_cloud_run_v2_job" "migrations" {
   project             = local.private_project_id
   name                = "agora-authentication-migrations"
@@ -35,8 +42,8 @@ resource "google_cloud_run_v2_job" "migrations" {
   deletion_protection = true
   labels              = { environment = "production", component = "authentication", role = "migrations" }
 
-  # Apply runs the migration once per image and fails until it succeeds.
-  run_execution_token = substr(sha256(local.image.migrations), 0, 24)
+  # Apply runs the migration once per image change and fails until it succeeds.
+  run_execution_token = substr(sha256(terraform_data.migrations.id), 0, 24)
 
   template {
     task_count  = 1
