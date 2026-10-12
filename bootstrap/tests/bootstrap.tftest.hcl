@@ -68,9 +68,21 @@ run "trusts_only_reviewed_workflows" {
         "(assertion.ref == 'refs/heads/master' && assertion.workflow_ref == 'a-novel/infra/.github/workflows/deploy.yaml@refs/heads/master' && assertion.environment == 'production') || ",
         "(assertion.ref == 'refs/heads/master' && assertion.workflow_ref == 'a-novel/infra/.github/workflows/recovery.yaml@refs/heads/master' && assertion.environment == 'production') || ",
         "(assertion.ref == 'refs/heads/master' && assertion.workflow_ref == 'a-novel/infra/.github/workflows/roll-database.yaml@refs/heads/master' && assertion.environment == 'production'))",
+      ]) &&
+      google_iam_workload_identity_pool_provider.github["downtime"].attribute_condition == join("", [
+        "assertion.repository_owner_id == '131281268' && assertion.repository_id == '1344262359' && (",
+        "(assertion.ref == 'refs/heads/master' && assertion.workflow_ref == 'a-novel/infra/.github/workflows/downtime.yaml@refs/heads/master'))",
       ])
     )
     error_message = "Only master workflows behind their environment may write, and only same-repository pull requests may plan."
+  }
+
+  assert {
+    condition = (
+      google_workflows_workflow.downtime_announcements.call_log_level == "LOG_NONE" &&
+      google_workflows_workflow.downtime_announcements.execution_history_level == "EXECUTION_HISTORY_BASIC"
+    )
+    error_message = "Call logs and detailed history would record the Discord webhook the announcements read."
   }
 
   assert {

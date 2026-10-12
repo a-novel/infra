@@ -45,3 +45,13 @@ variable "operator_principals" {
     error_message = "Provide at least one operator as user:email or group:email. Service accounts and broad principals are not accepted."
   }
 }
+
+variable "downtime_webhook_version" {
+  description = "Numeric version of production-downtime-discord-webhook that the announcements read."
+  type        = number
+
+  validation {
+    condition     = var.downtime_webhook_version >= 1 && floor(var.downtime_webhook_version) == var.downtime_webhook_version
+    error_message = "Pin a positive whole secret version, never latest."
+  }
+}

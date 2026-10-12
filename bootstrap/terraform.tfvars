@@ -1,6 +1,7 @@
-management_project_id = "a-novel-management-prod"
-region                = "europe-west1"
-storage_location      = "EU"
+management_project_id    = "a-novel-management-prod"
+region                   = "europe-west1"
+storage_location         = "EU"
+downtime_webhook_version = 1
 operator_principals = [
   "user:geoffroy.vincent@agorastoryverse.com",
 ]

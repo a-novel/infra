@@ -1,0 +1,43 @@
+# Posts each step of a planned downtime to Discord at its time. downtime.yaml cancels the previous
+# execution and starts one per change, listing the posts still due in time order:
+#   {"posts": [{"at": <unix seconds>, "message": <Discord webhook payload>}, ...]}
+# The webhook is read from Secret Manager at posting time, and calls are never logged.
+main:
+  params: [args]
+  steps:
+    - post_each:
+        for:
+          value: post
+          in: ${args.posts}
+          steps:
+            - wait:
+                switch:
+                  - condition: ${post.at > sys.now()}
+                    steps:
+                      - sleep:
+                          call: sys.sleep
+                          args:
+                            seconds: ${int(post.at - sys.now())}
+            - read_webhook:
+                call: googleapis.secretmanager.v1.projects.secrets.versions.accessString
+                args:
+                  project_id: ${sys.get_env("GOOGLE_CLOUD_PROJECT_ID")}
+                  secret_id: production-downtime-discord-webhook
+                  version: ${sys.get_env("WEBHOOK_VERSION")}
+                result: webhook
+            # A failed post must not cost the later ones.
+            - send:
+                try:
+                  call: http.post
+                  args:
+                    url: ${webhook}
+                    body: ${post.message}
+                retry: ${http.default_retry}
+                except:
+                  as: error
+                  steps:
+                    - report:
+                        call: sys.log
+                        args:
+                          severity: WARNING
+                          text: ${"Discord refused a planned downtime post (HTTP " + string(default(map.get(error, "code"), 0)) + ")."}

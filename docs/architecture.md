@@ -117,6 +117,7 @@ Workloads pin numeric versions in `terraform.tfvars`, never `latest`.
 | Account                                                                               | Purpose                                                                                      |
 | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | `infra-plan`, `infra-foundation` (management)                                         | CI: read-only plans and checks, and deployments.                                             |
+| `infra-downtime` (management)                                                         | CI: starts and cancels the planned downtime announcements.                                   |
 | `agora-json-keys-private`, `agora-authentication-private`, `agora-authentication-api` | Cloud Run runtimes, one per service and zone.                                                |
 | `agora-auth-initializer`                                                              | Reserved for the one-time administrator initializer, which no job runs yet.                  |
 | `agora-json-keys-database`, `agora-auth-database`                                     | Database hosts.                                                                              |

@@ -66,6 +66,13 @@ locals {
       }
       pull_requests = null
     }
+    downtime = {
+      service_account_id = "infra-downtime"
+      display_name       = "Infra planned downtime announcements"
+      provider_id        = "github-downtime"
+      workflows          = { "downtime.yaml" = null }
+      pull_requests      = null
+    }
   }
 
   secret_definitions = merge({
