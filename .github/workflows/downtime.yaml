@@ -132,6 +132,8 @@ jobs:
           fi
 
           gh workflow run deploy.yaml --repo "$REPOSITORY" --ref master
+          # A new reminder chain replaces the sleeping one, which still knows the previous downtime.
+          gh workflow run downtime-reminders.yaml --repo "$REPOSITORY" --ref master
           {
             echo "Previous downtime: \`${PREVIOUS:-none}\`"
             echo

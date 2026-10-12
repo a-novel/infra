@@ -30,8 +30,9 @@ read it:
 - **the Discord announcements.** `downtime.yaml` posts each change to the public
   `a-novel-planned-downtime` channel: scheduled, rescheduled, extended (same start, later end), ended
   or cancelled. `downtime-reminders.yaml` posts 1 week, 1 day, 6 hours and 30 minutes before `start`,
-  then at `start`. It runs every 10 minutes, so a reminder comes up to 10 minutes late, more when
-  GitHub delays its scheduled runs.
+  then at `start`, on time: each run sleeps until the next reminder and starts the next run, and
+  every `downtime.yaml` run starts a new chain. Its hourly schedule only restarts a broken chain,
+  hours late at worst, since GitHub delays scheduled runs.
 
 Deploys, plans and drift checks read `DOWNTIME` too. A database host change merges only while a
 downtime listing that service has started, and the deploy rolls the host only then: see

@@ -1,33 +1,63 @@
 name: downtime reminders
 
 # Reminds the public planned downtime channel 1 week, 1 day, 6 hours and 30 minutes before a planned
-# downtime starts, then announces the start. Scheduled runs come late or not at all under load, so
-# each run posts what fell due since the previous successful run, and only the most urgent of those.
+# downtime starts, then announces the start. GitHub runs scheduled workflows hours late
+# (a-novel-kit/.github#288), so the reminders come from a chain of runs: each posts what fell due,
+# sleeps until the next reminder, then starts the next run, which begins within seconds.
+# downtime.yaml starts a new chain on every change; the schedule only restarts a chain that broke.
 on:
-  schedule:
-    - cron: "7-59/10 * * * *"
   workflow_dispatch:
+  schedule:
+    - cron: "7 * * * *"
 
 permissions: {}
 
-concurrency:
-  group: downtime-reminders
-  cancel-in-progress: false
-
 jobs:
-  remind:
-    if: vars.DOWNTIME != ''
+  # A scheduled run steps aside while a chain runs, so it never replaces a run that already posted.
+  check:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       actions: read
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    steps:
+      - id: check
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          running=0
+          if [ "$EVENT" = schedule ]; then
+            running="$(gh run list --repo "$REPOSITORY" --workflow downtime-reminders.yaml --limit 20 --json databaseId,status |
+              jq --argjson id "$RUN_ID" '[.[] | select(.databaseId != $id and .status != "completed")] | length')"
+          fi
+          echo "run=$([ "$running" = 0 ] && echo true || echo false)" >>"$GITHUB_OUTPUT"
+
+  remind:
+    needs: check
+    if: needs.check.outputs.run == 'true'
+    runs-on: ubuntu-24.04
+    # A run sleeps at most 5 h 40 min, under GitHub's 6-hour job limit.
+    timeout-minutes: 350
+    # The newest run wins: a reschedule or a clear replaces the sleeping one.
+    concurrency:
+      group: downtime-reminders
+      cancel-in-progress: true
+    permissions:
+      # Starts the next run of the chain.
+      actions: write
       contents: read
     steps:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - name: Find the reminder that fell due
+      - name: Find the reminders
         id: due
         shell: bash
         env:
@@ -36,24 +66,28 @@ jobs:
           DOWNTIME: ${{ vars.DOWNTIME }}
         run: |
           set -euo pipefail
-          # Nothing older than the downtime itself: downtime.yaml rewrites the downtime branch on
-          # every change, so a rescheduled downtime is reminded again.
+          if [ -z "$DOWNTIME" ]; then exit 0; fi
+          # Post what fell due since the previous successful run, but nothing older than the
+          # downtime itself: downtime.yaml rewrites the downtime branch on every change.
           since="$(date -d "$(gh api "repos/$REPOSITORY/commits/downtime" --jq .commit.committer.date)" +%s)"
           last="$(gh run list --repo "$REPOSITORY" --workflow downtime-reminders.yaml --status success \
             --limit 1 --json createdAt --jq '.[0].createdAt // empty')"
           if [ -n "$last" ] && [ "$(date -d "$last" +%s)" -gt "$since" ]; then since="$(date -d "$last" +%s)"; fi
           now="$(date +%s)"
           start="$(date -d "$(jq -r .start <<<"$DOWNTIME")" +%s)"
-          # Most urgent first, so the first reminder that fell due is the one posted.
+          # Most urgent first: the first reminder that fell due is the one posted, and the last one
+          # still ahead is the next to wait for.
+          title="" next=""
           for reminder in "0 started" "1800 in 30 minutes" "21600 in 6 hours" "86400 in 1 day" "604800 in 1 week"; do
             at=$((start - ${reminder%% *}))
-            if [ "$at" -gt "$since" ] && [ "$at" -le "$now" ]; then
+            if [ -z "$title" ] && [ "$at" -gt "$since" ] && [ "$at" -le "$now" ]; then
               title="⏰ Planned downtime ${reminder#* }" color=upcoming
-              [ "${reminder%% *}" = 0 ] && title="🚧 Planned downtime started" color=in-progress
+              if [ "$at" = "$start" ]; then title="🚧 Planned downtime started" color=in-progress; fi
               { echo "title=$title"; echo "color=$color"; } >>"$GITHUB_OUTPUT"
-              break
             fi
+            if [ "$at" -gt "$now" ]; then next="$at"; fi
           done
+          if [ -n "$next" ]; then echo "wake=$((next < now + 20400 ? next : now + 20400))" >>"$GITHUB_OUTPUT"; fi
 
       - if: steps.due.outputs.title != ''
         uses: $/.github/actions/announce-downtime
@@ -62,3 +96,17 @@ jobs:
           window: ${{ vars.DOWNTIME }}
           title: ${{ steps.due.outputs.title }}
           color: ${{ steps.due.outputs.color }}
+
+      # The next run posts the reminder that fell due while this one slept.
+      - name: Wait for the next reminder
+        if: steps.due.outputs.wake != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          WAKE: ${{ steps.due.outputs.wake }}
+        run: |
+          set -euo pipefail
+          delay=$((WAKE - $(date +%s)))
+          if [ "$delay" -gt 0 ]; then sleep "$delay"; fi
+          gh workflow run downtime-reminders.yaml --repo "$REPOSITORY" --ref master
