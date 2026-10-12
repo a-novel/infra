@@ -12,8 +12,8 @@ TimeoutStopSec=45
 # Check without a Requires/Requisite dependency: database restarts must not replay jobs.
 ExecStartPre=/usr/bin/systemctl is-active --quiet agora-database.service
 # Remove only an exited predecessor. A still-running container makes the next run fail closed.
-ExecStartPre=-/usr/bin/docker rm agora-backup-${name}
-ExecStart=/usr/bin/docker run --name=agora-backup-${name} --pull=never \
+ExecStartPre=-/usr/bin/docker rm agora-backup-${service}-${name}
+ExecStart=/usr/bin/docker run --name=agora-backup-${service}-${name} --pull=never \
     --network=container:agora-postgres-${service} --read-only --user=999:999 \
     --cap-drop=ALL --security-opt=no-new-privileges --cpus=0.5 --memory=512m --memory-swap=512m \
     --pids-limit=64 --no-healthcheck --ulimit=core=0 --stop-signal=SIGTERM \
@@ -30,6 +30,6 @@ ExecStart=/usr/bin/docker run --name=agora-backup-${name} --pull=never \
 %{ else ~}
     --entrypoint=pgbackrest ${image} --stanza=${service} ${command}
 %{ endif ~}
-ExecStop=-/usr/bin/docker stop --time=30 agora-backup-${name}
+ExecStop=-/usr/bin/docker stop --time=30 agora-backup-${service}-${name}
 # Preserve bounded logs for COS collection after failure, timeout or ordinary completion.
-ExecStopPost=-/usr/bin/docker kill agora-backup-${name}
+ExecStopPost=-/usr/bin/docker kill agora-backup-${service}-${name}

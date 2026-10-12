@@ -6,9 +6,6 @@ mock_provider "google" {
       name   = "projects/a-novel-production-prod/serviceAccounts/agora-mock@a-novel-production-prod.iam.gserviceaccount.com"
     }
   }
-  mock_data "google_compute_instance_group" {
-    defaults = { instances = ["projects/a-novel-production-prod/zones/europe-west1-d/instances/agora-database-json-keys-test"] }
-  }
 }
 
 override_data {

@@ -54,6 +54,14 @@ run "accepted_schedules_follow_database" {
     error_message = "Restart propagation must never replay a backup worker."
   }
   assert {
+    condition = alltrue([for file in yamldecode(output.cloud_config).write_files :
+      strcontains(file.content, "--name=agora-backup-json-keys-${trimsuffix(trimprefix(file.path, "/etc/systemd/system/agora-backup-"), ".service")} ")
+      if startswith(file.path, "/etc/systemd/system/agora-backup-") && endswith(file.path, ".service")
+      ]) && strcontains(one([for file in yamldecode(output.cloud_config).write_files : file.content
+    if file.path == "/etc/systemd/system/agora-database.service"]), "agora-backup-json-keys-full")
+    error_message = "Backup containers carry their service, so their logs tell the two hosts apart."
+  }
+  assert {
     condition = alltrue([for option in ["repo1-retention-full-type=time", "repo1-retention-full=14", "expire-auto=y"] :
       strcontains(one([for file in yamldecode(output.cloud_config).write_files : file.content
       if file.path == "/etc/agora-database/pgbackrest.conf"]), option)

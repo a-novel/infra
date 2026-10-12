@@ -73,10 +73,6 @@ One of these happened:
 - no backup succeeded in 24 hours 45 minutes;
 - the hourly archive check has not succeeded in three hours.
 
-These alerts find the database host by its VM's ID. After a rollout that replaced the VM, they watch
-the old one until the service deploys again, at the latest when its downtime is cleared, and can fire
-falsely in between.
-
 ```bash
 # on the database host
 sudo journalctl -u 'agora-backup-*' --since=-1d
