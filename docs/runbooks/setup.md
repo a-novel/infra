@@ -17,10 +17,12 @@ removing a job in `main.yaml`.
 
 Repository variables (Settings → Secrets and variables → Actions):
 
-| Variable                              | Value (from `tofu -chdir=bootstrap output`)                                                                |
-| ------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER` | `projects/<management number>/locations/global/workloadIdentityPools/github-actions/providers/github-plan` |
-| `GCP_PLAN_SERVICE_ACCOUNT`            | `infra-plan@a-novel-management-prod.iam.gserviceaccount.com`                                               |
+| Variable                                  | Value (from `tofu -chdir=bootstrap output`)                                                                |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER`     | `projects/<management number>/locations/global/workloadIdentityPools/github-actions/providers/github-plan` |
+| `GCP_PLAN_SERVICE_ACCOUNT`                | `infra-plan@a-novel-management-prod.iam.gserviceaccount.com`                                               |
+| `GCP_DOWNTIME_WORKLOAD_IDENTITY_PROVIDER` | `…/providers/github-downtime`                                                                              |
+| `GCP_DOWNTIME_SERVICE_ACCOUNT`            | `infra-downtime@a-novel-management-prod.iam.gserviceaccount.com`                                           |
 
 `DOWNTIME` holds the planned downtime. Never set it by hand: [downtime.yaml](downtime.md) writes
 it with the `anovelbot-agent` App, which needs **Variables: Read and write**, and publishes it on the

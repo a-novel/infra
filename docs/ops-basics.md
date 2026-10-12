@@ -79,10 +79,11 @@ GitHub Actions gets short-lived Google credentials through **Workload Identity F
 No service-account key exists anywhere. The trust conditions live in
 [`bootstrap/main.tf`](../bootstrap/main.tf).
 
-| Identity           | Used by                                                                                               | Can               |
-| ------------------ | ----------------------------------------------------------------------------------------------------- | ----------------- |
-| `infra-plan`       | pull-request plans, the drift check, the scheduled health check                                       | read everything   |
-| `infra-foundation` | `deploy.yaml`, `roll-database.yaml` and `recovery.yaml`, on `master`, in the `production` environment | change everything |
+| Identity           | Used by                                                                                               | Can                                                 |
+| ------------------ | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `infra-plan`       | pull-request plans, the drift check, the scheduled health check                                       | read everything                                     |
+| `infra-foundation` | `deploy.yaml`, `roll-database.yaml` and `recovery.yaml`, on `master`, in the `production` environment | change everything                                   |
+| `infra-downtime`   | `downtime.yaml`, on `master`                                                                          | start and cancel the planned downtime announcements |
 
 The read-only identity trusts pull requests into `master` and the drift workflow on `master`. GitHub
 issues no OIDC token to pull requests from forks, so outside contributors get no cloud access.
