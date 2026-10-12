@@ -12,29 +12,53 @@ inputs:
     description: The downtime as DOWNTIME holds it, {components, start, end}.
   title:
     required: true
-    description: What happened, such as "Planned downtime in 1 day".
+    description: What happened, such as "⏰ Planned downtime in 1 day".
   color:
     required: true
     description: The discord-post color naming the downtime's state.
+  cleared:
+    required: false
+    default: "false"
+    description: '"true" once the downtime ended or was cancelled, which drops the countdown headline.'
 
 runs:
   using: composite
   steps:
+    # Large type carries what readers need first: the countdown to the start, or to the expected end
+    # once it started. Discord keeps relative timestamps live, so an old post never shows stale text.
     - name: Describe the downtime
       id: describe
       shell: bash
       env:
         WINDOW: ${{ inputs.window }}
+        CLEARED: ${{ inputs.cleared }}
       run: |
         set -euo pipefail
         start="$(date -d "$(jq -r .start <<<"$WINDOW")" +%s)"
         end="$(date -d "$(jq -r .end <<<"$WINDOW")" +%s)"
+        minutes=$(((end - start) / 60))
+        length=""
+        if ((minutes >= 60)); then length="$((minutes / 60)) h"; fi
+        if ((minutes % 60)); then length="${length:+$length }$((minutes % 60)) min"; fi
+
+        headline=""
+        if [ "$CLEARED" != true ]; then
+          headline="## Starts <t:$start:R>"
+          if [ "$(date +%s)" -ge "$start" ]; then headline="## Expected back <t:$end:R>"; fi
+        fi
         delimiter="EOF_$(openssl rand -hex 8)"
         {
           echo "description<<$delimiter"
-          echo "**Affects** $(jq -r '.components | map("`\(.)`") | join(", ")' <<<"$WINDOW")"
-          echo "**Starts** <t:$start:F> (<t:$start:R>)"
-          echo "**Expected back** <t:$end:F> (<t:$end:R>)"
+          if [ -n "$headline" ]; then printf '%s\n\n' "$headline"; fi
+          echo "**Affects**"
+          # service-json-keys.database reads as "json-keys database".
+          jq -r '.components[] | (capture("^service-(?<name>.+)\\.(?<part>[^.]+)$") // {name: ., part: ""})
+            | "- **\(.name)** \(.part)"' <<<"$WINDOW"
+          echo
+          echo "**When**"
+          echo "- **From** <t:$start:F>"
+          echo "- **Back by** <t:$end:F> *(expected)*"
+          echo "-# About ${length:-0 min} · shown in your time zone"
           echo "$delimiter"
         } >>"$GITHUB_OUTPUT"
 

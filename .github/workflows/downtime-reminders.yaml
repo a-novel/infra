@@ -48,9 +48,9 @@ jobs:
           for reminder in "0 started" "1800 in 30 minutes" "21600 in 6 hours" "86400 in 1 day" "604800 in 1 week"; do
             at=$((start - ${reminder%% *}))
             if [ "$at" -gt "$since" ] && [ "$at" -le "$now" ]; then
-              color=upcoming
-              [ "${reminder%% *}" = 0 ] && color=in-progress
-              { echo "title=Planned downtime ${reminder#* }"; echo "color=$color"; } >>"$GITHUB_OUTPUT"
+              title="⏰ Planned downtime ${reminder#* }" color=upcoming
+              [ "${reminder%% *}" = 0 ] && title="🚧 Planned downtime started" color=in-progress
+              { echo "title=$title"; echo "color=$color"; } >>"$GITHUB_OUTPUT"
               break
             fi
           done
