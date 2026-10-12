@@ -18,6 +18,12 @@ mock_provider "google" {
   }
 }
 
+mock_provider "google-beta" {
+  mock_resource "google_project_service_identity" {
+    defaults = { member = "serviceAccount:mock-agent@gcp-sa-workflows.iam.gserviceaccount.com" }
+  }
+}
+
 run "protects_state_and_backups" {
   command = plan
 
@@ -91,6 +97,14 @@ run "trusts_only_reviewed_workflows" {
       provider.oidc[0].allowed_audiences == null
     ])
     error_message = "Every provider must pin the GitHub organization and Google's canonical audience."
+  }
+
+  # Google rejects a longer provider display name only at apply time.
+  assert {
+    condition = alltrue([for provider in concat(values(google_iam_workload_identity_pool_provider.github), values(google_iam_workload_identity_pool_provider.visual_tests)) :
+      length(provider.display_name) <= 32
+    ])
+    error_message = "Workload identity provider display names are limited to 32 characters."
   }
 
   assert {
