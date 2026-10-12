@@ -122,7 +122,8 @@ jobs:
           tree="$(jq -n --arg content "${WINDOW:-null}"$'\n' \
             '{tree: [{path: "downtime.json", mode: "100644", type: "blob", content: $content}]}' |
             gh api "repos/$REPOSITORY/git/trees" --input - --jq .sha)"
-          commit="$(gh api "repos/$REPOSITORY/git/commits" -f message="Planned downtime: ${WINDOW:-none}" \
+          # The commit-messages ruleset covers every branch, this one included.
+          commit="$(gh api "repos/$REPOSITORY/git/commits" -f message="chore(downtime): publish ${WINDOW:-no planned downtime}" \
             -f tree="$tree" --jq .sha)"
           if gh api "repos/$REPOSITORY/git/ref/heads/downtime" >/dev/null 2>&1; then
             gh api -X PATCH "repos/$REPOSITORY/git/refs/heads/downtime" -f sha="$commit" -F force=true >/dev/null
