@@ -50,7 +50,8 @@ that waits for a downtime that has since started.
    `terraform.tfvars`. Its database image is also pinned in foundation's `database_images`.
 2. **CI plans it.** In the service's plan check, expect:
    - the Cloud Run service and jobs on the new images;
-   - a new `run_execution_token` on the migration job, when the migration image changed;
+   - when the migration image changed, its `terraform_data` replaced and a new
+     `run_execution_token` on the migration job;
    - each image's provenance verified against its service's release workflow.
 3. **It merges itself.** Once its checks pass, the auto-approve workflow approves it and queues it;
    Renovate itself never merges production files.
@@ -74,15 +75,16 @@ keeps the database digest, because the database image builds reproducibly, and d
 Revert the release pull request and merge the revert. Deploy redeploys the previous digests within
 minutes.
 
-Database migrations are not reverted. A data rollback is a [recovery](recovery.md), and a database
-host change is undone as described in [Undo a rollout](database.md#undo-a-rollout).
+Database migrations are not reverted: the previous migration image runs again and applies nothing.
+A data rollback is a [recovery](recovery.md), and a database host change is undone as described in
+[Undo a rollout](database.md#undo-a-rollout).
 
 ## Deletions and weakened protections
 
 A plan fails its check when it deletes, replaces or forgets a resource, or weakens
 `deletion_protection`, `deletion_policy` or `force_destroy`. The check's error lists the addresses;
-the job summary holds the full plan. Replacing an instance template is exempt: templates hold no
-data.
+the job summary holds the full plan. Replacing an instance template or a `terraform_data` is
+exempt: neither holds data.
 
 If the change is intended:
 

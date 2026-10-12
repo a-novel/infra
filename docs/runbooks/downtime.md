@@ -56,7 +56,7 @@ gh workflow run downtime.yaml --repo a-novel/infra -f operation=schedule \
 - Running it again replaces the downtime. A new `end` only changes what users see. A new `start` or
   new components also change when the services stop.
 
-The workflow checks the components and dates, writes `DOWNTIME`, publishes the document, then runs a
+The workflow checks the components and dates, publishes the document, writes `DOWNTIME`, then runs a
 full deploy, which passes `DOWNTIME_START` to the listed services. **Check that this deploy succeeded
 before `start`:** if it failed, the services keep serving at `start`. The rollout then refuses to
 restart their database hosts, until a deploy run by hand gives them `DOWNTIME_START`.
@@ -66,8 +66,9 @@ restart their database hosts, until a deploy run by hand gives them `DOWNTIME_ST
 - Merge the database host changes the downtime was planned for, with the `allow-downtime` label.
   Their deploy runs a release's migrations, then rolls the hosts. Migrations still run during a
   downtime; the JSON Keys smoke check waits for the downtime to be cleared.
-- The deploy health check is skipped, since the listed services refuse work. Check the database hosts
-  directly ([Inspect and connect](database.md#inspect-and-connect)).
+- The deploy health check is skipped, since the listed services refuse work. So is a health or
+  smoke check that began just before `start` and failed after it. Check the database hosts directly
+  ([Inspect and connect](database.md#inspect-and-connect)).
 
 ## Clear the downtime
 

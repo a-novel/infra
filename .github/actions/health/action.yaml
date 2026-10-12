@@ -12,10 +12,13 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        if [ -n "${DOWNTIME:-}" ] && [ "$(date -d "$(jq -r .start <<<"$DOWNTIME")" +%s)" -le "$(date +%s)" ]; then
-          echo "::notice::Planned downtime started for $(jq -r '.components | join(", ")' <<<"$DOWNTIME"); health check skipped."
-          exit 0
-        fi
+        skip_if_started() {
+          if [ -n "${DOWNTIME:-}" ] && [ "$(date -d "$(jq -r .start <<<"$DOWNTIME")" +%s)" -le "$(date +%s)" ]; then
+            echo "::notice::Planned downtime started for $(jq -r '.components | join(", ")' <<<"$DOWNTIME"); health check skipped."
+            exit 0
+          fi
+        }
+        skip_if_started
         lookup() {
           gcloud run services describe agora-authentication-rest \
             --project=a-novel-public-api-prod --region=europe-west1 --format='value(status.url)'
@@ -29,6 +32,9 @@ runs:
         if ! curl -sS --fail-with-body --retry 12 --retry-all-errors --retry-delay 10 --max-time 15 \
           -H "Authorization: Bearer $ID_TOKEN" -o "$body" "$url/v2/healthcheck"; then
           cat "$body" >&2
-          exit 1
+        elif tee /dev/stderr <"$body" | jq -e 'length == 3 and all(.[]; .status == "up")' >/dev/null; then
+          exit 0
         fi
-        tee /dev/stderr <"$body" | jq -e 'length == 3 and all(.[]; .status == "up")' >/dev/null
+        # A check that began just before the downtime fails once the services stop.
+        skip_if_started
+        exit 1
