@@ -31,6 +31,23 @@ resource "google_project_iam_member" "downtime_announcer_logs" {
   member  = google_service_account.downtime_announcer.member
 }
 
+# Google creates the Workflows service agent lazily, and a workflow cannot be created before it
+# exists.
+resource "google_project_service_identity" "workflows" {
+  provider = google-beta
+
+  project = var.management_project_id
+  service = "workflows.googleapis.com"
+
+  depends_on = [google_project_service.management["workflows.googleapis.com"]]
+}
+
+resource "google_project_iam_member" "workflows_agent" {
+  project = var.management_project_id
+  role    = "roles/workflows.serviceAgent"
+  member  = google_project_service_identity.workflows.member
+}
+
 resource "google_workflows_workflow" "downtime_announcements" {
   name            = "downtime-announcements"
   region          = var.region
@@ -49,7 +66,7 @@ resource "google_workflows_workflow" "downtime_announcements" {
   deletion_protection     = false
 
   depends_on = [
-    google_project_service.management["workflows.googleapis.com"],
+    google_project_iam_member.workflows_agent,
     google_secret_manager_secret_iam_member.downtime_announcer,
   ]
 }

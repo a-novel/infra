@@ -5,6 +5,12 @@ provider "google" {
   default_labels = local.labels
 }
 
+# Only service-agent creation needs the beta provider.
+provider "google-beta" {
+  project = var.management_project_id
+  region  = var.region
+}
+
 data "google_project" "management" {
   project_id = var.management_project_id
 }
@@ -68,7 +74,7 @@ locals {
     }
     downtime = {
       service_account_id = "infra-downtime"
-      display_name       = "Infra planned downtime announcements"
+      display_name       = "Infra downtime announcements"
       provider_id        = "github-downtime"
       workflows          = { "downtime.yaml" = null }
       pull_requests      = null
