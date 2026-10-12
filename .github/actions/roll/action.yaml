@@ -76,12 +76,13 @@ runs:
         fi
         { echo "database=$database_pending"; echo "repository=$repository_pending"; echo "config=$config"; } >>"$GITHUB_OUTPUT"
 
+    # Gold, not the informational blue: restarting a database host needs someone watching.
     - name: Announce the database rollout
       if: steps.check.outputs.database == 'true'
       uses: a-novel-kit/workflows/generic-actions/discord-post@v1.49.1
       with:
         webhook: ${{ inputs.webhook }}
-        color: started
+        color: upcoming
         title: a-novel/infra · ${{ inputs.service }} database rollout started
         url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         description: Snapshot of `agora-data-${{ inputs.service }}`, then a restart of `agora-database-${{ inputs.service }}`.
