@@ -1,7 +1,7 @@
 images = {
-  database   = "ghcr.io/a-novel/service-authentication/database:v2.12.0@sha256:a1e2630f014e889357c201e81db468831b51d9f1b320c7c7d07a9ec6b10596b4"
-  migrations = "ghcr.io/a-novel/service-authentication/jobs/migrations:v2.12.0@sha256:a2fe27a3bfe2a63e1d01308436684ad5380cabfb31e132b434df39998cd82567"
-  rest       = "ghcr.io/a-novel/service-authentication/rest:v2.12.0@sha256:636603b149ce28207f27ad64e09a09e118b51e758232124bf370358ba1b3af40"
+  database   = "ghcr.io/a-novel/service-authentication/database:v2.13.0@sha256:a1e2630f014e889357c201e81db468831b51d9f1b320c7c7d07a9ec6b10596b4"
+  migrations = "ghcr.io/a-novel/service-authentication/jobs/migrations:v2.13.0@sha256:a683aac13bfb57829c987aa83aafc3d76588a0f8160dd05dde8460f7e3ee9745"
+  rest       = "ghcr.io/a-novel/service-authentication/rest:v2.13.0@sha256:9be54a5b5df3ddfc83063ed61deff3be853dea468f65ae3a975d66aaf9155671"
 }
 
 secret_versions = {
