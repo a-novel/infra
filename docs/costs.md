@@ -18,8 +18,9 @@ versions 7 days after they are replaced.
 The budget is **60 units** of the billing account's currency a month, for the four production
 projects. It alerts at 50, 75, 90 and
 100%, actual or forecast, and caps nothing. Quotas, maximum instances and fixed disk sizes bound most
-usage, but not storage or requests. Recovery drill projects are billed to the same account but sit
-outside the budget, so delete each one as soon as its drill ends.
+usage, but not storage or requests. Every project that runs Cloud Run has its own CPU and memory
+quota, and each service root checks its maximum instances against it. Recovery drill projects are
+billed to the same account but sit outside the budget, so delete each one as soon as its drill ends.
 
 Native backups were approved with a planning ceiling of EUR 10–15 extra per service per month. Real
 figures come from the billing report.

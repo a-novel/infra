@@ -1,23 +1,48 @@
 locals {
+  # Each shell project runs its own Cloud Run services, so each gets its own ceiling.
+  shell_projects = merge(
+    { for zone, project in module.public_project : zone => project.project_id },
+    { for zone, project in module.public_api_project : zone => project.project_id },
+  )
+
   # Regional quota IDs are service-defined and known before project creation.
   # Planning must not query APIs that the same plan still needs to enable.
-  quota_preferences = {
-    cloud_run_cpu = {
-      service  = "run.googleapis.com"
-      quota_id = "CpuAllocPerProjectRegion"
-      value    = var.cloud_run_cpu_quota_millicpu
-    }
-    cloud_run_memory = {
-      service  = "run.googleapis.com"
-      quota_id = "MemAllocPerProjectRegion"
-      value    = var.cloud_run_memory_quota_bytes
-    }
-    compute_cpu = {
-      service  = "compute.googleapis.com"
-      quota_id = "CPUS-per-project-region"
-      value    = var.compute_cpu_quota
-    }
-  }
+  quota_preferences = merge(
+    {
+      cloud_run_cpu = {
+        project_id = google_project.workload.project_id
+        service    = "run.googleapis.com"
+        quota_id   = "CpuAllocPerProjectRegion"
+        value      = var.cloud_run_cpu_quota_millicpu
+      }
+      cloud_run_memory = {
+        project_id = google_project.workload.project_id
+        service    = "run.googleapis.com"
+        quota_id   = "MemAllocPerProjectRegion"
+        value      = var.cloud_run_memory_quota_bytes
+      }
+      compute_cpu = {
+        project_id = google_project.workload.project_id
+        service    = "compute.googleapis.com"
+        quota_id   = "CPUS-per-project-region"
+        value      = var.compute_cpu_quota
+      }
+    },
+    merge([for zone, project_id in local.shell_projects : {
+      "${zone}/cloud_run_cpu" = {
+        project_id = project_id
+        service    = "run.googleapis.com"
+        quota_id   = "CpuAllocPerProjectRegion"
+        value      = var.shell_cloud_run_quotas[zone].cpu_millicpu
+      }
+      "${zone}/cloud_run_memory" = {
+        project_id = project_id
+        service    = "run.googleapis.com"
+        quota_id   = "MemAllocPerProjectRegion"
+        value      = var.shell_cloud_run_quotas[zone].memory_bytes
+      }
+    }]...),
+  )
 }
 
 data "google_billing_account" "workload" {
@@ -37,7 +62,7 @@ data "google_project" "management" {
 resource "google_cloud_quotas_quota_preference" "cost_cap" {
   for_each = local.quota_preferences
 
-  parent     = "projects/${google_project.workload.project_id}"
+  parent     = "projects/${each.value.project_id}"
   service    = each.value.service
   quota_id   = each.value.quota_id
   dimensions = { region = var.region }
