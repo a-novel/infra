@@ -37,6 +37,8 @@ jobs:
       actions: write
       # Publishes the document on the downtime branch.
       contents: write
+      # Hands the announcements to Google Cloud Workflows.
+      id-token: write
     steps:
       # workflow_dispatch is open to anyone with write access.
       - name: Require a repository admin
@@ -140,39 +142,92 @@ jobs:
             echo "A full deploy is applying it."
           } >>"$GITHUB_STEP_SUMMARY"
 
-      # Announces the change in the public planned downtime channel. Timestamps share one RFC 3339
-      # UTC format, so they compare as strings.
-      - name: Describe the change
-        id: change
+      # Every post this downtime needs, in time order: the change itself now, then the reminders still
+      # ahead. The countdowns are Discord timestamps, so a post written now still reads right when it
+      # lands. Timestamps share one RFC 3339 UTC format, so they compare as strings.
+      - name: Plan the announcements
+        id: posts
         shell: bash
         env:
           PREVIOUS: ${{ vars.DOWNTIME }}
           WINDOW: ${{ steps.window.outputs.window }}
         run: |
           set -euo pipefail
-          if [ -n "$WINDOW" ] && [ -z "$PREVIOUS" ]; then
-            title="🗓️ Planned downtime scheduled" color=upcoming window="$WINDOW" cleared=false
-          elif [ -n "$WINDOW" ]; then
-            title="🔁 Planned downtime rescheduled" color=started window="$WINDOW" cleared=false
-            if jq -e --argjson previous "$PREVIOUS" \
-              '.start == $previous.start and .components == $previous.components and .end > $previous.end' <<<"$WINDOW" >/dev/null; then
-              title="⏩ Planned downtime extended"
-            fi
-          elif [ -n "$PREVIOUS" ]; then
-            title="✖️ Planned downtime cancelled" color=cancelled window="$PREVIOUS" cleared=true
-            if [ "$(date -d "$(jq -r .start <<<"$PREVIOUS")" +%s)" -le "$(date +%s)" ]; then
-              title="✅ Planned downtime ended" color=succeeded
-            fi
-          else
-            exit 0
-          fi
-          { echo "title=$title"; echo "color=$color"; echo "window=$window"; echo "cleared=$cleared"; } >>"$GITHUB_OUTPUT"
+          # discord-post's palette (a-novel-kit/workflows) for the states these posts show.
+          upcoming=15844367 in_progress=15105570 informational=3447003 succeeded=3066993 cancelled=9807270
+          now="$(date +%s)"
 
-      - if: steps.change.outputs.title != ''
-        uses: $/.github/actions/announce-downtime
+          body() { # window, headline
+            local start end minutes length=""
+            start="$(date -d "$(jq -r .start <<<"$1")" +%s)" end="$(date -d "$(jq -r .end <<<"$1")" +%s)"
+            minutes=$(((end - start) / 60))
+            if ((minutes >= 60)); then length="$((minutes / 60)) h"; fi
+            if ((minutes % 60)); then length="${length:+$length }$((minutes % 60)) min"; fi
+            if [ -n "$2" ]; then printf '%s\n\n' "$2"; fi
+            echo "**Affects**"
+            # service-json-keys.database reads as "json-keys database".
+            jq -r '.components[] | (capture("^service-(?<name>.+)\\.(?<part>[^.]+)$") // {name: ., part: ""})
+              | "- **\(.name)** \(.part)"' <<<"$1"
+            echo
+            echo "**When**"
+            echo "- **From** <t:$start:F>"
+            echo "- **Back by** <t:$end:F> *(expected)*"
+            echo "-# About ${length:-0 min} · shown in your time zone"
+          }
+          post() { # at, title, color, window, headline
+            jq -cn --argjson at "$1" --arg title "$2" --argjson color "$3" --arg description "$(body "$4" "$5")" \
+              '{at: $at, message: {embeds: [{title: $title, color: $color, description: $description}], allowed_mentions: {parse: []}}}'
+          }
+
+          posts=()
+          if [ -n "$WINDOW" ]; then
+            start="$(date -d "$(jq -r .start <<<"$WINDOW")" +%s)"
+            countdown="## Starts <t:$start:R>"
+            back="## Expected back <t:$(date -d "$(jq -r .end <<<"$WINDOW")" +%s):R>"
+            headline="$countdown"
+            if [ "$now" -ge "$start" ]; then headline="$back"; fi
+            if [ -z "$PREVIOUS" ]; then
+              posts+=("$(post "$now" "🗓️ Planned downtime scheduled" "$upcoming" "$WINDOW" "$headline")")
+            elif jq -e --argjson previous "$PREVIOUS" \
+              '.start == $previous.start and .components == $previous.components and .end > $previous.end' <<<"$WINDOW" >/dev/null; then
+              posts+=("$(post "$now" "⏩ Planned downtime extended" "$informational" "$WINDOW" "$headline")")
+            else
+              posts+=("$(post "$now" "🔁 Planned downtime rescheduled" "$informational" "$WINDOW" "$headline")")
+            fi
+            for reminder in "604800 in 1 week" "86400 in 1 day" "21600 in 6 hours" "1800 in 30 minutes"; do
+              at=$((start - ${reminder%% *}))
+              if [ "$at" -gt "$now" ]; then posts+=("$(post "$at" "⏰ Planned downtime ${reminder#* }" "$upcoming" "$WINDOW" "$countdown")"); fi
+            done
+            if [ "$start" -gt "$now" ]; then posts+=("$(post "$start" "🚧 Planned downtime started" "$in_progress" "$WINDOW" "$back")"); fi
+          elif [ -n "$PREVIOUS" ]; then
+            if [ "$(date -d "$(jq -r .start <<<"$PREVIOUS")" +%s)" -le "$now" ]; then
+              posts+=("$(post "$now" "✅ Planned downtime ended" "$succeeded" "$PREVIOUS" "")")
+            else
+              posts+=("$(post "$now" "✖️ Planned downtime cancelled" "$cancelled" "$PREVIOUS" "")")
+            fi
+          fi
+          echo "posts=$(printf '%s\n' "${posts[@]}" | jq -cs '{posts: map(select(. != null))}')" >>"$GITHUB_OUTPUT"
+
+      - uses: google-github-actions/auth@v3.0.0
         with:
-          webhook: ${{ secrets.DOWNTIME_WEBHOOK }}
-          window: ${{ steps.change.outputs.window }}
-          title: ${{ steps.change.outputs.title }}
-          color: ${{ steps.change.outputs.color }}
-          cleared: ${{ steps.change.outputs.cleared }}
+          workload_identity_provider: ${{ vars.GCP_DOWNTIME_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DOWNTIME_SERVICE_ACCOUNT }}
+
+      # Google Cloud Workflows runs the announcements, because GitHub starts scheduled workflows
+      # hours late. The execution sleeps until each post and reads the webhook only then. A new
+      # execution replaces the pending one, which still knows the previous downtime.
+      - name: Replace the pending announcements
+        shell: bash
+        env:
+          POSTS: ${{ steps.posts.outputs.posts }}
+        run: |
+          set -euo pipefail
+          where=(--location=europe-west1 --project=a-novel-management-prod)
+          while read -r execution; do
+            gcloud workflows executions cancel "$execution" --workflow=downtime-announcements "${where[@]}" >/dev/null
+          done < <(gcloud workflows executions list downtime-announcements "${where[@]}" \
+            --filter='state=ACTIVE' --format='value(name.basename())')
+          if [ "$(jq '.posts | length' <<<"$POSTS")" -gt 0 ]; then
+            gcloud workflows execute downtime-announcements "${where[@]}" --data="$POSTS" >/dev/null
+          fi
+          echo "Announcements scheduled: $(jq -r '[.posts[].message.embeds[0].title] | join(", ")' <<<"$POSTS")" >>"$GITHUB_STEP_SUMMARY"
