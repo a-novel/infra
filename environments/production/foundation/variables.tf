@@ -277,8 +277,10 @@ variable "shell_cloud_run_quotas" {
     memory_bytes = number
   }))
   default = {
-    public       = { cpu_millicpu = 2000, memory_bytes = 4294967296 }
-    "public-api" = { cpu_millicpu = 2000, memory_bytes = 4294967296 }
+    public = { cpu_millicpu = 2000, memory_bytes = 4294967296 }
+    # Google refuses a ceiling below recent usage, and Authentication ran 3 instances before its
+    # one-instance cap. Lower this to 2000 once that peak no longer counts.
+    "public-api" = { cpu_millicpu = 3000, memory_bytes = 4294967296 }
   }
 
   validation {
