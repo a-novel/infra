@@ -33,13 +33,13 @@ locals {
         project_id = project_id
         service    = "run.googleapis.com"
         quota_id   = "CpuAllocPerProjectRegion"
-        value      = var.shell_cloud_run_quotas[zone].cpu_millicpu
+        value      = var.shell_cloud_run_quota.cpu_millicpu
       }
       "${zone}/cloud_run_memory" = {
         project_id = project_id
         service    = "run.googleapis.com"
         quota_id   = "MemAllocPerProjectRegion"
-        value      = var.shell_cloud_run_quotas[zone].memory_bytes
+        value      = var.shell_cloud_run_quota.memory_bytes
       }
     }]...),
   )
