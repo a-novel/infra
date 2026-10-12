@@ -37,8 +37,9 @@ jobs:
       actions: write
       # Publishes the document on the downtime branch.
       contents: write
-      # Hands the announcements to Google Cloud Workflows.
-      id-token: write
+    outputs:
+      previous: ${{ vars.DOWNTIME }}
+      window: ${{ steps.window.outputs.window }}
     steps:
       # workflow_dispatch is open to anyone with write access.
       - name: Require a repository admin
@@ -150,6 +151,17 @@ jobs:
             echo "A full deploy is applying it."
           } >>"$GITHUB_STEP_SUMMARY"
 
+  # Kept apart from the downtime: a failure here leaves the downtime applied, and "Re-run failed
+  # jobs" retries only the announcements. A retry plans from its own clock, so it posts the change
+  # and the reminders still ahead, never a burst of past ones.
+  announce:
+    needs: downtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      # Hands the announcements to Google Cloud Workflows.
+      id-token: write
+    steps:
       # Every post this downtime needs, in time order: the change itself now, then the reminders still
       # ahead. The countdowns are Discord timestamps, so a post written now still reads right when it
       # lands. Timestamps share one RFC 3339 UTC format, so they compare as strings.
@@ -157,8 +169,8 @@ jobs:
         id: posts
         shell: bash
         env:
-          PREVIOUS: ${{ vars.DOWNTIME }}
-          WINDOW: ${{ steps.window.outputs.window }}
+          PREVIOUS: ${{ needs.downtime.outputs.previous }}
+          WINDOW: ${{ needs.downtime.outputs.window }}
         run: |
           set -euo pipefail
           # discord-post's palette (a-novel-kit/workflows) for the states these posts show.
@@ -228,14 +240,22 @@ jobs:
         shell: bash
         env:
           POSTS: ${{ steps.posts.outputs.posts }}
+          # gcloud asks before cancelling, and no one answers in CI.
+          CLOUDSDK_CORE_DISABLE_PROMPTS: "1"
         run: |
           set -euo pipefail
           where=(--location=europe-west1 --project=a-novel-management-prod)
           while read -r execution; do
-            gcloud workflows executions cancel "$execution" --workflow=downtime-announcements "${where[@]}" >/dev/null
+            gcloud workflows executions cancel "$execution" --workflow=downtime-announcements "${where[@]}" --quiet >/dev/null
           done < <(gcloud workflows executions list downtime-announcements "${where[@]}" \
             --filter='state=ACTIVE' --format='value(name.basename())')
           if [ "$(jq '.posts | length' <<<"$POSTS")" -gt 0 ]; then
             gcloud workflows execute downtime-announcements "${where[@]}" --data="$POSTS" >/dev/null
           fi
           echo "Announcements scheduled: $(jq -r '[.posts[].message.embeds[0].title] | join(", ")' <<<"$POSTS")" >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Explain a failure
+        if: failure()
+        shell: bash
+        run: |
+          echo "::error::The downtime itself is applied. Only its announcements failed: fix the cause, then use Re-run failed jobs, which replaces the pending announcements."
