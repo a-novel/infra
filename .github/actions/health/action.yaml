@@ -22,7 +22,13 @@ runs:
         }
         # gcloud re-fetches the GitHub OIDC token here, and that request can time out.
         url="$(lookup || { sleep 15; lookup; })"
-        # The retries also cover a fresh invoker grant, which takes a minute or two to apply.
-        curl -sS --fail-with-body --retry 12 --retry-all-errors --retry-delay 10 --max-time 15 \
-          -H "Authorization: Bearer $ID_TOKEN" "$url/v2/healthcheck" |
-          tee /dev/stderr | jq -e 'length == 3 and all(.[]; .status == "up")' >/dev/null
+        # The retries also cover a fresh invoker grant, which takes a minute or two to apply. curl
+        # empties its output file before each retry, which it cannot do for a pipe, so jq reads only
+        # the last answer.
+        body="$RUNNER_TEMP/health.json"
+        if ! curl -sS --fail-with-body --retry 12 --retry-all-errors --retry-delay 10 --max-time 15 \
+          -H "Authorization: Bearer $ID_TOKEN" -o "$body" "$url/v2/healthcheck"; then
+          cat "$body" >&2
+          exit 1
+        fi
+        tee /dev/stderr <"$body" | jq -e 'length == 3 and all(.[]; .status == "up")' >/dev/null
