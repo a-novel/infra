@@ -5,6 +5,7 @@ locals {
     "roles/iam.workloadIdentityPoolViewer",
     "roles/secretmanager.viewer",
     "roles/serviceusage.serviceUsageViewer",
+    "roles/workflows.viewer",
   ])
 
   foundation_project_roles = toset([
@@ -13,6 +14,7 @@ locals {
     "roles/iam.workloadIdentityPoolAdmin",
     "roles/resourcemanager.projectIamAdmin",
     "roles/serviceusage.serviceUsageAdmin",
+    "roles/workflows.admin",
   ])
 
   # Data Access audit entries are private logs. Human operators need the

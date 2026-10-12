@@ -33,6 +33,8 @@ locals {
     "serviceusage.googleapis.com",
     "storage.googleapis.com",
     "sts.googleapis.com",
+    "workflowexecutions.googleapis.com",
+    "workflows.googleapis.com",
   ])
 
   github = {
@@ -90,6 +92,10 @@ locals {
     production-json-keys-postgres-password = {
       contract = "POSTGRES_PASSWORD"
       purpose  = "JSON Keys database owner password"
+    }
+    production-downtime-discord-webhook = {
+      contract = "DISCORD_WEBHOOK"
+      purpose  = "Discord webhook of the public planned downtime channel"
     }
     }, { for secret, credential in local.pgbackrest_tls : secret => {
       contract = credential.contract
