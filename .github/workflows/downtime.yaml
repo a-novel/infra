@@ -101,7 +101,7 @@ jobs:
           # this one it doesn't declare.
           permission-actions-variables: write
 
-      - name: Write DOWNTIME, publish it, and deploy
+      - name: Write and publish DOWNTIME, then deploy
         shell: bash
         env:
           APP_TOKEN: ${{ steps.token.outputs.token }}
@@ -111,24 +111,32 @@ jobs:
           WINDOW: ${{ steps.window.outputs.window }}
         run: |
           set -euo pipefail
-          if [ -n "$WINDOW" ]; then
-            GH_TOKEN="$APP_TOKEN" gh variable set DOWNTIME --repo "$REPOSITORY" --body "$WINDOW"
-          elif [ -n "$PREVIOUS" ]; then
-            GH_TOKEN="$APP_TOKEN" gh variable delete DOWNTIME --repo "$REPOSITORY"
-          fi
-
           # The platform reads downtime.json from the downtime branch: one orphan commit, replaced
           # on every run, holding the downtime or null. Commits by this token start no workflow.
-          tree="$(jq -n --arg content "${WINDOW:-null}"$'\n' \
-            '{tree: [{path: "downtime.json", mode: "100644", type: "blob", content: $content}]}' |
-            gh api "repos/$REPOSITORY/git/trees" --input - --jq .sha)"
-          # The commit-messages ruleset covers every branch, this one included.
-          commit="$(gh api "repos/$REPOSITORY/git/commits" -f message="chore(downtime): publish ${WINDOW:-no planned downtime}" \
-            -f tree="$tree" --jq .sha)"
-          if gh api "repos/$REPOSITORY/git/ref/heads/downtime" >/dev/null 2>&1; then
-            gh api -X PATCH "repos/$REPOSITORY/git/refs/heads/downtime" -f sha="$commit" -F force=true >/dev/null
+          publish() {
+            tree="$(jq -n --arg content "${WINDOW:-null}"$'\n' \
+              '{tree: [{path: "downtime.json", mode: "100644", type: "blob", content: $content}]}' |
+              gh api "repos/$REPOSITORY/git/trees" --input - --jq .sha)"
+            # The commit-messages ruleset covers every branch, this one included.
+            commit="$(gh api "repos/$REPOSITORY/git/commits" -f message="chore(downtime): publish ${WINDOW:-no planned downtime}" \
+              -f tree="$tree" --jq .sha)"
+            if gh api "repos/$REPOSITORY/git/ref/heads/downtime" >/dev/null 2>&1; then
+              gh api -X PATCH "repos/$REPOSITORY/git/refs/heads/downtime" -f sha="$commit" -F force=true >/dev/null
+            else
+              gh api "repos/$REPOSITORY/git/refs" -f ref=refs/heads/downtime -f sha="$commit" >/dev/null
+            fi
+          }
+
+          # Any deploy applies DOWNTIME, so users see a downtime before it is set and until it is
+          # deleted. A failed schedule or clear leaves a stale notice, never an unannounced stop.
+          if [ -n "$WINDOW" ]; then
+            publish
+            GH_TOKEN="$APP_TOKEN" gh variable set DOWNTIME --repo "$REPOSITORY" --body "$WINDOW"
           else
-            gh api "repos/$REPOSITORY/git/refs" -f ref=refs/heads/downtime -f sha="$commit" >/dev/null
+            if [ -n "$PREVIOUS" ]; then
+              GH_TOKEN="$APP_TOKEN" gh variable delete DOWNTIME --repo "$REPOSITORY"
+            fi
+            publish
           fi
 
           gh workflow run deploy.yaml --repo "$REPOSITORY" --ref master
