@@ -110,8 +110,11 @@ jobs:
             fi
             roots+="- \`${root//_/-}\`${images:+: $images}"$'\n'
           done
-          # Both posts name the commit that triggered the deploy, and its author.
-          commit="$(git log -1 --format="%s%n[\`%h\`]($SERVER_URL/$REPOSITORY/commit/%H) by %an" HEAD)"
+          # Both posts name the commit that triggered the deploy, and its author's GitHub login: a
+          # squash merge carries the profile name instead. The name stays as a fallback.
+          author="$(gh api "repos/$REPOSITORY/commits/$(git rev-parse HEAD)" --jq '.author.login // empty' 2>/dev/null)" || author=""
+          [ -n "$author" ] || author="$(git log -1 --format=%an HEAD)"
+          commit="$(git log -1 --format="%s%n[\`%h\`]($SERVER_URL/$REPOSITORY/commit/%H)" HEAD) by $author"
           announcement="$roots"$'\n'"$commit"
           delimiter="EOF_$(openssl rand -hex 8)"
           printf '%s<<%s\n%s\n%s\n' announcement "$delimiter" "$announcement" "$delimiter" \
