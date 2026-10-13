@@ -84,6 +84,22 @@ To turn it on:
 The Apps Script behind the waitlist must use the same secret, so update both together; requests
 fail while they differ. To turn it off, remove both settings.
 
+## GitHub dispatch tokens
+
+The `github-dispatch` workflow starts each org's timed `.github` workflows with a fine-grained
+personal access token, one per org, because GitHub starts scheduled workflows hours late. Create
+each one in [Fine-grained tokens](https://github.com/settings/personal-access-tokens/new):
+
+- **Resource owner:** the org, `a-novel` or `a-novel-kit`. An org that reviews tokens asks an owner
+  to approve it.
+- **Repository access:** only `<org>/.github`.
+- **Permissions:** Actions, read and write. Nothing else.
+- **Expiration:** the longest the org allows. The token-expiry tracker posts before it lapses.
+
+Add each one as a version of `production-github-dispatch-<org>`, as in
+[Rotate a secret](#rotate-a-secret). It can start, rerun, cancel and delete workflow runs in that
+one repository; for a leak, revoke it on GitHub as well as disabling its version.
+
 ## pgBackRest TLS certificates
 
 The database and repository hosts authenticate each other with certificates from an offline CA.

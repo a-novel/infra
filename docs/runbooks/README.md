@@ -10,7 +10,7 @@ the ideas they rely on.
 | Release, roll back, deletion label, failed deploy, freeze | [Deployments](deployments.md)   |
 | Inspect, back up, change or restore a database host       | [Database hosts](database.md)   |
 | Schedule or clear a planned downtime                      | [Planned downtime](downtime.md) |
-| Add or rotate a secret, SMTP, waitlist, TLS certificates  | [Secrets](secrets.md)           |
+| Add or rotate a secret, SMTP, waitlist, TLS, GitHub token | [Secrets](secrets.md)           |
 | Publish or pin `host-credentials` or `native-restore`     | [Host tools](host-tools.md)     |
 | An alert or a failed scheduled check                      | [Alerts](alerts.md)             |
 | Restore a backup in a disposable project                  | [Recovery](recovery.md)         |

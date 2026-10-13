@@ -28,6 +28,7 @@ locals {
   required_services = toset([
     "billingbudgets.googleapis.com",
     "cloudbilling.googleapis.com",
+    "cloudscheduler.googleapis.com",
     "cloudquotas.googleapis.com",
     "cloudresourcemanager.googleapis.com",
     "drive.googleapis.com",
@@ -109,6 +110,14 @@ locals {
     production-downtime-discord-webhook = {
       contract = "DISCORD_WEBHOOK"
       purpose  = "Discord webhook of the public planned downtime channel"
+    }
+    production-github-dispatch-a-novel = {
+      contract = "GITHUB_TOKEN"
+      purpose  = "Fine-grained token that dispatches the a-novel/.github workflows"
+    }
+    production-github-dispatch-a-novel-kit = {
+      contract = "GITHUB_TOKEN"
+      purpose  = "Fine-grained token that dispatches the a-novel-kit/.github workflows"
     }
     }, { for secret, credential in local.pgbackrest_tls : secret => {
       contract = credential.contract
