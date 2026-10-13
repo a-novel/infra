@@ -40,7 +40,11 @@ locals {
         ) : (
         "(assertion.workflow_ref == '${github.repository}/.github/workflows/main.yaml@refs/heads/master' && assertion.event_name == 'push') || (assertion.workflow_ref == '${github.repository}/.github/workflows/visual-tests.yaml@refs/heads/master' && assertion.event_name in ['workflow_run', 'pull_request_target', 'delete', 'schedule'])"
       )
-      condition = role == "ci" ? "assertion.ref.startsWith('refs/heads/') && assertion.event_name in ['push', 'merge_group']" : "assertion.ref == 'refs/heads/master'"
+      # GitHub issues no OIDC token to fork pull requests, so a pull request run is a collaborator's branch.
+      condition = role == "ci" ? "(${join(" || ", [
+        "(assertion.ref.startsWith('refs/heads/') && assertion.event_name in ['push', 'merge_group'])",
+        "(assertion.event_name == 'pull_request' && assertion.base_ref == 'master' && assertion.ref.startsWith('refs/pull/'))",
+      ])})" : "assertion.ref == 'refs/heads/master'"
     }
   }]...)
 }
