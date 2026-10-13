@@ -1,5 +1,6 @@
 locals {
   plan_project_roles = toset([
+    "roles/cloudscheduler.viewer",
     "roles/iam.roleViewer",
     "roles/iam.serviceAccountViewer",
     "roles/iam.workloadIdentityPoolViewer",
@@ -9,6 +10,7 @@ locals {
   ])
 
   foundation_project_roles = toset([
+    "roles/cloudscheduler.admin",
     "roles/iam.roleAdmin",
     "roles/iam.serviceAccountAdmin",
     "roles/iam.workloadIdentityPoolAdmin",
