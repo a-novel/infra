@@ -45,16 +45,20 @@ that waits for a downtime that has since started.
 
 ## Release a service
 
-1. **Renovate opens one pull request per service release**, named after the service family, for
-   example `service-json-keys images`. It updates each `tag@digest` image pin in that service's
-   `terraform.tfvars`. Its database image is also pinned in foundation's `database_images`.
+1. **The release opens its pull request.** Once a service's release workflow has published every
+   image, it dispatches `pin-release.yaml`, which opens one pull request per service on
+   `chore/deps/<repository>`, for example `chore(deps): update service-json-keys images to v2.10.0`.
+   It moves every `tag@digest` pin of that service in `environments/production`, the database pin in
+   foundation's `database_images` included, and the tag of each `builds/` image built from it. A
+   newer release of the same service replaces the open pull request's content.
 2. **CI plans it.** In the service's plan check, expect:
    - the Cloud Run service and jobs on the new images;
    - when the migration image changed, its `terraform_data` replaced and a new
      `run_execution_token` on the migration job;
    - each image's provenance verified against its service's release workflow.
-3. **It merges itself.** Once its checks pass, the auto-approve workflow approves it and queues it;
-   Renovate itself never merges production files.
+3. **It merges itself.** The Dependencies App opens it, so once its checks pass the auto-approve
+   workflow approves it and queues it, as it does Renovate's. When another release merges first and
+   leaves it conflicting, the next push to `master` rebuilds it from `master`.
 4. **The deploy applies it:**
    1. it copies the images to the service's Artifact Registry repository;
    2. it applies, which runs the migration job and waits for it;
@@ -69,6 +73,14 @@ A release that changes the database image has a new digest, which changes the da
 plan fails, so it waits for a planned downtime: merge it as a
 [database host change](database.md#change-a-database-host). A release that only changes the service
 keeps the database digest, because the database image builds reproducibly, and deploys right away.
+
+A release whose dispatch never ran, such as one cut before its repository dispatched releases,
+is pinned by sending the event by hand:
+
+```bash
+gh api repos/a-novel/infra/dispatches -f event_type=release \
+  -f 'client_payload[repository]=a-novel/service-json-keys' -f 'client_payload[version]=v2.10.1'
+```
 
 ## Roll back
 

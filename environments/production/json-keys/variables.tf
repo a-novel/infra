@@ -1,5 +1,5 @@
 variable "images" {
-  description = "Service images as ghcr.io/a-novel/<path>:<tag>@<digest>, kept current by Renovate."
+  description = "Service images as ghcr.io/a-novel/<path>:<tag>@<digest>, pinned by each release."
   type        = map(string)
 
   validation {

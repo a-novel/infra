@@ -6,7 +6,7 @@ Google emails alerts to the operations channels: foundation's, and one per servi
 also receives that service's backup alerts. Budget alerts go to both the cost and operations
 channels. Every deploy that applies a root, and every database rollout, posts when it starts and
 when it ends to the Discord channel `a-novel-deployments`. A failure pings the `a-novel/infra` role
-and the failed service's role, including a deploy a bot triggered, such as a Renovate release.
+and the failed service's role, including a deploy a bot triggered, such as a service release.
 GitHub emails failed `drift` runs to whoever last edited its schedule.
 
 ## Authentication health
