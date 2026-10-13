@@ -2,7 +2,8 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "github>a-novel-kit/workflows//renovate/infra#v1.51.2",
-    ":semanticCommits"
+    ":semanticCommits",
+    "helpers:pinGitHubActionDigestsToSemver"
   ],
   "rangeStrategy": "pin",
   "ignoreUnstable": true,
@@ -34,13 +35,25 @@
       "automerge": false
     },
     {
-      "description": "Keep GitHub Actions on complete stable SemVer tags.",
-      "matchManagers": ["github-actions"],
-      "matchPackageNames": ["!a-novel-kit/workflows"],
-      "pinDigests": false
+      "description": "Leave the managed governance workflows to `a-novel repo update`, which renders them from the stack's templates, where their pins are updated. Pinning them here would be reverted at the next reconcile.",
+      "matchFileNames": [
+        ".github/workflows/approve-pr.yaml",
+        ".github/workflows/auto-approve-dependabot.yaml",
+        ".github/workflows/auto-assign-author.yaml",
+        ".github/workflows/check-dependencies.yaml",
+        ".github/workflows/derive-status.yaml",
+        ".github/workflows/epic-freeze.yaml",
+        ".github/workflows/epic-rollback.yaml",
+        ".github/workflows/feature-env.yaml",
+        ".github/workflows/lock-closed.yaml",
+        ".github/workflows/merge-gate.yaml",
+        ".github/workflows/notify.yaml",
+        ".github/workflows/recover-prs.yaml"
+      ],
+      "enabled": false
     },
     {
-      "description": "Keep the shared workflow actions on one reviewed release tag.",
+      "description": "Keep the shared workflow actions on one reviewed release tag until their released actions reference each other by commit (a-novel-kit/workflows#560); every other action is pinned to its commit with the version beside it.",
       "matchManagers": ["github-actions"],
       "matchPackageNames": ["a-novel-kit/workflows"],
       "groupName": "a-novel-kit workflows",
