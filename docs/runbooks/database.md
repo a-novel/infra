@@ -188,7 +188,7 @@ power loss.
    ```
 
    - **Deploys stay off between the stop and the start.** Stopping lowers the group's target size,
-     and a foundation apply would restore it by creating a second host. Renovate's merges and
+     and a foundation apply would restore it by creating a second host. Automatic merges and
      `downtime.yaml` both start deploys, so the block disables the workflow first.
    - The detach waits for the host to stop, about two minutes.
    - The new disk keeps the old name, so the group and the host find it, and the host keeps its name

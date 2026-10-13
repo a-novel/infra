@@ -63,8 +63,9 @@ deploy:  bootstrap ─► foundation ─► json-keys ──────┬─�
 3. **The approval and the merge.** `master` requires one approval, with every review thread
    resolved, and merges through a merge queue as a single squashed commit. An author cannot approve
    their own pull request: a repository admin reviews it, then records the approval with
-   `approve-pr.yaml`. Renovate's pull requests are approved and queued automatically once their
-   checks pass, so a failing plan is what stops one. Repository admins can bypass these rules.
+   `approve-pr.yaml`. The Dependencies App's pull requests, Renovate's updates and the release pins,
+   are approved and queued automatically once their checks pass, so a failing plan is what stops
+   one. Repository admins can bypass these rules.
 4. **The deploy.** Each merge starts `deploy.yaml`. It applies only the roots changed since the last
    successful deploy, in order: bootstrap, foundation, then the services in parallel. Then two jobs
    run side by side: the database [rollout](#database-hosts-and-planned-downtime) and a production
@@ -129,7 +130,7 @@ name these pieces:
 | `a-novel repo update`         | The fleet CLI command that applies a repository's rulesets and shared workflows from the `stack` repository.                                                  |
 | `approve-pr.yaml`             | Records an approval an author cannot give: `gh workflow run approve-pr.yaml --repo a-novel/infra -f pull_request=<URL>`. Repository admins only.              |
 | `merge-gate`, `epic-freeze`   | Required checks that hold a pull request belonging to a larger, multi-pull-request change until that change can land whole. A standalone pull request passes. |
-| Dependencies App              | The bot identity Renovate runs as.                                                                                                                            |
+| Dependencies App              | The bot identity Renovate runs as, and `pin-release.yaml` opens each release's pull request as.                                                               |
 | Agent App (`anovelbot-agent`) | The bot identity automation acts as: it records approvals, writes `DOWNTIME`, and posts comments.                                                             |
 | Publish App                   | The bot identity release automation runs as.                                                                                                                  |
 
