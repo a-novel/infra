@@ -60,6 +60,18 @@
       "pinDigests": false
     },
     {
+      "description": "Review a digest update by hand. It keeps an action's version and moves it to another commit, which means the release tag was moved: the shape of the 2026 trivy-action hijack.",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["digest"],
+      "automerge": false
+    },
+    {
+      "description": "Hold new third-party action releases for three days. Deploy jobs run them with the production identity, so the release age bounds a compromised upstream release, as it does for OpenTofu.",
+      "matchManagers": ["github-actions"],
+      "matchPackageNames": ["!a-novel-kit/workflows"],
+      "minimumReleaseAge": "3 days"
+    },
+    {
       "description": "Resolve Aqua Security tags directly from Git because its organization IP allow list rejects authenticated GitHub GraphQL lookups.",
       "matchPackageNames": ["aquasecurity/trivy", "aquasecurity/trivy-action"],
       "overrideDatasource": "git-tags",
