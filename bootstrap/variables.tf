@@ -46,6 +46,16 @@ variable "operator_principals" {
   }
 }
 
+variable "github_dispatch_token_versions" {
+  description = "Numeric version of each org's production-github-dispatch-<org> token that the clock reads."
+  type        = map(number)
+
+  validation {
+    condition     = alltrue([for version in values(var.github_dispatch_token_versions) : version >= 1 && floor(version) == version])
+    error_message = "Pin a positive whole secret version per org, never latest."
+  }
+}
+
 variable "downtime_webhook_version" {
   description = "Numeric version of production-downtime-discord-webhook that the announcements read."
   type        = number

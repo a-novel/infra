@@ -105,11 +105,10 @@ run "trusts_only_reviewed_workflows" {
   }
 
   assert {
-    condition = (
-      google_workflows_workflow.downtime_announcements.call_log_level == "LOG_NONE" &&
-      google_workflows_workflow.downtime_announcements.execution_history_level == "EXECUTION_HISTORY_BASIC"
-    )
-    error_message = "Call logs and detailed history would record the Discord webhook the announcements read."
+    condition = alltrue([for workflow in [google_workflows_workflow.downtime_announcements, google_workflows_workflow.github_dispatch] :
+      workflow.call_log_level == "LOG_NONE" && workflow.execution_history_level == "EXECUTION_HISTORY_BASIC"
+    ])
+    error_message = "Call logs and detailed history would record the secrets the workflows read: the Discord webhook and the GitHub dispatch tokens."
   }
 
   assert {
