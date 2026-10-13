@@ -42,19 +42,9 @@ jobs:
       window: ${{ steps.window.outputs.window }}
     steps:
       # workflow_dispatch is open to anyone with write access.
-      - name: Require a repository admin
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-          ACTOR: ${{ github.triggering_actor }}
-        run: |
-          set -euo pipefail
-          permission="$(gh api "repos/$REPOSITORY/collaborators/$ACTOR/permission" --jq .permission)"
-          if [ "$permission" != admin ]; then
-            echo "::error::downtime.yaml is admin-only; @$ACTOR has $permission."
-            exit 1
-          fi
+      - uses: a-novel-kit/workflows/generic-actions/require-role@v1.54.0
+        with:
+          roles: admin
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
