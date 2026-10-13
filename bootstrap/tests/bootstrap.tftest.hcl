@@ -85,6 +85,27 @@ run "trusts_only_reviewed_workflows" {
 
   assert {
     condition = (
+      google_iam_workload_identity_pool_provider.visual_tests["studio-ci"].attribute_condition == join("", [
+        "assertion.repository_owner_id == '131281268' && assertion.repository_id == '1338436652' && ",
+        "assertion.repository == 'a-novel/platform-studio' && ",
+        "(assertion.workflow_ref == 'a-novel/platform-studio/.github/workflows/main.yaml@' + assertion.ref) && (",
+        "(assertion.ref.startsWith('refs/heads/') && assertion.event_name in ['push', 'merge_group']) || ",
+        "(assertion.event_name == 'pull_request' && assertion.base_ref == 'master' && assertion.ref.startsWith('refs/pull/')))",
+      ]) &&
+      google_iam_workload_identity_pool_provider.visual_tests["studio-maintenance"].attribute_condition == join("", [
+        "assertion.repository_owner_id == '131281268' && assertion.repository_id == '1338436652' && ",
+        "assertion.repository == 'a-novel/platform-studio' && ",
+        "((assertion.workflow_ref == 'a-novel/platform-studio/.github/workflows/main.yaml@refs/heads/master' && assertion.event_name == 'push') || ",
+        "(assertion.workflow_ref == 'a-novel/platform-studio/.github/workflows/visual-tests.yaml@refs/heads/master' && ",
+        "assertion.event_name in ['workflow_run', 'pull_request_target', 'delete', 'schedule'])) && ",
+        "assertion.ref == 'refs/heads/master'",
+      ])
+    )
+    error_message = "Visual-test CI runs on main.yaml from a branch, the merge queue or a pull request into master; only master may stage references."
+  }
+
+  assert {
+    condition = (
       google_workflows_workflow.downtime_announcements.call_log_level == "LOG_NONE" &&
       google_workflows_workflow.downtime_announcements.execution_history_level == "EXECUTION_HISTORY_BASIC"
     )
