@@ -98,7 +98,7 @@ each one in [Fine-grained tokens](https://github.com/settings/personal-access-to
 
 Add each one as a version of `production-github-dispatch-<org>`, as in
 [Rotate a secret](#rotate-a-secret), and pin it in bootstrap's `github_dispatch_token_versions`. The
-next hourly execution after the deploy reads it. It can start, rerun, cancel and delete workflow runs in that
+next dispatch after the deploy reads it. It can start, rerun, cancel and delete workflow runs in that
 one repository; for a leak, revoke it on GitHub as well as disabling its version.
 
 ## pgBackRest TLS certificates

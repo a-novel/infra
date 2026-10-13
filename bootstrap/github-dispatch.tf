@@ -1,8 +1,17 @@
-# GitHub starts scheduled workflows hours late, so Cloud Scheduler starts the ones that must run on
-# time: every hour it runs the github-dispatch workflow, which dispatches each org's stuck bot pull
-# request poll (a-novel-kit/.github#298). Each org's dispatch token lives only in Secret Manager.
+# GitHub starts scheduled workflows hours late, so Cloud Scheduler starts the `.github` workflows that
+# must run on time: one job per workflow, at the cron its file used to ask GitHub for, runs the
+# github-dispatch workflow, which dispatches it in each org. Each org's dispatch token lives only in
+# Secret Manager.
 locals {
   github_dispatch_owners = toset(["a-novel", "a-novel-kit"])
+
+  github_dispatch_schedules = {
+    "notify-issues.yaml"   = "4-59/15 * * * *"
+    "notify-stuck.yaml"    = "17 * * * *"
+    "reconcile-board.yaml" = "*/15 * * * *"
+    "token-expiry.yaml"    = "0 8 * * *"
+    "watchdog.yaml"        = "*/30 * * * *"
+  }
 }
 
 # Runs the github-dispatch workflow: reads each org's token at dispatch time.
@@ -84,12 +93,11 @@ resource "google_workflows_workflow" "github_dispatch" {
   source_contents = file("${path.module}/workflows/github-dispatch.yaml")
 
   user_env_vars = {
-    DISPATCHES     = jsonencode([for owner in sort(local.github_dispatch_owners) : { owner = owner, workflow = "notify-stuck.yaml" }])
     TOKEN_VERSIONS = jsonencode({ for owner in local.github_dispatch_owners : owner => var.github_dispatch_token_versions[owner] })
   }
 
-  # Detailed history and call logs would record the tokens. Only the clock starts executions, without
-  # overriding these.
+  # Detailed history and call logs would record the tokens. Only the clock's jobs start executions,
+  # without overriding these.
   call_log_level          = "LOG_NONE"
   execution_history_level = "EXECUTION_HISTORY_BASIC"
   deletion_protection     = false
@@ -100,12 +108,19 @@ resource "google_workflows_workflow" "github_dispatch" {
   ]
 }
 
+moved {
+  from = google_cloud_scheduler_job.github_dispatch
+  to   = google_cloud_scheduler_job.github_dispatch["notify-stuck.yaml"]
+}
+
 resource "google_cloud_scheduler_job" "github_dispatch" {
+  for_each = local.github_dispatch_schedules
+
   project          = var.management_project_id
   region           = var.region
-  name             = "github-dispatch"
-  description      = "Starts the github-dispatch workflow every hour."
-  schedule         = "17 * * * *"
+  name             = "github-dispatch-${trimsuffix(each.key, ".yaml")}"
+  description      = "Dispatches ${each.key} in each org's .github repository."
+  schedule         = each.value
   time_zone        = "Etc/UTC"
   attempt_deadline = "180s"
 
@@ -119,7 +134,7 @@ resource "google_cloud_scheduler_job" "github_dispatch" {
     http_method = "POST"
     uri         = "https://workflowexecutions.googleapis.com/v1/${google_workflows_workflow.github_dispatch.id}/executions"
     headers     = { "Content-Type" = "application/json" }
-    body        = base64encode("{}")
+    body        = base64encode(jsonencode({ argument = jsonencode({ workflow = each.key }) }))
 
     oauth_token {
       service_account_email = google_service_account.github_dispatch_clock.email

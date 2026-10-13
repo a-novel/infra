@@ -127,7 +127,7 @@ Workloads pin numeric versions in `terraform.tfvars`, never `latest`.
 | `agora-scheduler-invoker`                                                             | Runs the rotation job, and only jobs tagged `scheduled`.                                     |
 | `studio-visual-ci`, `studio-visual-maintenance` (management)                          | `a-novel/platform-studio` CI: visual-test evidence in Google Drive, no Cloud Storage access. |
 | `downtime-announcer` (management)                                                     | Runs the planned downtime announcements; reads only the Discord webhook.                     |
-| `github-dispatcher`, `github-dispatch-clock` (management)                             | The hourly clock: the clock starts the dispatcher, which reads only the dispatch tokens.     |
+| `github-dispatcher`, `github-dispatch-clock` (management)                             | The `.github` workflows' clock: starts the dispatcher, which reads only the dispatch tokens. |
 
 Data Access audit logs are on in the management project for IAM, Secret Manager, Cloud Storage and
 token exchange.
