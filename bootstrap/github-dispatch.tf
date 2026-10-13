@@ -10,7 +10,6 @@ locals {
     "notify-stuck.yaml"    = "17 * * * *"
     "reconcile-board.yaml" = "*/15 * * * *"
     "token-expiry.yaml"    = "0 8 * * *"
-    "watchdog.yaml"        = "*/30 * * * *"
   }
 }
 
