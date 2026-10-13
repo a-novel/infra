@@ -37,6 +37,12 @@ jobs:
       json_keys: ${{ steps.changes.outputs.json_keys }}
       authentication: ${{ steps.changes.outputs.authentication }}
     steps:
+      # A manual run applies every root, and workflow_dispatch is open to anyone with write access.
+      - if: github.event_name == 'workflow_dispatch'
+        uses: a-novel-kit/workflows/generic-actions/require-role@v1.54.0
+        with:
+          roles: admin
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0

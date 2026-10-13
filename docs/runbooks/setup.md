@@ -41,7 +41,7 @@ Environment `production`: deployment branches `master` only, no required reviewe
 | `GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER` | `…/providers/github-foundation`                                    |
 | `GCP_FOUNDATION_SERVICE_ACCOUNT`            | `infra-foundation@a-novel-management-prod.iam.gserviceaccount.com` |
 
-Environment `host-artifacts`: a required reviewer, who approves each host tool publication.
+Environment `host-artifacts`: the `core` team as required reviewer, approving each host tool publication.
 
 The organization's Renovate (Dependencies) and Agent Apps need access to this repository.
 
