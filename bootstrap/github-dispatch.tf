@@ -75,3 +75,60 @@ resource "google_project_iam_member" "cloudscheduler_agent" {
   role    = "roles/cloudscheduler.serviceAgent"
   member  = google_project_service_identity.cloudscheduler.member
 }
+
+resource "google_workflows_workflow" "github_dispatch" {
+  name            = "github-dispatch"
+  region          = var.region
+  description     = "Dispatches each org's timed .github workflows."
+  service_account = google_service_account.github_dispatcher.id
+  source_contents = file("${path.module}/workflows/github-dispatch.yaml")
+
+  user_env_vars = {
+    DISPATCHES     = jsonencode([for owner in sort(local.github_dispatch_owners) : { owner = owner, workflow = "notify-stuck.yaml" }])
+    TOKEN_VERSIONS = jsonencode({ for owner in local.github_dispatch_owners : owner => var.github_dispatch_token_versions[owner] })
+  }
+
+  # Detailed history and call logs would record the tokens. Only the clock starts executions, without
+  # overriding these.
+  call_log_level          = "LOG_NONE"
+  execution_history_level = "EXECUTION_HISTORY_BASIC"
+  deletion_protection     = false
+
+  depends_on = [
+    google_project_iam_member.workflows_agent,
+    google_secret_manager_secret_iam_member.github_dispatcher,
+  ]
+}
+
+resource "google_cloud_scheduler_job" "github_dispatch" {
+  project          = var.management_project_id
+  region           = var.region
+  name             = "github-dispatch"
+  description      = "Starts the github-dispatch workflow every hour."
+  schedule         = "17 * * * *"
+  time_zone        = "Etc/UTC"
+  attempt_deadline = "180s"
+
+  retry_config {
+    retry_count          = 1
+    min_backoff_duration = "30s"
+    max_backoff_duration = "60s"
+  }
+
+  http_target {
+    http_method = "POST"
+    uri         = "https://workflowexecutions.googleapis.com/v1/${google_workflows_workflow.github_dispatch.id}/executions"
+    headers     = { "Content-Type" = "application/json" }
+    body        = base64encode("{}")
+
+    oauth_token {
+      service_account_email = google_service_account.github_dispatch_clock.email
+      scope                 = "https://www.googleapis.com/auth/cloud-platform"
+    }
+  }
+
+  depends_on = [
+    google_project_iam_member.cloudscheduler_agent,
+    google_project_iam_member.github_dispatch_clock,
+  ]
+}

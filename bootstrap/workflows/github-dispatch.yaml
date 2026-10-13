@@ -1,0 +1,46 @@
+# Dispatches each org's timed `.github` workflows. Cloud Scheduler starts one execution every hour,
+# because GitHub starts scheduled workflows hours late. DISPATCHES lists them:
+#   [{"owner": <org>, "workflow": <file in <org>/.github>}, ...]
+# Each org's token is read from Secret Manager at dispatch time, and calls are never logged.
+main:
+  steps:
+    - read_config:
+        assign:
+          - dispatches: ${json.decode(sys.get_env("DISPATCHES"))}
+          - versions: ${json.decode(sys.get_env("TOKEN_VERSIONS"))}
+    - dispatch_each:
+        for:
+          value: dispatch
+          in: ${dispatches}
+          steps:
+            # A failure must not cost the other dispatches.
+            - dispatch:
+                try:
+                  steps:
+                    - read_token:
+                        call: googleapis.secretmanager.v1.projects.secrets.versions.accessString
+                        args:
+                          project_id: ${sys.get_env("GOOGLE_CLOUD_PROJECT_ID")}
+                          secret_id: ${"production-github-dispatch-" + dispatch.owner}
+                          version: ${string(versions[dispatch.owner])}
+                        result: token
+                    - send:
+                        call: http.post
+                        args:
+                          url: ${"https://api.github.com/repos/" + dispatch.owner + "/.github/actions/workflows/" + dispatch.workflow + "/dispatches"}
+                          headers:
+                            Accept: application/vnd.github+json
+                            Authorization: ${"Bearer " + token}
+                            User-Agent: a-novel-github-dispatch
+                            X-GitHub-Api-Version: "2022-11-28"
+                          body:
+                            ref: master
+                retry: ${http.default_retry}
+                except:
+                  as: error
+                  steps:
+                    - report:
+                        call: sys.log
+                        args:
+                          severity: WARNING
+                          text: ${"Could not dispatch " + dispatch.owner + "/.github " + dispatch.workflow + " (HTTP " + string(default(map.get(error, "code"), 0)) + ")."}
