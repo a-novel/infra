@@ -16,6 +16,12 @@
       "pinDigests": false
     },
     {
+      "description": "Leave first-party release images to pin-release.yaml: each release dispatches it once all its images are published, so no update pins half a release.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ghcr.io/a-novel/**"],
+      "enabled": false
+    },
+    {
       "description": "Resolve Terraform providers and modules from the registry used by OpenTofu.",
       "matchDatasources": ["terraform-provider", "terraform-module"],
       "registryUrls": ["https://registry.opentofu.org"]
@@ -46,34 +52,6 @@
       "overrideDatasource": "git-tags",
       "overridePackageName": "https://github.com/{{{packageName}}}",
       "versioning": "semver"
-    },
-    {
-      "description": "Accept only complete stable SemVer tags for production service images.",
-      "matchDatasources": ["docker"],
-      "matchFileNames": ["environments/production/*/terraform.tfvars"],
-      "allowedVersions": "/^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$/",
-      "versioning": "semver",
-      "automerge": false
-    },
-    {
-      "description": "Update the JSON Keys image family as one release, database included: the hosts pin its digest alone, so a release without a database change plans nothing for them.",
-      "matchDatasources": ["docker"],
-      "matchFileNames": ["environments/production/*/terraform.tfvars"],
-      "matchPackageNames": ["ghcr.io/a-novel/service-json-keys/**"],
-      "groupName": "service-json-keys images",
-      "minimumGroupSize": 3,
-      "groupSlug": "service-json-keys-images",
-      "separateMajorMinor": true
-    },
-    {
-      "description": "Update the Authentication image family as one release, database included: the hosts pin its digest alone, so a release without a database change plans nothing for them.",
-      "matchDatasources": ["docker"],
-      "matchFileNames": ["environments/production/*/terraform.tfvars"],
-      "matchPackageNames": ["ghcr.io/a-novel/service-authentication/**"],
-      "groupName": "service-authentication images",
-      "minimumGroupSize": 2,
-      "groupSlug": "service-authentication-images",
-      "separateMajorMinor": true
     },
     {
       "description": "Let the OpenTofu managers own required_version instead of treating it as HashiCorp Terraform.",
@@ -160,18 +138,6 @@
       "matchStrings": [
         "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>[^\\s]+)\\s+(?:[a-z_]+_)?version\\s*[:=]\\s*[\"']?(?<currentValue>v?[0-9]+\\.[0-9]+\\.[0-9]+)[\"']?"
       ]
-    },
-    {
-      "customType": "regex",
-      "description": "Update production service images pinned as tag@digest.",
-      "managerFilePatterns": [
-        "/^environments/production/[^/]+/terraform\\.tfvars$/"
-      ],
-      "matchStrings": [
-        "\"(?<depName>ghcr\\.io/a-novel/[^:\"]+):(?<currentValue>v[0-9]+\\.[0-9]+\\.[0-9]+)@(?<currentDigest>sha256:[a-f0-9]{64})\""
-      ],
-      "datasourceTemplate": "docker",
-      "versioningTemplate": "semver"
     }
   ]
 }
