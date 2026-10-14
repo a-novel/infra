@@ -50,8 +50,10 @@ contents need.
 | Authentication | `agora-authentication-rest`: 1 instance, which holds the in-memory rate limits; public ingress, CPU always allocated for detached mail | `migrations` (runs at deploy, in the private project)                                                                                        |
 
 Service images come from `ghcr.io/a-novel/*`. Each is pinned as `tag@digest` in the service root's
-`terraform.tfvars`, and its database image in foundation's too. Before applying, deploy verifies
-each image's attestation against its service's release workflow and copies it to Artifact Registry.
+`terraform.tfvars`, and its database image in foundation's too. Every plan verifies each image it
+changes: its release tag's own run built it, the release App published that tag as an immutable
+GitHub Release, and its version is not below the one deployed. Before applying, deploy copies the
+images to Artifact Registry.
 
 Artifact Registry holds `agora-production`, for the database images, and two repositories per
 service and zone, `…-production` and `…-tooling`, all with immutable tags. The tooling repositories

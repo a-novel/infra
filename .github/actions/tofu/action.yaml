@@ -1,8 +1,9 @@
 name: OpenTofu root
 description: >
-  Plan one root and enforce the deletion and downtime policies. With apply set, also verify and copy the
-  root's release images, then apply the reviewed plan. Pull-request and drift callers pass
-  the read-only identity; the deploy workflow passes the writer.
+  Plan one root, enforce the deletion and downtime policies, and verify the release images the plan
+  changes. With apply set, also copy the root's release images, then apply the reviewed plan.
+  Pull-request and drift callers pass the read-only identity; the deploy workflow passes the writer.
+  The caller's environment provides DOWNTIME and RELEASE_BOT_LOGIN.
 
 inputs:
   root:
@@ -135,19 +136,45 @@ runs:
           fi
         done
 
+    # A release image deploys only from an immutable Release the release App published, built by
+    # that tag's own run, and never below the version already deployed: pull requests only move
+    # forward. Pins the last apply deployed, the output's value before this plan, were verified when
+    # they deployed; the plan's prior state already shows the new outputs.
     - name: Verify release provenance
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github_token }}
       run: |
         set -euo pipefail
-        jq -c '.planned_values.outputs.image_copies.value[]?' "$RUNNER_TEMP/plan.json" | while read -r image; do
+        deployed="$(jq -r '.output_changes.image_copies.before[]?.source' "$RUNNER_TEMP/plan.json" | sort -u)"
+        jq -c '[.planned_values.outputs.image_copies.value[]?] | unique_by(.source)[]' "$RUNNER_TEMP/plan.json" | while read -r image; do
           source="$(jq -r .source <<<"$image")"
           producer="$(jq -r .producer <<<"$image")"
           workflow="$(jq -r '.workflow // "release.yaml"' <<<"$image")"
-          gh attestation verify "oci://${source%%:*}@${source##*@}" --repo "$producer" \
-            --signer-workflow "$producer/.github/workflows/$workflow" \
-            --source-ref refs/heads/master --deny-self-hosted-runners >/dev/null
+          if grep -qxF "$source" <<<"$deployed"; then
+            continue
+          fi
+          name="${source%%:*}" digest="${source##*@}" tag="${source%@*}"
+          tag="${tag##*:}"
+          if [ "$workflow" != release.yaml ]; then
+            gh attestation verify "oci://$name@$digest" --repo "$producer" \
+              --signer-workflow "$producer/.github/workflows/$workflow" \
+              --source-ref refs/heads/master --deny-self-hosted-runners >/dev/null
+            continue
+          fi
+          previous="$(awk -v prefix="$name:" 'index($0, prefix) == 1' <<<"$deployed" | sed 's/@.*//; s/.*://' | sort -V | tail -n1)"
+          if [ -n "$previous" ] && [ "$(printf '%s\n' "$previous" "$tag" | sort -V | tail -n1)" != "$tag" ]; then
+            echo "::error::$source lowers $name from $previous. Pull requests only move forward: ship the fix as a new release."
+            exit 1
+          fi
+          gh attestation verify "oci://$name@$digest" --repo "$producer" \
+            --signer-workflow "$producer/.github/workflows/release.yaml" \
+            --source-ref "refs/tags/$tag" --deny-self-hosted-runners >/dev/null
+          release="$(gh api "repos/$producer/releases/tags/$tag" --jq '"\(.author.login) \(.immutable)"')"
+          if [ "$release" != "${RELEASE_BOT_LOGIN:?} true" ]; then
+            echo "::error::$source: $producer $tag is not an immutable Release that $RELEASE_BOT_LOGIN published (got \"$release\")."
+            exit 1
+          fi
         done
 
     - name: Copy release images to Artifact Registry

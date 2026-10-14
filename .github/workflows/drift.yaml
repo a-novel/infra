@@ -14,6 +14,8 @@ env:
   TF_IN_AUTOMATION: "true"
   # The planned downtime window, written only by downtime.yaml.
   DOWNTIME: ${{ vars.DOWNTIME }}
+  # The release App's login, the author every deployed release image's Release must have.
+  RELEASE_BOT_LOGIN: ${{ vars.RELEASE_BOT_LOGIN }}
 
 jobs:
   drift:
