@@ -1,7 +1,7 @@
 # Deployments
 
 This runbook covers how merged changes reach production: what a deploy runs, how a service release
-and a rollback work, when a plan needs a label, and what to do when a deploy fails.
+and its fix work, when a plan needs a label, and what to do when a deploy fails.
 [Ops basics](../ops-basics.md#from-a-pull-request-to-production) explains the pipeline as a whole.
 
 ## What a deploy runs
@@ -55,7 +55,8 @@ that waits for a downtime that has since started.
    - the Cloud Run service and jobs on the new images;
    - when the migration image changed, its `terraform_data` replaced and a new
      `run_execution_token` on the migration job;
-   - each image's provenance verified against its service's release workflow.
+   - each new image verified: its release tag's own run built it, the release App published that
+     tag as an immutable GitHub Release, and its version is not below the one deployed.
 3. **It merges itself.** The Dependencies App opens it, so once its checks pass the auto-approve
    workflow approves it and queues it, as it does Renovate's. When another release merges first and
    leaves it conflicting, the next push to `master` rebuilds it from `master`.
@@ -82,14 +83,15 @@ gh api repos/a-novel/infra/dispatches -f event_type=release \
   -f 'client_payload[repository]=a-novel/service-json-keys' -f 'client_payload[version]=v2.10.1'
 ```
 
-## Roll back
+## Fix a bad release
 
-Revert the release pull request and merge the revert. Deploy redeploys the previous digests within
-minutes.
+Nothing rolls a release back: a pull request that lowers a pinned version fails its plan check.
+Ship the fix as a new release of the service. When its `master` carries unreleased work, dispatch
+its `hotfix` workflow, which releases the fix from the deployed line. The new pin deploys like any
+release.
 
-Database migrations are not reverted: the previous migration image runs again and applies nothing.
-A data rollback is a [recovery](recovery.md), and a database host change is undone as described in
-[Undo a rollout](database.md#undo-a-rollout).
+Database migrations are never reverted. A data rollback is a [recovery](recovery.md), and a database
+host change is undone as described in [Undo a rollout](database.md#undo-a-rollout).
 
 ## Deletions and weakened protections
 

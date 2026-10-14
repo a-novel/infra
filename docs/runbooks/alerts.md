@@ -35,8 +35,8 @@ schedule it again with a later `end`.
 ## Authentication 5xx rate
 
 More than 10% of requests failed for five minutes. If a deploy just happened,
-[roll it back](deployments.md#roll-back). Otherwise read the revision's logs and check the
-dependencies above.
+[fix it forward](deployments.md#fix-a-bad-release). Otherwise read the revision's logs and check
+the dependencies above.
 
 ## Application jobs and key rotation
 
