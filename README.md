@@ -43,5 +43,5 @@ Read them in this order to understand the whole setup:
 
 ## Contributing
 
-Start with the [developer onboarding guide](https://github.com/a-novel-kit/.github/blob/master/README.md),
+Start with the [developer guide](https://a-novel-kit.github.io/stack/),
 then [CONTRIBUTING.md](CONTRIBUTING.md).

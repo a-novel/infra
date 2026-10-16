@@ -1,7 +1,7 @@
 # Contributing to infra
 
 Workspace setup lives in the
-[developer onboarding guide](https://github.com/a-novel-kit/.github/blob/master/README.md). Read
+[developer guide](https://a-novel-kit.github.io/stack/). Read
 [ops basics](docs/ops-basics.md) first.
 
 ## Validate locally
