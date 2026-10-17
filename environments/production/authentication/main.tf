@@ -93,7 +93,7 @@ resource "google_logging_project_exclusion" "successful_healthchecks" {
 
 resource "google_monitoring_alert_policy" "rest_error_rate" {
   project      = local.api_project_id
-  display_name = "Agora authentication REST 5xx error rate"
+  display_name = "A-Novel authentication REST 5xx error rate"
   combiner     = "OR"
   enabled      = true
   severity     = "ERROR"

@@ -7,19 +7,19 @@ locals {
   runtime_identities = {
     authentication_initializer = {
       account_id   = "agora-auth-initializer"
-      display_name = "Agora Authentication initializer"
+      display_name = "A-Novel Authentication initializer"
     }
     authentication_database = {
       account_id   = "agora-auth-database"
-      display_name = "Agora Authentication PostgreSQL host"
+      display_name = "A-Novel Authentication PostgreSQL host"
     }
     json_keys_database = {
       account_id   = "agora-json-keys-database"
-      display_name = "Agora JSON Keys PostgreSQL host"
+      display_name = "A-Novel JSON Keys PostgreSQL host"
     }
     scheduler_invoker = {
       account_id   = "agora-scheduler-invoker"
-      display_name = "Agora scheduled job invoker"
+      display_name = "A-Novel scheduled job invoker"
     }
   }
 

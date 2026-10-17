@@ -69,7 +69,7 @@ resource "google_cloud_quotas_quota_preference" "cost_cap" {
   # IAM grants on the foundation identity authorize the request. Google sends
   # quota-review follow-up to the monitored operator address.
   contact_email = var.cost_alert_email
-  justification = "Agora production cost ceiling; changes require reviewed infrastructure code."
+  justification = "A-Novel production cost ceiling; changes require reviewed infrastructure code."
 
   # Permit deliberate decreases larger than Google's percentage threshold
   # while retaining its block against setting a limit below current usage.
@@ -87,7 +87,7 @@ resource "google_monitoring_notification_channel" "cost_email" {
 
   project = google_project.workload.project_id
 
-  display_name = "Agora production cost alerts"
+  display_name = "A-Novel production cost alerts"
   description  = "Human-reviewed email destination for production infrastructure budget alerts."
   type         = "email"
   enabled      = true
@@ -107,7 +107,7 @@ resource "google_monitoring_notification_channel" "operations_email" {
 
   project = google_project.workload.project_id
 
-  display_name = "Agora production operations alerts"
+  display_name = "A-Novel production operations alerts"
   description  = "Primary human destination for production service, job, backup, and database alerts."
   type         = "email"
   enabled      = true
@@ -126,7 +126,7 @@ resource "google_billing_budget" "workload" {
   count = 1
 
   billing_account = var.billing_account_id
-  display_name    = "Agora production infrastructure"
+  display_name    = "A-Novel production infrastructure"
   ownership_scope = "BILLING_ACCOUNT"
 
   budget_filter {

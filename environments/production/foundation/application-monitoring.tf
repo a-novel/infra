@@ -4,7 +4,7 @@ resource "google_monitoring_alert_policy" "application_jobs_unhealthy" {
   count = 1
 
   project      = google_project.workload.project_id
-  display_name = "Agora application jobs unhealthy"
+  display_name = "A-Novel application jobs unhealthy"
   combiner     = "OR"
   enabled      = true
   severity     = "ERROR"
