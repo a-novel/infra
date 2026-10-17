@@ -35,7 +35,7 @@
       "automerge": false
     },
     {
-      "description": "Leave the managed governance workflows to `a-novel repo update`, which renders them from the stack's templates, where their pins are updated. Pinning them here would be reverted at the next reconcile.",
+      "description": "Leave the other actions in the managed governance workflows to `a-novel repo update`, which renders them on release tags from the stack's templates. A commit pin here would be reverted at the next reconcile. Their a-novel-kit/workflows pins stay with Renovate, since the reconcile keeps a deployed pin newer than its template's.",
       "matchFileNames": [
         ".github/workflows/approve-pr.yaml",
         ".github/workflows/auto-approve-dependabot.yaml",
@@ -47,9 +47,13 @@
         ".github/workflows/feature-env.yaml",
         ".github/workflows/lock-closed.yaml",
         ".github/workflows/merge-gate.yaml",
+        ".github/workflows/notify-reviews.yaml",
         ".github/workflows/notify.yaml",
-        ".github/workflows/recover-prs.yaml"
+        ".github/workflows/pr-relay.yaml",
+        ".github/workflows/recover-prs.yaml",
+        ".github/workflows/review-gate.yaml"
       ],
+      "matchPackageNames": ["!a-novel-kit/workflows"],
       "enabled": false
     },
     {
