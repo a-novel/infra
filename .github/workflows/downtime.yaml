@@ -42,7 +42,7 @@ jobs:
       window: ${{ steps.window.outputs.window }}
     steps:
       # workflow_dispatch is open to anyone with write access.
-      - uses: a-novel-kit/workflows/generic-actions/require-role@v1.58.0
+      - uses: a-novel-kit/workflows/generic-actions/require-role@v1.58.1
         with:
           roles: admin
 
