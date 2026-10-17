@@ -15,6 +15,10 @@ jobs:
   renovate:
     if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-24.04
+    # The privileged keys are secrets of the governance environment, which no feature branch opens.
+    environment:
+      name: governance
+      deployment: false
     timeout-minutes: 30
     permissions:
       contents: read
