@@ -58,7 +58,7 @@ resource "google_logging_metric" "backup_success" {
 
 resource "google_monitoring_alert_policy" "backup_failure" {
   project               = var.project_id
-  display_name          = "Agora ${var.service} native backup failed"
+  display_name          = "A-Novel ${var.service} native backup failed"
   combiner              = "OR"
   enabled               = true
   severity              = "ERROR"
@@ -90,7 +90,7 @@ resource "google_monitoring_alert_policy" "backup_health" {
   for_each = local.health_rules
 
   project               = var.project_id
-  display_name          = "Agora ${var.service}: ${each.value.title}"
+  display_name          = "A-Novel ${var.service}: ${each.value.title}"
   combiner              = "OR"
   enabled               = true
   severity              = "ERROR"

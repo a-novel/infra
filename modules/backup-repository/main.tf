@@ -44,7 +44,7 @@ locals {
 resource "google_service_account" "repository" {
   project      = var.project_id
   account_id   = "agora-pgbr-${var.service}"
-  display_name = "Agora ${var.service} native backup repository"
+  display_name = "A-Novel ${var.service} native backup repository"
 
   lifecycle {
     prevent_destroy = true

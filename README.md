@@ -1,6 +1,6 @@
-# Agora infrastructure
+# A-Novel infrastructure
 
-OpenTofu definitions for Agora's production on Google Cloud: projects, network, database hosts,
+OpenTofu definitions for A-Novel's production on Google Cloud: projects, network, database hosts,
 backups, Cloud Run services and their identities.
 
 [![X (formerly Twitter) Follow](https://img.shields.io/twitter/follow/agorastoryverse)](https://twitter.com/agorastoryverse)

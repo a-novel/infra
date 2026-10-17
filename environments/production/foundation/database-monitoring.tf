@@ -47,7 +47,7 @@ resource "google_monitoring_alert_policy" "database_capacity" {
   for_each = local.database_alerts
 
   project      = google_project.workload.project_id
-  display_name = "Agora database ${each.value.title}"
+  display_name = "A-Novel database ${each.value.title}"
   combiner     = "OR"
   enabled      = true
   severity     = each.value.severity

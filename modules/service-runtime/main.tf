@@ -6,7 +6,7 @@ locals {
 resource "google_service_account" "runtime" {
   project      = var.project_id
   account_id   = local.name
-  display_name = "Agora ${var.service} application"
+  display_name = "A-Novel ${var.service} application"
 
   lifecycle {
     prevent_destroy = true
@@ -62,7 +62,7 @@ resource "google_artifact_registry_repository" "images" {
 
 resource "google_monitoring_notification_channel" "operations" {
   project         = var.project_id
-  display_name    = "Agora ${var.service} production operations alerts"
+  display_name    = "A-Novel ${var.service} production operations alerts"
   type            = "email"
   enabled         = true
   labels          = { email_address = var.alert_email }

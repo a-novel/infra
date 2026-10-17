@@ -31,7 +31,7 @@ variable "backup_bucket_name" {
 variable "workload_project_name" {
   description = "Human-readable Google Cloud project name for the production workload."
   type        = string
-  default     = "Agora production"
+  default     = "A-Novel production"
 
   validation {
     condition     = length(trimspace(var.workload_project_name)) >= 4 && length(var.workload_project_name) <= 30
