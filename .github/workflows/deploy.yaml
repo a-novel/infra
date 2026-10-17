@@ -41,7 +41,7 @@ jobs:
     steps:
       # A manual run applies every root, and workflow_dispatch is open to anyone with write access.
       - if: github.event_name == 'workflow_dispatch'
-        uses: a-novel-kit/workflows/generic-actions/require-role@v1.59.0
+        uses: a-novel-kit/workflows/generic-actions/require-role@v1.60.0
         with:
           roles: admin
 
@@ -139,7 +139,7 @@ jobs:
           echo "Changes since ${base:-the first deploy}; every root: $all." >>"$GITHUB_STEP_SUMMARY"
       - name: Announce the deploy
         if: steps.changes.outputs.deploys == 'true'
-        uses: a-novel-kit/workflows/generic-actions/discord-post@v1.59.0
+        uses: a-novel-kit/workflows/generic-actions/discord-post@v1.60.0
         with:
           webhook: ${{ secrets.DEPLOY_WEBHOOK }}
           color: started
@@ -341,7 +341,7 @@ jobs:
           delimiter="EOF_$(openssl rand -hex 8)"
           { echo "outcome=$outcome"; echo "roles=$roles"; printf 'description<<%s\n%s\n%s\n' "$delimiter" "$description" "$delimiter"; } >>"$GITHUB_OUTPUT"
       - name: Post the outcome
-        uses: a-novel-kit/workflows/generic-actions/discord-post@v1.59.0
+        uses: a-novel-kit/workflows/generic-actions/discord-post@v1.60.0
         with:
           webhook: ${{ secrets.DEPLOY_WEBHOOK }}
           color: ${{ steps.outcome.outputs.outcome }}
