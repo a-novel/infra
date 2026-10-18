@@ -486,6 +486,7 @@ start_database() {
         -c "listen_addresses=*" \
         -c "agora.database_image=${image}" \
         -c "max_connections=${MAX_CONNECTIONS}" \
+        -c "shared_buffers=$((CONTAINER_MEMORY_MB / 4))MB" \
         -c "password_encryption=scram-sha-256" \
         "${postgres_options[@]}" >/dev/null
 
