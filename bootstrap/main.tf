@@ -92,10 +92,6 @@ locals {
   }
 
   secret_definitions = merge({
-    production-authentication-postgres-password = {
-      contract = "POSTGRES_PASSWORD"
-      purpose  = "Authentication database owner password"
-    }
     production-authentication-app-password = {
       contract = "POSTGRES_PASSWORD"
       purpose  = "Authentication application role password, for a login without superuser rights"
@@ -116,10 +112,6 @@ locals {
       contract = "APP_MASTER_KEY"
       purpose  = "JSON Keys service application master key"
     }
-    production-json-keys-postgres-password = {
-      contract = "POSTGRES_PASSWORD"
-      purpose  = "JSON Keys database owner password"
-    }
     production-json-keys-app-password = {
       contract = "POSTGRES_PASSWORD"
       purpose  = "JSON Keys application role password, for a login without superuser rights"
@@ -127,10 +119,6 @@ locals {
     production-genai-openai-api-key = {
       contract = "OPENAI_API_KEY"
       purpose  = "GenAI OpenAI API key, restricted to the Responses endpoints"
-    }
-    production-genai-postgres-password = {
-      contract = "POSTGRES_PASSWORD"
-      purpose  = "GenAI database owner password"
     }
     production-genai-app-password = {
       contract = "POSTGRES_PASSWORD"
