@@ -38,10 +38,12 @@ ID="$(gcloud compute instances describe "$HOST" --zone="$ZONE" --project="$PROD"
 ssh-keygen -R "compute.$ID" -f ~/.ssh/google_compute_known_hosts
 ```
 
-On the host:
+On the host. A host without native backups has no `agora-database.service`: its startup script runs
+as `google-startup-scripts.service`, and its container is `agora-postgres-<service>` either way.
 
 ```bash
 sudo systemctl status agora-database.service
+sudo journalctl -u google-startup-scripts.service --since=-1h
 sudo docker ps
 df -h /mnt/disks/agora-data
 sudo journalctl -u agora-database.service --since=-1h
@@ -105,6 +107,7 @@ deploy:  roots applied ──► rollout (per service) ──► database host e
                                                        │                          └ yes ─► service took it? ─ no ─► fail
                                                        │                                                   └ yes ─► snapshot the data disk
                                                        │                                                            restart or replace the host
+                                                       │                                                            wait for PostgreSQL
                                                        ▼
                                    backup repository VM differs? ─ yes ─► restart it, after the database host
 ```
@@ -116,6 +119,11 @@ deploy:  roots applied ──► rollout (per service) ──► database host e
   replaced or force-merged deploy still rolls at the next deploy that runs during the downtime.
 - The host keeps its data disk and IP. A template change replaces the VM; any other change restarts
   it. The database is down for one to two minutes.
+- The job then waits up to 10 minutes for PostgreSQL itself. Each boot's startup publishes
+  `<state>:<revision>:<boot id>` in the guest attribute `agora/database-release`. The rollout
+  succeeds once the new boot reports `healthy`, or `idle` for a host without a release, and fails
+  otherwise. A running VM alone proves nothing: its startup can fail closed and leave PostgreSQL
+  stopped.
 - The snapshot is the way back: see [Undo a rollout](#undo-a-rollout).
 - A **backup repository VM** restarts whenever its `config` label differs from `running-config`, the
   label the rollout sets after each restart. It needs no planned downtime, and it restarts right after

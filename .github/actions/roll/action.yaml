@@ -116,7 +116,12 @@ runs:
         set -euo pipefail
         where=(--zone=europe-west1-d --project=a-novel-production-prod)
         group="agora-database-$SERVICE" repository="agora-pgbackrest-$SERVICE"
+        # Each boot publishes "<state>:<revision>:<boot id>" for the release workflows to wait on.
+        host() { gcloud compute instance-groups managed list-instances "$group" --format='value(instance.basename())' "${where[@]}"; }
+        release() { gcloud compute instances get-guest-attributes "$(host)" --query-path=agora/database-release \
+          --format='value(value)' "${where[@]}" 2>/dev/null || true; }
         if [ "$DATABASE" = true ]; then
+          before="$(release)"
           # The data and WAL share this disk, so PostgreSQL recovers the snapshot as after a power loss.
           snapshot="agora-data-$SERVICE-$(date -u +%Y%m%d-%H%M%S)"
           gcloud compute disks snapshot "agora-data-$SERVICE" --snapshot-names="$snapshot" \
@@ -124,6 +129,18 @@ runs:
           gcloud compute instance-groups managed update-instances "$group" --all-instances \
             --minimal-action=restart --most-disruptive-allowed-action=replace "${where[@]}"
           gcloud compute instance-groups managed wait-until "$group" --stable --timeout=900 "${where[@]}"
+          # A stable group only runs the VM. PostgreSQL is up once the new boot's startup published
+          # healthy, or idle for a host without a release. systemd retries a failed start, so only
+          # the deadline ends the wait.
+          deadline=$((SECONDS + 600))
+          until status="$(release)" && [ "${status##*:}" != "${before##*:}" ] &&
+            { [ "${status%%:*}" = healthy ] || [ "${status%%:*}" = idle ]; }; do
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::PostgreSQL on the $SERVICE database host did not come up within 10 minutes. Its last status is ${status:-none}; read its startup log (docs/runbooks/database.md#inspect-and-connect)."
+              exit 1
+            fi
+            sleep 5
+          done
           # Snapshots outlive the next rollout, which may be the revert of a damaging one.
           gcloud compute snapshots list --project=a-novel-production-prod --format='value(name)' \
             --filter="labels.role=pre-rollout AND labels.component=$SERVICE AND creationTimestamp<-P14D" |
