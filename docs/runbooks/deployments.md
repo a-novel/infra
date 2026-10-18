@@ -147,8 +147,9 @@ If the change is intended:
 2. **Add it again after each push.** A push removes it, because it approved the plans of the
    previous commit.
 3. **Merge with the label still on.** Before applying, the deploy checks that a pull request merged
-   since the last successful deploy carried it, whether the deploy follows a merge or was run by
-   hand.
+   since the last successful deploy carried it when it merged, applied last by a maintainer, an
+   admin or the Agent App. That holds whether the deploy follows a merge or was run by hand, and a
+   label added after the merge counts for nothing.
 
 ## Database host changes
 
