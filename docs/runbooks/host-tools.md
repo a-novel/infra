@@ -47,15 +47,16 @@ gh attestation verify "oci://ghcr.io/a-novel/infra/$TOOL@$TOOL_DIGEST" --repo a-
   --source-ref refs/heads/master --source-digest "$TOOL_COMMIT" --deny-self-hosted-runners
 ```
 
-An attestation proves where the image comes from, not that its run succeeded: check the run too. If
-attestation failed after the push, the pushed image is incomplete: publish again.
+An attestation proves where the image comes from. It does not prove its run succeeded, so check
+the run too. If attestation failed after the push, the pushed image is incomplete. Publish again.
 
 ## Pin `host-credentials`
 
 Foundation pins the published image once, in `host_credentials_image`, as
-`ghcr.io/a-novel/infra/host-credentials:<tag>@<digest>` from the run summary. Each deploy verifies its
-attestation against `publish-rollout-verifier.yaml` and copies it into each service's private tooling
-repository, `agora-<service>-private-tooling`. The hosts pull it from there, by digest.
+`ghcr.io/a-novel/infra/host-credentials:<tag>@<digest>` from the run summary. Every plan that
+changes the pin verifies its attestation against `publish-rollout-verifier.yaml`. The deploy then
+copies it into each service's private tooling repository, `agora-<service>-private-tooling`. The
+hosts pull it from there, by digest.
 
 The service roots read that reference from foundation for their backup repository VMs, so this one
 value is the only pin.

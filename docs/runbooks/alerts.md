@@ -4,15 +4,17 @@ This runbook covers what to do when an alert fires or a scheduled check fails.
 
 Google emails alerts to the operations channels: foundation's, and one per service runtime, which
 also receives that service's backup alerts. Budget alerts go to both the cost and operations
-channels. Every deploy that applies a root, and every database rollout, posts when it starts and
-when it ends to the Discord channel `a-novel-deployments`. A failure pings the `a-novel/infra` role
-and the failed service's role, including a deploy a bot triggered, such as a service release.
-GitHub emails failed `drift` runs to whoever last edited its schedule.
+channels. Every deploy that changes a root posts when it starts and when it ends to the Discord
+channel `a-novel-deployments`, and so does every database rollout. A failed deploy posts even when
+it changed nothing. A failure pings the `a-novel/infra` role and the failed service's role,
+including a deploy a bot triggered, such as a service release. GitHub emails failed `drift` runs to
+whoever last edited its schedule.
 
 ## Authentication health
 
-`drift.yaml` calls Authentication's `/v2/healthcheck` every three hours, and each deploy that changed
-a service calls it once. Both skip it while a planned downtime runs. The job log prints the response:
+`drift.yaml` calls Authentication's `/v2/healthcheck` every three hours. Each deploy calls it once
+after applying the service roots, even when one of them failed. Both skip it while a planned
+downtime runs. The job log prints the response:
 
 | Shows `down`      | Look at                                                                                                         |
 | ----------------- | --------------------------------------------------------------------------------------------------------------- |
@@ -96,12 +98,11 @@ Common causes:
 - the database disk is full.
 
 After fixing it, [take a backup by hand](database.md#back-up-now-and-verify). Keep WAL archiving
-on, and never delete WAL.
+on.
 
 ## Budget
 
-The monthly budget (60 units, the four production projects) reached 50, 75, 90 or 100%, actual or
-forecast. In the billing report, group by service. Usual suspects:
+The [monthly budget](../costs.md) reached 50, 75, 90 or 100%, actual or forecast. In the billing report, group by service. Usual suspects:
 
 - Cloud Run instances that never go idle;
 - backup storage growth (see [costs](../costs.md));

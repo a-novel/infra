@@ -1,7 +1,8 @@
 # Database hosts
 
 This runbook covers the PostgreSQL hosts: how to look at them, back them up, change them, and undo
-a change. Each service has its own pair of VMs:
+a change. Each service has a database host. JSON Keys and Authentication also have a backup
+repository VM:
 
 - the **database host**, the only member of the instance group `agora-database-<service>`. It runs
   PostgreSQL from the service's `database` image, on a separate data disk `agora-data-<service>`
@@ -10,7 +11,7 @@ a change. Each service has its own pair of VMs:
   backups over mutual TLS, and it stores them in the service's backup bucket.
 
 `<service>` is `json-keys`, `authentication` or `genai`. Their SQL role and database are
-`agora_json_keys`, `agora_authentication` and `agora_genai`. GenAI has no backup repository VM yet.
+`agora_json_keys`, `agora_authentication` and `agora_genai`.
 [Architecture](../architecture.md#databases-and-backups) lists their sizes, addresses and schedules.
 
 ## Inspect and connect
@@ -84,9 +85,9 @@ A **database host change** is any change that restarts the database host once ap
 - the machine type, container size or connection limit (see [capacity](#capacity)).
 
 The database is unavailable while its host restarts, so these changes happen during a
-[planned downtime](downtime.md), when the service's users are warned and its services stop on
-purpose. The pull request plan enforces it: it fails until the pull request carries the
-`allow-downtime` label and a planned downtime listing that service has started.
+[planned downtime](downtime.md), when the service's users are warned and its services stop. The
+pull request plan enforces it. It fails until the pull request carries the `allow-downtime` label and
+a planned downtime listing that service has started.
 
 ### How the rollout works
 
@@ -95,7 +96,9 @@ The host restarts nothing on apply. Every deploy then ends with a `rollout` job,
 which compares each host with its applied configuration:
 
 ```text
-deploy:  roots applied ──► rollout (per service) ──► database host differs?
+deploy:  roots applied ──► rollout (per service) ──► database host exists? ─ no ─► nothing to do
+                                                       ▼
+                                                     database host differs?
                                                        │ no  ─► nothing to do
                                                        │ yes ─► downtime started? ─ no ─► "rollout pending"
                                                        │                          └ yes ─► service took it? ─ no ─► fail
@@ -124,15 +127,15 @@ deploy:  roots applied ──► rollout (per service) ──► database host d
 2. **Take a full backup and verify it** ([above](#back-up-now-and-verify)) before the downtime
    starts.
 3. **Once the downtime has started, add the `allow-downtime` label** to the pull request. Its checks
-   re-run and pass. A label added earlier does not re-run them when the downtime starts: re-run the
-   failed plan checks by hand. A push removes the label, because it approved the plans of the commit
-   it was added on: review the new plans and add it again.
+   re-run and pass. A label added before the downtime started does not re-run them, so re-run the
+   failed plan checks by hand. A push removes the label, because the label approved the plans of an
+   earlier commit. Review the new plans and add it again.
 4. **Approve and merge.** The deploy applies the change, including a release's migrations, then
    rolls the host. Its summary names the snapshot. A release's smoke job skips its check during the
-   downtime: the service refuses it on purpose.
+   downtime, since the service refuses work.
 
 5. **Check the database.** The deploy's health check is skipped while the downtime runs, since the
-   services refuse work on purpose. [Connect to the host](#inspect-and-connect) and check
+   services refuse work. [Connect to the host](#inspect-and-connect) and check
    `agora-database.service` and its log instead.
 6. **Clear the downtime** ([Clear the downtime](downtime.md#clear-the-downtime)). Its deploy
    restarts the services, runs the smoke checks the downtime skipped, and checks health again.
@@ -144,9 +147,9 @@ when a downtime begins.
 
 ### Roll a host by hand
 
-`roll-database.yaml` restarts a service's database host and backup repository VM at once, whatever
-the downtime, then checks health. It takes the same snapshot first. Use it when a host must restart
-outside a downtime, for example to recover one stuck in a bad state:
+`roll-database.yaml` restarts a service's database host and backup repository VM now, whatever the
+downtime, then checks health. Only admins can run it. It takes the same snapshot first. Use it when
+a host must restart outside a downtime, for example to recover one stuck in a bad state:
 
 ```bash
 gh workflow run roll-database.yaml --repo a-novel/infra -f service=json-keys
@@ -158,8 +161,8 @@ The database is down for one to two minutes, and users are not warned.
 
 Before restarting a database host, the rollout snapshots its data disk as
 `agora-data-<service>-<UTC time>`, labelled `role=pre-rollout`. The deploy summary names it. A
-snapshot stays until a later rollout of that service finds it older than 14 days. The data and WAL share that disk, so PostgreSQL recovers the snapshot as after a
-power loss.
+snapshot stays until a later rollout of that service finds it older than 14 days. The data and WAL
+share that disk, so PostgreSQL recovers the snapshot as after a power loss.
 
 1. **Revert the pull request** and merge the revert during the downtime. The deploy rolls the host
    back onto the previous configuration. That is enough when the data is intact, for example when
@@ -191,9 +194,7 @@ power loss.
      `downtime.yaml` both start deploys, so the block disables the workflow first.
    - The detach waits for the host to stop, about two minutes.
    - The new disk keeps the old name, so the group and the host find it, and the host keeps its name
-     and IP. OpenTofu ignores the disk's source snapshot, so its state needs no change. This
-     procedure was rehearsed on a throwaway group, including a later rollout that reattached the
-     restored disk.
+     and IP. OpenTofu ignores the disk's source snapshot, so its state needs no change.
 
 3. **Wait until the database answers, then clear the downtime.** The template records the data
    disk's ID, so every foundation plan now changes the host's template, and needs a planned downtime,
@@ -201,10 +202,9 @@ power loss.
 
 ## Capacity
 
-The machine type, container CPU and memory, data disk size and connection limit are the
-`database_*` variables of foundation's `variables.tf`, whose defaults are in use. Override them in
-foundation's `terraform.tfvars`. A `check` block keeps 1 GiB of memory and 0.5 vCPU for the host
-itself. Changing any of them is a
+Each host's machine type, container CPU and memory, data disk size and connection limit are its
+entry in foundation's `database_capacity`, in `terraform.tfvars`. A `check` block keeps 1 GiB of
+memory and 0.5 vCPU for the host itself. Changing any of them is a
 [database host change](#change-a-database-host).
 
 Disks can grow but never shrink. A machine-type change replaces the VM, not the disk.

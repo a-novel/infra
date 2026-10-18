@@ -81,7 +81,7 @@ gh workflow run recovery.yaml --repo a-novel/infra -f operation=plan -f drill="$
 ```
 
 `cos_image` is the repository VMs' image, `backup_repository.cos_image` in a service root. Read the
-plan in the run's summary. Once it shows only the drill host and its network, apply it:
+plan in the run's log. Once it shows only the drill host and its network, apply it:
 
 ```bash
 gh workflow run recovery.yaml --repo a-novel/infra -f operation=apply -f drill="$DRILL_JSON"

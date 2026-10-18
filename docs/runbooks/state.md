@@ -3,10 +3,10 @@
 This runbook covers OpenTofu's state: unlocking it, restoring an older version, and moving resources
 between addresses.
 
-Each root's state is one object in `$STATE/<prefix>/default.tfstate`: `bootstrap`, `foundation`,
-`json-keys`, `authentication`, or `recovery/<project>` for a drill. The bucket keeps an overwritten
-version until it is 90 days old and 50 newer versions exist, and a deleted object for 7 days. State
-holds no secret values, but it is private: never paste it anywhere.
+Each root's state is one object in `$STATE/<prefix>/default.tfstate`. The prefix is the root's
+directory name, such as `foundation` or `json-keys`, or `recovery/<project>` for a drill. The bucket
+keeps an overwritten version until it is 90 days old and 50 newer versions exist, and a deleted
+object for 7 days. State holds no secret values, but it is private: never paste it anywhere.
 
 ## Remove a stale lock
 

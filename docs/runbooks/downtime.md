@@ -7,8 +7,8 @@ see, and how it ends.
 ## How a downtime unfolds
 
 A downtime lists **components**, `service-<root>.database`, one per service whose database will be
-changed. `<root>` is the service root's directory under `environments/production`: `json-keys` or
-`authentication`. `*` lists them all. It has a `start` and an `end`, and goes through three phases:
+changed. `<root>` is the directory of any service root under `environments/production`, such as
+`json-keys`. `*` lists them all. It has a `start` and an `end`, and goes through three phases:
 
 | Phase   | When                       | What happens                                                                                                                                      |
 | ------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -19,8 +19,8 @@ changed. `<root>` is the service root's directory under `environments/production
 `end` is only what users were told. A downtime lasts until you clear it, even past its `end`.
 
 There is at most one downtime at a time. It lives in the `DOWNTIME` repository variable as
-`{"components": [...], "start": "...", "end": "..."}`, and only `downtime.yaml` writes it. Three things
-read it:
+`{"components": [...], "start": "...", "end": "..."}`, and only `downtime.yaml` writes it. These read
+it:
 
 - **the services.** At each deploy, a listed service receives `DOWNTIME_START` and stops on its own
   at that time. No deploy runs at `start`;
@@ -28,15 +28,16 @@ read it:
   `https://raw.githubusercontent.com/a-novel/infra/downtime/downtime.json`, which holds `null` when
   none is planned. The `downtime` branch holds only that file, replaced on every run.
 - **the Discord announcements** in the public `a-novel-planned-downtime` channel. Each
-  `downtime.yaml` run hands the `downtime-announcements` Cloud Workflow (management project) every
-  post the downtime still needs: the change now (scheduled, rescheduled, extended with the same start
-  and a later end, ended, or cancelled), then 1 week, 1 day, 6 hours and 30 minutes before `start`,
-  and at `start`. The workflow sleeps until each post, so they land on time, and reads the webhook
-  from `production-downtime-discord-webhook` only then. A new run replaces the pending one.
+  `downtime.yaml` run hands the `downtime-announcements` Cloud Workflow, in the management project,
+  every post the downtime still needs. The first announces the change: scheduled, rescheduled,
+  extended, ended or cancelled. Reminders follow 1 week, 1 day, 6 hours and 30 minutes before
+  `start`, and one more at `start`. The workflow sleeps until each post, so they land on time. It
+  reads the webhook from `production-downtime-discord-webhook` only when it posts, and a new run
+  replaces the pending one.
 
 Deploys, plans and drift checks read `DOWNTIME` too. A database host change merges only while a
-downtime listing that service has started, and the deploy rolls the host only then: see
-[Change a database host](database.md#change-a-database-host).
+downtime listing that service has started, and the deploy rolls the host only then.
+[Change a database host](database.md#change-a-database-host) walks through it.
 
 ## Schedule or change a downtime
 
@@ -104,4 +105,5 @@ has passed, as a reminder to clear it or to schedule a later end.
 ## Requirements
 
 `downtime.yaml` writes the variable with the `anovelbot-agent` App, which needs **Variables: Read
-and write** on this repository, and publishes the document with the workflow token.
+and write** on this repository. Its key is a secret of the `governance` environment. The workflow
+token publishes the document.
