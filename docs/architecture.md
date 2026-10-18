@@ -49,6 +49,9 @@ contents need.
   Cloud Run refuses a deploy there that breaks either. Organization admins set both by hand, and no
   CI identity holds an organization role that could lift them. Public APIs run in
   `a-novel-public-api-prod`.
+- **An organization deny policy** keeps `infra-plan` from reading logs and traces, though its Viewer
+  role covers them. Pull requests can mint that identity. Organization admins set the policy by hand,
+  from [the setup runbook](runbooks/setup.md#organization-guardrails).
 
 ## Services
 

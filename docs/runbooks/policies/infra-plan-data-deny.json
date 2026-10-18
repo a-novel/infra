@@ -1,0 +1,20 @@
+{
+  "displayName": "The plan identity reads no logs or traces",
+  "rules": [
+    {
+      "description": "Pull requests can mint infra-plan. Its Viewer role would otherwise read what users write to logs and traces.",
+      "denyRule": {
+        "deniedPrincipals": [
+          "principal://iam.googleapis.com/projects/-/serviceAccounts/infra-plan@a-novel-management-prod.iam.gserviceaccount.com"
+        ],
+        "deniedPermissions": [
+          "logging.googleapis.com/logEntries.list",
+          "logging.googleapis.com/privateLogEntries.list",
+          "logging.googleapis.com/views.access",
+          "cloudtrace.googleapis.com/traces.get",
+          "cloudtrace.googleapis.com/traces.list"
+        ]
+      }
+    }
+  ]
+}

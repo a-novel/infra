@@ -50,6 +50,28 @@ approves a host tool publication.
 
 The organization's Renovate (Dependencies) and Agent Apps need access to this repository.
 
+## Organization guardrails
+
+Some rules sit above the projects, where no CI identity holds a role. An organization admin sets
+them by hand, once:
+
+- **Organization policies** on the private project keep Cloud Run internal and IAM-checked; see
+  [Architecture](../architecture.md#network).
+- **A deny policy** keeps the plan identity away from logs and traces. Pull requests can mint
+  `infra-plan`, and its Viewer role reads everything else a plan needs.
+
+The deny policy lives in [`policies/infra-plan-data-deny.json`](policies/infra-plan-data-deny.json).
+Creating it needs the Deny Admin role on the organization:
+
+```bash
+ORG=1031663934757
+gcloud iam policies create plan-identity-data --kind=denypolicies \
+  --attachment-point="cloudresourcemanager.googleapis.com/organizations/$ORG" \
+  --policy-file=docs/runbooks/policies/infra-plan-data-deny.json
+```
+
+After a change to the file, run `gcloud iam policies update` with the same arguments.
+
 ## Rebuild from nothing
 
 Use this only if the management project is gone: it holds the state, the CI identities and the
