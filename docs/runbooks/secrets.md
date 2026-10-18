@@ -87,22 +87,24 @@ fail while they differ. To turn it off, remove both settings.
 
 ## GitHub dispatch tokens
 
-GitHub starts scheduled workflows hours late. The `github-dispatch` workflow starts each org's
-timed `.github` workflows instead, and only those its schedules list. It uses one fine-grained
-personal access token per org. Create
+GitHub starts scheduled workflows hours late. The `github-dispatch` workflow starts the timed
+workflows instead, and only those its schedules list, in the repositories they list: each org's
+`.github` workflows, and `clean-images.yaml` in the services and platform-studio. It uses one
+fine-grained personal access token per org. Create
 each one in [Fine-grained tokens](https://github.com/settings/personal-access-tokens/new):
 
 - **Resource owner:** the org, `a-novel` or `a-novel-kit`. An org that reviews tokens asks an owner
   to approve it.
-- **Repository access:** only `<org>/.github`.
+- **Repository access:** only `<org>/.github`, plus, for `a-novel`, the repositories bootstrap's
+  `clean-images.yaml` schedule lists: `platform-studio` and the `service-*` repositories.
 - **Permissions:** Actions, read and write. Nothing else.
 - **Expiration:** the longest the org allows. The `.github` repository's daily `token-expiry`
   workflow posts to Discord before it lapses.
 
 Add each one as a version of `production-github-dispatch-<org>`, as in
 [Rotate a secret](#rotate-a-secret), and pin it in bootstrap's `github_dispatch_token_versions`. The
-next dispatch after the deploy reads it. It can start, rerun, cancel and delete workflow runs in that
-one repository. For a leak, revoke it on GitHub as well as disabling its version.
+next dispatch after the deploy reads it. It can start, rerun, cancel and delete workflow runs in those
+repositories. For a leak, revoke it on GitHub as well as disabling its version.
 
 ## pgBackRest TLS certificates
 
