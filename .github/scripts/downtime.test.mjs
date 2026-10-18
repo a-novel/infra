@@ -185,16 +185,22 @@ describe("planAnnouncements", () => {
 
   it("counts down to the end once the downtime started", () => {
     const started = Date.parse(window.start) / 1000 + 60;
-    const posts = planAnnouncements({
-      previous: window,
-      window: { ...window, end: "2026-10-20T08:00:00Z" },
-      now: started,
-    });
-    assert.equal(posts.length, 1);
-    assert.match(
-      posts[0].message.embeds[0].description,
-      /^## Expected back <t:\d+:R>/,
-    );
+    const inProgress = planAnnouncements({ previous: null, window, now }).at(-1)
+      .message.embeds[0].color;
+    // A downtime scheduled to start at once, then one extended while it runs.
+    for (const previous of [null, window]) {
+      const posts = planAnnouncements({
+        previous,
+        window: { ...window, end: "2026-10-20T08:00:00Z" },
+        now: started,
+      });
+      assert.equal(posts.length, 1);
+      assert.match(
+        posts[0].message.embeds[0].description,
+        /^## Expected back <t:\d+:R>/,
+      );
+      assert.equal(posts[0].message.embeds[0].color, inProgress);
+    }
   });
 
   it("ends a started downtime and cancels one ahead", () => {

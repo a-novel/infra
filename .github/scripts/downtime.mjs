@@ -138,7 +138,10 @@ export function planAnnouncements({ previous, window, now }) {
   const start = seconds(window.start);
   const countdown = `## Starts <t:${start}:R>`;
   const back = `## Expected back <t:${seconds(window.end)}:R>`;
-  const headline = now >= start ? back : countdown;
+  const started = now >= start;
+  const headline = started ? back : countdown;
+  // The color shows the same state as the headline: a started downtime is in progress.
+  const color = (pending) => (started ? colors.inProgress : pending);
   const extended =
     previous &&
     window.start === previous.start &&
@@ -149,7 +152,7 @@ export function planAnnouncements({ previous, window, now }) {
       ? post(
           now,
           "🗓️ Planned downtime scheduled",
-          colors.upcoming,
+          color(colors.upcoming),
           window,
           headline,
         )
@@ -157,14 +160,14 @@ export function planAnnouncements({ previous, window, now }) {
         ? post(
             now,
             "⏩ Planned downtime extended",
-            colors.informational,
+            color(colors.informational),
             window,
             headline,
           )
         : post(
             now,
             "🔁 Planned downtime rescheduled",
-            colors.informational,
+            color(colors.informational),
             window,
             headline,
           ),
