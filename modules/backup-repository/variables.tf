@@ -55,15 +55,8 @@ variable "management_project_number" {
   type        = string
 }
 
-variable "database" {
-  description = "The database host's service account, owned by the foundation root."
-  type = object({
-    service_account = string
-  })
-}
-
 variable "repository_ids" {
-  description = "Service image repository IDs the repository and database hosts pull from."
+  description = "Service image repository IDs the repository host pulls from."
   type        = map(string)
 }
 

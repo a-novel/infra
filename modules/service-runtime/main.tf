@@ -103,6 +103,18 @@ resource "google_artifact_registry_repository" "images" {
   }
 }
 
+# The database host pulls PostgreSQL from the production repository and, with native backups, its
+# TLS loader from tooling. It reads no other service's images.
+resource "google_artifact_registry_repository_iam_member" "database" {
+  for_each = toset(var.database_service_account == null ? [] : keys(google_artifact_registry_repository.images))
+
+  project    = var.project_id
+  location   = var.region
+  repository = google_artifact_registry_repository.images[each.key].repository_id
+  role       = "roles/artifactregistry.reader"
+  member     = "serviceAccount:${var.database_service_account}"
+}
+
 resource "google_monitoring_notification_channel" "operations" {
   project         = var.project_id
   display_name    = "A-Novel ${var.service} production operations alerts"

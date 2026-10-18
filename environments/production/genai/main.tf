@@ -26,12 +26,13 @@ locals {
 module "runtime" {
   source = "../../../modules/service-runtime"
 
-  service               = "genai"
-  zone                  = "private"
-  project_id            = local.project_id
-  region                = local.region
-  management_project_id = local.management_project_id
-  secrets               = toset([for name in keys(var.secret_versions) : "production-genai-${name}"])
+  service                  = "genai"
+  zone                     = "private"
+  project_id               = local.project_id
+  region                   = local.region
+  management_project_id    = local.management_project_id
+  secrets                  = toset([for name in keys(var.secret_versions) : "production-genai-${name}"])
+  database_service_account = local.database.service_account
   # The migrations, the sweep and the smoke check run apart from the gRPC server, each reading only
   # what it mounts.
   workloads = {
