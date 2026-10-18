@@ -138,7 +138,7 @@ them. Operators may add and read versions of every secret.
 | `production-authentication-super-admin-password`           | The initializer identity                                         |
 | `production-genai-postgres-password`                       | GenAI runtime, sweep and migrations, database host               |
 | `production-genai-openai-api-key`                          | GenAI runtime and sweep                                          |
-| `production-<service>-app-password`                        | Database host, to set the application role's password            |
+| `production-<service>-app-password`                        | Database host, database workloads, Authentication's initializer  |
 | `production-<service>-pgbackrest-{ca,database,repository}` | Database host and repository VM (TLS)                            |
 | `production-downtime-discord-webhook`                      | `downtime-announcer`, when it posts a planned downtime step      |
 | `production-github-dispatch-{a-novel,a-novel-kit}`         | `github-dispatcher`, when it dispatches that org's workflows     |

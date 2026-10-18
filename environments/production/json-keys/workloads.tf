@@ -30,6 +30,9 @@ locals {
     POSTGRES_PASSWORD = "postgres-password"
     APP_MASTER_KEY    = "app-master-key"
   }
+  # Every database workload reads both passwords while the services move to the application role
+  # (a-novel/infra#912), so the grant applies before any revision mounts the new one.
+  database_passwords = ["postgres-password", "app-password"]
   jobs = {
     migrations = { timeout = "600s", retries = 0, secrets = { POSTGRES_PASSWORD = "postgres-password" } }
     rotatekeys = { timeout = "300s", retries = 1, secrets = local.secret_env }

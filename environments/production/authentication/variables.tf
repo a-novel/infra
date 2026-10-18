@@ -17,10 +17,11 @@ variable "secret_versions" {
   validation {
     condition = (
       contains(keys(var.secret_versions), "postgres-password") &&
+      contains(keys(var.secret_versions), "app-password") &&
       contains(keys(var.secret_versions), "smtp-sender-password") &&
       (var.waitlist_url == null) != contains(keys(var.secret_versions), "waitlist-secret")
     )
-    error_message = "Pin postgres-password and smtp-sender-password, plus waitlist-secret exactly when waitlist_url is set."
+    error_message = "Pin postgres-password, app-password and smtp-sender-password, plus waitlist-secret exactly when waitlist_url is set."
   }
 }
 

@@ -130,6 +130,10 @@ locals {
       identity = "authentication_initializer"
       secret   = "production-authentication-postgres-password"
     }
+    "authentication-initializer:app-password" = {
+      identity = "authentication_initializer"
+      secret   = "production-authentication-app-password"
+    }
     "authentication-initializer:super-admin-password" = {
       identity = "authentication_initializer"
       secret   = "production-authentication-super-admin-password"
