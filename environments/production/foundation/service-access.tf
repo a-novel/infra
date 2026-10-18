@@ -27,17 +27,15 @@ resource "google_project_iam_member" "foundation_service_access" {
 # without an execution and its services without invokers, foundation then tags them and creates
 # its schedules, and only tagged resources can be updated, run or invoked. A tag binding is read back
 # before its tag reaches the release role's conditions, so listing bindings is not conditioned either.
-# The provider resumes every schedule it creates, which takes `enable`, and a schedule whose
-# creation failed halfway is replaced, which takes `delete`. Plans still flag that deletion.
 resource "google_project_iam_custom_role" "foundation_private_provisioning" {
   count = length(google_project_iam_custom_role.foundation_private_release)
 
   project     = google_project.workload.project_id
   role_id     = "infraFoundationPrivateProvisioning"
   title       = "Foundation private workload creation"
-  description = "Create and tag private Cloud Run services, jobs and schedules, read them back, and replace a half-created schedule, without updating, running or invoking them."
+  description = "Create and tag private Cloud Run services, jobs and schedules, and read them back, without updating, running or invoking them."
   permissions = [
-    "cloudscheduler.jobs.create", "cloudscheduler.jobs.delete", "cloudscheduler.jobs.enable",
+    "cloudscheduler.jobs.create",
     "run.jobs.create", "run.jobs.createTagBinding", "run.jobs.get", "run.jobs.listTagBindings",
     "run.services.create", "run.services.createTagBinding",
     "run.services.get", "run.services.listTagBindings",
@@ -150,14 +148,19 @@ resource "google_project_iam_member" "foundation_release_observation" {
   member  = "serviceAccount:${local.automation_service_accounts.foundation}"
 }
 
-# Scheduler does not support resource-name conditions for these permissions.
+# Scheduler does not support resource-name conditions for these permissions. A schedule whose
+# creation failed is destroyed before any role its state records as a dependency changes, the
+# provisioning role included, so this role holds what replacing it takes.
 resource "google_project_iam_custom_role" "foundation_scheduler" {
   count       = contains(keys(local.service_release_boundaries), "json-keys/private") ? 1 : 0
   project     = google_project.workload.project_id
   role_id     = "infraFoundationScheduler"
   title       = "Foundation existing schedule updates"
-  description = "Read and update existing schedules without creating, deleting or running jobs."
-  permissions = ["cloudscheduler.jobs.get", "cloudscheduler.jobs.fullView", "cloudscheduler.jobs.update"]
+  description = "Read, update, resume and delete existing schedules without creating or running jobs."
+  permissions = [
+    "cloudscheduler.jobs.delete", "cloudscheduler.jobs.enable",
+    "cloudscheduler.jobs.get", "cloudscheduler.jobs.fullView", "cloudscheduler.jobs.update",
+  ]
 }
 
 resource "google_project_iam_member" "foundation_scheduler" {
