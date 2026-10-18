@@ -27,15 +27,17 @@ resource "google_project_iam_member" "foundation_service_access" {
 # without an execution and its services without invokers, foundation then tags them and creates
 # its schedules, and only tagged resources can be updated, run or invoked. A tag binding is read back
 # before its tag reaches the release role's conditions, so listing bindings is not conditioned either.
+# The provider resumes every schedule it creates, which takes `enable`, and a schedule whose
+# creation failed halfway is replaced, which takes `delete`. Plans still flag that deletion.
 resource "google_project_iam_custom_role" "foundation_private_provisioning" {
   count = length(google_project_iam_custom_role.foundation_private_release)
 
   project     = google_project.workload.project_id
   role_id     = "infraFoundationPrivateProvisioning"
   title       = "Foundation private workload creation"
-  description = "Create and tag private Cloud Run services, jobs and schedules, and read them back, without updating, running or invoking them."
+  description = "Create and tag private Cloud Run services, jobs and schedules, read them back, and replace a half-created schedule, without updating, running or invoking them."
   permissions = [
-    "cloudscheduler.jobs.create",
+    "cloudscheduler.jobs.create", "cloudscheduler.jobs.delete", "cloudscheduler.jobs.enable",
     "run.jobs.create", "run.jobs.createTagBinding", "run.jobs.get", "run.jobs.listTagBindings",
     "run.services.create", "run.services.createTagBinding",
     "run.services.get", "run.services.listTagBindings",
