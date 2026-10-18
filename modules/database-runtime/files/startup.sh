@@ -4,7 +4,7 @@
 # No arguments: initial boot. --supervise: systemd lifecycle with native TLS backups.
 # Release metadata contains only immutable image references and numeric secret-version identifiers.
 
-set -euo pipefail
+set -Eeuo pipefail
 
 umask 077
 
@@ -108,7 +108,7 @@ require_numeric() {
 
     if ! [[ "${value}" =~ ^[0-9]+$ ]] || [ "${value}" -eq 0 ]; then
         printf 'error: %s must be a positive integer\n' "${label}" >&2
-        exit 1
+        return 1
     fi
 }
 
@@ -117,7 +117,7 @@ require_cpu() {
 
     if ! [[ "${value}" =~ ^[0-9]+([.][0-9]+)?$ ]] || [ "${value}" = "0" ]; then
         printf 'error: container CPU must be a positive decimal number\n' >&2
-        exit 1
+        return 1
     fi
 }
 
@@ -125,26 +125,26 @@ require_promoted_image() {
     local image="$1"
     local repository="$2"
     local digest=""
-    local expected_prefix="${REGISTRY_HOST}/${WORKLOAD_PROJECT_ID}/agora-production/${repository}@sha256:"
+    local expected_prefix="${REGISTRY_HOST}/${WORKLOAD_PROJECT_ID}/agora-${DATABASE_COMPONENT}-private-production/${repository}@sha256:"
 
     case "${image}" in
         "${expected_prefix}"*) digest="${image#"${expected_prefix}"}" ;;
         *)
             printf 'error: database image is outside the promoted repository contract\n' >&2
-            exit 1
+            return 1
             ;;
     esac
 
     if ! [[ "${digest}" =~ ^[a-f0-9]{64}$ ]]; then
         printf 'error: database image must use an immutable sha256 digest\n' >&2
-        exit 1
+        return 1
     fi
 
     # The repository and local backup workers must use the database's exact pgBackRest build.
     if [ "${DATABASE_SUPERVISED}" = true ] &&
         [ "${digest}" != "${PGBACKREST_DATABASE_IMAGE##*@sha256:}" ]; then
         printf 'error: native backup image differs from the selected database image\n' >&2
-        exit 1
+        return 1
     fi
 }
 
@@ -163,6 +163,8 @@ fetch_secret() {
         --fail \
         --silent \
         --show-error \
+        --connect-timeout 5 \
+        --max-time 30 \
         --retry 5 \
         --retry-all-errors \
         "https://secretmanager.googleapis.com/v1/projects/${MANAGEMENT_PROJECT_ID}/secrets/${secret_id}/versions/${version}:access" \
@@ -174,7 +176,7 @@ fetch_secret() {
     if [ "${newline_count}" -ne 0 ] || [ "${payload_size}" -lt 32 ] || [ "${payload_size}" -gt 128 ] || \
         ! LC_ALL=C grep -Eq '^[A-Za-z0-9_-]+$' "${temporary_file}"; then
         printf 'error: %s must be a 32-128 character URL-safe database password\n' "${secret_id}" >&2
-        exit 1
+        return 1
     fi
 
     # The parent directory remains root-only on the host. The read-only bind
@@ -430,7 +432,6 @@ start_database() {
     if [ "${DATABASE_SUPERVISED}" = true ]; then
         restart=no
         client_options=(
-            --cap-drop=NET_RAW
             --add-host "${PGBACKREST_REPOSITORY_NAME}:${PGBACKREST_REPOSITORY_IP}"
             --mount "type=bind,source=/etc/agora-database/pgbackrest.conf,target=/etc/pgbackrest/pgbackrest.conf,readonly"
             --mount "type=bind,source=/run/agora/pgbackrest/current,target=/run/pgbackrest,readonly"
@@ -470,6 +471,9 @@ start_database() {
         --memory "${CONTAINER_MEMORY_MB}m" \
         --memory-swap "${CONTAINER_MEMORY_MB}m" \
         --pids-limit 512 \
+        --user postgres \
+        --cap-drop ALL \
+        --security-opt no-new-privileges \
         --log-opt max-size=10m \
         --log-opt max-file=3 \
         --env "POSTGRES_USER=${database_user}" \
@@ -486,6 +490,7 @@ start_database() {
         -c "listen_addresses=*" \
         -c "agora.database_image=${image}" \
         -c "max_connections=${MAX_CONNECTIONS}" \
+        -c "shared_buffers=$((CONTAINER_MEMORY_MB / 4))MB" \
         -c "password_encryption=scram-sha-256" \
         "${postgres_options[@]}" >/dev/null
 
@@ -495,17 +500,17 @@ start_database() {
         if [ "${running}" != "true" ]; then
             printf 'error: %s exited before becoming healthy\n' "${container_name}" >&2
             docker logs --tail 20 "${container_name}" >&2 || true
-            exit 1
+            return 1
         fi
         if [ "${health}" = "unhealthy" ] || [ "${health}" = "missing" ]; then
             printf 'error: %s health status is %s\n' "${container_name}" "${health}" >&2
             docker logs --tail 20 "${container_name}" >&2 || true
-            exit 1
+            return 1
         fi
         if [ "${elapsed}" -ge 120 ]; then
             printf 'error: %s did not become healthy within 120 seconds\n' "${container_name}" >&2
             docker logs --tail 20 "${container_name}" >&2 || true
-            exit 1
+            return 1
         fi
 
         elapsed=$((elapsed + 1))
@@ -559,7 +564,7 @@ DATABASE_CONTAINERS=("agora-postgres-${DATABASE_COMPONENT}")
 BOOT_ID="$(tr -d '\n' </proc/sys/kernel/random/boot_id)"
 if ! [[ "${BOOT_ID}" =~ ^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$ ]]; then
     printf 'error: database host boot ID is invalid\n' >&2
-    exit 1
+    handle_failure 1
 fi
 
 RELEASE_REVISION="$(attribute_get agora-database-release-revision 2>/dev/null || true)"
@@ -576,7 +581,7 @@ elapsed=0
 until [ -b "${DATA_DEVICE}" ]; do
     if [ "${elapsed}" -ge 60 ]; then
         printf 'error: preserved data disk did not attach within 60 seconds\n' >&2
-        exit 1
+        handle_failure 1
     fi
 
     elapsed=$((elapsed + 1))
@@ -590,14 +595,14 @@ case "${filesystem_type}" in
         # provider-created disk whose first MiB is still entirely zeroed.
         if ! cmp -n 1048576 /dev/zero "${DATA_DEVICE}" >/dev/null 2>&1; then
             printf 'error: unrecognized non-empty data disk; refusing destructive initialization\n' >&2
-            exit 1
+            handle_failure 1
         fi
         mkfs.ext4 -F -m 1 -L agora-data "${DATA_DEVICE}" >/dev/null
         ;;
     ext4) ;;
     *)
         printf 'error: preserved data disk has unsupported filesystem %s\n' "${filesystem_type}" >&2
-        exit 1
+        handle_failure 1
         ;;
 esac
 
@@ -606,7 +611,7 @@ if mountpoint -q "${DATA_MOUNT}"; then
     mounted_source="$(findmnt -n -o SOURCE --target "${DATA_MOUNT}")"
     if [ "$(readlink -f "${mounted_source}")" != "$(readlink -f "${DATA_DEVICE}")" ]; then
         printf 'error: data mountpoint is occupied by an unexpected device\n' >&2
-        exit 1
+        handle_failure 1
     fi
 else
     mount -o noatime,nosuid,nodev "${DATA_DEVICE}" "${DATA_MOUNT}"
@@ -627,7 +632,7 @@ fi
 
 if ! [[ "${RELEASE_REVISION}" =~ ^[a-f0-9]{40}$ ]]; then
     printf 'error: database release revision must be a full Git commit SHA\n' >&2
-    exit 1
+    handle_failure 1
 fi
 
 MANAGEMENT_PROJECT_ID="$(attribute_get agora-management-project-id)"
@@ -656,7 +661,7 @@ unset TOKEN_RESPONSE
 
 if [ -z "${ACCESS_TOKEN}" ]; then
     printf 'error: metadata server returned no access token\n' >&2
-    exit 1
+    handle_failure 1
 fi
 
 TOKEN_CONFIG="$(mktemp /run/agora/secret-manager-curl.XXXXXX)"
