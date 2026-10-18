@@ -21,6 +21,10 @@ locals {
     POSTGRES_USER        = "agora_json_keys"
     POSTGRES_DATABASE    = "agora_json_keys"
     POSTGRES_TLS_ENABLED = "false"
+    # Signing reads keys from a cache, so a few connections serve every instance. Two instances and
+    # a rollout's third, plus the jobs, stay well under the database's connection ceiling.
+    POSTGRES_MAX_OPEN_CONNS = "5"
+    POSTGRES_MAX_IDLE_CONNS = "2"
   }
   secret_env = {
     POSTGRES_PASSWORD = "postgres-password"
@@ -136,11 +140,11 @@ resource "google_cloud_run_v2_service" "grpc" {
 
       dynamic "env" {
         for_each = merge(local.database_env, local.downtime_env, {
-          GCLOUD_PROJECT_ID       = local.project_id
-          GRPC_PORT               = "8080"
-          OTEL                    = "true"
-          POSTGRES_MAX_IDLE_CONNS = "10"
-          POSTGRES_MAX_OPEN_CONNS = "20"
+          GCLOUD_PROJECT_ID = local.project_id
+          # The Go runtime does not read the container's memory limit.
+          GOMEMLIMIT = "400MiB"
+          GRPC_PORT  = "8080"
+          OTEL       = "true"
         })
         content {
           name  = env.key
