@@ -27,7 +27,9 @@ resource "google_tags_location_tag_binding" "application" {
   location  = var.region
   tag_value = google_tags_tag_value.cloud_run_invocation[each.value.class].id
 
-  depends_on = [google_project_iam_member.foundation_private_provisioning, google_tags_tag_value_iam_member.foundation_application_tags]
+  # Not on the provisioning role: OpenTofu replaces a dependent before updating what it depends on,
+  # so no replacement downstream could use a permission granted in the same change.
+  depends_on = [google_tags_tag_value_iam_member.foundation_application_tags]
 }
 
 
