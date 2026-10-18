@@ -128,15 +128,14 @@ deploy:  roots applied ──► rollout (per service) ──► database host d
    failed plan checks by hand. A push removes the label, because it approved the plans of the commit
    it was added on: review the new plans and add it again.
 4. **Approve and merge.** The deploy applies the change, including a release's migrations, then
-   rolls the host. Its summary names the snapshot. A JSON Keys release's smoke job skips its check
-   during the downtime: the service refuses it on purpose.
+   rolls the host. Its summary names the snapshot. A release's smoke job skips its check during the
+   downtime: the service refuses it on purpose.
 
 5. **Check the database.** The deploy's health check is skipped while the downtime runs, since the
    services refuse work on purpose. [Connect to the host](#inspect-and-connect) and check
    `agora-database.service` and its log instead.
 6. **Clear the downtime** ([Clear the downtime](downtime.md#clear-the-downtime)). Its deploy
-   restarts the services, runs the JSON Keys smoke check the downtime skipped, and checks health
-   again.
+   restarts the services, runs the smoke checks the downtime skipped, and checks health again.
 
 A database host change merged before its downtime started, by a force-merge for example, still
 applies, and every deploy reports "rollout pending". Once the downtime has started, run a deploy by

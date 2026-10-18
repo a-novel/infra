@@ -81,7 +81,7 @@ hand gives them `DOWNTIME_START`.
 
 - Merge the database host changes the downtime was planned for, with the `allow-downtime` label.
   Their deploy runs a release's migrations, then rolls the hosts. Migrations still run during a
-  downtime; the JSON Keys smoke check waits for the downtime to be cleared.
+  downtime; the smoke checks wait for the downtime to be cleared.
 - The deploy health check is skipped, since the listed services refuse work. So is a health or
   smoke check that began just before `start` and failed after it. Check the database hosts directly
   ([Inspect and connect](database.md#inspect-and-connect)).
@@ -94,7 +94,7 @@ gh workflow run downtime.yaml --repo a-novel/infra -f operation=clear
 
 Clear it once the work is done and verified. The workflow deletes `DOWNTIME` and publishes `null`,
 then `deploy.yaml` runs a full deploy, which restarts the services without `DOWNTIME_START`. The
-health check runs again, and so does the JSON Keys smoke check when the downtime listed JSON Keys.
+health check runs again, and so does each smoke check whose service the downtime listed.
 **Check that a deploy succeeded after the clear:** until one does, the services keep answering 503.
 If none is due, run one by hand (`gh workflow run deploy.yaml --repo a-novel/infra --ref master`).
 

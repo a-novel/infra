@@ -24,3 +24,8 @@ output "notification_channel" {
   description = "Operations notification channel name."
   value       = google_monitoring_notification_channel.operations.name
 }
+
+output "smoke_script" {
+  description = "The shared health check, for a smoke job's `sh -c`. The deploy and drift health checks run the same file."
+  value       = file("${path.module}/smoke.sh")
+}
