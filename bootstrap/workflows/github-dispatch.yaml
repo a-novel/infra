@@ -1,12 +1,20 @@
 # Dispatches one `.github` workflow in each org, because GitHub starts scheduled workflows hours
 # late. Cloud Scheduler starts an execution per workflow at its cron, with {"workflow": <file>}.
 # Each org's token is read from Secret Manager at dispatch time, and calls are never logged.
+# Only the scheduled workflows dispatch: any management-project caller may start an execution.
 main:
   params: [args]
   steps:
     - read_config:
         assign:
           - versions: ${json.decode(sys.get_env("TOKEN_VERSIONS"))}
+          - scheduled: ${args.workflow in json.decode(sys.get_env("WORKFLOWS"))}
+    - refuse_unscheduled:
+        switch:
+          - condition: ${scheduled == false}
+            steps:
+              - refuse:
+                  raise: ${"Only the scheduled workflows dispatch, not " + args.workflow + "."}
     - dispatch_each:
         for:
           value: owner

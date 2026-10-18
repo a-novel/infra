@@ -183,6 +183,11 @@ jobs:
       # Hands the announcements to Google Cloud Workflows.
       id-token: write
     steps:
+      # "Re-run this job" skips the downtime job's gate, and would replay an old run's posts.
+      - uses: a-novel-kit/workflows/generic-actions/require-role@v1.63.0
+        with:
+          roles: admin
+
       # Every post this downtime needs, in time order: the change itself now, then the reminders still
       # ahead. The countdowns are Discord timestamps, so a post written now still reads right when it
       # lands. Timestamps share one RFC 3339 UTC format, so they compare as strings.
