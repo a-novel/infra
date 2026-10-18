@@ -61,6 +61,7 @@ func TestVerifySQL(t *testing.T) {
 							step = "identity"
 						case strings.Contains(step, "pg_extension"):
 							require.Contains(t, step, "'"+role+"_backup'")
+							require.Contains(t, step, "'"+role+"_app'")
 							step = "schema"
 						default:
 							require.Contains(t, step, "BEGIN READ ONLY;")

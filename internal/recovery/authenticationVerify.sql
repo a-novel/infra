@@ -15,4 +15,10 @@ SELECT
       AND (NOT rolcanlogin OR rolsuper OR rolcreatedb OR rolcreaterole
         OR rolreplication OR rolbypassrls
         OR NOT pg_has_role(oid, 'pg_read_all_data', 'MEMBER'))
+  )
+  -- Backups taken before the application role existed lack it.
+  AND NOT EXISTS (
+    SELECT FROM pg_roles WHERE rolname = 'agora_authentication_app'
+      AND (NOT rolcanlogin OR rolsuper OR rolcreatedb OR rolcreaterole
+        OR rolreplication OR rolbypassrls)
   );
