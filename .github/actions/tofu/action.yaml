@@ -57,7 +57,22 @@ runs:
         tofu_version_file: .opentofu-version
         tofu_wrapper: false
 
+    # Google's token service answers 503 now and then, and this action has no retry of its own: a
+    # failed first attempt gets a second one, which fails the job if it fails too.
     - id: auth
+      continue-on-error: true
+      uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+      with:
+        workload_identity_provider: ${{ inputs.workload_identity_provider }}
+        service_account: ${{ inputs.service_account }}
+        token_format: access_token
+
+    - if: steps.auth.outcome == 'failure'
+      shell: bash
+      run: sleep 15
+
+    - id: auth_retry
+      if: steps.auth.outcome == 'failure'
       uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
       with:
         workload_identity_provider: ${{ inputs.workload_identity_provider }}
@@ -75,13 +90,26 @@ runs:
         TF_VAR_downtime: ${{ env.DOWNTIME }}
       run: |
         set -euo pipefail
-        tofu -chdir="$ROOT" init -input=false -lockfile=readonly -no-color >/dev/null
-        status=0
-        tofu -chdir="$ROOT" plan -input=false -no-color -lock="$LOCK" -detailed-exitcode -out=tfplan >"$RUNNER_TEMP/plan.txt" || status=$?
-        if [ "$status" -eq 1 ]; then
-          cat "$RUNNER_TEMP/plan.txt"
-          exit 1
-        fi
+        errors="$RUNNER_TEMP/plan.err"
+        attempt() {
+          tofu -chdir="$ROOT" init -input=false -lockfile=readonly -no-color >/dev/null 2>"$errors" || return 1
+          status=0
+          tofu -chdir="$ROOT" plan -input=false -no-color -lock="$LOCK" -detailed-exitcode -out=tfplan \
+            >"$RUNNER_TEMP/plan.txt" 2>>"$errors" || status=$?
+          [ "$status" -ne 1 ]
+        }
+        # Cloud Storage answers 503 now and then while OpenTofu reads the state. A plan changes
+        # nothing, so such an error is retried for two minutes; any other error fails at once.
+        deadline=$((SECONDS + 120))
+        until attempt; do
+          if [ "$SECONDS" -ge "$deadline" ] || ! grep -Eq '"code": 50[234]|UNAVAILABLE' "$errors"; then
+            cat "$RUNNER_TEMP/plan.txt" "$errors" 2>/dev/null || true
+            exit 1
+          fi
+          echo "::warning::Google answered a transient error while planning; retrying in 10 seconds."
+          sleep 10
+        done
+        cat "$errors" >&2
         tofu -chdir="$ROOT" show -json tfplan >"$RUNNER_TEMP/plan.json"
         echo "changes=$([ "$status" -eq 2 ] && echo true || echo false)" >>"$GITHUB_OUTPUT"
         # The log lists each change and the fields it touches; values stay in the job summary.
@@ -148,7 +176,7 @@ runs:
       if: inputs.apply == 'true' && steps.plan.outputs.changes == 'true'
       shell: bash
       env:
-        ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+        ACCESS_TOKEN: ${{ steps.auth.outputs.access_token || steps.auth_retry.outputs.access_token }}
       run: |
         set -euo pipefail
         jq -r '.planned_values.outputs.image_copies.value[]?.target | split("/")[0]' "$RUNNER_TEMP/plan.json" | sort -u |
