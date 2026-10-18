@@ -9,9 +9,9 @@ a change. Each service has its own pair of VMs:
 - the **backup repository VM** `agora-pgbackrest-<service>`. The database host sends it WAL and
   backups over mutual TLS, and it stores them in the service's backup bucket.
 
-`<service>` is `json-keys` or `authentication`. Their SQL role and database are `agora_json_keys`
-and `agora_authentication`. [Architecture](../architecture.md#databases-and-backups) lists their
-sizes, addresses and schedules.
+`<service>` is `json-keys`, `authentication` or `genai`. Their SQL role and database are
+`agora_json_keys`, `agora_authentication` and `agora_genai`. GenAI has no backup repository VM yet.
+[Architecture](../architecture.md#databases-and-backups) lists their sizes, addresses and schedules.
 
 ## Inspect and connect
 

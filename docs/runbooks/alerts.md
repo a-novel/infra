@@ -38,6 +38,17 @@ More than 10% of requests failed for five minutes. If a deploy just happened,
 [fix it forward](deployments.md#fix-a-bad-release). Otherwise read the revision's logs and check
 the dependencies above.
 
+## GenAI sweep calls failing
+
+At least three scheduled `/sweep` calls answered 5xx, other than 503, in ten minutes. Until the
+sweep recovers, a generation nobody polls is not checked: it keeps its owner's concurrency slot,
+and a finished result may expire at the provider. A planned downtime answers 503, so it does not
+fire this alert.
+
+1. Read the `agora-genai-sweep` revision logs in Cloud Run for the failing calls.
+2. Check GenAI's [database host](database.md#inspect-and-connect).
+3. Check the provider's status page. The sweep fails when OpenAI refuses the key or is down.
+
 ## Application jobs and key rotation
 
 A job execution failed, or the rotation job went three hours without a successful run. It runs

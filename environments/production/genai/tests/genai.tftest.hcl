@@ -68,8 +68,13 @@ run "serves_privately_from_pinned_images_and_secrets" {
   }
 
   assert {
-    condition     = google_cloud_run_v2_job.migrations.run_execution_token == null && google_cloud_run_v2_job.smoke.run_execution_token == null
-    error_message = "Until foundation tags the jobs, nothing runs: the first deploy only creates them."
+    condition     = terraform_data.migrations.triggers_replace == google_cloud_run_v2_job.migrations.template[0].template[0].containers[0].image
+    error_message = "Migrations run during apply, once per image change."
+  }
+
+  assert {
+    condition     = terraform_data.smoke.triggers_replace == [google_cloud_run_v2_service.grpc.template[0].containers[0].image, ""]
+    error_message = "Without a planned downtime, the smoke check runs once per gRPC image change."
   }
 
   assert {
@@ -108,6 +113,11 @@ run "passes_the_planned_downtime_start" {
       ) : lookup({ for env in container.env : env.name => env.value }, "DOWNTIME_START", null) == "2026-10-12T06:00:00Z"
     ])
     error_message = "Every service and job must receive the planned downtime start: the gRPC server and the sweep both write."
+  }
+
+  assert {
+    condition     = terraform_data.smoke.triggers_replace == [google_cloud_run_v2_service.grpc.template[0].containers[0].image, "2026-10-12T06:00:00Z"]
+    error_message = "A planned downtime must replace the smoke trigger, so clearing it runs the check again."
   }
 }
 
