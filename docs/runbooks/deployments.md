@@ -17,15 +17,15 @@ It applies every service root on every deploy. A service root also reads `DOWNTI
 shows: a downtime written while another deploy waited or ran must still reach the services, and an
 unchanged service root applies nothing. The announcement lists only the roots that changed.
 
-The service roots are the directories next to `foundation`, so deploy finds a new one by itself. Its
-jobs cannot be generated, though: `lint-repository` fails until the new root has a `plan-<root>` job
-in `main.yaml`, an apply job, a `changes` output and a `notify` entry in `deploy.yaml`, and an entry
-in `drift.yaml`'s matrix. A root with a database host also joins the `rollout` matrix and the roll
-action.
+The service roots are the directories next to `foundation`. Deploy applies and rolls out each one it
+finds, and drift checks it, with no edit to either workflow. Two things cannot be derived:
+`lint-repository` fails until a new root has a `plan-<root>` job in `main.yaml`, its required check,
+and an option in `roll-database.yaml`. A root with a database host also names the Cloud Run services
+that write to it in the roll action.
 
 ```text
-changes ─► bootstrap ─► foundation ─► json-keys ──────┬─► rollout (per service)
-                                      authentication ─┴─► health check
+changes ─► bootstrap ─► foundation ─► one job per service ─┬─► rollout (per service)
+                                                           └─► health check
 ```
 
 Each root's job plans, verifies and copies its images, then applies. The `rollout` job moves the

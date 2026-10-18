@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Fails when a service root lacks the workflow wiring every root needs. deploy.yaml finds the service
-# roots by directory and applies each one on every deploy, but GitHub Actions cannot generate the
-# jobs, outputs and lists below, so a new root must add them by hand.
+# Fails when a service root lacks the workflow wiring GitHub Actions cannot derive from disk. deploy.yaml
+# and drift.yaml find the roots by directory, but each root's plan is a required check named by its
+# own job, and a manual dispatch offers only the choices its workflow lists.
 set -euo pipefail
 
 workflows=.github/workflows
@@ -9,19 +9,13 @@ status=0
 for dir in environments/production/*/; do
   ROOT="$(basename "$dir")"
   [ "$ROOT" = foundation ] && continue
-  ROOT_PATH="environments/production/$ROOT" KEY="${ROOT//-/_}"
-  export ROOT ROOT_PATH KEY
+  ROOT_PATH="environments/production/$ROOT"
+  export ROOT ROOT_PATH
   missing=()
   [ "$(yq '[.jobs[].steps[]?.with.root] | any_c(. == strenv(ROOT_PATH))' "$workflows/main.yaml")" = true ] ||
     missing+=("a plan job in main.yaml")
-  [ "$(yq '[.jobs[strenv(ROOT)].steps[]?.with.root] | any_c(. == strenv(ROOT_PATH))' "$workflows/deploy.yaml")" = true ] ||
-    missing+=("a $ROOT job applying it in deploy.yaml")
-  [ "$(yq '.jobs.changes.outputs | has(strenv(KEY))' "$workflows/deploy.yaml")" = true ] ||
-    missing+=("the $KEY output of deploy.yaml's changes job")
-  [ "$(yq '.jobs.notify.needs | any_c(. == strenv(ROOT))' "$workflows/deploy.yaml")" = true ] ||
-    missing+=("$ROOT in deploy.yaml's notify needs")
-  [ "$(yq '[.jobs[].strategy.matrix.root[]?] | any_c(. == strenv(ROOT_PATH))' "$workflows/drift.yaml")" = true ] ||
-    missing+=("an entry in drift.yaml's matrix")
+  [ "$(yq '.on.workflow_dispatch.inputs.service.options | any_c(. == strenv(ROOT))' "$workflows/roll-database.yaml")" = true ] ||
+    missing+=("a service option in roll-database.yaml")
   for item in "${missing[@]}"; do
     echo "::error::$ROOT_PATH lacks $item."
     status=1

@@ -1,10 +1,11 @@
 name: Database rollout
 description: >
-  Move a service's database host and backup repository VM onto their applied configuration. The
-  database host moves only when it differs and the service's planned downtime is in progress and
-  its service has taken it, after a snapshot of its data disk; the repository VM moves when its config label differs from the
-  running one, and after its database host, so pgBackRest keeps one version on both. With force,
-  both move now. The caller must hold the foundation identity and set DOWNTIME.
+  Move a service's database host and backup repository VM onto their applied configuration; a
+  service without a database host has nothing to move. The database host moves only when it differs
+  and the service's planned downtime is in progress and its service has taken it, after a snapshot
+  of its data disk; the repository VM moves when its config label differs from the running one, and
+  after its database host, so pgBackRest keeps one version on both. With force, both move now. The
+  caller must hold the foundation identity and set DOWNTIME.
 
 inputs:
   service:
@@ -38,6 +39,12 @@ runs:
         set -euo pipefail
         where=(--zone=europe-west1-d --project=a-novel-production-prod)
         group="agora-database-$SERVICE" repository="agora-pgbackrest-$SERVICE"
+        # A new service root deploys before foundation adds its database host, and has nothing to roll.
+        if [ -z "$(gcloud compute instance-groups managed list --filter="name=$group" --zones=europe-west1-d \
+          --project=a-novel-production-prod --format='value(name)')" ]; then
+          echo "- \`$SERVICE\`: no database host yet" >>"$GITHUB_STEP_SUMMARY"
+          exit 0
+        fi
         # Observed state, not this deploy's changes: a cancelled or force-merged deploy loses nothing.
         database_pending="$(gcloud compute instance-groups managed describe "$group" "${where[@]}" --format=json |
           jq '(.status.versionTarget.isReached and (.status.allInstancesConfig.effective // true)) | not')"
