@@ -55,7 +55,7 @@ output "database_hosts" {
       }
       instance_group_manager = google_compute_instance_group_manager.database[service].name
       instance_name          = data.google_compute_instance.database[service].name
-      machine_type           = var.database_machine_type
+      machine_type           = host.capacity.machine_type
       port                   = host.port
       private_ip             = one(data.google_compute_instance.database[service].network_interface).network_ip
       # The backup repository VM's address, which the database host trusts.
