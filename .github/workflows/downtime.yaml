@@ -11,15 +11,15 @@ on:
         type: choice
         options: [schedule, clear]
       components:
-        description: Comma-separated components it stops, such as "service-json-keys.database".
+        description: Comma-separated components it stops, such as "service-json-keys.database", or "*" for all. Empty keeps the current ones.
         type: string
         default: ""
       start:
-        description: When their services stop, in RFC 3339 UTC, such as 2026-10-12T06:00:00Z.
+        description: When their services stop, in RFC 3339 UTC, such as 2026-10-12T06:00:00Z, or after a delay from now, such as 2h or 1d12h. Empty keeps the current start, and must be empty once it has passed.
         type: string
         default: ""
       end:
-        description: When service is expected back, in RFC 3339 UTC. Users see it; services ignore it.
+        description: When service is expected back, in RFC 3339 UTC, or after a length from the start, such as 1h30m. Users see it; services ignore it.
         type: string
         default: ""
 
@@ -62,28 +62,55 @@ jobs:
           COMPONENTS: ${{ inputs.components }}
           START: ${{ inputs.start }}
           END: ${{ inputs.end }}
+          PREVIOUS: ${{ vars.DOWNTIME }}
         run: |
           set -euo pipefail
           if [ "$OPERATION" = clear ]; then
             echo "window=" >>"$GITHUB_OUTPUT"
             exit 0
           fi
-          # Each service root has a database that can be stopped.
+          # Each service root has a database that can be stopped. "*" names them all, and naming none
+          # keeps the current downtime's components.
           known="$(find environments/production -mindepth 1 -maxdepth 1 -type d ! -name foundation -printf 'service-%f.database\n')"
-          for component in ${COMPONENTS//,/ }; do
+          read -ra components <<<"${COMPONENTS//,/ }"
+          if [ "${components[*]}" = "*" ]; then mapfile -t components <<<"$known"; fi
+          if [ "${#components[@]}" -eq 0 ]; then mapfile -t components < <(jq -r '.components[]?' <<<"${PREVIOUS:-null}"); fi
+          if [ "${#components[@]}" -eq 0 ]; then
+            echo "::error::No downtime is scheduled, so components can't be empty: name them, or use \"*\" for all of them."
+            exit 1
+          fi
+          for component in "${components[@]}"; do
             if ! grep -qx "$component" <<<"$known"; then
               echo "::error::Unknown component \"$component\"; known: $(paste -sd, <<<"$known")."
               exit 1
             fi
           done
-          rfc3339='^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'
-          if [ -z "${COMPONENTS//[, ]/}" ] || ! [[ $START =~ $rfc3339 && $END =~ $rfc3339 ]] ||
-            [ "$(date -d "$END" +%s)" -le "$(date -d "$START" +%s)" ]; then
-            echo "::error::A downtime needs components, and start and end in RFC 3339 UTC with the end after the start."
+          # A time is RFC 3339 UTC, or a duration in days, hours and minutes, such as 1d12h or 30m,
+          # counted from the base: now for the start, the start for the end.
+          epoch() { # time, base
+            if [[ $1 =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]; then
+              date -d "$1" +%s
+            elif [ -n "$1" ] && [[ $1 =~ ^([0-9]+d)?([0-9]+h)?([0-9]+m)?$ ]]; then
+              local days="${BASH_REMATCH[1]%d}" hours="${BASH_REMATCH[2]%h}" minutes="${BASH_REMATCH[3]%m}"
+              echo $(($2 + ((10#${days:-0} * 24 + 10#${hours:-0}) * 60 + 10#${minutes:-0}) * 60))
+            else
+              return 1
+            fi
+          }
+          # An empty start keeps the current one, which can't move once it has passed.
+          now="$(date +%s)"
+          current="$(jq -r '.start // empty' <<<"${PREVIOUS:-null}")"
+          if [ -n "$START" ] && [ -n "$current" ] && [ "$(date -d "$current" +%s)" -le "$now" ]; then
+            echo "::error::The downtime started at $current, so its start can't move. Leave start empty to keep it."
             exit 1
           fi
-          window="$(jq -cn --arg components "$COMPONENTS" --arg start "$START" --arg end "$END" \
-            '{components: ($components | split(",") | map(select(. != ""))), start: $start, end: $end}')"
+          if ! start="$(epoch "${START:-$current}" "$now")" || ! end="$(epoch "$END" "$start")" || [ "$end" -le "$start" ]; then
+            echo "::error::A downtime needs a start and an end, each in RFC 3339 UTC or a duration such as 1d12h, with the end after the start."
+            exit 1
+          fi
+          # Sorted, so the same components always compare equal.
+          window="$(jq -cn --argjson start "$start" --argjson end "$end" \
+            '{components: ($ARGS.positional | unique), start: ($start | todate), end: ($end | todate)}' --args "${components[@]}")"
           echo "window=$window" >>"$GITHUB_OUTPUT"
 
       # The workflow token can't write variables; the agent App can.
