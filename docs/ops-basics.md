@@ -154,6 +154,9 @@ name these pieces:
 
 ## Local commands
 
+Set up [OpenTofu](https://a-novel-kit.github.io/stack/sysadmins/opentofu) first. It reads the state
+with your [application default credentials](https://a-novel-kit.github.io/stack/sysadmins/gcloud#configure).
+
 ```bash
 tofu -chdir=environments/production/foundation init
 tofu -chdir=environments/production/foundation plan -lock=false -refresh=false

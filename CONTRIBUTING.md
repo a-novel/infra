@@ -6,7 +6,8 @@ Workspace setup lives in the
 
 ## Validate locally
 
-These are CI's main checks, run the same way:
+[Install OpenTofu](https://a-novel-kit.github.io/stack/sysadmins/opentofu#install) at the pinned
+version. These are CI's main checks, run the same way:
 
 ```bash
 tofu fmt -check -recursive -diff
