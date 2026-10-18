@@ -131,6 +131,14 @@ run "trusts_only_reviewed_workflows" {
     error_message = "Workload identity provider display names are limited to 32 characters."
   }
 
+  # Google rejects a reserved environment variable name only at apply time.
+  assert {
+    condition = alltrue(flatten([for workflow in [google_workflows_workflow.downtime_announcements, google_workflows_workflow.github_dispatch] :
+      [for name in keys(workflow.user_env_vars) : !startswith(name, "GOOGLE") && !startswith(name, "WORKFLOWS")]
+    ]))
+    error_message = "Workflows environment variable names cannot begin with GOOGLE or WORKFLOWS."
+  }
+
   assert {
     condition = alltrue([for binding in concat(values(google_project_iam_member.automation), values(google_project_iam_member.operator)) :
       !contains(["roles/owner", "roles/editor"], binding.role)

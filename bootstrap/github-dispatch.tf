@@ -93,7 +93,7 @@ resource "google_workflows_workflow" "github_dispatch" {
 
   user_env_vars = {
     TOKEN_VERSIONS = jsonencode({ for owner in local.github_dispatch_owners : owner => var.github_dispatch_token_versions[owner] })
-    WORKFLOWS      = jsonencode(keys(local.github_dispatch_schedules))
+    SCHEDULED      = jsonencode(keys(local.github_dispatch_schedules))
   }
 
   # Detailed history and call logs would record the tokens. Only the clock's jobs start executions,
