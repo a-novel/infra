@@ -49,8 +49,8 @@ that waits for a downtime that has since started.
    image, it dispatches `pin-release.yaml`, which opens one pull request per service on
    `chore/deps/<repository>`, for example `chore(deps): update service-json-keys images to v2.10.0`.
    It moves every `tag@digest` pin of that service in `environments/production`, the database pin in
-   foundation's `database_images` included, and the tag of each `builds/` image built from it. A
-   newer release of the same service replaces the open pull request's content.
+   foundation's `database_images` included, and the `FROM` lines of the `builds/` images built from
+   it. A newer release of the same service replaces the open pull request's content.
 2. **CI plans it.** In the service's plan check, expect:
    - the Cloud Run service and jobs on the new images;
    - when the migration image changed, its `terraform_data` replaced and a new
@@ -58,7 +58,8 @@ that waits for a downtime that has since started.
    - each new image verified: its release tag's own run built it, the release App published that
      tag as an immutable GitHub Release, and its version is not below the one deployed.
 3. **It merges itself.** The Dependencies App opens it, so once its checks pass the auto-approve
-   workflow approves it and queues it, as it does Renovate's. When another release merges first and
+   workflow approves it and queues it, as it does Renovate's. A `FROM` line counts as part of the
+   pin when it takes a digest the same pull request pins in `environments/production`. When another release merges first and
    leaves it conflicting, the next push to `master` rebuilds it from `master`.
 4. **The deploy applies it:**
    1. it copies the images to the service's Artifact Registry repository;
@@ -86,9 +87,40 @@ gh api repos/a-novel/infra/dispatches -f event_type=release \
 ## Fix a bad release
 
 Nothing rolls a release back: a pull request that lowers a pinned version fails its plan check.
-Ship the fix as a new release of the service. When its `master` carries unreleased work, dispatch
-its `hotfix` workflow, which releases the fix from the deployed line. The new pin deploys like any
-release.
+Ship the fix as a new release of the service. When its `master` holds nothing unreleased but the
+fix, a normal patch release ships it. Otherwise, ship a hotfix from the deployed line:
+
+1. **Land the fix on `master`** through its pull request.
+2. **Dispatch the service's `hotfix` workflow** with the deployed line and the fix's commit:
+
+   ```bash
+   gh workflow run hotfix.yaml --repo a-novel/service-json-keys \
+     -f line=2.10 -f fix_refs=<commit> -f dry_run=false
+   ```
+
+   The first hotfix of a line creates `release/vX.Y` from the line's latest tag. That step waits for
+   a `release` environment approval.
+
+3. **The backport merges itself** when the fix applies unchanged: the Dependencies App opens it and
+   the agent approves and queues it. A fix git had to fit to the line's code needs a review.
+4. **Approve the cut.** The merged backport starts the cut, which waits for a `release` environment
+   approval. The release App tags the minor's next free patch, and the tag's own run publishes the
+   images. `master`'s next patch release skips past that tag.
+5. **The pin deploys** like any release.
+
+The target is 30 minutes from dispatch to production, plus the approvals. Rerun the drill whenever
+the hotfix path changes. The last one shipped JSON Keys v2.10.3 on 2026-10-18 in 22 minutes:
+
+| Step                                 | Since dispatch |
+| ------------------------------------ | -------------- |
+| Release line created, after approval | 0:46           |
+| Backport opened and approved         | 1:03           |
+| Backport merged, after the line's CI | 6:17           |
+| Cut tagged, after approval           | 7:58           |
+| Images published                     | 12:22          |
+| Pin pull request opened and approved | 12:34          |
+| Pin merged, after the plans          | 17:39          |
+| Production healthy                   | 22:26          |
 
 Database migrations are never reverted. A data rollback is a [recovery](recovery.md), and a database
 host change is undone as described in [Undo a rollout](database.md#undo-a-rollout).
@@ -135,8 +167,8 @@ plans only the rest.
      release again.
    - **Rollout failed:** read the job log, then re-run it, or roll the host by hand
      ([Roll a host by hand](database.md#roll-a-host-by-hand)).
-   - **Health check failed after apply:** see [Alerts](alerts.md#authentication-health), then roll
-     back if the release caused it.
+   - **Health check failed after apply:** see [Alerts](alerts.md#authentication-health). If the
+     release caused it, [fix it forward](#fix-a-bad-release).
 3. **"Error acquiring the state lock":** a cancelled run left its lock behind. Make sure no deploy
    is running, then delete the lock ([State](state.md#remove-a-stale-lock)).
 
