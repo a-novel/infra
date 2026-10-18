@@ -60,7 +60,10 @@ resource "google_cloud_run_v2_job" "migrations" {
         image = local.image.migrations
 
         dynamic "env" {
-          for_each = merge(local.database_env, local.downtime_env)
+          for_each = merge(local.database_env, local.downtime_env, {
+            POSTGRES_MAX_OPEN_CONNS = "2"
+            POSTGRES_MAX_IDLE_CONNS = "1"
+          })
           content {
             name  = env.key
             value = env.value
@@ -149,11 +152,16 @@ resource "google_cloud_run_v2_service" "rest" {
 
       dynamic "env" {
         for_each = merge(local.database_env, local.downtime_env, {
-          GCLOUD_PROJECT_ID       = local.api_project_id
+          # One 64 MiB Argon2 hash at a time per vCPU: more slots add memory, not throughput.
+          ARGON2_MAX_CONCURRENT = "1"
+          GCLOUD_PROJECT_ID     = local.api_project_id
+          # The Go runtime does not read the container's memory limit; this lets it reclaim one
+          # hash's 64 MiB before the next one doubles the heap.
+          GOMEMLIMIT              = "384MiB"
           OTEL                    = "true"
           PLATFORM_AUTH_URL       = var.smtp.platform_auth_url
-          POSTGRES_MAX_IDLE_CONNS = "10"
-          POSTGRES_MAX_OPEN_CONNS = "20"
+          POSTGRES_MAX_IDLE_CONNS = "5"
+          POSTGRES_MAX_OPEN_CONNS = "10"
           REST_CLIENT_IP_HEADER   = "X-Client-IP"
           REST_PORT               = "8080"
           REST_TIMEOUT_SHUTDOWN   = "9s"
@@ -191,8 +199,9 @@ resource "google_cloud_run_v2_service" "rest" {
       resources {
         limits = { cpu = "1", memory = "512Mi" }
         # Accepted email keeps sending after the HTTP response returns.
-        cpu_idle          = false
-        startup_cpu_boost = false
+        cpu_idle = false
+        # Startup computes a dummy hash; the boost shortens a rollout's overlap.
+        startup_cpu_boost = true
       }
 
       # Cloud Run moves traffic only to a revision whose startup probe passes.
