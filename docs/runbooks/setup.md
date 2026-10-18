@@ -23,6 +23,8 @@ Repository variables (Settings → Secrets and variables → Actions):
 | `GCP_PLAN_SERVICE_ACCOUNT`                | `infra-plan@a-novel-management-prod.iam.gserviceaccount.com`                                               |
 | `GCP_DOWNTIME_WORKLOAD_IDENTITY_PROVIDER` | `…/providers/github-downtime`                                                                              |
 | `GCP_DOWNTIME_SERVICE_ACCOUNT`            | `infra-downtime@a-novel-management-prod.iam.gserviceaccount.com`                                           |
+| `GCP_HEALTH_WORKLOAD_IDENTITY_PROVIDER`   | `…/providers/github-health`                                                                                |
+| `GCP_HEALTH_SERVICE_ACCOUNT`              | `infra-health@a-novel-management-prod.iam.gserviceaccount.com`                                             |
 
 `DOWNTIME` holds the planned downtime. Never set it by hand: [downtime.yaml](downtime.md) writes
 it with the `anovelbot-agent` App, which needs **Variables: Read and write**, and publishes it on the

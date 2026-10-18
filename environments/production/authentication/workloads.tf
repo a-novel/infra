@@ -116,8 +116,8 @@ resource "google_cloud_run_v2_service_iam_member" "json_keys_invoker" {
   member   = module.api_runtime.member
 }
 
-# Only the platform and the deploy health check may call the REST API, so it can trust the visitor
-# IP the platform forwards. Their ID tokens name the custom audience, whatever the service URL.
+# Only the platform and the health checks may call the REST API, so it can trust the visitor IP the
+# platform forwards. Their ID tokens name the custom audience, whatever the service URL.
 resource "google_cloud_run_v2_service" "rest" {
   project              = local.api_project_id
   name                 = "agora-authentication-rest"
@@ -262,4 +262,16 @@ resource "google_cloud_run_v2_service_iam_member" "health_invoker" {
   location = local.region
   role     = "roles/run.servicesInvoker"
   member   = "serviceAccount:${local.deployer}"
+}
+
+# The scheduled health check looks up the REST API's URL and calls it as its own identity, which
+# only drift.yaml on master can mint.
+resource "google_cloud_run_v2_service_iam_member" "scheduled_health" {
+  for_each = toset(["roles/run.servicesInvoker", "roles/run.viewer"])
+
+  project  = local.api_project_id
+  name     = google_cloud_run_v2_service.rest.name
+  location = local.region
+  role     = each.value
+  member   = "serviceAccount:infra-health@${local.management_project_id}.iam.gserviceaccount.com"
 }

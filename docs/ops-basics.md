@@ -83,9 +83,10 @@ No service-account key exists anywhere. The trust conditions live in
 
 | Identity           | Used by                                                                                               | Can                                                 |
 | ------------------ | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| `infra-plan`       | pull-request plans, the drift check, the scheduled health check                                       | read everything                                     |
+| `infra-plan`       | pull-request plans, the drift check                                                                   | read everything                                     |
 | `infra-foundation` | `deploy.yaml`, `roll-database.yaml` and `recovery.yaml`, on `master`, in the `production` environment | change everything                                   |
 | `infra-downtime`   | `downtime.yaml`, on `master`                                                                          | start and cancel the planned downtime announcements |
+| `infra-health`     | the scheduled health check in `drift.yaml`, on `master`                                               | call Authentication's REST API                      |
 
 The read-only identity trusts pull requests into `master` and the drift workflow on `master`. GitHub
 issues no OIDC token to pull requests from forks, so outside contributors get no cloud access.

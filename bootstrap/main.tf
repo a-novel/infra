@@ -80,6 +80,15 @@ locals {
       workflows          = { "downtime.yaml" = null }
       pull_requests      = null
     }
+    # Authentication trusts the visitor IP header its callers send, so no pull request may mint the
+    # identity that calls it on a schedule.
+    health = {
+      service_account_id = "infra-health"
+      display_name       = "Infra scheduled health check"
+      provider_id        = "github-health"
+      workflows          = { "drift.yaml" = null }
+      pull_requests      = null
+    }
   }
 
   secret_definitions = merge({
