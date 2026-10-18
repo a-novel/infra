@@ -12,10 +12,11 @@ variable "database_images" {
 }
 
 variable "database_releases" {
-  description = "Existing numeric password version and release marker of each database host."
+  description = "Release marker and numeric owner and application role password versions of each database host."
   type = map(object({
-    revision         = string
-    password_version = string
+    revision             = string
+    password_version     = string
+    app_password_version = string
   }))
   default  = {}
   nullable = false
@@ -25,10 +26,11 @@ variable "database_releases" {
       toset(keys(var.database_releases)) == toset(["json-keys", "authentication", "genai"]) &&
       alltrue([for service, release in var.database_releases :
         can(regex("^[a-f0-9]{40}$", release.revision)) &&
-        can(regex("^[1-9][0-9]*$", release.password_version))
+        can(regex("^[1-9][0-9]*$", release.password_version)) &&
+        can(regex("^[1-9][0-9]*$", release.app_password_version))
       ])
     )
-    error_message = "Supply every database release with its revision and numeric credential version."
+    error_message = "Supply every database release with its revision and numeric credential versions."
   }
 }
 

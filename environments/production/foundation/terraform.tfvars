@@ -81,16 +81,19 @@ native_backups = {
 }
 database_releases = {
   json-keys = {
-    revision         = "13df9600c58d376562c1809782d0c533a10e91c5"
-    password_version = "2"
+    revision             = "13df9600c58d376562c1809782d0c533a10e91c5"
+    password_version     = "2"
+    app_password_version = "1"
   }
   authentication = {
-    revision         = "906476efeaeddef29b81dd7a32b9a6fa4e2ae0f6"
-    password_version = "2"
+    revision             = "906476efeaeddef29b81dd7a32b9a6fa4e2ae0f6"
+    password_version     = "2"
+    app_password_version = "1"
   }
   genai = {
-    revision         = "de87d803ccf9c4fff9d80bfe68862133d5e4ac2e"
-    password_version = "1"
+    revision             = "de87d803ccf9c4fff9d80bfe68862133d5e4ac2e"
+    password_version     = "1"
+    app_password_version = "1"
   }
 }
 database_images = {
