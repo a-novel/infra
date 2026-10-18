@@ -9,7 +9,7 @@ on:
       service:
         description: Service whose database and backup hosts move onto their applied configuration.
         type: choice
-        options: [json-keys, authentication]
+        options: [json-keys, authentication, genai]
 
 permissions: {}
 

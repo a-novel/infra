@@ -282,7 +282,7 @@ jobs:
   # planned downtime, the backup repository VM whenever its config changed. It reads the hosts, not
   # this deploy's changes, so it runs on every deploy.
   rollout:
-    needs: [json-keys, authentication]
+    needs: [json-keys, authentication, genai]
     if: ${{ !cancelled() && !failure() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -290,7 +290,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [json-keys, authentication]
+        service: [json-keys, authentication, genai]
     concurrency:
       group: roll-database-${{ matrix.service }}
       cancel-in-progress: false
