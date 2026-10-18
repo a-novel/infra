@@ -227,26 +227,3 @@ module "smoke" {
   network         = local.network
   downtime_start  = try(local.downtime_env.DOWNTIME_START, "")
 }
-
-moved {
-  from = google_cloud_run_v2_service_iam_member.smoke
-  to   = module.smoke.google_cloud_run_v2_service_iam_member.invoker
-}
-
-moved {
-  from = terraform_data.smoke
-  to   = module.smoke.terraform_data.smoke
-}
-
-moved {
-  from = google_cloud_run_v2_job.smoke
-  to   = module.smoke.google_cloud_run_v2_job.smoke
-}
-
-# The smoke job's earlier grant, through the shared runtime identity.
-resource "google_cloud_run_v2_service_iam_member" "smoke_invoker" {
-  name     = google_cloud_run_v2_service.grpc.name
-  location = local.region
-  role     = "roles/run.servicesInvoker"
-  member   = module.runtime.member
-}
