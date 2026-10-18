@@ -10,8 +10,8 @@ Every merge to `master` starts `deploy.yaml`. It compares `master` with the last
 deploy, and applies bootstrap and foundation only when their inputs changed since then:
 
 - a root's own directory, or a local module it calls;
-- the shared tooling, `.opentofu-version`, `.github/actions/` or `deploy.yaml`, which affects every
-  root.
+- the shared tooling, `.opentofu-version`, `.github/actions/tofu/` or `deploy.yaml`, which affects
+  every root. The other actions apply no root: the rollout and the health check run on every deploy.
 
 It applies every service root on every deploy. A service root also reads `DOWNTIME`, which no diff
 shows: a downtime written while another deploy waited or ran must still reach the services, and an
