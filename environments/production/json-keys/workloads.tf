@@ -38,9 +38,10 @@ locals {
 
 # Cloud Run names an execution after its job and token, and refuses a name it has used before. A
 # token taken from a replaced terraform_data is new on every change, a revert to an older image
-# included. It is hashed to fit the 63-character execution name.
+# included. It is hashed to fit the 63-character execution name. A new identity runs it too, so
+# its grants are proven at once rather than at the next release.
 resource "terraform_data" "migrations" {
-  triggers_replace = local.image.migrations
+  triggers_replace = [local.image.migrations, module.runtime.workloads["migrations"].service_account]
 }
 
 resource "google_cloud_run_v2_job" "application" {
@@ -59,7 +60,7 @@ resource "google_cloud_run_v2_job" "application" {
     parallelism = 1
 
     template {
-      service_account       = module.runtime.service_account
+      service_account       = module.runtime.workloads[each.key].service_account
       execution_environment = "EXECUTION_ENVIRONMENT_GEN2"
       timeout               = each.value.timeout
       max_retries           = each.value.retries
@@ -210,13 +211,36 @@ resource "google_cloud_run_v2_service" "grpc" {
   }
 }
 
-# The private service is unreachable from CI, so a one-shot job calls its
-# health RPC from inside the VPC after every new image.
-resource "google_cloud_run_v2_service_iam_member" "smoke" {
-  name     = google_cloud_run_v2_service.grpc.name
-  location = local.region
-  role     = "roles/run.servicesInvoker"
-  member   = module.runtime.workloads["smoke"].member
+# The smoke check runs as its own identity, which may only invoke the gRPC service.
+module "smoke" {
+  source = "../../../modules/smoke-check"
+
+  service = "json-keys"
+  region  = local.region
+  target = {
+    name       = google_cloud_run_v2_service.grpc.name
+    uri        = google_cloud_run_v2_service.grpc.uri
+    status_rpc = "anovel.jsonkeys.v2.StatusService/Status"
+  }
+  image           = local.image.grpc
+  service_account = module.runtime.workloads["smoke"].service_account
+  network         = local.network
+  downtime_start  = try(local.downtime_env.DOWNTIME_START, "")
+}
+
+moved {
+  from = google_cloud_run_v2_service_iam_member.smoke
+  to   = module.smoke.google_cloud_run_v2_service_iam_member.invoker
+}
+
+moved {
+  from = terraform_data.smoke
+  to   = module.smoke.terraform_data.smoke
+}
+
+moved {
+  from = google_cloud_run_v2_job.smoke
+  to   = module.smoke.google_cloud_run_v2_job.smoke
 }
 
 # The smoke job's earlier grant, through the shared runtime identity.
@@ -225,72 +249,4 @@ resource "google_cloud_run_v2_service_iam_member" "smoke_invoker" {
   location = local.region
   role     = "roles/run.servicesInvoker"
   member   = module.runtime.member
-}
-
-# A planned downtime skips the check, so its start is a trigger: clearing the downtime runs the check
-# again against the restarted service.
-resource "terraform_data" "smoke" {
-  triggers_replace = [local.image.grpc, try(local.downtime_env.DOWNTIME_START, ""), sha256(module.runtime.smoke_script)]
-}
-
-resource "google_cloud_run_v2_job" "smoke" {
-  name                = "agora-json-keys-smoke"
-  location            = local.region
-  deletion_protection = true
-  labels              = { environment = "production", component = "json-keys", role = "smoke" }
-  run_execution_token = substr(sha256(terraform_data.smoke.id), 0, 24)
-
-  template {
-    task_count  = 1
-    parallelism = 1
-
-    template {
-      service_account       = module.runtime.service_account
-      max_retries           = 0
-      timeout               = "360s"
-      execution_environment = "EXECUTION_ENVIRONMENT_GEN2"
-
-      containers {
-        image   = local.image.grpc
-        command = ["/bin/sh"]
-        args    = ["-c", module.runtime.smoke_script]
-        dynamic "env" {
-          for_each = {
-            PROTOCOL    = "grpc"
-            SERVICE_URL = google_cloud_run_v2_service.grpc.uri
-            STATUS_RPC  = "anovel.jsonkeys.v2.StatusService/Status"
-          }
-          content {
-            name  = env.key
-            value = env.value
-          }
-        }
-        dynamic "env" {
-          for_each = local.downtime_env
-          content {
-            name  = env.key
-            value = env.value
-          }
-        }
-        resources {
-          limits = { cpu = "1", memory = "512Mi" }
-        }
-      }
-
-      vpc_access {
-        egress = "ALL_TRAFFIC"
-        network_interfaces {
-          network    = local.network.network
-          subnetwork = local.network.subnetwork
-          tags       = local.network.tags
-        }
-      }
-    }
-  }
-
-  depends_on = [google_cloud_run_v2_service_iam_member.smoke_invoker]
-
-  lifecycle {
-    prevent_destroy = true
-  }
 }
