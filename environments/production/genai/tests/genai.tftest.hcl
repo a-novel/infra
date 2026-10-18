@@ -73,8 +73,8 @@ run "serves_privately_from_pinned_images_and_secrets" {
   }
 
   assert {
-    condition     = terraform_data.smoke.triggers_replace == [google_cloud_run_v2_service.grpc.template[0].containers[0].image, ""]
-    error_message = "Without a planned downtime, the smoke check runs once per gRPC image change."
+    condition     = terraform_data.smoke.triggers_replace == [google_cloud_run_v2_service.grpc.template[0].containers[0].image, "", filesha256("${path.module}/smoke.sh")]
+    error_message = "Without a planned downtime, the smoke check runs once per gRPC image or check change."
   }
 
   assert {
@@ -116,7 +116,7 @@ run "passes_the_planned_downtime_start" {
   }
 
   assert {
-    condition     = terraform_data.smoke.triggers_replace == [google_cloud_run_v2_service.grpc.template[0].containers[0].image, "2026-10-12T06:00:00Z"]
+    condition     = terraform_data.smoke.triggers_replace == [google_cloud_run_v2_service.grpc.template[0].containers[0].image, "2026-10-12T06:00:00Z", filesha256("${path.module}/smoke.sh")]
     error_message = "A planned downtime must replace the smoke trigger, so clearing it runs the check again."
   }
 }

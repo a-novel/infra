@@ -19,11 +19,20 @@ IDENTITY_TOKEN="$(wget -q -T 10 -O - --header='Metadata-Flavor: Google' "http://
 test -n "${IDENTITY_TOKEN}"
 export IDENTITY_TOKEN
 
+# A fresh invoker grant takes a minute or two to apply, so the check retries for two minutes.
+# grpcurl exits with 64 plus the gRPC status code, which names a failure without the response.
+attempt=1
 # Header expansion keeps the token out of the command-line arguments.
 # shellcheck disable=SC2016
-grpcurl -connect-timeout 10 -max-time 30 -max-msg-sz 4096 -expand-headers -H 'Authorization: Bearer ${IDENTITY_TOKEN}' -d '{}' "${GENAI_URL#https://}:443" anovel.genai.v0.StatusService/Status >/dev/null 2>&1 || {
+until grpcurl -connect-timeout 10 -max-time 15 -max-msg-sz 4096 -expand-headers -H 'Authorization: Bearer ${IDENTITY_TOKEN}' -d '{}' "${GENAI_URL#https://}:443" anovel.genai.v0.StatusService/Status >/dev/null 2>&1; do
+    code=$?
     # A check that began just before the downtime fails once the service stops.
     skip_if_started
-    exit 1
-}
+    if [ "${attempt}" -ge 12 ]; then
+        printf 'GenAI status call failed: grpcurl exited with %s.\n' "${code}"
+        exit 1
+    fi
+    attempt=$((attempt + 1))
+    sleep 10
+done
 printf 'GenAI application health passed.\n'
