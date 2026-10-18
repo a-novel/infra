@@ -6,7 +6,8 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY cmd/host-credentials ./cmd/host-credentials
 COPY internal/hostcredentials ./internal/hostcredentials
-RUN go build -ldflags="-s -w" -trimpath -o /host-credentials ./cmd/host-credentials
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    go build -ldflags="-s -w" -trimpath -o /host-credentials ./cmd/host-credentials
 
 FROM docker.io/library/alpine:3.24.2
 COPY --from=builder /host-credentials /host-credentials
