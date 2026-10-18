@@ -115,15 +115,17 @@ jobs:
 
       # The workflow token can't write variables; the agent App can.
       - id: token
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0 # zizmor: ignore[github-app] Narrowed through env.
+        # Variables only. The action reads every INPUT_PERMISSION-* variable as a permission, but
+        # declares no input for this one yet (actions/create-github-app-token#231): set as an
+        # input, it warns. Move it to `with:` once the action declares it, and drop the ignore.
+        env:
+          INPUT_PERMISSION-ACTIONS-VARIABLES: write
         with:
           client-id: ${{ vars.AGENT_BOT_CLIENT_ID }}
           private-key: ${{ secrets.AGENT_BOT_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: ${{ github.event.repository.name }}
-          # Variables only. The action forwards every permission-* input to GitHub, including
-          # this one it doesn't declare.
-          permission-actions-variables: write
 
       - name: Write and publish DOWNTIME, then deploy
         shell: bash
