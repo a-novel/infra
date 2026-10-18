@@ -8,7 +8,7 @@ main:
     - read_config:
         assign:
           - versions: ${json.decode(sys.get_env("TOKEN_VERSIONS"))}
-          - scheduled: ${args.workflow in json.decode(sys.get_env("WORKFLOWS"))}
+          - scheduled: ${args.workflow in json.decode(sys.get_env("SCHEDULED"))}
     - refuse_unscheduled:
         switch:
           - condition: ${scheduled == false}
