@@ -24,7 +24,8 @@ DATABASE_SUPERVISED=false
 
 remove_database_secret_files() {
     if [ -n "${DATABASE_COMPONENT}" ]; then
-        rm -f -- "${SECRETS_DIR}/${DATABASE_COMPONENT}-postgres-password"
+        rm -f -- "${SECRETS_DIR}/${DATABASE_COMPONENT}-postgres-password" \
+            "${SECRETS_DIR}/${DATABASE_COMPONENT}-app-password"
     fi
 }
 
@@ -245,8 +246,9 @@ activate_database_credentials() {
     local database_user="$2"
     local database_name="$3"
 
-    # The owner payload stays inside the container and only its SCRAM verifier
-    # is stored. Native physical backups need no separate SQL password or login.
+    # The owner and application role payloads stay inside the container and only
+    # their SCRAM verifiers are stored. Native physical backups need no separate
+    # SQL password or login.
     if ! docker exec --interactive --user postgres \
             --env 'PGOPTIONS=-c log_statement=none -c log_min_messages=panic -c log_min_error_statement=panic -c log_min_duration_statement=-1 -c log_min_duration_sample=-1 -c log_transaction_sample_rate=0 -c log_error_verbosity=terse -c pgaudit.log=none -c auto_explain.log_min_duration=-1' \
             "${container_name}" \
@@ -263,6 +265,11 @@ BEGIN
         current_user,
         pg_read_file('/run/agora-postgres-password')
     );
+    EXECUTE format(
+        'ALTER ROLE %I PASSWORD %L',
+        current_database() || '_app',
+        pg_read_file('/run/agora-app-password')
+    );
 EXCEPTION WHEN OTHERS THEN
     RAISE EXCEPTION 'database credential activation failed';
 END
@@ -270,6 +277,80 @@ $activate_password$;
 SQL
     then
         printf 'error: database credential activation failed for %s\n' "${container_name}" >&2
+        return 1
+    fi
+}
+
+# <database>_app owns schema public without superuser rights, for the service's connections.
+# Each boot restores the role's attributes and hands the role what superuser migrations created,
+# in one transaction. Objects the role already owns take no lock.
+converge_application_role() {
+    local container_name="$1"
+    local database_user="$2"
+    local database_name="$3"
+
+    if ! docker exec --interactive --user postgres "${container_name}" \
+            psql --no-psqlrc --set ON_ERROR_STOP=1 --single-transaction \
+            --username "${database_user}" --dbname "${database_name}" \
+            >/dev/null <<'APPLICATION_ROLE'
+SET LOCAL lock_timeout = '5s';
+SET LOCAL statement_timeout = '60s';
+DO $application_role$
+DECLARE
+    application_role text := current_database() || '_app';
+    target record;
+BEGIN
+    IF to_regrole(application_role) IS NULL THEN
+        EXECUTE format('CREATE ROLE %I', application_role);
+    END IF;
+    EXECUTE format(
+        'ALTER ROLE %I LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS',
+        application_role
+    );
+    EXECUTE format('ALTER SCHEMA public OWNER TO %I', application_role);
+
+    -- Indexes, row types, array types and column-owned sequences follow their owner.
+    -- Extension members stay with the extension.
+    FOR target IN
+        SELECT object.type, object.identity
+        FROM (
+            SELECT 'pg_class'::regclass AS classid, oid AS objid, relowner AS owner
+            FROM pg_class
+            WHERE relnamespace = 'public'::regnamespace
+              AND (relkind IN ('r', 'p', 'v', 'm', 'f')
+                   OR relkind = 'S' AND NOT EXISTS (
+                       SELECT FROM pg_depend
+                       WHERE classid = 'pg_class'::regclass AND objid = pg_class.oid AND objsubid = 0
+                         AND deptype = 'a'))
+            UNION ALL
+            SELECT 'pg_proc'::regclass, oid, proowner FROM pg_proc
+            WHERE pronamespace = 'public'::regnamespace
+            UNION ALL
+            SELECT 'pg_type'::regclass, oid, typowner FROM pg_type
+            WHERE typnamespace = 'public'::regnamespace
+        ) member
+        CROSS JOIN LATERAL pg_identify_object(member.classid, member.objid, 0) object
+        WHERE member.owner <> to_regrole(application_role)
+          AND NOT EXISTS (
+              SELECT FROM pg_depend
+              WHERE classid = member.classid AND objid = member.objid AND objsubid = 0
+                AND deptype IN ('e', 'i'))
+    LOOP
+        EXECUTE format('ALTER %s %s OWNER TO %I', target.type, target.identity, application_role);
+    END LOOP;
+
+    -- genai's migrations schedule its purge through pg_cron, whose jobs run as their owner.
+    IF to_regnamespace('cron') IS NOT NULL THEN
+        EXECUTE format('GRANT USAGE ON SCHEMA cron TO %I', application_role);
+        PERFORM cron.alter_job(jobid, username => application_role)
+        FROM cron.job
+        WHERE username = current_user AND database = current_database();
+    END IF;
+END
+$application_role$;
+APPLICATION_ROLE
+    then
+        printf 'error: application role convergence failed for %s\n' "${container_name}" >&2
         return 1
     fi
 }
@@ -418,6 +499,7 @@ start_database() {
     local database_user="$4"
     local database_name="$5"
     local password_file="$6"
+    local app_password_file="$7"
     local container_name="agora-postgres-${key}"
     local data_directory="${DATA_MOUNT}/${key}"
     local network_name="agora-database-${key}"
@@ -483,6 +565,7 @@ start_database() {
         --env "POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256 --auth-local=trust" \
         --mount "type=bind,source=${data_directory},target=/var/lib/postgresql" \
         --mount "type=bind,source=${password_file},target=/run/agora-postgres-password,readonly" \
+        --mount "type=bind,source=${app_password_file},target=/run/agora-app-password,readonly" \
         "${socket_options[@]}" \
         "${client_options[@]}" \
         "${image}" \
@@ -517,6 +600,7 @@ start_database() {
         sleep 1
     done
 
+    converge_application_role "${container_name}" "${database_user}" "${database_name}"
     activate_database_credentials "${container_name}" "${database_user}" "${database_name}"
 }
 
@@ -644,11 +728,13 @@ CONTAINER_MEMORY_MB="$(attribute_get agora-database-container-memory-mb)"
 MAX_CONNECTIONS="$(attribute_get agora-database-max-connections)"
 DATABASE_IMAGE="$(attribute_get "agora-${DATABASE_COMPONENT}-database-image")"
 PASSWORD_VERSION="$(attribute_get "agora-${DATABASE_COMPONENT}-postgres-password-version")"
+APP_PASSWORD_VERSION="$(attribute_get "agora-${DATABASE_COMPONENT}-app-password-version")"
 
 require_cpu "${CONTAINER_CPU}"
 require_numeric "container memory" "${CONTAINER_MEMORY_MB}"
 require_numeric "maximum connections" "${MAX_CONNECTIONS}"
 require_numeric "owner password version" "${PASSWORD_VERSION}"
+require_numeric "application password version" "${APP_PASSWORD_VERSION}"
 require_promoted_image "${DATABASE_IMAGE}" "service-${DATABASE_COMPONENT}/database"
 
 # ---- Host-only credentials and images ----
@@ -669,8 +755,10 @@ printf 'header = "Authorization: Bearer %s"\n' "${ACCESS_TOKEN}" > "${TOKEN_CONF
 unset ACCESS_TOKEN
 
 PASSWORD_FILE="${SECRETS_DIR}/${DATABASE_COMPONENT}-postgres-password"
+APP_PASSWORD_FILE="${SECRETS_DIR}/${DATABASE_COMPONENT}-app-password"
 
 fetch_secret "production-${DATABASE_COMPONENT}-postgres-password" "${PASSWORD_VERSION}" "${PASSWORD_FILE}"
+fetch_secret "production-${DATABASE_COMPONENT}-app-password" "${APP_PASSWORD_VERSION}" "${APP_PASSWORD_FILE}"
 
 # Docker invokes the standalone helper, which obtains short-lived credentials
 # from the attached VM identity. This file contains only the registry hostname
@@ -693,7 +781,8 @@ start_database \
     "${DATABASE_PORT}" \
     "${DATABASE_NAME}" \
     "${DATABASE_NAME}" \
-    "${PASSWORD_FILE}"
+    "${PASSWORD_FILE}" \
+    "${APP_PASSWORD_FILE}"
 
 publish_database_status healthy
 printf 'Database release %s is healthy.\n' "${RELEASE_REVISION}"

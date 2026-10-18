@@ -87,6 +87,15 @@ host is an `e2-standard-2` with a 1.5 vCPU, 6 GiB container and 150 connections.
 - PostgreSQL 18 from the service's `database` image, in a container limited to 0.75 vCPU, 1536 MiB
   and 50 connections, supervised by systemd.
 
+Each database has two login roles:
+
+- `<database>` owns the database and is the cluster's superuser;
+- `<database>_app` owns schema `public` and holds no superuser, role or database rights.
+
+At boot, the host sets both passwords. The host then hands `<database>_app` every object in `public`
+outside an extension, and GenAI's pg_cron jobs. Objects from an earlier superuser migration change
+owner this way.
+
 JSON Keys and Authentication each have their own **backup repository VM**, an `e2-micro`: JSON
 Keys `10.20.0.6`, Authentication `10.20.0.7`. GenAI enrolls in native backups later. Foundation's
 `native_backups.<service>.repository_ip` sets each address. The service root reserves it for the VM,

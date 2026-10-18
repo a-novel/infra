@@ -44,12 +44,16 @@ there: the Google account, the database role, and so on.
 
 ### Database passwords
 
-The database host sets its owner password at boot, from the version in foundation's
-`database_releases.<service>.password_version`. The service reads the same secret through
-`secret_versions.postgres-password` in its root.
+The database host sets two passwords at boot, each from a version in foundation's
+`database_releases.<service>`:
+
+| Secret                | Role             | Host version           | Service version                       |
+| --------------------- | ---------------- | ---------------------- | ------------------------------------- |
+| `*-postgres-password` | `<database>`     | `password_version`     | `secret_versions.postgres-password`   |
+| `*-app-password`      | `<database>_app` | `app_password_version` | none yet: no service connects with it |
 
 1. Add the version.
-2. In **one** pull request, bump both values.
+2. In **one** pull request, bump the host version and the service version.
 3. Merge it as a [database host change](database.md#change-a-database-host), during a planned
    downtime. The deploy gives the service the new version, then the rollout restarts the host, which
    sets it. The services refuse work during the downtime, so nothing fails in between.

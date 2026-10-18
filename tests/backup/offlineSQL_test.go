@@ -34,7 +34,7 @@ func testOfflineSQL(t *testing.T, service string) {
 	dataSQL := string(query)
 	p := newProof(t, service)
 	role := "agora_" + strings.ReplaceAll(service, "-", "_")
-	p.sql(t, "CREATE ROLE "+role+" LOGIN SUPERUSER; CREATE ROLE "+role+"_backup LOGIN; GRANT pg_read_all_data TO "+role+"_backup;")
+	p.sql(t, "CREATE ROLE "+role+" LOGIN SUPERUSER; CREATE ROLE "+role+"_app LOGIN; CREATE ROLE "+role+"_backup LOGIN; GRANT pg_read_all_data TO "+role+"_backup;")
 	p.sql(t, "CREATE DATABASE "+role+" OWNER "+role+";")
 	run(t, "psql", "-X", "-h", p.root, "-d", role, "-v", "ON_ERROR_STOP=1", "-f", "/docker-entrypoint-initdb.d/init.sql")
 	sql := func(query string) string {

@@ -17,7 +17,9 @@ func TestCollationPreparation(t *testing.T) {
 	}
 	asset, err := os.ReadFile("/database-startup.sh")
 	require.NoError(t, err)
-	_, sql, found := strings.Cut(string(asset), "SET LOCAL lock_timeout = ")
+	_, sql, found := strings.Cut(string(asset), "<<'COLLATION'\n")
+	require.True(t, found)
+	_, sql, found = strings.Cut(sql, "SET LOCAL lock_timeout = ")
 	require.True(t, found)
 	sql, _, found = strings.Cut(sql, "\nSQL\n")
 	require.True(t, found)
