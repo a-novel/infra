@@ -93,11 +93,13 @@ jobs:
         uses: $/.github/actions/build-tooling-image
         with:
           image_name: host-credentials
+          trivy_installed: "true"
 
       - name: Build and scan the restore worker
         uses: $/.github/actions/build-tooling-image
         with:
           image_name: native-restore
+          trivy_installed: "true"
 
   lint-repository:
     runs-on: ubuntu-24.04
