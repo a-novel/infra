@@ -107,6 +107,14 @@ locals {
       contract = "POSTGRES_PASSWORD"
       purpose  = "JSON Keys database owner password"
     }
+    production-genai-openai-api-key = {
+      contract = "OPENAI_API_KEY"
+      purpose  = "GenAI OpenAI API key, restricted to the Responses endpoints"
+    }
+    production-genai-postgres-password = {
+      contract = "POSTGRES_PASSWORD"
+      purpose  = "GenAI database owner password"
+    }
     production-downtime-discord-webhook = {
       contract = "DISCORD_WEBHOOK"
       purpose  = "Discord webhook of the public planned downtime channel"
