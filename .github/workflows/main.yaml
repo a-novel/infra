@@ -127,6 +127,10 @@ jobs:
           npx --yes "prettier@$prettier_version" --no-config --no-editorconfig --check .
           npx --yes --package "renovate@$renovate_version" -- renovate-config-validator --strict
 
+      - name: Test the workflow scripts
+        shell: bash
+        run: node --test '.github/scripts/*.test.mjs'
+
       - name: Lint Go
         uses: a-novel-kit/workflows/go-actions/lint-go@v1.63.0
 
