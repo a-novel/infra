@@ -71,9 +71,11 @@ gh workflow run downtime.yaml --repo a-novel/infra -f operation=schedule \
   empty. To extend a downtime, leave `start` empty and pass a later `end`, such as `-f end=3h` for
   three hours after the start.
 
-The workflow checks the components and dates, publishes the document and writes `DOWNTIME`. Once it
-ends, `deploy.yaml` runs a full deploy, which passes `DOWNTIME_START` to the listed services. Every
-later deploy applies the current `DOWNTIME` too, so a merge landing meanwhile cannot lose it.
+The workflow checks the components and dates, publishes the document and writes `DOWNTIME`. When
+the run ends, `deploy.yaml` runs a full deploy, which passes `DOWNTIME_START` to the listed services.
+A run that fails before writing `DOWNTIME` deploys nothing. A failure in the announcements alone
+still deploys. Every later deploy applies the current `DOWNTIME` too, so a merge landing meanwhile
+cannot lose it.
 **Check that a deploy succeeded after the change, before `start`:** if none did, the services keep
 serving at `start`. The rollout then refuses to restart their database hosts, until a deploy run by
 hand gives them `DOWNTIME_START`.

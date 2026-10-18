@@ -10,9 +10,8 @@ on:
     branches: [master]
   workflow_dispatch:
   # A dispatch from downtime.yaml would run as github-actions[bot], which the
-  # admin gate refuses. This run inherits the downtime run's triggering actor,
-  # and starts even when that run failed: DOWNTIME then holds its old or its new
-  # value, and both are safe to apply.
+  # admin gate refuses. This run inherits the downtime run's triggering actor.
+  # It applies only once that run's downtime job validated and set DOWNTIME.
   workflow_run: # zizmor: ignore[dangerous-triggers] It deploys master and reads nothing from the downtime run.
     workflows: [downtime]
     branches: [master]
@@ -42,6 +41,7 @@ jobs:
       pull-requests: read
     outputs:
       allow: ${{ steps.changes.outputs.allow }}
+      apply: ${{ steps.changes.outputs.apply }}
       deploys: ${{ steps.changes.outputs.deploys }}
       commit: ${{ steps.changes.outputs.commit }}
       bootstrap: ${{ steps.changes.outputs.bootstrap }}
@@ -62,6 +62,7 @@ jobs:
         shell: bash
         env:
           EVENT: ${{ github.event_name }}
+          DOWNTIME_JOBS: ${{ github.event.workflow_run.jobs_url }}
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           SERVER_URL: ${{ github.server_url }}
@@ -69,6 +70,16 @@ jobs:
           AGENT_BOT_LOGIN: ${{ vars.AGENT_BOT_LOGIN }}
         run: |
           set -euo pipefail
+          # A downtime run whose downtime job failed set no DOWNTIME, so nothing applies. A failure
+          # of its announcements alone still deploys the downtime it set.
+          if [ "$EVENT" = workflow_run ] &&
+            [ "$(gh api "$DOWNTIME_JOBS" --jq '.jobs[] | select(.name == "downtime") | .conclusion')" != success ]; then
+            echo "apply=false" | tee -a "$GITHUB_OUTPUT"
+            echo "The downtime run set no DOWNTIME, so nothing deploys." >>"$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "apply=true" >>"$GITHUB_OUTPUT"
+
           # Diff against the last successful deploy, not the previous commit, so
           # the changes of a failed or replaced run are deployed by the next one.
           base="$(gh run list --repo "$REPOSITORY" --workflow deploy.yaml --branch master --status success \
@@ -199,7 +210,7 @@ jobs:
   services:
     name: ${{ matrix.service }}
     needs: [changes, foundation]
-    if: ${{ !cancelled() && !failure() }}
+    if: ${{ !cancelled() && !failure() && needs.changes.outputs.apply == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: production
@@ -229,7 +240,7 @@ jobs:
   # this deploy's changes, so it runs on every deploy.
   rollout:
     needs: [changes, services]
-    if: ${{ !cancelled() && !failure() }}
+    if: ${{ !cancelled() && !failure() && needs.changes.outputs.apply == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: production
