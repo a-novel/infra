@@ -96,6 +96,10 @@ locals {
       contract = "POSTGRES_PASSWORD"
       purpose  = "Authentication database owner password"
     }
+    production-authentication-app-password = {
+      contract = "POSTGRES_PASSWORD"
+      purpose  = "Authentication application role password, for a login without superuser rights"
+    }
     production-authentication-smtp-sender-password = {
       contract = "SMTP_SENDER_PASSWORD"
       purpose  = "Authentication service production SMTP credential"
@@ -116,6 +120,10 @@ locals {
       contract = "POSTGRES_PASSWORD"
       purpose  = "JSON Keys database owner password"
     }
+    production-json-keys-app-password = {
+      contract = "POSTGRES_PASSWORD"
+      purpose  = "JSON Keys application role password, for a login without superuser rights"
+    }
     production-genai-openai-api-key = {
       contract = "OPENAI_API_KEY"
       purpose  = "GenAI OpenAI API key, restricted to the Responses endpoints"
@@ -123,6 +131,10 @@ locals {
     production-genai-postgres-password = {
       contract = "POSTGRES_PASSWORD"
       purpose  = "GenAI database owner password"
+    }
+    production-genai-app-password = {
+      contract = "POSTGRES_PASSWORD"
+      purpose  = "GenAI application role password, for a login without superuser rights"
     }
     production-downtime-discord-webhook = {
       contract = "DISCORD_WEBHOOK"
