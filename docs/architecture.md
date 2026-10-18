@@ -132,13 +132,10 @@ them. Operators may add and read versions of every secret.
 
 | Secret                                                     | Read by                                                         |
 | ---------------------------------------------------------- | --------------------------------------------------------------- |
-| `production-json-keys-postgres-password`                   | Nobody: the owner has no password                               |
 | `production-json-keys-app-master-key`                      | JSON Keys runtime, rotation job                                 |
-| `production-authentication-postgres-password`              | Nobody: the owner has no password                               |
 | `production-authentication-smtp-sender-password`           | Authentication API                                              |
 | `production-authentication-waitlist-secret`                | Authentication API, when the waitlist is on                     |
 | `production-authentication-super-admin-password`           | The initializer identity                                        |
-| `production-genai-postgres-password`                       | Nobody: the owner has no password                               |
 | `production-genai-openai-api-key`                          | GenAI runtime and sweep                                         |
 | `production-<service>-app-password`                        | Database host, database workloads, Authentication's initializer |
 | `production-<service>-pgbackrest-{ca,database,repository}` | Database host and repository VM (TLS)                           |

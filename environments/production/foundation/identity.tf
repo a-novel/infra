@@ -101,18 +101,6 @@ locals {
   }
 
   runtime_secret_access = {
-    "database:authentication-password" = {
-      identity = "authentication_database"
-      secret   = "production-authentication-postgres-password"
-    }
-    "database:json-keys-password" = {
-      identity = "json_keys_database"
-      secret   = "production-json-keys-postgres-password"
-    }
-    "database:genai-password" = {
-      identity = "genai_database"
-      secret   = "production-genai-postgres-password"
-    }
     # The host sets the application role's password at boot.
     "database:authentication-app-password" = {
       identity = "authentication_database"
