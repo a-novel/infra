@@ -23,6 +23,7 @@ locals {
     POSTGRES_TLS_ENABLED = "false"
   }
   # The servers call the provider, so both read its key; the migrations job reads only the database.
+  migrations_secret_env = { POSTGRES_PASSWORD = "postgres-password" }
   server_secret_env = {
     POSTGRES_PASSWORD = "postgres-password"
     OPENAI_API_KEY    = "openai-api-key"
@@ -75,12 +76,15 @@ resource "google_cloud_run_v2_job" "migrations" {
           }
         }
 
-        env {
-          name = "POSTGRES_PASSWORD"
-          value_source {
-            secret_key_ref {
-              secret  = "projects/${local.management_project_id}/secrets/production-genai-postgres-password"
-              version = tostring(var.secret_versions["postgres-password"])
+        dynamic "env" {
+          for_each = local.migrations_secret_env
+          content {
+            name = env.key
+            value_source {
+              secret_key_ref {
+                secret  = "projects/${local.management_project_id}/secrets/production-genai-${env.value}"
+                version = tostring(var.secret_versions[env.value])
+              }
             }
           }
         }
@@ -316,6 +320,14 @@ resource "google_cloud_run_v2_service" "sweep" {
 
 # The private service is unreachable from CI, so a one-shot job calls its health RPC from inside
 # the VPC after every new image.
+resource "google_cloud_run_v2_service_iam_member" "smoke" {
+  name     = google_cloud_run_v2_service.grpc.name
+  location = local.region
+  role     = "roles/run.servicesInvoker"
+  member   = module.runtime.workloads["smoke"].member
+}
+
+# The smoke job's earlier grant, through the shared runtime identity.
 resource "google_cloud_run_v2_service_iam_member" "smoke_invoker" {
   name     = google_cloud_run_v2_service.grpc.name
   location = local.region

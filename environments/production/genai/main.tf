@@ -32,6 +32,13 @@ module "runtime" {
   region                = local.region
   management_project_id = local.management_project_id
   secrets               = toset([for name in keys(var.secret_versions) : "production-genai-${name}"])
-  deployer              = local.deployer
-  alert_email           = var.alert_email
+  # The migrations, the sweep and the smoke check run apart from the gRPC server, each reading only
+  # what it mounts.
+  workloads = {
+    migrations = { secrets = toset([for name in values(local.migrations_secret_env) : "production-genai-${name}"]) }
+    sweep      = { secrets = toset([for name in values(local.server_secret_env) : "production-genai-${name}"]), telemetry = true }
+    smoke      = {}
+  }
+  deployer    = local.deployer
+  alert_email = var.alert_email
 }

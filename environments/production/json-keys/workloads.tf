@@ -212,6 +212,14 @@ resource "google_cloud_run_v2_service" "grpc" {
 
 # The private service is unreachable from CI, so a one-shot job calls its
 # health RPC from inside the VPC after every new image.
+resource "google_cloud_run_v2_service_iam_member" "smoke" {
+  name     = google_cloud_run_v2_service.grpc.name
+  location = local.region
+  role     = "roles/run.servicesInvoker"
+  member   = module.runtime.workloads["smoke"].member
+}
+
+# The smoke job's earlier grant, through the shared runtime identity.
 resource "google_cloud_run_v2_service_iam_member" "smoke_invoker" {
   name     = google_cloud_run_v2_service.grpc.name
   location = local.region

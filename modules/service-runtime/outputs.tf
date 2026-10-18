@@ -8,6 +8,13 @@ output "member" {
   value       = google_service_account.runtime.member
 }
 
+output "workloads" {
+  description = "Each workload's identity, by role: its service account email and IAM member."
+  value = { for role, account in google_service_account.workload :
+    role => { service_account = account.email, member = account.member }
+  }
+}
+
 output "repositories" {
   description = "Image repository URLs by purpose (production, tooling)."
   value = { for purpose, repository in google_artifact_registry_repository.images :

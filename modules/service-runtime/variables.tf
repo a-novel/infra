@@ -33,6 +33,20 @@ variable "secrets" {
   type        = set(string)
 }
 
+variable "workloads" {
+  description = "Workloads that run apart from the main server, by role: each gets its own identity, which reads only the secret IDs listed and writes telemetry only when asked."
+  type = map(object({
+    secrets   = optional(set(string), [])
+    telemetry = optional(bool, false)
+  }))
+  default = {}
+
+  validation {
+    condition     = alltrue([for role in keys(var.workloads) : length("agora-${var.service}-${role}") <= 30])
+    error_message = "Each workload's account ID, agora-<service>-<role>, must fit 30 characters."
+  }
+}
+
 variable "deployer" {
   description = "Service account email that deploys the workloads."
   type        = string

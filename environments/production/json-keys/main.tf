@@ -30,8 +30,13 @@ module "runtime" {
   region                = local.region
   management_project_id = local.management_project_id
   secrets               = toset([for name in keys(var.secret_versions) : "production-json-keys-${name}"])
-  deployer              = local.deployer
-  alert_email           = var.alert_email
+  # The jobs and the smoke check run apart from the gRPC server, each reading only what it mounts.
+  workloads = merge(
+    { for job, config in local.jobs : job => { secrets = toset([for name in values(config.secrets) : "production-json-keys-${name}"]) } },
+    { smoke = {} },
+  )
+  deployer    = local.deployer
+  alert_email = var.alert_email
 }
 
 module "backups" {
