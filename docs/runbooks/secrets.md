@@ -7,7 +7,7 @@ never reach state, plans or Git. Each workload reads the numeric version pinned 
 
 ## Rotate a secret
 
-This is the general procedure. Database passwords, the SMTP password, the waitlist secret and the
+This is the general procedure. The database password, the SMTP password, the waitlist secret and the
 pgBackRest certificates rotate differently, because something besides the service reads them.
 `production-json-keys-app-master-key` has no rotation procedure: it encrypts the signing keys JSON
 Keys stores, and a new value cannot decrypt them.
@@ -20,13 +20,12 @@ Keys stores, and a new value cannot decrypt them.
    gcloud secrets versions list "$SECRET" --project="$MGMT" --limit=3
    ```
 
-   | Secret                | Format                                                              |
-   | --------------------- | ------------------------------------------------------------------- |
-   | `*-postgres-password` | 32–128 characters, `[A-Za-z0-9_-]`, different per service           |
-   | `*-app-password`      | the same format, different from the service's `*-postgres-password` |
-   | `*-app-master-key`    | 64 hexadecimal characters                                           |
-   | `*-waitlist-secret`   | at least 32 characters                                              |
-   | `*-openai-api-key`    | an OpenAI project key restricted to the Responses API               |
+   | Secret              | Format                                                    |
+   | ------------------- | --------------------------------------------------------- |
+   | `*-app-password`    | 32–128 characters, `[A-Za-z0-9_-]`, different per service |
+   | `*-app-master-key`  | 64 hexadecimal characters                                 |
+   | `*-waitlist-secret` | at least 32 characters                                    |
+   | `*-openai-api-key`  | an OpenAI project key restricted to the Responses API     |
 
 2. Pin the new number in a pull request (`secret_versions` in the service root) and merge. Deploy
    rolls out a new revision that reads it.
@@ -42,18 +41,15 @@ Keys stores, and a new value cannot decrypt them.
 Disabling a version does not revoke the credential where it was issued. For a leak, also revoke it
 there: the Google account, the database role, and so on.
 
-### Database passwords
+### Database password
 
-The database host sets two passwords at boot, each from a version in foundation's
-`database_releases.<service>`:
-
-| Secret                | Role             | Host version           | Service version                        |
-| --------------------- | ---------------- | ---------------------- | -------------------------------------- |
-| `*-postgres-password` | `<database>`     | `password_version`     | none: no service connects as the owner |
-| `*-app-password`      | `<database>_app` | `app_password_version` | `secret_versions.app-password`         |
+The database host sets the application role's password at boot, from foundation's
+`database_releases.<service>.app_password_version`. The service reads the same secret through
+`secret_versions.app-password` in its root. The owner has no password: it logs in only through the
+host's local socket.
 
 1. Add the version.
-2. In **one** pull request, bump the host version, and the service version for `*-app-password`.
+2. In **one** pull request, bump both values.
 3. Merge it as a [database host change](database.md#change-a-database-host), during a planned
    downtime. The deploy gives the service the new version, then the rollout restarts the host, which
    sets it. The services refuse work during the downtime, so nothing fails in between.

@@ -24,7 +24,7 @@ DATABASE_SUPERVISED=false
 
 remove_database_secret_files() {
     if [ -n "${DATABASE_COMPONENT}" ]; then
-        rm -f -- "${SECRETS_DIR}/${DATABASE_COMPONENT}-postgres-password" \
+        rm -f -- "${SECRETS_DIR}/${DATABASE_COMPONENT}-initdb-password" \
             "${SECRETS_DIR}/${DATABASE_COMPONENT}-app-password"
     fi
 }
@@ -246,9 +246,9 @@ activate_database_credentials() {
     local database_user="$2"
     local database_name="$3"
 
-    # The owner and application role payloads stay inside the container and only
-    # their SCRAM verifiers are stored. Native physical backups need no separate
-    # SQL password or login.
+    # The owner logs in only through the local trust socket, so it keeps no password. The
+    # application role's payload stays inside the container and only its SCRAM verifier is
+    # stored. Native physical backups need no separate SQL password or login.
     if ! docker exec --interactive --user postgres \
             --env 'PGOPTIONS=-c log_statement=none -c log_min_messages=panic -c log_min_error_statement=panic -c log_min_duration_statement=-1 -c log_min_duration_sample=-1 -c log_transaction_sample_rate=0 -c log_error_verbosity=terse -c pgaudit.log=none -c auto_explain.log_min_duration=-1' \
             "${container_name}" \
@@ -260,11 +260,7 @@ activate_database_credentials() {
             >/dev/null 2>&1 <<'SQL'
 DO $activate_password$
 BEGIN
-    EXECUTE format(
-        'ALTER ROLE %I PASSWORD %L',
-        current_user,
-        pg_read_file('/run/agora-postgres-password')
-    );
+    EXECUTE format('ALTER ROLE %I PASSWORD NULL', current_user);
     EXECUTE format(
         'ALTER ROLE %I PASSWORD %L',
         current_database() || '_app',
@@ -727,13 +723,11 @@ CONTAINER_CPU="$(attribute_get agora-database-container-cpu)"
 CONTAINER_MEMORY_MB="$(attribute_get agora-database-container-memory-mb)"
 MAX_CONNECTIONS="$(attribute_get agora-database-max-connections)"
 DATABASE_IMAGE="$(attribute_get "agora-${DATABASE_COMPONENT}-database-image")"
-PASSWORD_VERSION="$(attribute_get "agora-${DATABASE_COMPONENT}-postgres-password-version")"
 APP_PASSWORD_VERSION="$(attribute_get "agora-${DATABASE_COMPONENT}-app-password-version")"
 
 require_cpu "${CONTAINER_CPU}"
 require_numeric "container memory" "${CONTAINER_MEMORY_MB}"
 require_numeric "maximum connections" "${MAX_CONNECTIONS}"
-require_numeric "owner password version" "${PASSWORD_VERSION}"
 require_numeric "application password version" "${APP_PASSWORD_VERSION}"
 require_promoted_image "${DATABASE_IMAGE}" "service-${DATABASE_COMPONENT}/database"
 
@@ -754,10 +748,13 @@ TOKEN_CONFIG="$(mktemp /run/agora/secret-manager-curl.XXXXXX)"
 printf 'header = "Authorization: Bearer %s"\n' "${ACCESS_TOKEN}" > "${TOKEN_CONFIG}"
 unset ACCESS_TOKEN
 
-PASSWORD_FILE="${SECRETS_DIR}/${DATABASE_COMPONENT}-postgres-password"
+PASSWORD_FILE="${SECRETS_DIR}/${DATABASE_COMPONENT}-initdb-password"
 APP_PASSWORD_FILE="${SECRETS_DIR}/${DATABASE_COMPONENT}-app-password"
 
-fetch_secret "production-${DATABASE_COMPONENT}-postgres-password" "${PASSWORD_VERSION}" "${PASSWORD_FILE}"
+# The image needs an owner password only to initialize a new disk. This one is never stored, and
+# activation removes it on every boot.
+head -c 36 /dev/urandom | base64 > "${PASSWORD_FILE}"
+chmod 0444 "${PASSWORD_FILE}"
 fetch_secret "production-${DATABASE_COMPONENT}-app-password" "${APP_PASSWORD_VERSION}" "${APP_PASSWORD_FILE}"
 
 # Docker invokes the standalone helper, which obtains short-lived credentials

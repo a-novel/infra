@@ -83,8 +83,7 @@ A **database host change** is any change that restarts the database host once ap
 - a new database image digest, which a service release brings;
 - a startup, OS or TLS setting: `native_backups` or `database_*` in foundation's
   `terraform.tfvars`;
-- a database password version: `database_releases.<service>.password_version` or
-  `app_password_version`;
+- the application role's password version: `database_releases.<service>.app_password_version`;
 - the machine type, container size or connection limit (see [capacity](#capacity)).
 
 The database is unavailable while its host restarts, so these changes happen during a
