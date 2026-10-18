@@ -2,11 +2,20 @@ name: deploy
 
 # Every merge to master applies the roots it changed. Service roots deploy in
 # parallel, so a change one service needs from another merges first, on its own.
-# A manual run applies every root. Disable this workflow to freeze production.
+# A manual run applies every root, and so does the end of a downtime.yaml run,
+# which changes DOWNTIME. Disable this workflow to freeze production.
 on:
   push:
     branches: [master]
   workflow_dispatch:
+  # A dispatch from downtime.yaml would run as github-actions[bot], which the
+  # admin gate refuses. This run inherits the downtime run's triggering actor,
+  # and starts even when that run failed: DOWNTIME then holds its old or its new
+  # value, and both are safe to apply.
+  workflow_run: # zizmor: ignore[dangerous-triggers] It deploys master and reads nothing from the downtime run.
+    workflows: [downtime]
+    branches: [master]
+    types: [completed]
 
 permissions: {}
 
@@ -39,8 +48,8 @@ jobs:
       json_keys: ${{ steps.changes.outputs.json_keys }}
       authentication: ${{ steps.changes.outputs.authentication }}
     steps:
-      # A manual run applies every root, and workflow_dispatch is open to anyone with write access.
-      - if: github.event_name == 'workflow_dispatch'
+      # A manual or downtime run applies every root, and anyone with write access can start either.
+      - if: github.event_name != 'push'
         uses: a-novel-kit/workflows/generic-actions/require-role@v1.63.0
         with:
           roles: admin
@@ -69,9 +78,9 @@ jobs:
             all=true
             commits=""
           fi
-          # A manual run applies every root, and still honours every pull request since the last
-          # successful deploy, plus the one that made HEAD.
-          [ "$EVENT" = workflow_dispatch ] && all=true
+          # A manual or downtime run applies every root, and still honours every pull request since
+          # the last successful deploy, plus the one that made HEAD.
+          [ "$EVENT" != push ] && all=true
           commits="$(printf '%s\n%s\n' "$commits" "$(git rev-parse HEAD)" | sort -u | sed '/^$/d')"
 
           # A root depends on the shared tooling, its directory and the local modules it calls.

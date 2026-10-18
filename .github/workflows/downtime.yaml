@@ -1,8 +1,8 @@
 name: downtime
 
-# Schedules, changes or clears the one planned downtime, publishes it for the platform, then
-# applies it with a full deploy. It is the only writer of the DOWNTIME variable and of the
-# downtime branch, and only repository admins run it.
+# Schedules, changes or clears the one planned downtime and publishes it for the platform. Once
+# the run ends, deploy.yaml applies it with a full deploy. It is the only writer of the DOWNTIME
+# variable and of the downtime branch, and only repository admins run it.
 on:
   workflow_dispatch:
     inputs:
@@ -38,7 +38,6 @@ jobs:
       deployment: false
     timeout-minutes: 5
     permissions:
-      actions: write
       # Publishes the document on the downtime branch.
       contents: write
     outputs:
@@ -127,7 +126,7 @@ jobs:
           owner: ${{ github.repository_owner }}
           repositories: ${{ github.event.repository.name }}
 
-      - name: Write and publish DOWNTIME, then deploy
+      - name: Write and publish DOWNTIME
         shell: bash
         env:
           APP_TOKEN: ${{ steps.token.outputs.token }}
@@ -165,13 +164,12 @@ jobs:
             publish
           fi
 
-          gh workflow run deploy.yaml --repo "$REPOSITORY" --ref master
           {
             echo "Previous downtime: \`${PREVIOUS:-none}\`"
             echo
             echo "New downtime: \`${WINDOW:-none}\`, published at https://raw.githubusercontent.com/$REPOSITORY/downtime/downtime.json"
             echo
-            echo "A full deploy is applying it."
+            echo "A full deploy applies it once this run ends: https://github.com/$REPOSITORY/actions/workflows/deploy.yaml"
           } >>"$GITHUB_STEP_SUMMARY"
 
   # Kept apart from the downtime: a failure here leaves the downtime applied, and "Re-run failed

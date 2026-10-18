@@ -70,10 +70,11 @@ gh workflow run downtime.yaml --repo a-novel/infra -f operation=schedule \
   empty. To extend a downtime, leave `start` empty and pass a later `end`, such as `-f end=3h` for
   three hours after the start.
 
-The workflow checks the components and dates, publishes the document, writes `DOWNTIME`, then runs a
-full deploy, which passes `DOWNTIME_START` to the listed services. **Check that this deploy succeeded
-before `start`:** if it failed, the services keep serving at `start`. The rollout then refuses to
-restart their database hosts, until a deploy run by hand gives them `DOWNTIME_START`.
+The workflow checks the components and dates, publishes the document and writes `DOWNTIME`. Once it
+ends, `deploy.yaml` runs a full deploy, which passes `DOWNTIME_START` to the listed services.
+**Check that this deploy succeeded before `start`:** if it failed, the services keep serving at
+`start`. The rollout then refuses to restart their database hosts, until a deploy run by hand gives
+them `DOWNTIME_START`.
 
 ## While it runs
 
@@ -90,9 +91,9 @@ restart their database hosts, until a deploy run by hand gives them `DOWNTIME_ST
 gh workflow run downtime.yaml --repo a-novel/infra -f operation=clear
 ```
 
-Clear it once the work is done and verified. The workflow deletes `DOWNTIME`, publishes `null`, and
-runs a full deploy, which restarts the services without `DOWNTIME_START`. The health check runs
-again, and so does the JSON Keys smoke check when the downtime listed JSON Keys.
+Clear it once the work is done and verified. The workflow deletes `DOWNTIME` and publishes `null`,
+then `deploy.yaml` runs a full deploy, which restarts the services without `DOWNTIME_START`. The
+health check runs again, and so does the JSON Keys smoke check when the downtime listed JSON Keys.
 
 A forgotten downtime keeps its services down. The drift workflow fails every three hours once `end`
 has passed, as a reminder to clear it or to schedule a later end.
