@@ -17,13 +17,21 @@ for dir in bootstrap environments/production/* environments/recovery $(dirname m
 done
 go test ./internal/hostcredentials/... ./internal/recovery/...
 go tool -modfile=golangci-lint.mod golangci-lint run ./...
+node --test '.github/scripts/*.test.mjs'
 npx prettier@3.9.10 --no-config --no-editorconfig --check .
 ```
 
-`tofu test` uses mocked providers and needs no credentials. CI also runs the Go tests with `-race`,
-the [backup tests](tests/backup/README.md) inside both database images, the Renovate config
-validator, shellcheck, actionlint, zizmor and a Trivy scan, which also builds both
-[host tools](docs/runbooks/host-tools.md). The real plans appear on your pull request.
+`tofu test` uses mocked providers and needs no credentials. Each job of `main.yaml` is a required
+check:
+
+| Job                   | Checks                                                                                                         |
+| --------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `validate-opentofu`   | Formatting, TFLint, and `validate` and `tofu test` in every root and tested module.                            |
+| `lint-repository`     | Prettier, the Renovate config, the workflow scripts, Go lint, service-root wiring, shell and workflow linters. |
+| `test-go`             | The host programs, with `-race`.                                                                               |
+| `test-backup`         | The [backup tests](tests/backup/README.md), inside each database image.                                        |
+| `scan-infrastructure` | Trivy on the repository and on both [host tools](docs/runbooks/host-tools.md).                                 |
+| `plan-<root>`         | The root's real plan, with the read-only identity.                                                             |
 
 ## Rules
 
@@ -32,6 +40,9 @@ validator, shellcheck, actionlint, zizmor and a Trivy scan, which also builds bo
 - **Add a module** only for a second caller or a shared security invariant.
 - **Inputs go in `terraform.tfvars`.** Secret values never do: add them with `gcloud` (see
   [Secrets](docs/runbooks/secrets.md)).
+- **Put a rule that can stop or misdeploy production in a tested script.** Workflow steps that call
+  `tofu`, `gh`, `gcloud` or `skopeo` stay bash. The decisions around them live in `.github/scripts`,
+  as zero-dependency `.mjs` with tests. A port proves itself against the bash it replaces.
 - **Pin images and secrets exactly.** Images as the `tag@digest` they were published under, copies
   in Artifact Registry by digest, secret versions as numbers, never `latest`.
 - **Keep production-critical resources protected.** Use `prevent_destroy`, `deletion_protection`

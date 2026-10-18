@@ -11,11 +11,12 @@ deploy, and applies bootstrap and foundation only when their inputs changed sinc
 
 - a root's own directory, or a local module it calls;
 - the shared tooling, `.opentofu-version`, `.github/actions/tofu/` or `deploy.yaml`, which affects
-  every root. The other actions apply no root: the rollout and the health check run on every deploy.
+  every root. The other actions apply no root, and the rollout and the health check run on every
+  deploy anyway.
 
 It applies every service root on every deploy. A service root also reads `DOWNTIME`, which no diff
-shows: a downtime written while another deploy waited or ran must still reach the services, and an
-unchanged service root applies nothing. The announcement lists only the roots that changed.
+shows. A downtime written while another deploy waited or ran must still reach the services. An
+unchanged service root applies nothing, and the announcement lists only the roots that changed.
 
 The service roots are the directories next to `foundation`. Deploy applies and rolls out each one it
 finds, and drift checks it, with no edit to either workflow. Two things cannot be derived:
@@ -31,8 +32,8 @@ changes ─► bootstrap ─► foundation ─► one job per service ─┬─�
 Each root's job plans, verifies and copies its images, then applies. The `rollout` job moves the
 database hosts and backup repository VMs onto their applied configuration, as described in
 [Change a database host](database.md#how-the-rollout-works). The health check calls Authentication's
-`/v2/healthcheck`, which also covers PostgreSQL, SMTP and JSON Keys. It runs only when a service
-root deployed, and skips while a planned downtime runs.
+`/v2/healthcheck`, which also covers PostgreSQL, SMTP and JSON Keys. It runs whenever the service
+roots applied, even when one of them failed, and skips while a planned downtime runs.
 
 Deploys run one at a time:
 
@@ -66,8 +67,9 @@ that waits for a downtime that has since started.
      tag as an immutable GitHub Release, and its version is not below the one deployed.
 3. **It merges itself.** The Dependencies App opens it, so once its checks pass the auto-approve
    workflow approves it and queues it, as it does Renovate's. A `FROM` line counts as part of the
-   pin when it takes a digest the same pull request pins in `environments/production`. When another release merges first and
-   leaves it conflicting, the next push to `master` rebuilds it from `master`.
+   pin when it takes a digest the same pull request pins in `environments/production`. When another
+   release merges first and leaves it conflicting, the next push to `master` rebuilds it from
+   `master`.
 4. **The deploy applies it:**
    1. it copies the images to the service's Artifact Registry repository;
    2. it applies, which runs the migration job and waits for it;
@@ -162,13 +164,13 @@ plans only the rest.
 1. **Open the failed job.** The plan or apply output names the resource and the API error.
 2. **Find the cause:**
    - **Transient API error or timeout:** select **Re-run failed jobs**. Every job plans again, so a
-     re-run is safe. A re-run applies only while its commit is still `master`'s head; once `master`
+     re-run is safe. A re-run applies only while its commit is still `master`'s head. Once `master`
      has moved on, it refuses, and a deploy run by hand applies the latest code instead.
-   - **Configuration error:** fix it in a new pull request. Never fix resources in the console: the
+   - **Configuration error:** fix it in a new pull request. Never fix resources in the console. The
      next plan reverts the change, and the drift check reports it.
    - **403 during apply:** pull-request plans run as the read-only identity, so they cannot catch a
      permission the deploy identity lacks. Grant it in the foundation root, or in bootstrap for the
-     management project, and merge: the deploy applies the grant before it reaches the services.
+     management project, and merge. The deploy applies the grant before it reaches the services.
    - **Migration failed**, when the job exits non-zero: the old revision keeps serving. Read the
      execution logs of `agora-<service>-migrations` in the Cloud Run console, fix the service, and
      release again.

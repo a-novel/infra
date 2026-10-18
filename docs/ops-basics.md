@@ -45,8 +45,8 @@ pull request ──► checks: validate, lint, test, scan, one plan per root
                   ▼
              approval ──► merge queue ──► master
                                             ▼
-deploy:  bootstrap ─► foundation ─► json-keys ──────┬─► rollout of the database hosts
-                                    authentication ─┴─► health check
+deploy:  bootstrap ─► foundation ─► one job per service ─┬─► rollout of the database hosts
+                                                         └─► health check
 ```
 
 1. **The pull request.** CI validates and tests every root, lints the repository, scans it, and plans
@@ -98,11 +98,11 @@ Human operators hold two sets of roles:
 - **in the production project**, read access, logs, and SSH with administrator rights to the VMs
   through Identity-Aware Proxy.
 
-They have no write access to production resources: changes go through pull requests.
+They have no write access to production resources. Changes go through pull requests.
 
 ## Database hosts and planned downtime
 
-Most changes deploy without anyone noticing: Cloud Run moves traffic to a new revision only once it
+Most changes deploy without anyone noticing. Cloud Run moves traffic to a new revision only once it
 starts. A database host is different. Each service's PostgreSQL runs on one VM, and changing that VM
 means restarting it, which makes the database unavailable for a minute or two.
 
@@ -134,7 +134,6 @@ name these pieces:
 | `merge-gate`, `epic-freeze`   | Required checks that hold a pull request belonging to a larger, multi-pull-request change until that change can land whole. A standalone pull request passes. |
 | Dependencies App              | The bot identity Renovate runs as, and `pin-release.yaml` opens each release's pull request as.                                                               |
 | Agent App (`anovelbot-agent`) | The bot identity automation acts as: it records approvals, writes `DOWNTIME`, and posts comments.                                                             |
-| Publish App                   | The bot identity release automation runs as.                                                                                                                  |
 
 ## Why the repository is laid out this way
 
@@ -144,13 +143,15 @@ name these pieces:
   resources instead of hundreds.
 - **Roots read foundation's outputs** with `terraform_remote_state` instead of copying values.
 - **Modules only for real reuse.** A module needs two callers or one shared invariant.
-  `service-runtime` serves three runtimes, one per service and [trust zone](architecture.md#projects),
-  and `backup-repository` serves both databases.
+  `service-runtime` serves one runtime per service and [trust zone](architecture.md#projects),
+  `smoke-check` each private gRPC service, and `backup-repository` each database with native
+  backups.
 - **Native features first.**
   - Migrations run during apply through Cloud Run's `run_execution_token`.
   - Traffic moves only to a revision whose startup probe passes.
   - Images are pinned by digest, and copied only after their provenance is verified.
-  - Custom code is limited to the two programs that run on the VMs.
+  - Custom code is limited to the two programs that run on the VMs, and to the pipeline's rules in
+    `.github/scripts`, each with its tests.
 
 ## Local commands
 

@@ -7,13 +7,14 @@ from nothing.
 
 `a-novel repo update` applies the repository's rulesets:
 
-- **`master`:** every job in `main.yaml`, plus `merge-gate` and `epic-freeze`, must pass. Merges go
-  through a merge queue, as signed squash commits.
+- **`master`:** every job in `main.yaml` must pass, and so must the fleet's own checks:
+  `merge-gate`, `epic-freeze`, `check-dependencies` and `review-gate`. Merges go through a merge
+  queue, as signed squash commits.
 - **`require-approval`:** one approval, given after the last push, with every review thread
-  resolved. The Dependencies, Publish and Agent Apps are exempt.
+  resolved.
 
-Repository and organization admins can bypass both. Re-run `a-novel repo update` after renaming or
-removing a job in `main.yaml`.
+Repository and organization admins can bypass both, and nobody else. Re-run `a-novel repo update`
+after renaming or removing a job in `main.yaml`.
 
 Repository variables (Settings → Secrets and variables → Actions):
 
@@ -31,10 +32,11 @@ it with the `anovelbot-agent` App, which needs **Variables: Read and write**, an
 `downtime` branch. `HOST_CREDENTIALS_PUBLICATION_ENABLED` and `NATIVE_RESTORE_PUBLICATION_ENABLED`
 exist only while a [host tool](host-tools.md#publish-a-version) is being published.
 
-The workflows also read the organization's App credentials, which must be visible to this
-repository: `AGENT_BOT_CLIENT_ID`, `AGENT_KILL_SWITCH`, `DEPENDENCY_BOT_CLIENT_ID`,
-`DEPENDENCY_BOT_LOGIN` and `DEPENDABOT_SECURITY_LOGIN` (variables), and `AGENT_BOT_PRIVATE_KEY` and
-`DEPENDENCY_BOT_PRIVATE_KEY` (secrets).
+The workflows also read organization variables, which must be visible to this repository: the
+Apps' client IDs and logins, `AGENT_KILL_SWITCH`, `DISCORD_REPO_ROLES` and `RELEASE_BOT_LOGIN`.
+Without `RELEASE_BOT_LOGIN`, every plan that changes a release image fails. The Apps' private keys
+live only in the `governance` environment, which `a-novel repo update` creates and fills from
+Bitwarden.
 
 Environment `production`: deployment branches `master` only, no required reviewers.
 
@@ -43,7 +45,8 @@ Environment `production`: deployment branches `master` only, no required reviewe
 | `GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER` | `…/providers/github-foundation`                                    |
 | `GCP_FOUNDATION_SERVICE_ACCOUNT`            | `infra-foundation@a-novel-management-prod.iam.gserviceaccount.com` |
 
-Environment `host-artifacts`: the `core` and `owners-infra` teams as required reviewers; either approves a host tool publication.
+Environment `host-artifacts`: the `core` and `owners-infra` teams as required reviewers. Either
+approves a host tool publication.
 
 The organization's Renovate (Dependencies) and Agent Apps need access to this repository.
 
@@ -62,7 +65,8 @@ project's number, so a rebuild starts with new names.
    ```
 
 2. **Rename it everywhere, on a branch.** Replace the old project ID and project number in every
-   root's `versions.tf` (the state bucket) and `terraform.tfvars` (project IDs and bucket names).
+   root's `versions.tf` (the state bucket), `main.tf` and `terraform.tfvars` (project IDs and bucket
+   names), and in `.github/workflows/`.
    The next steps run from that branch; it merges in step 6.
 3. **Apply bootstrap locally.** This is the only apply a person runs. The state bucket does not
    exist yet, so start with local state, then move it into the bucket:
