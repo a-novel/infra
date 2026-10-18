@@ -77,8 +77,15 @@ jobs:
             echo "::error::The planned downtime was announced to end at $end, and its services still refuse work. Clear it with downtime.yaml once the work is done, or schedule it again with a later end."
             exit 1
           fi
-      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+      # Authentication admits only IAM callers; the token names its custom audience. Pull requests
+      # can mint the plan identity, so this check runs as one that only drift.yaml on master gets.
+      - id: google
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
-          workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
+          workload_identity_provider: ${{ vars.GCP_HEALTH_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_HEALTH_SERVICE_ACCOUNT }}
+          token_format: id_token
+          id_token_audience: agora-authentication-rest
       - uses: $/.github/actions/health
+        env:
+          ID_TOKEN: ${{ steps.google.outputs.id_token }}

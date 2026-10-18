@@ -36,8 +36,8 @@ contents need.
 - **JSON Keys gRPC** has internal ingress and IAM authentication. Only Authentication's API identity
   and JSON Keys' own private identity, shared by its gRPC service and its jobs, may invoke it.
 - **Authentication REST** has public ingress and IAM authentication, under the custom audience
-  `agora-authentication-rest`. Only the platform and the deploy health check may invoke it, so it
-  trusts the visitor IP the platform sends in `X-Client-IP`. Its egress reaches private ranges
+  `agora-authentication-rest`. Only the platform and the health checks, after each deploy and every
+  three hours, may invoke it, so it trusts the visitor IP the platform sends in `X-Client-IP`. Its egress reaches private ranges
   through the VPC, and SMTP through Google's managed egress.
 - **GenAI gRPC and sweep** have internal ingress and IAM authentication. GenAI's own identity invokes
   the gRPC service for its smoke check, and narrative-engine will once it deploys; only the scheduler
@@ -131,6 +131,7 @@ Workloads pin numeric versions in `terraform.tfvars`, never `latest`.
 | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
 | `infra-plan`, `infra-foundation` (management)                                                                | CI: read-only plans and checks, and deployments.                                             |
 | `infra-downtime` (management)                                                                                | CI: starts and cancels the planned downtime announcements.                                   |
+| `infra-health` (management)                                                                                  | CI: the scheduled health check, which calls Authentication's REST API.                       |
 | `agora-json-keys-private`, `agora-authentication-private`, `agora-authentication-api`, `agora-genai-private` | Cloud Run runtimes, one per service and zone.                                                |
 | `agora-auth-initializer`                                                                                     | Reserved for the one-time administrator initializer, which no job runs yet.                  |
 | `agora-json-keys-database`, `agora-auth-database`                                                            | Database hosts.                                                                              |

@@ -78,9 +78,13 @@ run "trusts_only_reviewed_workflows" {
       google_iam_workload_identity_pool_provider.github["downtime"].attribute_condition == join("", [
         "assertion.repository_owner_id == '131281268' && assertion.repository_id == '1344262359' && (",
         "(assertion.ref == 'refs/heads/master' && assertion.workflow_ref == 'a-novel/infra/.github/workflows/downtime.yaml@refs/heads/master'))",
+      ]) &&
+      google_iam_workload_identity_pool_provider.github["health"].attribute_condition == join("", [
+        "assertion.repository_owner_id == '131281268' && assertion.repository_id == '1344262359' && (",
+        "(assertion.ref == 'refs/heads/master' && assertion.workflow_ref == 'a-novel/infra/.github/workflows/drift.yaml@refs/heads/master'))",
       ])
     )
-    error_message = "Only master workflows behind their environment may write, and only same-repository pull requests may plan."
+    error_message = "Only master workflows behind their environment may write or call Authentication, and only same-repository pull requests may plan."
   }
 
   assert {
