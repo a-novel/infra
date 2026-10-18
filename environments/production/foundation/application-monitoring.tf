@@ -10,7 +10,7 @@ resource "google_monitoring_alert_policy" "application_jobs_unhealthy" {
   severity     = "ERROR"
 
   documentation {
-    content   = "Owner: production operator. An Authentication or JSON Keys job failed, or JSON Keys rotation has not completed successfully for three hours. Follow [the alert runbook](https://github.com/a-novel/infra/blob/master/docs/runbooks/alerts.md#application-jobs-and-key-rotation)."
+    content   = "Owner: production operator. An Authentication, JSON Keys or GenAI job failed, or JSON Keys rotation has not completed successfully for three hours. Follow [the alert runbook](https://github.com/a-novel/infra/blob/master/docs/runbooks/alerts.md#application-jobs-and-key-rotation)."
     mime_type = "text/markdown"
   }
 
@@ -18,7 +18,7 @@ resource "google_monitoring_alert_policy" "application_jobs_unhealthy" {
     display_name = "Application job execution failed"
 
     condition_threshold {
-      filter          = "resource.type = \"cloud_run_job\" AND metric.type = \"run.googleapis.com/job/completed_execution_count\" AND metric.label.result = \"failed\" AND (resource.label.job_name = starts_with(\"agora-authentication-\") OR resource.label.job_name = starts_with(\"agora-json-keys-\"))"
+      filter          = "resource.type = \"cloud_run_job\" AND metric.type = \"run.googleapis.com/job/completed_execution_count\" AND metric.label.result = \"failed\" AND (resource.label.job_name = starts_with(\"agora-authentication-\") OR resource.label.job_name = starts_with(\"agora-json-keys-\") OR resource.label.job_name = starts_with(\"agora-genai-\"))"
       comparison      = "COMPARISON_GT"
       threshold_value = 0
       duration        = "0s"
