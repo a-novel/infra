@@ -129,20 +129,20 @@ receives no writes, and its locked retention keeps it until it can be retired.
 Secret containers live in the management project. Humans add their values; OpenTofu never sees
 them. Operators may add and read versions of every secret.
 
-| Secret                                                     | Read by                                                          |
-| ---------------------------------------------------------- | ---------------------------------------------------------------- |
-| `production-json-keys-postgres-password`                   | JSON Keys runtime and jobs, database host                        |
-| `production-json-keys-app-master-key`                      | JSON Keys runtime, rotation job                                  |
-| `production-authentication-postgres-password`              | Authentication runtimes, the initializer identity, database host |
-| `production-authentication-smtp-sender-password`           | Authentication API                                               |
-| `production-authentication-waitlist-secret`                | Authentication API, when the waitlist is on                      |
-| `production-authentication-super-admin-password`           | The initializer identity                                         |
-| `production-genai-postgres-password`                       | GenAI runtime, sweep and migrations, database host               |
-| `production-genai-openai-api-key`                          | GenAI runtime and sweep                                          |
-| `production-<service>-app-password`                        | Database host, database workloads, Authentication's initializer  |
-| `production-<service>-pgbackrest-{ca,database,repository}` | Database host and repository VM (TLS)                            |
-| `production-downtime-discord-webhook`                      | `downtime-announcer`, when it posts a planned downtime step      |
-| `production-github-dispatch-{a-novel,a-novel-kit}`         | `github-dispatcher`, when it dispatches that org's workflows     |
+| Secret                                                     | Read by                                                         |
+| ---------------------------------------------------------- | --------------------------------------------------------------- |
+| `production-json-keys-postgres-password`                   | Database host                                                   |
+| `production-json-keys-app-master-key`                      | JSON Keys runtime, rotation job                                 |
+| `production-authentication-postgres-password`              | Database host                                                   |
+| `production-authentication-smtp-sender-password`           | Authentication API                                              |
+| `production-authentication-waitlist-secret`                | Authentication API, when the waitlist is on                     |
+| `production-authentication-super-admin-password`           | The initializer identity                                        |
+| `production-genai-postgres-password`                       | Database host                                                   |
+| `production-genai-openai-api-key`                          | GenAI runtime and sweep                                         |
+| `production-<service>-app-password`                        | Database host, database workloads, Authentication's initializer |
+| `production-<service>-pgbackrest-{ca,database,repository}` | Database host and repository VM (TLS)                           |
+| `production-downtime-discord-webhook`                      | `downtime-announcer`, when it posts a planned downtime step     |
+| `production-github-dispatch-{a-novel,a-novel-kit}`         | `github-dispatcher`, when it dispatches that org's workflows    |
 
 Workloads pin numeric versions in `terraform.tfvars`, never `latest`.
 

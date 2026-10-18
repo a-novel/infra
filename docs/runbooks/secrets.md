@@ -53,7 +53,7 @@ The database host sets two passwords at boot, each from a version in foundation'
 | `*-app-password`      | `<database>_app` | `app_password_version` | `secret_versions.app-password`         |
 
 1. Add the version.
-2. In **one** pull request, bump the host version and the service version.
+2. In **one** pull request, bump the host version, and the service version for `*-app-password`.
 3. Merge it as a [database host change](database.md#change-a-database-host), during a planned
    downtime. The deploy gives the service the new version, then the rollout restarts the host, which
    sets it. The services refuse work during the downtime, so nothing fails in between.

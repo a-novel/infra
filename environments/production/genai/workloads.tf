@@ -22,9 +22,6 @@ locals {
     POSTGRES_DATABASE    = "agora_genai"
     POSTGRES_TLS_ENABLED = "false"
   }
-  # Every database workload reads both passwords while the services move to the application role
-  # (a-novel/infra#912), so the grant applies before any revision mounts the new one.
-  database_passwords = ["postgres-password", "app-password"]
   # The servers call the provider, so both read its key; the migrations job reads only the database.
   migrations_secret_env = { POSTGRES_PASSWORD = "app-password" }
   server_secret_env = {
