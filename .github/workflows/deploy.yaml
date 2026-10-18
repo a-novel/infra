@@ -46,9 +46,7 @@ jobs:
       commit: ${{ steps.changes.outputs.commit }}
       bootstrap: ${{ steps.changes.outputs.bootstrap }}
       foundation: ${{ steps.changes.outputs.foundation }}
-      json_keys: ${{ steps.changes.outputs.json_keys }}
-      authentication: ${{ steps.changes.outputs.authentication }}
-      genai: ${{ steps.changes.outputs.genai }}
+      services: ${{ steps.changes.outputs.services }}
     steps:
       # A manual or downtime run applies every root, and anyone with write access can start either.
       - if: github.event_name != 'push'
@@ -100,14 +98,8 @@ jobs:
           }
           deploy() { changed "$1" && echo true || echo false; }
 
-          # The service roots are the directories next to foundation, so a new one needs no edit here;
-          # main.yaml's lint-repository checks the jobs it needs in this workflow.
-          services="$(find environments/production -mindepth 1 -maxdepth 1 -type d ! -name foundation -printf '%f\n' | sort | tr - _)"
-          bootstrap="$(deploy bootstrap)"
-          foundation="$(deploy environments/production/foundation)"
-          for root in $services; do
-            printf -v "$root" '%s' "$(deploy "environments/production/${root//_/-}")"
-          done
+          # The service roots are the directories next to foundation, so a new one needs no edit here.
+          mapfile -t services < <(find environments/production -mindepth 1 -maxdepth 1 -type d ! -name foundation -printf '%f\n' | sort)
 
           # Deletions are allowed when any pull request in this deploy carried the label.
           allow=false
@@ -119,22 +111,16 @@ jobs:
 
           # The announcement lists the roots that changed, with each image's new tag.
           roots="" deploys=false
-          for root in bootstrap foundation $services; do
-            [ "${!root}" = true ] || continue
+          for dir in bootstrap environments/production/foundation "${services[@]/#/environments/production/}"; do
+            changed "$dir" || continue
             deploys=true
-            dir=environments/production/${root//_/-}
-            [ "$root" = bootstrap ] && dir=bootstrap
             images=""
             if [ "$all" = false ]; then
               images="$(git diff --unified=0 "$base" HEAD -- "$dir/terraform.tfvars" |
                 sed -nE 's/^\+ *([a-z-]+) *= *"[^"]*:([^@"]+)@.*/\1 \2/p' | paste -sd, - | sed 's/,/, /g')"
             fi
-            roots+="- \`${root//_/-}\`${images:+: $images}"$'\n'
+            roots+="- \`$(basename "$dir")\`${images:+: $images}"$'\n'
           done
-          # Every deploy applies every service root, so the services run the current DOWNTIME whichever
-          # deploy applies last: a downtime written while another deploy waited or ran would otherwise
-          # reach no service. An unchanged root applies nothing; the announcement keeps the changed ones.
-          for root in $services; do printf -v "$root" true; done
           # Both posts name the commit that triggered the deploy, and its author's GitHub login: a
           # squash merge carries the profile name instead. The name stays as a fallback.
           author="$(gh api "repos/$REPOSITORY/commits/$(git rev-parse HEAD)" --jq '.author.login // empty' 2>/dev/null)" || author=""
@@ -147,9 +133,9 @@ jobs:
 
           {
             echo "deploys=$deploys"
-            echo "bootstrap=$bootstrap"
-            echo "foundation=$foundation"
-            for root in $services; do echo "$root=${!root}"; done
+            echo "bootstrap=$(deploy bootstrap)"
+            echo "foundation=$(deploy environments/production/foundation)"
+            echo "services=$(jq -cn '$ARGS.positional' --args "${services[@]}")"
             echo "allow=$allow"
           } | tee -a "$GITHUB_OUTPUT"
           echo "Changes since ${base:-the first deploy}; every root: $all." >>"$GITHUB_STEP_SUMMARY"
@@ -209,12 +195,20 @@ jobs:
           service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
           github_token: ${{ github.token }}
 
-  json-keys:
+  # Every deploy applies every service root, found on disk by the changes job, so the services run
+  # the current DOWNTIME whichever deploy applies last: a downtime written while another deploy
+  # waited or ran would otherwise reach no service. An unchanged root applies nothing.
+  services:
+    name: ${{ matrix.service }}
     needs: [changes, foundation]
-    if: ${{ !cancelled() && !failure() && needs.changes.outputs.json_keys == 'true' }}
+    if: ${{ !cancelled() && !failure() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: production
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.changes.outputs.services) }}
     permissions:
       attestations: read
       contents: read
@@ -225,53 +219,7 @@ jobs:
           persist-credentials: false
       - uses: $/.github/actions/tofu
         with:
-          root: environments/production/json-keys
-          apply: "true"
-          allow_deletion: ${{ needs.changes.outputs.allow }}
-          workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
-          github_token: ${{ github.token }}
-
-  authentication:
-    needs: [changes, foundation]
-    if: ${{ !cancelled() && !failure() && needs.changes.outputs.authentication == 'true' }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    environment: production
-    permissions:
-      attestations: read
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: $/.github/actions/tofu
-        with:
-          root: environments/production/authentication
-          apply: "true"
-          allow_deletion: ${{ needs.changes.outputs.allow }}
-          workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
-          github_token: ${{ github.token }}
-
-  genai:
-    needs: [changes, foundation]
-    if: ${{ !cancelled() && !failure() && needs.changes.outputs.genai == 'true' }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    environment: production
-    permissions:
-      attestations: read
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: $/.github/actions/tofu
-        with:
-          root: environments/production/genai
+          root: environments/production/${{ matrix.service }}
           apply: "true"
           allow_deletion: ${{ needs.changes.outputs.allow }}
           workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
@@ -282,7 +230,7 @@ jobs:
   # planned downtime, the backup repository VM whenever its config changed. It reads the hosts, not
   # this deploy's changes, so it runs on every deploy.
   rollout:
-    needs: [json-keys, authentication, genai]
+    needs: [changes, services]
     if: ${{ !cancelled() && !failure() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -290,7 +238,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [json-keys, authentication, genai]
+        service: ${{ fromJSON(needs.changes.outputs.services) }}
     concurrency:
       group: roll-database-${{ matrix.service }}
       cancel-in-progress: false
@@ -311,10 +259,11 @@ jobs:
           webhook: ${{ secrets.DEPLOY_WEBHOOK }}
           roles: ${{ vars.DISCORD_REPO_ROLES }}
 
-  # Authentication's health covers PostgreSQL, SMTP and the JSON Keys path.
+  # Authentication's health covers PostgreSQL, SMTP and the JSON Keys path. It reports on
+  # production whenever the service roots applied, even when one of them failed.
   health:
-    needs: [json-keys, authentication]
-    if: ${{ !cancelled() && !failure() && contains(needs.*.result, 'success') }}
+    needs: services
+    if: ${{ !cancelled() && needs.services.result != 'skipped' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: production
@@ -340,39 +289,35 @@ jobs:
   # Reports every deploy that applied a root, and any that failed. A failure pings a-novel/infra and
   # the role of each service whose root failed to apply.
   notify:
-    needs:
-      [
-        changes,
-        bootstrap,
-        foundation,
-        json-keys,
-        authentication,
-        genai,
-        rollout,
-        health,
-      ]
+    needs: [changes, bootstrap, foundation, services, rollout, health]
     if: ${{ always() && (needs.changes.outputs.deploys == 'true' || contains(needs.*.result, 'failure')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    permissions: {}
+    permissions:
+      # Names the failed jobs: a matrix reports one result for all its services.
+      actions: read
     steps:
       - name: Summarize the outcome
         id: outcome
         shell: bash
         env:
           NEEDS: ${{ toJSON(needs) }}
+          SERVICES: ${{ needs.changes.outputs.services }}
           ROLES: ${{ vars.DISCORD_REPO_ROLES }}
           COMMIT: ${{ needs.changes.outputs.commit }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           [ -n "$ROLES" ] || ROLES='{}'
-          failed="$(jq -r '[to_entries[] | select(.value.result == "failure") | "`\(.key)`"] | join(", ")' <<<"$NEEDS")"
+          [ -n "$SERVICES" ] || SERVICES='[]'
           roles="" description="$COMMIT"
-          if [ -n "$failed" ]; then
-            outcome=failed description="Failed jobs: $failed"$'\n\n'"$COMMIT"
-            roles="$(jq -r --argjson roles "$ROLES" '["a-novel/infra"] + [to_entries[]
-              | select(.value.result == "failure" and (.key == "json-keys" or .key == "authentication" or .key == "genai"))
-              | "a-novel/service-\(.key)"] | map($roles[.] // empty) | join(" ")' <<<"$NEEDS")"
+          if jq -e 'any(.[]; .result == "failure")' <<<"$NEEDS" >/dev/null; then
+            # A service's apply job carries the service's name.
+            failed="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs" --paginate \
+              --jq '.jobs[] | select(.conclusion == "failure") | .name' | jq -Rsc 'split("\n") | map(select(. != ""))')"
+            outcome=failed description="Failed jobs: $(jq -r 'map("`\(.)`") | join(", ")' <<<"$failed")"$'\n\n'"$COMMIT"
+            roles="$(jq -r --argjson roles "$ROLES" --argjson services "$SERVICES" '["a-novel/infra"]
+              + [.[] | select(IN($services[])) | "a-novel/service-\(.)"] | map($roles[.] // empty) | join(" ")' <<<"$failed")"
           elif jq -e 'any(.[]; .result == "cancelled")' <<<"$NEEDS" >/dev/null; then
             outcome=cancelled
           else

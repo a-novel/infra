@@ -18,8 +18,27 @@ env:
   RELEASE_BOT_LOGIN: ${{ vars.RELEASE_BOT_LOGIN }}
 
 jobs:
-  drift:
+  # Every root on disk, so a new service root is drift-checked with no edit here.
+  roots:
     if: github.event_name == 'workflow_dispatch' || github.event.schedule == '17 5 * * *'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      roots: ${{ steps.roots.outputs.roots }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: roots
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "roots=$(find environments/production -mindepth 1 -maxdepth 1 -type d | sort | jq -Rnc '["bootstrap"] + [inputs]')" >>"$GITHUB_OUTPUT"
+
+  drift:
+    needs: roots
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -29,12 +48,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        root:
-          - bootstrap
-          - environments/production/foundation
-          - environments/production/json-keys
-          - environments/production/authentication
-          - environments/production/genai
+        root: ${{ fromJSON(needs.roots.outputs.roots) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
