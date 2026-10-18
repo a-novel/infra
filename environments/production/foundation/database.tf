@@ -26,7 +26,15 @@ locals {
       component = replace(service, "_", "-")
       port      = port
       identity  = "${service}_database"
+      capacity  = var.database_capacity[replace(service, "_", "-")]
     }
+  }
+}
+
+check "database_capacity_matches_hosts" {
+  assert {
+    condition     = sort(keys(var.database_capacity)) == sort([for host in local.database_hosts : host.component])
+    error_message = "database_capacity must size exactly the services that have a database host."
   }
 }
 
@@ -39,28 +47,28 @@ check "database_zone_matches_region" {
 
 check "database_container_memory_headroom" {
   assert {
-    condition = (
-      var.database_container_memory_mb <=
-      (local.database_machine_profiles[var.database_machine_type].memory_mb - 1024)
-    )
+    condition = alltrue([for host in local.database_hosts :
+      host.capacity.container_memory_mb <= local.database_machine_profiles[host.capacity.machine_type].memory_mb - 1024
+    ])
     error_message = "Database container limits must leave at least 1 GiB of host memory."
   }
 }
 
 check "database_container_cpu_headroom" {
   assert {
-    condition = (
-      var.database_container_cpu <=
-      (local.database_machine_profiles[var.database_machine_type].vcpu - 0.5)
-    )
+    condition = alltrue([for host in local.database_hosts :
+      host.capacity.container_cpu <= local.database_machine_profiles[host.capacity.machine_type].vcpu - 0.5
+    ])
     error_message = "Database container limits must leave at least 0.5 vCPU for the host."
   }
 }
 
 check "database_cpu_quota" {
   assert {
-    condition     = var.compute_cpu_quota >= length(local.database_hosts) * local.database_machine_profiles[var.database_machine_type].vcpu
-    error_message = "The regional Compute CPU quota must fit both database VMs."
+    condition = var.compute_cpu_quota >= sum([for host in local.database_hosts :
+      local.database_machine_profiles[host.capacity.machine_type].vcpu
+    ])
+    error_message = "The regional Compute CPU quota must fit every database VM."
   }
 }
 
@@ -72,7 +80,7 @@ resource "google_compute_disk" "database" {
   name    = "agora-data-${each.value.component}"
 
   type                      = "pd-balanced"
-  size                      = var.database_data_disk_size_gb
+  size                      = each.value.capacity.data_disk_size_gb
   physical_block_size_bytes = 4096
   description               = "Preserved PostgreSQL data for ${each.value.component}."
 
@@ -97,7 +105,7 @@ resource "google_compute_instance_template" "database" {
 
   description          = "Immutable Container-Optimized OS template for the production PostgreSQL host."
   instance_description = "One-member private PostgreSQL data plane."
-  machine_type         = var.database_machine_type
+  machine_type         = each.value.capacity.machine_type
   can_ip_forward       = false
 
   tags   = [local.network_tags[each.value.identity]]
@@ -106,10 +114,10 @@ resource "google_compute_instance_template" "database" {
   metadata = {
     agora-database-service             = each.value.component
     agora-database-data-disk-id        = google_compute_disk.database[each.key].disk_id
-    agora-database-container-cpu       = tostring(var.database_container_cpu)
-    agora-database-container-memory-mb = tostring(var.database_container_memory_mb)
-    agora-database-data-disk-size-gb   = tostring(var.database_data_disk_size_gb)
-    agora-database-max-connections     = tostring(var.database_max_connections)
+    agora-database-container-cpu       = tostring(each.value.capacity.container_cpu)
+    agora-database-container-memory-mb = tostring(each.value.capacity.container_memory_mb)
+    agora-database-data-disk-size-gb   = tostring(each.value.capacity.data_disk_size_gb)
+    agora-database-max-connections     = tostring(each.value.capacity.max_connections)
     agora-management-project-id        = var.management_project_id
     agora-registry-host                = "${var.region}-docker.pkg.dev"
     block-project-ssh-keys             = "TRUE"

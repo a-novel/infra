@@ -107,68 +107,51 @@ variable "database_zone" {
   }
 }
 
-variable "database_machine_type" {
-  description = "Reviewed vertical-capacity profile for the always-on PostgreSQL host."
-  type        = string
-  default     = "e2-medium"
+variable "database_capacity" {
+  description = "Each service's PostgreSQL host: its machine type, its container's vCPU and memory limits, its connection ceiling, and its data disk, which grows online and never shrinks."
+  type = map(object({
+    machine_type        = string
+    container_cpu       = number
+    container_memory_mb = number
+    max_connections     = number
+    data_disk_size_gb   = number
+  }))
 
   validation {
-    condition     = contains(["e2-medium", "e2-standard-2", "e2-standard-4"], var.database_machine_type)
-    error_message = "The database machine type must be e2-medium, e2-standard-2, or e2-standard-4."
+    condition = alltrue([for capacity in values(var.database_capacity) :
+      contains(["e2-medium", "e2-standard-2", "e2-standard-4"], capacity.machine_type)
+    ])
+    error_message = "Each database machine type must be e2-medium, e2-standard-2, or e2-standard-4."
   }
-}
-
-variable "database_data_disk_size_gb" {
-  description = "SSD-backed data-disk capacity for each PostgreSQL host; increases are online, decreases are forbidden."
-  type        = number
-  default     = 50
 
   validation {
-    condition = (
-      var.database_data_disk_size_gb >= 50 &&
-      var.database_data_disk_size_gb <= 1000 &&
-      floor(var.database_data_disk_size_gb) == var.database_data_disk_size_gb &&
-      var.database_data_disk_size_gb % 10 == 0
-    )
-    error_message = "The database data disk must be 50-1,000 GiB in 10 GiB increments."
-  }
-}
-
-variable "database_container_cpu" {
-  description = "Maximum vCPU allocation for each PostgreSQL container."
-  type        = number
-  default     = 0.75
-
-  validation {
-    condition     = var.database_container_cpu >= 0.25 && var.database_container_cpu <= 1.75
+    condition = alltrue([for capacity in values(var.database_capacity) :
+      capacity.container_cpu >= 0.25 && capacity.container_cpu <= 1.75
+    ])
     error_message = "Each database container must receive 0.25-1.75 vCPU."
   }
-}
-
-variable "database_container_memory_mb" {
-  description = "Hard memory limit in MiB for each PostgreSQL container."
-  type        = number
-  default     = 1536
 
   validation {
-    condition = (
-      var.database_container_memory_mb >= 512 &&
-      var.database_container_memory_mb <= 7168 &&
-      floor(var.database_container_memory_mb) == var.database_container_memory_mb &&
-      var.database_container_memory_mb % 128 == 0
-    )
+    condition = alltrue([for capacity in values(var.database_capacity) :
+      capacity.container_memory_mb >= 512 && capacity.container_memory_mb <= 7168 &&
+      floor(capacity.container_memory_mb) == capacity.container_memory_mb && capacity.container_memory_mb % 128 == 0
+    ])
     error_message = "Each database container must receive 512-7,168 MiB in 128 MiB increments."
   }
-}
-
-variable "database_max_connections" {
-  description = "PostgreSQL connection ceiling applied independently to each database container."
-  type        = number
-  default     = 50
 
   validation {
-    condition     = var.database_max_connections >= 20 && var.database_max_connections <= 200 && floor(var.database_max_connections) == var.database_max_connections
+    condition = alltrue([for capacity in values(var.database_capacity) :
+      capacity.max_connections >= 20 && capacity.max_connections <= 200 && floor(capacity.max_connections) == capacity.max_connections
+    ])
     error_message = "Each database must allow 20-200 whole-number connections."
+  }
+
+  validation {
+    condition = alltrue([for capacity in values(var.database_capacity) :
+      capacity.data_disk_size_gb >= 50 && capacity.data_disk_size_gb <= 1000 &&
+      floor(capacity.data_disk_size_gb) == capacity.data_disk_size_gb && capacity.data_disk_size_gb % 10 == 0
+    ])
+    error_message = "Each database data disk must be 50-1,000 GiB in 10 GiB increments."
   }
 }
 

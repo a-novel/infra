@@ -4,6 +4,22 @@ authentication_initializer_principals = [
 backup_bucket_name = "a-novel-management-prod-232403541574-backups"
 billing_account_id = "01BDFE-5B21E7-8393CB"
 cost_alert_email   = "geoffroy.vincent@agorastoryverse.com"
+database_capacity = {
+  json-keys = {
+    machine_type        = "e2-medium"
+    container_cpu       = 0.75
+    container_memory_mb = 1536
+    max_connections     = 50
+    data_disk_size_gb   = 50
+  }
+  authentication = {
+    machine_type        = "e2-medium"
+    container_cpu       = 0.75
+    container_memory_mb = 1536
+    max_connections     = 50
+    data_disk_size_gb   = 50
+  }
+}
 database_operator_principals = [
   "user:geoffroy.vincent@agorastoryverse.com",
 ]

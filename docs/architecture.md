@@ -61,7 +61,9 @@ hold the [host tools](runbooks/host-tools.md), pinned by digest.
 
 ## Databases and backups
 
-Each service has its own **database host**:
+Each service has its own **database host**, sized on its own in foundation's `database_capacity`:
+machine type, container vCPU and memory, connection ceiling and data disk. JSON Keys and
+Authentication run the same size today.
 
 - a Container-Optimized OS VM, `e2-medium`, the only member of a stateful instance group. Its COS
   image is pinned, and automatic OS updates are off;
