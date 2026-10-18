@@ -19,6 +19,15 @@ database_capacity = {
     max_connections     = 50
     data_disk_size_gb   = 50
   }
+  # 20 concurrent 24 MiB writes peak at 2 GiB of PostgreSQL memory, and vacuum, TOAST compression
+  # and pgBackRest need more than the one vCPU an e2-medium sustains.
+  genai = {
+    machine_type        = "e2-standard-2"
+    container_cpu       = 1.5
+    container_memory_mb = 6144
+    max_connections     = 150
+    data_disk_size_gb   = 50
+  }
 }
 database_operator_principals = [
   "user:geoffroy.vincent@agorastoryverse.com",
@@ -79,10 +88,15 @@ database_releases = {
     revision         = "906476efeaeddef29b81dd7a32b9a6fa4e2ae0f6"
     password_version = "2"
   }
+  genai = {
+    revision         = "de87d803ccf9c4fff9d80bfe68862133d5e4ac2e"
+    password_version = "1"
+  }
 }
 database_images = {
   json-keys      = "ghcr.io/a-novel/service-json-keys/database:v2.10.4@sha256:392e831c21e44cca0a75ed0d10f241002ae56323e22f8569a086722f96434d0b"
   authentication = "ghcr.io/a-novel/service-authentication/database:v2.14.0@sha256:024090f703849c1c12fabc7cd78b5abac8ab0df043d64ab31e254ea75c973263"
+  genai          = "ghcr.io/a-novel/service-genai/database:v0.5.0@sha256:b4165369c30cb3f8cfb830c880848767e5a4a90f355fcd6378f890d65735ecb3"
 }
 # json-keys and genai at their maximum instances, plus one rollout instance each, and the jobs.
 cloud_run_cpu_quota_millicpu = 16000

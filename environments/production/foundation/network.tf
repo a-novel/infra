@@ -6,6 +6,8 @@ locals {
     authentication_database = "agora-database-authentication"
     json_keys_database      = "agora-database-json-keys"
     json_keys               = "agora-json-keys"
+    genai_database          = "agora-database-genai"
+    genai                   = "agora-genai"
   }
 
   database_egress_contracts = {
@@ -16,6 +18,10 @@ locals {
     json_keys = {
       port        = local.database_ports.json_keys
       target_tags = toset([local.network_tags.json_keys])
+    }
+    genai = {
+      port        = local.database_ports.genai
+      target_tags = toset([local.network_tags.genai])
     }
   }
 

@@ -17,6 +17,10 @@ locals {
       account_id   = "agora-json-keys-database"
       display_name = "A-Novel JSON Keys PostgreSQL host"
     }
+    genai_database = {
+      account_id   = "agora-genai-database"
+      display_name = "A-Novel GenAI PostgreSQL host"
+    }
     scheduler_invoker = {
       account_id   = "agora-scheduler-invoker"
       display_name = "A-Novel scheduled job invoker"
@@ -104,6 +108,10 @@ locals {
     "database:json-keys-password" = {
       identity = "json_keys_database"
       secret   = "production-json-keys-postgres-password"
+    }
+    "database:genai-password" = {
+      identity = "genai_database"
+      secret   = "production-genai-postgres-password"
     }
     "authentication-initializer:postgres-password" = {
       identity = "authentication_initializer"
