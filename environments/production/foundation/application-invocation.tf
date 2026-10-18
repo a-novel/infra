@@ -9,7 +9,15 @@ locals {
       json_keys_smoke      = { resource = "jobs/agora-json-keys-smoke", class = "release" }
       json_keys_grpc       = { resource = "services/agora-json-keys-grpc", class = "internal" }
     } : {},
+    contains(keys(local.service_release_boundaries), "genai/private") ? {
+      genai_migrations = { resource = "jobs/agora-genai-migrations", class = "release" }
+      genai_smoke      = { resource = "jobs/agora-genai-smoke", class = "release" }
+      genai_grpc       = { resource = "services/agora-genai-grpc", class = "internal" }
+      genai_sweep      = { resource = "services/agora-genai-sweep", class = "internal" }
+    } : {},
   )
+  # The service's deterministic URL, which foundation knows before reading the service root.
+  genai_sweep_url = "https://agora-genai-sweep-${google_project.workload.number}.${var.region}.run.app"
 }
 
 resource "google_tags_location_tag_binding" "application" {
@@ -56,4 +64,51 @@ resource "google_cloud_scheduler_job" "json_keys_rotation" {
   }
 
   depends_on = [google_tags_location_tag_binding.application]
+}
+
+# Foundation may set invokers only on a service tagged internal, so the grant waits for the tag.
+resource "google_cloud_run_v2_service_iam_member" "genai_sweep_scheduler" {
+  count = contains(keys(local.application_invocation), "genai_sweep") ? 1 : 0
+
+  project  = var.workload_project_id
+  location = var.region
+  name     = "agora-genai-sweep"
+  role     = "roles/run.servicesInvoker"
+  member   = "serviceAccount:${google_service_account.runtime["scheduler_invoker"].email}"
+
+  depends_on = [google_tags_location_tag_binding.application]
+}
+
+# The sweep checks the generations nobody polled, so a generation settles while the provider still
+# holds its result. A call that fails is not retried: the next minute's call takes over.
+resource "google_cloud_scheduler_job" "genai_sweep" {
+  count = contains(keys(local.application_invocation), "genai_sweep") ? 1 : 0
+
+  project          = var.workload_project_id
+  region           = var.region
+  name             = "agora-genai-sweep"
+  schedule         = "* * * * *"
+  time_zone        = "Etc/UTC"
+  paused           = false
+  attempt_deadline = "180s"
+
+  retry_config {
+    retry_count = 0
+  }
+
+  http_target {
+    http_method = "POST"
+    uri         = "${local.genai_sweep_url}/sweep"
+
+    oidc_token {
+      service_account_email = google_service_account.runtime["scheduler_invoker"].email
+      audience              = local.genai_sweep_url
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [paused]
+  }
+
+  depends_on = [google_cloud_run_v2_service_iam_member.genai_sweep_scheduler]
 }
