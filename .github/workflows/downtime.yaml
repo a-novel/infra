@@ -15,7 +15,7 @@ on:
         type: string
         default: ""
       start:
-        description: When their services stop, in RFC 3339 UTC, such as 2026-10-12T06:00:00Z, or after a delay from now, such as 2h or 1d12h.
+        description: When their services stop, in RFC 3339 UTC, such as 2026-10-12T06:00:00Z, or after a delay from now, such as 2h or 1d12h. Empty keeps the current start, and must be empty once it has passed.
         type: string
         default: ""
       end:
@@ -62,6 +62,7 @@ jobs:
           COMPONENTS: ${{ inputs.components }}
           START: ${{ inputs.start }}
           END: ${{ inputs.end }}
+          PREVIOUS: ${{ vars.DOWNTIME }}
         run: |
           set -euo pipefail
           if [ "$OPERATION" = clear ]; then
@@ -90,7 +91,14 @@ jobs:
               return 1
             fi
           }
-          if ! start="$(epoch "$START" "$(date +%s)")" || ! end="$(epoch "$END" "$start")" || [ "$end" -le "$start" ]; then
+          # An empty start keeps the current one, which can't move once it has passed.
+          now="$(date +%s)"
+          current="$(jq -r '.start // empty' <<<"${PREVIOUS:-null}")"
+          if [ -n "$START" ] && [ -n "$current" ] && [ "$(date -d "$current" +%s)" -le "$now" ]; then
+            echo "::error::The downtime started at $current, so its start can't move. Leave start empty to keep it."
+            exit 1
+          fi
+          if ! start="$(epoch "${START:-$current}" "$now")" || ! end="$(epoch "$END" "$start")" || [ "$end" -le "$start" ]; then
             echo "::error::A downtime needs a start and an end, each in RFC 3339 UTC or a duration such as 1d12h, with the end after the start."
             exit 1
           fi

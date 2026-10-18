@@ -65,8 +65,10 @@ gh workflow run downtime.yaml --repo a-novel/infra -f operation=schedule \
 - Requests already running at `start` finish normally. Leave a margin before the database host
   restarts.
 - Running it again replaces the downtime. A new `end` only changes what users see. A new `start` or
-  new components also change when the services stop. A delay always sets a new `start`: to extend a
-  downtime, pass its current `start` again, from the last run's summary, with a later `end`.
+  new components also change when the services stop. An empty `start` keeps the current one.
+- **A started downtime keeps its `start`.** Once it has passed, the run fails unless `start` is
+  empty. To extend a downtime, leave `start` empty and pass a later `end`, such as `-f end=3h` for
+  three hours after the start.
 
 The workflow checks the components and dates, publishes the document, writes `DOWNTIME`, then runs a
 full deploy, which passes `DOWNTIME_START` to the listed services. **Check that this deploy succeeded
