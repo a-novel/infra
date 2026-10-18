@@ -115,12 +115,7 @@ jobs:
         with:
           node-version: "24.22.0"
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: false
-
-      - name: Lint formatting, Go and Renovate configuration
+      - name: Lint formatting and Renovate configuration
         shell: bash
         env:
           # renovate: datasource=npm depName=prettier
@@ -131,7 +126,9 @@ jobs:
           set -euo pipefail
           npx --yes "prettier@$prettier_version" --no-config --no-editorconfig --check .
           npx --yes --package "renovate@$renovate_version" -- renovate-config-validator --strict
-          go tool -modfile=golangci-lint.mod golangci-lint run ./...
+
+      - name: Lint Go
+        uses: a-novel-kit/workflows/go-actions/lint-go@v1.63.0
 
       - name: Check every service root is planned, deployed and drift-checked
         shell: bash
@@ -191,12 +188,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for service in json-keys authentication; do
+          services=(json-keys authentication)
+          # The images test at once, one runner CPU each.
+          for service in "${services[@]}"; do
             docker build -f builds/backup-test.Dockerfile --build-arg DATABASE_SERVICE="$service" -t "backup-test:$service" .
-            docker run --rm --network=none --read-only --cap-drop=all \
+            docker run --detach --name "backup-test-$service" --network=none --read-only --cap-drop=all \
               --security-opt=no-new-privileges --cpus=1 --memory=2g --pids-limit=128 \
-              --tmpfs=/tmp:rw,size=1g,mode=1777 "backup-test:$service"
+              --tmpfs=/tmp:rw,size=1g,mode=1777 "backup-test:$service" >/dev/null
           done
+          status=0
+          for service in "${services[@]}"; do
+            code="$(docker wait "backup-test-$service")"
+            echo "::group::Backup tests in the $service image"
+            docker logs "backup-test-$service" 2>&1
+            echo "::endgroup::"
+            if [ "$code" != 0 ]; then
+              echo "::error::The backup tests failed in the $service image (exit $code)."
+              status=1
+            fi
+          done
+          exit "$status"
 
   # The deletion label approves the plans of the head it was added on. A push's plans ignore it, and
   # this job removes it so a maintainer can add it again for the new head.
