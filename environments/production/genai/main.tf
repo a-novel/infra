@@ -18,6 +18,7 @@ locals {
   region                = local.foundation.region
   management_project_id = "a-novel-management-prod"
   deployer              = "infra-foundation@${local.management_project_id}.iam.gserviceaccount.com"
+  database              = local.foundation.database_hosts["genai"]
 }
 
 # The runtime identity and the image repositories come first: the deploy copies images into these

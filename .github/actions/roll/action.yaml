@@ -41,15 +41,20 @@ runs:
         # Observed state, not this deploy's changes: a cancelled or force-merged deploy loses nothing.
         database_pending="$(gcloud compute instance-groups managed describe "$group" "${where[@]}" --format=json |
           jq '(.status.versionTarget.isReached and (.status.allInstancesConfig.effective // true)) | not')"
-        labels="$(gcloud compute instances describe "$repository" "${where[@]}" --format='json(labels)')"
-        config="$(jq -r '.labels.config // ""' <<<"$labels")"
-        repository_pending="$(jq '.labels.config != .labels["running-config"]' <<<"$labels")"
+        # A service enrolls in native backups after its first deploy, so its repository VM can be absent.
+        repository_exists=false config="" repository_pending=false
+        if [ -n "$(gcloud compute instances list --filter="name=$repository" --zones=europe-west1-d --project=a-novel-production-prod --format='value(name)')" ]; then
+          repository_exists=true
+          labels="$(gcloud compute instances describe "$repository" "${where[@]}" --format='json(labels)')"
+          config="$(jq -r '.labels.config // ""' <<<"$labels")"
+          repository_pending="$(jq '.labels.config != .labels["running-config"]' <<<"$labels")"
+        fi
         started=false
         if [ -n "${DOWNTIME:-}" ] && jq -e --arg component "service-$SERVICE.database" '.components | index($component)' <<<"$DOWNTIME" >/dev/null \
           && [ "$(date -d "$(jq -r .start <<<"$DOWNTIME")" +%s)" -le "$(date +%s)" ]; then
           started=true
         fi
-        if [ "$FORCE" = true ]; then database_pending=true repository_pending=true started=true; fi
+        if [ "$FORCE" = true ]; then database_pending=true repository_pending=$repository_exists started=true; fi
 
         if [ "$database_pending" = true ]; then
           if [ "$started" != true ]; then
@@ -58,23 +63,27 @@ runs:
             exit 0
           fi
           # DOWNTIME alone does not stop the services: only a deploy gives them DOWNTIME_START. Roll
-          # only once the serving revision is the latest one and carries this downtime's start.
+          # only once every service writing to the database serves its latest revision, carrying
+          # this downtime's start.
           if [ "$FORCE" != true ]; then
             case "$SERVICE" in
-              json-keys) run=(agora-json-keys-grpc --project=a-novel-production-prod) ;;
-              authentication) run=(agora-authentication-rest --project=a-novel-public-api-prod) ;;
+              json-keys) project=a-novel-production-prod writers=(agora-json-keys-grpc) ;;
+              authentication) project=a-novel-public-api-prod writers=(agora-authentication-rest) ;;
+              genai) project=a-novel-production-prod writers=(agora-genai-grpc agora-genai-sweep) ;;
               *) echo "::error::Unknown service $SERVICE."; exit 1 ;;
             esac
-            stopped="$(gcloud run services describe "${run[@]}" --region=europe-west1 --format=json |
-              jq --arg start "$(jq -r .start <<<"$DOWNTIME")" '.status.latestReadyRevisionName == .status.latestCreatedRevisionName
-                and ([.spec.template.spec.containers[].env[]? | select(.name == "DOWNTIME_START") | .value] | index($start) != null)')"
-            if [ "$stopped" != true ]; then
-              echo "::error::The $SERVICE service has not taken the planned downtime yet; run a deploy by hand to apply it, which rolls the host."
-              exit 1
-            fi
+            for writer in "${writers[@]}"; do
+              stopped="$(gcloud run services describe "$writer" --project="$project" --region=europe-west1 --format=json |
+                jq --arg start "$(jq -r .start <<<"$DOWNTIME")" '.status.latestReadyRevisionName == .status.latestCreatedRevisionName
+                  and ([.spec.template.spec.containers[].env[]? | select(.name == "DOWNTIME_START") | .value] | index($start) != null)')"
+              if [ "$stopped" != true ]; then
+                echo "::error::$writer has not taken the planned downtime yet; run a deploy by hand to apply it, which rolls the host."
+                exit 1
+              fi
+            done
           fi
         fi
-        { echo "database=$database_pending"; echo "repository=$repository_pending"; echo "config=$config"; } >>"$GITHUB_OUTPUT"
+        { echo "database=$database_pending"; echo "repository=$repository_pending"; echo "repository_exists=$repository_exists"; echo "config=$config"; } >>"$GITHUB_OUTPUT"
 
     # Gold, not the informational blue: restarting a database host needs someone watching.
     - name: Announce the database rollout
@@ -94,6 +103,7 @@ runs:
       env:
         SERVICE: ${{ inputs.service }}
         DATABASE: ${{ steps.check.outputs.database }}
+        REPOSITORY_EXISTS: ${{ steps.check.outputs.repository_exists }}
         CONFIG: ${{ steps.check.outputs.config }}
       run: |
         set -euo pipefail
@@ -113,6 +123,7 @@ runs:
             xargs -r gcloud compute snapshots delete --quiet --project=a-novel-production-prod
           echo "- \`$SERVICE\`: database host rolled after snapshot \`$snapshot\`" >>"$GITHUB_STEP_SUMMARY"
         fi
+        [ "$REPOSITORY_EXISTS" = true ] || exit 0
         # The repository VM follows its database host, so pgBackRest keeps one version on both.
         gcloud compute instances stop "$repository" "${where[@]}"
         gcloud compute instances start "$repository" "${where[@]}"
