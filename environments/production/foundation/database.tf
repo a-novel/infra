@@ -113,6 +113,8 @@ resource "google_compute_instance_template" "database" {
 
   metadata = {
     agora-database-service             = each.value.component
+    agora-database-port                = tostring(each.value.port)
+    agora-database-name                = "agora_${each.key}"
     agora-database-data-disk-id        = google_compute_disk.database[each.key].disk_id
     agora-database-container-cpu       = tostring(each.value.capacity.container_cpu)
     agora-database-container-memory-mb = tostring(each.value.capacity.container_memory_mb)
