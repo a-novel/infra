@@ -11,7 +11,7 @@ on:
         type: choice
         options: [schedule, clear]
       components:
-        description: Comma-separated components it stops, such as "service-json-keys.database". Empty stops them all.
+        description: Comma-separated components it stops, such as "service-json-keys.database", or "*" for all. Empty keeps the current ones.
         type: string
         default: ""
       start:
@@ -69,10 +69,16 @@ jobs:
             echo "window=" >>"$GITHUB_OUTPUT"
             exit 0
           fi
-          # Each service root has a database that can be stopped. Naming none stops them all.
+          # Each service root has a database that can be stopped. "*" names them all, and naming none
+          # keeps the current downtime's components.
           known="$(find environments/production -mindepth 1 -maxdepth 1 -type d ! -name foundation -printf 'service-%f.database\n')"
           read -ra components <<<"${COMPONENTS//,/ }"
-          if [ "${#components[@]}" -eq 0 ]; then mapfile -t components <<<"$known"; fi
+          if [ "${components[*]}" = "*" ]; then mapfile -t components <<<"$known"; fi
+          if [ "${#components[@]}" -eq 0 ]; then mapfile -t components < <(jq -r '.components[]?' <<<"${PREVIOUS:-null}"); fi
+          if [ "${#components[@]}" -eq 0 ]; then
+            echo "::error::No downtime is scheduled, so components can't be empty: name them, or use \"*\" for all of them."
+            exit 1
+          fi
           for component in "${components[@]}"; do
             if ! grep -qx "$component" <<<"$known"; then
               echo "::error::Unknown component \"$component\"; known: $(paste -sd, <<<"$known")."

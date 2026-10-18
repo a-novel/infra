@@ -8,8 +8,7 @@ see, and how it ends.
 
 A downtime lists **components**, `service-<root>.database`, one per service whose database will be
 changed. `<root>` is the service root's directory under `environments/production`: `json-keys` or
-`authentication`. A downtime scheduled without components lists them all. It has a `start` and an
-`end`, and goes through three phases:
+`authentication`. `*` lists them all. It has a `start` and an `end`, and goes through three phases:
 
 | Phase   | When                       | What happens                                                                                                                                      |
 | ------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -44,7 +43,8 @@ downtime listing that service has started, and the deploy rolls the host only th
 This one stops every service in a day, for about an hour:
 
 ```bash
-gh workflow run downtime.yaml --repo a-novel/infra -f operation=schedule -f start=1d -f end=1h
+gh workflow run downtime.yaml --repo a-novel/infra -f operation=schedule \
+  -f 'components=*' -f start=1d -f end=1h
 ```
 
 This one stops two services at fixed times:
@@ -59,13 +59,13 @@ gh workflow run downtime.yaml --repo a-novel/infra -f operation=schedule \
 - `start` is an RFC 3339 time in UTC or a delay from now. `end` is an RFC 3339 time in UTC or a
   length from the start. Durations count days, hours and minutes: `30m`, `2h`, `1d12h`. `end` must
   come after `start`. Announce a downtime well before its start: users see it within minutes.
-- **Name components only to stop part of the platform, and list the services that depend on the one
-  you stop.** Authentication signs its tokens through JSON Keys, so a JSON Keys downtime should list
-  Authentication too.
+- **List the services that depend on the one you stop.** Authentication signs its tokens through JSON
+  Keys, so a JSON Keys downtime should list Authentication too.
 - Requests already running at `start` finish normally. Leave a margin before the database host
   restarts.
 - Running it again replaces the downtime. A new `end` only changes what users see. A new `start` or
-  new components also change when the services stop. An empty `start` keeps the current one.
+  new components also change when the services stop. Empty `components` or `start` keep the current
+  ones, so a new downtime needs both.
 - **A started downtime keeps its `start`.** Once it has passed, the run fails unless `start` is
   empty. To extend a downtime, leave `start` empty and pass a later `end`, such as `-f end=3h` for
   three hours after the start.
