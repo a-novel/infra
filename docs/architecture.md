@@ -45,6 +45,11 @@ contents need.
   through Google's managed egress.
 - **Invocation tags** (`agora-invocation`: `initializer`, `internal`, `release`, `scheduled`) gate
   who may invoke each Cloud Run service or job.
+- **Organization policies** on `a-novel-production-prod` allow only internal ingress
+  (`run.allowedIngress`) and require the invoker IAM check (`run.managed.requireInvokerIam`).
+  Cloud Run refuses a deploy there that breaks either. Organization admins set both by hand, and no
+  CI identity holds an organization role that could lift them. Public APIs run in
+  `a-novel-public-api-prod`.
 
 ## Services
 
