@@ -125,7 +125,7 @@ require_promoted_image() {
     local image="$1"
     local repository="$2"
     local digest=""
-    local expected_prefix="${REGISTRY_HOST}/${WORKLOAD_PROJECT_ID}/agora-production/${repository}@sha256:"
+    local expected_prefix="${REGISTRY_HOST}/${WORKLOAD_PROJECT_ID}/agora-${DATABASE_COMPONENT}-private-production/${repository}@sha256:"
 
     case "${image}" in
         "${expected_prefix}"*) digest="${image#"${expected_prefix}"}" ;;

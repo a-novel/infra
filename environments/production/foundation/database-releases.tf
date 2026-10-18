@@ -37,10 +37,10 @@ locals {
     regex("^ghcr\\.io/a-novel/(?P<path>[^:@]+):(?P<tag>[^@]+)@(?P<digest>sha256:[a-f0-9]{64})$", ref),
     { source = ref },
   ) }
-  # The host runs PostgreSQL from the foundation repository and its backup
-  # containers from the service's private repository; both copies share a digest.
+  # The host runs PostgreSQL and its backup containers from the service's own private repository,
+  # so a host can pull no other service's image.
   database_image_repositories = { for service in keys(var.database_images) : service => {
-    host   = "${var.region}-docker.pkg.dev/${var.workload_project_id}/agora-production"
+    host   = "${var.region}-docker.pkg.dev/${var.workload_project_id}/agora-${service}-private-production"
     backup = "${var.region}-docker.pkg.dev/${var.workload_project_id}/agora-${service}-private-production"
   } }
   database_image = { for service, image in local.database_images : service => {
