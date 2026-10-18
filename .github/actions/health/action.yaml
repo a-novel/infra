@@ -2,17 +2,30 @@ name: Production health
 description: >
   Fails unless Authentication reports PostgreSQL, SMTP and JSON Keys up, through the health check
   every service shares (modules/service-runtime/smoke.sh). The caller must check out this
-  repository, already hold Google credentials that can read the Cloud Run service, set ID_TOKEN to
-  an ID token Authentication's IAM admits, and set DOWNTIME to the planned downtime: once it starts,
-  the listed services refuse work on purpose until it is cleared, and the check is skipped.
+  repository, already hold Google credentials that can read the Cloud Run service, and set DOWNTIME
+  to the planned downtime: once it starts, the listed services refuse work on purpose until it is
+  cleared, and the check is skipped.
+
+inputs:
+  id_token:
+    required: true
+    description: >
+      An ID token Authentication's IAM admits, for the agora-authentication-rest audience, such as the
+      id_token output of google-github-actions/auth.
 
 runs:
   using: composite
   steps:
     - name: Check Authentication and its dependencies
       shell: bash
+      env:
+        ID_TOKEN: ${{ inputs.id_token }}
       run: |
         set -euo pipefail
+        if [ -z "$ID_TOKEN" ]; then
+          echo "::error::The health check needs an ID token for the agora-authentication-rest audience."
+          exit 1
+        fi
         lookup() {
           gcloud run services describe agora-authentication-rest \
             --project=a-novel-public-api-prod --region=europe-west1 --format='value(status.url)'

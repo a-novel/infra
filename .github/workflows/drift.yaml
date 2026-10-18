@@ -87,5 +87,5 @@ jobs:
           token_format: id_token
           id_token_audience: agora-authentication-rest
       - uses: $/.github/actions/health
-        env:
-          ID_TOKEN: ${{ steps.google.outputs.id_token }}
+        with:
+          id_token: ${{ steps.google.outputs.id_token }}
