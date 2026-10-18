@@ -85,9 +85,9 @@ jobs:
           [ "$EVENT" != push ] && all=true
           commits="$(printf '%s\n%s\n' "$commits" "$(git rev-parse HEAD)" | sort -u | sed '/^$/d')"
 
-          # A root depends on the shared tooling, its directory and the local modules it calls.
+          # A root depends on the action that applies it, its directory and the local modules it calls.
           deps() {
-            printf '%s\n' .opentofu-version .github/actions/ .github/workflows/deploy.yaml "$1/"
+            printf '%s\n' .opentofu-version .github/actions/tofu/ .github/workflows/deploy.yaml "$1/"
             { grep -ho 'source *= *"\.[^"]*"' "$1"/*.tf || true; } | sed -E 's/.*"(.*)"/\1/' | while read -r source; do
               deps "$(realpath --relative-to=. "$1/$source")"
             done
