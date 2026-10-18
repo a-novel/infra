@@ -65,6 +65,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           SERVER_URL: ${{ github.server_url }}
+          # The Agent App's label counts like a maintainer's, as review-gate counts it.
+          AGENT_BOT_LOGIN: ${{ vars.AGENT_BOT_LOGIN }}
         run: |
           set -euo pipefail
           # Diff against the last successful deploy, not the previous commit, so
@@ -101,13 +103,9 @@ jobs:
           # The service roots are the directories next to foundation, so a new one needs no edit here.
           mapfile -t services < <(find environments/production -mindepth 1 -maxdepth 1 -type d ! -name foundation -printf '%f\n' | sort)
 
-          # Deletions are allowed when any pull request in this deploy carried the label.
-          allow=false
-          for sha in $commits; do
-            labelled="$(gh api "repos/$REPOSITORY/commits/$sha/pulls" \
-              --jq '[.[] | select(.merged_at != null) | .labels[].name] | index("allow-resource-deletion") != null')"
-            [ "$labelled" = true ] && allow=true
-          done
+          # Deletions are allowed when a pull request in this deploy carried the label when it merged.
+          # shellcheck disable=SC2086 # One commit per word.
+          allow="$(node .github/scripts/deletion-approval.mjs $commits)"
 
           # The announcement lists the roots that changed, with each image's new tag.
           roots="" deploys=false
