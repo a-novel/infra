@@ -113,6 +113,19 @@ locals {
       identity = "genai_database"
       secret   = "production-genai-postgres-password"
     }
+    # The host sets the application role's password at boot.
+    "database:authentication-app-password" = {
+      identity = "authentication_database"
+      secret   = "production-authentication-app-password"
+    }
+    "database:json-keys-app-password" = {
+      identity = "json_keys_database"
+      secret   = "production-json-keys-app-password"
+    }
+    "database:genai-app-password" = {
+      identity = "genai_database"
+      secret   = "production-genai-app-password"
+    }
     "authentication-initializer:postgres-password" = {
       identity = "authentication_initializer"
       secret   = "production-authentication-postgres-password"
