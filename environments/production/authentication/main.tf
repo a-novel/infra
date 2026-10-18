@@ -26,14 +26,15 @@ locals {
 module "private_runtime" {
   source = "../../../modules/service-runtime"
 
-  service               = "authentication"
-  zone                  = "private"
-  project_id            = local.private_project_id
-  region                = local.region
-  management_project_id = local.management_project_id
-  secrets               = toset(["production-authentication-postgres-password"])
-  deployer              = local.deployer
-  alert_email           = var.alert_email
+  service                  = "authentication"
+  zone                     = "private"
+  project_id               = local.private_project_id
+  region                   = local.region
+  management_project_id    = local.management_project_id
+  secrets                  = toset(["production-authentication-postgres-password"])
+  database_service_account = local.database.service_account
+  deployer                 = local.deployer
+  alert_email              = var.alert_email
 }
 
 # The public REST API runs in the public-api zone.
@@ -65,12 +66,9 @@ module "backups" {
   region                    = local.region
   bucket                    = "a-novel-management-prod-232403541574-pgbr-authentication"
   management_project_number = "232403541574"
-  database = {
-    service_account = local.database.service_account
-  }
-  repository_ids       = module.private_runtime.repository_ids
-  deployer             = local.deployer
-  notification_channel = module.private_runtime.notification_channel
+  repository_ids            = module.private_runtime.repository_ids
+  deployer                  = local.deployer
+  notification_channel      = module.private_runtime.notification_channel
 }
 
 # Keep failed health requests and every application and audit log. Only successful probes to the

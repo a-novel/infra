@@ -22,8 +22,9 @@ override_data {
       }
       database_hosts = {
         genai = {
-          private_ip = "10.20.0.8"
-          port       = 5434
+          private_ip      = "10.20.0.8"
+          port            = 5434
+          service_account = "agora-genai-database@a-novel-production-prod.iam.gserviceaccount.com"
         }
       }
     }

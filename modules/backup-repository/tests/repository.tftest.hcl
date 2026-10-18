@@ -27,12 +27,9 @@ variables {
   }
   bucket                    = "agora-management-test-1-pgbr-json-keys"
   management_project_number = "1"
-  database = {
-    service_account = "agora-json-keys-database@agora-test.iam.gserviceaccount.com"
-  }
-  repository_ids       = { production = "agora-json-keys-private-production", tooling = "agora-json-keys-private-tooling" }
-  deployer             = "infra-foundation@agora-management-test.iam.gserviceaccount.com"
-  notification_channel = "projects/agora-test/notificationChannels/1"
+  repository_ids            = { production = "agora-json-keys-private-production", tooling = "agora-json-keys-private-tooling" }
+  deployer                  = "infra-foundation@agora-management-test.iam.gserviceaccount.com"
+  notification_channel      = "projects/agora-test/notificationChannels/1"
 }
 
 run "keeps_the_repository_private_and_hardened" {

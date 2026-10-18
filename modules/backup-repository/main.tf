@@ -57,19 +57,16 @@ resource "google_service_account_iam_member" "deployer" {
   member             = "serviceAccount:${var.deployer}"
 }
 
-# The repository host and the database host both pull their images from the
-# service's private repositories.
+# The repository host pulls its images from the service's private repositories. The database
+# host's own grant lives in service-runtime, so a host without backups pulls too.
 resource "google_artifact_registry_repository_iam_member" "readers" {
-  for_each = { for pair in setproduct(keys(var.repository_ids), ["repository", "database"]) : join("/", pair) => {
-    repository = var.repository_ids[pair[0]]
-    member     = pair[1] == "repository" ? google_service_account.repository.member : "serviceAccount:${var.database.service_account}"
-  } }
+  for_each = { for purpose, repository in var.repository_ids : "${purpose}/repository" => repository }
 
   project    = var.project_id
   location   = var.region
-  repository = each.value.repository
+  repository = each.value
   role       = "roles/artifactregistry.reader"
-  member     = each.value.member
+  member     = google_service_account.repository.member
 }
 
 # The database host reaches this VM at one fixed address, so the address is reserved.

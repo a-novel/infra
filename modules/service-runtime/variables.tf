@@ -33,6 +33,12 @@ variable "secrets" {
   type        = set(string)
 }
 
+variable "database_service_account" {
+  description = "Email of the service's database host identity, owned by the foundation root. Null for a service without a database host."
+  type        = string
+  default     = null
+}
+
 variable "workloads" {
   description = "Workloads that run apart from the main server, by role: each gets its own identity, which reads only the secret IDs listed and writes telemetry only when asked."
   type = map(object({

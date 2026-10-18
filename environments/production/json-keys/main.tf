@@ -24,12 +24,13 @@ locals {
 module "runtime" {
   source = "../../../modules/service-runtime"
 
-  service               = "json-keys"
-  zone                  = "private"
-  project_id            = local.project_id
-  region                = local.region
-  management_project_id = local.management_project_id
-  secrets               = toset([for name in keys(var.secret_versions) : "production-json-keys-${name}"])
+  service                  = "json-keys"
+  zone                     = "private"
+  project_id               = local.project_id
+  region                   = local.region
+  management_project_id    = local.management_project_id
+  secrets                  = toset([for name in keys(var.secret_versions) : "production-json-keys-${name}"])
+  database_service_account = local.database.service_account
   # The jobs and the smoke check run apart from the gRPC server, each reading only what it mounts.
   workloads = merge(
     { for job, config in local.jobs : job => { secrets = toset([for name in values(config.secrets) : "production-json-keys-${name}"]) } },
@@ -54,10 +55,7 @@ module "backups" {
   region                    = local.region
   bucket                    = "a-novel-management-prod-232403541574-pgbr-json-keys"
   management_project_number = "232403541574"
-  database = {
-    service_account = local.database.service_account
-  }
-  repository_ids       = module.runtime.repository_ids
-  deployer             = local.deployer
-  notification_channel = module.runtime.notification_channel
+  repository_ids            = module.runtime.repository_ids
+  deployer                  = local.deployer
+  notification_channel      = module.runtime.notification_channel
 }
