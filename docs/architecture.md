@@ -121,19 +121,19 @@ Workloads pin numeric versions in `terraform.tfvars`, never `latest`.
 
 ## Identities
 
-| Account                                                                               | Purpose                                                                                      |
-| ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `infra-plan`, `infra-foundation` (management)                                         | CI: read-only plans and checks, and deployments.                                             |
-| `infra-downtime` (management)                                                         | CI: starts and cancels the planned downtime announcements.                                   |
-| `agora-json-keys-private`, `agora-authentication-private`, `agora-authentication-api` | Cloud Run runtimes, one per service and zone.                                                |
-| `agora-auth-initializer`                                                              | Reserved for the one-time administrator initializer, which no job runs yet.                  |
-| `agora-json-keys-database`, `agora-auth-database`                                     | Database hosts.                                                                              |
-| `agora-pgbr-<service>`                                                                | Backup repository VMs.                                                                       |
-| `pgbr-<service>-recovery` (management)                                                | Recovery drill hosts: read and restore backups, never delete. Disabled outside drills.       |
-| `agora-scheduler-invoker`                                                             | Runs the rotation job, and only jobs tagged `scheduled`.                                     |
-| `studio-visual-ci`, `studio-visual-maintenance` (management)                          | `a-novel/platform-studio` CI: visual-test evidence in Google Drive, no Cloud Storage access. |
-| `downtime-announcer` (management)                                                     | Runs the planned downtime announcements; reads only the Discord webhook.                     |
-| `github-dispatcher`, `github-dispatch-clock` (management)                             | The `.github` workflows' clock: starts the dispatcher, which reads only the dispatch tokens. |
+| Account                                                                                                      | Purpose                                                                                      |
+| ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| `infra-plan`, `infra-foundation` (management)                                                                | CI: read-only plans and checks, and deployments.                                             |
+| `infra-downtime` (management)                                                                                | CI: starts and cancels the planned downtime announcements.                                   |
+| `agora-json-keys-private`, `agora-authentication-private`, `agora-authentication-api`, `agora-genai-private` | Cloud Run runtimes, one per service and zone.                                                |
+| `agora-auth-initializer`                                                                                     | Reserved for the one-time administrator initializer, which no job runs yet.                  |
+| `agora-json-keys-database`, `agora-auth-database`                                                            | Database hosts.                                                                              |
+| `agora-pgbr-<service>`                                                                                       | Backup repository VMs.                                                                       |
+| `pgbr-<service>-recovery` (management)                                                                       | Recovery drill hosts: read and restore backups, never delete. Disabled outside drills.       |
+| `agora-scheduler-invoker`                                                                                    | Runs the rotation job, and only jobs tagged `scheduled`.                                     |
+| `studio-visual-ci`, `studio-visual-maintenance` (management)                                                 | `a-novel/platform-studio` CI: visual-test evidence in Google Drive, no Cloud Storage access. |
+| `downtime-announcer` (management)                                                                            | Runs the planned downtime announcements; reads only the Discord webhook.                     |
+| `github-dispatcher`, `github-dispatch-clock` (management)                                                    | The `.github` workflows' clock: starts the dispatcher, which reads only the dispatch tokens. |
 
 Data Access audit logs are on in the management project for IAM, Secret Manager, Cloud Storage and
 token exchange.
@@ -148,7 +148,7 @@ All state lives in `a-novel-management-prod-232403541574-tofu-state`, one object
 - **Email channels.** Foundation has an operations channel and a cost channel. Each service runtime
   adds its own operations channel, and a service's backup alerts go to its private runtime's channel.
 - **Alerts** cover Authentication's 5xx rate, failed jobs and key rotation, database capacity,
-  backups, and the monthly budget of 60 units of the billing account's currency, for the four
+  backups, and the monthly budget of 150 units of the billing account's currency, for the four
   production projects. [Alerts](runbooks/alerts.md) gives each threshold and what to do.
 - **Health checks.** `drift.yaml` calls Authentication's `/v2/healthcheck` every three hours, and
   each deploy that changed a service calls it once.
