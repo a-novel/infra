@@ -91,6 +91,19 @@ run "grants_no_basic_roles" {
   }
 }
 
+run "keeps_humans_off_untagged_jobs" {
+  command = plan
+
+  assert {
+    condition = (
+      length(setintersection(google_project_iam_custom_role.authentication_initializer_deployer[0].permissions,
+      ["run.jobs.update", "run.jobs.delete", "run.jobs.deleteTagBinding", "run.jobs.run", "run.jobs.runWithOverrides"])) == 0 &&
+      alltrue([for binding in google_project_iam_member.authentication_initializer_maintainer : length(binding.condition) == 1])
+    )
+    error_message = "Humans may create and tag the initializer, and change only jobs that carry its tag."
+  }
+}
+
 run "copies_and_pins_host_credentials_by_digest" {
   command = plan
 

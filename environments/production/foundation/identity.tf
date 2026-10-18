@@ -304,13 +304,10 @@ resource "google_project_iam_custom_role" "authentication_initializer_deployer" 
     "run.executions.list",
     "run.jobs.create",
     "run.jobs.createTagBinding",
-    "run.jobs.delete",
-    "run.jobs.deleteTagBinding",
     "run.jobs.get",
     "run.jobs.list",
     "run.jobs.listEffectiveTags",
     "run.jobs.listTagBindings",
-    "run.jobs.update",
     "run.locations.list",
     "run.operations.get",
   ]
@@ -327,6 +324,42 @@ resource "google_project_iam_member" "authentication_initializer_deployer" {
   project = google_project.workload.project_id
   role    = google_project_iam_custom_role.authentication_initializer_deployer[0].name
   member  = each.value
+}
+
+# No tag exists before a job is created, so only creation and tagging go unconditioned. Changing,
+# untagging or deleting a job stays on jobs that carry the initializer tag.
+resource "google_project_iam_custom_role" "authentication_initializer_maintainer" {
+  project = google_project.workload.project_id
+
+  role_id     = "authenticationInitializerMaintainer"
+  title       = "Authentication Initializer Maintainer"
+  description = "Change, untag or delete the human-only Authentication initializer job."
+  stage       = "GA"
+
+  permissions = [
+    "run.jobs.delete",
+    "run.jobs.deleteTagBinding",
+    "run.jobs.update",
+  ]
+
+  depends_on = [google_project_service.workload["iam.googleapis.com"]]
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "google_project_iam_member" "authentication_initializer_maintainer" {
+  for_each = var.authentication_initializer_principals
+
+  project = google_project.workload.project_id
+  role    = google_project_iam_custom_role.authentication_initializer_maintainer.name
+  member  = each.value
+
+  condition {
+    title       = "AuthenticationInitializerOnly"
+    description = "Named humans may change only the tagged one-time Authentication initializer."
+    expression  = "resource.matchTagId('${google_tags_tag_key.cloud_run_invocation.id}', '${google_tags_tag_value.cloud_run_invocation["initializer"].id}')"
+  }
 }
 
 resource "google_project_iam_member" "database_runtime_observability" {
