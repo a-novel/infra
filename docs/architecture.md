@@ -63,12 +63,13 @@ hold the [host tools](runbooks/host-tools.md), pinned by digest.
 
 Each service has its own **database host**, sized on its own in foundation's `database_capacity`:
 machine type, container vCPU and memory, connection ceiling and data disk. JSON Keys and
-Authentication run the same size today.
+Authentication run the sizes below; GenAI, whose rows hold payloads and responses of up to 24 MiB,
+runs an `e2-standard-2` with a 1.5 vCPU, 6 GiB container and 150 connections.
 
 - a Container-Optimized OS VM, `e2-medium`, the only member of a stateful instance group. Its COS
   image is pinned, and automatic OS updates are off;
 - a 50 GiB `pd-balanced` data disk and a fixed IP that both outlive the VM: JSON Keys
-  `10.20.0.5:5432`, Authentication `10.20.0.4:5433`;
+  `10.20.0.5:5432`, Authentication `10.20.0.4:5433`, GenAI on port `5434`;
 - PostgreSQL 18 from the service's `database` image, in a container limited to 0.75 vCPU, 1536 MiB
   and 50 connections, supervised by systemd.
 

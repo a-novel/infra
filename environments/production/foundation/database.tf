@@ -19,6 +19,7 @@ locals {
   database_ports = {
     json_keys      = 5432
     authentication = 5433
+    genai          = 5434
   }
 
   database_hosts = {

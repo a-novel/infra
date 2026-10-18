@@ -22,13 +22,13 @@ variable "database_releases" {
 
   validation {
     condition = length(var.database_releases) == 0 || (
-      toset(keys(var.database_releases)) == toset(["json-keys", "authentication"]) &&
+      toset(keys(var.database_releases)) == toset(["json-keys", "authentication", "genai"]) &&
       alltrue([for service, release in var.database_releases :
         can(regex("^[a-f0-9]{40}$", release.revision)) &&
         can(regex("^[1-9][0-9]*$", release.password_version))
       ])
     )
-    error_message = "Supply both database releases with revisions and numeric credential versions."
+    error_message = "Supply every database release with its revision and numeric credential version."
   }
 }
 
