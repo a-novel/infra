@@ -131,6 +131,10 @@ jobs:
           npx --yes --package "renovate@$renovate_version" -- renovate-config-validator --strict
           go tool -modfile=golangci-lint.mod golangci-lint run ./...
 
+      - name: Check every service root is planned, deployed and drift-checked
+        shell: bash
+        run: .github/scripts/check-service-roots.sh
+
       - name: Lint shell scripts
         uses: a-novel-kit/workflows/generic-actions/lint-shell@v1.63.0
         with:

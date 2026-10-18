@@ -99,12 +99,14 @@ jobs:
           }
           deploy() { changed "$1" && echo true || echo false; }
 
-          # Service roots read foundation's outputs, so a foundation change re-plans them.
+          # The service roots are the directories next to foundation, so a new one needs no edit here;
+          # main.yaml's lint-repository checks the jobs it needs in this workflow.
+          services="$(find environments/production -mindepth 1 -maxdepth 1 -type d ! -name foundation -printf '%f\n' | sort | tr - _)"
           bootstrap="$(deploy bootstrap)"
           foundation="$(deploy environments/production/foundation)"
-          json_keys="$(deploy environments/production/json-keys)"
-          authentication="$(deploy environments/production/authentication)"
-          [ "$foundation" = true ] && json_keys=true authentication=true
+          for root in $services; do
+            printf -v "$root" '%s' "$(deploy "environments/production/${root//_/-}")"
+          done
 
           # Deletions are allowed when any pull request in this deploy carried the label.
           allow=false
@@ -114,9 +116,9 @@ jobs:
             [ "$labelled" = true ] && allow=true
           done
 
-          # The announcement lists the roots this deploy applies, with each image's new tag.
+          # The announcement lists the roots that changed, with each image's new tag.
           roots="" deploys=false
-          for root in bootstrap foundation json_keys authentication; do
+          for root in bootstrap foundation $services; do
             [ "${!root}" = true ] || continue
             deploys=true
             dir=environments/production/${root//_/-}
@@ -131,7 +133,7 @@ jobs:
           # Every deploy applies every service root, so the services run the current DOWNTIME whichever
           # deploy applies last: a downtime written while another deploy waited or ran would otherwise
           # reach no service. An unchanged root applies nothing; the announcement keeps the changed ones.
-          json_keys=true authentication=true
+          for root in $services; do printf -v "$root" true; done
           # Both posts name the commit that triggered the deploy, and its author's GitHub login: a
           # squash merge carries the profile name instead. The name stays as a fallback.
           author="$(gh api "repos/$REPOSITORY/commits/$(git rev-parse HEAD)" --jq '.author.login // empty' 2>/dev/null)" || author=""
@@ -142,14 +144,13 @@ jobs:
           printf '%s<<%s\n%s\n%s\n' announcement "$delimiter" "$announcement" "$delimiter" \
             commit "$delimiter" "$commit" "$delimiter" >>"$GITHUB_OUTPUT"
 
-          tee -a "$GITHUB_OUTPUT" <<EOF
-          deploys=$deploys
-          bootstrap=$bootstrap
-          foundation=$foundation
-          json_keys=$json_keys
-          authentication=$authentication
-          allow=$allow
-          EOF
+          {
+            echo "deploys=$deploys"
+            echo "bootstrap=$bootstrap"
+            echo "foundation=$foundation"
+            for root in $services; do echo "$root=${!root}"; done
+            echo "allow=$allow"
+          } | tee -a "$GITHUB_OUTPUT"
           echo "Changes since ${base:-the first deploy}; every root: $all." >>"$GITHUB_STEP_SUMMARY"
       - name: Announce the deploy
         if: steps.changes.outputs.deploys == 'true'
