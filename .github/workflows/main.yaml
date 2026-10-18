@@ -115,12 +115,7 @@ jobs:
         with:
           node-version: "24.22.0"
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: false
-
-      - name: Lint formatting, Go and Renovate configuration
+      - name: Lint formatting and Renovate configuration
         shell: bash
         env:
           # renovate: datasource=npm depName=prettier
@@ -131,7 +126,9 @@ jobs:
           set -euo pipefail
           npx --yes "prettier@$prettier_version" --no-config --no-editorconfig --check .
           npx --yes --package "renovate@$renovate_version" -- renovate-config-validator --strict
-          go tool -modfile=golangci-lint.mod golangci-lint run ./...
+
+      - name: Lint Go
+        uses: a-novel-kit/workflows/go-actions/lint-go@v1.63.0
 
       - name: Check every service root is planned, deployed and drift-checked
         shell: bash
