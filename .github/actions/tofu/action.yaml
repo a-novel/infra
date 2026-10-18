@@ -88,29 +88,41 @@ runs:
         LOCK: ${{ inputs.apply }}
         # Service roots pass the planned downtime window to their workloads.
         TF_VAR_downtime: ${{ env.DOWNTIME }}
+        ACCESS_TOKEN: ${{ steps.auth.outputs.access_token || steps.auth_retry.outputs.access_token }}
       run: |
         set -euo pipefail
         errors="$RUNNER_TEMP/plan.err"
         attempt() {
           tofu -chdir="$ROOT" init -input=false -lockfile=readonly -no-color >/dev/null 2>"$errors" || return 1
           status=0
-          tofu -chdir="$ROOT" plan -input=false -no-color -lock="$LOCK" -detailed-exitcode -out=tfplan \
+          tofu -chdir="$ROOT" plan -input=false -no-color -lock="$LOCK" -detailed-exitcode -out=tfplan "$@" \
             >"$RUNNER_TEMP/plan.txt" 2>>"$errors" || status=$?
           [ "$status" -ne 1 ]
         }
         # Cloud Storage answers 503 now and then while OpenTofu reads the state. A plan changes
         # nothing, so such an error is retried for two minutes; any other error fails at once.
-        deadline=$((SECONDS + 120))
-        until attempt; do
-          if [ "$SECONDS" -ge "$deadline" ] || ! grep -Eq '"code": 50[234]|UNAVAILABLE' "$errors"; then
-            cat "$RUNNER_TEMP/plan.txt" "$errors" 2>/dev/null || true
-            exit 1
-          fi
-          echo "::warning::Google answered a transient error while planning; retrying in 10 seconds."
-          sleep 10
-        done
-        cat "$errors" >&2
-        tofu -chdir="$ROOT" show -json tfplan >"$RUNNER_TEMP/plan.json"
+        run_plan() {
+          local deadline=$((SECONDS + 120))
+          until attempt "$@"; do
+            if [ "$SECONDS" -ge "$deadline" ] || ! grep -Eq '"code": 50[234]|UNAVAILABLE' "$errors"; then
+              cat "$RUNNER_TEMP/plan.txt" "$errors" 2>/dev/null || true
+              exit 1
+            fi
+            echo "::warning::Google answered a transient error while planning; retrying in 10 seconds."
+            sleep 10
+          done
+          cat "$errors" >&2
+          tofu -chdir="$ROOT" show -json tfplan >"$RUNNER_TEMP/plan.json"
+        }
+        run_plan
+        # A job run through run_execution_token keeps its new token even when the execution fails,
+        # so a failed migration or smoke check would never run again. Replacing its token source
+        # runs it again in this plan.
+        mapfile -t rerun < <(node .github/scripts/rerun-failed-jobs.mjs "$RUNNER_TEMP/plan.json")
+        if [ "${#rerun[@]}" -gt 0 ]; then
+          echo "::warning::A job's last execution failed, so this plan runs it again: ${rerun[*]}"
+          run_plan "${rerun[@]/#/-replace=}"
+        fi
         echo "changes=$([ "$status" -eq 2 ] && echo true || echo false)" >>"$GITHUB_OUTPUT"
         # The log lists each change and the fields it touches; values stay in the job summary.
         jq -r '.resource_changes[]? | select(.change.actions != ["no-op"]) | (.change.actions | join("+")) + " " + .address
