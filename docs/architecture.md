@@ -39,15 +39,20 @@ contents need.
   `agora-authentication-rest`. Only the platform and the deploy health check may invoke it, so it
   trusts the visitor IP the platform sends in `X-Client-IP`. Its egress reaches private ranges
   through the VPC, and SMTP through Google's managed egress.
+- **GenAI gRPC and sweep** have internal ingress and IAM authentication. GenAI's own identity invokes
+  the gRPC service for its smoke check, and narrative-engine will once it deploys; only the scheduler
+  identity invokes the sweep. Their egress reaches private ranges through the VPC, and OpenAI
+  through Google's managed egress.
 - **Invocation tags** (`agora-invocation`: `initializer`, `internal`, `release`, `scheduled`) gate
   who may invoke each Cloud Run service or job.
 
 ## Services
 
-| Service        | Cloud Run                                                                                                                              | Jobs                                                                                                                                         |
-| -------------- | -------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| JSON Keys      | `agora-json-keys-grpc`: 1–2 instances, private ingress, CPU only during requests                                                       | `migrations` (runs at deploy), `rotatekeys` (Scheduler hourly at :10; the job keeps 24 h between rotations), `smoke` (probes each new image) |
-| Authentication | `agora-authentication-rest`: 1 instance, which holds the in-memory rate limits; public ingress, CPU always allocated for detached mail | `migrations` (runs at deploy, in the private project)                                                                                        |
+| Service        | Cloud Run                                                                                                                                                                                                   | Jobs                                                                                                                                         |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| JSON Keys      | `agora-json-keys-grpc`: 1–2 instances, private ingress, CPU only during requests                                                                                                                            | `migrations` (runs at deploy), `rotatekeys` (Scheduler hourly at :10; the job keeps 24 h between rotations), `smoke` (probes each new image) |
+| Authentication | `agora-authentication-rest`: 1 instance, which holds the in-memory rate limits; public ingress, CPU always allocated for detached mail                                                                      | `migrations` (runs at deploy, in the private project)                                                                                        |
+| GenAI          | `agora-genai-grpc`: 0–4 instances, private ingress, CPU only during requests; `agora-genai-sweep`: 0–1 instance, private ingress, which Scheduler calls every minute to check the generations nobody polled | `migrations` (runs at deploy), `smoke` (probes each new image)                                                                               |
 
 Service images come from `ghcr.io/a-novel/*`. Each is pinned as `tag@digest` in the service root's
 `terraform.tfvars`, and its database image in foundation's too. Every plan verifies each image it
@@ -131,7 +136,7 @@ Workloads pin numeric versions in `terraform.tfvars`, never `latest`.
 | `agora-json-keys-database`, `agora-auth-database`                                                            | Database hosts.                                                                              |
 | `agora-pgbr-<service>`                                                                                       | Backup repository VMs.                                                                       |
 | `pgbr-<service>-recovery` (management)                                                                       | Recovery drill hosts: read and restore backups, never delete. Disabled outside drills.       |
-| `agora-scheduler-invoker`                                                                                    | Runs the rotation job, and only jobs tagged `scheduled`.                                     |
+| `agora-scheduler-invoker`                                                                                    | Runs the rotation job, and only jobs tagged `scheduled`; calls GenAI's sweep.                |
 | `studio-visual-ci`, `studio-visual-maintenance` (management)                                                 | `a-novel/platform-studio` CI: visual-test evidence in Google Drive, no Cloud Storage access. |
 | `downtime-announcer` (management)                                                                            | Runs the planned downtime announcements; reads only the Discord webhook.                     |
 | `github-dispatcher`, `github-dispatch-clock` (management)                                                    | The `.github` workflows' clock: starts the dispatcher, which reads only the dispatch tokens. |
