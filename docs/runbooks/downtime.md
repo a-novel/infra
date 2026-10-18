@@ -8,7 +8,8 @@ see, and how it ends.
 
 A downtime lists **components**, `service-<root>.database`, one per service whose database will be
 changed. `<root>` is the service root's directory under `environments/production`: `json-keys` or
-`authentication`. It has a `start` and an `end`, and goes through three phases:
+`authentication`. A downtime scheduled without components lists them all. It has a `start` and an
+`end`, and goes through three phases:
 
 | Phase   | When                       | What happens                                                                                                                                      |
 | ------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -40,6 +41,14 @@ downtime listing that service has started, and the deploy rolls the host only th
 
 ## Schedule or change a downtime
 
+This one stops every service in a day, for about an hour:
+
+```bash
+gh workflow run downtime.yaml --repo a-novel/infra -f operation=schedule -f start=1d -f end=1h
+```
+
+This one stops two services at fixed times:
+
 ```bash
 gh workflow run downtime.yaml --repo a-novel/infra -f operation=schedule \
   -f components=service-json-keys.database,service-authentication.database \
@@ -47,14 +56,17 @@ gh workflow run downtime.yaml --repo a-novel/infra -f operation=schedule \
 ```
 
 - Only repository admins can run it.
-- Times are RFC 3339 in UTC, and `end` must come after `start`. Announce a downtime well before its
-  start: users see it within minutes.
-- **List the services that depend on the one you stop.** Authentication signs its tokens through JSON
-  Keys, so a JSON Keys downtime should list Authentication too.
+- `start` is an RFC 3339 time in UTC or a delay from now. `end` is an RFC 3339 time in UTC or a
+  length from the start. Durations count days, hours and minutes: `30m`, `2h`, `1d12h`. `end` must
+  come after `start`. Announce a downtime well before its start: users see it within minutes.
+- **Name components only to stop part of the platform, and list the services that depend on the one
+  you stop.** Authentication signs its tokens through JSON Keys, so a JSON Keys downtime should list
+  Authentication too.
 - Requests already running at `start` finish normally. Leave a margin before the database host
   restarts.
 - Running it again replaces the downtime. A new `end` only changes what users see. A new `start` or
-  new components also change when the services stop.
+  new components also change when the services stop. A delay always sets a new `start`: to extend a
+  downtime, pass its current `start` again, from the last run's summary, with a later `end`.
 
 The workflow checks the components and dates, publishes the document, writes `DOWNTIME`, then runs a
 full deploy, which passes `DOWNTIME_START` to the listed services. **Check that this deploy succeeded
