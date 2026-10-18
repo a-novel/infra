@@ -18,7 +18,7 @@ locals {
   database_env = {
     POSTGRES_HOST        = local.database.private_ip
     POSTGRES_PORT        = tostring(local.database.port)
-    POSTGRES_USER        = "agora_genai"
+    POSTGRES_USER        = "agora_genai_app"
     POSTGRES_DATABASE    = "agora_genai"
     POSTGRES_TLS_ENABLED = "false"
   }
@@ -26,9 +26,9 @@ locals {
   # (a-novel/infra#912), so the grant applies before any revision mounts the new one.
   database_passwords = ["postgres-password", "app-password"]
   # The servers call the provider, so both read its key; the migrations job reads only the database.
-  migrations_secret_env = { POSTGRES_PASSWORD = "postgres-password" }
+  migrations_secret_env = { POSTGRES_PASSWORD = "app-password" }
   server_secret_env = {
-    POSTGRES_PASSWORD = "postgres-password"
+    POSTGRES_PASSWORD = "app-password"
     OPENAI_API_KEY    = "openai-api-key"
   }
   server_env = merge(local.database_env, local.downtime_env, {
@@ -39,10 +39,10 @@ locals {
 
 # Cloud Run names an execution after its job and token, and refuses a name it has used before. A
 # token taken from a replaced terraform_data is new on every change, a revert to an older image
-# included. It is hashed to fit the 63-character execution name. A new identity runs it too, so
-# its grants are proven at once rather than at the next release.
+# included. It is hashed to fit the 63-character execution name. A new identity or database user
+# runs it too, so its grants and login are proven at once rather than at the next release.
 resource "terraform_data" "migrations" {
-  triggers_replace = [local.image.migrations, module.runtime.workloads["migrations"].service_account]
+  triggers_replace = [local.image.migrations, module.runtime.workloads["migrations"].service_account, local.database_env.POSTGRES_USER]
 }
 
 resource "google_cloud_run_v2_job" "migrations" {

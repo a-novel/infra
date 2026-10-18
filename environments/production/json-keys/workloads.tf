@@ -18,7 +18,7 @@ locals {
   database_env = {
     POSTGRES_HOST        = local.database.private_ip
     POSTGRES_PORT        = tostring(local.database.port)
-    POSTGRES_USER        = "agora_json_keys"
+    POSTGRES_USER        = "agora_json_keys_app"
     POSTGRES_DATABASE    = "agora_json_keys"
     POSTGRES_TLS_ENABLED = "false"
     # Signing reads keys from a cache, so a few connections serve every instance. Two instances and
@@ -27,24 +27,24 @@ locals {
     POSTGRES_MAX_IDLE_CONNS = "2"
   }
   secret_env = {
-    POSTGRES_PASSWORD = "postgres-password"
+    POSTGRES_PASSWORD = "app-password"
     APP_MASTER_KEY    = "app-master-key"
   }
   # Every database workload reads both passwords while the services move to the application role
   # (a-novel/infra#912), so the grant applies before any revision mounts the new one.
   database_passwords = ["postgres-password", "app-password"]
   jobs = {
-    migrations = { timeout = "600s", retries = 0, secrets = { POSTGRES_PASSWORD = "postgres-password" } }
+    migrations = { timeout = "600s", retries = 0, secrets = { POSTGRES_PASSWORD = "app-password" } }
     rotatekeys = { timeout = "300s", retries = 1, secrets = local.secret_env }
   }
 }
 
 # Cloud Run names an execution after its job and token, and refuses a name it has used before. A
 # token taken from a replaced terraform_data is new on every change, a revert to an older image
-# included. It is hashed to fit the 63-character execution name. A new identity runs it too, so
-# its grants are proven at once rather than at the next release.
+# included. It is hashed to fit the 63-character execution name. A new identity or database user
+# runs it too, so its grants and login are proven at once rather than at the next release.
 resource "terraform_data" "migrations" {
-  triggers_replace = [local.image.migrations, module.runtime.workloads["migrations"].service_account]
+  triggers_replace = [local.image.migrations, module.runtime.workloads["migrations"].service_account, local.database_env.POSTGRES_USER]
 }
 
 resource "google_cloud_run_v2_job" "application" {
