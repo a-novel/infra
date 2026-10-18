@@ -164,8 +164,9 @@ plans only the rest.
 
 1. **Open the failed job.** The plan or apply output names the resource and the API error.
 2. **Find the cause:**
-   - **Transient API error or timeout:** select **Re-run failed jobs**. Every job plans again, so a
-     re-run is safe. A re-run applies only while its commit is still `master`'s head. Once `master`
+   - **Transient API error or timeout:** the plan retries Google's 503s on its own, for two
+     minutes, and authentication retries once. For an error that outlasts that, or one during the
+     apply, select **Re-run failed jobs**. Every job plans again, so a re-run is safe. A re-run applies only while its commit is still `master`'s head. Once `master`
      has moved on, it refuses, and a deploy run by hand applies the latest code instead.
    - **Configuration error:** fix it in a new pull request. Never fix resources in the console. The
      next plan reverts the change, and the drift check reports it.
