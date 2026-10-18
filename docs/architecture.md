@@ -1,20 +1,20 @@
 # Architecture
 
 This document describes what runs where in production, on Google Cloud: projects, network,
-services, databases and backups, secrets, identities, state and monitoring. Region `europe-west1`,
-database zone `europe-west1-d`.
+services, databases and backups, secrets, identities, state and monitoring. Everything runs in
+`europe-west1`, and the database hosts in zone `europe-west1-d`.
 
 ## Projects
 
 Production is split into four projects, one per trust zone, so each one holds only the access its
 contents need.
 
-| Project                   | Zone       | Holds                                                                                 |
-| ------------------------- | ---------- | ------------------------------------------------------------------------------------- |
-| `a-novel-management-prod` | management | State bucket, backup buckets, secrets, CI identities. Survives a workload rebuild.    |
-| `a-novel-production-prod` | private    | Shared VPC host, database and backup VMs, JSON Keys, all jobs, the rotation schedule. |
-| `a-novel-public-api-prod` | public-api | Authentication REST API, attached to the private VPC.                                 |
-| `a-novel-public-prod`     | public     | Reserved for platforms; no VPC attachment, no database access.                        |
+| Project                   | Zone       | Holds                                                                               |
+| ------------------------- | ---------- | ----------------------------------------------------------------------------------- |
+| `a-novel-management-prod` | management | State bucket, backup buckets, secrets, CI identities. Survives a workload rebuild.  |
+| `a-novel-production-prod` | private    | Shared VPC host, database and backup VMs, JSON Keys, GenAI, every job and schedule. |
+| `a-novel-public-api-prod` | public-api | Authentication REST API, attached to the private VPC.                               |
+| `a-novel-public-prod`     | public     | Reserved for platforms; no VPC attachment, no database access.                      |
 
 ## Network
 
@@ -36,13 +36,12 @@ contents need.
 - **JSON Keys gRPC** has internal ingress and IAM authentication. Only Authentication's API identity
   and JSON Keys' smoke identity may invoke it.
 - **Authentication REST** has public ingress and IAM authentication, under the custom audience
-  `agora-authentication-rest`. Only the platform and the health checks, after each deploy and every
-  three hours, may invoke it, so it trusts the visitor IP the platform sends in `X-Client-IP`. Its egress reaches private ranges
+  `agora-authentication-rest`. Only the platform and the health checks may invoke it. It therefore
+  trusts the visitor IP the platform sends in `X-Client-IP`. Its egress reaches private ranges
   through the VPC, and SMTP through Google's managed egress.
-- **GenAI gRPC and sweep** have internal ingress and IAM authentication. GenAI's smoke identity invokes
-  the gRPC service, and narrative-engine will once it deploys; only the scheduler
-  identity invokes the sweep. Their egress reaches private ranges through the VPC, and OpenAI
-  through Google's managed egress.
+- **GenAI gRPC and sweep** have internal ingress and IAM authentication. GenAI's smoke identity
+  invokes the gRPC service. Only the scheduler identity invokes the sweep. Their egress reaches
+  private ranges through the VPC, and OpenAI through Google's managed egress.
 - **Invocation tags** (`agora-invocation`: `initializer`, `internal`, `release`, `scheduled`) gate
   who may invoke each Cloud Run service or job.
 - **Organization policies** on `a-novel-production-prod` allow only internal ingress
@@ -73,8 +72,8 @@ hold the [host tools](runbooks/host-tools.md), pinned by digest.
 
 Each service has its own **database host**, sized on its own in foundation's `database_capacity`:
 machine type, container vCPU and memory, connection ceiling and data disk. JSON Keys and
-Authentication run the sizes below; GenAI, whose rows hold payloads and responses of up to 24 MiB,
-runs an `e2-standard-2` with a 1.5 vCPU, 6 GiB container and 150 connections.
+Authentication run the sizes below. GenAI's rows hold payloads and responses of up to 24 MiB, so its
+host is an `e2-standard-2` with a 1.5 vCPU, 6 GiB container and 150 connections.
 
 - a Container-Optimized OS VM, `e2-medium`, the only member of a stateful instance group. Its COS
   image is pinned, and automatic OS updates are off;
@@ -83,9 +82,10 @@ runs an `e2-standard-2` with a 1.5 vCPU, 6 GiB container and 150 connections.
 - PostgreSQL 18 from the service's `database` image, in a container limited to 0.75 vCPU, 1536 MiB
   and 50 connections, supervised by systemd.
 
-Each service also has its own **backup repository VM**, an `e2-micro`: JSON Keys `10.20.0.6`,
-Authentication `10.20.0.7`. Foundation's `native_backups.<service>.repository_ip` sets that address:
-the service root reserves it for the VM, and the database host trusts it.
+JSON Keys and Authentication each have their own **backup repository VM**, an `e2-micro`: JSON
+Keys `10.20.0.6`, Authentication `10.20.0.7`. GenAI enrolls in native backups later. Foundation's
+`native_backups.<service>.repository_ip` sets each address. The service root reserves it for the VM,
+and the database host trusts it.
 
 - The database host archives WAL and runs backups with pgBackRest, over mutual TLS, to its
   repository VM.
@@ -98,16 +98,16 @@ the service root reserves it for the VM, and the database host trusts it.
 | Monday–Saturday 02:00 | differential backup                |
 | hourly at :30         | archive check and TLS expiry check |
 
-Each timer adds up to five minutes of random delay. pgBackRest keeps full backups, and the WAL and
-differentials that depend on them, for 14 days, and owns their expiry: the buckets never age-delete
-live data. Restores go into a disposable project; see [Recovery](runbooks/recovery.md).
+Each timer adds up to five minutes of random delay. pgBackRest keeps full backups, with the WAL and
+differentials that depend on them, for 14 days. It owns their expiry, so the buckets never
+age-delete live data. Restores go into a disposable project; see [Recovery](runbooks/recovery.md).
 
 Before restarting a database host, each rollout snapshots its data disk into `europe-west1`. Each
 rollout also deletes that service's snapshots older than 14 days, so a snapshot lasts at least that
 long. See [Undo a rollout](runbooks/database.md#undo-a-rollout).
 
-The management project also holds `…-backups`, the bucket of the earlier logical backups. Nothing
-writes to it any more; its locked retention keeps it until it can be retired.
+The management project also holds `…-backups`, the bucket of the earlier logical backups. It
+receives no writes, and its locked retention keeps it until it can be retired.
 
 ## Secrets
 
@@ -132,21 +132,21 @@ Workloads pin numeric versions in `terraform.tfvars`, never `latest`.
 
 ## Identities
 
-| Account                                                                                                      | Purpose                                                                                                                                        |
-| ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `infra-plan`, `infra-foundation` (management)                                                                | CI: read-only plans and checks, and deployments.                                                                                               |
-| `infra-downtime` (management)                                                                                | CI: starts and cancels the planned downtime announcements.                                                                                     |
-| `infra-health` (management)                                                                                  | CI: the scheduled health check, which calls Authentication's REST API.                                                                         |
-| `agora-json-keys-private`, `agora-authentication-private`, `agora-authentication-api`, `agora-genai-private` | Cloud Run runtimes, one per service and zone: the gRPC servers, Authentication's migrations and REST API.                                      |
-| `agora-<service>-<role>`: `migrations`, `rotatekeys`, `sweep`, `smoke`                                       | JSON Keys' and GenAI's other workloads, one each, reading only the secrets it mounts. The smoke identities may only invoke their gRPC service. |
-| `agora-auth-initializer`                                                                                     | Reserved for the one-time administrator initializer, which no job runs yet.                                                                    |
-| `agora-json-keys-database`, `agora-auth-database`, `agora-genai-database`                                    | Database hosts.                                                                                                                                |
-| `agora-pgbr-<service>`                                                                                       | Backup repository VMs.                                                                                                                         |
-| `pgbr-<service>-recovery` (management)                                                                       | Recovery drill hosts: read and restore backups, never delete. Disabled outside drills.                                                         |
-| `agora-scheduler-invoker`                                                                                    | Runs the rotation job, and only jobs tagged `scheduled`; calls GenAI's sweep.                                                                  |
-| `studio-visual-ci`, `studio-visual-maintenance` (management)                                                 | `a-novel/platform-studio` CI: visual-test evidence in Google Drive, no Cloud Storage access.                                                   |
-| `downtime-announcer` (management)                                                                            | Runs the planned downtime announcements; reads only the Discord webhook.                                                                       |
-| `github-dispatcher`, `github-dispatch-clock` (management)                                                    | The `.github` workflows' clock: starts the dispatcher, which reads only the dispatch tokens.                                                   |
+| Account                                                                                                      | Purpose                                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `infra-plan`, `infra-foundation` (management)                                                                | CI: read-only plans and checks, and deployments.                                                                                                                               |
+| `infra-downtime` (management)                                                                                | CI: starts and cancels the planned downtime announcements.                                                                                                                     |
+| `infra-health` (management)                                                                                  | CI: the scheduled health check, which calls Authentication's REST API.                                                                                                         |
+| `agora-json-keys-private`, `agora-authentication-private`, `agora-authentication-api`, `agora-genai-private` | Cloud Run runtimes, one per service and zone: the gRPC servers, Authentication's migrations and REST API.                                                                      |
+| `agora-<service>-<role>`: `migrations`, `rotatekeys`, `sweep`, `smoke`                                       | JSON Keys' and GenAI's other workloads, each with its own account, which reads only the secrets that workload mounts. The smoke identities may only invoke their gRPC service. |
+| `agora-auth-initializer`                                                                                     | Reserved for the one-time administrator initializer, which no job runs yet.                                                                                                    |
+| `agora-json-keys-database`, `agora-auth-database`, `agora-genai-database`                                    | Database hosts.                                                                                                                                                                |
+| `agora-pgbr-<service>`                                                                                       | Backup repository VMs.                                                                                                                                                         |
+| `pgbr-<service>-recovery` (management)                                                                       | Recovery drill hosts: read and restore backups, never delete. Disabled outside drills.                                                                                         |
+| `agora-scheduler-invoker`                                                                                    | Runs the rotation job, and only jobs tagged `scheduled`; calls GenAI's sweep.                                                                                                  |
+| `studio-visual-ci`, `studio-visual-maintenance` (management)                                                 | `a-novel/platform-studio` CI: visual-test evidence in Google Drive, no Cloud Storage access.                                                                                   |
+| `downtime-announcer` (management)                                                                            | Runs the planned downtime announcements; reads only the Discord webhook.                                                                                                       |
+| `github-dispatcher`, `github-dispatch-clock` (management)                                                    | The `.github` workflows' clock: starts the dispatcher, which reads only the dispatch tokens.                                                                                   |
 
 Data Access audit logs are on in the management project for IAM, Secret Manager, Cloud Storage and
 token exchange.
@@ -160,10 +160,10 @@ All state lives in `a-novel-management-prod-232403541574-tofu-state`, one object
 
 - **Email channels.** Foundation has an operations channel and a cost channel. Each service runtime
   adds its own operations channel, and a service's backup alerts go to its private runtime's channel.
-- **Alerts** cover Authentication's 5xx rate, failed jobs and key rotation, database capacity,
-  backups, and the monthly budget of 150 units of the billing account's currency, for the four
-  production projects. [Alerts](runbooks/alerts.md) gives each threshold and what to do.
-- **Health checks.** `drift.yaml` calls Authentication's `/v2/healthcheck` every three hours, and
-  each deploy that changed a service calls it once.
+- **Alerts** cover Authentication's 5xx rate, GenAI's sweep failures, failed jobs and key rotation,
+  database capacity, backups, and the [monthly budget](costs.md). [Alerts](runbooks/alerts.md) gives
+  each threshold and what to do.
+- **Health checks.** `drift.yaml` calls Authentication's `/v2/healthcheck` every three hours. Each
+  deploy calls it once after applying the service roots, even when one of them failed.
 - **Logs** are kept 30 days. Successful health-check requests to Authentication are not logged.
 - **Traces and logs** leave the services over OTLP to Google's Telemetry API.
