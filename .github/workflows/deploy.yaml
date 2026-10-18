@@ -1,7 +1,8 @@
 name: deploy
 
-# Every merge to master applies the roots it changed. Service roots deploy in
-# parallel, so a change one service needs from another merges first, on its own.
+# Every merge to master applies the roots it changed, and every service root, so
+# the services always run the current DOWNTIME. Service roots deploy in parallel,
+# so a change one service needs from another merges first, on its own.
 # A manual run applies every root, and so does the end of a downtime.yaml run,
 # which changes DOWNTIME. Disable this workflow to freeze production.
 on:
@@ -127,6 +128,10 @@ jobs:
             fi
             roots+="- \`${root//_/-}\`${images:+: $images}"$'\n'
           done
+          # Every deploy applies every service root, so the services run the current DOWNTIME whichever
+          # deploy applies last: a downtime written while another deploy waited or ran would otherwise
+          # reach no service. An unchanged root applies nothing; the announcement keeps the changed ones.
+          json_keys=true authentication=true
           # Both posts name the commit that triggered the deploy, and its author's GitHub login: a
           # squash merge carries the profile name instead. The name stays as a fallback.
           author="$(gh api "repos/$REPOSITORY/commits/$(git rev-parse HEAD)" --jq '.author.login // empty' 2>/dev/null)" || author=""

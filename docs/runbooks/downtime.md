@@ -71,10 +71,11 @@ gh workflow run downtime.yaml --repo a-novel/infra -f operation=schedule \
   three hours after the start.
 
 The workflow checks the components and dates, publishes the document and writes `DOWNTIME`. Once it
-ends, `deploy.yaml` runs a full deploy, which passes `DOWNTIME_START` to the listed services.
-**Check that this deploy succeeded before `start`:** if it failed, the services keep serving at
-`start`. The rollout then refuses to restart their database hosts, until a deploy run by hand gives
-them `DOWNTIME_START`.
+ends, `deploy.yaml` runs a full deploy, which passes `DOWNTIME_START` to the listed services. Every
+later deploy applies the current `DOWNTIME` too, so a merge landing meanwhile cannot lose it.
+**Check that a deploy succeeded after the change, before `start`:** if none did, the services keep
+serving at `start`. The rollout then refuses to restart their database hosts, until a deploy run by
+hand gives them `DOWNTIME_START`.
 
 ## While it runs
 
@@ -94,6 +95,8 @@ gh workflow run downtime.yaml --repo a-novel/infra -f operation=clear
 Clear it once the work is done and verified. The workflow deletes `DOWNTIME` and publishes `null`,
 then `deploy.yaml` runs a full deploy, which restarts the services without `DOWNTIME_START`. The
 health check runs again, and so does the JSON Keys smoke check when the downtime listed JSON Keys.
+**Check that a deploy succeeded after the clear:** until one does, the services keep answering 503.
+If none is due, run one by hand (`gh workflow run deploy.yaml --repo a-novel/infra --ref master`).
 
 A forgotten downtime keeps its services down. The drift workflow fails every three hours once `end`
 has passed, as a reminder to clear it or to schedule a later end.

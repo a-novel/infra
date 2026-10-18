@@ -7,14 +7,15 @@ and its fix work, when a plan needs a label, and what to do when a deploy fails.
 ## What a deploy runs
 
 Every merge to `master` starts `deploy.yaml`. It compares `master` with the last _successful_
-deploy, and applies only the roots whose inputs changed since then:
+deploy, and applies bootstrap and foundation only when their inputs changed since then:
 
 - a root's own directory, or a local module it calls;
 - the shared tooling, `.opentofu-version`, `.github/actions/` or `deploy.yaml`, which affects every
   root.
 
-Markdown changes deploy nothing. A foundation change also deploys both services, which read its
-outputs.
+It applies every service root on every deploy. A service root also reads `DOWNTIME`, which no diff
+shows: a downtime written while another deploy waited or ran must still reach the services, and an
+unchanged service root applies nothing. The announcement lists only the roots that changed.
 
 ```text
 changes ─► bootstrap ─► foundation ─► json-keys ──────┬─► rollout (per service)

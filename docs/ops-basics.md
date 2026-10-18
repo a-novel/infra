@@ -66,8 +66,9 @@ deploy:  bootstrap ─► foundation ─► json-keys ──────┬─�
    `approve-pr.yaml`. The Dependencies App's pull requests, Renovate's updates and the release pins,
    are approved and queued automatically once their checks pass, so a failing plan is what stops
    one. Repository admins can bypass these rules.
-4. **The deploy.** Each merge starts `deploy.yaml`. It applies only the roots changed since the last
-   successful deploy, in order: bootstrap, foundation, then the services in parallel. Then two jobs
+4. **The deploy.** Each merge starts `deploy.yaml`. It applies bootstrap and foundation when they
+   changed since the last successful deploy, then every service root in parallel, so the services
+   always run the current planned downtime. Then two jobs
    run side by side: the database [rollout](#database-hosts-and-planned-downtime) and a production
    health check.
 
