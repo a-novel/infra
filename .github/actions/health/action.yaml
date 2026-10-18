@@ -1,7 +1,7 @@
 name: Production health
 description: >
   Fails unless Authentication reports PostgreSQL, SMTP and JSON Keys up, through the health check
-  every service shares (modules/service-runtime/smoke.sh). The caller must check out this
+  every service shares (modules/smoke-check/smoke.sh). The caller must check out this
   repository, already hold Google credentials that can read the Cloud Run service, and set DOWNTIME
   to the planned downtime: once it starts, the listed services refuse work on purpose until it is
   cleared, and the check is skipped.
@@ -34,4 +34,4 @@ runs:
         url="$(lookup || { sleep 15; lookup; })"
         DOWNTIME_START="$(jq -r '.start // empty' <<<"${DOWNTIME:-}")" PROTOCOL=http SERVICE_URL="$url" \
           HEALTH_PATH=/v2/healthcheck IDENTITY_TOKEN="$ID_TOKEN" TMPDIR="$RUNNER_TEMP" \
-          sh "$GITHUB_WORKSPACE/modules/service-runtime/smoke.sh"
+          sh "$GITHUB_WORKSPACE/modules/smoke-check/smoke.sh"

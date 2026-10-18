@@ -65,7 +65,7 @@ run "serves_privately_from_pinned_images_and_secrets" {
 
   assert {
     condition = (
-      terraform_data.migrations.triggers_replace == google_cloud_run_v2_job.application["migrations"].template[0].template[0].containers[0].image &&
+      terraform_data.migrations.triggers_replace[0] == google_cloud_run_v2_job.application["migrations"].template[0].template[0].containers[0].image &&
       google_cloud_run_v2_job.application["rotatekeys"].run_execution_token == null
     )
     error_message = "Only migrations run during apply, once per image change."
@@ -74,11 +74,6 @@ run "serves_privately_from_pinned_images_and_secrets" {
   assert {
     condition     = !contains([for env in google_cloud_run_v2_service.grpc.template[0].containers[0].env : env.name], "DOWNTIME_START")
     error_message = "Without a planned downtime, the service receives no start."
-  }
-
-  assert {
-    condition     = terraform_data.smoke.triggers_replace == [google_cloud_run_v2_service.grpc.template[0].containers[0].image, "", sha256(module.runtime.smoke_script)]
-    error_message = "Without a planned downtime, the smoke check runs once per gRPC image or check change."
   }
 }
 
@@ -110,16 +105,6 @@ run "passes_the_planned_downtime_start" {
       ) : lookup({ for env in container.env : env.name => env.value }, "DOWNTIME_START", null) == "2026-10-12T06:00:00Z"
     ])
     error_message = "Every service and application job must receive the planned downtime start."
-  }
-
-  assert {
-    condition     = lookup({ for env in google_cloud_run_v2_job.smoke.template[0].template[0].containers[0].env : env.name => env.value }, "DOWNTIME_START", null) == "2026-10-12T06:00:00Z"
-    error_message = "The smoke check must know when the planned downtime starts, to skip during it."
-  }
-
-  assert {
-    condition     = terraform_data.smoke.triggers_replace == [google_cloud_run_v2_service.grpc.template[0].containers[0].image, "2026-10-12T06:00:00Z", sha256(module.runtime.smoke_script)]
-    error_message = "A planned downtime must replace the smoke trigger, so clearing it runs the check again."
   }
 }
 

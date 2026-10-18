@@ -46,7 +46,6 @@ run "serves_privately_from_pinned_images_and_secrets" {
       google_cloud_run_v2_service.grpc.template[0].containers[0].image,
       google_cloud_run_v2_service.sweep.template[0].containers[0].image,
       google_cloud_run_v2_job.migrations.template[0].template[0].containers[0].image,
-      google_cloud_run_v2_job.smoke.template[0].template[0].containers[0].image,
       ] : can(regex("^europe-west1-docker\\.pkg\\.dev/a-novel-production-prod/agora-genai-private-production/service-genai/[a-z/]+@sha256:[a-f0-9]{64}$", image))
     ])
     error_message = "Workloads must run the Artifact Registry copy of each image, pinned by digest."
@@ -68,13 +67,8 @@ run "serves_privately_from_pinned_images_and_secrets" {
   }
 
   assert {
-    condition     = terraform_data.migrations.triggers_replace == google_cloud_run_v2_job.migrations.template[0].template[0].containers[0].image
+    condition     = terraform_data.migrations.triggers_replace[0] == google_cloud_run_v2_job.migrations.template[0].template[0].containers[0].image
     error_message = "Migrations run during apply, once per image change."
-  }
-
-  assert {
-    condition     = terraform_data.smoke.triggers_replace == [google_cloud_run_v2_service.grpc.template[0].containers[0].image, "", sha256(module.runtime.smoke_script)]
-    error_message = "Without a planned downtime, the smoke check runs once per gRPC image or check change."
   }
 
   assert {
@@ -109,15 +103,9 @@ run "passes_the_planned_downtime_start" {
       google_cloud_run_v2_service.grpc.template[0].containers,
       google_cloud_run_v2_service.sweep.template[0].containers,
       google_cloud_run_v2_job.migrations.template[0].template[0].containers,
-      google_cloud_run_v2_job.smoke.template[0].template[0].containers,
       ) : lookup({ for env in container.env : env.name => env.value }, "DOWNTIME_START", null) == "2026-10-12T06:00:00Z"
     ])
     error_message = "Every service and job must receive the planned downtime start: the gRPC server and the sweep both write."
-  }
-
-  assert {
-    condition     = terraform_data.smoke.triggers_replace == [google_cloud_run_v2_service.grpc.template[0].containers[0].image, "2026-10-12T06:00:00Z", sha256(module.runtime.smoke_script)]
-    error_message = "A planned downtime must replace the smoke trigger, so clearing it runs the check again."
   }
 }
 

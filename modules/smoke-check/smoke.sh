@@ -57,19 +57,21 @@ show_answer() {
     fi
 }
 
-# A fresh invoker grant takes a minute or two to apply, so the check retries for two minutes.
+# A fresh invoker grant takes a minute or two to apply, so the check retries for two minutes, every
+# five seconds.
+deadline=$(($(date +%s) + 120))
 attempt=1
 until check; do
     code=$?
     # A check that began just before the downtime fails once the service stops.
     skip_if_started
-    if [ "${attempt}" -ge 12 ]; then
+    if [ "$(date +%s)" -ge "${deadline}" ]; then
         printf 'Health check failed after %s attempts, the last exiting with %s.\n' "${attempt}" "${code}"
         show_answer
         exit 1
     fi
     attempt=$((attempt + 1))
-    sleep 10
+    sleep 5
 done
 show_answer
 printf 'Health check passed.\n'

@@ -34,13 +34,13 @@ contents need.
   | SSH from Identity-Aware Proxy, `35.235.240.0/20`, to the database and repository VMs | 810      |
 
 - **JSON Keys gRPC** has internal ingress and IAM authentication. Only Authentication's API identity
-  and JSON Keys' own private identity, shared by its gRPC service and its jobs, may invoke it.
+  and JSON Keys' smoke identity may invoke it.
 - **Authentication REST** has public ingress and IAM authentication, under the custom audience
   `agora-authentication-rest`. Only the platform and the health checks, after each deploy and every
   three hours, may invoke it, so it trusts the visitor IP the platform sends in `X-Client-IP`. Its egress reaches private ranges
   through the VPC, and SMTP through Google's managed egress.
-- **GenAI gRPC and sweep** have internal ingress and IAM authentication. GenAI's own identity invokes
-  the gRPC service for its smoke check, and narrative-engine will once it deploys; only the scheduler
+- **GenAI gRPC and sweep** have internal ingress and IAM authentication. GenAI's smoke identity invokes
+  the gRPC service, and narrative-engine will once it deploys; only the scheduler
   identity invokes the sweep. Their egress reaches private ranges through the VPC, and OpenAI
   through Google's managed egress.
 - **Invocation tags** (`agora-invocation`: `initializer`, `internal`, `release`, `scheduled`) gate
@@ -116,14 +116,14 @@ them. Operators may add and read versions of every secret.
 
 | Secret                                                     | Read by                                                          |
 | ---------------------------------------------------------- | ---------------------------------------------------------------- |
-| `production-json-keys-postgres-password`                   | JSON Keys runtime, database host                                 |
-| `production-json-keys-app-master-key`                      | JSON Keys runtime                                                |
+| `production-json-keys-postgres-password`                   | JSON Keys runtime and jobs, database host                        |
+| `production-json-keys-app-master-key`                      | JSON Keys runtime, rotation job                                  |
 | `production-authentication-postgres-password`              | Authentication runtimes, the initializer identity, database host |
 | `production-authentication-smtp-sender-password`           | Authentication API                                               |
 | `production-authentication-waitlist-secret`                | Authentication API, when the waitlist is on                      |
 | `production-authentication-super-admin-password`           | The initializer identity                                         |
-| `production-genai-postgres-password`                       | GenAI runtime, database host                                     |
-| `production-genai-openai-api-key`                          | GenAI runtime                                                    |
+| `production-genai-postgres-password`                       | GenAI runtime, sweep and migrations, database host               |
+| `production-genai-openai-api-key`                          | GenAI runtime and sweep                                          |
 | `production-<service>-pgbackrest-{ca,database,repository}` | Database host and repository VM (TLS)                            |
 | `production-downtime-discord-webhook`                      | `downtime-announcer`, when it posts a planned downtime step      |
 | `production-github-dispatch-{a-novel,a-novel-kit}`         | `github-dispatcher`, when it dispatches that org's workflows     |
@@ -132,20 +132,21 @@ Workloads pin numeric versions in `terraform.tfvars`, never `latest`.
 
 ## Identities
 
-| Account                                                                                                      | Purpose                                                                                      |
-| ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
-| `infra-plan`, `infra-foundation` (management)                                                                | CI: read-only plans and checks, and deployments.                                             |
-| `infra-downtime` (management)                                                                                | CI: starts and cancels the planned downtime announcements.                                   |
-| `infra-health` (management)                                                                                  | CI: the scheduled health check, which calls Authentication's REST API.                       |
-| `agora-json-keys-private`, `agora-authentication-private`, `agora-authentication-api`, `agora-genai-private` | Cloud Run runtimes, one per service and zone.                                                |
-| `agora-auth-initializer`                                                                                     | Reserved for the one-time administrator initializer, which no job runs yet.                  |
-| `agora-json-keys-database`, `agora-auth-database`                                                            | Database hosts.                                                                              |
-| `agora-pgbr-<service>`                                                                                       | Backup repository VMs.                                                                       |
-| `pgbr-<service>-recovery` (management)                                                                       | Recovery drill hosts: read and restore backups, never delete. Disabled outside drills.       |
-| `agora-scheduler-invoker`                                                                                    | Runs the rotation job, and only jobs tagged `scheduled`; calls GenAI's sweep.                |
-| `studio-visual-ci`, `studio-visual-maintenance` (management)                                                 | `a-novel/platform-studio` CI: visual-test evidence in Google Drive, no Cloud Storage access. |
-| `downtime-announcer` (management)                                                                            | Runs the planned downtime announcements; reads only the Discord webhook.                     |
-| `github-dispatcher`, `github-dispatch-clock` (management)                                                    | The `.github` workflows' clock: starts the dispatcher, which reads only the dispatch tokens. |
+| Account                                                                                                      | Purpose                                                                                                                                        |
+| ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `infra-plan`, `infra-foundation` (management)                                                                | CI: read-only plans and checks, and deployments.                                                                                               |
+| `infra-downtime` (management)                                                                                | CI: starts and cancels the planned downtime announcements.                                                                                     |
+| `infra-health` (management)                                                                                  | CI: the scheduled health check, which calls Authentication's REST API.                                                                         |
+| `agora-json-keys-private`, `agora-authentication-private`, `agora-authentication-api`, `agora-genai-private` | Cloud Run runtimes, one per service and zone: the gRPC servers, Authentication's migrations and REST API.                                      |
+| `agora-<service>-<role>`: `migrations`, `rotatekeys`, `sweep`, `smoke`                                       | JSON Keys' and GenAI's other workloads, one each, reading only the secrets it mounts. The smoke identities may only invoke their gRPC service. |
+| `agora-auth-initializer`                                                                                     | Reserved for the one-time administrator initializer, which no job runs yet.                                                                    |
+| `agora-json-keys-database`, `agora-auth-database`, `agora-genai-database`                                    | Database hosts.                                                                                                                                |
+| `agora-pgbr-<service>`                                                                                       | Backup repository VMs.                                                                                                                         |
+| `pgbr-<service>-recovery` (management)                                                                       | Recovery drill hosts: read and restore backups, never delete. Disabled outside drills.                                                         |
+| `agora-scheduler-invoker`                                                                                    | Runs the rotation job, and only jobs tagged `scheduled`; calls GenAI's sweep.                                                                  |
+| `studio-visual-ci`, `studio-visual-maintenance` (management)                                                 | `a-novel/platform-studio` CI: visual-test evidence in Google Drive, no Cloud Storage access.                                                   |
+| `downtime-announcer` (management)                                                                            | Runs the planned downtime announcements; reads only the Discord webhook.                                                                       |
+| `github-dispatcher`, `github-dispatch-clock` (management)                                                    | The `.github` workflows' clock: starts the dispatcher, which reads only the dispatch tokens.                                                   |
 
 Data Access audit logs are on in the management project for IAM, Secret Manager, Cloud Storage and
 token exchange.
