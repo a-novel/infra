@@ -25,6 +25,7 @@ JSON Keys stores, and a new value cannot decrypt them.
    | `*-postgres-password` | 32–128 characters, `[A-Za-z0-9_-]`, different per service |
    | `*-app-master-key`    | 64 hexadecimal characters                                 |
    | `*-waitlist-secret`   | at least 32 characters                                    |
+   | `*-openai-api-key`    | an OpenAI project key restricted to the Responses API     |
 
 2. Pin the new number in a pull request (`secret_versions` in the service root) and merge. Deploy
    rolls out a new revision that reads it.

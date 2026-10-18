@@ -111,6 +111,8 @@ them. Operators may add and read versions of every secret.
 | `production-authentication-smtp-sender-password`           | Authentication API                                               |
 | `production-authentication-waitlist-secret`                | Authentication API, when the waitlist is on                      |
 | `production-authentication-super-admin-password`           | The initializer identity                                         |
+| `production-genai-postgres-password`                       | GenAI runtime, database host                                     |
+| `production-genai-openai-api-key`                          | GenAI runtime                                                    |
 | `production-<service>-pgbackrest-{ca,database,repository}` | Database host and repository VM (TLS)                            |
 | `production-downtime-discord-webhook`                      | `downtime-announcer`, when it posts a planned downtime step      |
 | `production-github-dispatch-{a-novel,a-novel-kit}`         | `github-dispatcher`, when it dispatches that org's workflows     |
