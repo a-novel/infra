@@ -26,13 +26,12 @@ locals {
 module "private_runtime" {
   source = "../../../modules/service-runtime"
 
-  service               = "authentication"
-  zone                  = "private"
-  project_id            = local.private_project_id
-  region                = local.region
-  management_project_id = local.management_project_id
-  # Migrations read both passwords while they move to the application role (a-novel/infra#912).
-  secrets                  = toset(["production-authentication-postgres-password", "production-authentication-app-password"])
+  service                  = "authentication"
+  zone                     = "private"
+  project_id               = local.private_project_id
+  region                   = local.region
+  management_project_id    = local.management_project_id
+  secrets                  = toset(["production-authentication-app-password"])
   database_service_account = local.database.service_account
   deployer                 = local.deployer
   alert_email              = var.alert_email

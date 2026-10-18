@@ -126,10 +126,6 @@ locals {
       identity = "genai_database"
       secret   = "production-genai-app-password"
     }
-    "authentication-initializer:postgres-password" = {
-      identity = "authentication_initializer"
-      secret   = "production-authentication-postgres-password"
-    }
     "authentication-initializer:app-password" = {
       identity = "authentication_initializer"
       secret   = "production-authentication-app-password"
