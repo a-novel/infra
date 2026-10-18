@@ -90,7 +90,8 @@ host is an `e2-standard-2` with a 1.5 vCPU, 6 GiB container and 150 connections.
 Each database has two login roles:
 
 - `<database>` owns the database and is the cluster's superuser;
-- `<database>_app` owns schema `public` and holds no superuser, role or database rights.
+- `<database>_app` owns schema `public` and holds no superuser, role or database rights. The
+  services, their migrations and their jobs connect as this role.
 
 At boot, the host sets both passwords. The host then hands `<database>_app` every object in `public`
 outside an extension, and GenAI's pg_cron jobs. Objects from an earlier superuser migration change

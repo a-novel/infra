@@ -47,10 +47,10 @@ there: the Google account, the database role, and so on.
 The database host sets two passwords at boot, each from a version in foundation's
 `database_releases.<service>`:
 
-| Secret                | Role             | Host version           | Service version                       |
-| --------------------- | ---------------- | ---------------------- | ------------------------------------- |
-| `*-postgres-password` | `<database>`     | `password_version`     | `secret_versions.postgres-password`   |
-| `*-app-password`      | `<database>_app` | `app_password_version` | none yet: no service connects with it |
+| Secret                | Role             | Host version           | Service version                        |
+| --------------------- | ---------------- | ---------------------- | -------------------------------------- |
+| `*-postgres-password` | `<database>`     | `password_version`     | none: no service connects as the owner |
+| `*-app-password`      | `<database>_app` | `app_password_version` | `secret_versions.app-password`         |
 
 1. Add the version.
 2. In **one** pull request, bump the host version and the service version.

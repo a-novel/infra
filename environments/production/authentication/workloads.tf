@@ -18,21 +18,22 @@ locals {
   database_env = {
     POSTGRES_HOST        = local.database.private_ip
     POSTGRES_PORT        = tostring(local.database.port)
-    POSTGRES_USER        = "agora_authentication"
+    POSTGRES_USER        = "agora_authentication_app"
     POSTGRES_DATABASE    = "agora_authentication"
     POSTGRES_TLS_ENABLED = "false"
   }
   rest_secret_env = merge(
-    { POSTGRES_PASSWORD = "postgres-password", SMTP_SENDER_PASSWORD = "smtp-sender-password" },
+    { POSTGRES_PASSWORD = "app-password", SMTP_SENDER_PASSWORD = "smtp-sender-password" },
     var.waitlist_url == null ? {} : { WAITLIST_SECRET = "waitlist-secret" },
   )
 }
 
 # Cloud Run names an execution after its job and token, and refuses a name it has used before. A
 # token taken from a replaced terraform_data is new on every change, a revert to an older image
-# included. It is hashed to fit the 63-character execution name.
+# included. It is hashed to fit the 63-character execution name. A new database user runs it too,
+# so its login is proven at once rather than at the next release.
 resource "terraform_data" "migrations" {
-  triggers_replace = local.image.migrations
+  triggers_replace = [local.image.migrations, local.database_env.POSTGRES_USER]
 }
 
 resource "google_cloud_run_v2_job" "migrations" {
@@ -74,8 +75,8 @@ resource "google_cloud_run_v2_job" "migrations" {
           name = "POSTGRES_PASSWORD"
           value_source {
             secret_key_ref {
-              secret  = "projects/${local.management_project_id}/secrets/production-authentication-postgres-password"
-              version = tostring(var.secret_versions["postgres-password"])
+              secret  = "projects/${local.management_project_id}/secrets/production-authentication-app-password"
+              version = tostring(var.secret_versions["app-password"])
             }
           }
         }
