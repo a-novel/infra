@@ -7,7 +7,9 @@ services, databases and backups, secrets, identities, state and monitoring. Ever
 ## Projects
 
 Production is split into four projects, one per trust zone, so each one holds only the access its
-contents need.
+contents need. The services of a zone share its project. An organization holds a limited number of
+Google Cloud projects, and raising that quota is slow. Services therefore keep apart through their own
+identities, image repositories, network tags and database hosts.
 
 | Project                   | Zone       | Holds                                                                               |
 | ------------------------- | ---------- | ----------------------------------------------------------------------------------- |
