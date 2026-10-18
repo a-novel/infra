@@ -4,6 +4,9 @@ inputs:
   image_name:
     description: Reviewed Dockerfile basename under builds
     default: host-credentials
+  trivy_installed:
+    description: '"true" when an earlier step of the job installed this Trivy version, which the scan then reuses'
+    default: "false"
 runs:
   using: composite
   steps:
@@ -42,5 +45,6 @@ runs:
         format: table
         hide-progress: true
         cache: false
+        skip-setup-trivy: ${{ inputs.trivy_installed }}
         # renovate: datasource=github-releases depName=aquasecurity/trivy
         version: v0.75.0
