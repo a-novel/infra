@@ -25,18 +25,20 @@ resource "google_project_iam_member" "foundation_service_access" {
 # Creation cannot be scoped: Cloud Run and Cloud Scheduler support neither resource-name conditions
 # nor tags on a resource that does not exist yet. A new service's first deploy creates its jobs
 # without an execution and its services without invokers, foundation then tags them and creates
-# its schedules, and only tagged resources can be updated, run or invoked.
+# its schedules, and only tagged resources can be updated, run or invoked. A tag binding is read back
+# before its tag reaches the release role's conditions, so listing bindings is not conditioned either.
 resource "google_project_iam_custom_role" "foundation_private_provisioning" {
   count = length(google_project_iam_custom_role.foundation_private_release)
 
   project     = google_project.workload.project_id
   role_id     = "infraFoundationPrivateProvisioning"
   title       = "Foundation private workload creation"
-  description = "Create private Cloud Run services, jobs and schedules, and read them back, without updating, running or invoking them."
+  description = "Create and tag private Cloud Run services, jobs and schedules, and read them back, without updating, running or invoking them."
   permissions = [
     "cloudscheduler.jobs.create",
-    "run.jobs.create", "run.jobs.get",
-    "run.services.create", "run.services.get",
+    "run.jobs.create", "run.jobs.createTagBinding", "run.jobs.get", "run.jobs.listTagBindings",
+    "run.services.create", "run.services.createTagBinding",
+    "run.services.get", "run.services.listTagBindings",
   ]
 }
 
@@ -46,6 +48,15 @@ resource "google_project_iam_member" "foundation_private_provisioning" {
   project = google_project.workload.project_id
   role    = google_project_iam_custom_role.foundation_private_provisioning[0].name
   member  = "serviceAccount:${local.automation_service_accounts.foundation}"
+}
+
+# Binding a tag also takes tagUser on its value, which the project's tagAdmin does not include.
+resource "google_tags_tag_value_iam_member" "foundation_application_tags" {
+  for_each = toset([for workload in values(local.application_invocation) : workload.class])
+
+  tag_value = google_tags_tag_value.cloud_run_invocation[each.value].name
+  role      = "roles/resourcemanager.tagUser"
+  member    = "serviceAccount:${local.automation_service_accounts.foundation}"
 }
 
 resource "google_project_iam_custom_role" "foundation_public_api" {
