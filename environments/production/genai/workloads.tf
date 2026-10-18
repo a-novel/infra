@@ -33,13 +33,22 @@ locals {
   })
 }
 
-# The first deploy creates the jobs without an execution: only a job carrying foundation's release
-# tag may run, and foundation tags it once it exists.
+# Cloud Run names an execution after its job and token, and refuses a name it has used before. A
+# token taken from a replaced terraform_data is new on every change, a revert to an older image
+# included. It is hashed to fit the 63-character execution name.
+resource "terraform_data" "migrations" {
+  triggers_replace = local.image.migrations
+}
+
 resource "google_cloud_run_v2_job" "migrations" {
   name                = "agora-genai-migrations"
   location            = local.region
   deletion_protection = true
   labels              = { environment = "production", component = "genai", role = "migrations" }
+
+  # Apply runs the migration once per image change and fails until it succeeds. It also schedules
+  # the retention purge through pg_cron.
+  run_execution_token = substr(sha256(terraform_data.migrations.id), 0, 24)
 
   template {
     task_count  = 1
@@ -305,11 +314,27 @@ resource "google_cloud_run_v2_service" "sweep" {
   }
 }
 
+# The private service is unreachable from CI, so a one-shot job calls its health RPC from inside
+# the VPC after every new image.
+resource "google_cloud_run_v2_service_iam_member" "smoke_invoker" {
+  name     = google_cloud_run_v2_service.grpc.name
+  location = local.region
+  role     = "roles/run.servicesInvoker"
+  member   = module.runtime.member
+}
+
+# A planned downtime skips the check, so its start is a trigger: clearing the downtime runs the check
+# again against the restarted service.
+resource "terraform_data" "smoke" {
+  triggers_replace = [local.image.grpc, try(local.downtime_env.DOWNTIME_START, "")]
+}
+
 resource "google_cloud_run_v2_job" "smoke" {
   name                = "agora-genai-smoke"
   location            = local.region
   deletion_protection = true
   labels              = { environment = "production", component = "genai", role = "smoke" }
+  run_execution_token = substr(sha256(terraform_data.smoke.id), 0, 24)
 
   template {
     task_count  = 1
@@ -351,6 +376,8 @@ resource "google_cloud_run_v2_job" "smoke" {
       }
     }
   }
+
+  depends_on = [google_cloud_run_v2_service_iam_member.smoke_invoker]
 
   lifecycle {
     prevent_destroy = true
