@@ -89,11 +89,12 @@ host is an `e2-standard-2` with a 1.5 vCPU, 6 GiB container and 150 connections.
 
 Each database has two login roles:
 
-- `<database>` owns the database and is the cluster's superuser;
+- `<database>` owns the database and is the cluster's superuser. It has no password and logs in
+  only through the host's local socket;
 - `<database>_app` owns schema `public` and holds no superuser, role or database rights. The
   services, their migrations and their jobs connect as this role.
 
-At boot, the host sets both passwords. The host then hands `<database>_app` every object in `public`
+At boot, the host removes the owner's password and sets the application role's. The host then hands `<database>_app` every object in `public`
 outside an extension, and GenAI's pg_cron jobs. Objects from an earlier superuser migration change
 owner this way.
 
@@ -131,13 +132,13 @@ them. Operators may add and read versions of every secret.
 
 | Secret                                                     | Read by                                                         |
 | ---------------------------------------------------------- | --------------------------------------------------------------- |
-| `production-json-keys-postgres-password`                   | Database host                                                   |
+| `production-json-keys-postgres-password`                   | Nobody: the owner has no password                               |
 | `production-json-keys-app-master-key`                      | JSON Keys runtime, rotation job                                 |
-| `production-authentication-postgres-password`              | Database host                                                   |
+| `production-authentication-postgres-password`              | Nobody: the owner has no password                               |
 | `production-authentication-smtp-sender-password`           | Authentication API                                              |
 | `production-authentication-waitlist-secret`                | Authentication API, when the waitlist is on                     |
 | `production-authentication-super-admin-password`           | The initializer identity                                        |
-| `production-genai-postgres-password`                       | Database host                                                   |
+| `production-genai-postgres-password`                       | Nobody: the owner has no password                               |
 | `production-genai-openai-api-key`                          | GenAI runtime and sweep                                         |
 | `production-<service>-app-password`                        | Database host, database workloads, Authentication's initializer |
 | `production-<service>-pgbackrest-{ca,database,repository}` | Database host and repository VM (TLS)                           |
