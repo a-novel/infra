@@ -6,10 +6,10 @@ variable "service_release_zones" {
 
   validation {
     condition = alltrue([for service, zones in var.service_release_zones :
-      contains(["json-keys", "authentication"], service) && zones != null &&
+      contains(["json-keys", "authentication", "genai"], service) && zones != null &&
       try(length(zones) > 0 && alltrue([for zone in zones : contains(["private", "public-api"], zone)]), false)
     ])
-    error_message = "Select nonempty private/public-api zone sets for JSON Keys or Authentication; public is reserved for platforms."
+    error_message = "Select nonempty private/public-api zone sets for JSON Keys, Authentication or GenAI; public is reserved for platforms."
   }
 
   validation {

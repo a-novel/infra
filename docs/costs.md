@@ -15,7 +15,7 @@ Backup storage only grows today. The buckets keep every version of the objects p
 because `noncurrent_cleanup` is off in bootstrap's `terraform.tfvars`. Turning it on deletes those
 versions 7 days after they are replaced.
 
-The budget is **60 units** of the billing account's currency a month, for the four production
+The budget is **150 units** of the billing account's currency a month, for the four production
 projects. It alerts at 50, 75, 90 and
 100%, actual or forecast, and caps nothing. Quotas, maximum instances and fixed disk sizes bound most
 usage, but not storage or requests. Every project that runs Cloud Run has its own CPU and memory

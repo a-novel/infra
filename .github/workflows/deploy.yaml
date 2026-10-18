@@ -48,6 +48,7 @@ jobs:
       foundation: ${{ steps.changes.outputs.foundation }}
       json_keys: ${{ steps.changes.outputs.json_keys }}
       authentication: ${{ steps.changes.outputs.authentication }}
+      genai: ${{ steps.changes.outputs.genai }}
     steps:
       # A manual or downtime run applies every root, and anyone with write access can start either.
       - if: github.event_name != 'push'
@@ -254,6 +255,29 @@ jobs:
           service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
           github_token: ${{ github.token }}
 
+  genai:
+    needs: [changes, foundation]
+    if: ${{ !cancelled() && !failure() && needs.changes.outputs.genai == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: production
+    permissions:
+      attestations: read
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: $/.github/actions/tofu
+        with:
+          root: environments/production/genai
+          apply: "true"
+          allow_deletion: ${{ needs.changes.outputs.allow }}
+          workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
+          github_token: ${{ github.token }}
+
   # Moves each service's hosts onto their applied configuration: the database host only during its
   # planned downtime, the backup repository VM whenever its config changed. It reads the hosts, not
   # this deploy's changes, so it runs on every deploy.
@@ -323,6 +347,7 @@ jobs:
         foundation,
         json-keys,
         authentication,
+        genai,
         rollout,
         health,
       ]
@@ -346,7 +371,7 @@ jobs:
           if [ -n "$failed" ]; then
             outcome=failed description="Failed jobs: $failed"$'\n\n'"$COMMIT"
             roles="$(jq -r --argjson roles "$ROLES" '["a-novel/infra"] + [to_entries[]
-              | select(.value.result == "failure" and (.key == "json-keys" or .key == "authentication"))
+              | select(.value.result == "failure" and (.key == "json-keys" or .key == "authentication" or .key == "genai"))
               | "a-novel/service-\(.key)"] | map($roles[.] // empty) | join(" ")' <<<"$NEEDS")"
           elif jq -e 'any(.[]; .result == "cancelled")' <<<"$NEEDS" >/dev/null; then
             outcome=cancelled

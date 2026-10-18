@@ -43,6 +43,9 @@ service_release_zones = {
   json-keys = [
     "private",
   ]
+  genai = [
+    "private",
+  ]
 }
 shared_vpc_enabled     = true
 subnet_cidr            = "10.20.0.0/24"
@@ -81,3 +84,9 @@ database_images = {
   json-keys      = "ghcr.io/a-novel/service-json-keys/database:v2.10.4@sha256:392e831c21e44cca0a75ed0d10f241002ae56323e22f8569a086722f96434d0b"
   authentication = "ghcr.io/a-novel/service-authentication/database:v2.14.0@sha256:024090f703849c1c12fabc7cd78b5abac8ab0df043d64ab31e254ea75c973263"
 }
+# json-keys and genai at their maximum instances, plus one rollout instance each, and the jobs.
+cloud_run_cpu_quota_millicpu = 16000
+cloud_run_memory_quota_bytes = 25769803776
+# Three database hosts at their nominal vCPUs, plus the backup repository VMs.
+compute_cpu_quota    = 8
+monthly_budget_units = 150

@@ -22,6 +22,32 @@ resource "google_project_iam_member" "foundation_service_access" {
   }
 }
 
+# Creation cannot be scoped: Cloud Run and Cloud Scheduler support neither resource-name conditions
+# nor tags on a resource that does not exist yet. A new service's first deploy creates its jobs
+# without an execution and its services without invokers, foundation then tags them and creates
+# its schedules, and only tagged resources can be updated, run or invoked.
+resource "google_project_iam_custom_role" "foundation_private_provisioning" {
+  count = length(google_project_iam_custom_role.foundation_private_release)
+
+  project     = google_project.workload.project_id
+  role_id     = "infraFoundationPrivateProvisioning"
+  title       = "Foundation private workload creation"
+  description = "Create private Cloud Run services, jobs and schedules, and read them back, without updating, running or invoking them."
+  permissions = [
+    "cloudscheduler.jobs.create",
+    "run.jobs.create", "run.jobs.get",
+    "run.services.create", "run.services.get",
+  ]
+}
+
+resource "google_project_iam_member" "foundation_private_provisioning" {
+  count = length(google_project_iam_custom_role.foundation_private_provisioning)
+
+  project = google_project.workload.project_id
+  role    = google_project_iam_custom_role.foundation_private_provisioning[0].name
+  member  = "serviceAccount:${local.automation_service_accounts.foundation}"
+}
+
 resource "google_project_iam_custom_role" "foundation_public_api" {
   count = anytrue([for boundary in local.service_release_boundaries : boundary.zone == "public-api"]) ? 1 : 0
 
