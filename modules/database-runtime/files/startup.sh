@@ -163,6 +163,8 @@ fetch_secret() {
         --fail \
         --silent \
         --show-error \
+        --connect-timeout 5 \
+        --max-time 30 \
         --retry 5 \
         --retry-all-errors \
         "https://secretmanager.googleapis.com/v1/projects/${MANAGEMENT_PROJECT_ID}/secrets/${secret_id}/versions/${version}:access" \
@@ -430,7 +432,6 @@ start_database() {
     if [ "${DATABASE_SUPERVISED}" = true ]; then
         restart=no
         client_options=(
-            --cap-drop=NET_RAW
             --add-host "${PGBACKREST_REPOSITORY_NAME}:${PGBACKREST_REPOSITORY_IP}"
             --mount "type=bind,source=/etc/agora-database/pgbackrest.conf,target=/etc/pgbackrest/pgbackrest.conf,readonly"
             --mount "type=bind,source=/run/agora/pgbackrest/current,target=/run/pgbackrest,readonly"
@@ -470,6 +471,9 @@ start_database() {
         --memory "${CONTAINER_MEMORY_MB}m" \
         --memory-swap "${CONTAINER_MEMORY_MB}m" \
         --pids-limit 512 \
+        --user postgres \
+        --cap-drop ALL \
+        --security-opt no-new-privileges \
         --log-opt max-size=10m \
         --log-opt max-file=3 \
         --env "POSTGRES_USER=${database_user}" \
