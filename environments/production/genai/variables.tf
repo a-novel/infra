@@ -3,8 +3,8 @@ variable "secret_versions" {
   type        = map(number)
 
   validation {
-    condition     = toset(keys(var.secret_versions)) == toset(["postgres-password", "openai-api-key"])
-    error_message = "Pin exactly the postgres-password and openai-api-key versions."
+    condition     = toset(keys(var.secret_versions)) == toset(["postgres-password", "app-password", "openai-api-key"])
+    error_message = "Pin exactly the postgres-password, app-password and openai-api-key versions."
   }
 }
 

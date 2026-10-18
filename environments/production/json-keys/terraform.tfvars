@@ -7,6 +7,7 @@ images = {
 
 secret_versions = {
   postgres-password = 2
+  app-password      = 1
   app-master-key    = 2
 }
 

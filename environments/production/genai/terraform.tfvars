@@ -6,6 +6,7 @@ images = {
 
 secret_versions = {
   postgres-password = 1
+  app-password      = 1
   openai-api-key    = 1
 }
 

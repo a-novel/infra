@@ -36,8 +36,8 @@ module "runtime" {
   # The migrations, the sweep and the smoke check run apart from the gRPC server, each reading only
   # what it mounts.
   workloads = {
-    migrations = { secrets = toset([for name in values(local.migrations_secret_env) : "production-genai-${name}"]) }
-    sweep      = { secrets = toset([for name in values(local.server_secret_env) : "production-genai-${name}"]), telemetry = true }
+    migrations = { secrets = toset([for name in setunion(values(local.migrations_secret_env), local.database_passwords) : "production-genai-${name}"]) }
+    sweep      = { secrets = toset([for name in setunion(values(local.server_secret_env), local.database_passwords) : "production-genai-${name}"]), telemetry = true }
     smoke      = {}
   }
   deployer    = local.deployer
