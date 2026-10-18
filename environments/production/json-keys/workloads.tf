@@ -222,7 +222,7 @@ resource "google_cloud_run_v2_service_iam_member" "smoke_invoker" {
 # A planned downtime skips the check, so its start is a trigger: clearing the downtime runs the check
 # again against the restarted service.
 resource "terraform_data" "smoke" {
-  triggers_replace = [local.image.grpc, try(local.downtime_env.DOWNTIME_START, "")]
+  triggers_replace = [local.image.grpc, try(local.downtime_env.DOWNTIME_START, ""), sha256(module.runtime.smoke_script)]
 }
 
 resource "google_cloud_run_v2_job" "smoke" {
@@ -239,16 +239,23 @@ resource "google_cloud_run_v2_job" "smoke" {
     template {
       service_account       = module.runtime.service_account
       max_retries           = 0
-      timeout               = "90s"
+      timeout               = "360s"
       execution_environment = "EXECUTION_ENVIRONMENT_GEN2"
 
       containers {
         image   = local.image.grpc
         command = ["/bin/sh"]
-        args    = ["-c", file("${path.module}/smoke.sh")]
-        env {
-          name  = "JSON_KEYS_URL"
-          value = google_cloud_run_v2_service.grpc.uri
+        args    = ["-c", module.runtime.smoke_script]
+        dynamic "env" {
+          for_each = {
+            PROTOCOL    = "grpc"
+            SERVICE_URL = google_cloud_run_v2_service.grpc.uri
+            STATUS_RPC  = "anovel.jsonkeys.v2.StatusService/Status"
+          }
+          content {
+            name  = env.key
+            value = env.value
+          }
         }
         dynamic "env" {
           for_each = local.downtime_env

@@ -72,7 +72,7 @@ that waits for a downtime that has since started.
    1. it copies the images to the service's Artifact Registry repository;
    2. it applies, which runs the migration job and waits for it;
    3. Cloud Run moves traffic to the new revision once its startup probe passes;
-   4. for JSON Keys, it runs the smoke job;
+   4. for JSON Keys and GenAI, it runs the smoke job;
    5. it checks production health.
 
 Migrations must stay backward compatible: the previous revision keeps serving until the new one is

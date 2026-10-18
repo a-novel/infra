@@ -20,7 +20,7 @@ resource "google_monitoring_alert_policy" "sweep_failures" {
       filter          = "resource.type = \"cloud_run_revision\" AND resource.label.service_name = \"${google_cloud_run_v2_service.sweep.name}\" AND resource.label.location = \"${local.region}\" AND metric.type = \"run.googleapis.com/request_count\" AND metric.label.response_code_class = \"5xx\" AND metric.label.response_code != \"503\""
       comparison      = "COMPARISON_GT"
       threshold_value = 2
-      duration        = "0s"
+      duration        = "60s"
 
       aggregations {
         alignment_period     = "600s"
