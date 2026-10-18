@@ -1,15 +1,28 @@
-# GitHub starts scheduled workflows hours late, so Cloud Scheduler starts the `.github` workflows that
-# must run on time: one job per workflow, at the cron its file used to ask GitHub for, runs the
-# github-dispatch workflow, which dispatches it in each org. Each org's dispatch token lives only in
+# GitHub starts scheduled workflows hours late, so Cloud Scheduler starts the workflows that must run
+# on time: one job per workflow, at the cron its file used to ask GitHub for, runs the github-dispatch
+# workflow, which dispatches it in each repository listed. Each org's dispatch token lives only in
 # Secret Manager.
 locals {
-  github_dispatch_owners = toset(["a-novel", "a-novel-kit"])
+  github_dispatch_owners  = toset(["a-novel", "a-novel-kit"])
+  github_dot_repositories = [for owner in local.github_dispatch_owners : "${owner}/.github"]
 
   github_dispatch_schedules = {
-    "notify-issues.yaml"   = "4-59/15 * * * *"
-    "notify-stuck.yaml"    = "17 * * * *"
-    "reconcile-board.yaml" = "*/15 * * * *"
-    "token-expiry.yaml"    = "0 8 * * *"
+    "notify-issues.yaml"   = { cron = "4-59/15 * * * *", repositories = local.github_dot_repositories }
+    "notify-stuck.yaml"    = { cron = "17 * * * *", repositories = local.github_dot_repositories }
+    "reconcile-board.yaml" = { cron = "*/15 * * * *", repositories = local.github_dot_repositories }
+    "token-expiry.yaml"    = { cron = "0 8 * * *", repositories = local.github_dot_repositories }
+    # The repositories whose stack class sets `clean_images`: the services and platforms.
+    "clean-images.yaml" = {
+      cron = "17 3 * * *"
+      repositories = [
+        "a-novel/platform-studio",
+        "a-novel/service-authentication",
+        "a-novel/service-genai",
+        "a-novel/service-json-keys",
+        "a-novel/service-narrative-engine",
+        "a-novel/service-template",
+      ]
+    }
   }
 }
 
@@ -87,13 +100,13 @@ resource "google_project_iam_member" "cloudscheduler_agent" {
 resource "google_workflows_workflow" "github_dispatch" {
   name            = "github-dispatch"
   region          = var.region
-  description     = "Dispatches each org's timed .github workflows."
+  description     = "Dispatches the timed workflows in the repositories their schedules list."
   service_account = google_service_account.github_dispatcher.id
   source_contents = file("${path.module}/workflows/github-dispatch.yaml")
 
   user_env_vars = {
     TOKEN_VERSIONS = jsonencode({ for owner in local.github_dispatch_owners : owner => var.github_dispatch_token_versions[owner] })
-    SCHEDULED      = jsonencode(keys(local.github_dispatch_schedules))
+    SCHEDULED      = jsonencode({ for workflow, schedule in local.github_dispatch_schedules : workflow => schedule.repositories })
   }
 
   # Detailed history and call logs would record the tokens. Only the clock's jobs start executions,
@@ -119,8 +132,8 @@ resource "google_cloud_scheduler_job" "github_dispatch" {
   project          = var.management_project_id
   region           = var.region
   name             = "github-dispatch-${trimsuffix(each.key, ".yaml")}"
-  description      = "Dispatches ${each.key} in each org's .github repository."
-  schedule         = each.value
+  description      = "Dispatches ${each.key} in ${join(", ", each.value.repositories)}."
+  schedule         = each.value.cron
   time_zone        = "Etc/UTC"
   attempt_deadline = "180s"
 

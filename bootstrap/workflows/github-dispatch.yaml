@@ -1,26 +1,30 @@
-# Dispatches one `.github` workflow in each org, because GitHub starts scheduled workflows hours
-# late. Cloud Scheduler starts an execution per workflow at its cron, with {"workflow": <file>}.
-# Each org's token is read from Secret Manager at dispatch time, and calls are never logged.
-# Only the scheduled workflows dispatch: any management-project caller may start an execution.
+# Dispatches one workflow in each repository its schedule lists, because GitHub starts scheduled
+# workflows hours late. Cloud Scheduler starts an execution per workflow at its cron, with
+# {"workflow": <file>}. The repository owner's token is read from Secret Manager at dispatch time,
+# and calls are never logged. Only the scheduled workflows dispatch, and only to their listed
+# repositories: any management-project caller may start an execution.
 main:
   params: [args]
   steps:
     - read_config:
         assign:
           - versions: ${json.decode(sys.get_env("TOKEN_VERSIONS"))}
-          - scheduled: ${args.workflow in json.decode(sys.get_env("SCHEDULED"))}
+          - repositories: ${map.get(json.decode(sys.get_env("SCHEDULED")), args.workflow)}
     - refuse_unscheduled:
         switch:
-          - condition: ${scheduled == false}
+          - condition: ${repositories == null}
             steps:
               - refuse:
                   raise: ${"Only the scheduled workflows dispatch, not " + args.workflow + "."}
     - dispatch_each:
         for:
-          value: owner
-          in: ${keys(versions)}
+          value: repository
+          in: ${repositories}
           steps:
-            # A failure must not cost the other org's dispatch.
+            - owner:
+                assign:
+                  - owner: ${text.split(repository, "/")[0]}
+            # A failure must not cost another repository's dispatch.
             - dispatch:
                 try:
                   steps:
@@ -34,7 +38,7 @@ main:
                     - send:
                         call: http.post
                         args:
-                          url: ${"https://api.github.com/repos/" + owner + "/.github/actions/workflows/" + args.workflow + "/dispatches"}
+                          url: ${"https://api.github.com/repos/" + repository + "/actions/workflows/" + args.workflow + "/dispatches"}
                           headers:
                             Accept: application/vnd.github+json
                             Authorization: ${"Bearer " + token}
@@ -50,4 +54,4 @@ main:
                         call: sys.log
                         args:
                           severity: WARNING
-                          text: ${"Could not dispatch " + owner + "/.github " + args.workflow + " (HTTP " + string(default(map.get(error, "code"), 0)) + ")."}
+                          text: ${"Could not dispatch " + repository + " " + args.workflow + " (HTTP " + string(default(map.get(error, "code"), 0)) + ")."}

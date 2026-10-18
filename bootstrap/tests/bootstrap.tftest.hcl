@@ -131,6 +131,13 @@ run "trusts_only_reviewed_workflows" {
     error_message = "Workload identity provider display names are limited to 32 characters."
   }
 
+  assert {
+    condition = alltrue(flatten([for repositories in values(jsondecode(google_workflows_workflow.github_dispatch.user_env_vars.SCHEDULED)) :
+      [for repository in repositories : contains(keys(jsondecode(google_workflows_workflow.github_dispatch.user_env_vars.TOKEN_VERSIONS)), split("/", repository)[0])]
+    ])) && google_cloud_scheduler_job.github_dispatch["clean-images.yaml"].schedule == "17 3 * * *"
+    error_message = "Every repository a schedule lists needs its org's dispatch token, and the image cleanup runs daily."
+  }
+
   # Google rejects a reserved environment variable name only at apply time.
   assert {
     condition = alltrue(flatten([for workflow in [google_workflows_workflow.downtime_announcements, google_workflows_workflow.github_dispatch] :
