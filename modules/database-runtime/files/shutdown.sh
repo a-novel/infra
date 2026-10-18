@@ -5,10 +5,10 @@
 set -euo pipefail
 
 component="$(curl --fail --silent --show-error --connect-timeout 2 --max-time 10 --header 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/attributes/agora-database-service)"
-case "${component}" in
-    authentication|json-keys) ;;
-    *) printf 'error: unsupported database service\n' >&2; exit 65 ;;
-esac
+if ! [[ "${component}" =~ ^[a-z][a-z0-9-]{1,30}[a-z0-9]$ ]]; then
+    printf 'error: unsupported database service\n' >&2
+    exit 65
+fi
 
 container="agora-postgres-${component}"
 if docker container inspect "${container}" >/dev/null 2>&1; then

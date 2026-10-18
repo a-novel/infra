@@ -329,7 +329,7 @@ SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '60s';
 DO $collation$
 DECLARE
-    target_relation record;
+    target_index record;
     target_collation record;
     database_changed boolean;
     collations_changed boolean;
@@ -366,16 +366,21 @@ BEGIN
         RAISE EXCEPTION 'collation change requires a separately reviewed data migration';
     END IF;
 
-    FOR target_relation IN
-        SELECT namespace.nspname, relation.relname
-        FROM pg_class relation
-        JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
-        WHERE relation.relkind = 'r'
-          AND namespace.nspname NOT IN ('pg_catalog', 'information_schema')
+    -- Only an index that sorts by a versioned collation can fall out of order. Rebuilding just those
+    -- keeps this step short on large tables: their TOAST, uuid, timestamp and bytea indexes stay.
+    FOR target_index IN
+        SELECT DISTINCT index_relation.oid, namespace.nspname, index_relation.relname
+        FROM pg_index entry
+        JOIN pg_class index_relation ON index_relation.oid = entry.indexrelid
+        JOIN pg_namespace namespace ON namespace.oid = index_relation.relnamespace
+        JOIN pg_collation c ON c.oid = ANY (entry.indcollation::oid[])
+        WHERE namespace.nspname NOT IN ('pg_catalog', 'information_schema')
           AND namespace.nspname NOT LIKE 'pg_toast%'
-        ORDER BY relation.oid
+          AND c.collprovider IN ('d', 'c', 'i')
+          AND c.collname NOT IN ('C', 'POSIX')
+        ORDER BY index_relation.oid
     LOOP
-        EXECUTE format('REINDEX TABLE %I.%I', target_relation.nspname, target_relation.relname);
+        EXECUTE format('REINDEX INDEX %I.%I', target_index.nspname, target_index.relname);
     END LOOP;
 
     FOR target_collation IN
@@ -536,12 +541,17 @@ case "$*" in
     *) printf 'Usage: %s [--supervise]\n' "$0" >&2; exit 64 ;;
 esac
 
+# Foundation names the service, its port and its database in the host's template, so a new service
+# needs no change here.
 DATABASE_COMPONENT="$(attribute_get agora-database-service)"
-case "${DATABASE_COMPONENT}" in
-    json-keys) DATABASE_PORT=5432; DATABASE_NAME=agora_json_keys ;;
-    authentication) DATABASE_PORT=5433; DATABASE_NAME=agora_authentication ;;
-    *) printf 'error: unsupported database service\n' >&2; exit 65 ;;
-esac
+DATABASE_PORT="$(attribute_get agora-database-port)"
+DATABASE_NAME="$(attribute_get agora-database-name)"
+if ! [[ "${DATABASE_COMPONENT}" =~ ^[a-z][a-z0-9-]{1,30}[a-z0-9]$ ]] ||
+    ! [[ "${DATABASE_NAME}" =~ ^agora_[a-z0-9_]{1,40}$ ]] ||
+    ! [[ "${DATABASE_PORT}" =~ ^[1-9][0-9]{3,4}$ ]] || [ "${DATABASE_PORT}" -gt 65535 ]; then
+    printf 'error: unsupported database service\n' >&2
+    exit 65
+fi
 DATABASE_CONTAINERS=("agora-postgres-${DATABASE_COMPONENT}")
 
 # The managed-group stable bit only covers Compute's restart operation. This

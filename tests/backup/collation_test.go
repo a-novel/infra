@@ -37,13 +37,16 @@ func TestCollationPreparation(t *testing.T) {
 		return string(out), err
 	}
 	query("CREATE TABLE sample (value text PRIMARY KEY); INSERT INTO sample VALUES ('plain'), ('été'), ('Zebra');")
+	query("CREATE TABLE ids (id uuid PRIMARY KEY); INSERT INTO ids VALUES (gen_random_uuid());")
 	index := func() string { return query("SELECT relfilenode FROM pg_class WHERE relname='sample_pkey';") }
-	before := index()
+	uncollated := func() string { return query("SELECT relfilenode FROM pg_class WHERE relname='ids_pkey';") }
+	before, beforeUncollated := index(), uncollated()
 	markChanged := func() { p.sql(t, "UPDATE pg_database SET datcollversion='proof-old' WHERE datname='collation_proof';") }
 	markChanged()
 	out, err := prepare()
 	require.NoError(t, err, out)
 	require.NotEqual(t, before, index())
+	require.Equal(t, beforeUncollated, uncollated(), "an index on no collation must not be rebuilt")
 	require.Equal(t, "t", query("SELECT datcollversion=pg_database_collation_actual_version(oid) FROM pg_database WHERE datname=current_database();"))
 	require.Equal(t, "3", query("SELECT count(*) FROM sample;"))
 	before = index()
