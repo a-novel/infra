@@ -24,13 +24,10 @@ export const branchVersion = (message) =>
 /** Every reference to an image of source in content, as [image name, version] pairs. */
 export function pins(content, source) {
   const pattern = new RegExp(
-    String.raw`ghcr\.io/${escape(source)}(?:/[a-z0-9._/-]+)?:${semver}`,
+    String.raw`(ghcr\.io/${escape(source)}(?:/[a-z0-9._/-]+)?):(${semver})`,
     "g",
   );
-  return [...content.matchAll(pattern)].map(([match]) => [
-    match.slice(0, match.lastIndexOf(":")),
-    match.slice(match.lastIndexOf(":") + 1),
-  ]);
+  return [...content.matchAll(pattern)].map((match) => match.slice(1));
 }
 
 /**
@@ -58,6 +55,7 @@ const run = (command, args, input) =>
     stdio: "pipe",
   }).trim();
 const gh = (...args) => run("gh", args);
+const lines = (text) => text.split("\n").filter(Boolean);
 
 function headVersion(repository, branch) {
   try {
@@ -71,6 +69,84 @@ function headVersion(repository, branch) {
     );
   } catch {
     return "";
+  }
+}
+
+/** Moves every image found to version, with the digest of its published manifest. */
+function rewriteImages(files, images, version) {
+  for (const image of images) {
+    const manifest = execFileSync("skopeo", [
+      "inspect",
+      "--raw",
+      `docker://${image}:${version}`,
+    ]);
+    const digest = `sha256:${createHash("sha256").update(manifest).digest("hex")}`;
+    for (const file of files) {
+      const content = readFileSync(file, "utf8");
+      const moved = rewrite(content, image, version, digest);
+      if (moved !== content) writeFileSync(file, moved);
+    }
+  }
+}
+
+/**
+ * Commits the working tree's changes on top of HEAD through the API, and returns the commit. master
+ * requires signed commits, and GitHub signs only those an App makes through its API.
+ */
+function commitChanges(repository, message) {
+  const blob = (path) => ({
+    path,
+    mode: "100644",
+    type: "blob",
+    content: readFileSync(path, "utf8"),
+  });
+  const tree = run(
+    "gh",
+    ["api", `repos/${repository}/git/trees`, "--input", "-", "--jq", ".sha"],
+    JSON.stringify({
+      base_tree: run("git", ["rev-parse", "HEAD^{tree}"]),
+      tree: lines(run("git", ["diff", "--name-only"])).map(blob),
+    }),
+  );
+  const parent = run("git", ["rev-parse", "HEAD"]);
+  return gh(
+    "api",
+    `repos/${repository}/git/commits`,
+    "-f",
+    `message=${message}`,
+    "-f",
+    `tree=${tree}`,
+    "-f",
+    `parents[]=${parent}`,
+    "--jq",
+    ".sha",
+  );
+}
+
+/** Points branch at commit, creating the branch when it does not exist. */
+function moveBranch(repository, branch, commit) {
+  try {
+    gh(
+      "api",
+      "-X",
+      "PATCH",
+      `repos/${repository}/git/refs/heads/${branch}`,
+      "-f",
+      `sha=${commit}`,
+      "-F",
+      "force=true",
+      "--silent",
+    );
+  } catch {
+    gh(
+      "api",
+      `repos/${repository}/git/refs`,
+      "-f",
+      `ref=refs/heads/${branch}`,
+      "-f",
+      `sha=${commit}`,
+      "--silent",
+    );
   }
 }
 
@@ -100,9 +176,7 @@ function pin(env, source, released) {
     throw new Error(`Cannot pin ${source} at "${version}": not a release tag.`);
 
   run("git", ["reset", "-q", "--hard"]);
-  const files = run("git", ["ls-files", "--", ...paths])
-    .split("\n")
-    .filter(Boolean);
+  const files = lines(run("git", ["ls-files", "--", ...paths]));
   const found = files.flatMap((file) =>
     pins(readFileSync(file, "utf8"), source),
   );
@@ -137,78 +211,18 @@ function pin(env, source, released) {
     return;
   }
 
-  for (const image of [...new Set(found.map(([name]) => name))].sort()) {
-    const manifest = execFileSync("skopeo", [
-      "inspect",
-      "--raw",
-      `docker://${image}:${version}`,
-    ]);
-    const digest = `sha256:${createHash("sha256").update(manifest).digest("hex")}`;
-    for (const file of files) {
-      const content = readFileSync(file, "utf8");
-      const moved = rewrite(content, image, version, digest);
-      if (moved !== content) writeFileSync(file, moved);
-    }
-  }
-
-  // master requires signed commits, and GitHub signs only those an App makes through its API.
+  rewriteImages(
+    files,
+    [...new Set(found.map(([name]) => name))].sort(),
+    version,
+  );
   const title = `chore(deps): update ${source.split("/")[1]} images to ${version}`;
-  const changed = run("git", ["diff", "--name-only"])
-    .split("\n")
-    .filter(Boolean);
-  const tree = run(
-    "gh",
-    ["api", `repos/${GH_REPO}/git/trees`, "--input", "-", "--jq", ".sha"],
-    JSON.stringify({
-      base_tree: run("git", ["rev-parse", "HEAD^{tree}"]),
-      tree: changed.map((path) => ({
-        path,
-        mode: "100644",
-        type: "blob",
-        content: readFileSync(path, "utf8"),
-      })),
-    }),
-  );
-  const parent = run("git", ["rev-parse", "HEAD"]);
-  const commit = gh(
-    "api",
-    `repos/${GH_REPO}/git/commits`,
-    "-f",
-    `message=${title}`,
-    "-f",
-    `tree=${tree}`,
-    "-f",
-    `parents[]=${parent}`,
-    "--jq",
-    ".sha",
-  );
+  const commit = commitChanges(GH_REPO, title);
   if (newest(version, headVersion(GH_REPO, branch)) !== version) {
     console.log(`::notice::A concurrent run pinned a newer ${source} release.`);
     return;
   }
-  try {
-    gh(
-      "api",
-      "-X",
-      "PATCH",
-      `repos/${GH_REPO}/git/refs/heads/${branch}`,
-      "-f",
-      `sha=${commit}`,
-      "-F",
-      "force=true",
-      "--silent",
-    );
-  } catch {
-    gh(
-      "api",
-      `repos/${GH_REPO}/git/refs`,
-      "-f",
-      `ref=refs/heads/${branch}`,
-      "-f",
-      `sha=${commit}`,
-      "--silent",
-    );
-  }
+  moveBranch(GH_REPO, branch, commit);
 
   const body = `Deploys [${source} ${version}](${GITHUB_SERVER_URL}/${source}/releases/tag/${version}), whose release published every image pinned here.`;
   const url = pr
@@ -229,6 +243,11 @@ function pin(env, source, released) {
   appendFileSync(GITHUB_STEP_SUMMARY, `Pinned ${source} ${version}: ${url}\n`);
 }
 
+/** Whether a pull request is a release pin this workflow opened. */
+const isReleasePin = (pr) =>
+  pr.headRefName.startsWith("chore/deps/") &&
+  /^chore\(deps\): update [a-z0-9-]+ images to v/.test(pr.title);
+
 async function main(env) {
   if (env.EVENT === "repository_dispatch")
     return pin(env, env.RELEASE_REPOSITORY, env.RELEASE_VERSION);
@@ -244,11 +263,7 @@ async function main(env) {
         "--json",
         "headRefName,title,mergeable",
       ),
-    ).filter(
-      (pr) =>
-        pr.headRefName.startsWith("chore/deps/") &&
-        /^chore\(deps\): update [a-z0-9-]+ images to v/.test(pr.title),
-    );
+    ).filter(isReleasePin);
     if (!prs.some((pr) => pr.mergeable === "UNKNOWN")) break;
     if (attempt < 6) await new Promise((resolve) => setTimeout(resolve, 15000));
   }
