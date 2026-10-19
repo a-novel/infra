@@ -19,7 +19,7 @@ variables {
   alert_email           = "operations@example.test"
 }
 
-# A database host without native backups once had no grant, and its startup could not pull PostgreSQL.
+# Every database host pulls its PostgreSQL image, with or without native backups.
 run "lets_the_database_host_pull_its_own_images" {
   command = plan
 

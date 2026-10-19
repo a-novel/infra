@@ -158,8 +158,8 @@ resource "google_project_iam_member" "foundation_project_metadata" {
   member  = "serviceAccount:${local.automation_service_accounts.foundation}"
 }
 
-# The scheduled drift workflow reads provider metadata but cannot lock or
-# write state and receives no data-access role.
+# Pull-request and drift plans read the project's configuration as the plan identity, which
+# holds no data-access role.
 resource "google_project_iam_member" "plan_viewer" {
   project = google_project.workload.project_id
   role    = "roles/viewer"

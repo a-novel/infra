@@ -1,6 +1,6 @@
 # GitHub starts scheduled workflows hours late, so Cloud Scheduler starts the workflows that must run
-# on time: one job per workflow, at the cron its file used to ask GitHub for, runs the github-dispatch
-# workflow, which dispatches it in each repository listed. Each org's dispatch token lives only in
+# on time. One job per workflow runs the github-dispatch workflow at that workflow's cron, and
+# github-dispatch dispatches it in each repository listed. Each org's dispatch token lives only in
 # Secret Manager.
 locals {
   github_dispatch_owners  = toset(["a-novel", "a-novel-kit"])
