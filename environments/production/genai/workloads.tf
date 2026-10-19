@@ -120,7 +120,7 @@ resource "google_cloud_run_v2_service" "grpc" {
   labels               = { environment = "production", component = "genai", role = "grpc" }
 
   # Each open GenerationStream holds one of an instance's 20 request slots, so streams scale out.
-  # One warm instance once narrative-engine calls this service; none before.
+  # TODO: keep one warm instance once narrative-engine calls this service.
   scaling {
     min_instance_count = 0
     max_instance_count = 4

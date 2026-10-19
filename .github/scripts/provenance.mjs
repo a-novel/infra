@@ -22,31 +22,34 @@ export function checks(plan) {
   return [...sources.keys()]
     .sort()
     .filter((source) => !deployed.includes(source))
-    .map((source) => {
-      const { producer } = sources.get(source);
-      const workflow = sources.get(source).workflow ?? "release.yaml";
-      const name = source.slice(0, source.indexOf(":"));
-      const reference = source.slice(0, source.lastIndexOf("@"));
-      const check = {
-        source,
-        subject: `oci://${name}@${source.slice(source.lastIndexOf("@") + 1)}`,
-        producer,
-        workflow,
-        tag: reference.slice(reference.lastIndexOf(":") + 1),
-      };
-      if (workflow !== "release.yaml") return check;
-      const previous = newest(
-        ...deployed
-          .filter((other) => other.startsWith(`${name}:`))
-          .map((other) => other.replace(/@.*/, "").replace(/.*:/, "")),
+    .map((source) => check(sources.get(source), deployed));
+}
+
+/** The check one image copy needs; throws when it lowers a deployed release. */
+function check({ source, producer, workflow }, deployed) {
+  const name = source.slice(0, source.indexOf(":"));
+  const reference = source.slice(0, source.lastIndexOf("@"));
+  const tag = reference.slice(reference.lastIndexOf(":") + 1);
+  workflow ??= "release.yaml";
+  if (workflow === "release.yaml") {
+    const previous = newest(
+      ...deployed
+        .filter((other) => other.startsWith(`${name}:`))
+        .map((other) => other.replace(/@.*/, "").replace(/.*:/, "")),
+    );
+    if (previous && newest(previous, tag) !== tag) {
+      throw new Error(
+        `${source} lowers ${name} from ${previous}. Pull requests only move forward: ship the fix as a new release.`,
       );
-      if (previous && newest(previous, check.tag) !== check.tag) {
-        throw new Error(
-          `${source} lowers ${name} from ${previous}. Pull requests only move forward: ship the fix as a new release.`,
-        );
-      }
-      return check;
-    });
+    }
+  }
+  return {
+    source,
+    subject: `oci://${name}@${source.slice(source.lastIndexOf("@") + 1)}`,
+    producer,
+    workflow,
+    tag,
+  };
 }
 
 // A failure's message carries the command's stderr.

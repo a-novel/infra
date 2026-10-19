@@ -134,7 +134,7 @@ resource "google_compute_instance_template" "database" {
     shutdown-script                    = file("${path.module}/../../../modules/database-runtime/files/shutdown.sh")
   }
 
-  # The existing maintenance gate permits only this script to replace the host template.
+  # A new startup script replaces the host template, so it waits for the service's planned downtime.
   metadata_startup_script = contains(keys(var.native_backups), each.value.component) ? module.native_backup[each.value.component].startup_script : file("${path.module}/../../../modules/database-runtime/files/startup.sh")
 
   disk {
@@ -216,7 +216,6 @@ resource "google_compute_instance_group_manager" "database" {
     delete_rule    = "NEVER"
   }
 
-  # OPPORTUNISTIC updates leave the reviewed restart to protected maintenance.
   all_instances_config {
     metadata = {
       "agora-${each.value.component}-database-image"       = try(local.database_image[each.value.component].host, "")
@@ -226,8 +225,8 @@ resource "google_compute_instance_group_manager" "database" {
   }
 
   update_policy {
-    # Never let a metadata or template change trigger an action before its
-    # owning protected workflow supplies the reviewed disruption ceiling.
+    # Merging a template or metadata change restarts nothing. The deploy's rollout job restarts
+    # each host during its service's planned downtime.
     type                           = "OPPORTUNISTIC"
     minimal_action                 = "REPLACE"
     most_disruptive_allowed_action = "REPLACE"

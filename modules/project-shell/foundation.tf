@@ -1,5 +1,5 @@
-# Configuration authority stays with the protected administrator. Dispatch and
-# promotion belong to separately reviewed workload identities.
+# The deploy identity configures the shell project's resources, but runs no job or schedule and
+# rolls out no service.
 resource "google_project_iam_custom_role" "foundation_control_plane" {
   project     = google_project.service.project_id
   role_id     = "foundationServiceControlPlane"

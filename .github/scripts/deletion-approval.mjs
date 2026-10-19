@@ -12,15 +12,17 @@ export const label = "allow-resource-deletion";
  * events is the pull request's issue events, oldest first; trusted decides for an actor.
  */
 export function approvedAtMerge(events, mergedAt, trusted) {
-  const last = events
-    .filter(
-      (e) =>
-        ["labeled", "unlabeled"].includes(e.event) &&
-        e.label?.name === label &&
-        e.created_at <= mergedAt,
-    )
-    .at(-1);
+  const last = events.filter((event) => changesLabel(event, mergedAt)).at(-1);
   return last?.event === "labeled" && trusted(last.actor);
+}
+
+/** Whether an issue event added or removed the label by mergedAt. */
+function changesLabel(event, mergedAt) {
+  return (
+    ["labeled", "unlabeled"].includes(event.event) &&
+    event.label?.name === label &&
+    event.created_at <= mergedAt
+  );
 }
 
 // A failure's message carries the command's stderr.
@@ -29,21 +31,22 @@ const gh = (...args) =>
     execFileSync("gh", ["api", ...args], { encoding: "utf8", stdio: "pipe" }),
   );
 
+/** The login's role on the repository, or "" for someone outside it. */
+function role(repository, login) {
+  try {
+    return gh(`repos/${repository}/collaborators/${login}/permission`)
+      .role_name;
+  } catch (error) {
+    if (!String(error.stderr).includes("HTTP 404")) throw error;
+    return "";
+  }
+}
+
 function main(commits, { REPOSITORY, AGENT_BOT_LOGIN }) {
   const roles = new Map();
   const trusted = ({ login, type }) => {
     if (type === "Bot") return login === AGENT_BOT_LOGIN;
-    if (!roles.has(login)) {
-      try {
-        roles.set(
-          login,
-          gh(`repos/${REPOSITORY}/collaborators/${login}/permission`).role_name,
-        );
-      } catch (error) {
-        if (!String(error.stderr).includes("HTTP 404")) throw error;
-        roles.set(login, "");
-      }
-    }
+    if (!roles.has(login)) roles.set(login, role(REPOSITORY, login));
     return ["admin", "maintain"].includes(roles.get(login));
   };
   for (const sha of commits) {

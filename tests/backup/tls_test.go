@@ -37,7 +37,8 @@ func TestRepositoryTLS(t *testing.T) {
 		require.NoError(t, err)
 		write(t, path+".pem", string(certificate)+string(key))
 	}
-	for _, name := range []string{"client", "peer", "localhost"} {
+	identities := []string{"client", "peer", "localhost"}
+	for _, name := range identities {
 		path := filepath.Join(p.root, name)
 		run(t, "openssl", "req", "-new", "-newkey", "rsa:2048", "-nodes", "-keyout", path+".key",
 			"-out", path+".csr", "-subj", "/CN="+name, "-addext", "subjectAltName=DNS:"+name)
@@ -70,7 +71,9 @@ repo1-host-key-file=%[2]s/client.pem
 		return string(out), err
 	}
 	var set string
-	for _, tc := range []struct {
+	// Each certificate in turn is reissued to expire inside the 30-day warning.
+	expiring := []string{"client", "localhost", "ca"}
+	testCases := []struct {
 		name string
 		run  func(*testing.T)
 	}{
@@ -82,7 +85,7 @@ repo1-host-key-file=%[2]s/client.pem
 			out, err = check(t, "127.0.0.1")
 			require.Error(t, err, out)
 			require.Contains(t, out, "hostname mismatch")
-			for _, name := range []string{"client", "localhost", "ca"} {
+			for _, name := range expiring {
 				passed := t.Run(name, func(t *testing.T) {
 					path := p.root + "/" + name + ".pem"
 					if name == "ca" {
@@ -129,7 +132,8 @@ repo1-host-key-file=%[2]s/client.pem
 			require.Contains(t, string(out), "access denied")
 			p.backrest(t, "repo-ls")
 		}},
-	} {
+	}
+	for _, tc := range testCases {
 		if !t.Run(tc.name, tc.run) {
 			t.Fatal("stopping dependent transport cases after failure")
 		}

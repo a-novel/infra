@@ -11,6 +11,14 @@ const colors = {
   succeeded: 3066993,
   cancelled: 9807270,
 };
+// The post each change sends now, as its title and its color before the downtime starts.
+const changes = {
+  scheduled: ["🗓️ Planned downtime scheduled", colors.upcoming],
+  extended: ["⏩ Planned downtime extended", colors.informational],
+  rescheduled: ["🔁 Planned downtime rescheduled", colors.informational],
+  ended: ["✅ Planned downtime ended", colors.succeeded],
+  cancelled: ["✖️ Planned downtime cancelled", colors.cancelled],
+};
 const reminders = [
   [604800, "in 1 week"],
   [86400, "in 1 day"],
@@ -87,22 +95,23 @@ function body(window, headline) {
   ]
     .filter(Boolean)
     .join(" ");
-  // service-json-keys.database reads as "json-keys database".
-  const affects = window.components.map((component) => {
-    const [, name = component, part = ""] =
-      /^service-(.+)\.([^.]+)$/.exec(component) ?? [];
-    return `- **${name}** ${part}`;
-  });
   return [
     ...(headline ? [headline, ""] : []),
     "**Affects**",
-    ...affects,
+    ...window.components.map(affected),
     "",
     "**When**",
     `- **From** <t:${start}:F>`,
     `- **Back by** <t:${end}:F> *(expected)*`,
     `-# About ${length || "0 min"} · shown in your time zone`,
   ].join("\n");
+}
+
+/** A component's line in a post: service-json-keys.database reads as "json-keys database". */
+function affected(component) {
+  const [, name = component, part = ""] =
+    /^service-(.+)\.([^.]+)$/.exec(component) ?? [];
+  return `- **${name}** ${part}`;
 }
 
 function post(at, title, color, window, headline) {
@@ -123,60 +132,24 @@ function post(at, title, color, window, headline) {
 export function planAnnouncements({ previous, window, now }) {
   if (!window) {
     if (!previous) return [];
-    return seconds(previous.start) <= now
-      ? [post(now, "✅ Planned downtime ended", colors.succeeded, previous, "")]
-      : [
-          post(
-            now,
-            "✖️ Planned downtime cancelled",
-            colors.cancelled,
-            previous,
-            "",
-          ),
-        ];
+    const [title, color] =
+      seconds(previous.start) <= now ? changes.ended : changes.cancelled;
+    return [post(now, title, color, previous, "")];
   }
   const start = seconds(window.start);
   const countdown = `## Starts <t:${start}:R>`;
   const back = `## Expected back <t:${seconds(window.end)}:R>`;
   const started = now >= start;
-  const headline = started ? back : countdown;
+  const [title, pending] = changes[change(previous, window)];
   // The color shows the same state as the headline: a started downtime is in progress.
-  const color = (pending) => (started ? colors.inProgress : pending);
-  const extended =
-    previous &&
-    window.start === previous.start &&
-    JSON.stringify(window.components) === JSON.stringify(previous.components) &&
-    window.end > previous.end;
-  const posts = [
-    !previous
-      ? post(
-          now,
-          "🗓️ Planned downtime scheduled",
-          color(colors.upcoming),
-          window,
-          headline,
-        )
-      : extended
-        ? post(
-            now,
-            "⏩ Planned downtime extended",
-            color(colors.informational),
-            window,
-            headline,
-          )
-        : post(
-            now,
-            "🔁 Planned downtime rescheduled",
-            color(colors.informational),
-            window,
-            headline,
-          ),
-  ];
+  const color = started ? colors.inProgress : pending;
+  const posts = [post(now, title, color, window, started ? back : countdown)];
   for (const [ahead, label] of reminders) {
-    if (start - ahead > now) {
+    const at = start - ahead;
+    if (at > now) {
       posts.push(
         post(
-          start - ahead,
+          at,
           `⏰ Planned downtime ${label}`,
           colors.upcoming,
           window,
@@ -185,7 +158,7 @@ export function planAnnouncements({ previous, window, now }) {
       );
     }
   }
-  if (start > now)
+  if (start > now) {
     posts.push(
       post(
         start,
@@ -195,7 +168,18 @@ export function planAnnouncements({ previous, window, now }) {
         back,
       ),
     );
+  }
   return posts;
+}
+
+/** How window changes previous: scheduled, extended or rescheduled. */
+function change(previous, window) {
+  if (!previous) return "scheduled";
+  const extended =
+    window.start === previous.start &&
+    JSON.stringify(window.components) === JSON.stringify(previous.components) &&
+    window.end > previous.end;
+  return extended ? "extended" : "rescheduled";
 }
 
 const parse = (value) => (value ? JSON.parse(value) : null);

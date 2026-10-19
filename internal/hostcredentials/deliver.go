@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"syscall"
 	"time"
 
@@ -36,13 +37,15 @@ type Config struct {
 }
 
 var (
-	number = regexp.MustCompile(`^[1-9][0-9]{0,19}$`)
-	name   = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{0,252}$`)
+	// services lists the services whose hosts load pgBackRest credentials.
+	services = []string{"json-keys", "authentication"}
+	number   = regexp.MustCompile(`^[1-9][0-9]{0,19}$`)
+	name     = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{0,252}$`)
 )
 
 // Validate rejects invalid scope before credentials or secret access are requested.
 func (c Config) Validate() error {
-	if c.Service != "json-keys" && c.Service != "authentication" {
+	if !slices.Contains(services, c.Service) {
 		return errors.New("service must be json-keys or authentication")
 	}
 	if c.Endpoint != "database" && c.Endpoint != "repository" {
@@ -59,54 +62,66 @@ func (c Config) Validate() error {
 
 // Deliver publishes ca.pem and identity.pem together, without replacing an existing directory.
 // It reads only the selected service's two pinned versions and never returns remote error payloads.
-func Deliver(ctx context.Context, client *secretmanager.Client, config Config) (err error) {
+func Deliver(ctx context.Context, client *secretmanager.Client, config Config) error {
 	if err := config.Validate(); err != nil {
 		return err
 	}
-	parent := filepath.Dir(config.Output)
-	info, err := os.Lstat(parent)
-	if err != nil {
-		return fmt.Errorf("inspect credential parent: %w", err)
+	if err := checkOutput(config.Output); err != nil {
+		return err
 	}
-	if !info.IsDir() || info.Mode().Perm() != 0o700 || info.Sys().(*syscall.Stat_t).Uid != uint32(os.Geteuid()) {
-		return errors.New("credential parent must be a caller-owned 0700 directory")
-	}
-	if _, err := os.Lstat(config.Output); !errors.Is(err, os.ErrNotExist) {
-		return errors.New("credential output must not exist")
-	}
-
-	read := func(endpoint, version string) ([]byte, error) {
-		resource := fmt.Sprintf("projects/%s/secrets/production-%s-pgbackrest-%s/versions/%s", config.ProjectNumber, config.Service, endpoint, version)
-		response, err := client.AccessSecretVersion(ctx, &secretmanagerpb.AccessSecretVersionRequest{Name: resource})
-		if err != nil {
-			// Upstream diagnostic bodies are not a safe secret-handling log surface.
-			return nil, fmt.Errorf("access %s credential: %s", endpoint, status.Code(err))
-		}
-		payload := response.GetPayload()
-		if response.GetName() != resource || payload == nil || payload.DataCrc32C == nil {
-			return nil, errors.New("secret response is missing exact-version integrity evidence")
-		}
-		if len(payload.Data) == 0 || len(payload.Data) > 65536 || int64(crc32.Checksum(payload.Data, crc32.MakeTable(crc32.Castagnoli))) != *payload.DataCrc32C {
-			return nil, errors.New("secret payload size or checksum is invalid")
-		}
-		return payload.Data, nil
-	}
-	ca, err := read("ca", config.CAVersion)
+	ca, err := accessSecret(ctx, client, config, "ca", config.CAVersion)
 	if err != nil {
 		return err
 	}
-	identity, err := read(config.Endpoint, config.IdentityVersion)
+	identity, err := accessSecret(ctx, client, config, config.Endpoint, config.IdentityVersion)
 	if err != nil {
 		return err
 	}
 	if err := validateCertificate(ca, identity, config, time.Now()); err != nil {
 		return err
 	}
+	return publish(ctx, config.Output, map[string][]byte{"ca.pem": ca, "identity.pem": identity})
+}
+
+// checkOutput requires a fresh output path beneath a caller-owned 0700 parent.
+func checkOutput(output string) error {
+	info, err := os.Lstat(filepath.Dir(output))
+	if err != nil {
+		return fmt.Errorf("inspect credential parent: %w", err)
+	}
+	if !info.IsDir() || info.Mode().Perm() != 0o700 || info.Sys().(*syscall.Stat_t).Uid != uint32(os.Geteuid()) {
+		return errors.New("credential parent must be a caller-owned 0700 directory")
+	}
+	if _, err := os.Lstat(output); !errors.Is(err, os.ErrNotExist) {
+		return errors.New("credential output must not exist")
+	}
+	return nil
+}
+
+// accessSecret reads one exact secret version of the service's endpoint and checks its integrity.
+func accessSecret(ctx context.Context, client *secretmanager.Client, config Config, endpoint, version string) ([]byte, error) {
+	resource := fmt.Sprintf("projects/%s/secrets/production-%s-pgbackrest-%s/versions/%s", config.ProjectNumber, config.Service, endpoint, version)
+	response, err := client.AccessSecretVersion(ctx, &secretmanagerpb.AccessSecretVersionRequest{Name: resource})
+	if err != nil {
+		// Upstream diagnostic bodies are not a safe secret-handling log surface.
+		return nil, fmt.Errorf("access %s credential: %s", endpoint, status.Code(err))
+	}
+	payload := response.GetPayload()
+	if response.GetName() != resource || payload == nil || payload.DataCrc32C == nil {
+		return nil, errors.New("secret response is missing exact-version integrity evidence")
+	}
+	if len(payload.Data) == 0 || len(payload.Data) > 65536 || int64(crc32.Checksum(payload.Data, crc32.MakeTable(crc32.Castagnoli))) != *payload.DataCrc32C {
+		return nil, errors.New("secret payload size or checksum is invalid")
+	}
+	return payload.Data, nil
+}
+
+// publish writes files read-only into a private staging directory, then renames it to output.
+func publish(ctx context.Context, output string, files map[string][]byte) (err error) {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-
-	staging, err := os.MkdirTemp(parent, ".host-tls-")
+	staging, err := os.MkdirTemp(filepath.Dir(output), ".host-tls-")
 	if err != nil {
 		return fmt.Errorf("prepare credential directory: %w", err)
 	}
@@ -114,7 +129,7 @@ func Deliver(ctx context.Context, client *secretmanager.Client, config Config) (
 		// Only this invocation's private staging directory can be removed.
 		err = errors.Join(err, os.RemoveAll(staging))
 	}()
-	for filename, data := range map[string][]byte{"ca.pem": ca, "identity.pem": identity} {
+	for filename, data := range files {
 		if err := os.WriteFile(filepath.Join(staging, filename), data, 0o400); err != nil {
 			return fmt.Errorf("write %s: %w", filename, err)
 		}
@@ -123,7 +138,7 @@ func Deliver(ctx context.Context, client *secretmanager.Client, config Config) (
 		return err
 	}
 	// Linux's no-replace rename keeps concurrent starts from replacing a consumer's files.
-	if err := unix.Renameat2(unix.AT_FDCWD, staging, unix.AT_FDCWD, config.Output, unix.RENAME_NOREPLACE); err != nil {
+	if err := unix.Renameat2(unix.AT_FDCWD, staging, unix.AT_FDCWD, output, unix.RENAME_NOREPLACE); err != nil {
 		return fmt.Errorf("publish credential directory: %w", err)
 	}
 	return nil

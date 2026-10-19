@@ -21,7 +21,7 @@ func selection() recovery.Request {
 
 func TestRequest(t *testing.T) {
 	t.Parallel()
-	for _, tc := range []struct {
+	testCases := []struct {
 		name   string
 		change func(*recovery.Request)
 		fail   bool
@@ -41,7 +41,8 @@ func TestRequest(t *testing.T) {
 		{"Error/OptionInjection", func(r *recovery.Request) { r.Set += "\n--delta" }, true},
 		{"Error/SystemID", func(r *recovery.Request) { r.SystemID = "7.69e18" }, true},
 		{"Error/RelativeCutoff", func(r *recovery.Request) { r.RepositoryTime = "yesterday" }, true},
-	} {
+	}
+	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			request := selection()
@@ -62,7 +63,7 @@ func TestRequest(t *testing.T) {
 
 func TestRequestCatalog(t *testing.T) {
 	t.Parallel()
-	for _, tc := range []struct {
+	testCases := []struct {
 		name, old, replacement string
 		fail                   bool
 	}{
@@ -77,7 +78,8 @@ func TestRequestCatalog(t *testing.T) {
 		{"Error/MissingBackupStatus", `"error":false`, `"error":null`, true},
 		{"Error/OtherRepository", `"repo-key":1`, `"repo-key":2`, true},
 		{"Error/DatabaseEpoch", `"database":{"id":1`, `"database":{"id":2`, true},
-	} {
+	}
+	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			data := catalog

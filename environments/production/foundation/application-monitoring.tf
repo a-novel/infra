@@ -1,8 +1,6 @@
 # One native Cloud Run metric covers every declared application job failure.
 # A second condition catches a stopped rotation schedule without a controller.
 resource "google_monitoring_alert_policy" "application_jobs_unhealthy" {
-  count = 1
-
   project      = google_project.workload.project_id
   display_name = "A-Novel application jobs unhealthy"
   combiner     = "OR"
@@ -55,7 +53,7 @@ resource "google_monitoring_alert_policy" "application_jobs_unhealthy" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.operations_email[0].name]
+  notification_channels = [google_monitoring_notification_channel.operations_email.name]
   deletion_policy       = "PREVENT"
   lifecycle {
     prevent_destroy = true

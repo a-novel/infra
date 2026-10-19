@@ -158,11 +158,9 @@ resource "google_project_iam_member" "foundation_project_metadata" {
   member  = "serviceAccount:${local.automation_service_accounts.foundation}"
 }
 
-# The scheduled drift workflow reads provider metadata but cannot lock or
-# write state and receives no data-access role.
+# Pull-request and drift plans read the project's configuration as the plan identity, which
+# holds no data-access role.
 resource "google_project_iam_member" "plan_viewer" {
-  count = 1
-
   project = google_project.workload.project_id
   role    = "roles/viewer"
   member  = "serviceAccount:${local.automation_service_accounts.plan}"
@@ -253,8 +251,6 @@ resource "google_tags_tag_value_iam_member" "initializer_tag_user" {
 }
 
 resource "google_project_iam_member" "scheduler_cloud_run_invoker" {
-  count = 1
-
   project = google_project.workload.project_id
   role    = "roles/run.jobsExecutor"
   member  = "serviceAccount:${google_service_account.runtime["scheduler_invoker"].email}"
@@ -291,8 +287,6 @@ resource "google_service_account_iam_member" "initializer_act_as" {
 # This role is assigned only to named humans. Execution remains a separate,
 # initializer-tagged jobsExecutor grant, and overrides are never allowed.
 resource "google_project_iam_custom_role" "authentication_initializer_deployer" {
-  count = 1
-
   project = google_project.workload.project_id
 
   role_id     = "authenticationInitializerDeployer"
@@ -323,7 +317,7 @@ resource "google_project_iam_member" "authentication_initializer_deployer" {
   for_each = var.authentication_initializer_principals
 
   project = google_project.workload.project_id
-  role    = google_project_iam_custom_role.authentication_initializer_deployer[0].name
+  role    = google_project_iam_custom_role.authentication_initializer_deployer.name
   member  = each.value
 }
 

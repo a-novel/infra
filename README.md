@@ -1,7 +1,6 @@
 # A-Novel infrastructure
 
-OpenTofu definitions for A-Novel's production on Google Cloud: projects, network, database hosts,
-backups, Cloud Run services and their identities.
+OpenTofu definitions of A-Novel's production on Google Cloud.
 
 [![X (formerly Twitter) Follow](https://img.shields.io/twitter/follow/agorastoryverse)](https://twitter.com/agorastoryverse)
 [![Discord](https://img.shields.io/discord/1315240114691248138?logo=discord)](https://discord.gg/rp4Qr8cA)
@@ -32,7 +31,7 @@ their planned downtime, and checks production health. Nobody applies by hand, ex
 during a rebuild from nothing. [Ops basics](docs/ops-basics.md#from-a-pull-request-to-production)
 walks through it.
 
-To freeze production, run `gh workflow disable deploy.yaml`.
+Disabling `deploy.yaml` [freezes production](docs/runbooks/deployments.md#freeze-production).
 
 ## Layout
 
@@ -48,16 +47,13 @@ To freeze production, run `gh workflow disable deploy.yaml`.
 | `modules/backup-repository`             | A service's pgBackRest repository VM and its backup alerts.                     |
 | `modules/project-shell`                 | An empty trust-zone project, for foundation.                                    |
 | `cmd/`, `internal/`, `builds/`          | The two programs that run on the VMs: the TLS loader and the restore worker.    |
-| `.github/actions/`, `.github/workflows` | The pipeline: plan, deploy, drift, rollout, downtime and release pins.          |
-| `.github/scripts/`                      | The pipeline's tested rules: the downtime, release pins and image provenance.   |
+| `.github/actions/`, `.github/workflows` | The pipeline that plans, deploys and checks production.                         |
+| `.github/scripts/`                      | The pipeline's rules that can stop or misdeploy production, with their tests.   |
 | `tests/backup/`                         | Offline backup and restore tests inside the real database images.               |
-
-Each root keeps its production inputs in `terraform.tfvars`. Secret values never live in Git.
 
 ## Documentation
 
-1. [Ops basics](docs/ops-basics.md): the concepts behind this repository, how a change reaches
-   production, and how database changes stay safe.
+1. [Ops basics](docs/ops-basics.md): the ideas every runbook relies on.
 2. [Architecture](docs/architecture.md): what runs where in Google Cloud.
 3. [Runbooks](docs/runbooks/README.md): every operation that still needs a human.
 4. [Costs](docs/costs.md): what production pays for.

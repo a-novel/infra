@@ -1,9 +1,5 @@
 # project-shell
 
-An empty trust-zone project:
-
-- its APIs and service agents;
-- 30-day log retention;
-- scoped grants for the deploy and plan identities.
-
-Foundation uses it for the `public` and `public-api` projects.
+An empty trust-zone project, with its APIs, service agents, 30-day log retention, and scoped grants
+for the deploy and plan identities. Foundation creates the `public` and `public-api` projects with
+it.

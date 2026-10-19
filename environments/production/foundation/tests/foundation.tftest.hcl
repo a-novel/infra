@@ -96,7 +96,7 @@ run "keeps_humans_off_untagged_jobs" {
 
   assert {
     condition = (
-      length(setintersection(google_project_iam_custom_role.authentication_initializer_deployer[0].permissions,
+      length(setintersection(google_project_iam_custom_role.authentication_initializer_deployer.permissions,
       ["run.jobs.update", "run.jobs.delete", "run.jobs.deleteTagBinding", "run.jobs.run", "run.jobs.runWithOverrides"])) == 0 &&
       alltrue([for binding in google_project_iam_member.authentication_initializer_maintainer : length(binding.condition) == 1])
     )

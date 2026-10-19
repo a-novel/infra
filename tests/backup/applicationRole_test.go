@@ -47,12 +47,17 @@ CREATE TABLE events (at date NOT NULL) PARTITION BY RANGE (at);
 CREATE TABLE events_2026 PARTITION OF events FOR VALUES FROM ('2026-01-01') TO ('2027-01-01');
 CREATE TABLE bun_migrations (id bigserial PRIMARY KEY, name text NOT NULL);`)
 
-	for _, tc := range []struct{ name, before string }{
+	testCases := []struct{ name, before string }{
 		{name: "first boot"},
 		{name: "unchanged"},
 		{name: "privilege drift", before: "ALTER ROLE agora_proof_app SUPERUSER CREATEDB CREATEROLE REPLICATION BYPASSRLS NOLOGIN;"},
 		{name: "superuser migration", before: "CREATE TABLE later (id uuid PRIMARY KEY DEFAULT uuid_generate_v4()); CREATE FUNCTION later_count() RETURNS bigint LANGUAGE sql AS 'SELECT 1';"},
-	} {
+	}
+	escalations := []string{
+		"COPY (SELECT 1) TO PROGRAM 'true';",
+		"ALTER ROLE agora_proof_app SUPERUSER;",
+	}
+	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.before != "" {
 				query(tc.before)
@@ -79,10 +84,7 @@ ALTER TABLE items ADD COLUMN note text;
 CREATE TABLE extra (id uuid PRIMARY KEY DEFAULT uuid_generate_v4());
 SELECT nextval('tickets'), nextval('items_id_seq');
 ROLLBACK;`)
-			for _, escalation := range []string{
-				"COPY (SELECT 1) TO PROGRAM 'true';",
-				"ALTER ROLE agora_proof_app SUPERUSER;",
-			} {
+			for _, escalation := range escalations {
 				out, err := psql("SET ROLE agora_proof_app; " + escalation)
 				require.Error(t, err, escalation)
 				require.Contains(t, out, "permission denied", escalation)

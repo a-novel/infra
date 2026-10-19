@@ -11,8 +11,8 @@ resource "google_artifact_registry_repository" "production" {
     immutable_tags = true
   }
 
-  # Cleanup remains in dry-run until the release workflow creates receipt-* tags
-  # for every rollback digest and verifies the policy preview.
+  # Cleanup runs in dry-run and deletes nothing. No workflow creates the receipt-* tags the first
+  # policy keeps.
   cleanup_policy_dry_run = true
 
   cleanup_policies {

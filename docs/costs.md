@@ -1,6 +1,6 @@
 # Costs
 
-This page lists what production pays for, and what bounds each cost.
+This document is about what production pays for, and what bounds each cost.
 
 | Component         | Shape                                                                                                        | Main cost driver                   |
 | ----------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------- |
@@ -19,10 +19,12 @@ The budget is **150 units** of the billing account's currency a month, for the f
 projects. It alerts at 50, 75, 90 and 100%, actual or forecast, and caps nothing. Quotas, maximum
 instances and fixed disk sizes bound most usage, but not storage or requests. Every project that
 runs Cloud Run has its own CPU and memory quota, and each service root checks its maximum instances
-against it. Recovery drill projects are billed to the same account but sit outside the budget, so
-delete each one as soon as its drill ends.
+against it.
 
-Native backups are planned at EUR 10–15 extra per service per month. Real figures come from the
+Recovery drill projects are billed to the same account but sit outside the budget. Delete each one
+as soon as its drill ends.
+
+Native backups are estimated at EUR 10–15 extra per service per month. Real figures come from the
 billing report.
 
 Update this page when a VM, disk, warm instance, region or retention setting changes. Prices:

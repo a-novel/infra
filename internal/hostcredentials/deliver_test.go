@@ -24,7 +24,8 @@ import (
 
 func TestConfig(t *testing.T) {
 	t.Parallel()
-	for _, tc := range []struct {
+	valid := hostcredentials.Config{Service: "json-keys", ProjectNumber: "123456", Endpoint: "database", CAVersion: "3", IdentityVersion: "7", Name: "database", Output: "/run/credentials"}
+	testCases := []struct {
 		name   string
 		change func(*hostcredentials.Config)
 	}{
@@ -37,19 +38,27 @@ func TestConfig(t *testing.T) {
 		{"WildcardName", func(c *hostcredentials.Config) { c.Name = "*.internal" }},
 		{"RelativeOutput", func(c *hostcredentials.Config) { c.Output = "credentials" }},
 		{"UncleanOutput", func(c *hostcredentials.Config) { c.Output = "/run/../tmp/credentials" }},
-	} {
+	}
+	require.NoError(t, valid.Validate())
+	for _, tc := range testCases {
 		t.Run("Error/"+tc.name, func(t *testing.T) {
 			t.Parallel()
-			config := hostcredentials.Config{Service: "json-keys", ProjectNumber: "123456", Endpoint: "database", CAVersion: "3", IdentityVersion: "7", Name: "database", Output: "/run/credentials"}
+			config := valid
 			tc.change(&config)
 			require.Error(t, config.Validate())
 		})
 	}
 }
 
+// writtenFile is what Deliver leaves on disk for one credential file.
+type writtenFile struct {
+	Data []byte
+	Mode os.FileMode
+}
+
 func TestDeliver(t *testing.T) {
 	t.Parallel()
-	for _, tc := range []struct {
+	testCases := []struct {
 		name        string
 		service     string
 		endpoint    string
@@ -84,7 +93,8 @@ func TestDeliver(t *testing.T) {
 		{name: "Error/ConcurrentOutput", endpoint: "database", prepare: "race", wantError: "publish credential directory"},
 		{name: "Error/SymlinkOutput", endpoint: "database", prepare: "symlink", wantError: "must not exist"},
 		{name: "Error/PublicParent", endpoint: "database", prepare: "public", wantError: "0700"},
-	} {
+	}
+	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			ca, identity, expectedName := credentials(t, tc.endpoint, tc.certificate)
@@ -156,19 +166,14 @@ func TestDeliver(t *testing.T) {
 				require.NotContains(t, err.Error(), "secret diagnostic")
 			} else {
 				require.NoError(t, err)
-				for filename, expected := range map[string][]byte{"ca.pem": ca, "identity.pem": identity} {
+				expectedFiles := map[string][]byte{"ca.pem": ca, "identity.pem": identity}
+				for filename, expected := range expectedFiles {
 					path := filepath.Join(config.Output, filename)
 					actual, err := os.ReadFile(path)
 					require.NoError(t, err)
 					info, err := os.Stat(path)
 					require.NoError(t, err)
-					require.Equal(t, struct {
-						Data []byte
-						Mode os.FileMode
-					}{expected, 0o400}, struct {
-						Data []byte
-						Mode os.FileMode
-					}{actual, info.Mode().Perm()})
+					require.Equal(t, writtenFile{expected, 0o400}, writtenFile{actual, info.Mode().Perm()})
 				}
 			}
 			entries, err := os.ReadDir(filepath.Dir(config.Output))

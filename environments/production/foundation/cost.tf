@@ -46,16 +46,12 @@ locals {
 }
 
 data "google_billing_account" "workload" {
-  count = 1
-
   billing_account = var.billing_account_id
   lookup_projects = false
   open            = true
 }
 
 data "google_project" "management" {
-  count = 1
-
   project_id = var.management_project_id
 }
 
@@ -83,8 +79,6 @@ resource "google_cloud_quotas_quota_preference" "cost_cap" {
 }
 
 resource "google_monitoring_notification_channel" "cost_email" {
-  count = 1
-
   project = google_project.workload.project_id
 
   display_name = "A-Novel production cost alerts"
@@ -103,8 +97,6 @@ resource "google_monitoring_notification_channel" "cost_email" {
 }
 
 resource "google_monitoring_notification_channel" "operations_email" {
-  count = 1
-
   project = google_project.workload.project_id
 
   display_name = "A-Novel production operations alerts"
@@ -123,15 +115,13 @@ resource "google_monitoring_notification_channel" "operations_email" {
 }
 
 resource "google_billing_budget" "workload" {
-  count = 1
-
   billing_account = var.billing_account_id
   display_name    = "A-Novel production infrastructure"
   ownership_scope = "BILLING_ACCOUNT"
 
   budget_filter {
     projects = sort(concat([
-      "projects/${data.google_project.management[0].number}",
+      "projects/${data.google_project.management.number}",
       "projects/${google_project.workload.number}",
       ],
       [for project in module.public_project : "projects/${project.project_number}"],
@@ -142,57 +132,26 @@ resource "google_billing_budget" "workload" {
 
   amount {
     specified_amount {
-      currency_code = data.google_billing_account.workload[0].currency_code
+      currency_code = data.google_billing_account.workload.currency_code
       units         = tostring(var.monthly_budget_units)
     }
   }
 
-  threshold_rules {
-    threshold_percent = 0.5
-    spend_basis       = "CURRENT_SPEND"
-  }
-
-  threshold_rules {
-    threshold_percent = 0.75
-    spend_basis       = "CURRENT_SPEND"
-  }
-
-  threshold_rules {
-    threshold_percent = 0.9
-    spend_basis       = "CURRENT_SPEND"
-  }
-
-  threshold_rules {
-    threshold_percent = 1.0
-    spend_basis       = "CURRENT_SPEND"
-  }
-
-  threshold_rules {
-    threshold_percent = 0.5
-    spend_basis       = "FORECASTED_SPEND"
-  }
-
-  threshold_rules {
-    threshold_percent = 0.75
-    spend_basis       = "FORECASTED_SPEND"
-  }
-
-  threshold_rules {
-    threshold_percent = 0.9
-    spend_basis       = "FORECASTED_SPEND"
-  }
-
-  threshold_rules {
-    threshold_percent = 1.0
-    spend_basis       = "FORECASTED_SPEND"
+  # Notify at each share of the budget, for the spend so far and for the month's forecast.
+  dynamic "threshold_rules" {
+    for_each = setproduct(["CURRENT_SPEND", "FORECASTED_SPEND"], [0.5, 0.75, 0.9, 1.0])
+    content {
+      spend_basis       = threshold_rules.value[0]
+      threshold_percent = threshold_rules.value[1]
+    }
   }
 
   all_updates_rule {
     disable_default_iam_recipients  = true
     enable_project_level_recipients = false
     monitoring_notification_channels = sort([
-      google_monitoring_notification_channel.cost_email[0].name,
-      google_monitoring_notification_channel.operations_email[0].name,
+      google_monitoring_notification_channel.cost_email.name,
+      google_monitoring_notification_channel.operations_email.name,
     ])
   }
 

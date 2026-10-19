@@ -3,15 +3,25 @@ package hostcredentials
 import (
 	"errors"
 	"regexp"
+	"slices"
+)
+
+var (
+	projectID = regexp.MustCompile(`^[a-z][a-z0-9-]{4,28}[a-z0-9]$`)
+	// privateDatabaseAccounts names each service's database host identity in the shared private project.
+	privateDatabaseAccounts = map[string]string{
+		"json-keys":      "agora-json-keys-database",
+		"authentication": "agora-auth-database",
+	}
 )
 
 // ServiceAccount selects the exact service endpoint identity before metadata authentication.
 // An empty zone retains dedicated-project identities; private selects shared-project identities.
 func ServiceAccount(project, service, endpoint, zone string) (string, error) {
-	if service != "json-keys" && service != "authentication" {
+	if !slices.Contains(services, service) {
 		return "", errors.New("invalid service")
 	}
-	if !regexp.MustCompile(`^[a-z][a-z0-9-]{4,28}[a-z0-9]$`).MatchString(project) {
+	if !projectID.MatchString(project) {
 		return "", errors.New("invalid workload project")
 	}
 	var account string
@@ -21,10 +31,7 @@ func ServiceAccount(project, service, endpoint, zone string) (string, error) {
 	case "/repository":
 		account = "agora-backup-repository"
 	case "private/database":
-		account = map[string]string{
-			"json-keys":      "agora-json-keys-database",
-			"authentication": "agora-auth-database",
-		}[service]
+		account = privateDatabaseAccounts[service]
 	case "private/repository":
 		account = "agora-pgbr-" + service
 	default:
