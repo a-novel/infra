@@ -80,7 +80,7 @@ resource "google_monitoring_alert_policy" "database_capacity" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.operations_email[0].name]
+  notification_channels = [google_monitoring_notification_channel.operations_email.name]
   deletion_policy       = "PREVENT"
   lifecycle {
     prevent_destroy = true

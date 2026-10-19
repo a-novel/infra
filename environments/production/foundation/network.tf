@@ -10,21 +10,6 @@ locals {
     genai                   = "agora-genai"
   }
 
-  database_egress_contracts = {
-    authentication = {
-      port        = local.database_ports.authentication
-      target_tags = toset([local.network_tags.authentication])
-    }
-    json_keys = {
-      port        = local.database_ports.json_keys
-      target_tags = toset([local.network_tags.json_keys])
-    }
-    genai = {
-      port        = local.database_ports.genai
-      target_tags = toset([local.network_tags.genai])
-    }
-  }
-
   private_egress_tags = toset(values(local.network_tags))
 
   restricted_google_api_ranges = toset([
@@ -107,10 +92,11 @@ resource "google_compute_firewall" "allow_restricted_google_apis" {
   }
 }
 
+# Each service's workloads reach its own database host's port.
 resource "google_compute_firewall" "allow_postgres_egress" {
   depends_on = [google_project_iam_member.foundation_firewall]
 
-  for_each = local.database_egress_contracts
+  for_each = local.database_ports
 
   project = google_project.workload.project_id
   name    = "agora-allow-${replace(each.key, "_", "-")}-postgres-egress"
@@ -119,11 +105,11 @@ resource "google_compute_firewall" "allow_postgres_egress" {
   direction          = "EGRESS"
   priority           = 810
   destination_ranges = [var.subnet_cidr]
-  target_tags        = sort(tolist(each.value.target_tags))
+  target_tags        = [local.network_tags[each.key]]
 
   allow {
     protocol = "tcp"
-    ports    = [tostring(each.value.port)]
+    ports    = [tostring(each.value)]
   }
 }
 
