@@ -37,28 +37,13 @@ func run(ctx context.Context) error {
 	if (!verify && len(os.Args) != 1) || os.Getenv("GCE_METADATA_HOST") != "" {
 		return errors.New("unsupported recovery arguments or metadata override")
 	}
-	data, err := os.ReadFile("/etc/agora-recovery/request.json")
+	request, err := readRequest("/etc/agora-recovery/request.json")
 	if err != nil {
-		return errors.New("read approved recovery request")
-	}
-	var request recovery.Request
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if decoder.Decode(&request) != nil || decoder.Decode(&struct{}{}) != io.EOF {
-		return errors.New("invalid recovery request")
-	}
-	if err = request.Validate(); err != nil {
 		return err
 	}
 	if verify {
-		interfaces, err := net.Interfaces()
-		if err != nil {
-			return errors.New("offline network boundary is unavailable")
-		}
-		for _, device := range interfaces {
-			if device.Flags&net.FlagLoopback == 0 {
-				return errors.New("SQL verification requires a networkless container")
-			}
+		if err := requireNetworkless(); err != nil {
+			return err
 		}
 		return recovery.VerifySQL(ctx, request, "/recovery", recovery.Command)
 	}
@@ -72,4 +57,33 @@ func run(ctx context.Context) error {
 		return errors.New("VM does not carry the independent recovery identity")
 	}
 	return recovery.Restore(ctx, request, "/recovery", recovery.Command)
+}
+
+// readRequest decodes the approved request strictly: one JSON object with only known fields.
+func readRequest(path string) (recovery.Request, error) {
+	var request recovery.Request
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return request, errors.New("read approved recovery request")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&request) != nil || decoder.Decode(&struct{}{}) != io.EOF {
+		return request, errors.New("invalid recovery request")
+	}
+	return request, request.Validate()
+}
+
+// requireNetworkless refuses to run SQL verification beside any network interface but loopback.
+func requireNetworkless() error {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return errors.New("offline network boundary is unavailable")
+	}
+	for _, device := range interfaces {
+		if device.Flags&net.FlagLoopback == 0 {
+			return errors.New("SQL verification requires a networkless container")
+		}
+	}
+	return nil
 }

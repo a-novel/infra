@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"slices"
 	"time"
 )
 
@@ -39,12 +38,13 @@ type Request struct {
 
 // Validate limits the pilot to exact-set recovery to backup consistency, without promotion.
 func (r Request) Validate() error {
-	for _, project := range []string{r.SourceProject, r.Project, r.ManagementProject} {
+	projects := []string{r.SourceProject, r.Project, r.ManagementProject}
+	for _, project := range projects {
 		if !matches(`[a-z][a-z0-9-]{4,28}[a-z0-9]`, project) {
 			return errors.New("invalid recovery project")
 		}
 	}
-	if !slices.Contains([]string{"json-keys", "authentication"}, r.Service) || r.Major != 18 {
+	if _, supported := recoverySQL[r.Service]; !supported || r.Major != 18 {
 		return errors.New("recovery requires a supported PostgreSQL 18 service")
 	}
 	if r.Project == r.SourceProject || r.Project == r.ManagementProject || !matches(`a-novel-recovery-[a-z0-9-]+`, r.Project) {
@@ -138,19 +138,19 @@ func matches(pattern, value string) bool {
 }
 
 // CheckFiles verifies a worker's files-only completion, never database startup or SQL recovery.
-func (request Request) CheckFiles(files map[string]string) error {
+func (r Request) CheckFiles(files map[string]string) error {
 	var actual Request
 	var result struct {
 		SystemID string `json:"system_id"`
 		Set      string `json:"set"`
 		Started  *bool  `json:"postgresql_started"`
 	}
-	if json.Unmarshal([]byte(files["request.json"]), &actual) != nil || actual != request ||
-		request.CheckCatalog([]byte(files["catalog.json"])) != nil {
+	if json.Unmarshal([]byte(files["request.json"]), &actual) != nil || actual != r ||
+		r.CheckCatalog([]byte(files["catalog.json"])) != nil {
 		return errors.New("restore evidence differs from the selected database and backup")
 	}
 	if json.Unmarshal([]byte(files["files-restored.json"]), &result) != nil || result.Started == nil || *result.Started ||
-		result.SystemID != request.SystemID || result.Set != request.Set {
+		result.SystemID != r.SystemID || result.Set != r.Set {
 		return errors.New("files-only completion is unconfirmed")
 	}
 	return nil
