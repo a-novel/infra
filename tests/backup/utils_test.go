@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +13,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/a-novel/infra/internal/recovery"
 )
 
 type proof struct{ root, config, source, repo, stanza string }
@@ -84,6 +87,27 @@ func (p proof) backups(t *testing.T) []backup {
 	require.NoError(t, json.Unmarshal([]byte(out), &info), "%s", out)
 	require.Len(t, info, 1)
 	return info[0].Backup
+}
+
+// localCommand runs native tools as production does, with pgBackRest reading the proof's local
+// repository instead of Cloud Storage. Every selection, identity check and restore option stays real.
+func (p proof) localCommand(t *testing.T) func(context.Context, io.Writer, string, ...string) ([]byte, error) {
+	return func(ctx context.Context, diagnostics io.Writer, binary string, args ...string) ([]byte, error) {
+		if binary == "/usr/bin/pgbackrest" {
+			local := []string{"--repo1-type=posix", "--repo1-path=" + p.repo}
+			for _, arg := range args {
+				if !strings.HasPrefix(arg, "--repo1-") {
+					local = append(local, arg)
+				}
+			}
+			args = local
+		}
+		output, err := recovery.Command(ctx, diagnostics, binary, args...)
+		if err != nil {
+			t.Logf("synthetic native diagnostics: %s", output)
+		}
+		return output, err
+	}
 }
 
 func (p proof) sql(t *testing.T, sql string) string {

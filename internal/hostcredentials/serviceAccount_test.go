@@ -10,7 +10,7 @@ import (
 
 func TestServiceAccount(t *testing.T) {
 	t.Parallel()
-	for _, testCase := range []struct {
+	testCases := []struct {
 		name, project, service, endpoint, zone, account string
 	}{
 		{"Success/DedicatedDatabase", "example-private", "json-keys", "database", "", "agora-database"},
@@ -25,7 +25,8 @@ func TestServiceAccount(t *testing.T) {
 		{"Error/MissingService", "example-private", "", "database", "private", ""},
 		{"Error/Endpoint", "example-private", "json-keys", "recovery", "private", ""},
 		{"Error/Project", "example-private\n", "json-keys", "database", "private", ""},
-	} {
+	}
+	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 			account, err := hostcredentials.ServiceAccount(testCase.project, testCase.service, testCase.endpoint, testCase.zone)
