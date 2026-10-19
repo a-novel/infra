@@ -36,7 +36,7 @@ type Request struct {
 	ExpectedDataSHA256 string `json:"expected_data_sha256,omitempty"`
 }
 
-// Validate limits the pilot to exact-set recovery to backup consistency, without promotion.
+// Validate limits recovery to one exact backup set, restored to backup consistency without promotion.
 func (r Request) Validate() error {
 	projects := []string{r.SourceProject, r.Project, r.ManagementProject}
 	for _, project := range projects {
