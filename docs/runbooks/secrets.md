@@ -1,22 +1,24 @@
 # Secrets
 
-This runbook covers adding, rotating and auditing secret values. OpenTofu manages the secret
-containers, in the management project. Their **values** are added by humans with `gcloud`, so they
-never reach state, plans or Git. Each workload reads the numeric version pinned in its root's
-`terraform.tfvars`, so a new value takes effect only once a pull request pins it.
+This runbook is about secret values. OpenTofu manages the secret containers, in the management
+project. Humans add their values with `gcloud`, so the values never reach state, plans or Git. Each
+workload reads the numeric version its root's `terraform.tfvars` pins, so a new value takes effect
+only once a pull request pins it.
 
 ## Rotate a secret
 
 This is the general procedure. The database password, the SMTP password, the waitlist secret and the
 pgBackRest certificates rotate differently, because something besides the service reads them.
-`production-json-keys-app-master-key` has no rotation procedure: it encrypts the signing keys JSON
+`production-json-keys-app-master-key` has no rotation procedure. It encrypts the signing keys JSON
 Keys stores, and a new value cannot decrypt them.
 
-1. Add a version. Paste the value at the prompt; it is not echoed.
+1. **Add a version.** Paste the value at the prompt, which does not echo it.
 
    ```bash
-   SECRET=production-<service>-<name>
-   read -rs VALUE && printf '%s' "$VALUE" | gcloud secrets versions add "$SECRET" --project="$MGMT" --data-file=- && unset VALUE
+   SECRET="production-<service>-<name>"
+   read -rs VALUE
+   printf '%s' "$VALUE" | gcloud secrets versions add "$SECRET" --project="$MGMT" --data-file=-
+   unset VALUE
    gcloud secrets versions list "$SECRET" --project="$MGMT" --limit=3
    ```
 
@@ -27,26 +29,30 @@ Keys stores, and a new value cannot decrypt them.
    | `*-waitlist-secret` | at least 32 characters                                    |
    | `*-openai-api-key`  | an OpenAI project key restricted to the Responses API     |
 
-2. Pin the new number in a pull request (`secret_versions` in the service root) and merge. Deploy
-   rolls out a new revision that reads it.
-3. Once the deploy is healthy, disable the old version. Destroying it is final after 30 days.
+2. **Pin the new number** in `secret_versions` in the service root, in a pull request, and merge it.
+   The deploy rolls out a new revision that reads it.
+3. **Disable the old version** once the deploy is healthy:
 
    ```bash
-   gcloud secrets versions disable <old> --secret="$SECRET" --project="$MGMT"
-   gcloud secrets versions destroy <old> --secret="$SECRET" --project="$MGMT"
+   OLD="<old version number>"
+   gcloud secrets versions disable "$OLD" --secret="$SECRET" --project="$MGMT"
    ```
 
-   Run the second command only when you are sure the version is no longer needed.
+4. **Destroy it** only when you are sure it is no longer needed. Destruction becomes final 30 days
+   later.
+
+   ```bash
+   gcloud secrets versions destroy "$OLD" --secret="$SECRET" --project="$MGMT"
+   ```
 
 Disabling a version does not revoke the credential where it was issued. For a leak, also revoke it
-there: the Google account, the database role, and so on.
+there, such as in the Google account or the database role.
 
 ### Database password
 
 The database host sets the application role's password at boot, from foundation's
 `database_releases.<service>.app_password_version`. The service reads the same secret through
-`secret_versions.app-password` in its root. The owner has no password: it logs in only through the
-host's local socket.
+`secret_versions.app-password` in its root.
 
 1. Add the version.
 2. In **one** pull request, bump both values.
@@ -56,15 +62,13 @@ host's local socket.
 
 ## SMTP (Google Workspace relay)
 
-Authentication sends mail through `smtp-relay.gmail.com:587` with authenticated STARTTLS:
-
-- the account is `geoffroy.vincent@agorastoryverse.com`;
-- the sender is `no-reply@agorastoryverse.com`;
-- the password is a Google **app password**.
+Authentication sends mail through the Google Workspace SMTP relay on port 587, with authenticated
+STARTTLS. The authentication root's `smtp` input names the relay, the account and the sender. The
+password is a Google **app password** of that account.
 
 The relay rule is in Google Admin under **Apps → Google Workspace → Gmail → Routing → SMTP relay
-service**: "only addresses in my domains", "require SMTP authentication" and "require TLS", with no
-IP allowlist.
+service**. Its settings are "only addresses in my domains", "require SMTP authentication" and
+"require TLS", with no IP allowlist.
 
 To rotate the app password:
 
@@ -84,28 +88,28 @@ To turn it on:
 2. In the authentication root, set `waitlist_url` and `secret_versions.waitlist-secret`, and merge.
 
 The Apps Script behind the waitlist must use the same secret, so update both together. Requests
-fail while they differ. To turn it off, remove both settings.
+fail while they differ. To turn the waitlist off, remove both settings.
 
 ## GitHub dispatch tokens
 
-GitHub starts scheduled workflows hours late. The `github-dispatch` workflow starts the timed
-workflows instead, and only those its schedules list, in the repositories they list: each org's
-`.github` workflows, and `clean-images.yaml` in the services and platform-studio. It uses one
-fine-grained personal access token per org. Create
-each one in [Fine-grained tokens](https://github.com/settings/personal-access-tokens/new):
+GitHub starts scheduled workflows hours late. The `github-dispatch` Cloud Workflow therefore
+dispatches the timed workflows on time, in the repositories that `github_dispatch_schedules` lists
+in `bootstrap/github-dispatch.tf`. It uses one fine-grained personal access token per org. Create
+each one in the browser, in
+[Fine-grained tokens](https://github.com/settings/personal-access-tokens/new):
 
 - **Resource owner:** the org, `a-novel` or `a-novel-kit`. An org that reviews tokens asks an owner
   to approve it.
-- **Repository access:** only `<org>/.github`, plus, for `a-novel`, the repositories bootstrap's
-  `clean-images.yaml` schedule lists: `platform-studio` and the `service-*` repositories.
+- **Repository access:** only the org's repositories that `github_dispatch_schedules` lists, its
+  `.github` repository included.
 - **Permissions:** Actions, read and write. Nothing else.
 - **Expiration:** the longest the org allows. The `.github` repository's daily `token-expiry`
   workflow posts to Discord before it lapses.
 
 Add each one as a version of `production-github-dispatch-<org>`, as in
 [Rotate a secret](#rotate-a-secret), and pin it in bootstrap's `github_dispatch_token_versions`. The
-next dispatch after the deploy reads it. It can start, rerun, cancel and delete workflow runs in those
-repositories. For a leak, revoke it on GitHub as well as disabling its version.
+next dispatch after the deploy reads it. The token can start, rerun, cancel and delete workflow runs
+in those repositories. For a leak, revoke it on GitHub as well as disabling its version.
 
 ## pgBackRest TLS certificates
 
@@ -118,8 +122,8 @@ The hourly check fails 30 days before any certificate expires.
 | `production-<service>-pgbackrest-database`   | client certificate followed by its private key |
 | `production-<service>-pgbackrest-repository` | server certificate followed by its private key |
 
-- **Client CN:** `agora-database.a-novel-production-prod` for JSON Keys, or
-  `agora-authentication-database.a-novel-production-prod` for Authentication.
+- **Client CN:** the service's `native_backups.<service>.client_name` in foundation's
+  `terraform.tfvars`.
 - **Server DNS name:** `agora-pgbackrest-<service>.europe-west1-d.c.a-novel-production-prod.internal`.
 
 The CA's private key stays offline with its custodian, and never reaches a VM or Secret Manager.
@@ -135,16 +139,20 @@ The CA's private key stays offline with its custodian, and never reaches a VM or
 To renew:
 
 1. Issue the certificates offline, with the same names and purposes.
-2. Upload each PEM file:
+2. Upload each PEM file, here the database host's:
 
    ```bash
-   gcloud secrets versions add production-<service>-pgbackrest-database --project="$MGMT" --data-file=database.pem
+   SERVICE=json-keys
+   ENDPOINT=database
+   FILE=database.pem
+   gcloud secrets versions add "production-$SERVICE-pgbackrest-$ENDPOINT" --project="$MGMT" \
+     --data-file="$FILE"
    ```
 
 3. Bump the versions in one pull request:
-   - for the database host: `native_backups.<service>.ca_version` / `identity_version` in
+   - for the database host, `native_backups.<service>.ca_version` and `identity_version` in
      foundation;
-   - for the repository VM: `backup_repository.runtime.ca_version` / `identity_version` in the
+   - for the repository VM, `backup_repository.runtime.ca_version` and `identity_version` in the
      service root.
 4. Merge it as a [database host change](database.md#change-a-database-host), during a planned
    downtime. The rollout restarts the database host, then the repository VM, which load the new
@@ -155,6 +163,7 @@ Delete the local PEM files afterwards.
 ## Audit access
 
 ```bash
+SECRET="production-<service>-<name>"
 gcloud logging read 'protoPayload.serviceName="secretmanager.googleapis.com" AND protoPayload.resourceName:"/secrets/'"$SECRET"'"' \
   --project="$MGMT" --limit=20 --format='table(timestamp,protoPayload.methodName,protoPayload.authenticationInfo.principalEmail)'
 ```

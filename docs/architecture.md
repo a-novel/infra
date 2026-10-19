@@ -1,22 +1,21 @@
 # Architecture
 
-This document describes what runs where in production, on Google Cloud: projects, network,
-services, databases and backups, secrets, identities, state and monitoring. Everything runs in
+This document is about what runs where in production, on Google Cloud. Everything runs in
 `europe-west1`, and the database hosts in zone `europe-west1-d`.
 
 ## Projects
 
 Production is split into four projects, one per trust zone, so each one holds only the access its
 contents need. The services of a zone share its project. An organization holds a limited number of
-Google Cloud projects, and raising that quota is slow. Services therefore keep apart through their own
-identities, image repositories, network tags and database hosts.
+Google Cloud projects, and raising that quota is slow. Services therefore keep apart through their
+own identities, image repositories, network tags and database hosts.
 
 | Project                   | Zone       | Holds                                                                               |
 | ------------------------- | ---------- | ----------------------------------------------------------------------------------- |
 | `a-novel-management-prod` | management | State bucket, backup buckets, secrets, CI identities. Survives a workload rebuild.  |
 | `a-novel-production-prod` | private    | Shared VPC host, database and backup VMs, JSON Keys, GenAI, every job and schedule. |
 | `a-novel-public-api-prod` | public-api | Authentication REST API, attached to the private VPC.                               |
-| `a-novel-public-prod`     | public     | Reserved for platforms; no VPC attachment, no database access.                      |
+| `a-novel-public-prod`     | public     | Reserved for platforms, with no VPC attachment and no database access.              |
 
 ## Network
 
@@ -24,7 +23,7 @@ identities, image repositories, network tags and database hosts.
   gateway, router, load balancer or external IP.
 - **Google APIs** are reached through the restricted VIP ranges `199.36.153.4/30` and
   `34.126.0.0/18`. Private DNS zones resolve `googleapis.com`, `pkg.dev` and `run.app` to them.
-- **Firewall.** A VPC-wide rule denies all egress at priority 1200. Explicit rules allow, above it:
+- **Firewall.** A VPC-wide rule denies all egress at priority 1200. Explicit rules above it allow:
 
   | Traffic                                                                              | Priority |
   | ------------------------------------------------------------------------------------ | -------- |
@@ -38,8 +37,8 @@ identities, image repositories, network tags and database hosts.
 - **JSON Keys gRPC** has internal ingress and IAM authentication. Only Authentication's API identity
   and JSON Keys' smoke identity may invoke it.
 - **Authentication REST** has public ingress and IAM authentication, under the custom audience
-  `agora-authentication-rest`. Only the platform and the health checks may invoke it. It therefore
-  trusts the visitor IP the platform sends in `X-Client-IP`. Its egress reaches private ranges
+  `agora-authentication-rest`. Only the platform and the health checks may invoke it, so it can
+  trust the visitor IP the platform sends in `X-Client-IP`. Its egress reaches private ranges
   through the VPC, and SMTP through Google's managed egress.
 - **GenAI gRPC and sweep** have internal ingress and IAM authentication. GenAI's smoke identity
   invokes the gRPC service. Only the scheduler identity invokes the sweep. Their egress reaches
@@ -51,9 +50,9 @@ identities, image repositories, network tags and database hosts.
   Cloud Run refuses a deploy there that breaks either. Organization admins set both by hand, and no
   CI identity holds an organization role that could lift them. Public APIs run in
   `a-novel-public-api-prod`.
-- **An organization deny policy** keeps `infra-plan` from reading logs and traces, though its Viewer
-  role covers them. Pull requests can mint that identity. Organization admins set the policy by hand,
-  from [the setup runbook](runbooks/setup.md#organization-guardrails).
+- **An organization deny policy** keeps `infra-plan` from reading logs and traces, which its Viewer
+  role would otherwise cover. Pull requests can mint that identity. Organization admins set the
+  policy by hand, from [the setup runbook](runbooks/setup.md#organization-guardrails).
 
 ## Services
 
@@ -63,29 +62,37 @@ identities, image repositories, network tags and database hosts.
 | Authentication | `agora-authentication-rest`: 1 instance, which holds the in-memory rate limits; public ingress, CPU always allocated for detached mail                                                                      | `migrations` (runs at deploy, in the private project)                                                                                        |
 | GenAI          | `agora-genai-grpc`: 0–4 instances, private ingress, CPU only during requests; `agora-genai-sweep`: 0–1 instance, private ingress, which Scheduler calls every minute to check the generations nobody polled | `migrations` (runs at deploy), `smoke` (probes each new image)                                                                               |
 
-Service images come from `ghcr.io/a-novel/*`. Each is pinned as `tag@digest` in the service root's
-`terraform.tfvars`, and its database image in foundation's too. Every plan verifies each image it
-changes: its release tag's own run built it, the release App published that tag as an immutable
-GitHub Release, and its version is not below the one deployed. Before applying, deploy copies the
-images to Artifact Registry.
+Service images come from `ghcr.io/a-novel/*`. Each is pinned as `tag@digest` in its service root's
+`terraform.tfvars`, and each database image in foundation's `database_images` too. Every plan
+verifies each release image it changes:
 
-Artifact Registry holds `agora-production`, for the database images, and two repositories per
-service and zone, `…-production` and `…-tooling`, all with immutable tags. The tooling repositories
-hold the [host tools](runbooks/host-tools.md), pinned by digest.
+- the release tag's own run built it;
+- the release App published that tag as an immutable GitHub Release;
+- its version is not below the one deployed.
+
+Before applying, the deploy copies the images to Artifact Registry. Artifact Registry holds
+`agora-production`, for the database images, and two repositories per service and zone,
+`…-production` and `…-tooling`, all with immutable tags. The tooling repositories hold the
+[host tools](runbooks/host-tools.md), pinned by digest.
 
 ## Databases and backups
 
-Each service has its own **database host**, sized on its own in foundation's `database_capacity`:
-machine type, container vCPU and memory, connection ceiling and data disk. JSON Keys and
-Authentication run the sizes below. GenAI's rows hold payloads and responses of up to 24 MiB, so its
-host is an `e2-standard-2` with a 1.5 vCPU, 6 GiB container and 150 connections.
+Each service has its own **database host**, sized in foundation's `database_capacity`. GenAI's rows
+hold payloads and responses of up to 24 MiB, so its host is larger.
 
-- a Container-Optimized OS VM, `e2-medium`, the only member of a stateful instance group. Its COS
-  image is pinned, and automatic OS updates are off;
-- a 50 GiB `pd-balanced` data disk and a fixed IP that both outlive the VM: JSON Keys
-  `10.20.0.5:5432`, Authentication `10.20.0.4:5433`, GenAI on port `5434`;
-- PostgreSQL 18 from the service's `database` image, in a container limited to 0.75 vCPU, 1536 MiB
-  and 50 connections, supervised by systemd.
+| Service        | Machine         | Container           | Connections | Address          |
+| -------------- | --------------- | ------------------- | ----------- | ---------------- |
+| JSON Keys      | `e2-medium`     | 0.75 vCPU, 1536 MiB | 50          | `10.20.0.5:5432` |
+| Authentication | `e2-medium`     | 0.75 vCPU, 1536 MiB | 50          | `10.20.0.4:5433` |
+| GenAI          | `e2-standard-2` | 1.5 vCPU, 6 GiB     | 150         | port `5434`      |
+
+Each host combines:
+
+- a Container-Optimized OS VM, the only member of a stateful instance group. Its COS image is
+  pinned, and automatic OS updates are off;
+- a 50 GiB `pd-balanced` data disk and a fixed IP, which both outlive the VM;
+- PostgreSQL 18 from the service's `database` image, in a container held to the sizes above and
+  supervised by systemd.
 
 Each database has two login roles:
 
@@ -94,14 +101,14 @@ Each database has two login roles:
 - `<database>_app` owns schema `public` and holds no superuser, role or database rights. The
   services, their migrations and their jobs connect as this role.
 
-At boot, the host removes the owner's password and sets the application role's. The host then hands `<database>_app` every object in `public`
-outside an extension, and GenAI's pg_cron jobs. Objects from an earlier superuser migration change
-owner this way.
+At boot, the host removes the owner's password and sets the application role's. It then hands
+`<database>_app` every object in `public` outside an extension, and GenAI's pg_cron jobs. Objects an
+earlier superuser migration created change owner this way.
 
-JSON Keys and Authentication each have their own **backup repository VM**, an `e2-micro`: JSON
-Keys `10.20.0.6`, Authentication `10.20.0.7`. GenAI enrolls in native backups later. Foundation's
+JSON Keys and Authentication have native backups. Each has its own **backup repository VM**, an
+`e2-micro`: JSON Keys `10.20.0.6`, Authentication `10.20.0.7`. Foundation's
 `native_backups.<service>.repository_ip` sets each address. The service root reserves it for the VM,
-and the database host trusts it.
+and the database host trusts it. GenAI has no native backups.
 
 - The database host archives WAL and runs backups with pgBackRest, over mutual TLS, to its
   repository VM.
@@ -116,19 +123,21 @@ and the database host trusts it.
 
 Each timer adds up to five minutes of random delay. pgBackRest keeps full backups, with the WAL and
 differentials that depend on them, for 14 days. It owns their expiry, so the buckets never
-age-delete live data. Restores go into a disposable project; see [Recovery](runbooks/recovery.md).
+age-delete live data. Restores go into a disposable project, as [Recovery](runbooks/recovery.md)
+describes.
 
 Before restarting a database host, each rollout snapshots its data disk into `europe-west1`. Each
 rollout also deletes that service's snapshots older than 14 days, so a snapshot lasts at least that
-long. See [Undo a rollout](runbooks/database.md#undo-a-rollout).
+long. [Undo a rollout](runbooks/database.md#undo-a-rollout) uses them.
 
 The management project also holds `…-backups`, the bucket of the earlier logical backups. It
 receives no writes, and its locked retention keeps it until it can be retired.
 
 ## Secrets
 
-Secret containers live in the management project. Humans add their values; OpenTofu never sees
-them. Operators may add and read versions of every secret.
+Secret containers live in the management project. Humans add their values with `gcloud`, as
+[Secrets](runbooks/secrets.md) describes, so OpenTofu never sees them. Workloads read the numeric
+version their root's `terraform.tfvars` pins.
 
 | Secret                                                     | Read by                                                         |
 | ---------------------------------------------------------- | --------------------------------------------------------------- |
@@ -141,8 +150,6 @@ them. Operators may add and read versions of every secret.
 | `production-<service>-pgbackrest-{ca,database,repository}` | Database host and repository VM (TLS)                           |
 | `production-downtime-discord-webhook`                      | `downtime-announcer`, when it posts a planned downtime step     |
 | `production-github-dispatch-{a-novel,a-novel-kit}`         | `github-dispatcher`, when it dispatches that org's workflows    |
-
-Workloads pin numeric versions in `terraform.tfvars`, never `latest`.
 
 ## Identities
 
@@ -167,17 +174,16 @@ token exchange.
 
 ## State
 
-All state lives in `a-novel-management-prod-232403541574-tofu-state`, one object per root; see
-[State](runbooks/state.md).
+All state lives in `a-novel-management-prod-232403541574-tofu-state`, one object per root, as
+[State](runbooks/state.md) details.
 
 ## Monitoring
 
-- **Email channels.** Foundation has an operations channel and a cost channel. Each service runtime
-  adds its own operations channel, and a service's backup alerts go to its private runtime's channel.
-- **Alerts** cover Authentication's 5xx rate, GenAI's sweep failures, failed jobs and key rotation,
-  database capacity, backups, and the [monthly budget](costs.md). [Alerts](runbooks/alerts.md) gives
-  each threshold and what to do.
-- **Health checks.** `drift.yaml` calls Authentication's `/v2/healthcheck` every three hours. Each
-  deploy calls it once after applying the service roots, even when one of them failed.
+- **Alerts** email an operations channel: foundation's, or the service runtime's own. They cover
+  Authentication's 5xx rate, GenAI's sweep failures, failed jobs and key rotation, database
+  capacity, backups, and the [monthly budget](costs.md). [Alerts](runbooks/alerts.md) gives each
+  threshold and what to do.
+- **Health checks** call Authentication's `/v2/healthcheck` after each deploy and from `drift.yaml`,
+  as [Authentication health](runbooks/alerts.md#authentication-health) details.
 - **Logs** are kept 30 days. Successful health-check requests to Authentication are not logged.
 - **Traces and logs** leave the services over OTLP to Google's Telemetry API.

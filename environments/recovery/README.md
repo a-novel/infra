@@ -1,6 +1,6 @@
 # recovery
 
 Creates one disaster-recovery drill host in a disposable project, from the JSON input of
-`recovery.yaml`. Each drill has its own state prefix: `recovery/<project>`.
+`recovery.yaml`. Each drill has its own state prefix, `recovery/<project>`.
 
-Follow [recovery](../../docs/runbooks/recovery.md).
+[Recovery](../../docs/runbooks/recovery.md) walks through a drill.

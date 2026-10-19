@@ -1,9 +1,6 @@
 # database-runtime
 
-Renders a database host's boot configuration:
+Renders the boot configuration of a database host with native backups: its PostgreSQL and backup
+systemd units, its pgBackRest client configuration and its backup timers.
 
-- the PostgreSQL and backup systemd units;
-- the pgBackRest client configuration and its TLS loader;
-- the backup timers.
-
-`files/` holds the host scripts that the units run.
+`files/` holds the host scripts, which every database host runs.

@@ -1,9 +1,9 @@
 # foundation
 
-The long-lived production infrastructure that every service shares. It owns the trust-zone
-projects, the Shared VPC with its firewall and private DNS, and each service's database host. It
-also holds the shared IAM, the invocation tags and schedules that run the services' jobs, the
-`agora-production` registry of database images, and the quotas, budget and alerts.
+The long-lived production infrastructure every service shares: the trust-zone projects, the
+network, each service's database host, and the shared IAM, schedules, quotas and alerts.
+[Architecture](../../../docs/architecture.md) describes what runs where.
 
-See [architecture](../../../docs/architecture.md). Database hosts never restart on apply; see
-[database hosts](../../../docs/runbooks/database.md).
+Database hosts never restart on apply.
+[How the rollout works](../../../docs/runbooks/database.md#how-the-rollout-works) explains how a
+change reaches them.

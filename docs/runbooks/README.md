@@ -1,9 +1,8 @@
 # Runbooks
 
-Everything routine is automated: merges deploy, releases merge themselves when their checks pass,
-the deploy rolls the database hosts during planned downtimes, and the drift and health checks run on
-a schedule. These runbooks cover what still needs a human. [Ops basics](../ops-basics.md) explains
-the ideas they rely on.
+These runbooks cover the operations that still need a human. Everything routine runs on its own,
+from deploys and release pins to database rollouts and scheduled checks.
+[Ops basics](../ops-basics.md) explains the ideas they rely on.
 
 | Situation                                                 | Runbook                         |
 | --------------------------------------------------------- | ------------------------------- |
@@ -17,11 +16,12 @@ the ideas they rely on.
 | A state object is wrong or locked                         | [State](state.md)               |
 | Rebuild from nothing, or reconfigure GitHub               | [Setup](setup.md)               |
 
-Each runbook expects these variables in your shell:
+The commands run from a checkout of this repository, and expect these variables in your shell:
 
 ```bash
-export MGMT=a-novel-management-prod PROD=a-novel-production-prod API=a-novel-public-api-prod
-export STATE=gs://a-novel-management-prod-232403541574-tofu-state ZONE=europe-west1-d
+export MGMT=a-novel-management-prod PROD=a-novel-production-prod ZONE=europe-west1-d
+export STATE=gs://a-novel-management-prod-232403541574-tofu-state
+export ORG=1031663934757 BILLING=01BDFE-5B21E7-8393CB
 ```
 
 Never paste secret values, plans or state into GitHub, chat or logs.
