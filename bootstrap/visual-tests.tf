@@ -9,6 +9,10 @@ variable "visual_test_platforms" {
       repository    = "a-novel/platform-studio"
       repository_id = "1338436652"
     }
+    template = {
+      repository    = "a-novel/platform-template"
+      repository_id = "1310148363"
+    }
   }
   validation {
     condition = alltrue([for platform, github in var.visual_test_platforms :
