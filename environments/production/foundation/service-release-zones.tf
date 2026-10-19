@@ -29,13 +29,3 @@ locals {
     if contains(["private", "public-api"], boundary.zone) && (boundary.zone != "public-api" || var.public_api_project_id != null)
   }
 }
-
-# The retired release tooling kept plans and receipts in these folders. They
-# still hold historical objects, so OpenTofu forgets them instead of deleting.
-removed {
-  from = module.service_release
-
-  lifecycle {
-    destroy = false
-  }
-}

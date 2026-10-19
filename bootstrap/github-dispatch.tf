@@ -121,11 +121,6 @@ resource "google_workflows_workflow" "github_dispatch" {
   ]
 }
 
-moved {
-  from = google_cloud_scheduler_job.github_dispatch
-  to   = google_cloud_scheduler_job.github_dispatch["notify-stuck.yaml"]
-}
-
 resource "google_cloud_scheduler_job" "github_dispatch" {
   for_each = local.github_dispatch_schedules
 
