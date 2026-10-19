@@ -9,37 +9,15 @@ import (
 	"time"
 )
 
+// validateCertificate checks that identity holds config's endpoint certificate and key, issued under the
+// CA bundle and valid at now.
 func validateCertificate(ca, identity []byte, config Config, now time.Time) error {
-	roots := x509.NewCertPool()
-	for len(bytes.TrimSpace(ca)) > 0 {
-		block, rest := pem.Decode(ca)
-		if block == nil || block.Type != "CERTIFICATE" || len(block.Headers) != 0 {
-			return errors.New("trust bundle must contain only CA certificates")
-		}
-		certificate, err := x509.ParseCertificate(block.Bytes)
-		if err != nil || !certificate.IsCA || now.Before(certificate.NotBefore) || !now.Before(certificate.NotAfter) {
-			return errors.New("trust bundle contains an invalid or expired CA")
-		}
-		roots.AddCert(certificate)
-		ca = rest
+	roots, err := trustPool(ca, now)
+	if err != nil {
+		return err
 	}
-	keys := 0
-	for remaining := identity; len(bytes.TrimSpace(remaining)) > 0; {
-		block, rest := pem.Decode(remaining)
-		if block == nil || len(block.Headers) != 0 {
-			return errors.New("identity bundle must be unencrypted PEM")
-		}
-		switch block.Type {
-		case "CERTIFICATE":
-		case "PRIVATE KEY", "RSA PRIVATE KEY", "EC PRIVATE KEY":
-			keys++
-		default:
-			return errors.New("unexpected identity PEM block")
-		}
-		remaining = rest
-	}
-	if keys != 1 {
-		return errors.New("identity bundle must contain exactly one private key")
+	if err := requireOnePrivateKey(identity); err != nil {
+		return err
 	}
 	pair, err := tls.X509KeyPair(identity, identity)
 	if err != nil {
@@ -69,6 +47,47 @@ func validateCertificate(ca, identity []byte, config Config, now time.Time) erro
 	}
 	if _, err := leaf.Verify(options); err != nil {
 		return errors.New("identity certificate trust, validity or usage check failed")
+	}
+	return nil
+}
+
+// trustPool parses a PEM bundle that holds only CA certificates valid at now.
+func trustPool(ca []byte, now time.Time) (*x509.CertPool, error) {
+	roots := x509.NewCertPool()
+	for len(bytes.TrimSpace(ca)) > 0 {
+		block, rest := pem.Decode(ca)
+		if block == nil || block.Type != "CERTIFICATE" || len(block.Headers) != 0 {
+			return nil, errors.New("trust bundle must contain only CA certificates")
+		}
+		certificate, err := x509.ParseCertificate(block.Bytes)
+		if err != nil || !certificate.IsCA || now.Before(certificate.NotBefore) || !now.Before(certificate.NotAfter) {
+			return nil, errors.New("trust bundle contains an invalid or expired CA")
+		}
+		roots.AddCert(certificate)
+		ca = rest
+	}
+	return roots, nil
+}
+
+// requireOnePrivateKey accepts an unencrypted PEM bundle of certificates and exactly one private key.
+func requireOnePrivateKey(identity []byte) error {
+	keys := 0
+	for len(bytes.TrimSpace(identity)) > 0 {
+		block, rest := pem.Decode(identity)
+		if block == nil || len(block.Headers) != 0 {
+			return errors.New("identity bundle must be unencrypted PEM")
+		}
+		switch block.Type {
+		case "CERTIFICATE":
+		case "PRIVATE KEY", "RSA PRIVATE KEY", "EC PRIVATE KEY":
+			keys++
+		default:
+			return errors.New("unexpected identity PEM block")
+		}
+		identity = rest
+	}
+	if keys != 1 {
+		return errors.New("identity bundle must contain exactly one private key")
 	}
 	return nil
 }
