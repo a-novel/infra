@@ -3,6 +3,3 @@
 node_modules
 *.tf
 *.tftest.hcl
-
-# Generated files have their own formatters.
-pnpm-lock.yaml
