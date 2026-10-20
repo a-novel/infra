@@ -37,7 +37,7 @@ jobs:
       id-token: write
     steps:
       # workflow_dispatch is open to anyone with write access.
-      - uses: a-novel-kit/workflows/generic-actions/require-role@v1.66.0
+      - uses: a-novel-kit/workflows/generic-actions/require-role@v1.66.2
         with:
           roles: admin
 
