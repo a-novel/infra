@@ -1,5 +1,5 @@
-variable "visual_test_platforms" {
-  description = "Platforms using Drive evidence; add a repository once to generate both keyless identities."
+variable "visual_test_repositories" {
+  description = "Repositories using Drive visual-test evidence; add one once to generate both keyless identities."
   type = map(object({
     repository    = string
     repository_id = string
@@ -13,32 +13,40 @@ variable "visual_test_platforms" {
       repository    = "a-novel/platform-template"
       repository_id = "1310148363"
     }
+    uikit = {
+      repository    = "a-novel-kit/uikit"
+      repository_id = "1310094565"
+    }
   }
   validation {
-    condition = alltrue([for platform, github in var.visual_test_platforms :
-      can(regex("^[a-z][a-z0-9-]{0,9}[a-z0-9]$", platform)) &&
-      can(regex("^a-novel/platform-[a-z0-9-]+$", github.repository)) &&
+    condition = alltrue([for slug, github in var.visual_test_repositories :
+      can(regex("^[a-z][a-z0-9-]{0,9}[a-z0-9]$", slug)) &&
+      can(regex("^(a-novel/platform-[a-z0-9-]+|a-novel-kit/uikit)$", github.repository)) &&
       can(regex("^[0-9]+$", github.repository_id))
     ])
-    error_message = "Use a 2–11 character platform slug, an a-novel/platform-* repository and its numeric GitHub ID."
+    error_message = "Use a 2–11 character slug, an a-novel/platform-* repository or a-novel-kit/uikit, and its numeric GitHub ID."
   }
   validation {
     condition = (
-      length(distinct([for github in var.visual_test_platforms : github.repository])) == length(var.visual_test_platforms) &&
-      length(distinct([for github in var.visual_test_platforms : github.repository_id])) == length(var.visual_test_platforms)
+      length(distinct([for github in var.visual_test_repositories : github.repository])) == length(var.visual_test_repositories) &&
+      length(distinct([for github in var.visual_test_repositories : github.repository_id])) == length(var.visual_test_repositories)
     )
-    error_message = "Each platform must have a distinct repository and numeric GitHub ID."
+    error_message = "Each repository must have a distinct name and numeric GitHub ID."
   }
 }
 
 locals {
-  visual_identities = merge([for platform, github in var.visual_test_platforms : {
-    for role in ["ci", "maintenance"] : "${platform}-${role}" => {
-      platform      = platform
+  # GitHub's numeric organization IDs, which each provider pins beside the repository ID.
+  visual_owner_ids = { "a-novel" = local.github.owner_id, "a-novel-kit" = "187672320" }
+
+  visual_identities = merge([for slug, github in var.visual_test_repositories : {
+    for role in ["ci", "maintenance"] : "${slug}-${role}" => {
+      slug          = slug
       role          = role
+      owner_id      = local.visual_owner_ids[split("/", github.repository)[0]]
       repository    = github.repository
       repository_id = github.repository_id
-      account_id    = "${platform}-visual-${role}"
+      account_id    = "${slug}-visual-${role}"
       workflow = role == "ci" ? (
         "assertion.workflow_ref == '${github.repository}/.github/workflows/main.yaml@' + assertion.ref"
         ) : (
@@ -58,7 +66,7 @@ resource "google_service_account" "visual_tests" {
 
   project      = var.management_project_id
   account_id   = each.value.account_id
-  display_name = "${each.value.platform} visual ${each.value.role}"
+  display_name = "${each.value.slug} visual ${each.value.role}"
   description  = "Keyless visual-test storage identity for ${each.value.repository} ${each.value.role} runs."
 
   lifecycle {
@@ -73,8 +81,8 @@ resource "google_iam_workload_identity_pool_provider" "visual_tests" {
 
   workload_identity_pool_id          = google_iam_workload_identity_pool.github.workload_identity_pool_id
   workload_identity_pool_provider_id = each.value.account_id
-  display_name                       = "${each.value.platform} visual ${each.value.role}"
-  description                        = "Trust ${each.value.platform} ${each.value.role} workflow events for Drive visual-test storage."
+  display_name                       = "${each.value.slug} visual ${each.value.role}"
+  description                        = "Trust ${each.value.slug} ${each.value.role} workflow events for Drive visual-test storage."
   deletion_policy                    = "PREVENT"
 
   attribute_mapping = {
@@ -89,7 +97,7 @@ resource "google_iam_workload_identity_pool_provider" "visual_tests" {
     "attribute.trust_boundary" = "'${each.value.account_id}'"
   }
   attribute_condition = join(" && ", [
-    "assertion.repository_owner_id == '131281268'",
+    "assertion.repository_owner_id == '${each.value.owner_id}'",
     "assertion.repository_id == '${each.value.repository_id}'",
     "assertion.repository == '${each.value.repository}'",
     "(${each.value.workflow})",
@@ -113,20 +121,20 @@ resource "google_service_account_iam_member" "visual_tests" {
 }
 
 output "visual_tests" {
-  description = "Per-platform Drive handoff; a Workspace administrator verifies folder access and maintenance deletion authority before activation."
+  description = "Per-repository Drive handoff; a Workspace administrator verifies folder access and maintenance deletion authority before activation."
   value = {
     oauth_scope             = "https://www.googleapis.com/auth/drive"
     maintenance_parent_role = "organizer"
     ci_folder_roles         = { references = "reader", results = "writer" }
-    platforms = { for platform, github in var.visual_test_platforms : platform => {
+    repositories = { for slug, github in var.visual_test_repositories : slug => {
       repository = github.repository
       folders = {
-        references = "${platform}/ci/references"
-        results    = "${platform}/ci/results"
+        references = "${slug}/ci/references"
+        results    = "${slug}/ci/results"
       }
       identities = { for role in ["ci", "maintenance"] : role => {
-        service_account   = google_service_account.visual_tests["${platform}-${role}"].email
-        identity_provider = google_iam_workload_identity_pool_provider.visual_tests["${platform}-${role}"].name
+        service_account   = google_service_account.visual_tests["${slug}-${role}"].email
+        identity_provider = google_iam_workload_identity_pool_provider.visual_tests["${slug}-${role}"].name
       } }
     } }
   }

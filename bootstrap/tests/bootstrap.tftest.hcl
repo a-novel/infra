@@ -115,12 +115,13 @@ run "trusts_only_reviewed_workflows" {
     error_message = "Call logs and detailed history would record the secrets the workflows read: the Discord webhook and the GitHub dispatch tokens."
   }
 
+  # Only uikit's visual tests trust a repository outside the a-novel organization.
   assert {
     condition = alltrue([for provider in concat(values(google_iam_workload_identity_pool_provider.github), values(google_iam_workload_identity_pool_provider.visual_tests)) :
-      strcontains(provider.attribute_condition, "assertion.repository_owner_id == '131281268'") &&
+      strcontains(provider.attribute_condition, "assertion.repository_owner_id == '${strcontains(provider.attribute_condition, "assertion.repository == 'a-novel-kit/uikit'") ? "187672320" : "131281268"}'") &&
       provider.oidc[0].allowed_audiences == null
     ])
-    error_message = "Every provider must pin the GitHub organization and Google's canonical audience."
+    error_message = "Every provider must pin its repository's GitHub organization and Google's canonical audience."
   }
 
   # Google rejects a longer provider display name only at apply time.
