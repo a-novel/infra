@@ -56,15 +56,14 @@ module "native_backup" {
   service           = each.key
   project_id        = var.workload_project_id
   region            = var.region
-  management_number = trimprefix(trimsuffix(var.backup_bucket_name, "-backups"), "${var.management_project_id}-")
-  shared_private    = true
+  management_number = data.google_project.management.number
   identity_version  = each.value.identity_version
   wal_archiving     = each.value.wal_archiving
   schedules_enabled = each.value.schedules_enabled
   repository = merge(each.value, {
     name              = "agora-pgbackrest-${each.key}.${var.database_zone}.c.${var.workload_project_id}.internal"
     ip                = each.value.repository_ip
-    server_image      = local.database_image[each.key].backup
+    server_image      = local.database_image[each.key]
     credentials_image = local.host_credentials_image[each.key]
   })
 }

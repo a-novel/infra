@@ -23,12 +23,6 @@ variable "management_number" {
   type        = string
 }
 
-variable "shared_private" {
-  description = "Select the service's database identity in the shared private project."
-  type        = bool
-  default     = false
-}
-
 variable "repository" {
   description = "Private repository endpoint and exact runtime inputs."
   type = object({

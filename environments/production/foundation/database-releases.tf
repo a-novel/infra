@@ -39,25 +39,22 @@ locals {
   ) }
   # The host runs PostgreSQL and its backup containers from the service's own private repository,
   # so a host can pull no other service's image.
-  database_image_repositories = { for service in keys(var.database_images) : service => {
-    host   = "${var.region}-docker.pkg.dev/${var.workload_project_id}/agora-${service}-private-production"
-    backup = "${var.region}-docker.pkg.dev/${var.workload_project_id}/agora-${service}-private-production"
-  } }
-  database_image = { for service, image in local.database_images : service => {
-    for use, repository in local.database_image_repositories[service] : use => "${repository}/${image.path}@${image.digest}"
-  } }
+  database_image_repositories = {
+    for service in keys(var.database_images) : service => "${var.region}-docker.pkg.dev/${var.workload_project_id}/agora-${service}-private-production"
+  }
+  database_image = {
+    for service, image in local.database_images : service => "${local.database_image_repositories[service]}/${image.path}@${image.digest}"
+  }
 }
 
 output "image_copies" {
   description = "Images the deploy workflow verifies against their producer's workflow and copies to Artifact Registry before apply."
-  value = concat(flatten([for service, image in local.database_images : [
-    for repository in values(local.database_image_repositories[service]) : {
-      source   = image.source
-      producer = "a-novel/service-${service}"
-      workflow = "release.yaml"
-      target   = "${repository}/${image.path}:${image.tag}"
-    }
-    ]]), [for service, repository in local.host_credentials_repositories : {
+  value = concat([for service, image in local.database_images : {
+    source   = image.source
+    producer = "a-novel/service-${service}"
+    workflow = "release.yaml"
+    target   = "${local.database_image_repositories[service]}/${image.path}:${image.tag}"
+    }], [for service, repository in local.host_credentials_repositories : {
     source   = var.host_credentials_image
     producer = "a-novel/infra"
     workflow = "publish-rollout-verifier.yaml"

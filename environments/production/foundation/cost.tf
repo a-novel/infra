@@ -51,10 +51,6 @@ data "google_billing_account" "workload" {
   open            = true
 }
 
-data "google_project" "management" {
-  project_id = var.management_project_id
-}
-
 resource "google_cloud_quotas_quota_preference" "cost_cap" {
   for_each = local.quota_preferences
 

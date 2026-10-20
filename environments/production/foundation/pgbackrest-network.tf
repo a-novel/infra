@@ -18,12 +18,12 @@ variable "pgbackrest_repository_services" {
 }
 
 locals {
-  pgbackrest_network = merge({}, {
+  pgbackrest_network = {
     for service, zones in var.service_release_zones : service => {
       database   = google_service_account.runtime["${replace(service, "-", "_")}_database"].email
       repository = "agora-pgbr-${service}@${var.workload_project_id}.iam.gserviceaccount.com"
     } if try(contains(zones, "private"), false) && contains(var.pgbackrest_repository_services, service)
-  })
+  }
 }
 
 resource "google_compute_firewall" "pgbackrest_database_egress" {
