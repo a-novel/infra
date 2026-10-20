@@ -89,7 +89,6 @@ variable "subnet_cidr" {
 variable "database_zone" {
   description = "Single production zone for the stateful PostgreSQL managed instance group and preserved data disk."
   type        = string
-  default     = "europe-west1-c"
 
   validation {
     condition     = can(regex("^[a-z]+-[a-z]+[0-9]+-[a-z]$", var.database_zone))
@@ -213,7 +212,6 @@ variable "operations_alert_email" {
 variable "monthly_budget_units" {
   description = "Alert-only monthly production-infrastructure budget in whole units of the billing account currency; notifications do not stop spend."
   type        = number
-  default     = 60
 
   validation {
     condition     = var.monthly_budget_units >= 10 && var.monthly_budget_units <= 1000 && floor(var.monthly_budget_units) == var.monthly_budget_units
@@ -224,7 +222,6 @@ variable "monthly_budget_units" {
 variable "cloud_run_cpu_quota_millicpu" {
   description = "Regional Cloud Run CPU ceiling in milli-vCPU across services and jobs."
   type        = number
-  default     = 8000
 
   validation {
     condition     = var.cloud_run_cpu_quota_millicpu >= 2000 && var.cloud_run_cpu_quota_millicpu <= 64000 && var.cloud_run_cpu_quota_millicpu % 1000 == 0
@@ -235,7 +232,6 @@ variable "cloud_run_cpu_quota_millicpu" {
 variable "cloud_run_memory_quota_bytes" {
   description = "Regional Cloud Run memory ceiling in bytes across services and jobs."
   type        = number
-  default     = 17179869184
 
   validation {
     condition     = var.cloud_run_memory_quota_bytes >= 4294967296 && var.cloud_run_memory_quota_bytes <= 137438953472 && var.cloud_run_memory_quota_bytes % 1073741824 == 0
@@ -266,7 +262,6 @@ variable "shell_cloud_run_quota" {
 variable "compute_cpu_quota" {
   description = "Regional Compute Engine CPU ceiling for the stateful data plane."
   type        = number
-  default     = 4
 
   validation {
     condition     = var.compute_cpu_quota >= 2 && var.compute_cpu_quota <= 32 && floor(var.compute_cpu_quota) == var.compute_cpu_quota
