@@ -56,6 +56,53 @@ type writtenFile struct {
 	Mode os.FileMode
 }
 
+// fakeSecretManager answers Secret Manager's access calls with ca, or with identity for version 7,
+// and records each secret version requested.
+type fakeSecretManager struct {
+	ca, identity []byte
+	// prepare is the case's fault on the identity read: "race" creates output first, and "denied"
+	// refuses the read with a diagnostic that must not reach the caller.
+	prepare string
+	output  string
+	// response edits the identity read's answer.
+	response func(*secretmanagerpb.AccessSecretVersionResponse)
+
+	lock     sync.Mutex
+	requests []string
+}
+
+func (f *fakeSecretManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+	resource := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/"), ":access")
+	f.requests = append(f.requests, resource)
+	payload := f.ca
+	isIdentity := strings.HasSuffix(resource, "/versions/7")
+	if isIdentity {
+		if f.prepare == "race" {
+			if err := os.Mkdir(f.output, 0o700); err != nil {
+				panic(err)
+			}
+		}
+		if f.prepare == "denied" {
+			http.Error(w, "secret diagnostic that must not escape", http.StatusForbidden)
+			return
+		}
+		payload = f.identity
+	}
+	checksum := int64(crc32.Checksum(payload, crc32.MakeTable(crc32.Castagnoli)))
+	response := &secretmanagerpb.AccessSecretVersionResponse{Name: resource, Payload: &secretmanagerpb.SecretPayload{Data: payload, DataCrc32C: &checksum}}
+	if isIdentity && f.response != nil {
+		f.response(response)
+	}
+	data, err := protojson.Marshal(response)
+	if err != nil {
+		panic(err)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(data) // An abandoned test request needs no server-side recovery.
+}
+
 func TestDeliver(t *testing.T) {
 	t.Parallel()
 	testCases := []struct {
@@ -122,39 +169,8 @@ func TestDeliver(t *testing.T) {
 				require.NoError(t, os.Chmod(filepath.Dir(config.Output), 0o755))
 			}
 
-			var lock sync.Mutex
-			var requests []string
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				lock.Lock()
-				defer lock.Unlock()
-				resource := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/"), ":access")
-				requests = append(requests, resource)
-				payload := ca
-				isIdentity := strings.HasSuffix(resource, "/versions/7")
-				if isIdentity {
-					if tc.prepare == "race" {
-						if err := os.Mkdir(config.Output, 0o700); err != nil {
-							panic(err)
-						}
-					}
-					if tc.prepare == "denied" {
-						http.Error(w, "secret diagnostic that must not escape", http.StatusForbidden)
-						return
-					}
-					payload = identity
-				}
-				checksum := int64(crc32.Checksum(payload, crc32.MakeTable(crc32.Castagnoli)))
-				response := &secretmanagerpb.AccessSecretVersionResponse{Name: resource, Payload: &secretmanagerpb.SecretPayload{Data: payload, DataCrc32C: &checksum}}
-				if isIdentity && tc.response != nil {
-					tc.response(response)
-				}
-				data, err := protojson.Marshal(response)
-				if err != nil {
-					panic(err)
-				}
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write(data) // An abandoned test request needs no server-side recovery.
-			}))
+			secrets := &fakeSecretManager{ca: ca, identity: identity, prepare: tc.prepare, output: config.Output, response: tc.response}
+			server := httptest.NewServer(secrets)
 			t.Cleanup(server.Close)
 			client, err := secretmanager.NewRESTClient(t.Context(), option.WithEndpoint(server.URL), option.WithHTTPClient(server.Client()))
 			require.NoError(t, err)
@@ -187,13 +203,13 @@ func TestDeliver(t *testing.T) {
 				expectedEntries = []string{"credentials"}
 			}
 			require.Equal(t, expectedEntries, remaining)
-			lock.Lock()
-			defer lock.Unlock()
+			secrets.lock.Lock()
+			defer secrets.lock.Unlock()
 			var expectedRequests []string
 			if tc.prepare != "existing" && tc.prepare != "symlink" && tc.prepare != "public" {
 				expectedRequests = []string{fmt.Sprintf("projects/123456/secrets/production-%s-pgbackrest-ca/versions/3", service), fmt.Sprintf("projects/123456/secrets/production-%s-pgbackrest-%s/versions/7", service, tc.endpoint)}
 			}
-			require.Equal(t, expectedRequests, requests)
+			require.Equal(t, expectedRequests, secrets.requests)
 		})
 	}
 }

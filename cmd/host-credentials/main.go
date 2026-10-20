@@ -27,7 +27,7 @@ func main() {
 	flag.StringVar(&config.Service, "service", "", "json-keys or authentication")
 	flag.StringVar(&config.ProjectNumber, "management-project-number", "", "numeric project owning TLS secrets")
 	flag.StringVar(&workload, "workload-project", "", "project owning the attached endpoint identity")
-	flag.StringVar(&zone, "zone", "", "private for shared-project identities; empty for dedicated projects")
+	flag.StringVar(&zone, "zone", "", "trust zone of the endpoint identity: private")
 	flag.StringVar(&config.Endpoint, "endpoint", "", "database or repository")
 	flag.StringVar(&config.CAVersion, "ca-version", "", "numeric public-trust secret version")
 	flag.StringVar(&config.IdentityVersion, "identity-version", "", "numeric endpoint secret version")

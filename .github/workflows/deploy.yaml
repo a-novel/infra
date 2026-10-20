@@ -91,7 +91,7 @@ jobs:
             all=true
             commits=""
           fi
-          # A manual or downtime run applies every root, and still honours every pull request since
+          # A manual or downtime run applies every root, and still honors every pull request since
           # the last successful deploy, plus the one that made HEAD.
           [ "$EVENT" != push ] && all=true
           commits="$(printf '%s\n%s\n' "$commits" "$(git rev-parse HEAD)" | sort -u | sed '/^$/d')"

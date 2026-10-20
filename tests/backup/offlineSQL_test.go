@@ -44,7 +44,7 @@ const formatting = "SET timezone='Pacific/Auckland'; SET datestyle='SQL, DMY';"
 var offlineSQLFixtures = []offlineSQLFixture{
 	{
 		service:   "json-keys",
-		queryFile: "/data.sql",
+		queryFile: "/jsonKeysData.sql",
 		schema: `CREATE TABLE keys (
 id uuid PRIMARY KEY, private_key text NOT NULL CHECK (private_key <> ''), public_key text,
 usage text NOT NULL, created_at timestamptz(0) NOT NULL, expires_at timestamptz(0) NOT NULL,
@@ -112,40 +112,37 @@ func testOfflineSQL(t *testing.T, fixture offlineSQLFixture) {
 	dataSQL := string(query)
 	p := newProof(t, fixture.service)
 	role := "agora_" + strings.ReplaceAll(fixture.service, "-", "_")
-	p.sql(t, "CREATE ROLE "+role+" LOGIN SUPERUSER; CREATE ROLE "+role+"_app LOGIN; CREATE ROLE "+role+"_backup LOGIN; GRANT pg_read_all_data TO "+role+"_backup;")
-	p.sql(t, "CREATE DATABASE "+role+" OWNER "+role+";")
+	p.query(t, "postgres", "CREATE ROLE "+role+" LOGIN SUPERUSER; CREATE ROLE "+role+"_app LOGIN; CREATE ROLE "+role+"_backup LOGIN; GRANT pg_read_all_data TO "+role+"_backup;")
+	p.query(t, "postgres", "CREATE DATABASE "+role+" OWNER "+role+";")
 	run(t, "psql", "-X", "-h", p.root, "-d", role, "-v", "ON_ERROR_STOP=1", "-f", "/docker-entrypoint-initdb.d/init.sql")
-	sql := func(query string) string {
-		return strings.TrimSpace(run(t, "psql", "-XqAt", "-h", p.root, "-d", role, "-v", "ON_ERROR_STOP=1", "-c", query))
-	}
 	table := fixture.table
-	sql(fixture.schema)
-	fullHash := sql(dataSQL)
+	p.query(t, role, fixture.schema)
+	fullHash := p.query(t, role, dataSQL)
 	require.Regexp(t, `^[a-f0-9]{64}$`, fullHash)
 	p.backrest(t, "--type=full", "--archive-copy", "backup")
 	full := p.backups(t)[0].Label
-	sql(fixture.update)
-	diffHash := sql(dataSQL)
+	p.query(t, role, fixture.update)
+	diffHash := p.query(t, role, dataSQL)
 	require.NotEqual(t, fullHash, diffHash)
 	p.backrest(t, "--type=diff", "--archive-copy", "backup")
 	diff := p.backups(t)[1].Label
 	// Source observations precede recovery; no expected value is learned from restored data.
-	sql("CREATE TABLE saved_rows AS TABLE " + table + ";")
+	p.query(t, role, "CREATE TABLE saved_rows AS TABLE "+table+";")
 	for _, tc := range fixture.fingerprints {
 		t.Run("Fingerprint/"+tc.name, func(t *testing.T) {
-			sql(tc.change)
-			require.Equal(t, tc.same, sql(tc.settings+dataSQL) == diffHash)
-			sql("TRUNCATE " + table + "; INSERT INTO " + table + " SELECT * FROM saved_rows;")
+			p.query(t, role, tc.change)
+			require.Equal(t, tc.same, p.query(t, role, tc.settings+dataSQL) == diffHash)
+			p.query(t, role, "TRUNCATE "+table+"; INSERT INTO "+table+" SELECT * FROM saved_rows;")
 			if fixture.reset != "" {
-				sql(fixture.reset)
+				p.query(t, role, fixture.reset)
 			}
 		})
 	}
-	sql(fixture.missing)
-	missingHash := sql(dataSQL)
-	sql("TRUNCATE " + table + ";")
-	emptyHash := sql(dataSQL)
-	sql("INSERT INTO " + table + " SELECT * FROM saved_rows;")
+	p.query(t, role, fixture.missing)
+	missingHash := p.query(t, role, dataSQL)
+	p.query(t, role, "TRUNCATE "+table+";")
+	emptyHash := p.query(t, role, dataSQL)
+	p.query(t, role, "INSERT INTO "+table+" SELECT * FROM saved_rows;")
 	sets := []string{full, diff}
 	for _, set := range sets {
 		wal := filepath.Join(p.repo, "backup", fixture.service, set, "pg_data/pg_wal")
@@ -165,7 +162,7 @@ func testOfflineSQL(t *testing.T, fixture offlineSQLFixture) {
 		t.Run(tc.name, func(t *testing.T) {
 			request := recovery.Request{
 				Service: fixture.service, SourceProject: "source-project", Project: "a-novel-recovery-proof", ManagementProject: "management-project",
-				ManagementNumber: "123456789012", SystemID: strings.TrimSpace(p.sql(t, "SELECT system_identifier FROM pg_control_system();")), Major: 18, Set: tc.set, VerifySQL: true,
+				ManagementNumber: "123456789012", SystemID: p.query(t, "postgres", "SELECT system_identifier FROM pg_control_system();"), Major: 18, Set: tc.set, VerifySQL: true,
 				ExpectedDataSHA256: tc.expected,
 			}
 			parent := t.TempDir()
@@ -223,7 +220,7 @@ func restoredWAL(t *testing.T, dir string, remove bool) int64 {
 
 // offlineCommand runs native tools as VerifySQL does and fails any pgBackRest call. With failSchema
 // set, the schema check of the service whose main table is table answers false.
-func offlineCommand(t *testing.T, failSchema bool, table string) func(context.Context, io.Writer, string, ...string) ([]byte, error) {
+func offlineCommand(t *testing.T, failSchema bool, table string) recovery.Executor {
 	return func(ctx context.Context, diagnostics io.Writer, binary string, args ...string) ([]byte, error) {
 		require.NotContains(t, binary, "pgbackrest")
 		if failSchema && strings.HasSuffix(binary, "/psql") && strings.Contains(args[len(args)-1], "public."+table) {

@@ -13,11 +13,11 @@ import (
 	"time"
 )
 
-//go:embed verify.sql
-var verificationSQL string
+//go:embed jsonKeysVerify.sql
+var jsonKeysVerificationSQL string
 
-//go:embed data.sql
-var dataSQL string
+//go:embed jsonKeysData.sql
+var jsonKeysDataSQL string
 
 //go:embed authenticationVerify.sql
 var authenticationVerificationSQL string
@@ -35,7 +35,7 @@ type serviceSQL struct {
 
 // recoverySQL holds the queries of every service a recovery accepts.
 var recoverySQL = map[string]serviceSQL{
-	"json-keys":      {schema: verificationSQL, data: dataSQL},
+	"json-keys":      {schema: jsonKeysVerificationSQL, data: jsonKeysDataSQL},
 	"authentication": {schema: authenticationVerificationSQL, data: authenticationDataSQL},
 }
 
@@ -44,7 +44,7 @@ var evidence = []string{"request.json", "catalog.json", "files-restored.json"}
 
 // VerifySQL validates restored service data in a separately supervised, networkless
 // container. It pauses at backup consistency, preserves failures and refuses replay.
-func VerifySQL(ctx context.Context, request Request, parent string, execute func(context.Context, io.Writer, string, ...string) ([]byte, error)) (err error) {
+func VerifySQL(ctx context.Context, request Request, parent string, execute Executor) (err error) {
 	if request.Validate() != nil || !request.VerifySQL {
 		return errors.New("offline SQL verification was not selected")
 	}
@@ -65,55 +65,87 @@ func VerifySQL(ctx context.Context, request Request, parent string, execute func
 		return err
 	}
 	defer func() { err = errors.Join(err, log.Close()) }()
-	data := filepath.Join(root, "data")
-	role := "agora_" + strings.ReplaceAll(request.Service, "-", "_")
-	if err := configureOffline(data, verification, role); err != nil {
+	server := offlineServer{
+		execute: execute,
+		log:     log,
+		data:    filepath.Join(root, "data"),
+		dir:     verification,
+		role:    "agora_" + strings.ReplaceAll(request.Service, "-", "_"),
+	}
+	if err := configureOffline(server.data, server.dir, server.role); err != nil {
 		return err
 	}
-
-	const bin = "/usr/lib/postgresql/18/bin/"
-	command := func(binary string, args ...string) ([]byte, error) { return execute(ctx, log, bin+binary, args...) }
-	stopped := false
-	defer func() {
-		if !stopped {
-			cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 35*time.Second)
-			defer cancel()
-			_, stopErr := execute(cleanup, log, bin+"pg_ctl", "-D", data, "-m", "fast", "-w", "-t", "30", "stop")
-			err = errors.Join(err, stopErr)
-		}
-	}()
-	if _, err := command("pg_ctl", "-D", data, "-l", filepath.Join(verification, "postgres.log"),
-		"-o", "-c config_file="+filepath.Join(verification, "postgresql.conf"), "-w", "-t", "60", "start"); err != nil {
-		return errors.New("offline PostgreSQL startup failed; inspect private diagnostics")
-	}
-	query := func(sql string) (string, error) {
-		out, err := command("psql", "-XqAt", "-v", "ON_ERROR_STOP=1", "-h", verification, "-U", role, "-d", role, "-c", sql)
-		return strings.TrimSpace(string(out)), err
-	}
-	if err := awaitConsistency(ctx, query, request.SystemID); err != nil {
+	result, err := server.verify(ctx, request)
+	if err != nil {
 		return err
 	}
-	queries := recoverySQL[request.Service]
-	checks, err := query(queries.schema)
-	if err != nil || checks != "t" {
-		return errors.New("service recovery checks failed; inspect private diagnostics")
-	}
-	result := sqlCompletion{SystemID: request.SystemID, Set: request.Set, Stopped: true}
-	if request.ExpectedDataSHA256 != "" {
-		result.DataSHA256, err = query(queries.data)
-		if err != nil || result.DataSHA256 != request.ExpectedDataSHA256 {
-			return errors.New("recovered application data differs from the independent expectation or could not be read")
-		}
-	}
-	if _, err := command("pg_ctl", "-D", data, "-m", "fast", "-w", "-t", "30", "stop"); err != nil {
-		return errors.New("verified PostgreSQL shutdown is unconfirmed")
-	}
-	stopped = true
 	outcome, err := json.Marshal(result)
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(filepath.Join(verification, "sql-verified.json"), outcome, 0o600)
+}
+
+// postgresBin holds the PostgreSQL binaries of the restore image.
+const postgresBin = "/usr/lib/postgresql/18/bin/"
+
+// offlineServer runs PostgreSQL over a restored data directory, from the configuration
+// configureOffline writes in dir, where the server's socket admits only role.
+type offlineServer struct {
+	execute Executor
+	log     io.Writer
+	data    string
+	dir     string
+	role    string
+}
+
+// verify starts the server, runs the service's checks once it pauses at backup consistency, and
+// stops it again, after a failure too.
+func (s offlineServer) verify(ctx context.Context, request Request) (result sqlCompletion, err error) {
+	stopped := false
+	defer func() {
+		if !stopped {
+			cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 35*time.Second)
+			defer cancel()
+			err = errors.Join(err, s.stop(cleanup))
+		}
+	}()
+	if _, err := s.execute(ctx, s.log, postgresBin+"pg_ctl", "-D", s.data, "-l", filepath.Join(s.dir, "postgres.log"),
+		"-o", "-c config_file="+filepath.Join(s.dir, "postgresql.conf"), "-w", "-t", "60", "start"); err != nil {
+		return sqlCompletion{}, errors.New("offline PostgreSQL startup failed; inspect private diagnostics")
+	}
+	if err := awaitConsistency(ctx, s, request.SystemID); err != nil {
+		return sqlCompletion{}, err
+	}
+	queries := recoverySQL[request.Service]
+	checks, err := s.query(ctx, queries.schema)
+	if err != nil || checks != "t" {
+		return sqlCompletion{}, errors.New("service recovery checks failed; inspect private diagnostics")
+	}
+	result = sqlCompletion{SystemID: request.SystemID, Set: request.Set, Stopped: true}
+	if request.ExpectedDataSHA256 != "" {
+		result.DataSHA256, err = s.query(ctx, queries.data)
+		if err != nil || result.DataSHA256 != request.ExpectedDataSHA256 {
+			return sqlCompletion{}, errors.New("recovered application data differs from the independent expectation or could not be read")
+		}
+	}
+	if err := s.stop(ctx); err != nil {
+		return sqlCompletion{}, errors.New("verified PostgreSQL shutdown is unconfirmed")
+	}
+	stopped = true
+	return result, nil
+}
+
+// query runs sql as role and returns its trimmed output.
+func (s offlineServer) query(ctx context.Context, sql string) (string, error) {
+	out, err := s.execute(ctx, s.log, postgresBin+"psql", "-XqAt", "-v", "ON_ERROR_STOP=1", "-h", s.dir, "-U", s.role, "-d", s.role, "-c", sql)
+	return strings.TrimSpace(string(out)), err
+}
+
+// stop shuts the server down fast, waiting up to 30 seconds for it.
+func (s offlineServer) stop(ctx context.Context) error {
+	_, err := s.execute(ctx, s.log, postgresBin+"pg_ctl", "-D", s.data, "-m", "fast", "-w", "-t", "30", "stop")
+	return err
 }
 
 // readEvidence reads the evidence files of a completed file restoration.
@@ -173,11 +205,11 @@ statement_timeout='30s'
 
 // awaitConsistency waits up to 30 seconds for the server to pause at the recovery target.
 // SQL readiness can precede the recovery target. Only the native paused state qualifies.
-func awaitConsistency(ctx context.Context, query func(string) (string, error), systemID string) error {
+func awaitConsistency(ctx context.Context, server offlineServer, systemID string) error {
 	deadline := time.NewTimer(30 * time.Second)
 	defer deadline.Stop()
 	for {
-		state, err := query("SELECT system_identifier, pg_is_in_recovery(), pg_get_wal_replay_pause_state() FROM pg_control_system();")
+		state, err := server.query(ctx, "SELECT system_identifier, pg_is_in_recovery(), pg_get_wal_replay_pause_state() FROM pg_control_system();")
 		if err != nil || !strings.HasPrefix(state, systemID+"|t|") {
 			return errors.New("offline recovery identity or target state differs")
 		}

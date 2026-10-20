@@ -1,5 +1,5 @@
 variable "native_backups" {
-  description = "Per-service native lifecycle on existing stateful hosts. Schedule activation follows isolated restore acceptance."
+  description = "Native backups of each service's database host: its backup repository VM's address, the TLS client name and secret versions the host loads, and whether WAL archiving and the backup timers run."
   type = map(object({
     repository_ip     = string
     client_name       = string
@@ -21,14 +21,14 @@ variable "native_backups" {
       contains(var.pgbackrest_repository_services, service) &&
       cidrcontains(var.subnet_cidr, runtime.repository_ip)
     ])
-    error_message = "Native activation requires a registered private service, its repository networking and an address inside the private subnet; recovery copies cannot activate it."
+    error_message = "Native backups need a private service with repository networking, and a repository address inside the private subnet."
   }
   validation {
     condition = alltrue([for service, runtime in var.native_backups : alltrue([
       can(regex("^[a-z0-9][a-z0-9.-]{0,252}$", runtime.client_name)),
       alltrue([for version in [runtime.ca_version, runtime.identity_version] : can(regex("^[1-9][0-9]{0,19}$", version))]),
     ])])
-    error_message = "Native activation requires a valid TLS client name and numeric TLS versions."
+    error_message = "Native backups need a valid TLS client name and numeric TLS secret versions."
   }
 }
 
@@ -56,15 +56,14 @@ module "native_backup" {
   service           = each.key
   project_id        = var.workload_project_id
   region            = var.region
-  management_number = trimprefix(trimsuffix(var.backup_bucket_name, "-backups"), "${var.management_project_id}-")
-  shared_private    = true
+  management_number = data.google_project.management.number
   identity_version  = each.value.identity_version
   wal_archiving     = each.value.wal_archiving
   schedules_enabled = each.value.schedules_enabled
   repository = merge(each.value, {
     name              = "agora-pgbackrest-${each.key}.${var.database_zone}.c.${var.workload_project_id}.internal"
     ip                = each.value.repository_ip
-    server_image      = local.database_image[each.key].backup
+    server_image      = local.database_image[each.key]
     credentials_image = local.host_credentials_image[each.key]
   })
 }

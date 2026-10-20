@@ -8,15 +8,15 @@ import (
 
 var (
 	projectID = regexp.MustCompile(`^[a-z][a-z0-9-]{4,28}[a-z0-9]$`)
-	// privateDatabaseAccounts names each service's database host identity in the shared private project.
+	// privateDatabaseAccounts names each service's database host identity in the private project.
 	privateDatabaseAccounts = map[string]string{
 		"json-keys":      "agora-json-keys-database",
 		"authentication": "agora-auth-database",
 	}
 )
 
-// ServiceAccount selects the exact service endpoint identity before metadata authentication.
-// An empty zone retains dedicated-project identities; private selects shared-project identities.
+// ServiceAccount returns the identity a service's endpoint host must run as, in the project of the
+// private trust zone, before the host authenticates with it.
 func ServiceAccount(project, service, endpoint, zone string) (string, error) {
 	if !slices.Contains(services, service) {
 		return "", errors.New("invalid service")
@@ -24,18 +24,17 @@ func ServiceAccount(project, service, endpoint, zone string) (string, error) {
 	if !projectID.MatchString(project) {
 		return "", errors.New("invalid workload project")
 	}
+	if zone != "private" {
+		return "", errors.New("invalid trust zone")
+	}
 	var account string
-	switch zone + "/" + endpoint {
-	case "/database":
-		account = "agora-database"
-	case "/repository":
-		account = "agora-backup-repository"
-	case "private/database":
+	switch endpoint {
+	case "database":
 		account = privateDatabaseAccounts[service]
-	case "private/repository":
+	case "repository":
 		account = "agora-pgbr-" + service
 	default:
-		return "", errors.New("invalid endpoint or trust zone")
+		return "", errors.New("invalid endpoint")
 	}
 	return account + "@" + project + ".iam.gserviceaccount.com", nil
 }

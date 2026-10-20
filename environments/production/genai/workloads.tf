@@ -218,7 +218,8 @@ resource "google_cloud_run_v2_service" "grpc" {
   }
 }
 
-# A scheduler calls the sweep every SWEEP_INTERVAL; it checks the generations nobody polled.
+# Foundation's Cloud Scheduler job calls the sweep every minute, GenAI's default SWEEP_INTERVAL.
+# Each call checks the generations nobody polled.
 resource "google_cloud_run_v2_service" "sweep" {
   name                 = "agora-genai-sweep"
   location             = local.region

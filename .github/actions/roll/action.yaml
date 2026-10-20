@@ -116,7 +116,7 @@ runs:
         set -euo pipefail
         where=(--zone=europe-west1-d --project=a-novel-production-prod)
         group="agora-database-$SERVICE" repository="agora-pgbackrest-$SERVICE"
-        # Each boot publishes "<state>:<revision>:<boot id>" for the release workflows to wait on.
+        # Each boot publishes "<state>:<revision>:<boot id>", which the wait below reads.
         host() { gcloud compute instance-groups managed list-instances "$group" --format='value(instance.basename())' "${where[@]}"; }
         release() { gcloud compute instances get-guest-attributes "$(host)" --query-path=agora/database-release \
           --format='value(value)' "${where[@]}" 2>/dev/null || true; }

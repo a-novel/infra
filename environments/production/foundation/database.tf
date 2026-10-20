@@ -219,7 +219,7 @@ resource "google_compute_instance_group_manager" "database" {
 
   all_instances_config {
     metadata = {
-      "agora-${each.value.component}-database-image"       = try(local.database_image[each.value.component].host, "")
+      "agora-${each.value.component}-database-image"       = try(local.database_image[each.value.component], "")
       "agora-${each.value.component}-app-password-version" = try(var.database_releases[each.value.component].app_password_version, "0")
       agora-database-release-revision                      = try(var.database_releases[each.value.component].revision, "")
     }

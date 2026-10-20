@@ -1,7 +1,6 @@
 authentication_initializer_principals = [
   "user:geoffroy.vincent@agorastoryverse.com",
 ]
-backup_bucket_name = "a-novel-management-prod-232403541574-backups"
 billing_account_id = "01BDFE-5B21E7-8393CB"
 cost_alert_email   = "geoffroy.vincent@agorastoryverse.com"
 database_capacity = {

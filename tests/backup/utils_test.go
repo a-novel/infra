@@ -17,6 +17,8 @@ import (
 	"github.com/a-novel/infra/internal/recovery"
 )
 
+// proof is one synthetic PostgreSQL cluster under root, archiving to a local pgBackRest repository
+// through stanza.
 type proof struct{ root, config, source, repo, stanza string }
 
 // newProof creates only synthetic data, shared by the local and TLS transport cases.
@@ -54,12 +56,13 @@ archive_command='pgbackrest --config=%s --stanza=%s archive-push %%p'
 	p.start(t, p.source, p.root)
 	p.backrest(t, "stanza-create")
 	run(t, "psql", "-X", "-h", p.root, "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-f", "/docker-entrypoint-initdb.d/init.sql")
-	p.sql(t, `CREATE ROLE proof_reader;
+	p.query(t, "postgres", `CREATE ROLE proof_reader;
 CREATE TABLE sample (id uuid PRIMARY KEY, value text NOT NULL CHECK (value <> ''));
 INSERT INTO sample VALUES ('00000000-0000-0000-0000-000000000001', 'original');`)
 	return p
 }
 
+// backup is one backup set in pgBackRest's JSON info.
 type backup struct {
 	Label   string
 	Archive struct{ Start string }
@@ -91,7 +94,7 @@ func (p proof) backups(t *testing.T) []backup {
 
 // localCommand runs native tools as production does, with pgBackRest reading the proof's local
 // repository instead of Cloud Storage. Every selection, identity check and restore option stays real.
-func (p proof) localCommand(t *testing.T) func(context.Context, io.Writer, string, ...string) ([]byte, error) {
+func (p proof) localCommand(t *testing.T) recovery.Executor {
 	return func(ctx context.Context, diagnostics io.Writer, binary string, args ...string) ([]byte, error) {
 		if binary == "/usr/bin/pgbackrest" {
 			local := []string{"--repo1-type=posix", "--repo1-path=" + p.repo}
@@ -110,9 +113,25 @@ func (p proof) localCommand(t *testing.T) func(context.Context, io.Writer, strin
 	}
 }
 
-func (p proof) sql(t *testing.T, sql string) string {
+// psql returns a command that runs statement in database as the cluster's superuser, reading it
+// from standard input.
+func (p proof) psql(t *testing.T, database, statement string, args ...string) *exec.Cmd {
 	t.Helper()
-	return run(t, "psql", "-XAt", "-h", p.root, "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-c", sql)
+	cmd := exec.CommandContext(t.Context(), "psql", append([]string{"-XqAt", "-h", p.root, "-d", database, "-v", "ON_ERROR_STOP=1"}, args...)...)
+	cmd.Stdin = strings.NewReader(statement)
+	return cmd
+}
+
+// query runs statement in database and returns its trimmed standard output, failing the test on an
+// error. Warnings, such as a collation version mismatch, stay out of the result.
+func (p proof) query(t *testing.T, database, statement string) string {
+	t.Helper()
+	var diagnostics strings.Builder
+	cmd := p.psql(t, database, statement)
+	cmd.Stderr = &diagnostics
+	out, err := cmd.Output()
+	require.NoError(t, err, diagnostics.String())
+	return strings.TrimSpace(string(out))
 }
 
 func (p proof) start(t *testing.T, data, socket string) {

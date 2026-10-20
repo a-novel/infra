@@ -13,12 +13,11 @@ func TestServiceAccount(t *testing.T) {
 	testCases := []struct {
 		name, project, service, endpoint, zone, account string
 	}{
-		{"Success/DedicatedDatabase", "example-private", "json-keys", "database", "", "agora-database"},
-		{"Success/DedicatedRepository", "example-private", "json-keys", "repository", "", "agora-backup-repository"},
 		{"Success/JSONKeysDatabase", "example-private", "json-keys", "database", "private", "agora-json-keys-database"},
 		{"Success/JSONKeysRepository", "example-private", "json-keys", "repository", "private", "agora-pgbr-json-keys"},
 		{"Success/AuthenticationDatabase", "example-private", "authentication", "database", "private", "agora-auth-database"},
 		{"Success/AuthenticationRepository", "example-private", "authentication", "repository", "private", "agora-pgbr-authentication"},
+		{"Error/MissingZone", "example-private", "json-keys", "database", "", ""},
 		{"Error/PublicAPI", "example-private", "authentication", "database", "public-api", ""},
 		{"Error/Public", "example-private", "json-keys", "repository", "public", ""},
 		{"Error/Service", "example-private", "peer", "database", "private", ""},

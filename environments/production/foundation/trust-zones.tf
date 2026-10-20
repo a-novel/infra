@@ -1,13 +1,12 @@
 variable "shared_vpc_enabled" {
-  description = "Retain the production Shared VPC host independently of service-project registration."
+  description = "Make the workload project the Shared VPC host that the public-api project attaches to."
   type        = bool
   default     = false
   nullable    = false
-
 }
 
 variable "public_api_project_id" {
-  description = "Optional production API project shell attached to the existing private Shared VPC; application access is separately granted."
+  description = "Project of the public-api trust zone, attached to the workload project's Shared VPC. Null creates none."
   type        = string
   default     = null
 
@@ -17,12 +16,12 @@ variable "public_api_project_id" {
       !contains([var.management_project_id, var.workload_project_id, var.public_project_id], var.public_api_project_id) &&
       var.shared_vpc_enabled
     )
-    error_message = "The API shell requires a distinct valid project, an explicit production Shared VPC host, and no dedicated-service registration."
+    error_message = "The public-api project needs a valid ID of its own and the Shared VPC host."
   }
 }
 
 variable "public_project_id" {
-  description = "Optional production platform project shell with no private Shared VPC attachment; workload migration is separate."
+  description = "Project of the public trust zone, reserved for platforms, with no Shared VPC attachment. Null creates none."
   type        = string
   default     = null
 
@@ -31,7 +30,7 @@ variable "public_project_id" {
       can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", var.public_project_id)) &&
       !contains([var.management_project_id, var.workload_project_id], var.public_project_id)
     )
-    error_message = "The platform shell requires a distinct valid project and no dedicated-service registration."
+    error_message = "The public project needs a valid ID distinct from the management and workload projects."
   }
 }
 
@@ -88,7 +87,7 @@ resource "google_compute_shared_vpc_service_project" "public_api" {
 }
 
 output "production_projects" {
-  description = "Selected target trust-zone coordinates; these do not attest workload placement or authorize release writers. Null until a shell is selected."
+  description = "Project ID and number of each trust zone's project, by zone. Null without a shell project."
   value = length(module.public_project) + length(module.public_api_project) == 0 ? null : merge(
     { private = { project_id = google_project.workload.project_id, project_number = google_project.workload.number } },
     { for zone, project in module.public_project : zone => { project_id = project.project_id, project_number = project.project_number } },

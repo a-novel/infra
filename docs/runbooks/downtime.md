@@ -111,7 +111,7 @@ check whose service the downtime listed.
 If none is due, run one by hand:
 
 ```bash
-gh workflow run deploy.yaml --repo a-novel/infra --ref master
+gh workflow run deploy.yaml --repo a-novel/infra
 ```
 
 A forgotten downtime keeps its services down. The

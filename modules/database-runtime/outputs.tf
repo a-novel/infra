@@ -1,10 +1,10 @@
 output "cloud_config" {
-  description = "COS preparation-only cloud-config; the protected owner starts the units."
+  description = "The host's files and units as a cloud-config document, which starts nothing. The module's tests read it."
   # COS serves persistent keys, not the /etc/ssh keys cloud-init reports.
   value = "#cloud-config\n${yamlencode({ ssh_deletekeys = false, write_files = local.files, runcmd = [["systemctl", "daemon-reload"]] })}"
 }
 
 output "startup_script" {
-  description = "COS startup script for the existing stateful group; starts the database and its approved schedules."
+  description = "The host's startup script. It writes the host's files and starts the database, which also starts the backup timers when schedules are enabled."
   value       = templatefile("${path.module}/templates/startup.sh.tftpl", { files = local.files })
 }

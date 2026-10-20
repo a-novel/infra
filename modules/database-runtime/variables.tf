@@ -23,14 +23,8 @@ variable "management_number" {
   type        = string
 }
 
-variable "shared_private" {
-  description = "Select the service's database identity in the shared private project."
-  type        = bool
-  default     = false
-}
-
 variable "repository" {
-  description = "Private repository endpoint and exact runtime inputs."
+  description = "The backup repository VM the host sends backups to: its name and address, the images the host runs, and the TLS client name and CA version it loads."
   type = object({
     name              = string
     ip                = string
@@ -53,7 +47,7 @@ variable "wal_archiving" {
 }
 
 variable "schedules_enabled" {
-  description = "Start the native schedules with a healthy database, after backup and isolated restore acceptance."
+  description = "Start the backup timers once the database is healthy."
   type        = bool
   default     = false
 

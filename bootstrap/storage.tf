@@ -48,8 +48,8 @@ resource "google_storage_bucket" "backups" {
   public_access_prevention    = "enforced"
   uniform_bucket_level_access = true
 
-  # A recovery point cannot be removed during its first seven days. Locking is
-  # a separate, irreversible operator step after the first clean restore drill.
+  # A recovery point cannot be removed during its first seven days. The policy is
+  # locked, so Google refuses to shorten or remove it.
   retention_policy {
     retention_period = 604800
     is_locked        = true
@@ -65,8 +65,8 @@ resource "google_storage_bucket" "backups" {
     }
   }
 
-  # Soft delete would retain a second billable copy after lifecycle deletion.
-  # The seven-day bucket retention policy is the deliberate protection here.
+  # Lifecycle deletion frees the storage at once. The seven-day retention
+  # policy protects each recovery point instead.
   soft_delete_policy {
     retention_duration_seconds = 0
   }

@@ -13,9 +13,11 @@ provider "google-beta" {
   region  = var.region
 }
 
-locals {
-  root_name = "foundation"
+data "google_project" "management" {
+  project_id = var.management_project_id
+}
 
+locals {
   labels = {
     application = "agora"
     environment = "production"

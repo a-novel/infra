@@ -16,8 +16,6 @@ data "google_project" "management" {
 }
 
 locals {
-  root_name = "bootstrap"
-
   labels = {
     application = "agora"
     environment = "production"

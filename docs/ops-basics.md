@@ -79,7 +79,7 @@ a change made in the console.
 
 GitHub Actions gets short-lived Google credentials through **Workload Identity Federation (WIF)**.
 No service-account key exists anywhere. The trust conditions live in
-[`bootstrap/main.tf`](../bootstrap/main.tf).
+[`bootstrap/identity.tf`](../bootstrap/identity.tf).
 
 | Identity           | Used by                                                                                               | Can                                                 |
 | ------------------ | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------- |

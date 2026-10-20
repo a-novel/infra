@@ -3,7 +3,6 @@ package backup_test
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -21,7 +20,7 @@ func TestNativeRestore(t *testing.T) {
 	request := recovery.Request{
 		Service: "json-keys", SourceProject: "source-project", Project: "a-novel-recovery-proof",
 		ManagementProject: "management-project", ManagementNumber: "123456789012", Major: 18,
-		SystemID: strings.TrimSpace(p.sql(t, "SELECT system_identifier FROM pg_control_system();")), Set: p.backups(t)[0].Label,
+		SystemID: p.query(t, "postgres", "SELECT system_identifier FROM pg_control_system();"), Set: p.backups(t)[0].Label,
 	}
 	testCases := []struct {
 		name   string

@@ -1,5 +1,5 @@
 variable "native_backups" {
-  description = "Per-service native repository custody in the private project. Enrollment does not activate backups."
+  description = "Services with native backups: each gets a pgBackRest bucket, its writer and recovery roles, and with tls_credentials its TLS secret containers."
   type = map(object({
     workload_project_id = string
     zone                = string
@@ -25,7 +25,6 @@ variable "native_backups" {
 }
 
 locals {
-  pgbackrest = var.native_backups
   pgbackrest_permissions = {
     writer   = ["storage.objects.create", "storage.objects.get", "storage.objects.list", "storage.objects.delete"]
     recovery = ["storage.objects.create", "storage.objects.get", "storage.objects.list", "storage.objects.restore"]
@@ -38,7 +37,7 @@ locals {
 }
 
 resource "google_storage_bucket" "pgbackrest" {
-  for_each = local.pgbackrest
+  for_each = var.native_backups
 
   project                     = var.management_project_id
   name                        = "${local.bucket_name_prefix}-pgbr-${each.key}"
@@ -97,7 +96,7 @@ resource "google_project_iam_custom_role" "pgbackrest" {
 }
 
 resource "google_service_account" "pgbackrest_recovery" {
-  for_each = local.pgbackrest
+  for_each = var.native_backups
 
   project      = var.management_project_id
   account_id   = "pgbr-${each.key}-recovery"
@@ -112,7 +111,7 @@ resource "google_service_account" "pgbackrest_recovery" {
 }
 
 resource "google_storage_bucket_iam_member" "pgbackrest_writer" {
-  for_each = local.pgbackrest
+  for_each = var.native_backups
 
   bucket = google_storage_bucket.pgbackrest[each.key].name
   role   = google_project_iam_custom_role.pgbackrest["${each.key}:writer"].name
@@ -120,7 +119,7 @@ resource "google_storage_bucket_iam_member" "pgbackrest_writer" {
 }
 
 resource "google_storage_bucket_iam_member" "pgbackrest_recovery" {
-  for_each = local.pgbackrest
+  for_each = var.native_backups
 
   bucket = google_storage_bucket.pgbackrest[each.key].name
   role   = google_project_iam_custom_role.pgbackrest["${each.key}:recovery"].name
@@ -128,7 +127,7 @@ resource "google_storage_bucket_iam_member" "pgbackrest_recovery" {
 }
 
 output "native_backups" {
-  description = "Optional native repository coordinates, not backup readiness or recovery authorization."
+  description = "Each service's backup bucket, and the identities that write and recover it."
   value = { for service, config in var.native_backups : service => {
     schema_version     = 1
     service            = service
