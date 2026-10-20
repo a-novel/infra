@@ -2,8 +2,7 @@
 
 This runbook restores a backup into a **disposable drill project**, and checks it there.
 Production's disks and data are never touched. Use it to rehearse recovery, to inspect old data, or
-as the first step of a real data restore. To undo a database host rollout, use its snapshot instead,
-as [Undo a rollout](database.md#undo-a-rollout) describes.
+as the first step of a real data restore.
 
 ## 1. Pick the backup
 
@@ -140,8 +139,7 @@ sudo cat /mnt/disks/agora-recovery/work/attempt/files-restored.json /mnt/disks/a
 - The VM stops itself after four hours.
 
 Putting restored data back into production is a one-off change, planned and reviewed on its own.
-It can be a dump of the needed rows, imported during a planned downtime, or a disk made from the
-drill's restored data and swapped in as in [Undo a rollout](database.md#undo-a-rollout).
+It is a dump of the needed rows, imported during a planned downtime.
 
 ## 5. Clean up
 

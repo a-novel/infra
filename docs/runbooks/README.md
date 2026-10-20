@@ -6,7 +6,7 @@ from deploys and release pins to database rollouts and scheduled checks.
 
 | Situation                                                 | Runbook                         |
 | --------------------------------------------------------- | ------------------------------- |
-| Release, roll back, deletion label, failed deploy, freeze | [Deployments](deployments.md)   |
+| Release, hotfix, deletion label, failed deploy, freeze    | [Deployments](deployments.md)   |
 | Inspect, back up, change or restore a database host       | [Database hosts](database.md)   |
 | Schedule or clear a planned downtime                      | [Planned downtime](downtime.md) |
 | Add or rotate a secret, SMTP, waitlist, TLS, GitHub token | [Secrets](secrets.md)           |

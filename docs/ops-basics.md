@@ -116,7 +116,7 @@ Database host changes therefore follow their own path:
 - **The change merges only during that downtime**, with the `allow-downtime` label.
 - **Merging restarts nothing.** It only updates the host's configuration. The deploy's **rollout**
   job then restarts each database host that differs from its configuration, and only while its
-  downtime runs. It snapshots the data disk first, so the change can be undone.
+  downtime runs. It snapshots the data disk first, which keeps the data as it stood before.
 - **The backup repository VMs need no downtime.** The rollout restarts one whenever its
   configuration changed, and after each restart of its database host.
 

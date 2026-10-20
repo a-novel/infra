@@ -131,8 +131,9 @@ the hotfix path changes. The last one shipped JSON Keys v2.10.3 on 2026-10-18 in
 | Pin merged, after the plans          | 17:39          |
 | Production healthy                   | 22:26          |
 
-Database migrations are never reverted. A data rollback is a [recovery](recovery.md), and a database
-host change is undone as [Undo a rollout](database.md#undo-a-rollout) describes.
+Database migrations are never reverted. Damaged data goes back through [recovery](recovery.md), and
+a faulty database host change is fixed forward, as
+[Fix a bad host change](database.md#fix-a-bad-host-change) describes.
 
 ## Deletions and weakened protections
 
