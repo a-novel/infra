@@ -26,23 +26,12 @@ func TestRepositoryTLS(t *testing.T) {
 	run(t, "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "90",
 		"-keyout", p.root+"/ca.key", "-out", p.root+"/ca.crt", "-subj", "/CN=proof-ca",
 		"-addext", "basicConstraints=critical,CA:TRUE")
-	issue := func(t *testing.T, name, days string) {
-		t.Helper()
-		path := filepath.Join(p.root, name)
-		run(t, "openssl", "x509", "-req", "-in", path+".csr", "-out", path+".crt", "-days", days, "-copy_extensions", "copy",
-			"-CA", p.root+"/ca.crt", "-CAkey", p.root+"/ca.key", "-CAcreateserial")
-		certificate, err := os.ReadFile(path + ".crt")
-		require.NoError(t, err)
-		key, err := os.ReadFile(path + ".key")
-		require.NoError(t, err)
-		write(t, path+".pem", string(certificate)+string(key))
-	}
 	identities := []string{"client", "peer", "localhost"}
 	for _, name := range identities {
 		path := filepath.Join(p.root, name)
 		run(t, "openssl", "req", "-new", "-newkey", "rsa:2048", "-nodes", "-keyout", path+".key",
 			"-out", path+".csr", "-subj", "/CN="+name, "-addext", "subjectAltName=DNS:"+name)
-		issue(t, name, "90")
+		p.issue(t, name, "90")
 	}
 	write(t, serverConfig, strings.Replace(string(config), "[global]", fmt.Sprintf(`[global]
 tls-server-address=127.0.0.1
@@ -64,12 +53,6 @@ repo1-host-key-file=%[2]s/client.pem
 		stop()
 		stop = startRepository(t, serverConfig)
 	}
-	check := func(t *testing.T, server string) (string, error) {
-		t.Helper()
-		out, err := exec.CommandContext(t.Context(), "bash", "/check-backup.sh", server,
-			p.root+"/ca.crt", p.root+"/client.pem", "--config="+p.config, "--stanza=proof", "repo-ls").CombinedOutput()
-		return string(out), err
-	}
 	var set string
 	// Each certificate in turn is reissued to expire inside the 30-day warning.
 	expiring := []string{"client", "localhost", "ca"}
@@ -78,11 +61,11 @@ repo1-host-key-file=%[2]s/client.pem
 		run  func(*testing.T)
 	}{
 		{"TLSDeadline", func(t *testing.T) {
-			out, err := check(t, "localhost")
+			out, err := p.checkBackup(t, "localhost")
 			require.NoError(t, err, out)
 			require.Contains(t, out, "remain valid for at least 30 days")
 			require.True(t, strings.HasSuffix(out, "archive\nbackup\n"), out)
-			out, err = check(t, "127.0.0.1")
+			out, err = p.checkBackup(t, "127.0.0.1")
 			require.Error(t, err, out)
 			require.Contains(t, out, "hostname mismatch")
 			for _, name := range expiring {
@@ -98,11 +81,11 @@ repo1-host-key-file=%[2]s/client.pem
 						run(t, "openssl", "req", "-x509", "-key", p.root+"/ca.key", "-days", "1",
 							"-out", path, "-subj", "/CN=proof-ca", "-addext", "basicConstraints=critical,CA:TRUE")
 					} else {
-						issue(t, name, "1")
+						p.issue(t, name, "1")
 					}
 					restart()
 					p.backrest(t, "repo-ls") // Still valid today: only the advance warning must fail.
-					out, err := check(t, "localhost")
+					out, err := p.checkBackup(t, "localhost")
 					require.Error(t, err, out)
 					require.Contains(t, out, "certificate has expired")
 				})
@@ -110,7 +93,7 @@ repo1-host-key-file=%[2]s/client.pem
 					t.Fatal("stopping after unexpected TLS deadline behavior")
 				}
 				restart()
-				out, err := check(t, "localhost")
+				out, err := p.checkBackup(t, "localhost")
 				require.NoError(t, err, out)
 			}
 		}},
@@ -138,6 +121,28 @@ repo1-host-key-file=%[2]s/client.pem
 			t.Fatal("stopping dependent transport cases after failure")
 		}
 	}
+}
+
+// issue signs name's certificate request with the proof CA for days, and writes the certificate and
+// its key to name.pem.
+func (p proof) issue(t *testing.T, name, days string) {
+	t.Helper()
+	path := filepath.Join(p.root, name)
+	run(t, "openssl", "x509", "-req", "-in", path+".csr", "-out", path+".crt", "-days", days, "-copy_extensions", "copy",
+		"-CA", p.root+"/ca.crt", "-CAkey", p.root+"/ca.key", "-CAcreateserial")
+	certificate, err := os.ReadFile(path + ".crt")
+	require.NoError(t, err)
+	key, err := os.ReadFile(path + ".key")
+	require.NoError(t, err)
+	write(t, path+".pem", string(certificate)+string(key))
+}
+
+// checkBackup runs check-backup.sh against the repository server named server, as the client.
+func (p proof) checkBackup(t *testing.T, server string) (string, error) {
+	t.Helper()
+	out, err := exec.CommandContext(t.Context(), "bash", "/check-backup.sh", server,
+		p.root+"/ca.crt", p.root+"/client.pem", "--config="+p.config, "--stanza=proof", "repo-ls").CombinedOutput()
+	return string(out), err
 }
 
 // startRepository keeps native server output out of the client's pipes and reaps the process.
