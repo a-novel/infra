@@ -58,7 +58,7 @@ resource "google_project_iam_member" "github_dispatcher_logs" {
 resource "google_service_account" "github_dispatch_clock" {
   account_id   = "github-dispatch-clock"
   display_name = "GitHub dispatch clock"
-  description  = "Cloud Scheduler's identity: starts the github-dispatch workflow every hour."
+  description  = "Cloud Scheduler's identity: starts the github-dispatch workflow on each timed workflow's schedule."
   project      = var.management_project_id
 
   depends_on = [google_project_service.management["iam.googleapis.com"]]
