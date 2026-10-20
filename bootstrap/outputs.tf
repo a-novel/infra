@@ -3,27 +3,12 @@ output "management_project_number" {
   value       = data.google_project.management.number
 }
 
-output "state_bucket_name" {
-  description = "Versioned GCS bucket containing OpenTofu state and lock objects."
-  value       = google_storage_bucket.state.name
-}
-
-output "backup_bucket_name" {
-  description = "Bucket of the earlier logical database backups, kept by its locked retention until it is retired."
-  value       = google_storage_bucket.backups.name
-}
-
 output "automation_service_accounts" {
   description = "Keyless CI service-account emails, keyed by trust boundary."
   value       = { for name, account in google_service_account.automation : name => account.email }
 }
 
 output "workload_identity_providers" {
-  description = "Canonical Workload Identity Federation provider resource names for GitHub Actions authentication."
+  description = "Workload Identity Federation provider names for GitHub Actions. The setup runbook copies them into the repository's variables."
   value       = { for name, provider in google_iam_workload_identity_pool_provider.github : name => provider.name }
-}
-
-output "secret_ids" {
-  description = "Secret Manager containers, by secret ID. Their versions live outside OpenTofu state."
-  value       = { for name, secret in google_secret_manager_secret.application : name => secret.secret_id }
 }
