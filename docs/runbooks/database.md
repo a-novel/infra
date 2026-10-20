@@ -125,7 +125,8 @@ deploy:  roots applied ──► rollout (per service) ──► database host e
   succeeds once the new boot reports `healthy`, or `idle` for a host without a release, and fails
   otherwise. A running VM alone proves nothing, since its startup can fail closed and leave
   PostgreSQL stopped.
-- The snapshot is the way back, as [Undo a rollout](#undo-a-rollout) describes.
+- The snapshot keeps the data as it stood before the restart, as
+  [Pre-rollout snapshots](#pre-rollout-snapshots) describes.
 - A **backup repository VM** restarts whenever its `config` label differs from `running-config`, the
   label the rollout sets after each restart. It needs no planned downtime. It also restarts right
   after each restart of its database host, so both run the same pgBackRest version.
@@ -202,7 +203,29 @@ gh workflow run roll-database.yaml --repo a-novel/infra -f service="$SERVICE"
 
 The database is down for one to two minutes, and users are not warned.
 
-## Undo a rollout
+## Fix a bad host change
+
+Database hosts only move forward. A faulty host change is fixed by a new pull request, merged
+during the downtime like any host change, as [steps](#steps) 3 and 4 describe.
+
+The new pull request can revert the faulty one. The commit-messages ruleset refuses GitHub's own
+`Revert "…"` subject, so revert with git:
+
+```bash
+SHA="<squash commit of the faulty pull request>"
+BRANCH="<branch name for the revert>"
+git fetch origin
+git switch -c "$BRANCH" origin/master
+git revert --no-commit "$SHA"
+git commit -m "revert: $(git log -1 --format=%s "$SHA")" -m "This reverts commit $SHA."
+git push -u origin "$BRANCH"
+gh pr create --repo a-novel/infra --fill
+```
+
+Data damaged by the change goes back through [recovery](recovery.md), as a one-off change planned
+on its own.
+
+## Pre-rollout snapshots
 
 Before restarting a database host, the rollout snapshots its data disk as
 `agora-data-<service>-<UTC time>`, labelled `role=pre-rollout`. The deploy summary names it, and
@@ -214,80 +237,9 @@ gcloud compute snapshots list --project="$PROD" --format='table(name,creationTim
   --filter="labels.role=pre-rollout AND labels.component=$SERVICE"
 ```
 
-A snapshot stays until a later rollout of that service finds it older than 14 days. The data and WAL
-share that disk, so PostgreSQL recovers the snapshot as after a power loss.
-
-1. **Revert the pull request**, from a checkout of this repository. The commit-messages ruleset
-   refuses GitHub's own `Revert "…"` subject, so revert with git:
-
-   ```bash
-   SHA="<squash commit of the faulty pull request>"
-   BRANCH="<branch name for the revert>"
-   git fetch origin
-   git switch -c "$BRANCH" origin/master
-   git revert --no-commit "$SHA"
-   git commit -m "revert: $(git log -1 --format=%s "$SHA")" -m "This reverts commit $SHA."
-   git push -u origin "$BRANCH"
-   gh pr create --repo a-novel/infra --fill
-   ```
-
-   The revert changes the database host too, so merge it during the downtime, as
-   [steps](#steps) 3 and 4 describe. The deploy rolls the host back onto the previous
-   configuration. That is enough when the data is intact, for example when the new image failed to
-   start.
-
-2. **If the data is damaged, put back the disk** from the snapshot the faulty rollout took. The
-   revert's own rollout has just snapshotted the damaged disk, so that copy stays available for
-   inspection.
-
-   Operators hold no write access in the production project. An organization admin grants it for
-   the swap. The grant can take a minute or two to apply:
-
-   ```bash
-   ME="user:$(gcloud config get-value account)"
-   gcloud projects add-iam-policy-binding "$PROD" --role=roles/compute.instanceAdmin.v1 \
-     --member="$ME" --condition=None
-   ```
-
-   Then swap the disk:
-
-   ```bash
-   SERVICE=json-keys
-   SNAPSHOT="agora-data-json-keys-<UTC time of the faulty rollout>"
-   gh workflow disable deploy.yaml --repo a-novel/infra
-   where=(--zone="$ZONE" --project="$PROD")
-   group="agora-database-$SERVICE" disk="agora-data-$SERVICE"
-   instance="$(gcloud compute instance-groups managed list-instances "$group" "${where[@]}" --format='value(name)')"
-   gcloud compute disks describe "$disk" "${where[@]}" --format=json >"$disk.json"
-   gcloud compute instance-groups managed stop-instances "$group" --instances="$instance" "${where[@]}"
-   gcloud compute instances detach-disk "$instance" --device-name=agora-data "${where[@]}"
-   gcloud compute disks delete "$disk" --quiet "${where[@]}"
-   gcloud compute disks create "$disk" --source-snapshot="$SNAPSHOT" --type=pd-balanced \
-     --size="$(jq -r .sizeGb "$disk.json")GB" --description="$(jq -r .description "$disk.json")" \
-     --labels="$(jq -r '.labels | to_entries | map("\(.key)=\(.value)") | join(",")' "$disk.json")" "${where[@]}"
-   gcloud compute instances attach-disk "$instance" --disk="$disk" --device-name=agora-data "${where[@]}"
-   gcloud compute instance-groups managed start-instances "$group" --instances="$instance" "${where[@]}"
-   gh workflow enable deploy.yaml --repo a-novel/infra
-   ```
-
-   - **Deploys stay off between the stop and the start.** Stopping lowers the group's target size,
-     and a foundation apply would restore it by creating a second host. Automatic merges and
-     `downtime.yaml` both start deploys, so the block disables the workflow first.
-   - The detach waits for the host to stop, about two minutes.
-   - The new disk keeps the old name, so the group and the host find it, and the host keeps its name
-     and IP. OpenTofu ignores the disk's source snapshot, so its state needs no change.
-
-   Remove the grant once the host is back:
-
-   ```bash
-   gcloud projects remove-iam-policy-binding "$PROD" --role=roles/compute.instanceAdmin.v1 \
-     --member="$ME" --condition=None
-   ```
-
-3. **Wait until the database answers, then clear the downtime.** The template records the data
-   disk's ID, so every foundation plan now changes the host's template, and needs a planned
-   downtime, until one merges. To apply it right away, run a deploy by hand before you clear the
-   downtime.
+A snapshot stays until a later rollout of that service finds it older than 14 days. It is recovery
+data: the disk as it stood before the restart. The data and WAL share that disk, so PostgreSQL
+reads a snapshot as after a power loss.
 
 ## Capacity
 

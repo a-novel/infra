@@ -128,7 +128,8 @@ describes.
 
 Before restarting a database host, each rollout snapshots its data disk into `europe-west1`. Each
 rollout also deletes that service's snapshots older than 14 days, so a snapshot lasts at least that
-long. [Undo a rollout](runbooks/database.md#undo-a-rollout) uses them.
+long. They are recovery data, as
+[Pre-rollout snapshots](runbooks/database.md#pre-rollout-snapshots) describes.
 
 The management project also holds `…-backups`, the bucket of the earlier logical backups. It
 receives no writes, and its locked retention keeps it until it can be retired.
