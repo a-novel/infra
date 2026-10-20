@@ -8,11 +8,6 @@ output "workload_project_id" {
   value       = google_project.workload.project_id
 }
 
-output "workload_project_number" {
-  description = "Immutable project number used by service agents and budget scoping."
-  value       = google_project.workload.number
-}
-
 output "network" {
   description = "Direct VPC network and subnet consumed by production resources."
   value = {
@@ -22,24 +17,6 @@ output "network" {
     subnet_id    = google_compute_subnetwork.production.id
     subnet_cidr  = google_compute_subnetwork.production.ip_cidr_range
     network_tags = local.network_tags
-  }
-}
-
-output "artifact_registry" {
-  description = "Regional immutable Docker repository used by verified release promotion."
-  value = {
-    repository_id = google_artifact_registry_repository.production.repository_id
-    registry_uri  = google_artifact_registry_repository.production.registry_uri
-  }
-}
-
-output "cloud_run_invocation_tags" {
-  description = "Permanent Resource Manager tag IDs that enforce Cloud Run invocation classes."
-  value = {
-    key = google_tags_tag_key.cloud_run_invocation.id
-    values = {
-      for name, value in google_tags_tag_value.cloud_run_invocation : name => value.id
-    }
   }
 }
 
@@ -64,23 +41,6 @@ output "database_hosts" {
       credentials_image = try(local.host_credentials_image[host.component], null)
       service_account   = google_service_account.runtime[host.identity].email
       zone              = var.database_zone
-    }
-  }
-}
-
-output "runtime_service_accounts" {
-  description = "Keyless service-account emails for workload and operational trust boundaries."
-  value = {
-    for name, account in google_service_account.runtime : name => account.email
-  }
-}
-
-output "database_maintenance_templates" {
-  description = "Converged template incarnations for protected legacy host maintenance."
-  value = {
-    for service, template in google_compute_instance_template.database : service => {
-      url = template.self_link
-      id  = template.numeric_id
     }
   }
 }
