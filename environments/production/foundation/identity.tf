@@ -174,9 +174,9 @@ resource "google_project_iam_member" "plan_viewer" {
   member  = "serviceAccount:${local.automation_service_accounts.plan}"
 }
 
-# Managed instance groups act through Google's project service agent. The
-# service-agent role replaces a primitive Editor grant, while the account-level
-# binding below permits only attachment of the dedicated database identity.
+# Managed instance groups act through Google's project service agent, which holds the group
+# manager's service-agent role. mig_database_act_as lets it attach the database identities, and no
+# other.
 resource "google_project_iam_member" "mig_service_agent" {
   project = google_project.workload.project_id
   role    = "roles/compute.instanceGroupManagerServiceAgent"
@@ -225,9 +225,8 @@ resource "google_service_account_iam_member" "mig_database_act_as" {
   member             = "serviceAccount:${google_project.workload.number}@cloudservices.gserviceaccount.com"
 }
 
-# Resource Manager tags are authorization attributes here, not inventory
-# labels. One project-level conditional binding replaces mutable per-job IAM
-# while keeping each caller inside its reviewed workload class.
+# The invocation tags authorize. Each caller holds one project-level grant conditioned on a tag
+# value, so the class a workload is tagged with decides who may run or invoke it.
 resource "google_tags_tag_key" "cloud_run_invocation" {
   parent      = "projects/${google_project.workload.number}"
   short_name  = "agora-invocation"
@@ -414,8 +413,7 @@ resource "google_service_account_iam_member" "repository_operator_act_as" {
   member             = each.value.principal
 }
 
-# Secret payloads stay outside OpenTofu. These additive bindings expose only
-# the exact pre-created container each runtime contract consumes.
+# Each identity reads only the secrets its workload consumes.
 resource "google_secret_manager_secret_iam_member" "runtime" {
   for_each = local.runtime_secret_access
 

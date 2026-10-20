@@ -22,7 +22,7 @@ import (
 type Config struct {
 	// Service selects the service-owned credentials; endpoints never share secret names.
 	Service string
-	// ProjectNumber uses Secret Manager's canonical numeric project name.
+	// ProjectNumber is the number of the management project, which holds the secrets.
 	ProjectNumber string
 	// Endpoint selects the database client or repository server secret.
 	Endpoint string

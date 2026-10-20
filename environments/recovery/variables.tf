@@ -1,5 +1,5 @@
 variable "recovery" {
-  description = "Disabled by default. Private, independently approved disposable host inputs; never infer authorization from this object."
+  description = "The drill host to create, from recovery.yaml's drill input. Null creates nothing."
   type = object({
     service              = optional(string, "json-keys")
     project              = string
@@ -31,7 +31,7 @@ variable "recovery" {
       can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", var.recovery.management_project)),
       can(regex("^[1-9][0-9]{5,19}$", var.recovery.management_number)),
     ])
-    error_message = "Select a fresh disposable project outside the complete protected registration; include source and management in that registration."
+    error_message = "The drill project must match a-novel-recovery-<id> and stay out of protected_projects, which must list the source and management projects."
   }
   validation {
     condition = var.recovery == null ? true : alltrue([
@@ -41,7 +41,7 @@ variable "recovery" {
       can(regex("^europe-west1-docker[.]pkg[.]dev/${var.recovery.project}/agora-tooling/native-restore@sha256:[a-f0-9]{64}$", var.recovery.restore_image)),
       var.recovery.disk_gib >= 10 && var.recovery.disk_gib <= 100 && floor(var.recovery.disk_gib) == var.recovery.disk_gib,
     ])
-    error_message = "Use a reviewed COS image, provenanced recovery-project native-restore digest and a sized 10–100 GiB disk in europe-west1."
+    error_message = "Use europe-west1, a pinned COS image, the drill project's copy of native-restore by digest, and a 10–100 GiB disk."
   }
   validation {
     condition = var.recovery == null ? true : alltrue([
@@ -50,7 +50,7 @@ variable "recovery" {
       var.recovery.repository_time == "" || can(timecmp(var.recovery.repository_time, "2000-01-01T00:00:00Z")),
       var.recovery.expected_data_sha256 == "" || (var.recovery.verify_sql && can(regex("^[a-f0-9]{64}$", var.recovery.expected_data_sha256))),
     ])
-    error_message = "Select the independently evidenced database ID and exact backup set/cutoff; a data fingerprint requires verify_sql and a lowercase SHA-256 expectation."
+    error_message = "Pass the database's system ID and an exact backup set, and any repository time in RFC 3339. An expected data digest needs verify_sql and a lowercase SHA-256."
   }
 }
 

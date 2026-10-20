@@ -85,7 +85,7 @@ resource "google_compute_instance" "recovery" {
 }
 
 output "recovery" {
-  description = "Prepared host coordinates. These do not authorize execution or establish successful database recovery."
+  description = "The drill host, its data disk and the restore request it carries."
   value = { for key, host in local.hosts : key => {
     project          = host.project
     zone             = host.zone

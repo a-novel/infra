@@ -3,8 +3,8 @@ description: >
   Fails unless Authentication reports PostgreSQL, SMTP and JSON Keys up, through the health check
   every service shares (modules/smoke-check/smoke.sh). The caller must check out this
   repository, already hold Google credentials that can read the Cloud Run service, and set DOWNTIME
-  to the planned downtime: once it starts, the listed services refuse work on purpose until it is
-  cleared, and the check is skipped.
+  to the planned downtime. Once it starts, the listed services refuse work until it is cleared, and
+  the check is skipped.
 
 inputs:
   id_token:

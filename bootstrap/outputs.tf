@@ -9,7 +9,7 @@ output "state_bucket_name" {
 }
 
 output "backup_bucket_name" {
-  description = "Durable GCS bucket reserved for workload database backups."
+  description = "Bucket of the earlier logical database backups, kept by its locked retention until it is retired."
   value       = google_storage_bucket.backups.name
 }
 
@@ -24,6 +24,6 @@ output "workload_identity_providers" {
 }
 
 output "secret_ids" {
-  description = "Metadata-only Secret Manager containers. Secret versions are deliberately outside OpenTofu state."
+  description = "Secret Manager containers, by secret ID. Their versions live outside OpenTofu state."
   value       = { for name, secret in google_secret_manager_secret.application : name => secret.secret_id }
 }

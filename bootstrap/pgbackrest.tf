@@ -1,5 +1,5 @@
 variable "native_backups" {
-  description = "Per-service native repository custody in the private project. Enrollment does not activate backups."
+  description = "Services with native backups: each gets a pgBackRest bucket, its writer and recovery roles, and with tls_credentials its TLS secret containers."
   type = map(object({
     workload_project_id = string
     zone                = string
@@ -127,7 +127,7 @@ resource "google_storage_bucket_iam_member" "pgbackrest_recovery" {
 }
 
 output "native_backups" {
-  description = "Optional native repository coordinates, not backup readiness or recovery authorization."
+  description = "Each service's backup bucket, and the identities that write and recover it."
   value = { for service, config in var.native_backups : service => {
     schema_version     = 1
     service            = service

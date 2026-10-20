@@ -32,7 +32,7 @@ type Request struct {
 	// VerifySQL requests offline validation after restoring consistency WAL with the backup.
 	VerifySQL bool `json:"verify_sql,omitempty"`
 	// ExpectedDataSHA256 is captured independently from quiesced source rows with the service's data query.
-	// An absent expectation retains schema-only verification, not proof of data fidelity.
+	// Without it, verification checks the schema only.
 	ExpectedDataSHA256 string `json:"expected_data_sha256,omitempty"`
 }
 
@@ -86,7 +86,8 @@ func (r Request) Arguments() []string {
 	return args
 }
 
-// CheckCatalog verifies selection, not payload availability. pgBackRest owns dependency checks.
+// CheckCatalog checks that a pgBackRest catalog names the approved database and backup set.
+// pgBackRest itself checks that the set's files exist.
 func (r Request) CheckCatalog(data []byte) error {
 	var stanzas []struct {
 		Name   string
@@ -137,7 +138,8 @@ func matches(pattern, value string) bool {
 	return regexp.MustCompile("^(?:" + pattern + ")$").MatchString(value)
 }
 
-// CheckFiles verifies a worker's files-only completion, never database startup or SQL recovery.
+// CheckFiles checks the evidence a file restoration left: the request, its catalog, and a
+// completion record of a restore that started no PostgreSQL.
 func (r Request) CheckFiles(files map[string]string) error {
 	var actual Request
 	var result struct {
