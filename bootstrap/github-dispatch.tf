@@ -9,6 +9,7 @@ locals {
   github_dispatch_schedules = {
     "notify-issues.yaml"   = { cron = "4-59/15 * * * *", repositories = local.github_dot_repositories }
     "notify-stuck.yaml"    = { cron = "17 * * * *", repositories = local.github_dot_repositories }
+    "notify-warnings.yaml" = { cron = "0 7 * * *", repositories = local.github_dot_repositories }
     "reconcile-board.yaml" = { cron = "*/15 * * * *", repositories = local.github_dot_repositories }
     "token-expiry.yaml"    = { cron = "0 8 * * *", repositories = local.github_dot_repositories }
     # The repositories whose stack class sets `clean_images`: the services and platforms.
