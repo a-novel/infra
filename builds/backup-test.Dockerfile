@@ -13,7 +13,7 @@ RUN go test -c -trimpath -o /backup.test ./tests/backup
 
 FROM ${DATABASE_SERVICE}
 COPY --from=builder /backup.test /backup.test
-COPY internal/recovery/data.sql /data.sql
+COPY internal/recovery/jsonKeysData.sql /jsonKeysData.sql
 COPY internal/recovery/authenticationData.sql /authenticationData.sql
 COPY modules/database-runtime/files/startup.sh /database-startup.sh
 COPY modules/database-runtime/files/check-backup.sh /check-backup.sh

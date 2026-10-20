@@ -44,7 +44,7 @@ const formatting = "SET timezone='Pacific/Auckland'; SET datestyle='SQL, DMY';"
 var offlineSQLFixtures = []offlineSQLFixture{
 	{
 		service:   "json-keys",
-		queryFile: "/data.sql",
+		queryFile: "/jsonKeysData.sql",
 		schema: `CREATE TABLE keys (
 id uuid PRIMARY KEY, private_key text NOT NULL CHECK (private_key <> ''), public_key text,
 usage text NOT NULL, created_at timestamptz(0) NOT NULL, expires_at timestamptz(0) NOT NULL,
@@ -223,7 +223,7 @@ func restoredWAL(t *testing.T, dir string, remove bool) int64 {
 
 // offlineCommand runs native tools as VerifySQL does and fails any pgBackRest call. With failSchema
 // set, the schema check of the service whose main table is table answers false.
-func offlineCommand(t *testing.T, failSchema bool, table string) func(context.Context, io.Writer, string, ...string) ([]byte, error) {
+func offlineCommand(t *testing.T, failSchema bool, table string) recovery.Executor {
 	return func(ctx context.Context, diagnostics io.Writer, binary string, args ...string) ([]byte, error) {
 		require.NotContains(t, binary, "pgbackrest")
 		if failSchema && strings.HasSuffix(binary, "/psql") && strings.Contains(args[len(args)-1], "public."+table) {

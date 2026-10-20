@@ -91,7 +91,7 @@ func (p proof) backups(t *testing.T) []backup {
 
 // localCommand runs native tools as production does, with pgBackRest reading the proof's local
 // repository instead of Cloud Storage. Every selection, identity check and restore option stays real.
-func (p proof) localCommand(t *testing.T) func(context.Context, io.Writer, string, ...string) ([]byte, error) {
+func (p proof) localCommand(t *testing.T) recovery.Executor {
 	return func(ctx context.Context, diagnostics io.Writer, binary string, args ...string) ([]byte, error) {
 		if binary == "/usr/bin/pgbackrest" {
 			local := []string{"--repo1-type=posix", "--repo1-path=" + p.repo}
