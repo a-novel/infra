@@ -1,7 +1,8 @@
 // Release versions, vX.Y.Z: the only tags a release pins or deploys.
 export const semver = String.raw`v\d+\.\d+\.\d+`;
 
-export const isRelease = (version) => new RegExp(`^${semver}$`).test(version);
+const release = new RegExp(`^${semver}$`);
+export const isRelease = (version) => release.test(version);
 
 /** The newest of the release versions given, ignoring empty ones; "" when none. */
 export function newest(...versions) {
