@@ -574,8 +574,7 @@ start_database() {
         "${postgres_options[@]}" >/dev/null
 
     until [ "${health}" = "healthy" ]; do
-        running="$(docker inspect --format '{{.State.Running}}' "${container_name}")"
-        health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' "${container_name}")"
+        read -r running health < <(docker inspect --format '{{.State.Running}} {{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' "${container_name}")
         if [ "${running}" != "true" ]; then
             printf 'error: %s exited before becoming healthy\n' "${container_name}" >&2
             docker logs --tail 20 "${container_name}" >&2 || true
