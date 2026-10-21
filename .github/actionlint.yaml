@@ -9,3 +9,8 @@ paths:
       # approval workflow uses; every other input error from the action stays visible.
       - '^missing input "app-id" which is required by action "actions/create-github-app-token@v3"\.'
       - '^input "client-id" is not defined in action "actions/create-github-app-token@v3"\.'
+  # These managed workflows quote GraphQL $variables on purpose. The workflows repository
+  # shellchecks the same templates with SC2016 off; every other finding stays visible here.
+  .github/workflows/{auto-approve-dependabot,recover-prs}.yaml:
+    ignore:
+      - "^shellcheck reported issue in this script: SC2016:"
