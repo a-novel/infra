@@ -5,10 +5,6 @@ locals {
   }
 
   runtime_identities = {
-    authentication_initializer = {
-      account_id   = "agora-auth-initializer"
-      display_name = "A-Novel Authentication initializer"
-    }
     authentication_database = {
       account_id   = "agora-auth-database"
       display_name = "A-Novel Authentication PostgreSQL host"
@@ -193,9 +189,7 @@ resource "google_service_account" "runtime" {
   display_name = each.value.display_name
   description  = "Keyless production identity for the ${replace(each.key, "_", " ")} boundary."
 
-  # The initializer's account has had no job since the maintenance job replaced it
-  # (a-novel/.github#331). This apply unlocks it; the next one destroys it.
-  deletion_policy = each.key == "authentication_initializer" ? "DELETE" : "PREVENT"
+  deletion_policy = "PREVENT"
 
   depends_on = [google_project_service.workload["iam.googleapis.com"]]
   lifecycle {
