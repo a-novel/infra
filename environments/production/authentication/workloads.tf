@@ -40,10 +40,10 @@ locals {
   )
 }
 
-# Cloud Run names an execution after its job and token, and refuses a name it has used before. A
-# token taken from a replaced terraform_data is new on every change, a revert to an older image
-# included. It is hashed to fit the 63-character execution name. A new database user runs it too,
-# so its login is proven at once rather than at the next release.
+# Cloud Run names an execution after its job and token, and refuses a name it has used before. The
+# token comes from this terraform_data's ID, which is new each time a trigger replaces it, even on a
+# revert to an older image. Hashing fits the token into the 63-character execution name. A new
+# database user is a trigger too, so the migration proves its login at once.
 resource "terraform_data" "migrations" {
   triggers_replace = [local.image.migrations, local.database_env.POSTGRES_USER]
 }

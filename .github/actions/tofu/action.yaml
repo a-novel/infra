@@ -92,6 +92,7 @@ runs:
       run: |
         set -euo pipefail
         errors="$RUNNER_TEMP/plan.err"
+        # attempt leaves the plan's detailed exit code in status: 0 without changes, 2 with some.
         attempt() {
           tofu -chdir="$ROOT" init -input=false -lockfile=readonly -no-color >/dev/null 2>"$errors" || return 1
           status=0
