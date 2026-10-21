@@ -50,10 +50,6 @@ locals {
   ])
 
   cloud_run_invocation_tag_values = {
-    initializer = {
-      short_name  = "initializer"
-      description = "Human-only one-time Authentication initialization."
-    }
     internal = {
       short_name  = "internal"
       description = "Private service-to-service invocation."
@@ -126,14 +122,6 @@ locals {
       identity = "genai_database"
       secret   = "production-genai-app-password"
     }
-    "authentication-initializer:app-password" = {
-      identity = "authentication_initializer"
-      secret   = "production-authentication-app-password"
-    }
-    "authentication-initializer:super-admin-password" = {
-      identity = "authentication_initializer"
-      secret   = "production-authentication-super-admin-password"
-    }
   }
 }
 
@@ -205,7 +193,9 @@ resource "google_service_account" "runtime" {
   display_name = each.value.display_name
   description  = "Keyless production identity for the ${replace(each.key, "_", " ")} boundary."
 
-  deletion_policy = "PREVENT"
+  # The initializer's account has had no job since the maintenance job replaced it
+  # (a-novel/.github#331). This apply unlocks it; the next one destroys it.
+  deletion_policy = each.key == "authentication_initializer" ? "DELETE" : "PREVENT"
 
   depends_on = [google_project_service.workload["iam.googleapis.com"]]
   lifecycle {
@@ -253,14 +243,6 @@ resource "google_tags_tag_value" "cloud_run_invocation" {
   }
 }
 
-resource "google_tags_tag_value_iam_member" "initializer_tag_user" {
-  for_each = var.authentication_maintenance_principals
-
-  tag_value = google_tags_tag_value.cloud_run_invocation["initializer"].name
-  role      = "roles/resourcemanager.tagUser"
-  member    = each.value
-}
-
 resource "google_project_iam_member" "scheduler_cloud_run_invoker" {
   project = google_project.workload.project_id
   role    = "roles/run.jobsExecutor"
@@ -299,101 +281,6 @@ resource "google_project_iam_member" "maintenance_observer" {
   project = google_project.workload.project_id
   role    = each.value.role
   member  = each.value.principal
-}
-
-resource "google_project_iam_member" "initializer_cloud_run_invoker" {
-  for_each = var.authentication_maintenance_principals
-
-  project = google_project.workload.project_id
-  role    = "roles/run.jobsExecutor"
-  member  = each.value
-
-  condition {
-    title       = "AuthenticationInitializerOnly"
-    description = "Named humans may invoke only the tagged one-time Authentication initializer."
-    expression  = "resource.matchTagId('${google_tags_tag_key.cloud_run_invocation.id}', '${google_tags_tag_value.cloud_run_invocation["initializer"].id}')"
-  }
-}
-
-resource "google_service_account_iam_member" "initializer_act_as" {
-  for_each = var.authentication_maintenance_principals
-
-  service_account_id = google_service_account.runtime["authentication_initializer"].name
-  role               = "roles/iam.serviceAccountUser"
-  member             = each.value
-}
-
-# This role is assigned only to named humans. Execution remains a separate,
-# initializer-tagged jobsExecutor grant, and overrides are never allowed.
-resource "google_project_iam_custom_role" "authentication_initializer_deployer" {
-  project = google_project.workload.project_id
-
-  role_id     = "authenticationInitializerDeployer"
-  title       = "Authentication Initializer Deployer"
-  description = "Provision the human-only Authentication initializer without Cloud Run IAM-policy or execution-override authority."
-  stage       = "GA"
-
-  permissions = [
-    "run.executions.get",
-    "run.executions.list",
-    "run.jobs.create",
-    "run.jobs.createTagBinding",
-    "run.jobs.get",
-    "run.jobs.list",
-    "run.jobs.listEffectiveTags",
-    "run.jobs.listTagBindings",
-    "run.locations.list",
-    "run.operations.get",
-  ]
-
-  depends_on = [google_project_service.workload["iam.googleapis.com"]]
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
-resource "google_project_iam_member" "authentication_initializer_deployer" {
-  for_each = var.authentication_maintenance_principals
-
-  project = google_project.workload.project_id
-  role    = google_project_iam_custom_role.authentication_initializer_deployer.name
-  member  = each.value
-}
-
-# No tag exists before a job is created, so only creation and tagging go unconditioned. Changing,
-# untagging or deleting a job stays on jobs that carry the initializer tag.
-resource "google_project_iam_custom_role" "authentication_initializer_maintainer" {
-  project = google_project.workload.project_id
-
-  role_id     = "authenticationInitializerMaintainer"
-  title       = "Authentication Initializer Maintainer"
-  description = "Change, untag or delete the human-only Authentication initializer job."
-  stage       = "GA"
-
-  permissions = [
-    "run.jobs.delete",
-    "run.jobs.deleteTagBinding",
-    "run.jobs.update",
-  ]
-
-  depends_on = [google_project_service.workload["iam.googleapis.com"]]
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
-resource "google_project_iam_member" "authentication_initializer_maintainer" {
-  for_each = var.authentication_maintenance_principals
-
-  project = google_project.workload.project_id
-  role    = google_project_iam_custom_role.authentication_initializer_maintainer.name
-  member  = each.value
-
-  condition {
-    title       = "AuthenticationInitializerOnly"
-    description = "Named humans may change only the tagged one-time Authentication initializer."
-    expression  = "resource.matchTagId('${google_tags_tag_key.cloud_run_invocation.id}', '${google_tags_tag_value.cloud_run_invocation["initializer"].id}')"
-  }
 }
 
 resource "google_project_iam_member" "database_runtime_observability" {
