@@ -35,7 +35,12 @@ func validateCertificate(ca, identity []byte, config Config, now time.Time) erro
 		}
 		intermediates.AddCert(certificate)
 	}
-	options := x509.VerifyOptions{Roots: roots, Intermediates: intermediates, CurrentTime: now, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}
+	options := x509.VerifyOptions{
+		Roots:         roots,
+		Intermediates: intermediates,
+		CurrentTime:   now,
+		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
 	if config.Endpoint == "repository" {
 		options.DNSName = config.Name
 		options.KeyUsages = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
