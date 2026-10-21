@@ -58,6 +58,10 @@ locals {
       short_name  = "internal"
       description = "Private service-to-service invocation."
     }
+    maintenance = {
+      short_name  = "maintenance"
+      description = "Human-run maintenance operations, passed as execution arguments."
+    }
     release = {
       short_name  = "release"
       description = "Protected release-only migration execution."
@@ -250,7 +254,7 @@ resource "google_tags_tag_value" "cloud_run_invocation" {
 }
 
 resource "google_tags_tag_value_iam_member" "initializer_tag_user" {
-  for_each = var.authentication_initializer_principals
+  for_each = var.authentication_maintenance_principals
 
   tag_value = google_tags_tag_value.cloud_run_invocation["initializer"].name
   role      = "roles/resourcemanager.tagUser"
@@ -269,8 +273,36 @@ resource "google_project_iam_member" "scheduler_cloud_run_invoker" {
   }
 }
 
+# Named humans run Authentication's maintenance job, naming the operation in the execution's
+# arguments, which only runWithOverrides passes. The tag keeps every other job out of reach. They
+# read Cloud Run and the logs to follow the run.
+resource "google_project_iam_member" "maintenance_operator" {
+  for_each = var.authentication_maintenance_principals
+
+  project = google_project.workload.project_id
+  role    = "roles/run.jobsExecutorWithOverrides"
+  member  = each.value
+
+  condition {
+    title       = "MaintenanceJobsOnly"
+    description = "Named humans may run only the tagged maintenance job, with arguments."
+    expression  = "resource.matchTagId('${google_tags_tag_key.cloud_run_invocation.id}', '${google_tags_tag_value.cloud_run_invocation["maintenance"].id}')"
+  }
+}
+
+resource "google_project_iam_member" "maintenance_observer" {
+  for_each = {
+    for binding in setproduct(var.authentication_maintenance_principals, ["roles/logging.viewer", "roles/run.viewer"]) :
+    "${binding[0]}:${binding[1]}" => { principal = binding[0], role = binding[1] }
+  }
+
+  project = google_project.workload.project_id
+  role    = each.value.role
+  member  = each.value.principal
+}
+
 resource "google_project_iam_member" "initializer_cloud_run_invoker" {
-  for_each = var.authentication_initializer_principals
+  for_each = var.authentication_maintenance_principals
 
   project = google_project.workload.project_id
   role    = "roles/run.jobsExecutor"
@@ -284,7 +316,7 @@ resource "google_project_iam_member" "initializer_cloud_run_invoker" {
 }
 
 resource "google_service_account_iam_member" "initializer_act_as" {
-  for_each = var.authentication_initializer_principals
+  for_each = var.authentication_maintenance_principals
 
   service_account_id = google_service_account.runtime["authentication_initializer"].name
   role               = "roles/iam.serviceAccountUser"
@@ -321,7 +353,7 @@ resource "google_project_iam_custom_role" "authentication_initializer_deployer" 
 }
 
 resource "google_project_iam_member" "authentication_initializer_deployer" {
-  for_each = var.authentication_initializer_principals
+  for_each = var.authentication_maintenance_principals
 
   project = google_project.workload.project_id
   role    = google_project_iam_custom_role.authentication_initializer_deployer.name
@@ -351,7 +383,7 @@ resource "google_project_iam_custom_role" "authentication_initializer_maintainer
 }
 
 resource "google_project_iam_member" "authentication_initializer_maintainer" {
-  for_each = var.authentication_initializer_principals
+  for_each = var.authentication_maintenance_principals
 
   project = google_project.workload.project_id
   role    = google_project_iam_custom_role.authentication_initializer_maintainer.name

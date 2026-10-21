@@ -1,7 +1,8 @@
 locals {
   application_invocation = merge(
     contains(keys(local.service_release_boundaries), "authentication/private") ? {
-      authentication_migrations = { resource = "jobs/agora-authentication-migrations", class = "release" }
+      authentication_migrations  = { resource = "jobs/agora-authentication-migrations", class = "release" }
+      authentication_maintenance = { resource = "jobs/agora-authentication-maintenance", class = "maintenance" }
     } : {},
     contains(keys(local.service_release_boundaries), "json-keys/private") ? {
       json_keys_migrations = { resource = "jobs/agora-json-keys-migrations", class = "release" }

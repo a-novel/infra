@@ -66,7 +66,7 @@ resource "google_artifact_registry_repository_iam_member" "database_reader" {
 }
 
 resource "google_artifact_registry_repository_iam_member" "authentication_initializer_reader" {
-  for_each = var.authentication_initializer_principals
+  for_each = var.authentication_maintenance_principals
 
   project    = google_project.workload.project_id
   location   = google_artifact_registry_repository.production.location

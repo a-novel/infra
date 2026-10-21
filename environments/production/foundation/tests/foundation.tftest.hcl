@@ -102,6 +102,13 @@ run "keeps_humans_off_untagged_jobs" {
     )
     error_message = "Humans may create and tag the initializer, and change only jobs that carry its tag."
   }
+
+  assert {
+    condition = alltrue([for binding in google_project_iam_member.maintenance_operator :
+      binding.role == "roles/run.jobsExecutorWithOverrides" && length(binding.condition) == 1
+    ])
+    error_message = "Humans may run with arguments only the job tagged maintenance."
+  }
 }
 
 run "copies_and_pins_host_credentials_by_digest" {

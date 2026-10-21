@@ -100,6 +100,22 @@ resource "google_project_iam_member" "foundation_private_release" {
   }
 }
 
+# A release moves the maintenance job's image like any other job's, but only operators run it:
+# foundation_release_jobs leaves its class out.
+resource "google_project_iam_member" "foundation_maintenance_updates" {
+  count = length(google_project_iam_custom_role.foundation_private_release)
+
+  project = google_project.workload.project_id
+  role    = google_project_iam_custom_role.foundation_private_release[0].name
+  member  = "serviceAccount:${local.automation_service_accounts.foundation}"
+
+  condition {
+    title       = "MaintenanceJobUpdatesOnly"
+    description = "The existing maintenance job only, never run."
+    expression  = "resource.matchTagId('${google_tags_tag_key.cloud_run_invocation.id}', '${google_tags_tag_value.cloud_run_invocation["maintenance"].id}')"
+  }
+}
+
 resource "google_project_iam_member" "foundation_public_api" {
   count = length(google_project_iam_custom_role.foundation_public_api)
 
