@@ -132,14 +132,14 @@ jobs:
         run: node --test '.github/scripts/*.test.mjs'
 
       - name: Lint Go
-        uses: a-novel-kit/workflows/go-actions/lint-go@v1.69.0
+        uses: a-novel-kit/workflows/go-actions/lint-go@v1.70.0
 
       - name: Check every service root is planned, deployed and drift-checked
         shell: bash
         run: .github/scripts/check-service-roots.sh
 
       - name: Lint shell scripts
-        uses: a-novel-kit/workflows/generic-actions/lint-shell@v1.69.0
+        uses: a-novel-kit/workflows/generic-actions/lint-shell@v1.70.0
         with:
           # renovate: datasource=github-releases depName=koalaman/shellcheck
           version: "0.11.0"
@@ -154,7 +154,7 @@ jobs:
           pyflakes: false
 
       - name: Audit GitHub Actions security
-        uses: a-novel-kit/workflows/security-actions/lint-workflows@v1.69.0
+        uses: a-novel-kit/workflows/security-actions/lint-workflows@v1.70.0
         with:
           # renovate: datasource=docker depName=ghcr.io/zizmorcore/zizmor
           version: "1.31.1"
