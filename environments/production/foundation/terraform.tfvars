@@ -1,4 +1,4 @@
-authentication_initializer_principals = [
+authentication_maintenance_principals = [
   "user:geoffroy.vincent@agorastoryverse.com",
 ]
 billing_account_id = "01BDFE-5B21E7-8393CB"

@@ -134,5 +134,14 @@ project's number, so a rebuild starts with new names.
    - SPF includes `_spf.google.com`;
    - DKIM is active in Google Admin;
    - DMARC is present.
-9. **Grant the first administrator** with Authentication's `maintenance account-role` command and
-   `--role auth:superadmin`. No job in this repository runs it yet.
+9. **Grant the first administrator** by running Authentication's maintenance job with its
+   `account-role` operation. It emails the address a registration link, and the account it creates
+   gets the role. Only the `authentication_maintenance_principals` may run it:
+
+   ```bash
+   gcloud run jobs execute agora-authentication-maintenance --project=a-novel-production-prod \
+     --region=europe-west1 --wait --args=account-role,--email=<address>,--role=auth:superadmin
+   ```
+
+   The run's log ends with `account-role completed for <address> with outcome …`. Running it again
+   converges on the same role.

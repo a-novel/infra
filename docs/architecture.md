@@ -43,8 +43,9 @@ own identities, image repositories, network tags and database hosts.
 - **GenAI gRPC and sweep** have internal ingress and IAM authentication. GenAI's smoke identity
   invokes the gRPC service. Only the scheduler identity invokes the sweep. Their egress reaches
   private ranges through the VPC, and OpenAI through Google's managed egress.
-- **Invocation tags** (`agora-invocation`: `initializer`, `internal`, `release`, `scheduled`) gate
-  who may invoke each Cloud Run service or job.
+- **Invocation tags** (`agora-invocation`: `initializer`, `internal`, `maintenance`, `release`,
+  `scheduled`) gate who may invoke each Cloud Run service or job. Only the named maintenance
+  operators run the `maintenance` job, and only they may pass it arguments.
 - **Organization policies** on `a-novel-production-prod` allow only internal ingress
   (`run.allowedIngress`) and require the invoker IAM check (`run.managed.requireInvokerIam`).
   Cloud Run refuses a deploy there that breaks either. Organization admins set both by hand, and no

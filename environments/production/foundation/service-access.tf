@@ -93,8 +93,8 @@ resource "google_project_iam_member" "foundation_private_release" {
 
   condition {
     title       = "PrivateApplicationUpdatesOnly"
-    description = "Existing internal APIs and application jobs only; backup safety jobs remain excluded."
-    expression = "(${join(" || ", [for class in ["internal", "release", "scheduled"] :
+    description = "Existing internal APIs, application jobs and the maintenance job only; backup safety jobs remain excluded."
+    expression = "(${join(" || ", [for class in ["internal", "maintenance", "release", "scheduled"] :
       "resource.matchTagId('${google_tags_tag_key.cloud_run_invocation.id}', '${google_tags_tag_value.cloud_run_invocation[class].id}')"
     ])}) && !resource.matchTag('${var.workload_project_id}/agora-backup-maintenance', 'enabled')"
   }
@@ -126,7 +126,7 @@ resource "google_project_iam_member" "foundation_release_jobs" {
 
   condition {
     title       = "ReleaseJobsOnly"
-    description = "Migration and application probe jobs; scheduled work, initialization and backups are excluded."
+    description = "Migration and application probe jobs; scheduled work, maintenance and backups are excluded."
     expression  = "resource.matchTagId('${google_tags_tag_key.cloud_run_invocation.id}', '${google_tags_tag_value.cloud_run_invocation["release"].id}') && !resource.matchTag('${var.workload_project_id}/agora-backup-maintenance', 'enabled')"
   }
 }
