@@ -36,24 +36,33 @@ type Request struct {
 	ExpectedDataSHA256 string `json:"expected_data_sha256,omitempty"`
 }
 
+var (
+	projectID           = regexp.MustCompile(`^[a-z][a-z0-9-]{4,28}[a-z0-9]$`)
+	disposableProjectID = regexp.MustCompile(`^a-novel-recovery-[a-z0-9-]+$`)
+	databaseSystemID    = regexp.MustCompile(`^[1-9][0-9]{0,19}$`)
+	projectNumber       = regexp.MustCompile(`^[1-9][0-9]{5,19}$`)
+	backupLabel         = regexp.MustCompile(`^[0-9]{8}-[0-9]{6}F(?:_[0-9]{8}-[0-9]{6}D)?$`)
+	sha256Digest        = regexp.MustCompile(`^[a-f0-9]{64}$`)
+)
+
 // Validate limits recovery to one exact backup set, restored to backup consistency without promotion.
 func (r Request) Validate() error {
 	projects := []string{r.SourceProject, r.Project, r.ManagementProject}
 	for _, project := range projects {
-		if !matches(`[a-z][a-z0-9-]{4,28}[a-z0-9]`, project) {
+		if !projectID.MatchString(project) {
 			return errors.New("invalid recovery project")
 		}
 	}
 	if _, supported := recoverySQL[r.Service]; !supported || r.Major != 18 {
 		return errors.New("recovery requires a supported PostgreSQL 18 service")
 	}
-	if r.Project == r.SourceProject || r.Project == r.ManagementProject || !matches(`a-novel-recovery-[a-z0-9-]+`, r.Project) {
+	if r.Project == r.SourceProject || r.Project == r.ManagementProject || !disposableProjectID.MatchString(r.Project) {
 		return errors.New("recovery requires an independent disposable project")
 	}
-	if !matches(`[1-9][0-9]{0,19}`, r.SystemID) || !matches(`[1-9][0-9]{5,19}`, r.ManagementNumber) {
+	if !databaseSystemID.MatchString(r.SystemID) || !projectNumber.MatchString(r.ManagementNumber) {
 		return errors.New("invalid database or management identity")
 	}
-	if !matches(`[0-9]{8}-[0-9]{6}F(?:_[0-9]{8}-[0-9]{6}D)?`, r.Set) {
+	if !backupLabel.MatchString(r.Set) {
 		return errors.New("select an exact full or differential backup")
 	}
 	if r.RepositoryTime != "" {
@@ -61,7 +70,7 @@ func (r Request) Validate() error {
 			return errors.New("invalid repository time")
 		}
 	}
-	if r.ExpectedDataSHA256 != "" && (!r.VerifySQL || !matches(`[a-f0-9]{64}`, r.ExpectedDataSHA256)) {
+	if r.ExpectedDataSHA256 != "" && (!r.VerifySQL || !sha256Digest.MatchString(r.ExpectedDataSHA256)) {
 		return errors.New("application data verification requires SQL verification and a lowercase SHA-256 expectation")
 	}
 	return nil
@@ -132,10 +141,6 @@ func (r Request) CheckCatalog(data []byte) error {
 		return errors.New("exact backup does not identify the approved database")
 	}
 	return nil
-}
-
-func matches(pattern, value string) bool {
-	return regexp.MustCompile("^(?:" + pattern + ")$").MatchString(value)
 }
 
 // CheckFiles checks the evidence a file restoration left: the request, its catalog, and a

@@ -23,6 +23,7 @@ func TestCollationPreparation(t *testing.T) {
 	sql, _, found = strings.Cut(sql, "\nSQL\n")
 	require.True(t, found)
 	sql = "SET LOCAL lock_timeout = " + sql
+
 	const database = "collation_proof"
 	p := newProof(t, "collation")
 	p.query(t, "postgres", "CREATE DATABASE "+database+" LOCALE 'en_US.utf8' TEMPLATE template0;")
@@ -36,6 +37,7 @@ func TestCollationPreparation(t *testing.T) {
 		return p.query(t, database, "SELECT relfilenode FROM pg_class WHERE relname='ids_pkey';")
 	}
 	before, beforeUncollated := index(), uncollated()
+
 	markChanged := func() {
 		p.query(t, "postgres", "UPDATE pg_database SET datcollversion='proof-old' WHERE datname='"+database+"';")
 	}
@@ -46,6 +48,7 @@ func TestCollationPreparation(t *testing.T) {
 	require.Equal(t, beforeUncollated, uncollated(), "an index on no collation must not be rebuilt")
 	require.Equal(t, "t", p.query(t, database, "SELECT datcollversion=pg_database_collation_actual_version(oid) FROM pg_database WHERE datname=current_database();"))
 	require.Equal(t, "3", p.query(t, database, "SELECT count(*) FROM sample;"))
+
 	before = index()
 	out, err = prepare()
 	require.NoError(t, err, string(out))
@@ -58,6 +61,7 @@ func TestCollationPreparation(t *testing.T) {
 	require.Contains(t, string(out), "synthetic rebuild failure")
 	require.Equal(t, before, index(), "an earlier rebuilt index must roll back")
 	require.Equal(t, "proof-old", p.query(t, "postgres", "SELECT datcollversion FROM pg_database WHERE datname='"+database+"';"))
+
 	p.query(t, database, "DROP INDEX fail_rebuild; DROP FUNCTION index_value(text); CREATE MATERIALIZED VIEW unsupported AS TABLE sample;")
 	out, err = prepare()
 	require.Error(t, err)

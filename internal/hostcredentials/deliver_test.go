@@ -192,6 +192,7 @@ func TestDeliver(t *testing.T) {
 					require.Equal(t, writtenFile{expected, 0o400}, writtenFile{actual, info.Mode().Perm()})
 				}
 			}
+
 			entries, err := os.ReadDir(filepath.Dir(config.Output))
 			require.NoError(t, err)
 			var remaining []string
@@ -203,6 +204,7 @@ func TestDeliver(t *testing.T) {
 				expectedEntries = []string{"credentials"}
 			}
 			require.Equal(t, expectedEntries, remaining)
+
 			secrets.lock.Lock()
 			defer secrets.lock.Unlock()
 			var expectedRequests []string

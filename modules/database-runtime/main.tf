@@ -11,7 +11,8 @@ locals {
     diff  = "Mon..Sat *-*-* 02:00:00 UTC"
     check = "*-*-* *:30:00 UTC"
   }
-  files = concat([
+
+  database_files = [
     {
       path        = "/etc/agora-database/docker/config.json"
       permissions = "0600"
@@ -47,23 +48,32 @@ locals {
         backup_timers     = var.schedules_enabled ? join(" ", [for name in keys(local.backup_calendars) : "agora-backup-${name}.timer"]) : ""
       }))
     },
-    ], [for name, command in local.backup_jobs : {
-      path        = "/etc/systemd/system/agora-backup-${name}.service"
-      permissions = "0644"
-      content = templatefile("${path.module}/templates/database-backup.service.tftpl", {
-        name        = name
-        command     = command
-        image       = var.repository.server_image
-        server_name = var.repository.name
-        service     = var.service
-      })
-      }], [for name, calendar in local.backup_calendars : {
-      path        = "/etc/systemd/system/agora-backup-${name}.timer"
-      permissions = "0644"
-      content     = templatefile("${path.module}/templates/database-backup.timer.tftpl", { name = name, calendar = calendar, service = var.service })
-      }], [{
-      path        = "/etc/agora-database/check-backup.sh"
-      permissions = "0444"
-      content     = file("${path.module}/files/check-backup.sh")
-  }])
+  ]
+
+  backup_job_files = [for name, command in local.backup_jobs : {
+    path        = "/etc/systemd/system/agora-backup-${name}.service"
+    permissions = "0644"
+    content = templatefile("${path.module}/templates/database-backup.service.tftpl", {
+      name        = name
+      command     = command
+      image       = var.repository.server_image
+      server_name = var.repository.name
+      service     = var.service
+    })
+  }]
+
+  backup_timer_files = [for name, calendar in local.backup_calendars : {
+    path        = "/etc/systemd/system/agora-backup-${name}.timer"
+    permissions = "0644"
+    content     = templatefile("${path.module}/templates/database-backup.timer.tftpl", { name = name, calendar = calendar, service = var.service })
+  }]
+
+  backup_check_file = {
+    path        = "/etc/agora-database/check-backup.sh"
+    permissions = "0444"
+    content     = file("${path.module}/files/check-backup.sh")
+  }
+
+  # The startup script writes the files in this order, so reordering them is a database host change.
+  files = concat(local.database_files, local.backup_job_files, local.backup_timer_files, [local.backup_check_file])
 }

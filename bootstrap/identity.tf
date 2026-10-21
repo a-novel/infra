@@ -61,6 +61,27 @@ locals {
       bucket    = local.management_buckets[binding[1]]
     }
   }
+
+  # A boundary's workflows run on master, each in its GitHub environment when it names one.
+  workflow_clauses = {
+    for boundary, trust in local.trust_boundaries : boundary => [
+      for workflow, environment in trust.workflows : join(" && ", compact([
+        "assertion.ref == '${local.github.ref}'",
+        "assertion.workflow_ref == '${local.github.repository}/.github/workflows/${workflow}@${local.github.ref}'",
+        environment == null ? "" : "assertion.environment == '${environment}'",
+      ]))
+    ]
+  }
+
+  # A boundary that names a workflow for pull requests also trusts that workflow on this
+  # repository's pull requests into master.
+  pull_request_clauses = {
+    for boundary, trust in local.trust_boundaries : boundary => trust.pull_requests == null ? [] : [join(" && ", [
+      "assertion.event_name == 'pull_request'",
+      "assertion.base_ref == 'master'",
+      "assertion.workflow_ref.startsWith('${local.github.repository}/.github/workflows/${trust.pull_requests}@refs/pull/')",
+    ])]
+  }
 }
 
 resource "google_service_account" "automation" {
@@ -123,23 +144,11 @@ resource "google_iam_workload_identity_pool_provider" "github" {
     },
   )
 
+  # A token comes from this repository and matches one of the boundary's clauses.
   attribute_condition = join(" && ", [
     "assertion.repository_owner_id == '${local.github.owner_id}'",
     "assertion.repository_id == '${local.github.repository_id}'",
-    "(${join(" || ", concat(
-      [for workflow, environment in each.value.workflows : "(${join(" && ", concat(
-        [
-          "assertion.ref == '${local.github.ref}'",
-          "assertion.workflow_ref == '${local.github.repository}/.github/workflows/${workflow}@${local.github.ref}'",
-        ],
-        environment == null ? [] : ["assertion.environment == '${environment}'"],
-      ))})"],
-      each.value.pull_requests == null ? [] : ["(${join(" && ", [
-        "assertion.event_name == 'pull_request'",
-        "assertion.base_ref == 'master'",
-        "assertion.workflow_ref.startsWith('${local.github.repository}/.github/workflows/${each.value.pull_requests}@refs/pull/')",
-      ])})"],
-    ))})",
+    "(${join(" || ", [for clause in concat(local.workflow_clauses[each.key], local.pull_request_clauses[each.key]) : "(${clause})"])})",
   ])
 
   oidc {

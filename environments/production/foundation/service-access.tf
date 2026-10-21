@@ -22,11 +22,11 @@ resource "google_project_iam_member" "foundation_service_access" {
   }
 }
 
-# Creation cannot be scoped: Cloud Run and Cloud Scheduler support neither resource-name conditions
-# nor tags on a resource that does not exist yet. A new service's first deploy creates its jobs
-# without an execution and its services without invokers, foundation then tags them and creates
-# its schedules, and only tagged resources can be updated, run or invoked. A tag binding is read back
-# before its tag reaches the release role's conditions, so listing bindings is not conditioned either.
+# Creation cannot be scoped. Cloud Run and Cloud Scheduler support no resource-name conditions, and
+# a resource that does not exist yet carries no tag. A new service's first deploy creates its jobs
+# without an execution and its services without invokers. Foundation then tags them and creates
+# their schedules. Only tagged resources can be updated, run or invoked. Listing tag bindings is
+# unscoped too: the deploy reads a binding back before the release role's conditions see its tag.
 resource "google_project_iam_custom_role" "foundation_private_provisioning" {
   count = length(google_project_iam_custom_role.foundation_private_release)
 
@@ -164,9 +164,9 @@ resource "google_project_iam_member" "foundation_release_observation" {
   member  = "serviceAccount:${local.automation_service_accounts.foundation}"
 }
 
-# Scheduler does not support resource-name conditions for these permissions. A schedule whose
-# creation failed is destroyed before any role its state records as a dependency changes, the
-# provisioning role included, so this role holds what replacing it takes.
+# Scheduler supports no resource-name conditions for these permissions. OpenTofu replaces a schedule
+# whose creation failed, and destroys it before it updates any role the schedule's state records as
+# a dependency, the provisioning role included. This role holds what the replacement needs.
 resource "google_project_iam_custom_role" "foundation_scheduler" {
   count       = contains(keys(local.service_release_boundaries), "json-keys/private") ? 1 : 0
   project     = google_project.workload.project_id

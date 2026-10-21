@@ -249,9 +249,9 @@ resource "google_project_iam_member" "scheduler_cloud_run_invoker" {
   }
 }
 
-# Named humans run Authentication's maintenance job, naming the operation in the execution's
-# arguments, which only runWithOverrides passes. The tag keeps every other job out of reach. They
-# read Cloud Run and the logs to follow the run.
+# Named humans run Authentication's maintenance job. Each run names its operation in the execution's
+# arguments, which only runWithOverrides passes, and the tag keeps every other job out of reach. The
+# operators read Cloud Run and the logs to follow the run.
 resource "google_project_iam_member" "maintenance_operator" {
   for_each = var.authentication_maintenance_principals
 

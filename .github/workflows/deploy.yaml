@@ -96,18 +96,24 @@ jobs:
           [ "$EVENT" != push ] && all=true
           commits="$(printf '%s\n%s\n' "$commits" "$(git rev-parse HEAD)" | sort -u | sed '/^$/d')"
 
-          # A root depends on the action that applies it, its directory and the local modules it calls.
+          # A root depends on the action that applies it, its directory and the local modules it
+          # calls, directly or through another module. The loop also visits each module it adds.
           deps() {
-            printf '%s\n' .opentofu-version .github/actions/tofu/ .github/workflows/deploy.yaml "$1/"
-            { grep -ho 'source *= *"\.[^"]*"' "$1"/*.tf || true; } | sed -E 's/.*"(.*)"/\1/' | while read -r source; do
-              deps "$(realpath --relative-to=. "$1/$source")"
+            local dirs=("$1") i source
+            printf '%s\n' .opentofu-version .github/actions/tofu/ .github/workflows/deploy.yaml
+            for ((i = 0; i < ${#dirs[@]}; i++)); do
+              printf '%s/\n' "${dirs[i]}"
+              while read -r source; do
+                dirs+=("$(realpath --relative-to=. "${dirs[i]}/$source")")
+              done < <(grep -ho 'source *= *"\.[^"]*"' "${dirs[i]}"/*.tf | sed -E 's/.*"(.*)"/\1/')
             done
           }
           changed() {
             [ "$all" = true ] && return
+            local paths
+            mapfile -t paths < <(deps "$1")
             # OpenTofu never reads Markdown, so documentation alone deploys nothing.
-            deps "$1" | awk 'NR == FNR { prefix[$0]; next } { for (p in prefix) if (index($0, p) == 1) found = 1 }
-              END { exit !found }' - <(git diff --name-only "$base" HEAD -- . ':(exclude)*.md')
+            [ -n "$(git diff --name-only "$base" HEAD -- "${paths[@]}" ':(exclude)*.md')" ]
           }
           deploy() { changed "$1" && echo true || echo false; }
 

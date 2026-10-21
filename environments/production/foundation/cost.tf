@@ -116,12 +116,11 @@ resource "google_billing_budget" "workload" {
   ownership_scope = "BILLING_ACCOUNT"
 
   budget_filter {
-    projects = sort(concat([
-      "projects/${data.google_project.management.number}",
-      "projects/${google_project.workload.number}",
-      ],
+    projects = sort(concat(
+      ["projects/${data.google_project.management.number}", "projects/${google_project.workload.number}"],
       [for project in module.public_project : "projects/${project.project_number}"],
-    [for project in module.public_api_project : "projects/${project.project_number}"]))
+      [for project in module.public_api_project : "projects/${project.project_number}"],
+    ))
     calendar_period        = "MONTH"
     credit_types_treatment = "INCLUDE_ALL_CREDITS"
   }
