@@ -2,8 +2,7 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "github>a-novel-kit/workflows//renovate/infra#v1.67.0",
-    ":semanticCommits",
-    "helpers:pinGitHubActionDigestsToSemver"
+    ":semanticCommits"
   ],
   "rangeStrategy": "pin",
   "ignoreUnstable": true,
@@ -35,7 +34,7 @@
       "automerge": false
     },
     {
-      "description": "Leave the other actions in the managed governance workflows to `a-novel repo update`, which renders them on release tags from the stack's templates. A commit pin here would be reverted at the next reconcile. Their a-novel-kit/workflows pins stay with Renovate, since the reconcile keeps a deployed pin newer than its template's.",
+      "description": "Leave the other actions in the managed governance workflows to `a-novel repo update`, which renders them from the stack's templates, where the stack's Renovate keeps their commit pins current. An update here would be reverted at the next reconcile. Their a-novel-kit/workflows pins stay with Renovate, since the reconcile keeps a deployed pin newer than its template's.",
       "matchFileNames": [
         ".github/workflows/approve-pr.yaml",
         ".github/workflows/auto-approve-dependabot.yaml",
@@ -55,25 +54,6 @@
       ],
       "matchPackageNames": ["!a-novel-kit/workflows"],
       "enabled": false
-    },
-    {
-      "description": "Keep the shared workflow actions on one reviewed release tag until their released actions reference each other by commit (a-novel-kit/workflows#560); every other action is pinned to its commit with the version beside it.",
-      "matchManagers": ["github-actions"],
-      "matchPackageNames": ["a-novel-kit/workflows"],
-      "groupName": "a-novel-kit workflows",
-      "pinDigests": false
-    },
-    {
-      "description": "Review a digest update by hand. It keeps an action's version and moves it to another commit, which means the release tag was moved: the shape of the 2026 trivy-action hijack.",
-      "matchManagers": ["github-actions"],
-      "matchUpdateTypes": ["digest"],
-      "automerge": false
-    },
-    {
-      "description": "Hold new third-party action releases for three days. Deploy jobs run them with the production identity, so the release age bounds a compromised upstream release, as it does for OpenTofu.",
-      "matchManagers": ["github-actions"],
-      "matchPackageNames": ["!a-novel-kit/workflows"],
-      "minimumReleaseAge": "3 days"
     },
     {
       "description": "Resolve Aqua Security tags directly from Git because its organization IP allow list rejects authenticated GitHub GraphQL lookups.",
