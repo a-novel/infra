@@ -56,41 +56,46 @@ runs:
           config="$(jq -r '.labels.config // ""' <<<"$labels")"
           repository_pending="$(jq '.labels.config != .labels["running-config"]' <<<"$labels")"
         fi
-        started=false
-        if [ -n "${DOWNTIME:-}" ] && jq -e --arg component "service-$SERVICE.database" '.components | index($component)' <<<"$DOWNTIME" >/dev/null \
-          && [ "$(date -d "$(jq -r .start <<<"$DOWNTIME")" +%s)" -le "$(date +%s)" ]; then
-          started=true
+        start="" started=false
+        if [ -n "${DOWNTIME:-}" ] && jq -e --arg component "service-$SERVICE.database" '.components | index($component)' <<<"$DOWNTIME" >/dev/null; then
+          start="$(jq -r .start <<<"$DOWNTIME")"
+          if [ "$(date -d "$start" +%s)" -le "$(date +%s)" ]; then started=true; fi
         fi
         if [ "$FORCE" = true ]; then database_pending=true repository_pending=$repository_exists started=true; fi
 
-        if [ "$database_pending" = true ]; then
-          if [ "$started" != true ]; then
-            echo "::warning::Rollout pending: the $SERVICE database host waits for a planned downtime listing service-$SERVICE.database."
-            echo "- \`$SERVICE\`: database rollout pending until its planned downtime" >>"$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          # DOWNTIME alone does not stop the services: only a deploy gives them DOWNTIME_START. Roll
-          # only once every service writing to the database serves its latest revision, carrying
-          # this downtime's start.
-          if [ "$FORCE" != true ]; then
-            case "$SERVICE" in
-              json-keys) project=a-novel-production-prod writers=(agora-json-keys-grpc) ;;
-              authentication) project=a-novel-public-api-prod writers=(agora-authentication-rest) ;;
-              genai) project=a-novel-production-prod writers=(agora-genai-grpc agora-genai-sweep) ;;
-              *) echo "::error::Unknown service $SERVICE."; exit 1 ;;
-            esac
-            for writer in "${writers[@]}"; do
-              stopped="$(gcloud run services describe "$writer" --project="$project" --region=europe-west1 --format=json |
-                jq --arg start "$(jq -r .start <<<"$DOWNTIME")" '.status.latestReadyRevisionName == .status.latestCreatedRevisionName
-                  and ([.spec.template.spec.containers[].env[]? | select(.name == "DOWNTIME_START") | .value] | index($start) != null)')"
-              if [ "$stopped" != true ]; then
-                echo "::error::$writer has not taken the planned downtime yet; run a deploy by hand to apply it, which rolls the host."
-                exit 1
-              fi
-            done
-          fi
+        if [ "$database_pending" = true ] && [ "$started" != true ]; then
+          echo "::warning::Rollout pending: the $SERVICE database host waits for a planned downtime listing service-$SERVICE.database."
+          echo "- \`$SERVICE\`: database rollout pending until its planned downtime" >>"$GITHUB_STEP_SUMMARY"
+          exit 0
         fi
-        { echo "database=$database_pending"; echo "repository=$repository_pending"; echo "repository_exists=$repository_exists"; echo "config=$config"; } >>"$GITHUB_OUTPUT"
+
+        # DOWNTIME alone does not stop the services: only a deploy gives them DOWNTIME_START. Roll
+        # only once every service writing to the database serves its latest revision, carrying
+        # this downtime's start.
+        if [ "$database_pending" = true ] && [ "$FORCE" != true ]; then
+          case "$SERVICE" in
+            json-keys) project=a-novel-production-prod writers=(agora-json-keys-grpc) ;;
+            authentication) project=a-novel-public-api-prod writers=(agora-authentication-rest) ;;
+            genai) project=a-novel-production-prod writers=(agora-genai-grpc agora-genai-sweep) ;;
+            *) echo "::error::Unknown service $SERVICE."; exit 1 ;;
+          esac
+          for writer in "${writers[@]}"; do
+            stopped="$(gcloud run services describe "$writer" --project="$project" --region=europe-west1 --format=json |
+              jq --arg start "$start" '.status.latestReadyRevisionName == .status.latestCreatedRevisionName
+                and ([.spec.template.spec.containers[].env[]? | select(.name == "DOWNTIME_START") | .value] | index($start) != null)')"
+            if [ "$stopped" != true ]; then
+              echo "::error::$writer has not taken the planned downtime yet; run a deploy by hand to apply it, which rolls the host."
+              exit 1
+            fi
+          done
+        fi
+
+        {
+          echo "database=$database_pending"
+          echo "repository=$repository_pending"
+          echo "repository_exists=$repository_exists"
+          echo "config=$config"
+        } >>"$GITHUB_OUTPUT"
 
     # Gold, not the informational blue: restarting a database host needs someone watching.
     - name: Announce the database rollout
