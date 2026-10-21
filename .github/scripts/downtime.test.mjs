@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { buildWindow, epoch, planAnnouncements } from "./downtime.mjs";
+import {
+  buildWindow,
+  epoch,
+  planAnnouncements,
+  startedFor,
+} from "./downtime.mjs";
 
 const known = [
   "service-authentication.database",
@@ -122,6 +127,50 @@ describe("buildWindow", () => {
         /needs a start and an end/,
         `${start} ${end}`,
       );
+    }
+  });
+});
+
+describe("startedFor", () => {
+  const component = "service-json-keys.database";
+  const downtime = (start) =>
+    JSON.stringify({
+      components: [component],
+      start,
+      end: "2026-10-12T09:00:00Z",
+    });
+
+  it("starts at its start for the components it lists", () => {
+    for (const [start, started] of [
+      ["2026-10-12T04:00:00Z", true],
+      ["2026-10-12T05:00:00Z", true],
+      ["2026-10-12T05:00:01Z", false],
+    ]) {
+      assert.equal(startedFor(downtime(start), component, now), started, start);
+    }
+    assert.equal(
+      startedFor(
+        downtime("2026-10-12T04:00:00Z"),
+        "service-genai.database",
+        now,
+      ),
+      false,
+    );
+  });
+
+  it("has not started without a readable downtime and start", () => {
+    for (const value of [
+      "",
+      "{",
+      "null",
+      JSON.stringify({ components: component, start: "2026-10-12T04:00:00Z" }),
+      downtime(undefined),
+      downtime(""),
+      downtime("garbage"),
+      downtime("2026-10-12 04:00"),
+      downtime("2026-10-99T04:00:00Z"),
+    ]) {
+      assert.equal(startedFor(value, component, now), false, value);
     }
   });
 });

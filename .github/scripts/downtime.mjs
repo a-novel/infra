@@ -1,5 +1,6 @@
-// The planned downtime: the window downtime.yaml builds from its inputs, and the Discord posts it
-// hands to Google Cloud Workflows. Both are pure functions of their inputs and the clock.
+// The planned downtime: the window downtime.yaml builds from its inputs, the Discord posts it hands
+// to Google Cloud Workflows, and whether it has started for a component, which gates database host
+// changes and their rollout. All are pure functions of their inputs and the clock.
 import { appendFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -83,6 +84,25 @@ export function buildWindow({ components, start, end, previous, known, now }) {
     start: format(from),
     end: format(to),
   };
+}
+
+/**
+ * Whether downtime, the JSON text the window command writes, lists component and has started by
+ * now. An empty or unreadable downtime, or one without an RFC 3339 UTC start, has not started.
+ */
+export function startedFor(downtime, component, now) {
+  let window;
+  try {
+    window = JSON.parse(downtime);
+  } catch {
+    return false;
+  }
+  return (
+    Array.isArray(window?.components) &&
+    window.components.includes(component) &&
+    rfc3339.test(window.start) &&
+    seconds(window.start) <= now
+  );
 }
 
 function body(window, headline) {
@@ -184,7 +204,7 @@ function change(previous, window) {
 
 const parse = (value) => (value ? JSON.parse(value) : null);
 
-function main(command) {
+function main(command, component) {
   const {
     GITHUB_OUTPUT,
     OPERATION,
@@ -193,6 +213,7 @@ function main(command) {
     END = "",
     PREVIOUS = "",
     WINDOW = "",
+    DOWNTIME = "",
   } = process.env;
   const now = Math.floor(Date.now() / 1000);
   let output;
@@ -223,9 +244,13 @@ function main(command) {
       now,
     });
     output = `posts=${JSON.stringify({ posts })}\n`;
+  } else if (command === "started") {
+    // The gates read the answer inline, so it goes to stdout.
+    console.log(startedFor(DOWNTIME, component, now));
+    return;
   } else {
     throw new Error(
-      `Unknown command "${command}": use window or announcements.`,
+      `Unknown command "${command}": use window, announcements or started.`,
     );
   }
   appendFileSync(GITHUB_OUTPUT, output);
@@ -233,7 +258,7 @@ function main(command) {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
-    main(process.argv[2]);
+    main(process.argv[2], process.argv[3]);
   } catch (error) {
     console.log(`::error::${error.message}`);
     process.exit(1);

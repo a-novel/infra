@@ -56,11 +56,7 @@ runs:
           config="$(jq -r '.labels.config // ""' <<<"$labels")"
           repository_pending="$(jq '.labels.config != .labels["running-config"]' <<<"$labels")"
         fi
-        start="" started=false
-        if [ -n "${DOWNTIME:-}" ] && jq -e --arg component "service-$SERVICE.database" '.components | index($component)' <<<"$DOWNTIME" >/dev/null; then
-          start="$(jq -r .start <<<"$DOWNTIME")"
-          if [ "$(date -d "$start" +%s)" -le "$(date +%s)" ]; then started=true; fi
-        fi
+        started="$(node .github/scripts/downtime.mjs started "service-$SERVICE.database")"
         if [ "$FORCE" = true ]; then database_pending=true repository_pending=$repository_exists started=true; fi
 
         if [ "$database_pending" = true ] && [ "$started" != true ]; then
@@ -79,6 +75,7 @@ runs:
             genai) project=a-novel-production-prod writers=(agora-genai-grpc agora-genai-sweep) ;;
             *) echo "::error::Unknown service $SERVICE."; exit 1 ;;
           esac
+          start="$(jq -r .start <<<"$DOWNTIME")"
           for writer in "${writers[@]}"; do
             stopped="$(gcloud run services describe "$writer" --project="$project" --region=europe-west1 --format=json |
               jq --arg start "$start" '.status.latestReadyRevisionName == .status.latestCreatedRevisionName
