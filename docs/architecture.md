@@ -43,9 +43,9 @@ own identities, image repositories, network tags and database hosts.
 - **GenAI gRPC and sweep** have internal ingress and IAM authentication. GenAI's smoke identity
   invokes the gRPC service. Only the scheduler identity invokes the sweep. Their egress reaches
   private ranges through the VPC, and OpenAI through Google's managed egress.
-- **Invocation tags** (`agora-invocation`: `initializer`, `internal`, `maintenance`, `release`,
-  `scheduled`) gate who may invoke each Cloud Run service or job. Only the named maintenance
-  operators run the `maintenance` job, and only they may pass it arguments.
+- **Invocation tags** (`agora-invocation`: `internal`, `maintenance`, `release`, `scheduled`) gate
+  who may invoke each Cloud Run service or job. Only the named maintenance operators run the
+  `maintenance` job, and only they may pass it arguments.
 - **Organization policies** on `a-novel-production-prod` allow only internal ingress
   (`run.allowedIngress`) and require the invoker IAM check (`run.managed.requireInvokerIam`).
   Cloud Run refuses a deploy there that breaks either. Organization admins set both by hand, and no
@@ -141,17 +141,17 @@ Secret containers live in the management project. Humans add their values with `
 [Secrets](runbooks/secrets.md) describes, so OpenTofu never sees them. Workloads read the numeric
 version their root's `terraform.tfvars` pins.
 
-| Secret                                                     | Read by                                                         |
-| ---------------------------------------------------------- | --------------------------------------------------------------- |
-| `production-json-keys-app-master-key`                      | JSON Keys runtime, rotation job                                 |
-| `production-authentication-smtp-sender-password`           | Authentication API and maintenance job                          |
-| `production-authentication-waitlist-secret`                | Authentication API, when the waitlist is on                     |
-| `production-authentication-super-admin-password`           | The initializer identity                                        |
-| `production-genai-openai-api-key`                          | GenAI runtime and sweep                                         |
-| `production-<service>-app-password`                        | Database host, database workloads, Authentication's initializer |
-| `production-<service>-pgbackrest-{ca,database,repository}` | Database host and repository VM (TLS)                           |
-| `production-downtime-discord-webhook`                      | `downtime-announcer`, when it posts a planned downtime step     |
-| `production-github-dispatch-{a-novel,a-novel-kit}`         | `github-dispatcher`, when it dispatches that org's workflows    |
+| Secret                                                     | Read by                                                      |
+| ---------------------------------------------------------- | ------------------------------------------------------------ |
+| `production-json-keys-app-master-key`                      | JSON Keys runtime, rotation job                              |
+| `production-authentication-smtp-sender-password`           | Authentication API and maintenance job                       |
+| `production-authentication-waitlist-secret`                | Authentication API, when the waitlist is on                  |
+| `production-authentication-super-admin-password`           | No workload since the initializer's retirement               |
+| `production-genai-openai-api-key`                          | GenAI runtime and sweep                                      |
+| `production-<service>-app-password`                        | Database host and database workloads                         |
+| `production-<service>-pgbackrest-{ca,database,repository}` | Database host and repository VM (TLS)                        |
+| `production-downtime-discord-webhook`                      | `downtime-announcer`, when it posts a planned downtime step  |
+| `production-github-dispatch-{a-novel,a-novel-kit}`         | `github-dispatcher`, when it dispatches that org's workflows |
 
 ## Identities
 
@@ -162,7 +162,6 @@ version their root's `terraform.tfvars` pins.
 | `infra-health` (management)                                                                                  | CI: the scheduled health check, which calls Authentication's REST API.                                                                                                         |
 | `agora-json-keys-private`, `agora-authentication-private`, `agora-authentication-api`, `agora-genai-private` | Cloud Run runtimes, one per service and zone: the gRPC servers, Authentication's migrations and REST API.                                                                      |
 | `agora-<service>-<role>`: `migrations`, `rotatekeys`, `sweep`, `smoke`, `maintain`                           | All the services' other workloads, each with its own account, which reads only the secrets that this workload mounts. The smoke identities may only invoke their gRPC service. |
-| `agora-auth-initializer`                                                                                     | Reserved for the one-time administrator initializer, which no job runs yet.                                                                                                    |
 | `agora-json-keys-database`, `agora-auth-database`, `agora-genai-database`                                    | Database hosts.                                                                                                                                                                |
 | `agora-pgbr-<service>`                                                                                       | Backup repository VMs.                                                                                                                                                         |
 | `pgbr-<service>-recovery` (management)                                                                       | Recovery drill hosts: read and restore backups, never delete. Disabled outside drills.                                                                                         |
