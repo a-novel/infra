@@ -22,7 +22,7 @@ locals {
   database              = local.foundation.database_hosts["authentication"]
 }
 
-# Database migrations run beside the database in the private zone.
+# Database migrations and the maintenance job run beside the database in the private zone.
 module "private_runtime" {
   source = "../../../modules/service-runtime"
 
@@ -33,8 +33,12 @@ module "private_runtime" {
   management_project_id    = local.management_project_id
   secrets                  = toset(["production-authentication-app-password"])
   database_service_account = local.database.service_account
-  deployer                 = local.deployer
-  alert_email              = var.alert_email
+  # The maintenance job runs as its own identity, which reads only the secrets it mounts.
+  workloads = {
+    maintain = { secrets = toset([for name in values(local.maintenance_secret_env) : "production-authentication-${name}"]) }
+  }
+  deployer    = local.deployer
+  alert_email = var.alert_email
 }
 
 # The public REST API runs in the public-api zone.

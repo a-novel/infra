@@ -143,7 +143,7 @@ version their root's `terraform.tfvars` pins.
 | Secret                                                     | Read by                                                         |
 | ---------------------------------------------------------- | --------------------------------------------------------------- |
 | `production-json-keys-app-master-key`                      | JSON Keys runtime, rotation job                                 |
-| `production-authentication-smtp-sender-password`           | Authentication API                                              |
+| `production-authentication-smtp-sender-password`           | Authentication API and maintenance job                          |
 | `production-authentication-waitlist-secret`                | Authentication API, when the waitlist is on                     |
 | `production-authentication-super-admin-password`           | The initializer identity                                        |
 | `production-genai-openai-api-key`                          | GenAI runtime and sweep                                         |
@@ -160,7 +160,7 @@ version their root's `terraform.tfvars` pins.
 | `infra-downtime` (management)                                                                                | CI: starts and cancels the planned downtime announcements.                                                                                                                     |
 | `infra-health` (management)                                                                                  | CI: the scheduled health check, which calls Authentication's REST API.                                                                                                         |
 | `agora-json-keys-private`, `agora-authentication-private`, `agora-authentication-api`, `agora-genai-private` | Cloud Run runtimes, one per service and zone: the gRPC servers, Authentication's migrations and REST API.                                                                      |
-| `agora-<service>-<role>`: `migrations`, `rotatekeys`, `sweep`, `smoke`                                       | JSON Keys' and GenAI's other workloads, each with its own account, which reads only the secrets that workload mounts. The smoke identities may only invoke their gRPC service. |
+| `agora-<service>-<role>`: `migrations`, `rotatekeys`, `sweep`, `smoke`, `maintain`                           | All the services' other workloads, each with its own account, which reads only the secrets that this workload mounts. The smoke identities may only invoke their gRPC service. |
 | `agora-auth-initializer`                                                                                     | Reserved for the one-time administrator initializer, which no job runs yet.                                                                                                    |
 | `agora-json-keys-database`, `agora-auth-database`, `agora-genai-database`                                    | Database hosts.                                                                                                                                                                |
 | `agora-pgbr-<service>`                                                                                       | Backup repository VMs.                                                                                                                                                         |
