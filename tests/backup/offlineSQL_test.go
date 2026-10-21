@@ -117,15 +117,18 @@ func testOfflineSQL(t *testing.T, fixture offlineSQLFixture) {
 	run(t, "psql", "-X", "-h", p.root, "-d", role, "-v", "ON_ERROR_STOP=1", "-f", "/docker-entrypoint-initdb.d/init.sql")
 	table := fixture.table
 	p.query(t, role, fixture.schema)
+
 	fullHash := p.query(t, role, dataSQL)
 	require.Regexp(t, `^[a-f0-9]{64}$`, fullHash)
 	p.backrest(t, "--type=full", "--archive-copy", "backup")
 	full := p.backups(t)[0].Label
+
 	p.query(t, role, fixture.update)
 	diffHash := p.query(t, role, dataSQL)
 	require.NotEqual(t, fullHash, diffHash)
 	p.backrest(t, "--type=diff", "--archive-copy", "backup")
 	diff := p.backups(t)[1].Label
+
 	// Source observations precede recovery; no expected value is learned from restored data.
 	p.query(t, role, "CREATE TABLE saved_rows AS TABLE "+table+";")
 	for _, tc := range fixture.fingerprints {
@@ -138,15 +141,24 @@ func testOfflineSQL(t *testing.T, fixture offlineSQLFixture) {
 			}
 		})
 	}
+
 	p.query(t, role, fixture.missing)
 	missingHash := p.query(t, role, dataSQL)
 	p.query(t, role, "TRUNCATE "+table+";")
 	emptyHash := p.query(t, role, dataSQL)
 	p.query(t, role, "INSERT INTO "+table+" SELECT * FROM saved_rows;")
+	systemID := p.query(t, "postgres", "SELECT system_identifier FROM pg_control_system();")
+
 	sets := []string{full, diff}
 	for _, set := range sets {
 		wal := filepath.Join(p.repo, "backup", fixture.service, set, "pg_data/pg_wal")
 		t.Logf("copied consistency WAL stored (%s): %s", set, strings.TrimSpace(run(t, "du", "-sb", wal)))
+	}
+
+	faultErrors := map[string]string{
+		"wal":  "offline PostgreSQL startup failed",
+		"data": "recovered application data differs",
+		"sql":  "service recovery checks failed",
 	}
 	restoreCases := []struct{ name, set, expected, fault string }{
 		{"Full", full, fullHash, ""},
@@ -161,12 +173,20 @@ func testOfflineSQL(t *testing.T, fixture offlineSQLFixture) {
 	for _, tc := range restoreCases {
 		t.Run(tc.name, func(t *testing.T) {
 			request := recovery.Request{
-				Service: fixture.service, SourceProject: "source-project", Project: "a-novel-recovery-proof", ManagementProject: "management-project",
-				ManagementNumber: "123456789012", SystemID: p.query(t, "postgres", "SELECT system_identifier FROM pg_control_system();"), Major: 18, Set: tc.set, VerifySQL: true,
+				Service:            fixture.service,
+				SourceProject:      "source-project",
+				Project:            "a-novel-recovery-proof",
+				ManagementProject:  "management-project",
+				ManagementNumber:   "123456789012",
+				SystemID:           systemID,
+				Major:              18,
+				Set:                tc.set,
+				VerifySQL:          true,
 				ExpectedDataSHA256: tc.expected,
 			}
 			parent := t.TempDir()
 			require.NoError(t, recovery.Restore(t.Context(), request, parent, p.localCommand(t)))
+
 			// Recovered configuration is evidence, not authority to load startup hooks.
 			configs := []string{"postgresql.conf", "postgresql.auto.conf"}
 			for _, name := range configs {
@@ -175,21 +195,16 @@ func testOfflineSQL(t *testing.T, fixture offlineSQLFixture) {
 			walBytes := restoredWAL(t, filepath.Join(parent, "attempt/data/pg_wal"), tc.fault == "wal")
 			t.Logf("consistency WAL restored: %d bytes", walBytes)
 			require.Positive(t, walBytes)
+
 			// Verification cannot invoke pgBackRest; its startup uses only the restored WAL.
 			offline := offlineCommand(t, tc.fault == "sql", table)
 			err := recovery.VerifySQL(t.Context(), request, parent, offline)
 			if tc.fault == "" {
 				require.NoError(t, err)
 			} else {
-				message := "service recovery checks failed"
-				switch tc.fault {
-				case "wal":
-					message = "offline PostgreSQL startup failed"
-				case "data":
-					message = "recovered application data differs"
-				}
-				require.ErrorContains(t, err, message)
+				require.ErrorContains(t, err, faultErrors[tc.fault])
 			}
+
 			_, resultErr := os.Stat(filepath.Join(parent, "attempt/verification/sql-verified.json"))
 			require.Equal(t, tc.fault == "", resultErr == nil)
 			require.NoFileExists(t, filepath.Join(parent, "attempt/data/postmaster.pid"))
