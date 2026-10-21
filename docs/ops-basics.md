@@ -62,11 +62,12 @@ deploy:  bootstrap ─► foundation ─► one job per service ─┬─► rol
 
 3. **The approval and the merge.** `master` requires one approval, with every review thread
    resolved. It merges through a merge queue, as a single squashed commit. An author cannot approve
-   their own pull request, so a maintainer or admin reviews it, then records the approval with
-   `approve-pr.yaml`. A bot's pull request merges on its own only as a release pin, or as a version
-   update Renovate itself put on auto-merge: the Agent App approves and queues it. Anything else a
-   bot opens, such as a provider, OpenTofu or major update, waits for `approve-pr.yaml` like a
-   person's. Repository admins can bypass these rules.
+   their own pull request, so a maintainer or admin reviews and approves it. An admin may instead
+   approve their own pull request with `approve-pr.yaml`, which refuses anyone else's. A bot's pull
+   request merges on its own only as a release pin, or as a version update Renovate itself put on
+   auto-merge: the Agent App approves and queues it. Anything else a bot opens, such as a provider,
+   OpenTofu or major update, waits for a maintainer's or an admin's review like a person's.
+   Repository admins can bypass these rules.
 4. **The deploy.** Each merge starts `deploy.yaml`. It applies bootstrap and foundation when they
    changed since the last successful deploy. Then it applies every service root in parallel, so the
    services always run the current planned downtime. Two jobs then run side by side: the database
@@ -128,13 +129,13 @@ Database host changes therefore follow their own path:
 This repository shares its GitHub automation with the other A-Novel repositories. The runbooks name
 these pieces:
 
-| Name                          | What it is                                                                                                                                                                              |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `a-novel repo update`         | The stack CLI command that applies a repository's settings, rulesets and managed workflows.                                                                                             |
-| `approve-pr.yaml`             | Records the approval an author cannot give, run by a maintainer or admin who reviewed the pull request: `gh workflow run approve-pr.yaml --repo a-novel/infra -f pull_request="<URL>"`. |
-| `merge-gate`, `epic-freeze`   | Required checks that hold a pull request belonging to a larger change, spread over several pull requests, until that change can land whole. A standalone pull request passes.           |
-| Dependencies App              | The bot identity Renovate runs as, and the one `pin-release.yaml` opens each release's pull request as.                                                                                 |
-| Agent App (`anovelbot-agent`) | The bot identity the automation acts as, for example to record an approval or write `DOWNTIME`.                                                                                         |
+| Name                          | What it is                                                                                                                                                                    |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `a-novel repo update`         | The stack CLI command that applies a repository's settings, rulesets and managed workflows.                                                                                   |
+| `approve-pr.yaml`             | Records the approval an author cannot give, run by an admin for their own pull request only: `gh workflow run approve-pr.yaml --repo a-novel/infra -f pull_request="<URL>"`.  |
+| `merge-gate`, `epic-freeze`   | Required checks that hold a pull request belonging to a larger change, spread over several pull requests, until that change can land whole. A standalone pull request passes. |
+| Dependencies App              | The bot identity Renovate runs as, and the one `pin-release.yaml` opens each release's pull request as.                                                                       |
+| Agent App (`anovelbot-agent`) | The bot identity the automation acts as, for example to record an approval or write `DOWNTIME`.                                                                               |
 
 ## Why the repository is laid out this way
 

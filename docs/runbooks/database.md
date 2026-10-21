@@ -159,7 +159,8 @@ deploy:  roots applied ──► rollout (per service) ──► database host e
    A push removes the label, because the label approved the plans of an earlier commit. Review the
    new plans and add it again.
 
-4. **Approve and merge.** A maintainer or admin who reviewed the pull request records the approval:
+4. **Approve and merge.** A maintainer or admin reviews and approves the pull request. An admin who
+   opened it may record the approval themselves instead:
 
    ```bash
    gh workflow run approve-pr.yaml --repo a-novel/infra -f pull_request="$PR"
