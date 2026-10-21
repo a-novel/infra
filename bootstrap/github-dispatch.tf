@@ -7,7 +7,7 @@ locals {
   github_dot_repositories = [for owner in local.github_dispatch_owners : "${owner}/.github"]
 
   github_dispatch_schedules = {
-    "notify-audit.yaml"    = { cron = "*/5 * * * *", repositories = local.github_dot_repositories }
+    "notify-audit.yaml"    = { cron = "11-59/30 * * * *", repositories = local.github_dot_repositories }
     "notify-issues.yaml"   = { cron = "4-59/15 * * * *", repositories = local.github_dot_repositories }
     "notify-stuck.yaml"    = { cron = "17 * * * *", repositories = local.github_dot_repositories }
     "notify-warnings.yaml" = { cron = "0 7 * * *", repositories = local.github_dot_repositories }
