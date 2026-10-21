@@ -46,7 +46,7 @@ jobs:
       window: ${{ steps.window.outputs.window }}
     steps:
       # workflow_dispatch is open to anyone with write access.
-      - uses: a-novel-kit/workflows/generic-actions/require-role@v1.70.0
+      - uses: a-novel-kit/workflows/generic-actions/require-role@v1.71.0
         with:
           roles: admin
 
@@ -140,7 +140,7 @@ jobs:
       id-token: write
     steps:
       # "Re-run this job" skips the downtime job's gate, and would replay an old run's posts.
-      - uses: a-novel-kit/workflows/generic-actions/require-role@v1.70.0
+      - uses: a-novel-kit/workflows/generic-actions/require-role@v1.71.0
         with:
           roles: admin
 
