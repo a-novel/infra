@@ -22,8 +22,20 @@ locals {
     POSTGRES_DATABASE    = "agora_authentication"
     POSTGRES_TLS_ENABLED = "false"
   }
+  # Registration and account emails, sent by the REST API and the maintenance job.
+  mail_env = {
+    PLATFORM_AUTH_URL   = var.smtp.platform_auth_url
+    SMTP_ADDR           = "${var.smtp.host}:587"
+    SMTP_MAX_CONCURRENT = "8"
+    SMTP_SENDER_DOMAIN  = var.smtp.host
+    SMTP_SENDER_EMAIL   = var.smtp.sender_email
+    SMTP_SENDER_NAME    = var.smtp.sender_name
+    SMTP_TIMEOUT        = "5s"
+    SMTP_USERNAME       = var.smtp.username
+  }
+  maintenance_secret_env = { POSTGRES_PASSWORD = "app-password", SMTP_SENDER_PASSWORD = "smtp-sender-password" }
   rest_secret_env = merge(
-    { POSTGRES_PASSWORD = "app-password", SMTP_SENDER_PASSWORD = "smtp-sender-password" },
+    local.maintenance_secret_env,
     var.waitlist_url == null ? {} : { WAITLIST_SECRET = "waitlist-secret" },
   )
 }
@@ -102,6 +114,77 @@ resource "google_cloud_run_v2_job" "migrations" {
   }
 }
 
+# Named humans run Authentication's one-time operations here, naming the operation in the
+# execution's arguments, such as `account-role --email <address> --role auth:superadmin`. The stored
+# job names none, so a run without arguments only prints the image's help. A failed run is not
+# retried: the operator reads its log and runs it again, which the operations converge on.
+resource "google_cloud_run_v2_job" "maintenance" {
+  project             = local.private_project_id
+  name                = "agora-authentication-maintenance"
+  location            = local.region
+  deletion_protection = true
+  labels              = { environment = "production", component = "authentication", role = "maintenance" }
+
+  template {
+    task_count  = 1
+    parallelism = 1
+
+    template {
+      service_account       = module.private_runtime.workloads["maintain"].service_account
+      execution_environment = "EXECUTION_ENVIRONMENT_GEN2"
+      timeout               = "600s"
+      max_retries           = 0
+
+      containers {
+        name  = "maintenance"
+        image = local.image.maintenance
+
+        dynamic "env" {
+          for_each = merge(local.database_env, local.downtime_env, local.mail_env, {
+            POSTGRES_MAX_OPEN_CONNS = "2"
+            POSTGRES_MAX_IDLE_CONNS = "1"
+          })
+          content {
+            name  = env.key
+            value = env.value
+          }
+        }
+
+        dynamic "env" {
+          for_each = local.maintenance_secret_env
+          content {
+            name = env.key
+            value_source {
+              secret_key_ref {
+                secret  = "projects/${local.management_project_id}/secrets/production-authentication-${env.value}"
+                version = tostring(var.secret_versions[env.value])
+              }
+            }
+          }
+        }
+
+        resources {
+          limits = { cpu = "1", memory = "512Mi" }
+        }
+      }
+
+      # Private ranges reach the database; SMTP leaves through Google's managed egress.
+      vpc_access {
+        egress = "PRIVATE_RANGES_ONLY"
+        network_interfaces {
+          network    = local.network.network
+          subnetwork = local.network.subnetwork
+          tags       = local.network.tags
+        }
+      }
+    }
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
 # Authentication calls the private JSON Keys service over Cloud Run's internal ingress.
 data "google_cloud_run_v2_service" "json_keys" {
   project  = local.private_project_id
@@ -152,7 +235,7 @@ resource "google_cloud_run_v2_service" "rest" {
       }
 
       dynamic "env" {
-        for_each = merge(local.database_env, local.downtime_env, {
+        for_each = merge(local.database_env, local.downtime_env, local.mail_env, {
           # One 64 MiB Argon2 hash at a time per vCPU: more slots add memory, not throughput.
           ARGON2_MAX_CONCURRENT = "1"
           GCLOUD_PROJECT_ID     = local.api_project_id
@@ -160,7 +243,6 @@ resource "google_cloud_run_v2_service" "rest" {
           # hash's 64 MiB before the next one doubles the heap.
           GOMEMLIMIT              = "384MiB"
           OTEL                    = "true"
-          PLATFORM_AUTH_URL       = var.smtp.platform_auth_url
           POSTGRES_MAX_IDLE_CONNS = "5"
           POSTGRES_MAX_OPEN_CONNS = "10"
           REST_CLIENT_IP_HEADER   = "X-Client-IP"
@@ -168,13 +250,6 @@ resource "google_cloud_run_v2_service" "rest" {
           REST_TIMEOUT_SHUTDOWN   = "9s"
           SERVICE_JSON_KEYS_HOST  = trimprefix(data.google_cloud_run_v2_service.json_keys.uri, "https://")
           SERVICE_JSON_KEYS_PORT  = "443"
-          SMTP_ADDR               = "${var.smtp.host}:587"
-          SMTP_MAX_CONCURRENT     = "8"
-          SMTP_SENDER_DOMAIN      = var.smtp.host
-          SMTP_SENDER_EMAIL       = var.smtp.sender_email
-          SMTP_SENDER_NAME        = var.smtp.sender_name
-          SMTP_TIMEOUT            = "5s"
-          SMTP_USERNAME           = var.smtp.username
           }, var.waitlist_url == null ? {} : {
           WAITLIST_URL = var.waitlist_url
         })
