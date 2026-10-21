@@ -195,15 +195,14 @@ runs:
           while read -r registry; do
             skopeo login -u oauth2accesstoken --password-stdin "$registry" <<<"$ACCESS_TOKEN" >/dev/null
           done
-        jq -c '.planned_values.outputs.image_copies.value[]?' "$RUNNER_TEMP/plan.json" | while read -r image; do
-          source="$(jq -r .source <<<"$image")"
-          target="$(jq -r .target <<<"$image")"
-          digest="${source##*@}"
-          # Immutable tags make the copy fail if the tag already names another image.
-          if ! skopeo inspect --raw "docker://${target%:*}@$digest" >/dev/null 2>&1; then
-            skopeo copy --all --preserve-digests "docker://${source%%:*}@$digest" "docker://$target"
-          fi
-        done
+        jq -r '.planned_values.outputs.image_copies.value[]? | "\(.source) \(.target)"' "$RUNNER_TEMP/plan.json" |
+          while read -r source target; do
+            digest="${source##*@}"
+            # Immutable tags make the copy fail if the tag already names another image.
+            if ! skopeo inspect --raw "docker://${target%:*}@$digest" >/dev/null 2>&1; then
+              skopeo copy --all --preserve-digests "docker://${source%%:*}@$digest" "docker://$target"
+            fi
+          done
 
     - name: Apply
       if: inputs.apply == 'true' && steps.plan.outputs.changes == 'true'
