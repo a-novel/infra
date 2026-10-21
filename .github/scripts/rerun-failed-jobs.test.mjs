@@ -107,6 +107,51 @@ describe("tokenJobs", () => {
   it("finds nothing in a plan with no prior state", () => {
     assert.deepEqual(tokenJobs({ configuration: plan.configuration }), []);
   });
+
+  it("follows a module that another module calls", () => {
+    const smoke = plan.configuration.root_module.module_calls.smoke.module;
+    const nested = {
+      configuration: {
+        root_module: {
+          module_calls: {
+            outer: { module: { module_calls: { inner: { module: smoke } } } },
+          },
+        },
+      },
+      prior_state: {
+        values: {
+          root_module: {
+            child_modules: [
+              {
+                address: "module.outer",
+                child_modules: [
+                  {
+                    address: "module.outer.module.inner",
+                    resources: [
+                      job(
+                        "module.outer.module.inner.google_cloud_run_v2_job.smoke",
+                        "agora-nested-smoke",
+                        "c3",
+                      ),
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    };
+    assert.deepEqual(
+      tokenJobs(nested).map(({ source, name }) => [source, name]),
+      [
+        [
+          "module.outer.module.inner.terraform_data.smoke",
+          "agora-nested-smoke",
+        ],
+      ],
+    );
+  });
 });
 
 describe("failedSources", () => {

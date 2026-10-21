@@ -27,38 +27,47 @@ export function tokenJobs(plan) {
   return jobs;
 }
 
-/** Yields [job, source] address pairs for each configured job whose token derives from a terraform_data. */
-function* tokenSources(module, prefix = "") {
-  for (const resource of module.resources ?? []) {
-    const source =
-      resource.expressions?.run_execution_token?.references?.find(
-        isTerraformData,
-      );
-    if (resource.type === "google_cloud_run_v2_job" && source) {
-      yield [prefix + resource.address, prefix + source];
+/**
+ * Yields [job, source] address pairs for each configured job whose token derives from a
+ * terraform_data. The loop also visits each module call it appends.
+ */
+function* tokenSources(root) {
+  const modules = [{ module: root, prefix: "" }];
+  for (const { module, prefix } of modules) {
+    for (const resource of module.resources ?? []) {
+      const source =
+        resource.expressions?.run_execution_token?.references?.find(
+          isTerraformData,
+        );
+      if (resource.type === "google_cloud_run_v2_job" && source) {
+        yield [prefix + resource.address, prefix + source];
+      }
     }
-  }
-  for (const [name, call] of Object.entries(module.module_calls ?? {})) {
-    yield* tokenSources(call.module, `${prefix}module.${name}.`);
+    for (const [name, call] of Object.entries(module.module_calls ?? {})) {
+      modules.push({ module: call.module, prefix: `${prefix}module.${name}.` });
+    }
   }
 }
 
-/** Yields every resource of a state module and of its child modules. */
-function* resources(module) {
-  yield* module.resources ?? [];
-  for (const child of module.child_modules ?? []) yield* resources(child);
+/** Yields every resource of a state module and of its child modules, which the loop appends. */
+function* resources(root) {
+  const modules = [root];
+  for (const module of modules) {
+    yield* module.resources ?? [];
+    modules.push(...(module.child_modules ?? []));
+  }
 }
 
 /**
- * The token sources of the jobs whose last execution failed or was cancelled. A status that cannot
- * be read starts nothing, and the plan runs unchanged.
+ * The token sources of the jobs whose last execution failed or was cancelled. The statuses are read
+ * together. A status that cannot be read starts nothing, and the plan runs unchanged.
  */
 export async function failedSources(jobs, statusOf, log = () => {}) {
+  const statuses = await Promise.all(jobs.map((job) => statusOf(job)));
   const sources = new Set();
-  for (const job of jobs) {
-    const status = await statusOf(job);
-    log(`${job.name}: last execution ${status ?? "unknown"}`);
-    if (["EXECUTION_FAILED", "EXECUTION_CANCELLED"].includes(status))
+  for (const [index, job] of jobs.entries()) {
+    log(`${job.name}: last execution ${statuses[index] ?? "unknown"}`);
+    if (["EXECUTION_FAILED", "EXECUTION_CANCELLED"].includes(statuses[index]))
       sources.add(job.source);
   }
   return [...sources];

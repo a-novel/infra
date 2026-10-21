@@ -74,18 +74,24 @@ function headVersion(repository, branch) {
 
 /** Moves every image found to version, with the digest of its published manifest. */
 function rewriteImages(files, images, version) {
-  for (const image of images) {
+  const digests = images.map((image) => {
     const manifest = execFileSync("skopeo", [
       "inspect",
       "--raw",
       `docker://${image}:${version}`,
     ]);
-    const digest = `sha256:${createHash("sha256").update(manifest).digest("hex")}`;
-    for (const file of files) {
-      const content = readFileSync(file, "utf8");
-      const moved = rewrite(content, image, version, digest);
-      if (moved !== content) writeFileSync(file, moved);
-    }
+    return [
+      image,
+      `sha256:${createHash("sha256").update(manifest).digest("hex")}`,
+    ];
+  });
+  for (const file of files) {
+    const content = readFileSync(file, "utf8");
+    const moved = digests.reduce(
+      (text, [image, digest]) => rewrite(text, image, version, digest),
+      content,
+    );
+    if (moved !== content) writeFileSync(file, moved);
   }
 }
 

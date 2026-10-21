@@ -115,7 +115,6 @@ jobs:
             # OpenTofu never reads Markdown, so documentation alone deploys nothing.
             [ -n "$(git diff --name-only "$base" HEAD -- "${paths[@]}" ':(exclude)*.md')" ]
           }
-          deploy() { changed "$1" && echo true || echo false; }
 
           # The service roots are the directories next to foundation, so a new one needs no edit here.
           mapfile -t services < <(find environments/production -mindepth 1 -maxdepth 1 -type d ! -name foundation -printf '%f\n' | sort)
@@ -124,11 +123,13 @@ jobs:
           # shellcheck disable=SC2086 # One commit per word.
           allow="$(node .github/scripts/deletion-approval.mjs $commits)"
 
-          # The announcement lists the roots that changed, with each image's new tag.
+          # The loop records the roots that changed, which the announcement lists with each image's
+          # new tag.
           roots="" deploys=false
+          declare -A deployed=([bootstrap]=false [environments/production/foundation]=false)
           for dir in bootstrap environments/production/foundation "${services[@]/#/environments/production/}"; do
             changed "$dir" || continue
-            deploys=true
+            deploys=true deployed[$dir]=true
             images=""
             if [ "$all" = false ]; then
               images="$(git diff --unified=0 "$base" HEAD -- "$dir/terraform.tfvars" |
@@ -148,8 +149,8 @@ jobs:
 
           {
             echo "deploys=$deploys"
-            echo "bootstrap=$(deploy bootstrap)"
-            echo "foundation=$(deploy environments/production/foundation)"
+            echo "bootstrap=${deployed[bootstrap]}"
+            echo "foundation=${deployed[environments/production/foundation]}"
             echo "services=$(jq -cn '$ARGS.positional' --args "${services[@]}")"
             echo "allow=$allow"
           } | tee -a "$GITHUB_OUTPUT"
