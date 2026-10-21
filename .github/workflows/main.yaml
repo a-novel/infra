@@ -150,7 +150,9 @@ jobs:
           # renovate: datasource=github-releases depName=rhysd/actionlint
           version: 1.7.12
           cache: false
-          shellcheck: false
+          # Checks the workflows' run steps with the shellcheck that lint-shell installed above.
+          # actionlint never reads the composite actions under .github/actions.
+          shellcheck: true
           pyflakes: false
 
       - name: Audit GitHub Actions security

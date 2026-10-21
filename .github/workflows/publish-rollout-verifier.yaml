@@ -131,4 +131,5 @@ jobs:
         env:
           DIGEST: ${{ steps.publish.outputs.digest }}
         run: |
+          # shellcheck disable=SC2016 # The backticks are Markdown code spans.
           printf 'Tooling artifact: `ghcr.io/a-novel/infra/%s@%s`\n\nSource: `%s`\n\nVerify provenance before promotion. This run does not deploy, start hosts or approve a rollout.\n' "${TOOL}" "${DIGEST}" "${GITHUB_SHA}" >>"${GITHUB_STEP_SUMMARY}"
