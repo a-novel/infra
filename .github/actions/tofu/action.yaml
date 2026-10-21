@@ -170,8 +170,7 @@ runs:
           exit 1
         fi
         for service in $services; do
-          if [ -z "${DOWNTIME:-}" ] || ! jq -e --arg component "service-$service.database" '.components | index($component)' <<<"$DOWNTIME" >/dev/null \
-            || [ "$(date -d "$(jq -r .start <<<"$DOWNTIME")" +%s)" -gt "$(date +%s)" ]; then
+          if [ "$(node .github/scripts/downtime.mjs started "service-$service.database")" != true ]; then
             echo "::error::No planned downtime in progress lists service-$service.database; schedule one with downtime.yaml, then re-run this check."
             exit 1
           fi
