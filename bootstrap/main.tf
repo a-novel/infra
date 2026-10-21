@@ -98,10 +98,6 @@ locals {
       contract = "SMTP_SENDER_PASSWORD"
       purpose  = "Authentication service production SMTP credential"
     }
-    production-authentication-super-admin-password = {
-      contract = "SUPER_ADMIN_PASSWORD"
-      purpose  = "Authentication bootstrap administrator password"
-    }
     production-authentication-waitlist-secret = {
       contract = "WAITLIST_SECRET"
       purpose  = "Authentication invitation-list request signing key"

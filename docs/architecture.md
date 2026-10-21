@@ -146,7 +146,6 @@ version their root's `terraform.tfvars` pins.
 | `production-json-keys-app-master-key`                      | JSON Keys runtime, rotation job                              |
 | `production-authentication-smtp-sender-password`           | Authentication API and maintenance job                       |
 | `production-authentication-waitlist-secret`                | Authentication API, when the waitlist is on                  |
-| `production-authentication-super-admin-password`           | No workload since the initializer's retirement               |
 | `production-genai-openai-api-key`                          | GenAI runtime and sweep                                      |
 | `production-<service>-app-password`                        | Database host and database workloads                         |
 | `production-<service>-pgbackrest-{ca,database,repository}` | Database host and repository VM (TLS)                        |
