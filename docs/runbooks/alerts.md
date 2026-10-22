@@ -26,6 +26,9 @@ downtime runs. The job log prints the response:
 No response at all means Authentication itself is down. Read the logs of `agora-authentication-rest`
 in the `a-novel-public-api-prod` project.
 
+An SMTP warning with `category=timeout` in those logs means the connection never left: the
+[egress allowlist](../architecture.md#network) or NAT dropped it, and neither logs a refusal.
+
 If the checks stopped running, GitHub disabled the schedule after 60 days without repository
 activity. Enable it again:
 
