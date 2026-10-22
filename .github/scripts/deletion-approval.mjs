@@ -25,11 +25,24 @@ function changesLabel(event, mergedAt) {
   );
 }
 
-// A failure's message carries the command's stderr.
-const gh = (...args) =>
-  JSON.parse(
-    execFileSync("gh", ["api", ...args], { encoding: "utf8", stdio: "pipe" }),
-  );
+// A failure's message carries the command's stderr. GitHub sometimes answers a 5xx with an empty
+// body, which gh reports without its status. A client error is an answer; every other failure
+// retries.
+function gh(...args) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return JSON.parse(
+        execFileSync("gh", ["api", ...args], {
+          encoding: "utf8",
+          stdio: "pipe",
+        }),
+      );
+    } catch (error) {
+      if (attempt === 3 || /HTTP 4\d\d/.test(error.stderr)) throw error;
+      execFileSync("sleep", [String(attempt)]);
+    }
+  }
+}
 
 /** The login's role on the repository, or "" for someone outside it. */
 function role(repository, login) {
@@ -67,7 +80,9 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
     console.log(main(process.argv.slice(2), process.env));
   } catch (error) {
-    console.error(`::error::${error.message}`);
-    process.exit(1);
+    // An unread approval denies deletions. The plan policy still stops a plan that deletes or
+    // unprotects a resource, and every other change deploys.
+    console.error(`::warning::Deletions stay blocked: ${error.message}`);
+    console.log(false);
   }
 }

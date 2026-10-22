@@ -1,5 +1,16 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import {
+  chmodSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { approvedAtMerge, label } from "./deletion-approval.mjs";
 
@@ -79,5 +90,41 @@ describe("approvedAtMerge", () => {
     ];
     assert.equal(approvedAtMerge(events, merged, trusted), false);
     assert.equal(approvedAtMerge([], merged, trusted), false);
+  });
+});
+
+describe("the command line", () => {
+  it("denies deletions with a warning when GitHub keeps failing", (t) => {
+    const bin = mkdtempSync(join(tmpdir(), "deletion-approval-"));
+    t.after(() => rmSync(bin, { recursive: true, force: true }));
+    writeFileSync(
+      join(bin, "gh"),
+      `#!/bin/sh\necho "$*" >> "${bin}/calls"\necho "unexpected end of JSON input" >&2\nexit 1\n`,
+    );
+    chmodSync(join(bin, "gh"), 0o755);
+
+    const run = spawnSync(
+      process.execPath,
+      [
+        fileURLToPath(new URL("deletion-approval.mjs", import.meta.url)),
+        "7e1e237",
+      ],
+      {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: `${bin}:${process.env.PATH}`,
+          REPOSITORY: "a-novel/infra",
+        },
+      },
+    );
+
+    assert.equal(run.status, 0);
+    assert.equal(run.stdout, "false\n");
+    assert.match(run.stderr, /^::warning::Deletions stay blocked/);
+    assert.equal(
+      readFileSync(join(bin, "calls"), "utf8").trim().split("\n").length,
+      3,
+    );
   });
 });
