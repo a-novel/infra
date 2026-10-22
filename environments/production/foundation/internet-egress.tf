@@ -39,6 +39,21 @@ resource "google_compute_address" "nat" {
   }
 }
 
+# The workloads in the egress allowlist run their Direct VPC egress here, apart from the VMs, since
+# Cloud NAT bills every instance it serves. At their caps and mid-rollout they hold 25 addresses,
+# two per service instance and one per job task, which Cloud Run reserves 16 at a time. A /25 holds
+# eight such blocks; Google's minimum is a /26.
+resource "google_compute_subnetwork" "egress" {
+  project = google_project.workload.project_id
+  region  = var.region
+  name    = "${local.network_name}-egress-${var.region}"
+
+  ip_cidr_range            = var.egress_subnet_cidr
+  network                  = google_compute_network.production.id
+  private_ip_google_access = true
+  stack_type               = "IPV4_ONLY"
+}
+
 resource "google_compute_router" "nat" {
   project = google_project.workload.project_id
   region  = var.region
@@ -46,8 +61,7 @@ resource "google_compute_router" "nat" {
   network = google_compute_network.production.id
 }
 
-# NAT serves the whole primary range, the database and repository VMs included. The firewall decides
-# what reaches it: only the egress allowlist.
+# The firewall decides what reaches NAT: only the egress allowlist.
 resource "google_compute_router_nat" "production" {
   project = google_project.workload.project_id
   region  = var.region
@@ -59,7 +73,7 @@ resource "google_compute_router_nat" "production" {
   source_subnetwork_ip_ranges_to_nat = "LIST_OF_SUBNETWORKS"
 
   subnetwork {
-    name                    = google_compute_subnetwork.production.id
+    name                    = google_compute_subnetwork.egress.id
     source_ip_ranges_to_nat = ["PRIMARY_IP_RANGE"]
   }
 
@@ -69,8 +83,8 @@ resource "google_compute_router_nat" "production" {
   }
 }
 
-# Cloud NAT needs a default route. It is VPC-wide, so the deny-all rule alone keeps the database and
-# repository VMs off the internet, as it already does for every destination their rules do not name.
+# Cloud NAT needs a default route. It is VPC-wide, but the database and repository VMs have neither
+# NAT nor an external address, and the deny-all rule refuses their traffic first.
 resource "google_compute_route" "internet" {
   project = google_project.workload.project_id
   name    = "default-internet"

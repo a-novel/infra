@@ -144,7 +144,7 @@ resource "google_compute_firewall" "allow_postgres_ingress" {
 
   direction     = "INGRESS"
   priority      = 800
-  source_ranges = [var.subnet_cidr]
+  source_ranges = [var.subnet_cidr, var.egress_subnet_cidr]
   target_tags   = [local.network_tags[each.value.identity]]
 
   allow {

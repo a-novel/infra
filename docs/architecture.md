@@ -19,11 +19,13 @@ own identities, image repositories, network tags and database hosts.
 
 ## Network
 
-- **VPC** `agora-production` has one subnet, `10.20.0.0/24`, no load balancer and no external IP on
-  any VM.
-- **Internet egress** leaves through Cloud NAT, from one reserved address, `agora-production-nat`.
-  Foundation's `nat_address` output gives it. A VPC-wide default route serves NAT, and NAT logs only
-  its errors.
+- **VPC** `agora-production` has two subnets, no load balancer and no external IP on any VM:
+  - `10.20.0.0/24` holds the VMs and the workloads that stay inside Google;
+  - `10.20.1.0/25`, the egress subnet, holds the Direct VPC egress of the egress allowlist's
+    workloads.
+- **Internet egress** leaves through Cloud NAT, which serves the egress subnet alone, from one
+  reserved address, `agora-production-nat`. Foundation's `nat_address` output gives it. A VPC-wide
+  default route serves NAT, and NAT logs only its errors.
 - **Google APIs** are reached through the restricted VIP ranges `199.36.153.4/30` and
   `34.126.0.0/18`. Private DNS zones resolve `googleapis.com`, `pkg.dev` and `run.app` to them.
 - **Egress allowlist.** A network firewall policy, `agora-egress-allowlist`, runs before the firewall
@@ -42,7 +44,7 @@ own identities, image repositories, network tags and database hosts.
 
   | Traffic                                                                              | Priority |
   | ------------------------------------------------------------------------------------ | -------- |
-  | PostgreSQL into each database host, from the subnet, on its own port                 | 800      |
+  | PostgreSQL into each database host, from both subnets, on its own port               | 800      |
   | Each service's PostgreSQL egress, to its own database port only                      | 810      |
   | HTTPS egress to the Google API ranges, from the private workloads                    | 800      |
   | pgBackRest TLS on 8432, from a database host to its repository VM                    | 810      |

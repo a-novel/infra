@@ -57,6 +57,7 @@ service_release_zones = {
 }
 shared_vpc_enabled     = true
 subnet_cidr            = "10.20.0.0/24"
+egress_subnet_cidr     = "10.20.1.0/25"
 workload_project_id    = "a-novel-production-prod"
 workload_project_name  = "A-Novel production"
 host_credentials_image = "ghcr.io/a-novel/infra/host-credentials:sha-fd585ed07563425b0268432163f43f7b21590255-37551742865-1@sha256:a5e264fc51c824c52fb6fd59b035e14e52fdc9f77e47b0375b352d8ad9bfd00d"

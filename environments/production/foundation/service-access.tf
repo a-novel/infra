@@ -223,3 +223,14 @@ resource "google_compute_subnetwork_iam_member" "public_api_run" {
   role       = "roles/compute.networkUser"
   member     = module.public_api_project["public-api"].service_agents["run.googleapis.com"]
 }
+
+# Authentication's REST API reaches the internet from the egress subnet.
+resource "google_compute_subnetwork_iam_member" "public_api_run_egress" {
+  count = length(google_project_iam_custom_role.foundation_public_api)
+
+  project    = google_compute_shared_vpc_service_project.public_api["public-api"].host_project
+  region     = var.region
+  subnetwork = google_compute_subnetwork.egress.name
+  role       = "roles/compute.networkUser"
+  member     = module.public_api_project["public-api"].service_agents["run.googleapis.com"]
+}

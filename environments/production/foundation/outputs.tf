@@ -17,6 +17,8 @@ output "network" {
     subnet_id    = google_compute_subnetwork.production.id
     subnet_cidr  = google_compute_subnetwork.production.ip_cidr_range
     network_tags = local.network_tags
+    # The subnet whose workloads leave for the internet, through Cloud NAT.
+    egress_subnet_id = google_compute_subnetwork.egress.id
   }
 }
 

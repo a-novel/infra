@@ -64,6 +64,17 @@ run "keeps_databases_private_and_preserved" {
 run "denies_everything_the_network_does_not_allow" {
   command = plan
 
+  # Mocks give both subnets the same generated ID, which would hide the subnet NAT serves.
+  override_resource {
+    target = google_compute_subnetwork.production
+    values = { id = "projects/a-novel-production-prod/regions/europe-west1/subnetworks/agora-production-europe-west1" }
+  }
+
+  override_resource {
+    target = google_compute_subnetwork.egress
+    values = { id = "projects/a-novel-production-prod/regions/europe-west1/subnetworks/agora-production-egress-europe-west1" }
+  }
+
   assert {
     condition = (
       google_compute_firewall.deny_other_egress.direction == "EGRESS" &&
@@ -88,9 +99,17 @@ run "denies_everything_the_network_does_not_allow" {
   assert {
     condition = (
       google_compute_firewall.allow_iap_ssh.source_ranges == toset(["35.235.240.0/20"]) &&
-      alltrue([for rule in google_compute_firewall.allow_postgres_ingress : rule.source_ranges == toset([var.subnet_cidr])])
+      alltrue([for rule in google_compute_firewall.allow_postgres_ingress : rule.source_ranges == toset([var.subnet_cidr, var.egress_subnet_cidr])])
     )
-    error_message = "SSH must come only from Identity-Aware Proxy, and PostgreSQL only from the private subnet."
+    error_message = "SSH must come only from Identity-Aware Proxy, and PostgreSQL only from the two private subnets."
+  }
+
+  assert {
+    condition = (
+      google_compute_router_nat.production.source_subnetwork_ip_ranges_to_nat == "LIST_OF_SUBNETWORKS" &&
+      [for subnet in google_compute_router_nat.production.subnetwork : subnet.name] == [google_compute_subnetwork.egress.id]
+    )
+    error_message = "Cloud NAT must serve the egress subnet alone, never the VMs' subnet."
   }
 }
 
