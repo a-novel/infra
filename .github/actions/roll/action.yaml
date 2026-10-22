@@ -46,8 +46,10 @@ runs:
           exit 0
         fi
         # Observed state, not this deploy's changes: a cancelled or force-merged deploy loses nothing.
+        # An image pin changes only the all-instances config. jq's `//` replaces false as well as a
+        # missing value, so the check compares with false.
         database_pending="$(gcloud compute instance-groups managed describe "$group" "${where[@]}" --format=json |
-          jq '(.status.versionTarget.isReached and (.status.allInstancesConfig.effective // true)) | not')"
+          jq '(.status.versionTarget.isReached and .status.allInstancesConfig.effective != false) | not')"
         # A service enrolls in native backups after its first deploy, so its repository VM can be absent.
         repository_exists=false config="" repository_pending=false
         if [ -n "$(gcloud compute instances list --filter="name=$repository" --zones=europe-west1-d --project=a-novel-production-prod --format='value(name)')" ]; then
