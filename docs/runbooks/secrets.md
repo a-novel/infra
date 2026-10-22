@@ -7,8 +7,8 @@ only once a pull request pins it.
 
 ## Rotate a secret
 
-This is the general procedure. The database password, the SMTP password, the waitlist secret and the
-pgBackRest certificates rotate differently, because something besides the service reads them.
+This is the general procedure. The database password, the waitlist secret and the pgBackRest
+certificates rotate differently, because something besides the service reads them.
 `production-json-keys-app-master-key` has no rotation procedure. It encrypts the signing keys JSON
 Keys stores, and a new value cannot decrypt them.
 
@@ -62,23 +62,17 @@ The database host sets the application role's password at boot, from foundation'
 
 ## SMTP (Google Workspace relay)
 
-Authentication sends mail through the Google Workspace SMTP relay on port 587, with authenticated
-STARTTLS. The authentication root's `smtp` input names the relay, the account and the sender. The
-password is a Google **app password** of that account.
+Authentication sends mail through the Google Workspace SMTP relay on port 587, with STARTTLS and no
+credential: the relay admits it by the production NAT address. The authentication root's `smtp`
+input names the relay and the sender.
 
 The relay rule is in Google Admin under **Apps → Google Workspace → Gmail → Routing → SMTP relay
-service**. Its settings are "only addresses in my domains", "require SMTP authentication" and
-"require TLS", with no IP allowlist.
+service**. Its settings are "only addresses in my domains", "only accept mail from the specified IP
+addresses" with the NAT address alone, and "require TLS", without SMTP authentication.
 
-To rotate the app password:
-
-1. In [App passwords](https://myaccount.google.com/apppasswords), create a new one.
-2. Add it as a version of `production-authentication-smtp-sender-password`.
-3. Bump `smtp-sender-password` in the authentication root and merge.
-4. Check that health reports `client:smtp` up, and that a real email arrives.
-5. Revoke the old app password, then disable the old version.
-
-Changing the Google account's password revokes every app password.
+Health reporting `client:smtp` up proves only that the relay answers over TLS. Only a real email
+proves that the relay accepts the service's address, so send one after any change to the rule or
+to the [NAT address](../architecture.md#network).
 
 ## Waitlist
 

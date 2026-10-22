@@ -6,13 +6,11 @@ images = {
 }
 
 secret_versions = {
-  app-password         = 1
-  smtp-sender-password = 4
+  app-password = 1
 }
 
 smtp = {
   host              = "smtp-relay.gmail.com"
-  username          = "geoffroy.vincent@agorastoryverse.com"
   sender_email      = "no-reply@agorastoryverse.com"
   sender_name       = "Agora"
   platform_auth_url = "https://www.agorastoryverse.com"

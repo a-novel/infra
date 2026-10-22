@@ -25,7 +25,8 @@ own identities, image repositories, network tags and database hosts.
     workloads.
 - **Internet egress** leaves through Cloud NAT, which serves the egress subnet alone, from one
   reserved address, `agora-production-nat`. Foundation's `nat_address` output gives it. A VPC-wide
-  default route serves NAT, and NAT logs only its errors.
+  default route serves NAT, and NAT logs only its errors. OpenAI's project and the Workspace SMTP
+  relay admit that address alone, so a new address joins both before it replaces the old one.
 - **Google APIs** are reached through the restricted VIP ranges `199.36.153.4/30` and
   `34.126.0.0/18`. Private DNS zones resolve `googleapis.com`, `pkg.dev` and `run.app` to them.
 - **Egress allowlist.** A network firewall policy, `agora-egress-allowlist`, runs before the firewall
@@ -160,7 +161,6 @@ version their root's `terraform.tfvars` pins.
 | Secret                                                     | Read by                                                      |
 | ---------------------------------------------------------- | ------------------------------------------------------------ |
 | `production-json-keys-app-master-key`                      | JSON Keys runtime, rotation job                              |
-| `production-authentication-smtp-sender-password`           | Authentication API and maintenance job                       |
 | `production-authentication-waitlist-secret`                | Authentication API, when the waitlist is on                  |
 | `production-genai-openai-api-key`                          | GenAI runtime and sweep                                      |
 | `production-<service>-app-password`                        | Database host and database workloads                         |

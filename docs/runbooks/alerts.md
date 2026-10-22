@@ -17,11 +17,11 @@ failed `drift` runs to whoever last edited its schedule.
 after applying the service roots, even when one of them failed. Both skip it while a planned
 downtime runs. The job log prints the response:
 
-| Shows `down`      | Look at                                                                                                         |
-| ----------------- | --------------------------------------------------------------------------------------------------------------- |
-| `client:postgres` | [Database hosts](database.md#inspect-and-connect): is `agora-database.service` running? Is the disk full?       |
-| `client:smtp`     | [SMTP](secrets.md#smtp-google-workspace-relay): was the app password revoked? Is the relay rule still in place? |
-| `api:jsonKeys`    | The `agora-json-keys-grpc` logs in Cloud Run, then its database.                                                |
+| Shows `down`      | Look at                                                                                                   |
+| ----------------- | --------------------------------------------------------------------------------------------------------- |
+| `client:postgres` | [Database hosts](database.md#inspect-and-connect): is `agora-database.service` running? Is the disk full? |
+| `client:smtp`     | [SMTP](secrets.md#smtp-google-workspace-relay): does the relay rule still admit the NAT address?          |
+| `api:jsonKeys`    | The `agora-json-keys-grpc` logs in Cloud Run, then its database.                                          |
 
 No response at all means Authentication itself is down. Read the logs of `agora-authentication-rest`
 in the `a-novel-public-api-prod` project.
