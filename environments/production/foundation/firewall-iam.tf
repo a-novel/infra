@@ -1,13 +1,17 @@
-# Network Admin supplies firewall reads, but firewall writes require a separate grant.
+# Network Admin reads firewall rules and policies and attaches a policy to the network. Writing
+# either requires a separate grant.
 resource "google_project_iam_custom_role" "foundation_firewall" {
   project = google_project.workload.project_id
 
   role_id     = "infraFoundationFirewall"
   title       = "Infra Foundation Firewall"
-  description = "Maintain VPC firewall rules in the workload project."
+  description = "Maintain VPC firewall rules and network firewall policies in the workload project."
   stage       = "GA"
 
   permissions = [
+    "compute.firewallPolicies.create",
+    "compute.firewallPolicies.delete",
+    "compute.firewallPolicies.update",
     "compute.firewalls.create",
     "compute.firewalls.delete",
     "compute.firewalls.update",
