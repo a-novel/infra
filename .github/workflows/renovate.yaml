@@ -25,7 +25,7 @@ jobs:
       packages: read
     steps:
       - name: Run dependency updates
-        uses: a-novel-kit/workflows/generic-actions/renovate@v1.71.0
+        uses: a-novel-kit/workflows/generic-actions/renovate@v1.72.0
         with:
           repository_config: "true"
           github_token: ${{ github.token }}
