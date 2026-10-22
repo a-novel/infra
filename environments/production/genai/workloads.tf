@@ -189,9 +189,10 @@ resource "google_cloud_run_v2_service" "grpc" {
       }
     }
 
-    # Private ranges reach the database; the provider's API leaves through Google's managed egress.
+    # All egress enters the VPC, whose egress allowlist lets only the provider's API out, through
+    # Cloud NAT.
     vpc_access {
-      egress = "PRIVATE_RANGES_ONLY"
+      egress = "ALL_TRAFFIC"
       network_interfaces {
         network    = local.network.network
         subnetwork = local.network.subnetwork
@@ -294,7 +295,7 @@ resource "google_cloud_run_v2_service" "sweep" {
     }
 
     vpc_access {
-      egress = "PRIVATE_RANGES_ONLY"
+      egress = "ALL_TRAFFIC"
       network_interfaces {
         network    = local.network.network
         subnetwork = local.network.subnetwork

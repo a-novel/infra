@@ -37,9 +37,9 @@ run "serves_privately_from_pinned_images_and_secrets" {
   assert {
     condition = alltrue([for service in [google_cloud_run_v2_service.grpc, google_cloud_run_v2_service.sweep] :
       service.ingress == "INGRESS_TRAFFIC_INTERNAL_ONLY" && !service.invoker_iam_disabled &&
-      service.template[0].vpc_access[0].egress == "PRIVATE_RANGES_ONLY"
+      service.template[0].vpc_access[0].egress == "ALL_TRAFFIC"
     ])
-    error_message = "GenAI must stay internal and IAM-authenticated, reaching the database through the VPC and the provider through Google's managed egress."
+    error_message = "GenAI must stay internal and IAM-authenticated, with all egress through the VPC, whose egress allowlist decides what leaves."
   }
 
   assert {
