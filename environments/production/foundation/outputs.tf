@@ -17,7 +17,14 @@ output "network" {
     subnet_id    = google_compute_subnetwork.production.id
     subnet_cidr  = google_compute_subnetwork.production.ip_cidr_range
     network_tags = local.network_tags
+    # The subnet whose workloads leave for the internet, through Cloud NAT.
+    egress_subnet_id = google_compute_subnetwork.egress.id
   }
+}
+
+output "nat_address" {
+  description = "The one address production's internet egress leaves from, which the providers' IP allowlists name."
+  value       = google_compute_address.nat.address
 }
 
 output "database_hosts" {

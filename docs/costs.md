@@ -9,6 +9,7 @@ This document is about what production pays for, and what bounds each cost.
 | Backup storage    | EU multi-region buckets, 14-day full chains, plus versioning and soft delete                                 | Stored bytes, including WAL        |
 | Rollout snapshots | Each rollout's data-disk snapshot, until a later rollout finds it older than 14 days                         | Stored bytes                       |
 | Cloud Run         | JSON Keys 1–2 instances, Authentication 1, GenAI gRPC 0–4 and sweep 0–1; Authentication CPU always allocated | Instance time                      |
+| Internet egress   | Cloud NAT on the egress subnet, one reserved address, and the egress allowlist's Cloud NGFW Standard rules   | NAT hours per instance served      |
 | Control plane     | State, registries, secrets, private DNS (3 zones), logs (30 days), alerts                                    | Small, usage-based                 |
 
 Backup storage only grows today. The buckets keep every version of the objects pgBackRest expires,
@@ -27,8 +28,15 @@ as soon as its drill ends.
 Native backups are estimated at EUR 10–15 extra per service per month. Real figures come from the
 billing report.
 
+Internet egress is estimated at USD 6–10 a month. The address costs USD 0.005 an hour. NAT costs
+USD 0.0014 an hour for each instance it serves: only the egress subnet's Cloud Run instances, never
+the VMs. Authentication's warm instance and the sweep, which its schedule keeps warm, cost about
+USD 2 a month, and GenAI's gRPC server up to USD 4 more at its cap. The bytes that NAT and the
+allowlist process add cents.
+
 Update this page when a VM, disk, warm instance, region or retention setting changes. Prices:
 [Compute](https://cloud.google.com/products/compute/pricing),
 [disks](https://cloud.google.com/compute/disks-image-pricing),
 [Cloud Storage](https://cloud.google.com/storage/pricing),
-[Cloud Run](https://cloud.google.com/run/pricing).
+[Cloud Run](https://cloud.google.com/run/pricing), [Cloud NAT](https://cloud.google.com/nat/pricing),
+[Cloud NGFW](https://cloud.google.com/firewall/pricing).
