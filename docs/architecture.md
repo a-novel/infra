@@ -182,5 +182,6 @@ All state lives in `a-novel-management-prod-232403541574-tofu-state`, one object
   threshold and what to do.
 - **Health checks** call Authentication's `/v2/healthcheck` after each deploy and from `drift.yaml`,
   as [Authentication health](runbooks/alerts.md#authentication-health) details.
-- **Logs** are kept 30 days. Successful health-check requests to Authentication are not logged.
+- **Logs** are kept 30 days. Successful health-check requests to Authentication and successful
+  database health probes are not logged.
 - **Traces and logs** leave the services over OTLP to Google's Telemetry API.

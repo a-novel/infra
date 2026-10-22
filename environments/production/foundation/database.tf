@@ -191,6 +191,25 @@ resource "google_compute_instance_template" "database" {
   ]
 }
 
+# Each database image probes PostgreSQL with `pg_isready` every second, and COS logs every probe as
+# three Docker events. The exclusion keeps a failed probe's `exec_die` line, the start of every other
+# `docker exec`, and the container lifecycle events.
+resource "google_logging_project_exclusion" "database_health_probes" {
+  project = google_project.workload.project_id
+
+  name        = "successful-database-health-probes"
+  description = "Exclude the Docker exec events of successful pg_isready probes on the database hosts."
+  disabled    = false
+  filter      = <<-EOT
+    resource.type="gce_instance"
+    log_id("cos_system")
+    jsonPayload._SYSTEMD_UNIT="docker-events-collector-fluent-bit.service"
+    jsonPayload.MESSAGE=~" container (exec_(create|start): pg_isready |exec_die .* exitCode=0,)"
+  EOT
+
+  depends_on = [google_project_service.workload["logging.googleapis.com"]]
+}
+
 resource "google_compute_instance_group_manager" "database" {
   for_each = local.database_hosts
 
