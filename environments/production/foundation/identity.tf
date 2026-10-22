@@ -69,6 +69,7 @@ locals {
     "roles/compute.viewer",
     "roles/logging.viewer",
     "roles/monitoring.alertPolicyViewer",
+    "roles/monitoring.alertViewer",
     "roles/serviceusage.serviceUsageConsumer",
   ])
 
