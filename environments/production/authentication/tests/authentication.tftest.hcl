@@ -57,9 +57,11 @@ run "splits_private_migrations_from_the_public_api" {
       google_cloud_run_v2_job.migrations.project == "a-novel-production-prod" &&
       google_cloud_run_v2_service.rest.project == "a-novel-public-api-prod" &&
       google_cloud_run_v2_service.rest.ingress == "INGRESS_TRAFFIC_ALL" &&
-      google_cloud_run_v2_service.rest.template[0].vpc_access[0].egress == "PRIVATE_RANGES_ONLY"
+      alltrue([for vpc in [google_cloud_run_v2_service.rest.template[0].vpc_access[0], google_cloud_run_v2_job.maintenance.template[0].template[0].vpc_access[0]] :
+        vpc.egress == "ALL_TRAFFIC"
+      ])
     )
-    error_message = "Migrations stay private; only the REST API is public, and it reaches private ranges through the VPC only."
+    error_message = "Migrations stay private; only the REST API is public. Its egress and the maintenance job's go through the VPC, whose egress allowlist decides what leaves."
   }
 
   assert {

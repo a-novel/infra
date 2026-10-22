@@ -55,8 +55,9 @@ own identities, image repositories, network tags and database hosts.
   and JSON Keys' smoke identity may invoke it.
 - **Authentication REST** has public ingress and IAM authentication, under the custom audience
   `agora-authentication-rest`. Only the platform and the health checks may invoke it, so it can
-  trust the visitor IP the platform sends in `X-Client-IP`. Its egress reaches private ranges
-  through the VPC, and SMTP through Google's managed egress.
+  trust the visitor IP the platform sends in `X-Client-IP`. Its egress and the maintenance job's go
+  through the VPC: SMTP leaves through Cloud NAT, and JSON Keys and the Telemetry API stay on the
+  restricted VIP.
 - **GenAI gRPC and sweep** have internal ingress and IAM authentication. GenAI's smoke identity
   invokes the gRPC service. Only the scheduler identity invokes the sweep. Their egress reaches
   private ranges through the VPC, and OpenAI through Google's managed egress.

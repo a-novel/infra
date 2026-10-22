@@ -168,9 +168,9 @@ resource "google_cloud_run_v2_job" "maintenance" {
         }
       }
 
-      # Private ranges reach the database; SMTP leaves through Google's managed egress.
+      # All egress enters the VPC, whose egress allowlist lets only SMTP out, through Cloud NAT.
       vpc_access {
-        egress = "PRIVATE_RANGES_ONLY"
+        egress = "ALL_TRAFFIC"
         network_interfaces {
           network    = local.network.network
           subnetwork = local.network.subnetwork
@@ -302,9 +302,10 @@ resource "google_cloud_run_v2_service" "rest" {
       }
     }
 
-    # Private ranges reach the database and JSON Keys; SMTP leaves through Google's managed egress.
+    # All egress enters the VPC, whose egress allowlist lets only SMTP out, through Cloud NAT.
+    # JSON Keys and the Telemetry API stay on the restricted VIP.
     vpc_access {
-      egress = "PRIVATE_RANGES_ONLY"
+      egress = "ALL_TRAFFIC"
       network_interfaces {
         network    = local.network.network
         subnetwork = local.network.subnetwork
