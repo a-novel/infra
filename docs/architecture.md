@@ -19,10 +19,25 @@ own identities, image repositories, network tags and database hosts.
 
 ## Network
 
-- **VPC** `agora-production` has one subnet, `10.20.0.0/24`, and no default internet route, NAT
-  gateway, router, load balancer or external IP.
+- **VPC** `agora-production` has one subnet, `10.20.0.0/24`, no load balancer and no external IP on
+  any VM.
+- **Internet egress** leaves through Cloud NAT, from one reserved address, `agora-production-nat`.
+  Foundation's `nat_address` output gives it. A VPC-wide default route serves NAT, and NAT logs only
+  its errors.
 - **Google APIs** are reached through the restricted VIP ranges `199.36.153.4/30` and
   `34.126.0.0/18`. Private DNS zones resolve `googleapis.com`, `pkg.dev` and `run.app` to them.
+- **Egress allowlist.** A network firewall policy, `agora-egress-allowlist`, runs before the firewall
+  rules. It lets named identities reach named hosts, and nothing else:
+
+  | Destination                | Identities                                                  |
+  | -------------------------- | ----------------------------------------------------------- |
+  | `api.openai.com:443`       | `agora-genai-private`, `agora-genai-sweep`                  |
+  | `smtp-relay.gmail.com:587` | `agora-authentication-api`, `agora-authentication-maintain` |
+
+  The firewall resolves each host name through the VPC's Cloud DNS and matches the addresses it
+  returns. Other traffic falls through to the firewall rules. Direct VPC egress logs no firewall
+  verdict, so a refused connection shows only as the caller's own error.
+
 - **Firewall.** A VPC-wide rule denies all egress at priority 1200. Explicit rules above it allow:
 
   | Traffic                                                                              | Priority |

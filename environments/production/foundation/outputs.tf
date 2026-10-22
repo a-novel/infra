@@ -20,6 +20,11 @@ output "network" {
   }
 }
 
+output "nat_address" {
+  description = "The one address production's internet egress leaves from, which the providers' IP allowlists name."
+  value       = google_compute_address.nat.address
+}
+
 output "database_hosts" {
   description = "Service-owned PostgreSQL hosts and disk incarnations for release and recovery."
   value = {

@@ -77,6 +77,15 @@ run "denies_everything_the_network_does_not_allow" {
   }
 
   assert {
+    condition = alltrue([for rule in google_compute_network_firewall_policy_rule.egress_allowlist :
+      rule.direction == "EGRESS" && rule.action == "allow" && length(rule.target_service_accounts) > 0 &&
+      rule.match[0].dest_ip_ranges == null && length(rule.match[0].dest_fqdns) > 0 &&
+      alltrue([for layer4 in rule.match[0].layer4_configs : layer4.ip_protocol == "tcp" && length(layer4.ports) == 1])
+    ])
+    error_message = "The egress allowlist may only let named identities reach named hosts on one TCP port. Everything else must fall through to the deny."
+  }
+
+  assert {
     condition = (
       google_compute_firewall.allow_iap_ssh.source_ranges == toset(["35.235.240.0/20"]) &&
       alltrue([for rule in google_compute_firewall.allow_postgres_ingress : rule.source_ranges == toset([var.subnet_cidr])])

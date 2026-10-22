@@ -38,6 +38,8 @@ resource "google_compute_network" "production" {
   delete_default_routes_on_create = true
   mtu                             = 1460
   routing_mode                    = "REGIONAL"
+  # The egress allowlist's policy runs first: the classic deny-all would otherwise win.
+  network_firewall_policy_enforcement_order = "BEFORE_CLASSIC_FIREWALL"
 
   depends_on = [google_project_service.workload["compute.googleapis.com"]]
   lifecycle {
@@ -59,9 +61,9 @@ resource "google_compute_subnetwork" "production" {
   }
 }
 
-# Deleting the catch-all route removes an accidental public path. These two
-# explicit routes retain only restricted Google API and direct API paths. IAP
-# TCP forwarding uses Google's separate non-removable system route.
+# The network starts without Google's default routes. These two reach the restricted Google API
+# ranges, and internet-egress.tf adds the default route that Cloud NAT needs. IAP TCP forwarding
+# uses Google's separate non-removable system route.
 resource "google_compute_route" "restricted_google_apis" {
   for_each = local.restricted_google_api_ranges
 
