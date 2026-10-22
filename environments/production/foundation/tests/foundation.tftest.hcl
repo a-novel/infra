@@ -49,6 +49,16 @@ run "keeps_databases_private_and_preserved" {
     condition     = alltrue([for disk in google_compute_disk.database : disk.deletion_policy == "PREVENT"])
     error_message = "Database data disks must refuse deletion."
   }
+
+  assert {
+    condition = (
+      alltrue([for template in google_compute_instance_template.database :
+        template.project == google_logging_project_exclusion.database_health_probes.project
+      ]) &&
+      strcontains(google_logging_project_exclusion.database_health_probes.filter, "exitCode=0,")
+    )
+    error_message = "Only successful database health probes are excluded, in the project the database hosts log to."
+  }
 }
 
 run "denies_everything_the_network_does_not_allow" {
