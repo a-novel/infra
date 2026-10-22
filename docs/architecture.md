@@ -132,9 +132,6 @@ rollout also deletes that service's snapshots older than 14 days, so a snapshot 
 long. They are recovery data, as
 [Pre-rollout snapshots](runbooks/database.md#pre-rollout-snapshots) describes.
 
-The management project also holds `…-backups`, the bucket of the earlier logical backups. It
-receives no writes, and its locked retention keeps it until it can be retired.
-
 ## Secrets
 
 Secret containers live in the management project. Humans add their values with `gcloud`, as

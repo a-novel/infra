@@ -50,8 +50,7 @@ locals {
   }
 
   management_buckets = merge({
-    backups = google_storage_bucket.backups.name
-    state   = google_storage_bucket.state.name
+    state = google_storage_bucket.state.name
   }, { for service, bucket in google_storage_bucket.pgbackrest : "pgbackrest-${service}" => bucket.name })
 
   operator_bucket_bindings = {
