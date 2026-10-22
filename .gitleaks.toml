@@ -1,0 +1,30 @@
+# The scan-secrets baseline, restated, plus this repository's entry. gitleaks
+# rejects extend.path together with extend.useDefault, and an extending config
+# replaces the base's allowlists, so a repository that needs one entry restates
+# the rest.
+#
+# The baseline entries target generic-api-key alone, the entropy heuristic. The
+# provider-specific rules (AWS, GitHub, Stripe, ...) stay active everywhere.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Checksum manifests: digests are high-entropy by construction."
+targetRules = ["generic-api-key"]
+paths = ['''(^|/)(buf|go)\.sum$''', '''(^|/)pnpm-lock\.yaml$''']
+
+[[allowlists]]
+description = "Go test fixtures: sample keys and tokens generated per test, granting nothing."
+targetRules = ["generic-api-key"]
+paths = ['''_test\.go$''']
+
+[[allowlists]]
+description = "Compose and CI env blocks: throwaway credentials for a database that lives for one job."
+targetRules = ["generic-api-key"]
+regexes = ['''postgres://postgres:postgres@''']
+
+[[allowlists]]
+description = "Secret Manager secret IDs that a Cloud Run env var reads its value from. Matched by ID, so any other value is still reported."
+targetRules = ["hashicorp-tf-password"]
+regexes = ['''^"(app-password|smtp-sender-password)"$''']
