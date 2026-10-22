@@ -7,7 +7,7 @@
   "rangeStrategy": "pin",
   "ignoreUnstable": true,
   "gomod": {
-    "managerFilePatterns": ["/^golangci-lint\\.mod$/"]
+    "managerFilePatterns": ["/^(?:golangci-lint|govulncheck)\\.mod$/"]
   },
   "packageRules": [
     {
@@ -101,6 +101,13 @@
       "matchManagers": ["gomod"],
       "matchFileNames": ["golangci-lint.mod"],
       "additionalBranchPrefix": "golangci-lint-",
+      "goGetDirs": ["tool"]
+    },
+    {
+      "description": "Resolve only the declared tool in the isolated vulnerability-scanner module, on a branch apart from the linter and runtime dependencies.",
+      "matchManagers": ["gomod"],
+      "matchFileNames": ["govulncheck.mod"],
+      "additionalBranchPrefix": "govulncheck-",
       "goGetDirs": ["tool"]
     },
     {
