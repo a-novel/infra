@@ -59,8 +59,8 @@ own identities, image repositories, network tags and database hosts.
   through the VPC, and SMTP through Google's managed egress.
 - **GenAI gRPC and sweep** have internal ingress and IAM authentication. GenAI's smoke identity
   invokes the gRPC service. Only the scheduler identity invokes the sweep. Their egress goes
-  through the VPC: OpenAI's API leaves through Cloud NAT, and the Telemetry API stays on the
-  restricted VIP.
+  through the VPC from the egress subnet: OpenAI's API leaves through Cloud NAT, and the Telemetry
+  API stays on the restricted VIP.
 - **Invocation tags** (`agora-invocation`: `internal`, `maintenance`, `release`, `scheduled`) gate
   who may invoke each Cloud Run service or job. Only the named maintenance operators run the
   `maintenance` job, and only they may pass it arguments.

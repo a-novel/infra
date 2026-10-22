@@ -189,13 +189,13 @@ resource "google_cloud_run_v2_service" "grpc" {
       }
     }
 
-    # All egress enters the VPC, whose egress allowlist lets only the provider's API out, through
-    # Cloud NAT.
+    # All egress enters the VPC from the egress subnet, which Cloud NAT serves. The egress allowlist
+    # lets only the provider's API out.
     vpc_access {
       egress = "ALL_TRAFFIC"
       network_interfaces {
         network    = local.network.network
-        subnetwork = local.network.subnetwork
+        subnetwork = local.foundation.network.egress_subnet_id
         tags       = local.network.tags
       }
     }
@@ -298,7 +298,7 @@ resource "google_cloud_run_v2_service" "sweep" {
       egress = "ALL_TRAFFIC"
       network_interfaces {
         network    = local.network.network
-        subnetwork = local.network.subnetwork
+        subnetwork = local.foundation.network.egress_subnet_id
         tags       = local.network.tags
       }
     }

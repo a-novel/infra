@@ -19,6 +19,8 @@ override_data {
         network_id   = "projects/a-novel-production-prod/global/networks/agora-production"
         subnet_id    = "projects/a-novel-production-prod/regions/europe-west1/subnetworks/agora-production-europe-west1"
         network_tags = { genai = "agora-genai" }
+        # The subnet Cloud NAT serves.
+        egress_subnet_id = "projects/a-novel-production-prod/regions/europe-west1/subnetworks/agora-production-egress-europe-west1"
       }
       database_hosts = {
         genai = {
@@ -37,9 +39,10 @@ run "serves_privately_from_pinned_images_and_secrets" {
   assert {
     condition = alltrue([for service in [google_cloud_run_v2_service.grpc, google_cloud_run_v2_service.sweep] :
       service.ingress == "INGRESS_TRAFFIC_INTERNAL_ONLY" && !service.invoker_iam_disabled &&
-      service.template[0].vpc_access[0].egress == "ALL_TRAFFIC"
+      service.template[0].vpc_access[0].egress == "ALL_TRAFFIC" &&
+      endswith(service.template[0].vpc_access[0].network_interfaces[0].subnetwork, "/agora-production-egress-europe-west1")
     ])
-    error_message = "GenAI must stay internal and IAM-authenticated, with all egress through the VPC, whose egress allowlist decides what leaves."
+    error_message = "GenAI must stay internal and IAM-authenticated, with all egress through the egress subnet, whose NAT and allowlist decide what leaves."
   }
 
   assert {
