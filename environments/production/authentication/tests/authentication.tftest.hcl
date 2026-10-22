@@ -25,6 +25,8 @@ override_data {
         network_id   = "projects/a-novel-production-prod/global/networks/agora-production"
         subnet_id    = "projects/a-novel-production-prod/regions/europe-west1/subnetworks/agora-production-europe-west1"
         network_tags = { authentication = "agora-authentication" }
+        # The subnet Cloud NAT serves.
+        egress_subnet_id = "projects/a-novel-production-prod/regions/europe-west1/subnetworks/agora-production-egress-europe-west1"
       }
       database_hosts = {
         authentication = {
@@ -58,10 +60,10 @@ run "splits_private_migrations_from_the_public_api" {
       google_cloud_run_v2_service.rest.project == "a-novel-public-api-prod" &&
       google_cloud_run_v2_service.rest.ingress == "INGRESS_TRAFFIC_ALL" &&
       alltrue([for vpc in [google_cloud_run_v2_service.rest.template[0].vpc_access[0], google_cloud_run_v2_job.maintenance.template[0].template[0].vpc_access[0]] :
-        vpc.egress == "ALL_TRAFFIC"
+        vpc.egress == "ALL_TRAFFIC" && endswith(vpc.network_interfaces[0].subnetwork, "/agora-production-egress-europe-west1")
       ])
     )
-    error_message = "Migrations stay private; only the REST API is public. Its egress and the maintenance job's go through the VPC, whose egress allowlist decides what leaves."
+    error_message = "Migrations stay private; only the REST API is public. Its egress and the maintenance job's go through the egress subnet, whose NAT and allowlist decide what leaves."
   }
 
   assert {
@@ -158,6 +160,8 @@ run "refuses_instances_beyond_the_quota" {
           network_id   = "projects/a-novel-production-prod/global/networks/agora-production"
           subnet_id    = "projects/a-novel-production-prod/regions/europe-west1/subnetworks/agora-production-europe-west1"
           network_tags = { authentication = "agora-authentication" }
+          # The subnet Cloud NAT serves.
+          egress_subnet_id = "projects/a-novel-production-prod/regions/europe-west1/subnetworks/agora-production-egress-europe-west1"
         }
         database_hosts = {
           authentication = {

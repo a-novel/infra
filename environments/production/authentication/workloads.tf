@@ -168,12 +168,13 @@ resource "google_cloud_run_v2_job" "maintenance" {
         }
       }
 
-      # All egress enters the VPC, whose egress allowlist lets only SMTP out, through Cloud NAT.
+      # All egress enters the VPC from the egress subnet, which Cloud NAT serves. The egress
+      # allowlist lets only SMTP out.
       vpc_access {
         egress = "ALL_TRAFFIC"
         network_interfaces {
           network    = local.network.network
-          subnetwork = local.network.subnetwork
+          subnetwork = local.foundation.network.egress_subnet_id
           tags       = local.network.tags
         }
       }
@@ -302,13 +303,13 @@ resource "google_cloud_run_v2_service" "rest" {
       }
     }
 
-    # All egress enters the VPC, whose egress allowlist lets only SMTP out, through Cloud NAT.
-    # JSON Keys and the Telemetry API stay on the restricted VIP.
+    # All egress enters the VPC from the egress subnet, which Cloud NAT serves. The egress allowlist
+    # lets only SMTP out, and JSON Keys and the Telemetry API stay on the restricted VIP.
     vpc_access {
       egress = "ALL_TRAFFIC"
       network_interfaces {
         network    = local.network.network
-        subnetwork = local.network.subnetwork
+        subnetwork = local.foundation.network.egress_subnet_id
         tags       = local.network.tags
       }
     }
