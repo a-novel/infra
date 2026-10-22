@@ -72,6 +72,11 @@ function headVersion(repository, branch) {
   }
 }
 
+/** Whether master moved past the commit the working tree holds. */
+const masterMoved = () =>
+  run("git", ["ls-remote", "origin", "refs/heads/master"]).split("\t")[0] !==
+  run("git", ["rev-parse", "HEAD"]);
+
 /** Moves every image found to version, with the digest of its published manifest. */
 function rewriteImages(files, images, version) {
   const digests = images.map((image) => {
@@ -181,7 +186,10 @@ function pin(env, source, released) {
   if (!isRelease(version))
     throw new Error(`Cannot pin ${source} at "${version}": not a release tag.`);
 
-  run("git", ["reset", "-q", "--hard"]);
+  // Runs overlap, and the one that started first can finish last. Each pin therefore builds on
+  // master's current tip.
+  run("git", ["fetch", "-q", "--depth=1", "origin", "master"]);
+  run("git", ["reset", "-q", "--hard", "FETCH_HEAD"]);
   const files = lines(run("git", ["ls-files", "--", ...paths]));
   const found = files.flatMap((file) =>
     pins(readFileSync(file, "utf8"), source),
@@ -228,6 +236,9 @@ function pin(env, source, released) {
     console.log(`::notice::A concurrent run pinned a newer ${source} release.`);
     return;
   }
+  // A merge since the fetch leaves this commit behind master, and that merge's own run may already
+  // have rebuilt the pull request. The pin then starts again from the new tip.
+  if (masterMoved()) return pin(env, source, released);
   moveBranch(GH_REPO, branch, commit);
 
   const body = `Deploys [${source} ${version}](${GITHUB_SERVER_URL}/${source}/releases/tag/${version}), whose release published every image pinned here.`;
