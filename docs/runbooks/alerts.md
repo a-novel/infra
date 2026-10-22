@@ -63,7 +63,9 @@ answers 503, so it does not fire this alert.
    ```
 
 2. Check GenAI's [database host](database.md#inspect-and-connect).
-3. Check OpenAI's status page. The sweep fails when OpenAI refuses the key or is down.
+3. Check OpenAI's status page. The sweep fails when OpenAI refuses the key or is down. Connection
+   timeouts instead mean the [egress allowlist](../architecture.md#network) or NAT dropped the
+   calls, and neither logs a refusal.
 
 ## Application jobs and key rotation
 
