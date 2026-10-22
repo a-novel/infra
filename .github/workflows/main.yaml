@@ -158,8 +158,11 @@ jobs:
       - name: Lint shell scripts
         uses: a-novel-kit/workflows/generic-actions/lint-shell@v1.73.0
         with:
-          # renovate: datasource=github-releases depName=koalaman/shellcheck
+          # renovate: datasource=custom.shellcheck depName=koalaman/shellcheck
           version: "0.11.0"
+          sha256: "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
+          # actionlint below checks the workflows' steps but never reads a composite action.
+          run_steps: .github/actions/*/action.yaml
 
       - name: Lint GitHub Actions syntax
         uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2.2.0
@@ -168,7 +171,6 @@ jobs:
           version: 1.7.12
           cache: false
           # Checks the workflows' run steps with the shellcheck that lint-shell installed above.
-          # actionlint never reads the composite actions under .github/actions.
           shellcheck: true
           pyflakes: false
 
