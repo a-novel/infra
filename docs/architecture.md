@@ -111,8 +111,7 @@ Before applying, the deploy copies the images to Artifact Registry. Artifact Reg
 repositories per service and zone, `…-production` and `…-tooling`, all with immutable tags. The
 tooling repositories hold the [host tools](runbooks/host-tools.md), pinned by digest. A database
 host reads only its service's private repositories: PostgreSQL from `…-production`, its host tools
-from `…-tooling`. Foundation's shared `agora-production` repository receives no copies and has no
-readers.
+from `…-tooling`.
 
 ## Databases and backups
 
