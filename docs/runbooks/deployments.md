@@ -203,6 +203,15 @@ plans only the rest.
    - **403 during apply:** pull-request plans run as the read-only identity, so they cannot catch a
      permission the deploy identity lacks. Grant it in the foundation root, or in bootstrap for the
      management project, and merge. The deploy applies the grant before it reaches the services.
+   - **403 that names VPC Service Controls:** the service perimeter refused the call. Each
+     project's policy audit log holds its violations, and in dry run the calls it would refuse:
+
+     ```bash
+     gcloud logging read 'log_id("cloudaudit.googleapis.com/policy")' --project="$PROD" --freshness=1d
+     ```
+
+     Admit the call with a rule in foundation's `service-perimeter.tf`, in a new pull request.
+
    - **Rollout failed:** read the job log, then re-run it, or
      [roll the host by hand](database.md#roll-a-host-by-hand).
    - **Health check failed after apply:** see [Alerts](alerts.md#authentication-health). If the
