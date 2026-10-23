@@ -41,8 +41,8 @@ own identities, image repositories, network tags and database hosts.
   returns, which works only when every client gets the same answer. `api.openai.com` gives everyone
   the same two Cloudflare addresses. `smtp-relay.gmail.com` answers each client location with another
   frontend, so SMTP matches the `google-services` address group instead: every range Google
-  announces, minus those its Cloud customers rent. `.github/scripts/google-service-ranges.mjs`
-  regenerates its list.
+  announces, minus those its Cloud customers rent. `refresh-google-ranges.yaml` proposes Google's
+  latest list daily, and its pull request merges alone when it holds exactly what Google publishes.
 
   Other traffic falls through to the firewall rules. Direct VPC egress logs no firewall verdict, so
   a refused connection shows only as the caller's own error.

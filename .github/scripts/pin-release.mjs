@@ -48,13 +48,13 @@ export function rewrite(content, image, version, digest) {
 }
 
 // A failure's message carries the command's stderr.
-const run = (command, args, input) =>
+export const run = (command, args, input) =>
   execFileSync(command, args, {
     encoding: "utf8",
     input,
     stdio: "pipe",
   }).trim();
-const gh = (...args) => run("gh", args);
+export const gh = (...args) => run("gh", args);
 const lines = (text) => text.split("\n").filter(Boolean);
 
 function headVersion(repository, branch) {
@@ -104,7 +104,7 @@ function rewriteImages(files, images, version) {
  * Commits the working tree's changes on top of HEAD through the API, and returns the commit. master
  * requires signed commits, and GitHub signs only those an App makes through its API.
  */
-function commitChanges(repository, message) {
+export function commitChanges(repository, message) {
   const blob = (path) => ({
     path,
     mode: "100644",
@@ -135,7 +135,7 @@ function commitChanges(repository, message) {
 }
 
 /** Points branch at commit, creating the branch when it does not exist. */
-function moveBranch(repository, branch, commit) {
+export function moveBranch(repository, branch, commit) {
   try {
     gh(
       "api",

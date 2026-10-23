@@ -118,7 +118,7 @@ resource "google_compute_network_firewall_policy_association" "production" {
 }
 
 # Every range Google announces minus those its Cloud customers rent, so no customer VM can listen
-# behind it. .github/scripts/google-service-ranges.mjs writes the file from Google's lists. The
+# behind it. refresh-google-ranges.yaml rewrites the file from Google's lists. The
 # capacity is fixed at creation and counts against the policy's attribute quota in full.
 locals {
   google_services = {

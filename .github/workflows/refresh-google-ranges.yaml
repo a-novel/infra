@@ -1,0 +1,47 @@
+name: refresh google ranges
+# Foundation's google-services address group, which SMTP egress matches, holds Google's service
+# ranges. Google changes them a few times a year. This rewrites the list daily and, when it moved,
+# opens one pull request as the Dependencies App. auto-approve-dependabot.yaml approves it only when
+# it holds exactly what Google publishes, so it merges and deploys alone. A late start costs
+# nothing, so GitHub's own schedule drives it.
+on:
+  schedule:
+    - cron: "37 5 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  refresh:
+    runs-on: ubuntu-24.04
+    # The Dependencies key is a secret of the governance environment, which no feature branch opens.
+    environment:
+      name: governance
+      deployment: false
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: a-novel-kit/workflows/generic-actions/google-service-ranges@v1.77.0
+        with:
+          path: environments/production/foundation/google-service-ranges.json
+      # Unlike the workflow token's, the App's commits and pull requests start CI.
+      - id: token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.DEPENDENCY_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.DEPENDENCY_BOT_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Open, update or close the refresh pull request
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          APP: ${{ steps.token.outputs.app-slug }}
+        run: node .github/scripts/refresh-google-ranges.mjs
