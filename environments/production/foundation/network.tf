@@ -171,6 +171,21 @@ resource "google_compute_firewall" "allow_iap_ssh" {
   }
 }
 
+# Direct VPC egress logs no firewall verdict, so the network logs every lookup instead. The logs
+# show the names each workload resolves.
+resource "google_dns_policy" "production" {
+  project = google_project.workload.project_id
+  name    = local.network_name
+
+  enable_logging = true
+
+  networks {
+    network_url = google_compute_network.production.id
+  }
+
+  depends_on = [google_project_service.workload["dns.googleapis.com"]]
+}
+
 resource "google_dns_managed_zone" "googleapis" {
   project = google_project.workload.project_id
   name    = "restricted-googleapis"
