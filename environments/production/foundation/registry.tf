@@ -44,7 +44,9 @@ resource "google_artifact_registry_repository" "production" {
     }
   }
 
-  deletion_policy = "PREVENT"
+  # The repository lost its last reader in a-novel/infra#1037. This apply unlocks it; the next one
+  # deletes it, since the provider reads deletion_policy from state.
+  deletion_policy = "DELETE"
 
   depends_on = [google_project_service.workload["artifactregistry.googleapis.com"]]
   lifecycle {
