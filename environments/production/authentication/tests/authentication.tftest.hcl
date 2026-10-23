@@ -96,9 +96,9 @@ run "splits_private_migrations_from_the_public_api" {
       google_cloud_run_v2_job.maintenance.run_execution_token == null &&
       length(coalesce(google_cloud_run_v2_job.maintenance.template[0].template[0].containers[0].args, [])) == 0 &&
       google_cloud_run_v2_job.maintenance.template[0].template[0].max_retries == 0 &&
-      toset([for env in google_cloud_run_v2_job.maintenance.template[0].template[0].containers[0].env : env.name if length(env.value_source) > 0]) == toset(["POSTGRES_PASSWORD", "SMTP_SENDER_PASSWORD"])
+      toset([for env in google_cloud_run_v2_job.maintenance.template[0].template[0].containers[0].env : env.name if length(env.value_source) > 0]) == toset(["POSTGRES_PASSWORD"])
     )
-    error_message = "The maintenance job stays private, runs only when a human starts it with an operation, and mounts only the database and SMTP passwords."
+    error_message = "The maintenance job stays private, runs only when a human starts it with an operation, and mounts only the database password."
   }
 }
 

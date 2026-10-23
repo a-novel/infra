@@ -17,18 +17,16 @@ variable "secret_versions" {
   validation {
     condition = (
       contains(keys(var.secret_versions), "app-password") &&
-      contains(keys(var.secret_versions), "smtp-sender-password") &&
       (var.waitlist_url == null) != contains(keys(var.secret_versions), "waitlist-secret")
     )
-    error_message = "Pin app-password and smtp-sender-password, plus waitlist-secret exactly when waitlist_url is set."
+    error_message = "Pin app-password, plus waitlist-secret exactly when waitlist_url is set."
   }
 }
 
 variable "smtp" {
-  description = "Hosted SMTP relay settings; the password is the smtp-sender-password secret."
+  description = "Hosted SMTP relay settings. The relay admits the production NAT address without a password."
   type = object({
     host              = string
-    username          = string
     sender_email      = string
     sender_name       = string
     platform_auth_url = string

@@ -41,6 +41,30 @@ resource "google_secret_manager_secret" "application" {
   depends_on = [google_project_service.management["secretmanager.googleapis.com"]]
 }
 
+# The SMTP relay now admits Authentication by its NAT address, so nothing reads this credential.
+# This apply lifts its protection, and the next deletes it.
+moved {
+  from = google_secret_manager_secret.application["production-authentication-smtp-sender-password"]
+  to   = google_secret_manager_secret.retired_smtp_sender_password
+}
+
+resource "google_secret_manager_secret" "retired_smtp_sender_password" {
+  secret_id = "production-authentication-smtp-sender-password"
+
+  annotations = {
+    contract = "SMTP_SENDER_PASSWORD"
+    purpose  = "Authentication service production SMTP credential"
+  }
+
+  replication {
+    auto {}
+  }
+
+  version_destroy_ttl = "2592000s"
+  deletion_protection = false
+  deletion_policy     = "DELETE"
+}
+
 resource "google_secret_manager_secret_iam_member" "operator" {
   for_each = local.operator_secret_bindings
 

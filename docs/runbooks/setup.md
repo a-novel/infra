@@ -131,6 +131,7 @@ project's number, so a rebuild starts with new names.
 7. **Roll each database host by hand**, as [Roll a host by hand](database.md#roll-a-host-by-hand)
    describes, so it starts with its secrets. Nobody uses the services yet, so no downtime is needed.
 8. **Configure SMTP**, the Workspace relay and its DNS records:
+   - the [relay rule](secrets.md#smtp-google-workspace-relay) admits the NAT address;
    - SPF includes `_spf.google.com`;
    - DKIM is active in Google Admin;
    - DMARC is present.

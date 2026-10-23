@@ -94,10 +94,6 @@ locals {
       contract = "POSTGRES_PASSWORD"
       purpose  = "Authentication application role password, for a login without superuser rights"
     }
-    production-authentication-smtp-sender-password = {
-      contract = "SMTP_SENDER_PASSWORD"
-      purpose  = "Authentication service production SMTP credential"
-    }
     production-authentication-waitlist-secret = {
       contract = "WAITLIST_SECRET"
       purpose  = "Authentication invitation-list request signing key"

@@ -22,18 +22,17 @@ locals {
     POSTGRES_DATABASE    = "agora_authentication"
     POSTGRES_TLS_ENABLED = "false"
   }
-  # Registration and account emails, sent by the REST API and the maintenance job.
+  # Registration and account emails, sent by the REST API and the maintenance job. The relay admits
+  # them by the production NAT address, so they carry no SMTP credential.
   mail_env = {
     PLATFORM_AUTH_URL   = var.smtp.platform_auth_url
     SMTP_ADDR           = "${var.smtp.host}:587"
     SMTP_MAX_CONCURRENT = "8"
-    SMTP_SENDER_DOMAIN  = var.smtp.host
     SMTP_SENDER_EMAIL   = var.smtp.sender_email
     SMTP_SENDER_NAME    = var.smtp.sender_name
     SMTP_TIMEOUT        = "5s"
-    SMTP_USERNAME       = var.smtp.username
   }
-  maintenance_secret_env = { POSTGRES_PASSWORD = "app-password", SMTP_SENDER_PASSWORD = "smtp-sender-password" }
+  maintenance_secret_env = { POSTGRES_PASSWORD = "app-password" }
   rest_secret_env = merge(
     local.maintenance_secret_env,
     var.waitlist_url == null ? {} : { WAITLIST_SECRET = "waitlist-secret" },

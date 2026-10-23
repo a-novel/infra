@@ -27,4 +27,4 @@ regexes = ['''postgres://postgres:postgres@''']
 [[allowlists]]
 description = "Secret Manager secret IDs that a Cloud Run env var reads its value from. Matched by ID, so any other value is still reported."
 targetRules = ["hashicorp-tf-password"]
-regexes = ['''^"(app-password|smtp-sender-password)"$''']
+regexes = ['''^"app-password"$''']
