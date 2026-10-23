@@ -56,10 +56,21 @@ The organization's Renovate (Dependencies) and Agent Apps need access to this re
 Some rules sit above the projects, where no CI identity holds a role. An organization admin sets
 them by hand, once:
 
-- **Organization policies** on the private project keep Cloud Run internal and IAM-checked, as
-  [Architecture](../architecture.md#network) describes.
+- **Organization policies** keep Cloud Run internal and IAM-checked in the private project, and its
+  egress in the VPC in both workload projects, as [Architecture](../architecture.md#network)
+  describes.
 - **A deny policy** keeps the plan identity away from logs and traces. Pull requests can mint
   `infra-plan`, and its Viewer role reads everything else a plan needs.
+- **The access policy** holds the service perimeter, which foundation manages. The deploy identity
+  edits the policy and the plan identity reads it.
+
+Setting an organization policy needs Organization Policy Administrator on the organization:
+
+```bash
+for project in a-novel-production-prod a-novel-public-api-prod; do
+  gcloud resource-manager org-policies allow run.allowedVPCEgress all-traffic --project="$project"
+done
+```
 
 The deny policy lives in [`policies/infra-plan-data-deny.json`](policies/infra-plan-data-deny.json).
 Creating it needs the Deny Admin role on the organization:
@@ -71,6 +82,18 @@ gcloud iam policies create plan-identity-data --kind=denypolicies \
 ```
 
 After a change to the file, run `gcloud iam policies update` with the same arguments.
+
+Creating the access policy and granting on it needs Access Context Manager Admin on the
+organization. Foundation's `access_policy_id` holds the number the list prints:
+
+```bash
+gcloud access-context-manager policies create --organization="$ORG" --title=agora
+POLICY="$(gcloud access-context-manager policies list --organization="$ORG" --format='value(name)')"
+gcloud access-context-manager policies add-iam-policy-binding "$POLICY" \
+  --role=roles/accesscontextmanager.policyEditor --member="serviceAccount:infra-foundation@$MGMT.iam.gserviceaccount.com"
+gcloud access-context-manager policies add-iam-policy-binding "$POLICY" \
+  --role=roles/accesscontextmanager.policyReader --member="serviceAccount:infra-plan@$MGMT.iam.gserviceaccount.com"
+```
 
 ## Rebuild from nothing
 
@@ -120,6 +143,9 @@ project's number, so a rebuild starts with new names.
    gcloud billing accounts add-iam-policy-binding "$BILLING" --role=roles/billing.user \
      --member="$DEPLOYER"
    ```
+
+   Then grant the new deploy and plan identities on the access policy, as
+   [Organization guardrails](#organization-guardrails) shows.
 
 5. **Configure GitHub** [as above](#github-settings), with the values
    `tofu -chdir=bootstrap output` prints. CI can plan again from here.

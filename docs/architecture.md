@@ -79,7 +79,14 @@ own identities, image repositories, network tags and database hosts.
   (`run.allowedIngress`) and require the invoker IAM check (`run.managed.requireInvokerIam`).
   Cloud Run refuses a deploy there that breaks either. Organization admins set both by hand, and no
   CI identity holds an organization role that could lift them. Public APIs run in
-  `a-novel-public-api-prod`.
+  `a-novel-public-api-prod`. Both projects also keep Cloud Run's egress in the VPC
+  (`run.allowedVPCEgress`).
+- **A VPC Service Controls perimeter**, `agora_production`, holds the private and public-api
+  projects. Their VPC reaches only the APIs it restricts, every API the two projects enable, and
+  those APIs reach only resources inside it. CI's identities and the operators enter from anywhere.
+  Any identity inside may call Secret Manager and Cloud Storage in management, for the secrets and
+  the backups. The perimeter runs in dry run, which logs the calls it would refuse. Organization
+  admins create its access policy and grant on it by hand.
 - **An organization deny policy** keeps `infra-plan` from reading logs and traces, which its Viewer
   role would otherwise cover. Pull requests can mint that identity. Organization admins set the
   policy by hand, from [the setup runbook](runbooks/setup.md#organization-guardrails).

@@ -172,6 +172,33 @@ run "copies_and_pins_host_credentials_by_digest" {
   }
 }
 
+run "keeps_api_calls_inside_production" {
+  command = plan
+
+  assert {
+    condition = (
+      one(google_access_context_manager_service_perimeter.production.spec[0].vpc_accessible_services).enable_restriction &&
+      one(google_access_context_manager_service_perimeter.production.spec[0].vpc_accessible_services).allowed_services == toset(["RESTRICTED-SERVICES"]) &&
+      alltrue([for service in concat(keys(google_project_service.workload), keys(google_project_service.public_api_telemetry)) :
+        contains(google_access_context_manager_service_perimeter.production.spec[0].restricted_services, service)
+      ])
+    )
+    error_message = "The VPC may call only the perimeter's restricted APIs, and every API the projects enable must be restricted."
+  }
+
+  assert {
+    condition = (
+      alltrue([for rule in google_access_context_manager_service_perimeter.production.spec[0].ingress_policies :
+        rule.ingress_from[0].identity_type == null && length(rule.ingress_from[0].identities) > 0
+      ]) &&
+      alltrue([for rule in google_access_context_manager_service_perimeter.production.spec[0].egress_policies :
+        rule.egress_to[0].resources == toset(["projects/${data.google_project.management.number}"])
+      ])
+    )
+    error_message = "Only named identities may enter the perimeter, and calls may leave it only for the management project."
+  }
+}
+
 run "caps_cloud_run_in_every_project" {
   command = plan
 
