@@ -51,9 +51,9 @@ own identities, image repositories, network tags and database hosts.
 
 - **DNS allowlist.** A Cloud DNS response policy, `agora-dns-allowlist`, resolves only the private
   zones, Compute Engine's internal names and the egress allowlist's hosts. Every other name answers
-  with a CNAME to `blocked.internal.`, which does not exist, so the lookup ends in NXDOMAIN and no
-  outside name server receives it. A host added to the egress allowlist joins the DNS allowlist in
-  the same entry.
+  with a CNAME to `blocked.internal.` and no address, so the lookup fails at once and no outside
+  name server receives it. A host added to the egress allowlist joins the DNS allowlist in the same
+  entry.
 
 - **DNS query logs.** The network logs every lookup to Cloud Logging as a `dns_query` entry, with
   its name, source address and answer.
