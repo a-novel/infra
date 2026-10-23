@@ -16,8 +16,9 @@ locals {
     resources = [for number in concat([google_project.workload.number], [for project in module.public_api_project : project.project_number]) : "projects/${number}"]
 
     # Every API the perimeter's projects enable, plus Secret Manager, which their workloads call in
-    # management, and IAP's TCP forwarding. The VPC reaches only these, so an API missing here fails
-    # closed.
+    # management. The VPC reaches only these, so an API missing here fails closed. IAP's TCP
+    # forwarding stays out: its tunnel check reaches the perimeter without the caller's identity, so
+    # only IAM tells an operator apart.
     restricted_services = [
       "artifactregistry.googleapis.com",
       "cloudbuild.googleapis.com",
@@ -30,7 +31,6 @@ locals {
       "iam.googleapis.com",
       "iamcredentials.googleapis.com",
       "iap.googleapis.com",
-      "iaptunnel.googleapis.com",
       "logging.googleapis.com",
       "monitoring.googleapis.com",
       "networksecurity.googleapis.com",

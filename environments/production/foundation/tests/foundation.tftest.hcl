@@ -128,7 +128,7 @@ run "grants_no_basic_roles" {
   command = plan
 
   assert {
-    condition = alltrue([for binding in concat(values(google_project_iam_member.foundation), values(google_project_iam_member.database_operator)) :
+    condition = alltrue([for binding in concat(values(google_project_iam_member.foundation), values(google_project_iam_member.database_operator), values(google_project_iam_member.database_operator_public_api_logs)) :
       !contains(["roles/owner", "roles/editor"], binding.role)
     ])
     error_message = "Automation and operators get scoped roles, never owner or editor."

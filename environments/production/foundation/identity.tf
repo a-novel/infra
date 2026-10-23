@@ -308,6 +308,15 @@ resource "google_project_iam_member" "database_operator_iap" {
   }
 }
 
+# Operators read the public API's logs too, the perimeter's violations included.
+resource "google_project_iam_member" "database_operator_public_api_logs" {
+  for_each = length(module.public_api_project) == 0 ? toset([]) : var.database_operator_principals
+
+  project = module.public_api_project["public-api"].project_id
+  role    = "roles/logging.viewer"
+  member  = each.value
+}
+
 # OS Login rechecks whether an SSH operator may act as the VM's attached
 # service account. This account-level grant is required for login and does not
 # grant token-minting authority.
