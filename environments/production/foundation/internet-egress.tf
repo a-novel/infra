@@ -1,12 +1,13 @@
 locals {
   # The only internet destinations, each open to the identities of the workloads that call it. The
-  # service roots create these identities.
+  # service roots create these identities. The DNS allowlist resolves each host, and the firewall
+  # matches it by name unless the destination names address groups.
   egress_allowlist = {
     openai = {
       priority = 1000
       # Cloudflare gives every client the same two anycast addresses, so the firewall resolves
       # the ones its clients do.
-      fqdns          = ["api.openai.com"]
+      hosts          = ["api.openai.com"]
       address_groups = []
       port           = "443"
       # GenAI's gRPC server and sweep.
@@ -19,7 +20,7 @@ locals {
       priority = 1010
       # smtp-relay.gmail.com answers each client location with another frontend, which the
       # firewall's own lookup rarely matches, so the rule admits all of Google's service ranges.
-      fqdns          = []
+      hosts          = ["smtp-relay.gmail.com"]
       address_groups = [google_network_security_address_group.google_services.id]
       port           = "587"
       # Authentication's REST API, in the public-api project, and its maintenance job.
@@ -159,7 +160,7 @@ resource "google_compute_network_firewall_policy_rule" "egress_allowlist" {
   target_service_accounts = each.value.service_accounts
 
   match {
-    dest_fqdns          = each.value.fqdns
+    dest_fqdns          = length(each.value.address_groups) > 0 ? [] : each.value.hosts
     dest_address_groups = each.value.address_groups
 
     layer4_configs {
