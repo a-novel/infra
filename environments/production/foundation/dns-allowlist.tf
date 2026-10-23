@@ -22,7 +22,8 @@ locals {
     ]
   ]), local.dns_allowed)
 
-  # Compute Engine's internal DNS holds no such name, so a refused lookup ends in NXDOMAIN.
+  # Cloud DNS answers a refused lookup with this CNAME alone, so the client gets no address. Internal
+  # DNS holds no such name, so a client that follows the CNAME finds none either.
   dns_refusal = "blocked.internal."
 }
 
