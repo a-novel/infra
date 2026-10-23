@@ -51,16 +51,3 @@ resource "google_artifact_registry_repository" "production" {
     prevent_destroy = true
   }
 }
-
-# The PostgreSQL VM pulls its pinned container directly. Cloud Run pulls
-# same-project images through Google's managed service agent instead of the
-# application runtime identity, so no redundant reader grant is added there.
-resource "google_artifact_registry_repository_iam_member" "database_reader" {
-  for_each = local.database_hosts
-
-  project    = google_project.workload.project_id
-  location   = google_artifact_registry_repository.production.location
-  repository = google_artifact_registry_repository.production.repository_id
-  role       = "roles/artifactregistry.reader"
-  member     = "serviceAccount:${google_service_account.runtime[each.value.identity].email}"
-}
