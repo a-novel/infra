@@ -38,6 +38,7 @@ locals {
     "iap.googleapis.com",
     "logging.googleapis.com",
     "monitoring.googleapis.com",
+    "networksecurity.googleapis.com",
     "oslogin.googleapis.com",
     "run.googleapis.com",
     "serviceusage.googleapis.com",

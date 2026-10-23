@@ -4,8 +4,11 @@ locals {
   egress_allowlist = {
     openai = {
       priority = 1000
-      fqdn     = "api.openai.com"
-      port     = "443"
+      # Cloudflare gives every client the same two anycast addresses, so the firewall resolves
+      # the ones its clients do.
+      fqdns          = ["api.openai.com"]
+      address_groups = []
+      port           = "443"
       # GenAI's gRPC server and sweep.
       service_accounts = [
         "agora-genai-private@${var.workload_project_id}.iam.gserviceaccount.com",
@@ -14,8 +17,11 @@ locals {
     }
     smtp-relay = {
       priority = 1010
-      fqdn     = "smtp-relay.gmail.com"
-      port     = "587"
+      # smtp-relay.gmail.com answers each client location with another frontend, which the
+      # firewall's own lookup rarely matches, so the rule admits all of Google's service ranges.
+      fqdns          = []
+      address_groups = [google_network_security_address_group.google_services.id]
+      port           = "587"
       # Authentication's REST API, in the public-api project, and its maintenance job.
       service_accounts = [
         "agora-authentication-api@${var.public_api_project_id}.iam.gserviceaccount.com",
@@ -111,6 +117,35 @@ resource "google_compute_network_firewall_policy_association" "production" {
   firewall_policy   = google_compute_network_firewall_policy.egress.id
 }
 
+# Every range Google announces minus those its Cloud customers rent, so no customer VM can listen
+# behind it. .github/scripts/google-service-ranges.mjs writes the file from Google's lists. The
+# capacity is fixed at creation and counts against the policy's attribute quota in full.
+locals {
+  google_services = {
+    ranges   = jsondecode(file("${path.module}/google-service-ranges.json"))
+    capacity = 500
+  }
+}
+
+resource "google_network_security_address_group" "google_services" {
+  parent      = "projects/${google_project.workload.project_id}"
+  location    = "global"
+  name        = "google-services"
+  description = "Google's own service ranges, outside every range Cloud customers can rent."
+  type        = "IPV4"
+  capacity    = local.google_services.capacity
+  items       = local.google_services.ranges
+
+  lifecycle {
+    precondition {
+      condition     = length(local.google_services.ranges) > 0 && length(local.google_services.ranges) <= local.google_services.capacity
+      error_message = "The Google service ranges must be non-empty and fit the group's fixed capacity."
+    }
+  }
+
+  depends_on = [google_project_service.workload["networksecurity.googleapis.com"]]
+}
+
 resource "google_compute_network_firewall_policy_rule" "egress_allowlist" {
   for_each = local.egress_allowlist
 
@@ -124,7 +159,8 @@ resource "google_compute_network_firewall_policy_rule" "egress_allowlist" {
   target_service_accounts = each.value.service_accounts
 
   match {
-    dest_fqdns = [each.value.fqdn]
+    dest_fqdns          = each.value.fqdns
+    dest_address_groups = each.value.address_groups
 
     layer4_configs {
       ip_protocol = "tcp"

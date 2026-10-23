@@ -30,16 +30,22 @@ own identities, image repositories, network tags and database hosts.
 - **Google APIs** are reached through the restricted VIP ranges `199.36.153.4/30` and
   `34.126.0.0/18`. Private DNS zones resolve `googleapis.com`, `pkg.dev` and `run.app` to them.
 - **Egress allowlist.** A network firewall policy, `agora-egress-allowlist`, runs before the firewall
-  rules. It lets named identities reach named hosts, and nothing else:
+  rules. It lets named identities reach named destinations, and nothing else:
 
-  | Destination                | Identities                                                  |
-  | -------------------------- | ----------------------------------------------------------- |
-  | `api.openai.com:443`       | `agora-genai-private`, `agora-genai-sweep`                  |
-  | `smtp-relay.gmail.com:587` | `agora-authentication-api`, `agora-authentication-maintain` |
+  | Destination                                        | Identities                                                  |
+  | -------------------------------------------------- | ----------------------------------------------------------- |
+  | `api.openai.com:443`                               | `agora-genai-private`, `agora-genai-sweep`                  |
+  | Google's service ranges on 587, for the SMTP relay | `agora-authentication-api`, `agora-authentication-maintain` |
 
-  The firewall resolves each host name through the VPC's Cloud DNS and matches the addresses it
-  returns. Other traffic falls through to the firewall rules. Direct VPC egress logs no firewall
-  verdict, so a refused connection shows only as the caller's own error.
+  The firewall resolves a host name through the VPC's Cloud DNS and matches the addresses it
+  returns, which works only when every client gets the same answer. `api.openai.com` gives everyone
+  the same two Cloudflare addresses. `smtp-relay.gmail.com` answers each client location with another
+  frontend, so SMTP matches the `google-services` address group instead: every range Google
+  announces, minus those its Cloud customers rent. `.github/scripts/google-service-ranges.mjs`
+  regenerates its list.
+
+  Other traffic falls through to the firewall rules. Direct VPC egress logs no firewall verdict, so
+  a refused connection shows only as the caller's own error.
 
 - **Firewall.** A VPC-wide rule denies all egress at priority 1200. Explicit rules above it allow:
 
