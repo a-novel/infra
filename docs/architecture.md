@@ -100,10 +100,12 @@ verifies each release image it changes:
 - the release App published that tag as an immutable GitHub Release;
 - its version is not below the one deployed.
 
-Before applying, the deploy copies the images to Artifact Registry. Artifact Registry holds
-`agora-production`, for the database images, and two repositories per service and zone,
-`…-production` and `…-tooling`, all with immutable tags. The tooling repositories hold the
-[host tools](runbooks/host-tools.md), pinned by digest.
+Before applying, the deploy copies the images to Artifact Registry. Artifact Registry holds two
+repositories per service and zone, `…-production` and `…-tooling`, all with immutable tags. The
+tooling repositories hold the [host tools](runbooks/host-tools.md), pinned by digest. A database
+host reads only its service's private repositories: PostgreSQL from `…-production`, its host tools
+from `…-tooling`. Foundation's shared `agora-production` repository receives no copies and has no
+readers.
 
 ## Databases and backups
 
