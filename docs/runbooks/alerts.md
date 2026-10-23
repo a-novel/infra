@@ -29,7 +29,7 @@ in the `a-novel-public-api-prod` project.
 An SMTP warning with `category=timeout` in those logs means the connection never left: the
 [egress allowlist](../architecture.md#network) or NAT dropped it, and neither logs a refusal. When
 the address it dialed lies outside `environments/production/foundation/google-service-ranges.json`,
-regenerate that file with `node .github/scripts/google-service-ranges.mjs <file>` and merge it.
+dispatch `refresh-google-ranges.yaml`, whose pull request proposes Google's current list.
 
 If the checks stopped running, GitHub disabled the schedule after 60 days without repository
 activity. Enable it again:
