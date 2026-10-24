@@ -1,8 +1,8 @@
 images = {
-  database   = "ghcr.io/a-novel/service-json-keys/database:v2.12.2@sha256:a421bf1d7f00194505779efaa1f9cf643d57f11b346ba3d0f349bcf829fe11eb"
-  grpc       = "ghcr.io/a-novel/service-json-keys/grpc:v2.12.2@sha256:3eaed0ee887af789bb9fdd4730ee68c4441f328812cd2441172a2f2c07c07c00"
-  migrations = "ghcr.io/a-novel/service-json-keys/jobs/migrations:v2.12.2@sha256:b0befd0841d495eb678c005439b69ccc5abbe20c39cd8bc20af08766a52a9a03"
-  rotatekeys = "ghcr.io/a-novel/service-json-keys/jobs/rotatekeys:v2.12.2@sha256:1960bb5f95218060aa2777c3985298e02231f6d2388c87dd3087a4c9be51e15c"
+  database   = "ghcr.io/a-novel/service-json-keys/database:v2.12.3@sha256:8778711f5c9beb691b741b2edbbcccf4e5f857b0ff3380fbf2210dea194aab5a"
+  grpc       = "ghcr.io/a-novel/service-json-keys/grpc:v2.12.3@sha256:ec9672a8b8584c25d5e2519ffedcc72d78b42c0c9d660e4202492ca7e198bbb6"
+  migrations = "ghcr.io/a-novel/service-json-keys/jobs/migrations:v2.12.3@sha256:17eb51a95a74e3e34eea019a87fa9f3bc9461dc2507b96341c5e98a3d6d801b3"
+  rotatekeys = "ghcr.io/a-novel/service-json-keys/jobs/rotatekeys:v2.12.3@sha256:e8063bd6621da98ddf5dc6b889811b196cc945b6e07a639fb64f6a232816c00c"
 }
 
 secret_versions = {
