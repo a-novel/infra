@@ -126,6 +126,7 @@ resource "google_access_context_manager_service_perimeter" "production" {
     }
   }
 
-  # prevent_destroy returns once the rename has applied: it would refuse the replacement
-  # (a-novel/infra#1083).
+  lifecycle {
+    prevent_destroy = true
+  }
 }
