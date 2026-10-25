@@ -142,6 +142,14 @@ run "grants_no_basic_roles" {
     condition     = !google_cloud_scheduler_job.json_keys_rotation[0].paused
     error_message = "Key rotation must stay scheduled."
   }
+
+  assert {
+    condition = (
+      !google_cloud_scheduler_job.authentication_refresh_token_purge[0].paused &&
+      google_tags_location_tag_binding.application["authentication_refresh_token_purge"].tag_value == google_tags_tag_value.cloud_run_invocation["scheduled"].id
+    )
+    error_message = "The refresh token purge must stay scheduled, and tagged so the scheduler may run it without overrides."
+  }
 }
 
 run "keeps_humans_off_untagged_jobs" {

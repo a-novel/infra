@@ -1,8 +1,9 @@
 locals {
   application_invocation = merge(
     contains(keys(local.service_release_boundaries), "authentication/private") ? {
-      authentication_migrations  = { resource = "jobs/agora-authentication-migrations", class = "release" }
-      authentication_maintenance = { resource = "jobs/agora-authentication-maintenance", class = "maintenance" }
+      authentication_migrations          = { resource = "jobs/agora-authentication-migrations", class = "release" }
+      authentication_maintenance         = { resource = "jobs/agora-authentication-maintenance", class = "maintenance" }
+      authentication_refresh_token_purge = { resource = "jobs/a-novel-authentication-refresh-token-purge", class = "scheduled" }
     } : {},
     contains(keys(local.service_release_boundaries), "json-keys/private") ? {
       json_keys_migrations = { resource = "jobs/agora-json-keys-migrations", class = "release" }
@@ -55,6 +56,42 @@ resource "google_cloud_scheduler_job" "json_keys_rotation" {
   http_target {
     http_method = "POST"
     uri         = "https://run.googleapis.com/v2/projects/${var.workload_project_id}/locations/${var.region}/jobs/agora-json-keys-rotatekeys:run"
+    headers     = { "Content-Type" = "application/json" }
+    body        = base64encode("{}")
+
+    oauth_token {
+      service_account_email = google_service_account.runtime["scheduler_invoker"].email
+      scope                 = "https://www.googleapis.com/auth/cloud-platform"
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [paused]
+  }
+
+  depends_on = [google_tags_location_tag_binding.application]
+}
+
+# The purge deletes Authentication's refresh token revocations once their token has expired. A
+# missed or failed run only leaves expired rows for the next day's, so the schedule never retries.
+resource "google_cloud_scheduler_job" "authentication_refresh_token_purge" {
+  count = contains(keys(local.application_invocation), "authentication_refresh_token_purge") ? 1 : 0
+
+  project          = var.workload_project_id
+  region           = var.region
+  name             = "a-novel-authentication-refresh-token-purge"
+  schedule         = "40 3 * * *"
+  time_zone        = "Etc/UTC"
+  paused           = false
+  attempt_deadline = "180s"
+
+  retry_config {
+    retry_count = 0
+  }
+
+  http_target {
+    http_method = "POST"
+    uri         = "https://run.googleapis.com/v2/projects/${var.workload_project_id}/locations/${var.region}/jobs/a-novel-authentication-refresh-token-purge:run"
     headers     = { "Content-Type" = "application/json" }
     body        = base64encode("{}")
 
