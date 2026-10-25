@@ -38,7 +38,7 @@ type Config struct {
 
 var (
 	// services lists the services whose hosts load pgBackRest credentials.
-	services = []string{"json-keys", "authentication"}
+	services = []string{"json-keys", "authentication", "genai"}
 	number   = regexp.MustCompile(`^[1-9][0-9]{0,19}$`)
 	name     = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{0,252}$`)
 )
@@ -46,7 +46,7 @@ var (
 // Validate rejects invalid scope before credentials or secret access are requested.
 func (c Config) Validate() error {
 	if !slices.Contains(services, c.Service) {
-		return errors.New("service must be json-keys or authentication")
+		return errors.New("service must be json-keys, authentication or genai")
 	}
 	if c.Endpoint != "database" && c.Endpoint != "repository" {
 		return errors.New("endpoint must be database or repository")

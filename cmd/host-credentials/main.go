@@ -24,7 +24,7 @@ import (
 func main() {
 	var config hostcredentials.Config
 	var workload, zone string
-	flag.StringVar(&config.Service, "service", "", "json-keys or authentication")
+	flag.StringVar(&config.Service, "service", "", "json-keys, authentication or genai")
 	flag.StringVar(&config.ProjectNumber, "management-project-number", "", "numeric project owning TLS secrets")
 	flag.StringVar(&workload, "workload-project", "", "project owning the attached endpoint identity")
 	flag.StringVar(&zone, "zone", "", "trust zone of the endpoint identity: private")

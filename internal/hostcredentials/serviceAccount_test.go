@@ -17,6 +17,8 @@ func TestServiceAccount(t *testing.T) {
 		{"Success/JSONKeysRepository", "example-private", "json-keys", "repository", "private", "agora-pgbr-json-keys"},
 		{"Success/AuthenticationDatabase", "example-private", "authentication", "database", "private", "agora-auth-database"},
 		{"Success/AuthenticationRepository", "example-private", "authentication", "repository", "private", "agora-pgbr-authentication"},
+		{"Success/GenAIDatabase", "example-private", "genai", "database", "private", "agora-genai-database"},
+		{"Success/GenAIRepository", "example-private", "genai", "repository", "private", "agora-pgbr-genai"},
 		{"Error/MissingZone", "example-private", "json-keys", "database", "", ""},
 		{"Error/PublicAPI", "example-private", "authentication", "database", "public-api", ""},
 		{"Error/Public", "example-private", "json-keys", "repository", "public", ""},

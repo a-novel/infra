@@ -12,6 +12,7 @@ var (
 	privateDatabaseAccounts = map[string]string{
 		"json-keys":      "agora-json-keys-database",
 		"authentication": "agora-auth-database",
+		"genai":          "agora-genai-database",
 	}
 )
 
