@@ -185,6 +185,78 @@ resource "google_cloud_run_v2_job" "maintenance" {
   }
 }
 
+# Foundation's schedule runs this job to delete refresh token revocations past their expiry. The
+# stored arguments name its one operation, so the schedule runs it without overrides. It shares the
+# maintenance job's image and identity, which already read only the database password. A failed run
+# is not retried: the next scheduled run deletes what it left.
+resource "google_cloud_run_v2_job" "refresh_token_purge" {
+  project             = local.private_project_id
+  name                = "a-novel-authentication-refresh-token-purge"
+  location            = local.region
+  deletion_protection = true
+  labels              = { environment = "production", component = "authentication", role = "refresh-token-purge" }
+
+  template {
+    task_count  = 1
+    parallelism = 1
+
+    template {
+      service_account       = module.private_runtime.workloads["maintain"].service_account
+      execution_environment = "EXECUTION_ENVIRONMENT_GEN2"
+      timeout               = "600s"
+      max_retries           = 0
+
+      containers {
+        name  = "refresh-token-purge"
+        image = local.image.maintenance
+        args  = ["refresh-token-purge"]
+
+        dynamic "env" {
+          for_each = merge(local.database_env, local.downtime_env, {
+            POSTGRES_MAX_OPEN_CONNS = "2"
+            POSTGRES_MAX_IDLE_CONNS = "1"
+          })
+          content {
+            name  = env.key
+            value = env.value
+          }
+        }
+
+        dynamic "env" {
+          for_each = local.maintenance_secret_env
+          content {
+            name = env.key
+            value_source {
+              secret_key_ref {
+                secret  = "projects/${local.management_project_id}/secrets/production-authentication-${env.value}"
+                version = tostring(var.secret_versions[env.value])
+              }
+            }
+          }
+        }
+
+        resources {
+          limits = { cpu = "1", memory = "512Mi" }
+        }
+      }
+
+      # The job reaches only the database, so it stays on the private subnet, like the migrations.
+      vpc_access {
+        egress = "ALL_TRAFFIC"
+        network_interfaces {
+          network    = local.network.network
+          subnetwork = local.network.subnetwork
+          tags       = local.network.tags
+        }
+      }
+    }
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
 # Authentication calls the private JSON Keys service over Cloud Run's internal ingress.
 data "google_cloud_run_v2_service" "json_keys" {
   project  = local.private_project_id

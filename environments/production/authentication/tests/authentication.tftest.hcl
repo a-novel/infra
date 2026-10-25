@@ -100,6 +100,18 @@ run "splits_private_migrations_from_the_public_api" {
     )
     error_message = "The maintenance job stays private, runs only when a human starts it with an operation, and mounts only the database password."
   }
+
+  assert {
+    condition = (
+      google_cloud_run_v2_job.refresh_token_purge.project == "a-novel-production-prod" &&
+      google_cloud_run_v2_job.refresh_token_purge.run_execution_token == null &&
+      google_cloud_run_v2_job.refresh_token_purge.template[0].template[0].containers[0].args == tolist(["refresh-token-purge"]) &&
+      google_cloud_run_v2_job.refresh_token_purge.template[0].template[0].max_retries == 0 &&
+      endswith(google_cloud_run_v2_job.refresh_token_purge.template[0].template[0].vpc_access[0].network_interfaces[0].subnetwork, "/agora-production-europe-west1") &&
+      toset([for env in google_cloud_run_v2_job.refresh_token_purge.template[0].template[0].containers[0].env : env.name if length(env.value_source) > 0]) == toset(["POSTGRES_PASSWORD"])
+    )
+    error_message = "The purge job stays private and off the egress subnet, runs only its stored operation, and mounts only the database password."
+  }
 }
 
 run "requires_the_waitlist_secret_with_its_url" {
@@ -124,9 +136,10 @@ run "passes_the_planned_downtime_start" {
       google_cloud_run_v2_service.rest.template[0].containers,
       google_cloud_run_v2_job.migrations.template[0].template[0].containers,
       google_cloud_run_v2_job.maintenance.template[0].template[0].containers,
+      google_cloud_run_v2_job.refresh_token_purge.template[0].template[0].containers,
       ) : lookup({ for env in container.env : env.name => env.value }, "DOWNTIME_START", null) == "2026-10-12T06:00:00Z"
     ])
-    error_message = "The REST API and both jobs must receive the planned downtime start."
+    error_message = "The REST API and every job must receive the planned downtime start."
   }
 }
 
