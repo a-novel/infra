@@ -69,6 +69,35 @@ answers 503, so it does not fire this alert.
    timeouts instead mean the [egress allowlist](../architecture.md#network) or NAT dropped the
    calls, and neither logs a refusal.
 
+## GenAI purge falling behind
+
+An expired generation waited more than 30 minutes for the retention purge, or GenAI's database host
+logged no wait for 30 minutes. Every five minutes, the host's `a-novel-database-probe.timer` logs
+how long the oldest expired generation has waited. pg_cron runs the purge every 10 seconds, oldest
+first, at most 1,000 rows and 64 MiB a call, so the wait stays near zero. Past 30 minutes, either
+the purge stopped, or more than 30 minutes of its fastest pace, about 11 GiB, waits ahead. Expired
+content then fills the data disk.
+
+[Connect to GenAI's host](database.md#inspect-and-connect), then read the schedules, the backlog and
+the last runs:
+
+```bash
+sudo docker exec --user postgres agora-postgres-genai psql -U agora_genai -d agora_genai \
+  -c 'SELECT jobname, schedule, active FROM cron.job;' \
+  -c 'SELECT count(*) FROM generations WHERE expires_at < now();' \
+  -c 'SELECT status, return_message, start_time FROM cron.job_run_details ORDER BY start_time DESC LIMIT 10;'
+```
+
+- **`service-genai-purge-settled` is missing:** the migrations job ran against another database, and
+  skipped the schedule without an error. Fix its target, then run it again.
+- **The runs fail:** their `return_message` says why.
+- **The runs succeed and the backlog still grows:** settled content arrives faster than the purge
+  deletes it. The disk alerts give the time left. Raising the purge's batch is a service-genai
+  change.
+- **No wait was logged:** check `sudo systemctl status a-novel-database-probe.timer` and
+  `sudo journalctl -u a-novel-database-probe.service --since=-1h`. A stopped PostgreSQL also fires
+  the sweep alert.
+
 ## Application jobs and key rotation
 
 A job execution failed, or the rotation job went three hours without a successful run. It runs
