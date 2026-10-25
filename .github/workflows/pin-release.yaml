@@ -3,8 +3,9 @@ name: pin release
 # A service or platform release dispatches `release` once every image it publishes is in the
 # registry, so no pull request pins half a release. This pins them in one pull request per
 # repository, opened by the Dependencies App so auto-approve-dependabot.yaml approves and queues it
-# like a Renovate update. Release pull requests edit neighboring lines, so a merge can leave another
-# one conflicting: each push to master rebuilds those from master, as Renovate rebases its own.
+# like a Renovate update. A blank line separates each service's pins in shared files, so releases of
+# different services merge side by side. When a merge still leaves one conflicting, the next push to
+# master rebuilds it from master, as Renovate rebases its own.
 on:
   repository_dispatch:
     types: [release]

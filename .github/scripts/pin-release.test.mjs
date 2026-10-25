@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
-import { branchVersion, pins, rewrite } from "./pin-release.mjs";
+import { branchVersion, paths, pins, rewrite, run } from "./pin-release.mjs";
 
 const old = `sha256:${"a".repeat(64)}`;
 const fresh = `sha256:${"b".repeat(64)}`;
@@ -69,5 +70,24 @@ describe("rewrite", () => {
   it("leaves other images alone", () => {
     const other = `FROM ${image}-replica:v2.10.4@${old}\nFROM ghcr.io/a-novel/service-json-keys/grpc:v2.10.4@${old}`;
     assert.equal(rewrite(other, image, "v2.11.0", fresh), other);
+  });
+});
+
+describe("committed pins", () => {
+  // Git refuses to merge edits to adjacent lines, so concurrent release pull requests conflict
+  // when two repositories' pins touch.
+  it("keep a line between the pins of different repositories", () => {
+    for (const file of run("git", ["ls-files", "--", ...paths]).split("\n")) {
+      const owners = readFileSync(file, "utf8")
+        .split("\n")
+        .map((line) => /ghcr\.io\/([a-z0-9-]+\/[a-z0-9-]+)/.exec(line)?.[1]);
+      owners.forEach((owner, index) => {
+        const previous = owners[index - 1];
+        assert.ok(
+          !owner || !previous || owner === previous,
+          `${file}:${index + 1} pins ${owner} next to ${previous}.`,
+        );
+      });
+    }
   });
 });

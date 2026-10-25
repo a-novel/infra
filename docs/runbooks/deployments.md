@@ -63,8 +63,9 @@ that waits for a downtime that has since started.
 3. **It merges itself.** The Dependencies App opens it, so the auto-approve workflow approves and
    queues it, as it does Renovate's updates. The queue merges it once its checks pass. A `FROM` line
    counts as part of the pin when it takes a digest the same pull request pins in
-   `environments/production`. When another release merges first and leaves it conflicting, the next
-   push to `master` rebuilds it from `master`.
+   `environments/production`. A blank line separates each service's pins in shared files, so
+   releases of different services merge side by side. When a merge still leaves one conflicting,
+   the next push to `master` rebuilds it from `master`.
 4. **The deploy applies it:**
    1. it copies the images to the service's Artifact Registry repository;
    2. it applies, which runs the migration job and waits for it;

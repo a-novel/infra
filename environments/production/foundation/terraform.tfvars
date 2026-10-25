@@ -94,10 +94,14 @@ database_releases = {
     app_password_version = "1"
   }
 }
+# A blank line separates each service's pin, so concurrent release pull requests merge cleanly. Git
+# refuses to merge edits to adjacent lines.
 database_images = {
-  json-keys      = "ghcr.io/a-novel/service-json-keys/database:v2.13.0@sha256:8778711f5c9beb691b741b2edbbcccf4e5f857b0ff3380fbf2210dea194aab5a"
+  json-keys = "ghcr.io/a-novel/service-json-keys/database:v2.13.0@sha256:8778711f5c9beb691b741b2edbbcccf4e5f857b0ff3380fbf2210dea194aab5a"
+
   authentication = "ghcr.io/a-novel/service-authentication/database:v2.16.0@sha256:6e8aab13a3f8a3cff10c39f87d8d50a3153dabe88d7da3b20786079239f68ae1"
-  genai          = "ghcr.io/a-novel/service-genai/database:v0.6.2@sha256:b31cb76b7909f052e7bc2d417a32c9c1b15b54bb394059d07bc8709ad7dd48da"
+
+  genai = "ghcr.io/a-novel/service-genai/database:v0.6.2@sha256:b31cb76b7909f052e7bc2d417a32c9c1b15b54bb394059d07bc8709ad7dd48da"
 }
 # json-keys and genai at their maximum instances, plus one rollout instance each, and the jobs.
 cloud_run_cpu_quota_millicpu = 16000
