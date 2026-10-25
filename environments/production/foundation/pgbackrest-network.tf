@@ -35,20 +35,6 @@ resource "google_compute_address" "pgbackrest_repository" {
   }
 }
 
-variable "adopt_repository_addresses" {
-  description = "Import the two repository addresses the service roots reserved. Mocked providers cannot import, so tests turn it off."
-  type        = bool
-  default     = true
-  nullable    = false
-}
-
-# The service roots reserved these two before foundation did. Remove with the variable once applied.
-import {
-  for_each = var.adopt_repository_addresses ? toset(["json-keys", "authentication"]) : toset([])
-  to       = google_compute_address.pgbackrest_repository[each.key]
-  id       = "projects/${var.workload_project_id}/regions/${var.region}/addresses/agora-pgbackrest-${each.key}"
-}
-
 locals {
   # The repository's identity exists once its service root has deployed the VM, which needs the
   # address first, so the network rules wait for the database host to enroll.

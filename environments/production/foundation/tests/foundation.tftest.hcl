@@ -24,10 +24,6 @@ mock_provider "google-beta" {
   }
 }
 
-variables {
-  adopt_repository_addresses = false
-}
-
 run "keeps_databases_private_and_preserved" {
   command = plan
 
