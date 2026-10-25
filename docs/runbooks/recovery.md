@@ -10,7 +10,8 @@ List the service's backups on its repository VM:
 
 ```bash
 SERVICE=json-keys
-gcloud compute ssh "agora-pgbackrest-$SERVICE" --zone="$ZONE" --project="$PROD" --tunnel-through-iap \
+gcloud compute ssh "agora-pgbackrest-$SERVICE" --zone=europe-west1-d --project=a-novel-production-prod \
+  --tunnel-through-iap \
   --command="sudo docker exec agora-backup-repository pgbackrest --stanza=$SERVICE --output=json info" |
   jq '.[0] | {system_id: .db[0]["system-id"], sets: [.backup[] | .label]}'
 ```
@@ -24,7 +25,7 @@ admins grant it to themselves for the drill, and remove it afterwards. Skip this
 it:
 
 ```bash
-gcloud organizations add-iam-policy-binding "$ORG" --role=roles/resourcemanager.projectCreator \
+gcloud organizations add-iam-policy-binding 1031663934757 --role=roles/resourcemanager.projectCreator \
   --member="user:$(gcloud config get-value account)" --condition=None
 ```
 
@@ -32,8 +33,8 @@ Create the project. `DRILL` must match `a-novel-recovery-<id>`, with at most 30 
 
 ```bash
 DRILL=a-novel-recovery-261101
-gcloud projects create "$DRILL" --organization="$ORG"
-gcloud billing projects link "$DRILL" --billing-account="$BILLING"
+gcloud projects create "$DRILL" --organization=1031663934757
+gcloud billing projects link "$DRILL" --billing-account=01BDFE-5B21E7-8393CB
 gcloud services enable compute.googleapis.com artifactregistry.googleapis.com dns.googleapis.com \
   --project="$DRILL"
 ```
@@ -43,12 +44,12 @@ Let the deploy identity build the drill host, and the service's backup reader,
 backup reader to the drill VM, for the drill only:
 
 ```bash
-DEPLOYER="serviceAccount:infra-foundation@$MGMT.iam.gserviceaccount.com"
-READER="pgbr-$SERVICE-recovery@$MGMT.iam.gserviceaccount.com"
+DEPLOYER="serviceAccount:infra-foundation@a-novel-management-prod.iam.gserviceaccount.com"
+READER="pgbr-$SERVICE-recovery@a-novel-management-prod.iam.gserviceaccount.com"
 gcloud projects add-iam-policy-binding "$DRILL" --role=roles/owner --member="$DEPLOYER"
 gcloud projects add-iam-policy-binding "$DRILL" --role=roles/artifactregistry.reader \
   --member="serviceAccount:$READER"
-gcloud iam service-accounts add-iam-policy-binding "$READER" --project="$MGMT" \
+gcloud iam service-accounts add-iam-policy-binding "$READER" --project=a-novel-management-prod \
   --role=roles/iam.serviceAccountUser --member="$DEPLOYER"
 ```
 
@@ -56,7 +57,7 @@ The backup reader can read the service's backups and restore deleted objects, bu
 It stays disabled outside drills. Enable it:
 
 ```bash
-gcloud iam service-accounts enable "$READER" --project="$MGMT"
+gcloud iam service-accounts enable "$READER" --project=a-novel-management-prod
 ```
 
 While it is enabled, the drift check reports bootstrap as drifted.
@@ -117,8 +118,8 @@ The host is created **stopped**, with no external IP and no route to production.
 Start the drill host and connect to it:
 
 ```bash
-gcloud compute instances start agora-native-recovery --zone="$ZONE" --project="$DRILL"
-gcloud compute ssh agora-native-recovery --zone="$ZONE" --project="$DRILL" --tunnel-through-iap
+gcloud compute instances start agora-native-recovery --zone=europe-west1-d --project="$DRILL"
+gcloud compute ssh agora-native-recovery --zone=europe-west1-d --project="$DRILL" --tunnel-through-iap
 ```
 
 On the drill host, prepare the data disk, restore, then verify:
@@ -146,8 +147,8 @@ It is a dump of the needed rows, imported during a planned downtime.
 Disable the backup reader, and take back the deploy identity's right to attach it:
 
 ```bash
-gcloud iam service-accounts disable "$READER" --project="$MGMT"
-gcloud iam service-accounts remove-iam-policy-binding "$READER" --project="$MGMT" \
+gcloud iam service-accounts disable "$READER" --project=a-novel-management-prod
+gcloud iam service-accounts remove-iam-policy-binding "$READER" --project=a-novel-management-prod \
   --role=roles/iam.serviceAccountUser --member="$DEPLOYER"
 ```
 
@@ -155,7 +156,7 @@ Delete the drill project and its state:
 
 ```bash
 gcloud projects delete "$DRILL"
-gcloud storage rm -r "$STATE/recovery/$DRILL/"
+gcloud storage rm -r "gs://a-novel-management-prod-232403541574-tofu-state/recovery/$DRILL/"
 ```
 
 A deleted project keeps billing its disks until Google purges it, which can take up to 30 days.
@@ -163,6 +164,6 @@ A deleted project keeps billing its disks until Google purges it, which can take
 If you granted yourself the project-creation role for this drill, remove it:
 
 ```bash
-gcloud organizations remove-iam-policy-binding "$ORG" --role=roles/resourcemanager.projectCreator \
+gcloud organizations remove-iam-policy-binding 1031663934757 --role=roles/resourcemanager.projectCreator \
   --member="user:$(gcloud config get-value account)" --condition=None
 ```

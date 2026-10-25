@@ -191,7 +191,7 @@ plans only the rest.
      ```bash
      JOB=agora-json-keys-migrations
      gcloud logging read "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"$JOB\"" \
-       --project="$PROD" --freshness=1d --limit=50
+       --project=a-novel-production-prod --freshness=1d --limit=50
      ```
 
      Fix the service and release it again, or fix the configuration in a new pull request. Every
@@ -208,7 +208,8 @@ plans only the rest.
      project's policy audit log holds its violations, and in dry run the calls it would refuse:
 
      ```bash
-     gcloud logging read 'log_id("cloudaudit.googleapis.com/policy")' --project="$PROD" --freshness=1d
+     gcloud logging read 'log_id("cloudaudit.googleapis.com/policy")' \
+       --project=a-novel-production-prod --freshness=1d
      ```
 
      Admit the call with a rule in foundation's `service-perimeter.tf`, in a new pull request.

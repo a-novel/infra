@@ -16,12 +16,8 @@ from deploys and release pins to database rollouts and scheduled checks.
 | A state object is wrong or locked                         | [State](state.md)               |
 | Rebuild from nothing, or reconfigure GitHub               | [Setup](setup.md)               |
 
-The commands run from a checkout of this repository, and expect these variables in your shell:
-
-```bash
-export MGMT=a-novel-management-prod PROD=a-novel-production-prod ZONE=europe-west1-d
-export STATE=gs://a-novel-management-prod-232403541574-tofu-state
-export ORG=1031663934757 BILLING=01BDFE-5B21E7-8393CB
-```
+The commands run from a checkout of this repository. Each `gcloud` command names its project, and
+its zone or region, with the values in foundation's `terraform.tfvars`. A default left in your
+`gcloud` configuration never redirects it.
 
 Never paste secret values, plans or state into GitHub, chat or logs.
