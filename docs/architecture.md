@@ -81,7 +81,7 @@ own identities, image repositories, network tags and database hosts.
   CI identity holds an organization role that could lift them. Public APIs run in
   `a-novel-public-api-prod`. Both projects also keep Cloud Run's egress in the VPC
   (`run.allowedVPCEgress`).
-- **A VPC Service Controls perimeter**, `agora_production`, holds the private and public-api
+- **A VPC Service Controls perimeter**, `a_novel_production`, holds the private and public-api
   projects. Their VPC reaches only the APIs it restricts, every API the two projects enable, and
   those APIs reach only resources inside it. CI's identities and the operators enter from anywhere.
   Any identity inside may call Secret Manager and Cloud Storage in management, for the secrets and

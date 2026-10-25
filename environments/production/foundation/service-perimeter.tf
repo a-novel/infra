@@ -61,14 +61,12 @@ locals {
 # refuses nothing: an empty status block never converges.
 resource "google_access_context_manager_service_perimeter" "production" {
   parent      = "accessPolicies/${var.access_policy_id}"
-  name        = "accessPolicies/${var.access_policy_id}/servicePerimeters/agora_production"
-  title       = "agora-production"
+  name        = "accessPolicies/${var.access_policy_id}/servicePerimeters/a_novel_production"
+  title       = "a-novel-production"
   description = "Keeps the production workloads' Google API calls inside production and management."
 
   use_explicit_dry_run_spec = true
-  # The perimeter takes its A-Novel name in a-novel/infra#1083. This apply unlocks it; the next one
-  # replaces it, since the provider reads deletion_policy from state.
-  deletion_policy = "DELETE"
+  deletion_policy           = "PREVENT"
 
   spec {
     resources           = local.perimeter.resources
@@ -128,7 +126,6 @@ resource "google_access_context_manager_service_perimeter" "production" {
     }
   }
 
-  lifecycle {
-    prevent_destroy = true
-  }
+  # prevent_destroy returns once the rename has applied: it would refuse the replacement
+  # (a-novel/infra#1083).
 }
