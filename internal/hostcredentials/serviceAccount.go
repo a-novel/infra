@@ -18,15 +18,12 @@ var (
 
 // ServiceAccount returns the identity a service's endpoint host must run as, in the project of the
 // private trust zone, before the host authenticates with it.
-func ServiceAccount(project, service, endpoint, zone string) (string, error) {
+func ServiceAccount(project, service, endpoint string) (string, error) {
 	if !slices.Contains(services, service) {
 		return "", errors.New("invalid service")
 	}
 	if !projectID.MatchString(project) {
 		return "", errors.New("invalid workload project")
-	}
-	if zone != "private" {
-		return "", errors.New("invalid trust zone")
 	}
 	var account string
 	switch endpoint {
