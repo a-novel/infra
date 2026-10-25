@@ -56,7 +56,6 @@ service_release_zones = {
     "private",
   ]
 }
-shared_vpc_enabled     = true
 subnet_cidr            = "10.20.0.0/24"
 egress_subnet_cidr     = "10.20.1.0/25"
 workload_project_id    = "a-novel-production-prod"

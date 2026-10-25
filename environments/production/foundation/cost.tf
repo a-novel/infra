@@ -1,9 +1,9 @@
 locals {
   # Each shell project runs its own Cloud Run services, so each gets its own ceiling.
-  shell_projects = merge(
-    { for zone, project in module.public_project : zone => project.project_id },
-    { for zone, project in module.public_api_project : zone => project.project_id },
-  )
+  shell_projects = {
+    public     = module.public_project.project_id
+    public-api = module.public_api_project["public-api"].project_id
+  }
 
   # Regional quota IDs are service-defined and known before project creation.
   # Planning must not query APIs that the same plan still needs to enable.
@@ -116,11 +116,10 @@ resource "google_billing_budget" "workload" {
   ownership_scope = "BILLING_ACCOUNT"
 
   budget_filter {
-    projects = sort(concat(
-      ["projects/${data.google_project.management.number}", "projects/${google_project.workload.number}"],
-      [for project in module.public_project : "projects/${project.project_number}"],
-      [for project in module.public_api_project : "projects/${project.project_number}"],
-    ))
+    projects = sort([for number in [
+      data.google_project.management.number, google_project.workload.number,
+      module.public_project.project_number, module.public_api_project["public-api"].project_number,
+    ] : "projects/${number}"])
     calendar_period        = "MONTH"
     credit_types_treatment = "INCLUDE_ALL_CREDITS"
   }

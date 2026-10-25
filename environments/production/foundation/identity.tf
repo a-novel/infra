@@ -310,7 +310,7 @@ resource "google_project_iam_member" "database_operator_iap" {
 
 # Operators read the public API's logs too, the perimeter's violations included.
 resource "google_project_iam_member" "database_operator_public_api_logs" {
-  for_each = length(module.public_api_project) == 0 ? toset([]) : var.database_operator_principals
+  for_each = var.database_operator_principals
 
   project = module.public_api_project["public-api"].project_id
   role    = "roles/logging.viewer"

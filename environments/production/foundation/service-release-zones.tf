@@ -11,14 +11,6 @@ variable "service_release_zones" {
     ])
     error_message = "Select nonempty private/public-api zone sets for JSON Keys, Authentication or GenAI; public is reserved for platforms."
   }
-
-  validation {
-    condition = length(var.service_release_zones) == 0 || (
-      var.shared_vpc_enabled &&
-      (var.public_api_project_id != null || alltrue([for zones in var.service_release_zones : !try(contains(zones, "public-api"), false)]))
-    )
-    error_message = "Service zones require the Shared VPC and, for public-api, the API project."
-  }
 }
 
 locals {
@@ -26,6 +18,6 @@ locals {
     for boundary in flatten([for service, zones in var.service_release_zones : [
       for zone in coalesce(zones, toset([])) : { service = service, zone = zone }
     ]]) : "${boundary.service}/${boundary.zone}" => boundary
-    if contains(["private", "public-api"], boundary.zone) && (boundary.zone != "public-api" || var.public_api_project_id != null)
+    if contains(["private", "public-api"], boundary.zone)
   }
 }
