@@ -1,7 +1,7 @@
 # Runs tests/backup inside a service's database image with synthetic data only.
 ARG DATABASE_SERVICE=json-keys
 FROM ghcr.io/a-novel/service-json-keys/database:v2.13.0@sha256:8778711f5c9beb691b741b2edbbcccf4e5f857b0ff3380fbf2210dea194aab5a AS json-keys
-FROM ghcr.io/a-novel/service-authentication/database:v2.15.3@sha256:6e8aab13a3f8a3cff10c39f87d8d50a3153dabe88d7da3b20786079239f68ae1 AS authentication
+FROM ghcr.io/a-novel/service-authentication/database:v2.16.0@sha256:6e8aab13a3f8a3cff10c39f87d8d50a3153dabe88d7da3b20786079239f68ae1 AS authentication
 
 FROM docker.io/library/golang:1.27.3-alpine AS builder
 ENV CGO_ENABLED=0
