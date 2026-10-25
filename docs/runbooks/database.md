@@ -1,7 +1,7 @@
 # Database hosts
 
-This runbook is about the PostgreSQL hosts. Each service has a database host, and JSON Keys and
-Authentication also have a backup repository VM:
+This runbook is about the PostgreSQL hosts. Each service has a database host and a backup
+repository VM. GenAI's repository serves nothing until its host enrolls in native backups:
 
 - the **database host** is the only member of the instance group `agora-database-<service>`. It runs
   PostgreSQL from the service's `database` image, on a separate data disk `agora-data-<service>`

@@ -19,11 +19,23 @@ variable "images" {
   type        = map(string)
 
   validation {
-    condition = toset(keys(var.images)) == toset(["grpc", "migrations", "sweep"]) && alltrue([
+    condition = toset(keys(var.images)) == toset(["database", "grpc", "migrations", "sweep"]) && alltrue([
       for ref in values(var.images) : can(regex("^ghcr\\.io/a-novel/service-genai/[^:@]+:v[0-9]+\\.[0-9]+\\.[0-9]+@sha256:[a-f0-9]{64}$", ref))
     ])
-    error_message = "Pin the grpc, migrations and sweep images by release tag and digest."
+    error_message = "Pin the database, grpc, migrations and sweep images by release tag and digest."
   }
+}
+
+variable "backup_repository" {
+  description = "Backup repository VM image and the TLS runtime it loads at boot; the server runs the database image."
+  type = object({
+    cos_image = string
+    runtime = object({
+      client_name      = string
+      ca_version       = string
+      identity_version = string
+    })
+  })
 }
 
 variable "downtime" {
