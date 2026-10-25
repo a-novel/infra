@@ -62,8 +62,13 @@ token. They hold credentials.
 
 ## Back up now and verify
 
-Timers take a full backup on Sundays and a differential backup the other days, and run a check every
-hour. To take a backup by hand, for example before a database host change, run on the database host:
+Only the hosts in foundation's `native_backups`, JSON Keys and Authentication today, run the
+`agora-backup-*` units. Their timers take a full backup on Sundays and a differential backup the
+other days, and run a check every hour. GenAI's host has none until
+[a-novel/infra#785](https://github.com/a-novel/infra/issues/785) adds its backups, so its only copy
+before a host change is the [pre-rollout snapshot](#pre-rollout-snapshots).
+
+To take a backup by hand, for example before a database host change, run on the database host:
 
 ```bash
 sudo systemctl start --wait agora-backup-check.service
@@ -139,7 +144,8 @@ deploy:  roots applied ──► rollout (per service) ──► database host e
    [Schedule a downtime](downtime.md#schedule-or-change-a-downtime) describes. List the services
    that depend on it too.
 2. **Take a full backup and verify it** ([above](#back-up-now-and-verify)) before the downtime
-   starts.
+   starts. A service outside `native_backups`, GenAI today, has no backups: its only copy is the
+   [snapshot](#pre-rollout-snapshots) the rollout takes before the restart.
 3. **Once the downtime has started, add the `allow-downtime` label** to the pull request. Its checks
    re-run and pass.
 
