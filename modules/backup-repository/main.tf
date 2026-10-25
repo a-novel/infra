@@ -28,7 +28,6 @@ locals {
           service           = var.service
           management_number = var.management_project_number
           server_name       = local.server_name
-          zone_argument     = "--zone=private "
           restart           = "on-failure"
         }))
       },

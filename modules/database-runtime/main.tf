@@ -43,7 +43,6 @@ locals {
         server_ip         = var.repository.ip
         identity_version  = var.identity_version
         wal_archiving     = var.wal_archiving
-        zone_argument     = "--zone=private "
         backup_containers = join(" ", [for name in keys(local.backup_jobs) : "agora-backup-${var.service}-${name}"])
         backup_timers     = var.schedules_enabled ? join(" ", [for name in keys(local.backup_calendars) : "agora-backup-${name}.timer"]) : ""
       }))

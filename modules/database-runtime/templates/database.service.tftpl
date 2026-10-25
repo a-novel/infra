@@ -32,7 +32,7 @@ ExecStartPre=/usr/bin/docker run --rm --name=agora-database-credentials --pull=n
     --cpus=1 --memory=256m --pids-limit=64 --no-healthcheck --log-driver=none --ulimit=core=0 \
     --mount=type=bind,source=/run/agora/pgbackrest,target=/credentials \
     ${credentials_image} --management-project-number=${management_number} --workload-project=${project} \
-    --service=${service} --endpoint=database ${zone_argument}--ca-version=${ca_version} --identity-version=${identity_version} \
+    --service=${service} --endpoint=database --ca-version=${ca_version} --identity-version=${identity_version} \
     --name=${client_name} --output=/credentials/current
 ExecStart=/bin/bash /etc/agora-database/startup.sh --supervise
 ExecStop=/usr/bin/docker stop --time=60 agora-postgres-${service}
