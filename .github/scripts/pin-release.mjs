@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 
 import { isRelease, newest, semver } from "./versions.mjs";
 
-const paths = [
+export const paths = [
   ":(glob)environments/production/*/terraform.tfvars",
   ":(glob)builds/*.Dockerfile",
 ];
