@@ -20,8 +20,8 @@ Humans have read access plus SSH through Identity-Aware Proxy. No host has a pub
 ```bash
 SERVICE=json-keys
 HOST="$(gcloud compute instance-groups managed list-instances "agora-database-$SERVICE" \
-  --zone="$ZONE" --project="$PROD" --format='value(instance.basename())')"
-gcloud compute ssh "$HOST" --zone="$ZONE" --project="$PROD" --tunnel-through-iap
+  --zone=europe-west1-d --project=a-novel-production-prod --format='value(instance.basename())')"
+gcloud compute ssh "$HOST" --zone=europe-west1-d --project=a-novel-production-prod --tunnel-through-iap
 ```
 
 `gcloud` creates and registers an OS Login key on first use.
@@ -31,9 +31,11 @@ HOST IDENTIFICATION HAS CHANGED". Compare the fingerprint it prints with the key
 publishes, and drop the stale entry only when they match:
 
 ```bash
-gcloud compute instances get-guest-attributes "$HOST" --zone="$ZONE" --project="$PROD" \
-  --query-path=hostkeys/ssh-ed25519 --format='value(value)' | sed 's/^/ssh-ed25519 /' | ssh-keygen -lf -
-ID="$(gcloud compute instances describe "$HOST" --zone="$ZONE" --project="$PROD" --format='value(id)')"
+gcloud compute instances get-guest-attributes "$HOST" --zone=europe-west1-d \
+  --project=a-novel-production-prod --query-path=hostkeys/ssh-ed25519 --format='value(value)' |
+  sed 's/^/ssh-ed25519 /' | ssh-keygen -lf -
+ID="$(gcloud compute instances describe "$HOST" --zone=europe-west1-d --project=a-novel-production-prod \
+  --format='value(id)')"
 ssh-keygen -R "compute.$ID" -f ~/.ssh/google_compute_known_hosts
 ```
 
@@ -234,7 +236,7 @@ this lists them:
 
 ```bash
 SERVICE=json-keys
-gcloud compute snapshots list --project="$PROD" --format='table(name,creationTimestamp)' \
+gcloud compute snapshots list --project=a-novel-production-prod --format='table(name,creationTimestamp)' \
   --filter="labels.role=pre-rollout AND labels.component=$SERVICE"
 ```
 

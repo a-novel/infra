@@ -17,9 +17,9 @@ Keys stores, and a new value cannot decrypt them.
    ```bash
    SECRET="production-<service>-<name>"
    read -rs VALUE
-   printf '%s' "$VALUE" | gcloud secrets versions add "$SECRET" --project="$MGMT" --data-file=-
+   printf '%s' "$VALUE" | gcloud secrets versions add "$SECRET" --project=a-novel-management-prod --data-file=-
    unset VALUE
-   gcloud secrets versions list "$SECRET" --project="$MGMT" --limit=3
+   gcloud secrets versions list "$SECRET" --project=a-novel-management-prod --limit=3
    ```
 
    | Secret              | Format                                                    |
@@ -35,14 +35,14 @@ Keys stores, and a new value cannot decrypt them.
 
    ```bash
    OLD="<old version number>"
-   gcloud secrets versions disable "$OLD" --secret="$SECRET" --project="$MGMT"
+   gcloud secrets versions disable "$OLD" --secret="$SECRET" --project=a-novel-management-prod
    ```
 
 4. **Destroy it** only when you are sure it is no longer needed. Destruction becomes final 30 days
    later.
 
    ```bash
-   gcloud secrets versions destroy "$OLD" --secret="$SECRET" --project="$MGMT"
+   gcloud secrets versions destroy "$OLD" --secret="$SECRET" --project=a-novel-management-prod
    ```
 
 Disabling a version does not revoke the credential where it was issued. For a leak, also revoke it
@@ -139,7 +139,7 @@ To renew:
    SERVICE=json-keys
    ENDPOINT=database
    FILE=database.pem
-   gcloud secrets versions add "production-$SERVICE-pgbackrest-$ENDPOINT" --project="$MGMT" \
+   gcloud secrets versions add "production-$SERVICE-pgbackrest-$ENDPOINT" --project=a-novel-management-prod \
      --data-file="$FILE"
    ```
 
@@ -159,5 +159,5 @@ Delete the local PEM files afterwards.
 ```bash
 SECRET="production-<service>-<name>"
 gcloud logging read 'protoPayload.serviceName="secretmanager.googleapis.com" AND protoPayload.resourceName:"/secrets/'"$SECRET"'"' \
-  --project="$MGMT" --limit=20 --format='table(timestamp,protoPayload.methodName,protoPayload.authenticationInfo.principalEmail)'
+  --project=a-novel-management-prod --limit=20 --format='table(timestamp,protoPayload.methodName,protoPayload.authenticationInfo.principalEmail)'
 ```

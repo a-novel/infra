@@ -61,7 +61,7 @@ answers 503, so it does not fire this alert.
 
    ```bash
    gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="agora-genai-sweep" AND severity>=ERROR' \
-     --project="$PROD" --freshness=1h --limit=50
+     --project=a-novel-production-prod --freshness=1h --limit=50
    ```
 
 2. Check GenAI's [database host](database.md#inspect-and-connect).
@@ -75,7 +75,8 @@ A job execution failed, or the rotation job went three hours without a successfu
 hourly and rotates the keys only once 24 hours have passed, so a single failure retries on its own.
 
 ```bash
-gcloud logging read 'resource.type="cloud_run_job" AND severity>=ERROR' --project="$PROD" --freshness=6h --limit=50
+gcloud logging read 'resource.type="cloud_run_job" AND severity>=ERROR' \
+  --project=a-novel-production-prod --freshness=6h --limit=50
 ```
 
 A failed `migrations` job blocks its own deploy, as

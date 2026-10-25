@@ -2,11 +2,11 @@
 
 This runbook is about OpenTofu's state.
 
-Each root's state is one object in `$STATE/<prefix>/default.tfstate`. The prefix is the root's
-directory name, such as `foundation` or `json-keys`, or `recovery/<project>` for a drill. The bucket
-keeps a replaced version until 90 days after its replacement and until 50 newer versions exist. It
-keeps a deleted object for 7 days. State holds no secret values, but it is private. Never paste it
-anywhere.
+Each root's state is one object, `<prefix>/default.tfstate`, in the bucket
+`gs://a-novel-management-prod-232403541574-tofu-state`. The prefix is the root's directory name,
+such as `foundation` or `json-keys`, or `recovery/<project>` for a drill. The bucket keeps a
+replaced version until 90 days after its replacement and until 50 newer versions exist. It keeps a
+deleted object for 7 days. State holds no secret values, but it is private. Never paste it anywhere.
 
 ## Remove a stale lock
 
@@ -23,7 +23,7 @@ acquiring the state lock".
 
    ```bash
    ROOT=foundation
-   gcloud storage rm "$STATE/$ROOT/default.tflock"
+   gcloud storage rm "gs://a-novel-management-prod-232403541574-tofu-state/$ROOT/default.tflock"
    ```
 
 3. Re-run the failed deploy:
@@ -48,7 +48,7 @@ affected.
 
    ```bash
    ROOT=foundation
-   OBJ="$STATE/$ROOT/default.tfstate"
+   OBJ="gs://a-novel-management-prod-232403541574-tofu-state/$ROOT/default.tfstate"
    gcloud storage ls -a -l "$OBJ" | sort -k2 -r | head
    ```
 

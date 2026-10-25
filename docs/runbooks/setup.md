@@ -77,7 +77,7 @@ Creating it needs the Deny Admin role on the organization:
 
 ```bash
 gcloud iam policies create plan-identity-data --kind=denypolicies \
-  --attachment-point="cloudresourcemanager.googleapis.com/organizations/$ORG" \
+  --attachment-point="cloudresourcemanager.googleapis.com/organizations/1031663934757" \
   --policy-file=docs/runbooks/policies/infra-plan-data-deny.json
 ```
 
@@ -87,12 +87,14 @@ Creating the access policy and granting on it needs Access Context Manager Admin
 organization. Foundation's `access_policy_id` holds the number the list prints:
 
 ```bash
-gcloud access-context-manager policies create --organization="$ORG" --title=agora
-POLICY="$(gcloud access-context-manager policies list --organization="$ORG" --format='value(name)')"
+gcloud access-context-manager policies create --organization=1031663934757 --title=agora
+POLICY="$(gcloud access-context-manager policies list --organization=1031663934757 --format='value(name)')"
 gcloud access-context-manager policies add-iam-policy-binding "$POLICY" \
-  --role=roles/accesscontextmanager.policyEditor --member="serviceAccount:infra-foundation@$MGMT.iam.gserviceaccount.com"
+  --role=roles/accesscontextmanager.policyEditor \
+  --member="serviceAccount:infra-foundation@a-novel-management-prod.iam.gserviceaccount.com"
 gcloud access-context-manager policies add-iam-policy-binding "$POLICY" \
-  --role=roles/accesscontextmanager.policyReader --member="serviceAccount:infra-plan@$MGMT.iam.gserviceaccount.com"
+  --role=roles/accesscontextmanager.policyReader \
+  --member="serviceAccount:infra-plan@a-novel-management-prod.iam.gserviceaccount.com"
 ```
 
 ## Rebuild from nothing
@@ -105,8 +107,8 @@ project's number, so a rebuild starts with new names.
 
    ```bash
    MGMT="<new management project ID>"
-   gcloud projects create "$MGMT" --organization="$ORG"
-   gcloud billing projects link "$MGMT" --billing-account="$BILLING"
+   gcloud projects create "$MGMT" --organization=1031663934757
+   gcloud billing projects link "$MGMT" --billing-account=01BDFE-5B21E7-8393CB
    gcloud projects describe "$MGMT" --format='value(projectNumber)'
    ```
 
@@ -138,14 +140,14 @@ project's number, so a rebuild starts with new names.
 
    ```bash
    DEPLOYER="serviceAccount:infra-foundation@$MGMT.iam.gserviceaccount.com"
-   gcloud organizations add-iam-policy-binding "$ORG" --role=roles/resourcemanager.projectCreator \
+   gcloud organizations add-iam-policy-binding 1031663934757 --role=roles/resourcemanager.projectCreator \
      --member="$DEPLOYER"
-   gcloud billing accounts add-iam-policy-binding "$BILLING" --role=roles/billing.user \
+   gcloud billing accounts add-iam-policy-binding 01BDFE-5B21E7-8393CB --role=roles/billing.user \
      --member="$DEPLOYER"
    ```
 
    Then grant the new deploy and plan identities on the access policy, as
-   [Organization guardrails](#organization-guardrails) shows.
+   [Organization guardrails](#organization-guardrails) shows, with the new project ID.
 
 5. **Configure GitHub** [as above](#github-settings), with the values
    `tofu -chdir=bootstrap output` prints. CI can plan again from here.
