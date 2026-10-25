@@ -43,7 +43,7 @@ output "database_hosts" {
       port                   = host.port
       private_ip             = one(data.google_compute_instance.database[service].network_interface).network_ip
       # The backup repository VM's address, which the database host trusts.
-      repository_ip = try(var.native_backups[host.component].repository_ip, null)
+      repository_ip = try(google_compute_address.pgbackrest_repository[host.component].address, null)
       # The host-credentials image both of the service's hosts run, from its private tooling repository.
       credentials_image = try(local.host_credentials_image[host.component], null)
       service_account   = google_service_account.runtime[host.identity].email

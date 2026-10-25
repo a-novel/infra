@@ -1,28 +1,62 @@
 variable "pgbackrest_repository_services" {
-  description = "Services whose backup repository host gets database network access."
+  description = "Services with a backup repository VM. Each gets its address and a host-credentials copy before its database host enrolls in native_backups."
   type        = set(string)
   default     = []
   nullable    = false
 
   validation {
-    condition     = length(setsubtract(var.pgbackrest_repository_services, ["json-keys", "authentication"])) == 0
-    error_message = "Select supported database services for repository networking."
+    condition     = length(setsubtract(var.pgbackrest_repository_services, ["json-keys", "authentication", "genai"])) == 0
+    error_message = "Select supported database services for backup repositories."
   }
 
   validation {
     condition = length(setsubtract(var.pgbackrest_repository_services,
       toset([for service, zones in var.service_release_zones : service if try(contains(zones, "private"), false)]),
     )) == 0
-    error_message = "Repository networking requires a registered private service."
+    error_message = "A backup repository requires a registered private service."
   }
 }
 
+# Google picks each repository VM's address. The database host trusts it, and the service root pins
+# its VM to it, so a recreated VM keeps it.
+resource "google_compute_address" "pgbackrest_repository" {
+  for_each = var.pgbackrest_repository_services
+
+  project      = google_project.workload.project_id
+  region       = var.region
+  name         = "agora-pgbackrest-${each.key}"
+  description  = "Address of the ${each.key} backup repository VM, trusted by its database host."
+  address_type = "INTERNAL"
+  purpose      = "GCE_ENDPOINT"
+  subnetwork   = google_compute_subnetwork.production.id
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+variable "adopt_repository_addresses" {
+  description = "Import the two repository addresses the service roots reserved. Mocked providers cannot import, so tests turn it off."
+  type        = bool
+  default     = true
+  nullable    = false
+}
+
+# The service roots reserved these two before foundation did. Remove with the variable once applied.
+import {
+  for_each = var.adopt_repository_addresses ? toset(["json-keys", "authentication"]) : toset([])
+  to       = google_compute_address.pgbackrest_repository[each.key]
+  id       = "projects/${var.workload_project_id}/regions/${var.region}/addresses/agora-pgbackrest-${each.key}"
+}
+
 locals {
+  # The repository's identity exists once its service root has deployed the VM, which needs the
+  # address first, so the network rules wait for the database host to enroll.
   pgbackrest_network = {
-    for service, zones in var.service_release_zones : service => {
+    for service in keys(var.native_backups) : service => {
       database   = google_service_account.runtime["${replace(service, "-", "_")}_database"].email
       repository = "agora-pgbr-${service}@${var.workload_project_id}.iam.gserviceaccount.com"
-    } if try(contains(zones, "private"), false) && contains(var.pgbackrest_repository_services, service)
+    }
   }
 }
 

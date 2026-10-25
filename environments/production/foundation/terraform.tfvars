@@ -40,6 +40,7 @@ organization_id        = "1031663934757"
 pgbackrest_repository_services = [
   "json-keys",
   "authentication",
+  "genai",
 ]
 public_api_project_id = "a-novel-public-api-prod"
 public_project_id     = "a-novel-public-prod"
@@ -63,7 +64,6 @@ workload_project_name  = "A-Novel production"
 host_credentials_image = "ghcr.io/a-novel/infra/host-credentials:sha-fd585ed07563425b0268432163f43f7b21590255-37551742865-1@sha256:a5e264fc51c824c52fb6fd59b035e14e52fdc9f77e47b0375b352d8ad9bfd00d"
 native_backups = {
   json-keys = {
-    repository_ip     = "10.20.0.6"
     ca_version        = "1"
     identity_version  = "2"
     wal_archiving     = true
@@ -71,7 +71,6 @@ native_backups = {
     schedules_enabled = true
   }
   authentication = {
-    repository_ip     = "10.20.0.7"
     client_name       = "agora-authentication-database.a-novel-production-prod"
     ca_version        = "1"
     identity_version  = "1"
