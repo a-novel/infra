@@ -209,7 +209,7 @@ resource "google_project_service" "public_api_telemetry" {
 resource "google_project_iam_member" "public_api_network_viewer" {
   count = length(google_project_iam_custom_role.foundation_public_api)
 
-  project = google_compute_shared_vpc_service_project.public_api["public-api"].host_project
+  project = google_compute_shared_vpc_service_project.public_api.host_project
   role    = "roles/compute.networkViewer"
   member  = module.public_api_project["public-api"].service_agents["run.googleapis.com"]
 }
@@ -217,7 +217,7 @@ resource "google_project_iam_member" "public_api_network_viewer" {
 resource "google_compute_subnetwork_iam_member" "public_api_run" {
   count = length(google_project_iam_custom_role.foundation_public_api)
 
-  project    = google_compute_shared_vpc_service_project.public_api["public-api"].host_project
+  project    = google_compute_shared_vpc_service_project.public_api.host_project
   region     = var.region
   subnetwork = google_compute_subnetwork.production.name
   role       = "roles/compute.networkUser"
@@ -228,7 +228,7 @@ resource "google_compute_subnetwork_iam_member" "public_api_run" {
 resource "google_compute_subnetwork_iam_member" "public_api_run_egress" {
   count = length(google_project_iam_custom_role.foundation_public_api)
 
-  project    = google_compute_shared_vpc_service_project.public_api["public-api"].host_project
+  project    = google_compute_shared_vpc_service_project.public_api.host_project
   region     = var.region
   subnetwork = google_compute_subnetwork.egress.name
   role       = "roles/compute.networkUser"

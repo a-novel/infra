@@ -53,7 +53,9 @@ resource "google_project_default_service_accounts" "service" {
 }
 
 # Project creation grants the creator Owner. These bindings allow the human
-# operator to remove that temporary grant after verifying convergence.
+# operator to remove that temporary grant after verifying convergence. They are the deploy
+# identity's administration of the shell, so the privileged-role scan accepts them.
+#trivy:ignore:GCP-0007
 resource "google_project_iam_member" "foundation" {
   for_each = toset([
     "roles/artifactregistry.admin",
