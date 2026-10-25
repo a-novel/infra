@@ -2,6 +2,7 @@ locals {
   pgbackrest_database_accounts = {
     json-keys      = "agora-json-keys-database"
     authentication = "agora-auth-database"
+    genai          = "agora-genai-database"
   }
   pgbackrest_tls_endpoints = {
     ca = {

@@ -22,4 +22,11 @@ native_backups = {
     tls_credentials     = true
     noncurrent_cleanup  = false
   }
+  # A purged generation's content lasts at most pgBackRest's retention plus 7 days.
+  genai = {
+    workload_project_id = "a-novel-production-prod"
+    zone                = "private"
+    tls_credentials     = true
+    noncurrent_cleanup  = true
+  }
 }

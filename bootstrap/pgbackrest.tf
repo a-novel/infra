@@ -1,5 +1,5 @@
 variable "native_backups" {
-  description = "Services with native backups: each gets a pgBackRest bucket, its writer and recovery roles, and with tls_credentials its TLS secret containers."
+  description = "Services with native backups: each gets a pgBackRest bucket, its writer and recovery roles, and with tls_credentials its TLS secret containers. noncurrent_cleanup deletes replaced objects after 7 days and keeps no soft-deleted copy."
   type = map(object({
     workload_project_id = string
     zone                = string
@@ -11,7 +11,7 @@ variable "native_backups" {
 
   validation {
     condition = alltrue([for service, config in var.native_backups :
-      contains(["json-keys", "authentication"], service) &&
+      contains(["json-keys", "authentication", "genai"], service) &&
       can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", config.workload_project_id)) &&
       config.workload_project_id != var.management_project_id
     ])
@@ -55,8 +55,9 @@ resource "google_storage_bucket" "pgbackrest" {
     retention_period = 604800
     is_locked        = false
   }
+  # A bucket that bounds how long replaced content lasts keeps no soft-deleted copy either.
   soft_delete_policy {
-    retention_duration_seconds = 604800
+    retention_duration_seconds = each.value.noncurrent_cleanup ? 0 : 604800
   }
 
   # pgBackRest owns live chains; GCS disposes only generations no longer current.
