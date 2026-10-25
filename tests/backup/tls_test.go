@@ -19,7 +19,7 @@ func TestRepositoryTLS(t *testing.T) {
 	if os.Getenv("BACKUP_TEST") != "1" {
 		t.Skip("run inside builds/backup-test.Dockerfile")
 	}
-	p := newProof(t, "proof")
+	p := newProof(t, "proof", "postgres")
 	config, err := os.ReadFile(p.config)
 	require.NoError(t, err)
 	serverConfig := filepath.Join(p.root, "server.conf")

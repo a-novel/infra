@@ -30,7 +30,7 @@ check:
 | `validate-opentofu`                              | Formatting, TFLint, and `validate` and `tofu test` in every root and tested module.                            |
 | `lint-repository`                                | Prettier, the Renovate config, the workflow scripts, Go lint, service-root wiring, shell and workflow linters. |
 | `test-go`                                        | The host programs, with `-race`.                                                                               |
-| `test-backup`                                    | The [backup tests](tests/backup/README.md), inside the database image of each service with native backups.     |
+| `test-backup`                                    | The [backup tests](tests/backup/README.md), inside each service's database image.                              |
 | `scan-infrastructure`                            | Trivy on the repository and on both [host tools](docs/runbooks/host-tools.md).                                 |
 | `scan-secrets`                                   | gitleaks on the working tree, with the fleet baseline and the allowlist in `.gitleaks.toml`.                   |
 | `revoke-deletion-label`, `revoke-downtime-label` | Remove a label a push made stale, so it approves only the commit it was added on.                              |

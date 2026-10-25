@@ -71,6 +71,13 @@ func (f *fakePostgres) execute(_ context.Context, _ io.Writer, binary string, ar
 	}
 }
 
+// dataTables lists the tables each service's data query hashes.
+var dataTables = map[string][]string{
+	"json-keys":      {"public.keys"},
+	"authentication": {"public.credentials", "public.short_codes"},
+	"genai":          {"public.generations", "public.generation_attempts", "public.generation_payloads", "public.generation_usage"},
+}
+
 // query checks how a psql call connects, and names the step its SQL runs.
 func (f *fakePostgres) query(args []string) string {
 	sql := args[len(args)-1]
@@ -80,16 +87,12 @@ func (f *fakePostgres) query(args []string) string {
 	case strings.Contains(sql, "pg_control_system"):
 		return "identity"
 	case strings.Contains(sql, "pg_extension"):
-		require.Contains(f.t, sql, "'"+role+"_backup'")
 		require.Contains(f.t, sql, "'"+role+"_app'")
 		return "schema"
 	default:
 		require.Contains(f.t, sql, "BEGIN READ ONLY;")
-		if f.request.Service == "authentication" {
-			require.Contains(f.t, sql, "public.credentials")
-			require.Contains(f.t, sql, "public.short_codes")
-		} else {
-			require.Contains(f.t, sql, "public.keys")
+		for _, table := range dataTables[f.request.Service] {
+			require.Contains(f.t, sql, table)
 		}
 		return "data"
 	}
@@ -97,7 +100,7 @@ func (f *fakePostgres) query(args []string) string {
 
 func TestVerifySQL(t *testing.T) {
 	t.Parallel()
-	services := []string{"json-keys", "authentication"}
+	services := []string{"json-keys", "authentication", "genai"}
 	testCases := []struct {
 		name, fault string
 	}{

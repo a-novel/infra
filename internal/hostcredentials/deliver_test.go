@@ -118,6 +118,8 @@ func TestDeliver(t *testing.T) {
 		{name: "Success/Repository", endpoint: "repository"},
 		{name: "Success/AuthenticationDatabase", service: "authentication", endpoint: "database"},
 		{name: "Success/AuthenticationRepository", service: "authentication", endpoint: "repository"},
+		{name: "Success/GenAIDatabase", service: "genai", endpoint: "database"},
+		{name: "Success/GenAIRepository", service: "genai", endpoint: "repository"},
 		{name: "Error/CrossedService", service: "authentication", endpoint: "database", response: func(r *secretmanagerpb.AccessSecretVersionResponse) {
 			r.Name = strings.Replace(r.Name, "production-authentication-", "production-json-keys-", 1)
 		}, wantError: "exact-version"},

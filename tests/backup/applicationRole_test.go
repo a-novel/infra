@@ -21,7 +21,7 @@ func TestApplicationRoleConvergence(t *testing.T) {
 	sql, _, found = strings.Cut(sql, "\nAPPLICATION_ROLE\n")
 	require.True(t, found)
 	const database = "agora_proof"
-	p := newProof(t, "application")
+	p := newProof(t, "application", "postgres")
 	p.query(t, "postgres", "CREATE DATABASE "+database+";")
 	// The objects a service's migrations and its database image create, as the bootstrap superuser.
 	p.query(t, database, `CREATE EXTENSION "uuid-ossp";
