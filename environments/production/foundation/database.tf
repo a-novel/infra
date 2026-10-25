@@ -30,6 +30,48 @@ locals {
       capacity  = var.database_capacity[replace(service, "_", "-")]
     }
   }
+
+  # A probe is a query its host runs every five minutes, logging the one line it returns for a
+  # log-based metric in the service root. GenAI's purge deletes the oldest expired generations
+  # first, every 10 seconds, so the oldest one left shows how far it lags. Its retention index
+  # answers in one read, however large the backlog.
+  database_probes = {
+    genai = "SELECT 'oldest_expired_seconds=' || coalesce(floor(extract(epoch FROM now() - min(expires_at))), 0) FROM generations WHERE expires_at < now()"
+  }
+
+  # COS runs cloud-init at every boot, which writes the probe's units and starts its timer.
+  database_probe_user_data = { for component, query in local.database_probes : component => "#cloud-config\n${yamlencode({
+    ssh_deletekeys = false
+    write_files = [
+      {
+        path        = "/etc/systemd/system/a-novel-database-probe.service"
+        permissions = "0644"
+        content     = <<-EOT
+          [Unit]
+          Description=Agora ${component} database probe
+          Requires=docker.service
+          After=docker.service
+
+          [Service]
+          Type=oneshot
+          TimeoutStartSec=60
+          ExecStart=/usr/bin/docker exec --user postgres agora-postgres-${component} psql --no-psqlrc --quiet --tuples-only --no-align --set=ON_ERROR_STOP=1 --username=agora_${replace(component, "-", "_")} --dbname=agora_${replace(component, "-", "_")} "--command=${query}"
+        EOT
+      },
+      {
+        path        = "/etc/systemd/system/a-novel-database-probe.timer"
+        permissions = "0644"
+        content     = <<-EOT
+          [Unit]
+          Description=Agora ${component} database probe, every five minutes
+
+          [Timer]
+          OnCalendar=*:0/5
+        EOT
+      },
+    ]
+    runcmd = [["systemctl", "daemon-reload"], ["systemctl", "start", "a-novel-database-probe.timer"]]
+  })}" }
 }
 
 check "database_capacity_matches_hosts" {
@@ -113,7 +155,7 @@ resource "google_compute_instance_template" "database" {
   tags   = [local.network_tags[each.value.identity]]
   labels = merge(local.labels, { role = "database", component = each.value.component })
 
-  metadata = {
+  metadata = merge({
     agora-database-service             = each.value.component
     agora-database-port                = tostring(each.value.port)
     agora-database-name                = "agora_${each.key}"
@@ -133,7 +175,7 @@ resource "google_compute_instance_template" "database" {
     google-monitoring-enabled          = "true"
     serial-port-enable                 = "FALSE"
     shutdown-script                    = file("${path.module}/../../../modules/database-runtime/files/shutdown.sh")
-  }
+  }, contains(keys(local.database_probe_user_data), each.value.component) ? { user-data = local.database_probe_user_data[each.value.component] } : {})
 
   # A new startup script replaces the host template, so it waits for the service's planned downtime.
   metadata_startup_script = contains(keys(var.native_backups), each.value.component) ? module.native_backup[each.value.component].startup_script : file("${path.module}/../../../modules/database-runtime/files/startup.sh")
