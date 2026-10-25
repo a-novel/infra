@@ -22,7 +22,7 @@ variable "recovery" {
 
   validation {
     condition = var.recovery == null ? true : alltrue([
-      contains(["json-keys", "authentication"], var.recovery.service),
+      contains(["json-keys", "authentication", "genai"], var.recovery.service),
       can(regex("^a-novel-recovery-[a-z0-9-]{1,13}[a-z0-9]$", var.recovery.project)),
       !contains(var.recovery.protected_projects, var.recovery.project),
       contains(var.recovery.protected_projects, var.recovery.source_project),

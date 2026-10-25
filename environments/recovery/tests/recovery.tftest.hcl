@@ -78,6 +78,17 @@ run "authentication" {
   }
 }
 
+run "genai" {
+  command = plan
+  variables {
+    recovery = merge(jsondecode(file("tests/fixture.json")), { service = "genai", verify_sql = true })
+  }
+  assert {
+    condition     = google_compute_instance.recovery["selected"].service_account[0].email == "pgbr-genai-recovery@management-project.iam.gserviceaccount.com"
+    error_message = "GenAI recovery must bind its own service identity."
+  }
+}
+
 run "unknown_service" {
   command = plan
   variables {

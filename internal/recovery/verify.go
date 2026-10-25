@@ -25,6 +25,12 @@ var authenticationVerificationSQL string
 //go:embed authenticationData.sql
 var authenticationDataSQL string
 
+//go:embed genaiVerify.sql
+var genaiVerificationSQL string
+
+//go:embed genaiData.sql
+var genaiDataSQL string
+
 // serviceSQL holds a service's recovery queries.
 type serviceSQL struct {
 	// schema returns "t" when the restored schema and roles pass the service's checks.
@@ -37,6 +43,7 @@ type serviceSQL struct {
 var recoverySQL = map[string]serviceSQL{
 	"json-keys":      {schema: jsonKeysVerificationSQL, data: jsonKeysDataSQL},
 	"authentication": {schema: authenticationVerificationSQL, data: authenticationDataSQL},
+	"genai":          {schema: genaiVerificationSQL, data: genaiDataSQL},
 }
 
 // evidence lists the files a completed file restoration leaves in its attempt directory.

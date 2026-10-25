@@ -28,6 +28,7 @@ func TestRequest(t *testing.T) {
 	}{
 		{"Success", func(*recovery.Request) {}, false},
 		{"Success/Authentication", func(r *recovery.Request) { r.Service = "authentication" }, false},
+		{"Success/GenAI", func(r *recovery.Request) { r.Service = "genai" }, false},
 		{"Success/ExplicitCutoff", func(r *recovery.Request) { r.RepositoryTime = "2026-09-27T20:35:40Z" }, false},
 		{"Success/Data", func(r *recovery.Request) { r.VerifySQL, r.ExpectedDataSHA256 = true, strings.Repeat("a", 64) }, false},
 		{"Error/DataWithoutSQL", func(r *recovery.Request) { r.ExpectedDataSHA256 = strings.Repeat("a", 64) }, true},
