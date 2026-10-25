@@ -4,7 +4,7 @@ go 1.27.3
 
 require (
 	cloud.google.com/go/compute/metadata v0.10.0
-	cloud.google.com/go/secretmanager v1.22.0
+	cloud.google.com/go/secretmanager v1.23.0
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/oauth2 v0.37.0
 	golang.org/x/sys v0.49.0
