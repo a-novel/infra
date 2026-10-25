@@ -31,7 +31,7 @@ locals {
 # the allowlist. The egress firewall resolves its hosts through this policy too.
 resource "google_dns_response_policy" "allowlist" {
   project              = google_project.workload.project_id
-  response_policy_name = "agora-dns-allowlist"
+  response_policy_name = "a-novel-dns-allowlist"
   description          = "Resolve only the private zones, internal names and the egress allowlist's hosts."
 
   networks {

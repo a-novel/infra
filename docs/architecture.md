@@ -49,7 +49,7 @@ own identities, image repositories, network tags and database hosts.
   Other traffic falls through to the firewall rules. Direct VPC egress logs no firewall verdict, so
   a refused connection shows only as the caller's own error.
 
-- **DNS allowlist.** A Cloud DNS response policy, `agora-dns-allowlist`, resolves only the private
+- **DNS allowlist.** A Cloud DNS response policy, `a-novel-dns-allowlist`, resolves only the private
   zones, Compute Engine's internal names and the egress allowlist's hosts. Every other name answers
   with a CNAME to `blocked.internal.` and no address, so the lookup fails at once and no outside
   name server receives it. A host added to the egress allowlist joins the DNS allowlist in the same
