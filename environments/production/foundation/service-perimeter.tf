@@ -66,7 +66,9 @@ resource "google_access_context_manager_service_perimeter" "production" {
   description = "Keeps the production workloads' Google API calls inside production and management."
 
   use_explicit_dry_run_spec = true
-  deletion_policy           = "PREVENT"
+  # The perimeter takes its A-Novel name in a-novel/infra#1083. This apply unlocks it; the next one
+  # replaces it, since the provider reads deletion_policy from state.
+  deletion_policy = "DELETE"
 
   spec {
     resources           = local.perimeter.resources
