@@ -25,7 +25,7 @@ func TestCollationPreparation(t *testing.T) {
 	sql = "SET LOCAL lock_timeout = " + sql
 
 	const database = "collation_proof"
-	p := newProof(t, "collation")
+	p := newProof(t, "collation", "postgres")
 	p.query(t, "postgres", "CREATE DATABASE "+database+" LOCALE 'en_US.utf8' TEMPLATE template0;")
 	prepare := func() ([]byte, error) { return p.psql(t, database, sql, "--single-transaction").CombinedOutput() }
 	p.query(t, database, "CREATE TABLE sample (value text PRIMARY KEY); INSERT INTO sample VALUES ('plain'), ('été'), ('Zebra');")

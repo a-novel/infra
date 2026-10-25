@@ -3,6 +3,7 @@ package backup_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -21,8 +22,9 @@ import (
 // through stanza.
 type proof struct{ root, config, source, repo, stanza string }
 
-// newProof creates only synthetic data, shared by the local and TLS transport cases.
-func newProof(t *testing.T, stanza string) proof {
+// newProof creates only synthetic data, shared by the local and TLS transport cases. The image's
+// init.sql initializes database, which pg_cron serves, as on the service's database host.
+func newProof(t *testing.T, stanza, database string) proof {
 	t.Helper()
 	p := proof{root: t.TempDir(), stanza: stanza}
 	p.config = filepath.Join(p.root, "pgbackrest.conf")
@@ -45,17 +47,25 @@ pg1-path=%s
 pg1-socket-path=%s
 `, p.repo, p.root, stanza, p.source, p.root))
 	run(t, "initdb", "-D", p.source, "--auth-local=peer", "--auth-host=scram-sha-256", "--no-locale")
-	write(t, filepath.Join(p.source, "postgresql.conf"), fmt.Sprintf(`listen_addresses=''
+	// The settings follow the image's own, such as genai's preloaded pg_cron.
+	conf, err := os.OpenFile(filepath.Join(p.source, "postgresql.conf"), os.O_APPEND|os.O_WRONLY, 0)
+	require.NoError(t, err)
+	_, err = fmt.Fprintf(conf, `listen_addresses=''
 unix_socket_directories='%s'
 shared_buffers='64MB'
 max_connections=20
 wal_level=replica
 archive_mode=on
 archive_command='pgbackrest --config=%s --stanza=%s archive-push %%p'
-`, p.root, p.config, stanza))
+cron.database_name='%s'
+`, p.root, p.config, stanza, database)
+	require.NoError(t, errors.Join(err, conf.Close()))
 	p.start(t, p.source, p.root)
 	p.backrest(t, "stanza-create")
-	run(t, "psql", "-X", "-h", p.root, "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-f", "/docker-entrypoint-initdb.d/init.sql")
+	if database != "postgres" {
+		p.query(t, "postgres", "CREATE DATABASE "+database+";")
+	}
+	run(t, "psql", "-X", "-h", p.root, "-d", database, "-v", "ON_ERROR_STOP=1", "-f", "/docker-entrypoint-initdb.d/init.sql")
 	p.query(t, "postgres", `CREATE ROLE proof_reader;
 CREATE TABLE sample (id uuid PRIMARY KEY, value text NOT NULL CHECK (value <> ''));
 INSERT INTO sample VALUES ('00000000-0000-0000-0000-000000000001', 'original');`)

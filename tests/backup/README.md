@@ -9,8 +9,8 @@ They prove the parts this repository owns:
 - backup and restore through a mutually authenticated TLS repository, and its client and stanza
   denials.
 
-Run them from the repository root, in the image of a service with native backups: `json-keys` or
-`authentication`.
+Run them from the repository root, in the image of a service with native backups: `json-keys`,
+`authentication` or `genai`. The offline SQL test runs that service's case.
 
 ```bash
 SERVICE=json-keys

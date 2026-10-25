@@ -213,7 +213,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          services=(json-keys authentication)
+          services=(json-keys authentication genai)
           # The images test at once, one runner CPU each.
           for service in "${services[@]}"; do
             docker build -f builds/backup-test.Dockerfile --build-arg DATABASE_SERVICE="$service" -t "backup-test:$service" .

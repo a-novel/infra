@@ -15,7 +15,6 @@ import (
 
 // offlineSQLFixture holds one service's synthetic data and the changes its data digest must detect.
 type offlineSQLFixture struct {
-	service string
 	// queryFile is the service's data digest query inside the test image.
 	queryFile string
 	// schema creates the service's persisted columns, including nullable and binary ones, and fills them.
@@ -41,9 +40,9 @@ type fingerprintCase struct {
 // formatting changes how the session prints dates and times, which the digest must ignore.
 const formatting = "SET timezone='Pacific/Auckland'; SET datestyle='SQL, DMY';"
 
-var offlineSQLFixtures = []offlineSQLFixture{
-	{
-		service:   "json-keys",
+// offlineSQLFixtures holds each service's case, by service.
+var offlineSQLFixtures = map[string]offlineSQLFixture{
+	"json-keys": {
 		queryFile: "/jsonKeysData.sql",
 		schema: `CREATE TABLE keys (
 id uuid PRIMARY KEY, private_key text NOT NULL CHECK (private_key <> ''), public_key text,
@@ -65,8 +64,7 @@ CREATE VIEW active_keys AS SELECT * FROM keys WHERE expires_at > CURRENT_TIMESTA
 			{"Empty", "TRUNCATE keys;", "", false},
 		},
 	},
-	{
-		service:   "authentication",
+	"authentication": {
 		queryFile: "/authenticationData.sql",
 		schema: `CREATE TABLE credentials (
 id uuid PRIMARY KEY, email text NOT NULL UNIQUE CHECK (email <> ''), password text,
@@ -93,28 +91,85 @@ CREATE TABLE saved_short_codes AS TABLE short_codes;`,
 			{"Empty", "TRUNCATE credentials;", "", false},
 		},
 	},
+	"genai": {
+		queryFile: "/genaiData.sql",
+		schema: `CREATE TYPE generation_status AS ENUM ('pending', 'running', 'succeeded', 'failed', 'cancelled');
+CREATE TABLE generations (
+id uuid PRIMARY KEY, owner_id uuid NOT NULL, purpose text NOT NULL, provider text NOT NULL, request_key bytea NOT NULL,
+error text, status generation_status NOT NULL, attempt smallint NOT NULL, max_attempts smallint NOT NULL,
+run_at timestamptz NOT NULL, start_requested_at timestamptz, provider_call_id text, cancel_requested_at timestamptz,
+checked_at timestamptz NOT NULL, created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL, settled_at timestamptz,
+expires_at timestamptz, traceparent text, outcome_unknown_at timestamptz, streamed boolean NOT NULL,
+first_start_requested_at timestamptz);
+CREATE TABLE generation_attempts (
+generation_id uuid NOT NULL, attempt smallint NOT NULL, response json NOT NULL, created_at timestamptz NOT NULL,
+PRIMARY KEY (generation_id, attempt));
+CREATE TABLE generation_payloads (generation_id uuid PRIMARY KEY, payload json NOT NULL);
+CREATE TABLE generation_usage (
+generation_id uuid NOT NULL, attempt smallint NOT NULL, owner_id uuid NOT NULL, purpose text NOT NULL,
+provider text NOT NULL, model text NOT NULL, class text NOT NULL, tier text, input_tokens bigint NOT NULL,
+cached_input_tokens bigint NOT NULL, cache_write_tokens bigint NOT NULL, output_tokens bigint NOT NULL,
+reasoning_tokens bigint NOT NULL, started_at timestamptz NOT NULL, completed_at timestamptz, created_at timestamptz NOT NULL,
+PRIMARY KEY (generation_id, attempt));
+INSERT INTO generations VALUES
+('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000aa', 'proof', 'openai', decode('00ff', 'hex'),
+ NULL, 'succeeded', 1, 1, '2026-09-30Z', '2026-09-30Z', 'call-1', NULL, '2026-09-30Z', '2026-09-30Z', '2026-09-30Z',
+ '2026-09-30Z', '2026-09-30 06:00Z', '00-trace-01', NULL, true, '2026-09-30Z'),
+('00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-0000000000aa', 'proof', 'openai', decode('ff00', 'hex'),
+ E'quoted "é"\nline', 'failed', 1, 2, '2026-09-29Z', NULL, NULL, NULL, '2026-09-29Z', '2026-09-29Z', '2026-09-29Z',
+ '2026-09-29Z', '2026-09-29 06:00Z', NULL, '2026-09-29Z', false, NULL);
+INSERT INTO generation_attempts VALUES ('00000000-0000-0000-0000-000000000001', 1, '{"id":"resp-1","output":[]}', '2026-09-30Z');
+INSERT INTO generation_payloads VALUES
+('00000000-0000-0000-0000-000000000001', '{"model":"proof","input":"one"}'),
+('00000000-0000-0000-0000-000000000002', '{"model":"proof","input":"two"}');
+INSERT INTO generation_usage VALUES
+('00000000-0000-0000-0000-000000000001', 1, '00000000-0000-0000-0000-0000000000aa', 'proof', 'openai', 'proof', 'none',
+ NULL, 10, 0, 0, 5, 0, '2026-09-30Z', NULL, '2026-09-30Z');
+CREATE TABLE saved_attempts AS TABLE generation_attempts;
+CREATE TABLE saved_payloads AS TABLE generation_payloads;
+CREATE TABLE saved_usage AS TABLE generation_usage;
+SELECT cron.schedule('service-genai-purge-settled', '10 seconds', 'SELECT 1');
+SELECT cron.schedule('service-genai-purge-cron-runs', '0 4 * * *', 'SELECT 1');`,
+		table: "generations",
+		reset: `TRUNCATE generation_attempts, generation_payloads, generation_usage;
+INSERT INTO generation_attempts SELECT * FROM saved_attempts;
+INSERT INTO generation_payloads SELECT * FROM saved_payloads;
+INSERT INTO generation_usage SELECT * FROM saved_usage;`,
+		update:  "UPDATE generations SET checked_at = checked_at + interval '1 minute';",
+		missing: "DELETE FROM generations WHERE status = 'failed';",
+		fingerprints: []fingerprintCase{
+			{"OrderAndFormatting", "TRUNCATE generations; INSERT INTO generations SELECT * FROM saved_rows ORDER BY id DESC;", formatting, true},
+			{"NullError", "UPDATE generations SET error = '' WHERE error IS NULL;", "", false},
+			{"RequestKey", "UPDATE generations SET request_key = decode('0000', 'hex') WHERE status = 'succeeded';", "", false},
+			{"PayloadKeyOrder", `UPDATE generation_payloads SET payload = '{"input":"one","model":"proof"}' WHERE payload::text = '{"model":"proof","input":"one"}';`, "", false},
+			{"AttemptResponse", `UPDATE generation_attempts SET response = '{"id":"resp-1","output":[1]}';`, "", false},
+			{"Usage", "UPDATE generation_usage SET output_tokens = 6;", "", false},
+			{"MissingRow", "DELETE FROM generations WHERE status = 'failed';", "", false},
+			{"Empty", "TRUNCATE generations;", "", false},
+		},
+	},
 }
 
 func TestOfflineSQL(t *testing.T) {
 	if os.Getenv("BACKUP_TEST") != "1" {
 		t.Skip("run inside builds/backup-test.Dockerfile")
 	}
-	// Each case owns a synthetic cluster; child cases evolve its full/differential chain.
-	for _, fixture := range offlineSQLFixtures {
-		t.Run(fixture.service, func(t *testing.T) { testOfflineSQL(t, fixture) })
-	}
+	// The image's init.sql installs its own service's extensions, which that service's checks expect.
+	service := os.Getenv("DATABASE_SERVICE")
+	fixture, found := offlineSQLFixtures[service]
+	require.True(t, found, "no offline SQL fixture for service %q", service)
+	testOfflineSQL(t, service, fixture)
 }
 
-func testOfflineSQL(t *testing.T, fixture offlineSQLFixture) {
+// testOfflineSQL owns a synthetic cluster; its child cases evolve the full/differential chain.
+func testOfflineSQL(t *testing.T, service string, fixture offlineSQLFixture) {
 	t.Helper()
 	query, err := os.ReadFile(fixture.queryFile)
 	require.NoError(t, err)
 	dataSQL := string(query)
-	p := newProof(t, fixture.service)
-	role := "agora_" + strings.ReplaceAll(fixture.service, "-", "_")
-	p.query(t, "postgres", "CREATE ROLE "+role+" LOGIN SUPERUSER; CREATE ROLE "+role+"_app LOGIN; CREATE ROLE "+role+"_backup LOGIN; GRANT pg_read_all_data TO "+role+"_backup;")
-	p.query(t, "postgres", "CREATE DATABASE "+role+" OWNER "+role+";")
-	run(t, "psql", "-X", "-h", p.root, "-d", role, "-v", "ON_ERROR_STOP=1", "-f", "/docker-entrypoint-initdb.d/init.sql")
+	role := "agora_" + strings.ReplaceAll(service, "-", "_")
+	p := newProof(t, service, role)
+	p.query(t, "postgres", "CREATE ROLE "+role+" LOGIN SUPERUSER; CREATE ROLE "+role+"_app LOGIN; CREATE ROLE "+role+"_backup LOGIN; GRANT pg_read_all_data TO "+role+"_backup; ALTER DATABASE "+role+" OWNER TO "+role+";")
 	table := fixture.table
 	p.query(t, role, fixture.schema)
 
@@ -151,7 +206,7 @@ func testOfflineSQL(t *testing.T, fixture offlineSQLFixture) {
 
 	sets := []string{full, diff}
 	for _, set := range sets {
-		wal := filepath.Join(p.repo, "backup", fixture.service, set, "pg_data/pg_wal")
+		wal := filepath.Join(p.repo, "backup", service, set, "pg_data/pg_wal")
 		t.Logf("copied consistency WAL stored (%s): %s", set, strings.TrimSpace(run(t, "du", "-sb", wal)))
 	}
 
@@ -173,7 +228,7 @@ func testOfflineSQL(t *testing.T, fixture offlineSQLFixture) {
 	for _, tc := range restoreCases {
 		t.Run(tc.name, func(t *testing.T) {
 			request := recovery.Request{
-				Service:            fixture.service,
+				Service:            service,
 				SourceProject:      "source-project",
 				Project:            "a-novel-recovery-proof",
 				ManagementProject:  "management-project",

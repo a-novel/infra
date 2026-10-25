@@ -10,8 +10,8 @@ in production comes from the service repositories.
 
 Their code is in `cmd/` and `internal/`, and their Dockerfiles in `builds/`. Every pull request
 builds and scans both images and runs their Go tests. It also runs the
-[backup tests](../../tests/backup/README.md) inside the database image of each service with native
-backups. Merging deploys neither tool. A new version reaches the VMs only once you publish it and
+[backup tests](../../tests/backup/README.md) inside each service's database image. Merging deploys
+neither tool. A new version reaches the VMs only once you publish it and
 pin it.
 
 ## Publish a version

@@ -15,7 +15,7 @@ func TestNativeRestore(t *testing.T) {
 	if os.Getenv("BACKUP_TEST") != "1" {
 		t.Skip("run inside builds/backup-test.Dockerfile")
 	}
-	p := newProof(t, "json-keys")
+	p := newProof(t, "json-keys", "postgres")
 	p.backrest(t, "--type=full", "backup")
 	request := recovery.Request{
 		Service: "json-keys", SourceProject: "source-project", Project: "a-novel-recovery-proof",
