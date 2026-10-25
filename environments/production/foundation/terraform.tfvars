@@ -96,7 +96,7 @@ database_releases = {
 }
 database_images = {
   json-keys      = "ghcr.io/a-novel/service-json-keys/database:v2.12.3@sha256:8778711f5c9beb691b741b2edbbcccf4e5f857b0ff3380fbf2210dea194aab5a"
-  authentication = "ghcr.io/a-novel/service-authentication/database:v2.15.2@sha256:a1a1536d9ac14aa037ee0df45f297ed5bcc86f6788badedef8d0434f13e28c2e"
+  authentication = "ghcr.io/a-novel/service-authentication/database:v2.15.3@sha256:6e8aab13a3f8a3cff10c39f87d8d50a3153dabe88d7da3b20786079239f68ae1"
   genai          = "ghcr.io/a-novel/service-genai/database:v0.6.1@sha256:dc412d2e044f6016a1f71d5f879f8487cdbf43e8b614fa4805164cbb09ce4b9f"
 }
 # json-keys and genai at their maximum instances, plus one rollout instance each, and the jobs.
