@@ -99,7 +99,7 @@ runs:
     # Gold, not the informational blue: restarting a database host needs someone watching.
     - name: Announce the database rollout
       if: steps.check.outputs.database == 'true'
-      uses: a-novel-kit/workflows/generic-actions/discord-post@v1.77.1
+      uses: a-novel-kit/workflows/generic-actions/discord-post@v1.78.0
       with:
         webhook: ${{ inputs.webhook }}
         color: upcoming
@@ -161,7 +161,7 @@ runs:
 
     - name: Report the database rollout
       if: always() && steps.check.outputs.database == 'true'
-      uses: a-novel-kit/workflows/generic-actions/discord-post@v1.77.1
+      uses: a-novel-kit/workflows/generic-actions/discord-post@v1.78.0
       with:
         webhook: ${{ inputs.webhook }}
         color: ${{ steps.roll.outcome == 'success' && 'succeeded' || 'failed' }}
