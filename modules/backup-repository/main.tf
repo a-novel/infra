@@ -68,15 +68,6 @@ resource "google_artifact_registry_repository_iam_member" "readers" {
   member     = google_service_account.repository.member
 }
 
-# Foundation now reserves the address, so this state forgets its old copy. Remove once applied.
-removed {
-  from = google_compute_address.repository
-
-  lifecycle {
-    destroy = false
-  }
-}
-
 resource "google_compute_instance" "repository" {
   project                   = var.project_id
   zone                      = var.placement.zone
