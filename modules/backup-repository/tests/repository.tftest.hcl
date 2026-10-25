@@ -55,11 +55,7 @@ run "keeps_the_repository_private_and_hardened" {
   }
 
   assert {
-    condition = (
-      google_compute_address.repository.address == "10.20.0.6" &&
-      google_compute_address.repository.address_type == "INTERNAL" &&
-      google_compute_instance.repository.network_interface[0].network_ip == "10.20.0.6"
-    )
+    condition     = google_compute_instance.repository.network_interface[0].network_ip == "10.20.0.6"
     error_message = "The repository VM must keep the reserved address its database host trusts."
   }
 

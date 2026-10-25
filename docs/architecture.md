@@ -144,9 +144,9 @@ At boot, the host removes the owner's password and sets the application role's. 
 earlier superuser migration created change owner this way.
 
 JSON Keys and Authentication have native backups. Each has its own **backup repository VM**, an
-`e2-micro`: JSON Keys `10.20.0.6`, Authentication `10.20.0.7`. Foundation's
-`native_backups.<service>.repository_ip` sets each address. The service root reserves it for the VM,
-and the database host trusts it. GenAI has no native backups.
+`e2-micro`: JSON Keys `10.20.0.6`, Authentication `10.20.0.7`. Foundation reserves each address,
+which Google picks, for every service in `pgbackrest_repository_services`. The service root pins its
+VM to it, and the database host trusts it. GenAI has an address but no native backups yet.
 
 - The database host archives WAL and runs backups with pgBackRest, over mutual TLS, to its
   repository VM.

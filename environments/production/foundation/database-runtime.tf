@@ -1,7 +1,6 @@
 variable "native_backups" {
-  description = "Native backups of each service's database host: its backup repository VM's address, the TLS client name and secret versions the host loads, and whether WAL archiving and the backup timers run."
+  description = "Native backups of each service's database host: the TLS client name and secret versions the host loads, and whether WAL archiving and the backup timers run."
   type = map(object({
-    repository_ip     = string
     client_name       = string
     ca_version        = string
     identity_version  = string
@@ -18,10 +17,9 @@ variable "native_backups" {
   validation {
     condition = alltrue([for service, runtime in var.native_backups :
       try(contains(var.service_release_zones[service], "private"), false) &&
-      contains(var.pgbackrest_repository_services, service) &&
-      cidrcontains(var.subnet_cidr, runtime.repository_ip)
+      contains(var.pgbackrest_repository_services, service)
     ])
-    error_message = "Native backups need a private service with repository networking, and a repository address inside the private subnet."
+    error_message = "Native backups need a private service with a backup repository."
   }
   validation {
     condition = alltrue([for service, runtime in var.native_backups : alltrue([
@@ -45,7 +43,7 @@ variable "host_credentials_image" {
 locals {
   host_credentials = regex("^ghcr[.]io/a-novel/infra/host-credentials:(?P<tag>[^@]+)@(?P<digest>sha256:[0-9a-f]{64})$", var.host_credentials_image)
   # Each service's hosts pull the tool, by digest, from that service's private tooling repository.
-  host_credentials_repositories = { for service in keys(var.native_backups) : service => "${var.region}-docker.pkg.dev/${var.workload_project_id}/agora-${service}-private-tooling/host-credentials" }
+  host_credentials_repositories = { for service in var.pgbackrest_repository_services : service => "${var.region}-docker.pkg.dev/${var.workload_project_id}/agora-${service}-private-tooling/host-credentials" }
   host_credentials_image        = { for service, repository in local.host_credentials_repositories : service => "${repository}@${local.host_credentials.digest}" }
 }
 
@@ -62,7 +60,7 @@ module "native_backup" {
   schedules_enabled = each.value.schedules_enabled
   repository = merge(each.value, {
     name              = "agora-pgbackrest-${each.key}.${var.database_zone}.c.${var.workload_project_id}.internal"
-    ip                = each.value.repository_ip
+    ip                = google_compute_address.pgbackrest_repository[each.key].address
     server_image      = local.database_image[each.key]
     credentials_image = local.host_credentials_image[each.key]
   })

@@ -69,19 +69,12 @@ resource "google_artifact_registry_repository_iam_member" "readers" {
   member     = google_service_account.repository.member
 }
 
-# The database host reaches this VM at one fixed address, so the address is reserved.
-resource "google_compute_address" "repository" {
-  project      = var.project_id
-  region       = var.region
-  name         = "agora-pgbackrest-${var.service}"
-  description  = "Address of the ${var.service} backup repository VM, trusted by its database host."
-  address_type = "INTERNAL"
-  purpose      = "GCE_ENDPOINT"
-  subnetwork   = var.placement.subnetwork
-  address      = var.placement.ip
+# Foundation now reserves the address, so this state forgets its old copy. Remove once applied.
+removed {
+  from = google_compute_address.repository
 
   lifecycle {
-    prevent_destroy = true
+    destroy = false
   }
 }
 
@@ -115,7 +108,7 @@ resource "google_compute_instance" "repository" {
 
   network_interface {
     subnetwork = var.placement.subnetwork
-    network_ip = google_compute_address.repository.address
+    network_ip = var.placement.ip
   }
 
   service_account {
