@@ -34,10 +34,10 @@ module "runtime" {
   secrets                  = toset([for name in keys(var.secret_versions) : "production-genai-${name}"])
   database_service_account = local.database.service_account
   # The migrations, the sweep and the smoke check run apart from the gRPC server, each reading only
-  # what it mounts.
+  # what it mounts. The sweep reads its Sentry DSN before it mounts it (a-novel/infra#1106).
   workloads = {
     migrations = { secrets = toset([for name in values(local.migrations_secret_env) : "production-genai-${name}"]) }
-    sweep      = { secrets = toset([for name in values(local.server_secret_env) : "production-genai-${name}"]), telemetry = true }
+    sweep      = { secrets = toset([for name in setunion(values(local.server_secret_env), ["sentry-dsn"]) : "production-genai-${name}"]), telemetry = true }
     smoke      = {}
   }
   deployer    = local.deployer

@@ -180,6 +180,7 @@ version their root's `terraform.tfvars` pins.
 | `production-json-keys-app-master-key`                      | JSON Keys runtime, rotation job                              |
 | `production-authentication-waitlist-secret`                | Authentication API, when the waitlist is on                  |
 | `production-genai-openai-api-key`                          | GenAI runtime and sweep                                      |
+| `production-<service>-sentry-dsn`                          | Servers, sweep, and the maintenance, purge and rotation jobs |
 | `production-<service>-app-password`                        | Database host and database workloads                         |
 | `production-<service>-pgbackrest-{ca,database,repository}` | Database host and repository VM (TLS)                        |
 | `production-downtime-discord-webhook`                      | `downtime-announcer`, when it posts a planned downtime step  |

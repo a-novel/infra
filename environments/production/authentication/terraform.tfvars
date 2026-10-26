@@ -7,6 +7,7 @@ images = {
 
 secret_versions = {
   app-password = 1
+  sentry-dsn   = 1
 }
 
 smtp = {

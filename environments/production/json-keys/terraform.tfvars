@@ -8,6 +8,7 @@ images = {
 secret_versions = {
   app-password   = 1
   app-master-key = 2
+  sentry-dsn     = 1
 }
 
 backup_repository = {

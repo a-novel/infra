@@ -32,8 +32,9 @@ module "runtime" {
   secrets                  = toset([for name in keys(var.secret_versions) : "production-json-keys-${name}"])
   database_service_account = local.database.service_account
   # The jobs and the smoke check run apart from the gRPC server, each reading only what it mounts.
+  # The rotation job reads its Sentry DSN before it mounts it (a-novel/infra#1106).
   workloads = merge(
-    { for job, config in local.jobs : job => { secrets = toset([for name in values(config.secrets) : "production-json-keys-${name}"]) } },
+    { for job, config in local.jobs : job => { secrets = toset([for name in setunion(values(config.secrets), job == "rotatekeys" ? ["sentry-dsn"] : []) : "production-json-keys-${name}"]) } },
     { smoke = {} },
   )
   deployer    = local.deployer

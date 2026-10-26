@@ -15,8 +15,8 @@ variable "secret_versions" {
   type        = map(number)
 
   validation {
-    condition     = toset(keys(var.secret_versions)) == toset(["app-password", "app-master-key"])
-    error_message = "Pin exactly the app-password and app-master-key versions."
+    condition     = toset(keys(var.secret_versions)) == toset(["app-password", "app-master-key", "sentry-dsn"])
+    error_message = "Pin exactly the app-password, app-master-key and sentry-dsn versions."
   }
 }
 
