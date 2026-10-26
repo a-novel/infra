@@ -58,7 +58,8 @@ service_release_zones = {
   ]
 }
 subnet_cidr            = "10.20.0.0/24"
-egress_subnet_cidr     = "10.20.1.0/25"
+egress_subnet_cidr     = "10.20.1.0/24"
+sentry_ingest_host     = "o4504952660951040.ingest.us.sentry.io"
 workload_project_id    = "a-novel-production-prod"
 workload_project_name  = "A-Novel production"
 host_credentials_image = "ghcr.io/a-novel/infra/host-credentials:sha-174f08b578fb131fa7a4112d1207829a5822797b-40242655253-1@sha256:9d3b315ef9104a651836926bc39953ef2659aece423f08025799f25cf74995ed"

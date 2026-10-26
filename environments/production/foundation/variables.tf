@@ -89,7 +89,7 @@ variable "subnet_cidr" {
 variable "egress_subnet_cidr" {
   description = "Private IPv4 range of the Direct VPC egress that Cloud NAT serves: the workloads in the egress allowlist."
   type        = string
-  default     = "10.20.1.0/25"
+  default     = "10.20.1.0/24"
 
   validation {
     condition = (
@@ -98,6 +98,16 @@ variable "egress_subnet_cidr" {
       !cidrcontains(var.egress_subnet_cidr, cidrhost(var.subnet_cidr, 0))
     )
     error_message = "The egress subnet must be a valid IPv4 CIDR of /26 or larger, Direct VPC egress's minimum, apart from the production subnet."
+  }
+}
+
+variable "sentry_ingest_host" {
+  description = "Ingest host of the Sentry organization the services report to, the one Sentry name the egress allowlist admits."
+  type        = string
+
+  validation {
+    condition     = can(regex("^o[0-9]+\\.ingest\\.[a-z]+\\.sentry\\.io$", var.sentry_ingest_host))
+    error_message = "Name one organization's ingest host, o<id>.ingest.<region>.sentry.io, never a wider Sentry domain."
   }
 }
 

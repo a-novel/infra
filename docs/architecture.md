@@ -21,7 +21,7 @@ own identities, image repositories, network tags and database hosts.
 
 - **VPC** `agora-production` has two subnets, no load balancer and no external IP on any VM:
   - `10.20.0.0/24` holds the VMs and the workloads that stay inside Google;
-  - `10.20.1.0/25`, the egress subnet, holds the Direct VPC egress of the egress allowlist's
+  - `10.20.1.0/24`, the egress subnet, holds the Direct VPC egress of the egress allowlist's
     workloads.
 - **Internet egress** leaves through Cloud NAT, which serves the egress subnet alone, from one
   reserved address, `agora-production-nat`. Foundation's `nat_address` output gives it. A VPC-wide
@@ -32,14 +32,16 @@ own identities, image repositories, network tags and database hosts.
 - **Egress allowlist.** A network firewall policy, `agora-egress-allowlist`, runs before the firewall
   rules. It lets named identities reach named destinations, and nothing else:
 
-  | Destination                                        | Identities                                                  |
-  | -------------------------------------------------- | ----------------------------------------------------------- |
-  | `api.openai.com:443`                               | `agora-genai-private`, `agora-genai-sweep`                  |
-  | Google's service ranges on 587, for the SMTP relay | `agora-authentication-api`, `agora-authentication-maintain` |
+  | Destination                                        | Identities                                                                                                                                                       |
+  | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | `api.openai.com:443`                               | `agora-genai-private`, `agora-genai-sweep`                                                                                                                       |
+  | Google's service ranges on 587, for the SMTP relay | `agora-authentication-api`, `agora-authentication-maintain`                                                                                                      |
+  | Sentry's ingest host on 443, `sentry_ingest_host`  | `agora-authentication-api`, `agora-authentication-maintain`, `agora-json-keys-private`, `agora-json-keys-rotatekeys`, `agora-genai-private`, `agora-genai-sweep` |
 
   The firewall resolves a host name through the VPC's Cloud DNS and matches the addresses it
   returns, which works only when every client gets the same answer. `api.openai.com` gives everyone
-  the same two Cloudflare addresses. `smtp-relay.gmail.com` answers each client location with another
+  the same two Cloudflare addresses, and Sentry's ingest host, foundation's `sentry_ingest_host`,
+  one Google Cloud anycast address. `smtp-relay.gmail.com` answers each client location with another
   frontend, so SMTP matches the `google-services` address group instead: every range Google
   announces, minus those its Cloud customers rent. `refresh-google-ranges.yaml` proposes Google's
   latest list daily, and its pull request merges alone when it holds exactly what Google publishes.
