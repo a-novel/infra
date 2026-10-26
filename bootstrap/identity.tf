@@ -51,18 +51,6 @@ locals {
     }
   }
 
-  management_buckets = merge({
-    state = google_storage_bucket.state.name
-  }, { for service, bucket in google_storage_bucket.pgbackrest : "pgbackrest-${service}" => bucket.name })
-
-  operator_bucket_bindings = {
-    for binding in setproduct(var.operator_principals, keys(local.management_buckets)) :
-    "${binding[0]}:${binding[1]}" => {
-      principal = binding[0]
-      bucket    = local.management_buckets[binding[1]]
-    }
-  }
-
   # A boundary's workflows run on master, each in its GitHub environment when it names one.
   workflow_clauses = {
     for boundary, trust in local.trust_boundaries : boundary => [
@@ -260,22 +248,6 @@ resource "google_project_iam_member" "operator_secret_metadata" {
   project = var.management_project_id
   role    = google_project_iam_custom_role.secret_metadata.name
   member  = each.value
-}
-
-resource "google_storage_bucket_iam_member" "operator_admin" {
-  for_each = local.operator_bucket_bindings
-
-  bucket = each.value.bucket
-  role   = "roles/storage.admin"
-  member = each.value.principal
-}
-
-resource "google_storage_bucket_iam_member" "foundation_admin" {
-  for_each = local.management_buckets
-
-  bucket = each.value
-  role   = "roles/storage.admin"
-  member = "serviceAccount:${google_service_account.automation["foundation"].email}"
 }
 
 # Read-only planning reads every root's state but cannot create .tflock

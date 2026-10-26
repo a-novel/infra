@@ -142,7 +142,5 @@ output "native_backups" {
   depends_on = [
     google_storage_bucket_iam_member.pgbackrest_writer,
     google_storage_bucket_iam_member.pgbackrest_recovery,
-    google_storage_bucket_iam_member.foundation_admin,
-    google_storage_bucket_iam_member.operator_admin,
   ]
 }
