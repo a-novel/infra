@@ -153,6 +153,9 @@ resource "google_cloud_run_v2_job" "maintenance" {
           for_each = merge(local.database_env, local.downtime_env, local.mail_env, local.sentry_env, {
             POSTGRES_MAX_OPEN_CONNS = "2"
             POSTGRES_MAX_IDLE_CONNS = "1"
+            # A fresh job's first connection out waits 30 seconds or more for Cloud NAT, and the job
+            # waits for its mail anyway. The send ends well inside the task timeout.
+            SMTP_TIMEOUT = "300s"
           })
           content {
             name  = env.key
