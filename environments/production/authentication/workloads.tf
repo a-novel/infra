@@ -30,7 +30,9 @@ locals {
     SMTP_MAX_CONCURRENT = "8"
     SMTP_SENDER_EMAIL   = var.smtp.sender_email
     SMTP_SENDER_NAME    = var.smtp.sender_name
-    SMTP_TIMEOUT        = "5s"
+    # RFC 5321 gives each SMTP command minutes, and a fresh instance's first connection out waits
+    # 30 seconds or more for Cloud NAT. No request waits for a send, and a job waits anyway.
+    SMTP_TIMEOUT = "300s"
   }
   # The REST API and the jobs that share the maintenance image report their faults to Sentry; the
   # migrations report nothing.
@@ -153,9 +155,6 @@ resource "google_cloud_run_v2_job" "maintenance" {
           for_each = merge(local.database_env, local.downtime_env, local.mail_env, local.sentry_env, {
             POSTGRES_MAX_OPEN_CONNS = "2"
             POSTGRES_MAX_IDLE_CONNS = "1"
-            # A fresh job's first connection out waits 30 seconds or more for Cloud NAT, and the job
-            # waits for its mail anyway. The send ends well inside the task timeout.
-            SMTP_TIMEOUT = "300s"
           })
           content {
             name  = env.key
@@ -334,9 +333,11 @@ resource "google_cloud_run_v2_service" "rest" {
           POSTGRES_MAX_OPEN_CONNS = "10"
           REST_CLIENT_IP_HEADER   = "X-Client-IP"
           REST_PORT               = "8080"
-          REST_TIMEOUT_SHUTDOWN   = "9s"
-          SERVICE_JSON_KEYS_HOST  = trimprefix(data.google_cloud_run_v2_service.json_keys.uri, "https://")
-          SERVICE_JSON_KEYS_PORT  = "443"
+          # Cloud Run kills the instance 10 seconds after SIGTERM, and the server then waits up to
+          # 2 seconds each for Sentry and OpenTelemetry. A send still running at the deadline is cut.
+          REST_TIMEOUT_SHUTDOWN  = "6s"
+          SERVICE_JSON_KEYS_HOST = trimprefix(data.google_cloud_run_v2_service.json_keys.uri, "https://")
+          SERVICE_JSON_KEYS_PORT = "443"
           }, var.waitlist_url == null ? {} : {
           WAITLIST_URL = var.waitlist_url
         })

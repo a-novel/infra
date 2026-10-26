@@ -94,6 +94,14 @@ run "splits_private_migrations_from_the_public_api" {
   }
 
   assert {
+    condition = alltrue([
+      for vars in [{ for env in google_cloud_run_v2_service.rest.template[0].containers[0].env : env.name => env.value }] :
+      tonumber(trimsuffix(vars["SMTP_TIMEOUT"], "s")) >= 60 && tonumber(trimsuffix(vars["REST_TIMEOUT_SHUTDOWN"], "s")) <= 6
+    ])
+    error_message = "The REST API's mail must outlast Cloud NAT's warm-up, and its shutdown drain must leave its two 2-second flushes inside Cloud Run's 10 seconds."
+  }
+
+  assert {
     condition = (
       google_cloud_run_v2_job.maintenance.project == "a-novel-production-prod" &&
       google_cloud_run_v2_job.maintenance.run_execution_token == null &&
