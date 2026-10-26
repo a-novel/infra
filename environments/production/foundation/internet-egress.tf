@@ -46,9 +46,10 @@ resource "google_compute_address" "nat" {
 }
 
 # The workloads in the egress allowlist run their Direct VPC egress here, apart from the VMs, since
-# Cloud NAT bills every instance it serves. At their caps and mid-rollout they hold 25 addresses,
-# two per service instance and one per job task, which Cloud Run reserves 16 at a time. A /25 holds
-# eight such blocks; Google's minimum is a /26.
+# Cloud NAT bills every instance it serves. At their caps and mid-rollout they hold 35 addresses,
+# two per service instance and one per job task, which Cloud Run reserves 16 at a time. Counting a
+# block per workload, they fill a /25, so this is a /24; Google's minimum is a /26. A subnet's range
+# grows in place but never shrinks.
 resource "google_compute_subnetwork" "egress" {
   project = google_project.workload.project_id
   region  = var.region

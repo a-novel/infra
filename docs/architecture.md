@@ -21,7 +21,7 @@ own identities, image repositories, network tags and database hosts.
 
 - **VPC** `agora-production` has two subnets, no load balancer and no external IP on any VM:
   - `10.20.0.0/24` holds the VMs and the workloads that stay inside Google;
-  - `10.20.1.0/25`, the egress subnet, holds the Direct VPC egress of the egress allowlist's
+  - `10.20.1.0/24`, the egress subnet, holds the Direct VPC egress of the egress allowlist's
     workloads.
 - **Internet egress** leaves through Cloud NAT, which serves the egress subnet alone, from one
   reserved address, `agora-production-nat`. Foundation's `nat_address` output gives it. A VPC-wide

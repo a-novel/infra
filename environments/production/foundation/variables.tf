@@ -89,7 +89,7 @@ variable "subnet_cidr" {
 variable "egress_subnet_cidr" {
   description = "Private IPv4 range of the Direct VPC egress that Cloud NAT serves: the workloads in the egress allowlist."
   type        = string
-  default     = "10.20.1.0/25"
+  default     = "10.20.1.0/24"
 
   validation {
     condition = (
