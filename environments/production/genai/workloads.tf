@@ -179,7 +179,9 @@ resource "google_cloud_run_v2_service" "grpc" {
       }
 
       resources {
-        limits            = { cpu = "1", memory = "2Gi" }
+        limits = { cpu = "1", memory = "2Gi" }
+        # Sentry events and spans leave after the response, and an idle instance flushes them when it
+        # stops, within 15 minutes.
         cpu_idle          = true
         startup_cpu_boost = true
       }
@@ -284,7 +286,9 @@ resource "google_cloud_run_v2_service" "sweep" {
       }
 
       resources {
-        limits            = { cpu = "1", memory = "1Gi" }
+        limits = { cpu = "1", memory = "1Gi" }
+        # Sentry events and spans leave after the response, and an idle instance flushes them when it
+        # stops, within 15 minutes.
         cpu_idle          = true
         startup_cpu_boost = true
       }

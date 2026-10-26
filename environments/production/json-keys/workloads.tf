@@ -177,8 +177,10 @@ resource "google_cloud_run_v2_service" "grpc" {
       }
 
       resources {
-        limits            = { cpu = "1", memory = "512Mi" }
-        cpu_idle          = true
+        limits = { cpu = "1", memory = "512Mi" }
+        # Sentry events and spans leave after the response, and the kept instance never stops to
+        # flush them.
+        cpu_idle          = false
         startup_cpu_boost = false
       }
 

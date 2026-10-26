@@ -91,6 +91,11 @@ run "serves_privately_from_pinned_images_and_secrets" {
     ])
     error_message = "Every reporting workload names its release <repository>@<semver>, as release CI creates it in Sentry."
   }
+
+  assert {
+    condition     = google_cloud_run_v2_service.grpc.template[0].containers[0].resources[0].cpu_idle == false
+    error_message = "JSON Keys keeps CPU between requests, so its Sentry events and spans leave."
+  }
 }
 
 run "rejects_an_unpinned_image" {
