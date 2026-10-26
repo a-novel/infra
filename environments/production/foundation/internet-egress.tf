@@ -33,7 +33,7 @@ locals {
       priority = 1020
       # Sentry's ingest sits behind one Google Cloud anycast address that every client resolves
       # alike, so the firewall resolves the one its clients do.
-      fqdns          = [var.sentry_ingest_host]
+      hosts          = [var.sentry_ingest_host]
       address_groups = []
       port           = "443"
       # The servers, GenAI's sweep, and the jobs that report their faults: Authentication's
