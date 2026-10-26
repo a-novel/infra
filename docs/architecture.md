@@ -49,8 +49,14 @@ own identities, image repositories, network tags and database hosts.
   Other traffic falls through to the firewall rules. Direct VPC egress logs no firewall verdict, so
   a refused connection shows only as the caller's own error.
 
+- **DNS allowlist.** A Cloud DNS response policy, `a-novel-dns-allowlist`, resolves only the private
+  zones, Compute Engine's internal names and the egress allowlist's hosts. Every other name answers
+  with a CNAME to `blocked.internal.` and no address, so the lookup fails at once and no outside
+  name server receives it. A host added to the egress allowlist joins the DNS allowlist in the same
+  entry.
+
 - **DNS query logs.** The network logs every lookup to Cloud Logging as a `dns_query` entry, with
-  its name, source address and answer.
+  its name and answer. A VM's entry also carries its source address. A Cloud Run entry carries none.
 
 - **Firewall.** A VPC-wide rule denies all egress at priority 1200. Explicit rules above it allow:
 

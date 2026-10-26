@@ -124,6 +124,40 @@ run "denies_everything_the_network_does_not_allow" {
   }
 }
 
+run "resolves_only_the_dns_allowlist" {
+  command = plan
+
+  assert {
+    condition = (
+      contains(keys(google_dns_response_policy_rule.deny), "*.") &&
+      alltrue([for records in [for rule in google_dns_response_policy_rule.deny : one(rule.local_data).local_datas] :
+        length(records) == 1 && one(records).type == "CNAME" && one(one(records).rrdatas) == "blocked.internal."
+      ])
+    )
+    error_message = "The DNS allowlist must refuse every name below the root, with a CNAME that answers every record type."
+  }
+
+  assert {
+    condition = alltrue([for name in keys(google_dns_response_policy_rule.allow) :
+      !startswith(name, "*.") || contains(local.dns_google_domains, trimprefix(name, "*."))
+    ])
+    error_message = "Only a domain Google answers inside, a private zone or internal DNS, may be allowed whole. A public host is allowed by its exact name."
+  }
+
+  assert {
+    condition = alltrue(concat(
+      [for rule in google_compute_network_firewall_policy_rule.egress_allowlist :
+        alltrue([for fqdn in coalesce(rule.match[0].dest_fqdns, []) : contains(keys(google_dns_response_policy_rule.allow), "${fqdn}.")])
+      ],
+      [for zone in concat([google_dns_managed_zone.googleapis], values(google_dns_managed_zone.private_google_domain)) :
+        contains(keys(google_dns_response_policy_rule.allow), zone.dns_name) &&
+        contains(keys(google_dns_response_policy_rule.allow), "*.${zone.dns_name}")
+      ],
+    ))
+    error_message = "The firewall resolves its hosts through the DNS allowlist, and the private zones answer their whole domains, so each must be allowed."
+  }
+}
+
 run "grants_no_basic_roles" {
   command = plan
 
