@@ -177,8 +177,10 @@ resource "google_cloud_run_v2_service" "grpc" {
       }
 
       resources {
-        limits            = { cpu = "1", memory = "512Mi" }
-        cpu_idle          = true
+        limits = { cpu = "1", memory = "512Mi" }
+        # Consumers wait on these calls through the API that makes them, so their Sentry events and
+        # spans leave in the background, which needs CPU between requests.
+        cpu_idle          = false
         startup_cpu_boost = false
       }
 

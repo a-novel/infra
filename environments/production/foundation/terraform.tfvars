@@ -106,5 +106,6 @@ database_images = {
 cloud_run_cpu_quota_millicpu = 16000
 cloud_run_memory_quota_bytes = 25769803776
 # Three database hosts at their nominal vCPUs, plus the backup repository VMs.
-compute_cpu_quota    = 8
-monthly_budget_units = 150
+compute_cpu_quota = 8
+# The whole project at moderate traffic, planned near EUR 360 a month, with margin.
+monthly_budget_units = 500
