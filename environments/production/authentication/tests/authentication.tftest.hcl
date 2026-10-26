@@ -59,11 +59,14 @@ run "splits_private_migrations_from_the_public_api" {
       google_cloud_run_v2_job.migrations.project == "a-novel-production-prod" &&
       google_cloud_run_v2_service.rest.project == "a-novel-public-api-prod" &&
       google_cloud_run_v2_service.rest.ingress == "INGRESS_TRAFFIC_ALL" &&
-      alltrue([for vpc in [google_cloud_run_v2_service.rest.template[0].vpc_access[0], google_cloud_run_v2_job.maintenance.template[0].template[0].vpc_access[0]] :
-        vpc.egress == "ALL_TRAFFIC" && endswith(vpc.network_interfaces[0].subnetwork, "/agora-production-egress-europe-west1")
+      alltrue([for vpc in [
+        google_cloud_run_v2_service.rest.template[0].vpc_access[0],
+        google_cloud_run_v2_job.maintenance.template[0].template[0].vpc_access[0],
+        google_cloud_run_v2_job.refresh_token_purge.template[0].template[0].vpc_access[0],
+        ] : vpc.egress == "ALL_TRAFFIC" && endswith(vpc.network_interfaces[0].subnetwork, "/agora-production-egress-europe-west1")
       ])
     )
-    error_message = "Migrations stay private; only the REST API is public. Its egress and the maintenance job's go through the egress subnet, whose NAT and allowlist decide what leaves."
+    error_message = "Migrations stay private; only the REST API is public. Its egress and the jobs' that report to Sentry go through the egress subnet, whose NAT and allowlist decide what leaves."
   }
 
   assert {
@@ -96,9 +99,9 @@ run "splits_private_migrations_from_the_public_api" {
       google_cloud_run_v2_job.maintenance.run_execution_token == null &&
       length(coalesce(google_cloud_run_v2_job.maintenance.template[0].template[0].containers[0].args, [])) == 0 &&
       google_cloud_run_v2_job.maintenance.template[0].template[0].max_retries == 0 &&
-      toset([for env in google_cloud_run_v2_job.maintenance.template[0].template[0].containers[0].env : env.name if length(env.value_source) > 0]) == toset(["POSTGRES_PASSWORD"])
+      toset([for env in google_cloud_run_v2_job.maintenance.template[0].template[0].containers[0].env : env.name if length(env.value_source) > 0]) == toset(["POSTGRES_PASSWORD", "SENTRY_DSN"])
     )
-    error_message = "The maintenance job stays private, runs only when a human starts it with an operation, and mounts only the database password."
+    error_message = "The maintenance job stays private, runs only when a human starts it with an operation, and mounts only the database password and its Sentry DSN."
   }
 
   assert {
@@ -107,10 +110,19 @@ run "splits_private_migrations_from_the_public_api" {
       google_cloud_run_v2_job.refresh_token_purge.run_execution_token == null &&
       google_cloud_run_v2_job.refresh_token_purge.template[0].template[0].containers[0].args == tolist(["refresh-token-purge"]) &&
       google_cloud_run_v2_job.refresh_token_purge.template[0].template[0].max_retries == 0 &&
-      endswith(google_cloud_run_v2_job.refresh_token_purge.template[0].template[0].vpc_access[0].network_interfaces[0].subnetwork, "/agora-production-europe-west1") &&
-      toset([for env in google_cloud_run_v2_job.refresh_token_purge.template[0].template[0].containers[0].env : env.name if length(env.value_source) > 0]) == toset(["POSTGRES_PASSWORD"])
+      toset([for env in google_cloud_run_v2_job.refresh_token_purge.template[0].template[0].containers[0].env : env.name if length(env.value_source) > 0]) == toset(["POSTGRES_PASSWORD", "SENTRY_DSN"])
     )
-    error_message = "The purge job stays private and off the egress subnet, runs only its stored operation, and mounts only the database password."
+    error_message = "The purge job stays private, runs only its stored operation, and mounts only the database password and its Sentry DSN."
+  }
+
+  assert {
+    condition = alltrue([for container in [
+      google_cloud_run_v2_service.rest.template[0].containers[0],
+      google_cloud_run_v2_job.maintenance.template[0].template[0].containers[0],
+      google_cloud_run_v2_job.refresh_token_purge.template[0].template[0].containers[0],
+      ] : can(regex("^service-authentication@[0-9]+\\.[0-9]+\\.[0-9]+$", { for env in container.env : env.name => env.value }["SENTRY_RELEASE"]))
+    ])
+    error_message = "Every reporting workload names its release <repository>@<semver>, as release CI creates it in Sentry."
   }
 }
 

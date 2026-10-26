@@ -26,13 +26,23 @@ locals {
     POSTGRES_MAX_OPEN_CONNS = "5"
     POSTGRES_MAX_IDLE_CONNS = "2"
   }
+  # The server and the rotation job mount the same secrets, and both report their faults to Sentry.
   secret_env = {
     POSTGRES_PASSWORD = "app-password"
     APP_MASTER_KEY    = "app-master-key"
+    SENTRY_DSN        = "sentry-dsn"
   }
+  # Sentry names a release <repository>@<version>, as release CI creates it, so it can resolve an
+  # issue in the next release. Every image of a release carries its tag.
+  sentry_env = {
+    SENTRY_ENVIRONMENT = "production"
+    SENTRY_RELEASE     = "service-json-keys@${trimprefix(local.images.grpc.tag, "v")}"
+  }
+  # A job that reports to Sentry runs on the egress subnet, where the egress allowlist lets only
+  # Sentry out. The migrations report nothing and stay on the VMs' subnet.
   jobs = {
-    migrations = { timeout = "600s", retries = 0, secrets = { POSTGRES_PASSWORD = "app-password" } }
-    rotatekeys = { timeout = "300s", retries = 1, secrets = local.secret_env }
+    migrations = { timeout = "600s", retries = 0, secrets = { POSTGRES_PASSWORD = "app-password" }, reports = false }
+    rotatekeys = { timeout = "300s", retries = 1, secrets = local.secret_env, reports = true }
   }
 }
 
@@ -70,7 +80,7 @@ resource "google_cloud_run_v2_job" "application" {
         image = local.image[each.key]
 
         dynamic "env" {
-          for_each = merge(local.database_env, local.downtime_env)
+          for_each = merge(local.database_env, local.downtime_env, each.value.reports ? local.sentry_env : {})
           content {
             name  = env.key
             value = env.value
@@ -99,7 +109,7 @@ resource "google_cloud_run_v2_job" "application" {
         egress = "ALL_TRAFFIC"
         network_interfaces {
           network    = local.network.network
-          subnetwork = local.network.subnetwork
+          subnetwork = each.value.reports ? local.foundation.network.egress_subnet_id : local.network.subnetwork
           tags       = local.network.tags
         }
       }
@@ -140,7 +150,7 @@ resource "google_cloud_run_v2_service" "grpc" {
       }
 
       dynamic "env" {
-        for_each = merge(local.database_env, local.downtime_env, {
+        for_each = merge(local.database_env, local.downtime_env, local.sentry_env, {
           GCLOUD_PROJECT_ID = local.project_id
           # The Go runtime does not read the container's memory limit.
           GOMEMLIMIT = "400MiB"
@@ -183,11 +193,13 @@ resource "google_cloud_run_v2_service" "grpc" {
       }
     }
 
+    # All egress enters the VPC from the egress subnet, which Cloud NAT serves. The egress allowlist
+    # lets only Sentry out, and the database and Google's APIs stay inside the VPC.
     vpc_access {
       egress = "ALL_TRAFFIC"
       network_interfaces {
         network    = local.network.network
-        subnetwork = local.network.subnetwork
+        subnetwork = local.foundation.network.egress_subnet_id
         tags       = local.network.tags
       }
     }

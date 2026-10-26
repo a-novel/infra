@@ -32,7 +32,18 @@ locals {
     SMTP_SENDER_NAME    = var.smtp.sender_name
     SMTP_TIMEOUT        = "5s"
   }
-  maintenance_secret_env = { POSTGRES_PASSWORD = "app-password" }
+  # The REST API and the jobs that share the maintenance image report their faults to Sentry; the
+  # migrations report nothing.
+  maintenance_secret_env = {
+    POSTGRES_PASSWORD = "app-password"
+    SENTRY_DSN        = "sentry-dsn"
+  }
+  # Sentry names a release <repository>@<version>, as release CI creates it, so it can resolve an
+  # issue in the next release. Every image of a release carries its tag.
+  sentry_env = {
+    SENTRY_ENVIRONMENT = "production"
+    SENTRY_RELEASE     = "service-authentication@${trimprefix(local.images.rest.tag, "v")}"
+  }
   rest_secret_env = merge(
     local.maintenance_secret_env,
     var.waitlist_url == null ? {} : { WAITLIST_SECRET = "waitlist-secret" },
@@ -139,7 +150,7 @@ resource "google_cloud_run_v2_job" "maintenance" {
         image = local.image.maintenance
 
         dynamic "env" {
-          for_each = merge(local.database_env, local.downtime_env, local.mail_env, {
+          for_each = merge(local.database_env, local.downtime_env, local.mail_env, local.sentry_env, {
             POSTGRES_MAX_OPEN_CONNS = "2"
             POSTGRES_MAX_IDLE_CONNS = "1"
           })
@@ -168,7 +179,7 @@ resource "google_cloud_run_v2_job" "maintenance" {
       }
 
       # All egress enters the VPC from the egress subnet, which Cloud NAT serves. The egress
-      # allowlist lets only SMTP out.
+      # allowlist lets only SMTP and Sentry out.
       vpc_access {
         egress = "ALL_TRAFFIC"
         network_interfaces {
@@ -212,7 +223,7 @@ resource "google_cloud_run_v2_job" "refresh_token_purge" {
         args  = ["refresh-token-purge"]
 
         dynamic "env" {
-          for_each = merge(local.database_env, local.downtime_env, {
+          for_each = merge(local.database_env, local.downtime_env, local.sentry_env, {
             POSTGRES_MAX_OPEN_CONNS = "2"
             POSTGRES_MAX_IDLE_CONNS = "1"
           })
@@ -240,12 +251,13 @@ resource "google_cloud_run_v2_job" "refresh_token_purge" {
         }
       }
 
-      # The job reaches only the database, so it stays on the private subnet, like the migrations.
+      # The job reports its failures to Sentry, so it runs on the egress subnet, where the egress
+      # allowlist lets only Sentry out.
       vpc_access {
         egress = "ALL_TRAFFIC"
         network_interfaces {
           network    = local.network.network
-          subnetwork = local.network.subnetwork
+          subnetwork = local.foundation.network.egress_subnet_id
           tags       = local.network.tags
         }
       }
@@ -307,7 +319,7 @@ resource "google_cloud_run_v2_service" "rest" {
       }
 
       dynamic "env" {
-        for_each = merge(local.database_env, local.downtime_env, local.mail_env, {
+        for_each = merge(local.database_env, local.downtime_env, local.mail_env, local.sentry_env, {
           # One 64 MiB Argon2 hash at a time per vCPU: more slots add memory, not throughput.
           ARGON2_MAX_CONCURRENT = "1"
           GCLOUD_PROJECT_ID     = local.api_project_id
@@ -375,7 +387,7 @@ resource "google_cloud_run_v2_service" "rest" {
     }
 
     # All egress enters the VPC from the egress subnet, which Cloud NAT serves. The egress allowlist
-    # lets only SMTP out, and JSON Keys and the Telemetry API stay on the restricted VIP.
+    # lets only SMTP and Sentry out, and JSON Keys and the Telemetry API stay on the restricted VIP.
     vpc_access {
       egress = "ALL_TRAFFIC"
       network_interfaces {
