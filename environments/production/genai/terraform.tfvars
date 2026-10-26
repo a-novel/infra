@@ -8,6 +8,7 @@ images = {
 secret_versions = {
   app-password   = 1
   openai-api-key = 1
+  sentry-dsn     = 1
 }
 
 backup_repository = {

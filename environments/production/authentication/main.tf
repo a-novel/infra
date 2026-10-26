@@ -33,9 +33,10 @@ module "private_runtime" {
   management_project_id    = local.management_project_id
   secrets                  = toset(["production-authentication-app-password"])
   database_service_account = local.database.service_account
-  # The maintenance job runs as its own identity, which reads only the secrets it mounts.
+  # The maintenance job runs as its own identity, which reads only the secrets it mounts. It reads its
+  # Sentry DSN before it mounts it (a-novel/infra#1106).
   workloads = {
-    maintain = { secrets = toset([for name in values(local.maintenance_secret_env) : "production-authentication-${name}"]) }
+    maintain = { secrets = toset([for name in setunion(values(local.maintenance_secret_env), ["sentry-dsn"]) : "production-authentication-${name}"]) }
   }
   deployer    = local.deployer
   alert_email = var.alert_email

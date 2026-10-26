@@ -17,9 +17,10 @@ variable "secret_versions" {
   validation {
     condition = (
       contains(keys(var.secret_versions), "app-password") &&
+      contains(keys(var.secret_versions), "sentry-dsn") &&
       (var.waitlist_url == null) != contains(keys(var.secret_versions), "waitlist-secret")
     )
-    error_message = "Pin app-password, plus waitlist-secret exactly when waitlist_url is set."
+    error_message = "Pin app-password and sentry-dsn, plus waitlist-secret exactly when waitlist_url is set."
   }
 }
 
