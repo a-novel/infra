@@ -8,7 +8,7 @@ COPY internal/recovery ./internal/recovery
 RUN --mount=type=cache,target=/root/.cache/go-build \
     go build -ldflags="-s -w" -trimpath -o /native-restore ./cmd/native-restore
 
-FROM ghcr.io/a-novel/service-json-keys/database:v2.13.4@sha256:8778711f5c9beb691b741b2edbbcccf4e5f857b0ff3380fbf2210dea194aab5a
+FROM ghcr.io/a-novel/service-json-keys/database:v2.13.5@sha256:a7fd1aa7ba4476c6775e391fd632e0e292ca0667a25bec07a0cc3fab57afad3a
 COPY --from=builder /native-restore /native-restore
 USER postgres
 HEALTHCHECK NONE
