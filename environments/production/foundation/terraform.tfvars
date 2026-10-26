@@ -96,7 +96,7 @@ database_releases = {
 # A blank line separates each service's pin, so concurrent release pull requests merge cleanly. Git
 # refuses to merge edits to adjacent lines.
 database_images = {
-  json-keys = "ghcr.io/a-novel/service-json-keys/database:v2.13.4@sha256:8778711f5c9beb691b741b2edbbcccf4e5f857b0ff3380fbf2210dea194aab5a"
+  json-keys = "ghcr.io/a-novel/service-json-keys/database:v2.13.5@sha256:a7fd1aa7ba4476c6775e391fd632e0e292ca0667a25bec07a0cc3fab57afad3a"
 
   authentication = "ghcr.io/a-novel/service-authentication/database:v2.18.1@sha256:cce2b62f9486ddbf490e142525c444777782593845b1c2a6ab4ddab06eb94846"
 
