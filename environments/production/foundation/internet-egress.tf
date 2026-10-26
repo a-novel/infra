@@ -35,8 +35,8 @@ locals {
       fqdns          = [var.sentry_ingest_host]
       address_groups = []
       port           = "443"
-      # The servers, GenAI's sweep, and the jobs that report their faults: Authentication's maintenance
-      # and refresh token purge, which share one identity, and JSON Keys' key rotation.
+      # The servers, GenAI's sweep, and the jobs that report their faults: Authentication's
+      # maintenance and refresh token purge, which share one identity, and JSON Keys' key rotation.
       service_accounts = [
         "agora-authentication-api@${var.public_api_project_id}.iam.gserviceaccount.com",
         "agora-authentication-maintain@${var.workload_project_id}.iam.gserviceaccount.com",
