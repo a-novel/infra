@@ -105,6 +105,14 @@ run "splits_private_migrations_from_the_public_api" {
   }
 
   assert {
+    condition = alltrue([
+      for budget in [tonumber(trimsuffix({ for env in google_cloud_run_v2_job.maintenance.template[0].template[0].containers[0].env : env.name => env.value }["SMTP_TIMEOUT"], "s"))] :
+      budget >= 60 && budget < tonumber(trimsuffix(google_cloud_run_v2_job.maintenance.template[0].template[0].timeout, "s"))
+    ])
+    error_message = "The maintenance job's mail must outlast Cloud NAT's warm-up on a fresh instance, a minute at least, and end inside the task timeout."
+  }
+
+  assert {
     condition = (
       google_cloud_run_v2_job.refresh_token_purge.project == "a-novel-production-prod" &&
       google_cloud_run_v2_job.refresh_token_purge.run_execution_token == null &&
