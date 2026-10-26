@@ -74,6 +74,13 @@ run "serves_privately_from_pinned_images_and_secrets" {
   }
 
   assert {
+    condition = alltrue([for service in [google_cloud_run_v2_service.grpc, google_cloud_run_v2_service.sweep] :
+      can(regex("^service-genai@[0-9]+\\.[0-9]+\\.[0-9]+$", { for env in service.template[0].containers[0].env : env.name => env.value }["SENTRY_RELEASE"]))
+    ])
+    error_message = "Every reporting workload names its release <repository>@<semver>, as release CI creates it in Sentry."
+  }
+
+  assert {
     condition     = terraform_data.migrations.triggers_replace[0] == google_cloud_run_v2_job.migrations.template[0].template[0].containers[0].image
     error_message = "Migrations run during apply, once per image change."
   }

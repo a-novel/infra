@@ -19,6 +19,8 @@ override_data {
         network_id   = "projects/a-novel-production-prod/global/networks/agora-production"
         subnet_id    = "projects/a-novel-production-prod/regions/europe-west1/subnetworks/agora-production-europe-west1"
         network_tags = { json_keys = "agora-json-keys" }
+        # The subnet Cloud NAT serves.
+        egress_subnet_id = "projects/a-novel-production-prod/regions/europe-west1/subnetworks/agora-production-egress-europe-west1"
       }
       database_hosts = {
         json_keys = {
@@ -42,9 +44,14 @@ run "serves_privately_from_pinned_images_and_secrets" {
     condition = (
       google_cloud_run_v2_service.grpc.ingress == "INGRESS_TRAFFIC_INTERNAL_ONLY" &&
       !google_cloud_run_v2_service.grpc.invoker_iam_disabled &&
-      google_cloud_run_v2_service.grpc.template[0].vpc_access[0].egress == "ALL_TRAFFIC"
+      alltrue([for vpc in [
+        google_cloud_run_v2_service.grpc.template[0].vpc_access[0],
+        google_cloud_run_v2_job.application["rotatekeys"].template[0].template[0].vpc_access[0],
+        ] : vpc.egress == "ALL_TRAFFIC" && endswith(vpc.network_interfaces[0].subnetwork, "/agora-production-egress-europe-west1")
+      ]) &&
+      endswith(google_cloud_run_v2_job.application["migrations"].template[0].template[0].vpc_access[0].network_interfaces[0].subnetwork, "/agora-production-europe-west1")
     )
-    error_message = "JSON Keys must stay internal, IAM-authenticated and routed through the VPC."
+    error_message = "JSON Keys must stay internal and IAM-authenticated. The server's and the rotation job's egress goes through the egress subnet, whose NAT and allowlist decide what leaves; the migrations stay private."
   }
 
   assert {
@@ -74,6 +81,15 @@ run "serves_privately_from_pinned_images_and_secrets" {
   assert {
     condition     = !contains([for env in google_cloud_run_v2_service.grpc.template[0].containers[0].env : env.name], "DOWNTIME_START")
     error_message = "Without a planned downtime, the service receives no start."
+  }
+
+  assert {
+    condition = alltrue([for container in [
+      google_cloud_run_v2_service.grpc.template[0].containers[0],
+      google_cloud_run_v2_job.application["rotatekeys"].template[0].template[0].containers[0],
+      ] : can(regex("^service-json-keys@[0-9]+\\.[0-9]+\\.[0-9]+$", { for env in container.env : env.name => env.value }["SENTRY_RELEASE"]))
+    ])
+    error_message = "Every reporting workload names its release <repository>@<semver>, as release CI creates it in Sentry."
   }
 }
 

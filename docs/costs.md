@@ -28,11 +28,11 @@ as soon as its drill ends.
 Native backups are estimated at EUR 10–15 extra per service per month. Real figures come from the
 billing report.
 
-Internet egress is estimated at USD 6–10 a month. The address costs USD 0.005 an hour. NAT costs
+Internet egress is estimated at USD 7–11 a month. The address costs USD 0.005 an hour. NAT costs
 USD 0.0014 an hour for each instance it serves: only the egress subnet's Cloud Run instances, never
-the VMs. Authentication's warm instance and the sweep, which its schedule keeps warm, cost about
-USD 2 a month, and GenAI's gRPC server up to USD 4 more at its cap. The bytes that NAT and the
-allowlist process add cents.
+the VMs. Authentication's and JSON Keys' warm instances and the sweep, which its schedule keeps
+warm, cost about USD 3 a month, and GenAI's gRPC server up to USD 4 more at its cap. The bytes that
+NAT and the allowlist process add cents.
 
 Update this page when a VM, disk, warm instance, region or retention setting changes. Prices:
 [Compute](https://cloud.google.com/products/compute/pricing),

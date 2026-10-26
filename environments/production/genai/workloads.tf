@@ -22,15 +22,21 @@ locals {
     POSTGRES_DATABASE    = "agora_genai"
     POSTGRES_TLS_ENABLED = "false"
   }
-  # The servers call the provider, so both read its key; the migrations job reads only the database.
+  # The servers call the provider, so both read its key, and both report their faults to Sentry. The
+  # migrations job reads only the database.
   migrations_secret_env = { POSTGRES_PASSWORD = "app-password" }
   server_secret_env = {
     POSTGRES_PASSWORD = "app-password"
     OPENAI_API_KEY    = "openai-api-key"
+    SENTRY_DSN        = "sentry-dsn"
   }
   server_env = merge(local.database_env, local.downtime_env, {
-    GCLOUD_PROJECT_ID = local.project_id
-    OTEL              = "true"
+    GCLOUD_PROJECT_ID  = local.project_id
+    OTEL               = "true"
+    SENTRY_ENVIRONMENT = "production"
+    # Sentry names a release <repository>@<version>, as release CI creates it, so it can resolve an
+    # issue in the next release. Every image of a release carries its tag.
+    SENTRY_RELEASE = "service-genai@${trimprefix(local.images.grpc.tag, "v")}"
   })
 }
 
@@ -190,7 +196,7 @@ resource "google_cloud_run_v2_service" "grpc" {
     }
 
     # All egress enters the VPC from the egress subnet, which Cloud NAT serves. The egress allowlist
-    # lets only the provider's API out.
+    # lets only the provider's API and Sentry out.
     vpc_access {
       egress = "ALL_TRAFFIC"
       network_interfaces {
