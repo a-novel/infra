@@ -6,7 +6,7 @@ FROM ghcr.io/a-novel/service-json-keys/database:v2.13.7@sha256:a7fd1aa7ba4476c67
 
 FROM ghcr.io/a-novel/service-authentication/database:v2.18.2@sha256:cce2b62f9486ddbf490e142525c444777782593845b1c2a6ab4ddab06eb94846 AS authentication
 
-FROM ghcr.io/a-novel/service-genai/database:v0.7.2@sha256:880e760f2f03f4ffdaf2affc186d10a91a12f711602a4c0983a9d70d837efb70 AS genai
+FROM ghcr.io/a-novel/service-genai/database:v0.7.3@sha256:880e760f2f03f4ffdaf2affc186d10a91a12f711602a4c0983a9d70d837efb70 AS genai
 
 FROM docker.io/library/golang:1.27.3-alpine AS builder
 ENV CGO_ENABLED=0
