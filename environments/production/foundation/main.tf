@@ -7,7 +7,7 @@ provider "google" {
   default_labels = local.labels
 }
 
-# Only service-agent creation needs the beta provider.
+# Only service-agent creation and the DNS allowlist's bypass rules need the beta provider.
 provider "google-beta" {
   project = var.management_project_id
   region  = var.region
