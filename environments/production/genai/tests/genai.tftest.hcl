@@ -89,6 +89,14 @@ run "serves_privately_from_pinned_images_and_secrets" {
     condition     = !contains([for env in google_cloud_run_v2_service.grpc.template[0].containers[0].env : env.name], "DOWNTIME_START")
     error_message = "Without a planned downtime, the service receives no start."
   }
+
+  assert {
+    condition = (
+      google_cloud_run_v2_service.grpc.template[0].containers[0].resources[0].cpu_idle == false &&
+      google_cloud_run_v2_service.sweep.template[0].containers[0].resources[0].cpu_idle == true
+    )
+    error_message = "The gRPC server, which consumers wait on, keeps CPU between requests. The sweep, which no consumer waits on, is billed per request and sends its telemetry before each answer."
+  }
 }
 
 run "rejects_an_unpinned_image" {

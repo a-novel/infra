@@ -180,9 +180,9 @@ resource "google_cloud_run_v2_service" "grpc" {
 
       resources {
         limits = { cpu = "1", memory = "2Gi" }
-        # Sentry events and spans leave after the response, and an idle instance flushes them when it
-        # stops, within 15 minutes.
-        cpu_idle          = true
+        # Consumers wait on these calls through the API that makes them, so their Sentry events and
+        # spans leave in the background, which needs CPU between requests.
+        cpu_idle          = false
         startup_cpu_boost = true
       }
 
@@ -287,8 +287,8 @@ resource "google_cloud_run_v2_service" "sweep" {
 
       resources {
         limits = { cpu = "1", memory = "1Gi" }
-        # Sentry events and spans leave after the response, and an idle instance flushes them when it
-        # stops, within 15 minutes.
+        # No consumer waits on the sweep, so it sends its Sentry events and spans before each answer,
+        # and CPU between the scheduler's calls would only keep it billed.
         cpu_idle          = true
         startup_cpu_boost = true
       }
