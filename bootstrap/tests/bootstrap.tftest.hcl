@@ -160,4 +160,9 @@ run "trusts_only_reviewed_workflows" {
     ])
     error_message = "Automation and operators get scoped roles, never owner or editor."
   }
+
+  assert {
+    condition     = contains(keys(google_project_iam_member.automation), "foundation:roles/storage.admin")
+    error_message = "The deploy identity creates management buckets, which takes a project-level storage role."
+  }
 }

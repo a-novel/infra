@@ -16,6 +16,8 @@ locals {
     "roles/iam.workloadIdentityPoolAdmin",
     "roles/resourcemanager.projectIamAdmin",
     "roles/serviceusage.serviceUsageAdmin",
+    # Creating a bucket takes a project-level role.
+    "roles/storage.admin",
     "roles/workflows.admin",
   ])
 
