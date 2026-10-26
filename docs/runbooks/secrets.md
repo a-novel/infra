@@ -28,6 +28,7 @@ Keys stores, and a new value cannot decrypt them.
    | `*-app-master-key`  | 64 hexadecimal characters                                 |
    | `*-waitlist-secret` | at least 32 characters                                    |
    | `*-openai-api-key`  | an OpenAI project key restricted to the Responses API     |
+   | `*-sentry-dsn`      | the service's Sentry project DSN, from its Client Keys    |
 
 2. **Pin the new number** in `secret_versions` in the service root, in a pull request, and merge it.
    The deploy rolls out a new revision that reads it.
