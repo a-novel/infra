@@ -56,7 +56,7 @@ own identities, image repositories, network tags and database hosts.
   entry.
 
 - **DNS query logs.** The network logs every lookup to Cloud Logging as a `dns_query` entry, with
-  its name, source address and answer.
+  its name and answer. A VM's entry also carries its source address. A Cloud Run entry carries none.
 
 - **Firewall.** A VPC-wide rule denies all egress at priority 1200. Explicit rules above it allow:
 
