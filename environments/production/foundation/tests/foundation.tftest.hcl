@@ -241,6 +241,17 @@ run "keeps_api_calls_inside_production" {
   }
 }
 
+run "alerts_at_each_budget_share" {
+  command = plan
+
+  assert {
+    condition = alltrue([for basis in ["CURRENT_SPEND", "FORECASTED_SPEND"] :
+      sort([for rule in google_billing_budget.workload.threshold_rules : tostring(rule.threshold_percent) if rule.spend_basis == basis]) == sort(["0.5", "0.75", "0.8", "0.9", "1"])
+    ])
+    error_message = "The budget alerts at 50, 75, 80, 90 and 100%, for both the spend so far and the month's forecast."
+  }
+}
+
 run "caps_cloud_run_in_every_project" {
   command = plan
 

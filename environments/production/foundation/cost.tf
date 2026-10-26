@@ -133,7 +133,7 @@ resource "google_billing_budget" "workload" {
 
   # Notify at each share of the budget, for the spend so far and for the month's forecast.
   dynamic "threshold_rules" {
-    for_each = setproduct(["CURRENT_SPEND", "FORECASTED_SPEND"], [0.5, 0.75, 0.9, 1.0])
+    for_each = setproduct(["CURRENT_SPEND", "FORECASTED_SPEND"], [0.5, 0.75, 0.8, 0.9, 1.0])
     content {
       spend_basis       = threshold_rules.value[0]
       threshold_percent = threshold_rules.value[1]
