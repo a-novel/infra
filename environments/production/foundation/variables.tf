@@ -101,6 +101,16 @@ variable "egress_subnet_cidr" {
   }
 }
 
+variable "sentry_ingest_host" {
+  description = "Ingest host of the Sentry organization the services report to, the one Sentry name the egress allowlist admits."
+  type        = string
+
+  validation {
+    condition     = can(regex("^o[0-9]+\\.ingest\\.[a-z]+\\.sentry\\.io$", var.sentry_ingest_host))
+    error_message = "Name one organization's ingest host, o<id>.ingest.<region>.sentry.io, never a wider Sentry domain."
+  }
+}
+
 variable "database_zone" {
   description = "Single production zone for the stateful PostgreSQL managed instance group and preserved data disk."
   type        = string

@@ -28,6 +28,24 @@ locals {
         "agora-authentication-maintain@${var.workload_project_id}.iam.gserviceaccount.com",
       ]
     }
+    sentry = {
+      priority = 1020
+      # Sentry's ingest sits behind one Google Cloud anycast address that every client resolves
+      # alike, so the firewall resolves the one its clients do.
+      fqdns          = [var.sentry_ingest_host]
+      address_groups = []
+      port           = "443"
+      # The servers, GenAI's sweep, and the jobs that report their faults: Authentication's maintenance
+      # and refresh token purge, which share one identity, and JSON Keys' key rotation.
+      service_accounts = [
+        "agora-authentication-api@${var.public_api_project_id}.iam.gserviceaccount.com",
+        "agora-authentication-maintain@${var.workload_project_id}.iam.gserviceaccount.com",
+        "agora-json-keys-private@${var.workload_project_id}.iam.gserviceaccount.com",
+        "agora-json-keys-rotatekeys@${var.workload_project_id}.iam.gserviceaccount.com",
+        "agora-genai-private@${var.workload_project_id}.iam.gserviceaccount.com",
+        "agora-genai-sweep@${var.workload_project_id}.iam.gserviceaccount.com",
+      ]
+    }
   }
 }
 
