@@ -98,7 +98,7 @@ database_releases = {
 database_images = {
   json-keys = "ghcr.io/a-novel/service-json-keys/database:v2.13.4@sha256:8778711f5c9beb691b741b2edbbcccf4e5f857b0ff3380fbf2210dea194aab5a"
 
-  authentication = "ghcr.io/a-novel/service-authentication/database:v2.18.0@sha256:cce2b62f9486ddbf490e142525c444777782593845b1c2a6ab4ddab06eb94846"
+  authentication = "ghcr.io/a-novel/service-authentication/database:v2.18.1@sha256:cce2b62f9486ddbf490e142525c444777782593845b1c2a6ab4ddab06eb94846"
 
   genai = "ghcr.io/a-novel/service-genai/database:v0.7.1@sha256:b31cb76b7909f052e7bc2d417a32c9c1b15b54bb394059d07bc8709ad7dd48da"
 }
