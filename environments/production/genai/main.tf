@@ -37,7 +37,7 @@ module "runtime" {
   # what it mounts.
   workloads = {
     migrations = { secrets = toset([for name in values(local.migrations_secret_env) : "production-genai-${name}"]) }
-    sweep      = { secrets = toset([for name in values(local.server_secret_env) : "production-genai-${name}"]), telemetry = true }
+    sweep      = { secrets = toset([for name in values(local.server_secret_env) : "production-genai-${name}"]) }
     smoke      = {}
   }
   deployer    = local.deployer

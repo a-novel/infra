@@ -40,10 +40,9 @@ variable "database_service_account" {
 }
 
 variable "workloads" {
-  description = "Workloads that run apart from the main server, by role: each gets its own identity, which reads only the secret IDs listed and writes telemetry only when asked."
+  description = "Workloads that run apart from the main server, by role: each gets its own identity, which reads only the secret IDs listed."
   type = map(object({
-    secrets   = optional(set(string), [])
-    telemetry = optional(bool, false)
+    secrets = optional(set(string), [])
   }))
   default = {}
 
