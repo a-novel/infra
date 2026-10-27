@@ -46,6 +46,10 @@ Environment `production` allows the `master` branch only, with no required revie
 | `GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER` | `…/providers/github-foundation`                                    |
 | `GCP_FOUNDATION_SERVICE_ACCOUNT`            | `infra-foundation@a-novel-management-prod.iam.gserviceaccount.com` |
 
+Environment `production` also holds the `SENTRY_AUTH_TOKEN` secret, Sentry's `release-ci`
+organization token from Bitwarden. Deploys record each release's `production` deploy with it, and
+only warn without it.
+
 Environment `host-artifacts` has the `core` and `owners-infra` teams as required reviewers. Either
 one approves a host tool publication.
 

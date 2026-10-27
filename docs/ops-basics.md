@@ -70,8 +70,9 @@ deploy:  bootstrap ─► foundation ─► one job per service ─┬─► rol
    Repository admins can bypass these rules.
 4. **The deploy.** Each merge starts `deploy.yaml`. It applies bootstrap and foundation when they
    changed since the last successful deploy. Then it applies every service root in parallel, so the
-   services always run the current planned downtime. Two jobs then run side by side: the database
-   [rollout](#database-hosts-and-planned-downtime) and a production health check.
+   services always run the current planned downtime. Once a root's Cloud Run services serve a new
+   release, its job records the release's `production` deploy in Sentry. Two jobs then run side by
+   side: the database [rollout](#database-hosts-and-planned-downtime) and a production health check.
 
 A daily **drift** check re-plans every root. It fails when the cloud differs from `master`, as after
 a change made in the console.
