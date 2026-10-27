@@ -262,7 +262,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: $/.github/actions/tofu
+      - id: tofu
+        uses: $/.github/actions/tofu
         with:
           root: environments/production/${{ matrix.service }}
           apply: "true"
@@ -270,6 +271,14 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
           github_token: ${{ github.token }}
+      # Release CI creates each release in Sentry when it cuts the tag. This step records the
+      # release's production deploy once the root serves it, and never fails the job.
+      - name: Record the Sentry deploys
+        shell: bash
+        env:
+          PLAN: ${{ steps.tofu.outputs.plan }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: node .github/scripts/sentry-deploys.mjs "$PLAN"
 
   # Moves each service's hosts onto their applied configuration: the database host only during its
   # planned downtime, the backup repository VM whenever its config changed. It reads the hosts, not

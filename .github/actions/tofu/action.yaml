@@ -35,6 +35,9 @@ outputs:
   changes:
     description: '"true" when the plan has changes.'
     value: ${{ steps.plan.outputs.changes }}
+  plan:
+    description: Path of the plan as JSON, as `tofu show -json` prints it.
+    value: ${{ steps.plan.outputs.plan }}
 
 runs:
   using: composite
@@ -128,6 +131,7 @@ runs:
           run_plan "${rerun[@]/#/-replace=}"
         fi
         echo "changes=$([ "$status" -eq 2 ] && echo true || echo false)" >>"$GITHUB_OUTPUT"
+        echo "plan=$RUNNER_TEMP/plan.json" >>"$GITHUB_OUTPUT"
         # The log lists each change and the fields it touches; values stay in the job summary.
         jq -r '.resource_changes[]? | select(.change.actions != ["no-op"]) | (.change.actions | join("+")) + " " + .address
           + (if .change.actions == ["update"] then " (" + ([.change.before, .change.after] as [$b, $a]
