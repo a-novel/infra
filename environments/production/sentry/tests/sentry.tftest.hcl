@@ -3,10 +3,6 @@ mock_provider "google" {}
 
 mock_provider "sentry" {}
 
-variables {
-  adopt_projects = false
-}
-
 run "plans_with_the_read_only_token" {
   command = plan
 
