@@ -151,6 +151,14 @@ locals {
       contract = "GITHUB_TOKEN"
       purpose  = "Fine-grained token that dispatches the a-novel-kit/.github workflows"
     }
+    production-sentry-plan-token = {
+      contract = "SENTRY_AUTH_TOKEN"
+      purpose  = "Read-only Sentry token, with which pull requests and the drift check plan the Sentry root"
+    }
+    production-sentry-deploy-token = {
+      contract = "SENTRY_AUTH_TOKEN"
+      purpose  = "Sentry token with which deploys apply the Sentry root"
+    }
     }, { for secret, credential in local.pgbackrest_tls : secret => {
       contract = credential.contract
       purpose  = credential.purpose

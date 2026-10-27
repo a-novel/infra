@@ -63,6 +63,14 @@ run "protects_state_and_backups" {
     ])
     error_message = "Secrets must refuse deletion and keep destroyed versions recoverable for 30 days."
   }
+
+  assert {
+    condition = (
+      google_secret_manager_secret_iam_member.sentry_token["plan"].secret_id == "production-sentry-plan-token" &&
+      toset(keys(google_secret_manager_secret_iam_member.sentry_token)) == toset(["plan", "foundation"])
+    )
+    error_message = "The plan identity runs pull-request code, so it may read only the read-only Sentry token."
+  }
 }
 
 run "trusts_only_reviewed_workflows" {

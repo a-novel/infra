@@ -107,6 +107,23 @@ Add each one as a version of `production-github-dispatch-<org>`, as in
 next dispatch after the deploy reads it. The token can start, rerun, cancel and delete workflow runs
 in those repositories. For a leak, revoke it on GitHub as well as disabling its version.
 
+## Sentry configuration tokens
+
+The Sentry root reads one Sentry token per CI identity. Create each one in Sentry, under
+**Settings → Developer Settings → Custom Integrations → Create New Integration → Internal
+Integration**, without a webhook:
+
+| Secret                           | Integration name | Permissions                                                |
+| -------------------------------- | ---------------- | ---------------------------------------------------------- |
+| `production-sentry-plan-token`   | `infra-plan`     | Read on Project, Team, Organization and Alerts             |
+| `production-sentry-deploy-token` | `infra-deploy`   | Write on Project and Alerts, Read on Team and Organization |
+
+Copy each integration's token, add it as a version of its secret, as in
+[Rotate a secret](#rotate-a-secret), and pin it in the Sentry root's `token_versions`. Pull requests
+and the drift check read the plan token, and deploys the deploy token. An internal integration token
+never expires. For a leak, delete the integration's token in Sentry as well as disabling its
+version.
+
 ## pgBackRest TLS certificates
 
 The database and repository hosts authenticate each other with certificates from an offline CA.
