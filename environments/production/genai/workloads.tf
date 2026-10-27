@@ -122,6 +122,12 @@ resource "google_cloud_run_v2_job" "migrations" {
   }
 }
 
+# A revision that fails to start still records its template in state, so the next plan finds
+# nothing to change while Cloud Run keeps serving the previous revision. Every plan replaces this
+# terraform_data while the service's last rollout failed, and its new ID in the template makes Cloud
+# Run roll the same configuration again.
+resource "terraform_data" "grpc_revision" {}
+
 resource "google_cloud_run_v2_service" "grpc" {
   name                 = "agora-genai-grpc"
   location             = local.region
@@ -138,6 +144,7 @@ resource "google_cloud_run_v2_service" "grpc" {
   }
 
   template {
+    annotations     = { revision-token = terraform_data.grpc_revision.id }
     service_account = module.runtime.service_account
     # A check can outlast a minute: a streamed start alone waits 30 s for the provider.
     timeout                          = "300s"
@@ -232,6 +239,9 @@ resource "google_cloud_run_v2_service" "grpc" {
   }
 }
 
+# Rolls the sweep again after a failed rollout, as grpc_revision does for the gRPC service.
+resource "terraform_data" "sweep_revision" {}
+
 # Foundation's Cloud Scheduler job calls the sweep every minute, GenAI's default SWEEP_INTERVAL.
 # Each call checks the generations nobody polled.
 resource "google_cloud_run_v2_service" "sweep" {
@@ -248,6 +258,7 @@ resource "google_cloud_run_v2_service" "sweep" {
   }
 
   template {
+    annotations     = { revision-token = terraform_data.sweep_revision.id }
     service_account = module.runtime.workloads["sweep"].service_account
     # Above the sweep's own 2 m request and 2 m 15 s write timeouts, so its answer arrives.
     timeout = "300s"

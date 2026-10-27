@@ -169,4 +169,6 @@ too.
 The cloud no longer matches `master`, and the job summary shows the plan. Either someone changed
 something in the console, or a provider default moved. Undo the console change, or codify the new
 value in a pull request. A recovery drill reports bootstrap as drifted while its backup reader is
-enabled.
+enabled. A plan that replaces a job's or service's token source, which the job's warning names,
+means its last execution or rollout failed: follow
+[A deploy failed](deployments.md#a-deploy-failed).

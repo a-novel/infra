@@ -120,11 +120,11 @@ runs:
         }
         run_plan
         # A job run through run_execution_token keeps its new token even when the execution fails,
-        # so a failed migration or smoke check would never run again. Replacing its token source
-        # runs it again in this plan.
-        mapfile -t rerun < <(node .github/scripts/rerun-failed-jobs.mjs "$RUNNER_TEMP/plan.json")
+        # and a service keeps its new template even when the revision fails, so neither would run
+        # again. Replacing its token source runs the job or rolls the service again in this plan.
+        mapfile -t rerun < <(node .github/scripts/rerun-failed-workloads.mjs "$RUNNER_TEMP/plan.json")
         if [ "${#rerun[@]}" -gt 0 ]; then
-          echo "::warning::A job's last execution failed, so this plan runs it again: ${rerun[*]}"
+          echo "::warning::A job's last execution or a service's last rollout failed, so this plan starts it again: ${rerun[*]}"
           run_plan "${rerun[@]/#/-replace=}"
         fi
         echo "changes=$([ "$status" -eq 2 ] && echo true || echo false)" >>"$GITHUB_OUTPUT"
