@@ -240,10 +240,12 @@ jobs:
 
   # Every deploy applies every service root, found on disk by the changes job, so the services run
   # the current DOWNTIME whichever deploy applies last: a downtime written while another deploy
-  # waited or ran would otherwise reach no service. An unchanged root applies nothing.
+  # waited or ran would otherwise reach no service. An unchanged root applies nothing. The services
+  # read their Sentry DSN from the Sentry root, so they wait for its job, which runs only when it
+  # changes: a release never waits on Sentry.
   services:
     name: ${{ matrix.service }}
-    needs: [changes, foundation]
+    needs: [changes, foundation, sentry]
     if: ${{ !cancelled() && !failure() && needs.changes.outputs.apply == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30

@@ -12,6 +12,15 @@ data "terraform_remote_state" "foundation" {
   }
 }
 
+# The Sentry root owns the project, and with it the DSN and OTLP header the workloads report with.
+data "terraform_remote_state" "sentry" {
+  backend = "gcs"
+  config = {
+    bucket = "a-novel-management-prod-232403541574-tofu-state"
+    prefix = "sentry"
+  }
+}
+
 locals {
   foundation            = data.terraform_remote_state.foundation.outputs
   private_project_id    = local.foundation.production_projects["private"].project_id
@@ -20,6 +29,7 @@ locals {
   management_project_id = "a-novel-management-prod"
   deployer              = "infra-foundation@${local.management_project_id}.iam.gserviceaccount.com"
   database              = local.foundation.database_hosts["authentication"]
+  sentry                = data.terraform_remote_state.sentry.outputs.services["service-authentication"]
 }
 
 # Database migrations and the maintenance job run beside the database in the private zone.

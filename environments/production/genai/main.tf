@@ -12,6 +12,15 @@ data "terraform_remote_state" "foundation" {
   }
 }
 
+# The Sentry root owns the project, and with it the DSN and OTLP header the workloads report with.
+data "terraform_remote_state" "sentry" {
+  backend = "gcs"
+  config = {
+    bucket = "a-novel-management-prod-232403541574-tofu-state"
+    prefix = "sentry"
+  }
+}
+
 locals {
   foundation            = data.terraform_remote_state.foundation.outputs
   project_id            = local.foundation.workload_project_id
@@ -19,6 +28,7 @@ locals {
   management_project_id = "a-novel-management-prod"
   deployer              = "infra-foundation@${local.management_project_id}.iam.gserviceaccount.com"
   database              = local.foundation.database_hosts["genai"]
+  sentry                = data.terraform_remote_state.sentry.outputs.services["service-genai"]
 }
 
 # The runtime identity and the image repositories come first: the deploy copies images into these

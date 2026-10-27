@@ -26,21 +26,23 @@ locals {
     POSTGRES_MAX_OPEN_CONNS = "5"
     POSTGRES_MAX_IDLE_CONNS = "2"
   }
-  # The server and the rotation job mount the same secrets, and both report their faults to Sentry.
+  # The server and the rotation job mount the same secrets.
   secret_env = {
-    POSTGRES_PASSWORD          = "app-password"
-    APP_MASTER_KEY             = "app-master-key"
-    SENTRY_DSN                 = "sentry-dsn"
-    OTEL_EXPORTER_OTLP_HEADERS = "sentry-otlp-headers"
+    POSTGRES_PASSWORD = "app-password"
+    APP_MASTER_KEY    = "app-master-key"
   }
   # Sentry names a release <repository>@<version>, as release CI creates it, so it can resolve an
   # issue in the next release. Every image of a release carries its tag. The same workloads send
   # their traces and logs to the Sentry project over OTLP.
   sentry_env = {
-    OTEL                           = "true"
-    SENTRY_ENVIRONMENT             = "production"
-    SENTRY_RELEASE                 = "service-json-keys@${trimprefix(local.images.grpc.tag, "v")}"
-    OTEL_EXPORTER_OTLP_ENDPOINT    = "https://${local.foundation.sentry_ingest_host}/api/${var.sentry_project_id}/integration/otlp"
+    OTEL               = "true"
+    SENTRY_ENVIRONMENT = "production"
+    SENTRY_RELEASE     = "service-json-keys@${trimprefix(local.images.grpc.tag, "v")}"
+    # A DSN is not a secret: Sentry documents it as safe to expose, and its public key only lets a
+    # sender submit events. The OTLP header carries the same key.
+    SENTRY_DSN                     = local.sentry.dsn
+    OTEL_EXPORTER_OTLP_HEADERS     = local.sentry.otlp_headers
+    OTEL_EXPORTER_OTLP_ENDPOINT    = "https://${local.foundation.sentry_ingest_host}/api/${local.sentry.project_id}/integration/otlp"
     OTEL_EXPORTER_OTLP_COMPRESSION = "gzip"
     OTEL_SERVICE_NAME              = "service-json-keys"
   }

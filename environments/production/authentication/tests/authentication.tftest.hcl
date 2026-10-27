@@ -44,6 +44,21 @@ override_data {
   }
 }
 
+override_data {
+  target = data.terraform_remote_state.sentry
+  values = {
+    outputs = {
+      services = {
+        "service-authentication" = {
+          project_id   = "4512319614156800"
+          dsn          = "https://abc123@o1.ingest.us.sentry.io/4512319614156800"
+          otlp_headers = "x-sentry-auth=sentry sentry_key=abc123"
+        }
+      }
+    }
+  }
+}
+
 run "splits_private_migrations_from_the_public_api" {
   command = plan
 
@@ -108,9 +123,9 @@ run "splits_private_migrations_from_the_public_api" {
       google_cloud_run_v2_job.maintenance.run_execution_token == null &&
       length(coalesce(google_cloud_run_v2_job.maintenance.template[0].template[0].containers[0].args, [])) == 0 &&
       google_cloud_run_v2_job.maintenance.template[0].template[0].max_retries == 0 &&
-      toset([for env in google_cloud_run_v2_job.maintenance.template[0].template[0].containers[0].env : env.name if length(env.value_source) > 0]) == toset(["POSTGRES_PASSWORD", "SENTRY_DSN", "OTEL_EXPORTER_OTLP_HEADERS"])
+      toset([for env in google_cloud_run_v2_job.maintenance.template[0].template[0].containers[0].env : env.name if length(env.value_source) > 0]) == toset(["POSTGRES_PASSWORD"])
     )
-    error_message = "The maintenance job stays private, runs only when a human starts it with an operation, and mounts only the database password, its Sentry DSN and its OTLP header."
+    error_message = "The maintenance job stays private, runs only when a human starts it with an operation, and mounts only the database password."
   }
 
   assert {
@@ -127,9 +142,9 @@ run "splits_private_migrations_from_the_public_api" {
       google_cloud_run_v2_job.refresh_token_purge.run_execution_token == null &&
       google_cloud_run_v2_job.refresh_token_purge.template[0].template[0].containers[0].args == tolist(["refresh-token-purge"]) &&
       google_cloud_run_v2_job.refresh_token_purge.template[0].template[0].max_retries == 0 &&
-      toset([for env in google_cloud_run_v2_job.refresh_token_purge.template[0].template[0].containers[0].env : env.name if length(env.value_source) > 0]) == toset(["POSTGRES_PASSWORD", "SENTRY_DSN", "OTEL_EXPORTER_OTLP_HEADERS"])
+      toset([for env in google_cloud_run_v2_job.refresh_token_purge.template[0].template[0].containers[0].env : env.name if length(env.value_source) > 0]) == toset(["POSTGRES_PASSWORD"])
     )
-    error_message = "The purge job stays private, runs only its stored operation, and mounts only the database password, its Sentry DSN and its OTLP header."
+    error_message = "The purge job stays private, runs only its stored operation, and mounts only the database password."
   }
 
   assert {
@@ -148,9 +163,10 @@ run "splits_private_migrations_from_the_public_api" {
       google_cloud_run_v2_job.maintenance.template[0].template[0].containers[0],
       google_cloud_run_v2_job.refresh_token_purge.template[0].template[0].containers[0],
       ] : lookup({ for env in container.env : env.name => env.value }, "OTEL", null) == "true" &&
-      { for env in container.env : env.name => env.value }["OTEL_EXPORTER_OTLP_ENDPOINT"] == "https://o1.ingest.us.sentry.io/api/${var.sentry_project_id}/integration/otlp"
+      { for env in container.env : env.name => env.value }["OTEL_EXPORTER_OTLP_ENDPOINT"] == "https://o1.ingest.us.sentry.io/api/4512319614156800/integration/otlp" &&
+      lookup({ for env in container.env : env.name => env.value }, "SENTRY_DSN", null) == "https://abc123@o1.ingest.us.sentry.io/4512319614156800"
     ])
-    error_message = "Every reporting workload turns telemetry on and exports to its Sentry project's OTLP endpoint, on foundation's ingest host."
+    error_message = "Every reporting workload turns telemetry on, reports with the DSN the Sentry root exports, and exports to its Sentry project's OTLP endpoint, on foundation's ingest host."
   }
 }
 
