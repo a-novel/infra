@@ -32,7 +32,6 @@ locals {
     OTEL_EXPORTER_OTLP_HEADERS = "sentry-otlp-headers"
   }
   server_env = merge(local.database_env, local.downtime_env, {
-    GCLOUD_PROJECT_ID  = local.project_id
     OTEL               = "true"
     SENTRY_ENVIRONMENT = "production"
     # Sentry names a release <repository>@<version>, as release CI creates it, so it can resolve an

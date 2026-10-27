@@ -97,9 +97,10 @@ run "serves_privately_from_pinned_images_and_secrets" {
     condition = alltrue([for container in [
       google_cloud_run_v2_service.grpc.template[0].containers[0],
       google_cloud_run_v2_job.application["rotatekeys"].template[0].template[0].containers[0],
-      ] : { for env in container.env : env.name => env.value }["OTEL_EXPORTER_OTLP_ENDPOINT"] == "https://o1.ingest.us.sentry.io/api/${var.sentry_project_id}/integration/otlp"
+      ] : lookup({ for env in container.env : env.name => env.value }, "OTEL", null) == "true" &&
+      { for env in container.env : env.name => env.value }["OTEL_EXPORTER_OTLP_ENDPOINT"] == "https://o1.ingest.us.sentry.io/api/${var.sentry_project_id}/integration/otlp"
     ])
-    error_message = "Every reporting workload exports to its Sentry project's OTLP endpoint, on foundation's ingest host."
+    error_message = "Every reporting workload turns telemetry on and exports to its Sentry project's OTLP endpoint, on foundation's ingest host."
   }
 
   assert {

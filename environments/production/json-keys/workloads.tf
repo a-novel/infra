@@ -35,8 +35,9 @@ locals {
   }
   # Sentry names a release <repository>@<version>, as release CI creates it, so it can resolve an
   # issue in the next release. Every image of a release carries its tag. The same workloads send
-  # their traces and logs to the Sentry project over OTLP, once OTEL is on.
+  # their traces and logs to the Sentry project over OTLP.
   sentry_env = {
+    OTEL                           = "true"
     SENTRY_ENVIRONMENT             = "production"
     SENTRY_RELEASE                 = "service-json-keys@${trimprefix(local.images.grpc.tag, "v")}"
     OTEL_EXPORTER_OTLP_ENDPOINT    = "https://${local.foundation.sentry_ingest_host}/api/${var.sentry_project_id}/integration/otlp"
@@ -156,11 +157,9 @@ resource "google_cloud_run_v2_service" "grpc" {
 
       dynamic "env" {
         for_each = merge(local.database_env, local.downtime_env, local.sentry_env, {
-          GCLOUD_PROJECT_ID = local.project_id
           # The Go runtime does not read the container's memory limit.
           GOMEMLIMIT = "400MiB"
           GRPC_PORT  = "8080"
-          OTEL       = "true"
         })
         content {
           name  = env.key

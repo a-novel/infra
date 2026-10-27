@@ -43,8 +43,9 @@ locals {
   }
   # Sentry names a release <repository>@<version>, as release CI creates it, so it can resolve an
   # issue in the next release. Every image of a release carries its tag. The same workloads send
-  # their traces and logs to the Sentry project over OTLP, once OTEL is on.
+  # their traces and logs to the Sentry project over OTLP.
   sentry_env = {
+    OTEL                           = "true"
     SENTRY_ENVIRONMENT             = "production"
     SENTRY_RELEASE                 = "service-authentication@${trimprefix(local.images.rest.tag, "v")}"
     OTEL_EXPORTER_OTLP_ENDPOINT    = "https://${local.foundation.sentry_ingest_host}/api/${var.sentry_project_id}/integration/otlp"
@@ -333,7 +334,6 @@ resource "google_cloud_run_v2_service" "rest" {
           # The Go runtime does not read the container's memory limit; this lets it reclaim one
           # hash's 64 MiB before the next one doubles the heap.
           GOMEMLIMIT              = "384MiB"
-          OTEL                    = "true"
           POSTGRES_MAX_IDLE_CONNS = "5"
           POSTGRES_MAX_OPEN_CONNS = "10"
           REST_CLIENT_IP_HEADER   = "X-Client-IP"

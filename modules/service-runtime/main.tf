@@ -20,14 +20,6 @@ resource "google_service_account_iam_member" "deployer" {
   member             = "serviceAccount:${var.deployer}"
 }
 
-resource "google_project_iam_member" "telemetry" {
-  for_each = toset(["roles/telemetry.writer", "roles/serviceusage.serviceUsageConsumer"])
-
-  project = var.project_id
-  role    = each.value
-  member  = google_service_account.runtime.member
-}
-
 resource "google_secret_manager_secret_iam_member" "runtime" {
   for_each = var.secrets
 
@@ -68,16 +60,6 @@ resource "google_secret_manager_secret_iam_member" "workload" {
   secret_id = each.value.secret
   role      = "roles/secretmanager.secretAccessor"
   member    = google_service_account.workload[each.value.role].member
-}
-
-resource "google_project_iam_member" "workload_telemetry" {
-  for_each = merge([for role, workload in var.workloads : {
-    for grant in ["roles/telemetry.writer", "roles/serviceusage.serviceUsageConsumer"] : "${role}:${grant}" => { role = role, grant = grant }
-  } if workload.telemetry]...)
-
-  project = var.project_id
-  role    = each.value.grant
-  member  = google_service_account.workload[each.value.role].member
 }
 
 resource "google_artifact_registry_repository" "images" {

@@ -77,11 +77,10 @@ own identities, image repositories, network tags and database hosts.
   `agora-authentication-rest`. Only the platform and the health checks may invoke it, so it can
   trust the visitor IP the platform sends in `X-Client-IP`. Its egress, the maintenance job's and the
   refresh token purge's go through the VPC from the egress subnet: SMTP and Sentry leave through
-  Cloud NAT, and JSON Keys and the Telemetry API stay on the restricted VIP.
+  Cloud NAT, and JSON Keys stays on the restricted VIP.
 - **GenAI gRPC and sweep** have internal ingress and IAM authentication. GenAI's smoke identity
   invokes the gRPC service. Only the scheduler identity invokes the sweep. Their egress goes
-  through the VPC from the egress subnet: OpenAI's API and Sentry leave through Cloud NAT, and the
-  Telemetry API stays on the restricted VIP.
+  through the VPC from the egress subnet: OpenAI's API and Sentry leave through Cloud NAT.
 - **Invocation tags** (`agora-invocation`: `internal`, `maintenance`, `release`, `scheduled`) gate
   who may invoke each Cloud Run service or job. Only the named maintenance operators run the
   `maintenance` job, and only they may pass it arguments.
@@ -238,4 +237,6 @@ All state lives in `a-novel-management-prod-232403541574-tofu-state`, one object
   as [Authentication health](runbooks/alerts.md#authentication-health) details.
 - **Logs** are kept 30 days. Successful health-check requests to Authentication and successful
   database health probes are not logged.
-- **Traces and logs** leave the services over OTLP to Google's Telemetry API.
+- **Traces and logs** leave the services over OTLP/HTTP to each service's Sentry project, on the
+  ingest host error events use. The perimeter still restricts the Telemetry and Cloud Trace APIs,
+  so no workload can export to another project's.
