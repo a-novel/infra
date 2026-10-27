@@ -1,9 +1,10 @@
 locals {
   # Each service root labels its workloads' spans a_novel.workload=api or job through
-  # OTEL_RESOURCE_ATTRIBUTES. A job run's duration means something else than a request's.
+  # OTEL_RESOURCE_ATTRIBUTES. Sentry stores an OTLP resource attribute under a resource. prefix. A
+  # job run's duration means something else than a request's.
   workload_spans = {
-    api = { title = "APIs", conditions = "${local.server_spans} a_novel.workload:api" }
-    job = { title = "Jobs", conditions = "${local.server_spans} a_novel.workload:job" }
+    api = { title = "APIs", conditions = "${local.server_spans} resource.a_novel.workload:api" }
+    job = { title = "Jobs", conditions = "${local.server_spans} resource.a_novel.workload:job" }
   }
 
   span_concerns = {
