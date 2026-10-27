@@ -55,3 +55,13 @@ resource "sentry_project_spike_protection" "service" {
   project      = each.value.slug
   enabled      = true
 }
+
+# The services read their DSN and OTLP header from this root's outputs. A DSN is not a secret:
+# Sentry documents it as safe to expose, and its public key only lets a sender submit events.
+data "sentry_key" "service" {
+  for_each = sentry_project.service
+
+  organization = var.organization
+  project      = each.value.slug
+  first        = true
+}
