@@ -1,9 +1,8 @@
 // Records in Sentry the production deploy of each release a service root serves, once per release.
-// Release CI creates each release, named <repository>@<version>, when it cuts the tag. A failed
-// Cloud Run update still records its configuration in state, so a later apply can pass while the
-// service serves its previous revision. The root serves its releases only once every Cloud Run
-// service reports its latest revision ready. Nothing here fails the deploy: Sentry problems warn,
-// and the next deploy records what this one missed.
+// Release CI creates each release, named <repository>@<version>, when it cuts the tag. This runs
+// only once the root's tofu step succeeded, so every Cloud Run service serves its configuration:
+// the apply waits for each service it changes, and the plan rolls a failed one again. Nothing here
+// fails the deploy: Sentry problems warn, and the next deploy records what this one missed.
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -19,28 +18,6 @@ export function releases(plan) {
   }
   return [...names].sort();
 }
-
-/**
- * Whether every Cloud Run service of the root serves the applied configuration. The apply waited
- * for each service it changed. An unchanged service must report, in the state the plan refreshed,
- * that its latest revision is ready.
- */
-export function serving(plan) {
-  return (plan.resource_changes ?? [])
-    .filter(
-      ({ mode, type, change }) =>
-        mode === "managed" &&
-        type === "google_cloud_run_v2_service" &&
-        change.actions.join() !== "delete",
-    )
-    .every(
-      ({ change }) => change.actions.join() !== "no-op" || ready(change.before),
-    );
-}
-
-const ready = (service) =>
-  service?.terminal_condition?.[0]?.state === "CONDITION_SUCCEEDED" &&
-  service.latest_ready_revision === service.latest_created_revision;
 
 /**
  * The organization API an organization auth token names. Such a token reads
@@ -100,12 +77,6 @@ async function main([planPath], { SENTRY_AUTH_TOKEN }) {
   const plan = JSON.parse(readFileSync(planPath, "utf8"));
   const names = releases(plan);
   if (names.length === 0) return;
-  if (!serving(plan)) {
-    console.log(
-      `::warning::A Cloud Run service does not serve its latest revision, so Sentry records no deploy of ${names.join(", ")}.`,
-    );
-    return;
-  }
   const api = organizationApi(SENTRY_AUTH_TOKEN);
   const request = (method, path, body) =>
     fetch(api + path, {
