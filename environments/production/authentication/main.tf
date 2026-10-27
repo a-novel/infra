@@ -21,6 +21,15 @@ data "terraform_remote_state" "sentry" {
   }
 }
 
+# The Studio root owns the platform's identity, the only one that calls the REST API for visitors.
+data "terraform_remote_state" "studio" {
+  backend = "gcs"
+  config = {
+    bucket = "a-novel-management-prod-232403541574-tofu-state"
+    prefix = "studio"
+  }
+}
+
 locals {
   foundation            = data.terraform_remote_state.foundation.outputs
   private_project_id    = local.foundation.production_projects["private"].project_id

@@ -440,6 +440,15 @@ resource "google_cloud_run_v2_service" "rest" {
   }
 }
 
+# Studio calls the REST API for its visitors, with a Google ID token for the custom audience.
+resource "google_cloud_run_v2_service_iam_member" "platform_invoker" {
+  project  = local.api_project_id
+  name     = google_cloud_run_v2_service.rest.name
+  location = local.region
+  role     = "roles/run.servicesInvoker"
+  member   = "serviceAccount:${data.terraform_remote_state.studio.outputs.service_account}"
+}
+
 # The deploy health check calls the REST API as the deploy identity.
 resource "google_cloud_run_v2_service_iam_member" "health_invoker" {
   project  = local.api_project_id
