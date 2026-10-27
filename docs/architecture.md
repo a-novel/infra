@@ -191,16 +191,17 @@ Secret containers live in the management project. Humans add their values with `
 [Secrets](runbooks/secrets.md) describes, so OpenTofu never sees them. Workloads read the numeric
 version their root's `terraform.tfvars` pins.
 
-| Secret                                                     | Read by                                                      |
-| ---------------------------------------------------------- | ------------------------------------------------------------ |
-| `production-json-keys-app-master-key`                      | JSON Keys runtime, rotation job                              |
-| `production-authentication-waitlist-secret`                | Authentication API, when the waitlist is on                  |
-| `production-genai-openai-api-key`                          | GenAI runtime and sweep                                      |
-| `production-<service>-sentry-dsn`                          | Servers, sweep, and the maintenance, purge and rotation jobs |
-| `production-<service>-app-password`                        | Database host and database workloads                         |
-| `production-<service>-pgbackrest-{ca,database,repository}` | Database host and repository VM (TLS)                        |
-| `production-downtime-discord-webhook`                      | `downtime-announcer`, when it posts a planned downtime step  |
-| `production-github-dispatch-{a-novel,a-novel-kit}`         | `github-dispatcher`, when it dispatches that org's workflows |
+| Secret                                                     | Read by                                                        |
+| ---------------------------------------------------------- | -------------------------------------------------------------- |
+| `production-json-keys-app-master-key`                      | JSON Keys runtime, rotation job                                |
+| `production-authentication-waitlist-secret`                | Authentication API, when the waitlist is on                    |
+| `production-genai-openai-api-key`                          | GenAI runtime and sweep                                        |
+| `production-<service>-sentry-dsn`                          | Servers, sweep, and the maintenance, purge and rotation jobs   |
+| `production-<service>-sentry-otlp-headers`                 | The same workloads, once they export traces and logs to Sentry |
+| `production-<service>-app-password`                        | Database host and database workloads                           |
+| `production-<service>-pgbackrest-{ca,database,repository}` | Database host and repository VM (TLS)                          |
+| `production-downtime-discord-webhook`                      | `downtime-announcer`, when it posts a planned downtime step    |
+| `production-github-dispatch-{a-novel,a-novel-kit}`         | `github-dispatcher`, when it dispatches that org's workflows   |
 
 ## Identities
 
