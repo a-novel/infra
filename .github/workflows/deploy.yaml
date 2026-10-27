@@ -46,6 +46,7 @@ jobs:
       commit: ${{ steps.changes.outputs.commit }}
       bootstrap: ${{ steps.changes.outputs.bootstrap }}
       foundation: ${{ steps.changes.outputs.foundation }}
+      sentry: ${{ steps.changes.outputs.sentry }}
       services: ${{ steps.changes.outputs.services }}
     steps:
       # A manual or downtime run applies every root, and anyone with write access can start either.
@@ -117,7 +118,8 @@ jobs:
           }
 
           # The service roots are the directories next to foundation, so a new one needs no edit here.
-          mapfile -t services < <(find environments/production -mindepth 1 -maxdepth 1 -type d ! -name foundation -printf '%f\n' | sort)
+          # The Sentry root applies only when it changes, so a Sentry outage never holds a release.
+          mapfile -t services < <(find environments/production -mindepth 1 -maxdepth 1 -type d ! -name foundation ! -name sentry -printf '%f\n' | sort)
 
           # Deletions are allowed when a pull request in this deploy carried the label when it merged.
           # shellcheck disable=SC2086 # One commit per word.
@@ -126,8 +128,8 @@ jobs:
           # The loop records the roots that changed, which the announcement lists with each image's
           # new tag.
           roots="" deploys=false
-          declare -A deployed=([bootstrap]=false [environments/production/foundation]=false)
-          for dir in bootstrap environments/production/foundation "${services[@]/#/environments/production/}"; do
+          declare -A deployed=([bootstrap]=false [environments/production/foundation]=false [environments/production/sentry]=false)
+          for dir in bootstrap environments/production/foundation environments/production/sentry "${services[@]/#/environments/production/}"; do
             changed "$dir" || continue
             deploys=true deployed[$dir]=true
             images=""
@@ -151,6 +153,7 @@ jobs:
             echo "deploys=$deploys"
             echo "bootstrap=${deployed[bootstrap]}"
             echo "foundation=${deployed[environments/production/foundation]}"
+            echo "sentry=${deployed[environments/production/sentry]}"
             echo "services=$(jq -cn '$ARGS.positional' --args "${services[@]}")"
             echo "allow=$allow"
           } | tee -a "$GITHUB_OUTPUT"
@@ -205,6 +208,30 @@ jobs:
       - uses: $/.github/actions/tofu
         with:
           root: environments/production/foundation
+          apply: "true"
+          allow_deletion: ${{ needs.changes.outputs.allow }}
+          workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
+          github_token: ${{ github.token }}
+
+  # Sentry's configuration needs only bootstrap's token grants, and no release waits on it.
+  sentry:
+    needs: [changes, bootstrap]
+    if: ${{ !cancelled() && !failure() && needs.changes.outputs.sentry == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: production
+    permissions:
+      attestations: read
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: $/.github/actions/tofu
+        with:
+          root: environments/production/sentry
           apply: "true"
           allow_deletion: ${{ needs.changes.outputs.allow }}
           workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
@@ -305,7 +332,7 @@ jobs:
   # Reports every deploy that applied a root, and any that failed. A failure pings a-novel/infra and
   # the role of each service whose root failed to apply.
   notify:
-    needs: [changes, bootstrap, foundation, services, rollout, health]
+    needs: [changes, bootstrap, foundation, sentry, services, rollout, health]
     if: ${{ always() && (needs.changes.outputs.deploys == 'true' || contains(needs.*.result, 'failure')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5

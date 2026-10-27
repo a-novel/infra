@@ -34,6 +34,12 @@
       "automerge": false
     },
     {
+      "description": "Review the Sentry provider's updates: it is pre-1.0, so a minor release may break the configuration.",
+      "matchManagers": ["terraform"],
+      "matchPackageNames": ["jianyuan/sentry"],
+      "automerge": false
+    },
+    {
       "description": "Leave the other actions in the managed governance workflows to `a-novel repo update`, which renders them from the stack's templates, where the stack's Renovate keeps their commit pins current. An update here would be reverted at the next reconcile. Their a-novel-kit/workflows pins stay with Renovate, since the reconcile keeps a deployed pin newer than its template's.",
       "matchFileNames": [
         ".github/workflows/approve-pr.yaml",

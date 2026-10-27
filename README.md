@@ -40,6 +40,7 @@ Disabling `deploy.yaml` [freezes production](docs/runbooks/deployments.md#freeze
 | `bootstrap/`                            | Management project: state bucket, CI identities, secret containers.             |
 | `environments/production/foundation`    | Projects, VPC, firewall, database hosts, monitoring, budget.                    |
 | `environments/production/<service>`     | One service: its Cloud Run workloads, identities, backup repository and alerts. |
+| `environments/production/sentry`        | Sentry's projects and configuration, applied only when they change.             |
 | `environments/recovery`                 | Disposable disaster-recovery host, for manual drills.                           |
 | `modules/service-runtime`               | A service's identities, image repositories and alert channel in one project.    |
 | `modules/smoke-check`                   | A private service's smoke job, and the health check every service shares.       |

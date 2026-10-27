@@ -8,7 +8,8 @@ workflows=.github/workflows
 status=0
 for dir in environments/production/*/; do
   ROOT="$(basename "$dir")"
-  [ "$ROOT" = foundation ] && continue
+  # Foundation and the Sentry root are not service roots: deploy.yaml applies each in its own job.
+  case "$ROOT" in foundation | sentry) continue ;; esac
   ROOT_PATH="environments/production/$ROOT"
   export ROOT ROOT_PATH
   missing=()
