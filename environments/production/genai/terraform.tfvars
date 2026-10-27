@@ -5,13 +5,10 @@ images = {
   sweep      = "ghcr.io/a-novel/service-genai/sweep:v0.7.4@sha256:e714d9ab5be10c6c1cac620a2a338c42f1e608c4d7b3a0ff54655d2639a513da"
 }
 
-sentry_project_id = "4512319624314880"
 
 secret_versions = {
-  app-password        = 1
-  openai-api-key      = 1
-  sentry-dsn          = 1
-  sentry-otlp-headers = 1
+  app-password   = 1
+  openai-api-key = 1
 }
 
 backup_repository = {

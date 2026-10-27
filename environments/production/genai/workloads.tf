@@ -22,14 +22,11 @@ locals {
     POSTGRES_DATABASE    = "agora_genai"
     POSTGRES_TLS_ENABLED = "false"
   }
-  # The servers call the provider, so both read its key, and both report their faults to Sentry. The
-  # migrations job reads only the database.
+  # The servers call the provider, so both read its key. The migrations job reads only the database.
   migrations_secret_env = { POSTGRES_PASSWORD = "app-password" }
   server_secret_env = {
-    POSTGRES_PASSWORD          = "app-password"
-    OPENAI_API_KEY             = "openai-api-key"
-    SENTRY_DSN                 = "sentry-dsn"
-    OTEL_EXPORTER_OTLP_HEADERS = "sentry-otlp-headers"
+    POSTGRES_PASSWORD = "app-password"
+    OPENAI_API_KEY    = "openai-api-key"
   }
   server_env = merge(local.database_env, local.downtime_env, {
     OTEL               = "true"
@@ -38,7 +35,11 @@ locals {
     # issue in the next release. Every image of a release carries its tag.
     SENTRY_RELEASE = "service-genai@${trimprefix(local.images.grpc.tag, "v")}"
     # The servers send their traces and logs to the Sentry project over OTLP.
-    OTEL_EXPORTER_OTLP_ENDPOINT    = "https://${local.foundation.sentry_ingest_host}/api/${var.sentry_project_id}/integration/otlp"
+    OTEL_EXPORTER_OTLP_ENDPOINT = "https://${local.foundation.sentry_ingest_host}/api/${local.sentry.project_id}/integration/otlp"
+    # A DSN is not a secret: Sentry documents it as safe to expose, and its public key only lets a
+    # sender submit events. The OTLP header carries the same key.
+    SENTRY_DSN                     = local.sentry.dsn
+    OTEL_EXPORTER_OTLP_HEADERS     = local.sentry.otlp_headers
     OTEL_EXPORTER_OTLP_COMPRESSION = "gzip"
     OTEL_SERVICE_NAME              = "service-genai"
   })

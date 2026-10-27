@@ -34,21 +34,23 @@ locals {
     # 30 seconds or more for Cloud NAT. No request waits for a send, and a job waits anyway.
     SMTP_TIMEOUT = "300s"
   }
-  # The REST API and the jobs that share the maintenance image report their faults to Sentry; the
-  # migrations report nothing.
+  # The REST API and the jobs that share the maintenance image read the database password.
   maintenance_secret_env = {
-    POSTGRES_PASSWORD          = "app-password"
-    SENTRY_DSN                 = "sentry-dsn"
-    OTEL_EXPORTER_OTLP_HEADERS = "sentry-otlp-headers"
+    POSTGRES_PASSWORD = "app-password"
   }
-  # Sentry names a release <repository>@<version>, as release CI creates it, so it can resolve an
-  # issue in the next release. Every image of a release carries its tag. The same workloads send
-  # their traces and logs to the Sentry project over OTLP.
+  # The same workloads report their faults to Sentry; the migrations report nothing. Sentry names a
+  # release <repository>@<version>, as release CI creates it, so it can resolve an issue in the
+  # next release. Every image of a release carries its tag. The same workloads send their traces
+  # and logs to the Sentry project over OTLP.
   sentry_env = {
-    OTEL                           = "true"
-    SENTRY_ENVIRONMENT             = "production"
-    SENTRY_RELEASE                 = "service-authentication@${trimprefix(local.images.rest.tag, "v")}"
-    OTEL_EXPORTER_OTLP_ENDPOINT    = "https://${local.foundation.sentry_ingest_host}/api/${var.sentry_project_id}/integration/otlp"
+    OTEL               = "true"
+    SENTRY_ENVIRONMENT = "production"
+    SENTRY_RELEASE     = "service-authentication@${trimprefix(local.images.rest.tag, "v")}"
+    # A DSN is not a secret: Sentry documents it as safe to expose, and its public key only lets a
+    # sender submit events. The OTLP header carries the same key.
+    SENTRY_DSN                     = local.sentry.dsn
+    OTEL_EXPORTER_OTLP_HEADERS     = local.sentry.otlp_headers
+    OTEL_EXPORTER_OTLP_ENDPOINT    = "https://${local.foundation.sentry_ingest_host}/api/${local.sentry.project_id}/integration/otlp"
     OTEL_EXPORTER_OTLP_COMPRESSION = "gzip"
     OTEL_SERVICE_NAME              = "service-authentication"
   }

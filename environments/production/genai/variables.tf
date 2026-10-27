@@ -3,8 +3,8 @@ variable "secret_versions" {
   type        = map(number)
 
   validation {
-    condition     = toset(keys(var.secret_versions)) == toset(["app-password", "openai-api-key", "sentry-dsn", "sentry-otlp-headers"])
-    error_message = "Pin exactly the app-password, openai-api-key, sentry-dsn and sentry-otlp-headers versions."
+    condition     = toset(keys(var.secret_versions)) == toset(["app-password", "openai-api-key"])
+    error_message = "Pin exactly the app-password and openai-api-key versions."
   }
 }
 
@@ -49,12 +49,3 @@ variable "downtime" {
   }
 }
 
-variable "sentry_project_id" {
-  description = "The service's Sentry project ID, which names its OTLP endpoint."
-  type        = string
-
-  validation {
-    condition     = can(regex("^[0-9]+$", var.sentry_project_id))
-    error_message = "The Sentry project ID is a number."
-  }
-}
