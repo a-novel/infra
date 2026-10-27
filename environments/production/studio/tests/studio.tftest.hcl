@@ -42,7 +42,7 @@ override_data {
   }
 }
 
-run "serves_only_through_the_load_balancer" {
+run "serves_visitors_on_its_run_url" {
   command = plan
 
   assert {
@@ -52,18 +52,15 @@ run "serves_only_through_the_load_balancer" {
 
   assert {
     condition = (
-      google_cloud_run_v2_service.web.ingress == "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER" &&
+      google_cloud_run_v2_service.web.ingress == "INGRESS_TRAFFIC_ALL" &&
       google_cloud_run_v2_service.web.invoker_iam_disabled
     )
-    error_message = "The service admits requests without IAM only because nothing but the load balancer can reach it."
+    error_message = "Visitors carry no identity, so Studio admits public requests without IAM."
   }
 
   assert {
-    condition = (
-      google_compute_ssl_policy.web.min_tls_version == "TLS_1_2" &&
-      google_compute_url_map.redirect.default_url_redirect[0].https_redirect
-    )
-    error_message = "Visitors get TLS 1.2 or later, and plain HTTP only redirects to HTTPS."
+    condition     = lookup({ for env in google_cloud_run_v2_service.web.template[0].containers[0].env : env.name => env.value }, "XFF_DEPTH", null) == "1"
+    error_message = "Only the address Google appends last is the visitor's; a deeper entry is theirs to forge."
   }
 }
 

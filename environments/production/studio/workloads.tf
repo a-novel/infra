@@ -26,13 +26,13 @@ locals {
 # Run roll the same configuration again.
 resource "terraform_data" "web_revision" {}
 
-# Visitors reach Studio only through the load balancer, which carries no identity, so the service
-# admits every request the load balancer forwards and no other.
+# Visitors reach Studio on its own run.app URL, with no identity of their own, so the service admits
+# every request without IAM.
 resource "google_cloud_run_v2_service" "web" {
   project              = local.project_id
   name                 = "agora-studio-web"
   location             = local.region
-  ingress              = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
+  ingress              = "INGRESS_TRAFFIC_ALL"
   invoker_iam_disabled = true
   deletion_protection  = true
   labels               = { environment = "production", component = "studio", role = "web" }
@@ -62,12 +62,10 @@ resource "google_cloud_run_v2_service" "web" {
         for_each = merge(local.otel_env, {
           AUTHENTICATION_SERVICE_URL      = data.google_cloud_run_v2_service.authentication.uri
           AUTHENTICATION_SERVICE_AUDIENCE = "agora-authentication-rest"
-          # The load balancer appends the visitor's address and its own, so the visitor is second
-          # from the right. Authentication rate-limits by the address Studio forwards.
+          # Google's front end appends the visitor's address, so the rightmost entry is the only one
+          # a visitor cannot forge. Authentication rate-limits by the address Studio forwards.
           ADDRESS_HEADER = "X-Forwarded-For"
-          XFF_DEPTH      = "2"
-          # Form posts must come from the domain; SvelteKit compares their Origin with this.
-          ORIGIN = "https://${var.domain}"
+          XFF_DEPTH      = "1"
           # Cloud Run kills the instance 10 seconds after SIGTERM. adapter-node flushes the spans
           # only once its drain ends, so the drain stops at 5 seconds.
           SHUTDOWN_TIMEOUT = "5"

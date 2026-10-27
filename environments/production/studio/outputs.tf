@@ -3,9 +3,9 @@ output "service_account" {
   value       = module.runtime.service_account
 }
 
-output "address" {
-  description = "The load balancer's IPv4 address, which the domain's DNS A record names."
-  value       = google_compute_global_address.web.address
+output "url" {
+  description = "The URL Studio serves on, which Authentication's email links name."
+  value       = google_cloud_run_v2_service.web.uri
 }
 
 output "image_copies" {

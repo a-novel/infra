@@ -10,11 +10,6 @@ variable "images" {
   }
 }
 
-variable "domain" {
-  description = "Host name Studio serves on. Its DNS A record points at the address output, outside this repository."
-  type        = string
-}
-
 variable "alert_email" {
   description = "Operations inbox for this platform's alerts."
   type        = string
