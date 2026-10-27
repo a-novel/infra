@@ -15,8 +15,8 @@ variable "secret_versions" {
   type        = map(number)
 
   validation {
-    condition     = toset(keys(var.secret_versions)) == toset(["app-password", "app-master-key", "sentry-dsn"])
-    error_message = "Pin exactly the app-password, app-master-key and sentry-dsn versions."
+    condition     = toset(keys(var.secret_versions)) == toset(["app-password", "app-master-key", "sentry-dsn", "sentry-otlp-headers"])
+    error_message = "Pin exactly the app-password, app-master-key, sentry-dsn and sentry-otlp-headers versions."
   }
 }
 
@@ -46,5 +46,15 @@ variable "downtime" {
   validation {
     condition     = var.downtime == "" || can(tolist(jsondecode(var.downtime).components)) && can(jsondecode(var.downtime).start)
     error_message = "The planned downtime must be JSON with components, start and end."
+  }
+}
+
+variable "sentry_project_id" {
+  description = "The service's Sentry project ID, which names its OTLP endpoint."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[0-9]+$", var.sentry_project_id))
+    error_message = "The Sentry project ID is a number."
   }
 }

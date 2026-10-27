@@ -5,9 +5,12 @@ images = {
   rest        = "ghcr.io/a-novel/service-authentication/rest:v2.18.3@sha256:f1252693b43b9c2007c7a258b40bd9dfa32bb16bf62075c3c3f67c922849f30c"
 }
 
+sentry_project_id = "4512319614156800"
+
 secret_versions = {
-  app-password = 1
-  sentry-dsn   = 1
+  app-password        = 1
+  sentry-dsn          = 1
+  sentry-otlp-headers = 1
 }
 
 smtp = {

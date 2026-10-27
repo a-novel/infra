@@ -37,14 +37,19 @@ locals {
   # The REST API and the jobs that share the maintenance image report their faults to Sentry; the
   # migrations report nothing.
   maintenance_secret_env = {
-    POSTGRES_PASSWORD = "app-password"
-    SENTRY_DSN        = "sentry-dsn"
+    POSTGRES_PASSWORD          = "app-password"
+    SENTRY_DSN                 = "sentry-dsn"
+    OTEL_EXPORTER_OTLP_HEADERS = "sentry-otlp-headers"
   }
   # Sentry names a release <repository>@<version>, as release CI creates it, so it can resolve an
-  # issue in the next release. Every image of a release carries its tag.
+  # issue in the next release. Every image of a release carries its tag. The same workloads send
+  # their traces and logs to the Sentry project over OTLP, once OTEL is on.
   sentry_env = {
-    SENTRY_ENVIRONMENT = "production"
-    SENTRY_RELEASE     = "service-authentication@${trimprefix(local.images.rest.tag, "v")}"
+    SENTRY_ENVIRONMENT             = "production"
+    SENTRY_RELEASE                 = "service-authentication@${trimprefix(local.images.rest.tag, "v")}"
+    OTEL_EXPORTER_OTLP_ENDPOINT    = "https://${local.foundation.sentry_ingest_host}/api/${var.sentry_project_id}/integration/otlp"
+    OTEL_EXPORTER_OTLP_COMPRESSION = "gzip"
+    OTEL_SERVICE_NAME              = "service-authentication"
   }
   rest_secret_env = merge(
     local.maintenance_secret_env,

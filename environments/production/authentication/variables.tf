@@ -18,9 +18,10 @@ variable "secret_versions" {
     condition = (
       contains(keys(var.secret_versions), "app-password") &&
       contains(keys(var.secret_versions), "sentry-dsn") &&
+      contains(keys(var.secret_versions), "sentry-otlp-headers") &&
       (var.waitlist_url == null) != contains(keys(var.secret_versions), "waitlist-secret")
     )
-    error_message = "Pin app-password and sentry-dsn, plus waitlist-secret exactly when waitlist_url is set."
+    error_message = "Pin app-password, sentry-dsn and sentry-otlp-headers, plus waitlist-secret exactly when waitlist_url is set."
   }
 }
 
@@ -66,5 +67,15 @@ variable "downtime" {
   validation {
     condition     = var.downtime == "" || can(tolist(jsondecode(var.downtime).components)) && can(jsondecode(var.downtime).start)
     error_message = "The planned downtime must be JSON with components, start and end."
+  }
+}
+
+variable "sentry_project_id" {
+  description = "The service's Sentry project ID, which names its OTLP endpoint."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[0-9]+$", var.sentry_project_id))
+    error_message = "The Sentry project ID is a number."
   }
 }
