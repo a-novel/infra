@@ -59,3 +59,8 @@ output "cloud_run_cpu_quotas" {
     { for zone in keys(local.shell_projects) : zone => var.shell_cloud_run_quota.cpu_millicpu },
   )
 }
+
+output "sentry_ingest_host" {
+  description = "Sentry's ingest host. Error events and each project's OTLP endpoint share it."
+  value       = var.sentry_ingest_host
+}
