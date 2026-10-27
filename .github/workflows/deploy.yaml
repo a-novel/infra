@@ -242,11 +242,15 @@ jobs:
   # the current DOWNTIME whichever deploy applies last: a downtime written while another deploy
   # waited or ran would otherwise reach no service. An unchanged root applies nothing. The services
   # read their Sentry DSN from the Sentry root, so they wait for its job, which runs only when it
-  # changes: a release never waits on Sentry.
+  # changes. They run even when it fails, on the outputs it last applied: a deploy re-runs every
+  # root changed since the last successful one, so a failing Sentry root would otherwise hold
+  # every release until it is fixed.
   services:
     name: ${{ matrix.service }}
-    needs: [changes, foundation, sentry]
-    if: ${{ !cancelled() && !failure() && needs.changes.outputs.apply == 'true' }}
+    needs: [changes, bootstrap, foundation, sentry]
+    if: >-
+      ${{ !cancelled() && needs.changes.outputs.apply == 'true' &&
+      needs.bootstrap.result != 'failure' && needs.foundation.result != 'failure' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: production
@@ -285,7 +289,8 @@ jobs:
   # this deploy's changes, so it runs on every deploy.
   rollout:
     needs: [changes, services]
-    if: ${{ !cancelled() && !failure() && needs.changes.outputs.apply == 'true' }}
+    # failure() would also count a failed sentry job, an ancestor through the services.
+    if: ${{ !cancelled() && needs.changes.outputs.apply == 'true' && needs.services.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: production
