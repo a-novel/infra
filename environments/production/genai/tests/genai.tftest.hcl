@@ -106,6 +106,14 @@ run "serves_privately_from_pinned_images_and_secrets" {
   }
 
   assert {
+    condition = (
+      { for env in google_cloud_run_v2_service.grpc.template[0].containers[0].env : env.name => env.value }["OTEL_RESOURCE_ATTRIBUTES"] == "a_novel.workload=api" &&
+      { for env in google_cloud_run_v2_service.sweep.template[0].containers[0].env : env.name => env.value }["OTEL_RESOURCE_ATTRIBUTES"] == "a_novel.workload=job"
+    )
+    error_message = "The gRPC server reports as an api and the scheduled sweep as a job, so request and job-run durations stay apart."
+  }
+
+  assert {
     condition     = terraform_data.migrations.triggers_replace[0] == google_cloud_run_v2_job.migrations.template[0].template[0].containers[0].image
     error_message = "Migrations run during apply, once per image change."
   }

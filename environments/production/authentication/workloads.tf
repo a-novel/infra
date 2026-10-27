@@ -42,6 +42,9 @@ locals {
   # release <repository>@<version>, as release CI creates it, so it can resolve an issue in the
   # next release. Every image of a release carries its tag. The same workloads send their traces
   # and logs to the Sentry project over OTLP.
+  # Each reporting workload also sets OTEL_RESOURCE_ATTRIBUTES to a_novel.workload=api when it serves
+  # requests, or job when a person or a schedule starts it, so the Sentry dashboards and the latency
+  # monitor read a request's duration apart from a job run's.
   sentry_env = {
     OTEL               = "true"
     SENTRY_ENVIRONMENT = "production"
@@ -161,8 +164,9 @@ resource "google_cloud_run_v2_job" "maintenance" {
 
         dynamic "env" {
           for_each = merge(local.database_env, local.downtime_env, local.mail_env, local.sentry_env, {
-            POSTGRES_MAX_OPEN_CONNS = "2"
-            POSTGRES_MAX_IDLE_CONNS = "1"
+            OTEL_RESOURCE_ATTRIBUTES = "a_novel.workload=job"
+            POSTGRES_MAX_OPEN_CONNS  = "2"
+            POSTGRES_MAX_IDLE_CONNS  = "1"
           })
           content {
             name  = env.key
@@ -234,8 +238,9 @@ resource "google_cloud_run_v2_job" "refresh_token_purge" {
 
         dynamic "env" {
           for_each = merge(local.database_env, local.downtime_env, local.sentry_env, {
-            POSTGRES_MAX_OPEN_CONNS = "2"
-            POSTGRES_MAX_IDLE_CONNS = "1"
+            OTEL_RESOURCE_ATTRIBUTES = "a_novel.workload=job"
+            POSTGRES_MAX_OPEN_CONNS  = "2"
+            POSTGRES_MAX_IDLE_CONNS  = "1"
           })
           content {
             name  = env.key
@@ -337,6 +342,7 @@ resource "google_cloud_run_v2_service" "rest" {
 
       dynamic "env" {
         for_each = merge(local.database_env, local.downtime_env, local.mail_env, local.sentry_env, {
+          OTEL_RESOURCE_ATTRIBUTES = "a_novel.workload=api"
           # One 64 MiB Argon2 hash at a time per vCPU: more slots add memory, not throughput.
           ARGON2_MAX_CONCURRENT = "1"
           GCLOUD_PROJECT_ID     = local.api_project_id

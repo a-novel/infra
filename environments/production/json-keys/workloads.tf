@@ -34,6 +34,9 @@ locals {
   # Sentry names a release <repository>@<version>, as release CI creates it, so it can resolve an
   # issue in the next release. Every image of a release carries its tag. The same workloads send
   # their traces and logs to the Sentry project over OTLP.
+  # Each reporting workload also sets OTEL_RESOURCE_ATTRIBUTES to a_novel.workload=api when it serves
+  # requests, or job when a person or a schedule starts it, so the Sentry dashboards and the latency
+  # monitor read a request's duration apart from a job run's.
   sentry_env = {
     OTEL               = "true"
     SENTRY_ENVIRONMENT = "production"
@@ -88,7 +91,9 @@ resource "google_cloud_run_v2_job" "application" {
         image = local.image[each.key]
 
         dynamic "env" {
-          for_each = merge(local.database_env, local.downtime_env, each.value.reports ? local.sentry_env : {})
+          for_each = merge(local.database_env, local.downtime_env, each.value.reports ? merge(local.sentry_env, {
+            OTEL_RESOURCE_ATTRIBUTES = "a_novel.workload=job"
+          }) : {})
           content {
             name  = env.key
             value = env.value
@@ -166,6 +171,7 @@ resource "google_cloud_run_v2_service" "grpc" {
 
       dynamic "env" {
         for_each = merge(local.database_env, local.downtime_env, local.sentry_env, {
+          OTEL_RESOURCE_ATTRIBUTES = "a_novel.workload=api"
           # The Go runtime does not read the container's memory limit.
           GOMEMLIMIT = "400MiB"
           GRPC_PORT  = "8080"

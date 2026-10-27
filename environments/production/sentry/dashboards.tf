@@ -1,43 +1,81 @@
 locals {
-  # The span widgets read the same server spans as the monitors; the last one counts error events.
-  dashboard_widgets = [
-    { title = "Requests", widget_type = "spans", aggregate = "count()", extra = local.server_spans, x = 0, y = 0 },
-    { title = "Failing share", widget_type = "spans", aggregate = "failure_rate()", extra = local.server_spans, x = 3, y = 0 },
-    { title = "Duration, p95", widget_type = "spans", aggregate = "p95(span.duration)", extra = local.server_spans, x = 0, y = 2 },
-    { title = "Error events", widget_type = "error-events", aggregate = "count()", extra = "", x = 3, y = 2 },
-  ]
+  # Each service root labels its workloads' spans a_novel.workload=api or job through
+  # OTEL_RESOURCE_ATTRIBUTES. A job run's duration means something else than a request's.
+  workload_spans = {
+    api = { title = "APIs", conditions = "${local.server_spans} a_novel.workload:api" }
+    job = { title = "Jobs", conditions = "${local.server_spans} a_novel.workload:job" }
+  }
+
+  span_concerns = {
+    requests = { title = "Requests", aggregate = "count()" }
+    failures = { title = "Failing share", aggregate = "failure_rate()" }
+    duration = { title = "Duration, p95", aggregate = "p95(span.duration)" }
+  }
 }
 
-# One dashboard per service: its request rate, errors and duration.
-resource "sentry_dashboard" "service" {
-  for_each = var.projects
+# One dashboard per concern, whatever the number of services. Each widget draws one line per
+# service, and requests and job runs get a widget each.
+resource "sentry_dashboard" "concern" {
+  for_each = local.span_concerns
 
   organization = var.organization
-  title        = each.key
+  title        = each.value.title
 
   dynamic "widget" {
-    for_each = local.dashboard_widgets
+    for_each = keys(local.workload_spans)
 
     content {
-      title        = widget.value.title
+      title        = "${local.workload_spans[widget.value].title}, by service"
       display_type = "line"
       interval     = "5m"
-      widget_type  = widget.value.widget_type
+      widget_type  = "spans"
+      limit        = 10
 
       query {
-        fields     = [widget.value.aggregate]
-        aggregates = [widget.value.aggregate]
-        conditions = trimspace("project:${each.key} ${widget.value.extra}")
-        order_by   = ""
+        fields     = ["project", each.value.aggregate]
+        columns    = ["project"]
+        aggregates = [each.value.aggregate]
+        conditions = local.workload_spans[widget.value].conditions
+        order_by   = "-${each.value.aggregate}"
       }
 
       layout {
-        x     = widget.value.x
-        y     = widget.value.y
-        w     = 3
-        h     = 2
+        x     = 0
+        y     = widget.key * 3
+        w     = 6
+        h     = 3
         min_h = 2
       }
+    }
+  }
+}
+
+# Error events carry no workload label, so their dashboard splits by service only.
+resource "sentry_dashboard" "errors" {
+  organization = var.organization
+  title        = "Errors"
+
+  widget {
+    title        = "Error events, by service"
+    display_type = "line"
+    interval     = "5m"
+    widget_type  = "error-events"
+    limit        = 10
+
+    query {
+      fields     = ["project", "count()"]
+      columns    = ["project"]
+      aggregates = ["count()"]
+      conditions = ""
+      order_by   = "-count()"
+    }
+
+    layout {
+      x     = 0
+      y     = 0
+      w     = 6
+      h     = 3
+      min_h = 2
     }
   }
 }

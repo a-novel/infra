@@ -120,6 +120,14 @@ run "serves_privately_from_pinned_images_and_secrets" {
   }
 
   assert {
+    condition = (
+      { for env in google_cloud_run_v2_service.grpc.template[0].containers[0].env : env.name => env.value }["OTEL_RESOURCE_ATTRIBUTES"] == "a_novel.workload=api" &&
+      { for env in google_cloud_run_v2_job.application["rotatekeys"].template[0].template[0].containers[0].env : env.name => env.value }["OTEL_RESOURCE_ATTRIBUTES"] == "a_novel.workload=job"
+    )
+    error_message = "The gRPC server reports as an api and the rotation job as a job, so request and job-run durations stay apart."
+  }
+
+  assert {
     condition     = google_cloud_run_v2_service.grpc.template[0].containers[0].resources[0].cpu_idle == false
     error_message = "JSON Keys keeps CPU between requests, so its Sentry events and spans leave."
   }

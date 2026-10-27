@@ -168,6 +168,16 @@ run "splits_private_migrations_from_the_public_api" {
     ])
     error_message = "Every reporting workload turns telemetry on, reports with the DSN the Sentry root exports, and exports to its Sentry project's OTLP endpoint, on foundation's ingest host."
   }
+
+  assert {
+    condition = (
+      { for env in google_cloud_run_v2_service.rest.template[0].containers[0].env : env.name => env.value }["OTEL_RESOURCE_ATTRIBUTES"] == "a_novel.workload=api" &&
+      alltrue([for job in [google_cloud_run_v2_job.maintenance, google_cloud_run_v2_job.refresh_token_purge] :
+        { for env in job.template[0].template[0].containers[0].env : env.name => env.value }["OTEL_RESOURCE_ATTRIBUTES"] == "a_novel.workload=job"
+      ])
+    )
+    error_message = "The REST API reports as an api and its jobs as jobs, so request and job-run durations stay apart."
+  }
 }
 
 run "requires_the_waitlist_secret_with_its_url" {
