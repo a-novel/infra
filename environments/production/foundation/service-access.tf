@@ -71,6 +71,24 @@ resource "google_project_iam_custom_role" "foundation_public_api" {
   depends_on = [module.public_api_project]
 }
 
+# Platforms serve from the public project, behind a global load balancer. The project's
+# networkAdmin role builds the load balancer but cannot create its Google-managed certificate.
+resource "google_project_iam_custom_role" "foundation_public_platforms" {
+  project     = var.public_project_id
+  role_id     = "infraFoundationPublicPlatforms"
+  title       = "Foundation platform deployment"
+  description = "Create and update the platforms' Cloud Run services and load balancer certificates through protected native plans."
+  permissions = ["compute.sslCertificates.create", "run.services.create", "run.services.update"]
+
+  depends_on = [module.public_project]
+}
+
+resource "google_project_iam_member" "foundation_public_platforms" {
+  project = var.public_project_id
+  role    = google_project_iam_custom_role.foundation_public_platforms.name
+  member  = "serviceAccount:${local.automation_service_accounts.foundation}"
+}
+
 resource "google_project_iam_custom_role" "foundation_private_release" {
   count = anytrue([for boundary in local.service_release_boundaries : boundary.zone == "private"]) ? 1 : 0
 

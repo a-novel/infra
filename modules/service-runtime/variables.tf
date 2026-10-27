@@ -4,12 +4,12 @@ variable "service" {
 }
 
 variable "zone" {
-  description = "Trust zone of the project: private or public-api."
+  description = "Trust zone of the project: private or public-api for a service, public for a platform."
   type        = string
 
   validation {
-    condition     = contains(["private", "public-api"], var.zone)
-    error_message = "Backend services run in the private or public-api zone."
+    condition     = contains(["private", "public-api", "public"], var.zone)
+    error_message = "Backend services run in the private or public-api zone, and platforms in the public zone."
   }
 }
 
