@@ -13,6 +13,7 @@ override_data {
   values = {
     outputs = {
       region               = "europe-west1"
+      sentry_ingest_host   = "o1.ingest.us.sentry.io"
       cloud_run_cpu_quotas = { private = 16000 }
       workload_project_id  = "a-novel-production-prod"
       network = {
@@ -78,6 +79,13 @@ run "serves_privately_from_pinned_images_and_secrets" {
       can(regex("^service-genai@[0-9]+\\.[0-9]+\\.[0-9]+$", { for env in service.template[0].containers[0].env : env.name => env.value }["SENTRY_RELEASE"]))
     ])
     error_message = "Every reporting workload names its release <repository>@<semver>, as release CI creates it in Sentry."
+  }
+
+  assert {
+    condition = alltrue([for service in [google_cloud_run_v2_service.grpc, google_cloud_run_v2_service.sweep] :
+      { for env in service.template[0].containers[0].env : env.name => env.value }["OTEL_EXPORTER_OTLP_ENDPOINT"] == "https://o1.ingest.us.sentry.io/api/${var.sentry_project_id}/integration/otlp"
+    ])
+    error_message = "Every reporting workload exports to its Sentry project's OTLP endpoint, on foundation's ingest host."
   }
 
   assert {

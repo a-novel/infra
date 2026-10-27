@@ -5,10 +5,13 @@ images = {
   rotatekeys = "ghcr.io/a-novel/service-json-keys/jobs/rotatekeys:v2.13.8@sha256:0da8b24a02af2f2e1e47d10ce0868735cac8e3227ccd0707ecdd2d1e7d7b555c"
 }
 
+sentry_project_id = "4512319621169152"
+
 secret_versions = {
-  app-password   = 1
-  app-master-key = 2
-  sentry-dsn     = 1
+  app-password        = 1
+  app-master-key      = 2
+  sentry-dsn          = 1
+  sentry-otlp-headers = 1
 }
 
 backup_repository = {
