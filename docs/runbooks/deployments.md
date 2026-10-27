@@ -168,7 +168,8 @@ procedure.
 ## A deploy failed
 
 An apply that stops halfway keeps what it already applied. The state records it, and the next run
-plans only the rest.
+plans only the rest. A Cloud Run service whose new revision fails to start is the exception: the
+state records the new configuration, while the previous revision keeps serving.
 
 1. **Open the failed job.** The plan or apply output names the resource and the API error.
 
@@ -198,6 +199,13 @@ plans only the rest.
      plan reads each job's last execution, and replaces the token source of one that failed, such
      as `terraform_data.migrations`, so the next deploy runs it again. A service that depends on a
      failed migration does not deploy until the migration passes.
+
+   - **Revision that fails to start:** the previous revision keeps serving. The apply's error names
+     the cause, such as a missing secret version or a failed startup probe. Fix it in a new pull
+     request, or add what the revision lacks, such as the secret version. Every plan reads each
+     service's last rollout, and replaces the token source of one that failed, such as
+     `terraform_data.rest_revision`, so the next deploy rolls the same configuration again. Each
+     deploy fails on that service until a rollout succeeds, and the drift check reports it.
 
    - **Configuration error:** fix it in a new pull request. Never fix resources in the console. The
      next plan reverts the change, and the drift check reports it.

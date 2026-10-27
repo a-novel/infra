@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { failedSources, tokenJobs } from "./rerun-failed-jobs.mjs";
+import { failedSources, tokenWorkloads } from "./rerun-failed-workloads.mjs";
 
 // The shape tofu show -json gives a plan: configuration addresses are relative to their module,
 // prior-state addresses are absolute and carry instance keys.
@@ -14,6 +14,11 @@ const job = (address, name, token) => ({
     project: "a-novel-production-prod",
     run_execution_token: token,
   },
+});
+const service = (address, name, condition) => ({
+  address,
+  type: "google_cloud_run_v2_service",
+  values: { name, terminal_condition: condition ? [{ state: condition }] : [] },
 });
 const plan = {
   configuration: {
@@ -36,6 +41,22 @@ const plan = {
           address: "google_cloud_run_v2_job.sweep",
           type: "google_cloud_run_v2_job",
           expressions: {},
+        },
+        {
+          address: "google_cloud_run_v2_service.grpc",
+          type: "google_cloud_run_v2_service",
+          expressions: {
+            template: [
+              {
+                annotations: {
+                  references: [
+                    "terraform_data.grpc_revision.id",
+                    "terraform_data.grpc_revision",
+                  ],
+                },
+              },
+            ],
+          },
         },
       ],
       module_calls: {
@@ -75,6 +96,16 @@ const plan = {
             null,
           ),
           job("google_cloud_run_v2_job.sweep", "agora-genai-sweep", null),
+          service(
+            "google_cloud_run_v2_service.grpc",
+            "agora-json-keys-grpc",
+            "CONDITION_FAILED",
+          ),
+          service(
+            "data.google_cloud_run_v2_service.json_keys",
+            "agora-json-keys-grpc",
+            "CONDITION_SUCCEEDED",
+          ),
         ],
         child_modules: [
           {
@@ -93,19 +124,42 @@ const plan = {
   },
 };
 
-describe("tokenJobs", () => {
-  it("finds every job a token runs, with the terraform_data its token derives from", () => {
+describe("tokenWorkloads", () => {
+  it("finds every job and service a token starts, with the terraform_data its token derives from", () => {
     assert.deepEqual(
-      tokenJobs(plan).map(({ source, name }) => [source, name]),
+      tokenWorkloads(plan).map(({ source, name }) => [source, name]),
       [
         ["terraform_data.migrations", "agora-json-keys-migrations"],
+        ["terraform_data.grpc_revision", "agora-json-keys-grpc"],
         ["module.smoke.terraform_data.smoke", "agora-json-keys-smoke"],
       ],
     );
   });
 
+  it("reads a service's status from its refreshed terminal condition", () => {
+    const status = (condition) =>
+      tokenWorkloads({
+        ...plan,
+        prior_state: {
+          values: {
+            root_module: {
+              resources: [
+                service(
+                  "google_cloud_run_v2_service.grpc",
+                  "agora-json-keys-grpc",
+                  condition,
+                ),
+              ],
+            },
+          },
+        },
+      })[0].status;
+    assert.equal(status("CONDITION_FAILED"), "CONDITION_FAILED");
+    assert.equal(status(null), null);
+  });
+
   it("finds nothing in a plan with no prior state", () => {
-    assert.deepEqual(tokenJobs({ configuration: plan.configuration }), []);
+    assert.deepEqual(tokenWorkloads({ configuration: plan.configuration }), []);
   });
 
   it("follows a module that another module calls", () => {
@@ -143,7 +197,7 @@ describe("tokenJobs", () => {
       },
     };
     assert.deepEqual(
-      tokenJobs(nested).map(({ source, name }) => [source, name]),
+      tokenWorkloads(nested).map(({ source, name }) => [source, name]),
       [
         [
           "module.outer.module.inner.terraform_data.smoke",
@@ -155,9 +209,9 @@ describe("tokenJobs", () => {
 });
 
 describe("failedSources", () => {
-  const jobs = tokenJobs(plan);
+  const workloads = tokenWorkloads(plan);
   const run = (statuses) =>
-    failedSources(jobs, async ({ source }) => statuses[source] ?? null);
+    failedSources(workloads, async ({ source }) => statuses[source] ?? null);
 
   it("runs again a job whose last execution failed or was cancelled", async () => {
     assert.deepEqual(
@@ -170,12 +224,24 @@ describe("failedSources", () => {
     );
   });
 
-  it("leaves a succeeded, running or unreadable execution alone", async () => {
+  it("rolls again a service whose last rollout failed", async () => {
+    assert.deepEqual(
+      await run({ "terraform_data.grpc_revision": "CONDITION_FAILED" }),
+      ["terraform_data.grpc_revision"],
+    );
+  });
+
+  it("leaves a succeeded, running or unreadable workload alone", async () => {
     assert.deepEqual(
       await run({
         "terraform_data.migrations": "EXECUTION_SUCCEEDED",
         "module.smoke.terraform_data.smoke": "EXECUTION_RUNNING",
+        "terraform_data.grpc_revision": "CONDITION_RECONCILING",
       }),
+      [],
+    );
+    assert.deepEqual(
+      await run({ "terraform_data.grpc_revision": "CONDITION_SUCCEEDED" }),
       [],
     );
     assert.deepEqual(await run({}), []);

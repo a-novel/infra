@@ -294,6 +294,12 @@ resource "google_cloud_run_v2_service_iam_member" "json_keys_invoker" {
   member   = module.api_runtime.member
 }
 
+# A revision that fails to start still records its template in state, so the next plan finds
+# nothing to change while Cloud Run keeps serving the previous revision. Every plan replaces this
+# terraform_data while the service's last rollout failed, and its new ID in the template makes Cloud
+# Run roll the same configuration again.
+resource "terraform_data" "rest_revision" {}
+
 # Only the platform and the health checks may call the REST API, so it can trust the visitor IP the
 # platform forwards. Their ID tokens name the custom audience, whatever the service URL.
 resource "google_cloud_run_v2_service" "rest" {
@@ -314,6 +320,7 @@ resource "google_cloud_run_v2_service" "rest" {
   }
 
   template {
+    annotations                      = { revision-token = terraform_data.rest_revision.id }
     service_account                  = module.api_runtime.service_account
     timeout                          = "60s"
     max_instance_request_concurrency = 20

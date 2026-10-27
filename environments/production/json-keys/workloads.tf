@@ -129,6 +129,12 @@ resource "google_cloud_run_v2_job" "application" {
   }
 }
 
+# A revision that fails to start still records its template in state, so the next plan finds
+# nothing to change while Cloud Run keeps serving the previous revision. Every plan replaces this
+# terraform_data while the service's last rollout failed, and its new ID in the template makes Cloud
+# Run roll the same configuration again.
+resource "terraform_data" "grpc_revision" {}
+
 resource "google_cloud_run_v2_service" "grpc" {
   name                 = "agora-json-keys-grpc"
   location             = local.region
@@ -143,6 +149,7 @@ resource "google_cloud_run_v2_service" "grpc" {
   }
 
   template {
+    annotations                      = { revision-token = terraform_data.grpc_revision.id }
     service_account                  = module.runtime.service_account
     timeout                          = "60s"
     max_instance_request_concurrency = 20
