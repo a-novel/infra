@@ -34,3 +34,19 @@ run "deploys_with_the_write_token" {
     error_message = "Only a deploy may read the token that writes."
   }
 }
+
+run "watches_every_service" {
+  command = plan
+
+  assert {
+    condition = alltrue([for repository in var.projects : alltrue([
+      for kind in ["failures", "latency", "silence"] : contains(keys(sentry_metric_monitor.service), "${repository}/${kind}")
+    ])])
+    error_message = "Every service needs its failure, latency and no-data monitors, or a broken service stays silent."
+  }
+
+  assert {
+    condition     = sentry_alert.discord.action_filters[0].actions[0].discord.channel_id == var.discord.channel_id
+    error_message = "The alerts must post to the Discord channel the team watches."
+  }
+}

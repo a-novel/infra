@@ -41,3 +41,25 @@ variable "writer" {
   type        = bool
   default     = false
 }
+
+variable "discord" {
+  description = "Discord server and channel the alerts post to. Sentry's Discord integration is installed on the server by hand."
+  type = object({
+    server     = string
+    channel_id = string
+  })
+}
+
+variable "alerts" {
+  description = "Each service's alert thresholds, by repository: the failing share of its server spans, their p95 duration in milliseconds, and how long its telemetry may stop."
+  type = map(object({
+    failure_rate    = number
+    p95_ms          = number
+    no_data_seconds = number
+  }))
+
+  validation {
+    condition     = toset(keys(var.alerts)) == toset(var.projects)
+    error_message = "Give every project its alert thresholds, and no other repository."
+  }
+}
