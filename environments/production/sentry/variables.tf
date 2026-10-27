@@ -36,13 +36,6 @@ variable "token_versions" {
   })
 }
 
-variable "adopt_projects" {
-  description = "Import the projects created by hand before this root. Mocked providers cannot import, so tests turn it off."
-  type        = bool
-  default     = true
-  nullable    = false
-}
-
 variable "writer" {
   description = "Whether the run applies. The tofu action sets it, and only a deploy reads the token that writes."
   type        = bool

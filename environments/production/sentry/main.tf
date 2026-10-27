@@ -31,19 +31,6 @@ data "sentry_team" "owner" {
   slug         = var.team
 }
 
-# The US projects existed before this root. Remove with the variable once applied.
-import {
-  for_each = var.adopt_projects ? var.projects : toset([])
-  to       = sentry_project.service[each.key]
-  id       = "${var.organization}/${each.key}"
-}
-
-import {
-  for_each = var.adopt_projects ? var.projects : toset([])
-  to       = sentry_project_spike_protection.service[each.key]
-  id       = "${var.organization}/${each.key}"
-}
-
 resource "sentry_project" "service" {
   for_each = var.projects
 
