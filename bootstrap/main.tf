@@ -99,14 +99,6 @@ locals {
       contract = "WAITLIST_SECRET"
       purpose  = "Authentication invitation-list request signing key"
     }
-    production-authentication-sentry-dsn = {
-      contract = "SENTRY_DSN"
-      purpose  = "Authentication Sentry project DSN, where its server faults are reported"
-    }
-    production-authentication-sentry-otlp-headers = {
-      contract = "OTEL_EXPORTER_OTLP_HEADERS"
-      purpose  = "Authentication Sentry project OTLP header, which authenticates its traces and logs"
-    }
     production-json-keys-app-master-key = {
       contract = "APP_MASTER_KEY"
       purpose  = "JSON Keys service application master key"
@@ -115,14 +107,6 @@ locals {
       contract = "POSTGRES_PASSWORD"
       purpose  = "JSON Keys application role password, for a login without superuser rights"
     }
-    production-json-keys-sentry-dsn = {
-      contract = "SENTRY_DSN"
-      purpose  = "JSON Keys Sentry project DSN, where its server faults are reported"
-    }
-    production-json-keys-sentry-otlp-headers = {
-      contract = "OTEL_EXPORTER_OTLP_HEADERS"
-      purpose  = "JSON Keys Sentry project OTLP header, which authenticates its traces and logs"
-    }
     production-genai-openai-api-key = {
       contract = "OPENAI_API_KEY"
       purpose  = "GenAI OpenAI API key, restricted to the Responses endpoints"
@@ -130,14 +114,6 @@ locals {
     production-genai-app-password = {
       contract = "POSTGRES_PASSWORD"
       purpose  = "GenAI application role password, for a login without superuser rights"
-    }
-    production-genai-sentry-dsn = {
-      contract = "SENTRY_DSN"
-      purpose  = "GenAI Sentry project DSN, where its server faults are reported"
-    }
-    production-genai-sentry-otlp-headers = {
-      contract = "OTEL_EXPORTER_OTLP_HEADERS"
-      purpose  = "GenAI Sentry project OTLP header, which authenticates its traces and logs"
     }
     production-downtime-discord-webhook = {
       contract = "DISCORD_WEBHOOK"
