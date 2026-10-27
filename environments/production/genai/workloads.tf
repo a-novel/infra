@@ -28,6 +28,9 @@ locals {
     POSTGRES_PASSWORD = "app-password"
     OPENAI_API_KEY    = "openai-api-key"
   }
+  # Each reporting workload also sets OTEL_RESOURCE_ATTRIBUTES to a_novel.workload=api when it serves
+  # requests, or job when a person or a schedule starts it, so the Sentry dashboards and the latency
+  # monitor read a request's duration apart from a job run's.
   server_env = merge(local.database_env, local.downtime_env, {
     OTEL               = "true"
     SENTRY_ENVIRONMENT = "production"
@@ -162,6 +165,7 @@ resource "google_cloud_run_v2_service" "grpc" {
 
       dynamic "env" {
         for_each = merge(local.server_env, {
+          OTEL_RESOURCE_ATTRIBUTES = "a_novel.workload=api"
           # Polls stop reaching the provider more than once per interval, which also bounds the reads
           # in flight while the provider is slow.
           CHECK_INTERVAL = "10s"
@@ -276,6 +280,8 @@ resource "google_cloud_run_v2_service" "sweep" {
 
       dynamic "env" {
         for_each = merge(local.server_env, {
+          # Only Cloud Scheduler calls the sweep, so it counts as a job.
+          OTEL_RESOURCE_ATTRIBUTES = "a_novel.workload=job"
           # A sweep starts pending generations, which reads their payloads: 4 checks fit 1 GiB.
           GOMEMLIMIT              = "800MiB"
           POSTGRES_MAX_OPEN_CONNS = "4"
