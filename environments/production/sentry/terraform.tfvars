@@ -6,6 +6,7 @@ base_url     = "https://sentry.io/api/"
 team         = "a-novel-devs"
 
 projects = [
+  "platform-studio",
   "service-authentication",
   "service-genai",
   "service-json-keys",
@@ -24,6 +25,9 @@ discord = {
 # Tune these on real traffic. A no-data window outlasts the gap between the service's steady span
 # sources, so a night without users stays quiet.
 alerts = {
+  # Server spans only. Its pages wait on Authentication. The three-hourly health check calls it once
+  # its root lands; until Studio serves, its telemetry-stopped monitor stays open.
+  "platform-studio" = { failure_rate = 0.05, p95_ms = 2000, no_data_seconds = 14400 }
   # The health check runs every three hours; the liveness probe sends no span.
   "service-authentication" = { failure_rate = 0.05, p95_ms = 1000, no_data_seconds = 14400 }
   # The sweep runs every minute; generation calls the model and runs long.

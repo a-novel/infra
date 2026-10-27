@@ -24,7 +24,7 @@ variable "team" {
 }
 
 variable "projects" {
-  description = "Service repositories that report to Sentry. Release CI names each project after its repository."
+  description = "Service and platform repositories that report to Sentry. Release CI names each project after its repository."
   type        = set(string)
 }
 
