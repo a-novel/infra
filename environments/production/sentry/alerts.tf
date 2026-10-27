@@ -8,6 +8,7 @@ locals {
       project   = repository
       name      = "${repository}: failing requests"
       aggregate = "failure_rate()"
+      query     = local.server_spans
       type      = "gt"
       threshold = alert.failure_rate
       window    = 600
@@ -16,6 +17,8 @@ locals {
       project   = repository
       name      = "${repository}: slow requests"
       aggregate = "p95(span.duration)"
+      # A job run's duration says nothing about slowness, so latency reads requests only.
+      query     = local.workload_spans.api.conditions
       type      = "gt"
       threshold = alert.p95_ms
       window    = 600
@@ -26,6 +29,7 @@ locals {
       project   = repository
       name      = "${repository}: telemetry stopped"
       aggregate = "count()"
+      query     = local.server_spans
       type      = "lt"
       threshold = 1
       window    = alert.no_data_seconds
@@ -42,7 +46,7 @@ resource "sentry_metric_monitor" "service" {
   aggregate           = each.value.aggregate
   dataset             = "events_analytics_platform"
   event_types         = ["trace_item_span"]
-  query               = local.server_spans
+  query               = each.value.query
   time_window_seconds = each.value.window
 
   owner = {
