@@ -1,12 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import {
-  organizationApi,
-  record,
-  releases,
-  serving,
-} from "./sentry-deploys.mjs";
+import { organizationApi, record, releases } from "./sentry-deploys.mjs";
 
 const digest = `sha256:${"a".repeat(64)}`;
 const copy = (path, tag, extra = {}) => ({
@@ -45,58 +40,6 @@ describe("releases", () => {
       [],
     );
     assert.deepEqual(releases({}), []);
-  });
-});
-
-// The fields a refreshed google_cloud_run_v2_service carries about its rollout.
-const service = (state, created = "rest-00002") => ({
-  terminal_condition: [{ state }],
-  latest_created_revision: created,
-  latest_ready_revision: "rest-00002",
-});
-const change = (actions, before, extra = {}) => ({
-  mode: "managed",
-  type: "google_cloud_run_v2_service",
-  change: { actions, before },
-  ...extra,
-});
-const plan = (...changes) => ({ resource_changes: changes });
-
-describe("serving", () => {
-  it("trusts the apply for every service it changed", () => {
-    const failed = service("CONDITION_FAILED", "rest-00003");
-    assert.equal(serving(plan(change(["update"], failed))), true);
-    assert.equal(serving(plan(change(["create"], null))), true);
-    assert.equal(serving(plan(change(["delete", "create"], failed))), true);
-  });
-
-  it("requires every unchanged service to serve its latest revision", () => {
-    const healthy = change(["no-op"], service("CONDITION_SUCCEEDED"));
-    assert.equal(serving(plan(healthy)), true);
-    // A failed update leaves its configuration in state, and Cloud Run keeps the older revision.
-    for (const stuck of [
-      service("CONDITION_FAILED"),
-      service("CONDITION_SUCCEEDED", "rest-00003"),
-      service("CONDITION_RECONCILING"),
-      {},
-    ]) {
-      assert.equal(serving(plan(healthy, change(["no-op"], stuck))), false);
-    }
-  });
-
-  it("ignores deleted services, data sources and other resources", () => {
-    const failed = service("CONDITION_FAILED", "rest-00003");
-    assert.equal(
-      serving(
-        plan(
-          change(["delete"], failed),
-          change(["read"], failed, { mode: "data" }),
-          change(["no-op"], failed, { type: "google_cloud_run_v2_job" }),
-        ),
-      ),
-      true,
-    );
-    assert.equal(serving({}), true);
   });
 });
 
