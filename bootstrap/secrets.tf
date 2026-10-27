@@ -48,47 +48,6 @@ resource "google_secret_manager_secret" "application" {
   depends_on = [google_project_service.management["secretmanager.googleapis.com"]]
 }
 
-# A DSN is not a secret, so the services read it from the Sentry root (a-novel/infra#1154). The
-# previous apply unlocked these containers; moving them out of the protected resource lets this
-# one delete them. Remove these blocks once applied.
-moved {
-  from = google_secret_manager_secret.application["production-authentication-sentry-dsn"]
-  to   = google_secret_manager_secret.retired["production-authentication-sentry-dsn"]
-}
-
-moved {
-  from = google_secret_manager_secret.application["production-authentication-sentry-otlp-headers"]
-  to   = google_secret_manager_secret.retired["production-authentication-sentry-otlp-headers"]
-}
-
-moved {
-  from = google_secret_manager_secret.application["production-json-keys-sentry-dsn"]
-  to   = google_secret_manager_secret.retired["production-json-keys-sentry-dsn"]
-}
-
-moved {
-  from = google_secret_manager_secret.application["production-json-keys-sentry-otlp-headers"]
-  to   = google_secret_manager_secret.retired["production-json-keys-sentry-otlp-headers"]
-}
-
-moved {
-  from = google_secret_manager_secret.application["production-genai-sentry-dsn"]
-  to   = google_secret_manager_secret.retired["production-genai-sentry-dsn"]
-}
-
-moved {
-  from = google_secret_manager_secret.application["production-genai-sentry-otlp-headers"]
-  to   = google_secret_manager_secret.retired["production-genai-sentry-otlp-headers"]
-}
-
-removed {
-  from = google_secret_manager_secret.retired
-
-  lifecycle {
-    destroy = true
-  }
-}
-
 resource "google_secret_manager_secret_iam_member" "operator" {
   for_each = local.operator_secret_bindings
 
