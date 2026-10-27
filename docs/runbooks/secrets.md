@@ -22,14 +22,12 @@ Keys stores, and a new value cannot decrypt them.
    gcloud secrets versions list "$SECRET" --project=a-novel-management-prod --limit=3
    ```
 
-   | Secret                  | Format                                                      |
-   | ----------------------- | ----------------------------------------------------------- |
-   | `*-app-password`        | 32–128 characters, `[A-Za-z0-9_-]`, different per service   |
-   | `*-app-master-key`      | 64 hexadecimal characters                                   |
-   | `*-waitlist-secret`     | at least 32 characters                                      |
-   | `*-openai-api-key`      | an OpenAI project key restricted to the Responses API       |
-   | `*-sentry-dsn`          | the service's Sentry project DSN, from its Client Keys      |
-   | `*-sentry-otlp-headers` | `x-sentry-auth=sentry sentry_key=` and the DSN's public key |
+   | Secret              | Format                                                    |
+   | ------------------- | --------------------------------------------------------- |
+   | `*-app-password`    | 32–128 characters, `[A-Za-z0-9_-]`, different per service |
+   | `*-app-master-key`  | 64 hexadecimal characters                                 |
+   | `*-waitlist-secret` | at least 32 characters                                    |
+   | `*-openai-api-key`  | an OpenAI project key restricted to the Responses API     |
 
 2. **Pin the new number** in `secret_versions` in the service root, in a pull request, and merge it.
    The deploy rolls out a new revision that reads it.

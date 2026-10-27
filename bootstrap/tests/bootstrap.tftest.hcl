@@ -58,8 +58,8 @@ run "protects_state_and_backups" {
   }
 
   assert {
-    condition = alltrue([for secret in google_secret_manager_secret.application :
-      secret.deletion_protection && secret.version_destroy_ttl == "2592000s"
+    condition = alltrue([for name, secret in google_secret_manager_secret.application :
+      secret.deletion_protection && secret.version_destroy_ttl == "2592000s" if !contains(local.retiring_secrets, name)
     ])
     error_message = "Secrets must refuse deletion and keep destroyed versions recoverable for 30 days."
   }
