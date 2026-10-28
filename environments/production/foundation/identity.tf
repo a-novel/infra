@@ -32,7 +32,7 @@ locals {
     "roles/billing.projectManager",
     "roles/cloudquotas.admin",
     "roles/compute.instanceAdmin.v1",
-    "roles/container.clusterAdmin",
+    "roles/container.admin",
     "roles/compute.networkAdmin",
     "roles/dns.admin",
     "roles/iam.roleAdmin",
@@ -165,6 +165,13 @@ resource "google_project_iam_member" "foundation_project_metadata" {
 resource "google_project_iam_member" "plan_viewer" {
   project = google_project.workload.project_id
   role    = "roles/viewer"
+  member  = "serviceAccount:${local.automation_service_accounts.plan}"
+}
+
+# The plan identity reads the cluster's objects through its DNS endpoint, but never its Secrets.
+resource "google_project_iam_member" "plan_cluster_viewer" {
+  project = google_project.workload.project_id
+  role    = "roles/container.viewer"
   member  = "serviceAccount:${local.automation_service_accounts.plan}"
 }
 
