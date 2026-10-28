@@ -131,7 +131,11 @@ reaching the control plane through the DNS endpoint as the CI identities.
 - **Access:** outside the network, the control plane answers only through its DNS endpoint, which
   IAM and the perimeter guard. Nodes use its internal endpoint.
 - **Isolation:** Dataplane V2 enforces network policies, FQDN ones included. Workload Identity gives
-  each pod its own identity, never the node's.
+  each pod its own identity, never the node's. Every namespace the cluster root manages enforces
+  Pod Security's `restricted` level and two admission policies: images only from our Artifact
+  Registry, pinned by digest, and no `LoadBalancer` Service. The services' namespaces deny all
+  traffic but DNS until a workload's own policy opens a path. After each apply, the deploy sends
+  dry-run requests that admission must refuse, and one compliant pod it must admit.
 - **Images:** the add-ons pull quay.io and ghcr.io images through the Artifact Registry pull-through
   caches `a-novel-quay-io` and `a-novel-ghcr-io`, which only the nodes read. The cluster root pins
   each image by digest.

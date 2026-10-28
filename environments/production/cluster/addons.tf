@@ -18,7 +18,8 @@ resource "kubernetes_namespace_v1" "addon" {
   for_each = local.addon_namespaces
 
   metadata {
-    name = each.key
+    name   = each.key
+    labels = local.pod_security
   }
 
   lifecycle {

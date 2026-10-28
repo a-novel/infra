@@ -1,0 +1,18 @@
+{
+  "apiVersion": "v1",
+  "kind": "Service",
+  "metadata": {
+    "name": "admission-check"
+  },
+  "spec": {
+    "type": "LoadBalancer",
+    "selector": {
+      "app": "none"
+    },
+    "ports": [
+      {
+        "port": 443
+      }
+    ]
+  }
+}
