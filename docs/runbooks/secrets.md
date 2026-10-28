@@ -68,7 +68,8 @@ input names the relay and the sender.
 
 The relay rule is in Google Admin under **Apps → Google Workspace → Gmail → Routing → SMTP relay
 service**. Its settings are "only addresses in my domains", "only accept mail from the specified IP
-addresses" with the NAT address alone, and "require TLS", without SMTP authentication.
+addresses" with the NAT addresses alone, and "require TLS", without SMTP authentication. The
+addresses are foundation's `cluster_nat_address` and, until the old network retires, `nat_address`.
 
 Health reporting `client:smtp` up proves only that the relay answers over TLS. Only a real email
 proves that the relay accepts the service's address, so send one after any change to the rule or

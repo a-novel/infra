@@ -27,6 +27,11 @@ output "nat_address" {
   value       = google_compute_address.nat.address
 }
 
+output "cluster_nat_address" {
+  description = "The address the cluster's internet egress leaves from, which the providers' IP allowlists name beside nat_address."
+  value       = google_compute_address.cluster_nat.address
+}
+
 output "database_hosts" {
   description = "Service-owned PostgreSQL hosts and disk incarnations for release and recovery."
   value = {
