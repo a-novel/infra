@@ -299,7 +299,7 @@ variable "shell_cloud_run_quota" {
 }
 
 variable "compute_cpu_quota" {
-  description = "Regional Compute Engine CPU ceiling for the stateful data plane."
+  description = "Regional Compute Engine CPU ceiling for the database hosts, their backup repositories and the cluster's nodes."
   type        = number
 
   validation {

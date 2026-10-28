@@ -21,6 +21,10 @@ locals {
       account_id   = "agora-scheduler-invoker"
       display_name = "A-Novel scheduled job invoker"
     }
+    cluster_nodes = {
+      account_id   = "a-novel-cluster-nodes"
+      display_name = "A-Novel cluster nodes"
+    }
   }
 
   foundation_project_roles = toset([
@@ -28,6 +32,7 @@ locals {
     "roles/billing.projectManager",
     "roles/cloudquotas.admin",
     "roles/compute.instanceAdmin.v1",
+    "roles/container.clusterAdmin",
     "roles/compute.networkAdmin",
     "roles/dns.admin",
     "roles/iam.roleAdmin",
@@ -202,6 +207,20 @@ resource "google_service_account_iam_member" "foundation_database_act_as" {
   for_each = local.database_hosts
 
   service_account_id = google_service_account.runtime[each.value.identity].name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${local.automation_service_accounts.foundation}"
+}
+
+# The cluster's nodes write their own logs and metrics and pull images, and nothing else: each
+# workload acts as its own identity through Workload Identity.
+resource "google_project_iam_member" "cluster_nodes" {
+  project = google_project.workload.project_id
+  role    = "roles/container.defaultNodeServiceAccount"
+  member  = google_service_account.runtime["cluster_nodes"].member
+}
+
+resource "google_service_account_iam_member" "foundation_cluster_nodes_act_as" {
+  service_account_id = google_service_account.runtime["cluster_nodes"].name
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${local.automation_service_accounts.foundation}"
 }

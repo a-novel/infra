@@ -112,7 +112,8 @@ database_images = {
 # json-keys and genai at their maximum instances, plus one rollout instance each, and the jobs.
 cloud_run_cpu_quota_millicpu = 16000
 cloud_run_memory_quota_bytes = 25769803776
-# Three database hosts at their nominal vCPUs, plus the backup repository VMs.
-compute_cpu_quota = 8
+# Three database hosts at their nominal vCPUs and the backup repository VMs (8), plus the cluster's
+# three e2-standard-4 nodes and one surge node (16). Retirement lowers it once the hosts go.
+compute_cpu_quota = 24
 # The whole project at moderate traffic, planned near EUR 360 a month, with margin.
 monthly_budget_units = 500
