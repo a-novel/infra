@@ -135,6 +135,9 @@ reaching the control plane through the DNS endpoint as the CI identities.
 - **Images:** the add-ons pull quay.io and ghcr.io images through the Artifact Registry pull-through
   caches `a-novel-quay-io` and `a-novel-ghcr-io`, which only the nodes read. The cluster root pins
   each image by digest.
+- **Add-ons:** the cluster root installs cert-manager, the CloudNativePG operator, its Barman Cloud
+  plugin and External Secrets with Helm, each in its own namespace. Renovate moves each chart with
+  its images, after a week and a review.
 - **Upkeep:** the `REGULAR` release channel upgrades it during weekly windows, Tuesday to Thursday
   from 01:00 to 07:00 UTC. Google collects only system logs and metrics, since Grafana takes every
   signal.
