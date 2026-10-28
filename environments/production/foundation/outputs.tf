@@ -27,6 +27,15 @@ output "nat_address" {
   value       = google_compute_address.nat.address
 }
 
+output "cluster" {
+  description = "The production cluster, which the Kubernetes roots reach through its DNS endpoint."
+  value = {
+    name         = google_container_cluster.production.name
+    location     = google_container_cluster.production.location
+    dns_endpoint = one(one(google_container_cluster.production.control_plane_endpoints_config).dns_endpoint_config).endpoint
+  }
+}
+
 output "cluster_nat_address" {
   description = "The address the cluster's internet egress leaves from, which the providers' IP allowlists name beside nat_address."
   value       = google_compute_address.cluster_nat.address

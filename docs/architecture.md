@@ -115,6 +115,23 @@ own identities, image repositories, network tags and database hosts.
   role would otherwise cover. Pull requests can mint that identity. Organization admins set the
   policy by hand, from [the setup runbook](runbooks/setup.md#organization-guardrails).
 
+## Cluster
+
+`a-novel-production` is the GKE Standard cluster that replaces Cloud Run at the cutover
+(a-novel/.github#522). It holds no workload yet.
+
+- **Zonal,** so the billing account's free tier covers its management fee. The control plane runs in
+  `europe-west1-d`, and the nodes in `d` and `c`.
+- **Nodes:** the `general` pool, two `e2-standard-4` nodes that autoscale to three, with private
+  addresses only. They run as `a-novel-cluster-nodes`, and upgrades add a node before draining one.
+- **Access:** outside the network, the control plane answers only through its DNS endpoint, which
+  IAM and the perimeter guard. Nodes use its internal endpoint.
+- **Isolation:** Dataplane V2 enforces network policies, FQDN ones included. Workload Identity gives
+  each pod its own identity, never the node's.
+- **Upkeep:** the `REGULAR` release channel upgrades it during weekly windows, Tuesday to Thursday
+  from 01:00 to 07:00 UTC. Google collects only system logs and metrics, since Grafana takes every
+  signal.
+
 ## Services
 
 | Service        | Cloud Run                                                                                                                                                                                                                         | Jobs                                                                                                                                                                |

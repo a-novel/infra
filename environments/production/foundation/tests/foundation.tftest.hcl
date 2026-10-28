@@ -225,6 +225,38 @@ run "fences_the_cluster_network" {
   }
 }
 
+run "keeps_the_cluster_private" {
+  command = plan
+
+  assert {
+    condition = (
+      one(google_container_cluster.production.private_cluster_config).enable_private_nodes &&
+      one(google_container_cluster.production.private_cluster_config).enable_private_endpoint &&
+      one(one(google_container_cluster.production.control_plane_endpoints_config).dns_endpoint_config).allow_external_traffic
+    )
+    error_message = "Nodes must have no external address, and the control plane must answer outside the network only through its DNS endpoint."
+  }
+
+  assert {
+    condition = (
+      one(google_container_cluster.production.workload_identity_config).workload_pool == "${google_project.workload.project_id}.svc.id.goog" &&
+      one(one(google_container_node_pool.general.node_config).workload_metadata_config).mode == "GKE_METADATA" &&
+      one(google_container_node_pool.general.node_config).service_account == google_service_account.runtime["cluster_nodes"].email &&
+      one(one(google_container_node_pool.general.node_config).shielded_instance_config).enable_secure_boot
+    )
+    error_message = "Pods must get their own identities through GKE's metadata server, and nodes must boot securely as the node identity, never the default one."
+  }
+
+  assert {
+    condition = (
+      google_container_cluster.production.deletion_protection &&
+      one(google_container_cluster.production.release_channel).channel != "UNSPECIFIED" &&
+      !one(one(google_container_cluster.production.monitoring_config).managed_prometheus).enabled
+    )
+    error_message = "The cluster must refuse deletion, upgrade on a release channel, and leave metrics to Grafana."
+  }
+}
+
 run "grants_no_basic_roles" {
   command = plan
 
