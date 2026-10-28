@@ -71,14 +71,13 @@ resource "google_project_iam_custom_role" "foundation_public_api" {
   depends_on = [module.public_api_project]
 }
 
-# Platforms serve from the public project, behind a global load balancer. The project's
-# networkAdmin role builds the load balancer but cannot create its Google-managed certificate.
+# Platforms serve from the public project on their Cloud Run URLs.
 resource "google_project_iam_custom_role" "foundation_public_platforms" {
   project     = var.public_project_id
   role_id     = "infraFoundationPublicPlatforms"
   title       = "Foundation platform deployment"
-  description = "Create and update the platforms' Cloud Run services and load balancer certificates through protected native plans."
-  permissions = ["compute.sslCertificates.create", "run.services.create", "run.services.update"]
+  description = "Create and update the platforms' Cloud Run services through protected native plans."
+  permissions = ["run.services.create", "run.services.update"]
 
   depends_on = [module.public_project]
 }

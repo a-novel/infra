@@ -15,7 +15,7 @@ own identities, image repositories, network tags and database hosts.
 | `a-novel-management-prod` | management | State bucket, backup buckets, secrets, CI identities. Survives a workload rebuild.  |
 | `a-novel-production-prod` | private    | Shared VPC host, database and backup VMs, JSON Keys, GenAI, every job and schedule. |
 | `a-novel-public-api-prod` | public-api | Authentication REST API, attached to the private VPC.                               |
-| `a-novel-public-prod`     | public     | Reserved for platforms, with no VPC attachment and no database access.              |
+| `a-novel-public-prod`     | public     | Platforms: Studio, with no VPC attachment or database access.                       |
 
 ## Network
 
@@ -78,6 +78,9 @@ own identities, image repositories, network tags and database hosts.
   trust the visitor IP the platform sends in `X-Client-IP`. Its egress, the maintenance job's and the
   refresh token purge's go through the VPC from the egress subnet: SMTP and Sentry leave through
   Cloud NAT, and JSON Keys stays on the restricted VIP.
+- **Studio** serves visitors on its Cloud Run URL in the public project, with public ingress and
+  no IAM, since visitors carry no identity. It calls Authentication's public URL with its own ID
+  token, and its traces leave for Sentry directly, since the project has no VPC.
 - **GenAI gRPC and sweep** have internal ingress and IAM authentication. GenAI's smoke identity
   invokes the gRPC service. Only the scheduler identity invokes the sweep. Their egress goes
   through the VPC from the egress subnet: OpenAI's API and Sentry leave through Cloud NAT.

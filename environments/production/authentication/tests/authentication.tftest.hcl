@@ -45,6 +45,15 @@ override_data {
 }
 
 override_data {
+  target = data.terraform_remote_state.studio
+  values = {
+    outputs = {
+      service_account = "agora-studio-public@a-novel-public-prod.iam.gserviceaccount.com"
+    }
+  }
+}
+
+override_data {
   target = data.terraform_remote_state.sentry
   values = {
     outputs = {
