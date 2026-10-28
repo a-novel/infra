@@ -118,7 +118,8 @@ own identities, image repositories, network tags and database hosts.
 ## Cluster
 
 `a-novel-production` is the GKE Standard cluster that replaces Cloud Run at the cutover
-(a-novel/.github#522). It holds no workload yet.
+(a-novel/.github#522). It holds no workload yet. The `cluster` root manages its Kubernetes resources,
+reaching the control plane through the DNS endpoint as the CI identities.
 
 - **Zonal,** so the billing account's free tier covers its management fee. The control plane runs in
   `europe-west1-d`, and the nodes in `d` and `c`.
