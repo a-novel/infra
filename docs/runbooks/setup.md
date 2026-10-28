@@ -66,7 +66,9 @@ them by hand, once:
 - **A deny policy** keeps the plan identity away from logs and traces. Pull requests can mint
   `infra-plan`, and its Viewer role reads everything else a plan needs.
 - **The access policy** holds the service perimeter, which foundation manages. The deploy identity
-  edits the policy and the plan identity reads it.
+  edits the policy and the plan identity reads it. The deploy identity also reads the
+  organization's access policies, which Artifact Registry checks before it sets its VPC Service
+  Controls setting.
 
 Setting an organization policy needs Organization Policy Administrator on the organization:
 
@@ -99,6 +101,16 @@ gcloud access-context-manager policies add-iam-policy-binding "$POLICY" \
 gcloud access-context-manager policies add-iam-policy-binding "$POLICY" \
   --role=roles/accesscontextmanager.policyReader \
   --member="serviceAccount:infra-plan@a-novel-management-prod.iam.gserviceaccount.com"
+```
+
+Artifact Registry lists the organization's access policies before it sets its VPC Service Controls
+setting, so the deploy identity reads them on the organization:
+
+```bash
+gcloud organizations add-iam-policy-binding 1031663934757 \
+  --role=roles/accesscontextmanager.policyReader \
+  --member="serviceAccount:infra-foundation@a-novel-management-prod.iam.gserviceaccount.com" \
+  --condition=None
 ```
 
 ## Rebuild from nothing
