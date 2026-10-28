@@ -59,6 +59,14 @@ service_release_zones = {
 }
 subnet_cidr        = "10.20.0.0/24"
 egress_subnet_cidr = "10.20.1.0/24"
+# The control plane runs in the first zone. Two nodes hold every service and each database's
+# primary and replica, and the autoscaler adds a third; narrative-engine revisits the shape.
+cluster = {
+  zones        = ["europe-west1-d", "europe-west1-c"]
+  machine_type = "e2-standard-4"
+  min_nodes    = 2
+  max_nodes    = 3
+}
 # Apart from agora-production's ranges, which the import peering joins. The pods' /20 holds 16 nodes
 # at 110 pods each.
 cluster_ranges = {

@@ -101,6 +101,24 @@ variable "egress_subnet_cidr" {
   }
 }
 
+variable "cluster" {
+  description = "The production cluster's zones, the first holding the control plane, and its node pool."
+  type = object({
+    zones        = list(string)
+    machine_type = string
+    min_nodes    = number
+    max_nodes    = number
+  })
+
+  validation {
+    condition = (
+      length(var.cluster.zones) >= 2 && alltrue([for zone in var.cluster.zones : startswith(zone, "${var.region}-")]) &&
+      var.cluster.min_nodes >= 2 && var.cluster.max_nodes >= var.cluster.min_nodes
+    )
+    error_message = "The cluster needs two zones of the production region and two nodes at least, since each database keeps its primary and replica on separate nodes."
+  }
+}
+
 variable "cluster_ranges" {
   description = "Private IPv4 ranges of the cluster's network: the nodes' subnet, and the pods' and services' secondary ranges."
   type = object({
