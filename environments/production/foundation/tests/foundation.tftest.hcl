@@ -195,7 +195,7 @@ run "fences_the_cluster_network" {
 
   assert {
     condition = (
-      length(google_compute_network_firewall_policy_rule.cluster_egress_allowlist) == length(google_compute_network_firewall_policy_rule.egress_allowlist) &&
+      keys(google_compute_network_firewall_policy_rule.cluster_egress_allowlist) == keys(local.egress_allowlist) &&
       alltrue([for key, rule in google_compute_network_firewall_policy_rule.egress_allowlist :
         google_compute_network_firewall_policy_rule.cluster_egress_allowlist[key].match == rule.match &&
         google_compute_network_firewall_policy_rule.cluster_egress_allowlist[key].action == "allow"

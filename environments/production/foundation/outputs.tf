@@ -33,6 +33,8 @@ output "cluster" {
     name         = google_container_cluster.production.name
     location     = google_container_cluster.production.location
     dns_endpoint = one(one(google_container_cluster.production.control_plane_endpoints_config).dns_endpoint_config).endpoint
+    # Where the add-ons pull each public registry's images from, by its host.
+    image_registries = { for name, repository in google_artifact_registry_repository.cluster_upstream : trimprefix(local.cluster_image_upstreams[name], "https://") => repository.registry_uri }
   }
 }
 
