@@ -19,4 +19,6 @@ addon_images = {
   plugin_barman_cloud_sidecar = "ghcr.io/cloudnative-pg/plugin-barman-cloud-sidecar:v0.15.1@sha256:2287a793a804db751edd0d07d44cd549e357677e98a800eb12e2cf7c0d53f9b0"
 
   external_secrets = "ghcr.io/external-secrets/external-secrets:v2.13.0@sha256:f799d87a6a959e597a4ba7a8d2379886292c3fcfbee678f7dc2d3566051bcb96"
+
+  bitwarden_sdk_server = "ghcr.io/external-secrets/bitwarden-sdk-server:v0.6.0@sha256:8c5491554fe1069e8e07e6aa1813e7f8198679604dd271d4f778d238f5ca9337"
 }
