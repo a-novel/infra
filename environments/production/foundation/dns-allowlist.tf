@@ -34,8 +34,12 @@ resource "google_dns_response_policy" "allowlist" {
   response_policy_name = "a-novel-dns-allowlist"
   description          = "Resolve only the private zones, internal names and the egress allowlist's hosts."
 
-  networks {
-    network_url = google_compute_network.production.id
+  dynamic "networks" {
+    for_each = local.dns_networks
+
+    content {
+      network_url = networks.value
+    }
   }
 
   depends_on = [google_project_service.workload["dns.googleapis.com"]]

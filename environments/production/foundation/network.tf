@@ -24,10 +24,15 @@ locals {
     "199.36.153.7",
   ]
 
+  # GKE pulls its system images from gcr.io.
   private_google_domains = {
-    artifact_registry = "pkg.dev."
-    cloud_run         = "run.app."
+    artifact_registry  = "pkg.dev."
+    cloud_run          = "run.app."
+    container_registry = "gcr.io."
   }
+
+  # Both networks resolve through the same zones and allowlist until agora-production retires.
+  dns_networks = [google_compute_network.production.id, google_compute_network.cluster.id]
 }
 
 resource "google_compute_network" "production" {
@@ -179,8 +184,12 @@ resource "google_dns_policy" "production" {
 
   enable_logging = true
 
-  networks {
-    network_url = google_compute_network.production.id
+  dynamic "networks" {
+    for_each = local.dns_networks
+
+    content {
+      network_url = networks.value
+    }
   }
 
   depends_on = [google_project_service.workload["dns.googleapis.com"]]
@@ -197,8 +206,12 @@ resource "google_dns_managed_zone" "googleapis" {
   deletion_policy = "PREVENT"
 
   private_visibility_config {
-    networks {
-      network_url = google_compute_network.production.id
+    dynamic "networks" {
+      for_each = local.dns_networks
+
+      content {
+        network_url = networks.value
+      }
     }
   }
 
@@ -239,8 +252,12 @@ resource "google_dns_managed_zone" "private_google_domain" {
   deletion_policy = "PREVENT"
 
   private_visibility_config {
-    networks {
-      network_url = google_compute_network.production.id
+    dynamic "networks" {
+      for_each = local.dns_networks
+
+      content {
+        network_url = networks.value
+      }
     }
   }
 

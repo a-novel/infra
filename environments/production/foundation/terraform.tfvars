@@ -57,8 +57,15 @@ service_release_zones = {
     "private",
   ]
 }
-subnet_cidr            = "10.20.0.0/24"
-egress_subnet_cidr     = "10.20.1.0/24"
+subnet_cidr        = "10.20.0.0/24"
+egress_subnet_cidr = "10.20.1.0/24"
+# Apart from agora-production's ranges, which the import peering joins. The pods' /20 holds 16 nodes
+# at 110 pods each.
+cluster_ranges = {
+  nodes    = "10.30.0.0/24"
+  services = "10.30.4.0/22"
+  pods     = "10.30.16.0/20"
+}
 sentry_ingest_host     = "o4504952660951040.ingest.us.sentry.io"
 workload_project_id    = "a-novel-production-prod"
 workload_project_name  = "A-Novel production"

@@ -27,8 +27,20 @@ own identities, image repositories, network tags and database hosts.
   reserved address, `agora-production-nat`. Foundation's `nat_address` output gives it. A VPC-wide
   default route serves NAT, and NAT logs only its errors. OpenAI's project and the Workspace SMTP
   relay admit that address alone, so a new address joins both before it replaces the old one.
+- **The cluster's network,** `a-novel-production`, is built for the GKE cluster
+  (a-novel/.github#522) and replaces `agora-production` at the cutover:
+  - its subnet `10.30.0.0/24` holds the nodes, with the secondary ranges `pods`, `10.30.16.0/20`,
+    and `services`, `10.30.4.0/22`;
+  - Cloud NAT serves the whole subnet from `a-novel-production-nat`, foundation's
+    `cluster_nat_address`, which OpenAI and the SMTP relay admit beside `agora-production-nat`;
+  - its firewall denies all egress but the cluster's own ranges, the restricted VIP and the egress
+    allowlist's destinations. The firewall sees only the nodes, so `a-novel-egress-allowlist` opens
+    those destinations to every node, and each workload's network policy narrows them;
+  - the peering `a-novel-database-imports` joins it to `agora-production` for the cutover's database
+    imports. Neither network's firewall admits the other yet.
 - **Google APIs** are reached through the restricted VIP ranges `199.36.153.4/30` and
-  `34.126.0.0/18`. Private DNS zones resolve `googleapis.com`, `pkg.dev` and `run.app` to them.
+  `34.126.0.0/18`. Private DNS zones resolve `googleapis.com`, `gcr.io`, `pkg.dev` and `run.app` to
+  them, on both networks. GKE pulls its system images from `gcr.io`.
 - **Egress allowlist.** A network firewall policy, `agora-egress-allowlist`, runs before the firewall
   rules. It lets named identities reach named destinations, and nothing else:
 
@@ -49,8 +61,8 @@ own identities, image repositories, network tags and database hosts.
   Other traffic falls through to the firewall rules. Direct VPC egress logs no firewall verdict, so
   a refused connection shows only as the caller's own error.
 
-- **DNS allowlist.** A Cloud DNS response policy, `a-novel-dns-allowlist`, resolves only the private
-  zones, Compute Engine's internal names and the egress allowlist's hosts. Every other name answers
+- **DNS allowlist.** A Cloud DNS response policy, `a-novel-dns-allowlist`, on both networks,
+  resolves only the private zones, Compute Engine's internal names and the egress allowlist's hosts. Every other name answers
   with a CNAME to `blocked.internal.` and no address, so the lookup fails at once and no outside
   name server receives it. A host added to the egress allowlist joins the DNS allowlist in the same
   entry.

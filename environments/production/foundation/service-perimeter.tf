@@ -16,21 +16,25 @@ locals {
     resources = [for number in concat([google_project.workload.number], [for project in module.public_api_project : project.project_number]) : "projects/${number}"]
 
     # Every API the perimeter's projects enable, plus Secret Manager, which their workloads call in
-    # management. The VPC reaches only these, so an API missing here fails closed. IAP's TCP
-    # forwarding stays out: its tunnel check reaches the perimeter without the caller's identity, so
-    # only IAM tells an operator apart.
+    # management, and the APIs GKE's nodes call. The VPC reaches only these, so an API missing here
+    # fails closed. IAP's TCP forwarding stays out: its tunnel check reaches the perimeter without
+    # the caller's identity, so only IAM tells an operator apart.
     restricted_services = [
       "artifactregistry.googleapis.com",
+      "autoscaling.googleapis.com",
       "cloudbuild.googleapis.com",
       "cloudquotas.googleapis.com",
       "cloudresourcemanager.googleapis.com",
       "cloudscheduler.googleapis.com",
       "cloudtrace.googleapis.com",
       "compute.googleapis.com",
+      "container.googleapis.com",
+      "containerregistry.googleapis.com",
       "dns.googleapis.com",
       "iam.googleapis.com",
       "iamcredentials.googleapis.com",
       "iap.googleapis.com",
+      "kubernetesmetadata.googleapis.com",
       "logging.googleapis.com",
       "monitoring.googleapis.com",
       "networksecurity.googleapis.com",

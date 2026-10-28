@@ -101,6 +101,20 @@ variable "egress_subnet_cidr" {
   }
 }
 
+variable "cluster_ranges" {
+  description = "Private IPv4 ranges of the cluster's network: the nodes' subnet, and the pods' and services' secondary ranges."
+  type = object({
+    nodes    = string
+    pods     = string
+    services = string
+  })
+
+  validation {
+    condition     = alltrue([for range in values(var.cluster_ranges) : can(cidrhost(range, 0))])
+    error_message = "Each cluster range must be a valid IPv4 CIDR."
+  }
+}
+
 variable "sentry_ingest_host" {
   description = "Ingest host of the Sentry organization the services report to, the one Sentry name the egress allowlist admits."
   type        = string

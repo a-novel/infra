@@ -10,6 +10,10 @@ mock_provider "google" {
       name   = "projects/a-novel-production-prod/serviceAccounts/runtime-mock@a-novel-production-prod.iam.gserviceaccount.com"
     }
   }
+  # A peering checks that both networks are well-formed.
+  mock_resource "google_compute_network" {
+    defaults = { id = "projects/a-novel-production-prod/global/networks/mock" }
+  }
   mock_data "google_project" {
     defaults = { number = "232403541574" }
   }
@@ -155,6 +159,69 @@ run "resolves_only_the_dns_allowlist" {
       ],
     ))
     error_message = "The firewall resolves its hosts through the DNS allowlist, and the private zones answer their whole domains, so each must be allowed."
+  }
+}
+
+run "fences_the_cluster_network" {
+  command = plan
+
+  # Mocks give every network and subnet the same generated ID, which would hide which one a binding
+  # names.
+  override_resource {
+    target = google_compute_network.production
+    values = { id = "projects/a-novel-production-prod/global/networks/agora-production" }
+  }
+
+  override_resource {
+    target = google_compute_network.cluster
+    values = { id = "projects/a-novel-production-prod/global/networks/a-novel-production" }
+  }
+
+  override_resource {
+    target = google_compute_subnetwork.cluster
+    values = { id = "projects/a-novel-production-prod/regions/europe-west1/subnetworks/a-novel-production-europe-west1" }
+  }
+
+  assert {
+    condition = (
+      google_compute_firewall.cluster_deny_other_egress.destination_ranges == toset(["0.0.0.0/0"]) &&
+      google_compute_firewall.cluster_deny_other_egress.target_tags == null &&
+      alltrue([for rule in [google_compute_firewall.cluster_allow_restricted_google_apis, google_compute_firewall.cluster_allow_internal_egress] :
+        rule.priority < google_compute_firewall.cluster_deny_other_egress.priority
+      ])
+    )
+    error_message = "A network-wide deny must sit below every explicit egress allow of the cluster's network."
+  }
+
+  assert {
+    condition = (
+      length(google_compute_network_firewall_policy_rule.cluster_egress_allowlist) == length(google_compute_network_firewall_policy_rule.egress_allowlist) &&
+      alltrue([for key, rule in google_compute_network_firewall_policy_rule.egress_allowlist :
+        google_compute_network_firewall_policy_rule.cluster_egress_allowlist[key].match == rule.match &&
+        google_compute_network_firewall_policy_rule.cluster_egress_allowlist[key].action == "allow"
+      ])
+    )
+    error_message = "The cluster's nodes may reach exactly the egress allowlist's destinations."
+  }
+
+  assert {
+    condition     = [for subnet in google_compute_router_nat.cluster.subnetwork : subnet.name] == [google_compute_subnetwork.cluster.id]
+    error_message = "The cluster's Cloud NAT must serve the cluster's subnet alone."
+  }
+
+  assert {
+    condition = alltrue([for networks in concat(
+      [google_dns_policy.production.networks, google_dns_response_policy.allowlist.networks],
+      [for zone in concat([google_dns_managed_zone.googleapis], values(google_dns_managed_zone.private_google_domain)) : one(zone.private_visibility_config).networks],
+    ) : toset([for network in networks : network.network_url]) == toset([google_compute_network.production.id, google_compute_network.cluster.id])])
+    error_message = "Both networks must log their lookups, resolve through the private zones and resolve only the DNS allowlist."
+  }
+
+  assert {
+    condition = alltrue([for pair in setproduct(values(var.cluster_ranges), [var.subnet_cidr, var.egress_subnet_cidr]) :
+      !cidrcontains(pair[0], cidrhost(pair[1], 0)) && !cidrcontains(pair[1], cidrhost(pair[0], 0))
+    ])
+    error_message = "The peered networks' ranges must not overlap."
   }
 }
 
