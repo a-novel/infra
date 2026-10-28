@@ -71,6 +71,14 @@ run "protects_state_and_backups" {
     )
     error_message = "The plan identity runs pull-request code, so it may read only the read-only Sentry token."
   }
+
+  assert {
+    condition = (
+      google_secret_manager_secret_iam_member.grafana_token["plan"].secret_id == "production-grafana-plan-token" &&
+      toset(keys(google_secret_manager_secret_iam_member.grafana_token)) == toset(["plan", "foundation"])
+    )
+    error_message = "The plan identity runs pull-request code, so it may read only the read-only Grafana token."
+  }
 }
 
 run "trusts_only_reviewed_workflows" {

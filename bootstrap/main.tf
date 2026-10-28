@@ -135,6 +135,14 @@ locals {
       contract = "SENTRY_AUTH_TOKEN"
       purpose  = "Sentry token with which deploys apply the Sentry root"
     }
+    production-grafana-plan-token = {
+      contract = "GRAFANA_AUTH"
+      purpose  = "Read-only Grafana token, with which pull requests and the drift check plan the Grafana root"
+    }
+    production-grafana-deploy-token = {
+      contract = "GRAFANA_AUTH"
+      purpose  = "Grafana token with which deploys apply the Grafana root"
+    }
     }, { for secret, credential in local.pgbackrest_tls : secret => {
       contract = credential.contract
       purpose  = credential.purpose
