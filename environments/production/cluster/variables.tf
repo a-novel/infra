@@ -1,3 +1,13 @@
+variable "addon_images" {
+  description = "Each add-on image's upstream reference, pinned by digest. It pulls through foundation's Artifact Registry cache of its registry."
+  type        = map(string)
+
+  validation {
+    condition     = alltrue([for reference in values(var.addon_images) : can(regex("^(quay|ghcr)\\.io/[a-z0-9._/-]+:[^@]+@sha256:[a-f0-9]{64}$", reference))])
+    error_message = "Every add-on image must come from quay.io or ghcr.io, pinned by digest."
+  }
+}
+
 variable "namespaces" {
   description = "One namespace per service, holding its workloads, database and secrets."
   type        = set(string)

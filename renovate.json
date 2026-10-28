@@ -117,6 +117,45 @@
       "goGetDirs": ["tool"]
     },
     {
+      "description": "Hold the cluster add-ons' charts and images for a week, as provider releases are held, to bound a compromised upstream release.",
+      "matchFileNames": ["environments/production/cluster/**"],
+      "minimumReleaseAge": "7 days"
+    },
+    {
+      "description": "Move cert-manager's chart and images in one pull request, since the chart expects its own images.",
+      "matchFileNames": ["environments/production/cluster/**"],
+      "matchPackageNames": ["cert-manager", "quay.io/jetstack/**"],
+      "groupName": "cert-manager"
+    },
+    {
+      "description": "Move CloudNativePG's chart and images in one pull request, since the chart expects its own images.",
+      "matchFileNames": ["environments/production/cluster/**"],
+      "matchPackageNames": [
+        "cloudnative-pg",
+        "ghcr.io/cloudnative-pg/cloudnative-pg"
+      ],
+      "groupName": "CloudNativePG"
+    },
+    {
+      "description": "Move Barman Cloud plugin's chart and images in one pull request, since the chart expects its own images.",
+      "matchFileNames": ["environments/production/cluster/**"],
+      "matchPackageNames": [
+        "plugin-barman-cloud",
+        "ghcr.io/cloudnative-pg/plugin-barman-cloud",
+        "ghcr.io/cloudnative-pg/plugin-barman-cloud-sidecar"
+      ],
+      "groupName": "Barman Cloud plugin"
+    },
+    {
+      "description": "Move External Secrets's chart and images in one pull request, since the chart expects its own images.",
+      "matchFileNames": ["environments/production/cluster/**"],
+      "matchPackageNames": [
+        "external-secrets",
+        "ghcr.io/external-secrets/external-secrets"
+      ],
+      "groupName": "External Secrets"
+    },
+    {
       "description": "Require review for production configuration and infrastructure definitions.",
       "matchFileNames": [
         "bootstrap/**",
@@ -160,6 +199,17 @@
       "matchStrings": [
         "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>[^\\s]+)\\s+(?:[a-z_]+_)?version\\s*[:=]\\s*[\"']?(?<currentValue>v?[0-9]+\\.[0-9]+\\.[0-9]+)[\"']?"
       ]
+    },
+    {
+      "customType": "regex",
+      "description": "Update the cluster add-ons' images, each pinned by digest beside its tag.",
+      "managerFilePatterns": [
+        "/^environments/production/cluster/terraform\\.tfvars$/"
+      ],
+      "matchStrings": [
+        "\"(?<depName>(?:quay|ghcr)\\.io/[^:\"]+):(?<currentValue>[^@\"]+)@(?<currentDigest>sha256:[a-f0-9]{64})\""
+      ],
+      "datasourceTemplate": "docker"
     }
   ]
 }
