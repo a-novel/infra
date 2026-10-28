@@ -33,6 +33,10 @@ output "cluster" {
     name         = google_container_cluster.production.name
     location     = google_container_cluster.production.location
     dns_endpoint = one(one(google_container_cluster.production.control_plane_endpoints_config).dns_endpoint_config).endpoint
+    # The nodes' range, which holds the control plane's internal endpoint, and Google's restricted
+    # API addresses, for the network policies of pods that call either.
+    node_range        = var.cluster_ranges.nodes
+    google_api_ranges = sort(tolist(local.restricted_google_api_ranges))
     # Each service's PostgreSQL image, pinned by digest in its private repository.
     database_images = local.database_image
     # Where the add-ons pull each public registry's images from, by its host.
