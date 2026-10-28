@@ -120,3 +120,13 @@ resource "google_cloud_run_v2_service" "web" {
     }
   }
 }
+
+# The scheduled health check looks up Studio's URL as its own identity, which only drift.yaml on
+# master can mint. Studio admits its request like a visitor's.
+resource "google_cloud_run_v2_service_iam_member" "scheduled_health" {
+  project  = local.project_id
+  name     = google_cloud_run_v2_service.web.name
+  location = local.region
+  role     = "roles/run.viewer"
+  member   = "serviceAccount:infra-health@${local.management_project_id}.iam.gserviceaccount.com"
+}

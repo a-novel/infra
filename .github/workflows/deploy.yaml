@@ -318,8 +318,9 @@ jobs:
           webhook: ${{ secrets.DEPLOY_WEBHOOK }}
           roles: ${{ vars.DISCORD_REPO_ROLES }}
 
-  # Authentication's health covers PostgreSQL, SMTP and the JSON Keys path. It reports on
-  # production whenever the service roots applied, even when one of them failed.
+  # Authentication's health covers PostgreSQL, SMTP and the JSON Keys path, and Studio's its path to
+  # Authentication. It reports on production whenever the service roots applied, even when one of
+  # them failed.
   health:
     needs: services
     if: ${{ !cancelled() && needs.services.result != 'skipped' }}

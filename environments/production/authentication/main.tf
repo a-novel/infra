@@ -21,7 +21,8 @@ data "terraform_remote_state" "sentry" {
   }
 }
 
-# The Studio root owns the platform's identity, the only one that calls the REST API for visitors.
+# The Studio root owns the platform's identity, the only one that calls the REST API for visitors,
+# and the URL that serves the pages the account emails link to.
 data "terraform_remote_state" "studio" {
   backend = "gcs"
   config = {

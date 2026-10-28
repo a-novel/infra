@@ -27,8 +27,8 @@ changes ─► bootstrap ─► foundation ─► one job per service ─┬─�
 Each root's job plans, verifies and copies its images, then applies. The `rollout` job moves the
 database hosts and backup repository VMs onto their applied configuration, as
 [How the rollout works](database.md#how-the-rollout-works) details. The health check calls
-Authentication's `/v2/healthcheck`, which also covers PostgreSQL, SMTP and JSON Keys. It runs
-whenever the service roots applied, even when one of them failed, and skips while a planned downtime
+Authentication's `/v2/healthcheck`, which also covers PostgreSQL, SMTP and JSON Keys, then Studio's
+`/healthcheck`, which covers Studio's path to Authentication. It runs whenever the service roots applied, even when one of them failed, and skips while a planned downtime
 runs.
 
 Deploys run one at a time:

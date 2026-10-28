@@ -11,10 +11,9 @@ secret_versions = {
 }
 
 smtp = {
-  host              = "smtp-relay.gmail.com"
-  sender_email      = "no-reply@agorastoryverse.com"
-  sender_name       = "Agora"
-  platform_auth_url = "https://www.agorastoryverse.com"
+  host         = "smtp-relay.gmail.com"
+  sender_email = "no-reply@agorastoryverse.com"
+  sender_name  = "Agora"
 }
 
 backup_repository = {

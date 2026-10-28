@@ -13,9 +13,10 @@ failed `drift` runs to whoever last edited its schedule.
 
 ## Authentication health
 
-`drift.yaml` calls Authentication's `/v2/healthcheck` every three hours. Each deploy calls it once
-after applying the service roots, even when one of them failed. Both skip it while a planned
-downtime runs. The job log prints the response:
+`drift.yaml` calls Authentication's `/v2/healthcheck` every three hours, then Studio's public
+`/healthcheck`, which asks Authentication again as Studio. Each deploy calls both once after
+applying the service roots, even when one of them failed. Both skip them while a planned downtime
+runs. The job log prints each response:
 
 | Shows `down`      | Look at                                                                                                   |
 | ----------------- | --------------------------------------------------------------------------------------------------------- |
@@ -24,7 +25,8 @@ downtime runs. The job log prints the response:
 | `api:jsonKeys`    | The `agora-json-keys-grpc` logs in Cloud Run, then its database.                                          |
 
 No response at all means Authentication itself is down. Read the logs of `agora-authentication-rest`
-in the `a-novel-public-api-prod` project.
+in the `a-novel-public-api-prod` project. When only Studio's check fails, Studio is down or
+Authentication refuses it: read the logs of `agora-studio-web` in the `a-novel-public-prod` project.
 
 An SMTP warning with `category=timeout` in those logs means the connection never left: the
 [egress allowlist](../architecture.md#network) or NAT dropped it, and neither logs a refusal. When

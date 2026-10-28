@@ -27,8 +27,7 @@ discord = {
 # hours, but GitHub delays or skips scheduled runs for up to 15 hours. The services it feeds wait a
 # day, the longest window Sentry accepts.
 alerts = {
-  # Server spans only. Its pages wait on Authentication. The health check calls it once its root
-  # lands; until Studio serves, its telemetry-stopped monitor stays open.
+  # Server spans only. Its pages wait on Authentication; the health check is its steady source.
   "platform-studio" = { failure_rate = 0.05, p95_ms = 2000, no_data_seconds = 86400 }
   # The health check is its steady source; the liveness probe sends no span.
   "service-authentication" = { failure_rate = 0.05, p95_ms = 1000, no_data_seconds = 86400 }
