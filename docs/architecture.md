@@ -49,6 +49,7 @@ own identities, image repositories, network tags and database hosts.
   | `api.openai.com:443`                               | `agora-genai-private`, `agora-genai-sweep`                                                                                                                       |
   | Google's service ranges on 587, for the SMTP relay | `agora-authentication-api`, `agora-authentication-maintain`                                                                                                      |
   | Sentry's ingest host on 443, `sentry_ingest_host`  | `agora-authentication-api`, `agora-authentication-maintain`, `agora-json-keys-private`, `agora-json-keys-rotatekeys`, `agora-genai-private`, `agora-genai-sweep` |
+  | Bitwarden's EU API on 443, through Fastly          | none: the cluster only                                                                                                                                           |
 
   The firewall resolves a host name through the VPC's Cloud DNS and matches the addresses it
   returns, which works only when every client gets the same answer. `api.openai.com` gives everyone
@@ -109,8 +110,10 @@ own identities, image repositories, network tags and database hosts.
   projects. Their VPC reaches only the APIs it restricts, every API the two projects enable, and
   those APIs reach only resources inside it. CI's identities and the operators enter from anywhere.
   Any identity inside may call Secret Manager and Cloud Storage in management, for the secrets and
-  the backups. The perimeter runs in dry run, which logs the calls it would refuse. Organization
-  admins create its access policy and grant on it by hand.
+  the backups. Artifact Registry's VPC Service Controls setting is `ALLOW` in the region, so the
+  cluster's pull-through caches can fetch from their public registries. The perimeter runs in dry
+  run, which logs the calls it would refuse. Organization admins create its access policy and grant
+  on it by hand.
 - **An organization deny policy** keeps `infra-plan` from reading logs and traces, which its Viewer
   role would otherwise cover. Pull requests can mint that identity. Organization admins set the
   policy by hand, from [the setup runbook](runbooks/setup.md#organization-guardrails).
@@ -129,6 +132,9 @@ reaching the control plane through the DNS endpoint as the CI identities.
   IAM and the perimeter guard. Nodes use its internal endpoint.
 - **Isolation:** Dataplane V2 enforces network policies, FQDN ones included. Workload Identity gives
   each pod its own identity, never the node's.
+- **Images:** the add-ons pull quay.io and ghcr.io images through the Artifact Registry pull-through
+  caches `a-novel-quay-io` and `a-novel-ghcr-io`, which only the nodes read. The cluster root pins
+  each image by digest.
 - **Upkeep:** the `REGULAR` release channel upgrades it during weekly windows, Tuesday to Thursday
   from 01:00 to 07:00 UTC. Google collects only system logs and metrics, since Grafana takes every
   signal.

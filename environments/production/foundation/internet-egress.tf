@@ -1,7 +1,9 @@
 locals {
-  # The only internet destinations, each open to the identities of the workloads that call it. The
-  # service roots create these identities. The DNS allowlist resolves each host, and the firewall
-  # matches it by name unless the destination names address groups.
+  # The only internet destinations. On agora-production each opens to the identities of the
+  # workloads that call it, which the service roots create; a destination naming none serves the
+  # cluster alone. The cluster's nodes reach them all, and each workload's network policy narrows
+  # them. The DNS allowlist resolves each host, and the firewall matches it by name unless the
+  # destination names address groups.
   egress_allowlist = {
     openai = {
       priority = 1000
@@ -46,6 +48,15 @@ locals {
         "agora-genai-private@${var.workload_project_id}.iam.gserviceaccount.com",
         "agora-genai-sweep@${var.workload_project_id}.iam.gserviceaccount.com",
       ]
+    }
+    bitwarden = {
+      priority = 1030
+      # Both EU API names are CNAMEs to one Fastly host, whose two anycast addresses every client
+      # resolves alike. The DNS allowlist must resolve the Fastly host as well.
+      hosts            = ["api.bitwarden.eu", "identity.bitwarden.eu", "dualstack.n.sni.us-eu.fastly.net"]
+      address_groups   = []
+      port             = "443"
+      service_accounts = []
     }
   }
 }
@@ -167,7 +178,7 @@ resource "google_network_security_address_group" "google_services" {
 }
 
 resource "google_compute_network_firewall_policy_rule" "egress_allowlist" {
-  for_each = local.egress_allowlist
+  for_each = { for name, destination in local.egress_allowlist : name => destination if length(destination.service_accounts) > 0 }
 
   project         = google_project.workload.project_id
   firewall_policy = google_compute_network_firewall_policy.egress.name
