@@ -28,7 +28,7 @@ run "protects_state_and_backups" {
   command = plan
 
   assert {
-    condition = alltrue([for bucket in concat([google_storage_bucket.state], values(google_storage_bucket.pgbackrest)) :
+    condition = alltrue([for bucket in concat([google_storage_bucket.state], values(google_storage_bucket.pgbackrest), values(google_storage_bucket.barman)) :
       bucket.public_access_prevention == "enforced" && bucket.uniform_bucket_level_access && !bucket.force_destroy
     ])
     error_message = "Management buckets must be private, uniformly controlled and never force-destroyed."
@@ -43,11 +43,11 @@ run "protects_state_and_backups" {
   }
 
   assert {
-    condition = alltrue([for bucket in google_storage_bucket.pgbackrest :
+    condition = alltrue([for bucket in concat(values(google_storage_bucket.pgbackrest), values(google_storage_bucket.barman)) :
       bucket.versioning[0].enabled && tonumber(bucket.retention_policy[0].retention_period) == 604800 &&
       alltrue([for rule in bucket.lifecycle_rule : alltrue([for condition in rule.condition : condition.age == null || condition.age == 0])])
     ])
-    error_message = "Backup repositories keep a week of retention and are never pruned by age; pgBackRest owns expiry."
+    error_message = "Backup repositories keep a week of retention and are never pruned by age; pgBackRest and Barman own expiry."
   }
 
   assert {
@@ -78,6 +78,17 @@ run "protects_state_and_backups" {
       toset(keys(google_secret_manager_secret_iam_member.grafana_token)) == toset(["plan", "foundation"])
     )
     error_message = "The plan identity runs pull-request code, so it may read only the read-only Grafana token."
+  }
+}
+
+run "isolates_each_database_backup" {
+  command = plan
+
+  assert {
+    condition = alltrue([for service, grant in google_storage_bucket_iam_member.barman_writer :
+      grant.bucket == google_storage_bucket.barman[service].name && endswith(grant.member, "/subject/ns/${service}/sa/database")
+    ])
+    error_message = "Each Barman bucket must be written only by its own service's database service account."
   }
 }
 

@@ -179,6 +179,12 @@ from `…-tooling`.
 Each service has its own **database host**, sized in foundation's `database_capacity`. GenAI's rows
 hold payloads and responses of up to 24 MiB, so its host is larger.
 
+On the cluster, each service's CloudNativePG database backs up to its own Barman bucket in
+management, `<prefix>-barman-<service>`. Each bucket has the pgBackRest buckets' protections, and
+only that database's Kubernetes service account, `database` in the service's namespace, writes it
+through Workload Identity. The nodes pull each service's PostgreSQL image from its private
+repository, as its host does.
+
 | Service        | Machine         | Container           | Connections | Address          |
 | -------------- | --------------- | ------------------- | ----------- | ---------------- |
 | JSON Keys      | `e2-medium`     | 0.75 vCPU, 1536 MiB | 50          | `10.20.0.5:5432` |
