@@ -33,6 +33,7 @@ locals {
     "cloudresourcemanager.googleapis.com",
     "cloudtrace.googleapis.com",
     "compute.googleapis.com",
+    "container.googleapis.com",
     "dns.googleapis.com",
     "iam.googleapis.com",
     "iap.googleapis.com",
