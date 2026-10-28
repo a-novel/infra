@@ -151,7 +151,8 @@
       "matchFileNames": ["environments/production/cluster/**"],
       "matchPackageNames": [
         "external-secrets",
-        "ghcr.io/external-secrets/external-secrets"
+        "ghcr.io/external-secrets/external-secrets",
+        "ghcr.io/external-secrets/bitwarden-sdk-server"
       ],
       "groupName": "External Secrets"
     },

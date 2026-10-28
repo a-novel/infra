@@ -77,7 +77,6 @@ resource "helm_release" "plugin_barman_cloud" {
   depends_on = [helm_release.cert_manager, helm_release.cloudnative_pg]
 }
 
-# The Bitwarden SDK server joins once cert-manager issues its certificate.
 resource "helm_release" "external_secrets" {
   name       = "external-secrets"
   namespace  = kubernetes_namespace_v1.addon["external-secrets"].metadata[0].name
@@ -89,5 +88,11 @@ resource "helm_release" "external_secrets" {
     image          = local.images.external_secrets
     webhook        = { image = local.images.external_secrets }
     certController = { image = local.images.external_secrets }
+    bitwarden-sdk-server = {
+      enabled = true
+      image   = local.images.bitwarden_sdk_server
+    }
   })]
+
+  depends_on = [kubernetes_manifest.bitwarden_tls]
 }
