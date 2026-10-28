@@ -240,6 +240,47 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
           github_token: ${{ github.token }}
+      - id: google
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
+          token_format: access_token
+      # Admission must refuse each manifest that breaks Pod Security or an admission policy, and still
+      # admit a compliant pod, which proves the refusals come from admission and not from access.
+      # Dry runs persist nothing.
+      - name: Check admission
+        shell: bash
+        env:
+          TOKEN: ${{ steps.google.outputs.access_token }}
+          FIXTURES: environments/production/cluster/tests/admission
+        run: |
+          set -euo pipefail
+          endpoint="$(tofu -chdir=environments/production/cluster output -raw api_endpoint)"
+          status=0
+          for fixture in "$FIXTURES"/admitted/*.json "$FIXTURES"/refused/*.json; do
+            resource="$(jq -r '.kind | ascii_downcase' "$fixture")s"
+            code="$(curl -sS -o "$RUNNER_TEMP/response.json" -w '%{http_code}' -X POST \
+              -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' --data @"$fixture" \
+              "https://$endpoint/api/v1/namespaces/json-keys/$resource?dryRun=All")"
+            message="$(jq -r '.message // empty' "$RUNNER_TEMP/response.json")"
+            case "$fixture:$code" in
+              */admitted/*:201) echo "admitted $(basename "$fixture")" ;;
+              */refused/*:403 | */refused/*:422)
+                if grep -Eq 'violates PodSecurity|ValidatingAdmissionPolicy' <<<"$message"; then
+                  echo "refused $(basename "$fixture"): $message"
+                else
+                  echo "::error::$(basename "$fixture") was refused, but not by admission: $message"
+                  status=1
+                fi
+                ;;
+              *)
+                echo "::error::$(basename "$fixture") answered $code: $message"
+                status=1
+                ;;
+            esac
+          done
+          exit "$status"
 
   # Sentry's configuration needs only bootstrap's token grants, and no release waits on it.
   sentry:

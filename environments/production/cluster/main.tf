@@ -38,10 +38,16 @@ resource "kubernetes_namespace_v1" "service" {
   for_each = var.namespaces
 
   metadata {
-    name = each.key
+    name   = each.key
+    labels = local.pod_security
   }
 
   lifecycle {
     prevent_destroy = true
   }
+}
+
+output "api_endpoint" {
+  description = "The control plane's DNS endpoint, which the deploy's admission check calls."
+  value       = local.cluster.dns_endpoint
 }

@@ -80,6 +80,8 @@ jobs:
         with:
           scan-type: fs
           scan-ref: .
+          # The deploy's admission check sends these manifests because they break the rules.
+          skip-dirs: environments/production/cluster/tests/admission/refused
           scanners: vuln,misconfig,secret
           severity: HIGH,CRITICAL
           exit-code: "1"
