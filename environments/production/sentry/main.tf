@@ -56,6 +56,18 @@ resource "sentry_project_spike_protection" "service" {
   enabled      = true
 }
 
+# Sentry's health-check filter, on by default in every project, drops the health check's server
+# span, which the telemetry-stopped monitors count. The services leave their liveness probes
+# untraced themselves.
+resource "sentry_project_inbound_data_filter" "health_checks" {
+  for_each = sentry_project.service
+
+  organization = var.organization
+  project      = each.value.slug
+  filter_id    = "filtered-transaction"
+  active       = false
+}
+
 # The services read their DSN and OTLP header from this root's outputs. A DSN is not a secret:
 # Sentry documents it as safe to expose, and its public key only lets a sender submit events.
 data "sentry_key" "service" {

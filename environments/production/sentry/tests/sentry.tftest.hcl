@@ -46,6 +46,11 @@ run "watches_every_service" {
   }
 
   assert {
+    condition     = alltrue([for repository in var.projects : !sentry_project_inbound_data_filter.health_checks[repository].active])
+    error_message = "Sentry's health-check filter drops the health check's span, the steady source the no-data monitors count."
+  }
+
+  assert {
     condition     = sentry_alert.discord.action_filters[0].actions[0].discord.channel_id == var.discord.channel_id
     error_message = "The alerts must post to the Discord channel the team watches."
   }
