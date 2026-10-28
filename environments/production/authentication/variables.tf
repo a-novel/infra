@@ -26,10 +26,9 @@ variable "secret_versions" {
 variable "smtp" {
   description = "Hosted SMTP relay settings. The relay admits the production NAT address without a password."
   type = object({
-    host              = string
-    sender_email      = string
-    sender_name       = string
-    platform_auth_url = string
+    host         = string
+    sender_email = string
+    sender_name  = string
   })
 }
 

@@ -1,13 +1,14 @@
 #!/bin/sh
 
 # The health check every service shares. Smoke jobs call a gRPC service's Status RPC from inside the
-# VPC, and the deploy and drift workflows read Authentication's HTTP health endpoint. The token never
-# reaches the command line or the logs.
+# VPC, and the deploy and drift workflows read the HTTP health endpoints of Authentication and Studio.
+# The token never reaches the command line or the logs.
 #
 #   SERVICE_URL     the service's URL.
 #   PROTOCOL        grpc, which calls STATUS_RPC, or http, which reads HEALTH_PATH and needs every
-#                   dependency it lists up. http needs curl and jq.
+#                   status it reports up, nested ones included. http needs curl and jq.
 #   IDENTITY_TOKEN  an ID token the service admits; by default the metadata server issues one.
+#   PUBLIC          true for an http endpoint anyone may read, which then receives no token.
 #   DOWNTIME_START  the planned downtime's start, from which the check is skipped.
 set +x
 set -eu
@@ -22,10 +23,12 @@ skip_if_started() {
 }
 skip_if_started
 
-if [ -z "${IDENTITY_TOKEN:-}" ]; then
+if [ "${PUBLIC:-}" = true ]; then
+    IDENTITY_TOKEN=
+elif [ -z "${IDENTITY_TOKEN:-}" ]; then
     IDENTITY_TOKEN="$(wget -q -T 10 -O - --header='Metadata-Flavor: Google' "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity?audience=${SERVICE_URL:?}")"
+    test -n "${IDENTITY_TOKEN}"
 fi
-test -n "${IDENTITY_TOKEN}"
 export IDENTITY_TOKEN
 answer="${TMPDIR:-/tmp}/health-answer"
 : >"${answer}"
@@ -39,9 +42,11 @@ check() {
         grpcurl -connect-timeout 10 -max-time 15 -max-msg-sz 4096 -expand-headers -H 'Authorization: Bearer ${IDENTITY_TOKEN}' -d '{}' "${SERVICE_URL#https://}:443" "${STATUS_RPC:?}" >/dev/null 2>&1
         ;;
     http)
-        printf 'header = "Authorization: Bearer %s"\n' "${IDENTITY_TOKEN}" |
+        if [ -n "${IDENTITY_TOKEN}" ]; then
+            printf 'header = "Authorization: Bearer %s"\n' "${IDENTITY_TOKEN}"
+        fi |
             curl -sS --fail-with-body --max-time 15 -K - -o "${answer}" "${SERVICE_URL}${HEALTH_PATH:?}" &&
-            jq -e 'length > 0 and all(.[]; .status == "up")' "${answer}" >/dev/null
+            jq -e '[.. | objects | select(has("status")).status] | length > 0 and all(. == "up")' "${answer}" >/dev/null
         ;;
     *)
         printf 'PROTOCOL must be grpc or http, not %s.\n' "${PROTOCOL}" >&2

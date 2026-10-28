@@ -1,10 +1,10 @@
 name: Production health
 description: >
-  Fails unless Authentication reports PostgreSQL, SMTP and JSON Keys up, through the health check
-  every service shares (modules/smoke-check/smoke.sh). The caller must check out this
-  repository, already hold Google credentials that can read the Cloud Run service, and set DOWNTIME
-  to the planned downtime. Once it starts, the listed services refuse work until it is cleared, and
-  the check is skipped.
+  Fails unless Authentication reports PostgreSQL, SMTP and JSON Keys up, and Studio reports
+  Authentication up, through the health check every service shares (modules/smoke-check/smoke.sh).
+  The caller must check out this repository, already hold Google credentials that can read both
+  Cloud Run services, and set DOWNTIME to the planned downtime. Once it starts, the listed services
+  refuse work until it is cleared, and the check is skipped.
 
 inputs:
   id_token:
@@ -34,4 +34,18 @@ runs:
         url="$(lookup || { sleep 15; lookup; })"
         DOWNTIME_START="$(jq -r '.start // empty' <<<"${DOWNTIME:-}")" PROTOCOL=http SERVICE_URL="$url" \
           HEALTH_PATH=/v2/healthcheck IDENTITY_TOKEN="$ID_TOKEN" TMPDIR="$RUNNER_TEMP" \
+          sh "$GITHUB_WORKSPACE/modules/smoke-check/smoke.sh"
+    - name: Check Studio and Authentication through it
+      shell: bash
+      run: |
+        set -euo pipefail
+        lookup() {
+          gcloud run services describe agora-studio-web \
+            --project=a-novel-public-prod --region=europe-west1 --format='value(status.url)'
+        }
+        # gcloud re-fetches the GitHub OIDC token here, and that request can time out.
+        url="$(lookup || { sleep 15; lookup; })"
+        # Studio serves visitors without IAM, so it receives no token.
+        DOWNTIME_START="$(jq -r '.start // empty' <<<"${DOWNTIME:-}")" PROTOCOL=http SERVICE_URL="$url" \
+          HEALTH_PATH=/healthcheck PUBLIC=true TMPDIR="$RUNNER_TEMP" \
           sh "$GITHUB_WORKSPACE/modules/smoke-check/smoke.sh"

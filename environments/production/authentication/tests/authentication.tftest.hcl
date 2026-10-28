@@ -49,6 +49,7 @@ override_data {
   values = {
     outputs = {
       service_account = "agora-studio-public@a-novel-public-prod.iam.gserviceaccount.com"
+      url             = "https://agora-studio-web-test-ew.a.run.app"
     }
   }
 }
@@ -143,6 +144,15 @@ run "splits_private_migrations_from_the_public_api" {
       budget >= 60 && budget < tonumber(trimsuffix(google_cloud_run_v2_job.maintenance.template[0].template[0].timeout, "s"))
     ])
     error_message = "The maintenance job's mail must outlast Cloud NAT's warm-up on a fresh instance, a minute at least, and end inside the task timeout."
+  }
+
+  assert {
+    condition = alltrue([for container in [
+      google_cloud_run_v2_service.rest.template[0].containers[0],
+      google_cloud_run_v2_job.maintenance.template[0].template[0].containers[0],
+      ] : { for env in container.env : env.name => env.value }["PLATFORM_AUTH_URL"] == "https://agora-studio-web-test-ew.a.run.app"
+    ])
+    error_message = "Every workload that sends mail links to the URL Studio serves on."
   }
 
   assert {

@@ -88,7 +88,7 @@ No service-account key exists anywhere. The trust conditions live in
 | `infra-plan`       | pull-request plans, the drift check                                                                   | read everything a plan needs                        |
 | `infra-foundation` | `deploy.yaml`, `roll-database.yaml` and `recovery.yaml`, on `master`, in the `production` environment | change everything                                   |
 | `infra-downtime`   | `downtime.yaml`, on `master`                                                                          | start and cancel the planned downtime announcements |
-| `infra-health`     | the scheduled health check in `drift.yaml`, on `master`                                               | call Authentication's REST API                      |
+| `infra-health`     | the scheduled health check in `drift.yaml`, on `master`                                               | call Authentication's REST API, find Studio's URL   |
 
 GitHub issues no OIDC token to pull requests from forks, so outside contributors get no cloud
 access.

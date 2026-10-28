@@ -23,9 +23,9 @@ locals {
     POSTGRES_TLS_ENABLED = "false"
   }
   # Registration and account emails, sent by the REST API and the maintenance job. The relay admits
-  # them by the production NAT address, so they carry no SMTP credential.
+  # them by the production NAT address, so they carry no SMTP credential. Their links open Studio.
   mail_env = {
-    PLATFORM_AUTH_URL   = var.smtp.platform_auth_url
+    PLATFORM_AUTH_URL   = data.terraform_remote_state.studio.outputs.url
     SMTP_ADDR           = "${var.smtp.host}:587"
     SMTP_MAX_CONCURRENT = "8"
     SMTP_SENDER_EMAIL   = var.smtp.sender_email

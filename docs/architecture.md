@@ -209,7 +209,7 @@ version their root's `terraform.tfvars` pins.
 | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `infra-plan`, `infra-foundation` (management)                                                                | CI: read-only plans and checks, and deployments.                                                                                                                                                                                                                        |
 | `infra-downtime` (management)                                                                                | CI: starts and cancels the planned downtime announcements.                                                                                                                                                                                                              |
-| `infra-health` (management)                                                                                  | CI: the scheduled health check, which calls Authentication's REST API.                                                                                                                                                                                                  |
+| `infra-health` (management)                                                                                  | CI: the scheduled health check, which calls Authentication's REST API and Studio.                                                                                                                                                                                       |
 | `agora-json-keys-private`, `agora-authentication-private`, `agora-authentication-api`, `agora-genai-private` | Cloud Run runtimes, one per service and zone: the gRPC servers, Authentication's migrations and REST API.                                                                                                                                                               |
 | `agora-<service>-<role>`: `migrations`, `rotatekeys`, `sweep`, `smoke`, `maintain`                           | All the services' other workloads, each with its own account, which reads only the secrets that this workload mounts. The smoke identities may only invoke their gRPC service. Authentication's refresh token purge runs as `maintain`, with the same image and secret. |
 | `agora-json-keys-database`, `agora-auth-database`, `agora-genai-database`                                    | Database hosts.                                                                                                                                                                                                                                                         |
@@ -234,8 +234,9 @@ All state lives in `a-novel-management-prod-232403541574-tofu-state`, one object
   Authentication's 5xx rate, GenAI's sweep failures, failed jobs and key rotation, database
   capacity, backups, and the [monthly budget](costs.md). [Alerts](runbooks/alerts.md) gives each
   threshold and what to do.
-- **Health checks** call Authentication's `/v2/healthcheck` after each deploy and from `drift.yaml`,
-  as [Authentication health](runbooks/alerts.md#authentication-health) details.
+- **Health checks** call Authentication's `/v2/healthcheck` and Studio's `/healthcheck` after each
+  deploy and from `drift.yaml`, as [Authentication health](runbooks/alerts.md#authentication-health)
+  details.
 - **Logs** are kept 30 days. Successful health-check requests to Authentication and successful
   database health probes are not logged.
 - **Traces and logs** leave the services over OTLP/HTTP to each service's Sentry project, on the
