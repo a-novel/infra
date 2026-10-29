@@ -6,10 +6,10 @@ def weakened:
   (.before.deletion_protection == true and .after.deletion_protection != true)
   or (.before.force_destroy == false and .after.force_destroy == true)
   or ((.before.deletion_policy // "DELETE") != "DELETE" and .after.deletion_policy == "DELETE");
-# Instance templates are immutable configuration and terraform_data holds only a run token, so
-# replacing either deletes nothing that holds data.
+# Instance templates are immutable configuration, terraform_data holds only a run token, and a
+# finished Job only records its run, so replacing any of them deletes nothing that holds data.
 def harmless_replacement:
-  (.type == "google_compute_instance_template" or .type == "terraform_data") and (.change.actions | index("create"));
+  (.type == "google_compute_instance_template" or .type == "terraform_data" or .type == "kubernetes_job_v1") and (.change.actions | index("create"));
 # A database host restarts onto a new template or group configuration once rolled out. Creating a
 # new host restarts nothing.
 def database_host_change:

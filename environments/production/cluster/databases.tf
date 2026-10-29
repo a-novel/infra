@@ -13,6 +13,8 @@ locals {
   management_project = "a-novel-management-prod"
   # Each database's pods carry CloudNativePG's label for their Cluster, which is named `database`.
   database_pods = { "cnpg.io/cluster" = "database" }
+  # The service's own workloads and jobs that connect to its database carry this label.
+  database_clients = { "a-novel.io/database" = "client" }
 }
 
 # CloudNativePG reads PostgreSQL's major version from an image's tag, and ours carry the service's
@@ -89,6 +91,19 @@ resource "kubernetes_network_policy_v1" "database" {
       }
     }
 
+    ingress {
+      from {
+        pod_selector {
+          match_labels = local.database_clients
+        }
+      }
+
+      ports {
+        port     = "5432"
+        protocol = "TCP"
+      }
+    }
+
     egress {
       to {
         pod_selector {
@@ -149,6 +164,36 @@ import {
 
   to = kubernetes_manifest.database[each.value]
   id = "apiVersion=postgresql.cnpg.io/v1,kind=Cluster,namespace=${each.value},name=database"
+}
+
+# The service's clients reach its database, and nothing else through this policy.
+resource "kubernetes_network_policy_v1" "database_clients" {
+  for_each = var.databases
+
+  metadata {
+    name      = "database-clients"
+    namespace = kubernetes_namespace_v1.service[each.key].metadata[0].name
+  }
+
+  spec {
+    pod_selector {
+      match_labels = local.database_clients
+    }
+    policy_types = ["Egress"]
+
+    egress {
+      to {
+        pod_selector {
+          match_labels = local.database_pods
+        }
+      }
+
+      ports {
+        port     = "5432"
+        protocol = "TCP"
+      }
+    }
+  }
 }
 
 # The deploy waits until both instances serve and WAL reaches Barman, which proves the image runs
