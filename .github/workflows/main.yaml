@@ -461,6 +461,11 @@ jobs:
             done
             echo "::endgroup::"
           done
+          echo "::group::cluster DNS"
+          get "/api/v1/namespaces/kube-system/services/kube-dns" | jq -c '{clusterIP: .spec.clusterIP, selector: .spec.selector, ports: [.spec.ports[] | {port, targetPort, protocol}]}'
+          get "/api/v1/namespaces/kube-system/pods" | jq -r '.items[] | "\(.metadata.name) \(.metadata.labels | tostring)"' | grep -iE 'dns' || echo "no dns pods"
+          get "/api/v1/namespaces/kube-system/configmaps" | jq -r '.items[].metadata.name' | grep -iE 'dns' || true
+          echo "::endgroup::"
           echo "::group::plugin errors"
           for pod in $(get "/api/v1/namespaces/cnpg-system/pods" | jq -r '.items[].metadata.name'); do
             echo "--- $pod"
