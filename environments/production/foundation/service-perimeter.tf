@@ -22,6 +22,7 @@ locals {
     restricted_services = [
       "artifactregistry.googleapis.com",
       "autoscaling.googleapis.com",
+      "certificatemanager.googleapis.com",
       "cloudbuild.googleapis.com",
       "cloudquotas.googleapis.com",
       "cloudresourcemanager.googleapis.com",

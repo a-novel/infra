@@ -42,6 +42,11 @@ resource "google_container_cluster" "production" {
     workload_pool = "${google_project.workload.project_id}.svc.id.goog"
   }
 
+  # The cluster root's Gateway serves Studio through Google's global load balancer.
+  gateway_api_config {
+    channel = "CHANNEL_STANDARD"
+  }
+
   release_channel {
     channel = "REGULAR"
   }

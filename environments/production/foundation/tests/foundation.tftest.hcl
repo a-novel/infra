@@ -388,3 +388,27 @@ run "caps_cloud_run_in_every_project" {
     error_message = "Every project that runs Cloud Run services needs a CPU and a memory ceiling."
   }
 }
+
+run "serves_studio_on_its_host" {
+  command = plan
+
+  assert {
+    condition = (
+      one(google_container_cluster.production.gateway_api_config).channel == "CHANNEL_STANDARD" &&
+      google_compute_ssl_policy.studio.profile == "MODERN" &&
+      google_compute_ssl_policy.studio.min_tls_version == "TLS_1_2"
+    )
+    error_message = "The cluster must run the Gateway API, and Studio's edge must refuse TLS below 1.2."
+  }
+
+  assert {
+    condition = (
+      one(google_certificate_manager_certificate.studio.managed).domains == tolist([output.studio_edge.host]) &&
+      length(one(google_certificate_manager_certificate.studio.managed).dns_authorizations) == 1 &&
+      google_certificate_manager_dns_authorization.studio.domain == output.studio_edge.host &&
+      google_certificate_manager_certificate_map_entry.studio.hostname == output.studio_edge.host &&
+      google_certificate_manager_certificate_map_entry.studio.map == output.studio_edge.certificate_map
+    )
+    error_message = "Studio's certificate must cover only its host, authorized by DNS, and its map must serve it for that host."
+  }
+}
