@@ -30,6 +30,7 @@ locals {
   foundation_project_roles = toset([
     "roles/artifactregistry.admin",
     "roles/billing.projectManager",
+    "roles/certificatemanager.editor",
     "roles/cloudquotas.admin",
     "roles/compute.instanceAdmin.v1",
     "roles/container.admin",
