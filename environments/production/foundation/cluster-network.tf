@@ -38,6 +38,10 @@ resource "google_compute_subnetwork" "cluster" {
     range_name    = "services"
     ip_cidr_range = var.cluster_ranges.services
   }
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # Like agora-production, the network starts without Google's default routes.
@@ -70,8 +74,10 @@ resource "google_compute_address" "cluster_nat" {
   region  = var.cluster_region
   name    = "a-novel-production-nat"
 
-  # Unlocked while the cluster moves to Paris, and locked again once it runs.
-  deletion_policy = "DELETE"
+  deletion_policy = "PREVENT"
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "google_compute_router" "cluster_nat" {

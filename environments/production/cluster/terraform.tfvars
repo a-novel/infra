@@ -1,5 +1,8 @@
-# Off while the cluster moves to Paris (a-novel/.github#522): the new cluster gets its add-ons first.
-custom_resources = false
+custom_resources = true
+
+# Each new database lineage archives under a new name: Barman refuses an archive another database's
+# WAL already fills, and the buckets' retention keeps that WAL a week.
+backup_server_name = "database-paris"
 
 namespaces = [
   "authentication",

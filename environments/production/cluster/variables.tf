@@ -8,6 +8,16 @@ variable "addon_images" {
   }
 }
 
+variable "backup_server_name" {
+  description = "The name each database archives under in its Barman bucket, unique to its lineage."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[a-z][a-z0-9-]{0,62}$", var.backup_server_name))
+    error_message = "The backup server name must be a lowercase DNS label."
+  }
+}
+
 variable "custom_resources" {
   description = "Whether to manage the resources whose kinds the add-ons define, and the Bitwarden SDK server, which mounts one's certificate. A fresh cluster lacks those kinds until the add-ons install, so a rebuild turns this off before the cluster is replaced and on once they run."
   type        = bool
