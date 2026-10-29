@@ -80,6 +80,22 @@ resource "google_project_iam_custom_role" "barman_writer" {
   depends_on = [google_project_service.management["iam.googleapis.com"]]
 }
 
+# A recovery drill's database reads its source's backups and WAL, and can change nothing.
+resource "google_project_iam_custom_role" "barman_reader" {
+  project     = var.management_project_id
+  role_id     = "barmanReader"
+  title       = "Barman Cloud reader"
+  description = "Read one database's Barman backups and WAL, for a recovery drill."
+  stage       = "GA"
+  permissions = ["storage.buckets.get", "storage.objects.get", "storage.objects.list"]
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [google_project_service.management["iam.googleapis.com"]]
+}
+
 resource "google_storage_bucket_iam_member" "barman_writer" {
   for_each = local.barman_writers
 
@@ -93,4 +109,9 @@ output "barman_buckets" {
   value       = { for service, bucket in google_storage_bucket.barman : service => bucket.name }
 
   depends_on = [google_storage_bucket_iam_member.barman_writer]
+}
+
+output "barman_reader_role" {
+  description = "The role a recovery drill grants its database on the Barman bucket it restores from."
+  value       = google_project_iam_custom_role.barman_reader.name
 }
