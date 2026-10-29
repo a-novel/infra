@@ -2,7 +2,10 @@ custom_resources = true
 
 # Each new database lineage archives under a new name: Barman refuses an archive another database's
 # WAL already fills, and the buckets' retention keeps that WAL a week.
-backup_server_name = "database-paris"
+backup_server_name = "database-paris-2"
+
+# a-novel/infra#1231's deploy timed out reading GenAI's database. Empty once applied.
+adopted_databases = ["genai"]
 
 namespaces = [
   "authentication",

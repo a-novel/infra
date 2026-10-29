@@ -144,6 +144,13 @@ resource "kubernetes_network_policy_v1" "database" {
   }
 }
 
+import {
+  for_each = var.adopted_databases
+
+  to = kubernetes_manifest.database[each.value]
+  id = "apiVersion=postgresql.cnpg.io/v1,kind=Cluster,namespace=${each.value},name=database"
+}
+
 # The deploy waits until both instances serve and WAL reaches Barman, which proves the image runs
 # under CloudNativePG (a-novel/infra#1194). Updates switch the replica over instead of restarting
 # the primary. CloudNativePG generates the credentials, in the `database-app` Secret.
