@@ -445,6 +445,12 @@ jobs:
           get() { curl -sS -H "Authorization: Bearer $TOKEN" "https://$endpoint$1"; }
           get /apis/postgresql.cnpg.io/v1/clusters | jq -r '.items[] | "\(.metadata.namespace): phase=\(.status.phase) ready=\(.status.readyInstances)/\(.status.instances) lastSuccessfulBackup=\(.status.lastSuccessfulBackup) firstRecoverabilityPoint=\(.status.firstRecoverabilityPoint) conditions=\([.status.conditions[]? | "\(.type)=\(.status)"] | join(","))"'
           get /apis/postgresql.cnpg.io/v1/backups | jq -r '.items[] | "\(.metadata.namespace)/\(.metadata.name): phase=\(.status.phase) method=\(.spec.method) started=\(.status.startedAt) stopped=\(.status.stoppedAt) error=\(.status.error // "")"'
+          for ns in json-keys authentication genai; do
+            for pod in database-1 database-2; do
+              echo "--- $ns/$pod/plugin-barman-cloud"
+              get "/api/v1/namespaces/$ns/pods/$pod/log?container=plugin-barman-cloud&sinceSeconds=7200" | grep -iE 'backup' | grep -iE 'error|fail|exception|denied|refus|retention|forbidden|403' | cut -c1-900 | tail -8
+            done
+          done
 
   plan-sentry:
     if: github.event_name == 'pull_request'
