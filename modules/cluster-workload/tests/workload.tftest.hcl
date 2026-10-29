@@ -17,13 +17,14 @@ run "runs_unprivileged" {
     condition = (
       !kubernetes_service_account_v1.workload.automount_service_account_token &&
       !one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).automount_service_account_token &&
+      !one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).enable_service_links &&
       one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).security_context).run_as_non_root &&
       one(one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).security_context).run_as_non_root &&
       one(one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).security_context).read_only_root_filesystem &&
       !one(one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).security_context).allow_privilege_escalation &&
       one(one(one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).security_context).capabilities).drop == tolist(["ALL"])
     )
-    error_message = "A workload must run unprivileged, on a read-only filesystem, without a Kubernetes token."
+    error_message = "A workload must run unprivileged, on a read-only filesystem, without a Kubernetes token or Service link variables."
   }
 
   assert {

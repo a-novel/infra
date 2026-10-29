@@ -209,6 +209,7 @@ run "runs_each_release_from_its_private_repository" {
         endswith(job.metadata[0].name, substr(trimprefix(local.release_images["${service}/migrations"].digest, "sha256:"), 0, 12)) &&
         job.wait_for_completion &&
         job.spec[0].backoff_limit == 0 &&
+        !job.spec[0].template[0].spec[0].enable_service_links &&
         one(one(job.spec[0].template[0].spec[0].container).security_context).run_as_non_root
       ])
     )

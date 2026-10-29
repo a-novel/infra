@@ -39,6 +39,9 @@ resource "kubernetes_deployment_v1" "workload" {
       spec {
         service_account_name            = kubernetes_service_account_v1.workload.metadata[0].name
         automount_service_account_token = false
+        # Each Service in the namespace would otherwise inject <NAME>_PORT and the like, which our
+        # services read as configuration: the grpc Service's GRPC_PORT crashed GenAI's sweep.
+        enable_service_links = false
 
         # Our images start as root, so the pods name an unprivileged user, as Pod Security's
         # restricted level requires.
