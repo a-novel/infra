@@ -426,6 +426,32 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
           github_token: ${{ github.token }}
+      # Temporary, never merged: reads whether the secrets synced.
+      - id: google
+        if: always()
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
+          token_format: access_token
+      - name: Read the secret sync
+        if: always()
+        shell: bash
+        env:
+          TOKEN: ${{ steps.google.outputs.access_token }}
+        run: |
+          set -uo pipefail
+          endpoint="$(tofu -chdir=environments/production/cluster output -raw api_endpoint)"
+          get() { curl -sS -H "Authorization: Bearer $TOKEN" "https://$endpoint$1"; }
+          for kind in secretstores externalsecrets; do
+            get "/apis/external-secrets.io/v1/$kind" | jq -r '.items[] | "\(.kind) \(.metadata.namespace)/\(.metadata.name): \([.status.conditions[]? | "\(.type)=\(.status) \(.reason // ""): \(.message // "")"] | join("; "))"'
+          done
+          for ns in genai json-keys; do
+            echo "$ns secrets Secret keys: $(get "/api/v1/namespaces/$ns/secrets/secrets" | jq -r '(.data // {} | keys | join(",")) // .message')"
+          done
+          get "/api/v1/namespaces/external-secrets/pods" | jq -r '.items[].metadata.name' | grep -v sdk | head -3 | while read -r pod; do
+            echo "--- $pod"; get "/api/v1/namespaces/external-secrets/pods/$pod/log?tailLines=200" | grep -iE 'error|denied|fail' | tail -5 | cut -c1-400
+          done
 
   plan-sentry:
     if: github.event_name == 'pull_request'
