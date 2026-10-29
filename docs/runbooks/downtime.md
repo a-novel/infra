@@ -27,8 +27,9 @@ read it:
 - **the platform.** It reads the whole downtime from
   `https://raw.githubusercontent.com/a-novel/infra/downtime/downtime.json`, which holds `null` when
   none is planned. The `downtime` branch holds only that file, replaced on every run;
-- **deploys, plans and drift checks.** A database host change merges only while a downtime listing
-  that service has started, and the deploy rolls the host only then.
+- **deploys, plans and drift checks.** A database host change or a PostgreSQL major upgrade merges
+  only while a downtime listing that service has started, and the deploy rolls the host or applies
+  the upgrade only then. GKE holds every cluster upgrade from `start` to `end`.
 
 Users also read the downtime in the public `a-novel-planned-downtime` Discord channel. Each
 `downtime.yaml` run hands the `downtime-announcements` Cloud Workflow, in the management project,

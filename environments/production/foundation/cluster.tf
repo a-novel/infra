@@ -48,11 +48,23 @@ resource "google_container_cluster" "production" {
 
   # Upgrades start only early on Tuesday, Wednesday and Thursday mornings, UTC: 18 hours a week,
   # above GKE's minimum of 48 hours in 32 days.
+  # CloudNativePG switches a database over before its primary's node drains. A planned downtime holds
+  # every upgrade, so none drains a node under a major upgrade's pg_upgrade.
   maintenance_policy {
     recurring_window {
       start_time = "2026-11-03T01:00:00Z"
       end_time   = "2026-11-03T07:00:00Z"
       recurrence = "FREQ=WEEKLY;BYDAY=TU,WE,TH"
+    }
+
+    dynamic "maintenance_exclusion" {
+      for_each = var.downtime == "" ? [] : [jsondecode(var.downtime)]
+
+      content {
+        exclusion_name = "planned-downtime"
+        start_time     = maintenance_exclusion.value.start
+        end_time       = maintenance_exclusion.value.end
+      }
     }
   }
 

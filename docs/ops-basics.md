@@ -41,7 +41,7 @@ will change. Merging it deploys it, and nobody applies by hand.
 ```text
 pull request ──► checks: validate, lint, test, scan, one plan per root
                   │  plan deletes or unprotects something? ─► needs allow-resource-deletion
-                  │  plan changes a database host?         ─► needs allow-downtime, during a planned downtime
+                  │  plan stops a database?                ─► needs allow-downtime, during a planned downtime
                   ▼
              approval ──► merge queue ──► master
                                             ▼
@@ -54,8 +54,8 @@ deploy:  bootstrap ─► foundation ─► one job per service ─┬─► rol
 2. **The policy.** Two kinds of plan fail until a maintainer adds a label:
    - a plan that deletes, replaces or forgets a resource, or weakens its protection, needs
      `allow-resource-deletion`;
-   - a plan that changes a database host needs `allow-downtime`, and a planned downtime of that
-     service in progress.
+   - a plan that changes a database host or a PostgreSQL major needs `allow-downtime`, and a planned
+     downtime of that service in progress.
 
    A label approves the commit it was added on. A push removes it, so each new commit's plans get
    their own review.

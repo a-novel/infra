@@ -225,6 +225,22 @@ run "fences_the_cluster_network" {
   }
 }
 
+run "holds_cluster_upgrades_during_a_planned_downtime" {
+  command = plan
+
+  variables {
+    downtime = "{\"components\":[\"service-json-keys.database\"],\"start\":\"2026-11-10T22:00:00Z\",\"end\":\"2026-11-11T00:00:00Z\"}"
+  }
+
+  assert {
+    condition = (
+      one(one(google_container_cluster.production.maintenance_policy).maintenance_exclusion).start_time == "2026-11-10T22:00:00Z" &&
+      one(one(google_container_cluster.production.maintenance_policy).maintenance_exclusion).end_time == "2026-11-11T00:00:00Z"
+    )
+    error_message = "A planned downtime must hold every cluster upgrade from its start to its end."
+  }
+}
+
 run "keeps_the_cluster_private" {
   command = plan
 
