@@ -426,6 +426,36 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
           github_token: ${{ github.token }}
+      # Temporary, never merged: reads why GenAI's sweep crashes and how the base backups end.
+      - id: google
+        if: always()
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
+          token_format: access_token
+      - name: Read the sweep and the backups
+        if: always()
+        shell: bash
+        env:
+          TOKEN: ${{ steps.google.outputs.access_token }}
+        run: |
+          set -uo pipefail
+          endpoint="$(tofu -chdir=environments/production/cluster output -raw api_endpoint)"
+          get() { curl -sS -H "Authorization: Bearer $TOKEN" "https://$endpoint$1"; }
+          get "/api/v1/namespaces/genai/pods" | jq -c '.items[] | {name: .metadata.name, phase: .status.phase, containers: [.status.containerStatuses[]? | {name, ready, restarts: .restartCount, state, lastState}]}' | cut -c1-900
+          for pod in $(get "/api/v1/namespaces/genai/pods" | jq -r '.items[].metadata.name | select(startswith("sweep"))'); do
+            echo "--- $pod previous"; get "/api/v1/namespaces/genai/pods/$pod/log?previous=true&tailLines=40" | tail -40 | cut -c1-600
+            echo "--- $pod current"; get "/api/v1/namespaces/genai/pods/$pod/log?tailLines=20" | tail -20 | cut -c1-600
+          done
+          for namespace in authentication genai json-keys; do
+            echo "=== $namespace"
+            get "/apis/postgresql.cnpg.io/v1/namespaces/$namespace/clusters/database" | jq -c '.status | {lastSuccessfulBackup, lastFailedBackup, firstRecoverabilityPoint}'
+            get "/apis/postgresql.cnpg.io/v1/namespaces/$namespace/backups" | jq -c '.items[] | {name: .metadata.name, created: .metadata.creationTimestamp, phase: .status.phase, started: .status.startedAt, stopped: .status.stoppedAt, error: .status.error}' | cut -c1-700
+          done
+          for pod in $(get "/api/v1/namespaces/genai/pods" | jq -r '.items[].metadata.name | select(startswith("database-"))'); do
+            echo "--- $pod plugin"; get "/api/v1/namespaces/genai/pods/$pod/log?container=plugin-barman-cloud&tailLines=400" | grep -iE 'backup|error|denied|403|exit' | tail -25 | cut -c1-600
+          done
 
   plan-sentry:
     if: github.event_name == 'pull_request'
