@@ -1,6 +1,6 @@
 locals {
   # Each secret at the version its service's root pins for Cloud Run today.
-  secret_versions = { for service in keys(var.secrets) : service => provider::terraform::decode_tfvars(file("${path.module}/../${service}/terraform.tfvars")).secret_versions }
+  secret_versions = { for service in keys(var.secrets) : service => local.service_inputs[service].secret_versions }
   secret_grants = { for grant in flatten([for service, env in var.secrets : [for name in distinct(values(env)) : { service = service, name = name }]]) :
     "${grant.service}/${grant.name}" => grant
   }

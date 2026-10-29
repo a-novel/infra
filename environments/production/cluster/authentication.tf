@@ -1,0 +1,135 @@
+# Authentication on the cluster, which serves no one until the cutover (a-novel/.github#522). It runs
+# one pod, which holds the in-memory rate limits.
+
+# The Studio root names the URL that serves the pages the account emails link to.
+data "terraform_remote_state" "studio" {
+  backend = "gcs"
+  config = {
+    bucket = "a-novel-management-prod-232403541574-tofu-state"
+    prefix = "studio"
+  }
+}
+
+locals {
+  authentication_smtp = local.service_inputs["authentication"].smtp
+  authentication_env = merge(local.database_env["authentication"], local.downtime_env["authentication"], {
+    # One 64 MiB Argon2 hash at a time: more slots add memory, not throughput.
+    ARGON2_MAX_CONCURRENT = "1"
+    # The Go runtime does not read the container's memory limit; this lets it reclaim one hash's
+    # 64 MiB before the next one doubles the heap.
+    GOMEMLIMIT = "384MiB"
+    # Alloy carries the telemetry once it runs (a-novel/infra#1206).
+    OTEL                    = "false"
+    POSTGRES_MAX_OPEN_CONNS = "10"
+    POSTGRES_MAX_IDLE_CONNS = "5"
+    # Only Studio calls the API for its visitors, so it can trust the visitor IP Studio forwards.
+    REST_CLIENT_IP_HEADER  = "X-Client-IP"
+    REST_PORT              = "8080"
+    SERVICE_JSON_KEYS_HOST = "grpc.json-keys.svc"
+    SERVICE_JSON_KEYS_PORT = local.json_keys_env.GRPC_PORT
+    SERVICE_TOKEN_ISSUER   = local.service_token_issuer
+    SERVICE_TOKEN_AUDIENCE = "authentication"
+    SERVICE_TOKEN_CALLERS  = "system:serviceaccount:studio:web,system:serviceaccount:authentication:smoke"
+    # Registration and account emails, whose links open Studio. The relay admits them by the NAT
+    # address, so they carry no SMTP credential. RFC 5321 gives each SMTP command minutes, and no
+    # request waits for a send.
+    PLATFORM_AUTH_URL   = data.terraform_remote_state.studio.outputs.url
+    SMTP_ADDR           = "${local.authentication_smtp.host}:587"
+    SMTP_MAX_CONCURRENT = "8"
+    SMTP_SENDER_EMAIL   = local.authentication_smtp.sender_email
+    SMTP_SENDER_NAME    = local.authentication_smtp.sender_name
+    SMTP_TIMEOUT        = "300s"
+  })
+}
+
+module "authentication_rest" {
+  source = "../../../modules/cluster-workload"
+  count  = var.custom_resources ? 1 : 0
+
+  name             = "rest"
+  namespace        = kubernetes_namespace_v1.service["authentication"].metadata[0].name
+  image            = local.release_image["authentication/rest"]
+  port             = 8080
+  http_health_path = "/v2/ping"
+  env              = local.authentication_env
+  secret_env       = local.database_secret_env
+  service_tokens   = { (local.json_keys_env.SERVICE_TOKEN_AUDIENCE) = "SERVICE_TOKEN_PATH" }
+  ca_secret        = kubernetes_manifest.database_server_certificate["authentication"].manifest.spec.secretName
+  # Argon2 bursts above the request: the pod has no CPU limit.
+  resources = { cpu = "250m", memory = "512Mi" }
+  replicas  = { min = 1, max = 1 }
+  labels    = local.database_clients
+
+  depends_on = [kubernetes_job_v1.migrations]
+}
+
+# Studio and Authentication's smoke check call the API. The API calls JSON Keys, and reaches the
+# issuer's keys through Google's restricted API addresses. Its mail waits for the relay's egress
+# (a-novel/infra#1200).
+resource "kubernetes_network_policy_v1" "authentication_rest" {
+  metadata {
+    name      = "rest"
+    namespace = kubernetes_namespace_v1.service["authentication"].metadata[0].name
+  }
+
+  spec {
+    pod_selector {
+      match_labels = { "app.kubernetes.io/name" = "rest" }
+    }
+    policy_types = ["Ingress", "Egress"]
+
+    ingress {
+      from {
+        namespace_selector {
+          match_labels = { "kubernetes.io/metadata.name" = "studio" }
+        }
+        pod_selector {
+          match_labels = { "app.kubernetes.io/name" = "web" }
+        }
+      }
+      from {
+        pod_selector {
+          match_labels = { "app.kubernetes.io/name" = "smoke" }
+        }
+      }
+
+      ports {
+        port     = "8080"
+        protocol = "TCP"
+      }
+    }
+
+    egress {
+      to {
+        namespace_selector {
+          match_labels = { "kubernetes.io/metadata.name" = "json-keys" }
+        }
+        pod_selector {
+          match_labels = { "app.kubernetes.io/name" = "grpc" }
+        }
+      }
+
+      ports {
+        port     = "8080"
+        protocol = "TCP"
+      }
+    }
+
+    egress {
+      dynamic "to" {
+        for_each = local.cluster.google_api_ranges
+
+        content {
+          ip_block {
+            cidr = to.value
+          }
+        }
+      }
+
+      ports {
+        port     = "443"
+        protocol = "TCP"
+      }
+    }
+  }
+}

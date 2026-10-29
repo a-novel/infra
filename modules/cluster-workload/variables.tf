@@ -24,8 +24,14 @@ variable "image" {
 }
 
 variable "port" {
-  description = "The port the workload serves gRPC on, with the standard health service its probes call."
+  description = "The port the workload serves on."
   type        = number
+}
+
+variable "http_health_path" {
+  description = "When set, the workload serves HTTP, and its probes GET this path. Otherwise it serves gRPC, and its probes call the standard health service."
+  type        = string
+  default     = null
 }
 
 variable "env" {
@@ -41,6 +47,12 @@ variable "secret_env" {
     key    = string
   }))
   default = {}
+}
+
+variable "service_tokens" {
+  description = "The service tokens the workload sends to the services it calls: each callee's audience, to the variable that names the file the kubelet projects its token into."
+  type        = map(string)
+  default     = {}
 }
 
 variable "ca_secret" {

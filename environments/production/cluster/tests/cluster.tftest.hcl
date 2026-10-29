@@ -42,6 +42,15 @@ override_data {
 }
 
 override_data {
+  target = data.terraform_remote_state.studio
+  values = {
+    outputs = {
+      url = "https://agora-studio-web-mock.a.run.app"
+    }
+  }
+}
+
+override_data {
   target = data.terraform_remote_state.bootstrap
   values = {
     outputs = {
@@ -174,7 +183,7 @@ run "keeps_each_database_available_and_backed_up" {
   }
 }
 
-run "runs_json_keys_from_its_release" {
+run "runs_each_release_from_its_private_repository" {
   command = plan
 
   variables {
@@ -184,29 +193,44 @@ run "runs_json_keys_from_its_release" {
   assert {
     condition = (
       toset([for copy in output.image_copies : copy.target]) == toset([for key, image in local.release_images : "${image.repository}/${image.path}:${image.tag}"]) &&
-      alltrue([for copy in output.image_copies : startswith(copy.source, "ghcr.io/a-novel/service-json-keys/") && startswith(copy.target, "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-json-keys-private-production/")]) &&
-      alltrue([for image in values(local.release_image) : can(regex("^europe-west1-docker\\.pkg\\.dev/a-novel-production-prod/agora-json-keys-private-production/.+@sha256:[a-f0-9]{64}$", image))])
+      alltrue([for key, image in local.release_images :
+        startswith(image.source, "ghcr.io/a-novel/service-${split("/", key)[0]}/") &&
+        image.repository == "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-${split("/", key)[0]}-private-production" &&
+        can(regex("@sha256:[a-f0-9]{64}$", local.release_image[key]))
+      ])
     )
-    error_message = "JSON Keys must run its pinned release from its private repository, which this root's deploy copies it to."
+    error_message = "Each service must run its pinned release from its own private repository, which this root's deploy copies it to."
   }
 
   assert {
     condition = (
-      endswith(kubernetes_job_v1.json_keys_migrations[0].metadata[0].name, substr(trimprefix(local.release_images["json-keys/migrations"].digest, "sha256:"), 0, 12)) &&
-      kubernetes_job_v1.json_keys_migrations[0].wait_for_completion &&
-      one(one(kubernetes_job_v1.json_keys_migrations[0].spec[0].template[0].spec[0].container).security_context).run_as_non_root &&
-      kubernetes_job_v1.json_keys_migrations[0].spec[0].backoff_limit == 0
+      toset(keys(kubernetes_job_v1.migrations)) == toset(["authentication", "json-keys"]) &&
+      alltrue([for service, job in kubernetes_job_v1.migrations :
+        endswith(job.metadata[0].name, substr(trimprefix(local.release_images["${service}/migrations"].digest, "sha256:"), 0, 12)) &&
+        job.wait_for_completion &&
+        job.spec[0].backoff_limit == 0 &&
+        one(one(job.spec[0].template[0].spec[0].container).security_context).run_as_non_root
+      ])
     )
-    error_message = "Each migrations image must run once, to completion, before the server rolls."
+    error_message = "Each service's migrations image must run once, to completion, before its server rolls."
   }
 
   assert {
-    condition = (
-      one(one(kubernetes_job_v1.json_keys_migrations[0].spec[0].template[0].spec[0].volume).secret).secret_name == kubernetes_manifest.database_server_certificate["json-keys"].manifest.spec.secretName &&
-      [for item in one(one(kubernetes_job_v1.json_keys_migrations[0].spec[0].template[0].spec[0].volume).secret).items : item.key] == ["ca.crt"] &&
-      one([for env in one(kubernetes_job_v1.json_keys_migrations[0].spec[0].template[0].spec[0].container).env : env.value if env.name == "SSL_CERT_DIR"]) == "/etc/ssl/certs:${one(one(kubernetes_job_v1.json_keys_migrations[0].spec[0].template[0].spec[0].container).volume_mount).mount_path}"
-    )
-    error_message = "The migrations must trust only their database's CA certificate, beside the system roots."
+    condition = alltrue([for service, job in kubernetes_job_v1.migrations :
+      one(one(job.spec[0].template[0].spec[0].volume).secret).secret_name == kubernetes_manifest.database_server_certificate[service].manifest.spec.secretName &&
+      [for item in one(one(job.spec[0].template[0].spec[0].volume).secret).items : item.key] == ["ca.crt"] &&
+      one([for env in one(job.spec[0].template[0].spec[0].container).env : env.value if env.name == "SSL_CERT_DIR"]) == "/etc/ssl/certs:${one(one(job.spec[0].template[0].spec[0].container).volume_mount).mount_path}" &&
+      one([for env in one(job.spec[0].template[0].spec[0].container).env : env.value if env.name == "POSTGRES_HOST"]) == one(kubernetes_manifest.database_server_certificate[service].manifest.spec.dnsNames)
+    ])
+    error_message = "The migrations must reach their own database by its certificate's name, trusting only its CA certificate beside the system roots."
+  }
+}
+
+run "runs_json_keys" {
+  command = plan
+
+  variables {
+    custom_resources = true
   }
 
   assert {
@@ -226,5 +250,47 @@ run "runs_json_keys_from_its_release" {
       one(one(one(kubernetes_network_policy_v1.json_keys_grpc.spec).ingress).ports).port == "8080"
     )
     error_message = "Only Authentication's API and the smoke check may call JSON Keys."
+  }
+}
+
+run "runs_authentication" {
+  command = plan
+
+  variables {
+    custom_resources = true
+  }
+
+  assert {
+    condition = (
+      length([for name in keys(local.authentication_env) : name if startswith(name, "SENTRY_")]) == 0 &&
+      local.authentication_env.OTEL == "false" &&
+      local.authentication_env.POSTGRES_HOST == one(kubernetes_manifest.database_server_certificate["authentication"].manifest.spec.dnsNames) &&
+      local.authentication_env.SMTP_ADDR == "smtp-relay.gmail.com:587" &&
+      local.authentication_env.PLATFORM_AUTH_URL == "https://agora-studio-web-mock.a.run.app"
+    )
+    error_message = "Authentication must report nothing to Sentry, use its CloudNativePG database by its certificate's name, and send its root's mail with links to Studio."
+  }
+
+  # A release without service tokens sends Google ID tokens when GCLOUD_PROJECT_ID is set, which
+  # JSON Keys on the cluster cannot take.
+  assert {
+    condition = (
+      !contains(keys(local.authentication_env), "GCLOUD_PROJECT_ID") &&
+      startswith(local.authentication_env.SERVICE_JSON_KEYS_HOST, "${module.json_keys_grpc[0].pod_labels["app.kubernetes.io/name"]}.json-keys.") &&
+      contains(split(",", local.json_keys_env.SERVICE_TOKEN_CALLERS), module.authentication_rest[0].service_account) &&
+      one(one(one(kubernetes_network_policy_v1.authentication_rest.spec).egress[0].to).pod_selector).match_labels["app.kubernetes.io/name"] == module.json_keys_grpc[0].pod_labels["app.kubernetes.io/name"] &&
+      one(one(kubernetes_network_policy_v1.authentication_rest.spec).egress[0].ports).port == local.json_keys_env.GRPC_PORT
+    )
+    error_message = "Authentication must call JSON Keys' server directly, as a caller JSON Keys admits."
+  }
+
+  assert {
+    condition = (
+      length(one(kubernetes_network_policy_v1.authentication_rest.spec).ingress) == 1 &&
+      toset([for peer in one(one(kubernetes_network_policy_v1.authentication_rest.spec).ingress).from : one(peer.pod_selector).match_labels["app.kubernetes.io/name"]]) == toset(["web", "smoke"]) &&
+      toset(split(",", local.authentication_env.SERVICE_TOKEN_CALLERS)) == toset(["system:serviceaccount:studio:web", "system:serviceaccount:authentication:smoke"]) &&
+      one(one(one(kubernetes_network_policy_v1.authentication_rest.spec).ingress).ports).port == local.authentication_env.REST_PORT
+    )
+    error_message = "Only Studio and the smoke check may call Authentication, whose visitor IP header trusts Studio."
   }
 }

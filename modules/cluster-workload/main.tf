@@ -1,5 +1,11 @@
 locals {
-  labels = merge(var.labels, { "app.kubernetes.io/name" = var.name })
+  labels   = merge(var.labels, { "app.kubernetes.io/name" = var.name })
+  protocol = var.http_health_path == null ? "grpc" : "http"
+  # Go reads every directory SSL_CERT_DIR lists, beside the system bundle. Each service token sits in
+  # a file named after its audience.
+  env = merge(var.env, { SSL_CERT_DIR = "/etc/ssl/certs:/etc/database-ca" }, {
+    for audience, name in var.service_tokens : name => "/var/run/secrets/tokens/${audience}"
+  })
 }
 
 # The workload calls no Kubernetes API, so its pods mount no token for it.
@@ -62,12 +68,12 @@ resource "kubernetes_deployment_v1" "workload" {
           image = var.image
 
           port {
-            name           = "grpc"
+            name           = local.protocol
             container_port = var.port
           }
 
           dynamic "env" {
-            for_each = var.env
+            for_each = local.env
 
             content {
               name  = env.key
@@ -90,16 +96,20 @@ resource "kubernetes_deployment_v1" "workload" {
             }
           }
 
-          # Go reads every directory this lists, beside the system bundle.
-          env {
-            name  = "SSL_CERT_DIR"
-            value = "/etc/ssl/certs:/etc/database-ca"
-          }
-
           volume_mount {
             name       = "database-ca"
             mount_path = "/etc/database-ca"
             read_only  = true
+          }
+
+          dynamic "volume_mount" {
+            for_each = length(var.service_tokens) > 0 ? ["service-tokens"] : []
+
+            content {
+              name       = volume_mount.value
+              mount_path = "/var/run/secrets/tokens"
+              read_only  = true
+            }
           }
 
           resources {
@@ -124,16 +134,42 @@ resource "kubernetes_deployment_v1" "workload" {
             period_seconds    = 2
             failure_threshold = 30
 
-            grpc {
-              port = var.port
+            dynamic "grpc" {
+              for_each = local.protocol == "grpc" ? [var.port] : []
+
+              content {
+                port = grpc.value
+              }
+            }
+
+            dynamic "http_get" {
+              for_each = local.protocol == "http" ? [var.http_health_path] : []
+
+              content {
+                path = http_get.value
+                port = var.port
+              }
             }
           }
 
           readiness_probe {
             period_seconds = 5
 
-            grpc {
-              port = var.port
+            dynamic "grpc" {
+              for_each = local.protocol == "grpc" ? [var.port] : []
+
+              content {
+                port = grpc.value
+              }
+            }
+
+            dynamic "http_get" {
+              for_each = local.protocol == "http" ? [var.http_health_path] : []
+
+              content {
+                path = http_get.value
+                port = var.port
+              }
             }
           }
         }
@@ -148,6 +184,28 @@ resource "kubernetes_deployment_v1" "workload" {
             items {
               key  = "ca.crt"
               path = "ca.crt"
+            }
+          }
+        }
+
+        # The kubelet renews each token before it expires.
+        dynamic "volume" {
+          for_each = length(var.service_tokens) > 0 ? ["service-tokens"] : []
+
+          content {
+            name = volume.value
+
+            projected {
+              dynamic "sources" {
+                for_each = var.service_tokens
+
+                content {
+                  service_account_token {
+                    audience = sources.key
+                    path     = sources.key
+                  }
+                }
+              }
             }
           }
         }
@@ -171,7 +229,7 @@ resource "kubernetes_service_v1" "workload" {
     selector = { "app.kubernetes.io/name" = var.name }
 
     port {
-      name        = "grpc"
+      name        = local.protocol
       port        = var.port
       target_port = var.port
     }
