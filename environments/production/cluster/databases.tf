@@ -17,7 +17,7 @@ locals {
 # CloudNativePG reads PostgreSQL's major version from an image's tag, and ours carry the service's
 # release version, so a catalog states it. Foundation names each image as its release pins it.
 resource "kubernetes_manifest" "database_image" {
-  for_each = var.databases
+  for_each = var.custom_resources ? var.databases : {}
 
   manifest = {
     apiVersion = "postgresql.cnpg.io/v1"
@@ -29,7 +29,7 @@ resource "kubernetes_manifest" "database_image" {
 
 # Barman owns expiry inside the bucket, so it keeps 14 days of base backups and the WAL they need.
 resource "kubernetes_manifest" "database_backups" {
-  for_each = var.databases
+  for_each = var.custom_resources ? var.databases : {}
 
   manifest = {
     apiVersion = "barmancloud.cnpg.io/v1"
@@ -144,7 +144,7 @@ resource "kubernetes_network_policy_v1" "database" {
 # under CloudNativePG (a-novel/infra#1194). Updates switch the replica over instead of restarting
 # the primary. CloudNativePG generates the credentials, in the `database-app` Secret.
 resource "kubernetes_manifest" "database" {
-  for_each = var.databases
+  for_each = var.custom_resources ? var.databases : {}
 
   manifest = {
     apiVersion = "postgresql.cnpg.io/v1"
@@ -206,7 +206,7 @@ resource "kubernetes_manifest" "database" {
 
 # A daily base backup, from the replica. The first runs at once.
 resource "kubernetes_manifest" "database_schedule" {
-  for_each = var.databases
+  for_each = var.custom_resources ? var.databases : {}
 
   manifest = {
     apiVersion = "postgresql.cnpg.io/v1"
