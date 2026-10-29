@@ -331,6 +331,9 @@ jobs:
           set -uo pipefail
           p=a-novel-production-prod
           echo "::group::unattached disks"; gcloud compute disks list --project=$p --filter='-users:*' --format='table(name,zone.basename(),sizeGb,type.basename(),creationTimestamp)'; echo "::endgroup::"
+          for disk in pvc-d236c0cf-c164-4c98-8df0-1eb64b3405ae:europe-west1-c pvc-43c96904-a55e-4bf6-9791-dc5c4f98708b:europe-west1-d; do
+            echo "--- ${disk%%:*}: $(gcloud compute disks describe "${disk%%:*}" --zone="${disk##*:}" --project=$p --format='value(description,lastDetachTimestamp,labels)')"
+          done
           echo "::group::all disks"; gcloud compute disks list --project=$p --format='table(name,zone.basename(),sizeGb,users.len())'; echo "::endgroup::"
           echo "::group::addresses"; gcloud compute addresses list --project=$p --format='table(name,region.basename(),address,status)'; echo "::endgroup::"
           echo "::group::forwarding rules"; gcloud compute forwarding-rules list --project=$p --format='table(name,region.basename(),IPAddress)'; echo "::endgroup::"
