@@ -204,7 +204,7 @@ run "runs_each_release_from_its_private_repository" {
 
   assert {
     condition = (
-      toset(keys(kubernetes_job_v1.migrations)) == toset(["authentication", "json-keys"]) &&
+      toset(keys(kubernetes_job_v1.migrations)) == toset(["authentication", "genai", "json-keys"]) &&
       alltrue([for service, job in kubernetes_job_v1.migrations :
         endswith(job.metadata[0].name, substr(trimprefix(local.release_images["${service}/migrations"].digest, "sha256:"), 0, 12)) &&
         job.wait_for_completion &&
@@ -292,5 +292,41 @@ run "runs_authentication" {
       one(one(one(kubernetes_network_policy_v1.authentication_rest.spec).ingress).ports).port == local.authentication_env.REST_PORT
     )
     error_message = "Only Studio and the smoke check may call Authentication, whose visitor IP header trusts Studio."
+  }
+}
+
+run "runs_genai" {
+  command = plan
+
+  variables {
+    custom_resources = true
+  }
+
+  assert {
+    condition = alltrue([for env in [local.genai_grpc_env, local.genai_sweep_env] :
+      length([for name in keys(env) : name if startswith(name, "SENTRY_")]) == 0 &&
+      env.OTEL == "false" &&
+      env.POSTGRES_HOST == one(kubernetes_manifest.database_server_certificate["genai"].manifest.spec.dnsNames)
+    ])
+    error_message = "GenAI's server and sweep must report nothing to Sentry, and use their CloudNativePG database by its certificate's name."
+  }
+
+  assert {
+    condition = (
+      local.genai_secret_env.OPENAI_API_KEY.secret == "secrets" &&
+      contains(keys(var.secrets["genai"]), local.genai_secret_env.OPENAI_API_KEY.key) &&
+      local.genai_sweep_env.SWEEP_TICKER == "true"
+    )
+    error_message = "Both read OpenAI's key from the namespace's synced secrets, and the sweep runs itself."
+  }
+
+  assert {
+    condition = (
+      local.genai_grpc_env.SERVICE_TOKEN_CALLERS == "system:serviceaccount:genai:smoke" &&
+      length(one(kubernetes_network_policy_v1.genai_grpc.spec).ingress) == 1 &&
+      [for peer in one(one(kubernetes_network_policy_v1.genai_grpc.spec).ingress).from : one(peer.pod_selector).match_labels["app.kubernetes.io/name"]] == ["smoke"] &&
+      length(one(one(one(kubernetes_network_policy_v1.genai_grpc.spec).ingress).from).namespace_selector) == 0
+    )
+    error_message = "Only GenAI's own smoke check may call its server."
   }
 }
