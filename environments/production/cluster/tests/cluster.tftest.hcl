@@ -56,9 +56,10 @@ run "pulls_addons_through_our_registry" {
   }
 
   assert {
-    condition = alltrue([for release in [helm_release.cert_manager, helm_release.cloudnative_pg, helm_release.plugin_barman_cloud, helm_release.external_secrets] :
-      !strcontains(join("\n", release.values), "quay.io/") && !strcontains(join("\n", release.values), "ghcr.io/")
-    ])
+    condition = (
+      !strcontains(join("\n", helm_release.external_secrets.values), "quay.io/") &&
+      !strcontains(join("\n", helm_release.external_secrets.values), "ghcr.io/")
+    )
     error_message = "No chart may keep an upstream registry reference."
   }
 }

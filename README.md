@@ -48,6 +48,7 @@ Disabling `deploy.yaml` [freezes production](docs/runbooks/deployments.md#freeze
 | `modules/database-runtime`              | A database host's boot configuration and host scripts.                          |
 | `modules/backup-repository`             | A service's pgBackRest repository VM and its backup alerts.                     |
 | `modules/project-shell`                 | An empty trust-zone project, for foundation.                                    |
+| `modules/database-operator`             | cert-manager, CloudNativePG and its Barman Cloud plugin, for the cluster.       |
 | `cmd/`, `internal/`, `builds/`          | The two programs that run on the VMs: the TLS loader and the restore worker.    |
 | `.github/actions/`, `.github/workflows` | The pipeline that plans, deploys and checks production.                         |
 | `.github/scripts/`                      | The pipeline's rules that can stop or misdeploy production, with their tests.   |

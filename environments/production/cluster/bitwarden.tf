@@ -11,7 +11,7 @@ resource "kubernetes_manifest" "bitwarden_bootstrap_issuer" {
     spec       = { selfSigned = {} }
   }
 
-  depends_on = [helm_release.cert_manager]
+  depends_on = [module.database_operator]
 }
 
 resource "kubernetes_manifest" "bitwarden_ca" {

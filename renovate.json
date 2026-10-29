@@ -118,18 +118,27 @@
     },
     {
       "description": "Hold the cluster add-ons' charts and images for a week, as provider releases are held, to bound a compromised upstream release.",
-      "matchFileNames": ["environments/production/cluster/**"],
+      "matchFileNames": [
+        "environments/production/cluster/**",
+        "modules/database-operator/**"
+      ],
       "minimumReleaseAge": "7 days"
     },
     {
       "description": "Move cert-manager's chart and images in one pull request, since the chart expects its own images.",
-      "matchFileNames": ["environments/production/cluster/**"],
+      "matchFileNames": [
+        "environments/production/cluster/**",
+        "modules/database-operator/**"
+      ],
       "matchPackageNames": ["cert-manager", "quay.io/jetstack/**"],
       "groupName": "cert-manager"
     },
     {
       "description": "Move CloudNativePG's chart and images in one pull request, since the chart expects its own images.",
-      "matchFileNames": ["environments/production/cluster/**"],
+      "matchFileNames": [
+        "environments/production/cluster/**",
+        "modules/database-operator/**"
+      ],
       "matchPackageNames": [
         "cloudnative-pg",
         "ghcr.io/cloudnative-pg/cloudnative-pg"
@@ -138,7 +147,10 @@
     },
     {
       "description": "Move Barman Cloud plugin's chart and images in one pull request, since the chart expects its own images.",
-      "matchFileNames": ["environments/production/cluster/**"],
+      "matchFileNames": [
+        "environments/production/cluster/**",
+        "modules/database-operator/**"
+      ],
       "matchPackageNames": [
         "plugin-barman-cloud",
         "ghcr.io/cloudnative-pg/plugin-barman-cloud",
@@ -148,7 +160,10 @@
     },
     {
       "description": "Move External Secrets's chart and images in one pull request, since the chart expects its own images.",
-      "matchFileNames": ["environments/production/cluster/**"],
+      "matchFileNames": [
+        "environments/production/cluster/**",
+        "modules/database-operator/**"
+      ],
       "matchPackageNames": [
         "external-secrets",
         "ghcr.io/external-secrets/external-secrets",
