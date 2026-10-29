@@ -20,6 +20,8 @@ resource "kubernetes_job_v1" "migrations" {
       spec {
         restart_policy                  = "Never"
         automount_service_account_token = false
+        # As the workloads' pods, so no Service's link variables reach the migrations' configuration.
+        enable_service_links = false
 
         security_context {
           run_as_non_root = true
