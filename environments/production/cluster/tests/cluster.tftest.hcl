@@ -106,9 +106,10 @@ run "keeps_each_database_available_and_backed_up" {
       database.manifest.spec.instances == 2 &&
       database.manifest.spec.affinity.podAntiAffinityType == "required" &&
       database.manifest.spec.primaryUpdateMethod == "switchover" &&
-      one(database.manifest.spec.plugins).isWALArchiver
+      one(database.manifest.spec.plugins).isWALArchiver &&
+      contains(database.computed_fields, "spec.postgresql.parameters")
     ])
-    error_message = "Each database must keep a primary and a replica on separate nodes, switch over on updates, and archive WAL."
+    error_message = "Each database must keep a primary and a replica on separate nodes, switch over on updates, archive WAL, and accept the operator's parameter defaults."
   }
 
   assert {
