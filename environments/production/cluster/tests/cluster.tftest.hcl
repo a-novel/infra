@@ -3,6 +3,11 @@ mock_provider "google" {}
 mock_provider "kubernetes" {}
 mock_provider "helm" {}
 
+# Tests cannot import.
+variables {
+  adopted_databases = []
+}
+
 override_data {
   target = data.terraform_remote_state.foundation
   values = {
@@ -80,9 +85,12 @@ run "isolates_every_namespace" {
     condition = (
       strcontains(kubernetes_manifest.admission_policy["a-novel-images"].manifest.spec.validations[0].expression, "matches('^[a-z0-9-]+-docker[.]pkg[.]dev/a-novel-production-prod/')") &&
       toset(keys(kubernetes_network_policy_v1.default_deny)) == toset(var.namespaces) &&
-      alltrue([for policy in kubernetes_network_policy_v1.default_deny : toset(one(policy.spec).policy_types) == toset(["Ingress", "Egress"])])
+      alltrue([for policy in kubernetes_network_policy_v1.default_deny : toset(one(policy.spec).policy_types) == toset(["Ingress", "Egress"])]) &&
+      alltrue([for policy in kubernetes_network_policy_v1.default_deny :
+        toset(one(one(one(one(policy.spec).egress).to).pod_selector).match_expressions[0].values) == toset(["kube-dns", "node-local-dns"])
+      ])
     )
-    error_message = "Pods may pull only from our Artifact Registry, and every service namespace must deny all traffic by default."
+    error_message = "Pods may pull only from our Artifact Registry, every service namespace must deny all traffic by default, and its pods must reach the node's DNS cache."
   }
 }
 

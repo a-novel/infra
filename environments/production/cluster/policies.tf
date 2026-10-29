@@ -86,13 +86,19 @@ resource "kubernetes_network_policy_v1" "default_deny" {
     pod_selector {}
     policy_types = ["Ingress", "Egress"]
 
+    # NodeLocal DNSCache, on by default since GKE 1.34.1, answers each node's queries for kube-dns'
+    # address, and asks kube-dns for what it has not cached.
     egress {
       to {
         namespace_selector {
           match_labels = { "kubernetes.io/metadata.name" = "kube-system" }
         }
         pod_selector {
-          match_labels = { "k8s-app" = "kube-dns" }
+          match_expressions {
+            key      = "k8s-app"
+            operator = "In"
+            values   = ["kube-dns", "node-local-dns"]
+          }
         }
       }
 

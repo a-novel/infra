@@ -18,6 +18,12 @@ variable "backup_server_name" {
   }
 }
 
+variable "adopted_databases" {
+  description = "The databases whose Cluster exists but which state lost, imported on the next apply. A create whose wait fails on a request deadline records nothing."
+  type        = set(string)
+  default     = []
+}
+
 variable "custom_resources" {
   description = "Whether to manage the resources whose kinds the add-ons define, and the Bitwarden SDK server, which mounts one's certificate. A fresh cluster lacks those kinds until the add-ons install, so a rebuild turns this off before the cluster is replaced and on once they run."
   type        = bool
