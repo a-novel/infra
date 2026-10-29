@@ -101,6 +101,17 @@ variable "egress_subnet_cidr" {
   }
 }
 
+variable "downtime" {
+  description = "The planned downtime as JSON, from the DOWNTIME repository variable: components, start and end. Empty without one."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.downtime == "" || can(tolist(jsondecode(var.downtime).components)) && can(jsondecode(var.downtime).start) && can(jsondecode(var.downtime).end)
+    error_message = "The planned downtime must be JSON with components, start and end."
+  }
+}
+
 variable "cluster_region" {
   description = "Google Cloud region of the cluster and everything only it uses. The Cloud Run platform keeps region until it retires."
   type        = string

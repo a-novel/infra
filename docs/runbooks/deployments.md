@@ -159,11 +159,26 @@ If the change is intended:
    Agent App must have applied it last. The check holds whether the deploy follows a merge or was
    run by hand, and a label added after the merge counts for nothing.
 
-## Database host changes
+## Database changes
 
 A plan that changes a database host needs the `allow-downtime` label and a planned downtime of that
 service in progress. [Change a database host](database.md#change-a-database-host) covers the whole
 procedure.
+
+The cluster's databases roll without a downtime. CloudNativePG updates the replica, then switches
+over to it, which pauses writes for seconds. That covers a new release image of the same PostgreSQL
+major, settings, resources and operator upgrades, and a larger volume grows in place. GKE upgrades
+nodes only from Tuesday to Thursday, 01:00 to 07:00 UTC, and CloudNativePG switches over before a
+primary's node drains. A planned downtime holds every GKE upgrade from its start to its end.
+
+**A PostgreSQL major upgrade stops the database.** CloudNativePG shuts every instance down and runs
+`pg_upgrade`. A plan that raises `major` in a database's `imageCatalogRef` needs the
+`allow-downtime` label and a planned downtime listing `service-<root>.database` in progress, and the
+deploy applies it only while that downtime runs. Take a base backup before, and another once it
+ends: WAL from the old major recovers nothing past it.
+
+Volumes only grow. CloudNativePG refuses a smaller one, and another storage class applies only to
+instances recreated by hand.
 
 ## A deploy failed
 

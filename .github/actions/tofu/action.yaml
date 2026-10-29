@@ -170,12 +170,21 @@ runs:
           exit 1
         fi
         # A merged database host change is applied regardless; deploy rolls it out only during a
-        # planned downtime. Pull requests are where it waits for one.
-        [ "$GITHUB_EVENT_NAME" = pull_request ] || exit 0
+        # planned downtime. A major upgrade runs as soon as it applies, so a deploy applies it only
+        # during one. Pull requests are where either waits for its downtime.
+        if [ "$GITHUB_EVENT_NAME" != pull_request ]; then
+          for service in $(jq -r '.major_upgrades[]' <<<"$verdict"); do
+            if [ "$(node .github/scripts/downtime.mjs started "service-$service.database")" != true ]; then
+              echo "::error::The PostgreSQL major upgrade of $service applies only during its planned downtime; deploy again once it starts."
+              exit 1
+            fi
+          done
+          exit 0
+        fi
         services="$(jq -r '[.downtime_changes[].service] | unique | .[]' <<<"$verdict")"
         [ -n "$services" ] || exit 0
         if [ "$ALLOW_DOWNTIME" != true ]; then
-          echo "::error::This plan changes the database hosts of $(paste -sd, <<<"$services"); it needs the allow-downtime label during their planned downtime."
+          echo "::error::This plan stops the databases of $(paste -sd, <<<"$services"); it needs the allow-downtime label during their planned downtime."
           exit 1
         fi
         for service in $services; do
