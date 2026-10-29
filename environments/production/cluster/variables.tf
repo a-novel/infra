@@ -8,6 +8,22 @@ variable "addon_images" {
   }
 }
 
+variable "databases" {
+  description = "Each service's database: each instance's CPU and memory, its volume, its connection ceiling and its extensions."
+  type = map(object({
+    cpu             = string
+    memory          = string
+    storage         = string
+    max_connections = number
+    extensions      = list(string)
+  }))
+
+  validation {
+    condition     = alltrue([for service in keys(var.databases) : contains(var.namespaces, service)])
+    error_message = "Each database belongs to a service's namespace."
+  }
+}
+
 variable "namespaces" {
   description = "One namespace per service, holding its workloads, database and secrets."
   type        = set(string)
