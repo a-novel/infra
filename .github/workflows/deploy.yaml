@@ -103,6 +103,8 @@ jobs:
           deps() {
             local dirs=("$1") i source
             printf '%s\n' .opentofu-version .github/actions/tofu/ .github/workflows/deploy.yaml
+            # The cluster root reads each service root's pins from its terraform.tfvars.
+            [ "$1" != environments/production/cluster ] || printf '%s\n' 'environments/production/*/terraform.tfvars'
             for ((i = 0; i < ${#dirs[@]}; i++)); do
               printf '%s/\n' "${dirs[i]}"
               while read -r source; do
