@@ -101,6 +101,26 @@ variable "egress_subnet_cidr" {
   }
 }
 
+variable "cluster_region" {
+  description = "Google Cloud region of the cluster and everything only it uses. The Cloud Run platform keeps region until it retires."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[a-z]+-[a-z]+[0-9]+$", var.cluster_region))
+    error_message = "The cluster region must be a valid Google Cloud region name."
+  }
+}
+
+variable "cluster_compute_cpu_quota" {
+  description = "Compute Engine CPU ceiling in the cluster region: the nodes, at their maximum, plus one surge node."
+  type        = number
+
+  validation {
+    condition     = var.cluster_compute_cpu_quota >= 4 && var.cluster_compute_cpu_quota <= 32 && floor(var.cluster_compute_cpu_quota) == var.cluster_compute_cpu_quota
+    error_message = "The cluster CPU quota must be a whole number from 4 through 32."
+  }
+}
+
 variable "cluster" {
   description = "The production cluster's zones, the first holding the control plane, and its node pool."
   type = object({
@@ -112,10 +132,10 @@ variable "cluster" {
 
   validation {
     condition = (
-      length(var.cluster.zones) >= 2 && alltrue([for zone in var.cluster.zones : startswith(zone, "${var.region}-")]) &&
+      length(var.cluster.zones) >= 2 && alltrue([for zone in var.cluster.zones : startswith(zone, "${var.cluster_region}-")]) &&
       var.cluster.min_nodes >= 2 && var.cluster.max_nodes >= var.cluster.min_nodes
     )
-    error_message = "The cluster needs two zones of the production region and two nodes at least, since each database keeps its primary and replica on separate nodes."
+    error_message = "The cluster needs two zones of its region and two nodes at least, since each database keeps its primary and replica on separate nodes."
   }
 }
 

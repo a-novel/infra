@@ -21,8 +21,8 @@ resource "google_compute_network" "cluster" {
 # The nodes take the primary range, and the control plane's private endpoint an address in it.
 resource "google_compute_subnetwork" "cluster" {
   project = google_project.workload.project_id
-  region  = var.region
-  name    = "a-novel-production-${var.region}"
+  region  = var.cluster_region
+  name    = "a-novel-production-${var.cluster_region}"
 
   ip_cidr_range            = var.cluster_ranges.nodes
   network                  = google_compute_network.cluster.id
@@ -67,7 +67,7 @@ resource "google_compute_route" "cluster_internet" {
 # relay list it beside agora-production-nat before any workload moves.
 resource "google_compute_address" "cluster_nat" {
   project = google_project.workload.project_id
-  region  = var.region
+  region  = var.cluster_region
   name    = "a-novel-production-nat"
 
   # Unlocked while the cluster moves to Paris, and locked again once it runs.
@@ -76,14 +76,14 @@ resource "google_compute_address" "cluster_nat" {
 
 resource "google_compute_router" "cluster_nat" {
   project = google_project.workload.project_id
-  region  = var.region
+  region  = var.cluster_region
   name    = "a-novel-production-nat"
   network = google_compute_network.cluster.id
 }
 
 resource "google_compute_router_nat" "cluster" {
   project = google_project.workload.project_id
-  region  = var.region
+  region  = var.cluster_region
   router  = google_compute_router.cluster_nat.name
   name    = "a-novel-production-nat"
 

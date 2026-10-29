@@ -78,7 +78,7 @@ run "isolates_every_namespace" {
 
   assert {
     condition = (
-      strcontains(kubernetes_manifest.admission_policy["a-novel-images"].manifest.spec.validations[0].expression, "startsWith('europe-west1-docker.pkg.dev/a-novel-production-prod/')") &&
+      strcontains(kubernetes_manifest.admission_policy["a-novel-images"].manifest.spec.validations[0].expression, "matches('^[a-z0-9-]+-docker[.]pkg[.]dev/a-novel-production-prod/')") &&
       toset(keys(kubernetes_network_policy_v1.default_deny)) == toset(var.namespaces) &&
       alltrue([for policy in kubernetes_network_policy_v1.default_deny : toset(one(policy.spec).policy_types) == toset(["Ingress", "Egress"])])
     )

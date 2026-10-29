@@ -12,9 +12,10 @@ locals {
 
   admitted_namespaces = sort(setunion(var.namespaces, local.addon_namespaces))
 
-  # Images come only from our Artifact Registry, pinned by digest. A pod's containers, init
-  # containers and ephemeral containers are different types, so each list gets its own check.
-  image_rule = "c.image.startsWith('${data.terraform_remote_state.foundation.outputs.region}-docker.pkg.dev/${data.terraform_remote_state.foundation.outputs.workload_project_id}/') && c.image.contains('@sha256:')"
+  # Images come only from our project's Artifact Registry, in any region, pinned by digest. A pod's
+  # containers, init containers and ephemeral containers are different types, so each list gets its
+  # own check.
+  image_rule = "c.image.matches('^[a-z0-9-]+-docker[.]pkg[.]dev/${data.terraform_remote_state.foundation.outputs.workload_project_id}/') && c.image.contains('@sha256:')"
 
   admission_policies = {
     a-novel-images = {

@@ -27,6 +27,13 @@ locals {
         quota_id   = "CPUS-per-project-region"
         value      = var.compute_cpu_quota
       }
+      cluster_compute_cpu = {
+        project_id = google_project.workload.project_id
+        service    = "compute.googleapis.com"
+        quota_id   = "CPUS-per-project-region"
+        value      = var.cluster_compute_cpu_quota
+        region     = var.cluster_region
+      }
     },
     merge([for zone, project_id in local.shell_projects : {
       "${zone}/cloud_run_cpu" = {
@@ -57,7 +64,7 @@ resource "google_cloud_quotas_quota_preference" "cost_cap" {
   parent     = "projects/${each.value.project_id}"
   service    = each.value.service
   quota_id   = each.value.quota_id
-  dimensions = { region = var.region }
+  dimensions = { region = try(each.value.region, var.region) }
   # IAM grants on the foundation identity authorize the request. Google sends
   # quota-review follow-up to the monitored operator address.
   contact_email = var.cost_alert_email

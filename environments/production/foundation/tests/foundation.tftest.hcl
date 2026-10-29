@@ -179,7 +179,7 @@ run "fences_the_cluster_network" {
 
   override_resource {
     target = google_compute_subnetwork.cluster
-    values = { id = "projects/a-novel-production-prod/regions/europe-west1/subnetworks/a-novel-production-europe-west1" }
+    values = { id = "projects/a-novel-production-prod/regions/europe-west9/subnetworks/a-novel-production-europe-west9" }
   }
 
   assert {

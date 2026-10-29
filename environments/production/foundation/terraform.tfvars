@@ -59,10 +59,15 @@ service_release_zones = {
 }
 subnet_cidr        = "10.20.0.0/24"
 egress_subnet_cidr = "10.20.1.0/24"
+# The cluster runs in Paris. Cloud Run, the database hosts and the old network keep region until they
+# retire.
+cluster_region = "europe-west9"
+# Three e2-standard-4 nodes and one surge node.
+cluster_compute_cpu_quota = 16
 # The control plane runs in the first zone. Two nodes hold every service and each database's
 # primary and replica, and the autoscaler adds a third; narrative-engine revisits the shape.
 cluster = {
-  zones        = ["europe-west1-d", "europe-west1-c"]
+  zones        = ["europe-west9-a", "europe-west9-b"]
   machine_type = "e2-standard-4"
   min_nodes    = 2
   max_nodes    = 3
