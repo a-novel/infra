@@ -183,7 +183,9 @@ hold payloads and responses of up to 24 MiB, so its host is larger.
 On the cluster, each service's namespace holds a CloudNativePG database named `database`: a
 primary and a replica on separate nodes, with today's host sizes, switching over on updates. It
 holds no data until the cutover imports it. CloudNativePG generates its credentials, in the
-`database-app` Secret, for the database and owner `app`. Its image catalog takes the service's
+`database-app` Secret, for the database and owner `app`. It serves TLS for `database-rw.<service>.svc`
+from cert-manager's ten-year `databases` CA, which keeps its key when renewed. The service's pods
+connect by that name and trust that CA beside the system roots. Its image catalog takes the service's
 release image from foundation, and GenAI preloads `pg_cron`. The deploy waits until both instances
 serve and WAL reaches Barman; a daily base backup runs from the replica. Each database backs up to
 its own Barman bucket in management, `<prefix>-barman-<service>`. Each bucket has the pgBackRest

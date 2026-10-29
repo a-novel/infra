@@ -90,6 +90,18 @@ resource "kubernetes_deployment_v1" "workload" {
             }
           }
 
+          # Go reads every directory this lists, beside the system bundle.
+          env {
+            name  = "SSL_CERT_DIR"
+            value = "/etc/ssl/certs:/etc/database-ca"
+          }
+
+          volume_mount {
+            name       = "database-ca"
+            mount_path = "/etc/database-ca"
+            read_only  = true
+          }
+
           resources {
             requests = { cpu = var.resources.cpu, memory = var.resources.memory }
             limits   = { memory = var.resources.memory }
@@ -122,6 +134,20 @@ resource "kubernetes_deployment_v1" "workload" {
 
             grpc {
               port = var.port
+            }
+          }
+        }
+
+        # Only the CA's certificate: the Secret also holds the database's private key.
+        volume {
+          name = "database-ca"
+
+          secret {
+            secret_name = var.ca_secret
+
+            items {
+              key  = "ca.crt"
+              path = "ca.crt"
             }
           }
         }

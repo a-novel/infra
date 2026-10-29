@@ -20,12 +20,13 @@ locals {
 
   # Each service's workloads verify the service tokens the cluster signs.
   service_token_issuer = "https://container.googleapis.com/v1/projects/${data.terraform_remote_state.foundation.outputs.workload_project_id}/locations/${local.cluster.location}/clusters/${local.cluster.name}"
-  # Each workload reads its database's credentials from CloudNativePG's Secret.
-  database_env = {
-    POSTGRES_HOST     = "database-rw"
+  # Each workload reads its database's credentials from CloudNativePG's Secret, and verifies the
+  # database's certificate against this name.
+  database_env = { for service in keys(var.databases) : service => {
+    POSTGRES_HOST     = "database-rw.${service}.svc"
     POSTGRES_PORT     = "5432"
     POSTGRES_DATABASE = "app"
-  }
+  } }
   database_secret_env = {
     POSTGRES_USER     = { secret = "database-app", key = "username" }
     POSTGRES_PASSWORD = { secret = "database-app", key = "password" }

@@ -136,6 +136,23 @@ run "keeps_each_database_available_and_backed_up" {
     ])
     error_message = "Only a database that uses pg_cron preloads it."
   }
+
+  assert {
+    condition = (
+      kubernetes_manifest.database_ca[0].manifest.spec.isCA &&
+      kubernetes_manifest.database_ca[0].manifest.spec.privateKey.rotationPolicy == "Never" &&
+      kubernetes_manifest.database_issuer[0].manifest.spec.ca.secretName == kubernetes_manifest.database_ca[0].manifest.spec.secretName &&
+      alltrue([for service, certificate in kubernetes_manifest.database_server_certificate :
+        certificate.manifest.spec.issuerRef.name == kubernetes_manifest.database_issuer[0].manifest.metadata.name &&
+        certificate.manifest.spec.dnsNames == ["database-rw.${service}.svc"] &&
+        certificate.manifest.spec.secretTemplate.labels["cnpg.io/reload"] == "" &&
+        kubernetes_manifest.database[service].manifest.spec.certificates.serverTLSSecret == certificate.manifest.spec.secretName &&
+        kubernetes_manifest.database[service].manifest.spec.certificates.serverCASecret == certificate.manifest.spec.secretName
+      ])
+    )
+    error_message = "Each database must serve, and reload, a certificate for its own namespace's name from a CA that keeps its key."
+  }
+
   assert {
     condition = alltrue([for key, grant in google_secret_manager_secret_iam_member.secrets :
       endswith(grant.member, "/subject/ns/${split("/", key)[0]}/sa/secrets") &&
@@ -185,12 +202,21 @@ run "runs_json_keys_from_its_release" {
 
   assert {
     condition = (
+      one(one(kubernetes_job_v1.json_keys_migrations[0].spec[0].template[0].spec[0].volume).secret).secret_name == kubernetes_manifest.database_server_certificate["json-keys"].manifest.spec.secretName &&
+      [for item in one(one(kubernetes_job_v1.json_keys_migrations[0].spec[0].template[0].spec[0].volume).secret).items : item.key] == ["ca.crt"] &&
+      one([for env in one(kubernetes_job_v1.json_keys_migrations[0].spec[0].template[0].spec[0].container).env : env.value if env.name == "SSL_CERT_DIR"]) == "/etc/ssl/certs:${one(one(kubernetes_job_v1.json_keys_migrations[0].spec[0].template[0].spec[0].container).volume_mount).mount_path}"
+    )
+    error_message = "The migrations must trust only their database's CA certificate, beside the system roots."
+  }
+
+  assert {
+    condition = (
       length([for name in keys(local.json_keys_env) : name if startswith(name, "SENTRY_")]) == 0 &&
       local.json_keys_env.OTEL == "false" &&
       local.json_keys_env.SERVICE_TOKEN_ISSUER == "https://container.googleapis.com/v1/projects/a-novel-production-prod/locations/europe-west9-a/clusters/a-novel-production" &&
-      local.json_keys_env.POSTGRES_HOST == "database-rw"
+      local.json_keys_env.POSTGRES_HOST == one(kubernetes_manifest.database_server_certificate["json-keys"].manifest.spec.dnsNames)
     )
-    error_message = "JSON Keys must report nothing to Sentry, verify this cluster's service tokens, and use its CloudNativePG database."
+    error_message = "JSON Keys must report nothing to Sentry, verify this cluster's service tokens, and use its CloudNativePG database by its certificate's name."
   }
 
   assert {

@@ -43,6 +43,11 @@ variable "secret_env" {
   default = {}
 }
 
+variable "ca_secret" {
+  description = "The namespace's Secret whose `ca.crt` the workload trusts beside the system roots: its database's CA."
+  type        = string
+}
+
 variable "resources" {
   description = "Each pod's CPU request and memory, which also bounds it."
   type = object({

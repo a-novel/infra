@@ -5,6 +5,7 @@ variables {
   namespace = "json-keys"
   image     = "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-json-keys-private-production/service-json-keys/grpc@sha256:30df698ad643886f231dfdfd821e7731a19d53e3530c61a350c7d29f01f0a770"
   port      = 8080
+  ca_secret = "database-server-tls"
   resources = { cpu = "100m", memory = "512Mi" }
   replicas  = { min = 2, max = 2 }
 }
@@ -28,6 +29,15 @@ run "runs_unprivileged" {
   assert {
     condition     = length(kubernetes_pod_disruption_budget_v1.workload) == 1 && length(kubernetes_horizontal_pod_autoscaler_v2.workload) == 0
     error_message = "A fixed count of pods gets a disruption budget and no autoscaler."
+  }
+
+  assert {
+    condition = (
+      one(one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).volume).secret).secret_name == "database-server-tls" &&
+      [for item in one(one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).volume).secret).items : item.key] == ["ca.crt"] &&
+      one([for env in one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).env : env.value if env.name == "SSL_CERT_DIR"]) == "/etc/ssl/certs:${one(one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).volume_mount).mount_path}"
+    )
+    error_message = "A workload must trust only the CA's certificate from its Secret, beside the system roots."
   }
 }
 
