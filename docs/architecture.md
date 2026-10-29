@@ -51,7 +51,6 @@ own identities, image repositories, network tags and database hosts.
   | `api.openai.com:443`                               | `agora-genai-private`, `agora-genai-sweep`                                                                                                                       |
   | Google's service ranges on 587, for the SMTP relay | `agora-authentication-api`, `agora-authentication-maintain`                                                                                                      |
   | Sentry's ingest host on 443, `sentry_ingest_host`  | `agora-authentication-api`, `agora-authentication-maintain`, `agora-json-keys-private`, `agora-json-keys-rotatekeys`, `agora-genai-private`, `agora-genai-sweep` |
-  | Bitwarden's EU API on 443, through Fastly          | none: the cluster only                                                                                                                                           |
 
   The firewall resolves a host name through the VPC's Cloud DNS and matches the addresses it
   returns, which works only when every client gets the same answer. `api.openai.com` gives everyone
