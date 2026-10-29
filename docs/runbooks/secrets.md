@@ -129,13 +129,14 @@ The Grafana root reads one token per CI identity, from a service account of the 
 Create each one in the stack's Grafana, under **Administration → Users and access → Service
 accounts**:
 
-| Secret                            | Service account | Role                                              |
-| --------------------------------- | --------------- | ------------------------------------------------- |
-| `production-grafana-plan-token`   | `infra-plan`    | Viewer                                            |
-| `production-grafana-deploy-token` | `infra-deploy`  | Editor, plus `fixed:alerting.provisioning:writer` |
+| Secret                            | Service account | Role   |
+| --------------------------------- | --------------- | ------ |
+| `production-grafana-plan-token`   | `infra-plan`    | Viewer |
+| `production-grafana-deploy-token` | `infra-deploy`  | Editor |
 
-The plan account takes no alerting provisioning role. The writer role writes, and the secrets
-reader role hands the Discord contact point's webhook to pull-request code.
+Give neither account a provisioning role. The provisioning API accepts the alerting permissions of
+the basic roles, and **Read via Provisioning API + Export Secrets** hands the Discord contact
+point's webhook to pull-request code.
 
 Add each token as a version of its secret, as in [Rotate a secret](#rotate-a-secret), and pin it in
 the Grafana root's `token_versions`. Pull requests and the drift check read the plan token, and
