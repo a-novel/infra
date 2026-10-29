@@ -95,7 +95,10 @@ resource "kubernetes_deployment_v1" "workload" {
             limits   = { memory = var.resources.memory }
           }
 
+          # The provider sends runAsNonRoot=false for a container that leaves it unset, which
+          # overrides the pod's and fails Pod Security.
           security_context {
+            run_as_non_root            = true
             allow_privilege_escalation = false
             read_only_root_filesystem  = true
 

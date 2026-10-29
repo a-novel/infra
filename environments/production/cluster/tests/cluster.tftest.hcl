@@ -177,6 +177,7 @@ run "runs_json_keys_from_its_release" {
     condition = (
       endswith(kubernetes_job_v1.json_keys_migrations[0].metadata[0].name, substr(trimprefix(local.release_images["json-keys/migrations"].digest, "sha256:"), 0, 12)) &&
       kubernetes_job_v1.json_keys_migrations[0].wait_for_completion &&
+      one(one(kubernetes_job_v1.json_keys_migrations[0].spec[0].template[0].spec[0].container).security_context).run_as_non_root &&
       kubernetes_job_v1.json_keys_migrations[0].spec[0].backoff_limit == 0
     )
     error_message = "Each migrations image must run once, to completion, before the server rolls."
