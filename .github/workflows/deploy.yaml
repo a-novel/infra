@@ -283,7 +283,8 @@ jobs:
           done
           exit "$status"
       # A database that never serves fails the apply on its wait, which says nothing of why. Its
-      # conditions, stuck pods and warnings usually do.
+      # conditions, stuck pods and warnings usually do. A failure before OpenTofu installs touched
+      # nothing.
       - name: Describe the databases
         if: failure()
         shell: bash
@@ -291,6 +292,7 @@ jobs:
           TOKEN: ${{ steps.google.outputs.access_token }}
         run: |
           set -uo pipefail
+          command -v tofu >/dev/null || exit 0
           endpoint="$(tofu -chdir=environments/production/cluster output -raw api_endpoint)"
           get() { curl -sS -H "Authorization: Bearer $TOKEN" "https://$endpoint$1"; }
           for namespace in $(get /apis/postgresql.cnpg.io/v1/clusters | jq -r '.items[].metadata.namespace'); do
