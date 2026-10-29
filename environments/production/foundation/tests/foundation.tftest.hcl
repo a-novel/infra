@@ -407,8 +407,9 @@ run "serves_studio_on_its_host" {
       length(one(google_certificate_manager_certificate.studio.managed).dns_authorizations) == 1 &&
       google_certificate_manager_dns_authorization.studio.domain == output.studio_edge.host &&
       google_certificate_manager_certificate_map_entry.studio.hostname == output.studio_edge.host &&
-      google_certificate_manager_certificate_map_entry.studio.map == output.studio_edge.certificate_map
+      google_certificate_manager_certificate_map_entry.studio.map == output.studio_edge.certificate_map &&
+      contains(keys(google_project_iam_member.foundation), "roles/certificatemanager.editor")
     )
-    error_message = "Studio's certificate must cover only its host, authorized by DNS, and its map must serve it for that host."
+    error_message = "Studio's certificate must cover only its host, authorized by DNS, and its map must serve it for that host, which the deploy identity may create."
   }
 }

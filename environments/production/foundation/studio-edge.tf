@@ -26,12 +26,13 @@ resource "google_compute_ssl_policy" "studio" {
   depends_on = [google_project_service.workload["compute.googleapis.com"]]
 }
 
+# The deploy identity creates Certificate Manager's resources with the role foundation grants it.
 resource "google_certificate_manager_dns_authorization" "studio" {
   project = google_project.workload.project_id
   name    = "studio"
   domain  = local.studio_host
 
-  depends_on = [google_project_service.workload["certificatemanager.googleapis.com"]]
+  depends_on = [google_project_service.workload["certificatemanager.googleapis.com"], google_project_iam_member.foundation]
 }
 
 resource "google_certificate_manager_certificate" "studio" {
@@ -48,7 +49,7 @@ resource "google_certificate_manager_certificate_map" "studio" {
   project = google_project.workload.project_id
   name    = "studio"
 
-  depends_on = [google_project_service.workload["certificatemanager.googleapis.com"]]
+  depends_on = [google_project_service.workload["certificatemanager.googleapis.com"], google_project_iam_member.foundation]
 }
 
 resource "google_certificate_manager_certificate_map_entry" "studio" {
