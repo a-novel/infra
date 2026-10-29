@@ -30,3 +30,11 @@ native_backups = {
     noncurrent_cleanup  = true
   }
 }
+cluster_databases = {
+  workload_project_id = "a-novel-production-prod"
+  services = [
+    "authentication",
+    "genai",
+    "json-keys",
+  ]
+}

@@ -39,6 +39,18 @@ resource "google_artifact_registry_repository_iam_member" "cluster_upstream_node
   member     = google_service_account.runtime["cluster_nodes"].member
 }
 
+# The databases run each service's PostgreSQL image from its private repository, as its database
+# host does, so the nodes read those repositories too.
+resource "google_artifact_registry_repository_iam_member" "cluster_database_images" {
+  for_each = local.database_image_repositories
+
+  project    = var.workload_project_id
+  location   = var.region
+  repository = "agora-${each.key}-private-production"
+  role       = "roles/artifactregistry.reader"
+  member     = google_service_account.runtime["cluster_nodes"].member
+}
+
 # Inside the perimeter, Artifact Registry reaches no upstream by default. This lets the remote
 # repositories above fetch from theirs, and opens nothing else.
 resource "google_artifact_registry_vpcsc_config" "workload" {
