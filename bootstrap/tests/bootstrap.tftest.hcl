@@ -92,8 +92,8 @@ run "isolates_each_database_backup" {
   }
 
   assert {
-    condition     = contains(google_project_iam_custom_role.barman_writer.permissions, "storage.buckets.get")
-    error_message = "Barman must read its bucket: it refuses to archive when it cannot."
+    condition     = length(setsubtract(["storage.buckets.get", "storage.multipartUploads.create"], google_project_iam_custom_role.barman_writer.permissions)) == 0
+    error_message = "Barman must read its bucket, which it checks before archiving, and upload in parts, as base backups do."
   }
 }
 
