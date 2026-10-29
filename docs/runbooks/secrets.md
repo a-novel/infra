@@ -129,10 +129,14 @@ The Grafana root reads one token per CI identity, from a service account of the 
 Create each one in the stack's Grafana, under **Administration → Users and access → Service
 accounts**:
 
-| Secret                            | Service account | Role                                                      |
-| --------------------------------- | --------------- | --------------------------------------------------------- |
-| `production-grafana-plan-token`   | `infra-plan`    | Viewer, plus read access to the alerting provisioning API |
-| `production-grafana-deploy-token` | `infra-deploy`  | Editor                                                    |
+| Secret                            | Service account | Role   |
+| --------------------------------- | --------------- | ------ |
+| `production-grafana-plan-token`   | `infra-plan`    | Viewer |
+| `production-grafana-deploy-token` | `infra-deploy`  | Editor |
+
+Give neither account a provisioning role. The provisioning API accepts the alerting permissions of
+the basic roles, and **Read via Provisioning API + Export Secrets** hands the Discord contact
+point's webhook to pull-request code.
 
 Add each token as a version of its secret, as in [Rotate a secret](#rotate-a-secret), and pin it in
 the Grafana root's `token_versions`. Pull requests and the drift check read the plan token, and
@@ -141,6 +145,18 @@ Grafana as well as disabling its version.
 
 Grafana's Discord contact point is created by hand in the same stack, so its webhook never reaches
 state.
+
+## Alloy push token
+
+Alloy pushes metrics, logs and traces to the production stack with one access policy token. Create
+it in the stack's Grafana, under **Administration → Users and access → Cloud access policies**:
+
+- **Scopes:** `metrics:write`, `logs:write` and `traces:write`, and nothing else.
+- **Token:** no expiry.
+
+Add the token as a version of `production-alloy-push-token`, as in
+[Rotate a secret](#rotate-a-secret). For a leak, delete the token in Grafana as well as disabling
+its version.
 
 ## pgBackRest TLS certificates
 

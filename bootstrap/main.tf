@@ -143,6 +143,10 @@ locals {
       contract = "GRAFANA_AUTH"
       purpose  = "Grafana token with which deploys apply the Grafana root"
     }
+    production-alloy-push-token = {
+      contract = "GRAFANA_CLOUD_ACCESS_POLICY_TOKEN"
+      purpose  = "Grafana Cloud token with which Alloy pushes metrics, logs and traces"
+    }
     }, { for secret, credential in local.pgbackrest_tls : secret => {
       contract = credential.contract
       purpose  = credential.purpose
