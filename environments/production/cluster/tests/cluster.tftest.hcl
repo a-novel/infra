@@ -9,12 +9,21 @@ variables {
 }
 
 override_data {
+  target = data.google_project.workload
+  values = {
+    number = "968960642520"
+  }
+}
+
+override_data {
   target = data.terraform_remote_state.foundation
   values = {
     outputs = {
       region              = "europe-west1"
       workload_project_id = "a-novel-production-prod"
       cluster = {
+        name              = "a-novel-production"
+        location          = "europe-west9-a"
         dns_endpoint      = "gke-mock.europe-west1-d.gke.goog"
         node_range        = "10.30.0.0/24"
         google_api_ranges = ["199.36.153.4/30", "34.126.0.0/18"]
@@ -126,5 +135,24 @@ run "keeps_each_database_available_and_backed_up" {
       contains(database.manifest.spec.postgresql.shared_preload_libraries, "pg_cron") == contains(var.databases[service].extensions, "pg_cron")
     ])
     error_message = "Only a database that uses pg_cron preloads it."
+  }
+  assert {
+    condition = alltrue([for key, grant in google_secret_manager_secret_iam_member.secrets :
+      endswith(grant.member, "/subject/ns/${split("/", key)[0]}/sa/secrets") &&
+      grant.secret_id == "production-${split("/", key)[0]}-${split("/", key)[1]}" &&
+      grant.role == "roles/secretmanager.secretAccessor"
+    ])
+    error_message = "Each namespace's identity must read only its own service's secrets."
+  }
+
+  assert {
+    condition = alltrue(flatten([for service, store in kubernetes_manifest.secret_store : [
+      store.manifest.spec.provider.gcpsm.projectID == "a-novel-management-prod",
+      store.manifest.spec.provider.gcpsm.auth.workloadIdentity.serviceAccountRef.name == "secrets",
+      [for item in kubernetes_manifest.secrets[service].manifest.spec.data :
+        startswith(item.remoteRef.key, "production-${service}-") && can(regex("^[1-9][0-9]*$", item.remoteRef.version))
+      ],
+    ]]))
+    error_message = "Each store must read management's secrets as its namespace's identity, only its service's, each at a pinned version."
   }
 }
