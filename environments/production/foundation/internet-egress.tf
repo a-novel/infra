@@ -49,15 +49,6 @@ locals {
         "agora-genai-sweep@${var.workload_project_id}.iam.gserviceaccount.com",
       ]
     }
-    bitwarden = {
-      priority = 1030
-      # Both EU API names are CNAMEs to one Fastly host, whose two anycast addresses every client
-      # resolves alike. The DNS allowlist must resolve the Fastly host as well.
-      hosts            = ["api.bitwarden.eu", "identity.bitwarden.eu", "dualstack.n.sni.us-eu.fastly.net"]
-      address_groups   = []
-      port             = "443"
-      service_accounts = []
-    }
   }
 }
 

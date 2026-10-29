@@ -166,8 +166,7 @@
       ],
       "matchPackageNames": [
         "external-secrets",
-        "ghcr.io/external-secrets/external-secrets",
-        "ghcr.io/external-secrets/bitwarden-sdk-server"
+        "ghcr.io/external-secrets/external-secrets"
       ],
       "groupName": "External Secrets"
     },

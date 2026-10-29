@@ -1,5 +1,4 @@
-# Issues the certificates of the Barman Cloud plugin and the Bitwarden SDK server. Its leases stay in
-# its own namespace.
+# Issues the Barman Cloud plugin's certificates. Its leases stay in its own namespace.
 resource "helm_release" "cert_manager" {
   name       = "cert-manager"
   namespace  = var.namespaces.cert_manager
