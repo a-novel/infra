@@ -53,7 +53,7 @@ jobs:
           tofu fmt -check -recursive -diff
           tflint --init --config="$GITHUB_WORKSPACE/.tflint.hcl"
           tflint --recursive --config="$GITHUB_WORKSPACE/.tflint.hcl" --format=compact
-          for dir in bootstrap environments/production/* environments/recovery $(dirname modules/*/tests | sort -u); do
+          for dir in bootstrap environments/production/* environments/recovery* $(dirname modules/*/tests | sort -u); do
             echo "::group::$dir"
             tofu -chdir="$dir" init -backend=false -input=false -lockfile=readonly -no-color >/dev/null
             tofu -chdir="$dir" validate -no-color

@@ -95,6 +95,11 @@ run "isolates_each_database_backup" {
     condition     = length(setsubtract(["storage.buckets.get", "storage.multipartUploads.create"], google_project_iam_custom_role.barman_writer.permissions)) == 0
     error_message = "Barman must read its bucket, which it checks before archiving, and upload in parts, as base backups do."
   }
+
+  assert {
+    condition     = alltrue([for permission in google_project_iam_custom_role.barman_reader.permissions : contains(["storage.buckets.get", "storage.objects.get", "storage.objects.list"], permission)])
+    error_message = "A recovery drill may only read the backups it restores."
+  }
 }
 
 run "trusts_only_reviewed_workflows" {

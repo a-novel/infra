@@ -4,6 +4,9 @@ This runbook restores a backup into a **disposable drill project**, and checks i
 Production's disks and data are never touched. Use it to rehearse recovery, to inspect old data, or
 as the first step of a real data restore.
 
+Steps 1 to 5 restore a database host's pgBackRest backup. [Cluster databases](#cluster-databases)
+restores a cluster database's Barman backup, to a point in time.
+
 ## 1. Pick the backup
 
 List the service's backups on its repository VM:
@@ -167,3 +170,70 @@ If you granted yourself the project-creation role for this drill, remove it:
 gcloud organizations remove-iam-policy-binding 1031663934757 --role=roles/resourcemanager.projectCreator \
   --member="user:$(gcloud config get-value account)" --condition=None
 ```
+
+## Cluster databases
+
+The drill restores one service's database into a one-node cluster in the drill project. The cluster
+reaches nothing but Google's APIs, pulls every image through its own caches, and runs the operator
+production runs. Only the restored database reads the service's Barman bucket, and nothing writes
+it. A cluster costs about $0.25 an hour while it exists.
+
+A drill needs a base backup older than its target. Without a target, it recovers to the latest WAL
+in the bucket.
+
+### Create the drill project
+
+Create and link the project as in [step 2](#2-create-the-drill-project), then enable the cluster's
+APIs and let the deploy identity build in it:
+
+```bash
+DRILL=a-novel-recovery-261101
+gcloud services enable compute.googleapis.com container.googleapis.com artifactregistry.googleapis.com \
+  dns.googleapis.com --project="$DRILL"
+gcloud projects add-iam-policy-binding "$DRILL" --role=roles/owner \
+  --member="serviceAccount:infra-foundation@a-novel-management-prod.iam.gserviceaccount.com"
+```
+
+### Restore
+
+`recovery.yaml` takes the same input for both roots. `target_time` is RFC 3339 UTC, or empty for
+the latest:
+
+```bash
+SERVICE=json-keys
+DRILL_JSON="$(jq -nc --arg project "$DRILL" --arg service "$SERVICE" --arg target_time "2026-11-02T12:00:00Z" \
+  '{project: $project, service: $service, target_time: $target_time}')"
+gh workflow run recovery.yaml --repo a-novel/infra -f root=cluster -f operation=plan -f drill="$DRILL_JSON"
+```
+
+Read the plan in the run's log, as in [step 3](#3-create-the-drill-host). It creates the network,
+the caches, the cluster and its node, and one grant on the service's Barman bucket. Apply it, which
+takes about ten minutes, then plan and apply the restored database:
+
+```bash
+gh workflow run recovery.yaml --repo a-novel/infra -f root=cluster -f operation=apply -f drill="$DRILL_JSON"
+gh workflow run recovery.yaml --repo a-novel/infra -f root=database -f operation=plan -f drill="$DRILL_JSON"
+gh workflow run recovery.yaml --repo a-novel/infra -f root=database -f operation=apply -f drill="$DRILL_JSON"
+```
+
+The database apply passes once the database has recovered to its target and serves. Inspect it:
+
+```bash
+gcloud container clusters get-credentials recovery --location=europe-west9-a --project="$DRILL" --dns-endpoint
+kubectl exec --namespace="$SERVICE" drill-1 --container=postgres -- psql --dbname=app --command='\dt'
+```
+
+### Clean up
+
+Destroy the database, then the cluster, which takes back the bucket grant. Then delete the project
+and both states:
+
+```bash
+gh workflow run recovery.yaml --repo a-novel/infra -f root=database -f operation=destroy -f drill="$DRILL_JSON"
+gh workflow run recovery.yaml --repo a-novel/infra -f root=cluster -f operation=destroy -f drill="$DRILL_JSON"
+gcloud projects delete "$DRILL"
+gcloud storage rm -r "gs://a-novel-management-prod-232403541574-tofu-state/recovery-database/$DRILL/" \
+  "gs://a-novel-management-prod-232403541574-tofu-state/recovery-cluster/$DRILL/"
+```
+
+Remove the project-creation role as in [step 5](#5-clean-up) if you granted it for the drill.

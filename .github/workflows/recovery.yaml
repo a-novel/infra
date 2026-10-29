@@ -1,21 +1,27 @@
 name: recovery
 
-# Plans or applies the host of one disaster-recovery drill in a disposable
-# project. The drill itself follows docs/runbooks/recovery.md.
+# Plans, applies or destroys one root of a disaster-recovery drill in a
+# disposable project: a database host's, or a cluster database's cluster and
+# restored database. The drill itself follows docs/runbooks/recovery.md.
 on:
   workflow_dispatch:
     inputs:
-      operation:
-        description: Plan or apply the drill host.
+      root:
+        description: The drill host, or a cluster drill's cluster or restored database.
         required: true
         type: choice
-        options: [plan, apply]
+        options: [host, cluster, database]
+      operation:
+        description: Plan, apply or destroy the root.
+        required: true
+        type: choice
+        options: [plan, apply, destroy]
       drill:
-        description: JSON value of the recovery root's `recovery` variable.
+        description: JSON value of the root's `recovery` variable.
         required: true
         type: string
 
-run-name: "recovery ${{ inputs.operation }} by @${{ github.actor }}"
+run-name: "recovery ${{ inputs.root }} ${{ inputs.operation }} by @${{ github.actor }}"
 
 permissions: {}
 
@@ -30,7 +36,8 @@ jobs:
   drill:
     if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    # A cluster takes about ten minutes, and a restore waits up to thirty.
+    timeout-minutes: 45
     environment: production
     permissions:
       contents: read
@@ -55,17 +62,23 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
 
-      - name: Run the drill host operation
+      - name: Run the drill operation
         shell: bash
         env:
           DRILL: ${{ inputs.drill }}
           OPERATION: ${{ inputs.operation }}
+          ROOT: ${{ inputs.root }}
         run: |
           set -euo pipefail
+          case "$ROOT" in
+            host) dir=environments/recovery ;;
+            *) dir="environments/recovery-$ROOT" ;;
+          esac
           vars="$RUNNER_TEMP/drill.tfvars.json"
           jq -n --argjson recovery "$DRILL" '{recovery: $recovery}' >"$vars"
-          tofu -chdir=environments/recovery init -input=false -lockfile=readonly -no-color -var-file="$vars"
+          tofu -chdir="$dir" init -input=false -lockfile=readonly -no-color -var-file="$vars"
           case "$OPERATION" in
-            plan) tofu -chdir=environments/recovery plan -input=false -no-color -var-file="$vars" ;;
-            apply) tofu -chdir=environments/recovery apply -input=false -no-color -auto-approve -var-file="$vars" ;;
+            plan) tofu -chdir="$dir" plan -input=false -no-color -var-file="$vars" ;;
+            apply) tofu -chdir="$dir" apply -input=false -no-color -auto-approve -var-file="$vars" ;;
+            destroy) tofu -chdir="$dir" destroy -input=false -no-color -auto-approve -var-file="$vars" ;;
           esac

@@ -190,7 +190,9 @@ serve and WAL reaches Barman; a daily base backup runs from the replica. Each da
 its own Barman bucket in management, `<prefix>-barman-<service>`. Each bucket has the pgBackRest
 buckets' protections, and only that database's Kubernetes service account, `database` in the
 service's namespace, writes it through Workload Identity. The nodes pull each service's PostgreSQL
-image from its private repository, as its host does.
+image from its private repository, as its host does. While a
+[recovery drill](runbooks/recovery.md#cluster-databases) exists, its restored database reads one
+bucket through the `barmanReader` role, and writes none.
 
 | Service        | Machine         | Container           | Connections | Address          |
 | -------------- | --------------- | ------------------- | ----------- | ---------------- |
