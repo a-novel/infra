@@ -1,5 +1,8 @@
-# Off while the cluster moves to Paris (a-novel/.github#522): the new cluster gets its add-ons first.
-custom_resources = false
+custom_resources = true
+
+# Each new database lineage archives under a new name: Barman refuses an archive another database's
+# WAL already fills, and the buckets' retention keeps that WAL a week.
+backup_server_name = "database-paris"
 
 namespaces = [
   "authentication",
@@ -26,9 +29,11 @@ addon_images = {
   bitwarden_sdk_server = "ghcr.io/external-secrets/bitwarden-sdk-server:v0.6.0@sha256:8c5491554fe1069e8e07e6aa1813e7f8198679604dd271d4f778d238f5ca9337"
 }
 
-# Each instance gets today's database host sizes. GenAI's rows hold payloads of up to 24 MiB.
+# Each instance gets today's database host CPU and memory. Each host's data held about 0.1 GiB on
+# 2026-10-29, so the volumes start small and grow in place; the room above the data also absorbs
+# WAL while archiving stalls. GenAI's purge bounds its payloads of up to 24 MiB.
 databases = {
-  authentication = { cpu = "750m", memory = "1536Mi", storage = "50Gi", max_connections = 50, extensions = ["uuid-ossp"] }
-  genai          = { cpu = "1500m", memory = "6Gi", storage = "50Gi", max_connections = 150, extensions = ["pg_cron", "uuid-ossp"] }
-  json-keys      = { cpu = "750m", memory = "1536Mi", storage = "50Gi", max_connections = 50, extensions = ["uuid-ossp"] }
+  authentication = { cpu = "750m", memory = "1536Mi", storage = "30Gi", max_connections = 50, extensions = ["uuid-ossp"] }
+  genai          = { cpu = "1500m", memory = "6Gi", storage = "20Gi", max_connections = 150, extensions = ["pg_cron", "uuid-ossp"] }
+  json-keys      = { cpu = "750m", memory = "1536Mi", storage = "10Gi", max_connections = 50, extensions = ["uuid-ossp"] }
 }
