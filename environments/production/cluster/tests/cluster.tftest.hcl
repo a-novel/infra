@@ -156,3 +156,48 @@ run "keeps_each_database_available_and_backed_up" {
     error_message = "Each store must read management's secrets as its namespace's identity, only its service's, each at a pinned version."
   }
 }
+
+run "runs_json_keys_from_its_release" {
+  command = plan
+
+  variables {
+    custom_resources = true
+  }
+
+  assert {
+    condition = (
+      toset([for copy in output.image_copies : copy.target]) == toset([for key, image in local.release_images : "${image.repository}/${image.path}:${image.tag}"]) &&
+      alltrue([for copy in output.image_copies : startswith(copy.source, "ghcr.io/a-novel/service-json-keys/") && startswith(copy.target, "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-json-keys-private-production/")]) &&
+      alltrue([for image in values(local.release_image) : can(regex("^europe-west1-docker\\.pkg\\.dev/a-novel-production-prod/agora-json-keys-private-production/.+@sha256:[a-f0-9]{64}$", image))])
+    )
+    error_message = "JSON Keys must run its pinned release from its private repository, which this root's deploy copies it to."
+  }
+
+  assert {
+    condition = (
+      endswith(kubernetes_job_v1.json_keys_migrations[0].metadata[0].name, substr(trimprefix(local.release_images["json-keys/migrations"].digest, "sha256:"), 0, 12)) &&
+      kubernetes_job_v1.json_keys_migrations[0].wait_for_completion &&
+      kubernetes_job_v1.json_keys_migrations[0].spec[0].backoff_limit == 0
+    )
+    error_message = "Each migrations image must run once, to completion, before the server rolls."
+  }
+
+  assert {
+    condition = (
+      length([for name in keys(local.json_keys_env) : name if startswith(name, "SENTRY_")]) == 0 &&
+      local.json_keys_env.OTEL == "false" &&
+      local.json_keys_env.SERVICE_TOKEN_ISSUER == "https://container.googleapis.com/v1/projects/a-novel-production-prod/locations/europe-west9-a/clusters/a-novel-production" &&
+      local.json_keys_env.POSTGRES_HOST == "database-rw"
+    )
+    error_message = "JSON Keys must report nothing to Sentry, verify this cluster's service tokens, and use its CloudNativePG database."
+  }
+
+  assert {
+    condition = (
+      length(one(kubernetes_network_policy_v1.json_keys_grpc.spec).ingress) == 1 &&
+      toset([for peer in one(one(kubernetes_network_policy_v1.json_keys_grpc.spec).ingress).from : one(peer.pod_selector).match_labels["app.kubernetes.io/name"]]) == toset(["rest", "smoke"]) &&
+      one(one(one(kubernetes_network_policy_v1.json_keys_grpc.spec).ingress).ports).port == "8080"
+    )
+    error_message = "Only Authentication's API and the smoke check may call JSON Keys."
+  }
+}
