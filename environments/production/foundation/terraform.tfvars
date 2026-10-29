@@ -64,6 +64,9 @@ egress_subnet_cidr = "10.20.1.0/24"
 cluster_region = "europe-west9"
 # Three e2-standard-4 nodes and one surge node.
 cluster_compute_cpu_quota = 16
+# The nodes' boot disks and the databases' volumes peak near 240 GB. Above Google's default of 500,
+# this leaves room for narrative-engine's projects; the request applies once Google grants it.
+cluster_ssd_quota_gb = 1000
 # The control plane runs in the first zone. Two nodes hold every service and each database's
 # primary and replica, and the autoscaler adds a third; narrative-engine revisits the shape.
 cluster = {

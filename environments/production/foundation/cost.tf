@@ -34,6 +34,13 @@ locals {
         value      = var.cluster_compute_cpu_quota
         region     = var.cluster_region
       }
+      cluster_ssd = {
+        project_id = google_project.workload.project_id
+        service    = "compute.googleapis.com"
+        quota_id   = "SSD-TOTAL-GB-per-project-region"
+        value      = var.cluster_ssd_quota_gb
+        region     = var.cluster_region
+      }
     },
     merge([for zone, project_id in local.shell_projects : {
       "${zone}/cloud_run_cpu" = {

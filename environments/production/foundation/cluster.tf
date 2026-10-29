@@ -117,8 +117,7 @@ resource "google_container_node_pool" "general" {
   node_config {
     machine_type = var.cluster.machine_type
     image_type   = "COS_CONTAINERD"
-    # Boot disks count against the region's 500 GB SSD quota with the databases' volumes: three
-    # nodes, a surge node and six 50 GiB volumes peak at 420 GB.
+    # Boot disks share the region's SSD quota with the databases' volumes, so they stay small.
     disk_type       = "pd-balanced"
     disk_size_gb    = 30
     service_account = google_service_account.runtime["cluster_nodes"].email

@@ -121,6 +121,16 @@ variable "cluster_compute_cpu_quota" {
   }
 }
 
+variable "cluster_ssd_quota_gb" {
+  description = "SSD persistent disk ceiling in the cluster region, in GB: the nodes' boot disks and the databases' volumes."
+  type        = number
+
+  validation {
+    condition     = var.cluster_ssd_quota_gb >= 100 && var.cluster_ssd_quota_gb <= 4000 && floor(var.cluster_ssd_quota_gb) == var.cluster_ssd_quota_gb
+    error_message = "The cluster SSD quota must be a whole number of GB from 100 through 4000."
+  }
+}
+
 variable "cluster" {
   description = "The production cluster's zones, the first holding the control plane, and its node pool."
   type = object({
