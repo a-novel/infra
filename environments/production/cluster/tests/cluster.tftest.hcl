@@ -42,15 +42,6 @@ override_data {
 }
 
 override_data {
-  target = data.terraform_remote_state.studio
-  values = {
-    outputs = {
-      url = "https://agora-studio-web-mock.a.run.app"
-    }
-  }
-}
-
-override_data {
   target = data.terraform_remote_state.bootstrap
   values = {
     outputs = {
@@ -194,7 +185,7 @@ run "runs_each_release_from_its_private_repository" {
     condition = (
       toset([for copy in output.image_copies : copy.target]) == toset([for key, image in local.release_images : "${image.repository}/${image.path}:${image.tag}"]) &&
       alltrue([for key, image in local.release_images :
-        startswith(image.source, "ghcr.io/a-novel/service-${split("/", key)[0]}/") &&
+        can(regex("^ghcr\\.io/a-novel/(service|platform)-${split("/", key)[0]}[/:]", image.source)) &&
         image.repository == "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-${split("/", key)[0]}-private-production" &&
         can(regex("@sha256:[a-f0-9]{64}$", local.release_image[key]))
       ])
@@ -267,7 +258,7 @@ run "runs_authentication" {
       local.authentication_env.OTEL == "false" &&
       local.authentication_env.POSTGRES_HOST == one(kubernetes_manifest.database_server_certificate["authentication"].manifest.spec.dnsNames) &&
       local.authentication_env.SMTP_ADDR == "smtp-relay.gmail.com:587" &&
-      local.authentication_env.PLATFORM_AUTH_URL == "https://agora-studio-web-mock.a.run.app"
+      local.authentication_env.PLATFORM_AUTH_URL == "https://studio.agorastoryverse.com"
     )
     error_message = "Authentication must report nothing to Sentry, use its CloudNativePG database by its certificate's name, and send its root's mail with links to Studio."
   }
@@ -329,5 +320,38 @@ run "runs_genai" {
       length(one(one(one(kubernetes_network_policy_v1.genai_grpc.spec).ingress).from).namespace_selector) == 0
     )
     error_message = "Only GenAI's own smoke check may call its server."
+  }
+}
+
+run "runs_studio" {
+  command = plan
+
+  variables {
+    custom_resources = true
+  }
+
+  assert {
+    condition = (
+      length([for name in keys(local.studio_env) : name if startswith(name, "SENTRY_") || startswith(name, "PUBLIC_SENTRY_")]) == 0 &&
+      local.studio_env.OTEL == "false" &&
+      local.studio_env.ORIGIN == "https://studio.agorastoryverse.com" &&
+      local.studio_env.ADDRESS_HEADER == "X-Forwarded-For" &&
+      local.studio_env.XFF_DEPTH == "2"
+    )
+    error_message = "Studio must report nothing to Sentry, check form posts against its own host, and take the visitor's address the load balancer appends."
+  }
+
+  # A release without service tokens sends Google ID tokens when AUTHENTICATION_SERVICE_AUDIENCE is
+  # set, which Authentication on the cluster cannot take.
+  assert {
+    condition = (
+      !contains(keys(local.studio_env), "AUTHENTICATION_SERVICE_AUDIENCE") &&
+      local.studio_env.AUTHENTICATION_SERVICE_URL == "http://${module.authentication_rest[0].pod_labels["app.kubernetes.io/name"]}.authentication.svc:${local.authentication_env.REST_PORT}" &&
+      contains(split(",", local.authentication_env.SERVICE_TOKEN_CALLERS), module.studio_web.service_account) &&
+      one(one(one(kubernetes_network_policy_v1.studio_web.spec).egress).to).pod_selector[0].match_labels["app.kubernetes.io/name"] == module.authentication_rest[0].pod_labels["app.kubernetes.io/name"] &&
+      one(one(one(kubernetes_network_policy_v1.studio_web.spec).egress).ports).port == local.authentication_env.REST_PORT &&
+      contains([for peer in one(one(kubernetes_network_policy_v1.authentication_rest.spec).ingress).from : one(peer.pod_selector).match_labels["app.kubernetes.io/name"]], module.studio_web.pod_labels["app.kubernetes.io/name"])
+    )
+    error_message = "Studio must call Authentication's API directly, as a caller Authentication admits."
   }
 }

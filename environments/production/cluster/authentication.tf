@@ -1,15 +1,5 @@
 # Authentication on the cluster, which serves no one until the cutover (a-novel/.github#522). It runs
 # one pod, which holds the in-memory rate limits.
-
-# The Studio root names the URL that serves the pages the account emails link to.
-data "terraform_remote_state" "studio" {
-  backend = "gcs"
-  config = {
-    bucket = "a-novel-management-prod-232403541574-tofu-state"
-    prefix = "studio"
-  }
-}
-
 locals {
   authentication_smtp = local.service_inputs["authentication"].smtp
   authentication_env = merge(local.database_env["authentication"], local.downtime_env["authentication"], {
@@ -30,10 +20,10 @@ locals {
     SERVICE_TOKEN_ISSUER   = local.service_token_issuer
     SERVICE_TOKEN_AUDIENCE = "authentication"
     SERVICE_TOKEN_CALLERS  = "system:serviceaccount:studio:web,system:serviceaccount:authentication:smoke"
-    # Registration and account emails, whose links open Studio. The relay admits them by the NAT
-    # address, so they carry no SMTP credential. RFC 5321 gives each SMTP command minutes, and no
-    # request waits for a send.
-    PLATFORM_AUTH_URL   = data.terraform_remote_state.studio.outputs.url
+    # Registration and account emails, whose links open Studio on its own host. The relay admits
+    # them by the NAT address, so they carry no SMTP credential. RFC 5321 gives each SMTP command
+    # minutes, and no request waits for a send.
+    PLATFORM_AUTH_URL   = "https://${local.studio_host}"
     SMTP_ADDR           = "${local.authentication_smtp.host}:587"
     SMTP_MAX_CONCURRENT = "8"
     SMTP_SENDER_EMAIL   = local.authentication_smtp.sender_email

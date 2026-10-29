@@ -271,6 +271,16 @@ run "keeps_the_cluster_private" {
     )
     error_message = "The cluster must refuse deletion, upgrade on a release channel, and leave metrics to Grafana."
   }
+
+  assert {
+    condition = (
+      google_artifact_registry_repository.studio.project == google_project.workload.project_id &&
+      one(google_artifact_registry_repository.studio.docker_config).immutable_tags &&
+      google_artifact_registry_repository_iam_member.cluster_studio.role == "roles/artifactregistry.reader" &&
+      google_artifact_registry_repository_iam_member.cluster_studio.member == google_service_account.runtime["cluster_nodes"].member
+    )
+    error_message = "Studio's cluster release must sit in the workload project, which admission requires, with immutable tags the nodes only read."
+  }
 }
 
 run "grants_no_basic_roles" {
