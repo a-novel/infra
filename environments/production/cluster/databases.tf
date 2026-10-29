@@ -9,7 +9,8 @@ data "terraform_remote_state" "bootstrap" {
 }
 
 locals {
-  barman_plugin = "barman-cloud.cloudnative-pg.io"
+  barman_plugin      = "barman-cloud.cloudnative-pg.io"
+  management_project = "a-novel-management-prod"
   # Each database's pods carry CloudNativePG's label for their Cluster, which is named `database`.
   database_pods = { "cnpg.io/cluster" = "database" }
 }
@@ -37,6 +38,9 @@ resource "kubernetes_manifest" "database_backups" {
     metadata   = { name = "backups", namespace = kubernetes_namespace_v1.service[each.key].metadata[0].name }
     spec = {
       retentionPolicy = "14d"
+      # Workload Identity gives the sidecar a token but no project, which Cloud Storage's client
+      # requires: the bucket's own project stands in.
+      instanceSidecarConfiguration = { env = [{ name = "GOOGLE_CLOUD_PROJECT", value = local.management_project }] }
       configuration = {
         destinationPath   = "gs://${data.terraform_remote_state.bootstrap.outputs.barman_buckets[each.key]}/"
         googleCredentials = { gkeEnvironment = true }
