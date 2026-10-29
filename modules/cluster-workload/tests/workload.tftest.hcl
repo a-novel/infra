@@ -17,6 +17,7 @@ run "runs_unprivileged" {
       !kubernetes_service_account_v1.workload.automount_service_account_token &&
       !one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).automount_service_account_token &&
       one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).security_context).run_as_non_root &&
+      one(one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).security_context).run_as_non_root &&
       one(one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).security_context).read_only_root_filesystem &&
       !one(one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).security_context).allow_privilege_escalation &&
       one(one(one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).security_context).capabilities).drop == tolist(["ALL"])
