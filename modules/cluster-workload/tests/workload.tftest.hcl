@@ -43,6 +43,15 @@ run "runs_unprivileged" {
 
   assert {
     condition = (
+      output.service.name == kubernetes_service_v1.workload.metadata[0].name &&
+      output.service.port == one(one(kubernetes_service_v1.workload.spec).port).port &&
+      one(one(kubernetes_service_v1.workload.spec).port).target_port == tostring(var.port)
+    )
+    error_message = "The Service output must name the Service and the port it serves."
+  }
+
+  assert {
+    condition = (
       one(one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).volume).secret).secret_name == "database-server-tls" &&
       [for item in one(one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).volume).secret).items : item.key] == ["ca.crt"] &&
       one([for env in one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).env : env.value if env.name == "SSL_CERT_DIR"]) == "/etc/ssl/certs:${one(one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).volume_mount).mount_path}"

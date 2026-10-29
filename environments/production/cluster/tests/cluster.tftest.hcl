@@ -21,6 +21,12 @@ override_data {
     outputs = {
       region              = "europe-west1"
       workload_project_id = "a-novel-production-prod"
+      studio_edge = {
+        host            = "studio.storyverse.fr"
+        address_name    = "studio"
+        ssl_policy      = "studio"
+        certificate_map = "studio"
+      }
       cluster = {
         name              = "a-novel-production"
         location          = "europe-west9-a"
@@ -258,7 +264,7 @@ run "runs_authentication" {
       local.authentication_env.OTEL == "false" &&
       local.authentication_env.POSTGRES_HOST == one(kubernetes_manifest.database_server_certificate["authentication"].manifest.spec.dnsNames) &&
       local.authentication_env.SMTP_ADDR == "smtp-relay.gmail.com:587" &&
-      local.authentication_env.PLATFORM_AUTH_URL == "https://studio.agorastoryverse.com"
+      local.authentication_env.PLATFORM_AUTH_URL == "https://studio.storyverse.fr"
     )
     error_message = "Authentication must report nothing to Sentry, use its CloudNativePG database by its certificate's name, and send its root's mail with links to Studio."
   }
@@ -307,9 +313,10 @@ run "runs_genai" {
     condition = (
       local.genai_secret_env.OPENAI_API_KEY.secret == "secrets" &&
       contains(keys(var.secrets["genai"]), local.genai_secret_env.OPENAI_API_KEY.key) &&
-      local.genai_sweep_env.SWEEP_TICKER == "true"
+      local.genai_sweep_env.SWEEP_TICKER == "true" &&
+      local.genai_grpc_env.GRPC_MAX_CONCURRENT_CALLS == "20"
     )
-    error_message = "Both read OpenAI's key from the namespace's synced secrets, and the sweep runs itself."
+    error_message = "Both read OpenAI's key from the namespace's synced secrets, the sweep runs itself, and the server refuses calls beyond the 20 its memory is sized for."
   }
 
   assert {
@@ -334,7 +341,7 @@ run "runs_studio" {
     condition = (
       length([for name in keys(local.studio_env) : name if startswith(name, "SENTRY_") || startswith(name, "PUBLIC_SENTRY_")]) == 0 &&
       local.studio_env.OTEL == "false" &&
-      local.studio_env.ORIGIN == "https://studio.agorastoryverse.com" &&
+      local.studio_env.ORIGIN == "https://studio.storyverse.fr" &&
       local.studio_env.ADDRESS_HEADER == "X-Forwarded-For" &&
       local.studio_env.XFF_DEPTH == "2"
     )
@@ -353,5 +360,57 @@ run "runs_studio" {
       contains([for peer in one(one(kubernetes_network_policy_v1.authentication_rest.spec).ingress).from : one(peer.pod_selector).match_labels["app.kubernetes.io/name"]], module.studio_web.pod_labels["app.kubernetes.io/name"])
     )
     error_message = "Studio must call Authentication's API directly, as a caller Authentication admits."
+  }
+}
+
+run "serves_studio_through_the_gateway" {
+  command = plan
+
+  variables {
+    custom_resources = true
+  }
+
+  assert {
+    condition = (
+      kubernetes_manifest.studio_gateway[0].manifest.spec.gatewayClassName == "gke-l7-global-external-managed" &&
+      kubernetes_manifest.studio_gateway[0].manifest.spec.addresses == [{ type = "NamedAddress", value = "studio" }] &&
+      kubernetes_manifest.studio_gateway[0].manifest.metadata.annotations["networking.gke.io/certmap"] == "studio" &&
+      kubernetes_manifest.studio_gateway_policy[0].manifest.spec.default.sslPolicy == "studio" &&
+      alltrue([for listener in kubernetes_manifest.studio_gateway[0].manifest.spec.listeners : listener.hostname == local.studio_host])
+    )
+    error_message = "The Gateway must answer only for Studio's host, on foundation's address, certificate map and TLS policy."
+  }
+
+  assert {
+    condition = (
+      kubernetes_manifest.studio_route[0].manifest.spec.hostnames == [local.studio_host] &&
+      one(kubernetes_manifest.studio_route[0].manifest.spec.parentRefs).sectionName == "https" &&
+      one(one(kubernetes_manifest.studio_route[0].manifest.spec.rules).backendRefs) == module.studio_web.service &&
+      one(kubernetes_manifest.studio_redirect[0].manifest.spec.parentRefs).sectionName == "http" &&
+      one(one(kubernetes_manifest.studio_redirect[0].manifest.spec.rules).filters).requestRedirect.scheme == "https" &&
+      length(keys(one(kubernetes_manifest.studio_redirect[0].manifest.spec.rules))) == 1
+    )
+    error_message = "HTTPS must reach Studio's Service, and plain HTTP must only redirect to HTTPS."
+  }
+
+  assert {
+    condition = (
+      kubernetes_manifest.studio_health_check[0].manifest.spec.targetRef.name == module.studio_web.service.name &&
+      kubernetes_manifest.studio_health_check[0].manifest.spec.default.config.httpHealthCheck.requestPath == "/ping" &&
+      kubernetes_manifest.studio_health_check[0].manifest.spec.default.config.httpHealthCheck.port == module.studio_web.service.port &&
+      local.studio_env.ORIGIN == "https://${local.studio_host}" &&
+      local.authentication_env.PLATFORM_AUTH_URL == local.studio_env.ORIGIN
+    )
+    error_message = "The load balancer must check Studio on its probes' path, and Studio and Authentication's links must name the Gateway's host."
+  }
+
+  assert {
+    condition = (
+      length(one(kubernetes_network_policy_v1.studio_web.spec).ingress) == 1 &&
+      toset([for peer in one(one(kubernetes_network_policy_v1.studio_web.spec).ingress).from : one(peer.ip_block).cidr]) == toset(["35.191.0.0/16", "130.211.0.0/22"]) &&
+      alltrue([for peer in one(one(kubernetes_network_policy_v1.studio_web.spec).ingress).from : length(peer.pod_selector) == 0 && length(peer.namespace_selector) == 0]) &&
+      one(one(one(kubernetes_network_policy_v1.studio_web.spec).ingress).ports).port == tostring(module.studio_web.service.port)
+    )
+    error_message = "Only Google's load balancer may reach Studio, on its port."
   }
 }
