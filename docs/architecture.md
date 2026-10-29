@@ -143,6 +143,9 @@ reaching the control plane through the DNS endpoint as the CI identities.
 - **Add-ons:** the cluster root installs cert-manager, the CloudNativePG operator, its Barman Cloud
   plugin and External Secrets with Helm, each in its own namespace. Renovate moves each chart with
   its images, after a week and a review.
+- **Edge:** Studio will answer on `studio.agorastoryverse.com` through a Gateway on Google's global
+  load balancer (a-novel/infra#1201). Foundation holds its `studio` address, a TLS 1.2 policy, and
+  a Certificate Manager certificate the domain's DNS authorizes before any traffic moves.
 - **Upkeep:** the `REGULAR` release channel upgrades it during weekly windows, Tuesday to Thursday
   from 01:00 to 07:00 UTC. Google collects only system logs and metrics, since Grafana takes every
   signal.
