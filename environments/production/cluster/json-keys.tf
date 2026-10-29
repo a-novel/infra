@@ -1,7 +1,7 @@
 # JSON Keys on the cluster, which serves no one until the cutover (a-novel/.github#522). Its pods run
 # only once the operators' kinds exist, since they read the database's and External Secrets' Secrets.
 locals {
-  json_keys_env = merge(local.database_env, local.downtime_env["json-keys"], {
+  json_keys_env = merge(local.database_env["json-keys"], local.downtime_env["json-keys"], {
     # Signing reads keys from a cache, so a few connections serve every pod.
     POSTGRES_MAX_OPEN_CONNS = "5"
     POSTGRES_MAX_IDLE_CONNS = "2"
@@ -52,7 +52,7 @@ resource "kubernetes_job_v1" "json_keys_migrations" {
           image = local.release_image["json-keys/migrations"]
 
           dynamic "env" {
-            for_each = merge(local.database_env, local.downtime_env["json-keys"])
+            for_each = merge(local.database_env["json-keys"], local.downtime_env["json-keys"], { SSL_CERT_DIR = "/etc/ssl/certs:/etc/database-ca" })
 
             content {
               name  = env.key
@@ -75,6 +75,12 @@ resource "kubernetes_job_v1" "json_keys_migrations" {
             }
           }
 
+          volume_mount {
+            name       = "database-ca"
+            mount_path = "/etc/database-ca"
+            read_only  = true
+          }
+
           resources {
             requests = { cpu = "100m", memory = "256Mi" }
             limits   = { memory = "256Mi" }
@@ -89,6 +95,20 @@ resource "kubernetes_job_v1" "json_keys_migrations" {
 
             capabilities {
               drop = ["ALL"]
+            }
+          }
+        }
+
+        # The migrations trust the database's CA as the server does.
+        volume {
+          name = "database-ca"
+
+          secret {
+            secret_name = kubernetes_manifest.database_server_certificate["json-keys"].manifest.spec.secretName
+
+            items {
+              key  = "ca.crt"
+              path = "ca.crt"
             }
           }
         }
@@ -115,6 +135,7 @@ module "json_keys_grpc" {
   port       = 8080
   env        = local.json_keys_env
   secret_env = merge(local.database_secret_env, { APP_MASTER_KEY = { secret = "secrets", key = "APP_MASTER_KEY" } })
+  ca_secret  = kubernetes_manifest.database_server_certificate["json-keys"].manifest.spec.secretName
   resources  = { cpu = "100m", memory = "512Mi" }
   replicas   = { min = 2, max = 2 }
   labels     = local.database_clients
