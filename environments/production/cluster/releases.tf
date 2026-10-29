@@ -1,8 +1,8 @@
 locals {
   # The release images the cluster runs, by service and role, as each service's root pins them.
   # This root's own deploy copies them into the service's private repository, which the nodes read.
-  release_roles = { json-keys = ["grpc", "migrations"] }
-  release_pins  = { for service in keys(local.release_roles) : service => provider::terraform::decode_tfvars(file("${path.module}/../${service}/terraform.tfvars")).images }
+  release_roles = { authentication = ["migrations", "rest"], json-keys = ["grpc", "migrations"] }
+  release_pins  = { for service in keys(local.release_roles) : service => local.service_inputs[service].images }
   release_images = { for item in flatten([for service, roles in local.release_roles : [for role in roles : { service = service, role = role }]]) :
     "${item.service}/${item.role}" => merge(
       regex("^ghcr\\.io/a-novel/(?P<path>[^:@]+):(?P<tag>[^@]+)@(?P<digest>sha256:[a-f0-9]{64})$", local.release_pins[item.service][item.role]),

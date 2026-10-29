@@ -15,116 +15,6 @@ locals {
   })
 }
 
-# Each new migrations image runs once, before the server rolls. A finished Job stays as its record.
-resource "kubernetes_job_v1" "json_keys_migrations" {
-  count = var.custom_resources ? 1 : 0
-
-  metadata {
-    name      = "migrations-${substr(trimprefix(local.release_images["json-keys/migrations"].digest, "sha256:"), 0, 12)}"
-    namespace = kubernetes_namespace_v1.service["json-keys"].metadata[0].name
-  }
-
-  spec {
-    backoff_limit           = 0
-    active_deadline_seconds = 600
-
-    template {
-      metadata {
-        labels = merge(local.database_clients, { "app.kubernetes.io/name" = "migrations" })
-      }
-
-      spec {
-        restart_policy                  = "Never"
-        automount_service_account_token = false
-
-        security_context {
-          run_as_non_root = true
-          run_as_user     = 65532
-          run_as_group    = 65532
-
-          seccomp_profile {
-            type = "RuntimeDefault"
-          }
-        }
-
-        container {
-          name  = "migrations"
-          image = local.release_image["json-keys/migrations"]
-
-          dynamic "env" {
-            for_each = merge(local.database_env["json-keys"], local.downtime_env["json-keys"], { SSL_CERT_DIR = "/etc/ssl/certs:/etc/database-ca" })
-
-            content {
-              name  = env.key
-              value = env.value
-            }
-          }
-
-          dynamic "env" {
-            for_each = local.database_secret_env
-
-            content {
-              name = env.key
-
-              value_from {
-                secret_key_ref {
-                  name = env.value.secret
-                  key  = env.value.key
-                }
-              }
-            }
-          }
-
-          volume_mount {
-            name       = "database-ca"
-            mount_path = "/etc/database-ca"
-            read_only  = true
-          }
-
-          resources {
-            requests = { cpu = "100m", memory = "256Mi" }
-            limits   = { memory = "256Mi" }
-          }
-
-          # The provider sends runAsNonRoot=false for a container that leaves it unset, which
-          # overrides the pod's and fails Pod Security.
-          security_context {
-            run_as_non_root            = true
-            allow_privilege_escalation = false
-            read_only_root_filesystem  = true
-
-            capabilities {
-              drop = ["ALL"]
-            }
-          }
-        }
-
-        # The migrations trust the database's CA as the server does.
-        volume {
-          name = "database-ca"
-
-          secret {
-            secret_name = kubernetes_manifest.database_server_certificate["json-keys"].manifest.spec.secretName
-
-            items {
-              key  = "ca.crt"
-              path = "ca.crt"
-            }
-          }
-        }
-      }
-    }
-  }
-
-  wait_for_completion = true
-
-  timeouts {
-    create = "10m"
-  }
-
-  depends_on = [kubernetes_manifest.database, kubernetes_network_policy_v1.database_clients]
-}
-
 module "json_keys_grpc" {
   source = "../../../modules/cluster-workload"
   count  = var.custom_resources ? 1 : 0
@@ -140,7 +30,7 @@ module "json_keys_grpc" {
   replicas   = { min = 2, max = 2 }
   labels     = local.database_clients
 
-  depends_on = [kubernetes_job_v1.json_keys_migrations, kubernetes_manifest.secrets]
+  depends_on = [kubernetes_job_v1.migrations, kubernetes_manifest.secrets]
 }
 
 # Authentication's API and JSON Keys' smoke check call the server, which reaches the issuer's keys

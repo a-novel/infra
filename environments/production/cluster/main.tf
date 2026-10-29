@@ -8,6 +8,9 @@ data "terraform_remote_state" "foundation" {
 
 locals {
   cluster = data.terraform_remote_state.foundation.outputs.cluster
+  # Each service's Cloud Run root, which pins its releases and secret versions and holds its
+  # settings, read once for every service that runs here too.
+  service_inputs = { for service in var.namespaces : service => provider::terraform::decode_tfvars(file("${path.module}/../${service}/terraform.tfvars")) }
 }
 
 # An ephemeral read keeps CI's access token out of the state and the plan.
