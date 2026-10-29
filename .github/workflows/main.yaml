@@ -426,6 +426,29 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
           github_token: ${{ github.token }}
+      # Temporary, never merged: reads why JSON Keys' migrations never finished.
+      - id: google
+        if: always()
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
+          token_format: access_token
+      - name: Read the migrations
+        if: always()
+        shell: bash
+        env:
+          TOKEN: ${{ steps.google.outputs.access_token }}
+        run: |
+          set -uo pipefail
+          endpoint="$(tofu -chdir=environments/production/cluster output -raw api_endpoint)"
+          get() { curl -sS -H "Authorization: Bearer $TOKEN" "https://$endpoint$1"; }
+          get "/apis/batch/v1/namespaces/json-keys/jobs" | jq -c '.items[] | {name: .metadata.name, active: .status.active, failed: .status.failed, succeeded: .status.succeeded, conditions: [.status.conditions[]? | {type, reason, message}]}'
+          get "/api/v1/namespaces/json-keys/pods" | jq -c '.items[] | {name: .metadata.name, phase: .status.phase, conditions: [.status.conditions[]? | select(.status != "True") | {type, reason, message}], containers: [.status.containerStatuses[]? | {name, ready, restarts: .restartCount, state, lastState}]}' | cut -c1-900
+          get "/api/v1/namespaces/json-keys/events" | jq -r '.items | sort_by(.lastTimestamp // .eventTime) | .[-15:][] | "\(.type) \(.involvedObject.kind)/\(.involvedObject.name) \(.reason): \(.message)"' | cut -c1-400
+          for pod in $(get "/api/v1/namespaces/json-keys/pods" | jq -r '.items[].metadata.name | select(startswith("migrations"))'); do
+            echo "--- $pod"; get "/api/v1/namespaces/json-keys/pods/$pod/log?tailLines=40" | tail -40 | cut -c1-600
+          done
 
   plan-sentry:
     if: github.event_name == 'pull_request'
