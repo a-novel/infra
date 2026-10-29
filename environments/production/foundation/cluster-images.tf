@@ -12,7 +12,7 @@ resource "google_artifact_registry_repository" "cluster_upstream" {
   for_each = local.cluster_image_upstreams
 
   project       = google_project.workload.project_id
-  location      = var.region
+  location      = var.cluster_region
   repository_id = "a-novel-${each.key}"
   description   = "Pull-through cache of ${each.value} for the cluster's add-ons."
   format        = "DOCKER"
@@ -57,6 +57,6 @@ resource "google_artifact_registry_vpcsc_config" "workload" {
   provider = google-beta
 
   project      = google_project.workload.project_id
-  location     = var.region
+  location     = var.cluster_region
   vpcsc_policy = "ALLOW"
 }

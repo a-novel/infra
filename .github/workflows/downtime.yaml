@@ -174,7 +174,7 @@ jobs:
           CLOUDSDK_CORE_DISABLE_PROMPTS: "1"
         run: |
           set -euo pipefail
-          where=(--location=europe-west1 --project=a-novel-management-prod)
+          where=(--location=europe-west9 --project=a-novel-management-prod)
           while read -r execution; do
             gcloud workflows executions cancel "$execution" --workflow=downtime-announcements "${where[@]}" --quiet >/dev/null
           done < <(gcloud workflows executions list downtime-announcements "${where[@]}" \

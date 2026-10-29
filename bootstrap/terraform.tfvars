@@ -1,5 +1,5 @@
 management_project_id    = "a-novel-management-prod"
-region                   = "europe-west1"
+region                   = "europe-west9"
 storage_location         = "EU"
 downtime_webhook_version = 1
 github_dispatch_token_versions = {

@@ -1,7 +1,9 @@
 # Architecture
 
-This document is about what runs where in production, on Google Cloud. Everything runs in
-`europe-west1`, and the database hosts in zone `europe-west1-d`.
+This document is about what runs where in production, on Google Cloud. The cluster, its network and
+image caches, and the management Workflows run in Paris, `europe-west9`. The Cloud Run platform it
+replaces still runs in `europe-west1`, with its database hosts in zone `europe-west1-d`, until it
+retires (a-novel/.github#529).
 
 ## Projects
 
@@ -110,7 +112,7 @@ own identities, image repositories, network tags and database hosts.
   projects. Their VPC reaches only the APIs it restricts, every API the two projects enable, and
   those APIs reach only resources inside it. CI's identities and the operators enter from anywhere.
   Any identity inside may call Secret Manager and Cloud Storage in management, for the secrets and
-  the backups. Artifact Registry's VPC Service Controls setting is `ALLOW` in the region, so the
+  the backups. Artifact Registry's VPC Service Controls setting is `ALLOW` in `europe-west9`, so the
   cluster's pull-through caches can fetch from their public registries. The perimeter runs in dry
   run, which logs the calls it would refuse. Organization admins create its access policy and grant
   on it by hand.
@@ -125,7 +127,7 @@ own identities, image repositories, network tags and database hosts.
 reaching the control plane through the DNS endpoint as the CI identities.
 
 - **Zonal,** so the billing account's free tier covers its management fee. The control plane runs in
-  `europe-west1-d`, and the nodes in `d` and `c`.
+  `europe-west9-a`, and the nodes in `a` and `b`.
 - **Nodes:** the `general` pool, two `e2-standard-4` nodes that autoscale to three, with private
   addresses only. They run as `a-novel-cluster-nodes`, and upgrades add a node before draining one.
 - **Access:** outside the network, the control plane answers only through its DNS endpoint, which
