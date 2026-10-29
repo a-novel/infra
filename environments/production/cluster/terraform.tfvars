@@ -22,3 +22,10 @@ addon_images = {
 
   bitwarden_sdk_server = "ghcr.io/external-secrets/bitwarden-sdk-server:v0.6.0@sha256:8c5491554fe1069e8e07e6aa1813e7f8198679604dd271d4f778d238f5ca9337"
 }
+
+# Each instance gets today's database host sizes. GenAI's rows hold payloads of up to 24 MiB.
+databases = {
+  authentication = { cpu = "750m", memory = "1536Mi", storage = "50Gi", max_connections = 50, extensions = ["uuid-ossp"] }
+  genai          = { cpu = "1500m", memory = "6Gi", storage = "50Gi", max_connections = 150, extensions = ["pg_cron", "uuid-ossp"] }
+  json-keys      = { cpu = "750m", memory = "1536Mi", storage = "50Gi", max_connections = 50, extensions = ["uuid-ossp"] }
+}
