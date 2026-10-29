@@ -318,6 +318,26 @@ jobs:
           service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
           github_token: ${{ github.token }}
 
+      # Temporary, never merged: lists what the Belgian cluster may have left behind.
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        if: always()
+        with:
+          workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
+      - name: List leftovers
+        if: always()
+        shell: bash
+        run: |
+          set -uo pipefail
+          p=a-novel-production-prod
+          echo "::group::unattached disks"; gcloud compute disks list --project=$p --filter='-users:*' --format='table(name,zone.basename(),sizeGb,type.basename(),creationTimestamp)'; echo "::endgroup::"
+          echo "::group::all disks"; gcloud compute disks list --project=$p --format='table(name,zone.basename(),sizeGb,users.len())'; echo "::endgroup::"
+          echo "::group::addresses"; gcloud compute addresses list --project=$p --format='table(name,region.basename(),address,status)'; echo "::endgroup::"
+          echo "::group::forwarding rules"; gcloud compute forwarding-rules list --project=$p --format='table(name,region.basename(),IPAddress)'; echo "::endgroup::"
+          echo "::group::snapshots"; gcloud compute snapshots list --project=$p --format='table(name,diskSizeGb,creationTimestamp,sourceDisk.basename())'; echo "::endgroup::"
+          echo "::group::GKE clusters"; gcloud container clusters list --project=$p --format='table(name,location,status)'; echo "::endgroup::"
+          echo "::group::AR repositories"; gcloud artifacts repositories list --project=$p --location=europe-west1 --format='table(name.basename(),format,mode)'; echo "::endgroup::"
+
   plan-json-keys:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
