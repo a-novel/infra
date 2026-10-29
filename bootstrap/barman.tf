@@ -61,7 +61,9 @@ resource "google_project_iam_custom_role" "barman_writer" {
   title       = "Barman Cloud writer"
   description = "Write and expire one database's Barman backups and WAL."
   stage       = "GA"
-  permissions = ["storage.objects.create", "storage.objects.get", "storage.objects.list", "storage.objects.delete"]
+  # Barman reads the bucket before each archive and backup, and counts a refusal as lost
+  # connectivity.
+  permissions = ["storage.buckets.get", "storage.objects.create", "storage.objects.get", "storage.objects.list", "storage.objects.delete"]
 
   lifecycle {
     prevent_destroy = true

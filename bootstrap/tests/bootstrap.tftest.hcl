@@ -90,6 +90,11 @@ run "isolates_each_database_backup" {
     ])
     error_message = "Each Barman bucket must be written only by its own service's database service account."
   }
+
+  assert {
+    condition     = contains(google_project_iam_custom_role.barman_writer.permissions, "storage.buckets.get")
+    error_message = "Barman must read its bucket: it refuses to archive when it cannot."
+  }
 }
 
 run "trusts_only_reviewed_workflows" {
