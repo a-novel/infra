@@ -70,6 +70,7 @@ run "serves_http_with_service_tokens" {
   variables {
     http_health_path = "/v2/ping"
     service_tokens   = { json-keys = "SERVICE_TOKEN_PATH" }
+    ca_secret        = null
   }
 
   assert {
@@ -86,5 +87,13 @@ run "serves_http_with_service_tokens" {
       one([for env in one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).env : env.value if env.name == "SERVICE_TOKEN_PATH"]) == "${one([for mount in one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).volume_mount : mount.mount_path if mount.name == "service-tokens"])}/json-keys"
     )
     error_message = "Each service token must name its callee's audience, at the path its variable names."
+  }
+
+  assert {
+    condition = (
+      length([for volume in one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).volume : volume if volume.name == "database-ca"]) == 0 &&
+      length([for env in one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).env : env if env.name == "SSL_CERT_DIR"]) == 0
+    )
+    error_message = "A workload without a database trusts only the system roots."
   }
 }

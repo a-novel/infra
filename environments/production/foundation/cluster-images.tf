@@ -51,6 +51,40 @@ resource "google_artifact_registry_repository_iam_member" "cluster_database_imag
   member     = google_service_account.runtime["cluster_nodes"].member
 }
 
+# Admission admits only images from the workload project. The services with a database run from
+# their private repositories there; Studio has none, so it gets one for its cluster release, which
+# the cluster root's deploy fills. Foundation applies first, so the repository exists for that copy.
+resource "google_artifact_registry_repository" "studio" {
+  project         = var.workload_project_id
+  location        = var.region
+  repository_id   = "agora-studio-private-production"
+  format          = "DOCKER"
+  mode            = "STANDARD_REPOSITORY"
+  deletion_policy = "PREVENT"
+  labels          = { environment = "production", service = "studio" }
+
+  # A deployed digest can never be re-tagged to different content.
+  docker_config {
+    immutable_tags = true
+  }
+
+  cleanup_policy_dry_run = true
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [google_project_service.workload["artifactregistry.googleapis.com"]]
+}
+
+resource "google_artifact_registry_repository_iam_member" "cluster_studio" {
+  project    = google_artifact_registry_repository.studio.project
+  location   = google_artifact_registry_repository.studio.location
+  repository = google_artifact_registry_repository.studio.name
+  role       = "roles/artifactregistry.reader"
+  member     = google_service_account.runtime["cluster_nodes"].member
+}
+
 # Inside the perimeter, Artifact Registry reaches no upstream by default. This lets the remote
 # repositories above fetch from theirs, and opens nothing else.
 resource "google_artifact_registry_vpcsc_config" "workload" {

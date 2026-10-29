@@ -56,8 +56,9 @@ variable "service_tokens" {
 }
 
 variable "ca_secret" {
-  description = "The namespace's Secret whose `ca.crt` the workload trusts beside the system roots: its database's CA."
+  description = "The namespace's Secret whose `ca.crt` the workload trusts beside the system roots: its database's CA. A workload without a database leaves it unset."
   type        = string
+  default     = null
 }
 
 variable "resources" {

@@ -5,6 +5,7 @@ locals {
     authentication = ["migrations", "rest"]
     genai          = ["grpc", "migrations", "sweep"]
     json-keys      = ["grpc", "migrations"]
+    studio         = ["web"]
   }
   release_pins = { for service in keys(local.release_roles) : service => local.service_inputs[service].images }
   release_images = { for item in flatten([for service, roles in local.release_roles : [for role in roles : { service = service, role = role }]]) :

@@ -3,7 +3,7 @@ locals {
   protocol = var.http_health_path == null ? "grpc" : "http"
   # Go reads every directory SSL_CERT_DIR lists, beside the system bundle. Each service token sits in
   # a file named after its audience.
-  env = merge(var.env, { SSL_CERT_DIR = "/etc/ssl/certs:/etc/database-ca" }, {
+  env = merge(var.env, var.ca_secret == null ? {} : { SSL_CERT_DIR = "/etc/ssl/certs:/etc/database-ca" }, {
     for audience, name in var.service_tokens : name => "/var/run/secrets/tokens/${audience}"
   })
 }
@@ -99,10 +99,14 @@ resource "kubernetes_deployment_v1" "workload" {
             }
           }
 
-          volume_mount {
-            name       = "database-ca"
-            mount_path = "/etc/database-ca"
-            read_only  = true
+          dynamic "volume_mount" {
+            for_each = var.ca_secret == null ? [] : ["database-ca"]
+
+            content {
+              name       = volume_mount.value
+              mount_path = "/etc/database-ca"
+              read_only  = true
+            }
           }
 
           dynamic "volume_mount" {
@@ -178,15 +182,19 @@ resource "kubernetes_deployment_v1" "workload" {
         }
 
         # Only the CA's certificate: the Secret also holds the database's private key.
-        volume {
-          name = "database-ca"
+        dynamic "volume" {
+          for_each = var.ca_secret == null ? [] : [var.ca_secret]
 
-          secret {
-            secret_name = var.ca_secret
+          content {
+            name = "database-ca"
 
-            items {
-              key  = "ca.crt"
-              path = "ca.crt"
+            secret {
+              secret_name = volume.value
+
+              items {
+                key  = "ca.crt"
+                path = "ca.crt"
+              }
             }
           }
         }
