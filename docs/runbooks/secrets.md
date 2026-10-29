@@ -145,6 +145,18 @@ Grafana as well as disabling its version.
 Grafana's Discord contact point is created by hand in the same stack, so its webhook never reaches
 state.
 
+## Alloy push token
+
+Alloy pushes metrics, logs and traces to the production stack with one access policy token. Create
+it in the stack's Grafana, under **Administration → Users and access → Cloud access policies**:
+
+- **Scopes:** `metrics:write`, `logs:write` and `traces:write`, and nothing else.
+- **Token:** no expiry.
+
+Add the token as a version of `production-alloy-push-token`, as in
+[Rotate a secret](#rotate-a-secret). For a leak, delete the token in Grafana as well as disabling
+its version.
+
 ## pgBackRest TLS certificates
 
 The database and repository hosts authenticate each other with certificates from an offline CA.
