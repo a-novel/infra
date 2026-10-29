@@ -62,8 +62,16 @@ resource "google_project_iam_custom_role" "barman_writer" {
   description = "Write and expire one database's Barman backups and WAL."
   stage       = "GA"
   # Barman reads the bucket before each archive and backup, and counts a refusal as lost
-  # connectivity.
-  permissions = ["storage.buckets.get", "storage.objects.create", "storage.objects.get", "storage.objects.list", "storage.objects.delete"]
+  # connectivity. It uploads base backups in parts, through the XML multipart API.
+  permissions = [
+    "storage.buckets.get",
+    "storage.multipartUploads.abort",
+    "storage.multipartUploads.create",
+    "storage.objects.create",
+    "storage.objects.delete",
+    "storage.objects.get",
+    "storage.objects.list",
+  ]
 
   lifecycle {
     prevent_destroy = true
