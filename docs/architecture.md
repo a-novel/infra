@@ -186,12 +186,11 @@ primary and a replica on separate nodes, with today's host sizes, switching over
 holds no data until the cutover imports it. CloudNativePG generates its credentials, in the
 `database-app` Secret, for the database and owner `app`. Its image catalog takes the service's
 release image from foundation, and GenAI preloads `pg_cron`. The deploy waits until both instances
-serve and WAL reaches Barman; a daily base backup runs from the replica, and every plan warns when
-a database has none from the last two days. Each database backs up to its own Barman bucket in
-management, `<prefix>-barman-<service>`. Each bucket has the pgBackRest buckets' protections, and
-only that database's Kubernetes service account, `database` in the service's namespace, writes it
-through Workload Identity. The nodes pull each service's PostgreSQL image from its private
-repository, as its host does.
+serve and WAL reaches Barman; a daily base backup runs from the replica. Each database backs up to
+its own Barman bucket in management, `<prefix>-barman-<service>`. Each bucket has the pgBackRest
+buckets' protections, and only that database's Kubernetes service account, `database` in the
+service's namespace, writes it through Workload Identity. The nodes pull each service's PostgreSQL
+image from its private repository, as its host does.
 
 | Service        | Machine         | Container           | Connections | Address          |
 | -------------- | --------------- | ------------------- | ----------- | ---------------- |

@@ -59,4 +59,7 @@ resource "google_artifact_registry_vpcsc_config" "workload" {
   project      = google_project.workload.project_id
   location     = var.cluster_region
   vpcsc_policy = "ALLOW"
+
+  # A location has no configuration to set until the project holds a repository there.
+  depends_on = [google_artifact_registry_repository.cluster_upstream]
 }

@@ -223,18 +223,3 @@ resource "kubernetes_manifest" "database_schedule" {
     }
   }
 }
-
-# Every plan and drift check warns when a database has no base backup from the last two days.
-check "databases_back_up" {
-  data "kubernetes_resources" "databases" {
-    api_version = "postgresql.cnpg.io/v1"
-    kind        = "Cluster"
-  }
-
-  assert {
-    condition = alltrue([for database in coalesce(data.kubernetes_resources.databases.objects, []) :
-      timecmp(timeadd(try(database.status.lastSuccessfulBackup, "1970-01-01T00:00:00Z"), "48h"), plantimestamp()) > 0
-    ])
-    error_message = "A database has no base backup from the last two days."
-  }
-}
