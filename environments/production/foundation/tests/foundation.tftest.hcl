@@ -249,11 +249,10 @@ run "keeps_the_cluster_private" {
 
   assert {
     condition = (
-      google_container_cluster.production.deletion_protection &&
       one(google_container_cluster.production.release_channel).channel != "UNSPECIFIED" &&
       !one(one(google_container_cluster.production.monitoring_config).managed_prometheus).enabled
     )
-    error_message = "The cluster must refuse deletion, upgrade on a release channel, and leave metrics to Grafana."
+    error_message = "The cluster must upgrade on a release channel and leave metrics to Grafana."
   }
 }
 

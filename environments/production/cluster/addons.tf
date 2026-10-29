@@ -92,7 +92,7 @@ resource "helm_release" "external_secrets" {
     # Its chart sets no security context, so it gets the one Pod Security's restricted level asks
     # for. Its image already runs as a non-root user.
     bitwarden-sdk-server = {
-      enabled            = true
+      enabled            = var.custom_resources
       image              = local.images.bitwarden_sdk_server
       podSecurityContext = { runAsNonRoot = true, seccompProfile = { type = "RuntimeDefault" } }
       securityContext    = { allowPrivilegeEscalation = false, capabilities = { drop = ["ALL"] } }

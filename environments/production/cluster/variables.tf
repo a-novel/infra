@@ -8,6 +8,11 @@ variable "addon_images" {
   }
 }
 
+variable "custom_resources" {
+  description = "Whether to manage the resources whose kinds the add-ons define, and the Bitwarden SDK server, which mounts one's certificate. A fresh cluster lacks those kinds until the add-ons install, so a rebuild turns this off before the cluster is replaced and on once they run."
+  type        = bool
+}
+
 variable "databases" {
   description = "Each service's database: each instance's CPU and memory, its volume, its connection ceiling and its extensions."
   type = map(object({

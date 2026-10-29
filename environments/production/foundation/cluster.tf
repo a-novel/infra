@@ -79,10 +79,10 @@ resource "google_container_cluster" "production" {
     oauth_scopes    = ["https://www.googleapis.com/auth/cloud-platform"]
   }
 
-  deletion_protection = true
+  # Unlocked while the cluster moves to Paris (a-novel/.github#522), and locked again once it runs.
+  deletion_protection = false
   lifecycle {
-    prevent_destroy = true
-    ignore_changes  = [node_config]
+    ignore_changes = [node_config]
   }
 }
 
@@ -132,9 +132,5 @@ resource "google_container_node_pool" "general" {
       enable_secure_boot          = true
       enable_integrity_monitoring = true
     }
-  }
-
-  lifecycle {
-    prevent_destroy = true
   }
 }

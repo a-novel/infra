@@ -1,3 +1,6 @@
+# Off while the cluster moves to Paris (a-novel/.github#522): the new cluster gets its add-ons first.
+custom_resources = false
+
 namespaces = [
   "authentication",
   "genai",

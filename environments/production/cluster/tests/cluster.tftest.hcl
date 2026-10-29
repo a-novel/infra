@@ -89,6 +89,10 @@ run "isolates_every_namespace" {
 run "keeps_each_database_available_and_backed_up" {
   command = plan
 
+  variables {
+    custom_resources = true
+  }
+
   assert {
     condition = alltrue([for service, database in kubernetes_manifest.database :
       database.manifest.spec.instances == 2 &&
