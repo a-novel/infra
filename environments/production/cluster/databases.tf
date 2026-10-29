@@ -196,6 +196,10 @@ resource "kubernetes_manifest" "database" {
     }
   }
 
+  # CloudNativePG's webhook adds its defaults to the PostgreSQL parameters, beside the provider's
+  # own defaults.
+  computed_fields = ["metadata.labels", "metadata.annotations", "spec.postgresql.parameters"]
+
   wait {
     condition {
       type   = "Ready"

@@ -4,9 +4,6 @@ custom_resources = true
 # WAL already fills, and the buckets' retention keeps that WAL a week.
 backup_server_name = "database-paris-2"
 
-# a-novel/infra#1247's deploy timed out reading the replaced databases. Empty once applied.
-adopted_databases = ["authentication", "json-keys"]
-
 namespaces = [
   "authentication",
   "genai",
