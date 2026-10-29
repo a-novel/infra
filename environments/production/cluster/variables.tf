@@ -54,3 +54,13 @@ variable "namespaces" {
     error_message = "Each namespace must be a lowercase DNS label."
   }
 }
+
+variable "secrets" {
+  description = "Each service's secrets on the cluster: the variable its workloads read, and the name of its Secret Manager secret, production-<service>-<name>. Each version is the one the service's root pins."
+  type        = map(map(string))
+
+  validation {
+    condition     = alltrue(flatten([for service, env in var.secrets : [for variable, name in env : can(regex("^[A-Z][A-Z0-9_]*$", variable)) && can(regex("^[a-z][a-z0-9-]*$", name))]]))
+    error_message = "Name each variable in upper snake case, and each secret by its lowercase suffix."
+  }
+}

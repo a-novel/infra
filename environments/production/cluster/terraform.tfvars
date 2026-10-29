@@ -35,3 +35,10 @@ databases = {
   genai          = { cpu = "1500m", memory = "6Gi", storage = "20Gi", max_connections = 150, extensions = ["pg_cron", "uuid-ossp"] }
   json-keys      = { cpu = "750m", memory = "1536Mi", storage = "10Gi", max_connections = 50, extensions = ["uuid-ossp"] }
 }
+
+# The database passwords come from CloudNativePG's database-app Secrets, so only these come from
+# Secret Manager.
+secrets = {
+  genai     = { OPENAI_API_KEY = "openai-api-key" }
+  json-keys = { APP_MASTER_KEY = "app-master-key" }
+}

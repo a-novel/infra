@@ -20,5 +20,9 @@ terraform {
       source  = "hashicorp/kubernetes"
       version = "3.4.0"
     }
+    # Its decode_tfvars reads each service root's pinned secret versions.
+    terraform = {
+      source = "terraform.io/builtin/terraform"
+    }
   }
 }
