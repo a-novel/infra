@@ -335,13 +335,17 @@ jobs:
           service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
           github_token: ${{ github.token }}
 
-  # Repository config needs only bootstrap's key grants, and no release waits on it.
+  # Repository config needs only bootstrap's key grants, and no release waits on it. It applies from
+  # its own environment and identity, which hold no Google Cloud rights, and never beside the sweep.
   github:
     needs: [changes, bootstrap]
     if: ${{ !cancelled() && !failure() && needs.changes.outputs.github == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    environment: production
+    environment: github
+    concurrency:
+      group: github-root
+      cancel-in-progress: false
     permissions:
       attestations: read
       contents: read
@@ -355,8 +359,8 @@ jobs:
           root: environments/production/github
           apply: "true"
           allow_deletion: ${{ needs.changes.outputs.allow }}
-          workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
+          workload_identity_provider: ${{ vars.GCP_GITHUB_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_GITHUB_SERVICE_ACCOUNT }}
           github_token: ${{ github.token }}
 
   # Every deploy applies every service root, found on disk by the changes job, so the services run

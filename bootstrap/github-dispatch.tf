@@ -13,6 +13,10 @@ locals {
     "notify-warnings.yaml" = { cron = "0 7 * * *", repositories = local.github_dot_repositories }
     "reconcile-board.yaml" = { cron = "*/15 * * * *", repositories = local.github_dot_repositories }
     "token-expiry.yaml"    = { cron = "0 8 * * *", repositories = local.github_dot_repositories }
+    # The GitHub root's sweep, which applies it when a repository's workflows change, and the daily
+    # drift check (a-novel/.github#534).
+    "sweep.yaml" = { cron = "*/10 * * * *", repositories = ["a-novel/infra"] }
+    "drift.yaml" = { cron = "17 5 * * *", repositories = ["a-novel/infra"] }
     # The repositories whose stack class sets `clean_images`: the services and platforms.
     "clean-images.yaml" = {
       cron = "17 3 * * *"

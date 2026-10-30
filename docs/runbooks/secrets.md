@@ -159,10 +159,10 @@ KEY_FILE="<path to the downloaded .pem>"
 gcloud secrets versions add "$SECRET" --project=a-novel-management-prod --data-file="$KEY_FILE"
 ```
 
-| Secret                               | App                     | Read by                                                       |
-| ------------------------------------ | ----------------------- | ------------------------------------------------------------- |
-| `production-github-plan-key-<org>`   | the Plan App, read-only | `infra-plan`, for pull requests                               |
-| `production-github-deploy-key-<org>` | the Deploy App          | `infra-foundation` for deploys, `infra-drift` for drift plans |
+| Secret                               | App                     | Read by                                                                 |
+| ------------------------------------ | ----------------------- | ----------------------------------------------------------------------- |
+| `production-github-plan-key-<org>`   | the Plan App, read-only | `infra-plan`, for pull requests                                         |
+| `production-github-deploy-key-<org>` | the Deploy App          | `infra-github` for deploys and the sweep, `infra-drift` for drift plans |
 
 For a leak, delete the key in the App's settings as well as disabling its version.
 

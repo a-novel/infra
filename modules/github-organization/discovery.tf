@@ -4,15 +4,13 @@
 locals {
   default_branch = "master"
 
-  # The workflows that report the always-required checks. A repository without them is not ready, and
-  # gets no rulesets, environments or secret access until a commit adds them.
-  governance_workflows = ["merge-gate.yaml", "epic-freeze.yaml", "review-gate.yaml", "check-dependencies.yaml"]
-
   # GitHub Actions' App, which posts every workflow job's check.
   actions_app = 15368
 }
 
-# A missing file reads as no content, an empty repository's included.
+# A repository is ready once its default branch holds main.yaml. Until then it gets no rulesets,
+# environments or secret access. Each repository names its other workflows as it likes, so readiness
+# never depends on their names. A missing file reads as no content, an empty repository's included.
 data "github_repository_file" "main" {
   for_each = var.repositories
 
@@ -21,8 +19,12 @@ data "github_repository_file" "main" {
   file       = ".github/workflows/main.yaml"
 }
 
+locals {
+  ready = toset([for name, file in data.github_repository_file.main : name if file.content != null])
+}
+
 data "github_tree" "default_branch" {
-  for_each = { for name, file in data.github_repository_file.main : name => file if file.content != null }
+  for_each = local.ready
 
   repository = each.key
   tree_sha   = local.default_branch
@@ -35,11 +37,6 @@ locals {
       for entry in tree.entries : entry.path if entry.type == "blob" && can(regex("^\\.github/workflows/[^/]+\\.ya?ml$", entry.path))
     ]
   }
-
-  ready = toset([
-    for name, paths in local.workflow_paths : name
-    if alltrue([for file in local.governance_workflows : contains(paths, ".github/workflows/${file}")])
-  ])
 }
 
 data "github_repository_file" "workflow" {

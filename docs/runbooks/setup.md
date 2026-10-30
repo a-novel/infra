@@ -5,7 +5,7 @@ rebuilding production from nothing.
 
 ## GitHub settings
 
-`a-novel repo update` applies the repository's rulesets:
+The GitHub root, `environments/production/github`, applies the repository's rulesets:
 
 - **`master`:** every job in `main.yaml` must pass, and so must the fleet's own checks:
   `merge-gate`, `epic-freeze`, `check-dependencies` and `review-gate`. Merges go through a merge
@@ -26,6 +26,8 @@ Set the repository variables under **Settings → Secrets and variables → Acti
 | `GCP_DOWNTIME_SERVICE_ACCOUNT`            | `infra-downtime@a-novel-management-prod.iam.gserviceaccount.com`                                           |
 | `GCP_HEALTH_WORKLOAD_IDENTITY_PROVIDER`   | `…/providers/github-health`                                                                                |
 | `GCP_HEALTH_SERVICE_ACCOUNT`              | `infra-health@a-novel-management-prod.iam.gserviceaccount.com`                                             |
+| `GCP_DRIFT_WORKLOAD_IDENTITY_PROVIDER`    | `…/providers/github-drift`                                                                                 |
+| `GCP_DRIFT_SERVICE_ACCOUNT`               | `infra-drift@a-novel-management-prod.iam.gserviceaccount.com`                                              |
 
 `DOWNTIME` holds the planned downtime. Never set it by hand. [downtime.yaml](downtime.md) writes it
 with the `anovelbot-agent` App, which needs **Variables: Read and write**, and publishes it on the
@@ -35,8 +37,8 @@ exist only while a [host tool](host-tools.md#publish-a-version) is being publish
 The workflows also read organization variables, which must be visible to this repository: the
 Apps' client IDs and logins, `AGENT_KILL_SWITCH`, `DISCORD_REPO_ROLES` and `RELEASE_BOT_LOGIN`.
 Without `RELEASE_BOT_LOGIN`, every plan that changes a release image fails. The Apps' private keys
-live only in the `governance` environment, which `a-novel repo update` creates and fills from
-Bitwarden. The deploys and rollouts post to Discord through the `DEPLOY_WEBHOOK` secret, and skip
+live only in the `governance` environment, which the GitHub root creates and `a-novel repo update`
+fills from Bitwarden. The deploys and rollouts post to Discord through the `DEPLOY_WEBHOOK` secret, and skip
 their posts without it.
 
 Environment `production` allows the `master` branch only, with no required reviewers:
@@ -49,6 +51,14 @@ Environment `production` allows the `master` branch only, with no required revie
 Environment `production` also holds the `SENTRY_AUTH_TOKEN` secret, Sentry's `release-ci`
 organization token from Bitwarden. Deploys record each release's `production` deploy with it, and
 only warn without it.
+
+Environment `github` allows the `master` branch only, with no required reviewers. The GitHub root's
+deploys and its sweep apply from it, apart from Google Cloud's production:
+
+| Environment variable                    | Value                                                          |
+| --------------------------------------- | -------------------------------------------------------------- |
+| `GCP_GITHUB_WORKLOAD_IDENTITY_PROVIDER` | `…/providers/github-github`                                    |
+| `GCP_GITHUB_SERVICE_ACCOUNT`            | `infra-github@a-novel-management-prod.iam.gserviceaccount.com` |
 
 Environment `host-artifacts` has the `core` and `owners-infra` teams as required reviewers. Either
 one approves a host tool publication.
