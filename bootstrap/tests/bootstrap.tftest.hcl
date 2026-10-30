@@ -75,9 +75,11 @@ run "protects_state_and_backups" {
   assert {
     condition = (
       google_secret_manager_secret_iam_member.grafana_token["plan"].secret_id == "production-grafana-plan-token" &&
-      toset(keys(google_secret_manager_secret_iam_member.grafana_token)) == toset(["plan", "foundation"])
+      toset(keys(google_secret_manager_secret_iam_member.grafana_token)) == toset(["plan", "foundation"]) &&
+      google_secret_manager_secret_iam_member.grafana_cloud_token["plan"].secret_id == "production-grafana-cloud-plan-token" &&
+      toset(keys(google_secret_manager_secret_iam_member.grafana_cloud_token)) == toset(["plan", "foundation"])
     )
-    error_message = "The plan identity runs pull-request code, so it may read only the read-only Grafana token."
+    error_message = "The plan identity runs pull-request code, so it may read only the read-only Grafana tokens."
   }
 
   assert {

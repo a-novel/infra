@@ -3,3 +3,5 @@
 node_modules
 *.tf
 *.tftest.hcl
+# Vendored byte for byte from its upstream release, which the Grafana root pins by digest.
+environments/production/grafana/dashboards/

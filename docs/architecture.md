@@ -361,6 +361,11 @@ values and copies the governance secrets, so its templates stay frozen.
 
 ## Monitoring
 
+- **Grafana** receives every signal from the cluster, through Alloy. The Grafana root,
+  `environments/production/grafana`, holds its alert rules and dashboards, and its notification
+  policy posts every alert to the Discord contact point, which core creates by hand so its webhook
+  never reaches state. [Grafana alerts](runbooks/alerts.md#grafana-alerts) gives each rule. The root
+  applies only when it changes, in `deploy.yaml`'s own `grafana` job, which no release waits on.
 - **Alerts** email an operations channel: foundation's, or the service runtime's own. They cover
   Authentication's 5xx rate, GenAI's sweep failures, failed jobs and key rotation, database
   capacity, backups, and the [monthly budget](costs.md). [Alerts](runbooks/alerts.md) gives each
