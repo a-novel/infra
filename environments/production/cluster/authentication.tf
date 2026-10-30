@@ -54,8 +54,7 @@ module "authentication_rest" {
 }
 
 # Studio and Authentication's smoke check call the API. The API calls JSON Keys, and reaches the
-# issuer's keys through Google's restricted API addresses. Its mail waits for the relay's egress
-# (a-novel/infra#1200).
+# issuer's keys through Google's restricted API addresses and the mail relay (egress.tf).
 resource "kubernetes_network_policy_v1" "authentication_rest" {
   metadata {
     name      = "rest"

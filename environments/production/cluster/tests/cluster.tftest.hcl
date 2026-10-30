@@ -285,6 +285,26 @@ run "lets_operators_read_the_services" {
   }
 }
 
+run "reaches_only_its_internet_hosts" {
+  command = plan
+
+  variables {
+    custom_resources = true
+  }
+
+  assert {
+    condition = (
+      { for name, policy in kubernetes_manifest.internet_egress : name => "${policy.manifest.metadata.namespace}:${join(",", policy.manifest.spec.podSelector.matchExpressions[0].values)}:${policy.manifest.spec.egress[0].matches[0].name}:${policy.manifest.spec.egress[0].ports[0].port}" } == {
+        openai     = "genai:grpc,sweep:api.openai.com:443"
+        smtp-relay = "authentication:maintenance,rest:smtp-relay.gmail.com:587"
+        github-raw = "studio:web:raw.githubusercontent.com:443"
+      } &&
+      alltrue([for policy in kubernetes_manifest.internet_egress : policy.manifest.kind == "FQDNNetworkPolicy" && length(policy.manifest.spec.egress) == 1])
+    )
+    error_message = "GenAI may reach only OpenAI, Authentication only the mail relay, and Studio only GitHub's raw host, each on its own port."
+  }
+}
+
 run "runs_json_keys" {
   command = plan
 
