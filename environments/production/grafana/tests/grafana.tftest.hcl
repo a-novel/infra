@@ -63,6 +63,28 @@ run "watches_every_service" {
   }
 }
 
+run "warns_before_resources_run_out" {
+  command = plan
+
+  assert {
+    condition = (
+      length(grafana_rule_group.alerts["capacity"].rule) == 5 + length(local.databases) &&
+      alltrue([for name, database in local.databases : anytrue([for rule in grafana_rule_group.alerts["capacity"].rule :
+        strcontains(jsondecode(rule.data[0].model).expr, "namespace=\"${name}\"") &&
+        endswith(jsondecode(rule.data[0].model).expr, "> ${database.max_connections * var.thresholds.database_connections}")
+      ])])
+    )
+    error_message = "The capacity group must warn on CPU, memory, out-of-memory kills, waiting pods and saturated autoscalers, and on each database's connections against its own limit."
+  }
+
+  assert {
+    condition = alltrue([for rule in grafana_rule_group.alerts["capacity"].rule :
+      !strcontains(jsondecode(rule.data[0].model).expr, "resource_requests") || strcontains(jsondecode(rule.data[0].model).expr, "resource_requests{resource=\"cpu\"}) > 0)")
+    ])
+    error_message = "A container without a CPU request must be left out, or its share divides by zero and fires."
+  }
+}
+
 run "refuses_a_latency_alert_that_never_fires" {
   command = plan
 

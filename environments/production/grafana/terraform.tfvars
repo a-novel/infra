@@ -30,4 +30,8 @@ thresholds = {
   node_memory     = 0.85
   replica_lag     = 30
   usage           = 0.8
+  # Early enough to raise a request, a limit or max_connections before the resource runs out.
+  container_cpu        = 0.8
+  container_memory     = 0.85
+  database_connections = 0.8
 }

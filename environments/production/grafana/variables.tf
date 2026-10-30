@@ -54,7 +54,7 @@ variable "alerts" {
 }
 
 variable "thresholds" {
-  description = "The platform alerts' thresholds: the used share of a volume, a node's CPU and memory, a replica's replay lag in seconds, and the share of a Grafana Cloud allowance."
+  description = "The platform and capacity alerts' thresholds: the used share of a volume, a node's CPU and memory, a container's CPU request and memory limit, and a database's connections; a replica's replay lag in seconds; and the share of a Grafana Cloud allowance."
   type = object({
     volume_warning  = number
     volume_critical = number
@@ -62,5 +62,9 @@ variable "thresholds" {
     node_memory     = number
     replica_lag     = number
     usage           = number
+    # The used share of a container's CPU request and memory limit, and of a database's connections.
+    container_cpu        = number
+    container_memory     = number
+    database_connections = number
   })
 }

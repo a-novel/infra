@@ -16,7 +16,7 @@ failed `drift` runs to whoever last edited its schedule.
 Grafana evaluates the cluster's alerts every minute. Its notification policy posts each one to
 Discord through the hand-made `discord` contact point when it fires, every four hours while it
 fires, and when it resolves. The rules sit in the stack's **Production** folder: one rule group per
-service, plus `jobs`, `platform` and `usage`. Their thresholds are the Grafana root's `alerts` and
+service, plus `capacity`, `jobs`, `platform` and `usage`. Their thresholds are the Grafana root's `alerts` and
 `thresholds` inputs, and the folder's **Services**, **Cluster** and **CloudNativePG** dashboards
 draw the same metrics.
 
@@ -37,6 +37,12 @@ draw the same metrics.
 | `No room for a lost node's …`    | the pods' CPU or memory requests exceed every node but the largest, for 15 minutes              |
 | `Autoscaler at its maximum`      | the cluster has run as many nodes as foundation's `cluster.max_nodes` for 30 minutes            |
 | `Collector silent`               | no scrape reached Grafana for 10 minutes                                                        |
+| `Container CPU above 80% …`      | a container uses more than `container_cpu` of the CPU it requests for 15 minutes                |
+| `Container memory above 85% …`   | a container uses more than `container_memory` of its memory limit for 10 minutes                |
+| `Container killed for memory`    | a container restarted after running out of memory                                               |
+| `Pod waiting to start`           | a pod has waited 10 minutes for a node or its image                                             |
+| `Workload autoscaler at its max` | a workload's autoscaler has run its most replicas for 15 minutes                                |
+| `<database>: connections above…` | a database holds more than `database_connections` of its `max_connections` for 10 minutes       |
 | `Usage: … above 80% of the plan` | a Grafana Cloud allowance reached `usage` of what the Pro plan includes this month              |
 | `Usage: overage`                 | this month's usage costs anything beyond the plan                                               |
 
@@ -52,6 +58,15 @@ draw the same metrics.
 - **No room for a lost node, or the autoscaler at its maximum:** raise foundation's
   `cluster.max_nodes`, or lower a workload's requests, in a pull request. Mind the SSD quota the
   nodes' disks share with the volumes.
+- **A container near its CPU request or memory limit, or killed for memory:** raise its request or
+  limit in a pull request, the cluster root's `databases` for a database, before it saturates. No
+  container has a CPU limit, so a busy one slows its neighbours rather than throttling; memory past
+  the limit kills the container.
+- **A pod waiting to start, or a workload's autoscaler at its maximum:** the cluster or the workload
+  is out of room. Raise the workload's `replicas.max`, or foundation's `cluster.max_nodes` with its
+  CPU quota, in a pull request.
+- **A database near its connection limit:** raise its `max_connections` in the cluster root's
+  `databases`, and its memory with it, in a pull request.
 - **The collector silent:** Alloy's pod in the `alloy` namespace, its
   [push token](secrets.md#alloy-push-token) or its egress to Grafana's gateway stopped.
 

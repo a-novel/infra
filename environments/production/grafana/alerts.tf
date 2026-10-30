@@ -188,7 +188,52 @@ locals {
     expr       = "sum(grafanacloud_org_total_overage) > 0"
   }
 
+  # The cluster's databases, with the connections each admits.
+  databases = provider::terraform::decode_tfvars(file("${path.module}/../cluster/terraform.tfvars")).databases
+
+  # Each warns while a resource still has room, so a request, a limit or the node pool can rise
+  # before work queues or fails. A container without a request or limit has no ceiling to approach.
+  capacity_rules = concat([
+    {
+      title   = "Container CPU above ${format("%.0f", var.thresholds.container_cpu * 100)}% of its request"
+      for     = "15m"
+      summary = "{{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.container }}) uses {{ humanizePercentage $values.query.Value }} of the CPU it requests."
+      expr    = "sum by (namespace, pod, container) (rate(container_cpu_usage_seconds_total{container!=\"\", container!=\"POD\"}[10m])) / on (namespace, pod, container) (sum by (namespace, pod, container) (kube_pod_container_resource_requests{resource=\"cpu\"}) > 0) > ${var.thresholds.container_cpu}"
+    },
+    {
+      title   = "Container memory above ${format("%.0f", var.thresholds.container_memory * 100)}% of its limit"
+      for     = "10m"
+      summary = "{{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.container }}) uses {{ humanizePercentage $values.query.Value }} of its memory limit; past it, the container is killed."
+      expr    = "sum by (namespace, pod, container) (container_memory_working_set_bytes{container!=\"\", container!=\"POD\"}) / on (namespace, pod, container) (sum by (namespace, pod, container) (kube_pod_container_resource_limits{resource=\"memory\"}) > 0) > ${var.thresholds.container_memory}"
+    },
+    {
+      title   = "Container killed for memory"
+      for     = "0s"
+      summary = "{{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.container }}) restarted after running out of memory."
+      expr    = "increase(kube_pod_container_status_restarts_total[10m]) > 0 and on (namespace, pod, container) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"} == 1"
+    },
+    # A pod waits when no node has room for its requests, until the autoscaler adds one.
+    {
+      title   = "Pod waiting to start"
+      for     = "10m"
+      summary = "{{ $labels.namespace }}/{{ $labels.pod }} has waited 10 minutes for a node or its image."
+      expr    = "max by (namespace, pod) (kube_pod_status_phase{phase=\"Pending\"}) == 1"
+    },
+    {
+      title   = "Workload autoscaler at its maximum"
+      for     = "15m"
+      summary = "{{ $labels.namespace }}/{{ $labels.horizontalpodautoscaler }} runs its most replicas."
+      expr    = "kube_horizontalpodautoscaler_status_current_replicas >= on (namespace, horizontalpodautoscaler) kube_horizontalpodautoscaler_spec_max_replicas"
+    },
+    ], [for name, database in local.databases : {
+      title   = "${name}: connections above ${format("%.0f", var.thresholds.database_connections * 100)}% of the limit"
+      for     = "10m"
+      summary = "The ${name} database holds {{ $values.query.Value }} of the ${database.max_connections} connections it admits."
+      expr    = "max by (namespace) (sum by (namespace, pod) (cnpg_backends_total{namespace=\"${name}\"})) > ${database.max_connections * var.thresholds.database_connections}"
+  }])
+
   rule_groups = merge(local.service_rules, {
+    capacity = local.capacity_rules
     jobs     = local.job_rules
     platform = concat(local.platform_rules, local.request_rules)
     usage    = concat(local.usage_rules, [local.overage_rule])
