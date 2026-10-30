@@ -29,7 +29,7 @@ override_data {
 }
 
 variables {
-  recovery = { project = "a-novel-recovery-261101", service = "genai" }
+  recovery = { project = "a-novel-recovery-261101" }
 }
 
 run "isolates_the_drill" {
@@ -54,18 +54,42 @@ run "isolates_the_drill" {
     )
     error_message = "The drill cluster must keep its nodes and endpoint private, give pods their own identity, and go with the drill."
   }
-}
-
-run "reads_only_the_restored_service_backups" {
-  command = plan
 
   assert {
     condition = (
-      google_storage_bucket_iam_member.backups.bucket == "a-novel-management-prod-232403541574-barman-genai" &&
-      google_storage_bucket_iam_member.backups.role == "projects/a-novel-management-prod/roles/barmanReader" &&
-      google_storage_bucket_iam_member.backups.member == "principal://iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/a-novel-recovery-261101.svc.id.goog/subject/ns/genai/sa/drill"
+      google_project_iam_member.nodes.role != "roles/artifactregistry.reader" &&
+      toset([for grant in google_artifact_registry_repository_iam_member.nodes : grant.repository]) == toset([for cache in google_artifact_registry_repository.upstream : cache.name])
     )
-    error_message = "Only the drill's database may read, and only its service's backups."
+    error_message = "The nodes must read only the drill's own caches."
+  }
+}
+
+run "reads_only_the_restored_services_backups" {
+  command = plan
+
+  variables {
+    recovery = { project = "a-novel-recovery-261101", services = ["genai", "json-keys"] }
+  }
+
+  assert {
+    condition = (
+      keys(google_storage_bucket_iam_member.backups) == ["genai", "json-keys"] &&
+      alltrue([for service, grant in google_storage_bucket_iam_member.backups : (
+        grant.bucket == "a-novel-management-prod-232403541574-barman-${service}" &&
+        grant.role == "projects/a-novel-management-prod/roles/barmanReader" &&
+        grant.member == "principal://iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/a-novel-recovery-261101.svc.id.goog/subject/ns/${service}/sa/drill"
+      )])
+    )
+    error_message = "Only each restored database may read, and only its own service's backups."
+  }
+}
+
+run "restores_every_service_by_default" {
+  command = plan
+
+  assert {
+    condition     = keys(google_storage_bucket_iam_member.backups) == ["authentication", "genai", "json-keys"]
+    error_message = "A drill must restore every cluster database unless told otherwise."
   }
 }
 
@@ -73,7 +97,17 @@ run "refuses_a_protected_project" {
   command = plan
 
   variables {
-    recovery = { project = "a-novel-production-prod", service = "genai" }
+    recovery = { project = "a-novel-production-prod" }
+  }
+
+  expect_failures = [var.recovery]
+}
+
+run "refuses_an_unknown_service" {
+  command = plan
+
+  variables {
+    recovery = { project = "a-novel-recovery-261101", services = ["narrative-engine"] }
   }
 
   expect_failures = [var.recovery]

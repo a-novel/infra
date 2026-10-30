@@ -157,11 +157,21 @@ resource "google_service_account" "nodes" {
 }
 
 resource "google_project_iam_member" "nodes" {
-  for_each = toset(["roles/container.defaultNodeServiceAccount", "roles/artifactregistry.reader"])
-
   project = var.recovery.project
-  role    = each.key
+  role    = "roles/container.defaultNodeServiceAccount"
   member  = google_service_account.nodes.member
+}
+
+# The nodes pull every image from the drill's own caches, by the digests production pins, so the
+# drill reads nothing in production's registries.
+resource "google_artifact_registry_repository_iam_member" "nodes" {
+  for_each = google_artifact_registry_repository.upstream
+
+  project    = each.value.project
+  location   = each.value.location
+  repository = each.value.name
+  role       = "roles/artifactregistry.reader"
+  member     = google_service_account.nodes.member
 }
 
 # Production's cluster without its database rules: one zone, one node, and gone with the drill.
@@ -232,7 +242,7 @@ resource "google_container_cluster" "drill" {
   depends_on = [google_project_iam_member.nodes]
 }
 
-# One node holds the operator and the restored database, GenAI's 6 GiB included.
+# One node holds GKE's own pods, the operators and every restored database at production's sizes.
 resource "google_container_node_pool" "drill" {
   project    = var.recovery.project
   location   = google_container_cluster.drill.location
@@ -246,7 +256,7 @@ resource "google_container_node_pool" "drill" {
   }
 
   node_config {
-    machine_type    = "e2-standard-4"
+    machine_type    = "e2-standard-8"
     image_type      = "COS_CONTAINERD"
     disk_type       = "pd-balanced"
     disk_size_gb    = 30
@@ -265,12 +275,14 @@ resource "google_container_node_pool" "drill" {
   }
 }
 
-# The restored database's Kubernetes service account, which CloudNativePG names after its Cluster,
-# reads the service's backups and changes nothing. Destroying the drill takes the grant back.
+# Each restored database's Kubernetes service account, which CloudNativePG names after its Cluster,
+# reads its own service's backups and changes nothing. Destroying the drill takes the grants back.
 resource "google_storage_bucket_iam_member" "backups" {
-  bucket = data.terraform_remote_state.bootstrap.outputs.barman_buckets[var.recovery.service]
+  for_each = var.recovery.services
+
+  bucket = data.terraform_remote_state.bootstrap.outputs.barman_buckets[each.key]
   role   = data.terraform_remote_state.bootstrap.outputs.barman_reader_role
-  member = "principal://iam.googleapis.com/projects/${data.google_project.drill.number}/locations/global/workloadIdentityPools/${var.recovery.project}.svc.id.goog/subject/ns/${var.recovery.service}/sa/drill"
+  member = "principal://iam.googleapis.com/projects/${data.google_project.drill.number}/locations/global/workloadIdentityPools/${var.recovery.project}.svc.id.goog/subject/ns/${each.key}/sa/drill"
 
   # The workload identity pool exists once the cluster does.
   depends_on = [google_container_cluster.drill]

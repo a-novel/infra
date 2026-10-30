@@ -12,7 +12,7 @@ checks from the repository root, the way CI runs them:
 ```bash
 tofu fmt -check -recursive -diff
 tflint --init --config="$PWD/.tflint.hcl" && tflint --recursive --config="$PWD/.tflint.hcl"
-for dir in bootstrap environments/production/* environments/recovery $(dirname modules/*/tests | sort -u); do
+for dir in bootstrap environments/production/* environments/recovery* $(dirname modules/*/tests | sort -u); do
   tofu -chdir="$dir" init -backend=false -lockfile=readonly && tofu -chdir="$dir" validate && tofu -chdir="$dir" test
 done
 go test ./internal/hostcredentials/... ./internal/recovery/...
