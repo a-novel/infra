@@ -121,12 +121,27 @@ runs:
             >"$RUNNER_TEMP/plan.txt" 2>>"$errors" || status=$?
           [ "$status" -ne 1 ]
         }
-        # Cloud Storage answers 503 now and then while OpenTofu reads the state. A plan changes
-        # nothing, so such an error is retried for two minutes; any other error fails at once.
+        # transient tells whether a failed attempt is worth repeating. Cloud Storage answers 503 now
+        # and then while OpenTofu reads the state, and a lost answer to the lock's write leaves this
+        # runner's own lock (own-lock.mjs), which transient releases.
+        transient() {
+          local id
+          id="$(node .github/scripts/own-lock.mjs "$errors")" || return 1
+          if [ -z "$id" ]; then
+            grep -Eq '"code": 50[234]|UNAVAILABLE' "$errors"
+            return
+          fi
+          echo "::warning::tofu failed on this runner's own state lock $id; releasing it."
+          tofu -chdir="$ROOT" force-unlock -force "$id" || return 1
+        }
+        # A plan changes nothing, so a transient error is retried for two minutes; any other error
+        # fails at once. The two minutes start at the first failure, since Google's client can retry
+        # within one attempt for minutes. transient runs first, so a late failure releases its lock.
         run_plan() {
-          local deadline=$((SECONDS + 120))
+          local deadline=""
           until attempt "$@"; do
-            if [ "$SECONDS" -ge "$deadline" ] || ! grep -Eq '"code": 50[234]|UNAVAILABLE' "$errors"; then
+            deadline="${deadline:-$((SECONDS + 120))}"
+            if ! transient || [ "$SECONDS" -ge "$deadline" ]; then
               cat "$RUNNER_TEMP/plan.txt" "$errors" 2>/dev/null || true
               exit 1
             fi
@@ -240,4 +255,17 @@ runs:
       shell: bash
       env:
         ROOT: ${{ inputs.root }}
-      run: tofu -chdir="$ROOT" apply -input=false -no-color tfplan
+      run: |
+        set -euo pipefail
+        output="$RUNNER_TEMP/apply.txt"
+        if tofu -chdir="$ROOT" apply -input=false -no-color tfplan 2>&1 | tee "$output"; then
+          exit 0
+        fi
+        # A failed apply is not retried, but a lock it left as this runner's own would fail every
+        # later deploy.
+        id="$(node .github/scripts/own-lock.mjs "$output")"
+        if [ -n "$id" ]; then
+          echo "::warning::tofu failed on this runner's own state lock $id; releasing it."
+          tofu -chdir="$ROOT" force-unlock -force "$id"
+        fi
+        exit 1
