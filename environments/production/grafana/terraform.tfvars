@@ -4,7 +4,7 @@ management_project_id = "a-novel-management-prod"
 url = "https://anovel.grafana.net"
 
 token_versions = {
-  plan   = 1
+  plan   = 2
   deploy = 1
 }
 
@@ -34,4 +34,5 @@ thresholds = {
   container_cpu        = 0.8
   container_memory     = 0.85
   database_connections = 0.8
+  service_budget       = 0.8
 }

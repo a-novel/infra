@@ -132,8 +132,10 @@ accounts**:
 | Secret                            | Service account | Role   |
 | --------------------------------- | --------------- | ------ |
 | `production-grafana-plan-token`   | `infra-plan`    | Viewer |
-| `production-grafana-deploy-token` | `infra-deploy`  | Editor |
+| `production-grafana-deploy-token` | `infra-deploy`  | Admin  |
 
+The deploy account is an Admin because Grafana caches each identity's folder permissions: an
+Editor that creates a folder cannot read it back for a moment, which leaves the folder tainted.
 Give neither account a provisioning role. The provisioning API accepts the alerting permissions of
 the basic roles, and **Read via Provisioning API + Export Secrets** hands the Discord contact
 point's webhook to pull-request code.

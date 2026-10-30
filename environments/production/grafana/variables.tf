@@ -66,5 +66,6 @@ variable "thresholds" {
     container_cpu        = number
     container_memory     = number
     database_connections = number
+    service_budget       = number
   })
 }
