@@ -1,7 +1,9 @@
-# The operators the workloads and databases rely on, each in its own namespace. Renovate moves each
-# chart with its images, after a review.
+# The operators the workloads and databases rely on, and Alloy (alloy.tf), each in its own
+# namespace. Renovate moves each chart with its images, after a review.
 locals {
-  addon_namespaces = toset(["cert-manager", "cnpg-system", "external-secrets"])
+  addon_namespaces = toset(["alloy", "cert-manager", "cnpg-system", "external-secrets"])
+  # Every namespace this root manages, a service's or an add-on's, by name.
+  namespace = { for name, namespace in merge(kubernetes_namespace_v1.service, kubernetes_namespace_v1.addon) : name => namespace.metadata[0].name }
 
   # quay.io/jetstack/x:tag@digest pulls as <foundation's quay.io cache>/jetstack/x, with the tag
   # tag@digest: every chart renders an image as repository:tag.

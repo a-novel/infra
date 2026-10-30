@@ -3,9 +3,15 @@ variable "addon_images" {
   type        = map(string)
 
   validation {
-    condition     = alltrue([for reference in values(var.addon_images) : can(regex("^(quay|ghcr)\\.io/[a-z0-9._/-]+:[^@]+@sha256:[a-f0-9]{64}$", reference))])
-    error_message = "Every add-on image must come from quay.io or ghcr.io, pinned by digest."
+    condition     = alltrue([for reference in values(var.addon_images) : can(regex("^(docker\\.io|ghcr\\.io|quay\\.io|registry\\.k8s\\.io)/[a-z0-9._/-]+:[^@]+@sha256:[a-f0-9]{64}$", reference))])
+    error_message = "Every add-on image must come from Docker Hub, ghcr.io, quay.io or registry.k8s.io, pinned by digest."
   }
+}
+
+variable "addon_secret_versions" {
+  description = "Each add-on's secrets on the cluster, by namespace, at the version this root pins: each name is the suffix of production-<namespace>-<name>."
+  type        = map(map(number))
+  default     = {}
 }
 
 variable "backup_server_name" {
@@ -45,6 +51,14 @@ variable "databases" {
   }
 }
 
+variable "grafana_cloud" {
+  description = "The Grafana Cloud stack Alloy sends to: its instance ID, which names the sender, and its OTLP gateway's host."
+  type = object({
+    instance_id = string
+    otlp_host   = string
+  })
+}
+
 variable "namespaces" {
   description = "One namespace per service, holding its workloads, database and secrets."
   type        = set(string)
@@ -56,7 +70,7 @@ variable "namespaces" {
 }
 
 variable "secrets" {
-  description = "Each service's secrets on the cluster: the variable its workloads read, and the name of its Secret Manager secret, production-<service>-<name>. Each version is the one the service's root pins."
+  description = "Each namespace's secrets on the cluster: the variable its workloads read, and the name of its Secret Manager secret, production-<namespace>-<name>. A service's version is the one its root pins, and an add-on's is in addon_secret_versions."
   type        = map(map(string))
 
   validation {

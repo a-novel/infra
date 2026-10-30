@@ -171,6 +171,18 @@
       "groupName": "External Secrets"
     },
     {
+      "description": "Move the k8s-monitoring chart with the images it runs in one pull request. The chart pins its own versions of them, which the review compares.",
+      "matchFileNames": ["environments/production/cluster/**"],
+      "matchPackageNames": [
+        "k8s-monitoring",
+        "docker.io/grafana/alloy",
+        "ghcr.io/grafana/alloy-operator",
+        "quay.io/prometheus-operator/prometheus-config-reloader",
+        "registry.k8s.io/kube-state-metrics/kube-state-metrics"
+      ],
+      "groupName": "k8s-monitoring"
+    },
+    {
       "description": "Require review for production configuration and infrastructure definitions.",
       "matchFileNames": [
         "bootstrap/**",
@@ -222,7 +234,7 @@
         "/^environments/production/cluster/terraform\\.tfvars$/"
       ],
       "matchStrings": [
-        "\"(?<depName>(?:quay|ghcr)\\.io/[^:\"]+):(?<currentValue>[^@\"]+)@(?<currentDigest>sha256:[a-f0-9]{64})\""
+        "\"(?<depName>(?:docker\\.io|ghcr\\.io|quay\\.io|registry\\.k8s\\.io)/[^:\"]+):(?<currentValue>[^@\"]+)@(?<currentDigest>sha256:[a-f0-9]{64})\""
       ],
       "datasourceTemplate": "docker"
     }

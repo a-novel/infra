@@ -87,8 +87,7 @@ resource "kubernetes_cron_job_v1" "scheduled" {
               args  = each.value.args
 
               dynamic "env" {
-                for_each = merge(local.database_env[each.value.service], local.downtime_env[each.value.service], each.value.env, {
-                  OTEL         = "false"
+                for_each = merge(local.database_env[each.value.service], local.downtime_env[each.value.service], each.value.env, local.telemetry_env[each.value.service].job, {
                   SSL_CERT_DIR = "/etc/ssl/certs:/etc/database-ca"
                 })
 

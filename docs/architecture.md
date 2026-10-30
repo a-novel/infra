@@ -143,15 +143,21 @@ Kubernetes resources, reaching the control plane through the DNS endpoint as the
   Registry, pinned by digest, and no `LoadBalancer` Service. The services' namespaces deny all
   traffic but DNS until a workload's own policy opens a path. FQDN network policies give each
   workload its own internet hosts, matched on its own lookups: OpenAI for GenAI, the mail relay
-  for Authentication, GitHub's raw host for Studio. After each apply, the deploy sends
-  dry-run requests that admission must refuse, and one compliant pod it must admit.
+  for Authentication, GitHub's raw host for Studio, Grafana's gateway for Alloy. After each apply,
+  the deploy sends dry-run requests that admission must refuse, and one compliant pod it must admit.
 - **Images:** the add-ons pull Docker Hub, ghcr.io, quay.io and registry.k8s.io images through the
   Artifact Registry pull-through caches `a-novel-docker-io`, `a-novel-ghcr-io`, `a-novel-quay-io`
   and `a-novel-registry-k8s-io`, which only the nodes read. The cluster root pins each image by
   digest.
 - **Add-ons:** the cluster root installs cert-manager, the CloudNativePG operator, its Barman Cloud
-  plugin and External Secrets with Helm, each in its own namespace. Renovate moves each chart with
-  its images, after a week and a review.
+  plugin, External Secrets and Grafana's `k8s-monitoring` chart with Helm, each in its own
+  namespace. Renovate moves each chart with its images, after a week and a review.
+- **Telemetry:** one Alloy pod in the `alloy` namespace sends every signal to the Grafana Cloud
+  stack's OTLP gateway. The workloads export their traces and logs to its OTLP/HTTP receiver, from
+  which it derives span metrics on server and root spans. It scrapes the kubelets, cAdvisor,
+  kube-state-metrics and the databases every 60 seconds, and sends the Kubernetes events, all in
+  the cluster root's namespaces. It reads its push token from `production-alloy-push-token`, and
+  no Secret of the cluster. The Alloy Operator, which the chart runs, manages that namespace alone.
 - **Edge:** Studio answers on `studio.storyverse.fr` through the Gateway `studio`, on Google's
   global load balancer, which redirects plain HTTP to HTTPS. Foundation holds its `studio` address,
   a TLS 1.2 policy, and a Certificate Manager certificate the domain's DNS authorizes before any
