@@ -182,6 +182,10 @@ Kubernetes resources, reaching the control plane through the DNS endpoint as the
   with a service token for the service's audience. A `smoke-<hash>` Job runs it on each new image,
   script or setting, and the deploy waits on it. Each namespace's `health` CronJob runs it every
   five minutes, so a failing service shows as failed Jobs. Both skip a planned downtime.
+- **OpenAI call:** the `provider-check-<revision>` Job submits one small generation to GenAI, as
+  its `smoke` identity, and polls it until it settles. It runs once for each new value of the
+  cluster root's `genai_provider_check`, the deploy waits on it, and it fails unless the generation
+  succeeds. It skips a planned downtime.
 - **Upkeep:** the `REGULAR` release channel upgrades it during weekly windows, Tuesday to Thursday
   from 01:00 to 07:00 UTC. Google collects only system logs and metrics, since Grafana takes every
   signal.
