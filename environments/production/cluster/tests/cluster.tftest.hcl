@@ -732,3 +732,28 @@ run "lets_only_the_named_operators_run_maintenance" {
     error_message = "Admission must refuse an operator's Job that changes what the maintenance template runs, reads or runs as, and every one without the template."
   }
 }
+
+run "gives_each_service_its_own_budget" {
+  command = plan
+
+  assert {
+    condition = (
+      toset(keys(kubernetes_resource_quota_v1.service)) == toset(var.namespaces) &&
+      alltrue([for name, quota in kubernetes_resource_quota_v1.service :
+        quota.spec[0].hard["requests.cpu"] == var.service_budgets[name].cpu &&
+        quota.spec[0].hard["requests.memory"] == var.service_budgets[name].memory &&
+        quota.spec[0].hard["pods"] == tostring(var.service_budgets[name].pods)
+      ])
+    )
+    error_message = "Each service's namespace must cap its pods' CPU and memory requests and its pod count at its own budget."
+  }
+
+  assert {
+    condition = alltrue([for name in var.namespaces :
+      kubernetes_limit_range_v1.service[name].spec[0].limit[0].type == "Container" &&
+      length(kubernetes_limit_range_v1.service[name].spec[0].limit[0].default_request) == 2 &&
+      try(length(kubernetes_limit_range_v1.service[name].spec[0].limit[0].default), 0) == 0
+    ])
+    error_message = "Each service's namespace must give a container without requests a small CPU and memory request, and no limit, or its quota refuses the pod."
+  }
+}
