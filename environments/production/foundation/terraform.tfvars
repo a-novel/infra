@@ -68,14 +68,15 @@ cluster_compute_cpu_quota = 24
 # The nodes' boot disks and the databases' volumes peak near 240 GB. Above Google's default of 500,
 # this leaves room for narrative-engine's projects; the request applies once Google grants it.
 cluster_ssd_quota_gb = 1000
-# The control plane runs in the first zone. Two nodes hold every service and each database's
-# primary and replica. The autoscaler adds a node only when pods cannot be placed, and only to
-# absorb a spike or transient load: two more at most. Capacity that stays is a decision, which
-# Grafana prompts once the cluster runs above its baseline for two hours or at its maximum.
+# The control plane runs in the first zone. Three nodes hold every service and each database's
+# primary and replica: each instance's volume keeps it in its zone, where the databases' memory fills
+# most of a node. The autoscaler adds a node only when pods cannot be placed, and only to absorb a
+# spike or transient load: one more at most. Capacity that stays is a decision, which Grafana
+# prompts once the cluster runs above its baseline for two hours or at its maximum.
 cluster = {
   zones        = ["europe-west9-a", "europe-west9-b"]
   machine_type = "e2-standard-4"
-  min_nodes    = 2
+  min_nodes    = 3
   max_nodes    = 4
 }
 # Apart from agora-production's ranges, which the import peering joins. The pods' /20 holds 16 nodes
