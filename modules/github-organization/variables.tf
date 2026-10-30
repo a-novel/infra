@@ -27,7 +27,30 @@ variable "repositories" {
     vulnerability_alerts        = bool
     dependabot_security_updates = bool
     pages                       = bool
+    # Whether the tags and release-lines rulesets guard version tags and release lines.
+    tags_ruleset = bool
+    # Whether only admins bypass the rulesets: a class whose merges deploy production.
+    admins_only = bool
   }))
+}
+
+variable "bots" {
+  description = "App IDs of the organization's bots: agent posts the governance checks, dependencies opens Renovate's pull requests, and release cuts releases."
+  type = object({
+    agent        = number
+    dependencies = number
+    release      = number
+  })
+}
+
+variable "scoped_secrets" {
+  description = "Organization secrets with selected-repository visibility, each granted to the repositories whose workflows name it. An admin switches a secret to selected visibility by hand before listing it."
+  type        = set(string)
+}
+
+variable "governance_secrets" {
+  description = "The privileged secrets, held only by each repository's governance environment. A repository whose workflows name one gets the environment."
+  type        = set(string)
 }
 
 variable "tiers" {
