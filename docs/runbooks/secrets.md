@@ -96,7 +96,7 @@ each one in the browser, in
 - **Resource owner:** the org, `a-novel` or `a-novel-kit`. An org that reviews tokens asks an owner
   to approve it.
 - **Repository access:** only the org's repositories that `github_dispatch_schedules` lists, its
-  `.github` repository included.
+  `.github` repository included, and for `a-novel`, `infra`, whose sweep and drift check it starts.
 - **Permissions:** Actions, read and write. Nothing else.
 - **Expiration:** the longest the org allows. The `.github` repository's daily `token-expiry`
   workflow posts to Discord before it lapses.
@@ -189,8 +189,15 @@ For a leak, delete the key in the App's settings as well as disabling its versio
 `production-github-governance-<org>-<name>` holds a privileged key that each of the organization's
 repositories receives in its `governance` environment when its workflows name it. The secret's
 `contract` annotation is its name in GitHub: `AGENT_BOT_PRIVATE_KEY`, `DEPENDENCY_BOT_PRIVATE_KEY`
-or `BWS_READ_TOKEN`. Only deploys read them. Copy each value once from the organization's Bitwarden
-project, as in [Rotate a secret](#rotate-a-secret).
+or `BWS_READ_TOKEN`. The GitHub root pins each one's version in `terraform.tfvars`, under
+`organizations.<org>.governance_secrets`.
+
+After each apply, the GitHub root's deploy job and the sweep run `.github/scripts/secret-sync.mjs`
+as `infra-github`. It rewrites a repository's copy older than the pinned version, writes a missing
+one, and deletes one no workflow names. A value travels only through a pipe from `gcloud` to `gh`.
+
+To rotate one, add a version as in [Rotate a secret](#rotate-a-secret), then bump its pin in a pull
+request. Its deploy copies it into every repository that names it.
 
 ## Alloy push token
 

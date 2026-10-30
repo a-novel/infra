@@ -393,6 +393,13 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_GITHUB_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_GITHUB_SERVICE_ACCOUNT }}
           github_token: ${{ github.token }}
+      # Copies each repository's governance secrets at their pinned versions. No plan sees a value.
+      - name: Sync governance secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          tofu -chdir=environments/production/github output -json secret_sync >"$RUNNER_TEMP/secret-sync.json"
+          node .github/scripts/secret-sync.mjs "$RUNNER_TEMP/secret-sync.json"
 
   # Every deploy applies every service root, found on disk by the changes job, so the services run
   # the current DOWNTIME whichever deploy applies last: a downtime written while another deploy

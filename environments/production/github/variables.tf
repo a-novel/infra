@@ -44,11 +44,11 @@ variable "repositories" {
 }
 
 variable "organizations" {
-  description = "Each organization's bot App IDs, its scoped organization secrets, and its privileged governance secrets."
+  description = "Each organization's bot App IDs, its scoped organization secrets, and its privileged governance secrets with the Secret Manager version each repository receives."
   type = map(object({
     bots               = object({ agent = number, dependencies = number, release = number })
     scoped_secrets     = set(string)
-    governance_secrets = set(string)
+    governance_secrets = map(number)
   }))
 }
 
