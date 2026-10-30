@@ -43,6 +43,15 @@ variable "repositories" {
   }
 }
 
+variable "organizations" {
+  description = "Each organization's bot App IDs, its scoped organization secrets, and its privileged governance secrets."
+  type = map(object({
+    bots               = object({ agent = number, dependencies = number, release = number })
+    scoped_secrets     = set(string)
+    governance_secrets = set(string)
+  }))
+}
+
 variable "tiers" {
   description = "Each contributor tier's team and the role its area teams hold on their class's repositories."
   type        = map(string)

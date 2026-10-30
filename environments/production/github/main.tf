@@ -19,12 +19,14 @@ locals {
     dependabot_security_updates = false
     pages                       = false
     template                    = null
+    tags_ruleset                = true
+    admins_only                 = false
   }
 
   classes = {
     service   = { pages = true, template = "a-novel/service-template" }
     platform  = { pages = true, template = "a-novel/platform-template" }
-    infra     = { has_discussions = false }
+    infra     = { has_discussions = false, tags_ruleset = false, admins_only = true }
     library   = { dependabot_security_updates = true }
     workflows = { dependabot_security_updates = true }
     meta      = {}
@@ -63,10 +65,13 @@ module "a_novel" {
     github = github.a_novel
   }
 
-  repositories = local.owned["a-novel"]
-  tiers        = var.tiers
-  admin_team   = "core"
-  labels       = var.labels
+  repositories       = local.owned["a-novel"]
+  tiers              = var.tiers
+  admin_team         = "core"
+  labels             = var.labels
+  bots               = var.organizations["a-novel"].bots
+  scoped_secrets     = var.organizations["a-novel"].scoped_secrets
+  governance_secrets = var.organizations["a-novel"].governance_secrets
 }
 
 module "a_novel_kit" {
@@ -76,8 +81,11 @@ module "a_novel_kit" {
     github = github.a_novel_kit
   }
 
-  repositories = local.owned["a-novel-kit"]
-  tiers        = var.tiers
-  admin_team   = "core"
-  labels       = var.labels
+  repositories       = local.owned["a-novel-kit"]
+  tiers              = var.tiers
+  admin_team         = "core"
+  labels             = var.labels
+  bots               = var.organizations["a-novel-kit"].bots
+  scoped_secrets     = var.organizations["a-novel-kit"].scoped_secrets
+  governance_secrets = var.organizations["a-novel-kit"].governance_secrets
 }

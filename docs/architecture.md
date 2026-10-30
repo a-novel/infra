@@ -306,12 +306,23 @@ All state lives in `a-novel-management-prod-232403541574-tofu-state`, one object
 ## Repository config
 
 The GitHub root, `environments/production/github`, holds every repository of both organizations
-and the config their code does not: settings, team access, labels, Pages and the Dependabot
-toggles. Each repository takes its class's settings from `main.tf`, then its own overrides from
-`terraform.tfvars`, field by field. A new repository starts from its class's template,
-`service-template` or `platform-template`, or empty. Removing one archives it. Rulesets,
-environments and secret access stay with `a-novel repo update` until a-novel/.github#534 moves them
-here.
+and the config their code does not: settings, team access, labels, Pages, the Dependabot toggles,
+rulesets, environments and scoped secret access. Each repository takes its class's settings from
+`main.tf`, then its own overrides from `terraform.tfvars`, field by field. A new repository starts
+from its class's template, `service-template` or `platform-template`, or empty. Removing one
+archives it. Until a-novel/.github#534 retires it, `a-novel repo update` still writes the same
+values and copies the governance secrets, so its templates stay frozen.
+
+- **The code stays the source of truth.** Discovery reads each repository's default branch: the
+  required checks are the always-required set plus `main.yaml`'s jobs, minus reporting and
+  master-only ones; the secrets and environments come from every workflow; and the root
+  `package.json`'s major names the retired release lines. Each repository owns its workflows,
+  Renovate's updates included.
+- **A repository waits until it is ready.** Until its default branch holds `main.yaml` and the
+  workflows that report the always-required checks, it gets settings, team access and labels only.
+- **Only the guarded environments are managed:** `release`, with its reviewers, `governance` and
+  `sourcemaps`, each open on the refs a ruleset guards. GitHub creates the others, such as
+  `github-pages` and `copilot`.
 
 - **Each organization has two GitHub Apps.** Pull requests plan with the read-only Plan App, and
   deploys apply with the Deploy App, as [GitHub root keys](runbooks/secrets.md#github-root-keys)
