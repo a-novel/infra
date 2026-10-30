@@ -478,18 +478,33 @@ jobs:
       attestations: read
       contents: read
       id-token: write
+    env:
+      ALLOW_DELETION: ${{ github.event.action != 'synchronize' && contains(github.event.pull_request.labels.*.name, 'allow-resource-deletion') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: $/.github/actions/tofu
+      - id: tofu
+        uses: $/.github/actions/tofu
         with:
           root: environments/production/github
-          allow_deletion: ${{ github.event.action != 'synchronize' && contains(github.event.pull_request.labels.*.name, 'allow-resource-deletion') }}
+          allow_deletion: ${{ env.ALLOW_DELETION }}
           workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
           github_token: ${{ github.token }}
           # GitHub hides bypass lists, merge settings and security settings from the read-only Plan
           # App, so the plan compares the configuration with what the last deploy applied.
           refresh: "false"
+
+      # Lists the rulesets and deployment patterns the deploy would prune. Like a deletion in the
+      # plan, each needs allow-resource-deletion.
+      - name: Check what prune would delete
+        shell: bash
+        env:
+          PLAN: ${{ steps.tofu.outputs.plan }}
+        run: |
+          set -euo pipefail
+          mode=check
+          [ "$ALLOW_DELETION" != true ] || mode=report
+          node .github/scripts/prune.mjs "$PLAN" plan "$mode"

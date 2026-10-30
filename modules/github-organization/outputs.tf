@@ -5,3 +5,8 @@ output "governance_secrets" {
     if environment.environment == "governance"
   }
 }
+
+output "environments" {
+  description = "The environments the module manages, as \"<repository>:<environment>\": prune reads the deployment patterns of these alone."
+  value       = sort(keys(local.environments))
+}

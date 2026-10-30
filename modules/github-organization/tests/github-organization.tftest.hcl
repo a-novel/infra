@@ -177,6 +177,11 @@ run "derives_config_from_the_workflows" {
   }
 
   assert {
+    condition     = jsonencode(output.environments) == jsonencode([".github:governance", ".github:release", "infra:governance", "infra:release", "service-genai:governance", "service-genai:release"])
+    error_message = "Prune reads the deployment patterns of the managed environments alone, so GitHub's own and infra's deploy environments keep theirs."
+  }
+
+  assert {
     condition     = jsonencode(output.governance_secrets) == jsonencode({ ".github" = ["AGENT_BOT_PRIVATE_KEY"], infra = ["AGENT_BOT_PRIVATE_KEY"], "service-genai" = ["AGENT_BOT_PRIVATE_KEY"] })
     error_message = "Each governance environment holds exactly the privileged secrets its repository's workflows name, never a scoped one."
   }

@@ -53,7 +53,8 @@ deploy:  bootstrap ─► foundation ─► one job per service ─┬─► rol
    each root with a read-only identity. The plans appear in the job summaries.
 2. **The policy.** Two kinds of plan fail until a maintainer adds a label:
    - a plan that deletes, replaces or forgets a resource, or weakens its protection, needs
-     `allow-resource-deletion`;
+     `allow-resource-deletion`, as does a ruleset or deployment pattern the GitHub root would
+     prune;
    - a plan that changes a database host or a PostgreSQL major needs `allow-downtime`, and a planned
      downtime of that service in progress.
 
@@ -76,7 +77,8 @@ deploy:  bootstrap ─► foundation ─► one job per service ─┬─► rol
 
 A daily **drift** check re-plans every root. It fails when the cloud differs from `master`, as after
 a change made in the console. It also fails when a repository's setting differs from what the
-GitHub root asserts.
+GitHub root asserts, or when a repository holds a ruleset or deployment pattern the root does not
+produce.
 
 ## Identities
 

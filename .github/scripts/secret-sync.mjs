@@ -47,7 +47,12 @@ export async function github(token, method, path, body) {
     body: body && JSON.stringify(body),
   });
   if (!response.ok)
-    throw new Error(`${method} ${path}: HTTP ${response.status}`);
+    throw Object.assign(
+      new Error(`${method} ${path}: HTTP ${response.status}`),
+      {
+        status: response.status,
+      },
+    );
   return response.status === 204 ? null : response.json();
 }
 
@@ -103,10 +108,10 @@ export async function installationToken(project, app) {
 }
 
 export async function main(organizations) {
-  for (const [owner, { project, app, secrets, governance }] of Object.entries(
+  for (const [owner, { project, apps, secrets, governance }] of Object.entries(
     organizations,
   )) {
-    const token = await installationToken(project, app);
+    const token = await installationToken(project, apps.deploy);
 
     const created = Object.fromEntries(
       Object.entries(secrets).map(([name, source]) => [

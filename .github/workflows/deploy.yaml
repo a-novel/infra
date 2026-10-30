@@ -107,11 +107,11 @@ jobs:
             printf '%s\n' .opentofu-version .github/actions/tofu/ .github/workflows/deploy.yaml
             # The cluster root reads each service root's pins from its terraform.tfvars, and its
             # health checks run the smoke-check module's script. The Grafana root reads
-            # foundation's node pool. The GitHub root's job copies the governance secrets and
-            # asserts the repository settings after it applies.
+            # foundation's node pool. The GitHub root's job copies the governance secrets, asserts
+            # the repository settings and prunes after it applies.
             [ "$1" != environments/production/cluster ] || printf '%s\n' 'environments/production/*/terraform.tfvars' modules/smoke-check/smoke.sh
             [ "$1" != environments/production/grafana ] || printf '%s\n' environments/production/foundation/terraform.tfvars environments/production/cluster/terraform.tfvars
-            [ "$1" != environments/production/github ] || printf '%s\n' .github/scripts/secret-sync.mjs .github/scripts/repository-asserts.mjs
+            [ "$1" != environments/production/github ] || printf '%s\n' .github/scripts/secret-sync.mjs .github/scripts/repository-asserts.mjs .github/scripts/prune.mjs
             for ((i = 0; i < ${#dirs[@]}; i++)); do
               printf '%s/\n' "${dirs[i]}"
               while read -r source; do
@@ -370,9 +370,10 @@ jobs:
 
   # Repository config needs only bootstrap's key grants, and no release waits on it. It applies from
   # its own environment and identity, which hold no Google Cloud rights, and never beside the sweep.
+  # A deploy that may delete runs it too, so allow-resource-deletion prunes from any pull request.
   github:
     needs: [changes, bootstrap]
-    if: ${{ !cancelled() && !failure() && needs.changes.outputs.github == 'true' }}
+    if: ${{ !cancelled() && !failure() && (needs.changes.outputs.github == 'true' || needs.changes.outputs.allow == 'true') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: github
@@ -406,6 +407,18 @@ jobs:
       - name: Assert repository settings
         shell: bash
         run: node .github/scripts/repository-asserts.mjs "$RUNNER_TEMP/organizations.json" --apply
+      # Deletes the rulesets and deployment patterns the root does not produce, when a pull request
+      # merged with allow-resource-deletion. Without it, any such object fails the job.
+      - name: Prune
+        shell: bash
+        env:
+          ALLOW_DELETION: ${{ needs.changes.outputs.allow }}
+        run: |
+          set -euo pipefail
+          mode=check
+          [ "$ALLOW_DELETION" != true ] || mode=apply
+          tofu -chdir=environments/production/github show -json >"$RUNNER_TEMP/state.json"
+          node .github/scripts/prune.mjs "$RUNNER_TEMP/state.json" deploy "$mode"
 
   # Every deploy applies every service root, found on disk by the changes job, so the services run
   # the current DOWNTIME whichever deploy applies last: a downtime written while another deploy
