@@ -133,8 +133,3 @@ cloud_run_memory_quota_bytes = 25769803776
 compute_cpu_quota = 24
 # The whole project at moderate traffic, planned near EUR 360 a month, with margin.
 monthly_budget_units = 500
-# JSON Keys' database disks from the first cluster, imported to be deleted.
-leftover_disks = {
-  "pvc-d236c0cf-c164-4c98-8df0-1eb64b3405ae" = "europe-west1-c"
-  "pvc-43c96904-a55e-4bf6-9791-dc5c4f98708b" = "europe-west1-d"
-}
