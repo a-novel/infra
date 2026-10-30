@@ -299,6 +299,33 @@ resource "kubernetes_horizontal_pod_autoscaler_v2" "workload" {
         }
       }
     }
+
+    # The autoscaler absorbs bursts without overshoot or flapping: it adds or removes one pod a minute
+    # at most, and removes one only after five minutes below its targets. More capacity is a change
+    # to replicas.max.
+    behavior {
+      scale_up {
+        select_policy                = "Max"
+        stabilization_window_seconds = 0
+
+        policy {
+          type           = "Pods"
+          value          = 1
+          period_seconds = 60
+        }
+      }
+
+      scale_down {
+        select_policy                = "Max"
+        stabilization_window_seconds = 300
+
+        policy {
+          type           = "Pods"
+          value          = 1
+          period_seconds = 60
+        }
+      }
+    }
   }
 }
 

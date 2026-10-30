@@ -76,6 +76,14 @@ run "scales_between_bounds" {
     condition     = length(kubernetes_pod_disruption_budget_v1.workload) == 0 && one(kubernetes_horizontal_pod_autoscaler_v2.workload).spec[0].max_replicas == 4
     error_message = "A single pod gets no budget, which would block drains, and bounds apart get an autoscaler."
   }
+
+  assert {
+    condition = (
+      alltrue([for rules in values(one(one(kubernetes_horizontal_pod_autoscaler_v2.workload).spec[0].behavior)) : alltrue([for policy in one(rules).policy : policy.type == "Pods" && policy.value == 1 && policy.period_seconds >= 60])]) &&
+      one(one(one(kubernetes_horizontal_pod_autoscaler_v2.workload).spec[0].behavior).scale_down).stabilization_window_seconds >= 300
+    )
+    error_message = "The autoscaler must add or remove one pod a minute at most, and remove one only after five minutes below its targets."
+  }
 }
 
 run "serves_http_with_service_tokens" {
