@@ -40,15 +40,16 @@ module "genai_grpc" {
   source = "../../../modules/cluster-workload"
   count  = var.custom_resources ? 1 : 0
 
-  name       = "grpc"
-  namespace  = kubernetes_namespace_v1.service["genai"].metadata[0].name
-  image      = local.release_image["genai/grpc"]
-  port       = 8080
-  env        = local.genai_grpc_env
-  secret_env = local.genai_secret_env
-  ca_secret  = kubernetes_manifest.database_server_certificate["genai"].manifest.spec.secretName
-  resources  = { cpu = "250m", memory = "2Gi" }
-  labels     = local.database_clients
+  name            = "grpc"
+  namespace       = kubernetes_namespace_v1.service["genai"].metadata[0].name
+  image           = local.release_image["genai/grpc"]
+  port            = 8080
+  env             = local.genai_grpc_env
+  secret_env      = local.genai_secret_env
+  ca_secret       = kubernetes_manifest.database_server_certificate["genai"].manifest.spec.secretName
+  resources       = { cpu = "250m", memory = "2Gi" }
+  labels          = local.database_clients
+  pod_annotations = local.database_client_annotations
 
   # Full pods wait on OpenAI and use little CPU, so the server also keeps its calls in flight at 60%
   # of its cap per pod, Cloud Run's default target.
@@ -79,6 +80,7 @@ module "genai_sweep" {
   resources        = { cpu = "100m", memory = "1Gi" }
   replicas         = { min = 1, max = 1 }
   labels           = local.database_clients
+  pod_annotations  = local.database_client_annotations
 
   depends_on = [kubernetes_job_v1.migrations, kubernetes_manifest.secrets]
 }

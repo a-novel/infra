@@ -76,5 +76,13 @@ resource "kubernetes_manifest" "secrets" {
     }
   }
 
+  # A new database reads its host's password from the Secret as it starts its import.
+  wait {
+    condition {
+      type   = "Ready"
+      status = "True"
+    }
+  }
+
   depends_on = [google_secret_manager_secret_iam_member.secrets]
 }

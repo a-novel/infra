@@ -38,8 +38,9 @@ own identities, image repositories, network tags and database hosts.
   - its firewall denies all egress but the cluster's own ranges, the restricted VIP and the egress
     allowlist's destinations. The firewall sees only the nodes, so `a-novel-egress-allowlist` opens
     those destinations to every node, and each workload's network policy narrows them;
-  - the peering `a-novel-database-imports` joins it to `agora-production` for the cutover's database
-    imports. Neither network's firewall admits the other yet.
+  - the peering `a-novel-database-imports` joins it to `agora-production` for the database
+    imports. Apart from them, neither network admits the other: each database host admits the pod
+    range on its own port, and only the database pods' network policy reaches it.
 - **Google APIs** are reached through the restricted VIP ranges `199.36.153.4/30` and
   `34.126.0.0/18`. Private DNS zones resolve `googleapis.com`, `gcr.io`, `pkg.dev` and `run.app` to
   them, on both networks. GKE pulls its system images from `gcr.io`.
@@ -220,7 +221,12 @@ hold payloads and responses of up to 24 MiB, so its host is larger.
 
 On the cluster, each service's namespace holds a CloudNativePG database named `database`: a
 primary and a replica on separate nodes, with today's host sizes, switching over on updates. It
-holds no data until the cutover imports it. CloudNativePG generates its credentials, in the
+starts as an import of the service's host: CloudNativePG dumps the host's database as the role that
+owns its tables and restores it as `app`, leaving pg_cron's jobs out. Each lineage archives under
+the cluster's `backup_server_name`. A new name recreates the database, imports it again, rolls the
+service's pods and takes a base backup at once; bootstrap's `retired_barman_lineages` then expires
+the former lineage after 15 days. The rehearsal imports a copy of production this way, and the
+cutover imports it again (a-novel/infra#1202). CloudNativePG generates its credentials, in the
 `database-app` Secret, for the database and owner `app`. It serves TLS for `database-rw.<service>.svc`
 from cert-manager's ten-year `databases` CA, which keeps its key when renewed. The service's pods
 connect by that name and trust that CA beside the system roots. Its image catalog takes the service's

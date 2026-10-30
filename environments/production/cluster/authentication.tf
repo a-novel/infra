@@ -46,9 +46,10 @@ module "authentication_rest" {
   service_tokens   = { (local.json_keys_env.SERVICE_TOKEN_AUDIENCE) = "SERVICE_TOKEN_PATH" }
   ca_secret        = kubernetes_manifest.database_server_certificate["authentication"].manifest.spec.secretName
   # Argon2 bursts above the request: the pod has no CPU limit.
-  resources = { cpu = "250m", memory = "512Mi" }
-  replicas  = { min = 1, max = 1 }
-  labels    = local.database_clients
+  resources       = { cpu = "250m", memory = "512Mi" }
+  replicas        = { min = 1, max = 1 }
+  labels          = local.database_clients
+  pod_annotations = local.database_client_annotations
 
   depends_on = [kubernetes_job_v1.migrations]
 }
