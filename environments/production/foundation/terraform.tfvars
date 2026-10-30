@@ -62,19 +62,21 @@ egress_subnet_cidr = "10.20.1.0/24"
 # The cluster runs in Paris. Cloud Run, the database hosts and the old network keep region until they
 # retire.
 cluster_region = "europe-west9"
-# Five e2-standard-4 nodes, the autoscaler's maximum, and one surge node.
+# A ceiling only Google raises, above the node pool's maximum: deliberate growth past it starts with
+# a quota request.
 cluster_compute_cpu_quota = 24
 # The nodes' boot disks and the databases' volumes peak near 240 GB. Above Google's default of 500,
 # this leaves room for narrative-engine's projects; the request applies once Google grants it.
 cluster_ssd_quota_gb = 1000
 # The control plane runs in the first zone. Two nodes hold every service and each database's
-# primary and replica. The autoscaler adds a node only when pods cannot be placed, so its maximum
-# costs nothing until demand needs it; Grafana warns before it is reached.
+# primary and replica. The autoscaler adds a node only when pods cannot be placed, and only to
+# absorb a spike or transient load: two more at most. Capacity that stays is a decision, which
+# Grafana prompts once the cluster runs above its baseline for two hours or at its maximum.
 cluster = {
   zones        = ["europe-west9-a", "europe-west9-b"]
   machine_type = "e2-standard-4"
   min_nodes    = 2
-  max_nodes    = 5
+  max_nodes    = 4
 }
 # Apart from agora-production's ranges, which the import peering joins. The pods' /20 holds 16 nodes
 # at 110 pods each.

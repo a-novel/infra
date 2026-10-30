@@ -130,7 +130,7 @@ Kubernetes resources, reaching the control plane through the DNS endpoint as the
 
 - **Zonal,** so the billing account's free tier covers its management fee. The control plane runs in
   `europe-west9-a`, and the nodes in `a` and `b`.
-- **Nodes:** the `general` pool, two `e2-standard-4` nodes that autoscale to five, with private
+- **Nodes:** the `general` pool, two `e2-standard-4` nodes that autoscale to four, with private
   addresses only. They run as `a-novel-cluster-nodes`, and upgrades add a node before draining one.
 - **Access:** outside the network, the control plane answers only through its DNS endpoint, which
   IAM and the perimeter guard. Nodes use its internal endpoint. Operators read each service's
@@ -145,6 +145,10 @@ Kubernetes resources, reaching the control plane through the DNS endpoint as the
   workload its own internet hosts, matched on its own lookups: OpenAI for GenAI, the mail relay
   for Authentication, GitHub's raw host for Studio, Grafana's gateway for Alloy. After each apply,
   the deploy sends dry-run requests that admission must refuse, and one compliant pod it must admit.
+- **Budgets:** each service's namespace has its own ResourceQuota, the cluster root's
+  `service_budgets`: the CPU and memory its pods may request in all, and how many run. Its
+  autoscalers grow inside it, so one service cannot take the room another needs; raising one is a
+  deliberate change. A default request covers containers that set none.
 - **Images:** the add-ons pull Docker Hub, ghcr.io, quay.io and registry.k8s.io images through the
   Artifact Registry pull-through caches `a-novel-docker-io`, `a-novel-ghcr-io`, `a-novel-quay-io`
   and `a-novel-registry-k8s-io`, which only the nodes read. The cluster root pins each image by

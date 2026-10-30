@@ -50,6 +50,17 @@ databases = {
   json-keys      = { cpu = "500m", memory = "1536Mi", storage = "10Gi", max_connections = 50, extensions = ["uuid-ossp"] }
 }
 
+# Each service's ceiling, so one service cannot take the room another needs: its workloads at their
+# autoscalers' maximum, a rollout's surge pod, its database's two instances and its jobs, with room
+# above. Together they fit the node pool at its maximum. Grafana warns at 80% of each; raising one
+# is a deliberate change.
+service_budgets = {
+  authentication = { cpu = "3", memory = "8Gi", pods = 20 }
+  genai          = { cpu = "4", memory = "28Gi", pods = 20 }
+  json-keys      = { cpu = "3", memory = "8Gi", pods = 20 }
+  studio         = { cpu = "1", memory = "2Gi", pods = 10 }
+}
+
 # The database passwords come from CloudNativePG's database-app Secrets, so only these come from
 # Secret Manager.
 secrets = {

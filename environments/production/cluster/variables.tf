@@ -69,6 +69,20 @@ variable "namespaces" {
   }
 }
 
+variable "service_budgets" {
+  description = "Each service's ceiling on the cluster, as a ResourceQuota on its namespace: the CPU and memory its pods may request in all, and the pods that may run. Its autoscalers grow inside it, and raising it is a deliberate change."
+  type = map(object({
+    cpu    = string
+    memory = string
+    pods   = number
+  }))
+
+  validation {
+    condition     = toset(keys(var.service_budgets)) == var.namespaces
+    error_message = "Every service namespace needs a budget, and every budget a namespace."
+  }
+}
+
 variable "secrets" {
   description = "Each namespace's secrets on the cluster: the variable its workloads read, and the name of its Secret Manager secret, production-<namespace>-<name>. A service's version is the one its root pins, and an add-on's is in addon_secret_versions."
   type        = map(map(string))
