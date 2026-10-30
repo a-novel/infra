@@ -2,7 +2,18 @@
 # one pod, which holds the in-memory rate limits.
 locals {
   authentication_smtp = local.service_inputs["authentication"].smtp
-  authentication_env = merge(local.database_env["authentication"], local.downtime_env["authentication"], {
+  # Registration and account emails, which the API and the maintenance Jobs send, and whose links
+  # open Studio on its own host. The relay admits them by the NAT address, so they carry no SMTP
+  # credential. RFC 5321 gives each SMTP command minutes, and no request waits for a send.
+  authentication_mail_env = {
+    PLATFORM_AUTH_URL   = "https://${local.studio_host}"
+    SMTP_ADDR           = "${local.authentication_smtp.host}:587"
+    SMTP_MAX_CONCURRENT = "8"
+    SMTP_SENDER_EMAIL   = local.authentication_smtp.sender_email
+    SMTP_SENDER_NAME    = local.authentication_smtp.sender_name
+    SMTP_TIMEOUT        = "300s"
+  }
+  authentication_env = merge(local.database_env["authentication"], local.downtime_env["authentication"], local.authentication_mail_env, {
     # One 64 MiB Argon2 hash at a time: more slots add memory, not throughput.
     ARGON2_MAX_CONCURRENT = "1"
     # The Go runtime does not read the container's memory limit; this lets it reclaim one hash's
@@ -20,15 +31,6 @@ locals {
     SERVICE_TOKEN_ISSUER   = local.service_token_issuer
     SERVICE_TOKEN_AUDIENCE = "authentication"
     SERVICE_TOKEN_CALLERS  = "system:serviceaccount:studio:web,system:serviceaccount:authentication:smoke"
-    # Registration and account emails, whose links open Studio on its own host. The relay admits
-    # them by the NAT address, so they carry no SMTP credential. RFC 5321 gives each SMTP command
-    # minutes, and no request waits for a send.
-    PLATFORM_AUTH_URL   = "https://${local.studio_host}"
-    SMTP_ADDR           = "${local.authentication_smtp.host}:587"
-    SMTP_MAX_CONCURRENT = "8"
-    SMTP_SENDER_EMAIL   = local.authentication_smtp.sender_email
-    SMTP_SENDER_NAME    = local.authentication_smtp.sender_name
-    SMTP_TIMEOUT        = "300s"
   })
 }
 
@@ -53,8 +55,8 @@ module "authentication_rest" {
   depends_on = [kubernetes_job_v1.migrations]
 }
 
-# Studio and Authentication's smoke check call the API. The API calls JSON Keys, and reaches the
-# issuer's keys through Google's restricted API addresses and the mail relay (egress.tf).
+# Studio and Authentication's smoke and health checks call the API. It calls JSON Keys, and reaches
+# the issuer's keys through Google's restricted API addresses and the mail relay (egress.tf).
 resource "kubernetes_network_policy_v1" "authentication_rest" {
   metadata {
     name      = "rest"

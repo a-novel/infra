@@ -421,3 +421,15 @@ run "serves_studio_on_its_host" {
     error_message = "Studio's certificate must cover only its host, authorized by DNS, and its map must serve it for that host, which the deploy identity may create."
   }
 }
+
+run "lets_maintenance_operators_reach_the_cluster" {
+  command = plan
+
+  assert {
+    condition = (
+      alltrue([for principal in var.authentication_maintenance_principals : google_project_iam_member.maintenance_observer["${principal}:roles/container.clusterViewer"].project == google_project.workload.project_id]) &&
+      [for binding in values(google_project_iam_member.maintenance_observer) : binding.role if startswith(binding.role, "roles/container.")] == [for principal in var.authentication_maintenance_principals : "roles/container.clusterViewer"]
+    )
+    error_message = "Maintenance operators may only connect to the cluster through IAM; the cluster root's RBAC decides what they run."
+  }
+}

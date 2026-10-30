@@ -132,7 +132,9 @@ Kubernetes resources, reaching the control plane through the DNS endpoint as the
   addresses only. They run as `a-novel-cluster-nodes`, and upgrades add a node before draining one.
 - **Access:** outside the network, the control plane answers only through its DNS endpoint, which
   IAM and the perimeter guard. Nodes use its internal endpoint. Operators read each service's
-  namespace through Kubernetes' `view` role, which never reads Secrets.
+  namespace through Kubernetes' `view` role, which never reads Secrets. The named maintenance
+  operators create Jobs in `authentication`, which an admission policy holds to the `maintenance`
+  template but for their arguments.
 - **Isolation:** Dataplane V2 enforces network policies, FQDN ones included. Workload Identity gives
   each pod its own identity, never the node's. Every namespace the cluster root manages enforces
   Pod Security's `restricted` level and two admission policies: images only from our Artifact
@@ -153,7 +155,13 @@ Kubernetes resources, reaching the control plane through the DNS endpoint as the
   traffic moves. Only the load balancer's ranges reach Studio's pods.
 - **Jobs:** each new migrations image runs once as a Job before its server rolls. CronJobs run
   JSON Keys' key rotation hourly at :10 and Authentication's refresh token purge daily at 03:40
-  UTC, one run at a time, never retried.
+  UTC, one run at a time, never retried. The suspended `maintenance` CronJob holds the template of
+  Authentication's maintenance Jobs, which the [setup runbook](runbooks/setup.md) runs.
+- **Health checks:** the shared health check, `modules/smoke-check/smoke.sh`, calls JSON Keys' and
+  GenAI's `Status` RPC and Authentication's `/v2/healthcheck`, as the namespace's `smoke` identity
+  with a service token for the service's audience. A `smoke-<hash>` Job runs it on each new image,
+  script or setting, and the deploy waits on it. Each namespace's `health` CronJob runs it every
+  five minutes, so a failing service shows as failed Jobs. Both skip a planned downtime.
 - **Upkeep:** the `REGULAR` release channel upgrades it during weekly windows, Tuesday to Thursday
   from 01:00 to 07:00 UTC. Google collects only system logs and metrics, since Grafana takes every
   signal.
@@ -331,7 +339,8 @@ here.
   threshold and what to do.
 - **Health checks** call Authentication's `/v2/healthcheck` and Studio's `/healthcheck` after each
   deploy and from `drift.yaml`, as [Authentication health](runbooks/alerts.md#authentication-health)
-  details.
+  details. On the cluster, each service's `health` CronJob checks it every five minutes, and
+  kube-state-metrics reports its failed Jobs.
 - **Logs** are kept 30 days. Successful health-check requests to Authentication and successful
   database health probes are not logged.
 - **Traces and logs** leave the services over OTLP/HTTP to each service's Sentry project, on the

@@ -282,7 +282,8 @@ resource "google_project_iam_member" "scheduler_cloud_run_invoker" {
 
 # Named humans run Authentication's maintenance job. Each run names its operation in the execution's
 # arguments, which only runWithOverrides passes, and the tag keeps every other job out of reach. The
-# operators read Cloud Run and the logs to follow the run.
+# operators read Cloud Run and the logs to follow the run. On the cluster, they connect to the
+# control plane, and the cluster root's RBAC lets them run the job's Kubernetes counterpart.
 resource "google_project_iam_member" "maintenance_operator" {
   for_each = var.authentication_maintenance_principals
 
@@ -299,7 +300,7 @@ resource "google_project_iam_member" "maintenance_operator" {
 
 resource "google_project_iam_member" "maintenance_observer" {
   for_each = {
-    for binding in setproduct(var.authentication_maintenance_principals, ["roles/logging.viewer", "roles/run.viewer"]) :
+    for binding in setproduct(var.authentication_maintenance_principals, ["roles/container.clusterViewer", "roles/logging.viewer", "roles/run.viewer"]) :
     "${binding[0]}:${binding[1]}" => { principal = binding[0], role = binding[1] }
   }
 

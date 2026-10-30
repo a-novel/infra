@@ -192,3 +192,19 @@ project's number, so a rebuild starts with new names.
 
    The run's log ends with `account-role completed for <address> with outcome …`. Running it again
    converges on the same role.
+
+   On the cluster, which serves from the cutover (a-novel/.github#522), the same principals copy
+   the suspended `maintenance` CronJob into a Job whose arguments name the operation. Admission
+   refuses any other change to its template. With `kubectl`, `gke-gcloud-auth-plugin` and `jq`
+   installed:
+
+   ```bash
+   gcloud container clusters get-credentials a-novel-production --project=a-novel-production-prod --location=europe-west9-a --dns-endpoint
+   kubectl --namespace=authentication create job --from=cronjob/maintenance first-admin --dry-run=client -o json |
+     jq '.spec.template.spec.containers[0].args = ["account-role", "--email=<address>", "--role=auth:superadmin"]' |
+     kubectl --namespace=authentication create -f -
+   kubectl --namespace=authentication logs --follow --pod-running-timeout=2m job/first-admin
+   ```
+
+   A Job's name serves once, so give a second run another name. A failed Job is not retried: read
+   its log, then run it again.
