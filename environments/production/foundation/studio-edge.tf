@@ -2,7 +2,7 @@
 # TLS it accepts, and the certificate Google issues for Studio's host. The domain's DNS authorizes
 # the certificate before any traffic moves, so the cutover only points the host at the address.
 locals {
-  studio_host = "studio.agorastoryverse.com"
+  studio_host = "studio.storyverse.fr"
 }
 
 # The domain's DNS points the host here, so the address outlives any Gateway.
