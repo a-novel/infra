@@ -2,16 +2,15 @@
 # does: a stack service account's token for Grafana itself, and a Grafana Cloud access policy's
 # token for the Frontend Observability apps. Pull requests and the drift check plan with the plan
 # identity, which may hold only the read-only tokens, so a pull request can never write to Grafana.
+# Only the root's own deploy identity reads the tokens that write.
 locals {
   grafana_tokens = {
-    plan       = "production-grafana-plan-token"
-    foundation = "production-grafana-deploy-token"
-    grafana    = "production-grafana-deploy-token"
+    plan    = "production-grafana-plan-token"
+    grafana = "production-grafana-deploy-token"
   }
   grafana_cloud_tokens = {
-    plan       = "production-grafana-cloud-plan-token"
-    foundation = "production-grafana-cloud-deploy-token"
-    grafana    = "production-grafana-cloud-deploy-token"
+    plan    = "production-grafana-cloud-plan-token"
+    grafana = "production-grafana-cloud-deploy-token"
   }
 }
 
@@ -33,9 +32,8 @@ resource "google_secret_manager_secret_iam_member" "grafana_cloud_token" {
   member    = google_service_account.automation[each.key].member
 }
 
-# The provider reads a token's version metadata before its payload. The plan and foundation
-# identities read that metadata across the project; the Grafana root's own identity reads it on its
-# write tokens alone.
+# The provider reads a token's version metadata before its payload. The plan identity reads that
+# metadata across the project; the Grafana root's own identity reads it on its write tokens alone.
 resource "google_secret_manager_secret_iam_member" "grafana_token_metadata" {
   for_each = toset([local.grafana_tokens.grafana, local.grafana_cloud_tokens.grafana])
 
