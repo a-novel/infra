@@ -35,7 +35,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "roots=$(find environments/production -mindepth 1 -maxdepth 1 -type d | sort | jq -Rnc '["bootstrap"] + [inputs]')" >>"$GITHUB_OUTPUT"
+          # The GitHub root waits for the drift identity, which sees what its Plan App cannot
+          # (a-novel/infra#1240).
+          echo "roots=$(find environments/production -mindepth 1 -maxdepth 1 -type d ! -name github | sort | jq -Rnc '["bootstrap"] + [inputs]')" >>"$GITHUB_OUTPUT"
 
   drift:
     needs: roots

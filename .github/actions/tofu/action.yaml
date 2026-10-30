@@ -17,6 +17,12 @@ inputs:
     required: false
     default: "false"
     description: '"true" when the change carries the allow-resource-deletion label.'
+  refresh:
+    required: false
+    default: "true"
+    description: >-
+      "false" plans against the last applied state without reading the live objects. The GitHub
+      root's pull requests pass it: GitHub hides fields from its read-only App that the deploy reads.
   allow_downtime:
     required: false
     default: "false"
@@ -96,6 +102,7 @@ runs:
         # The Sentry root reads the token that writes only when it applies. The plan file keeps the
         # value for the apply step.
         TF_VAR_writer: ${{ inputs.apply }}
+        REFRESH: ${{ inputs.refresh }}
         ACCESS_TOKEN: ${{ steps.auth.outputs.access_token || steps.auth_retry.outputs.access_token }}
       run: |
         set -euo pipefail
@@ -104,7 +111,7 @@ runs:
         attempt() {
           tofu -chdir="$ROOT" init -input=false -lockfile=readonly -no-color >/dev/null 2>"$errors" || return 1
           status=0
-          tofu -chdir="$ROOT" plan -input=false -no-color -lock="$LOCK" -detailed-exitcode -out=tfplan "$@" \
+          tofu -chdir="$ROOT" plan -input=false -no-color -lock="$LOCK" -refresh="$REFRESH" -detailed-exitcode -out=tfplan "$@" \
             >"$RUNNER_TEMP/plan.txt" 2>>"$errors" || status=$?
           [ "$status" -ne 1 ]
         }
