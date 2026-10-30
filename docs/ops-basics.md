@@ -117,6 +117,10 @@ kubectl --namespace=authentication get jobs
 They have no write access in the workload projects. Changes there go through pull requests, and
 host restarts through the workflows.
 
+Foundation's `authentication_maintenance_principals` run Authentication's maintenance operations,
+such as granting a role, as the [setup runbook](runbooks/setup.md) shows: on Cloud Run with the
+job's arguments, and on the cluster as a Job copied from the `maintenance` CronJob.
+
 ## Database hosts and planned downtime
 
 Most changes deploy without anyone noticing, since Cloud Run moves traffic to a new revision only

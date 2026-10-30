@@ -1,5 +1,6 @@
-# The jobs Cloud Scheduler starts today, on the same schedules (a-novel/infra#1199). A failed run is
-# not retried: the next one takes over.
+# The jobs Cloud Run runs today outside a deploy (a-novel/infra#1199): those Cloud Scheduler starts,
+# on the same schedules, and the maintenance operations the named operators start. A failed run is
+# not retried: the next one takes over, or the operator runs it again.
 locals {
   scheduled_jobs = {
     # JSON Keys signs nothing until a first run creates each usage's key. Later runs rotate a key once
@@ -8,7 +9,9 @@ locals {
       service    = "json-keys"
       image      = "json-keys/rotatekeys"
       schedule   = "10 * * * *"
+      suspend    = false
       args       = []
+      env        = {}
       secret_env = { APP_MASTER_KEY = { secret = "secrets", key = "APP_MASTER_KEY" } }
     }
     # Deletes the sign-out revocations of expired refresh tokens.
@@ -16,7 +19,21 @@ locals {
       service    = "authentication"
       image      = "authentication/maintenance"
       schedule   = "40 3 * * *"
+      suspend    = false
       args       = ["refresh-token-purge"]
+      env        = {}
+      secret_env = {}
+    }
+    # The maintenance template never runs on its own. The named operators' Jobs copy it and name
+    # their operation in its arguments (maintenance.tf). Without one, the image prints its help.
+    # account-role sends its mail within SMTP_TIMEOUT, and the deadline leaves room for the exit.
+    maintenance = {
+      service    = "authentication"
+      image      = "authentication/maintenance"
+      schedule   = "0 0 1 1 *"
+      suspend    = true
+      args       = []
+      env        = local.authentication_mail_env
       secret_env = {}
     }
   }
@@ -32,6 +49,7 @@ resource "kubernetes_cron_job_v1" "scheduled" {
 
   spec {
     schedule           = each.value.schedule
+    suspend            = each.value.suspend
     timezone           = "Etc/UTC"
     concurrency_policy = "Forbid"
 
@@ -69,7 +87,7 @@ resource "kubernetes_cron_job_v1" "scheduled" {
               args  = each.value.args
 
               dynamic "env" {
-                for_each = merge(local.database_env[each.value.service], local.downtime_env[each.value.service], {
+                for_each = merge(local.database_env[each.value.service], local.downtime_env[each.value.service], each.value.env, {
                   OTEL         = "false"
                   SSL_CERT_DIR = "/etc/ssl/certs:/etc/database-ca"
                 })

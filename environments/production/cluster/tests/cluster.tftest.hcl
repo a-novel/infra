@@ -233,7 +233,7 @@ run "schedules_the_jobs_cloud_scheduler_runs" {
 
   assert {
     condition = (
-      toset(keys(kubernetes_cron_job_v1.scheduled)) == toset(["refresh-token-purge", "rotate-keys"]) &&
+      toset([for name, job in kubernetes_cron_job_v1.scheduled : name if !job.spec[0].suspend]) == toset(["refresh-token-purge", "rotate-keys"]) &&
       kubernetes_cron_job_v1.scheduled["rotate-keys"].spec[0].schedule == "10 * * * *" &&
       kubernetes_cron_job_v1.scheduled["refresh-token-purge"].spec[0].schedule == "40 3 * * *" &&
       alltrue([for job in kubernetes_cron_job_v1.scheduled :
@@ -566,5 +566,57 @@ run "skips_the_checks_during_a_planned_downtime" {
       lookup({ for env in one(kubernetes_cron_job_v1.health[service].spec[0].job_template[0].spec[0].template[0].spec[0].container).env : env.name => env.value }, "DOWNTIME_START", null) == (service == "json-keys" ? "2026-11-02T06:00:00Z" : null)
     ])
     error_message = "A planned downtime must reach only its own service's checks, which skip from its start."
+  }
+}
+
+run "lets_only_the_named_operators_run_maintenance" {
+  command = plan
+
+  variables {
+    custom_resources = true
+  }
+
+  assert {
+    condition = (
+      kubernetes_cron_job_v1.scheduled["maintenance"].metadata[0].namespace == "authentication" &&
+      kubernetes_cron_job_v1.scheduled["maintenance"].spec[0].suspend &&
+      kubernetes_cron_job_v1.scheduled["maintenance"].spec[0].job_template[0].spec[0].active_deadline_seconds >= tonumber(trimsuffix(local.authentication_mail_env.SMTP_TIMEOUT, "s")) + 180 &&
+      one(kubernetes_cron_job_v1.scheduled["maintenance"].spec[0].job_template[0].spec[0].template[0].spec[0].container).image == local.release_image["authentication/maintenance"] &&
+      length(one(kubernetes_cron_job_v1.scheduled["maintenance"].spec[0].job_template[0].spec[0].template[0].spec[0].container).args) == 0 &&
+      contains(kubernetes_manifest.internet_egress["smtp-relay"].manifest.spec.podSelector.matchExpressions[0].values, kubernetes_cron_job_v1.scheduled["maintenance"].spec[0].job_template[0].spec[0].template[0].metadata[0].labels["app.kubernetes.io/name"]) &&
+      alltrue([for name, value in local.authentication_mail_env :
+        { for env in one(kubernetes_cron_job_v1.scheduled["maintenance"].spec[0].job_template[0].spec[0].template[0].spec[0].container).env : env.name => env.value }[name] == local.authentication_env[name]
+      ])
+    )
+    error_message = "The maintenance template must never run on its own, run Authentication's maintenance image with no operation, and send the API's mail through the relay within SMTP_TIMEOUT and Sentry's exit flush."
+  }
+
+  assert {
+    condition = (
+      toset([for subject in kubernetes_role_binding_v1.maintenance.subject : "${lower(subject.kind)}:${subject.name}"]) == toset(local.maintenance_principals) &&
+      kubernetes_role_binding_v1.maintenance.role_ref[0].kind == "Role" &&
+      alltrue([for rule in kubernetes_role_v1.maintenance.rule :
+        !contains(rule.resources, "secrets") &&
+        length(setsubtract(rule.verbs, ["create", "get", "list", "watch"])) == 0 &&
+        (!contains(rule.verbs, "create") || toset(rule.resources) == toset(["jobs"])) &&
+        (!contains(rule.resources, "cronjobs") || toset(rule.resource_names) == toset([kubernetes_cron_job_v1.scheduled["maintenance"].metadata[0].name]))
+      ])
+    )
+    error_message = "Only foundation's maintenance principals may read the maintenance template and create Jobs in Authentication's namespace, never read its Secrets, and change nothing else."
+  }
+
+  assert {
+    condition = (
+      kubernetes_manifest.maintenance_policy.manifest.spec.failurePolicy == "Fail" &&
+      alltrue([for email in local.maintenance_emails : strcontains(kubernetes_manifest.maintenance_policy.manifest.spec.matchConditions[0].expression, "\"${email}\"")]) &&
+      length(setsubtract(["initContainers", "volumes", "serviceAccountName", "automountServiceAccountToken", "containers[0].image", "containers[0].command", "containers[0].env", "containers[0].envFrom", "containers[0].volumeMounts", "containers[0].lifecycle", "containers[0].livenessProbe", "containers[0].readinessProbe", "containers[0].startupProbe"], local.maintenance_kept_fields)) == 0 &&
+      kubernetes_manifest.maintenance_policy_binding.manifest.spec.validationActions == ["Deny"] &&
+      kubernetes_manifest.maintenance_policy_binding.manifest.spec.paramRef == {
+        name                    = kubernetes_cron_job_v1.scheduled["maintenance"].metadata[0].name
+        namespace               = kubernetes_cron_job_v1.scheduled["maintenance"].metadata[0].namespace
+        parameterNotFoundAction = "Deny"
+      }
+    )
+    error_message = "Admission must refuse an operator's Job that changes what the maintenance template runs, reads or runs as, and every one without the template."
   }
 }
