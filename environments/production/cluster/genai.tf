@@ -1,6 +1,6 @@
 # GenAI on the cluster, which serves no one until the cutover (a-novel/.github#522): its gRPC server,
-# which scales on CPU, and the sweep, which checks the generations nobody polled. Both reach OpenAI
-# once a-novel/infra#1200 opens the way.
+# which scales on CPU and its calls in flight, and the sweep, which checks the generations nobody
+# polled. Both reach OpenAI once a-novel/infra#1200 opens the way.
 locals {
   genai_env        = merge(local.database_env["genai"], local.downtime_env["genai"])
   genai_secret_env = merge(local.database_secret_env, { OPENAI_API_KEY = { secret = "secrets", key = "OPENAI_API_KEY" } })
@@ -14,6 +14,7 @@ locals {
     GOMEMLIMIT                = "1600MiB"
     GRPC_MAX_CONCURRENT_CALLS = "20"
     GRPC_PORT                 = "8080"
+    METRICS_PORT              = "9090"
     POSTGRES_MAX_OPEN_CONNS   = "10"
     POSTGRES_MAX_IDLE_CONNS   = "10"
     SERVICE_TOKEN_ISSUER      = local.service_token_issuer
@@ -44,8 +45,18 @@ module "genai_grpc" {
   secret_env = local.genai_secret_env
   ca_secret  = kubernetes_manifest.database_server_certificate["genai"].manifest.spec.secretName
   resources  = { cpu = "250m", memory = "2Gi" }
-  replicas   = { min = 1, max = 4 }
   labels     = local.database_clients
+
+  # Full pods wait on OpenAI and use little CPU, so the server also keeps its calls in flight at 60%
+  # of its cap per pod, Cloud Run's default target.
+  scaling_gauge = {
+    name    = "grpc_server_calls_in_flight"
+    port    = tonumber(local.genai_grpc_env.METRICS_PORT)
+    average = floor(tonumber(local.genai_grpc_env.GRPC_MAX_CONCURRENT_CALLS) * 60 / 100)
+  }
+  # The autoscaler absorbs bursts only. replicas.max times GRPC_MAX_CONCURRENT_CALLS bounds the calls
+  # the server runs at once, and so the requests it sends OpenAI: a hard bound on spend and load.
+  replicas = { min = 1, max = 3 }
 
   depends_on = [kubernetes_job_v1.migrations, kubernetes_manifest.secrets]
 }
@@ -92,6 +103,27 @@ resource "kubernetes_network_policy_v1" "genai_grpc" {
 
       ports {
         port     = local.genai_grpc_env.GRPC_PORT
+        protocol = "TCP"
+      }
+    }
+
+    # GKE reads the calls in flight for the autoscaler, from a source it does not document: a node,
+    # or a pod in kube-system.
+    ingress {
+      from {
+        ip_block {
+          cidr = local.cluster.node_range
+        }
+      }
+
+      from {
+        namespace_selector {
+          match_labels = { "kubernetes.io/metadata.name" = "kube-system" }
+        }
+      }
+
+      ports {
+        port     = local.genai_grpc_env.METRICS_PORT
         protocol = "TCP"
       }
     }
