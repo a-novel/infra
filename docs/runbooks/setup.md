@@ -60,6 +60,14 @@ deploys and its sweep apply from it, apart from Google Cloud's production:
 | `GCP_GITHUB_WORKLOAD_IDENTITY_PROVIDER` | `…/providers/github-github`                                    |
 | `GCP_GITHUB_SERVICE_ACCOUNT`            | `infra-github@a-novel-management-prod.iam.gserviceaccount.com` |
 
+Environment `grafana` allows the `master` branch only, with no required reviewers. The Grafana
+root's deploys apply from it, apart from Google Cloud's production:
+
+| Environment variable                     | Value                                                           |
+| ---------------------------------------- | --------------------------------------------------------------- |
+| `GCP_GRAFANA_WORKLOAD_IDENTITY_PROVIDER` | `…/providers/github-grafana`                                    |
+| `GCP_GRAFANA_SERVICE_ACCOUNT`            | `infra-grafana@a-novel-management-prod.iam.gserviceaccount.com` |
+
 Environment `host-artifacts` has the `core` and `owners-infra` teams as required reviewers. Either
 one approves a host tool publication.
 
