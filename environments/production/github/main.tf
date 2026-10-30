@@ -55,12 +55,12 @@ locals {
 }
 
 # One call per organization, each with its own App's provider. To drop an organization, remove its
-# call first and its Apps one apply later: a provider must outlive its resources by one apply.
+# call first and its provider one apply later: a provider must outlive its resources by one apply.
 module "a_novel" {
   source = "../../../modules/github-organization"
 
   providers = {
-    github = github.organization["a-novel"]
+    github = github.a_novel
   }
 
   repositories = local.owned["a-novel"]
@@ -73,7 +73,7 @@ module "a_novel_kit" {
   source = "../../../modules/github-organization"
 
   providers = {
-    github = github.organization["a-novel-kit"]
+    github = github.a_novel_kit
   }
 
   repositories = local.owned["a-novel-kit"]

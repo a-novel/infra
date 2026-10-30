@@ -18,14 +18,23 @@ ephemeral "google_secret_manager_secret_version" "app_key" {
 }
 
 provider "github" {
-  alias    = "organization"
-  for_each = var.apps
-
-  owner = each.key
+  alias = "a_novel"
+  owner = "a-novel"
 
   app_auth {
-    id              = each.value[local.app].id
-    installation_id = each.value[local.app].installation_id
-    pem_file        = ephemeral.google_secret_manager_secret_version.app_key[each.key].secret_data
+    id              = var.apps["a-novel"][local.app].id
+    installation_id = var.apps["a-novel"][local.app].installation_id
+    pem_file        = ephemeral.google_secret_manager_secret_version.app_key["a-novel"].secret_data
+  }
+}
+
+provider "github" {
+  alias = "a_novel_kit"
+  owner = "a-novel-kit"
+
+  app_auth {
+    id              = var.apps["a-novel-kit"][local.app].id
+    installation_id = var.apps["a-novel-kit"][local.app].installation_id
+    pem_file        = ephemeral.google_secret_manager_secret_version.app_key["a-novel-kit"].secret_data
   }
 }

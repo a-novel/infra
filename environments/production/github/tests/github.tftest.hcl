@@ -2,11 +2,14 @@
 mock_provider "google" {}
 
 mock_provider "github" {
-  alias = "organization"
+  alias = "a_novel"
 }
 
-# A mock stands in for one provider instance, never for each organization's, so the module's own tests
-# cover its resources.
+mock_provider "github" {
+  alias = "a_novel_kit"
+}
+
+# The module's own tests cover its resources.
 override_module {
   target = module.a_novel
 }
