@@ -39,8 +39,10 @@ override_data {
           json-keys      = "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-json-keys-private-production/service-json-keys/database@sha256:3333333333333333333333333333333333333333333333333333333333333333"
         }
         image_registries = {
-          "ghcr.io" = "europe-west1-docker.pkg.dev/a-novel-production-prod/a-novel-ghcr-io"
-          "quay.io" = "europe-west1-docker.pkg.dev/a-novel-production-prod/a-novel-quay-io"
+          "docker.io"       = "europe-west1-docker.pkg.dev/a-novel-production-prod/a-novel-docker-io"
+          "ghcr.io"         = "europe-west1-docker.pkg.dev/a-novel-production-prod/a-novel-ghcr-io"
+          "quay.io"         = "europe-west1-docker.pkg.dev/a-novel-production-prod/a-novel-quay-io"
+          "registry.k8s.io" = "europe-west1-docker.pkg.dev/a-novel-production-prod/a-novel-registry-k8s-io"
         }
       }
     }
@@ -71,10 +73,9 @@ run "pulls_addons_through_our_registry" {
   }
 
   assert {
-    condition = (
-      !strcontains(join("\n", helm_release.external_secrets.values), "quay.io/") &&
-      !strcontains(join("\n", helm_release.external_secrets.values), "ghcr.io/")
-    )
+    condition = alltrue([for registry in ["docker.io/", "ghcr.io/", "quay.io/", "registry.k8s.io/"] :
+      !strcontains(join("\n", concat(helm_release.external_secrets.values, helm_release.alloy.values)), registry)
+    ])
     error_message = "No chart may keep an upstream registry reference."
   }
 }
@@ -107,6 +108,121 @@ run "isolates_every_namespace" {
       ])
     )
     error_message = "Pods may pull only from our Artifact Registry, every service namespace must deny all traffic by default, and its pods must reach the node's DNS cache."
+  }
+}
+
+run "sends_every_signal_to_grafana_through_alloy" {
+  command = plan
+
+  variables {
+    custom_resources = true
+  }
+
+  assert {
+    condition = (
+      local.alloy_values.global.scrapeInterval == "60s" &&
+      local.alloy_values.clusterEvents.enabled &&
+      alltrue([for feature in ["nodeLogs", "podLogsObjects", "podLogsViaKubernetesApi", "podLogsViaLoki", "podLogsViaOpenTelemetry"] : !try(local.alloy_values[feature].enabled, false)]) &&
+      !try(local.alloy_values.hostMetrics.enabled, false) &&
+      !try(local.alloy_values.telemetryServices["node-exporter"].deploy, false) &&
+      contains(local.alloy_values.annotationAutodiscovery.metricsTuning.excludeMetrics, "cnpg_pg_settings_setting")
+    )
+    error_message = "Alloy must scrape every 60 seconds, send the cluster's events, collect no log the services already send, run no Node Exporter, and drop CloudNativePG's settings."
+  }
+
+  assert {
+    condition = alltrue([for scope in [
+      local.alloy_values.clusterEvents.namespaces,
+      local.alloy_values.clusterMetrics.cadvisor.metricsTuning.includeNamespaces,
+      split(",", local.alloy_values.telemetryServices["kube-state-metrics"].namespaces),
+      local.alloy_values.annotationAutodiscovery.namespaces,
+    ] : length(scope) > 0 && length(setsubtract(scope, setunion(var.namespaces, local.addon_namespaces))) == 0])
+    error_message = "Alloy must read the events, containers, objects and pods of this root's namespaces alone."
+  }
+
+  # The span metrics come from the server spans and the roots alone, under one series per service
+  # whatever its pods, and the chart's own span metrics stay off.
+  assert {
+    condition = (
+      strcontains(local.alloy_values.destinations.span-metrics.config, "span = [`kind != SPAN_KIND_SERVER and not IsRootSpan()`]") &&
+      toset(flatten(regexall("name = \"([^\"]+)\"", local.alloy_values.destinations.span-metrics.config))) == toset(["error.type", "a_novel.workload"]) &&
+      strcontains(local.alloy_values.destinations.span-metrics.config, "exclude_dimensions              = [\"span.kind\"]") &&
+      strcontains(local.alloy_values.destinations.span-metrics.config, "resource_metrics_key_attributes = [\"service.name\"]") &&
+      strcontains(local.alloy_values.destinations.span-metrics.config, "statements = [`keep_keys(attributes, [\"service.name\"])`]") &&
+      strcontains(local.alloy_values.destinations.span-metrics.config, "metrics = [otelcol.processor.attributes.grafana_cloud.input]") &&
+      contains(local.alloy_values.applicationObservability.destinations, "span-metrics") &&
+      !try(local.alloy_values.applicationObservability.connectors.spanMetrics.enabled, false) &&
+      local.alloy_values.collectors.alloy.presets == ["singleton"]
+    )
+    error_message = "Span metrics must count the server and root spans by service, span name, status, error type and workload, on a single collector, with no pod or instance label."
+  }
+
+  # Alloy reads no Secret, and the operator manages its own namespace alone.
+  assert {
+    condition = (
+      !local.alloy_values.collectors.alloy.rbac.create &&
+      alltrue([for rule in kubernetes_cluster_role_v1.alloy.rule : length(setintersection(rule.resources, ["configmaps", "secrets"])) == 0 && length(setsubtract(rule.verbs, ["get", "list", "watch"])) == 0]) &&
+      local.alloy_values.alloy-operator.ownNamespaceOnly &&
+      !local.alloy_values.alloy-operator.rbac.createClusterRoles &&
+      local.alloy_values.destinations.grafana-cloud.secret.embed &&
+      one(local.alloy_values.collectors.alloy.alloy.extraEnv).valueFrom.secretKeyRef.name == kubernetes_manifest.secrets["alloy"].manifest.spec.target.name &&
+      contains(keys(var.secrets["alloy"]), one(local.alloy_values.collectors.alloy.alloy.extraEnv).valueFrom.secretKeyRef.key) &&
+      length(setintersection(local.alloy_values.telemetryServices["kube-state-metrics"].collectors, ["configmaps", "secrets"])) == 0
+    )
+    error_message = "Alloy must read only cluster state, take its push token from its namespace's synced secrets, and leave the operator its own namespace alone."
+  }
+
+  assert {
+    condition = (
+      local.alloy_values.destinations.grafana-cloud.url == "https://${kubernetes_manifest.internet_egress["grafana-otlp"].manifest.spec.egress[0].matches[0].name}/otlp" &&
+      kubernetes_manifest.internet_egress["grafana-otlp"].manifest.metadata.namespace == helm_release.alloy.namespace &&
+      toset(kubernetes_manifest.internet_egress["grafana-otlp"].manifest.spec.podSelector.matchExpressions[0].values) == toset(keys(local.alloy_values.collectors))
+    )
+    error_message = "Only Alloy's collector may reach Grafana, at the gateway it sends to."
+  }
+
+  # Every service's pods reach the receiver, and nothing else reaches Alloy.
+  assert {
+    condition = (
+      length(one(kubernetes_network_policy_v1.alloy.spec).ingress) == 1 &&
+      toset(one(one(one(one(kubernetes_network_policy_v1.alloy.spec).ingress).from).namespace_selector).match_expressions[0].values) == toset(var.namespaces) &&
+      [for port in one(one(kubernetes_network_policy_v1.alloy.spec).ingress).ports : port.port] == ["4318"] &&
+      one(kubernetes_network_policy_v1.alloy.spec).pod_selector[0].match_labels["app.kubernetes.io/name"] == one(keys(local.alloy_values.collectors)) &&
+      toset(keys(kubernetes_network_policy_v1.telemetry)) == toset(var.namespaces) &&
+      alltrue([for policy in kubernetes_network_policy_v1.telemetry :
+        one(one(one(policy.spec).egress).to).pod_selector[0].match_labels == one(kubernetes_network_policy_v1.alloy.spec).pod_selector[0].match_labels &&
+        [for port in one(one(policy.spec).egress).ports : port.port] == ["4318"]
+      ])
+    )
+    error_message = "Alloy's receiver must admit every service's pods, and only them, on OTLP/HTTP alone."
+  }
+
+  assert {
+    condition = alltrue([for service, policy in kubernetes_network_policy_v1.database :
+      length([for rule in one(policy.spec).ingress : rule if anytrue([for peer in rule.from : try(peer.namespace_selector[0].match_labels["kubernetes.io/metadata.name"], "") == "alloy"])]) == 1 &&
+      one([for rule in one(policy.spec).ingress : [for port in rule.ports : port.port] if anytrue([for peer in rule.from : try(peer.namespace_selector[0].match_labels["kubernetes.io/metadata.name"], "") == "alloy"])]) == ["9187"] &&
+      kubernetes_manifest.database[service].manifest.spec.inheritedMetadata.annotations["k8s.grafana.com/scrape"] == "true"
+    ])
+    error_message = "Alloy must reach each database's metrics port alone."
+  }
+
+  # Each workload exports to the receiver under its repository's name, as on Cloud Run.
+  assert {
+    condition = alltrue([for workload in [
+      { env = local.json_keys_env, kind = "api" },
+      { env = local.authentication_env, kind = "api" },
+      { env = local.genai_grpc_env, kind = "api" },
+      { env = local.genai_sweep_env, kind = "job" },
+      { env = local.studio_env, kind = "api" },
+      { env = { for env in one(kubernetes_cron_job_v1.scheduled["rotate-keys"].spec[0].job_template[0].spec[0].template[0].spec[0].container).env : env.name => env.value }, kind = "job" },
+      { env = { for env in one(kubernetes_cron_job_v1.scheduled["refresh-token-purge"].spec[0].job_template[0].spec[0].template[0].spec[0].container).env : env.name => env.value }, kind = "job" },
+      ] :
+      workload.env.OTEL == "true" &&
+      workload.env.OTEL_EXPORTER_OTLP_ENDPOINT == "http://${one(keys(local.alloy_values.collectors))}.${helm_release.alloy.namespace}.svc:${local.alloy_values.applicationObservability.receivers.otlp.http.port}" &&
+      can(regex("^(service|platform)-[a-z-]+$", workload.env.OTEL_SERVICE_NAME)) &&
+      workload.env.OTEL_RESOURCE_ATTRIBUTES == "a_novel.workload=${workload.kind}"
+    ])
+    error_message = "Every server, the sweep, the jobs and Studio must export to Alloy's receiver, named after their repository, as an api or a job."
   }
 }
 
@@ -262,10 +378,9 @@ run "schedules_the_jobs_cloud_scheduler_runs" {
       job.spec[0].job_template[0].spec[0].template[0].metadata[0].labels["a-novel.io/database"] == "client" &&
       one(one(job.spec[0].job_template[0].spec[0].template[0].spec[0].volume).secret).secret_name == kubernetes_manifest.database_server_certificate[local.scheduled_jobs[name].service].manifest.spec.secretName &&
       one([for env in one(job.spec[0].job_template[0].spec[0].template[0].spec[0].container).env : env.value if env.name == "POSTGRES_HOST"]) == one(kubernetes_manifest.database_server_certificate[local.scheduled_jobs[name].service].manifest.spec.dnsNames) &&
-      one([for env in one(job.spec[0].job_template[0].spec[0].template[0].spec[0].container).env : env.value if env.name == "SSL_CERT_DIR"]) == "/etc/ssl/certs:/etc/database-ca" &&
-      one([for env in one(job.spec[0].job_template[0].spec[0].template[0].spec[0].container).env : env.value if env.name == "OTEL"]) == "false"
+      one([for env in one(job.spec[0].job_template[0].spec[0].template[0].spec[0].container).env : env.value if env.name == "SSL_CERT_DIR"]) == "/etc/ssl/certs:/etc/database-ca"
     ])
-    error_message = "Each scheduled job must reach its own database as a client, by its certificate's name, trusting its CA, and export no telemetry until Alloy runs."
+    error_message = "Each scheduled job must reach its own database as a client, by its certificate's name, trusting its CA."
   }
 }
 
@@ -295,13 +410,14 @@ run "reaches_only_its_internet_hosts" {
   assert {
     condition = (
       { for name, policy in kubernetes_manifest.internet_egress : name => "${policy.manifest.metadata.namespace}:${join(",", policy.manifest.spec.podSelector.matchExpressions[0].values)}:${policy.manifest.spec.egress[0].matches[0].name}:${policy.manifest.spec.egress[0].ports[0].port}" } == {
-        openai     = "genai:grpc,sweep:api.openai.com:443"
-        smtp-relay = "authentication:maintenance,rest:smtp-relay.gmail.com:587"
-        github-raw = "studio:web:raw.githubusercontent.com:443"
+        openai       = "genai:grpc,sweep:api.openai.com:443"
+        smtp-relay   = "authentication:maintenance,rest:smtp-relay.gmail.com:587"
+        github-raw   = "studio:web:raw.githubusercontent.com:443"
+        grafana-otlp = "alloy:alloy:otlp-gateway-prod-eu-west-2.grafana.net:443"
       } &&
       alltrue([for policy in kubernetes_manifest.internet_egress : policy.manifest.kind == "FQDNNetworkPolicy" && length(policy.manifest.spec.egress) == 1])
     )
-    error_message = "GenAI may reach only OpenAI, Authentication only the mail relay, and Studio only GitHub's raw host, each on its own port."
+    error_message = "GenAI may reach only OpenAI, Authentication only the mail relay, Studio only GitHub's raw host, and Alloy only Grafana's gateway, each on its own port."
   }
 }
 
@@ -315,7 +431,6 @@ run "runs_json_keys" {
   assert {
     condition = (
       length([for name in keys(local.json_keys_env) : name if startswith(name, "SENTRY_")]) == 0 &&
-      local.json_keys_env.OTEL == "false" &&
       local.json_keys_env.SERVICE_TOKEN_ISSUER == "https://container.googleapis.com/v1/projects/a-novel-production-prod/locations/europe-west9-a/clusters/a-novel-production" &&
       local.json_keys_env.POSTGRES_HOST == one(kubernetes_manifest.database_server_certificate["json-keys"].manifest.spec.dnsNames)
     )
@@ -342,7 +457,6 @@ run "runs_authentication" {
   assert {
     condition = (
       length([for name in keys(local.authentication_env) : name if startswith(name, "SENTRY_")]) == 0 &&
-      local.authentication_env.OTEL == "false" &&
       local.authentication_env.POSTGRES_HOST == one(kubernetes_manifest.database_server_certificate["authentication"].manifest.spec.dnsNames) &&
       local.authentication_env.SMTP_ADDR == "smtp-relay.gmail.com:587" &&
       local.authentication_env.PLATFORM_AUTH_URL == "https://studio.storyverse.fr"
@@ -384,7 +498,6 @@ run "runs_genai" {
   assert {
     condition = alltrue([for env in [local.genai_grpc_env, local.genai_sweep_env] :
       length([for name in keys(env) : name if startswith(name, "SENTRY_")]) == 0 &&
-      env.OTEL == "false" &&
       env.POSTGRES_HOST == one(kubernetes_manifest.database_server_certificate["genai"].manifest.spec.dnsNames)
     ])
     error_message = "GenAI's server and sweep must report nothing to Sentry, and use their CloudNativePG database by its certificate's name."
@@ -421,7 +534,6 @@ run "runs_studio" {
   assert {
     condition = (
       length([for name in keys(local.studio_env) : name if startswith(name, "SENTRY_") || startswith(name, "PUBLIC_SENTRY_")]) == 0 &&
-      local.studio_env.OTEL == "false" &&
       local.studio_env.ORIGIN == "https://studio.storyverse.fr" &&
       local.studio_env.ADDRESS_HEADER == "X-Forwarded-For" &&
       local.studio_env.XFF_DEPTH == "2"

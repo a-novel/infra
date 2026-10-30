@@ -2,13 +2,10 @@
 # which scales on CPU, and the sweep, which checks the generations nobody polled. Both reach OpenAI
 # once a-novel/infra#1200 opens the way.
 locals {
-  genai_env = merge(local.database_env["genai"], local.downtime_env["genai"], {
-    # Alloy carries the telemetry once it runs (a-novel/infra#1206).
-    OTEL = "false"
-  })
+  genai_env        = merge(local.database_env["genai"], local.downtime_env["genai"])
   genai_secret_env = merge(local.database_secret_env, { OPENAI_API_KEY = { secret = "secrets", key = "OPENAI_API_KEY" } })
 
-  genai_grpc_env = merge(local.genai_env, {
+  genai_grpc_env = merge(local.genai_env, local.telemetry_env["genai"].api, {
     # Polls stop reaching the provider more than once per interval, which also bounds the reads in
     # flight while the provider is slow.
     CHECK_INTERVAL = "10s"
@@ -24,7 +21,7 @@ locals {
     SERVICE_TOKEN_CALLERS     = "system:serviceaccount:genai:smoke"
   })
 
-  genai_sweep_env = merge(local.genai_env, {
+  genai_sweep_env = merge(local.genai_env, local.telemetry_env["genai"].job, {
     # A sweep starts pending generations, which reads their payloads: 4 checks fit 1 GiB.
     GOMEMLIMIT              = "800MiB"
     POSTGRES_MAX_OPEN_CONNS = "4"

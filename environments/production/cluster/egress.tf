@@ -8,6 +8,8 @@ locals {
     smtp-relay = { namespace = "authentication", pods = ["maintenance", "rest"], host = local.authentication_smtp.host, port = 587 }
     # Studio's planned downtime document.
     github-raw = { namespace = "studio", pods = ["web"], host = "raw.githubusercontent.com", port = 443 }
+    # The Grafana Cloud stack, which receives every signal (alloy.tf).
+    grafana-otlp = { namespace = "alloy", pods = ["alloy"], host = var.grafana_cloud.otlp_host, port = 443 }
   }
 }
 
@@ -17,7 +19,7 @@ resource "kubernetes_manifest" "internet_egress" {
   manifest = {
     apiVersion = "networking.gke.io/v1alpha1"
     kind       = "FQDNNetworkPolicy"
-    metadata   = { name = each.key, namespace = kubernetes_namespace_v1.service[each.value.namespace].metadata[0].name }
+    metadata   = { name = each.key, namespace = local.namespace[each.value.namespace] }
     spec = {
       podSelector = { matchExpressions = [{ key = "app.kubernetes.io/name", operator = "In", values = each.value.pods }] }
       egress = [{

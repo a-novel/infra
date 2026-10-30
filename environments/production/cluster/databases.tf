@@ -104,6 +104,23 @@ resource "kubernetes_network_policy_v1" "database" {
       }
     }
 
+    # Alloy scrapes each instance's metrics (alloy.tf).
+    ingress {
+      from {
+        namespace_selector {
+          match_labels = { "kubernetes.io/metadata.name" = local.namespace["alloy"] }
+        }
+        pod_selector {
+          match_labels = kubernetes_network_policy_v1.alloy.spec[0].pod_selector[0].match_labels
+        }
+      }
+
+      ports {
+        port     = "9187"
+        protocol = "TCP"
+      }
+    }
+
     egress {
       to {
         pod_selector {
@@ -215,6 +232,9 @@ resource "kubernetes_manifest" "database" {
       affinity            = { enablePodAntiAffinity = true, podAntiAffinityType = "required", topologyKey = "kubernetes.io/hostname" }
       resources           = { requests = { cpu = each.value.cpu, memory = each.value.memory }, limits = { memory = each.value.memory } }
       storage             = { size = each.value.storage, storageClass = "standard-rwo", resizeInUseVolumes = true }
+
+      # Alloy scrapes each instance's metrics port (alloy.tf).
+      inheritedMetadata = { annotations = { "k8s.grafana.com/scrape" = "true", "k8s.grafana.com/metrics.portName" = "metrics" } }
 
       # pg_cron runs GenAI's retention purge in background workers, since a job's own connection
       # would need a password.

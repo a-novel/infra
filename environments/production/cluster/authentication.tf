@@ -13,14 +13,12 @@ locals {
     SMTP_SENDER_NAME    = local.authentication_smtp.sender_name
     SMTP_TIMEOUT        = "300s"
   }
-  authentication_env = merge(local.database_env["authentication"], local.downtime_env["authentication"], local.authentication_mail_env, {
+  authentication_env = merge(local.database_env["authentication"], local.downtime_env["authentication"], local.authentication_mail_env, local.telemetry_env["authentication"].api, {
     # One 64 MiB Argon2 hash at a time: more slots add memory, not throughput.
     ARGON2_MAX_CONCURRENT = "1"
     # The Go runtime does not read the container's memory limit; this lets it reclaim one hash's
     # 64 MiB before the next one doubles the heap.
-    GOMEMLIMIT = "384MiB"
-    # Alloy carries the telemetry once it runs (a-novel/infra#1206).
-    OTEL                    = "false"
+    GOMEMLIMIT              = "384MiB"
     POSTGRES_MAX_OPEN_CONNS = "10"
     POSTGRES_MAX_IDLE_CONNS = "5"
     # Only Studio calls the API for its visitors, so it can trust the visitor IP Studio forwards.

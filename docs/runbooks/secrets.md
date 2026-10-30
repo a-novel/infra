@@ -183,8 +183,8 @@ it in the stack's Grafana, under **Administration → Users and access → Cloud
 - **Token:** no expiry.
 
 Add the token as a version of `production-alloy-push-token`, as in
-[Rotate a secret](#rotate-a-secret). For a leak, delete the token in Grafana as well as disabling
-its version.
+[Rotate a secret](#rotate-a-secret), and pin it in the cluster root's `addon_secret_versions`. For a
+leak, delete the token in Grafana as well as disabling its version.
 
 ## pgBackRest TLS certificates
 

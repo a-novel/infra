@@ -1,17 +1,15 @@
 # JSON Keys on the cluster, which serves no one until the cutover (a-novel/.github#522). Its pods run
 # only once the operators' kinds exist, since they read the database's and External Secrets' Secrets.
 locals {
-  json_keys_env = merge(local.database_env["json-keys"], local.downtime_env["json-keys"], {
+  json_keys_env = merge(local.database_env["json-keys"], local.downtime_env["json-keys"], local.telemetry_env["json-keys"].api, {
     # Signing reads keys from a cache, so a few connections serve every pod.
     POSTGRES_MAX_OPEN_CONNS = "5"
     POSTGRES_MAX_IDLE_CONNS = "2"
     GRPC_PORT               = "8080"
     GOMEMLIMIT              = "400MiB"
-    # Alloy carries the telemetry once it runs (a-novel/infra#1206).
-    OTEL                   = "false"
-    SERVICE_TOKEN_ISSUER   = local.service_token_issuer
-    SERVICE_TOKEN_AUDIENCE = "json-keys"
-    SERVICE_TOKEN_CALLERS  = "system:serviceaccount:authentication:rest,system:serviceaccount:json-keys:smoke"
+    SERVICE_TOKEN_ISSUER    = local.service_token_issuer
+    SERVICE_TOKEN_AUDIENCE  = "json-keys"
+    SERVICE_TOKEN_CALLERS   = "system:serviceaccount:authentication:rest,system:serviceaccount:json-keys:smoke"
   })
 }
 

@@ -23,13 +23,14 @@ locals {
   database_images = provider::terraform::decode_tfvars(file("${path.module}/../production/foundation/terraform.tfvars")).database_images
 
   # Each image pulls through the drill's caches, as production's pull through its own. The database
-  # images go by their service's name.
+  # images go by their service's name. The drill runs only the database operators and the databases,
+  # so it skips the images of registries it does not cache, such as Alloy's.
   image_parts = { for name, reference in merge(local.production.addon_images, local.database_images) : name => regex("^(?P<host>[^/]+)/(?P<path>[^:]+):(?P<tag>.+)$", reference) }
   images = {
     for name, parts in local.image_parts : name => {
       repository = "${local.cluster.image_registries[parts.host]}/${parts.path}"
       tag        = parts.tag
-    }
+    } if contains(keys(local.cluster.image_registries), parts.host)
   }
 
   barman_plugin      = "barman-cloud.cloudnative-pg.io"
@@ -72,7 +73,7 @@ resource "kubernetes_namespace_v1" "drill" {
 module "database_operator" {
   source = "../../modules/database-operator"
 
-  images = { for name in keys(local.production.addon_images) : name => local.images[name] }
+  images = { for name, image in local.images : name => image if contains(keys(local.production.addon_images), name) }
   namespaces = {
     cert_manager   = kubernetes_namespace_v1.drill["cert-manager"].metadata[0].name
     cloudnative_pg = kubernetes_namespace_v1.drill["cnpg-system"].metadata[0].name

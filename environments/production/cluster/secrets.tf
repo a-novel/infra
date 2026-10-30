@@ -1,6 +1,7 @@
 locals {
-  # Each secret at the version its service's root pins for Cloud Run today.
-  secret_versions = { for service in keys(var.secrets) : service => local.service_inputs[service].secret_versions }
+  # Each secret at the version its service's root pins for Cloud Run today. This root pins the
+  # add-ons' own.
+  secret_versions = merge(var.addon_secret_versions, { for service in setintersection(keys(var.secrets), var.namespaces) : service => local.service_inputs[service].secret_versions })
   secret_grants = { for grant in flatten([for service, env in var.secrets : [for name in distinct(values(env)) : { service = service, name = name }]]) :
     "${grant.service}/${grant.name}" => grant
   }
@@ -17,7 +18,7 @@ resource "kubernetes_service_account_v1" "secrets" {
 
   metadata {
     name      = "secrets"
-    namespace = kubernetes_namespace_v1.service[each.key].metadata[0].name
+    namespace = local.namespace[each.key]
   }
 }
 
@@ -37,7 +38,7 @@ resource "kubernetes_manifest" "secret_store" {
   manifest = {
     apiVersion = "external-secrets.io/v1"
     kind       = "SecretStore"
-    metadata   = { name = "secret-manager", namespace = kubernetes_namespace_v1.service[each.key].metadata[0].name }
+    metadata   = { name = "secret-manager", namespace = local.namespace[each.key] }
     spec = {
       provider = {
         gcpsm = {
@@ -63,7 +64,7 @@ resource "kubernetes_manifest" "secrets" {
   manifest = {
     apiVersion = "external-secrets.io/v1"
     kind       = "ExternalSecret"
-    metadata   = { name = "secrets", namespace = kubernetes_namespace_v1.service[each.key].metadata[0].name }
+    metadata   = { name = "secrets", namespace = local.namespace[each.key] }
     spec = {
       refreshInterval = "1h"
       secretStoreRef  = { kind = "SecretStore", name = kubernetes_manifest.secret_store[each.key].manifest.metadata.name }
