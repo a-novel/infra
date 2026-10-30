@@ -84,8 +84,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tofu -chdir=environments/production/github output -json secret_sync >"$RUNNER_TEMP/secret-sync.json"
-          node .github/scripts/secret-sync.mjs "$RUNNER_TEMP/secret-sync.json"
+          tofu -chdir=environments/production/github output -json organizations >"$RUNNER_TEMP/organizations.json"
+          node .github/scripts/secret-sync.mjs "$RUNNER_TEMP/organizations.json"
+      # Writes back the settings the provider cannot manage yet, wherever a repository differs.
+      - name: Assert repository settings
+        shell: bash
+        run: node .github/scripts/repository-asserts.mjs "$RUNNER_TEMP/organizations.json" --apply
       # Until a pull request fixes it, each sweep fails again; the warning reaches the daily CI
       # warnings digest on Discord.
       - if: failure()

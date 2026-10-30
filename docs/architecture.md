@@ -353,6 +353,12 @@ values and copies the governance secrets from Bitwarden, so its templates stay f
 - **Secret sync copies the governance secrets.** After each apply, the deploy job and the sweep
   copy each repository's privileged keys from Secret Manager, at the versions `terraform.tfvars`
   pins, into its `governance` environment, as `.github/scripts/secret-sync.mjs` does.
+- **Asserts cover what the provider cannot manage.** After each apply, the deploy job and the
+  sweep keep code scanning default setup and Code Quality off, fork pull request approval at
+  `all_external_contributors` and pull request creation limited to collaborators, on every
+  repository, as `.github/scripts/repository-asserts.mjs` does. The drift check reads the same
+  settings and warns when one differs. Each assert names the issue that replaces it with a
+  provider resource.
 - **Only the guarded environments are managed:** `release`, with its reviewers, `governance` and
   `sourcemaps`, each open on the refs a ruleset guards. GitHub creates the others, such as
   `github-pages` and `copilot`.

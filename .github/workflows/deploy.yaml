@@ -107,11 +107,11 @@ jobs:
             printf '%s\n' .opentofu-version .github/actions/tofu/ .github/workflows/deploy.yaml
             # The cluster root reads each service root's pins from its terraform.tfvars, and its
             # health checks run the smoke-check module's script. The Grafana root reads
-            # foundation's node pool. The GitHub root's job copies the governance secrets with
-            # secret-sync.mjs after it applies.
+            # foundation's node pool. The GitHub root's job copies the governance secrets and
+            # asserts the repository settings after it applies.
             [ "$1" != environments/production/cluster ] || printf '%s\n' 'environments/production/*/terraform.tfvars' modules/smoke-check/smoke.sh
             [ "$1" != environments/production/grafana ] || printf '%s\n' environments/production/foundation/terraform.tfvars environments/production/cluster/terraform.tfvars
-            [ "$1" != environments/production/github ] || printf '%s\n' .github/scripts/secret-sync.mjs
+            [ "$1" != environments/production/github ] || printf '%s\n' .github/scripts/secret-sync.mjs .github/scripts/repository-asserts.mjs
             for ((i = 0; i < ${#dirs[@]}; i++)); do
               printf '%s/\n' "${dirs[i]}"
               while read -r source; do
@@ -400,8 +400,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tofu -chdir=environments/production/github output -json secret_sync >"$RUNNER_TEMP/secret-sync.json"
-          node .github/scripts/secret-sync.mjs "$RUNNER_TEMP/secret-sync.json"
+          tofu -chdir=environments/production/github output -json organizations >"$RUNNER_TEMP/organizations.json"
+          node .github/scripts/secret-sync.mjs "$RUNNER_TEMP/organizations.json"
+      # Writes back the settings the provider cannot manage yet, wherever a repository differs.
+      - name: Assert repository settings
+        shell: bash
+        run: node .github/scripts/repository-asserts.mjs "$RUNNER_TEMP/organizations.json" --apply
 
   # Every deploy applies every service root, found on disk by the changes job, so the services run
   # the current DOWNTIME whichever deploy applies last: a downtime written while another deploy

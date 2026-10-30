@@ -78,3 +78,12 @@ run "resolves_each_repository_from_its_class" {
     error_message = "Only the two templates are template repositories."
   }
 }
+
+run "lists_every_repository_for_the_asserts" {
+  command = plan
+
+  assert {
+    condition     = toset(flatten([for owner, organization in output.organizations : [for name in organization.repositories : "${owner}/${name}"]])) == toset(keys(var.repositories))
+    error_message = "repository-asserts.mjs holds every repository to its settings, ready or not, so the output lists them all, not only those with a governance environment."
+  }
+}

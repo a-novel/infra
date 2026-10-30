@@ -75,7 +75,8 @@ deploy:  bootstrap ─► foundation ─► one job per service ─┬─► rol
    side: the database [rollout](#database-hosts-and-planned-downtime) and a production health check.
 
 A daily **drift** check re-plans every root. It fails when the cloud differs from `master`, as after
-a change made in the console.
+a change made in the console. It also fails when a repository's setting differs from what the
+GitHub root asserts.
 
 ## Identities
 
