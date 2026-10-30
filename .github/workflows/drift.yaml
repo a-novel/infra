@@ -75,6 +75,14 @@ jobs:
           echo "::warning::$ROOT differs from master; see the drift run's job summary for the plan."
           echo "::error::$ROOT differs from master; see the job summary for the plan."
           exit 1
+      # The settings the provider cannot manage yet: a warning for each repository that differs.
+      - name: Check repository settings
+        if: ${{ !cancelled() && steps.tofu.outcome == 'success' && matrix.root == 'environments/production/github' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tofu -chdir=environments/production/github output -json organizations >"$RUNNER_TEMP/organizations.json"
+          node .github/scripts/repository-asserts.mjs "$RUNNER_TEMP/organizations.json"
 
   health:
     if: github.event_name == 'workflow_dispatch' || github.event.schedule == '43 */3 * * *'

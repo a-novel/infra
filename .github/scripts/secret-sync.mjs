@@ -36,7 +36,7 @@ export function appJwt(appId, key, now = Date.now()) {
   return `${header}.${claims}.${createSign("RSA-SHA256").update(`${header}.${claims}`).sign(key, "base64url")}`;
 }
 
-async function github(token, method, path) {
+export async function github(token, method, path, body) {
   const response = await fetch(`https://api.github.com/${path}`, {
     method,
     headers: {
@@ -44,6 +44,7 @@ async function github(token, method, path) {
       accept: "application/vnd.github+json",
       "x-github-api-version": "2022-11-28",
     },
+    body: body && JSON.stringify(body),
   });
   if (!response.ok)
     throw new Error(`${method} ${path}: HTTP ${response.status}`);
@@ -82,24 +83,30 @@ export function copy(project, source, repository, name, token) {
   if (status !== 0) throw new Error(`copy ${name} into ${repository} failed`);
 }
 
+/** The Deploy App's installation token, minted from its key in Secret Manager and masked in the log. */
+export async function installationToken(project, app) {
+  const key = gcloud(
+    project,
+    "secrets",
+    "versions",
+    "access",
+    String(app.key.version),
+    `--secret=${app.key.secret}`,
+  );
+  const { token } = await github(
+    appJwt(app.id, key),
+    "POST",
+    `app/installations/${app.installation_id}/access_tokens`,
+  );
+  console.log(`::add-mask::${token}`);
+  return token;
+}
+
 export async function main(organizations) {
-  for (const [owner, { project, app, secrets, repositories }] of Object.entries(
+  for (const [owner, { project, app, secrets, governance }] of Object.entries(
     organizations,
   )) {
-    const key = gcloud(
-      project,
-      "secrets",
-      "versions",
-      "access",
-      String(app.key.version),
-      `--secret=${app.key.secret}`,
-    );
-    const { token } = await github(
-      appJwt(app.id, key),
-      "POST",
-      `app/installations/${app.installation_id}/access_tokens`,
-    );
-    console.log(`::add-mask::${token}`);
+    const token = await installationToken(project, app);
 
     const created = Object.fromEntries(
       Object.entries(secrets).map(([name, source]) => [
@@ -118,7 +125,7 @@ export async function main(organizations) {
       ]),
     );
 
-    for (const [name, wanted] of Object.entries(repositories)) {
+    for (const [name, wanted] of Object.entries(governance)) {
       const repository = `${owner}/${name}`;
       const { secrets: held } = await github(
         token,
