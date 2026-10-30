@@ -141,9 +141,9 @@ the basic roles, and **Read via Provisioning API + Export Secrets** hands the Di
 point's webhook to pull-request code.
 
 Add each token as a version of its secret, as in [Rotate a secret](#rotate-a-secret), and pin it in
-the Grafana root's `token_versions`. Pull requests and the drift check read the plan token, and
-deploys the deploy token. Create the tokens without an expiry. For a leak, delete the token in
-Grafana as well as disabling its version.
+the Grafana root's `token_versions`. Pull requests and the drift check read the plan token as
+`infra-plan`, and deploys the deploy token as `infra-grafana`. Create the tokens without an expiry.
+For a leak, delete the token in Grafana as well as disabling its version.
 
 Grafana's Discord contact point is created by hand in the same stack, so its webhook never reaches
 state.
@@ -161,8 +161,8 @@ realm, then a token without an expiry:
 | `production-grafana-cloud-deploy-token` | `infra-deploy` | `stacks:read`, `frontend-observability:read`, `frontend-observability:write`, `frontend-observability:delete` |
 
 Add each token as a version of its secret, as in [Rotate a secret](#rotate-a-secret). Pull requests
-and the drift check read the plan token, and deploys the deploy token. For a leak, delete the token
-in the Cloud Portal as well as disabling its version.
+and the drift check read the plan token as `infra-plan`, and deploys the deploy token as
+`infra-grafana`. For a leak, delete the token in the Cloud Portal as well as disabling its version.
 
 ## GitHub root keys
 

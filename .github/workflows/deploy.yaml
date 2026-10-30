@@ -341,12 +341,14 @@ jobs:
           github_token: ${{ github.token }}
 
   # Grafana's alerts and dashboards need only bootstrap's token grants, and no release waits on them.
+  # They apply from their own environment and identity, which read only Grafana's write tokens and
+  # this root's state.
   grafana:
     needs: [changes, bootstrap]
     if: ${{ !cancelled() && !failure() && needs.changes.outputs.grafana == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    environment: production
+    environment: grafana
     permissions:
       attestations: read
       contents: read
@@ -360,8 +362,8 @@ jobs:
           root: environments/production/grafana
           apply: "true"
           allow_deletion: ${{ needs.changes.outputs.allow }}
-          workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
+          workload_identity_provider: ${{ vars.GCP_GRAFANA_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_GRAFANA_SERVICE_ACCOUNT }}
           github_token: ${{ github.token }}
 
   # Repository config needs only bootstrap's key grants, and no release waits on it. It applies from
