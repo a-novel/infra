@@ -238,6 +238,10 @@ resource "kubernetes_service_v1" "workload" {
 
   spec {
     selector = { "app.kubernetes.io/name" = var.name }
+    # A gRPC caller keeps one connection per address, so a headless Service hands it every ready
+    # pod to balance its calls across (a-novel/.github#536). HTTP callers open several connections
+    # and keep the virtual address.
+    cluster_ip = local.protocol == "grpc" ? "None" : null
 
     port {
       name        = local.protocol
