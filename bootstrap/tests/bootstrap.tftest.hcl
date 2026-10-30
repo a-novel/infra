@@ -75,11 +75,21 @@ run "protects_state_and_backups" {
   assert {
     condition = (
       google_secret_manager_secret_iam_member.grafana_token["plan"].secret_id == "production-grafana-plan-token" &&
-      toset(keys(google_secret_manager_secret_iam_member.grafana_token)) == toset(["plan", "foundation"]) &&
+      toset(keys(google_secret_manager_secret_iam_member.grafana_token)) == toset(["plan", "foundation", "grafana"]) &&
       google_secret_manager_secret_iam_member.grafana_cloud_token["plan"].secret_id == "production-grafana-cloud-plan-token" &&
-      toset(keys(google_secret_manager_secret_iam_member.grafana_cloud_token)) == toset(["plan", "foundation"])
+      toset(keys(google_secret_manager_secret_iam_member.grafana_cloud_token)) == toset(["plan", "foundation", "grafana"])
     )
     error_message = "The plan identity runs pull-request code, so it may read only the read-only Grafana tokens."
+  }
+
+  assert {
+    condition = (
+      toset(keys(google_secret_manager_secret_iam_member.grafana_token_metadata)) ==
+      toset([google_secret_manager_secret_iam_member.grafana_token["grafana"].secret_id, google_secret_manager_secret_iam_member.grafana_cloud_token["grafana"].secret_id]) &&
+      endswith(google_storage_bucket_iam_member.grafana_state.condition[0].expression, "/objects/grafana/\")") &&
+      !anytrue([for binding in values(local.automation_project_bindings) : binding.boundary == "grafana"])
+    )
+    error_message = "The Grafana root's deploys read the version metadata of the tokens they read and write their own state, and hold no project role."
   }
 
   assert {
@@ -155,6 +165,10 @@ run "trusts_only_reviewed_workflows" {
         "assertion.repository_owner_id == '131281268' && assertion.repository_id == '1344262359' && (",
         "(assertion.ref == 'refs/heads/master' && assertion.workflow_ref == 'a-novel/infra/.github/workflows/deploy.yaml@refs/heads/master' && assertion.environment == 'github') || ",
         "(assertion.ref == 'refs/heads/master' && assertion.workflow_ref == 'a-novel/infra/.github/workflows/sweep.yaml@refs/heads/master' && assertion.environment == 'github'))",
+      ]) &&
+      google_iam_workload_identity_pool_provider.github["grafana"].attribute_condition == join("", [
+        "assertion.repository_owner_id == '131281268' && assertion.repository_id == '1344262359' && (",
+        "(assertion.ref == 'refs/heads/master' && assertion.workflow_ref == 'a-novel/infra/.github/workflows/deploy.yaml@refs/heads/master' && assertion.environment == 'grafana'))",
       ]) &&
       google_iam_workload_identity_pool_provider.github["drift"].attribute_condition == join("", [
         "assertion.repository_owner_id == '131281268' && assertion.repository_id == '1344262359' && (",

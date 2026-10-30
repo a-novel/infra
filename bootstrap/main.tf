@@ -109,6 +109,15 @@ locals {
       workflows          = { "drift.yaml" = null }
       pull_requests      = null
     }
+    # The Grafana root applies from its own environment, apart from Google Cloud's production. It
+    # reads its write tokens and its own state, and nothing else in Google Cloud.
+    grafana = {
+      service_account_id = "infra-grafana"
+      display_name       = "Infra Grafana root deployment"
+      provider_id        = "github-grafana"
+      workflows          = { "deploy.yaml" = "grafana" }
+      pull_requests      = null
+    }
   }
 
   secret_definitions = merge({
