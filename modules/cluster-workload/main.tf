@@ -303,6 +303,11 @@ output "pod_labels" {
   value       = local.labels
 }
 
+output "service" {
+  description = "The workload's Service, as a route or a health check names it."
+  value       = { name = kubernetes_service_v1.workload.metadata[0].name, port = var.port }
+}
+
 output "service_account" {
   description = "The workload's Kubernetes service account, as service tokens name it."
   value       = "system:serviceaccount:${var.namespace}:${kubernetes_service_account_v1.workload.metadata[0].name}"

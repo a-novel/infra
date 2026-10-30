@@ -12,14 +12,16 @@ locals {
     # Polls stop reaching the provider more than once per interval, which also bounds the reads in
     # flight while the provider is slow.
     CHECK_INTERVAL = "10s"
-    # 20 concurrent maximum-size submits peak at 1,575 MiB under this limit.
-    GOMEMLIMIT              = "1600MiB"
-    GRPC_PORT               = "8080"
-    POSTGRES_MAX_OPEN_CONNS = "10"
-    POSTGRES_MAX_IDLE_CONNS = "10"
-    SERVICE_TOKEN_ISSUER    = local.service_token_issuer
-    SERVICE_TOKEN_AUDIENCE  = "genai"
-    SERVICE_TOKEN_CALLERS   = "system:serviceaccount:genai:smoke"
+    # 20 concurrent maximum-size submits peak at 1,575 MiB under this limit, and the server refuses
+    # a call beyond them.
+    GOMEMLIMIT                = "1600MiB"
+    GRPC_MAX_CONCURRENT_CALLS = "20"
+    GRPC_PORT                 = "8080"
+    POSTGRES_MAX_OPEN_CONNS   = "10"
+    POSTGRES_MAX_IDLE_CONNS   = "10"
+    SERVICE_TOKEN_ISSUER      = local.service_token_issuer
+    SERVICE_TOKEN_AUDIENCE    = "genai"
+    SERVICE_TOKEN_CALLERS     = "system:serviceaccount:genai:smoke"
   })
 
   genai_sweep_env = merge(local.genai_env, {
