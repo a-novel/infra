@@ -1,10 +1,13 @@
 # The add-ons' images come through these pull-through caches of their public registries, so the
 # cluster pulls only from our Artifact Registry. The cluster root pins each image by digest, so a
-# tag moved upstream never changes what runs.
+# tag moved upstream never changes what runs. Each key spells its registry's host with dashes, and
+# Docker Hub serves docker.io's images from its registry host.
 locals {
   cluster_image_upstreams = {
-    ghcr-io = "https://ghcr.io"
-    quay-io = "https://quay.io"
+    docker-io       = "https://registry-1.docker.io"
+    ghcr-io         = "https://ghcr.io"
+    quay-io         = "https://quay.io"
+    registry-k8s-io = "https://registry.k8s.io"
   }
 }
 

@@ -52,14 +52,16 @@ own identities, image repositories, network tags and database hosts.
   | Google's service ranges on 587, for the SMTP relay | `agora-authentication-api`, `agora-authentication-maintain`                                                                                                      |
   | Sentry's ingest host on 443, `sentry_ingest_host`  | `agora-authentication-api`, `agora-authentication-maintain`, `agora-json-keys-private`, `agora-json-keys-rotatekeys`, `agora-genai-private`, `agora-genai-sweep` |
   | `raw.githubusercontent.com:443`                    | None: only the cluster's nodes, for Studio's planned downtime document                                                                                           |
+  | `otlp-gateway-prod-eu-west-2.grafana.net:443`      | None: only the cluster's nodes, for Alloy's telemetry                                                                                                            |
 
   The firewall resolves a host name through the VPC's Cloud DNS and matches the addresses it
   returns, which works only when every client gets the same answer. `api.openai.com` gives everyone
-  the same two Cloudflare addresses, and Sentry's ingest host, foundation's `sentry_ingest_host`,
-  one Google Cloud anycast address. `smtp-relay.gmail.com` answers each client location with another
-  frontend, so SMTP matches the `google-services` address group instead: every range Google
-  announces, minus those its Cloud customers rent. `refresh-google-ranges.yaml` proposes Google's
-  latest list daily, and its pull request merges alone when it holds exactly what Google publishes.
+  the same two Cloudflare addresses, Sentry's ingest host, foundation's `sentry_ingest_host`, one
+  Google Cloud anycast address, and Grafana's OTLP gateway one fixed address.
+  `smtp-relay.gmail.com` answers each client location with another frontend, so SMTP matches the
+  `google-services` address group instead: every range Google announces, minus those its Cloud
+  customers rent. `refresh-google-ranges.yaml` proposes Google's latest list daily, and its pull
+  request merges alone when it holds exactly what Google publishes.
 
   Other traffic falls through to the firewall rules. Direct VPC egress logs no firewall verdict, so
   a refused connection shows only as the caller's own error.
@@ -141,9 +143,10 @@ Kubernetes resources, reaching the control plane through the DNS endpoint as the
   workload its own internet hosts, matched on its own lookups: OpenAI for GenAI, the mail relay
   for Authentication, GitHub's raw host for Studio. After each apply, the deploy sends
   dry-run requests that admission must refuse, and one compliant pod it must admit.
-- **Images:** the add-ons pull quay.io and ghcr.io images through the Artifact Registry pull-through
-  caches `a-novel-quay-io` and `a-novel-ghcr-io`, which only the nodes read. The cluster root pins
-  each image by digest.
+- **Images:** the add-ons pull Docker Hub, ghcr.io, quay.io and registry.k8s.io images through the
+  Artifact Registry pull-through caches `a-novel-docker-io`, `a-novel-ghcr-io`, `a-novel-quay-io`
+  and `a-novel-registry-k8s-io`, which only the nodes read. The cluster root pins each image by
+  digest.
 - **Add-ons:** the cluster root installs cert-manager, the CloudNativePG operator, its Barman Cloud
   plugin and External Secrets with Helm, each in its own namespace. Renovate moves each chart with
   its images, after a week and a review.

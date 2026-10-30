@@ -59,6 +59,16 @@ locals {
       # The cluster's Studio alone: Cloud Run's leaves through its own project.
       service_accounts = []
     }
+    grafana-otlp = {
+      priority = 1040
+      # The Grafana Cloud stack's OTLP gateway, which receives every signal. It answers every client
+      # with the same address.
+      hosts          = ["otlp-gateway-prod-eu-west-2.grafana.net"]
+      address_groups = []
+      port           = "443"
+      # The cluster's Alloy alone.
+      service_accounts = []
+    }
   }
 }
 

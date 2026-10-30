@@ -40,7 +40,7 @@ output "cluster" {
     # Each service's PostgreSQL image, pinned by digest in its private repository.
     database_images = local.database_image
     # Where the add-ons pull each public registry's images from, by its host.
-    image_registries = { for name, repository in google_artifact_registry_repository.cluster_upstream : trimprefix(local.cluster_image_upstreams[name], "https://") => repository.registry_uri }
+    image_registries = { for name, repository in google_artifact_registry_repository.cluster_upstream : replace(name, "-", ".") => repository.registry_uri }
   }
 }
 
