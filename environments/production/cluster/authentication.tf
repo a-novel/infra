@@ -53,8 +53,8 @@ module "authentication_rest" {
   depends_on = [kubernetes_job_v1.migrations]
 }
 
-# Studio and Authentication's smoke check call the API. The API calls JSON Keys, and reaches the
-# issuer's keys through Google's restricted API addresses and the mail relay (egress.tf).
+# Studio and Authentication's smoke and health checks call the API. It calls JSON Keys, and reaches
+# the issuer's keys through Google's restricted API addresses and the mail relay (egress.tf).
 resource "kubernetes_network_policy_v1" "authentication_rest" {
   metadata {
     name      = "rest"

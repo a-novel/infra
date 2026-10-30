@@ -495,3 +495,76 @@ run "serves_studio_through_the_gateway" {
     error_message = "Only Google's load balancer may reach Studio, on its port."
   }
 }
+
+run "checks_each_service_as_a_caller_it_admits" {
+  command = plan
+
+  variables {
+    custom_resources = true
+  }
+
+  assert {
+    condition = (
+      toset(keys(kubernetes_job_v1.smoke)) == toset(["authentication", "genai", "json-keys"]) &&
+      toset(keys(kubernetes_cron_job_v1.health)) == toset(keys(kubernetes_job_v1.smoke)) &&
+      alltrue([for service, job in kubernetes_job_v1.smoke :
+        job.wait_for_completion &&
+        job.spec[0].backoff_limit == 0 &&
+        one(job.spec[0].template[0].spec[0].container).args == tolist(["-c", file("../../../modules/smoke-check/smoke.sh")]) &&
+        kubernetes_cron_job_v1.health[service].spec[0].schedule == "*/5 * * * *" &&
+        kubernetes_cron_job_v1.health[service].spec[0].concurrency_policy == "Forbid" &&
+        kubernetes_cron_job_v1.health[service].spec[0].job_template[0].spec[0].backoff_limit == 0
+      ])
+    )
+    error_message = "Each service must get a smoke Job, which the deploy waits on, and a health CronJob every five minutes, both running the shared check once per run."
+  }
+
+  # Each Job's name follows what its pod runs, so a new image, script or setting runs it again.
+  assert {
+    condition = alltrue([for service, job in kubernetes_job_v1.smoke :
+      job.metadata[0].name == "smoke-${substr(sha256(jsonencode([
+        one(job.spec[0].template[0].spec[0].container).image,
+        { for env in one(job.spec[0].template[0].spec[0].container).env : env.name => env.value },
+        one(job.spec[0].template[0].spec[0].container).args[1],
+      ])), 0, 12)}"
+    ])
+    error_message = "Each smoke Job's name must change with its image, its settings and the script."
+  }
+
+  assert {
+    condition = alltrue([for service, target in {
+      authentication = { workload = module.authentication_rest[0], env = local.authentication_env, image = "authentication/rest", policy = kubernetes_network_policy_v1.authentication_rest }
+      genai          = { workload = module.genai_grpc[0], env = local.genai_grpc_env, image = "genai/grpc", policy = kubernetes_network_policy_v1.genai_grpc }
+      json-keys      = { workload = module.json_keys_grpc[0], env = local.json_keys_env, image = "json-keys/grpc", policy = kubernetes_network_policy_v1.json_keys_grpc }
+      } : alltrue([for pod in [kubernetes_job_v1.smoke[service].spec[0].template[0], kubernetes_cron_job_v1.health[service].spec[0].job_template[0].spec[0].template[0]] : (
+        one(pod.spec[0].container).image == local.release_image[target.image] &&
+        contains(split(",", target.env.SERVICE_TOKEN_CALLERS), "system:serviceaccount:${service}:${pod.spec[0].service_account_name}") &&
+        one(one(one(pod.spec[0].volume[0].projected).sources).service_account_token).audience == target.env.SERVICE_TOKEN_AUDIENCE &&
+        { for env in one(pod.spec[0].container).env : env.name => env.value }["SERVICE_TOKEN_PATH"] == "/var/run/secrets/tokens/${target.env.SERVICE_TOKEN_AUDIENCE}" &&
+        { for env in one(pod.spec[0].container).env : env.name => env.value }["SERVICE_URL"] == "http://${target.workload.service.name}.${service}.svc:${target.workload.service.port}" &&
+        contains([for peer in one(one(target.policy.spec).ingress).from : one(peer.pod_selector).match_labels["app.kubernetes.io/name"]], pod.metadata[0].labels["app.kubernetes.io/name"]) &&
+        one(one(one(kubernetes_network_policy_v1.smoke[service].spec).egress).to).pod_selector[0].match_labels == tomap({ "app.kubernetes.io/name" = target.workload.pod_labels["app.kubernetes.io/name"] }) &&
+        one(one(one(kubernetes_network_policy_v1.smoke[service].spec).egress).ports).port == tostring(target.workload.service.port) &&
+        kubernetes_network_policy_v1.smoke[service].spec[0].pod_selector[0].match_labels == pod.metadata[0].labels
+      )])
+    ])
+    error_message = "Each check must run in its service's image, call its Service with a token for its audience as a caller it admits, and reach only its pods, which admit it."
+  }
+}
+
+run "skips_the_checks_during_a_planned_downtime" {
+  command = plan
+
+  variables {
+    custom_resources = true
+    downtime         = "{\"components\":[\"service-json-keys.grpc\"],\"start\":\"2026-11-02T06:00:00Z\",\"end\":\"2026-11-02T07:00:00Z\"}"
+  }
+
+  assert {
+    condition = alltrue([for service, job in kubernetes_job_v1.smoke :
+      lookup({ for env in one(job.spec[0].template[0].spec[0].container).env : env.name => env.value }, "DOWNTIME_START", null) == (service == "json-keys" ? "2026-11-02T06:00:00Z" : null) &&
+      lookup({ for env in one(kubernetes_cron_job_v1.health[service].spec[0].job_template[0].spec[0].template[0].spec[0].container).env : env.name => env.value }, "DOWNTIME_START", null) == (service == "json-keys" ? "2026-11-02T06:00:00Z" : null)
+    ])
+    error_message = "A planned downtime must reach only its own service's checks, which skip from its start."
+  }
+}
