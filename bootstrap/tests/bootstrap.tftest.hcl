@@ -34,6 +34,16 @@ run "protects_state_and_backups" {
     error_message = "Management buckets must be private, uniformly controlled and never force-destroyed."
   }
 
+  # Expiry would delete the backups of the lineage the cluster's databases archive to now.
+  assert {
+    condition = alltrue([for bucket in values(google_storage_bucket.barman) :
+      toset(flatten([for rule in bucket.lifecycle_rule : one(rule.condition).matches_prefix])) == toset([for lineage in var.retired_barman_lineages : "${lineage}/"])
+      ]) && !contains(var.retired_barman_lineages,
+      one(regex("(?m)^backup_server_name\\s*=\\s*\"([^\"]+)\"", file("../environments/production/cluster/terraform.tfvars")))
+    )
+    error_message = "Barman's buckets may expire only retired lineages, and never the one the cluster archives to."
+  }
+
   assert {
     condition = (
       google_storage_bucket.state.versioning[0].enabled &&
@@ -44,10 +54,11 @@ run "protects_state_and_backups" {
 
   assert {
     condition = alltrue([for bucket in concat(values(google_storage_bucket.pgbackrest), values(google_storage_bucket.barman)) :
-      bucket.versioning[0].enabled && tonumber(bucket.retention_policy[0].retention_period) == 604800 &&
+      bucket.versioning[0].enabled && tonumber(bucket.retention_policy[0].retention_period) == 604800
+      ]) && alltrue([for bucket in google_storage_bucket.pgbackrest :
       alltrue([for rule in bucket.lifecycle_rule : alltrue([for condition in rule.condition : condition.age == null || condition.age == 0])])
     ])
-    error_message = "Backup repositories keep a week of retention and are never pruned by age; pgBackRest and Barman own expiry."
+    error_message = "Backup repositories keep a week of retention, and pgBackRest's are never pruned by age: pgBackRest owns their expiry."
   }
 
   assert {

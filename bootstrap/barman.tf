@@ -11,6 +11,17 @@ variable "cluster_databases" {
   }
 }
 
+variable "retired_barman_lineages" {
+  description = "Backup lineages no database archives to any more, the cluster root's former backup_server_name values. Their objects expire 15 days after they were written."
+  type        = set(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for lineage in var.retired_barman_lineages : can(regex("^[a-z][a-z0-9-]{0,62}$", lineage))])
+    error_message = "Name each retired lineage as the cluster root named it."
+  }
+}
+
 data "google_project" "workload" {
   project_id = var.cluster_databases.workload_project_id
 }
@@ -23,8 +34,9 @@ locals {
   }
 }
 
-# The same protections as the pgBackRest buckets: Barman owns expiry, so nothing deletes by age, and
-# a week of retention and soft deletion bounds a mistaken or hostile delete.
+# The same protections as the pgBackRest buckets: Barman owns expiry, and a week of retention and
+# soft deletion bounds a mistaken or hostile delete. Barman expires only the lineage its database
+# archives to, so a retired lineage, which may hold a copy of production data, expires by age.
 resource "google_storage_bucket" "barman" {
   for_each = var.cluster_databases.services
 
@@ -46,6 +58,36 @@ resource "google_storage_bucket" "barman" {
   }
   soft_delete_policy {
     retention_duration_seconds = 604800
+  }
+
+  dynamic "lifecycle_rule" {
+    for_each = var.retired_barman_lineages
+
+    content {
+      condition {
+        matches_prefix = ["${lifecycle_rule.value}/"]
+        age            = 15
+      }
+      action {
+        type = "Delete"
+      }
+    }
+  }
+
+  # Deleting a versioned object keeps it as a prior version, which goes a day later.
+  dynamic "lifecycle_rule" {
+    for_each = var.retired_barman_lineages
+
+    content {
+      condition {
+        matches_prefix             = ["${lifecycle_rule.value}/"]
+        with_state                 = "ARCHIVED"
+        days_since_noncurrent_time = 1
+      }
+      action {
+        type = "Delete"
+      }
+    }
   }
 
   lifecycle {

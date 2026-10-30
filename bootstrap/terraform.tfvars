@@ -38,3 +38,5 @@ cluster_databases = {
     "json-keys",
   ]
 }
+# The lineages the cluster's databases archived to before their current one.
+retired_barman_lineages = ["database-paris-2"]
