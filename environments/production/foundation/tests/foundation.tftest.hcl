@@ -28,11 +28,6 @@ mock_provider "google-beta" {
   }
 }
 
-# Tests cannot import.
-variables {
-  leftover_disks = {}
-}
-
 run "keeps_databases_private_and_preserved" {
   command = plan
 
