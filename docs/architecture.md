@@ -336,8 +336,9 @@ values and copies the governance secrets, so its templates stay frozen.
   master-only ones; the secrets and environments come from every workflow; and the root
   `package.json`'s major names the retired release lines. Each repository owns its workflows,
   Renovate's updates included.
-- **A repository waits until it is ready.** Until its default branch holds `main.yaml` and the
-  workflows that report the always-required checks, it gets settings, team access and labels only.
+- **A repository waits until it is ready.** Until its default branch holds `main.yaml`, it gets
+  settings, team access and labels only. Readiness never depends on another workflow's name: each
+  repository names its workflows as it likes.
 - **Only the guarded environments are managed:** `release`, with its reviewers, `governance` and
   `sourcemaps`, each open on the refs a ruleset guards. GitHub creates the others, such as
   `github-pages` and `copilot`.
