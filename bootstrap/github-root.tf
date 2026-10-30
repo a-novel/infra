@@ -50,6 +50,20 @@ resource "google_secret_manager_secret_iam_member" "github_root" {
   member    = google_service_account.automation[each.value.boundary].member
 }
 
+# The provider reads a key's version metadata before its payload. The plan identity holds a viewer
+# role on the whole project; the GitHub root's deploy and drift identities hold one on their keys
+# alone.
+resource "google_secret_manager_secret_iam_member" "github_root_metadata" {
+  for_each = merge([for boundary in ["github", "drift"] : {
+    for secret in local.github_root_readers[boundary] : "${boundary}:${secret}" => { boundary = boundary, secret = secret }
+  }]...)
+
+  project   = var.management_project_id
+  secret_id = google_secret_manager_secret.application[each.value.secret].secret_id
+  role      = "roles/secretmanager.viewer"
+  member    = google_service_account.automation[each.value.boundary].member
+}
+
 # The GitHub root's deploys write its state and lock under github/ alone. Listing the bucket shows
 # object names, never their content.
 resource "google_storage_bucket_iam_member" "github_state" {
