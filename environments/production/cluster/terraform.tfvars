@@ -39,13 +39,15 @@ grafana_cloud = {
   otlp_host   = "otlp-gateway-prod-eu-west-2.grafana.net"
 }
 
-# Each instance gets today's database host CPU and memory. Each host's data held about 0.1 GiB on
-# 2026-10-29, so the volumes start small and grow in place; the room above the data also absorbs
-# WAL while archiving stalls. GenAI's purge bounds its payloads of up to 24 MiB.
+# Each instance gets today's database host memory, and half a CPU, so each database reserves one.
+# Each used about 0.02 CPU on 2026-10-30 with no users; no CPU limit applies, so an instance takes
+# idle CPU in a burst, and Grafana warns once one holds 80% of its request. Each host's data held
+# about 0.1 GiB on 2026-10-29, so the volumes start small and grow in place; the room above the
+# data also absorbs WAL while archiving stalls. GenAI's purge bounds its payloads of up to 24 MiB.
 databases = {
-  authentication = { cpu = "750m", memory = "1536Mi", storage = "30Gi", max_connections = 50, extensions = ["uuid-ossp"] }
-  genai          = { cpu = "1500m", memory = "6Gi", storage = "20Gi", max_connections = 150, extensions = ["pg_cron", "uuid-ossp"] }
-  json-keys      = { cpu = "750m", memory = "1536Mi", storage = "10Gi", max_connections = 50, extensions = ["uuid-ossp"] }
+  authentication = { cpu = "500m", memory = "1536Mi", storage = "30Gi", max_connections = 50, extensions = ["uuid-ossp"] }
+  genai          = { cpu = "500m", memory = "6Gi", storage = "20Gi", max_connections = 150, extensions = ["pg_cron", "uuid-ossp"] }
+  json-keys      = { cpu = "500m", memory = "1536Mi", storage = "10Gi", max_connections = 50, extensions = ["uuid-ossp"] }
 }
 
 # The database passwords come from CloudNativePG's database-app Secrets, so only these come from

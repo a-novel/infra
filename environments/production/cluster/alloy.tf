@@ -331,9 +331,14 @@ resource "kubernetes_network_policy_v1" "alloy" {
         }
       }
 
-      ports {
-        port     = "8080"
-        protocol = "TCP"
+      # Its metrics, and its own health on the telemetry port.
+      dynamic "ports" {
+        for_each = ["8080", "8081"]
+
+        content {
+          port     = ports.value
+          protocol = "TCP"
+        }
       }
     }
 
