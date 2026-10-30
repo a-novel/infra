@@ -4,7 +4,7 @@ management_project_id = "a-novel-management-prod"
 url = "https://anovel.grafana.net"
 
 token_versions = {
-  plan   = 1
+  plan   = 2
   deploy = 1
 }
 
