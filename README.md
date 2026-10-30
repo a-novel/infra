@@ -42,6 +42,7 @@ Disabling `deploy.yaml` [freezes production](docs/runbooks/deployments.md#freeze
 | `environments/production/<service>`     | One service: its Cloud Run workloads, identities, backup repository and alerts.  |
 | `environments/production/cluster`       | The cluster's namespaces, add-ons and policies, applied only when they change.   |
 | `environments/production/sentry`        | Sentry's projects and configuration, applied only when they change.              |
+| `environments/production/grafana`       | Grafana's alerts and dashboards, applied only when they change.                  |
 | `environments/recovery`                 | Disposable disaster-recovery host, for manual drills.                            |
 | `environments/recovery-cluster`         | A cluster drill's throwaway cluster, which reads the restored services' backups. |
 | `environments/recovery-database`        | A cluster drill's databases, restored from production's backups and checked.     |
