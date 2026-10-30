@@ -85,8 +85,9 @@ module "genai_sweep" {
   depends_on = [kubernetes_job_v1.migrations, kubernetes_manifest.secrets]
 }
 
-# Only GenAI's smoke check calls the server, which reaches the issuer's keys through Google's
-# restricted API addresses and OpenAI (egress.tf). Nothing calls the sweep, which reaches OpenAI alone.
+# Only GenAI's smoke and provider checks call the server, which reaches the issuer's keys through
+# Google's restricted API addresses and OpenAI (egress.tf). Nothing calls the sweep, which reaches
+# OpenAI alone.
 resource "kubernetes_network_policy_v1" "genai_grpc" {
   metadata {
     name      = "grpc"

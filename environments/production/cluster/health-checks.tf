@@ -290,3 +290,134 @@ resource "kubernetes_cron_job_v1" "health" {
 
   depends_on = [kubernetes_job_v1.smoke]
 }
+
+# GenAI's provider check makes one real OpenAI call, as GenAI's smoke identity. It runs once for each
+# revision genai_provider_check names, and the deploy waits on it. A planned downtime skips it.
+locals {
+  provider_check_script = file("${path.module}/provider-check.sh")
+  provider_check_env = var.genai_provider_check == null ? null : merge(local.downtime_env["genai"], {
+    SERVICE_URL        = local.health_checks["genai"].env.SERVICE_URL
+    SERVICE_TOKEN_PATH = local.health_checks["genai"].env.SERVICE_TOKEN_PATH
+    SUBMIT_REQUEST = jsonencode({
+      # Each revision acts for its own user, whom no account holds, so it makes a new call under its
+      # own caps. GenAI answers a resent request with the generation it already ran.
+      owner_id = uuidv5("a0d26c4d-19c1-49c9-9b2d-49f52d36671a", var.genai_provider_check)
+      # GenAI refuses a purpose its caps do not declare.
+      purpose  = "studio.generation"
+      provider = "openai"
+      # A tiny call: the small gpt-5.6-luna at low effort, cut at the 16 output tokens the Responses
+      # API allows at least. GenAI settles a cut answer as a success. gRPC's JSON form of bytes is
+      # base64.
+      payload = base64encode(jsonencode({
+        model             = "gpt-5.6-luna"
+        reasoning         = { effort = "low" }
+        max_output_tokens = 16
+        store             = false
+        input             = "Reply with OK."
+      }))
+    })
+  })
+}
+
+resource "kubernetes_job_v1" "provider_check" {
+  count = var.custom_resources && var.genai_provider_check != null ? 1 : 0
+
+  metadata {
+    name      = "provider-check-${var.genai_provider_check}"
+    namespace = kubernetes_namespace_v1.service["genai"].metadata[0].name
+  }
+
+  spec {
+    backoff_limit           = 0
+    active_deadline_seconds = 540
+
+    # As the smoke Job's pods, which GenAI's server admits.
+    template {
+      metadata {
+        labels = { "app.kubernetes.io/name" = "smoke" }
+      }
+
+      spec {
+        restart_policy                  = "Never"
+        service_account_name            = kubernetes_service_account_v1.smoke["genai"].metadata[0].name
+        automount_service_account_token = false
+        enable_service_links            = false
+
+        security_context {
+          run_as_non_root = true
+          run_as_user     = 65532
+          run_as_group    = 65532
+
+          seccomp_profile {
+            type = "RuntimeDefault"
+          }
+        }
+
+        container {
+          name    = "provider-check"
+          image   = local.release_image["genai/grpc"]
+          command = ["/bin/sh"]
+          args    = ["-c", local.provider_check_script]
+
+          dynamic "env" {
+            for_each = local.provider_check_env
+
+            content {
+              name  = env.key
+              value = env.value
+            }
+          }
+
+          volume_mount {
+            name       = "service-token"
+            mount_path = "/var/run/secrets/tokens"
+            read_only  = true
+          }
+
+          resources {
+            requests = { cpu = "50m", memory = "64Mi" }
+            limits   = { memory = "64Mi" }
+          }
+
+          security_context {
+            run_as_non_root            = true
+            allow_privilege_escalation = false
+            read_only_root_filesystem  = true
+
+            capabilities {
+              drop = ["ALL"]
+            }
+          }
+        }
+
+        volume {
+          name = "service-token"
+
+          projected {
+            sources {
+              service_account_token {
+                audience = local.health_checks["genai"].audience
+                path     = local.health_checks["genai"].audience
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  wait_for_completion = true
+
+  timeouts {
+    create = "10m"
+  }
+
+  # Only a new revision runs the check again: a new image, setting or downtime leaves the finished Job
+  # alone. A failed Job stays tainted, so the next deploy runs it again.
+  lifecycle {
+    ignore_changes = [spec]
+  }
+
+  # The call needs GenAI's server rolled out and its way to OpenAI.
+  depends_on = [module.genai_grpc, kubernetes_network_policy_v1.smoke, kubernetes_manifest.internet_egress]
+}

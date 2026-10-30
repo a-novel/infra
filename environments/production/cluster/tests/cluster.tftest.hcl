@@ -815,3 +815,66 @@ run "gives_each_service_its_own_budget" {
     error_message = "Each service's namespace must give a container without requests a small CPU and memory request, and no limit, or its quota refuses the pod."
   }
 }
+
+run "makes_no_openai_call_without_a_revision" {
+  command = plan
+
+  variables {
+    custom_resources = true
+  }
+
+  assert {
+    condition     = length(kubernetes_job_v1.provider_check) == 0
+    error_message = "Without a revision, no provider check may call OpenAI."
+  }
+}
+
+run "makes_one_openai_call_per_revision_as_a_caller_genai_admits" {
+  command = plan
+
+  variables {
+    custom_resources     = true
+    genai_provider_check = "rehearsal"
+  }
+
+  assert {
+    condition = (
+      length(kubernetes_job_v1.provider_check) == 1 &&
+      kubernetes_job_v1.provider_check[0].metadata[0].name == "provider-check-${var.genai_provider_check}" &&
+      kubernetes_job_v1.provider_check[0].wait_for_completion &&
+      kubernetes_job_v1.provider_check[0].spec[0].backoff_limit == 0 &&
+      kubernetes_job_v1.provider_check[0].spec[0].active_deadline_seconds < tonumber(trimsuffix(kubernetes_job_v1.provider_check[0].timeouts.create, "m")) * 60 &&
+      one(kubernetes_job_v1.provider_check[0].spec[0].template[0].spec[0].container).args == tolist(["-c", file("provider-check.sh")])
+    )
+    error_message = "A revision must run one provider check, named after it, which never retries and ends before the deploy stops waiting on it."
+  }
+
+  assert {
+    condition = alltrue([for pod in [kubernetes_job_v1.provider_check[0].spec[0].template[0]] : (
+      kubernetes_job_v1.provider_check[0].metadata[0].namespace == "genai" &&
+      one(pod.spec[0].container).image == local.release_image["genai/grpc"] &&
+      contains(split(",", local.genai_grpc_env.SERVICE_TOKEN_CALLERS), "system:serviceaccount:genai:${pod.spec[0].service_account_name}") &&
+      one(one(one(pod.spec[0].volume[0].projected).sources).service_account_token).audience == local.genai_grpc_env.SERVICE_TOKEN_AUDIENCE &&
+      { for env in one(pod.spec[0].container).env : env.name => env.value }["SERVICE_TOKEN_PATH"] == "/var/run/secrets/tokens/${local.genai_grpc_env.SERVICE_TOKEN_AUDIENCE}" &&
+      { for env in one(pod.spec[0].container).env : env.name => env.value }["SERVICE_URL"] == "http://${module.genai_grpc[0].service.name}.genai.svc:${module.genai_grpc[0].service.port}" &&
+      contains(flatten([for rule in one(kubernetes_network_policy_v1.genai_grpc.spec).ingress : [for peer in rule.from : one(peer.pod_selector).match_labels["app.kubernetes.io/name"]] if contains([for port in rule.ports : port.port], tostring(module.genai_grpc[0].service.port))]), pod.metadata[0].labels["app.kubernetes.io/name"]) &&
+      kubernetes_network_policy_v1.smoke["genai"].spec[0].pod_selector[0].match_labels == pod.metadata[0].labels
+    )])
+    error_message = "The provider check must run in GenAI's server image, call its Service with a token for its audience as a caller it admits, and reach only its pods, which admit it."
+  }
+}
+
+run "skips_the_openai_call_during_a_planned_downtime" {
+  command = plan
+
+  variables {
+    custom_resources     = true
+    genai_provider_check = "rehearsal"
+    downtime             = "{\"components\":[\"service-genai.grpc\"],\"start\":\"2026-11-02T06:00:00Z\",\"end\":\"2026-11-02T07:00:00Z\"}"
+  }
+
+  assert {
+    condition     = lookup({ for env in one(kubernetes_job_v1.provider_check[0].spec[0].template[0].spec[0].container).env : env.name => env.value }, "DOWNTIME_START", null) == "2026-11-02T06:00:00Z"
+    error_message = "GenAI's planned downtime must skip the provider check from its start."
+  }
+}

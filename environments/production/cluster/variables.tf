@@ -103,3 +103,14 @@ variable "downtime" {
     error_message = "The planned downtime must be JSON with components, start and end."
   }
 }
+
+variable "genai_provider_check" {
+  description = "The revision of GenAI's provider check, which makes one real OpenAI call as the Job provider-check-<revision>. Each new revision runs it once, and the deploy waits on it, so OpenAI must admit the cluster's NAT address first. Null runs none."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.genai_provider_check == null || can(regex("^[a-z0-9]([a-z0-9-]{0,46}[a-z0-9])?$", var.genai_provider_check))
+    error_message = "The revision must be a lowercase DNS label of at most 48 characters, since it names the check's Job."
+  }
+}
