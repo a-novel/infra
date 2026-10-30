@@ -223,6 +223,17 @@ run "fences_the_cluster_network" {
     ])
     error_message = "The peered networks' ranges must not overlap."
   }
+
+  # The hosts' addresses are known only once their groups exist, so the egress rule's destination
+  # stays unknown here.
+  assert {
+    condition = alltrue([for service, host in local.database_hosts : (
+      google_compute_firewall.allow_database_imports[service].source_ranges == toset([var.cluster_ranges.pods]) &&
+      google_compute_firewall.allow_database_imports[service].target_tags == toset([local.network_tags[host.identity]]) &&
+      alltrue([for rule in concat(tolist(google_compute_firewall.allow_database_imports[service].allow), tolist(google_compute_firewall.cluster_allow_database_imports[service].allow)) : rule.protocol == "tcp" && rule.ports == tolist([tostring(host.port)])])
+    )])
+    error_message = "The import must open each database host to the cluster's pods on that host's port alone."
+  }
 }
 
 run "holds_cluster_upgrades_during_a_planned_downtime" {
