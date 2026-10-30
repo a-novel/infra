@@ -69,13 +69,14 @@ cluster_compute_cpu_quota = 24
 # this leaves room for narrative-engine's projects; the request applies once Google grants it.
 cluster_ssd_quota_gb = 1000
 # The control plane runs in the first zone. Three nodes hold every service and each database's
-# primary and replica: each instance's volume keeps it in its zone, where the databases' memory fills
-# most of a node. The autoscaler adds a node only when pods cannot be placed, and only to absorb a
-# spike or transient load: one more at most. Capacity that stays is a decision, which Grafana
-# prompts once the cluster runs above its baseline for two hours or at its maximum.
+# primary and replica: each instance's volume keeps it in its zone. Memory bounds them, not CPU, so
+# the nodes are highmem: two of them still hold every pod's requests if the third is lost
+# (a-novel/infra#1326). The autoscaler adds a node only when pods cannot be placed, and only to
+# absorb a spike or transient load: one more at most. Capacity that stays is a decision, which
+# Grafana prompts once the cluster runs above its baseline for two hours or at its maximum.
 cluster = {
   zones        = ["europe-west9-a", "europe-west9-b"]
-  machine_type = "e2-standard-4"
+  machine_type = "e2-highmem-4"
   min_nodes    = 3
   max_nodes    = 4
 }
