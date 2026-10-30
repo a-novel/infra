@@ -137,6 +137,14 @@ locals {
       summary = "{{ $labels.namespace }}/{{ $labels.pod }} fails to archive its WAL to the backup bucket."
       expr    = "cnpg_pg_stat_archiver_last_failed_time > cnpg_pg_stat_archiver_last_archived_time"
     },
+    # The autoscaler absorbs spikes and transient load. Capacity that stays is a decision: raise the
+    # node pool's minimum, or lower the load, in a pull request.
+    {
+      title   = "Cluster above its baseline"
+      for     = "2h"
+      summary = "The cluster has run {{ $values.query.Value }} nodes for 2 hours, above its ${local.node_pool.min_nodes}-node baseline: decide whether that capacity stays."
+      expr    = "count(kube_node_info) > ${local.node_pool.min_nodes}"
+    },
     {
       title   = "Autoscaler at its maximum"
       for     = "30m"

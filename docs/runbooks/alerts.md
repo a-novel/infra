@@ -35,6 +35,7 @@ draw the same metrics.
 | `Replica not streaming`          | a database's primary streams to no replica for 5 minutes                                        |
 | `WAL archiving failing`          | a primary's latest WAL archive attempt failed, for 5 minutes                                    |
 | `No room for a lost node's …`    | the pods' CPU or memory requests exceed every node but the largest, for 15 minutes              |
+| `Cluster above its baseline`     | the cluster has run more nodes than foundation's `cluster.min_nodes` for 2 hours                |
 | `Autoscaler at its maximum`      | the cluster has run as many nodes as foundation's `cluster.max_nodes` for 30 minutes            |
 | `Collector silent`               | no scrape reached Grafana for 10 minutes                                                        |
 | `Container CPU above 80% …`      | a container uses more than `container_cpu` of the CPU it requests for 15 minutes                |
@@ -55,6 +56,9 @@ draw the same metrics.
 - **A full volume, a lagging replica or failing archiving:** read the database's state on the
   CloudNativePG dashboard first. Barman's archive errors appear in the instance's logs. Never
   delete WAL by hand.
+- **The cluster above its baseline:** the autoscaler absorbs spikes and transient load; capacity that
+  stays is a decision. Raise foundation's `cluster.min_nodes`, or lower the load, in a pull request,
+  or let it fall back once the load passes.
 - **No room for a lost node, or the autoscaler at its maximum:** raise foundation's
   `cluster.max_nodes`, or lower a workload's requests, in a pull request. Mind the SSD quota the
   nodes' disks share with the volumes.
