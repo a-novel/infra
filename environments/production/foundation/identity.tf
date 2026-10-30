@@ -70,8 +70,11 @@ locals {
     }
   }
 
+  # The cluster viewer role only finds the cluster and connects to it. The cluster root lets the
+  # operators read the services' namespaces.
   database_operator_project_roles = toset([
     "roles/compute.osAdminLogin",
+    "roles/container.clusterViewer",
     "roles/compute.viewer",
     "roles/logging.viewer",
     "roles/monitoring.alertPolicyViewer",

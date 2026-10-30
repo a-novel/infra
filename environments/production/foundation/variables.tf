@@ -254,7 +254,7 @@ variable "database_cos_image" {
 }
 
 variable "database_operator_principals" {
-  description = "Human identities allowed to inspect the private database host through OS Login and IAP and read workload logs. Data Access logs remain restricted. Use user: or group: IAM member syntax."
+  description = "Human identities allowed to inspect the private database host through OS Login and IAP, read workload logs, and read the cluster's service namespaces. Data Access logs remain restricted. Use user: or group: IAM member syntax."
   type        = set(string)
 
   validation {

@@ -294,6 +294,14 @@ run "grants_no_basic_roles" {
   }
 
   assert {
+    condition = (
+      alltrue([for principal in var.database_operator_principals : google_project_iam_member.database_operator["${principal}:roles/container.clusterViewer"].role == "roles/container.clusterViewer"]) &&
+      [for binding in values(google_project_iam_member.database_operator) : binding.role if startswith(binding.role, "roles/container.")] == [for principal in var.database_operator_principals : "roles/container.clusterViewer"]
+    )
+    error_message = "Operators may only connect to the cluster through IAM; the cluster root's RBAC decides what they read."
+  }
+
+  assert {
     condition     = !google_cloud_scheduler_job.json_keys_rotation[0].paused
     error_message = "Key rotation must stay scheduled."
   }

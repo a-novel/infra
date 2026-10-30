@@ -130,7 +130,8 @@ Kubernetes resources, reaching the control plane through the DNS endpoint as the
 - **Nodes:** the `general` pool, two `e2-standard-4` nodes that autoscale to three, with private
   addresses only. They run as `a-novel-cluster-nodes`, and upgrades add a node before draining one.
 - **Access:** outside the network, the control plane answers only through its DNS endpoint, which
-  IAM and the perimeter guard. Nodes use its internal endpoint.
+  IAM and the perimeter guard. Nodes use its internal endpoint. Operators read each service's
+  namespace through Kubernetes' `view` role, which never reads Secrets.
 - **Isolation:** Dataplane V2 enforces network policies, FQDN ones included. Workload Identity gives
   each pod its own identity, never the node's. Every namespace the cluster root manages enforces
   Pod Security's `restricted` level and two admission policies: images only from our Artifact

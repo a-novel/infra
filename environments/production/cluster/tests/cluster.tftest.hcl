@@ -269,6 +269,22 @@ run "schedules_the_jobs_cloud_scheduler_runs" {
   }
 }
 
+run "lets_operators_read_the_services" {
+  command = plan
+
+  assert {
+    condition = (
+      toset(keys(kubernetes_role_binding_v1.operators)) == toset(var.namespaces) &&
+      alltrue([for binding in kubernetes_role_binding_v1.operators :
+        binding.role_ref[0].kind == "ClusterRole" &&
+        binding.role_ref[0].name == "view" &&
+        toset([for subject in binding.subject : "${lower(subject.kind)}:${subject.name}"]) == toset(local.operators)
+      ])
+    )
+    error_message = "Foundation's database operators must read each service's namespace through the view role, which never reads Secrets, and nothing more."
+  }
+}
+
 run "runs_json_keys" {
   command = plan
 
