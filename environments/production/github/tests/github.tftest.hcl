@@ -8,7 +8,11 @@ mock_provider "github" {
 # A mock stands in for one provider instance, never for each organization's, so the module's own tests
 # cover its resources.
 override_module {
-  target = module.organization
+  target = module.a_novel
+}
+
+override_module {
+  target = module.a_novel_kit
 }
 
 variables {

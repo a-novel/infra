@@ -50,19 +50,33 @@ locals {
       },
     )
   }
+
+  owned = { for owner in keys(var.apps) : owner => { for repository in values(local.repositories) : repository.name => repository if repository.owner == owner } }
 }
 
-# The organizations with a repository, a subset of those with Apps: an organization's provider must
-# outlive its resources by one apply, so dropping it takes its repositories first, then its Apps.
-module "organization" {
-  source   = "../../../modules/github-organization"
-  for_each = toset([for repository in values(local.repositories) : repository.owner])
+# One call per organization, each with its own App's provider. To drop an organization, remove its
+# call first and its Apps one apply later: a provider must outlive its resources by one apply.
+module "a_novel" {
+  source = "../../../modules/github-organization"
 
   providers = {
-    github = github.organization[each.key]
+    github = github.organization["a-novel"]
   }
 
-  repositories = { for repository in values(local.repositories) : repository.name => repository if repository.owner == each.key }
+  repositories = local.owned["a-novel"]
+  tiers        = var.tiers
+  admin_team   = "core"
+  labels       = var.labels
+}
+
+module "a_novel_kit" {
+  source = "../../../modules/github-organization"
+
+  providers = {
+    github = github.organization["a-novel-kit"]
+  }
+
+  repositories = local.owned["a-novel-kit"]
   tiers        = var.tiers
   admin_team   = "core"
   labels       = var.labels
