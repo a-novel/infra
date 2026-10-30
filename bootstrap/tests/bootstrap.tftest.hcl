@@ -93,6 +93,11 @@ run "protects_state_and_backups" {
   }
 
   assert {
+    condition     = toset(keys(google_secret_manager_secret_iam_member.github_root_metadata)) == toset([for key in keys(google_secret_manager_secret_iam_member.github_root) : key if !startswith(key, "plan:")])
+    error_message = "The GitHub root's deploy and drift identities need to read each key's version metadata, which the plan identity's project role already grants."
+  }
+
+  assert {
     condition     = endswith(google_storage_bucket_iam_member.github_state.condition[0].expression, "/objects/github/\")")
     error_message = "The GitHub root's deploys may write their own state alone."
   }
