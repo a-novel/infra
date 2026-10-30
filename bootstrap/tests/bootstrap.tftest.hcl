@@ -79,6 +79,17 @@ run "protects_state_and_backups" {
     )
     error_message = "The plan identity runs pull-request code, so it may read only the read-only Grafana token."
   }
+
+  assert {
+    condition = (
+      toset([for key, grant in google_secret_manager_secret_iam_member.github_root : grant.secret_id if startswith(key, "plan:")]) ==
+      toset(["production-github-plan-key-a-novel", "production-github-plan-key-a-novel-kit"]) &&
+      toset([for key, grant in google_secret_manager_secret_iam_member.github_root : grant.secret_id if startswith(key, "drift:")]) ==
+      toset(["production-github-deploy-key-a-novel", "production-github-deploy-key-a-novel-kit"]) &&
+      alltrue([for key, grant in google_secret_manager_secret_iam_member.github_root : startswith(key, "foundation:") if strcontains(grant.secret_id, "-governance-")])
+    )
+    error_message = "The plan identity runs pull-request code, so it may read only the Plan App keys; the drift identity reads only the Deploy App keys, and only deploys read the governance secrets."
+  }
 }
 
 run "isolates_each_database_backup" {
@@ -126,9 +137,13 @@ run "trusts_only_reviewed_workflows" {
       google_iam_workload_identity_pool_provider.github["health"].attribute_condition == join("", [
         "assertion.repository_owner_id == '131281268' && assertion.repository_id == '1344262359' && (",
         "(assertion.ref == 'refs/heads/master' && assertion.workflow_ref == 'a-novel/infra/.github/workflows/drift.yaml@refs/heads/master'))",
+      ]) &&
+      google_iam_workload_identity_pool_provider.github["drift"].attribute_condition == join("", [
+        "assertion.repository_owner_id == '131281268' && assertion.repository_id == '1344262359' && (",
+        "(assertion.ref == 'refs/heads/master' && assertion.workflow_ref == 'a-novel/infra/.github/workflows/drift.yaml@refs/heads/master'))",
       ])
     )
-    error_message = "Only master workflows behind their environment may write or call Authentication, and only same-repository pull requests may plan."
+    error_message = "Only master workflows behind their environment may write, call Authentication or read the GitHub Deploy App keys, and only same-repository pull requests may plan."
   }
 
   assert {
