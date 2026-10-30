@@ -27,7 +27,7 @@ addon_images = {
   external_secrets = "ghcr.io/external-secrets/external-secrets:v2.13.0@sha256:f799d87a6a959e597a4ba7a8d2379886292c3fcfbee678f7dc2d3566051bcb96"
 
   # The images the k8s-monitoring chart runs, which move with it.
-  alloy              = "docker.io/grafana/alloy:v1.21.1@sha256:4039c971193053a84e53dd9ed3e7d4561c069256b024631cd3498a353ed7ece8"
+  alloy              = "docker.io/grafana/alloy:v1.21.2@sha256:89a5a320168387336b9ac3c850609c3ba7757eadd4ae5f1d819deb35e9854b18"
   alloy_operator     = "ghcr.io/grafana/alloy-operator:1.14.2@sha256:44afd94d078432336e753da3da2d3d5f130dbe930c9ea53b4839363878f0ab09"
   config_reloader    = "quay.io/prometheus-operator/prometheus-config-reloader:v0.94.2@sha256:a1897c67478bc23434534e91ad3855280771196b1daf17144db9dbcb655bef71"
   kube_state_metrics = "registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.20.0@sha256:42cfe3723a5f058171c627537fb57a3ea0f26e4380fa18555a95cb1a1b4cfc5b"
