@@ -71,7 +71,7 @@ module "a_novel" {
   labels             = var.labels
   bots               = var.organizations["a-novel"].bots
   scoped_secrets     = var.organizations["a-novel"].scoped_secrets
-  governance_secrets = var.organizations["a-novel"].governance_secrets
+  governance_secrets = toset(keys(var.organizations["a-novel"].governance_secrets))
 }
 
 module "a_novel_kit" {
@@ -87,5 +87,5 @@ module "a_novel_kit" {
   labels             = var.labels
   bots               = var.organizations["a-novel-kit"].bots
   scoped_secrets     = var.organizations["a-novel-kit"].scoped_secrets
-  governance_secrets = var.organizations["a-novel-kit"].governance_secrets
+  governance_secrets = toset(keys(var.organizations["a-novel-kit"].governance_secrets))
 }

@@ -175,4 +175,9 @@ run "derives_config_from_the_workflows" {
     condition     = length([for key, policy in local.deployment_policies : key if startswith(key, "infra:")]) == 2 && length([for key, policy in local.deployment_policies : key if startswith(key, "service-genai:")]) == 6
     error_message = "An environment opens on the default branch, plus release lines and version tags where the tags ruleset guards them."
   }
+
+  assert {
+    condition     = jsonencode(output.governance_secrets) == jsonencode({ ".github" = ["AGENT_BOT_PRIVATE_KEY"], infra = ["AGENT_BOT_PRIVATE_KEY"], "service-genai" = ["AGENT_BOT_PRIVATE_KEY"] })
+    error_message = "Each governance environment holds exactly the privileged secrets its repository's workflows name, never a scoped one."
+  }
 }

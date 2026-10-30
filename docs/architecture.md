@@ -340,7 +340,7 @@ rulesets, environments and scoped secret access. Each repository takes its class
 `main.tf`, then its own overrides from `terraform.tfvars`, field by field. A new repository starts
 from its class's template, `service-template` or `platform-template`, or empty. Removing one
 archives it. Until a-novel/.github#534 retires it, `a-novel repo update` still writes the same
-values and copies the governance secrets, so its templates stay frozen.
+values and copies the governance secrets from Bitwarden, so its templates stay frozen.
 
 - **The code stays the source of truth.** Discovery reads each repository's default branch: the
   required checks are the always-required set plus `main.yaml`'s jobs, minus reporting and
@@ -350,6 +350,9 @@ values and copies the governance secrets, so its templates stay frozen.
 - **A repository waits until it is ready.** Until its default branch holds `main.yaml`, it gets
   settings, team access and labels only. Readiness never depends on another workflow's name: each
   repository names its workflows as it likes.
+- **Secret sync copies the governance secrets.** After each apply, the deploy job and the sweep
+  copy each repository's privileged keys from Secret Manager, at the versions `terraform.tfvars`
+  pins, into its `governance` environment, as `.github/scripts/secret-sync.mjs` does.
 - **Only the guarded environments are managed:** `release`, with its reviewers, `governance` and
   `sourcemaps`, each open on the refs a ruleset guards. GitHub creates the others, such as
   `github-pages` and `copilot`.

@@ -14,14 +14,15 @@ apps = {
 
 organizations = {
   a-novel = {
-    bots               = { agent = 3549319, dependencies = 1717331, release = 5307879 }
-    scoped_secrets     = ["CODECOV_TOKEN", "TOKEN_EXPIRY_ADMIN"]
-    governance_secrets = ["AGENT_BOT_PRIVATE_KEY", "BWS_READ_TOKEN", "DEPENDENCY_BOT_PRIVATE_KEY"]
+    bots           = { agent = 3549319, dependencies = 1717331, release = 5307879 }
+    scoped_secrets = ["CODECOV_TOKEN", "TOKEN_EXPIRY_ADMIN"]
+    # Each value is a version of production-github-governance-<org>-<name>; a deploy copies it.
+    governance_secrets = { AGENT_BOT_PRIVATE_KEY = 2, BWS_READ_TOKEN = 1, DEPENDENCY_BOT_PRIVATE_KEY = 1 }
   }
   a-novel-kit = {
     bots               = { agent = 3549379, dependencies = 1734926, release = 5307968 }
     scoped_secrets     = ["CODECOV_TOKEN", "TOKEN_EXPIRY_ADMIN"]
-    governance_secrets = ["AGENT_BOT_PRIVATE_KEY", "BWS_READ_TOKEN", "DEPENDENCY_BOT_PRIVATE_KEY"]
+    governance_secrets = { AGENT_BOT_PRIVATE_KEY = 1, BWS_READ_TOKEN = 1, DEPENDENCY_BOT_PRIVATE_KEY = 1 }
   }
 }
 
