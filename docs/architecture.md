@@ -122,8 +122,8 @@ own identities, image repositories, network tags and database hosts.
 ## Cluster
 
 `a-novel-production` is the GKE Standard cluster that replaces Cloud Run at the cutover
-(a-novel/.github#522). It holds no workload yet. The `cluster` root manages its Kubernetes resources,
-reaching the control plane through the DNS endpoint as the CI identities.
+(a-novel/.github#522). Its workloads serve no one until then. The `cluster` root manages its
+Kubernetes resources, reaching the control plane through the DNS endpoint as the CI identities.
 
 - **Zonal,** so the billing account's free tier covers its management fee. The control plane runs in
   `europe-west9-a`, and the nodes in `a` and `b`.
@@ -147,6 +147,9 @@ reaching the control plane through the DNS endpoint as the CI identities.
   global load balancer, which redirects plain HTTP to HTTPS. Foundation holds its `studio` address,
   a TLS 1.2 policy, and a Certificate Manager certificate the domain's DNS authorizes before any
   traffic moves. Only the load balancer's ranges reach Studio's pods.
+- **Jobs:** each new migrations image runs once as a Job before its server rolls. CronJobs run
+  JSON Keys' key rotation hourly at :10 and Authentication's refresh token purge daily at 03:40
+  UTC, one run at a time, never retried.
 - **Upkeep:** the `REGULAR` release channel upgrades it during weekly windows, Tuesday to Thursday
   from 01:00 to 07:00 UTC. Google collects only system logs and metrics, since Grafana takes every
   signal.

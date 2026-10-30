@@ -224,6 +224,51 @@ run "runs_each_release_from_its_private_repository" {
   }
 }
 
+run "schedules_the_jobs_cloud_scheduler_runs" {
+  command = plan
+
+  variables {
+    custom_resources = true
+  }
+
+  assert {
+    condition = (
+      toset(keys(kubernetes_cron_job_v1.scheduled)) == toset(["refresh-token-purge", "rotate-keys"]) &&
+      kubernetes_cron_job_v1.scheduled["rotate-keys"].spec[0].schedule == "10 * * * *" &&
+      kubernetes_cron_job_v1.scheduled["refresh-token-purge"].spec[0].schedule == "40 3 * * *" &&
+      alltrue([for job in kubernetes_cron_job_v1.scheduled :
+        job.spec[0].timezone == "Etc/UTC" &&
+        job.spec[0].concurrency_policy == "Forbid" &&
+        job.spec[0].job_template[0].spec[0].backoff_limit == 0
+      ])
+    )
+    error_message = "Key rotation must run hourly at :10 and the refresh token purge daily at 03:40 UTC, one run at a time, never retried."
+  }
+
+  assert {
+    condition = (
+      kubernetes_cron_job_v1.scheduled["rotate-keys"].metadata[0].namespace == "json-keys" &&
+      one(kubernetes_cron_job_v1.scheduled["rotate-keys"].spec[0].job_template[0].spec[0].template[0].spec[0].container).image == local.release_image["json-keys/rotatekeys"] &&
+      one([for env in one(kubernetes_cron_job_v1.scheduled["rotate-keys"].spec[0].job_template[0].spec[0].template[0].spec[0].container).env : "${one(one(env.value_from).secret_key_ref).name}/${one(one(env.value_from).secret_key_ref).key}" if env.name == "APP_MASTER_KEY"]) == "secrets/APP_MASTER_KEY" &&
+      kubernetes_cron_job_v1.scheduled["refresh-token-purge"].metadata[0].namespace == "authentication" &&
+      one(kubernetes_cron_job_v1.scheduled["refresh-token-purge"].spec[0].job_template[0].spec[0].template[0].spec[0].container).image == local.release_image["authentication/maintenance"] &&
+      one(kubernetes_cron_job_v1.scheduled["refresh-token-purge"].spec[0].job_template[0].spec[0].template[0].spec[0].container).args == tolist(["refresh-token-purge"])
+    )
+    error_message = "Key rotation must run JSON Keys' rotatekeys image with its master key, and the purge Authentication's maintenance image."
+  }
+
+  assert {
+    condition = alltrue([for name, job in kubernetes_cron_job_v1.scheduled :
+      job.spec[0].job_template[0].spec[0].template[0].metadata[0].labels["a-novel.io/database"] == "client" &&
+      one(one(job.spec[0].job_template[0].spec[0].template[0].spec[0].volume).secret).secret_name == kubernetes_manifest.database_server_certificate[local.scheduled_jobs[name].service].manifest.spec.secretName &&
+      one([for env in one(job.spec[0].job_template[0].spec[0].template[0].spec[0].container).env : env.value if env.name == "POSTGRES_HOST"]) == one(kubernetes_manifest.database_server_certificate[local.scheduled_jobs[name].service].manifest.spec.dnsNames) &&
+      one([for env in one(job.spec[0].job_template[0].spec[0].template[0].spec[0].container).env : env.value if env.name == "SSL_CERT_DIR"]) == "/etc/ssl/certs:/etc/database-ca" &&
+      one([for env in one(job.spec[0].job_template[0].spec[0].template[0].spec[0].container).env : env.value if env.name == "OTEL"]) == "false"
+    ])
+    error_message = "Each scheduled job must reach its own database as a client, by its certificate's name, trusting its CA, and export no telemetry until Alloy runs."
+  }
+}
+
 run "runs_json_keys" {
   command = plan
 
