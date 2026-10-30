@@ -39,6 +39,14 @@ output "cluster" {
     google_api_ranges = sort(tolist(local.restricted_google_api_ranges))
     # Each service's PostgreSQL image, pinned by digest in its private repository.
     database_images = local.database_image
+    # Each service's database host, which the cutover imports from across the import peering, as the
+    # role that owns the service's tables.
+    database_imports = { for service, host in local.database_hosts : host.component => {
+      host     = one(data.google_compute_instance.database[service].network_interface).network_ip
+      port     = host.port
+      database = "agora_${service}"
+      user     = "agora_${service}_app"
+    } }
     # Where the add-ons pull each public registry's images from, by its host.
     image_registries = { for name, repository in google_artifact_registry_repository.cluster_upstream : replace(name, "-", ".") => repository.registry_uri }
   }

@@ -199,8 +199,8 @@ resource "google_compute_network_firewall_policy_rule" "cluster_egress_allowlist
   }
 }
 
-# The cutover imports each database from its host across this peering. Neither network's firewall
-# admits the other yet: the import opens the database hosts to the pod range.
+# The cutover imports each database from its host across this peering. Apart from the import's
+# rules below, which open the database hosts to the pod range, neither network admits the other.
 resource "google_compute_network_peering" "cluster_to_agora" {
   name         = "a-novel-database-imports"
   network      = google_compute_network.cluster.id
@@ -214,4 +214,46 @@ resource "google_compute_network_peering" "agora_to_cluster" {
 
   # Google refuses a peering operation on a network while another one runs.
   depends_on = [google_compute_network_peering.cluster_to_agora]
+}
+
+# Each database host admits the cluster's pods on its own port, which reach it with their own
+# addresses. Inside the cluster, only the database pods' network policy opens the way.
+resource "google_compute_firewall" "allow_database_imports" {
+  depends_on = [google_project_iam_member.foundation_firewall]
+
+  for_each = local.database_hosts
+
+  project = google_project.workload.project_id
+  name    = "agora-allow-${each.value.component}-database-imports"
+  network = google_compute_network.production.name
+
+  direction     = "INGRESS"
+  priority      = 800
+  source_ranges = [var.cluster_ranges.pods]
+  target_tags   = [local.network_tags[each.value.identity]]
+
+  allow {
+    protocol = "tcp"
+    ports    = [tostring(each.value.port)]
+  }
+}
+
+# The firewall sees the nodes in place of their pods, so every node may reach each host's port.
+resource "google_compute_firewall" "cluster_allow_database_imports" {
+  depends_on = [google_project_iam_member.foundation_firewall]
+
+  for_each = local.database_hosts
+
+  project = google_project.workload.project_id
+  name    = "a-novel-allow-${each.value.component}-database-imports"
+  network = google_compute_network.cluster.name
+
+  direction          = "EGRESS"
+  priority           = 800
+  destination_ranges = ["${one(data.google_compute_instance.database[each.key].network_interface).network_ip}/32"]
+
+  allow {
+    protocol = "tcp"
+    ports    = [tostring(each.value.port)]
+  }
 }
