@@ -6,6 +6,8 @@ locals {
   env = merge(var.env, var.ca_secret == null ? {} : { SSL_CERT_DIR = "/etc/ssl/certs:/etc/database-ca" }, {
     for audience, name in var.service_tokens : name => "/var/run/secrets/tokens/${audience}"
   })
+  # GKE names a gauge with a DNS label.
+  gauge_name = var.scaling_gauge == null ? null : replace(var.scaling_gauge.name, "_", "-")
 }
 
 # The workload calls no Kubernetes API, so its pods mount no token for it.
@@ -73,6 +75,15 @@ resource "kubernetes_deployment_v1" "workload" {
           port {
             name           = local.protocol
             container_port = var.port
+          }
+
+          dynamic "port" {
+            for_each = var.scaling_gauge == null ? [] : [var.scaling_gauge.port]
+
+            content {
+              name           = "metrics"
+              container_port = port.value
+            }
           }
 
           dynamic "env" {
@@ -269,6 +280,29 @@ resource "kubernetes_pod_disruption_budget_v1" "workload" {
   }
 }
 
+# GKE reads the gauge from every pod every few seconds, and serves it to the autoscaler, which names
+# it autoscaling.gke.io|<this object>|<the gauge>.
+resource "kubernetes_manifest" "scaling_gauge" {
+  count = var.scaling_gauge == null ? 0 : 1
+
+  manifest = {
+    apiVersion = "autoscaling.gke.io/v1beta1"
+    kind       = "AutoscalingMetric"
+    metadata   = { name = var.name, namespace = var.namespace }
+    spec = {
+      metrics = [{
+        pod = {
+          selector = { matchLabels = { "app.kubernetes.io/name" = var.name } }
+          containers = [{
+            endpoint = { port = var.scaling_gauge.port, path = "/metrics" }
+            metrics  = [{ gauge = { name = local.gauge_name, prometheusMetricName = var.scaling_gauge.name } }]
+          }]
+        }
+      }]
+    }
+  }
+}
+
 resource "kubernetes_horizontal_pod_autoscaler_v2" "workload" {
   count = var.replicas.max > var.replicas.min ? 1 : 0
 
@@ -299,6 +333,60 @@ resource "kubernetes_horizontal_pod_autoscaler_v2" "workload" {
         }
       }
     }
+
+    dynamic "metric" {
+      for_each = kubernetes_manifest.scaling_gauge[*].manifest
+
+      content {
+        type = "Pods"
+
+        pods {
+          metric {
+            name = "autoscaling.gke.io|${metric.value.metadata.name}|${local.gauge_name}"
+          }
+
+          target {
+            type          = "AverageValue"
+            average_value = tostring(var.scaling_gauge.average)
+          }
+        }
+      }
+    }
+
+    # The autoscaler absorbs bursts without overshoot or flapping: it adds or removes one pod a minute
+    # at most, and removes one only after five minutes below its targets. More capacity is a change
+    # to replicas.max.
+    behavior {
+      scale_up {
+        select_policy                = "Max"
+        stabilization_window_seconds = 0
+
+        policy {
+          type           = "Pods"
+          value          = 1
+          period_seconds = 60
+        }
+      }
+
+      scale_down {
+        select_policy                = "Max"
+        stabilization_window_seconds = 300
+
+        policy {
+          type           = "Pods"
+          value          = 1
+          period_seconds = 60
+        }
+      }
+    }
+  }
+}
+
+output "autoscaler" {
+  description = "The autoscaler's spec and the AutoscalingMetric it reads the scaling gauge from, each null when absent. The cluster root's tests read them."
+  value = {
+    spec  = one(kubernetes_horizontal_pod_autoscaler_v2.workload[*].spec[0])
+    gauge = one(kubernetes_manifest.scaling_gauge[*].manifest)
   }
 }
 

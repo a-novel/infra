@@ -76,6 +76,56 @@ run "scales_between_bounds" {
     condition     = length(kubernetes_pod_disruption_budget_v1.workload) == 0 && one(kubernetes_horizontal_pod_autoscaler_v2.workload).spec[0].max_replicas == 4
     error_message = "A single pod gets no budget, which would block drains, and bounds apart get an autoscaler."
   }
+
+  assert {
+    condition = (
+      [for metric in one(kubernetes_horizontal_pod_autoscaler_v2.workload).spec[0].metric : metric.type] == ["Resource"] &&
+      length(kubernetes_manifest.scaling_gauge) == 0 &&
+      length(one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).port) == 1 &&
+      output.autoscaler.gauge == null
+    )
+    error_message = "A workload without a scaling gauge must scale on CPU alone, and serve no metrics port."
+  }
+
+  assert {
+    condition = (
+      alltrue([for rules in values(one(one(kubernetes_horizontal_pod_autoscaler_v2.workload).spec[0].behavior)) : alltrue([for policy in one(rules).policy : policy.type == "Pods" && policy.value == 1 && policy.period_seconds >= 60])]) &&
+      one(one(one(kubernetes_horizontal_pod_autoscaler_v2.workload).spec[0].behavior).scale_down).stabilization_window_seconds >= 300
+    )
+    error_message = "The autoscaler must add or remove one pod a minute at most, and remove one only after five minutes below its targets."
+  }
+}
+
+run "scales_on_a_gauge" {
+  command = plan
+
+  variables {
+    replicas      = { min = 1, max = 3 }
+    scaling_gauge = { name = "grpc_server_calls_in_flight", port = 9090, average = 12 }
+  }
+
+  # GKE reads the gauge on its own port from every pod of the workload, and nothing else.
+  assert {
+    condition = (
+      tomap(kubernetes_manifest.scaling_gauge[0].manifest.spec.metrics[0].pod.selector.matchLabels) == one(one(kubernetes_deployment_v1.workload.spec).selector).match_labels &&
+      kubernetes_manifest.scaling_gauge[0].manifest.spec.metrics[0].pod.containers[0].endpoint.port == 9090 &&
+      [for metric in kubernetes_manifest.scaling_gauge[0].manifest.spec.metrics[0].pod.containers[0].metrics : metric.gauge.prometheusMetricName] == ["grpc_server_calls_in_flight"] &&
+      tomap({ for port in one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).port : port.name => port.container_port }) == tomap({ grpc = 8080, metrics = 9090 }) &&
+      [for port in one(kubernetes_service_v1.workload.spec).port : port.port] == [8080]
+    )
+    error_message = "An AutoscalingMetric must read the gauge on the pods' metrics port, which the Service leaves out."
+  }
+
+  assert {
+    condition = (
+      [for metric in one(kubernetes_horizontal_pod_autoscaler_v2.workload).spec[0].metric : metric.type] == ["Resource", "Pods"] &&
+      one(one(one(kubernetes_horizontal_pod_autoscaler_v2.workload).spec[0].metric[0].resource).target).average_utilization == 70 &&
+      one(one(one(kubernetes_horizontal_pod_autoscaler_v2.workload).spec[0].metric[1].pods).metric).name == "autoscaling.gke.io|${kubernetes_manifest.scaling_gauge[0].manifest.metadata.name}|${kubernetes_manifest.scaling_gauge[0].manifest.spec.metrics[0].pod.containers[0].metrics[0].gauge.name}" &&
+      one(one(one(kubernetes_horizontal_pod_autoscaler_v2.workload).spec[0].metric[1].pods).target).average_value == "12" &&
+      output.autoscaler.gauge == kubernetes_manifest.scaling_gauge[0].manifest
+    )
+    error_message = "The autoscaler must keep CPU at 70% and the gauge at its average per pod, read through the AutoscalingMetric."
+  }
 }
 
 run "serves_http_with_service_tokens" {

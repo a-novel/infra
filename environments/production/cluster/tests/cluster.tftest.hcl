@@ -516,11 +516,29 @@ run "runs_genai" {
   assert {
     condition = (
       local.genai_grpc_env.SERVICE_TOKEN_CALLERS == "system:serviceaccount:genai:smoke" &&
-      length(one(kubernetes_network_policy_v1.genai_grpc.spec).ingress) == 1 &&
-      [for peer in one(one(kubernetes_network_policy_v1.genai_grpc.spec).ingress).from : one(peer.pod_selector).match_labels["app.kubernetes.io/name"]] == ["smoke"] &&
-      length(one(one(one(kubernetes_network_policy_v1.genai_grpc.spec).ingress).from).namespace_selector) == 0
+      [for rule in one(kubernetes_network_policy_v1.genai_grpc.spec).ingress : [for port in rule.ports : port.port]] == [[local.genai_grpc_env.GRPC_PORT], [local.genai_grpc_env.METRICS_PORT]] &&
+      [for peer in one(kubernetes_network_policy_v1.genai_grpc.spec).ingress[0].from : one(peer.pod_selector).match_labels["app.kubernetes.io/name"]] == ["smoke"] &&
+      length(one(one(kubernetes_network_policy_v1.genai_grpc.spec).ingress[0].from).namespace_selector) == 0
     )
     error_message = "Only GenAI's own smoke check may call its server."
+  }
+
+  # Each peer of the metrics rule names its source range or namespace, and one of them only.
+  assert {
+    condition = [for peer in one(kubernetes_network_policy_v1.genai_grpc.spec).ingress[1].from :
+      concat([for block in peer.ip_block : block.cidr], [for selector in peer.namespace_selector : selector.match_labels["kubernetes.io/metadata.name"]])
+    ] == [[local.cluster.node_range], ["kube-system"]]
+    error_message = "Only the nodes and kube-system may read the server's calls in flight, on its metrics port alone."
+  }
+
+  assert {
+    condition = (
+      [for metric in module.genai_grpc[0].autoscaler.spec.metric : metric.type] == ["Resource", "Pods"] &&
+      one(one(module.genai_grpc[0].autoscaler.spec.metric[1].pods).target).average_value == tostring(floor(tonumber(local.genai_grpc_env.GRPC_MAX_CONCURRENT_CALLS) * 60 / 100)) &&
+      module.genai_grpc[0].autoscaler.gauge.spec.metrics[0].pod.containers[0].endpoint.port == tonumber(local.genai_grpc_env.METRICS_PORT) &&
+      alltrue([for workload in [module.json_keys_grpc[0], module.authentication_rest[0], module.genai_sweep[0], module.studio_web] : workload.autoscaler.gauge == null])
+    )
+    error_message = "GenAI's server alone must scale on its calls in flight, beside CPU, at 60% of its call cap per pod, read on its metrics port."
   }
 }
 
@@ -654,7 +672,7 @@ run "checks_each_service_as_a_caller_it_admits" {
         one(one(one(pod.spec[0].volume[0].projected).sources).service_account_token).audience == target.env.SERVICE_TOKEN_AUDIENCE &&
         { for env in one(pod.spec[0].container).env : env.name => env.value }["SERVICE_TOKEN_PATH"] == "/var/run/secrets/tokens/${target.env.SERVICE_TOKEN_AUDIENCE}" &&
         { for env in one(pod.spec[0].container).env : env.name => env.value }["SERVICE_URL"] == "http://${target.workload.service.name}.${service}.svc:${target.workload.service.port}" &&
-        contains([for peer in one(one(target.policy.spec).ingress).from : one(peer.pod_selector).match_labels["app.kubernetes.io/name"]], pod.metadata[0].labels["app.kubernetes.io/name"]) &&
+        contains(flatten([for rule in one(target.policy.spec).ingress : [for peer in rule.from : one(peer.pod_selector).match_labels["app.kubernetes.io/name"]] if contains([for port in rule.ports : port.port], tostring(target.workload.service.port))]), pod.metadata[0].labels["app.kubernetes.io/name"]) &&
         one(one(one(kubernetes_network_policy_v1.smoke[service].spec).egress).to).pod_selector[0].match_labels == tomap({ "app.kubernetes.io/name" = target.workload.pod_labels["app.kubernetes.io/name"] }) &&
         one(one(one(kubernetes_network_policy_v1.smoke[service].spec).egress).ports).port == tostring(target.workload.service.port) &&
         kubernetes_network_policy_v1.smoke[service].spec[0].pod_selector[0].match_labels == pod.metadata[0].labels

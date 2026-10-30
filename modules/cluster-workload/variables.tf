@@ -69,8 +69,23 @@ variable "resources" {
   })
 }
 
+variable "scaling_gauge" {
+  description = "A Prometheus gauge each pod serves on a port of its own, and the average per pod the autoscaler keeps it at, beside CPU. GKE reads it from every pod through an AutoscalingMetric."
+  type = object({
+    name    = string
+    port    = number
+    average = number
+  })
+  default = null
+
+  validation {
+    condition     = var.scaling_gauge == null || can(regex("^[a-z][a-z0-9_]{0,61}[a-z0-9]$", var.scaling_gauge.name))
+    error_message = "Name the gauge in lowercase snake case, in 63 characters at most: GKE names it with a DNS label."
+  }
+}
+
 variable "replicas" {
-  description = "The pods to run: an autoscaler moves between min and max on CPU; equal bounds run a fixed count."
+  description = "The pods to run: an autoscaler moves between min and max on CPU, and on the scaling gauge when one is set; equal bounds run a fixed count."
   type = object({
     min = number
     max = number

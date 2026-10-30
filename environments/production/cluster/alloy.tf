@@ -92,12 +92,14 @@ locals {
 
     # Nodes, containers and volumes from the kubelets and cAdvisor, and objects from
     # kube-state-metrics, all in this root's namespaces. Node Exporter stays off: it needs the host's
-    # filesystems and network, which Pod Security's restricted level refuses.
+    # filesystems and network, which Pod Security's restricted level refuses. Beside the chart's
+    # allowlist, each autoscaler's current metrics show whether it reads its pods' gauge.
     clusterMetrics = {
-      enabled      = true
-      collector    = "alloy"
-      destinations = ["grafana-cloud"]
-      cadvisor     = { metricsTuning = { includeNamespaces = local.admitted_namespaces } }
+      enabled            = true
+      collector          = "alloy"
+      destinations       = ["grafana-cloud"]
+      cadvisor           = { metricsTuning = { includeNamespaces = local.admitted_namespaces } }
+      kube-state-metrics = { metricsTuning = { includeMetrics = ["kube_horizontalpodautoscaler_status_target_metric"] } }
     }
 
     # The Kubernetes events. Pod logs stay off, since the workloads send their own.
