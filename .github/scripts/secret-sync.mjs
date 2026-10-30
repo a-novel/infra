@@ -2,7 +2,7 @@
 // after the GitHub root applies in a deploy or the sweep (a-novel/.github#534). The decision and the
 // App's token are pure functions; main runs gcloud and gh around them. A value travels only through
 // a pipe from gcloud to gh, so it never reaches a log, a variable or an argument.
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createSign } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -55,38 +55,31 @@ const gcloud = (project, ...args) =>
     encoding: "utf8",
   }).trim();
 
-/** Pipes one secret version's payload from gcloud into gh, which encrypts it for the environment. */
-function copy(project, source, repository, name, token) {
-  return new Promise((resolve, reject) => {
-    const access = spawn(
-      "gcloud",
-      [
-        "secrets",
-        "versions",
-        "access",
-        String(source.version),
-        `--secret=${source.secret}`,
-        `--project=${project}`,
-      ],
-      { stdio: ["ignore", "pipe", "inherit"] },
-    );
-    const set = spawn(
-      "gh",
-      ["secret", "set", name, "--env", "governance", "--repo", repository],
-      {
-        stdio: [access.stdout, "ignore", "inherit"],
-        env: { ...process.env, GH_TOKEN: token },
-      },
-    );
-    const exits = [access, set].map(
-      (child) => new Promise((done) => child.on("close", (code) => done(code))),
-    );
-    Promise.all(exits).then(([read, write]) =>
-      read === 0 && write === 0
-        ? resolve()
-        : reject(new Error(`copy ${name} into ${repository} failed`)),
-    );
-  });
+/**
+ * Pipes one secret version's payload from gcloud into gh, which encrypts it for the environment. The
+ * pipe runs in bash, so the value never reaches this process; its arguments name it, never hold it.
+ */
+export function copy(project, source, repository, name, token) {
+  const { status } = spawnSync(
+    "bash",
+    [
+      "-o",
+      "pipefail",
+      "-c",
+      'gcloud secrets versions access "$1" --secret="$2" --project="$3" | gh secret set "$4" --env governance --repo "$5" >/dev/null',
+      "copy",
+      String(source.version),
+      source.secret,
+      project,
+      name,
+      repository,
+    ],
+    {
+      stdio: ["ignore", "inherit", "inherit"],
+      env: { ...process.env, GH_TOKEN: token },
+    },
+  );
+  if (status !== 0) throw new Error(`copy ${name} into ${repository} failed`);
 }
 
 export async function main(organizations) {
@@ -146,7 +139,7 @@ export async function main(organizations) {
           `repos/${repository}/environments/governance/secrets/${secret}`,
         );
       for (const secret of write)
-        await copy(project, secrets[secret], repository, secret, token);
+        copy(project, secrets[secret], repository, secret, token);
       if (write.length + remove.length > 0) {
         console.log(
           `${repository}: wrote ${write.join(", ") || "nothing"}; deleted ${remove.join(", ") || "nothing"}.`,
