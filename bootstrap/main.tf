@@ -164,6 +164,14 @@ locals {
       contract = "GRAFANA_AUTH"
       purpose  = "Grafana token with which deploys apply the Grafana root"
     }
+    production-grafana-cloud-plan-token = {
+      contract = "GRAFANA_CLOUD_ACCESS_POLICY_TOKEN"
+      purpose  = "Read-only Grafana Cloud token, with which pull requests and the drift check plan the Grafana root's Frontend Observability apps"
+    }
+    production-grafana-cloud-deploy-token = {
+      contract = "GRAFANA_CLOUD_ACCESS_POLICY_TOKEN"
+      purpose  = "Grafana Cloud token with which deploys apply the Grafana root's Frontend Observability apps"
+    }
     production-alloy-push-token = {
       contract = "GRAFANA_CLOUD_ACCESS_POLICY_TOKEN"
       purpose  = "Grafana Cloud token with which Alloy pushes metrics, logs and traces"

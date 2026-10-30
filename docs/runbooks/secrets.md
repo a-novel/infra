@@ -146,6 +146,22 @@ Grafana as well as disabling its version.
 Grafana's Discord contact point is created by hand in the same stack, so its webhook never reaches
 state.
 
+## Grafana Cloud tokens
+
+Frontend Observability's API takes a Grafana Cloud access policy token, which no stack service
+account replaces, so bootstrap holds one for each CI identity of the Grafana root. Create each
+policy in the Cloud Portal, under **Security → Access policies**, with the production stack as its
+realm, then a token without an expiry:
+
+| Secret                                  | Access policy  | Scopes                                                                                                        |
+| --------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------- |
+| `production-grafana-cloud-plan-token`   | `infra-plan`   | `stacks:read`, `frontend-observability:read`                                                                  |
+| `production-grafana-cloud-deploy-token` | `infra-deploy` | `stacks:read`, `frontend-observability:read`, `frontend-observability:write`, `frontend-observability:delete` |
+
+Add each token as a version of its secret, as in [Rotate a secret](#rotate-a-secret). Pull requests
+and the drift check read the plan token, and deploys the deploy token. For a leak, delete the token
+in the Cloud Portal as well as disabling its version.
+
 ## GitHub root keys
 
 The GitHub root reads one GitHub App key per organization and CI identity. Core creates each
