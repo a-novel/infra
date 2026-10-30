@@ -54,9 +54,10 @@ resource "google_artifact_registry_repository_iam_member" "cluster_database_imag
   member     = google_service_account.runtime["cluster_nodes"].member
 }
 
-# Admission admits only images from the workload project. The services with a database run from
-# their private repositories there; Studio has none, so it gets one for its cluster release, which
-# the cluster root's deploy fills. Foundation applies first, so the repository exists for that copy.
+# Admission admits only images from the workload project. The services with a Cloud Run root run
+# from the private repositories it creates there. Studio and narrative-engine have none, so each gets
+# one for its cluster release, which the cluster root's deploy fills. Foundation applies first, so the
+# repository exists for that copy.
 resource "google_artifact_registry_repository" "studio" {
   project         = var.workload_project_id
   location        = var.region
@@ -84,6 +85,36 @@ resource "google_artifact_registry_repository_iam_member" "cluster_studio" {
   project    = google_artifact_registry_repository.studio.project
   location   = google_artifact_registry_repository.studio.location
   repository = google_artifact_registry_repository.studio.name
+  role       = "roles/artifactregistry.reader"
+  member     = google_service_account.runtime["cluster_nodes"].member
+}
+
+resource "google_artifact_registry_repository" "narrative_engine" {
+  project         = var.workload_project_id
+  location        = var.region
+  repository_id   = "agora-narrative-engine-private-production"
+  format          = "DOCKER"
+  mode            = "STANDARD_REPOSITORY"
+  deletion_policy = "PREVENT"
+  labels          = { environment = "production", service = "narrative-engine" }
+
+  docker_config {
+    immutable_tags = true
+  }
+
+  cleanup_policy_dry_run = true
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [google_project_service.workload["artifactregistry.googleapis.com"]]
+}
+
+resource "google_artifact_registry_repository_iam_member" "cluster_narrative_engine" {
+  project    = google_artifact_registry_repository.narrative_engine.project
+  location   = google_artifact_registry_repository.narrative_engine.location
+  repository = google_artifact_registry_repository.narrative_engine.name
   role       = "roles/artifactregistry.reader"
   member     = google_service_account.runtime["cluster_nodes"].member
 }

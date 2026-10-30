@@ -36,6 +36,7 @@ cluster_databases = {
     "authentication",
     "genai",
     "json-keys",
+    "narrative-engine",
   ]
 }
 # The lineages the cluster's databases archived to before their current one.
