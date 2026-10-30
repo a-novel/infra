@@ -94,12 +94,22 @@ GitHub issues no OIDC token to pull requests from forks, so outside contributors
 access.
 
 Human operators are the members of bootstrap's `operator_principals` and foundation's
-`database_operator_principals`. They hold two sets of roles:
+`database_operator_principals`. They hold three sets of roles:
 
 - **in the management project**, the administration of IAM, Cloud Scheduler, Workflows and the
   management buckets, private audit logs, and the right to add and read versions of every secret;
 - **in the production project**, read access, logs, and SSH with administrator rights to the VMs
-  through Identity-Aware Proxy.
+  through Identity-Aware Proxy;
+- **on the cluster**, read access to each service's namespace: its pods and their logs, events and
+  workloads, never its Secrets.
+
+The cluster's workload logs stay off Cloud Logging, so operators read them through the control
+plane, with `kubectl` and `gke-gcloud-auth-plugin` installed:
+
+```bash
+gcloud container clusters get-credentials a-novel-production --project=a-novel-production-prod --location=europe-west9-a --dns-endpoint
+kubectl --namespace=authentication logs deployment/rest
+```
 
 They have no write access in the workload projects. Changes there go through pull requests, and
 host restarts through the workflows.
