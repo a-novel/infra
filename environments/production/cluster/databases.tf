@@ -1,5 +1,7 @@
 # Each service's CloudNativePG database: a primary and a replica on separate nodes, archiving WAL to
-# the service's Barman bucket. It holds no data until the cutover imports it (a-novel/infra#1207).
+# the service's Barman bucket. It starts as an import of the service's database host. A new
+# `backup_server_name` starts a new lineage, which recreates the database and imports it again: the
+# rehearsal does, then the cutover (a-novel/infra#1202, a-novel/infra#1207).
 data "terraform_remote_state" "bootstrap" {
   backend = "gcs"
   config = {
@@ -15,6 +17,16 @@ locals {
   database_pods = { "cnpg.io/cluster" = "database" }
   # The service's own workloads and jobs that connect to its database carry this label.
   database_clients = { "a-novel.io/database" = "client" }
+  # A client's pods read the database's generated password at start, so they roll with each new
+  # lineage, once its database serves.
+  database_client_annotations = { "a-novel.io/database-lineage" = var.backup_server_name }
+  # The import reads each service's database host, across the import peering.
+  database_hosts = local.cluster.database_imports
+}
+
+# Replacing it replaces each database and its backup schedule.
+resource "terraform_data" "database_lineage" {
+  input = var.backup_server_name
 }
 
 # CloudNativePG reads PostgreSQL's major version from an image's tag, and ours carry the service's
@@ -173,6 +185,20 @@ resource "kubernetes_network_policy_v1" "database" {
         }
       }
     }
+
+    # The import reads the service's database host.
+    egress {
+      to {
+        ip_block {
+          cidr = "${local.database_hosts[each.key].host}/32"
+        }
+      }
+
+      ports {
+        port     = tostring(local.database_hosts[each.key].port)
+        protocol = "TCP"
+      }
+    }
   }
 }
 
@@ -246,6 +272,9 @@ resource "kubernetes_manifest" "database" {
         )
       }
 
+      # The import dumps the host's database as the role that owns its tables, then restores it as
+      # `app`. pg_cron guards its jobs with row-level security, which pg_dump turns off, so a dump as
+      # that role leaves them out, and GenAI schedules its purge again (a-novel/service-genai#486).
       bootstrap = {
         initdb = {
           database = "app"
@@ -254,8 +283,25 @@ resource "kubernetes_manifest" "database" {
             [for extension in each.value.extensions : "CREATE EXTENSION IF NOT EXISTS \"${extension}\""],
             contains(each.value.extensions, "pg_cron") ? ["GRANT USAGE ON SCHEMA cron TO app"] : [],
           )
+          import = {
+            type               = "microservice"
+            databases          = [local.database_hosts[each.key].database]
+            source             = { externalCluster = "host" }
+            pgDumpExtraOptions = contains(each.value.extensions, "pg_cron") ? ["--exclude-table-data=cron.*"] : []
+          }
         }
       }
+
+      externalClusters = [{
+        name = "host"
+        connectionParameters = {
+          host   = local.database_hosts[each.key].host
+          port   = tostring(local.database_hosts[each.key].port)
+          user   = local.database_hosts[each.key].user
+          dbname = local.database_hosts[each.key].database
+        }
+        password = { name = kubernetes_manifest.secrets[each.key].manifest.spec.target.name, key = "DATABASE_HOST_PASSWORD" }
+      }]
 
       plugins = [{ name = local.barman_plugin, isWALArchiver = true, parameters = { barmanObjectName = kubernetes_manifest.database_backups[each.key].manifest.metadata.name, serverName = var.backup_server_name } }]
 
@@ -287,6 +333,10 @@ resource "kubernetes_manifest" "database" {
     update = "20m"
   }
 
+  lifecycle {
+    replace_triggered_by = [terraform_data.database_lineage]
+  }
+
   depends_on = [kubernetes_network_policy_v1.database]
 }
 
@@ -307,5 +357,10 @@ resource "kubernetes_manifest" "database_schedule" {
       pluginConfiguration  = { name = local.barman_plugin }
       target               = "prefer-standby"
     }
+  }
+
+  # Each new lineage starts with a base backup, so the imported data has a recovery point at once.
+  lifecycle {
+    replace_triggered_by = [terraform_data.database_lineage]
   }
 }

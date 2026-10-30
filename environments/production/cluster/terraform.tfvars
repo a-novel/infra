@@ -2,7 +2,7 @@ custom_resources = true
 
 # Each new database lineage archives under a new name: Barman refuses an archive another database's
 # WAL already fills, and the buckets' retention keeps that WAL a week.
-backup_server_name = "database-paris-2"
+backup_server_name = "database-rehearsal"
 
 namespaces = [
   "authentication",
@@ -61,12 +61,13 @@ service_budgets = {
   studio         = { cpu = "1", memory = "2Gi", pods = 10 }
 }
 
-# The database passwords come from CloudNativePG's database-app Secrets, so only these come from
-# Secret Manager.
+# The workloads' database passwords come from CloudNativePG's database-app Secrets. These come from
+# Secret Manager, with each database host's password, which the import reads.
 secrets = {
-  alloy     = { GRAFANA_CLOUD_TOKEN = "push-token" }
-  genai     = { OPENAI_API_KEY = "openai-api-key" }
-  json-keys = { APP_MASTER_KEY = "app-master-key" }
+  alloy          = { GRAFANA_CLOUD_TOKEN = "push-token" }
+  authentication = { DATABASE_HOST_PASSWORD = "app-password" }
+  genai          = { OPENAI_API_KEY = "openai-api-key", DATABASE_HOST_PASSWORD = "app-password" }
+  json-keys      = { APP_MASTER_KEY = "app-master-key", DATABASE_HOST_PASSWORD = "app-password" }
 }
 
 addon_secret_versions = {

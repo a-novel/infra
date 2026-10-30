@@ -102,3 +102,9 @@ variable "labels" {
   type        = map(string)
   default     = {}
 }
+
+variable "pod_annotations" {
+  description = "Extra pod annotations. A change rolls the pods, as a new database lineage does for its clients."
+  type        = map(string)
+  default     = {}
+}

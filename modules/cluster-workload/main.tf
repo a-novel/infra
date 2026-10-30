@@ -35,7 +35,8 @@ resource "kubernetes_deployment_v1" "workload" {
 
     template {
       metadata {
-        labels = local.labels
+        labels      = local.labels
+        annotations = var.pod_annotations
       }
 
       spec {
@@ -393,6 +394,11 @@ output "autoscaler" {
 output "pod_labels" {
   description = "The workload's pod labels, which network policies select."
   value       = local.labels
+}
+
+output "pod_annotations" {
+  description = "The workload's pod annotations, as its Deployment sets them. The cluster root's tests read them."
+  value       = one(one(kubernetes_deployment_v1.workload.spec).template).metadata[0].annotations
 }
 
 output "service" {

@@ -17,16 +17,17 @@ module "json_keys_grpc" {
   source = "../../../modules/cluster-workload"
   count  = var.custom_resources ? 1 : 0
 
-  name       = "grpc"
-  namespace  = kubernetes_namespace_v1.service["json-keys"].metadata[0].name
-  image      = local.release_image["json-keys/grpc"]
-  port       = 8080
-  env        = local.json_keys_env
-  secret_env = merge(local.database_secret_env, { APP_MASTER_KEY = { secret = "secrets", key = "APP_MASTER_KEY" } })
-  ca_secret  = kubernetes_manifest.database_server_certificate["json-keys"].manifest.spec.secretName
-  resources  = { cpu = "100m", memory = "512Mi" }
-  replicas   = { min = 2, max = 2 }
-  labels     = local.database_clients
+  name            = "grpc"
+  namespace       = kubernetes_namespace_v1.service["json-keys"].metadata[0].name
+  image           = local.release_image["json-keys/grpc"]
+  port            = 8080
+  env             = local.json_keys_env
+  secret_env      = merge(local.database_secret_env, { APP_MASTER_KEY = { secret = "secrets", key = "APP_MASTER_KEY" } })
+  ca_secret       = kubernetes_manifest.database_server_certificate["json-keys"].manifest.spec.secretName
+  resources       = { cpu = "100m", memory = "512Mi" }
+  replicas        = { min = 2, max = 2 }
+  labels          = local.database_clients
+  pod_annotations = local.database_client_annotations
 
   depends_on = [kubernetes_job_v1.migrations, kubernetes_manifest.secrets]
 }

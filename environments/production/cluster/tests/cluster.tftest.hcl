@@ -38,6 +38,11 @@ override_data {
           genai          = "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-genai-private-production/service-genai/database@sha256:2222222222222222222222222222222222222222222222222222222222222222"
           json-keys      = "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-json-keys-private-production/service-json-keys/database@sha256:3333333333333333333333333333333333333333333333333333333333333333"
         }
+        database_imports = {
+          authentication = { host = "10.20.0.11", port = 5433, database = "agora_authentication", user = "agora_authentication_app" }
+          genai          = { host = "10.20.0.12", port = 5434, database = "agora_genai", user = "agora_genai_app" }
+          json-keys      = { host = "10.20.0.10", port = 5432, database = "agora_json_keys", user = "agora_json_keys_app" }
+        }
         image_registries = {
           "docker.io"       = "europe-west1-docker.pkg.dev/a-novel-production-prod/a-novel-docker-io"
           "ghcr.io"         = "europe-west1-docker.pkg.dev/a-novel-production-prod/a-novel-ghcr-io"
@@ -293,6 +298,41 @@ run "keeps_each_database_available_and_backed_up" {
       ],
     ]]))
     error_message = "Each store must read management's secrets as its namespace's identity, only its service's, each at a pinned version."
+  }
+
+  assert {
+    condition = alltrue([for service, database in kubernetes_manifest.database : (
+      database.manifest.spec.bootstrap.initdb.import.type == "microservice" &&
+      database.manifest.spec.bootstrap.initdb.import.databases == ["agora_${replace(service, "-", "_")}"] &&
+      database.manifest.spec.bootstrap.initdb.import.source.externalCluster == one(database.manifest.spec.externalClusters).name &&
+      database.manifest.spec.bootstrap.initdb.import.pgDumpExtraOptions == (contains(var.databases[service].extensions, "pg_cron") ? ["--exclude-table-data=cron.*"] : []) &&
+      one(database.manifest.spec.externalClusters).connectionParameters == {
+        host   = data.terraform_remote_state.foundation.outputs.cluster.database_imports[service].host
+        port   = tostring(data.terraform_remote_state.foundation.outputs.cluster.database_imports[service].port)
+        user   = "agora_${replace(service, "-", "_")}_app"
+        dbname = "agora_${replace(service, "-", "_")}"
+      } &&
+      one(database.manifest.spec.externalClusters).password == { name = "secrets", key = "DATABASE_HOST_PASSWORD" } &&
+      var.secrets[service].DATABASE_HOST_PASSWORD == "app-password"
+    )])
+    error_message = "Each database must import its own host's database, as the role owning its tables, with the host's password from Secret Manager, and leave pg_cron's jobs out."
+  }
+
+  assert {
+    condition = alltrue([for service, policy in kubernetes_network_policy_v1.database :
+      length([for rule in one(policy.spec).egress : rule if(
+        [for peer in rule.to : one(peer.ip_block).cidr] == ["${data.terraform_remote_state.foundation.outputs.cluster.database_imports[service].host}/32"] &&
+        [for port in rule.ports : port.port] == [tostring(data.terraform_remote_state.foundation.outputs.cluster.database_imports[service].port)]
+      )]) == 1
+    ])
+    error_message = "Each database's pods must reach their own host's port alone, for the import."
+  }
+
+  assert {
+    condition = alltrue([for workload in [module.json_keys_grpc[0], module.authentication_rest[0], module.genai_grpc[0], module.genai_sweep[0]] :
+      workload.pod_annotations["a-novel.io/database-lineage"] == var.backup_server_name
+    ])
+    error_message = "Every database client's pods must roll with a new lineage, once its database serves."
   }
 }
 
