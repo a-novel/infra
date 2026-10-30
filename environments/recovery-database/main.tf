@@ -221,17 +221,24 @@ resource "kubernetes_job_v1" "check" {
             }
           }
 
-          dynamic "env" {
-            for_each = { PGUSER = "username", PGPASSWORD = "password" }
+          env {
+            name = "PGUSER"
 
-            content {
-              name = env.key
+            value_from {
+              secret_key_ref {
+                name = "${kubernetes_manifest.database[each.key].manifest.metadata.name}-app"
+                key  = "username"
+              }
+            }
+          }
 
-              value_from {
-                secret_key_ref {
-                  name = "${kubernetes_manifest.database[each.key].manifest.metadata.name}-app"
-                  key  = env.value
-                }
+          env {
+            name = "PGPASSWORD"
+
+            value_from {
+              secret_key_ref {
+                name = "${kubernetes_manifest.database[each.key].manifest.metadata.name}-app"
+                key  = "password"
               }
             }
           }
