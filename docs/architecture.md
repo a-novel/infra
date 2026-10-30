@@ -131,7 +131,7 @@ Kubernetes resources, reaching the control plane through the DNS endpoint as the
 
 - **Zonal,** so the billing account's free tier covers its management fee. The control plane runs in
   `europe-west9-a`, and the nodes in `a` and `b`.
-- **Nodes:** the `general` pool, three `e2-standard-4` nodes that autoscale to four, with private
+- **Nodes:** the `general` pool, three `e2-highmem-4` nodes that autoscale to four, with private
   addresses only. They run as `a-novel-cluster-nodes`, and upgrades add a node before draining one.
 - **Access:** outside the network, the control plane answers only through its DNS endpoint, which
   IAM and the perimeter guard. Nodes use its internal endpoint. Operators read each service's
