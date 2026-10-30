@@ -79,11 +79,16 @@ run "resolves_each_repository_from_its_class" {
   }
 }
 
-run "lists_every_repository_for_the_asserts" {
+run "gives_the_scripts_their_apps_and_repositories" {
   command = plan
 
   assert {
     condition     = toset(flatten([for owner, organization in output.organizations : [for name in organization.repositories : "${owner}/${name}"]])) == toset(keys(var.repositories))
     error_message = "repository-asserts.mjs holds every repository to its settings, ready or not, so the output lists them all, not only those with a governance environment."
+  }
+
+  assert {
+    condition     = alltrue([for owner, organization in output.organizations : organization.apps.plan.key.secret == "production-github-plan-key-${owner}" && organization.apps.deploy.key.secret == "production-github-deploy-key-${owner}"])
+    error_message = "Pull request plans prune as the Plan App and deploys as the Deploy App, each with its own key, the only one its identity reads."
   }
 }

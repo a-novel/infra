@@ -83,6 +83,13 @@ jobs:
           set -euo pipefail
           tofu -chdir=environments/production/github output -json organizations >"$RUNNER_TEMP/organizations.json"
           node .github/scripts/repository-asserts.mjs "$RUNNER_TEMP/organizations.json"
+      # A warning for each ruleset or deployment pattern the root does not produce.
+      - name: Check what prune would delete
+        if: ${{ !cancelled() && steps.tofu.outcome == 'success' && matrix.root == 'environments/production/github' }}
+        shell: bash
+        env:
+          PLAN: ${{ steps.tofu.outputs.plan }}
+        run: node .github/scripts/prune.mjs "$PLAN" deploy check
 
   health:
     if: github.event_name == 'workflow_dispatch' || github.event.schedule == '43 */3 * * *'

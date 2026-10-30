@@ -69,10 +69,10 @@ export async function assert(request, repository, apply) {
 /** Asserts every repository's settings, and returns whether one differed. */
 export async function main(organizations, apply) {
   let differed = false;
-  for (const [owner, { project, app, repositories }] of Object.entries(
+  for (const [owner, { project, apps, repositories }] of Object.entries(
     organizations,
   )) {
-    const token = await installationToken(project, app);
+    const token = await installationToken(project, apps.deploy);
     const request = (method, path, body) => github(token, method, path, body);
     for (const name of repositories) {
       const repository = `${owner}/${name}`;
