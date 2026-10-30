@@ -162,6 +162,12 @@ Kubernetes resources, reaching the control plane through the DNS endpoint as the
   global load balancer, which redirects plain HTTP to HTTPS. Foundation holds its `studio` address,
   a TLS 1.2 policy, and a Certificate Manager certificate the domain's DNS authorizes before any
   traffic moves. Only the load balancer's ranges reach Studio's pods.
+- **Scaling:** an autoscaler absorbs bursts only. It adds or removes one pod a minute at most, and
+  removes one only after five minutes below its targets. A workload's maximum moves by pull request,
+  which the `Workload autoscaler at its maximum` alert prompts. GenAI's server scales on CPU and on
+  its calls in flight, at 60% of `GRPC_MAX_CONCURRENT_CALLS` per pod: GKE reads that gauge from
+  each pod's metrics port through an `AutoscalingMetric`. Its maximum of three pods times that cap
+  bounds the calls it runs at once, and so its OpenAI spend.
 - **Jobs:** each new migrations image runs once as a Job before its server rolls. CronJobs run
   JSON Keys' key rotation hourly at :10 and Authentication's refresh token purge daily at 03:40
   UTC, one run at a time, never retried. The suspended `maintenance` CronJob holds the template of
