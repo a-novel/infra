@@ -68,7 +68,7 @@ run "warns_before_resources_run_out" {
 
   assert {
     condition = (
-      length(grafana_rule_group.alerts["capacity"].rule) == 5 + length(local.databases) &&
+      length(grafana_rule_group.alerts["capacity"].rule) == 6 + length(local.databases) &&
       alltrue([for name, database in local.databases : anytrue([for rule in grafana_rule_group.alerts["capacity"].rule :
         strcontains(jsondecode(rule.data[0].model).expr, "namespace=\"${name}\"") &&
         endswith(jsondecode(rule.data[0].model).expr, "> ${database.max_connections * var.thresholds.database_connections}")

@@ -227,6 +227,13 @@ locals {
       summary = "{{ $labels.namespace }}/{{ $labels.pod }} has waited 10 minutes for a node or its image."
       expr    = "max by (namespace, pod) (kube_pod_status_phase{phase=\"Pending\"}) == 1"
     },
+    # Each service runs inside the cluster root's service_budgets; past it, new pods are refused.
+    {
+      title   = "Service above ${format("%.0f", var.thresholds.service_budget * 100)}% of its budget"
+      for     = "10m"
+      summary = "The {{ $labels.namespace }} service uses {{ humanizePercentage $values.query.Value }} of its {{ $labels.resource }} budget."
+      expr    = "max by (namespace, resource) (kube_resourcequota{type=\"used\"}) / max by (namespace, resource) (kube_resourcequota{type=\"hard\"} > 0) > ${var.thresholds.service_budget}"
+    },
     {
       title   = "Workload autoscaler at its maximum"
       for     = "15m"
