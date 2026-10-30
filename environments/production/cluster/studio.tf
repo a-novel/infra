@@ -35,8 +35,8 @@ module "studio_web" {
   replicas         = { min = 1, max = 2 }
 }
 
-# The load balancer reaches Studio, which calls Authentication's API. The downtime document's host
-# arrives with a-novel/infra#1200.
+# The load balancer reaches Studio, which calls Authentication's API and reads the planned downtime
+# document from GitHub (egress.tf).
 resource "kubernetes_network_policy_v1" "studio_web" {
   metadata {
     name      = "web"

@@ -51,6 +51,7 @@ own identities, image repositories, network tags and database hosts.
   | `api.openai.com:443`                               | `agora-genai-private`, `agora-genai-sweep`                                                                                                                       |
   | Google's service ranges on 587, for the SMTP relay | `agora-authentication-api`, `agora-authentication-maintain`                                                                                                      |
   | Sentry's ingest host on 443, `sentry_ingest_host`  | `agora-authentication-api`, `agora-authentication-maintain`, `agora-json-keys-private`, `agora-json-keys-rotatekeys`, `agora-genai-private`, `agora-genai-sweep` |
+  | `raw.githubusercontent.com:443`                    | None: only the cluster's nodes, for Studio's planned downtime document                                                                                           |
 
   The firewall resolves a host name through the VPC's Cloud DNS and matches the addresses it
   returns, which works only when every client gets the same answer. `api.openai.com` gives everyone
@@ -136,7 +137,9 @@ Kubernetes resources, reaching the control plane through the DNS endpoint as the
   each pod its own identity, never the node's. Every namespace the cluster root manages enforces
   Pod Security's `restricted` level and two admission policies: images only from our Artifact
   Registry, pinned by digest, and no `LoadBalancer` Service. The services' namespaces deny all
-  traffic but DNS until a workload's own policy opens a path. After each apply, the deploy sends
+  traffic but DNS until a workload's own policy opens a path. FQDN network policies give each
+  workload its own internet hosts, matched on its own lookups: OpenAI for GenAI, the mail relay
+  for Authentication, GitHub's raw host for Studio. After each apply, the deploy sends
   dry-run requests that admission must refuse, and one compliant pod it must admit.
 - **Images:** the add-ons pull quay.io and ghcr.io images through the Artifact Registry pull-through
   caches `a-novel-quay-io` and `a-novel-ghcr-io`, which only the nodes read. The cluster root pins

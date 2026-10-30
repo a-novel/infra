@@ -73,7 +73,7 @@ module "genai_sweep" {
 }
 
 # Only GenAI's smoke check calls the server, which reaches the issuer's keys through Google's
-# restricted API addresses. Nothing calls the sweep, so the namespace's default policy covers it.
+# restricted API addresses and OpenAI (egress.tf). Nothing calls the sweep, which reaches OpenAI alone.
 resource "kubernetes_network_policy_v1" "genai_grpc" {
   metadata {
     name      = "grpc"

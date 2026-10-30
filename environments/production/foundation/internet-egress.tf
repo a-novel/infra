@@ -49,6 +49,16 @@ locals {
         "agora-genai-sweep@${var.workload_project_id}.iam.gserviceaccount.com",
       ]
     }
+    github-raw = {
+      priority = 1030
+      # Studio's planned downtime document. GitHub serves it from four anycast addresses that every
+      # client resolves alike.
+      hosts          = ["raw.githubusercontent.com"]
+      address_groups = []
+      port           = "443"
+      # The cluster's Studio alone: Cloud Run's leaves through its own project.
+      service_accounts = []
+    }
   }
 }
 
