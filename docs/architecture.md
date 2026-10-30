@@ -300,6 +300,26 @@ token exchange.
 All state lives in `a-novel-management-prod-232403541574-tofu-state`, one object per root, as
 [State](runbooks/state.md) details.
 
+## Repository config
+
+The GitHub root, `environments/production/github`, holds every repository of both organizations
+and the config their code does not: settings, team access, labels, Pages and the Dependabot
+toggles. Each repository takes its class's settings from `main.tf`, then its own overrides from
+`terraform.tfvars`, field by field. A new repository starts from its class's template,
+`service-template` or `platform-template`, or empty. Removing one archives it. Rulesets,
+environments and secret access stay with `a-novel repo update` until a-novel/.github#534 moves them
+here.
+
+- **Each organization has two GitHub Apps.** Pull requests plan with the read-only Plan App, and
+  deploys apply with the Deploy App, as [GitHub root keys](runbooks/secrets.md#github-root-keys)
+  describes.
+- **Pull requests plan without refreshing.** GitHub hides bypass lists, merge settings and security
+  settings from the Plan App, so a pull request plans against what the last deploy applied. Deploys
+  refresh with the Deploy App, which sees them.
+- **Team access is authoritative; labels are not.** A team or person granted by hand loses access at
+  the next apply. Only the managed labels are enforced: the Epic, gate and Dependabot labels stay.
+- **It applies only when it changes,** in `deploy.yaml`'s own `github` job, which no release waits on.
+
 ## Monitoring
 
 - **Alerts** email an operations channel: foundation's, or the service runtime's own. They cover
