@@ -292,6 +292,16 @@ run "keeps_the_cluster_private" {
     )
     error_message = "Studio's cluster release must sit in the workload project, which admission requires, with immutable tags the nodes only read."
   }
+
+  assert {
+    condition = (
+      google_artifact_registry_repository.narrative_engine.project == google_project.workload.project_id &&
+      one(google_artifact_registry_repository.narrative_engine.docker_config).immutable_tags &&
+      google_artifact_registry_repository_iam_member.cluster_narrative_engine.role == "roles/artifactregistry.reader" &&
+      google_artifact_registry_repository_iam_member.cluster_narrative_engine.member == google_service_account.runtime["cluster_nodes"].member
+    )
+    error_message = "narrative-engine's cluster release must sit in the workload project, which admission requires, with immutable tags the nodes only read."
+  }
 }
 
 run "grants_no_basic_roles" {
