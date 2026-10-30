@@ -97,7 +97,7 @@ DRILL_JSON="$(jq -nc --arg project "$DRILL" --arg service "$SERVICE" --arg diges
     restore_image: ("europe-west1-docker.pkg.dev/" + $project + "/agora-tooling/native-restore@" + $digest),
     disk_gib: 20, system_id: $system_id, set: $set, verify_sql: true
   }')"
-gh workflow run recovery.yaml --repo a-novel/infra -f operation=plan -f drill="$DRILL_JSON"
+gh workflow run recovery.yaml --repo a-novel/infra -f root=host -f operation=plan -f drill="$DRILL_JSON"
 ```
 
 Read the plan in the run's log:
@@ -111,7 +111,7 @@ gh run view "$RUN" --repo a-novel/infra --log
 Once it shows only the drill host and its network, apply it:
 
 ```bash
-gh workflow run recovery.yaml --repo a-novel/infra -f operation=apply -f drill="$DRILL_JSON"
+gh workflow run recovery.yaml --repo a-novel/infra -f root=host -f operation=apply -f drill="$DRILL_JSON"
 ```
 
 The host is created **stopped**, with no external IP and no route to production.
@@ -173,13 +173,17 @@ gcloud organizations remove-iam-policy-binding 1031663934757 --role=roles/resour
 
 ## Cluster databases
 
-The drill restores one service's database into a one-node cluster in the drill project. The cluster
-reaches nothing but Google's APIs, pulls every image through its own caches, and runs the operator
-production runs. Only the restored database reads the service's Barman bucket, and nothing writes
-it. A cluster costs about $0.25 an hour while it exists.
+A drill restores each service's cluster database from its Barman bucket, to a point in time, into a
+throwaway cluster in the drill project. One `recovery.yaml` run creates the cluster, restores and
+checks the databases, then destroys the cluster, even when the drill fails or is cancelled. The
+billing account's free tier already covers production's cluster, so the drill's cluster pays the
+full management fee. With its node, that comes to about USD 0.40 an hour, billed only while the
+run lasts, under an hour.
 
-A drill needs a base backup older than its target. Without a target, it recovers to the latest WAL
-in the bucket.
+The cluster reaches nothing but Google's APIs, and runs the operator production runs. It pulls every
+image through the drill project's own caches of quay.io and ghcr.io, by the digests production
+pins, so it reads nothing in production's registries. Each restored database reads only its own
+service's Barman bucket, through the `barmanReader` role, and nothing writes the buckets.
 
 ### Create the drill project
 
@@ -194,43 +198,79 @@ gcloud projects add-iam-policy-binding "$DRILL" --role=roles/owner \
   --member="serviceAccount:infra-foundation@a-novel-management-prod.iam.gserviceaccount.com"
 ```
 
-### Restore
+The project serves any number of drills: each one leaves it empty.
 
-`recovery.yaml` takes the same input for both roots. `target_time` is RFC 3339 UTC, or empty for
-the latest:
+### Run the drill
 
-```bash
-SERVICE=json-keys
-DRILL_JSON="$(jq -nc --arg project "$DRILL" --arg service "$SERVICE" --arg target_time "2026-11-02T12:00:00Z" \
-  '{project: $project, service: $service, target_time: $target_time}')"
-gh workflow run recovery.yaml --repo a-novel/infra -f root=cluster -f operation=plan -f drill="$DRILL_JSON"
-```
-
-Read the plan in the run's log, as in [step 3](#3-create-the-drill-host). It creates the network,
-the caches, the cluster and its node, and one grant on the service's Barman bucket. Apply it, which
-takes about ten minutes, then plan and apply the restored database:
+The input names the drill project. It restores every service's database unless `services` lists
+some, and recovers to the latest WAL unless `target_time` sets an RFC 3339 UTC time:
 
 ```bash
-gh workflow run recovery.yaml --repo a-novel/infra -f root=cluster -f operation=apply -f drill="$DRILL_JSON"
-gh workflow run recovery.yaml --repo a-novel/infra -f root=database -f operation=plan -f drill="$DRILL_JSON"
-gh workflow run recovery.yaml --repo a-novel/infra -f root=database -f operation=apply -f drill="$DRILL_JSON"
+DRILL_JSON="$(jq -nc --arg project "$DRILL" '{project: $project}')"
+gh workflow run recovery.yaml --repo a-novel/infra -f root=cluster -f operation=drill -f drill="$DRILL_JSON"
 ```
 
-The database apply passes once the database has recovered to its target and serves. Inspect it:
+A target needs a base backup older than it, and a commit after it in each database's WAL:
+PostgreSQL fails a recovery that ends before its target. A point-in-time drill therefore restores
+the databases that wrote after the target, such as GenAI, whose pg_cron jobs write every few
+seconds:
+
+```bash
+DRILL_JSON="$(jq -nc --arg project "$DRILL" --arg target_time "2026-11-02T12:00:00Z" \
+  '{project: $project, services: ["genai"], target_time: $target_time}')"
+gh workflow run recovery.yaml --repo a-novel/infra -f root=cluster -f operation=drill -f drill="$DRILL_JSON"
+```
+
+The drill passes when its `run` job succeeds: each database recovered, serves and passed its
+check. Each check connects as the database's owner, and fails at the first of these that does not
+hold:
+
+- every extension production creates came back;
+- the migrations history came back;
+- every constraint is validated;
+- the owner holds no rights beyond its database;
+- a database that runs pg_cron brought its schedules back, active;
+- every row of every table reads, its stored values included.
+
+The `Report the databases` step prints, for each service, where its recovery stopped, its check's
+row counts and latest migration, and whatever kept the database from serving. Follow the run:
+
+```bash
+gh run list --repo a-novel/infra --workflow recovery.yaml --limit 1
+RUN="<ID of that run>"
+gh run view "$RUN" --repo a-novel/infra --log
+```
+
+The `teardown` job then destroys the databases, which deletes their volumes, then the cluster, and
+fails if a volume's disk is left. When it fails, re-run it alone:
+
+```bash
+gh run rerun "$RUN" --repo a-novel/infra --failed
+```
+
+A disk it names holds restored production data. Delete it with the command its error prints.
+
+### Inspect a restore
+
+`operation=apply` restores and checks the databases like a drill, and keeps them. The cluster bills
+until `operation=destroy` removes it. Inspect a database:
 
 ```bash
 gcloud container clusters get-credentials recovery --location=europe-west9-a --project="$DRILL" --dns-endpoint
-kubectl exec --namespace="$SERVICE" drill-1 --container=postgres -- psql --dbname=app --command='\dt'
+kubectl exec --namespace=json-keys drill-1 --container=postgres -- psql --dbname=app --command='\dt'
+```
+
+Then destroy it:
+
+```bash
+gh workflow run recovery.yaml --repo a-novel/infra -f root=cluster -f operation=destroy -f drill="$DRILL_JSON"
 ```
 
 ### Clean up
 
-Destroy the database, then the cluster, which takes back the bucket grant. Then delete the project
-and both states:
+Once the drills are done, delete the project and both states:
 
 ```bash
-gh workflow run recovery.yaml --repo a-novel/infra -f root=database -f operation=destroy -f drill="$DRILL_JSON"
-gh workflow run recovery.yaml --repo a-novel/infra -f root=cluster -f operation=destroy -f drill="$DRILL_JSON"
 gcloud projects delete "$DRILL"
 gcloud storage rm -r "gs://a-novel-management-prod-232403541574-tofu-state/recovery-database/$DRILL/" \
   "gs://a-novel-management-prod-232403541574-tofu-state/recovery-cluster/$DRILL/"

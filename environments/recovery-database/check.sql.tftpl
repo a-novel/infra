@@ -1,0 +1,37 @@
+-- Fails unless the restored database holds what production keeps. psql stops at the first failed
+-- assertion, which names what differs.
+DO $$
+BEGIN
+  ASSERT (SELECT array_agg(extname::text) FROM pg_extension) @> '{${join(",", extensions)}}'::text[],
+    'an extension production creates is missing';
+  ASSERT EXISTS (SELECT FROM public.bun_migrations), 'the migrations history is empty';
+  ASSERT NOT EXISTS (
+    SELECT FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
+    WHERE n.nspname = 'public' AND NOT c.convalidated
+  ), 'a constraint is not validated';
+  ASSERT NOT EXISTS (
+    SELECT FROM pg_roles WHERE rolname = current_user
+      AND (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls)
+  ), 'the owner holds rights beyond its database';
+%{ if contains(extensions, "pg_cron") ~}
+  -- The retention purge runs only while its schedules come back with the data.
+  ASSERT EXISTS (SELECT FROM cron.job) AND NOT EXISTS (SELECT FROM cron.job WHERE NOT active),
+    'a pg_cron schedule is missing or inactive';
+%{ endif ~}
+END
+$$;
+
+-- Reading each row as text reads every page and detoasts every value, so damaged data fails here.
+DO $$
+DECLARE
+  item record;
+  total bigint;
+BEGIN
+  FOR item IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename LOOP
+    EXECUTE format('SELECT count(t::text) FROM public.%I AS t', item.tablename) INTO total;
+    RAISE NOTICE '% rows in %', total, item.tablename;
+  END LOOP;
+END
+$$;
+
+SELECT name AS latest_migration FROM public.bun_migrations ORDER BY id DESC LIMIT 1;

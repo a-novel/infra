@@ -1,21 +1,22 @@
 name: recovery
 
-# Plans, applies or destroys one root of a disaster-recovery drill in a
-# disposable project: a database host's, or a cluster database's cluster and
-# restored database. The drill itself follows docs/runbooks/recovery.md.
+# Runs a disaster-recovery drill in a disposable project, as docs/runbooks/recovery.md describes.
+# A cluster drill restores cluster databases from Barman into a throwaway cluster, checks them,
+# then destroys the cluster whatever the outcome. The host drill's root holds a database host's
+# restore, which runs on the host.
 on:
   workflow_dispatch:
     inputs:
       root:
-        description: The drill host, or a cluster drill's cluster or restored database.
+        description: The cluster drill, or the database host drill.
         required: true
         type: choice
-        options: [host, cluster, database]
+        options: [cluster, host]
       operation:
-        description: Plan, apply or destroy the root.
+        description: Run the whole cluster drill, or plan, apply or destroy the root.
         required: true
         type: choice
-        options: [plan, apply, destroy]
+        options: [drill, plan, apply, destroy]
       drill:
         description: JSON value of the root's `recovery` variable.
         required: true
@@ -33,11 +34,11 @@ env:
   TF_IN_AUTOMATION: "true"
 
 jobs:
-  drill:
-    if: github.ref == 'refs/heads/master'
+  run:
+    if: github.ref == 'refs/heads/master' && inputs.operation != 'destroy'
     runs-on: ubuntu-24.04
-    # A cluster takes about ten minutes, and a restore waits up to thirty.
-    timeout-minutes: 45
+    # A cluster takes about ten minutes, and the restores wait up to thirty.
+    timeout-minutes: 60
     environment: production
     permissions:
       contents: read
@@ -62,7 +63,7 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
 
-      - name: Run the drill operation
+      - name: Run the operation
         shell: bash
         env:
           DRILL: ${{ inputs.drill }}
@@ -70,15 +71,145 @@ jobs:
           ROOT: ${{ inputs.root }}
         run: |
           set -euo pipefail
-          case "$ROOT" in
-            host) dir=environments/recovery ;;
-            *) dir="environments/recovery-$ROOT" ;;
-          esac
           vars="$RUNNER_TEMP/drill.tfvars.json"
           jq -n --argjson recovery "$DRILL" '{recovery: $recovery}' >"$vars"
-          tofu -chdir="$dir" init -input=false -lockfile=readonly -no-color -var-file="$vars"
-          case "$OPERATION" in
-            plan) tofu -chdir="$dir" plan -input=false -no-color -var-file="$vars" ;;
-            apply) tofu -chdir="$dir" apply -input=false -no-color -auto-approve -var-file="$vars" ;;
-            destroy) tofu -chdir="$dir" destroy -input=false -no-color -auto-approve -var-file="$vars" ;;
+          in_root() {
+            local dir="environments/$1"
+            shift
+            tofu -chdir="$dir" init -input=false -lockfile=readonly -no-color -var-file="$vars"
+            tofu -chdir="$dir" "$@" -input=false -no-color -var-file="$vars"
+          }
+          case "$ROOT:$OPERATION" in
+            host:drill)
+              echo "::error::A host drill restores on its host: plan and apply its root, then follow the runbook."
+              exit 1
+              ;;
+            host:plan) in_root recovery plan ;;
+            host:apply) in_root recovery apply -auto-approve ;;
+            # The databases plan only once the cluster they install into exists.
+            cluster:plan) in_root recovery-cluster plan ;;
+            cluster:*)
+              in_root recovery-cluster apply -auto-approve
+              # A custom resource plans only once its kind exists, so the operators install first.
+              in_root recovery-database apply -auto-approve -target=module.database_operator
+              in_root recovery-database apply -auto-approve
+              ;;
           esac
+
+      - id: google
+        if: ${{ !cancelled() && inputs.root == 'cluster' && inputs.operation != 'plan' }}
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
+          token_format: access_token
+
+      # Each database's recovery job logs where its recovery stopped, and its check what came back.
+      # A database that never serves fails the apply on its wait, which says nothing of why. Its
+      # conditions, stuck pods and warnings usually do, and the teardown deletes them with the
+      # cluster.
+      - name: Report the databases
+        if: ${{ !cancelled() && inputs.root == 'cluster' && inputs.operation != 'plan' }}
+        shell: bash
+        env:
+          TOKEN: ${{ steps.google.outputs.access_token }}
+        run: |
+          set -uo pipefail
+          endpoint="$(tofu -chdir=environments/recovery-cluster output -json cluster | jq -er .dns_endpoint)" || exit 0
+          get() { curl -sS -H "Authorization: Bearer $TOKEN" "https://$endpoint$1"; }
+          logs() {
+            for pod in $(get "/api/v1/namespaces/$1/pods?labelSelector=$2" | jq -r '.items[].metadata.name'); do
+              get "/api/v1/namespaces/$1/pods/$pod/log?container=$3"
+            done
+          }
+          for namespace in $(get /apis/postgresql.cnpg.io/v1/clusters | jq -r '.items[].metadata.namespace'); do
+            echo "::group::$namespace"
+            get "/apis/postgresql.cnpg.io/v1/namespaces/$namespace/clusters/drill" |
+              jq -r '.status | "phase: \(.phase)", (.conditions[]? | select(.status != "True") | "\(.type): \(.reason): \(.message)")'
+            logs "$namespace" cnpg.io/jobRole%3Dfull-recovery full-recovery |
+              jq -Rr 'fromjson? | objects | .record.message // empty | select(test("^(recovery stopping|last completed transaction)"))'
+            logs "$namespace" batch.kubernetes.io/job-name%3Dcheck check
+            get "/api/v1/namespaces/$namespace/pods" |
+              jq -r '.items[] | .metadata.name as $pod | (.status.conditions[]? | select(.status != "True" and .message) | "\($pod) \(.type): \(.message)"), ((.status.initContainerStatuses // []) + (.status.containerStatuses // []) | .[] | select(.state.waiting) | "\($pod)/\(.name): \(.state.waiting.reason): \(.state.waiting.message // "")")'
+            get "/api/v1/namespaces/$namespace/events" |
+              jq -r '[.items[] | select(.type == "Warning")] | sort_by(.lastTimestamp // .eventTime) | .[-10:][] | "\(.involvedObject.kind)/\(.involvedObject.name) \(.reason): \(.message)"'
+            echo "::endgroup::"
+          done
+
+  # A drill's cluster goes even when the drill failed or was cancelled, so it bills only while the
+  # drill runs. Re-run this job alone when it fails.
+  teardown:
+    needs: run
+    if: >-
+      always() && github.ref == 'refs/heads/master' &&
+      (inputs.operation == 'destroy' || (inputs.operation == 'drill' && inputs.root == 'cluster'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: a-novel-kit/workflows/generic-actions/require-role@v1.81.1
+        with:
+          roles: admin
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version_file: .opentofu-version
+          tofu_wrapper: false
+
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
+
+      - name: Destroy the drill
+        shell: bash
+        env:
+          DRILL: ${{ inputs.drill }}
+          ROOT: ${{ inputs.root }}
+        run: |
+          set -euo pipefail
+          vars="$RUNNER_TEMP/drill.tfvars.json"
+          jq -n --argjson recovery "$DRILL" '{recovery: $recovery}' >"$vars"
+          case "$ROOT" in
+            host) roots=(recovery) ;;
+            # The databases go first: deleting them deletes their volumes' disks, which outlive a
+            # deleted cluster.
+            cluster) roots=(recovery-database recovery-cluster) ;;
+          esac
+          for root in "${roots[@]}"; do
+            dir="environments/$root"
+            tofu -chdir="$dir" init -input=false -lockfile=readonly -no-color -var-file="$vars"
+            # A root that never applied holds nothing, and reads outputs its drill may lack.
+            resources="$(tofu -chdir="$dir" state list)"
+            if [ -n "$resources" ]; then
+              tofu -chdir="$dir" destroy -input=false -no-color -auto-approve -var-file="$vars"
+            fi
+          done
+
+      # A volume's disk holds restored production data, and keeps billing.
+      - name: Check no volume is left
+        if: inputs.root == 'cluster'
+        shell: bash
+        env:
+          DRILL: ${{ inputs.drill }}
+        run: |
+          set -euo pipefail
+          project="$(jq -r .project <<<"$DRILL")"
+          if [[ ! "$project" =~ ^a-novel-recovery-[a-z0-9-]{1,13}[a-z0-9]$ ]]; then
+            echo "::error::$project is not a drill project."
+            exit 1
+          fi
+          disks="$(gcloud compute disks list --project="$project" --filter='name ~ ^pvc-' --format='value(name,zone.basename())')"
+          if [ -n "$disks" ]; then
+            while read -r name zone; do
+              echo "::error::The drill left $name. Delete it: gcloud compute disks delete $name --project=$project --zone=$zone"
+            done <<<"$disks"
+            exit 1
+          fi
