@@ -367,3 +367,9 @@ variable "compute_cpu_quota" {
   }
 }
 
+
+variable "leftover_disks" {
+  description = "Disks a deleted cluster left behind, by name, with their zone, which this root imports to delete."
+  type        = map(string)
+  default     = {}
+}
