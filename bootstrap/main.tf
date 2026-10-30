@@ -88,6 +88,19 @@ locals {
       workflows          = { "drift.yaml" = null }
       pull_requests      = null
     }
+    # The GitHub root applies from its own environment, apart from Google Cloud's production. It
+    # reads its Deploy App keys, the governance secrets and its own state, and nothing in Google
+    # Cloud.
+    github = {
+      service_account_id = "infra-github"
+      display_name       = "Infra GitHub root deployment"
+      provider_id        = "github-github"
+      workflows = {
+        "deploy.yaml" = "github"
+        "sweep.yaml"  = "github"
+      }
+      pull_requests = null
+    }
     # The GitHub root's drift check reads the Deploy App keys, so no pull request may mint it.
     drift = {
       service_account_id = "infra-drift"

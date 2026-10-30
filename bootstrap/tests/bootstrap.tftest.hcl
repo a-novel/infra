@@ -86,9 +86,15 @@ run "protects_state_and_backups" {
       toset(["production-github-plan-key-a-novel", "production-github-plan-key-a-novel-kit"]) &&
       toset([for key, grant in google_secret_manager_secret_iam_member.github_root : grant.secret_id if startswith(key, "drift:")]) ==
       toset(["production-github-deploy-key-a-novel", "production-github-deploy-key-a-novel-kit"]) &&
-      alltrue([for key, grant in google_secret_manager_secret_iam_member.github_root : startswith(key, "foundation:") if strcontains(grant.secret_id, "-governance-")])
+      alltrue([for key, grant in google_secret_manager_secret_iam_member.github_root : startswith(key, "github:") if strcontains(grant.secret_id, "-governance-")]) &&
+      !anytrue([for key in keys(google_secret_manager_secret_iam_member.github_root) : startswith(key, "foundation:")])
     )
-    error_message = "The plan identity runs pull-request code, so it may read only the Plan App keys; the drift identity reads only the Deploy App keys, and only deploys read the governance secrets."
+    error_message = "The plan identity runs pull-request code, so it may read only the Plan App keys; the drift identity reads only the Deploy App keys; only the GitHub root's deploys read the governance secrets, and Google Cloud's deploy identity reads none of them."
+  }
+
+  assert {
+    condition     = endswith(google_storage_bucket_iam_member.github_state.condition[0].expression, "/objects/github/\")")
+    error_message = "The GitHub root's deploys may write their own state alone."
   }
 }
 
@@ -137,6 +143,11 @@ run "trusts_only_reviewed_workflows" {
       google_iam_workload_identity_pool_provider.github["health"].attribute_condition == join("", [
         "assertion.repository_owner_id == '131281268' && assertion.repository_id == '1344262359' && (",
         "(assertion.ref == 'refs/heads/master' && assertion.workflow_ref == 'a-novel/infra/.github/workflows/drift.yaml@refs/heads/master'))",
+      ]) &&
+      google_iam_workload_identity_pool_provider.github["github"].attribute_condition == join("", [
+        "assertion.repository_owner_id == '131281268' && assertion.repository_id == '1344262359' && (",
+        "(assertion.ref == 'refs/heads/master' && assertion.workflow_ref == 'a-novel/infra/.github/workflows/deploy.yaml@refs/heads/master' && assertion.environment == 'github') || ",
+        "(assertion.ref == 'refs/heads/master' && assertion.workflow_ref == 'a-novel/infra/.github/workflows/sweep.yaml@refs/heads/master' && assertion.environment == 'github'))",
       ]) &&
       google_iam_workload_identity_pool_provider.github["drift"].attribute_condition == join("", [
         "assertion.repository_owner_id == '131281268' && assertion.repository_id == '1344262359' && (",

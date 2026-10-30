@@ -89,6 +89,7 @@ No service-account key exists anywhere. The trust conditions live in
 | `infra-foundation` | `deploy.yaml`, `roll-database.yaml` and `recovery.yaml`, on `master`, in the `production` environment | change everything                                   |
 | `infra-downtime`   | `downtime.yaml`, on `master`                                                                          | start and cancel the planned downtime announcements |
 | `infra-health`     | the scheduled health check in `drift.yaml`, on `master`                                               | call Authentication's REST API, find Studio's URL   |
+| `infra-github`     | the GitHub root's `deploy.yaml` job and `sweep.yaml`, on `master`, in the `github` environment        | apply the GitHub root, with no Google Cloud role    |
 | `infra-drift`      | the GitHub root's drift check in `drift.yaml`, on `master`                                            | read the GitHub Deploy App keys and the state       |
 
 GitHub issues no OIDC token to pull requests from forks, so outside contributors get no cloud

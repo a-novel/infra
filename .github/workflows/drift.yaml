@@ -1,8 +1,9 @@
 name: drift
 
+# GitHub starts scheduled workflows hours late, so the dispatch clock starts the daily drift check on
+# time (bootstrap/github-dispatch.tf). A dispatch also runs the health check.
 on:
   schedule:
-    - cron: "17 5 * * *"
     # Every three hours: Authentication's health, and a reminder to clear a planned
     # downtime past its announced end.
     - cron: "43 */3 * * *"
@@ -20,7 +21,7 @@ env:
 jobs:
   # Every root on disk, so a new service root is drift-checked with no edit here.
   roots:
-    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '17 5 * * *'
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -35,9 +36,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # The GitHub root waits for the drift identity, which sees what its Plan App cannot
-          # (a-novel/infra#1240).
-          echo "roots=$(find environments/production -mindepth 1 -maxdepth 1 -type d ! -name github | sort | jq -Rnc '["bootstrap"] + [inputs]')" >>"$GITHUB_OUTPUT"
+          echo "roots=$(find environments/production -mindepth 1 -maxdepth 1 -type d | sort | jq -Rnc '["bootstrap"] + [inputs]')" >>"$GITHUB_OUTPUT"
 
   drift:
     needs: roots
@@ -55,19 +54,25 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # GitHub shows bypass lists, merge settings and security settings only to an App that can
+      # change them, so the GitHub root plans with its Deploy App, through an identity only this
+      # workflow on master mints. It never applies.
       - id: tofu
         uses: $/.github/actions/tofu
         with:
           root: ${{ matrix.root }}
           allow_deletion: "true"
-          workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
+          writer: ${{ matrix.root == 'environments/production/github' }}
+          workload_identity_provider: ${{ matrix.root == 'environments/production/github' && vars.GCP_DRIFT_WORKLOAD_IDENTITY_PROVIDER || vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ matrix.root == 'environments/production/github' && vars.GCP_DRIFT_SERVICE_ACCOUNT || vars.GCP_PLAN_SERVICE_ACCOUNT }}
           github_token: ${{ github.token }}
+      # The warning reaches the daily CI warnings digest on Discord.
       - if: steps.tofu.outputs.changes == 'true'
         shell: bash
         env:
           ROOT: ${{ matrix.root }}
         run: |
+          echo "::warning::$ROOT differs from master; see the drift run's job summary for the plan."
           echo "::error::$ROOT differs from master; see the job summary for the plan."
           exit 1
 

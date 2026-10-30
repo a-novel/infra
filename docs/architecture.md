@@ -280,18 +280,18 @@ Secret containers live in the management project. Humans add their values with `
 [Secrets](runbooks/secrets.md) describes, so OpenTofu never sees them. Workloads read the numeric
 version their root's `terraform.tfvars` pins.
 
-| Secret                                                     | Read by                                                                              |
-| ---------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `production-json-keys-app-master-key`                      | JSON Keys runtime, rotation job                                                      |
-| `production-authentication-waitlist-secret`                | Authentication API, when the waitlist is on                                          |
-| `production-genai-openai-api-key`                          | GenAI runtime and sweep                                                              |
-| `production-<service>-app-password`                        | Database host and database workloads                                                 |
-| `production-<service>-pgbackrest-{ca,database,repository}` | Database host and repository VM (TLS)                                                |
-| `production-downtime-discord-webhook`                      | `downtime-announcer`, when it posts a planned downtime step                          |
-| `production-github-dispatch-{a-novel,a-novel-kit}`         | `github-dispatcher`, when it dispatches that org's workflows                         |
-| `production-github-plan-key-<org>`                         | `infra-plan`, when it plans the GitHub root                                          |
-| `production-github-deploy-key-<org>`                       | `infra-foundation` and `infra-drift`, when they apply or drift-check the GitHub root |
-| `production-github-governance-<org>-<name>`                | `infra-foundation`, when it copies them into the governance environments             |
+| Secret                                                     | Read by                                                                          |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `production-json-keys-app-master-key`                      | JSON Keys runtime, rotation job                                                  |
+| `production-authentication-waitlist-secret`                | Authentication API, when the waitlist is on                                      |
+| `production-genai-openai-api-key`                          | GenAI runtime and sweep                                                          |
+| `production-<service>-app-password`                        | Database host and database workloads                                             |
+| `production-<service>-pgbackrest-{ca,database,repository}` | Database host and repository VM (TLS)                                            |
+| `production-downtime-discord-webhook`                      | `downtime-announcer`, when it posts a planned downtime step                      |
+| `production-github-dispatch-{a-novel,a-novel-kit}`         | `github-dispatcher`, when it dispatches that org's workflows                     |
+| `production-github-plan-key-<org>`                         | `infra-plan`, when it plans the GitHub root                                      |
+| `production-github-deploy-key-<org>`                       | `infra-github` and `infra-drift`, when they apply or drift-check the GitHub root |
+| `production-github-governance-<org>-<name>`                | `infra-github`, when it copies them into the governance environments             |
 
 ## Identities
 
@@ -300,6 +300,7 @@ version their root's `terraform.tfvars` pins.
 | `infra-plan`, `infra-foundation` (management)                                                                | CI: read-only plans and checks, and deployments. In the cluster, `infra-plan` reads every object but Secrets, and `infra-foundation` administers it.                                                                                                                    |
 | `infra-downtime` (management)                                                                                | CI: starts and cancels the planned downtime announcements.                                                                                                                                                                                                              |
 | `infra-health` (management)                                                                                  | CI: the scheduled health check, which calls Authentication's REST API and Studio.                                                                                                                                                                                       |
+| `infra-github` (management)                                                                                  | CI: the GitHub root's deploys and sweep, from the `github` environment. It reads the Deploy App keys, the governance secrets and its own state, and holds no Google Cloud role.                                                                                         |
 | `infra-drift` (management)                                                                                   | CI: the GitHub root's drift check, which reads the Deploy App keys.                                                                                                                                                                                                     |
 | `agora-json-keys-private`, `agora-authentication-private`, `agora-authentication-api`, `agora-genai-private` | Cloud Run runtimes, one per service and zone: the gRPC servers, Authentication's migrations and REST API.                                                                                                                                                               |
 | `agora-<service>-<role>`: `migrations`, `rotatekeys`, `sweep`, `smoke`, `maintain`                           | All the services' other workloads, each with its own account, which reads only the secrets that this workload mounts. The smoke identities may only invoke their gRPC service. Authentication's refresh token purge runs as `maintain`, with the same image and secret. |
@@ -349,7 +350,13 @@ values and copies the governance secrets, so its templates stay frozen.
   refresh with the Deploy App, which sees them.
 - **Team access is authoritative; labels are not.** A team or person granted by hand loses access at
   the next apply. Only the managed labels are enforced: the Epic, gate and Dependabot labels stay.
-- **It applies only when it changes,** in `deploy.yaml`'s own `github` job, which no release waits on.
+- **It applies from its own environment and identity,** `github` and `infra-github`, apart from
+  Google Cloud's production: in `deploy.yaml`'s own `github` job when it changes, which no release
+  waits on, and from `sweep.yaml`.
+- **The sweep follows the code.** The dispatch clock starts `sweep.yaml` every 10 minutes. When a
+  repository's workflows or root `package.json` changed since the last successful sweep, it applies
+  the root, and refuses any deletion, which waits for a pull request with `allow-resource-deletion`.
+  The clock starts the daily drift check too, which plans this root as `infra-drift`.
 
 ## Monitoring
 

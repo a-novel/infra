@@ -33,9 +33,9 @@ locals {
   )
 
   github_root_readers = {
-    plan       = [for owner in local.github_root_owners : "production-github-plan-key-${owner}"]
-    drift      = [for owner in local.github_root_owners : "production-github-deploy-key-${owner}"]
-    foundation = [for secret in keys(local.github_root_secrets) : secret if !startswith(secret, "production-github-plan-key-")]
+    plan   = [for owner in local.github_root_owners : "production-github-plan-key-${owner}"]
+    drift  = [for owner in local.github_root_owners : "production-github-deploy-key-${owner}"]
+    github = [for secret in keys(local.github_root_secrets) : secret if !startswith(secret, "production-github-plan-key-")]
   }
 }
 
@@ -48,6 +48,19 @@ resource "google_secret_manager_secret_iam_member" "github_root" {
   secret_id = google_secret_manager_secret.application[each.value.secret].secret_id
   role      = "roles/secretmanager.secretAccessor"
   member    = google_service_account.automation[each.value.boundary].member
+}
+
+# The GitHub root's deploys write its state and lock under github/ alone. Listing the bucket shows
+# object names, never their content.
+resource "google_storage_bucket_iam_member" "github_state" {
+  bucket = google_storage_bucket.state.name
+  role   = "roles/storage.objectAdmin"
+  member = google_service_account.automation["github"].member
+
+  condition {
+    title      = "github-root-state"
+    expression = "resource.type == \"storage.googleapis.com/Bucket\" || resource.name.startsWith(\"projects/_/buckets/${google_storage_bucket.state.name}/objects/github/\")"
+  }
 }
 
 # State holds no secret values, so the drift identity reads it as the plan identity does, without
