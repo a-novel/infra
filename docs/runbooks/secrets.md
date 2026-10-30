@@ -146,6 +146,34 @@ Grafana as well as disabling its version.
 Grafana's Discord contact point is created by hand in the same stack, so its webhook never reaches
 state.
 
+## GitHub root keys
+
+The GitHub root reads one GitHub App key per organization and CI identity. Core creates each
+organization's Plan App and Deploy App by hand, with the permissions a-novel/.github#535 lists.
+Generate a private key under the App's **Private keys** settings, add the downloaded file as a
+version of its secret, then delete the file:
+
+```bash
+SECRET="production-github-<plan|deploy>-key-<org>"
+KEY_FILE="<path to the downloaded .pem>"
+gcloud secrets versions add "$SECRET" --project=a-novel-management-prod --data-file="$KEY_FILE"
+```
+
+| Secret                               | App                     | Read by                                                       |
+| ------------------------------------ | ----------------------- | ------------------------------------------------------------- |
+| `production-github-plan-key-<org>`   | the Plan App, read-only | `infra-plan`, for pull requests                               |
+| `production-github-deploy-key-<org>` | the Deploy App          | `infra-foundation` for deploys, `infra-drift` for drift plans |
+
+For a leak, delete the key in the App's settings as well as disabling its version.
+
+## Governance secrets
+
+`production-github-governance-<org>-<name>` holds a privileged key that each of the organization's
+repositories receives in its `governance` environment when its workflows name it. The secret's
+`contract` annotation is its name in GitHub: `AGENT_BOT_PRIVATE_KEY`, `DEPENDENCY_BOT_PRIVATE_KEY`
+or `BWS_READ_TOKEN`. Only deploys read them. Copy each value once from the organization's Bitwarden
+project, as in [Rotate a secret](#rotate-a-secret).
+
 ## Alloy push token
 
 Alloy pushes metrics, logs and traces to the production stack with one access policy token. Create

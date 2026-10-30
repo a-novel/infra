@@ -88,6 +88,14 @@ locals {
       workflows          = { "drift.yaml" = null }
       pull_requests      = null
     }
+    # The GitHub root's drift check reads the Deploy App keys, so no pull request may mint it.
+    drift = {
+      service_account_id = "infra-drift"
+      display_name       = "Infra GitHub root drift check"
+      provider_id        = "github-drift"
+      workflows          = { "drift.yaml" = null }
+      pull_requests      = null
+    }
   }
 
   secret_definitions = merge({
@@ -150,7 +158,7 @@ locals {
     }, { for secret, credential in local.pgbackrest_tls : secret => {
       contract = credential.contract
       purpose  = credential.purpose
-  } })
+  } }, local.github_root_secrets)
 
   audited_services = toset([
     # Service Account Credentials inherits IAM's Data Access configuration and
