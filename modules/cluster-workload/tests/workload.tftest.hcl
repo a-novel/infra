@@ -51,6 +51,11 @@ run "runs_unprivileged" {
   }
 
   assert {
+    condition     = one(kubernetes_service_v1.workload.spec).cluster_ip == "None"
+    error_message = "A gRPC workload's Service must be headless, so its callers see every ready pod."
+  }
+
+  assert {
     condition = (
       one(one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).volume).secret).secret_name == "database-server-tls" &&
       [for item in one(one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).volume).secret).items : item.key] == ["ca.crt"] &&
