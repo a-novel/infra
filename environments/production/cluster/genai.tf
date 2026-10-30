@@ -28,8 +28,11 @@ locals {
     POSTGRES_MAX_OPEN_CONNS = "4"
     POSTGRES_MAX_IDLE_CONNS = "4"
     REST_PORT               = "8080"
-    # The sweep runs itself every SWEEP_INTERVAL, a minute by default, instead of waiting for a call.
-    SWEEP_TICKER = "true"
+    # Off, the sweep checks only when called, and nothing on the cluster calls it. Production's sweep
+    # checks every generation until the cutover hands them over and turns this on: the rehearsal's
+    # copy shares production's OpenAI account, so a second sweep would start its pending generations
+    # again and stop calls production tracks (a-novel/infra#1202).
+    SWEEP_TICKER = "false"
   })
 }
 
