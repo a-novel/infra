@@ -1,0 +1,717 @@
+{
+  "description": "Each service's own numbers, one tab per service. The panels that read traces cover the last 24 hours at most.",
+  "cursorSync": "Off",
+  "preload": false,
+  "annotations": [],
+  "variables": [],
+  "elements": {
+    "authentication-sessions": {
+      "kind": "Panel",
+      "spec": {
+        "id": 1,
+        "title": "Sessions issued",
+        "description": "Logins, anonymous sessions and refreshes, each hour.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "tempo",
+                    "version": "v0",
+                    "datasource": { "name": "grafanacloud-traces" },
+                    "spec": {
+                      "queryType": "traceql",
+                      "metricsQueryType": "range",
+                      "step": "1h",
+                      "query": "{ resource.service.name = \"service-authentication\" && name =~ \"core.TokenCreate|core.TokenCreateAnon|core.TokenRefresh\" } | count_over_time() by (name)"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": { "timeFrom": "24h" }
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "",
+          "spec": {
+            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+            "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "custom": { "drawStyle": "bars", "fillOpacity": 70, "stacking": { "mode": "normal" } } }, "overrides": [] }
+          }
+        }
+      }
+    },
+    "authentication-mails": {
+      "kind": "Panel",
+      "spec": {
+        "id": 2,
+        "title": "Mails sent",
+        "description": "Each hour's sends, by kind and status. A mail is sent once, never retried.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "tempo",
+                    "version": "v0",
+                    "datasource": { "name": "grafanacloud-traces" },
+                    "spec": {
+                      "queryType": "traceql",
+                      "metricsQueryType": "range",
+                      "step": "1h",
+                      "query": "{ resource.service.name = \"service-authentication\" && name = \"core.MailDelivery(send)\" } | count_over_time() by (span.mail.kind, status)"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": { "timeFrom": "24h" }
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "",
+          "spec": {
+            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+            "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "custom": { "drawStyle": "bars", "fillOpacity": 70, "stacking": { "mode": "normal" } } }, "overrides": [] }
+          }
+        }
+      }
+    },
+    "authentication-mail-queue": {
+      "kind": "Panel",
+      "spec": {
+        "id": 3,
+        "title": "Mails waiting or refused",
+        "description": "Mails that waited for a free sender, and mails refused because every sender was busy.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "tempo",
+                    "version": "v0",
+                    "datasource": { "name": "grafanacloud-traces" },
+                    "spec": {
+                      "queryType": "traceql",
+                      "metricsQueryType": "range",
+                      "step": "1h",
+                      "query": "{ resource.service.name = \"service-authentication\" && (name = \"core.MailDelivery(wait)\" || (name = \"core.MailDelivery(reserve)\" && status = error)) } | count_over_time() by (name)"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": { "timeFrom": "24h" }
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "",
+          "spec": {
+            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+            "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "custom": { "drawStyle": "bars", "fillOpacity": 70 } }, "overrides": [] }
+          }
+        }
+      }
+    },
+    "authentication-requests": {
+      "kind": "Panel",
+      "spec": {
+        "id": 4,
+        "title": "Requests by operation",
+        "description": "Requests per second, by operation and outcome, without the health probes.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": { "name": "grafanacloud-prom" },
+                    "spec": {
+                      "legendFormat": "{{span_name}} {{a_novel_outcome}}",
+                      "expr": "sum by (span_name, a_novel_outcome) (rate(traces_span_metrics_calls_total{service_name=\"service-authentication\", a_novel_workload=\"api\"}[$__rate_interval]))"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": {}
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "",
+          "spec": {
+            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+            "fieldConfig": { "defaults": { "unit": "reqps", "min": 0 }, "overrides": [] }
+          }
+        }
+      }
+    },
+    "genai-tokens": {
+      "kind": "Panel",
+      "spec": {
+        "id": 5,
+        "title": "Tokens consumed",
+        "description": "Input and output tokens the providers billed each hour.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "tempo",
+                    "version": "v0",
+                    "datasource": { "name": "grafanacloud-traces" },
+                    "spec": {
+                      "queryType": "traceql",
+                      "metricsQueryType": "range",
+                      "step": "1h",
+                      "query": "{ resource.service.name = \"service-genai\" && name = \"dao.PgGenerationUsageInsert\" } | sum_over_time(span.usage.input_tokens)"
+                    }
+                  }
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "B",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "tempo",
+                    "version": "v0",
+                    "datasource": { "name": "grafanacloud-traces" },
+                    "spec": {
+                      "queryType": "traceql",
+                      "metricsQueryType": "range",
+                      "step": "1h",
+                      "query": "{ resource.service.name = \"service-genai\" && name = \"dao.PgGenerationUsageInsert\" } | sum_over_time(span.usage.output_tokens)"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": { "timeFrom": "24h" }
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "",
+          "spec": {
+            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+            "fieldConfig": {
+              "defaults": { "unit": "short", "decimals": 0, "custom": { "drawStyle": "bars", "fillOpacity": 70 } },
+              "overrides": [
+                { "matcher": { "id": "byFrameRefID", "options": "A" }, "properties": [{ "id": "displayName", "value": "input" }] },
+                { "matcher": { "id": "byFrameRefID", "options": "B" }, "properties": [{ "id": "displayName", "value": "output" }] }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "genai-generations": {
+      "kind": "Panel",
+      "spec": {
+        "id": 6,
+        "title": "Generations by status",
+        "description": "Each hour's generations, by the status they reached.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "tempo",
+                    "version": "v0",
+                    "datasource": { "name": "grafanacloud-traces" },
+                    "spec": {
+                      "queryType": "traceql",
+                      "metricsQueryType": "range",
+                      "step": "1h",
+                      "query": "{ resource.service.name = \"service-genai\" && span.generation.status != nil } | count_over_time() by (span.generation.status)"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": { "timeFrom": "24h" }
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "",
+          "spec": {
+            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+            "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "custom": { "drawStyle": "bars", "fillOpacity": 70, "stacking": { "mode": "normal" } } }, "overrides": [] }
+          }
+        }
+      }
+    },
+    "genai-queue": {
+      "kind": "Panel",
+      "spec": {
+        "id": 7,
+        "title": "Generations waiting",
+        "description": "The longest queue of generations waiting for a provider, each hour.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "tempo",
+                    "version": "v0",
+                    "datasource": { "name": "grafanacloud-traces" },
+                    "spec": {
+                      "queryType": "traceql",
+                      "metricsQueryType": "range",
+                      "step": "1h",
+                      "query": "{ resource.service.name = \"service-genai\" && name = \"dao.PgGenerationQueueDepth\" } | max_over_time(span.queue.pending)"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": { "timeFrom": "24h" }
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "",
+          "spec": {
+            "options": { "legend": { "displayMode": "hidden", "placement": "bottom" }, "tooltip": { "mode": "single" } },
+            "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "min": 0 }, "overrides": [] }
+          }
+        }
+      }
+    },
+    "genai-provider": {
+      "kind": "Panel",
+      "spec": {
+        "id": 8,
+        "title": "Provider calls: p95",
+        "description": "How long the calls to the model providers take, at the 95th percentile.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "tempo",
+                    "version": "v0",
+                    "datasource": { "name": "grafanacloud-traces" },
+                    "spec": {
+                      "queryType": "traceql",
+                      "metricsQueryType": "range",
+                      "step": "1h",
+                      "query": "{ resource.service.name = \"service-genai\" && kind = client && span.server.address != nil } | quantile_over_time(duration, .95) by (span.server.address)"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": { "timeFrom": "24h" }
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "",
+          "spec": {
+            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+            "fieldConfig": { "defaults": { "unit": "s", "min": 0 }, "overrides": [] }
+          }
+        }
+      }
+    },
+    "json-keys-requests": {
+      "kind": "Panel",
+      "spec": {
+        "id": 9,
+        "title": "Requests by operation",
+        "description": "Signatures, key lists and status checks per second, by outcome, without the health probes.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": { "name": "grafanacloud-prom" },
+                    "spec": {
+                      "legendFormat": "{{span_name}} {{a_novel_outcome}}",
+                      "expr": "sum by (span_name, a_novel_outcome) (rate(traces_span_metrics_calls_total{service_name=\"service-json-keys\", a_novel_workload=\"api\", span_name!=\"grpc.health.v1.Health/Check\"}[$__rate_interval]))"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": {}
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "",
+          "spec": {
+            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+            "fieldConfig": { "defaults": { "unit": "reqps", "min": 0 }, "overrides": [] }
+          }
+        }
+      }
+    },
+    "json-keys-rotations": {
+      "kind": "Panel",
+      "spec": {
+        "id": 10,
+        "title": "Key rotation runs",
+        "description": "The hourly rotation job's runs, by outcome. It rotates the keys once they are 24 hours old.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": { "name": "grafanacloud-prom" },
+                    "spec": {
+                      "legendFormat": "{{a_novel_outcome}}",
+                      "interval": "1h",
+                      "expr": "sum by (a_novel_outcome) (increase(traces_span_metrics_calls_total{service_name=\"service-json-keys\", a_novel_workload=\"job\"}[$__interval]))"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": {}
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "",
+          "spec": {
+            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+            "fieldConfig": {
+              "defaults": { "unit": "short", "decimals": 0, "custom": { "drawStyle": "bars", "fillOpacity": 70, "stacking": { "mode": "normal" } } },
+              "overrides": [
+                { "matcher": { "id": "byName", "options": "ok" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] },
+                { "matcher": { "id": "byName", "options": "fault" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "json-keys-keys": {
+      "kind": "Panel",
+      "spec": {
+        "id": 11,
+        "title": "Keys listed",
+        "description": "The most keys a key search returned each hour: the active keys of a usage.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "tempo",
+                    "version": "v0",
+                    "datasource": { "name": "grafanacloud-traces" },
+                    "spec": {
+                      "queryType": "traceql",
+                      "metricsQueryType": "range",
+                      "step": "1h",
+                      "query": "{ resource.service.name = \"service-json-keys\" && name = \"dao.PgJwkSearch\" } | max_over_time(span.keys.count)"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": { "timeFrom": "24h" }
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "",
+          "spec": {
+            "options": { "legend": { "displayMode": "hidden", "placement": "bottom" }, "tooltip": { "mode": "single" } },
+            "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "min": 0 }, "overrides": [] }
+          }
+        }
+      }
+    },
+    "studio-pages": {
+      "kind": "Panel",
+      "spec": {
+        "id": 12,
+        "title": "Pages and data requests",
+        "description": "Each hour's server renders: full pages, and data requests from pages already open.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "tempo",
+                    "version": "v0",
+                    "datasource": { "name": "grafanacloud-traces" },
+                    "spec": {
+                      "queryType": "traceql",
+                      "metricsQueryType": "range",
+                      "step": "1h",
+                      "query": "{ resource.service.name = \"platform-studio\" && name = \"sveltekit.handle.root\" } | count_over_time() by (span.sveltekit.is_data_request)"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": { "timeFrom": "24h" }
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "",
+          "spec": {
+            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+            "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "custom": { "drawStyle": "bars", "fillOpacity": 70, "stacking": { "mode": "normal" } } }, "overrides": [] }
+          }
+        }
+      }
+    },
+    "studio-calls": {
+      "kind": "Panel",
+      "spec": {
+        "id": 13,
+        "title": "Calls to the services: p95",
+        "description": "How long Studio's server waits on each service it calls, at the 95th percentile.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "tempo",
+                    "version": "v0",
+                    "datasource": { "name": "grafanacloud-traces" },
+                    "spec": {
+                      "queryType": "traceql",
+                      "metricsQueryType": "range",
+                      "step": "1h",
+                      "query": "{ resource.service.name = \"platform-studio\" && kind = client } | quantile_over_time(duration, .95) by (span.server.address)"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": { "timeFrom": "24h" }
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "",
+          "spec": {
+            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+            "fieldConfig": { "defaults": { "unit": "s", "min": 0 }, "overrides": [] }
+          }
+        }
+      }
+    }
+  },
+  "layout": {
+    "kind": "TabsLayout",
+    "spec": {
+      "tabs": [
+        {
+          "kind": "TabsLayoutTab",
+          "spec": {
+            "title": "Authentication",
+            "layout": {
+              "kind": "AutoGridLayout",
+              "spec": {
+                "maxColumnCount": 2,
+                "columnWidthMode": "standard",
+                "rowHeightMode": "standard",
+                "items": [
+                  { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "authentication-sessions" } } },
+                  { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "authentication-mails" } } },
+                  { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "authentication-mail-queue" } } },
+                  { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "authentication-requests" } } }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "kind": "TabsLayoutTab",
+          "spec": {
+            "title": "GenAI",
+            "layout": {
+              "kind": "AutoGridLayout",
+              "spec": {
+                "maxColumnCount": 2,
+                "columnWidthMode": "standard",
+                "rowHeightMode": "standard",
+                "items": [
+                  { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "genai-tokens" } } },
+                  { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "genai-generations" } } },
+                  { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "genai-queue" } } },
+                  { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "genai-provider" } } }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "kind": "TabsLayoutTab",
+          "spec": {
+            "title": "JSON Keys",
+            "layout": {
+              "kind": "AutoGridLayout",
+              "spec": {
+                "maxColumnCount": 2,
+                "columnWidthMode": "standard",
+                "rowHeightMode": "standard",
+                "items": [
+                  { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "json-keys-requests" } } },
+                  { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "json-keys-rotations" } } },
+                  { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "json-keys-keys" } } }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "kind": "TabsLayoutTab",
+          "spec": {
+            "title": "Studio",
+            "layout": {
+              "kind": "AutoGridLayout",
+              "spec": {
+                "maxColumnCount": 2,
+                "columnWidthMode": "standard",
+                "rowHeightMode": "standard",
+                "items": [
+                  { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "studio-pages" } } },
+                  { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "studio-calls" } } }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

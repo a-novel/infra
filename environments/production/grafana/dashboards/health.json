@@ -1,0 +1,308 @@
+{
+  "description": "Whether the cluster holds its load: nodes, pods, resources against their requests, limits and budgets, traffic and databases. Act within the day.",
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Nodes above baseline",
+      "description": "Nodes the autoscaler added beyond the node pool's minimum. One that stays is a capacity decision.",
+      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
+      "targets": [{ "refId": "A", "instant": true, "expr": "count(kube_node_info) - $node_baseline" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }] }
+        }
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Pods not ready",
+      "description": "Pods waiting for a node or an image, and running pods that fail their readiness probe.",
+      "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
+      "targets": [
+        {
+          "refId": "A",
+          "instant": true,
+          "expr": "(sum(kube_pod_status_phase{phase=\"Pending\"}) or vector(0)) + (sum(kube_pod_status_ready{condition=\"false\"} * on (namespace, pod) group_left () kube_pod_status_phase{phase=\"Running\"}) or vector(0))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] }
+        }
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Container restarts",
+      "description": "Restarts over the time range: crashes, failed liveness probes and out-of-memory kills.",
+      "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
+      "targets": [{ "refId": "A", "instant": true, "expr": "sum(increase(kube_pod_container_status_restarts_total[$__range])) or vector(0)" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }] }
+        }
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "CPU requested, if a node is lost",
+      "description": "The pods' CPU requests against every node but the largest. Past 100%, losing a node leaves pods without room.",
+      "gridPos": { "x": 12, "y": 0, "w": 4, "h": 4 },
+      "targets": [
+        {
+          "refId": "A",
+          "instant": true,
+          "expr": "sum(kube_pod_container_resource_requests{resource=\"cpu\"} * on (namespace, pod) group_left () max by (namespace, pod) (kube_pod_status_phase{phase=~\"Pending|Running\"})) / (sum(kube_node_status_allocatable{resource=\"cpu\"}) - max(kube_node_status_allocatable{resource=\"cpu\"}))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 0,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 0.85 }, { "color": "red", "value": 1 }] }
+        }
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Memory requested, if a node is lost",
+      "description": "The pods' memory requests against every node but the largest. Past 100%, losing a node leaves pods without room.",
+      "gridPos": { "x": 16, "y": 0, "w": 4, "h": 4 },
+      "targets": [
+        {
+          "refId": "A",
+          "instant": true,
+          "expr": "sum(kube_pod_container_resource_requests{resource=\"memory\"} * on (namespace, pod) group_left () max by (namespace, pod) (kube_pod_status_phase{phase=~\"Pending|Running\"})) / (sum(kube_node_status_allocatable{resource=\"memory\"}) - max(kube_node_status_allocatable{resource=\"memory\"}))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 0,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 0.85 }, { "color": "red", "value": 1 }] }
+        }
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Fullest volume",
+      "description": "The fullest persistent volume, a database's in practice. The alerts warn at 70% and 85%.",
+      "gridPos": { "x": 20, "y": 0, "w": 4, "h": 4 },
+      "targets": [{ "refId": "A", "instant": true, "expr": "max(kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes)" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 0,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 0.7 }, { "color": "red", "value": 0.85 }] }
+        }
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Nodes",
+      "gridPos": { "x": 0, "y": 4, "w": 8, "h": 8 },
+      "targets": [
+        { "refId": "A", "legendFormat": "nodes", "expr": "count(kube_node_info)" },
+        { "refId": "B", "legendFormat": "baseline", "expr": "vector($node_baseline)" },
+        { "refId": "C", "legendFormat": "autoscaler maximum", "expr": "vector($node_maximum)" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "decimals": 0, "min": 0, "custom": { "lineInterpolation": "stepAfter" } },
+        "overrides": [
+          { "matcher": { "id": "byRegexp", "options": "baseline|autoscaler maximum" }, "properties": [{ "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 10] } }, { "id": "color", "value": { "mode": "fixed", "fixedColor": "text" } }] }
+        ]
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "CPU by node",
+      "description": "The dashed line is the alert's threshold.",
+      "gridPos": { "x": 8, "y": 4, "w": 8, "h": 8 },
+      "targets": [{ "refId": "A", "legendFormat": "{{node}}", "expr": "rate(node_cpu_usage_seconds_total[$__rate_interval]) / on (node) kube_node_status_capacity{resource=\"cpu\"}" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "custom": { "thresholdsStyle": { "mode": "dashed" } },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "transparent", "value": null }, { "color": "red", "value": 0.8 }] }
+        }
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Memory by node",
+      "description": "The dashed line is the alert's threshold.",
+      "gridPos": { "x": 16, "y": 4, "w": 8, "h": 8 },
+      "targets": [{ "refId": "A", "legendFormat": "{{node}}", "expr": "node_memory_working_set_bytes / on (node) kube_node_status_capacity{resource=\"memory\"}" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "custom": { "thresholdsStyle": { "mode": "dashed" } },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "transparent", "value": null }, { "color": "red", "value": 0.85 }] }
+        }
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 10,
+      "type": "bargauge",
+      "title": "Service budgets",
+      "description": "Each service's use of its namespace budget. Past it, new pods are refused.",
+      "gridPos": { "x": 0, "y": 12, "w": 8, "h": 8 },
+      "targets": [
+        {
+          "refId": "A",
+          "instant": true,
+          "legendFormat": "{{namespace}} {{resource}}",
+          "expr": "sort_desc(max by (namespace, resource) (kube_resourcequota{type=\"used\"}) / max by (namespace, resource) (kube_resourcequota{type=\"hard\"} > 0))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 0.8 }, { "color": "red", "value": 0.95 }] }
+        }
+      },
+      "options": { "displayMode": "basic", "orientation": "horizontal", "showUnfilled": true, "valueMode": "text", "namePlacement": "left", "sizing": "manual", "minVizHeight": 12, "maxVizHeight": 16 }
+    },
+    {
+      "id": 11,
+      "type": "bargauge",
+      "title": "Containers: CPU against request",
+      "description": "The busiest containers. Past 100% a container borrows idle CPU, which a busy node takes back.",
+      "gridPos": { "x": 8, "y": 12, "w": 8, "h": 8 },
+      "targets": [
+        {
+          "refId": "A",
+          "instant": true,
+          "legendFormat": "{{namespace}}/{{container}}",
+          "expr": "topk(10, max by (namespace, container) (sum by (namespace, pod, container) (rate(container_cpu_usage_seconds_total{container!=\"\", container!=\"POD\"}[10m])) / on (namespace, pod, container) (sum by (namespace, pod, container) (kube_pod_container_resource_requests{resource=\"cpu\"}) > 0)))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 0.8 }, { "color": "red", "value": 1 }] }
+        }
+      },
+      "options": { "displayMode": "basic", "orientation": "horizontal", "showUnfilled": true, "valueMode": "text", "namePlacement": "left", "sizing": "manual", "minVizHeight": 12, "maxVizHeight": 16 }
+    },
+    {
+      "id": 12,
+      "type": "bargauge",
+      "title": "Containers: memory against limit",
+      "description": "The fullest containers. At 100% the container is killed and restarts.",
+      "gridPos": { "x": 16, "y": 12, "w": 8, "h": 8 },
+      "targets": [
+        {
+          "refId": "A",
+          "instant": true,
+          "legendFormat": "{{namespace}}/{{container}}",
+          "expr": "topk(10, max by (namespace, container) (sum by (namespace, pod, container) (container_memory_working_set_bytes{container!=\"\", container!=\"POD\"}) / on (namespace, pod, container) (sum by (namespace, pod, container) (kube_pod_container_resource_limits{resource=\"memory\"}) > 0)))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 0.85 }, { "color": "red", "value": 0.95 }] }
+        }
+      },
+      "options": { "displayMode": "basic", "orientation": "horizontal", "showUnfilled": true, "valueMode": "text", "namePlacement": "left", "sizing": "manual", "minVizHeight": 12, "maxVizHeight": 16 }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Traffic",
+      "description": "Requests and job runs per second, by service, without the kubelets' health probes.",
+      "gridPos": { "x": 0, "y": 20, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{service_name}}",
+          "expr": "sum by (service_name) (rate(traces_span_metrics_calls_total{span_name!=\"grpc.health.v1.Health/Check\"}[$__rate_interval]))"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "min": 0 } },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Replicas",
+      "description": "Each workload's ready pods. An autoscaled workload climbs with its load.",
+      "gridPos": { "x": 12, "y": 20, "w": 12, "h": 8 },
+      "targets": [{ "refId": "A", "legendFormat": "{{namespace}}/{{deployment}}", "expr": "sum by (namespace, deployment) (kube_deployment_status_replicas_available)" }],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "min": 0, "custom": { "lineInterpolation": "stepAfter" } } },
+      "options": { "legend": { "displayMode": "list", "placement": "right" }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Databases: volumes",
+      "description": "The dashed lines are the alerts' thresholds. The CloudNativePG dashboard, linked above, details each database.",
+      "gridPos": { "x": 0, "y": 28, "w": 8, "h": 7 },
+      "targets": [{ "refId": "A", "legendFormat": "{{namespace}}/{{persistentvolumeclaim}}", "expr": "kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "custom": { "thresholdsStyle": { "mode": "dashed" } },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "transparent", "value": null }, { "color": "orange", "value": 0.7 }, { "color": "red", "value": 0.85 }] }
+        }
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Databases: connections",
+      "gridPos": { "x": 8, "y": 28, "w": 8, "h": 7 },
+      "targets": [{ "refId": "A", "legendFormat": "{{namespace}}", "expr": "max by (namespace) (sum by (namespace, pod) (cnpg_backends_total))" }],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "min": 0 } },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Databases: replica lag",
+      "description": "How far each replica replays behind its primary. The alert fires past 30 seconds.",
+      "gridPos": { "x": 16, "y": 28, "w": 8, "h": 7 },
+      "targets": [{ "refId": "A", "legendFormat": "{{namespace}}/{{pod}}", "expr": "cnpg_pg_replication_lag" }],
+      "fieldConfig": { "defaults": { "unit": "s", "min": 0 } },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    }
+  ]
+}

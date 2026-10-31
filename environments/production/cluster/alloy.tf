@@ -13,6 +13,18 @@ locals {
     OTEL_RESOURCE_ATTRIBUTES    = "a_novel.workload=${workload}"
   } } }
 
+  # Each request and job run, a server span or a trace's root, gets a_novel.outcome: what it asks of
+  # an operator. A fault is our own failure, to fix now. A transient failure, an unreachable
+  # dependency, a timeout or a rate limit, matters once it lasts. An expected refusal, such as a
+  # missing session or an unknown record, answers the caller's own mistake. A later statement
+  # overrides an earlier one, and spans of neither kind get no outcome.
+  outcome_statements = [
+    "set(attributes[\"a_novel.outcome\"], \"ok\") where kind == SPAN_KIND_SERVER or IsRootSpan()",
+    "set(attributes[\"a_novel.outcome\"], \"expected\") where attributes[\"a_novel.outcome\"] != nil and ((attributes[\"http.response.status_code\"] >= 400 and attributes[\"http.response.status_code\"] < 500) or IsMatch(attributes[\"rpc.response.status_code\"], \"^(CANCELLED|INVALID_ARGUMENT|NOT_FOUND|ALREADY_EXISTS|PERMISSION_DENIED|UNAUTHENTICATED|FAILED_PRECONDITION|OUT_OF_RANGE)$\"))",
+    "set(attributes[\"a_novel.outcome\"], \"fault\") where attributes[\"a_novel.outcome\"] != nil and status.code == STATUS_CODE_ERROR",
+    "set(attributes[\"a_novel.outcome\"], \"transient\") where attributes[\"a_novel.outcome\"] != nil and (attributes[\"http.response.status_code\"] == 429 or attributes[\"http.response.status_code\"] == 502 or attributes[\"http.response.status_code\"] == 503 or attributes[\"http.response.status_code\"] == 504 or IsMatch(attributes[\"rpc.response.status_code\"], \"^(UNAVAILABLE|DEADLINE_EXCEEDED|RESOURCE_EXHAUSTED|ABORTED)$\"))",
+  ]
+
   # Each image as the charts take it: our cache of its registry, its path, its tag and its digest.
   alloy_images = { for name in ["alloy", "alloy_operator", "config_reloader", "kube_state_metrics"] : name => {
     registry   = local.cluster.image_registries[local.image_parts[name].host]
@@ -52,9 +64,19 @@ locals {
             }
           }
 
-          // Beside the service, span name and status: the innermost error's type and whether the
-          // span served a request or ran a job. Every pod of a service adds to the same series.
+          // Beside the service, span name and status: the outcome, the response's code, the
+          // innermost error's type and whether the span served a request or ran a job. Every pod of
+          // a service adds to the same series.
           otelcol.connector.spanmetrics "default" {
+            dimension {
+              name = "a_novel.outcome"
+            }
+            dimension {
+              name = "http.response.status_code"
+            }
+            dimension {
+              name = "rpc.response.status_code"
+            }
             dimension {
               name = "error.type"
             }
@@ -64,11 +86,17 @@ locals {
             exclude_dimensions              = ["span.kind"]
             resource_metrics_key_attributes = ["service.name"]
             aggregation_cardinality_limit   = 1000
+            // An exponential histogram, which Grafana stores as a native one: precise percentiles
+            // at any duration, billed by the buckets in use.
             histogram {
               unit = "s"
-              explicit {
-                buckets = ["50ms", "200ms", "1s", "5s", "30s"]
+              exponential {
+                max_size = 160
               }
+            }
+            // Each data point keeps a few trace IDs, so a latency graph opens its slow traces.
+            exemplars {
+              enabled = true
             }
             output {
               metrics = [otelcol.processor.transform.span_metrics.input]
@@ -131,6 +159,7 @@ locals {
       receivers    = { otlp = { http = { enabled = true, port = 4318 } } }
       # The spans keep their own host, which would otherwise name Alloy's pod.
       processors = { resourceDetection = { system = { enabled = false } } }
+      traces     = { transforms = { span = local.outcome_statements } }
       connectors = { grafanaCloudMetrics = { enabled = false } }
     }
 

@@ -1,0 +1,11 @@
+{{ define "discord.title" }}{{ .CommonLabels.alertname }} · {{ if eq .Status "firing" }}firing{{ else }}resolved{{ end }}{{ end }}
+
+{{ define "discord.message" -}}
+{{ range $index, $alert := .Alerts.Firing }}{{ if lt $index 10 }}{{ $alert.Annotations.summary }}
+{{ end }}{{ end -}}
+{{ if gt (len .Alerts.Firing) 10 }}{{ len .Alerts.Firing }} fire in all; the first 10 are above.
+{{ end -}}
+{{ range .Alerts.Resolved }}Resolved{{ range .Labels.SortedPairs }}{{ if and (ne .Name "alertname") (ne .Name "grafana_folder") }} · {{ .Value }}{{ end }}{{ end }}
+{{ end -}}
+{{ with index .Alerts 0 }}{{ with or .PanelURL .DashboardURL }}[Dashboard]({{ . }}) · {{ end }}[Runbook]({{ .Annotations.runbook_url }}) · [Silence]({{ .SilenceURL }}){{ end }}
+{{- end }}

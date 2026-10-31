@@ -1,7 +1,8 @@
 management_project_id = "a-novel-management-prod"
 
 # The production stack, in prod-eu-west-2.
-url = "https://anovel.grafana.net"
+url      = "https://anovel.grafana.net"
+stack_id = 1896612
 
 token_versions = {
   plan   = 2
