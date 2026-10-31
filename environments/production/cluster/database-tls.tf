@@ -63,3 +63,36 @@ resource "kubernetes_manifest" "database_server_certificate" {
     }
   }
 }
+
+locals {
+  # The name each database's replication certificate carries, which only its own database maps to
+  # streaming_replica.
+  database_replication_names = { for service in keys(var.databases) : service => "streaming-replica.${service}" }
+}
+
+# Each database's replica authenticates as streaming_replica with this certificate. The operator
+# generates no client CA, so a database that replaces another never meets the CA the old one used.
+resource "kubernetes_manifest" "database_replication_certificate" {
+  for_each = var.custom_resources ? var.databases : {}
+
+  manifest = {
+    apiVersion = "cert-manager.io/v1"
+    kind       = "Certificate"
+    metadata   = { name = "database-replication", namespace = kubernetes_namespace_v1.service[each.key].metadata[0].name }
+    spec = {
+      secretName     = "database-replication-tls"
+      secretTemplate = { labels = { "cnpg.io/reload" = "" } }
+      usages         = ["client auth"]
+      commonName     = local.database_replication_names[each.key]
+      issuerRef      = { group = "cert-manager.io", kind = "ClusterIssuer", name = kubernetes_manifest.database_issuer[0].manifest.metadata.name }
+    }
+  }
+
+  # A new database finds the certificate as it starts.
+  wait {
+    condition {
+      type   = "Ready"
+      status = "True"
+    }
+  }
+}

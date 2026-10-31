@@ -24,9 +24,14 @@ locals {
   database_hosts = local.cluster.database_imports
 }
 
-# Replacing it replaces each database and its backup schedule.
-resource "terraform_data" "database_lineage" {
-  input = var.backup_server_name
+# A new lineage replaces it, and so each database and its backup schedule. Its creation waits four
+# minutes, which separates a database from the one it replaces: the operator's objects for the old
+# one share the new one's names until they are collected, and its instances wait up to three
+# minutes for their clients before stopping. An overlap left one database trusting a CA another
+# one generated.
+resource "time_sleep" "database_lineage" {
+  create_duration = "4m"
+  triggers        = { lineage = var.backup_server_name }
 }
 
 # CloudNativePG reads PostgreSQL's major version from an image's tag, and ours carry the service's
@@ -265,6 +270,8 @@ resource "kubernetes_manifest" "database" {
       # pg_cron runs GenAI's retention purge in background workers, since a job's own connection
       # would need a password.
       postgresql = {
+        # Our CA signs every database's replication certificate, so each accepts only its own.
+        pg_ident                 = ["cnpg_streaming_replica ${local.database_replication_names[each.key]} streaming_replica"]
         shared_preload_libraries = contains(each.value.extensions, "pg_cron") ? ["pg_cron"] : []
         parameters = merge(
           { max_connections = tostring(each.value.max_connections) },
@@ -305,10 +312,13 @@ resource "kubernetes_manifest" "database" {
 
       plugins = [{ name = local.barman_plugin, isWALArchiver = true, parameters = { barmanObjectName = kubernetes_manifest.database_backups[each.key].manifest.metadata.name, serverName = var.backup_server_name } }]
 
-      # cert-manager's Secret holds the certificate and the CA that signed it.
+      # cert-manager's Secrets hold each certificate and the CA that signed it. The replica
+      # authenticates with our CA's certificate, so the operator generates no client CA.
       certificates = {
-        serverTLSSecret = kubernetes_manifest.database_server_certificate[each.key].manifest.spec.secretName
-        serverCASecret  = kubernetes_manifest.database_server_certificate[each.key].manifest.spec.secretName
+        serverTLSSecret      = kubernetes_manifest.database_server_certificate[each.key].manifest.spec.secretName
+        serverCASecret       = kubernetes_manifest.database_server_certificate[each.key].manifest.spec.secretName
+        replicationTLSSecret = kubernetes_manifest.database_replication_certificate[each.key].manifest.spec.secretName
+        clientCASecret       = kubernetes_manifest.database_replication_certificate[each.key].manifest.spec.secretName
       }
     }
   }
@@ -334,10 +344,10 @@ resource "kubernetes_manifest" "database" {
   }
 
   lifecycle {
-    replace_triggered_by = [terraform_data.database_lineage]
+    replace_triggered_by = [time_sleep.database_lineage]
   }
 
-  depends_on = [kubernetes_network_policy_v1.database]
+  depends_on = [kubernetes_network_policy_v1.database, time_sleep.database_lineage]
 }
 
 # A daily base backup, from the replica. The first runs at once.
@@ -361,6 +371,6 @@ resource "kubernetes_manifest" "database_schedule" {
 
   # Each new lineage starts with a base backup, so the imported data has a recovery point at once.
   lifecycle {
-    replace_triggered_by = [terraform_data.database_lineage]
+    replace_triggered_by = [time_sleep.database_lineage]
   }
 }

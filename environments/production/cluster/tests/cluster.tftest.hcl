@@ -2,6 +2,7 @@
 mock_provider "google" {}
 mock_provider "kubernetes" {}
 mock_provider "helm" {}
+mock_provider "time" {}
 
 # Tests cannot import.
 variables {
@@ -333,6 +334,23 @@ run "keeps_each_database_available_and_backed_up" {
       workload.pod_annotations["a-novel.io/database-lineage"] == var.backup_server_name
     ])
     error_message = "Every database client's pods must roll with a new lineage, once its database serves."
+  }
+
+  assert {
+    condition = alltrue([for service, database in kubernetes_manifest.database : (
+      database.manifest.spec.certificates.replicationTLSSecret == kubernetes_manifest.database_replication_certificate[service].manifest.spec.secretName &&
+      database.manifest.spec.certificates.clientCASecret == kubernetes_manifest.database_replication_certificate[service].manifest.spec.secretName &&
+      kubernetes_manifest.database_replication_certificate[service].manifest.spec.commonName == "streaming-replica.${service}" &&
+      kubernetes_manifest.database_replication_certificate[service].manifest.spec.usages == ["client auth"] &&
+      kubernetes_manifest.database_replication_certificate[service].manifest.spec.issuerRef.name == kubernetes_manifest.database_issuer[0].manifest.metadata.name &&
+      database.manifest.spec.postgresql.pg_ident == ["cnpg_streaming_replica streaming-replica.${service} streaming_replica"]
+    )])
+    error_message = "Each database's replica must authenticate with our CA's certificate, which only its own database accepts."
+  }
+
+  assert {
+    condition     = time_sleep.database_lineage.create_duration == "4m" && time_sleep.database_lineage.triggers.lineage == var.backup_server_name
+    error_message = "A new lineage must wait four minutes before its databases replace the old ones."
   }
 }
 
