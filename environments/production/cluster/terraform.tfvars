@@ -75,5 +75,5 @@ addon_secret_versions = {
 }
 
 # Each new revision makes one real OpenAI call through GenAI, which the deploy waits on. The
-# rehearsal checks OpenAI from the cluster (a-novel/infra#1202).
-genai_provider_check = "rehearsal-1"
+# cutover checks OpenAI from the cluster once production runs there (a-novel/infra#1207).
+genai_provider_check = "cutover-1"
