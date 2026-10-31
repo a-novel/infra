@@ -838,7 +838,8 @@ run "makes_no_openai_call_without_a_revision" {
   command = plan
 
   variables {
-    custom_resources = true
+    custom_resources     = true
+    genai_provider_check = null
   }
 
   assert {
