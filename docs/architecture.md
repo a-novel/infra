@@ -156,7 +156,8 @@ Kubernetes resources, reaching the control plane through the DNS endpoint as the
   digest.
 - **Add-ons:** the cluster root installs cert-manager, the CloudNativePG operator, its Barman Cloud
   plugin, External Secrets and Grafana's `k8s-monitoring` chart with Helm, each in its own
-  namespace. Renovate moves each chart with its images, after a week and a review.
+  namespace. Renovate moves each chart with its images after a week, and merges a minor or patch
+  update on its own.
 - **Telemetry:** one Alloy pod in the `alloy` namespace sends every signal to the Grafana Cloud
   stack's OTLP gateway. The workloads export their traces and logs to its OTLP/HTTP receiver, from
   which it derives span metrics on server and root spans. It scrapes the kubelets, cAdvisor,
