@@ -39,33 +39,35 @@ Alloy gives each request and job run an outcome, which the dashboards and alerts
 | `expected`  | the caller's own mistake: no action | other HTTP 4xx; gRPC `CANCELLED`, `INVALID_ARGUMENT`, `NOT_FOUND`, `ALREADY_EXISTS`, `PERMISSION_DENIED`, `UNAUTHENTICATED`, `FAILED_PRECONDITION`, `OUT_OF_RANGE` |
 | `ok`        | success                             |                                                                                                                                                                    |
 
-| Alert                             | Fires when                                                                                        |
-| --------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `<service>: failing share`        | more than its `failure_rate` of its calls were faults or transient over 10 minutes, for 5 minutes |
-| `<service>: slow requests`        | its requests' 95th percentile took longer than `p95_seconds` over 10 minutes, for 5 minutes       |
-| `<service>: faults`               | a fault in the last 10 minutes: one alert per span and error type                                 |
-| `<service>: new fault`            | the service raised an error type it had not raised in the week before                             |
-| `Scheduled job failing`           | a CronJob's latest scheduled run has not succeeded for 15 minutes; a later success resolves it    |
-| `Scheduled job missed`            | a CronJob is more than 10 minutes late for a run it never started                                 |
-| `Volume above 70%`, `85%`         | a database volume stays that full for 10 and 5 minutes                                            |
-| `Node CPU above 80%`              | a node uses more than `node_cpu` of its CPU for 15 minutes                                        |
-| `Node memory above 85%`           | a node uses more than `node_memory` of its memory for 10 minutes                                  |
-| `Replica lagging`                 | a replica replays WAL more than `replica_lag` seconds behind its primary, for 5 minutes           |
-| `Replica not streaming`           | a database's primary streams to no replica for 5 minutes                                          |
-| `WAL archiving failing`           | a primary's latest WAL archive attempt failed, for 5 minutes                                      |
-| `No room for a lost node's …`     | the pods' CPU or memory requests exceed every node but the largest, for 15 minutes                |
-| `Cluster above its baseline`      | the cluster has run more nodes than foundation's `cluster.min_nodes` for 2 hours                  |
-| `Autoscaler at its maximum`       | the cluster has run as many nodes as foundation's `cluster.max_nodes` for 30 minutes              |
-| `Collector silent`                | no scrape reached Grafana for 10 minutes                                                          |
-| `Container CPU above 80% …`       | a container uses more than `container_cpu` of the CPU it requests for 15 minutes                  |
-| `Container memory above 85% …`    | a container uses more than `container_memory` of its memory limit for 10 minutes                  |
-| `Container killed for memory`     | a container restarted after running out of memory                                                 |
-| `Pod waiting to start`            | a pod has waited 10 minutes for a node or its image                                               |
-| `Service above 80% of its budget` | a service's pods request more than `service_budget` of its namespace's quota for 10 minutes       |
-| `Workload autoscaler at its max`  | a workload's autoscaler has run its most replicas for 15 minutes                                  |
-| `<database>: connections above…`  | a database holds more than `database_connections` of its `max_connections` for 10 minutes         |
-| `Usage: … above 80% of the plan`  | a Grafana Cloud allowance reached `usage` of what the Pro plan includes this month                |
-| `Usage: overage`                  | this month's usage costs anything beyond the plan                                                 |
+| Alert                                | Fires when                                                                                        |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| `<service>: failing share`           | more than its `failure_rate` of its calls were faults or transient over 10 minutes, for 5 minutes |
+| `<service>: slow requests`           | its requests' 95th percentile took longer than `p95_seconds` over 10 minutes, for 5 minutes       |
+| `<service>: faults`                  | a fault in the last 10 minutes: one alert per span and error type                                 |
+| `<service>: new fault`               | the service raised an error type it had not raised in the week before                             |
+| `Scheduled job failing`              | a CronJob's latest scheduled run has not succeeded for 15 minutes; a later success resolves it    |
+| `Scheduled job missed`               | a CronJob is more than 10 minutes late for a run it never started                                 |
+| `Volume above 70%`, `85%`            | a database volume stays that full for 10 and 5 minutes                                            |
+| `Node CPU above 80%`                 | a node uses more than `node_cpu` of its CPU for 15 minutes                                        |
+| `Node memory above 85%`              | a node uses more than `node_memory` of its memory for 10 minutes                                  |
+| `Replica lagging`                    | a replica replays WAL more than `replica_lag` seconds behind its primary, for 5 minutes           |
+| `Replica not streaming`              | a database's primary streams to no replica for 5 minutes                                          |
+| `WAL archiving failing`              | a primary's latest WAL archive attempt failed, for 5 minutes                                      |
+| `No room for a lost node's …`        | the pods' CPU or memory requests exceed every node but the largest, for 15 minutes                |
+| `Cluster above its baseline`         | the cluster has run more nodes than foundation's `cluster.min_nodes` for 2 hours                  |
+| `Autoscaler at its maximum`          | the cluster has run as many nodes as foundation's `cluster.max_nodes` for 30 minutes              |
+| `Collector silent`                   | no scrape reached Grafana for 10 minutes                                                          |
+| `Container CPU above 80% …`          | a container uses more than `container_cpu` of the CPU it requests for 15 minutes                  |
+| `Container memory above 85% …`       | a container uses more than `container_memory` of its memory limit for 10 minutes                  |
+| `Container killed for memory`        | a container restarted after running out of memory                                                 |
+| `Pod waiting to start`               | a pod has waited 10 minutes for a node or its image                                               |
+| `Service above 80% of its budget`    | a service's pods request more than `service_budget` of its namespace's quota for 10 minutes       |
+| `Workload autoscaler at its max`     | a workload's autoscaler has run its most replicas for 15 minutes                                  |
+| `<database>: connections above…`     | a database holds more than `database_connections` of its `max_connections` for 10 minutes         |
+| `Usage: … above 80% of the plan`     | a Grafana Cloud allowance reached `usage` of what the Pro plan includes this month                |
+| `Usage: overage`                     | this month's usage costs anything beyond the plan                                                 |
+| `Signing keys running out`           | a key usage's newest key signs for less than 3 days more, for 15 minutes                          |
+| `GenAI keeps content past retention` | a settled generation stays stored 30 minutes past its retention, for 5 minutes                    |
 
 - **A fault** is filed by hand, from its Discord post, as an issue in the service's repository. On
   the Errors dashboard, its operation opens its traces and its service opens its error logs.
@@ -93,6 +95,12 @@ Alloy gives each request and job run an outcome, which the dashboards and alerts
   `databases`, and its memory with it, in a pull request.
 - **The collector silent:** Alloy's pod in the `alloy` namespace, its
   [push token](secrets.md#alloy-push-token) or its egress to Grafana's gateway stopped.
+- **Signing keys running out:** JSON Keys' `rotate-keys` CronJob has stopped creating keys, which
+  `Scheduled job failing` usually reported first, or someone revoked the last keys. Once no key is
+  left, Authentication can sign no session. Run the rotation job again; read its logs if it fails.
+- **GenAI keeping content past retention:** the database's pg_cron purge stopped or falls behind,
+  so manuscripts outlive the retention promise. Follow [GenAI purge falling behind](#genai-purge-falling-behind)
+  against the cluster's database.
 
 The contact point's **Title** is `{{ template "discord.title" . }}` and its **Message**
 `{{ template "discord.message" . }}`, with **Use embed description** on: the root's `discord`

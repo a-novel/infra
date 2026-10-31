@@ -1,5 +1,5 @@
 {
-  "description": "Each service's own numbers, one tab per service. The panels that read traces cover the last 24 hours at most.",
+  "description": "Each service's own numbers, one tab per service. Counts read from a database work over any time range; panels read from traces cover the last 24 hours.",
   "cursorSync": "Off",
   "preload": false,
   "annotations": [],
@@ -8,7 +8,7 @@
     "authentication-accounts": {
       "kind": "Panel",
       "spec": {
-        "id": 14,
+        "id": 1,
         "title": "Accounts",
         "description": "Accounts by role, counted in the database.",
         "links": [],
@@ -25,8 +25,14 @@
                     "kind": "DataQuery",
                     "group": "prometheus",
                     "version": "v0",
-                    "datasource": { "name": "grafanacloud-prom" },
-                    "spec": { "instant": true, "legendFormat": "{{role}}", "expr": "max by (role) (cnpg_accounts_total)" }
+                    "datasource": {
+                      "name": "grafanacloud-prom"
+                    },
+                    "spec": {
+                      "instant": true,
+                      "legendFormat": "{{role}}",
+                      "expr": "max by (role) (cnpg_accounts_total)"
+                    }
                   }
                 }
               }
@@ -40,8 +46,27 @@
           "group": "stat",
           "version": "",
           "spec": {
-            "options": { "colorMode": "none", "graphMode": "none", "textMode": "value_and_name", "reduceOptions": { "calcs": ["lastNotNull"] } },
-            "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "color": { "mode": "fixed", "fixedColor": "text" } }, "overrides": [] }
+            "options": {
+              "colorMode": "none",
+              "graphMode": "none",
+              "textMode": "value_and_name",
+              "reduceOptions": {
+                "calcs": [
+                  "lastNotNull"
+                ]
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short",
+                "decimals": 0,
+                "color": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              },
+              "overrides": []
+            }
           }
         }
       }
@@ -49,9 +74,9 @@
     "authentication-new-accounts": {
       "kind": "Panel",
       "spec": {
-        "id": 15,
-        "title": "New accounts",
-        "description": "Accounts created over the time range, less those deleted.",
+        "id": 2,
+        "title": "New accounts, 7 days",
+        "description": "Accounts created in the last 7 days, all roles.",
         "links": [],
         "data": {
           "kind": "QueryGroup",
@@ -66,8 +91,14 @@
                     "kind": "DataQuery",
                     "group": "prometheus",
                     "version": "v0",
-                    "datasource": { "name": "grafanacloud-prom" },
-                    "spec": { "instant": true, "legendFormat": "new", "expr": "sum(max by (role) (cnpg_accounts_total)) - sum(max by (role) (cnpg_accounts_total offset $__range))" }
+                    "datasource": {
+                      "name": "grafanacloud-prom"
+                    },
+                    "spec": {
+                      "instant": true,
+                      "legendFormat": "new",
+                      "expr": "sum(max by (role) (cnpg_accounts_created_7d))"
+                    }
                   }
                 }
               }
@@ -81,8 +112,27 @@
           "group": "stat",
           "version": "",
           "spec": {
-            "options": { "colorMode": "none", "graphMode": "none", "textMode": "value_and_name", "reduceOptions": { "calcs": ["lastNotNull"] } },
-            "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "color": { "mode": "fixed", "fixedColor": "text" } }, "overrides": [] }
+            "options": {
+              "colorMode": "none",
+              "graphMode": "none",
+              "textMode": "value_and_name",
+              "reduceOptions": {
+                "calcs": [
+                  "lastNotNull"
+                ]
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short",
+                "decimals": 0,
+                "color": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              },
+              "overrides": []
+            }
           }
         }
       }
@@ -90,9 +140,9 @@
     "authentication-codes": {
       "kind": "Panel",
       "spec": {
-        "id": 16,
-        "title": "Codes awaiting use",
-        "description": "Codes mailed for a registration, an email change or a password reset, neither used nor expired yet.",
+        "id": 3,
+        "title": "Codes mailed, 7 days",
+        "description": "What became of the codes mailed for a registration, an email change or a password reset. Used against mailed is the invitation or reset completion rate.",
         "links": [],
         "data": {
           "kind": "QueryGroup",
@@ -107,33 +157,151 @@
                     "kind": "DataQuery",
                     "group": "prometheus",
                     "version": "v0",
-                    "datasource": { "name": "grafanacloud-prom" },
-                    "spec": { "instant": true, "legendFormat": "{{usage}}", "expr": "max by (usage) (cnpg_short_codes_pending)" }
+                    "datasource": {
+                      "name": "grafanacloud-prom"
+                    },
+                    "spec": {
+                      "instant": true,
+                      "format": "table",
+                      "expr": "max by (usage) (cnpg_short_codes_issued_7d)"
+                    }
+                  }
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "B",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-prom"
+                    },
+                    "spec": {
+                      "instant": true,
+                      "format": "table",
+                      "expr": "max by (usage) (cnpg_short_codes_used_7d)"
+                    }
+                  }
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "C",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-prom"
+                    },
+                    "spec": {
+                      "instant": true,
+                      "format": "table",
+                      "expr": "max by (usage) (cnpg_short_codes_replaced_7d)"
+                    }
+                  }
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "D",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-prom"
+                    },
+                    "spec": {
+                      "instant": true,
+                      "format": "table",
+                      "expr": "max by (usage) (cnpg_short_codes_expired_7d)"
+                    }
+                  }
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "E",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-prom"
+                    },
+                    "spec": {
+                      "instant": true,
+                      "format": "table",
+                      "expr": "max by (usage) (cnpg_short_codes_pending)"
+                    }
                   }
                 }
               }
             ],
-            "transformations": [],
+            "transformations": [
+              {
+                "id": "merge"
+              },
+              {
+                "id": "organize",
+                "options": {
+                  "excludeByName": {
+                    "Time": true
+                  },
+                  "renameByName": {
+                    "usage": "Usage",
+                    "Value #A": "Mailed",
+                    "Value #B": "Used",
+                    "Value #C": "Replaced",
+                    "Value #D": "Expired",
+                    "Value #E": "Pending"
+                  }
+                }
+              }
+            ],
             "queryOptions": {}
           }
         },
         "vizConfig": {
           "kind": "VizConfig",
-          "group": "stat",
+          "group": "table",
           "version": "",
           "spec": {
-            "options": { "colorMode": "none", "graphMode": "none", "textMode": "value_and_name", "reduceOptions": { "calcs": ["lastNotNull"] } },
-            "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "color": { "mode": "fixed", "fixedColor": "text" } }, "overrides": [] }
+            "options": {
+              "showHeader": true,
+              "cellHeight": "sm",
+              "footer": {
+                "show": false
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short",
+                "decimals": 0
+              },
+              "overrides": []
+            }
           }
         }
       }
     },
-    "authentication-sessions": {
+    "authentication-sign-ins": {
       "kind": "Panel",
       "spec": {
-        "id": 1,
-        "title": "Sessions issued",
-        "description": "Logins, anonymous sessions and refreshes, each hour.",
+        "id": 4,
+        "title": "Sign-ins by response",
+        "description": "Each hour's sign-in attempts by HTTP status: 201 signed in, 401 refused credentials, 429 rate-limited.",
         "links": [],
         "data": {
           "kind": "QueryGroup",
@@ -148,19 +316,23 @@
                     "kind": "DataQuery",
                     "group": "tempo",
                     "version": "v0",
-                    "datasource": { "name": "grafanacloud-traces" },
+                    "datasource": {
+                      "name": "grafanacloud-traces"
+                    },
                     "spec": {
                       "queryType": "traceql",
                       "metricsQueryType": "range",
                       "step": "1h",
-                      "query": "{ resource.service.name = \"service-authentication\" && name =~ \"core.TokenCreate|core.TokenCreateAnon|core.TokenRefresh\" } | count_over_time() by (name)"
+                      "query": "{ resource.service.name = \"service-authentication\" && name = \"rest.TokenCreate\" } << { kind = server } | count_over_time() by (span.http.response.status_code)"
                     }
                   }
                 }
               }
             ],
             "transformations": [],
-            "queryOptions": { "timeFrom": "24h" }
+            "queryOptions": {
+              "timeFrom": "24h"
+            }
           }
         },
         "vizConfig": {
@@ -168,8 +340,29 @@
           "group": "timeseries",
           "version": "",
           "spec": {
-            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-            "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "custom": { "drawStyle": "bars", "fillOpacity": 70, "stacking": { "mode": "normal" } } }, "overrides": [] }
+            "options": {
+              "legend": {
+                "displayMode": "list",
+                "placement": "bottom"
+              },
+              "tooltip": {
+                "mode": "multi"
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short",
+                "decimals": 0,
+                "custom": {
+                  "drawStyle": "bars",
+                  "fillOpacity": 70,
+                  "stacking": {
+                    "mode": "normal"
+                  }
+                }
+              },
+              "overrides": []
+            }
           }
         }
       }
@@ -177,7 +370,7 @@
     "authentication-mails": {
       "kind": "Panel",
       "spec": {
-        "id": 2,
+        "id": 5,
         "title": "Mails sent",
         "description": "Each hour's sends, by kind and status. A mail is sent once, never retried.",
         "links": [],
@@ -194,7 +387,9 @@
                     "kind": "DataQuery",
                     "group": "tempo",
                     "version": "v0",
-                    "datasource": { "name": "grafanacloud-traces" },
+                    "datasource": {
+                      "name": "grafanacloud-traces"
+                    },
                     "spec": {
                       "queryType": "traceql",
                       "metricsQueryType": "range",
@@ -206,7 +401,9 @@
               }
             ],
             "transformations": [],
-            "queryOptions": { "timeFrom": "24h" }
+            "queryOptions": {
+              "timeFrom": "24h"
+            }
           }
         },
         "vizConfig": {
@@ -214,8 +411,29 @@
           "group": "timeseries",
           "version": "",
           "spec": {
-            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-            "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "custom": { "drawStyle": "bars", "fillOpacity": 70, "stacking": { "mode": "normal" } } }, "overrides": [] }
+            "options": {
+              "legend": {
+                "displayMode": "list",
+                "placement": "bottom"
+              },
+              "tooltip": {
+                "mode": "multi"
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short",
+                "decimals": 0,
+                "custom": {
+                  "drawStyle": "bars",
+                  "fillOpacity": 70,
+                  "stacking": {
+                    "mode": "normal"
+                  }
+                }
+              },
+              "overrides": []
+            }
           }
         }
       }
@@ -223,7 +441,7 @@
     "authentication-mail-queue": {
       "kind": "Panel",
       "spec": {
-        "id": 3,
+        "id": 6,
         "title": "Mails waiting or refused",
         "description": "Mails that waited for a free sender, and mails refused because every sender was busy.",
         "links": [],
@@ -240,7 +458,9 @@
                     "kind": "DataQuery",
                     "group": "tempo",
                     "version": "v0",
-                    "datasource": { "name": "grafanacloud-traces" },
+                    "datasource": {
+                      "name": "grafanacloud-traces"
+                    },
                     "spec": {
                       "queryType": "traceql",
                       "metricsQueryType": "range",
@@ -252,7 +472,9 @@
               }
             ],
             "transformations": [],
-            "queryOptions": { "timeFrom": "24h" }
+            "queryOptions": {
+              "timeFrom": "24h"
+            }
           }
         },
         "vizConfig": {
@@ -260,62 +482,39 @@
           "group": "timeseries",
           "version": "",
           "spec": {
-            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-            "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "custom": { "drawStyle": "bars", "fillOpacity": 70 } }, "overrides": [] }
-          }
-        }
-      }
-    },
-    "authentication-requests": {
-      "kind": "Panel",
-      "spec": {
-        "id": 4,
-        "title": "Requests by operation",
-        "description": "Requests per second, by operation and outcome, without the health probes.",
-        "links": [],
-        "data": {
-          "kind": "QueryGroup",
-          "spec": {
-            "queries": [
-              {
-                "kind": "PanelQuery",
-                "spec": {
-                  "refId": "A",
-                  "hidden": false,
-                  "query": {
-                    "kind": "DataQuery",
-                    "group": "prometheus",
-                    "version": "v0",
-                    "datasource": { "name": "grafanacloud-prom" },
-                    "spec": {
-                      "legendFormat": "{{span_name}} {{a_novel_outcome}}",
-                      "expr": "sum by (span_name, a_novel_outcome) (rate(traces_span_metrics_calls_total{service_name=\"service-authentication\", a_novel_workload=\"api\"}[$__rate_interval]))"
-                    }
+            "options": {
+              "legend": {
+                "displayMode": "list",
+                "placement": "bottom"
+              },
+              "tooltip": {
+                "mode": "multi"
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short",
+                "decimals": 0,
+                "custom": {
+                  "drawStyle": "bars",
+                  "fillOpacity": 70,
+                  "stacking": {
+                    "mode": "normal"
                   }
                 }
-              }
-            ],
-            "transformations": [],
-            "queryOptions": {}
-          }
-        },
-        "vizConfig": {
-          "kind": "VizConfig",
-          "group": "timeseries",
-          "version": "",
-          "spec": {
-            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
-            "fieldConfig": { "defaults": { "unit": "reqps", "min": 0 }, "overrides": [] }
+              },
+              "overrides": []
+            }
           }
         }
       }
     },
-    "genai-tokens": {
+    "authentication-refused-refresh": {
       "kind": "Panel",
       "spec": {
-        "id": 5,
-        "title": "Tokens consumed",
-        "description": "Input and output tokens the providers billed each hour.",
+        "id": 7,
+        "title": "Refused refresh tokens",
+        "description": "Refreshes with a revoked or unknown token. A steady stream can mean a stolen token being replayed.",
         "links": [],
         "data": {
           "kind": "QueryGroup",
@@ -330,7 +529,560 @@
                     "kind": "DataQuery",
                     "group": "tempo",
                     "version": "v0",
-                    "datasource": { "name": "grafanacloud-traces" },
+                    "datasource": {
+                      "name": "grafanacloud-traces"
+                    },
+                    "spec": {
+                      "queryType": "traceql",
+                      "metricsQueryType": "range",
+                      "step": "1h",
+                      "query": "{ resource.service.name = \"service-authentication\" && name = \"core.TokenRefresh\" && status = error && statusMessage =~ \"refresh token (revoked|not issued).*\" } | count_over_time()"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": {
+              "timeFrom": "24h"
+            }
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "",
+          "spec": {
+            "options": {
+              "legend": {
+                "displayMode": "list",
+                "placement": "bottom"
+              },
+              "tooltip": {
+                "mode": "multi"
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short",
+                "decimals": 0,
+                "custom": {
+                  "drawStyle": "bars",
+                  "fillOpacity": 70,
+                  "stacking": {
+                    "mode": "normal"
+                  }
+                }
+              },
+              "overrides": []
+            }
+          }
+        }
+      }
+    },
+    "genai-live": {
+      "kind": "Panel",
+      "spec": {
+        "id": 8,
+        "title": "Live generations",
+        "description": "Generations waiting for a provider call, and those a provider works on.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-prom"
+                    },
+                    "spec": {
+                      "instant": true,
+                      "legendFormat": "waiting",
+                      "expr": "max(cnpg_generations_live_pending)"
+                    }
+                  }
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "B",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-prom"
+                    },
+                    "spec": {
+                      "instant": true,
+                      "legendFormat": "running",
+                      "expr": "max(cnpg_generations_live_running)"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": {}
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "stat",
+          "version": "",
+          "spec": {
+            "options": {
+              "colorMode": "none",
+              "graphMode": "none",
+              "textMode": "value_and_name",
+              "reduceOptions": {
+                "calcs": [
+                  "lastNotNull"
+                ]
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short",
+                "decimals": 0,
+                "color": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              },
+              "overrides": []
+            }
+          }
+        }
+      }
+    },
+    "genai-oldest": {
+      "kind": "Panel",
+      "spec": {
+        "id": 9,
+        "title": "Oldest waits",
+        "description": "The oldest waiting generation, the oldest running call, and the longest since the sweep checked a live generation. The sweep checks each one at least every minute while it runs.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-prom"
+                    },
+                    "spec": {
+                      "instant": true,
+                      "legendFormat": "waiting",
+                      "expr": "max(cnpg_generations_live_oldest_pending_seconds)"
+                    }
+                  }
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "B",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-prom"
+                    },
+                    "spec": {
+                      "instant": true,
+                      "legendFormat": "running",
+                      "expr": "max(cnpg_generations_live_oldest_running_seconds)"
+                    }
+                  }
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "C",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-prom"
+                    },
+                    "spec": {
+                      "instant": true,
+                      "legendFormat": "since a check",
+                      "expr": "max(cnpg_generations_live_oldest_check_seconds)"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": {}
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "stat",
+          "version": "",
+          "spec": {
+            "options": {
+              "colorMode": "value",
+              "graphMode": "none",
+              "textMode": "value_and_name",
+              "reduceOptions": {
+                "calcs": [
+                  "lastNotNull"
+                ]
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "s",
+                "color": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              },
+              "overrides": [
+                {
+                  "matcher": {
+                    "id": "byFrameRefID",
+                    "options": "C"
+                  },
+                  "properties": [
+                    {
+                      "id": "color",
+                      "value": {
+                        "mode": "thresholds"
+                      }
+                    },
+                    {
+                      "id": "thresholds",
+                      "value": {
+                        "mode": "absolute",
+                        "steps": [
+                          {
+                            "color": "green",
+                            "value": null
+                          },
+                          {
+                            "color": "orange",
+                            "value": 300
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "genai-settled": {
+      "kind": "Panel",
+      "spec": {
+        "id": 10,
+        "title": "Settled in the last hour",
+        "description": "Generations that reached a final status in the last hour, by reason, with those that needed a second attempt and the time from submission to settlement.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-prom"
+                    },
+                    "spec": {
+                      "instant": true,
+                      "format": "table",
+                      "expr": "max by (status, reason) (cnpg_generations_settled_total)"
+                    }
+                  }
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "B",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-prom"
+                    },
+                    "spec": {
+                      "instant": true,
+                      "format": "table",
+                      "expr": "max by (status, reason) (cnpg_generations_settled_retried)"
+                    }
+                  }
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "C",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-prom"
+                    },
+                    "spec": {
+                      "instant": true,
+                      "format": "table",
+                      "expr": "max by (status, reason) (cnpg_generations_settled_p95_seconds)"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [
+              {
+                "id": "merge"
+              },
+              {
+                "id": "organize",
+                "options": {
+                  "excludeByName": {
+                    "Time": true
+                  },
+                  "renameByName": {
+                    "status": "Status",
+                    "reason": "Reason",
+                    "Value #A": "Generations",
+                    "Value #B": "Retried",
+                    "Value #C": "p95"
+                  }
+                }
+              }
+            ],
+            "queryOptions": {}
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "table",
+          "version": "",
+          "spec": {
+            "options": {
+              "showHeader": true,
+              "cellHeight": "sm",
+              "footer": {
+                "show": false
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short",
+                "decimals": 0
+              },
+              "overrides": []
+            }
+          }
+        }
+      }
+    },
+    "genai-tokens-models": {
+      "kind": "Panel",
+      "spec": {
+        "id": 11,
+        "title": "Tokens, last 24 hours",
+        "description": "Tokens by model, reasoning effort and service tier: what the provider bills.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-prom"
+                    },
+                    "spec": {
+                      "instant": true,
+                      "format": "table",
+                      "expr": "max by (model, class, tier) (cnpg_generation_tokens_input)"
+                    }
+                  }
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "B",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-prom"
+                    },
+                    "spec": {
+                      "instant": true,
+                      "format": "table",
+                      "expr": "max by (model, class, tier) (cnpg_generation_tokens_cached_input)"
+                    }
+                  }
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "C",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-prom"
+                    },
+                    "spec": {
+                      "instant": true,
+                      "format": "table",
+                      "expr": "max by (model, class, tier) (cnpg_generation_tokens_output)"
+                    }
+                  }
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "D",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-prom"
+                    },
+                    "spec": {
+                      "instant": true,
+                      "format": "table",
+                      "expr": "max by (model, class, tier) (cnpg_generation_tokens_reasoning)"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [
+              {
+                "id": "merge"
+              },
+              {
+                "id": "organize",
+                "options": {
+                  "excludeByName": {
+                    "Time": true
+                  },
+                  "renameByName": {
+                    "model": "Model",
+                    "class": "Effort",
+                    "tier": "Tier",
+                    "Value #A": "Input",
+                    "Value #B": "Cached input",
+                    "Value #C": "Output",
+                    "Value #D": "Reasoning"
+                  }
+                }
+              }
+            ],
+            "queryOptions": {}
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "table",
+          "version": "",
+          "spec": {
+            "options": {
+              "showHeader": true,
+              "cellHeight": "sm",
+              "footer": {
+                "show": false
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short",
+                "decimals": 0
+              },
+              "overrides": []
+            }
+          }
+        }
+      }
+    },
+    "genai-tokens": {
+      "kind": "Panel",
+      "spec": {
+        "id": 12,
+        "title": "Tokens per hour",
+        "description": "Input and output tokens the provider billed each hour.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "tempo",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-traces"
+                    },
                     "spec": {
                       "queryType": "traceql",
                       "metricsQueryType": "range",
@@ -349,7 +1101,9 @@
                     "kind": "DataQuery",
                     "group": "tempo",
                     "version": "v0",
-                    "datasource": { "name": "grafanacloud-traces" },
+                    "datasource": {
+                      "name": "grafanacloud-traces"
+                    },
                     "spec": {
                       "queryType": "traceql",
                       "metricsQueryType": "range",
@@ -361,7 +1115,9 @@
               }
             ],
             "transformations": [],
-            "queryOptions": { "timeFrom": "24h" }
+            "queryOptions": {
+              "timeFrom": "24h"
+            }
           }
         },
         "vizConfig": {
@@ -369,24 +1125,61 @@
           "group": "timeseries",
           "version": "",
           "spec": {
-            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+            "options": {
+              "legend": {
+                "displayMode": "list",
+                "placement": "bottom"
+              },
+              "tooltip": {
+                "mode": "multi"
+              }
+            },
             "fieldConfig": {
-              "defaults": { "unit": "short", "decimals": 0, "custom": { "drawStyle": "bars", "fillOpacity": 70 } },
+              "defaults": {
+                "unit": "short",
+                "decimals": 0,
+                "custom": {
+                  "drawStyle": "bars",
+                  "fillOpacity": 70
+                }
+              },
               "overrides": [
-                { "matcher": { "id": "byFrameRefID", "options": "A" }, "properties": [{ "id": "displayName", "value": "input" }] },
-                { "matcher": { "id": "byFrameRefID", "options": "B" }, "properties": [{ "id": "displayName", "value": "output" }] }
+                {
+                  "matcher": {
+                    "id": "byFrameRefID",
+                    "options": "A"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "input"
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byFrameRefID",
+                    "options": "B"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "output"
+                    }
+                  ]
+                }
               ]
             }
           }
         }
       }
     },
-    "genai-generations": {
+    "genai-users": {
       "kind": "Panel",
       "spec": {
-        "id": 6,
-        "title": "Generations by status",
-        "description": "Each hour's generations, by the status they reached.",
+        "id": 13,
+        "title": "Accounts generating, 24 hours",
+        "description": "Accounts that ran at least one generation in the last 24 hours.",
         "links": [],
         "data": {
           "kind": "QueryGroup",
@@ -399,40 +1192,60 @@
                   "hidden": false,
                   "query": {
                     "kind": "DataQuery",
-                    "group": "tempo",
+                    "group": "prometheus",
                     "version": "v0",
-                    "datasource": { "name": "grafanacloud-traces" },
+                    "datasource": {
+                      "name": "grafanacloud-prom"
+                    },
                     "spec": {
-                      "queryType": "traceql",
-                      "metricsQueryType": "range",
-                      "step": "1h",
-                      "query": "{ resource.service.name = \"service-genai\" && span.generation.status != nil } | count_over_time() by (span.generation.status)"
+                      "instant": true,
+                      "legendFormat": "accounts",
+                      "expr": "max(cnpg_generation_users_active)"
                     }
                   }
                 }
               }
             ],
             "transformations": [],
-            "queryOptions": { "timeFrom": "24h" }
+            "queryOptions": {}
           }
         },
         "vizConfig": {
           "kind": "VizConfig",
-          "group": "timeseries",
+          "group": "stat",
           "version": "",
           "spec": {
-            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-            "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "custom": { "drawStyle": "bars", "fillOpacity": 70, "stacking": { "mode": "normal" } } }, "overrides": [] }
+            "options": {
+              "colorMode": "none",
+              "graphMode": "none",
+              "textMode": "value_and_name",
+              "reduceOptions": {
+                "calcs": [
+                  "lastNotNull"
+                ]
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short",
+                "decimals": 0,
+                "color": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              },
+              "overrides": []
+            }
           }
         }
       }
     },
-    "genai-queue": {
+    "genai-pushback": {
       "kind": "Panel",
       "spec": {
-        "id": 7,
-        "title": "Generations waiting",
-        "description": "The longest queue of generations waiting for a provider, each hour.",
+        "id": 14,
+        "title": "Refusals and provider pushback",
+        "description": "Each hour's submissions refused by a usage cap, starts the provider turned away, and failed calls queued for another attempt.",
         "links": [],
         "data": {
           "kind": "QueryGroup",
@@ -447,19 +1260,23 @@
                     "kind": "DataQuery",
                     "group": "tempo",
                     "version": "v0",
-                    "datasource": { "name": "grafanacloud-traces" },
+                    "datasource": {
+                      "name": "grafanacloud-traces"
+                    },
                     "spec": {
                       "queryType": "traceql",
                       "metricsQueryType": "range",
                       "step": "1h",
-                      "query": "{ resource.service.name = \"service-genai\" && name = \"dao.PgGenerationQueueDepth\" } | max_over_time(span.queue.pending)"
+                      "query": "{ resource.service.name = \"service-genai\" && (name = \"core.GenerationCheck(releaseStart)\" || name = \"core.GenerationCheck(requeue)\" || (name = \"core.GenerationSubmit(admit)\" && status = error)) } | count_over_time() by (name)"
                     }
                   }
                 }
               }
             ],
             "transformations": [],
-            "queryOptions": { "timeFrom": "24h" }
+            "queryOptions": {
+              "timeFrom": "24h"
+            }
           }
         },
         "vizConfig": {
@@ -467,8 +1284,29 @@
           "group": "timeseries",
           "version": "",
           "spec": {
-            "options": { "legend": { "displayMode": "hidden", "placement": "bottom" }, "tooltip": { "mode": "single" } },
-            "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "min": 0 }, "overrides": [] }
+            "options": {
+              "legend": {
+                "displayMode": "list",
+                "placement": "bottom"
+              },
+              "tooltip": {
+                "mode": "multi"
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short",
+                "decimals": 0,
+                "custom": {
+                  "drawStyle": "bars",
+                  "fillOpacity": 70,
+                  "stacking": {
+                    "mode": "normal"
+                  }
+                }
+              },
+              "overrides": []
+            }
           }
         }
       }
@@ -476,7 +1314,7 @@
     "genai-provider": {
       "kind": "Panel",
       "spec": {
-        "id": 8,
+        "id": 15,
         "title": "Provider calls: p95",
         "description": "How long the calls to the model providers take, at the 95th percentile.",
         "links": [],
@@ -493,7 +1331,9 @@
                     "kind": "DataQuery",
                     "group": "tempo",
                     "version": "v0",
-                    "datasource": { "name": "grafanacloud-traces" },
+                    "datasource": {
+                      "name": "grafanacloud-traces"
+                    },
                     "spec": {
                       "queryType": "traceql",
                       "metricsQueryType": "range",
@@ -505,7 +1345,9 @@
               }
             ],
             "transformations": [],
-            "queryOptions": { "timeFrom": "24h" }
+            "queryOptions": {
+              "timeFrom": "24h"
+            }
           }
         },
         "vizConfig": {
@@ -513,18 +1355,32 @@
           "group": "timeseries",
           "version": "",
           "spec": {
-            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-            "fieldConfig": { "defaults": { "unit": "s", "min": 0 }, "overrides": [] }
+            "options": {
+              "legend": {
+                "displayMode": "list",
+                "placement": "bottom"
+              },
+              "tooltip": {
+                "mode": "multi"
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "s",
+                "min": 0
+              },
+              "overrides": []
+            }
           }
         }
       }
     },
-    "json-keys-requests": {
+    "genai-retention": {
       "kind": "Panel",
       "spec": {
-        "id": 9,
-        "title": "Requests by operation",
-        "description": "Signatures, key lists and status checks per second, by outcome, without the health probes.",
+        "id": 16,
+        "title": "Kept past retention",
+        "description": "Settled generations still stored after their retention, which the purge deletes every 10 seconds. An alert fires past 30 minutes.",
         "links": [],
         "data": {
           "kind": "QueryGroup",
@@ -539,10 +1395,33 @@
                     "kind": "DataQuery",
                     "group": "prometheus",
                     "version": "v0",
-                    "datasource": { "name": "grafanacloud-prom" },
+                    "datasource": {
+                      "name": "grafanacloud-prom"
+                    },
                     "spec": {
-                      "legendFormat": "{{span_name}} {{a_novel_outcome}}",
-                      "expr": "sum by (span_name, a_novel_outcome) (rate(traces_span_metrics_calls_total{service_name=\"service-json-keys\", a_novel_workload=\"api\", span_name!=\"grpc.health.v1.Health/Check\"}[$__rate_interval]))"
+                      "instant": true,
+                      "legendFormat": "generations",
+                      "expr": "max(cnpg_generations_expired_waiting)"
+                    }
+                  }
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "B",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-prom"
+                    },
+                    "spec": {
+                      "instant": true,
+                      "legendFormat": "oldest",
+                      "expr": "max(cnpg_generations_expired_oldest_seconds)"
                     }
                   }
                 }
@@ -554,21 +1433,75 @@
         },
         "vizConfig": {
           "kind": "VizConfig",
-          "group": "timeseries",
+          "group": "stat",
           "version": "",
           "spec": {
-            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
-            "fieldConfig": { "defaults": { "unit": "reqps", "min": 0 }, "overrides": [] }
+            "options": {
+              "colorMode": "value",
+              "graphMode": "none",
+              "textMode": "value_and_name",
+              "reduceOptions": {
+                "calcs": [
+                  "lastNotNull"
+                ]
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short",
+                "decimals": 0,
+                "color": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              },
+              "overrides": [
+                {
+                  "matcher": {
+                    "id": "byFrameRefID",
+                    "options": "B"
+                  },
+                  "properties": [
+                    {
+                      "id": "unit",
+                      "value": "s"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "mode": "thresholds"
+                      }
+                    },
+                    {
+                      "id": "thresholds",
+                      "value": {
+                        "mode": "absolute",
+                        "steps": [
+                          {
+                            "color": "green",
+                            "value": null
+                          },
+                          {
+                            "color": "red",
+                            "value": 1800
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
           }
         }
       }
     },
-    "json-keys-rotations": {
+    "json-keys-keys": {
       "kind": "Panel",
       "spec": {
-        "id": 10,
-        "title": "Key rotation runs",
-        "description": "The hourly rotation job's runs, by outcome. It rotates the keys once they are 24 hours old.",
+        "id": 17,
+        "title": "Signing keys",
+        "description": "Each usage's active keys, the age of the newest, and the runway: how long the newest still signs. Rotation keeps the newest younger than its period; an alert fires when the runway drops under 3 days.",
         "links": [],
         "data": {
           "kind": "QueryGroup",
@@ -583,7 +1516,231 @@
                     "kind": "DataQuery",
                     "group": "prometheus",
                     "version": "v0",
-                    "datasource": { "name": "grafanacloud-prom" },
+                    "datasource": {
+                      "name": "grafanacloud-prom"
+                    },
+                    "spec": {
+                      "instant": true,
+                      "format": "table",
+                      "expr": "max by (usage) (cnpg_keys_active)"
+                    }
+                  }
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "B",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-prom"
+                    },
+                    "spec": {
+                      "instant": true,
+                      "format": "table",
+                      "expr": "max by (usage) (cnpg_keys_newest_age_seconds)"
+                    }
+                  }
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "C",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-prom"
+                    },
+                    "spec": {
+                      "instant": true,
+                      "format": "table",
+                      "expr": "max by (usage) (cnpg_keys_runway_seconds)"
+                    }
+                  }
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "D",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-prom"
+                    },
+                    "spec": {
+                      "instant": true,
+                      "format": "table",
+                      "expr": "max by (usage) (cnpg_keys_revoked)"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [
+              {
+                "id": "merge"
+              },
+              {
+                "id": "organize",
+                "options": {
+                  "excludeByName": {
+                    "Time": true
+                  },
+                  "renameByName": {
+                    "usage": "Usage",
+                    "Value #A": "Active",
+                    "Value #B": "Newest age",
+                    "Value #C": "Runway",
+                    "Value #D": "Revoked"
+                  }
+                }
+              }
+            ],
+            "queryOptions": {}
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "table",
+          "version": "",
+          "spec": {
+            "options": {
+              "showHeader": true,
+              "cellHeight": "sm",
+              "footer": {
+                "show": false
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short",
+                "decimals": 0
+              },
+              "overrides": [
+                {
+                  "matcher": {
+                    "id": "byRegexp",
+                    "options": "Newest age|Runway"
+                  },
+                  "properties": [
+                    {
+                      "id": "unit",
+                      "value": "s"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "json-keys-signed": {
+      "kind": "Panel",
+      "spec": {
+        "id": 18,
+        "title": "Tokens signed",
+        "description": "Each hour's signed tokens by key usage: access tokens (auth) and refresh tokens (auth-refresh), which follow sign-ins.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "tempo",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-traces"
+                    },
+                    "spec": {
+                      "queryType": "traceql",
+                      "metricsQueryType": "range",
+                      "step": "1h",
+                      "query": "{ resource.service.name = \"service-json-keys\" && name = \"core.ClaimsSign\" } | count_over_time() by (span.key.usage, status)"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": {
+              "timeFrom": "24h"
+            }
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "",
+          "spec": {
+            "options": {
+              "legend": {
+                "displayMode": "list",
+                "placement": "bottom"
+              },
+              "tooltip": {
+                "mode": "multi"
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short",
+                "decimals": 0,
+                "custom": {
+                  "drawStyle": "bars",
+                  "fillOpacity": 70,
+                  "stacking": {
+                    "mode": "normal"
+                  }
+                }
+              },
+              "overrides": []
+            }
+          }
+        }
+      }
+    },
+    "json-keys-rotations": {
+      "kind": "Panel",
+      "spec": {
+        "id": 19,
+        "title": "Key rotation runs",
+        "description": "The hourly rotation job's runs, by outcome.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-prom"
+                    },
                     "spec": {
                       "legendFormat": "{{a_novel_outcome}}",
                       "interval": "1h",
@@ -602,24 +1759,70 @@
           "group": "timeseries",
           "version": "",
           "spec": {
-            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+            "options": {
+              "legend": {
+                "displayMode": "list",
+                "placement": "bottom"
+              },
+              "tooltip": {
+                "mode": "multi"
+              }
+            },
             "fieldConfig": {
-              "defaults": { "unit": "short", "decimals": 0, "custom": { "drawStyle": "bars", "fillOpacity": 70, "stacking": { "mode": "normal" } } },
+              "defaults": {
+                "unit": "short",
+                "decimals": 0,
+                "custom": {
+                  "drawStyle": "bars",
+                  "fillOpacity": 70,
+                  "stacking": {
+                    "mode": "normal"
+                  }
+                }
+              },
               "overrides": [
-                { "matcher": { "id": "byName", "options": "ok" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] },
-                { "matcher": { "id": "byName", "options": "fault" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] }
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "ok"
+                  },
+                  "properties": [
+                    {
+                      "id": "color",
+                      "value": {
+                        "mode": "fixed",
+                        "fixedColor": "green"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "fault"
+                  },
+                  "properties": [
+                    {
+                      "id": "color",
+                      "value": {
+                        "mode": "fixed",
+                        "fixedColor": "red"
+                      }
+                    }
+                  ]
+                }
               ]
             }
           }
         }
       }
     },
-    "json-keys-keys": {
+    "json-keys-verify-failures": {
       "kind": "Panel",
       "spec": {
-        "id": 11,
-        "title": "Keys listed",
-        "description": "The most keys a key search returned each hour: the active keys of a usage.",
+        "id": 20,
+        "title": "Token verifications refused",
+        "description": "Tokens Authentication refused to verify, each hour, by key usage: mostly expired tokens, so watch the trend.",
         "links": [],
         "data": {
           "kind": "QueryGroup",
@@ -634,19 +1837,23 @@
                     "kind": "DataQuery",
                     "group": "tempo",
                     "version": "v0",
-                    "datasource": { "name": "grafanacloud-traces" },
+                    "datasource": {
+                      "name": "grafanacloud-traces"
+                    },
                     "spec": {
                       "queryType": "traceql",
                       "metricsQueryType": "range",
                       "step": "1h",
-                      "query": "{ resource.service.name = \"service-json-keys\" && name = \"dao.PgJwkSearch\" } | max_over_time(span.keys.count)"
+                      "query": "{ resource.service.name = \"service-authentication\" && name = \"tokens.ClaimsVerify\" && status = error } | count_over_time() by (span.key.usage)"
                     }
                   }
                 }
               }
             ],
             "transformations": [],
-            "queryOptions": { "timeFrom": "24h" }
+            "queryOptions": {
+              "timeFrom": "24h"
+            }
           }
         },
         "vizConfig": {
@@ -654,8 +1861,100 @@
           "group": "timeseries",
           "version": "",
           "spec": {
-            "options": { "legend": { "displayMode": "hidden", "placement": "bottom" }, "tooltip": { "mode": "single" } },
-            "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "min": 0 }, "overrides": [] }
+            "options": {
+              "legend": {
+                "displayMode": "list",
+                "placement": "bottom"
+              },
+              "tooltip": {
+                "mode": "multi"
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short",
+                "decimals": 0,
+                "custom": {
+                  "drawStyle": "bars",
+                  "fillOpacity": 70,
+                  "stacking": {
+                    "mode": "normal"
+                  }
+                }
+              },
+              "overrides": []
+            }
+          }
+        }
+      }
+    },
+    "studio-forms": {
+      "kind": "Panel",
+      "spec": {
+        "id": 21,
+        "title": "Form submissions",
+        "description": "Each hour's form submissions by action and result. Sign-in, waitlist and password reset share the home page's default action.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "tempo",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-traces"
+                    },
+                    "spec": {
+                      "queryType": "traceql",
+                      "metricsQueryType": "range",
+                      "step": "1h",
+                      "query": "{ resource.service.name = \"platform-studio\" && name = \"sveltekit.form_action\" } | count_over_time() by (span.sveltekit.form_action.name, span.sveltekit.form_action.result.type)"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": {
+              "timeFrom": "24h"
+            }
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "",
+          "spec": {
+            "options": {
+              "legend": {
+                "displayMode": "list",
+                "placement": "bottom"
+              },
+              "tooltip": {
+                "mode": "multi"
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short",
+                "decimals": 0,
+                "custom": {
+                  "drawStyle": "bars",
+                  "fillOpacity": 70,
+                  "stacking": {
+                    "mode": "normal"
+                  }
+                }
+              },
+              "overrides": []
+            }
           }
         }
       }
@@ -663,7 +1962,7 @@
     "studio-pages": {
       "kind": "Panel",
       "spec": {
-        "id": 12,
+        "id": 22,
         "title": "Pages and data requests",
         "description": "Each hour's server renders: full pages, and data requests from pages already open.",
         "links": [],
@@ -680,7 +1979,9 @@
                     "kind": "DataQuery",
                     "group": "tempo",
                     "version": "v0",
-                    "datasource": { "name": "grafanacloud-traces" },
+                    "datasource": {
+                      "name": "grafanacloud-traces"
+                    },
                     "spec": {
                       "queryType": "traceql",
                       "metricsQueryType": "range",
@@ -692,7 +1993,9 @@
               }
             ],
             "transformations": [],
-            "queryOptions": { "timeFrom": "24h" }
+            "queryOptions": {
+              "timeFrom": "24h"
+            }
           }
         },
         "vizConfig": {
@@ -700,8 +2003,29 @@
           "group": "timeseries",
           "version": "",
           "spec": {
-            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-            "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "custom": { "drawStyle": "bars", "fillOpacity": 70, "stacking": { "mode": "normal" } } }, "overrides": [] }
+            "options": {
+              "legend": {
+                "displayMode": "list",
+                "placement": "bottom"
+              },
+              "tooltip": {
+                "mode": "multi"
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short",
+                "decimals": 0,
+                "custom": {
+                  "drawStyle": "bars",
+                  "fillOpacity": 70,
+                  "stacking": {
+                    "mode": "normal"
+                  }
+                }
+              },
+              "overrides": []
+            }
           }
         }
       }
@@ -709,7 +2033,7 @@
     "studio-calls": {
       "kind": "Panel",
       "spec": {
-        "id": 13,
+        "id": 23,
         "title": "Calls to the services: p95",
         "description": "How long Studio's server waits on each service it calls, at the 95th percentile.",
         "links": [],
@@ -726,7 +2050,9 @@
                     "kind": "DataQuery",
                     "group": "tempo",
                     "version": "v0",
-                    "datasource": { "name": "grafanacloud-traces" },
+                    "datasource": {
+                      "name": "grafanacloud-traces"
+                    },
                     "spec": {
                       "queryType": "traceql",
                       "metricsQueryType": "range",
@@ -738,7 +2064,9 @@
               }
             ],
             "transformations": [],
-            "queryOptions": { "timeFrom": "24h" }
+            "queryOptions": {
+              "timeFrom": "24h"
+            }
           }
         },
         "vizConfig": {
@@ -746,8 +2074,93 @@
           "group": "timeseries",
           "version": "",
           "spec": {
-            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-            "fieldConfig": { "defaults": { "unit": "s", "min": 0 }, "overrides": [] }
+            "options": {
+              "legend": {
+                "displayMode": "list",
+                "placement": "bottom"
+              },
+              "tooltip": {
+                "mode": "multi"
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "s",
+                "min": 0
+              },
+              "overrides": []
+            }
+          }
+        }
+      }
+    },
+    "studio-refusals": {
+      "kind": "Panel",
+      "spec": {
+        "id": 24,
+        "title": "Refusals from the services",
+        "description": "Each hour's calls a service answered with an error status, by service and status: where a visitor's request met a limit or a fault.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "tempo",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-traces"
+                    },
+                    "spec": {
+                      "queryType": "traceql",
+                      "metricsQueryType": "range",
+                      "step": "1h",
+                      "query": "{ resource.service.name = \"platform-studio\" && kind = client && span.http.response.status_code >= 400 } | count_over_time() by (span.server.address, span.http.response.status_code)"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": {
+              "timeFrom": "24h"
+            }
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "",
+          "spec": {
+            "options": {
+              "legend": {
+                "displayMode": "list",
+                "placement": "bottom"
+              },
+              "tooltip": {
+                "mode": "multi"
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short",
+                "decimals": 0,
+                "custom": {
+                  "drawStyle": "bars",
+                  "fillOpacity": 70,
+                  "stacking": {
+                    "mode": "normal"
+                  }
+                }
+              },
+              "overrides": []
+            }
           }
         }
       }
@@ -768,13 +2181,69 @@
                 "columnWidthMode": "standard",
                 "rowHeightMode": "standard",
                 "items": [
-                  { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "authentication-accounts" } } },
-                  { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "authentication-new-accounts" } } },
-                  { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "authentication-codes" } } },
-                  { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "authentication-sessions" } } },
-                  { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "authentication-mails" } } },
-                  { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "authentication-mail-queue" } } },
-                  { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "authentication-requests" } } }
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "authentication-accounts"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "authentication-new-accounts"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "authentication-codes"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "authentication-sign-ins"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "authentication-mails"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "authentication-mail-queue"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "authentication-refused-refresh"
+                      }
+                    }
+                  }
                 ]
               }
             }
@@ -787,14 +2256,91 @@
             "layout": {
               "kind": "AutoGridLayout",
               "spec": {
-                "maxColumnCount": 2,
+                "maxColumnCount": 3,
                 "columnWidthMode": "standard",
                 "rowHeightMode": "standard",
                 "items": [
-                  { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "genai-tokens" } } },
-                  { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "genai-generations" } } },
-                  { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "genai-queue" } } },
-                  { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "genai-provider" } } }
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "genai-live"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "genai-oldest"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "genai-users"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "genai-settled"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "genai-tokens-models"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "genai-tokens"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "genai-pushback"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "genai-provider"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "genai-retention"
+                      }
+                    }
+                  }
                 ]
               }
             }
@@ -807,13 +2353,46 @@
             "layout": {
               "kind": "AutoGridLayout",
               "spec": {
-                "maxColumnCount": 2,
+                "maxColumnCount": 3,
                 "columnWidthMode": "standard",
                 "rowHeightMode": "standard",
                 "items": [
-                  { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "json-keys-requests" } } },
-                  { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "json-keys-rotations" } } },
-                  { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "json-keys-keys" } } }
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "json-keys-keys"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "json-keys-signed"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "json-keys-rotations"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "json-keys-verify-failures"
+                      }
+                    }
+                  }
                 ]
               }
             }
@@ -826,12 +2405,46 @@
             "layout": {
               "kind": "AutoGridLayout",
               "spec": {
-                "maxColumnCount": 2,
+                "maxColumnCount": 3,
                 "columnWidthMode": "standard",
                 "rowHeightMode": "standard",
                 "items": [
-                  { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "studio-pages" } } },
-                  { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "studio-calls" } } }
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "studio-forms"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "studio-pages"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "studio-calls"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "studio-refusals"
+                      }
+                    }
+                  }
                 ]
               }
             }

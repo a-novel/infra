@@ -268,8 +268,8 @@ run "keeps_each_database_available_and_backed_up" {
       contains(keys(kubernetes_config_map_v1.database_queries), service)
       ? database.manifest.spec.monitoring.customQueriesConfigMap == [{ name = "cnpg-default-monitoring", key = "queries" }, { name = "database-queries", key = "queries.yaml" }]
       : !can(database.manifest.spec.monitoring)
-    ]) && contains(keys(kubernetes_config_map_v1.database_queries), "authentication")
-    error_message = "A database with its own queries must list them after CloudNativePG's, and Authentication must count its accounts."
+    ]) && toset(keys(kubernetes_config_map_v1.database_queries)) == toset(keys(var.databases))
+    error_message = "Each database must export its own numbers, listed after CloudNativePG's queries."
   }
 
   assert {

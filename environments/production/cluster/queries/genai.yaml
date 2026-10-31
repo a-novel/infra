@@ -1,0 +1,135 @@
+# GenAI's own numbers. CloudNativePG runs each query on the primary at every scrape, and exports
+# each column as cnpg_<query>_<column>. generations holds the live rows and six hours of settled
+# ones before the purge deletes them, so reading it whole stays cheap. No query reads an owner, a
+# payload or a response.
+
+# The live work, and how long its oldest rows have waited. Every live row is checked at least every
+# minute while the sweep runs, so an old check means the sweep stopped.
+generations_live:
+  query: |
+    SELECT
+      count(*) FILTER (WHERE status = 'pending') AS pending,
+      count(*) FILTER (WHERE status = 'running') AS running,
+      coalesce(extract(epoch FROM now() - min(created_at) FILTER (WHERE status = 'pending')), 0) AS oldest_pending_seconds,
+      coalesce(extract(epoch FROM now() - min(start_requested_at) FILTER (WHERE status = 'running')), 0) AS oldest_running_seconds,
+      coalesce(extract(epoch FROM now() - min(checked_at)), 0) AS oldest_check_seconds
+    FROM generations
+    WHERE status IN ('pending', 'running')
+  primary: true
+  target_databases: ["app"]
+  metrics:
+    - pending:
+        usage: GAUGE
+        description: Generations waiting for a provider call.
+    - running:
+        usage: GAUGE
+        description: Generations a provider is working on.
+    - oldest_pending_seconds:
+        usage: GAUGE
+        description: Age of the oldest waiting generation.
+    - oldest_running_seconds:
+        usage: GAUGE
+        description: Time since the oldest running call started.
+    - oldest_check_seconds:
+        usage: GAUGE
+        description: Time since the sweep last checked the least recently checked live generation.
+
+# The last hour's settled generations, by status and failure reason, which are fixed strings.
+generations_settled:
+  query: |
+    SELECT
+      status::text AS status,
+      coalesce(error, 'none') AS reason,
+      count(*) AS total,
+      count(*) FILTER (WHERE attempt > 1) AS retried,
+      percentile_cont(0.95) WITHIN GROUP (ORDER BY extract(epoch FROM settled_at - created_at)) AS p95_seconds
+    FROM generations
+    WHERE settled_at > now() - interval '1 hour'
+    GROUP BY 1, 2
+  primary: true
+  target_databases: ["app"]
+  metrics:
+    - status:
+        usage: LABEL
+        description: The status the generation settled in.
+    - reason:
+        usage: LABEL
+        description: Why it failed, or none.
+    - total:
+        usage: GAUGE
+        description: Generations settled in the last hour.
+    - retried:
+        usage: GAUGE
+        description: Those that took more than one attempt.
+    - p95_seconds:
+        usage: GAUGE
+        description: Time from submission to settlement, at the 95th percentile.
+
+# generation_usage is never purged and has no index on time alone. Its keys start with the
+# generation's uuidv7, minted at submission, and a call reports its usage within about two and a
+# half hours, so the key bound reads only the last 27 hours.
+generation_tokens:
+  query: |
+    SELECT
+      model,
+      class,
+      coalesce(tier, 'none') AS tier,
+      sum(input_tokens) AS input,
+      sum(cached_input_tokens) AS cached_input,
+      sum(output_tokens) AS output,
+      sum(reasoning_tokens) AS reasoning
+    FROM generation_usage
+    WHERE generation_id >= (SELECT uuidv7(interval '-27 hours')) AND created_at > now() - interval '24 hours'
+    GROUP BY 1, 2, 3
+  primary: true
+  target_databases: ["app"]
+  metrics:
+    - model:
+        usage: LABEL
+        description: The model that ran.
+    - class:
+        usage: LABEL
+        description: The reasoning effort that ran.
+    - tier:
+        usage: LABEL
+        description: The provider's service tier, which sets the price.
+    - input:
+        usage: GAUGE
+        description: Input tokens over the last 24 hours.
+    - cached_input:
+        usage: GAUGE
+        description: Of those, tokens read from the provider's cache, at a lower price.
+    - output:
+        usage: GAUGE
+        description: Output tokens over the last 24 hours.
+    - reasoning:
+        usage: GAUGE
+        description: Of those, reasoning tokens.
+
+generation_users:
+  query: |
+    SELECT count(DISTINCT owner_id) AS active
+    FROM generation_usage
+    WHERE generation_id >= (SELECT uuidv7(interval '-27 hours')) AND created_at > now() - interval '24 hours'
+  primary: true
+  target_databases: ["app"]
+  metrics:
+    - active:
+        usage: GAUGE
+        description: Accounts that ran a generation in the last 24 hours.
+
+# Settled content past its retention, which pg_cron purges every 10 seconds.
+generations_expired:
+  query: |
+    SELECT count(*) AS waiting, coalesce(extract(epoch FROM now() - min(expires_at)), 0) AS oldest_seconds
+    FROM generations
+    WHERE expires_at < now()
+  primary: true
+  target_databases: ["app"]
+  metrics:
+    - waiting:
+        usage: GAUGE
+        description: Generations kept past their retention.
+    - oldest_seconds:
+        usage: GAUGE
+        description: How long the oldest of them has been kept past it.

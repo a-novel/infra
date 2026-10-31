@@ -1,7 +1,11 @@
 # Authentication's own numbers. CloudNativePG runs each query on the primary at every scrape, and
-# exports each column as cnpg_<query>_<column>.
+# exports each column as cnpg_<query>_<column>. No query reads an email, a code or a target.
+
 accounts:
-  query: SELECT role, count(*) AS total FROM credentials GROUP BY role
+  query: |
+    SELECT role, count(*) AS total, count(*) FILTER (WHERE created_at > now() - interval '7 days') AS created_7d
+    FROM credentials
+    GROUP BY role
   primary: true
   target_databases: ["app"]
   metrics:
@@ -11,16 +15,43 @@ accounts:
     - total:
         usage: GAUGE
         description: Accounts with this role.
+    - created_7d:
+        usage: GAUGE
+        description: Of those, accounts created in the last 7 days.
 
-# A code is pending from its mail until it is used, which deletes it, or expires.
+# What became of the codes mailed in the last 7 days, longer than any code lives: used, replaced by
+# a newer one, still pending, or expired unused. The service marks a used or replaced code through
+# deleted_comment, and leaves an expired one as it is.
 short_codes:
-  query: SELECT usage, count(*) AS pending FROM short_codes WHERE deleted_at IS NULL AND expires_at > now() GROUP BY usage
+  query: |
+    SELECT
+      usage,
+      count(*) AS issued_7d,
+      count(*) FILTER (WHERE deleted_comment = 'key consumed') AS used_7d,
+      count(*) FILTER (WHERE deleted_comment = 'override with newer key') AS replaced_7d,
+      count(*) FILTER (WHERE deleted_at IS NULL AND expires_at > now()) AS pending,
+      count(*) FILTER (WHERE deleted_at IS NULL AND expires_at <= now()) AS expired_7d
+    FROM short_codes
+    WHERE created_at > now() - interval '7 days'
+    GROUP BY usage
   primary: true
   target_databases: ["app"]
   metrics:
     - usage:
         usage: LABEL
         description: What the code authorizes.
+    - issued_7d:
+        usage: GAUGE
+        description: Codes mailed in the last 7 days.
+    - used_7d:
+        usage: GAUGE
+        description: Of those, codes used.
+    - replaced_7d:
+        usage: GAUGE
+        description: Of those, codes replaced by a newer one before use.
     - pending:
         usage: GAUGE
-        description: Codes sent and neither used nor expired.
+        description: Codes neither used, replaced nor expired.
+    - expired_7d:
+        usage: GAUGE
+        description: Of those mailed in the last 7 days, codes that expired unused.
