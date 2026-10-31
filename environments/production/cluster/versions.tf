@@ -20,6 +20,10 @@ terraform {
       source  = "hashicorp/kubernetes"
       version = "3.4.0"
     }
+    time = {
+      source  = "hashicorp/time"
+      version = "0.14.2"
+    }
     # Its decode_tfvars reads each service root's inputs.
     terraform = {
       source = "terraform.io/builtin/terraform"

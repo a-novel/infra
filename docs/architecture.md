@@ -227,12 +227,15 @@ On the cluster, each service's namespace holds a CloudNativePG database named `d
 primary and a replica on separate nodes, with today's host sizes, switching over on updates. It
 starts as an import of the service's host: CloudNativePG dumps the host's database as the role that
 owns its tables and restores it as `app`, leaving pg_cron's jobs out. Each lineage archives under
-the cluster's `backup_server_name`. A new name recreates the database, imports it again, rolls the
+the cluster's `backup_server_name`. A new name recreates the database four minutes after deleting
+the old one, so the operator's objects for the two never overlap, imports it again, rolls the
 service's pods and takes a base backup at once; bootstrap's `retired_barman_lineages` then expires
 the former lineage after 15 days. The rehearsal imports a copy of production this way, and the
 cutover imports it again (a-novel/infra#1202). CloudNativePG generates its credentials, in the
 `database-app` Secret, for the database and owner `app`. It serves TLS for `database-rw.<service>.svc`
-from cert-manager's ten-year `databases` CA, which keeps its key when renewed. The service's pods
+from cert-manager's ten-year `databases` CA, which keeps its key when renewed. The same CA issues
+its replica's `streaming_replica` certificate, named `streaming-replica.<service>`, which only that
+database maps to the role. The service's pods
 connect by that name and trust that CA beside the system roots. Its image catalog takes the service's
 release image from foundation, and GenAI preloads `pg_cron`. The deploy waits until both instances
 serve and WAL reaches Barman; a daily base backup runs from the replica. Each database backs up to
