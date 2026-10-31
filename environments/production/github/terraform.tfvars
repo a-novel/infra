@@ -84,6 +84,11 @@ repositories = {
     description  = "OpenTofu infrastructure and GitOps delivery on Google Cloud."
     homepage_url = "https://www.agorastoryverse.com"
   }
+  "a-novel/platform-account" = {
+    class        = "platform"
+    description  = "The Agora account platform: sign-in, email links and account settings."
+    homepage_url = "https://a-novel.github.io/platform-account/"
+  }
   "a-novel/platform-studio" = {
     class        = "platform"
     description  = "The Studio creative platform."
