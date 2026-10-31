@@ -275,4 +275,5 @@ gh workflow run deploy.yaml --repo a-novel/infra
   with an admin bypass, then run `a-novel repo update` on `master`.
 - **OpenTofu and provider upgrades** wait 7 days after release, or 6 hours for patches, before
   Renovate proposes them. Every pull-request plan runs those binaries with the read-only identity's
-  access, so the wait leaves time for a compromised release to be found first.
+  access, and a provider update that merges on its own deploys them, so the wait leaves time for a
+  compromised release to be found first.

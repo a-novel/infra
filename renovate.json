@@ -80,7 +80,7 @@
       "automerge": false
     },
     {
-      "description": "Hold OpenTofu and provider releases for a week. Pull-request plans run the new binaries with the read-only production identity, so the release age bounds a compromised upstream release.",
+      "description": "Hold OpenTofu and provider releases for a week. Pull-request plans run the new binaries with the read-only production identity, and an update that merges on its own deploys them, so the release age bounds a compromised upstream release.",
       "matchFileNames": [".opentofu-version", "**/versions.tf"],
       "minimumReleaseAge": "7 days"
     },
@@ -171,7 +171,7 @@
       "groupName": "External Secrets"
     },
     {
-      "description": "Move the k8s-monitoring chart with the images it runs in one pull request. The chart pins its own versions of them, which the review compares.",
+      "description": "Move the k8s-monitoring chart with the images it runs in one pull request, since the chart pins its own versions of them.",
       "matchFileNames": ["environments/production/cluster/**"],
       "matchPackageNames": [
         "k8s-monitoring",
@@ -181,19 +181,6 @@
         "registry.k8s.io/kube-state-metrics/kube-state-metrics"
       ],
       "groupName": "k8s-monitoring"
-    },
-    {
-      "description": "Require review for production configuration and infrastructure definitions.",
-      "matchFileNames": [
-        "bootstrap/**",
-        "environments/production/**",
-        "**/*.tf",
-        "**/*.tf.json",
-        "**/*.tofu",
-        "**/*.tofu.json",
-        "**/.terraform.lock.hcl"
-      ],
-      "automerge": false
     }
   ],
   "customManagers": [
