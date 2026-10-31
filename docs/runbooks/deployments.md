@@ -272,7 +272,7 @@ gh workflow run deploy.yaml --repo a-novel/infra
 - **Fork pull requests** get no cloud credentials, so their plan checks fail. Push the branch to
   this repository to plan it.
 - **Renaming or removing a job in `main.yaml`** changes the required checks. Merge the pull request
-  with an admin bypass, then run `a-novel repo update` on `master`.
+  with an admin bypass. The GitHub root's sweep requires the new set within 10 minutes.
 - **OpenTofu and provider upgrades** wait 7 days after release, or 6 hours for patches, before
   Renovate proposes them. Every pull-request plan runs those binaries with the read-only identity's
   access, and a provider update that merges on its own deploys them, so the wait leaves time for a

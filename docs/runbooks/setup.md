@@ -37,8 +37,8 @@ exist only while a [host tool](host-tools.md#publish-a-version) is being publish
 The workflows also read organization variables, which must be visible to this repository: the
 Apps' client IDs and logins, `AGENT_KILL_SWITCH`, `DISCORD_REPO_ROLES` and `RELEASE_BOT_LOGIN`.
 Without `RELEASE_BOT_LOGIN`, every plan that changes a release image fails. The Apps' private keys
-live only in the `governance` environment, which the GitHub root creates and `a-novel repo update`
-fills from Bitwarden. The deploys and rollouts post to Discord through the `DEPLOY_WEBHOOK` secret, and skip
+live only in the `governance` environment, which the GitHub root creates and its secret sync fills
+from Secret Manager. The deploys and rollouts post to Discord through the `DEPLOY_WEBHOOK` secret, and skip
 their posts without it.
 
 Environment `production` allows the `master` branch only, with no required reviewers:

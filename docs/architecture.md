@@ -354,8 +354,7 @@ and the config their code does not: settings, team access, labels, Pages, the De
 rulesets, environments and scoped secret access. Each repository takes its class's settings from
 `main.tf`, then its own overrides from `terraform.tfvars`, field by field. A new repository starts
 from its class's template, `service-template` or `platform-template`, or empty. Removing one
-archives it. Until a-novel/.github#534 retires it, `a-novel repo update` still writes the same
-values and copies the governance secrets from Bitwarden, so its templates stay frozen.
+archives it.
 
 - **The code stays the source of truth.** Discovery reads each repository's default branch: the
   required checks are the always-required set plus `main.yaml`'s jobs, minus reporting and

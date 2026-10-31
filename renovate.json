@@ -40,28 +40,6 @@
       "automerge": false
     },
     {
-      "description": "Leave the other actions in the managed governance workflows to `a-novel repo update`, which renders them from the stack's templates, where the stack's Renovate keeps their commit pins current. An update here would be reverted at the next reconcile. Their a-novel-kit/workflows pins stay with Renovate, since the reconcile keeps a deployed pin newer than its template's.",
-      "matchFileNames": [
-        ".github/workflows/approve-pr.yaml",
-        ".github/workflows/auto-approve-dependabot.yaml",
-        ".github/workflows/auto-assign-author.yaml",
-        ".github/workflows/check-dependencies.yaml",
-        ".github/workflows/derive-status.yaml",
-        ".github/workflows/epic-freeze.yaml",
-        ".github/workflows/epic-rollback.yaml",
-        ".github/workflows/feature-env.yaml",
-        ".github/workflows/lock-closed.yaml",
-        ".github/workflows/merge-gate.yaml",
-        ".github/workflows/notify-reviews.yaml",
-        ".github/workflows/notify.yaml",
-        ".github/workflows/pr-relay.yaml",
-        ".github/workflows/recover-prs.yaml",
-        ".github/workflows/review-gate.yaml"
-      ],
-      "matchPackageNames": ["!a-novel-kit/workflows"],
-      "enabled": false
-    },
-    {
       "description": "Resolve Aqua Security tags directly from Git because its organization IP allow list rejects authenticated GitHub GraphQL lookups.",
       "matchPackageNames": ["aquasecurity/trivy", "aquasecurity/trivy-action"],
       "overrideDatasource": "git-tags",
