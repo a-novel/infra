@@ -9,6 +9,7 @@ from deploys and release pins to database rollouts and scheduled checks.
 | Release, hotfix, deletion label, failed deploy, freeze    | [Deployments](deployments.md)   |
 | Inspect, back up, change or restore a database host       | [Database hosts](database.md)   |
 | Schedule or clear a planned downtime                      | [Planned downtime](downtime.md) |
+| Move production from Cloud Run to the cluster             | [Cutover](cutover.md)           |
 | Add or rotate a secret, SMTP, waitlist, TLS, GitHub token | [Secrets](secrets.md)           |
 | Publish or pin `host-credentials` or `native-restore`     | [Host tools](host-tools.md)     |
 | An alert or a failed scheduled check                      | [Alerts](alerts.md)             |
