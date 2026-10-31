@@ -4,7 +4,7 @@ resource "helm_release" "cert_manager" {
   namespace  = var.namespaces.cert_manager
   repository = "https://charts.jetstack.io"
   chart      = "cert-manager"
-  version    = "v1.21.2"
+  version    = "v1.21.3"
 
   values = [yamlencode({
     crds            = { enabled = true, keep = true }
