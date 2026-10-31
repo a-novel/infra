@@ -44,15 +44,37 @@ describe("known", () => {
   });
 });
 
-// One organization: infra holds a managed ruleset, a stray one and an organization ruleset; its
-// governance environment holds a managed pattern and a stray one; the release environment is new.
+// One organization: infra holds a managed ruleset, a stray one, a disabled one and an organization
+// ruleset; its governance environment holds a managed pattern and a stray one; the release
+// environment is new.
 function organization() {
   const calls = [];
   const responses = {
     "repos/a-novel/infra/rulesets?includes_parents=false&per_page=100": [
-      { id: 1, name: "master", source_type: "Repository" },
-      { id: 2, name: "by-hand", source_type: "Repository" },
-      { id: 3, name: "org-wide", source_type: "Organization" },
+      {
+        id: 1,
+        name: "master",
+        source_type: "Repository",
+        enforcement: "active",
+      },
+      {
+        id: 2,
+        name: "by-hand",
+        source_type: "Repository",
+        enforcement: "active",
+      },
+      {
+        id: 3,
+        name: "org-wide",
+        source_type: "Organization",
+        enforcement: "active",
+      },
+      {
+        id: 4,
+        name: "draft",
+        source_type: "Repository",
+        enforcement: "disabled",
+      },
     ],
     "repos/a-novel/infra/environments/governance/deployment-branch-policies?per_page=100":
       {

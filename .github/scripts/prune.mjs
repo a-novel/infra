@@ -55,11 +55,15 @@ export async function prune(request, owner, organization, keep, apply) {
       request,
       `repos/${owner}/${name}/rulesets?includes_parents=false&per_page=100`,
     );
-    for (const { id, name: ruleset, source_type } of rulesets ?? []) {
-      if (source_type !== "Repository" || keep.rulesets.has(id)) continue;
+    // Read access lists only active rulesets, so the Plan App never sees an inactive one. Prune
+    // leaves those, which enforce nothing, so a plan and its deploy find the same strays.
+    for (const ruleset of rulesets ?? []) {
+      const { id, source_type, enforcement } = ruleset;
+      if (source_type !== "Repository" || enforcement !== "active") continue;
+      if (keep.rulesets.has(id)) continue;
       strays.push({
         path: `repos/${owner}/${name}/rulesets/${id}`,
-        description: `${owner}/${name}'s ruleset ${ruleset}`,
+        description: `${owner}/${name}'s ruleset ${ruleset.name}`,
       });
     }
   }

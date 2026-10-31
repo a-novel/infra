@@ -373,11 +373,13 @@ values and copies the governance secrets from Bitwarden, so its templates stay f
   repository, as `.github/scripts/repository-asserts.mjs` does. The drift check reads the same
   settings and warns when one differs. Each assert names the issue that replaces it with a
   provider resource.
-- **Prune removes what the root does not produce.** A ruleset or deployment pattern made by hand
-  fails the next pull request's `plan-github` until a maintainer adds `allow-resource-deletion`,
-  and the deploy of that pull request deletes it, as `.github/scripts/prune.mjs` does. It reads
-  patterns only in the environments the root manages, never deletes an environment, and the sweep
-  never prunes. Secret sync deletes the governance secrets no workflow names.
+- **Prune removes what the root does not produce.** An active ruleset or a deployment pattern made
+  by hand fails the next pull request's `plan-github` until a maintainer adds
+  `allow-resource-deletion`, and the deploy of that pull request deletes it, as
+  `.github/scripts/prune.mjs` does. It leaves inactive rulesets, which enforce nothing and which the
+  Plan App cannot list. It reads patterns only in the environments the root manages, never deletes
+  an environment, and the sweep never prunes. Secret sync deletes the governance secrets no workflow
+  names.
 - **Only the guarded environments are managed:** `release`, with its reviewers, `governance` and
   `sourcemaps`, each open on the refs a ruleset guards. GitHub creates the others, such as
   `github-pages` and `copilot`.

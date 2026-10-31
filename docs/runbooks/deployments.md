@@ -143,8 +143,9 @@ A plan fails its check when it deletes, replaces or forgets a resource, or weake
 and the job summary holds the full plan. Replacing an instance template or a `terraform_data` is
 exempt, since neither holds data.
 
-`plan-github` fails the same way when a repository holds a ruleset or deployment pattern the GitHub
-root does not produce, such as one made by hand: the deploy would prune it. Its warnings name each.
+`plan-github` fails the same way when a repository holds an active ruleset or a deployment pattern
+the GitHub root does not produce, such as one made by hand: the deploy would prune it. Its warnings
+name each.
 To keep one, declare it in the GitHub root instead.
 
 If the change is intended:
