@@ -5,6 +5,129 @@
   "annotations": [],
   "variables": [],
   "elements": {
+    "authentication-accounts": {
+      "kind": "Panel",
+      "spec": {
+        "id": 14,
+        "title": "Accounts",
+        "description": "Accounts by role, counted in the database.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": { "name": "grafanacloud-prom" },
+                    "spec": { "instant": true, "legendFormat": "{{role}}", "expr": "max by (role) (cnpg_accounts_total)" }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": {}
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "stat",
+          "version": "",
+          "spec": {
+            "options": { "colorMode": "none", "graphMode": "none", "textMode": "value_and_name", "reduceOptions": { "calcs": ["lastNotNull"] } },
+            "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "color": { "mode": "fixed", "fixedColor": "text" } }, "overrides": [] }
+          }
+        }
+      }
+    },
+    "authentication-new-accounts": {
+      "kind": "Panel",
+      "spec": {
+        "id": 15,
+        "title": "New accounts",
+        "description": "Accounts created over the time range, less those deleted.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": { "name": "grafanacloud-prom" },
+                    "spec": { "instant": true, "legendFormat": "new", "expr": "sum(max by (role) (cnpg_accounts_total)) - sum(max by (role) (cnpg_accounts_total offset $__range))" }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": {}
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "stat",
+          "version": "",
+          "spec": {
+            "options": { "colorMode": "none", "graphMode": "none", "textMode": "value_and_name", "reduceOptions": { "calcs": ["lastNotNull"] } },
+            "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "color": { "mode": "fixed", "fixedColor": "text" } }, "overrides": [] }
+          }
+        }
+      }
+    },
+    "authentication-codes": {
+      "kind": "Panel",
+      "spec": {
+        "id": 16,
+        "title": "Codes awaiting use",
+        "description": "Codes mailed for a registration, an email change or a password reset, neither used nor expired yet.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": { "name": "grafanacloud-prom" },
+                    "spec": { "instant": true, "legendFormat": "{{usage}}", "expr": "max by (usage) (cnpg_short_codes_pending)" }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": {}
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "stat",
+          "version": "",
+          "spec": {
+            "options": { "colorMode": "none", "graphMode": "none", "textMode": "value_and_name", "reduceOptions": { "calcs": ["lastNotNull"] } },
+            "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "color": { "mode": "fixed", "fixedColor": "text" } }, "overrides": [] }
+          }
+        }
+      }
+    },
     "authentication-sessions": {
       "kind": "Panel",
       "spec": {
@@ -641,10 +764,13 @@
             "layout": {
               "kind": "AutoGridLayout",
               "spec": {
-                "maxColumnCount": 2,
+                "maxColumnCount": 3,
                 "columnWidthMode": "standard",
                 "rowHeightMode": "standard",
                 "items": [
+                  { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "authentication-accounts" } } },
+                  { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "authentication-new-accounts" } } },
+                  { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "authentication-codes" } } },
                   { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "authentication-sessions" } } },
                   { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "authentication-mails" } } },
                   { "kind": "AutoGridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "authentication-mail-queue" } } },

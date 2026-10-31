@@ -1,0 +1,26 @@
+# Authentication's own numbers. CloudNativePG runs each query on the primary at every scrape, and
+# exports each column as cnpg_<query>_<column>.
+accounts:
+  query: SELECT role, count(*) AS total FROM credentials GROUP BY role
+  primary: true
+  target_databases: ["app"]
+  metrics:
+    - role:
+        usage: LABEL
+        description: The accounts' role.
+    - total:
+        usage: GAUGE
+        description: Accounts with this role.
+
+# A code is pending from its mail until it is used, which deletes it, or expires.
+short_codes:
+  query: SELECT usage, count(*) AS pending FROM short_codes WHERE deleted_at IS NULL AND expires_at > now() GROUP BY usage
+  primary: true
+  target_databases: ["app"]
+  metrics:
+    - usage:
+        usage: LABEL
+        description: What the code authorizes.
+    - pending:
+        usage: GAUGE
+        description: Codes sent and neither used nor expired.
