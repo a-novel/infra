@@ -246,7 +246,7 @@ resource "helm_release" "alloy" {
   namespace  = local.namespace["alloy"]
   repository = "https://grafana.github.io/helm-charts"
   chart      = "k8s-monitoring"
-  version    = "4.5.4"
+  version    = "4.5.5"
 
   values = [yamlencode(local.alloy_values)]
 
