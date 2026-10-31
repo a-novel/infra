@@ -64,9 +64,3 @@ variable "labels" {
     description = string
   }))
 }
-
-variable "adopt" {
-  description = "Whether the plan imports the live objects. Mocked providers cannot import, so the tests turn it off."
-  type        = bool
-  default     = true
-}

@@ -18,10 +18,6 @@ override_module {
   target = module.a_novel_kit
 }
 
-variables {
-  adopt = false
-}
-
 run "plans_with_the_plan_app" {
   command = plan
 
