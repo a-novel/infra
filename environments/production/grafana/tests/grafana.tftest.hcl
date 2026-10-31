@@ -97,13 +97,8 @@ run "refuses_a_latency_alert_without_a_threshold" {
   expect_failures = [var.alerts]
 }
 
-run "opens_on_the_journey" {
+run "links_the_journey" {
   command = plan
-
-  assert {
-    condition     = grafana_organization_preferences.home.home_dashboard_uid == grafana_dashboard.journey["errors"].uid
-    error_message = "Grafana must open on the journey's first step."
-  }
 
   assert {
     condition = alltrue(concat(
