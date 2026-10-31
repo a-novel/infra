@@ -27,8 +27,9 @@ ephemeral "google_secret_manager_secret_version" "grafana_token" {
 }
 
 provider "grafana" {
-  url  = var.url
-  auth = ephemeral.google_secret_manager_secret_version.grafana_token.secret_data
+  url      = var.url
+  stack_id = var.stack_id
+  auth     = ephemeral.google_secret_manager_secret_version.grafana_token.secret_data
 }
 
 # Holds every alert rule group and dashboard this root manages.
@@ -42,4 +43,11 @@ resource "grafana_folder" "production" {
 resource "grafana_notification_policy" "discord" {
   contact_point = var.contact_point
   group_by      = ["grafana_folder", "alertname"]
+}
+
+# The contact point's title and message call these templates: each post names the alert, gives one
+# line per firing instance and links its dashboard panel, runbook and silence.
+resource "grafana_message_template" "discord" {
+  name     = "discord"
+  template = file("${path.module}/templates/discord.tmpl")
 }

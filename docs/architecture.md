@@ -159,8 +159,9 @@ Kubernetes resources, reaching the control plane through the DNS endpoint as the
   namespace. Renovate moves each chart with its images after a week, and merges a minor or patch
   update on its own.
 - **Telemetry:** one Alloy pod in the `alloy` namespace sends every signal to the Grafana Cloud
-  stack's OTLP gateway. The workloads export their traces and logs to its OTLP/HTTP receiver, from
-  which it derives span metrics on server and root spans. It scrapes the kubelets, cAdvisor,
+  stack's OTLP gateway. The workloads export their traces and logs to its OTLP/HTTP receiver. It
+  gives each server and root span an outcome, `a_novel.outcome`, then derives span metrics from
+  them, with a native histogram of their duration. It scrapes the kubelets, cAdvisor,
   kube-state-metrics and the databases every 60 seconds, and sends the Kubernetes events, all in
   the cluster root's namespaces. It reads its push token from `production-alloy-push-token`, and
   no Secret of the cluster. The Alloy Operator, which the chart runs, manages that namespace alone.

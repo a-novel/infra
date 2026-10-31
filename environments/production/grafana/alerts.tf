@@ -1,51 +1,65 @@
 locals {
   # Alloy derives these span metrics from every server span and from each trace's root, which a
   # job's run is.
+  # Each carries a_novel.outcome (the cluster root's alloy.tf): fault, transient, expected or ok.
+  # The duration is a native histogram.
   calls    = "traces_span_metrics_calls_total"
-  duration = "traces_span_metrics_duration_seconds_bucket"
+  duration = "traces_span_metrics_duration_seconds"
+
+  # Each alert links its runbook, and the journey panel that draws what it watches.
+  runbook = "https://github.com/a-novel/infra/blob/master/docs/runbooks/alerts.md#grafana-alerts"
 
   # The kubelets' gRPC probes call each pod every few seconds, so they would drown the failures and
   # the duration of every other request.
   probes = "grpc.health.v1.Health/Check"
 
   # Faults are filed by hand from Discord. Each span's fault type fires while it recurs, and an error
-  # type the service has not raised for a week also fires as new.
+  # type the service has not raised for a week also fires as new. Transient failures count only
+  # toward the failing share, and expected refusals toward nothing.
   service_rules = { for service, alert in var.alerts : service => [
     {
-      title   = "${service}: failing share"
-      for     = "5m"
-      summary = "{{ humanizePercentage $values.query.Value }} of ${service}'s requests and job runs failed over 10 minutes."
-      expr    = <<-EOT
-        sum(rate(${local.calls}{service_name="${service}", span_name!="${local.probes}", status_code="STATUS_CODE_ERROR"}[10m]))
+      title     = "${service}: failing share"
+      for       = "5m"
+      dashboard = "errors"
+      panel     = 5
+      summary   = "{{ humanizePercentage $values.query.Value }} of its calls failed over 10 minutes, past ${format("%g", alert.failure_rate * 100)}%."
+      expr      = <<-EOT
+        sum(rate(${local.calls}{service_name="${service}", span_name!="${local.probes}", a_novel_outcome=~"fault|transient"}[10m]))
           / sum(rate(${local.calls}{service_name="${service}", span_name!="${local.probes}"}[10m]))
           > ${alert.failure_rate}
       EOT
     },
     {
-      title   = "${service}: slow requests"
-      for     = "5m"
-      summary = "${service}'s requests took {{ humanizeDuration $values.query.Value }} at the 95th percentile over 10 minutes."
-      expr    = <<-EOT
-        histogram_quantile(0.95, sum by (le) (rate(
+      title     = "${service}: slow requests"
+      for       = "5m"
+      dashboard = "performance"
+      panel     = 1
+      summary   = "95% of its requests took up to {{ humanizeDuration $values.query.Value }} over 10 minutes, past ${alert.p95_seconds}s."
+      expr      = <<-EOT
+        histogram_quantile(0.95, sum(rate(
           ${local.duration}{service_name="${service}", a_novel_workload="api", span_name!~"${join("|", concat([local.probes], alert.latency_ignores))}"}[10m]
         ))) > ${alert.p95_seconds}
       EOT
     },
     {
-      title   = "${service}: faults"
-      for     = "0s"
-      summary = "{{ index $labels \"span_name\" }} failed in the last 10 minutes: {{ index $labels \"error_type\" }}."
-      expr    = <<-EOT
+      title     = "${service}: faults"
+      for       = "0s"
+      dashboard = "errors"
+      panel     = 7
+      summary   = "{{ index $labels \"span_name\" }}: {{ index $labels \"error_type\" }}, {{ humanize $values.query.Value }} in 10 minutes."
+      expr      = <<-EOT
         sum by (span_name, error_type) (
-          increase(${local.calls}{service_name="${service}", status_code="STATUS_CODE_ERROR"}[10m])
+          increase(${local.calls}{service_name="${service}", a_novel_outcome="fault"}[10m])
         ) > 0
       EOT
     },
     {
-      title   = "${service}: new fault"
-      for     = "0s"
-      summary = "${service} raised {{ index $labels \"error_type\" }}, which it had not raised for a week."
-      expr    = <<-EOT
+      title     = "${service}: new fault"
+      for       = "0s"
+      dashboard = "errors"
+      panel     = 7
+      summary   = "It raised {{ index $labels \"error_type\" }}, which it had not raised for a week."
+      expr      = <<-EOT
         group by (error_type) (increase(${local.calls}{service_name="${service}", error_type!=""}[10m]) > 0)
           unless group by (error_type) (present_over_time(${local.calls}{service_name="${service}", error_type!=""}[1w] offset 10m))
       EOT
@@ -56,19 +70,23 @@ locals {
   # it. The wait outlasts the longest run, whose deadline is 10 minutes.
   job_rules = [
     {
-      title   = "Scheduled job failing"
-      for     = "15m"
-      summary = "{{ $labels.namespace }}/{{ $labels.cronjob }} has not succeeded since its last scheduled run."
-      expr    = <<-EOT
+      title     = "Scheduled job failing"
+      dashboard = "errors"
+      panel     = 4
+      for       = "15m"
+      summary   = "{{ $labels.namespace }}/{{ $labels.cronjob }} has not succeeded since its last scheduled run."
+      expr      = <<-EOT
         kube_cronjob_status_last_schedule_time
           unless on (namespace, cronjob) kube_cronjob_status_last_successful_time >= kube_cronjob_status_last_schedule_time
       EOT
     },
     {
-      title   = "Scheduled job missed"
-      for     = "0s"
-      summary = "{{ $labels.namespace }}/{{ $labels.cronjob }} has not started the run due {{ humanizeDuration $values.query.Value }} ago."
-      expr    = "time() - kube_cronjob_next_schedule_time > 600"
+      title     = "Scheduled job missed"
+      dashboard = "errors"
+      panel     = 4
+      for       = "0s"
+      summary   = "{{ $labels.namespace }}/{{ $labels.cronjob }} has not started the run due {{ humanizeDuration $values.query.Value }} ago."
+      expr      = "time() - kube_cronjob_next_schedule_time > 600"
     },
   ]
 
@@ -92,64 +110,82 @@ locals {
 
   platform_rules = [
     {
-      title   = "Volume above ${format("%.0f", var.thresholds.volume_warning * 100)}%"
-      for     = "10m"
-      summary = "{{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} is {{ humanizePercentage $values.query.Value }} full."
-      expr    = "${local.volume_usage} > ${var.thresholds.volume_warning}"
+      title     = "Volume above ${format("%.0f", var.thresholds.volume_warning * 100)}%"
+      dashboard = "health"
+      panel     = 15
+      for       = "10m"
+      summary   = "{{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} is {{ humanizePercentage $values.query.Value }} full."
+      expr      = "${local.volume_usage} > ${var.thresholds.volume_warning}"
     },
     {
-      title   = "Volume above ${format("%.0f", var.thresholds.volume_critical * 100)}%"
-      for     = "5m"
-      summary = "{{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} is {{ humanizePercentage $values.query.Value }} full."
-      expr    = "${local.volume_usage} > ${var.thresholds.volume_critical}"
+      title     = "Volume above ${format("%.0f", var.thresholds.volume_critical * 100)}%"
+      dashboard = "health"
+      panel     = 15
+      for       = "5m"
+      summary   = "{{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} is {{ humanizePercentage $values.query.Value }} full."
+      expr      = "${local.volume_usage} > ${var.thresholds.volume_critical}"
     },
     {
-      title   = "Node CPU above ${format("%.0f", var.thresholds.node_cpu * 100)}%"
-      for     = "15m"
-      summary = "{{ $labels.node }} uses {{ humanizePercentage $values.query.Value }} of its CPU."
-      expr    = "${local.node_usage.cpu} > ${var.thresholds.node_cpu}"
+      title     = "Node CPU above ${format("%.0f", var.thresholds.node_cpu * 100)}%"
+      dashboard = "health"
+      panel     = 8
+      for       = "15m"
+      summary   = "{{ $labels.node }} uses {{ humanizePercentage $values.query.Value }} of its CPU."
+      expr      = "${local.node_usage.cpu} > ${var.thresholds.node_cpu}"
     },
     {
-      title   = "Node memory above ${format("%.0f", var.thresholds.node_memory * 100)}%"
-      for     = "10m"
-      summary = "{{ $labels.node }} uses {{ humanizePercentage $values.query.Value }} of its memory."
-      expr    = "${local.node_usage.memory} > ${var.thresholds.node_memory}"
+      title     = "Node memory above ${format("%.0f", var.thresholds.node_memory * 100)}%"
+      dashboard = "health"
+      panel     = 9
+      for       = "10m"
+      summary   = "{{ $labels.node }} uses {{ humanizePercentage $values.query.Value }} of its memory."
+      expr      = "${local.node_usage.memory} > ${var.thresholds.node_memory}"
     },
     # CloudNativePG reports no lag once a replica has replayed all it received, so a replica that
     # stopped receiving reports none. The next rule catches it.
     {
-      title   = "Replica lagging"
-      for     = "5m"
-      summary = "{{ $labels.namespace }}/{{ $labels.pod }} replays WAL {{ humanizeDuration $values.query.Value }} behind its primary."
-      expr    = "cnpg_pg_replication_lag > ${var.thresholds.replica_lag}"
+      title     = "Replica lagging"
+      dashboard = "health"
+      panel     = 17
+      for       = "5m"
+      summary   = "{{ $labels.namespace }}/{{ $labels.pod }} replays WAL {{ humanizeDuration $values.query.Value }} behind its primary."
+      expr      = "cnpg_pg_replication_lag > ${var.thresholds.replica_lag}"
     },
     {
-      title   = "Replica not streaming"
-      for     = "5m"
-      summary = "The {{ $labels.namespace }} database's primary streams WAL to no replica."
-      expr    = "max by (namespace) (cnpg_pg_replication_streaming_replicas) < 1"
+      title     = "Replica not streaming"
+      dashboard = "health"
+      panel     = 17
+      for       = "5m"
+      summary   = "The {{ $labels.namespace }} database's primary streams WAL to no replica."
+      expr      = "max by (namespace) (cnpg_pg_replication_streaming_replicas) < 1"
     },
     # PostgreSQL retries a failed segment until it archives, so a failed latest attempt means WAL
     # piles up on the primary's volume.
     {
-      title   = "WAL archiving failing"
-      for     = "5m"
-      summary = "{{ $labels.namespace }}/{{ $labels.pod }} fails to archive its WAL to the backup bucket."
-      expr    = "cnpg_pg_stat_archiver_last_failed_time > cnpg_pg_stat_archiver_last_archived_time"
+      title     = "WAL archiving failing"
+      dashboard = "health"
+      panel     = 15
+      for       = "5m"
+      summary   = "{{ $labels.namespace }}/{{ $labels.pod }} fails to archive its WAL to the backup bucket."
+      expr      = "cnpg_pg_stat_archiver_last_failed_time > cnpg_pg_stat_archiver_last_archived_time"
     },
     # The autoscaler absorbs spikes and transient load. Capacity that stays is a decision: raise the
     # node pool's minimum, or lower the load, in a pull request.
     {
-      title   = "Cluster above its baseline"
-      for     = "2h"
-      summary = "The cluster has run {{ $values.query.Value }} nodes for 2 hours, above its ${local.node_pool.min_nodes}-node baseline: decide whether that capacity stays."
-      expr    = "count(kube_node_info) > ${local.node_pool.min_nodes}"
+      title     = "Cluster above its baseline"
+      dashboard = "health"
+      panel     = 7
+      for       = "2h"
+      summary   = "The cluster has run {{ $values.query.Value }} nodes for 2 hours, above its ${local.node_pool.min_nodes}-node baseline: decide whether that capacity stays."
+      expr      = "count(kube_node_info) > ${local.node_pool.min_nodes}"
     },
     {
-      title   = "Autoscaler at its maximum"
-      for     = "30m"
-      summary = "The cluster runs {{ $values.query.Value }} nodes, the most its autoscaler adds."
-      expr    = "count(kube_node_info) >= ${local.node_pool.max_nodes}"
+      title     = "Autoscaler at its maximum"
+      dashboard = "health"
+      panel     = 7
+      for       = "30m"
+      summary   = "The cluster runs {{ $values.query.Value }} nodes, the most its autoscaler adds."
+      expr      = "count(kube_node_info) >= ${local.node_pool.max_nodes}"
     },
     # Alloy is the only collector, so every scrape stops with it, its token or its egress.
     {
@@ -160,11 +196,13 @@ locals {
     },
   ]
 
-  request_rules = [for sum in values(local.requests) : {
-    title   = "No room for a lost node's ${sum.name} requests"
-    for     = "15m"
-    summary = "The pods request {{ humanize $values.query.Value }} of ${sum.name}, more than every node but the largest holds."
-    expr    = "${sum.requested} > ${sum.tolerated}"
+  request_rules = [for resource, sum in local.requests : {
+    title     = "No room for a lost node's ${sum.name} requests"
+    dashboard = "health"
+    panel     = resource == "cpu" ? 4 : 5
+    for       = "15m"
+    summary   = "The pods request {{ humanize $values.query.Value }} of ${sum.name}, more than every node but the largest holds."
+    expr      = "${sum.requested} > ${sum.tolerated}"
   }]
 
   # Grafana Cloud's usage metrics, against what the Pro plan includes each month. Active series
@@ -203,48 +241,62 @@ locals {
   # before work queues or fails. A container without a request or limit has no ceiling to approach.
   capacity_rules = concat([
     {
-      title   = "Container CPU above ${format("%.0f", var.thresholds.container_cpu * 100)}% of its request"
-      for     = "15m"
-      summary = "{{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.container }}) uses {{ humanizePercentage $values.query.Value }} of the CPU it requests."
-      expr    = "sum by (namespace, pod, container) (rate(container_cpu_usage_seconds_total{container!=\"\", container!=\"POD\"}[10m])) / on (namespace, pod, container) (sum by (namespace, pod, container) (kube_pod_container_resource_requests{resource=\"cpu\"}) > 0) > ${var.thresholds.container_cpu}"
+      title     = "Container CPU above ${format("%.0f", var.thresholds.container_cpu * 100)}% of its request"
+      dashboard = "health"
+      panel     = 11
+      for       = "15m"
+      summary   = "{{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.container }}) uses {{ humanizePercentage $values.query.Value }} of the CPU it requests."
+      expr      = "sum by (namespace, pod, container) (rate(container_cpu_usage_seconds_total{container!=\"\", container!=\"POD\"}[10m])) / on (namespace, pod, container) (sum by (namespace, pod, container) (kube_pod_container_resource_requests{resource=\"cpu\"}) > 0) > ${var.thresholds.container_cpu}"
     },
     {
-      title   = "Container memory above ${format("%.0f", var.thresholds.container_memory * 100)}% of its limit"
-      for     = "10m"
-      summary = "{{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.container }}) uses {{ humanizePercentage $values.query.Value }} of its memory limit; past it, the container is killed."
-      expr    = "sum by (namespace, pod, container) (container_memory_working_set_bytes{container!=\"\", container!=\"POD\"}) / on (namespace, pod, container) (sum by (namespace, pod, container) (kube_pod_container_resource_limits{resource=\"memory\"}) > 0) > ${var.thresholds.container_memory}"
+      title     = "Container memory above ${format("%.0f", var.thresholds.container_memory * 100)}% of its limit"
+      dashboard = "health"
+      panel     = 12
+      for       = "10m"
+      summary   = "{{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.container }}) uses {{ humanizePercentage $values.query.Value }} of its memory limit; past it, the container is killed."
+      expr      = "sum by (namespace, pod, container) (container_memory_working_set_bytes{container!=\"\", container!=\"POD\"}) / on (namespace, pod, container) (sum by (namespace, pod, container) (kube_pod_container_resource_limits{resource=\"memory\"}) > 0) > ${var.thresholds.container_memory}"
     },
     {
-      title   = "Container killed for memory"
-      for     = "0s"
-      summary = "{{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.container }}) restarted after running out of memory."
-      expr    = "increase(kube_pod_container_status_restarts_total[10m]) > 0 and on (namespace, pod, container) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"} == 1"
+      title     = "Container killed for memory"
+      dashboard = "health"
+      panel     = 3
+      for       = "0s"
+      summary   = "{{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.container }}) restarted after running out of memory."
+      expr      = "increase(kube_pod_container_status_restarts_total[10m]) > 0 and on (namespace, pod, container) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"} == 1"
     },
     # A pod waits when no node has room for its requests, until the autoscaler adds one.
     {
-      title   = "Pod waiting to start"
-      for     = "10m"
-      summary = "{{ $labels.namespace }}/{{ $labels.pod }} has waited 10 minutes for a node or its image."
-      expr    = "max by (namespace, pod) (kube_pod_status_phase{phase=\"Pending\"}) == 1"
+      title     = "Pod waiting to start"
+      dashboard = "health"
+      panel     = 2
+      for       = "10m"
+      summary   = "{{ $labels.namespace }}/{{ $labels.pod }} has waited 10 minutes for a node or its image."
+      expr      = "max by (namespace, pod) (kube_pod_status_phase{phase=\"Pending\"}) == 1"
     },
     # Each service runs inside the cluster root's service_budgets; past it, new pods are refused.
     {
-      title   = "Service above ${format("%.0f", var.thresholds.service_budget * 100)}% of its budget"
-      for     = "10m"
-      summary = "The {{ $labels.namespace }} service uses {{ humanizePercentage $values.query.Value }} of its {{ $labels.resource }} budget."
-      expr    = "max by (namespace, resource) (kube_resourcequota{type=\"used\"}) / max by (namespace, resource) (kube_resourcequota{type=\"hard\"} > 0) > ${var.thresholds.service_budget}"
+      title     = "Service above ${format("%.0f", var.thresholds.service_budget * 100)}% of its budget"
+      dashboard = "health"
+      panel     = 10
+      for       = "10m"
+      summary   = "The {{ $labels.namespace }} service uses {{ humanizePercentage $values.query.Value }} of its {{ $labels.resource }} budget."
+      expr      = "max by (namespace, resource) (kube_resourcequota{type=\"used\"}) / max by (namespace, resource) (kube_resourcequota{type=\"hard\"} > 0) > ${var.thresholds.service_budget}"
     },
     {
-      title   = "Workload autoscaler at its maximum"
-      for     = "15m"
-      summary = "{{ $labels.namespace }}/{{ $labels.horizontalpodautoscaler }} runs its most replicas."
-      expr    = "kube_horizontalpodautoscaler_status_current_replicas >= on (namespace, horizontalpodautoscaler) kube_horizontalpodautoscaler_spec_max_replicas"
+      title     = "Workload autoscaler at its maximum"
+      dashboard = "health"
+      panel     = 14
+      for       = "15m"
+      summary   = "{{ $labels.namespace }}/{{ $labels.horizontalpodautoscaler }} runs its most replicas."
+      expr      = "kube_horizontalpodautoscaler_status_current_replicas >= on (namespace, horizontalpodautoscaler) kube_horizontalpodautoscaler_spec_max_replicas"
     },
     ], [for name, database in local.databases : {
-      title   = "${name}: connections above ${format("%.0f", var.thresholds.database_connections * 100)}% of the limit"
-      for     = "10m"
-      summary = "The ${name} database holds {{ $values.query.Value }} of the ${database.max_connections} connections it admits."
-      expr    = "max by (namespace) (sum by (namespace, pod) (cnpg_backends_total{namespace=\"${name}\"})) > ${database.max_connections * var.thresholds.database_connections}"
+      title     = "${name}: connections above ${format("%.0f", var.thresholds.database_connections * 100)}% of the limit"
+      dashboard = "health"
+      panel     = 16
+      for       = "10m"
+      summary   = "The ${name} database holds {{ $values.query.Value }} of the ${database.max_connections} connections it admits."
+      expr      = "max by (namespace) (sum by (namespace, pod) (cnpg_backends_total{namespace=\"${name}\"})) > ${database.max_connections * var.thresholds.database_connections}"
   }])
 
   rule_groups = merge(local.service_rules, {
@@ -272,7 +324,10 @@ resource "grafana_rule_group" "alerts" {
       # A query that returns nothing is healthy, as in a Prometheus rule.
       no_data_state  = "OK"
       exec_err_state = "Error"
-      annotations    = { summary = rule.value.summary }
+      annotations = merge(
+        { summary = rule.value.summary, runbook_url = local.runbook },
+        can(rule.value.dashboard) ? { __dashboardUid__ = "journey-${rule.value.dashboard}", __panelId__ = tostring(rule.value.panel) } : {},
+      )
 
       data {
         ref_id         = "query"

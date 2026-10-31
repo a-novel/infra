@@ -1,91 +1,29 @@
 locals {
-  # Each service root labels its workloads' spans a_novel.workload=api or job. A job run's duration
-  # means something else than a request's.
-  workloads = {
-    api = { title = "APIs", spans = "a_novel_workload=\"api\", span_name!=\"${local.probes}\"" }
-    job = { title = "Jobs", spans = "a_novel_workload=\"job\"" }
+  # The daily journey, read in this order: what needs action now, then the cluster's health, then
+  # performance, then each service's own numbers. Each dashboard is Grafana's own JSON under
+  # dashboards/, so a panel changed in the UI exports back as is. The first three hold one view;
+  # Services holds a tab per service, which only the v2 schema has.
+  journey = {
+    errors      = { title = "1. Errors", from = "now-24h", refresh = "1m" }
+    health      = { title = "2. Health", from = "now-6h", refresh = "1m" }
+    performance = { title = "3. Performance", from = "now-7d", refresh = "5m" }
   }
 
-  # Each workload's calls, failing share and duration, one line per service.
-  span_panels = flatten([for workload in values(local.workloads) : [
-    {
-      title   = "${workload.title}: calls per second"
-      unit    = "ops"
-      targets = { "{{service_name}}" = "sum by (service_name) (rate(${local.calls}{${workload.spans}}[$__rate_interval]))" }
-    },
-    {
-      title   = "${workload.title}: failing share"
-      unit    = "percentunit"
-      targets = { "{{service_name}}" = "sum by (service_name) (rate(${local.calls}{${workload.spans}, status_code=\"STATUS_CODE_ERROR\"}[$__rate_interval])) / sum by (service_name) (rate(${local.calls}{${workload.spans}}[$__rate_interval]))" }
-    },
-    {
-      title   = "${workload.title}: duration, p95"
-      unit    = "s"
-      targets = { "{{service_name}}" = "histogram_quantile(0.95, sum by (service_name, le) (rate(${local.duration}{${workload.spans}}[$__rate_interval])))" }
-    },
-  ]])
+  # Every journey dashboard links the others, then the drilldown apps, keeping the time range. Health
+  # also links the CloudNativePG dashboard.
+  journey_links = [
+    { type = "dashboards", title = "Journey", tags = ["journey"], asDropdown = false, keepTime = true, includeVars = false, targetBlank = false, icon = "external link", tooltip = "" },
+    { type = "link", title = "Traces", url = "/a/grafana-exploretraces-app/explore", tags = [], asDropdown = false, keepTime = true, includeVars = false, targetBlank = false, icon = "external link", tooltip = "" },
+    { type = "link", title = "Logs", url = "/a/grafana-lokiexplore-app/explore", tags = [], asDropdown = false, keepTime = true, includeVars = false, targetBlank = false, icon = "external link", tooltip = "" },
+  ]
+  database_link = { type = "link", title = "CloudNativePG", url = "/d/${grafana_dashboard.cloudnative_pg.uid}", tags = [], asDropdown = false, keepTime = true, includeVars = false, targetBlank = false, icon = "dashboard", tooltip = "" }
 
-  # Each panel draws one line per target and legend entry, three panels to a row.
-  dashboards = {
-    services = {
-      title = "Services"
-      panels = concat(local.span_panels, [{
-        title   = "Faults by type"
-        unit    = "short"
-        targets = { "{{service_name}}: {{span_name}}, {{error_type}}" = "sum by (service_name, span_name, error_type) (increase(${local.calls}{status_code=\"STATUS_CODE_ERROR\"}[$__rate_interval])) > 0" }
-      }])
-    }
-
-    cluster = {
-      title = "Cluster"
-      panels = [
-        {
-          title   = "Nodes"
-          unit    = "short"
-          targets = { "nodes" = "count(kube_node_info)", "autoscaler maximum" = "vector(${local.node_pool.max_nodes})" }
-        },
-        {
-          title   = "CPU by node"
-          unit    = "percentunit"
-          targets = { "{{node}}" = local.node_usage.cpu }
-        },
-        {
-          title   = "Memory by node"
-          unit    = "percentunit"
-          targets = { "{{node}}" = local.node_usage.memory }
-        },
-        {
-          title   = "CPU requests"
-          unit    = "short"
-          targets = { "requested" = local.requests.cpu.requested, "every node but the largest" = local.requests.cpu.tolerated }
-        },
-        {
-          title   = "Memory requests"
-          unit    = "bytes"
-          targets = { "requested" = local.requests.memory.requested, "every node but the largest" = local.requests.memory.tolerated }
-        },
-        {
-          title   = "Volumes"
-          unit    = "percentunit"
-          targets = { "{{namespace}}/{{persistentvolumeclaim}}" = local.volume_usage }
-        },
-        {
-          title   = "Replica lag"
-          unit    = "s"
-          targets = { "{{namespace}}/{{pod}}" = "cnpg_pg_replication_lag" }
-        },
-        {
-          title   = "Container restarts"
-          unit    = "short"
-          targets = { "{{namespace}}/{{pod}}" = "sum by (namespace, pod) (increase(kube_pod_container_status_restarts_total[$__rate_interval])) > 0" }
-        },
-        {
-          title   = "Since each CronJob's last success"
-          unit    = "s"
-          targets = { "{{namespace}}/{{cronjob}}" = "time() - kube_cronjob_status_last_successful_time" }
-        },
-      ]
-    }
+  # Hidden constants the queries read: the node pool's bounds, and the spans whose duration says
+  # nothing of slowness.
+  journey_constants = {
+    node_baseline   = local.node_pool.min_nodes
+    node_maximum    = local.node_pool.max_nodes
+    latency_ignores = join("|", distinct(concat([local.probes], flatten([for alert in values(var.alerts) : alert.latency_ignores]))))
   }
 
   # CloudNativePG's dashboard, byte for byte as this release of cloudnative-pg/grafana-dashboards
@@ -104,30 +42,57 @@ locals {
   }
 }
 
-resource "grafana_dashboard" "overview" {
-  for_each = local.dashboards
+# A panel without its own data source reads the stack's metrics.
+resource "grafana_dashboard" "journey" {
+  for_each = local.journey
 
   folder = grafana_folder.production.uid
-  config_json = jsonencode({
-    uid           = each.key
+  config_json = jsonencode(merge(jsondecode(file("${path.module}/dashboards/${each.key}.json")), {
+    uid           = "journey-${each.key}"
     title         = each.value.title
+    tags          = ["journey"]
     schemaVersion = 41
-    time          = { from = "now-24h", to = "now" }
-    refresh       = "1m"
-    panels = [for index, panel in each.value.panels : {
-      id          = index + 1
-      type        = "timeseries"
-      title       = panel.title
-      gridPos     = { x = index % 3 * 8, y = floor(index / 3) * 8, w = 8, h = 8 }
-      datasource  = { type = "prometheus", uid = local.metrics }
-      fieldConfig = { defaults = { unit = panel.unit }, overrides = [] }
-      targets = [for position, legend in keys(panel.targets) : {
-        refId        = ["A", "B"][position]
-        expr         = panel.targets[legend]
-        legendFormat = legend
-      }]
-    }]
-  })
+    time          = { from = each.value.from, to = "now" }
+    refresh       = each.value.refresh
+    links         = concat(local.journey_links, each.key == "health" ? [local.database_link] : [])
+    templating = { list = [for name, value in local.journey_constants :
+      { type = "constant", name = name, query = tostring(value), hide = 2 }
+    ] }
+    panels = [for panel in jsondecode(file("${path.module}/dashboards/${each.key}.json")).panels :
+      merge({ datasource = { type = "prometheus", uid = local.metrics } }, panel)
+    ]
+  }))
+}
+
+resource "grafana_apps_dashboard_dashboard_v2" "services" {
+  metadata {
+    uid        = "journey-services"
+    folder_uid = grafana_folder.production.uid
+  }
+
+  spec {
+    title = "4. Services"
+    tags  = ["journey"]
+    json = jsonencode(merge(jsondecode(file("${path.module}/dashboards/services.json")), {
+      title = "4. Services"
+      tags  = ["journey"]
+      links = local.journey_links
+      timeSettings = {
+        timezone             = "browser"
+        from                 = "now-24h"
+        to                   = "now"
+        autoRefresh          = "5m"
+        autoRefreshIntervals = ["1m", "5m", "15m", "1h"]
+        hideTimepicker       = false
+        fiscalYearStartMonth = 0
+      }
+    }))
+  }
+}
+
+# Grafana opens on the journey's first step.
+resource "grafana_organization_preferences" "home" {
+  home_dashboard_uid = grafana_dashboard.journey["errors"].uid
 }
 
 resource "grafana_dashboard" "cloudnative_pg" {

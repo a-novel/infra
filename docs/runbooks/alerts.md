@@ -16,42 +16,59 @@ failed `drift` runs to whoever last edited its schedule.
 Grafana evaluates the cluster's alerts every minute. Its notification policy posts each one to
 Discord through the hand-made `discord` contact point when it fires, every four hours while it
 fires, and when it resolves. The rules sit in the stack's **Production** folder: one rule group per
-service, plus `capacity`, `jobs`, `platform` and `usage`. Their thresholds are the Grafana root's `alerts` and
-`thresholds` inputs, and the folder's **Services**, **Cluster** and **CloudNativePG** dashboards
-draw the same metrics.
+service, plus `capacity`, `jobs`, `platform` and `usage`. Their thresholds are the Grafana root's
+`alerts` and `thresholds` inputs.
 
-| Alert                             | Fires when                                                                                      |
-| --------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `<service>: failing share`        | more than its `failure_rate` of its requests and job runs failed over 10 minutes, for 5 minutes |
-| `<service>: slow requests`        | its requests' 95th percentile took longer than `p95_seconds` over 10 minutes, for 5 minutes     |
-| `<service>: faults`               | a span failed in the last 10 minutes: one alert per span and error type                         |
-| `<service>: new fault`            | the service raised an error type it had not raised in the week before                           |
-| `Scheduled job failing`           | a CronJob's latest scheduled run has not succeeded for 15 minutes; a later success resolves it  |
-| `Scheduled job missed`            | a CronJob is more than 10 minutes late for a run it never started                               |
-| `Volume above 70%`, `85%`         | a database volume stays that full for 10 and 5 minutes                                          |
-| `Node CPU above 80%`              | a node uses more than `node_cpu` of its CPU for 15 minutes                                      |
-| `Node memory above 85%`           | a node uses more than `node_memory` of its memory for 10 minutes                                |
-| `Replica lagging`                 | a replica replays WAL more than `replica_lag` seconds behind its primary, for 5 minutes         |
-| `Replica not streaming`           | a database's primary streams to no replica for 5 minutes                                        |
-| `WAL archiving failing`           | a primary's latest WAL archive attempt failed, for 5 minutes                                    |
-| `No room for a lost node's …`     | the pods' CPU or memory requests exceed every node but the largest, for 15 minutes              |
-| `Cluster above its baseline`      | the cluster has run more nodes than foundation's `cluster.min_nodes` for 2 hours                |
-| `Autoscaler at its maximum`       | the cluster has run as many nodes as foundation's `cluster.max_nodes` for 30 minutes            |
-| `Collector silent`                | no scrape reached Grafana for 10 minutes                                                        |
-| `Container CPU above 80% …`       | a container uses more than `container_cpu` of the CPU it requests for 15 minutes                |
-| `Container memory above 85% …`    | a container uses more than `container_memory` of its memory limit for 10 minutes                |
-| `Container killed for memory`     | a container restarted after running out of memory                                               |
-| `Pod waiting to start`            | a pod has waited 10 minutes for a node or its image                                             |
-| `Service above 80% of its budget` | a service's pods request more than `service_budget` of its namespace's quota for 10 minutes     |
-| `Workload autoscaler at its max`  | a workload's autoscaler has run its most replicas for 15 minutes                                |
-| `<database>: connections above…`  | a database holds more than `database_connections` of its `max_connections` for 10 minutes       |
-| `Usage: … above 80% of the plan`  | a Grafana Cloud allowance reached `usage` of what the Pro plan includes this month              |
-| `Usage: overage`                  | this month's usage costs anything beyond the plan                                               |
+The folder's dashboards make a daily journey, linked in each one's header, and Grafana opens on its
+first step:
 
-- **A fault** is filed by hand, from its Discord post, as an issue in the service's repository. Its
-  span name and error type locate it, and a TraceQL search such as
-  `{ resource.service.name = "service-json-keys" && span.error.type = "<error type>" }` in Explore
-  shows its traces.
+1. **Errors:** what needs action now, and the alerts that fire.
+2. **Health:** nodes, pods, resources against their requests, limits and budgets, traffic, databases.
+3. **Performance:** latency against the period before, the slowest operations and steps.
+4. **Services:** one tab per service with its own numbers, such as tokens consumed or mails sent.
+
+**CloudNativePG** details each database, from Health. Each alert's post links the panel that draws
+what it watches.
+
+Alloy gives each request and job run an outcome, which the dashboards and alerts read:
+
+| Outcome     | Means                               | Codes                                                                                                                                                              |
+| ----------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `fault`     | our own failure: fix it             | any other failure: HTTP 5xx, gRPC `INTERNAL`, `UNKNOWN`, `DATA_LOSS`, `UNIMPLEMENTED`, a panic, a failed job                                                       |
+| `transient` | a dependency or timeout: watch it   | HTTP 429, 502, 503, 504; gRPC `UNAVAILABLE`, `DEADLINE_EXCEEDED`, `RESOURCE_EXHAUSTED`, `ABORTED`                                                                  |
+| `expected`  | the caller's own mistake: no action | other HTTP 4xx; gRPC `CANCELLED`, `INVALID_ARGUMENT`, `NOT_FOUND`, `ALREADY_EXISTS`, `PERMISSION_DENIED`, `UNAUTHENTICATED`, `FAILED_PRECONDITION`, `OUT_OF_RANGE` |
+| `ok`        | success                             |                                                                                                                                                                    |
+
+| Alert                             | Fires when                                                                                        |
+| --------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `<service>: failing share`        | more than its `failure_rate` of its calls were faults or transient over 10 minutes, for 5 minutes |
+| `<service>: slow requests`        | its requests' 95th percentile took longer than `p95_seconds` over 10 minutes, for 5 minutes       |
+| `<service>: faults`               | a fault in the last 10 minutes: one alert per span and error type                                 |
+| `<service>: new fault`            | the service raised an error type it had not raised in the week before                             |
+| `Scheduled job failing`           | a CronJob's latest scheduled run has not succeeded for 15 minutes; a later success resolves it    |
+| `Scheduled job missed`            | a CronJob is more than 10 minutes late for a run it never started                                 |
+| `Volume above 70%`, `85%`         | a database volume stays that full for 10 and 5 minutes                                            |
+| `Node CPU above 80%`              | a node uses more than `node_cpu` of its CPU for 15 minutes                                        |
+| `Node memory above 85%`           | a node uses more than `node_memory` of its memory for 10 minutes                                  |
+| `Replica lagging`                 | a replica replays WAL more than `replica_lag` seconds behind its primary, for 5 minutes           |
+| `Replica not streaming`           | a database's primary streams to no replica for 5 minutes                                          |
+| `WAL archiving failing`           | a primary's latest WAL archive attempt failed, for 5 minutes                                      |
+| `No room for a lost node's …`     | the pods' CPU or memory requests exceed every node but the largest, for 15 minutes                |
+| `Cluster above its baseline`      | the cluster has run more nodes than foundation's `cluster.min_nodes` for 2 hours                  |
+| `Autoscaler at its maximum`       | the cluster has run as many nodes as foundation's `cluster.max_nodes` for 30 minutes              |
+| `Collector silent`                | no scrape reached Grafana for 10 minutes                                                          |
+| `Container CPU above 80% …`       | a container uses more than `container_cpu` of the CPU it requests for 15 minutes                  |
+| `Container memory above 85% …`    | a container uses more than `container_memory` of its memory limit for 10 minutes                  |
+| `Container killed for memory`     | a container restarted after running out of memory                                                 |
+| `Pod waiting to start`            | a pod has waited 10 minutes for a node or its image                                               |
+| `Service above 80% of its budget` | a service's pods request more than `service_budget` of its namespace's quota for 10 minutes       |
+| `Workload autoscaler at its max`  | a workload's autoscaler has run its most replicas for 15 minutes                                  |
+| `<database>: connections above…`  | a database holds more than `database_connections` of its `max_connections` for 10 minutes         |
+| `Usage: … above 80% of the plan`  | a Grafana Cloud allowance reached `usage` of what the Pro plan includes this month                |
+| `Usage: overage`                  | this month's usage costs anything beyond the plan                                                 |
+
+- **A fault** is filed by hand, from its Discord post, as an issue in the service's repository. On
+  the Errors dashboard, its operation opens its traces and its service opens its error logs.
 - **A failed or missed CronJob:** read its Jobs and their logs with `kubectl`, as
   [Ops basics](../ops-basics.md) shows. A failed run is not retried, and the next one takes over.
 - **A full volume, a lagging replica or failing archiving:** read the database's state on the
@@ -77,7 +94,10 @@ draw the same metrics.
 - **The collector silent:** Alloy's pod in the `alloy` namespace, its
   [push token](secrets.md#alloy-push-token) or its egress to Grafana's gateway stopped.
 
-A test notification from **Alerting → Contact points** proves the `discord` contact point's
+The contact point's **Title** is `{{ template "discord.title" . }}` and its **Message**
+`{{ template "discord.message" . }}`, with **Use embed description** on: the root's `discord`
+message template then writes one line per firing instance and the panel, runbook and silence
+links. A test notification from **Alerting → Contact points** proves the `discord` contact point's
 webhook. A firing rule proves the policy too, such as `Autoscaler at its maximum` while the pool
 runs its largest size.
 

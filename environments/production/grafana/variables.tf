@@ -13,6 +13,11 @@ variable "url" {
   }
 }
 
+variable "stack_id" {
+  description = "The stack's numeric ID, which the v2 dashboard API addresses. Grafana's /api/frontend/settings shows it as the namespace stacks-<ID>."
+  type        = number
+}
+
 variable "token_versions" {
   description = "Numeric versions of the Grafana token secrets, by CI identity."
   type = object({
@@ -45,11 +50,9 @@ variable "alerts" {
     error_message = "A failing share lies between 0 and 1."
   }
 
-  # Alloy's span-metric histogram tops out at 30 seconds (the cluster root's alloy.tf), so a p95
-  # above it reads as 30.
   validation {
-    condition     = alltrue([for alert in values(var.alerts) : alert.p95_seconds > 0 && alert.p95_seconds < 30])
-    error_message = "A p95 threshold lies below 30 seconds, the span-metric histogram's largest bucket, or its alert never fires."
+    condition     = alltrue([for alert in values(var.alerts) : alert.p95_seconds > 0])
+    error_message = "A p95 threshold is a positive duration."
   }
 }
 

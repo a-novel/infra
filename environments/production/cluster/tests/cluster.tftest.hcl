@@ -147,11 +147,14 @@ run "sends_every_signal_to_grafana_through_alloy" {
   }
 
   # The span metrics come from the server spans and the roots alone, under one series per service
-  # whatever its pods, and the chart's own span metrics stay off.
+  # whatever its pods, and the chart's own span metrics stay off. Each span is classified before it
+  # reaches Grafana or the span metrics, so both read the same outcome.
   assert {
     condition = (
+      local.alloy_values.applicationObservability.traces.transforms.span == local.outcome_statements &&
       strcontains(local.alloy_values.destinations.span-metrics.config, "span = [`kind != SPAN_KIND_SERVER and not IsRootSpan()`]") &&
-      toset(flatten(regexall("name = \"([^\"]+)\"", local.alloy_values.destinations.span-metrics.config))) == toset(["error.type", "a_novel.workload"]) &&
+      toset(flatten(regexall("name = \"([^\"]+)\"", local.alloy_values.destinations.span-metrics.config))) == toset(["a_novel.outcome", "http.response.status_code", "rpc.response.status_code", "error.type", "a_novel.workload"]) &&
+      strcontains(local.alloy_values.destinations.span-metrics.config, "exponential {") &&
       strcontains(local.alloy_values.destinations.span-metrics.config, "exclude_dimensions              = [\"span.kind\"]") &&
       strcontains(local.alloy_values.destinations.span-metrics.config, "resource_metrics_key_attributes = [\"service.name\"]") &&
       strcontains(local.alloy_values.destinations.span-metrics.config, "statements = [`keep_keys(attributes, [\"service.name\"])`]") &&
@@ -160,7 +163,7 @@ run "sends_every_signal_to_grafana_through_alloy" {
       !try(local.alloy_values.applicationObservability.connectors.spanMetrics.enabled, false) &&
       local.alloy_values.collectors.alloy.presets == ["singleton"]
     )
-    error_message = "Span metrics must count the server and root spans by service, span name, status, error type and workload, on a single collector, with no pod or instance label."
+    error_message = "Span metrics must count the classified server and root spans by service, span name, status, outcome, response code, error type and workload, in a native histogram, on a single collector, with no pod or instance label."
   }
 
   # Alloy reads no Secret, and the operator manages its own namespace alone.

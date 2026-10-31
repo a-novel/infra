@@ -146,7 +146,8 @@ the Grafana root's `token_versions`. Pull requests and the drift check read the 
 For a leak, delete the token in Grafana as well as disabling its version.
 
 Grafana's Discord contact point is created by hand in the same stack, so its webhook never reaches
-state.
+state. Its title and message call the Grafana root's templates, as
+[Grafana alerts](alerts.md#grafana-alerts) shows.
 
 ## Grafana Cloud tokens
 

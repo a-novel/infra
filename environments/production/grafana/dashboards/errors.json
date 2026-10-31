@@ -1,0 +1,281 @@
+{
+  "description": "What needs action now. Faults are our own failures: fix them. Transient failures matter once they last. Expected refusals answer the caller's own mistakes and need no action, unless they spike.",
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Faults",
+      "description": "Requests and job runs that failed through our own fault: an internal error, a panic, a failed job. Fix each one.",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "targets": [
+        {
+          "refId": "A",
+          "instant": true,
+          "expr": "sum(increase(traces_span_metrics_calls_total{a_novel_outcome=\"fault\"}[$__range])) or vector(0)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          },
+          "links": [
+            {
+              "title": "Open the faults' traces",
+              "url": "/a/grafana-exploretraces-app/explore?${__url_time_range}&var-ds=grafanacloud-traces&var-primarySignal=true&var-filters=span.a_novel.outcome%7C%3D%7Cfault&var-metric=errors&actionView=traceList"
+            }
+          ]
+        }
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Transient failures",
+      "description": "An unreachable dependency, a timeout or a rate limit. They retry well, so look only when they last or grow.",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "targets": [
+        {
+          "refId": "A",
+          "instant": true,
+          "expr": "sum(increase(traces_span_metrics_calls_total{a_novel_outcome=\"transient\"}[$__range])) or vector(0)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 1 }
+            ]
+          },
+          "links": [
+            {
+              "title": "Open the transient failures' traces",
+              "url": "/a/grafana-exploretraces-app/explore?${__url_time_range}&var-ds=grafanacloud-traces&var-primarySignal=true&var-filters=span.a_novel.outcome%7C%3D%7Ctransient&var-metric=errors&actionView=traceList"
+            }
+          ]
+        }
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Expected refusals",
+      "description": "Requests refused for the caller's own mistake: a missing session, a denied permission, an unknown record, an invalid input. No action, unless they spike.",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "targets": [
+        {
+          "refId": "A",
+          "instant": true,
+          "expr": "sum(increase(traces_span_metrics_calls_total{a_novel_outcome=\"expected\"}[$__range])) or vector(0)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": { "mode": "fixed", "fixedColor": "blue" }
+        }
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Failing scheduled jobs",
+      "description": "CronJobs whose latest scheduled run has not succeeded. A later success clears them.",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "targets": [
+        {
+          "refId": "A",
+          "instant": true,
+          "expr": "count(kube_cronjob_status_last_schedule_time unless on (namespace, cronjob) kube_cronjob_status_last_successful_time >= kube_cronjob_status_last_schedule_time) or vector(0)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Failures over time",
+      "description": "Each bar counts the failures of its interval, by outcome. A red bar needs a fix; a growing orange or blue band needs a look.",
+      "gridPos": { "x": 0, "y": 4, "w": 16, "h": 8 },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{a_novel_outcome}}",
+          "interval": "5m",
+          "expr": "sum by (a_novel_outcome) (increase(traces_span_metrics_calls_total{a_novel_outcome=~\"fault|transient|expected\"}[$__interval]))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "custom": { "drawStyle": "bars", "fillOpacity": 80, "lineWidth": 0, "stacking": { "mode": "normal" } }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "fault" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }, { "id": "displayName", "value": "Faults" }] },
+          { "matcher": { "id": "byName", "options": "transient" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }, { "id": "displayName", "value": "Transient" }] },
+          { "matcher": { "id": "byName", "options": "expected" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } }, { "id": "displayName", "value": "Expected" }] }
+        ]
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 6,
+      "type": "alertlist",
+      "title": "Firing alerts",
+      "description": "The Production folder's alerts that fire or are about to. Each also posts to Discord.",
+      "gridPos": { "x": 16, "y": 4, "w": 8, "h": 8 },
+      "options": {
+        "viewMode": "list",
+        "groupMode": "default",
+        "maxItems": 20,
+        "sortOrder": 1,
+        "showInstances": false,
+        "stateFilter": { "firing": true, "pending": true, "noData": false, "normal": false, "error": true },
+        "alertInstanceLabelFilter": ""
+      }
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "To fix: faults and transient failures",
+      "description": "One row per operation and cause. Click an operation for its traces, or a service for its error logs.",
+      "gridPos": { "x": 0, "y": 12, "w": 24, "h": 9 },
+      "targets": [
+        {
+          "refId": "A",
+          "instant": true,
+          "format": "table",
+          "expr": "sort_desc(sum by (service_name, span_name, a_novel_outcome, error_type, http_response_status_code, rpc_response_status_code) (increase(traces_span_metrics_calls_total{a_novel_outcome=~\"fault|transient\"}[$__range])) > 0)"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true },
+            "indexByName": { "a_novel_outcome": 0, "service_name": 1, "span_name": 2, "error_type": 3, "rpc_response_status_code": 4, "http_response_status_code": 5, "Value": 6 },
+            "renameByName": { "a_novel_outcome": "Outcome", "service_name": "Service", "span_name": "Operation", "error_type": "Error type", "rpc_response_status_code": "gRPC code", "http_response_status_code": "HTTP code", "Value": "Count" }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Count" }, "properties": [{ "id": "decimals", "value": 0 }, { "id": "custom.width", "value": 90 }] },
+          {
+            "matcher": { "id": "byName", "options": "Outcome" },
+            "properties": [
+              { "id": "custom.width", "value": 110 },
+              { "id": "custom.cellOptions", "value": { "type": "color-background" } },
+              { "id": "mappings", "value": [{ "type": "value", "options": { "fault": { "text": "fault", "color": "red" }, "transient": { "text": "transient", "color": "orange" } } }] }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Service" },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open ${__data.fields.Service}'s error logs",
+                    "url": "/a/grafana-lokiexplore-app/explore/service/${__data.fields.Service}/logs?${__url_time_range}&var-ds=grafanacloud-logs&var-filters=service_name%7C%3D%7C${__data.fields.Service}&var-levels=detected_level%7C%3D%7Cerror"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Operation" },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open these failures' traces",
+                    "url": "/a/grafana-exploretraces-app/explore?${__url_time_range}&var-ds=grafanacloud-traces&var-primarySignal=true&var-filters=resource.service.name%7C%3D%7C${__data.fields.Service}&var-filters=name%7C%3D%7C${__data.fields.Operation:percentencode}&var-filters=span.a_novel.outcome%7C%3D%7C${__data.fields.Outcome}&var-metric=errors&actionView=traceList"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": { "showHeader": true, "cellHeight": "sm", "footer": { "show": false } }
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "To watch: expected refusals",
+      "description": "Refusals that answer the caller: no action unless one grows out of proportion, such as a login refused for many users at once.",
+      "gridPos": { "x": 0, "y": 21, "w": 24, "h": 8 },
+      "targets": [
+        {
+          "refId": "A",
+          "instant": true,
+          "format": "table",
+          "expr": "sort_desc(sum by (service_name, span_name, http_response_status_code, rpc_response_status_code) (increase(traces_span_metrics_calls_total{a_novel_outcome=\"expected\"}[$__range])) > 0)"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true },
+            "indexByName": { "service_name": 0, "span_name": 1, "rpc_response_status_code": 2, "http_response_status_code": 3, "Value": 4 },
+            "renameByName": { "service_name": "Service", "span_name": "Operation", "rpc_response_status_code": "gRPC code", "http_response_status_code": "HTTP code", "Value": "Count" }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Count" }, "properties": [{ "id": "decimals", "value": 0 }, { "id": "custom.width", "value": 90 }] },
+          {
+            "matcher": { "id": "byName", "options": "Operation" },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open these refusals' traces",
+                    "url": "/a/grafana-exploretraces-app/explore?${__url_time_range}&var-ds=grafanacloud-traces&var-primarySignal=true&var-filters=resource.service.name%7C%3D%7C${__data.fields.Service}&var-filters=name%7C%3D%7C${__data.fields.Operation:percentencode}&var-filters=span.a_novel.outcome%7C%3D%7Cexpected&var-metric=rate&actionView=traceList"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": { "showHeader": true, "cellHeight": "sm", "footer": { "show": false } }
+    }
+  ]
+}

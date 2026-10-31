@@ -85,16 +85,50 @@ run "warns_before_resources_run_out" {
   }
 }
 
-run "refuses_a_latency_alert_that_never_fires" {
+run "refuses_a_latency_alert_without_a_threshold" {
   command = plan
 
   variables {
     alerts = {
-      "service-genai" = { failure_rate = 0.05, p95_seconds = 60 }
+      "service-genai" = { failure_rate = 0.05, p95_seconds = 0 }
     }
   }
 
   expect_failures = [var.alerts]
+}
+
+run "opens_on_the_journey" {
+  command = plan
+
+  assert {
+    condition     = grafana_organization_preferences.home.home_dashboard_uid == grafana_dashboard.journey["errors"].uid
+    error_message = "Grafana must open on the journey's first step."
+  }
+
+  assert {
+    condition = alltrue(concat(
+      [for dashboard in grafana_dashboard.journey : contains(jsondecode(dashboard.config_json).tags, "journey") && jsondecode(dashboard.config_json).links[0].tags == ["journey"]],
+      [contains(jsondecode(grafana_apps_dashboard_dashboard_v2.services.spec.json).tags, "journey") && jsondecode(grafana_apps_dashboard_dashboard_v2.services.spec.json).links[0].tags == ["journey"]],
+    ))
+    error_message = "Every journey dashboard must carry the journey tag and link the others through it."
+  }
+}
+
+run "links_every_alert" {
+  command = plan
+
+  assert {
+    condition = alltrue(flatten([for group in grafana_rule_group.alerts : [for rule in group.rule : (
+      rule.annotations.runbook_url == local.runbook &&
+      contains(concat([for key in keys(local.journey) : "journey-${key}"], ["journey-services", ""]), lookup(rule.annotations, "__dashboardUid__", ""))
+    )]]))
+    error_message = "Every alert must link the runbook, and a dashboard only of the journey."
+  }
+
+  assert {
+    condition     = strcontains(grafana_message_template.discord.template, "define \"discord.title\"") && strcontains(grafana_message_template.discord.template, "define \"discord.message\"")
+    error_message = "The contact point calls discord.title and discord.message, so the template must define both."
+  }
 }
 
 run "alerts_before_grafana_bills_overage" {

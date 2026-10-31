@@ -1,0 +1,179 @@
+{
+  "description": "How fast requests and jobs run, and where the time goes. Compare with the period before to spot a regression; click an operation for its slowest traces.",
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Requests: p95 by service",
+      "description": "95% of requests answer faster than this. Long streams and health probes stay out.",
+      "gridPos": { "x": 0, "y": 0, "w": 16, "h": 9 },
+      "targets": [
+        {
+          "refId": "A",
+          "exemplar": true,
+          "legendFormat": "{{service_name}}",
+          "expr": "histogram_quantile(0.95, sum by (service_name) (rate(traces_span_metrics_duration_seconds{a_novel_workload=\"api\", span_name!~\"$latency_ignores\"}[$__rate_interval])))"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s", "min": 0 } },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 2,
+      "type": "table",
+      "title": "p95 against the period before",
+      "description": "Each service's p95 over the time range, beside the same length of time just before it.",
+      "gridPos": { "x": 16, "y": 0, "w": 8, "h": 9 },
+      "targets": [
+        {
+          "refId": "A",
+          "instant": true,
+          "format": "table",
+          "expr": "histogram_quantile(0.95, sum by (service_name) (increase(traces_span_metrics_duration_seconds{a_novel_workload=\"api\", span_name!~\"$latency_ignores\"}[$__range])))"
+        },
+        {
+          "refId": "B",
+          "instant": true,
+          "format": "table",
+          "expr": "histogram_quantile(0.95, sum by (service_name) (increase(traces_span_metrics_duration_seconds{a_novel_workload=\"api\", span_name!~\"$latency_ignores\"}[$__range] offset $__range)))"
+        }
+      ],
+      "transformations": [
+        { "id": "merge" },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true },
+            "renameByName": { "service_name": "Service", "Value #A": "Now", "Value #B": "Before" }
+          }
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s", "decimals": 2 } },
+      "options": { "showHeader": true, "cellHeight": "sm", "footer": { "show": false } }
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "Slowest operations",
+      "description": "Each operation's p95, its calls and the total time it took over the time range. A cheap operation called often can cost more than a slow one. Click an operation for its slowest traces.",
+      "gridPos": { "x": 0, "y": 9, "w": 24, "h": 10 },
+      "targets": [
+        {
+          "refId": "A",
+          "instant": true,
+          "format": "table",
+          "expr": "topk(15, histogram_quantile(0.95, sum by (service_name, span_name) (increase(traces_span_metrics_duration_seconds{span_name!~\"$latency_ignores\"}[$__range]))))"
+        },
+        {
+          "refId": "B",
+          "instant": true,
+          "format": "table",
+          "expr": "sum by (service_name, span_name) (increase(traces_span_metrics_calls_total{span_name!~\"$latency_ignores\"}[$__range]))"
+        },
+        {
+          "refId": "C",
+          "instant": true,
+          "format": "table",
+          "expr": "histogram_sum(sum by (service_name, span_name) (increase(traces_span_metrics_duration_seconds{span_name!~\"$latency_ignores\"}[$__range])))"
+        }
+      ],
+      "transformations": [
+        { "id": "merge" },
+        { "id": "filterByValue", "options": { "type": "exclude", "match": "any", "filters": [{ "fieldName": "Value #A", "config": { "id": "isNull", "options": {} } }] } },
+        { "id": "sortBy", "options": { "sort": [{ "field": "Value #A", "desc": true }] } },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true },
+            "indexByName": { "service_name": 0, "span_name": 1, "Value #A": 2, "Value #B": 3, "Value #C": 4 },
+            "renameByName": { "service_name": "Service", "span_name": "Operation", "Value #A": "p95", "Value #B": "Calls", "Value #C": "Total time" }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "p95" }, "properties": [{ "id": "unit", "value": "s" }, { "id": "decimals", "value": 2 }, { "id": "custom.cellOptions", "value": { "type": "gauge", "mode": "basic" } }, { "id": "color", "value": { "mode": "continuous-GrYlRd" } }] },
+          { "matcher": { "id": "byName", "options": "Calls" }, "properties": [{ "id": "decimals", "value": 0 }, { "id": "custom.width", "value": 100 }] },
+          { "matcher": { "id": "byName", "options": "Total time" }, "properties": [{ "id": "unit", "value": "s" }, { "id": "decimals", "value": 0 }, { "id": "custom.width", "value": 110 }] },
+          {
+            "matcher": { "id": "byName", "options": "Operation" },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open its slowest traces",
+                    "url": "/a/grafana-exploretraces-app/explore?${__url_time_range}&var-ds=grafanacloud-traces&var-primarySignal=true&var-filters=resource.service.name%7C%3D%7C${__data.fields.Service}&var-filters=name%7C%3D%7C${__data.fields.Operation:percentencode}&var-metric=duration&actionView=traceList"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": { "showHeader": true, "cellHeight": "sm", "footer": { "show": false } }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Jobs: run duration",
+      "description": "How long each scheduled or background job's runs take, at the 95th percentile.",
+      "gridPos": { "x": 0, "y": 19, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{service_name}}: {{span_name}}",
+          "expr": "histogram_quantile(0.95, sum by (service_name, span_name) (rate(traces_span_metrics_duration_seconds{a_novel_workload=\"job\"}[$__rate_interval])))"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s", "min": 0 } },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Busy time by service",
+      "description": "Seconds of request handling per second: how many requests each service handles at once, on average. It grows with traffic and with slowness.",
+      "gridPos": { "x": 12, "y": 19, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{service_name}}",
+          "expr": "histogram_sum(sum by (service_name) (rate(traces_span_metrics_duration_seconds{a_novel_workload=\"api\", span_name!~\"$latency_ignores\"}[$__rate_interval])))"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0, "custom": { "fillOpacity": 30, "stacking": { "mode": "normal" } } } },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Slowest steps inside requests, last 24 hours",
+      "description": "Database queries, outgoing calls and internal steps, at the 95th percentile. Read from the traces themselves, which answer 24 hours at most.",
+      "gridPos": { "x": 0, "y": 27, "w": 24, "h": 9 },
+      "timeFrom": "24h",
+      "datasource": { "type": "tempo", "uid": "grafanacloud-traces" },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "traceql",
+          "metricsQueryType": "instant",
+          "query": "{ kind != server && nestedSetParent > 0 } | quantile_over_time(duration, .95) by (resource.service.name, name) | topk(15)"
+        }
+      ],
+      "transformations": [
+        { "id": "reduce", "options": { "reducers": ["max"], "mode": "seriesToRows" } },
+        { "id": "sortBy", "options": { "sort": [{ "field": "Max", "desc": true }] } },
+        { "id": "organize", "options": { "renameByName": { "Field": "Step", "Max": "p95" } } }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "s", "decimals": 3 },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "p95" }, "properties": [{ "id": "custom.cellOptions", "value": { "type": "gauge", "mode": "basic" } }, { "id": "color", "value": { "mode": "continuous-GrYlRd" } }] }
+        ]
+      },
+      "options": { "showHeader": true, "cellHeight": "sm", "footer": { "show": false } }
+    }
+  ]
+}
