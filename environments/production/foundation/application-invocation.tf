@@ -122,7 +122,8 @@ resource "google_cloud_run_v2_service_iam_member" "genai_sweep_scheduler" {
 }
 
 # The sweep checks the generations nobody polled, so a generation settles while the provider still
-# holds its result. A call that fails is not retried: the next minute's call takes over.
+# holds its result. A call that fails is not retried: the next minute's call takes over. `paused`
+# follows this file, since the cutover pauses it and its way back resumes it (a-novel/infra#1207).
 resource "google_cloud_scheduler_job" "genai_sweep" {
   count = contains(keys(local.application_invocation), "genai_sweep") ? 1 : 0
 
@@ -146,10 +147,6 @@ resource "google_cloud_scheduler_job" "genai_sweep" {
       service_account_email = google_service_account.runtime["scheduler_invoker"].email
       audience              = local.genai_sweep_url
     }
-  }
-
-  lifecycle {
-    ignore_changes = [paused]
   }
 
   depends_on = [google_cloud_run_v2_service_iam_member.genai_sweep_scheduler]
