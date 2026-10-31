@@ -1,5 +1,5 @@
 images = {
-  web = "ghcr.io/a-novel/platform-studio:v0.4.0@sha256:5a12680849fc179cd715438785fd58bc4f2045fa38bb2a0d12d69d0b31443f07"
+  web = "ghcr.io/a-novel/platform-studio:v0.5.0@sha256:90ea80b2f40cd736fbad323d206f3a60ed5c25db9937523070f69f613b15fd36"
 }
 
 alert_email = "geoffroy.vincent@agorastoryverse.com"
