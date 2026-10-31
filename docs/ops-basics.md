@@ -156,7 +156,6 @@ these pieces:
 
 | Name                          | What it is                                                                                                                                                                    |
 | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `a-novel repo update`         | The stack CLI command that applies a repository's settings, rulesets and managed workflows.                                                                                   |
 | `approve-pr.yaml`             | Records the approval an author cannot give, run by an admin for their own pull request only: `gh workflow run approve-pr.yaml --repo a-novel/infra -f pull_request="<URL>"`.  |
 | `merge-gate`, `epic-freeze`   | Required checks that hold a pull request belonging to a larger change, spread over several pull requests, until that change can land whole. A standalone pull request passes. |
 | Dependencies App              | The bot identity Renovate runs as, and the one `pin-release.yaml` opens each release's pull request as.                                                                       |
