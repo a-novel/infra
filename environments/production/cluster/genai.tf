@@ -28,11 +28,10 @@ locals {
     POSTGRES_MAX_OPEN_CONNS = "4"
     POSTGRES_MAX_IDLE_CONNS = "4"
     REST_PORT               = "8080"
-    # Off, the sweep checks only when called, and nothing on the cluster calls it. Production's sweep
-    # checks every generation until the cutover hands them over and turns this on: the rehearsal's
-    # copy shares production's OpenAI account, so a second sweep would start its pending generations
-    # again and stop calls production tracks (a-novel/infra#1202).
-    SWEEP_TICKER = "false"
+    # The cutover hands every generation to this sweep and pauses Cloud Run's in the same deploy.
+    # Both stacks share one OpenAI account, so a second sweep would start pending generations again
+    # and stop calls the other tracks (a-novel/infra#1207).
+    SWEEP_TICKER = "true"
   })
 }
 

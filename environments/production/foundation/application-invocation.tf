@@ -132,7 +132,7 @@ resource "google_cloud_scheduler_job" "genai_sweep" {
   name             = "agora-genai-sweep"
   schedule         = "* * * * *"
   time_zone        = "Etc/UTC"
-  paused           = false
+  paused           = true
   attempt_deadline = "180s"
 
   retry_config {

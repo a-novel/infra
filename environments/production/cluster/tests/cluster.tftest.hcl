@@ -568,10 +568,10 @@ run "runs_genai" {
     condition = (
       local.genai_secret_env.OPENAI_API_KEY.secret == "secrets" &&
       contains(keys(var.secrets["genai"]), local.genai_secret_env.OPENAI_API_KEY.key) &&
-      local.genai_sweep_env.SWEEP_TICKER == "false" &&
+      local.genai_sweep_env.SWEEP_TICKER == "true" &&
       local.genai_grpc_env.GRPC_MAX_CONCURRENT_CALLS == "20"
     )
-    error_message = "Both read OpenAI's key from the namespace's synced secrets, the sweep checks nothing until the cutover, and the server refuses calls beyond the 20 its memory is sized for."
+    error_message = "Both read OpenAI's key from the namespace's synced secrets, the sweep checks generations on its own ticker, and the server refuses calls beyond the 20 its memory is sized for."
   }
 
   assert {
