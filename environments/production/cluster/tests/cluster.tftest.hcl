@@ -897,3 +897,61 @@ run "skips_the_openai_call_during_a_planned_downtime" {
     error_message = "GenAI's planned downtime must skip the provider check from its start."
   }
 }
+
+# A database whose service has no host, such as a new service's, starts empty: it imports nothing
+# and reaches no host.
+run "starts_a_database_without_a_host_empty" {
+  command = plan
+
+  variables {
+    custom_resources = true
+  }
+
+  override_data {
+    target = data.terraform_remote_state.foundation
+    values = {
+      outputs = {
+        region              = "europe-west1"
+        workload_project_id = "a-novel-production-prod"
+        studio_edge = {
+          host            = "studio.storyverse.fr"
+          address_name    = "studio"
+          ssl_policy      = "studio"
+          certificate_map = "studio"
+        }
+        cluster = {
+          name              = "a-novel-production"
+          location          = "europe-west9-a"
+          dns_endpoint      = "gke-mock.europe-west1-d.gke.goog"
+          node_range        = "10.30.0.0/24"
+          google_api_ranges = ["199.36.153.4/30", "34.126.0.0/18"]
+          database_images = {
+            authentication = "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-authentication-private-production/service-authentication/database@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+            genai          = "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-genai-private-production/service-genai/database@sha256:2222222222222222222222222222222222222222222222222222222222222222"
+            json-keys      = "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-json-keys-private-production/service-json-keys/database@sha256:3333333333333333333333333333333333333333333333333333333333333333"
+          }
+          database_imports = {
+            authentication = { host = "10.20.0.11", port = 5433, database = "agora_authentication", user = "agora_authentication_app" }
+            genai          = { host = "10.20.0.12", port = 5434, database = "agora_genai", user = "agora_genai_app" }
+          }
+          image_registries = {
+            "docker.io"       = "europe-west1-docker.pkg.dev/a-novel-production-prod/a-novel-docker-io"
+            "ghcr.io"         = "europe-west1-docker.pkg.dev/a-novel-production-prod/a-novel-ghcr-io"
+            "quay.io"         = "europe-west1-docker.pkg.dev/a-novel-production-prod/a-novel-quay-io"
+            "registry.k8s.io" = "europe-west1-docker.pkg.dev/a-novel-production-prod/a-novel-registry-k8s-io"
+          }
+        }
+      }
+    }
+  }
+
+  assert {
+    condition = (
+      !can(kubernetes_manifest.database["json-keys"].manifest.spec.bootstrap.initdb.import) &&
+      !can(kubernetes_manifest.database["json-keys"].manifest.spec.externalClusters) &&
+      length(one(kubernetes_network_policy_v1.database["json-keys"].spec).egress) == length(one(kubernetes_network_policy_v1.database["genai"].spec).egress) - 1 &&
+      alltrue([for service in ["authentication", "genai"] : kubernetes_manifest.database[service].manifest.spec.bootstrap.initdb.import.source.externalCluster == "host"])
+    )
+    error_message = "Only a database whose service has a host may import, and reach that host."
+  }
+}

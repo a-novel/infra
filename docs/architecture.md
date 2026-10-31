@@ -226,8 +226,9 @@ hold payloads and responses of up to 24 MiB, so its host is larger.
 
 On the cluster, each service's namespace holds a CloudNativePG database named `database`: a
 primary and a replica on separate nodes, with today's host sizes, switching over on updates. It
-starts as an import of the service's host: CloudNativePG dumps the host's database as the role that
-owns its tables and restores it as `app`, leaving pg_cron's jobs out. Each lineage archives under
+starts as an import of the service's host, when it has one: CloudNativePG dumps the host's database
+as the role that owns its tables and restores it as `app`, leaving pg_cron's jobs out. A new
+service's database starts empty. Each lineage archives under
 the cluster's `backup_server_name`. A new name recreates the database four minutes after deleting
 the old one, so the operator's objects for the two never overlap, imports it again, rolls the
 service's pods and takes a base backup at once; bootstrap's `retired_barman_lineages` then expires
