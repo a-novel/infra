@@ -5,6 +5,10 @@ variable "visual_test_repositories" {
     repository_id = string
   }))
   default = {
+    account = {
+      repository    = "a-novel/platform-account"
+      repository_id = "1441378666"
+    }
     studio = {
       repository    = "a-novel/platform-studio"
       repository_id = "1338436652"
