@@ -54,8 +54,8 @@ jobs:
         with:
           persist-credentials: false
 
-      # Each service root has a database that can be stopped. "*" names them all, and naming none
-      # keeps the current downtime's components; an empty start keeps its start.
+      # Each service root is one component, service-<root>.database. "*" names them all, and naming
+      # none keeps the current downtime's components; an empty start keeps its start.
       - name: Build the downtime
         id: window
         shell: bash
