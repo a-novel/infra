@@ -12,7 +12,7 @@ locals {
     # a call beyond them.
     GOMEMLIMIT                = "1600MiB"
     GRPC_MAX_CONCURRENT_CALLS = "20"
-    GRPC_PORT                 = tostring(local.service_ports.tls)
+    GRPC_PORT                 = tostring(local.service_port)
     METRICS_PORT              = "9090"
     POSTGRES_MAX_OPEN_CONNS   = "10"
     POSTGRES_MAX_IDLE_CONNS   = "10"
@@ -39,8 +39,8 @@ module "genai_grpc" {
   name            = "grpc"
   namespace       = kubernetes_namespace_v1.service["genai"].metadata[0].name
   image           = local.release_image["genai/grpc"]
-  port            = local.service_ports.tls
-  tls             = { secret = kubernetes_manifest.service_server_certificate["genai"].manifest.spec.secretName, plaintext_port = local.service_ports.plaintext }
+  port            = local.service_port
+  tls             = { secret = kubernetes_manifest.service_server_certificate["genai"].manifest.spec.secretName }
   env             = local.genai_grpc_env
   secret_env      = local.genai_secret_env
   ca_secret       = kubernetes_manifest.database_server_certificate["genai"].manifest.spec.secretName
@@ -104,13 +104,9 @@ resource "kubernetes_network_policy_v1" "genai_grpc" {
         }
       }
 
-      dynamic "ports" {
-        for_each = values(local.service_ports)
-
-        content {
-          port     = tostring(ports.value)
-          protocol = "TCP"
-        }
+      ports {
+        port     = tostring(local.service_port)
+        protocol = "TCP"
       }
     }
 

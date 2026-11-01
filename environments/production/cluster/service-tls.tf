@@ -9,9 +9,8 @@ locals {
     genai          = "grpc"
     json-keys      = "grpc"
   }
-  # Each API serves TLS on one port, and plaintext on the other while its probes and health checks
-  # still read it.
-  service_ports = { tls = 8443, plaintext = 8080 }
+  # The port each API serves TLS on.
+  service_port = 8443
 }
 
 # It reads the CA in its own namespace. GKE's control plane reaches pods on 443 and 10250 only, so

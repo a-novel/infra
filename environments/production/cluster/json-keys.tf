@@ -5,7 +5,7 @@ locals {
     # Signing reads keys from a cache, so a few connections serve every pod.
     POSTGRES_MAX_OPEN_CONNS = "5"
     POSTGRES_MAX_IDLE_CONNS = "2"
-    GRPC_PORT               = tostring(local.service_ports.tls)
+    GRPC_PORT               = tostring(local.service_port)
     GOMEMLIMIT              = "400MiB"
     SERVICE_TOKEN_ISSUER    = local.service_token_issuer
     SERVICE_TOKEN_AUDIENCE  = "json-keys"
@@ -20,8 +20,8 @@ module "json_keys_grpc" {
   name            = "grpc"
   namespace       = kubernetes_namespace_v1.service["json-keys"].metadata[0].name
   image           = local.release_image["json-keys/grpc"]
-  port            = local.service_ports.tls
-  tls             = { secret = kubernetes_manifest.service_server_certificate["json-keys"].manifest.spec.secretName, plaintext_port = local.service_ports.plaintext }
+  port            = local.service_port
+  tls             = { secret = kubernetes_manifest.service_server_certificate["json-keys"].manifest.spec.secretName }
   env             = local.json_keys_env
   secret_env      = merge(local.database_secret_env, { APP_MASTER_KEY = { secret = "secrets", key = "APP_MASTER_KEY" } })
   ca_secret       = kubernetes_manifest.database_server_certificate["json-keys"].manifest.spec.secretName
@@ -62,13 +62,9 @@ resource "kubernetes_network_policy_v1" "json_keys_grpc" {
         }
       }
 
-      dynamic "ports" {
-        for_each = values(local.service_ports)
-
-        content {
-          port     = tostring(ports.value)
-          protocol = "TCP"
-        }
+      ports {
+        port     = tostring(local.service_port)
+        protocol = "TCP"
       }
     }
 

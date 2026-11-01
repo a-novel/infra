@@ -5,14 +5,16 @@
 # On the cluster, smoke Jobs and health CronJobs call each service at its in-cluster address. The
 # token never reaches the logs, and reaches a command line only for BusyBox wget on the cluster.
 #
-#   SERVICE_URL         the service's URL: https://… on Cloud Run, http://<host>:<port> on the
+#   SERVICE_URL         the service's URL: https://… on Cloud Run, https://<host>:<port> on the
 #                       cluster.
 #   PROTOCOL            grpc, which calls STATUS_RPC, or http, which reads HEALTH_PATH and needs
 #                       every status it reports up, nested ones included. http needs curl and jq,
 #                       except on the cluster.
 #   IDENTITY_TOKEN      an ID token the service admits; by default the metadata server issues one.
 #   SERVICE_TOKEN_PATH  on the cluster, the file the kubelet projects a service token into, which
-#                       the check sends over plaintext instead of an ID token.
+#                       the check sends instead of an ID token.
+#   SSL_CERT_FILE       on the cluster, the services CA, which grpcurl and BusyBox wget verify the
+#                       service against.
 #   PUBLIC              true for an http endpoint anyone may read, which then receives no token.
 #   DOWNTIME_START      the planned downtime's start, from which the check is skipped.
 #
@@ -44,8 +46,7 @@ answer="${TMPDIR:-/tmp}/health-answer"
 : >"${answer}"
 
 # grpcurl exits with 64 plus the gRPC status code; curl exits with 22 on an HTTP error status, and
-# BusyBox wget with 1. On the cluster, the service token goes in the header golib reads, over
-# plaintext.
+# BusyBox wget with 1. On the cluster, the service token goes in the header golib reads.
 check() {
     case "${PROTOCOL:?}${SERVICE_TOKEN_PATH:+-cluster}" in
     grpc)
@@ -55,7 +56,7 @@ check() {
         ;;
     grpc-cluster)
         # shellcheck disable=SC2016
-        grpcurl -plaintext -connect-timeout 10 -max-time 15 -max-msg-sz 4096 -expand-headers -H 'X-Service-Authorization: ${SERVICE_TOKEN}' -d '{}' "${SERVICE_URL#http://}" "${STATUS_RPC:?}" >/dev/null 2>&1
+        grpcurl -cacert "${SSL_CERT_FILE:?}" -connect-timeout 10 -max-time 15 -max-msg-sz 4096 -expand-headers -H 'X-Service-Authorization: ${SERVICE_TOKEN}' -d '{}' "${SERVICE_URL#https://}" "${STATUS_RPC:?}" >/dev/null 2>&1
         ;;
     http)
         if [ -n "${IDENTITY_TOKEN}" ]; then
@@ -66,8 +67,8 @@ check() {
         ;;
     http-cluster)
         # The services' images carry only BusyBox wget, which takes headers as arguments, readable
-        # only by the pod's own processes. Authentication's health endpoint answers 503 while a
-        # dependency is down.
+        # only by the pod's own processes. Its TLS client reads SSL_CERT_FILE. Authentication's
+        # health endpoint answers 503 while a dependency is down.
         wget -q -T 15 -O "${answer}" --header "X-Service-Authorization: ${SERVICE_TOKEN}" "${SERVICE_URL}${HEALTH_PATH:?}"
         ;;
     *)
