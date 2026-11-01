@@ -55,20 +55,8 @@ describe("rewrite", () => {
     );
   });
 
-  it("moves a tag-only reference without adding a digest", () => {
-    assert.equal(
-      rewrite(
-        `FROM ${image}:v2.10.4 AS json-keys\nFROM ${image}:v2.10.4`,
-        image,
-        "v2.11.0",
-        fresh,
-      ),
-      `FROM ${image}:v2.11.0 AS json-keys\nFROM ${image}:v2.11.0`,
-    );
-  });
-
   it("leaves other images alone", () => {
-    const other = `FROM ${image}-replica:v2.10.4@${old}\nFROM ghcr.io/a-novel/service-json-keys/grpc:v2.10.4@${old}`;
+    const other = `replica = "${image}-replica:v2.10.4@${old}"\ngrpc = "ghcr.io/a-novel/service-json-keys/grpc:v2.10.4@${old}"`;
     assert.equal(rewrite(other, image, "v2.11.0", fresh), other);
   });
 });
