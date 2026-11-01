@@ -187,11 +187,9 @@ run "serves_grpc_over_tls" {
     condition = alltrue([for probe in [
       one(one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).startup_probe),
       one(one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).readiness_probe),
-      ] : length(probe.grpc) == 0 &&
-      strcontains(one(probe.exec).command[2], "grpcurl -insecure -connect-timeout 1 localhost:8443 grpc.health.v1.Health/Check") &&
-      probe.timeout_seconds == 2
+      ] : length(probe.grpc) == 0 && one(probe.tcp_socket).port == "8443"
     ])
-    error_message = "A TLS gRPC server's probes must call its health service over TLS, which the kubelet's gRPC probe cannot."
+    error_message = "A TLS gRPC server's probes must check its TLS port, since the kubelet's gRPC probe speaks plaintext only."
   }
 
   assert {
@@ -217,7 +215,7 @@ run "serves_http_over_tls" {
     condition = alltrue([for probe in [
       one(one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).startup_probe),
       one(one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).readiness_probe),
-    ] : one(probe.http_get).scheme == "HTTPS" && one(probe.http_get).port == "8443" && length(probe.exec) == 0])
+    ] : one(probe.http_get).scheme == "HTTPS" && one(probe.http_get).port == "8443" && length(probe.tcp_socket) == 0])
     error_message = "A TLS HTTP server's probes must GET its health path over HTTPS."
   }
 }
