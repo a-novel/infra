@@ -24,9 +24,10 @@ locals {
     # Only the platforms call the API for their visitors, so it can trust the visitor IP they
     # forward.
     REST_CLIENT_IP_HEADER  = "X-Client-IP"
-    REST_PORT              = "8080"
+    REST_PORT              = tostring(local.service_ports.tls)
     SERVICE_JSON_KEYS_HOST = "grpc.json-keys.svc"
     SERVICE_JSON_KEYS_PORT = local.json_keys_env.GRPC_PORT
+    SERVICE_JSON_KEYS_TLS  = "true"
     SERVICE_TOKEN_ISSUER   = local.service_token_issuer
     SERVICE_TOKEN_AUDIENCE = "authentication"
     SERVICE_TOKEN_CALLERS = join(",", concat(
@@ -43,7 +44,9 @@ module "authentication_rest" {
   name             = "rest"
   namespace        = kubernetes_namespace_v1.service["authentication"].metadata[0].name
   image            = local.release_image["authentication/rest"]
-  port             = 8080
+  port             = local.service_ports.tls
+  tls              = { secret = kubernetes_manifest.service_server_certificate["authentication"].manifest.spec.secretName, plaintext_port = local.service_ports.plaintext }
+  service_ca       = kubernetes_manifest.service_trust_bundle[0].manifest.metadata.name
   http_health_path = "/v2/ping"
   env              = local.authentication_env
   secret_env       = local.database_secret_env
@@ -55,7 +58,9 @@ module "authentication_rest" {
   labels          = local.database_clients
   pod_annotations = local.database_client_annotations
 
-  depends_on = [kubernetes_job_v1.migrations]
+  # Its new pods serve TLS and call JSON Keys over it, once JSON Keys' pods serve it and both
+  # policies admit it.
+  depends_on = [kubernetes_job_v1.migrations, module.json_keys_grpc, kubernetes_network_policy_v1.authentication_rest, kubernetes_network_policy_v1.json_keys_grpc]
 }
 
 # The platforms and Authentication's smoke and health checks call the API. It calls JSON Keys, and
@@ -92,9 +97,13 @@ resource "kubernetes_network_policy_v1" "authentication_rest" {
         }
       }
 
-      ports {
-        port     = "8080"
-        protocol = "TCP"
+      dynamic "ports" {
+        for_each = values(local.service_ports)
+
+        content {
+          port     = tostring(ports.value)
+          protocol = "TCP"
+        }
       }
     }
 
@@ -108,9 +117,13 @@ resource "kubernetes_network_policy_v1" "authentication_rest" {
         }
       }
 
-      ports {
-        port     = "8080"
-        protocol = "TCP"
+      dynamic "ports" {
+        for_each = values(local.service_ports)
+
+        content {
+          port     = tostring(ports.value)
+          protocol = "TCP"
+        }
       }
     }
 

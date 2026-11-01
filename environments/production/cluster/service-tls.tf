@@ -9,6 +9,9 @@ locals {
     genai          = "grpc"
     json-keys      = "grpc"
   }
+  # Each API serves TLS on one port, and plaintext on the other while its probes and health checks
+  # still read it.
+  service_ports = { tls = 8443, plaintext = 8080 }
 }
 
 # It reads the CA in its own namespace. GKE's control plane reaches pods on 443 and 10250 only, so
@@ -88,4 +91,33 @@ resource "kubernetes_manifest" "service_server_certificate" {
       status = "True"
     }
   }
+}
+
+# Every service namespace receives the CA's certificate in a ConfigMap named after the Bundle, and a
+# workload that calls a service API mounts it. The CA keeps its key, so a renewal changes no caller's trust.
+resource "kubernetes_manifest" "service_trust_bundle" {
+  count = var.custom_resources ? 1 : 0
+
+  manifest = {
+    apiVersion = "trust.cert-manager.io/v1alpha1"
+    kind       = "Bundle"
+    metadata   = { name = "services-ca" }
+    spec = {
+      sources = [{ secret = { name = kubernetes_manifest.service_ca[0].manifest.spec.secretName, key = "ca.crt" } }]
+      target = {
+        configMap         = { key = "ca.crt" }
+        namespaceSelector = { matchExpressions = [{ key = "kubernetes.io/metadata.name", operator = "In", values = sort(var.namespaces) }] }
+      }
+    }
+  }
+
+  # A caller finds the certificate as it starts.
+  wait {
+    condition {
+      type   = "Synced"
+      status = "True"
+    }
+  }
+
+  depends_on = [helm_release.trust_manager]
 }

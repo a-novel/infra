@@ -5,15 +5,16 @@
 # audience. A planned downtime skips the check, and clearing it runs the Job again.
 locals {
   health_check_script = file("${path.module}/../../../modules/smoke-check/smoke.sh")
-  # Each check runs in its service's own image, which carries grpcurl or BusyBox wget.
+  # Each check runs in its service's own image, which carries grpcurl or BusyBox wget, and calls its
+  # service's plaintext port.
   health_check_targets = {
-    authentication = { image = "authentication/rest", pods = "rest", port = local.authentication_env.REST_PORT, audience = local.authentication_env.SERVICE_TOKEN_AUDIENCE, env = { PROTOCOL = "http", HEALTH_PATH = "/v2/healthcheck" } }
-    genai          = { image = "genai/grpc", pods = "grpc", port = local.genai_grpc_env.GRPC_PORT, audience = local.genai_grpc_env.SERVICE_TOKEN_AUDIENCE, env = { PROTOCOL = "grpc", STATUS_RPC = "anovel.genai.v0.StatusService/Status" } }
-    json-keys      = { image = "json-keys/grpc", pods = "grpc", port = local.json_keys_env.GRPC_PORT, audience = local.json_keys_env.SERVICE_TOKEN_AUDIENCE, env = { PROTOCOL = "grpc", STATUS_RPC = "anovel.jsonkeys.v2.StatusService/Status" } }
+    authentication = { image = "authentication/rest", pods = "rest", audience = local.authentication_env.SERVICE_TOKEN_AUDIENCE, env = { PROTOCOL = "http", HEALTH_PATH = "/v2/healthcheck" } }
+    genai          = { image = "genai/grpc", pods = "grpc", audience = local.genai_grpc_env.SERVICE_TOKEN_AUDIENCE, env = { PROTOCOL = "grpc", STATUS_RPC = "anovel.genai.v0.StatusService/Status" } }
+    json-keys      = { image = "json-keys/grpc", pods = "grpc", audience = local.json_keys_env.SERVICE_TOKEN_AUDIENCE, env = { PROTOCOL = "grpc", STATUS_RPC = "anovel.jsonkeys.v2.StatusService/Status" } }
   }
   health_checks = { for service, target in local.health_check_targets : service => merge(target, {
     env = merge(target.env, local.downtime_env[service], {
-      SERVICE_URL        = "http://${target.pods}.${service}.svc:${target.port}"
+      SERVICE_URL        = "http://${target.pods}.${service}.svc:${local.service_ports.plaintext}"
       SERVICE_TOKEN_PATH = "/var/run/secrets/tokens/${target.audience}"
     })
   }) }
@@ -54,7 +55,7 @@ resource "kubernetes_network_policy_v1" "smoke" {
       }
 
       ports {
-        port     = each.value.port
+        port     = tostring(local.service_ports.plaintext)
         protocol = "TCP"
       }
     }

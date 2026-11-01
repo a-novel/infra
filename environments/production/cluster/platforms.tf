@@ -11,7 +11,7 @@ locals {
     studio = { ACCOUNT_URL = "https://${local.platform_edges.account.host}" }
   }
   platform_env = { for platform, settings in local.platforms : platform => merge(local.telemetry_env[platform].api, {
-    AUTHENTICATION_SERVICE_URL = "http://rest.authentication.svc:${local.authentication_env.REST_PORT}"
+    AUTHENTICATION_SERVICE_URL = "https://rest.authentication.svc:${local.authentication_env.REST_PORT}"
     # The load balancer appends the visitor's address, then its own, so the second entry from the
     # right is the only one a visitor cannot forge. Authentication rate-limits by the address the
     # platform forwards.
@@ -20,6 +20,8 @@ locals {
     # The load balancer ends TLS, so the platform checks form posts against its public origin.
     ORIGIN = "https://${local.platform_edges[platform].host}"
   }, settings) }
+  # The port each platform serves, which its network policy admits before its pods roll.
+  platform_port = 3000
   # The global load balancer's proxies and health checks reach the pods from these ranges.
   # https://cloud.google.com/load-balancing/docs/firewall-rules
   load_balancer_ranges = ["35.191.0.0/16", "130.211.0.0/22"]
@@ -32,12 +34,17 @@ module "platform_web" {
   name             = "web"
   namespace        = kubernetes_namespace_v1.service[each.key].metadata[0].name
   image            = local.release_image["${each.key}/web"]
-  port             = 3000
+  port             = local.platform_port
   http_health_path = "/ping"
   env              = local.platform_env[each.key]
   service_tokens   = { (local.authentication_env.SERVICE_TOKEN_AUDIENCE) = "SERVICE_TOKEN_PATH" }
+  service_ca       = one(kubernetes_manifest.service_trust_bundle[*].manifest.metadata.name)
   resources        = { cpu = "100m", memory = "512Mi" }
   replicas         = { min = 1, max = 2 }
+
+  # Its new pods call Authentication over TLS, once Authentication's pods serve it and the policy
+  # lets them reach it.
+  depends_on = [module.authentication_rest, kubernetes_network_policy_v1.platform_web]
 }
 
 moved {
@@ -73,7 +80,7 @@ resource "kubernetes_network_policy_v1" "platform_web" {
       }
 
       ports {
-        port     = tostring(module.platform_web[each.key].service.port)
+        port     = tostring(local.platform_port)
         protocol = "TCP"
       }
     }
@@ -88,9 +95,13 @@ resource "kubernetes_network_policy_v1" "platform_web" {
         }
       }
 
-      ports {
-        port     = local.authentication_env.REST_PORT
-        protocol = "TCP"
+      dynamic "ports" {
+        for_each = values(local.service_ports)
+
+        content {
+          port     = tostring(ports.value)
+          protocol = "TCP"
+        }
       }
     }
   }
