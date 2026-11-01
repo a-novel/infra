@@ -1,24 +1,23 @@
 name: recovery
 
 # Runs a disaster-recovery drill in a disposable project, as docs/runbooks/recovery.md describes.
-# A cluster drill restores cluster databases from Barman into a throwaway cluster, checks them,
-# then destroys the cluster whatever the outcome. The host drill's root holds a database host's
-# restore, which runs on the host.
+# A drill restores the production databases from Barman into a throwaway cluster, checks them, then
+# destroys the cluster whatever the outcome.
 on:
   workflow_dispatch:
     inputs:
       root:
-        description: The cluster drill, or the database host drill.
+        description: The drill's roots, a throwaway cluster and the databases it restores.
         required: true
         type: choice
-        options: [cluster, host]
+        options: [cluster]
       operation:
-        description: Run the whole cluster drill, or plan, apply or destroy the root.
+        description: Run the whole drill, or plan, apply or destroy its roots.
         required: true
         type: choice
         options: [drill, plan, apply, destroy]
       drill:
-        description: JSON value of the root's `recovery` variable.
+        description: JSON value of the roots' `recovery` variable.
         required: true
         type: string
 
@@ -68,7 +67,6 @@ jobs:
         env:
           DRILL: ${{ inputs.drill }}
           OPERATION: ${{ inputs.operation }}
-          ROOT: ${{ inputs.root }}
         run: |
           set -euo pipefail
           vars="$RUNNER_TEMP/drill.tfvars.json"
@@ -79,16 +77,10 @@ jobs:
             tofu -chdir="$dir" init -input=false -lockfile=readonly -no-color -var-file="$vars"
             tofu -chdir="$dir" "$@" -input=false -no-color -var-file="$vars"
           }
-          case "$ROOT:$OPERATION" in
-            host:drill)
-              echo "::error::A host drill restores on its host: plan and apply its root, then follow the runbook."
-              exit 1
-              ;;
-            host:plan) in_root recovery plan ;;
-            host:apply) in_root recovery apply -auto-approve ;;
+          case "$OPERATION" in
             # The databases plan only once the cluster they install into exists.
-            cluster:plan) in_root recovery-cluster plan ;;
-            cluster:*)
+            plan) in_root recovery-cluster plan ;;
+            *)
               in_root recovery-cluster apply -auto-approve
               # A custom resource plans only once its kind exists, so the operators install first.
               in_root recovery-database apply -auto-approve -target=module.database_operator
@@ -97,7 +89,7 @@ jobs:
           esac
 
       - id: google
-        if: ${{ !cancelled() && inputs.root == 'cluster' && inputs.operation != 'plan' }}
+        if: ${{ !cancelled() && inputs.operation != 'plan' }}
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
           workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
@@ -109,7 +101,7 @@ jobs:
       # conditions, stuck pods and warnings usually do, and the teardown deletes them with the
       # cluster.
       - name: Report the databases
-        if: ${{ !cancelled() && inputs.root == 'cluster' && inputs.operation != 'plan' }}
+        if: ${{ !cancelled() && inputs.operation != 'plan' }}
         shell: bash
         env:
           TOKEN: ${{ steps.google.outputs.access_token }}
@@ -142,7 +134,7 @@ jobs:
     needs: run
     if: >-
       always() && github.ref == 'refs/heads/master' &&
-      (inputs.operation == 'destroy' || (inputs.operation == 'drill' && inputs.root == 'cluster'))
+      (inputs.operation == 'destroy' || inputs.operation == 'drill')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: production
@@ -172,18 +164,13 @@ jobs:
         shell: bash
         env:
           DRILL: ${{ inputs.drill }}
-          ROOT: ${{ inputs.root }}
         run: |
           set -euo pipefail
           vars="$RUNNER_TEMP/drill.tfvars.json"
           jq -n --argjson recovery "$DRILL" '{recovery: $recovery}' >"$vars"
-          case "$ROOT" in
-            host) roots=(recovery) ;;
-            # The databases go first: deleting them deletes their volumes' disks, which outlive a
-            # deleted cluster.
-            cluster) roots=(recovery-database recovery-cluster) ;;
-          esac
-          for root in "${roots[@]}"; do
+          # The databases go first: deleting them deletes their volumes' disks, which outlive a
+          # deleted cluster.
+          for root in recovery-database recovery-cluster; do
             dir="environments/$root"
             tofu -chdir="$dir" init -input=false -lockfile=readonly -no-color -var-file="$vars"
             # A root that never applied holds nothing, and reads outputs its drill may lack.
@@ -195,7 +182,6 @@ jobs:
 
       # A volume's disk holds restored production data, and keeps billing.
       - name: Check no volume is left
-        if: inputs.root == 'cluster'
         shell: bash
         env:
           DRILL: ${{ inputs.drill }}
