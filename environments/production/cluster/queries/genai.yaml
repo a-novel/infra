@@ -1,7 +1,7 @@
 # GenAI's own numbers. CloudNativePG runs each query on the primary at every scrape, and exports
 # each column as cnpg_<query>_<column>. generations holds the live rows and six hours of settled
-# ones before the purge deletes them, so reading it whole stays cheap. No query reads an owner, a
-# payload or a response.
+# ones before the purge deletes them, so reading it whole stays cheap. No query exports an owner,
+# and none reads a payload or a response. genai.sql grants every column the queries read.
 
 # The live work, and how long its oldest rows have waited. Every live row is checked at least every
 # minute while the sweep runs, so an old check means the sweep stopped.

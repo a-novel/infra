@@ -163,9 +163,10 @@ Kubernetes resources, reaching the control plane through the DNS endpoint as the
   gives each server and root span an outcome, `a_novel.outcome`, then derives span metrics from
   them, with a native histogram of their duration. CloudNativePG also exports each database's own
   numbers, such as accounts, tokens consumed or signing keys' runway, from the cluster root's
-  `queries/<database>.yaml`. It scrapes the kubelets, cAdvisor,
-  kube-state-metrics and the databases every 60 seconds, and sends the Kubernetes events, all in
-  the cluster root's namespaces. It reads its push token from `production-alloy-push-token`, and
+  `queries/<database>.yaml`. It runs them as `cnpg_metrics_exporter`, which reads only the columns
+  `queries/<database>.sql` grants it: a Job runs those grants as the tables' owner after each run of
+  the migrations. Alloy scrapes the kubelets, cAdvisor, kube-state-metrics and the databases every
+  60 seconds, and sends the Kubernetes events, all in the cluster root's namespaces. It reads its push token from `production-alloy-push-token`, and
   no Secret of the cluster. The Alloy Operator, which the chart runs, manages that namespace alone.
 - **Edge:** Studio answers on `studio.storyverse.fr` through the Gateway `studio`, on Google's
   global load balancer, which redirects plain HTTP to HTTPS. Foundation holds its `studio` address,

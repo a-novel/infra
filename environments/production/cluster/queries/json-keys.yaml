@@ -1,5 +1,6 @@
 # JSON Keys' own numbers. CloudNativePG runs the query on the primary at every scrape, and exports
-# each column as cnpg_<query>_<column>. It never reads a key's material.
+# each column as cnpg_<query>_<column>. It never reads a key's material. json-keys.sql grants every
+# column it reads.
 
 # A key is active as the service's active_keys view defines it. The runway is how long the newest
 # key still signs: it shrinks once rotation stops, and turns negative once no key is left.
