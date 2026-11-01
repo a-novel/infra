@@ -1,24 +1,42 @@
-locals {
-  pgbackrest_database_accounts = {
-    json-keys      = "agora-json-keys-database"
-    authentication = "agora-auth-database"
-    genai          = "agora-genai-database"
+variable "native_backups" {
+  description = "Services whose database hosts had native backups. With tls_credentials, their TLS secret containers retire after the hosts (a-novel/infra#1208)."
+  type = map(object({
+    workload_project_id = string
+    zone                = string
+    tls_credentials     = optional(bool, false)
+    noncurrent_cleanup  = optional(bool, false)
+  }))
+  default  = {}
+  nullable = false
+
+  validation {
+    condition = alltrue([for service, config in var.native_backups :
+      contains(["json-keys", "authentication", "genai"], service) &&
+      can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", config.workload_project_id)) &&
+      config.workload_project_id != var.management_project_id
+    ])
+    error_message = "Select a supported service and its registered database project, distinct from management."
   }
+
+  validation {
+    condition     = alltrue([for config in var.native_backups : config.zone == "private"])
+    error_message = "Native backup custody belongs only to the private zone."
+  }
+}
+
+locals {
   pgbackrest_tls_endpoints = {
     ca = {
       contract = "PGBACKREST_CA_PEM"
       purpose  = "native backup public TLS trust bundle"
-      readers  = ["database", "repository"]
     }
     database = {
       contract = "PGBACKREST_IDENTITY_PEM"
       purpose  = "database TLS client certificate and private key"
-      readers  = ["database"]
     }
     repository = {
       contract = "PGBACKREST_IDENTITY_PEM"
       purpose  = "repository TLS server certificate and private key"
-      readers  = ["repository"]
     }
   }
 
@@ -26,27 +44,6 @@ locals {
     for endpoint, credential in local.pgbackrest_tls_endpoints : "production-${service}-pgbackrest-${endpoint}" => {
       contract = credential.contract
       purpose  = "${service} ${credential.purpose}"
-      service  = service
-      endpoint = endpoint
-      readers = [for reader in credential.readers :
-        "${reader == "database" ? local.pgbackrest_database_accounts[service] : "agora-pgbr-${service}"}@${config.workload_project_id}.iam.gserviceaccount.com"
-      ]
     }
   } if config.tls_credentials]...)
-
-  pgbackrest_tls_readers = merge([for secret, credential in local.pgbackrest_tls : {
-    for reader in credential.readers : "${credential.service}:${credential.endpoint}:${split("@", reader)[0]}" => {
-      secret = secret
-      reader = reader
-    }
-  }]...)
-}
-
-resource "google_secret_manager_secret_iam_member" "pgbackrest_tls" {
-  for_each = local.pgbackrest_tls_readers
-
-  project   = var.management_project_id
-  secret_id = google_secret_manager_secret.application[each.value.secret].secret_id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${each.value.reader}"
 }

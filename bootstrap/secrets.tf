@@ -1,10 +1,14 @@
 locals {
-  # A DSN is not a secret, so the services read it from the Sentry root (a-novel/infra#1154). These
+  # A DSN is not a secret, so the services read it from the Sentry root (a-novel/infra#1154). The
+  # database hosts' passwords and TLS credentials retire with the hosts (a-novel/infra#1208). These
   # containers are unlocked here and deleted in the next apply.
-  retiring_secrets = toset(flatten([
-    for service in ["authentication", "json-keys", "genai"] :
-    ["production-${service}-sentry-dsn", "production-${service}-sentry-otlp-headers"]
-  ]))
+  retiring_secrets = setunion(
+    flatten([
+      for service in ["authentication", "json-keys", "genai"] :
+      ["production-${service}-sentry-dsn", "production-${service}-sentry-otlp-headers", "production-${service}-app-password"]
+    ]),
+    keys(local.pgbackrest_tls),
+  )
 
   operator_secret_roles = toset([
     "roles/secretmanager.secretAccessor",

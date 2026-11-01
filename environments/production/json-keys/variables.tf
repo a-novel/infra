@@ -1,3 +1,5 @@
+# The cluster root reads these pins from this root's terraform.tfvars.
+# tflint-ignore: terraform_unused_declarations
 variable "images" {
   description = "Service images as ghcr.io/a-novel/<path>:<tag>@<digest>, pinned by each release."
   type        = map(string)
@@ -20,22 +22,4 @@ variable "secret_versions" {
     condition     = toset(keys(var.secret_versions)) == toset(["app-password", "app-master-key"])
     error_message = "Pin exactly the app-password and app-master-key versions."
   }
-}
-
-variable "backup_repository" {
-  description = "Backup repository VM image and the TLS runtime it loads at boot; the server runs the database image."
-  type = object({
-    cos_image = string
-    runtime = object({
-      client_name      = string
-      ca_version       = string
-      identity_version = string
-    })
-  })
-}
-
-variable "alert_email" {
-  description = "Operations inbox for this service's alerts."
-  type        = string
-  sensitive   = true
 }

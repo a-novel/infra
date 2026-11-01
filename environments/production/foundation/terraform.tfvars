@@ -4,47 +4,16 @@ authentication_maintenance_principals = [
 ]
 billing_account_id = "01BDFE-5B21E7-8393CB"
 cost_alert_email   = "geoffroy.vincent@agorastoryverse.com"
-database_capacity = {
-  json-keys = {
-    machine_type        = "e2-medium"
-    container_cpu       = 0.75
-    container_memory_mb = 1536
-    max_connections     = 50
-    data_disk_size_gb   = 50
-  }
-  authentication = {
-    machine_type        = "e2-medium"
-    container_cpu       = 0.75
-    container_memory_mb = 1536
-    max_connections     = 50
-    data_disk_size_gb   = 50
-  }
-  # 20 concurrent 24 MiB writes peak at 2 GiB of PostgreSQL memory, and vacuum, TOAST compression
-  # and pgBackRest need more than the one vCPU an e2-medium sustains.
-  genai = {
-    machine_type        = "e2-standard-2"
-    container_cpu       = 1.5
-    container_memory_mb = 6144
-    max_connections     = 150
-    data_disk_size_gb   = 50
-  }
-}
 database_operator_principals = [
   "user:geoffroy.vincent@agorastoryverse.com",
 ]
-database_zone          = "europe-west1-d"
 folder_id              = null
 management_project_id  = "a-novel-management-prod"
 operations_alert_email = "geoffroy.vincent@agorastoryverse.com"
 organization_id        = "1031663934757"
-pgbackrest_repository_services = [
-  "json-keys",
-  "authentication",
-  "genai",
-]
-public_api_project_id = "a-novel-public-api-prod"
-public_project_id     = "a-novel-public-prod"
-region                = "europe-west1"
+public_api_project_id  = "a-novel-public-api-prod"
+public_project_id      = "a-novel-public-prod"
+region                 = "europe-west1"
 service_release_zones = {
   authentication = [
     "private",
@@ -87,40 +56,9 @@ cluster_ranges = {
   services = "10.30.4.0/22"
   pods     = "10.30.16.0/20"
 }
-sentry_ingest_host     = "o4504952660951040.ingest.us.sentry.io"
-workload_project_id    = "a-novel-production-prod"
-workload_project_name  = "A-Novel production"
-host_credentials_image = "ghcr.io/a-novel/infra/host-credentials:sha-174f08b578fb131fa7a4112d1207829a5822797b-40242655253-1@sha256:9d3b315ef9104a651836926bc39953ef2659aece423f08025799f25cf74995ed"
-native_backups = {
-  json-keys = {
-    ca_version        = "1"
-    identity_version  = "2"
-    wal_archiving     = true
-    client_name       = "agora-database.a-novel-production-prod"
-    schedules_enabled = true
-  }
-  authentication = {
-    client_name       = "agora-authentication-database.a-novel-production-prod"
-    ca_version        = "1"
-    identity_version  = "1"
-    wal_archiving     = true
-    schedules_enabled = true
-  }
-}
-database_releases = {
-  json-keys = {
-    revision             = "13df9600c58d376562c1809782d0c533a10e91c5"
-    app_password_version = "1"
-  }
-  authentication = {
-    revision             = "906476efeaeddef29b81dd7a32b9a6fa4e2ae0f6"
-    app_password_version = "1"
-  }
-  genai = {
-    revision             = "de87d803ccf9c4fff9d80bfe68862133d5e4ac2e"
-    app_password_version = "1"
-  }
-}
+sentry_ingest_host    = "o4504952660951040.ingest.us.sentry.io"
+workload_project_id   = "a-novel-production-prod"
+workload_project_name = "A-Novel production"
 # A blank line separates each service's pin, so concurrent release pull requests merge cleanly. Git
 # refuses to merge edits to adjacent lines.
 database_images = {

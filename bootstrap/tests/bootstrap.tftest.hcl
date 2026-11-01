@@ -55,17 +55,8 @@ run "protects_state_and_backups" {
   assert {
     condition = alltrue([for bucket in values(google_storage_bucket.barman) :
       bucket.versioning[0].enabled && tonumber(bucket.retention_policy[0].retention_period) == 604800
-      ]) && alltrue([for bucket in google_storage_bucket.pgbackrest :
-      alltrue([for rule in bucket.lifecycle_rule : alltrue([for condition in rule.condition : condition.age == null || condition.age == 0])])
     ])
-    error_message = "Barman's buckets keep a week of retention, and pgBackRest's are never pruned by age: pgBackRest owns their expiry."
-  }
-
-  assert {
-    condition = alltrue([for bucket in google_storage_bucket.pgbackrest :
-      length(bucket.lifecycle_rule) == 0 || bucket.soft_delete_policy[0].retention_duration_seconds == 0
-    ])
-    error_message = "A backup bucket that deletes replaced objects must keep no soft-deleted copy of them."
+    error_message = "Barman's buckets keep a week of retention."
   }
 
   assert {

@@ -39,14 +39,6 @@ output "cluster" {
     google_api_ranges = sort(tolist(local.restricted_google_api_ranges))
     # Each service's PostgreSQL image, pinned by digest in its private repository.
     database_images = local.database_image
-    # Each service's database host, which the cutover imports from across the import peering, as the
-    # role that owns the service's tables.
-    database_imports = { for service, host in local.database_hosts : host.component => {
-      host     = one(data.google_compute_instance.database[service].network_interface).network_ip
-      port     = host.port
-      database = "agora_${service}"
-      user     = "agora_${service}_app"
-    } }
     # Where the add-ons pull each public registry's images from, by its host.
     image_registries = { for name, repository in google_artifact_registry_repository.cluster_upstream : replace(name, "-", ".") => repository.registry_uri }
   }
@@ -55,31 +47,6 @@ output "cluster" {
 output "cluster_nat_address" {
   description = "The address the cluster's internet egress leaves from, which the providers' IP allowlists name beside nat_address."
   value       = google_compute_address.cluster_nat.address
-}
-
-output "database_hosts" {
-  description = "Service-owned PostgreSQL hosts and disk incarnations for release and recovery."
-  value = {
-    for service, host in local.database_hosts : service => {
-      data_disk = {
-        name    = google_compute_disk.database[service].name
-        id      = google_compute_disk.database[service].disk_id
-        size_gb = google_compute_disk.database[service].size
-        type    = google_compute_disk.database[service].type
-      }
-      instance_group_manager = google_compute_instance_group_manager.database[service].name
-      instance_name          = data.google_compute_instance.database[service].name
-      machine_type           = host.capacity.machine_type
-      port                   = host.port
-      private_ip             = one(data.google_compute_instance.database[service].network_interface).network_ip
-      # The backup repository VM's address, which the database host trusts.
-      repository_ip = try(google_compute_address.pgbackrest_repository[host.component].address, null)
-      # The host-credentials image both of the service's hosts run, from its private tooling repository.
-      credentials_image = try(local.host_credentials_image[host.component], null)
-      service_account   = google_service_account.runtime[host.identity].email
-      zone              = var.database_zone
-    }
-  }
 }
 
 output "sentry_ingest_host" {

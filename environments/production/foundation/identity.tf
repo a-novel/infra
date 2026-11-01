@@ -46,11 +46,6 @@ locals {
     "roles/monitoring.notificationChannelEditor",
   ])
 
-  database_runtime_project_roles = toset([
-    "roles/logging.logWriter",
-    "roles/monitoring.metricWriter",
-  ])
-
   cloud_run_invocation_tag_values = {
     internal = {
       short_name  = "internal"
@@ -73,7 +68,6 @@ locals {
   # The cluster viewer role only finds the cluster and connects to it. The cluster root lets the
   # operators read the services' namespaces.
   database_operator_project_roles = toset([
-    "roles/compute.osAdminLogin",
     "roles/container.clusterViewer",
     "roles/compute.viewer",
     "roles/logging.viewer",
@@ -87,46 +81,6 @@ locals {
     "${binding[0]}:${binding[1]}" => {
       principal = binding[0]
       role      = binding[1]
-    }
-  }
-
-  database_runtime_project_bindings = {
-    for binding in setproduct(keys(local.database_hosts), local.database_runtime_project_roles) :
-    "${binding[0]}:${binding[1]}" => {
-      identity = local.database_hosts[binding[0]].identity
-      role     = binding[1]
-    }
-  }
-
-  database_operator_account_bindings = {
-    for binding in setproduct(keys(local.database_hosts), var.database_operator_principals) :
-    "${binding[0]}:${binding[1]}" => {
-      identity  = local.database_hosts[binding[0]].identity
-      principal = binding[1]
-    }
-  }
-
-  repository_operator_account_bindings = {
-    for binding in setproduct(keys(local.pgbackrest_network), var.database_operator_principals) :
-    "${binding[0]}:${binding[1]}" => {
-      service   = binding[0]
-      principal = binding[1]
-    }
-  }
-
-  runtime_secret_access = {
-    # The host sets the application role's password at boot.
-    "database:authentication-app-password" = {
-      identity = "authentication_database"
-      secret   = "production-authentication-app-password"
-    }
-    "database:json-keys-app-password" = {
-      identity = "json_keys_database"
-      secret   = "production-json-keys-app-password"
-    }
-    "database:genai-app-password" = {
-      identity = "genai_database"
-      secret   = "production-genai-app-password"
     }
   }
 }
@@ -179,9 +133,8 @@ resource "google_project_iam_member" "plan_cluster_viewer" {
   member  = "serviceAccount:${local.automation_service_accounts.plan}"
 }
 
-# Managed instance groups act through Google's project service agent, which holds the group
-# manager's service-agent role. mig_database_act_as lets it attach the database identities, and no
-# other.
+# Managed instance groups, the cluster's node pools included, act through Google's project service
+# agent, which holds the group manager's service-agent role.
 resource "google_project_iam_member" "mig_service_agent" {
   project = google_project.workload.project_id
   role    = "roles/compute.instanceGroupManagerServiceAgent"
@@ -215,14 +168,6 @@ resource "google_service_account" "runtime" {
   }
 }
 
-resource "google_service_account_iam_member" "foundation_database_act_as" {
-  for_each = local.database_hosts
-
-  service_account_id = google_service_account.runtime[each.value.identity].name
-  role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:${local.automation_service_accounts.foundation}"
-}
-
 # The cluster's nodes write their own logs and metrics and pull images, and nothing else: each
 # workload acts as its own identity through Workload Identity.
 resource "google_project_iam_member" "cluster_nodes" {
@@ -235,14 +180,6 @@ resource "google_service_account_iam_member" "foundation_cluster_nodes_act_as" {
   service_account_id = google_service_account.runtime["cluster_nodes"].name
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${local.automation_service_accounts.foundation}"
-}
-
-resource "google_service_account_iam_member" "mig_database_act_as" {
-  for_each = local.database_hosts
-
-  service_account_id = google_service_account.runtime[each.value.identity].name
-  role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:${google_project.workload.number}@cloudservices.gserviceaccount.com"
 }
 
 # The invocation tags authorize. Each caller holds one project-level grant conditioned on a tag
@@ -282,34 +219,12 @@ resource "google_project_iam_member" "maintenance_observer" {
   member  = each.value.principal
 }
 
-resource "google_project_iam_member" "database_runtime_observability" {
-  for_each = local.database_runtime_project_bindings
-
-  project = google_project.workload.project_id
-  role    = each.value.role
-  member  = "serviceAccount:${google_service_account.runtime[each.value.identity].email}"
-}
-
 resource "google_project_iam_member" "database_operator" {
   for_each = local.database_operator_project_bindings
 
   project = google_project.workload.project_id
   role    = each.value.role
   member  = each.value.principal
-}
-
-resource "google_project_iam_member" "database_operator_iap" {
-  for_each = var.database_operator_principals
-
-  project = google_project.workload.project_id
-  role    = "roles/iap.tunnelResourceAccessor"
-  member  = each.value
-
-  condition {
-    title       = "DatabaseIAPSSHOnly"
-    description = "Permit IAP TCP forwarding only to SSH; the VPC firewall limits the target to the database host."
-    expression  = "destination.port == 22"
-  }
 }
 
 # Operators read the public API's logs too, the perimeter's violations included.
@@ -321,31 +236,20 @@ resource "google_project_iam_member" "database_operator_public_api_logs" {
   member  = each.value
 }
 
-# OS Login rechecks whether an SSH operator may act as the VM's attached
-# service account. This account-level grant is required for login and does not
-# grant token-minting authority.
-resource "google_service_account_iam_member" "database_operator_act_as" {
-  for_each = local.database_operator_account_bindings
+# The deploy identity's and the group manager's grants on the database host identities leave with
+# those identities, so no host deletion in the same apply waits on them (a-novel/infra#1208).
+removed {
+  from = google_service_account_iam_member.foundation_database_act_as
 
-  service_account_id = google_service_account.runtime[each.value.identity].name
-  role               = "roles/iam.serviceAccountUser"
-  member             = each.value.principal
+  lifecycle {
+    destroy = false
+  }
 }
 
-resource "google_service_account_iam_member" "repository_operator_act_as" {
-  for_each = local.repository_operator_account_bindings
+removed {
+  from = google_service_account_iam_member.mig_database_act_as
 
-  service_account_id = "projects/${var.workload_project_id}/serviceAccounts/${local.pgbackrest_network[each.value.service].repository}"
-  role               = "roles/iam.serviceAccountUser"
-  member             = each.value.principal
-}
-
-# Each identity reads only the secrets its workload consumes.
-resource "google_secret_manager_secret_iam_member" "runtime" {
-  for_each = local.runtime_secret_access
-
-  project   = var.management_project_id
-  secret_id = each.value.secret
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.runtime[each.value.identity].email}"
+  lifecycle {
+    destroy = false
+  }
 }

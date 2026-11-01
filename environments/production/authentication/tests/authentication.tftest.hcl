@@ -1,13 +1,4 @@
-# The backup repository VM's identity.
-mock_provider "google" {
-  mock_resource "google_service_account" {
-    defaults = {
-      email  = "agora-mock@a-novel-production-prod.iam.gserviceaccount.com"
-      member = "serviceAccount:agora-mock@a-novel-production-prod.iam.gserviceaccount.com"
-      name   = "projects/a-novel-production-prod/serviceAccounts/agora-mock@a-novel-production-prod.iam.gserviceaccount.com"
-    }
-  }
-}
+mock_provider "google" {}
 
 override_data {
   target = data.terraform_remote_state.foundation
@@ -15,17 +6,6 @@ override_data {
     outputs = {
       region              = "europe-west1"
       workload_project_id = "a-novel-production-prod"
-      network = {
-        subnet_id = "projects/a-novel-production-prod/regions/europe-west1/subnetworks/agora-production-europe-west1"
-      }
-      database_hosts = {
-        authentication = {
-          repository_ip     = "10.20.0.7"
-          credentials_image = "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-authentication-private-tooling/host-credentials@sha256:a5e264fc51c824c52fb6fd59b035e14e52fdc9f77e47b0375b352d8ad9bfd00d"
-          service_account   = "agora-auth-database@a-novel-production-prod.iam.gserviceaccount.com"
-          zone              = "europe-west1-d"
-        }
-      }
     }
   }
 }

@@ -39,11 +39,6 @@ override_data {
           genai          = "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-genai-private-production/service-genai/database@sha256:2222222222222222222222222222222222222222222222222222222222222222"
           json-keys      = "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-json-keys-private-production/service-json-keys/database@sha256:3333333333333333333333333333333333333333333333333333333333333333"
         }
-        database_imports = {
-          authentication = { host = "10.20.0.11", port = 5433, database = "agora_authentication", user = "agora_authentication_app" }
-          genai          = { host = "10.20.0.12", port = 5434, database = "agora_genai", user = "agora_genai_app" }
-          json-keys      = { host = "10.20.0.10", port = 5432, database = "agora_json_keys", user = "agora_json_keys_app" }
-        }
         image_registries = {
           "docker.io"       = "europe-west1-docker.pkg.dev/a-novel-production-prod/a-novel-docker-io"
           "ghcr.io"         = "europe-west1-docker.pkg.dev/a-novel-production-prod/a-novel-ghcr-io"
@@ -327,31 +322,10 @@ run "keeps_each_database_available_and_backed_up" {
   }
 
   assert {
-    condition = alltrue([for service, database in kubernetes_manifest.database : (
-      database.manifest.spec.bootstrap.initdb.import.type == "microservice" &&
-      database.manifest.spec.bootstrap.initdb.import.databases == ["agora_${replace(service, "-", "_")}"] &&
-      database.manifest.spec.bootstrap.initdb.import.source.externalCluster == one(database.manifest.spec.externalClusters).name &&
-      database.manifest.spec.bootstrap.initdb.import.pgDumpExtraOptions == (contains(var.databases[service].extensions, "pg_cron") ? ["--exclude-table-data=cron.*"] : []) &&
-      one(database.manifest.spec.externalClusters).connectionParameters == {
-        host   = data.terraform_remote_state.foundation.outputs.cluster.database_imports[service].host
-        port   = tostring(data.terraform_remote_state.foundation.outputs.cluster.database_imports[service].port)
-        user   = "agora_${replace(service, "-", "_")}_app"
-        dbname = "agora_${replace(service, "-", "_")}"
-      } &&
-      one(database.manifest.spec.externalClusters).password == { name = "secrets", key = "DATABASE_HOST_PASSWORD" } &&
-      var.secrets[service].DATABASE_HOST_PASSWORD == "app-password"
-    )])
-    error_message = "Each database must import its own host's database, as the role owning its tables, with the host's password from Secret Manager, and leave pg_cron's jobs out."
-  }
-
-  assert {
-    condition = alltrue([for service, policy in kubernetes_network_policy_v1.database :
-      length([for rule in one(policy.spec).egress : rule if(
-        [for peer in rule.to : one(peer.ip_block).cidr] == ["${data.terraform_remote_state.foundation.outputs.cluster.database_imports[service].host}/32"] &&
-        [for port in rule.ports : port.port] == [tostring(data.terraform_remote_state.foundation.outputs.cluster.database_imports[service].port)]
-      )]) == 1
+    condition = alltrue([for database in kubernetes_manifest.database :
+      !can(database.manifest.spec.bootstrap.initdb.import) && !can(database.manifest.spec.externalClusters)
     ])
-    error_message = "Each database's pods must reach their own host's port alone, for the import."
+    error_message = "The database hosts are gone, so no database imports from one or names one."
   }
 
   assert {
@@ -921,63 +895,5 @@ run "skips_the_openai_call_during_a_planned_downtime" {
   assert {
     condition     = lookup({ for env in one(kubernetes_job_v1.provider_check[0].spec[0].template[0].spec[0].container).env : env.name => env.value }, "DOWNTIME_START", null) == "2026-11-02T06:00:00Z"
     error_message = "GenAI's planned downtime must skip the provider check from its start."
-  }
-}
-
-# A database whose service has no host, such as a new service's, starts empty: it imports nothing
-# and reaches no host.
-run "starts_a_database_without_a_host_empty" {
-  command = plan
-
-  variables {
-    custom_resources = true
-  }
-
-  override_data {
-    target = data.terraform_remote_state.foundation
-    values = {
-      outputs = {
-        region              = "europe-west1"
-        workload_project_id = "a-novel-production-prod"
-        studio_edge = {
-          host            = "studio.storyverse.fr"
-          address_name    = "studio"
-          ssl_policy      = "studio"
-          certificate_map = "studio"
-        }
-        cluster = {
-          name              = "a-novel-production"
-          location          = "europe-west9-a"
-          dns_endpoint      = "gke-mock.europe-west1-d.gke.goog"
-          node_range        = "10.30.0.0/24"
-          google_api_ranges = ["199.36.153.4/30", "34.126.0.0/18"]
-          database_images = {
-            authentication = "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-authentication-private-production/service-authentication/database@sha256:1111111111111111111111111111111111111111111111111111111111111111"
-            genai          = "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-genai-private-production/service-genai/database@sha256:2222222222222222222222222222222222222222222222222222222222222222"
-            json-keys      = "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-json-keys-private-production/service-json-keys/database@sha256:3333333333333333333333333333333333333333333333333333333333333333"
-          }
-          database_imports = {
-            authentication = { host = "10.20.0.11", port = 5433, database = "agora_authentication", user = "agora_authentication_app" }
-            genai          = { host = "10.20.0.12", port = 5434, database = "agora_genai", user = "agora_genai_app" }
-          }
-          image_registries = {
-            "docker.io"       = "europe-west1-docker.pkg.dev/a-novel-production-prod/a-novel-docker-io"
-            "ghcr.io"         = "europe-west1-docker.pkg.dev/a-novel-production-prod/a-novel-ghcr-io"
-            "quay.io"         = "europe-west1-docker.pkg.dev/a-novel-production-prod/a-novel-quay-io"
-            "registry.k8s.io" = "europe-west1-docker.pkg.dev/a-novel-production-prod/a-novel-registry-k8s-io"
-          }
-        }
-      }
-    }
-  }
-
-  assert {
-    condition = (
-      !can(kubernetes_manifest.database["json-keys"].manifest.spec.bootstrap.initdb.import) &&
-      !can(kubernetes_manifest.database["json-keys"].manifest.spec.externalClusters) &&
-      length(one(kubernetes_network_policy_v1.database["json-keys"].spec).egress) == length(one(kubernetes_network_policy_v1.database["genai"].spec).egress) - 1 &&
-      alltrue([for service in ["authentication", "genai"] : kubernetes_manifest.database[service].manifest.spec.bootstrap.initdb.import.source.externalCluster == "host"])
-    )
-    error_message = "Only a database whose service has a host may import, and reach that host."
   }
 }

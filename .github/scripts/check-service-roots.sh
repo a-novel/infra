@@ -16,11 +16,6 @@ for dir in environments/production/*/; do
   missing=()
   [ "$(yq '[.jobs[].steps[]?.with.root] | any_c(. == strenv(ROOT_PATH))' "$workflows/main.yaml")" = true ] ||
     missing+=("a plan job in main.yaml")
-  # A root without a database host, such as a platform's, has nothing to roll.
-  if grep -q 'database_hosts\[' "$ROOT_PATH"/*.tf; then
-    [ "$(yq '.on.workflow_dispatch.inputs.service.options | any_c(. == strenv(ROOT))' "$workflows/roll-database.yaml")" = true ] ||
-      missing+=("a service option in roll-database.yaml")
-  fi
   for item in "${missing[@]}"; do
     echo "::error::$ROOT_PATH lacks $item."
     status=1

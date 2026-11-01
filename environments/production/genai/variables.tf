@@ -10,12 +10,8 @@ variable "secret_versions" {
   }
 }
 
-variable "alert_email" {
-  description = "Operations inbox for this service's alerts."
-  type        = string
-  sensitive   = true
-}
-
+# The cluster root reads these pins from this root's terraform.tfvars.
+# tflint-ignore: terraform_unused_declarations
 variable "images" {
   description = "Service images as ghcr.io/a-novel/<path>:<tag>@<digest>, pinned by each release."
   type        = map(string)
@@ -26,16 +22,4 @@ variable "images" {
     ])
     error_message = "Pin the database, grpc, migrations and sweep images by release tag and digest."
   }
-}
-
-variable "backup_repository" {
-  description = "Backup repository VM image and the TLS runtime it loads at boot; the server runs the database image."
-  type = object({
-    cos_image = string
-    runtime = object({
-      client_name      = string
-      ca_version       = string
-      identity_version = string
-    })
-  })
 }

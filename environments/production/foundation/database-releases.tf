@@ -1,5 +1,5 @@
 variable "database_images" {
-  description = "Database image of each service as ghcr.io/a-novel/<path>:<tag>@<digest>. Hosts pull it only when rolled."
+  description = "Database image of each service as ghcr.io/a-novel/<path>:<tag>@<digest>, which its cluster database runs."
   type        = map(string)
   nullable    = false
 
@@ -11,34 +11,12 @@ variable "database_images" {
   }
 }
 
-variable "database_releases" {
-  description = "Release marker and numeric application role password version of each database host."
-  type = map(object({
-    revision             = string
-    app_password_version = string
-  }))
-  default  = {}
-  nullable = false
-
-  validation {
-    condition = length(var.database_releases) == 0 || (
-      toset(keys(var.database_releases)) == toset(["json-keys", "authentication", "genai"]) &&
-      alltrue([for service, release in var.database_releases :
-        can(regex("^[a-f0-9]{40}$", release.revision)) &&
-        can(regex("^[1-9][0-9]*$", release.app_password_version))
-      ])
-    )
-    error_message = "Supply every database release with its revision and numeric application password version."
-  }
-}
-
 locals {
   database_images = { for service, ref in var.database_images : service => merge(
     regex("^ghcr\\.io/a-novel/(?P<path>[^:@]+):(?P<tag>[^@]+)@(?P<digest>sha256:[a-f0-9]{64})$", ref),
     { source = ref },
   ) }
-  # The host runs PostgreSQL and its backup containers from the service's own private repository,
-  # so a host can pull no other service's image.
+  # Each database runs PostgreSQL from its service's own private repository.
   database_image_repositories = {
     for service in keys(var.database_images) : service => "${var.region}-docker.pkg.dev/${var.workload_project_id}/agora-${service}-private-production"
   }
@@ -49,15 +27,10 @@ locals {
 
 output "image_copies" {
   description = "Images the deploy workflow verifies against their producer's workflow and copies to Artifact Registry before apply."
-  value = concat([for service, image in local.database_images : {
+  value = [for service, image in local.database_images : {
     source   = image.source
     producer = "a-novel/service-${service}"
     workflow = "release.yaml"
     target   = "${local.database_image_repositories[service]}/${image.path}:${image.tag}"
-    }], [for service, repository in local.host_credentials_repositories : {
-    source   = var.host_credentials_image
-    producer = "a-novel/infra"
-    workflow = "publish-rollout-verifier.yaml"
-    target   = "${repository}:${local.host_credentials.tag}"
-  }])
+  }]
 }

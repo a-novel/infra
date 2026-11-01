@@ -114,10 +114,8 @@ The cluster keeps its import. A later attempt imports again under a new lineage 
 
 ## After the window
 
-- **Never change `backup_server_name` until the retirement removes the import.** A new lineage
-  recreates each database from its host, whose data stopped at the cutover.
-- Cloud Run's services keep running on the hosts' data, reachable only by their `run.app` URLs.
-  Retire them soon (a-novel/infra#1208).
+- **Never change `backup_server_name`.** The database hosts and the import are gone
+  (a-novel/infra#1208), so a new lineage recreates every database empty.
 
 ## When the import fails
 

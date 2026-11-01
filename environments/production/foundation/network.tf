@@ -99,27 +99,6 @@ resource "google_compute_firewall" "allow_restricted_google_apis" {
   }
 }
 
-# Each service's workloads reach its own database host's port.
-resource "google_compute_firewall" "allow_postgres_egress" {
-  depends_on = [google_project_iam_member.foundation_firewall]
-
-  for_each = local.database_ports
-
-  project = google_project.workload.project_id
-  name    = "agora-allow-${replace(each.key, "_", "-")}-postgres-egress"
-  network = google_compute_network.production.name
-
-  direction          = "EGRESS"
-  priority           = 810
-  destination_ranges = [var.subnet_cidr]
-  target_tags        = [local.network_tags[each.key]]
-
-  allow {
-    protocol = "tcp"
-    ports    = [tostring(each.value)]
-  }
-}
-
 resource "google_compute_firewall" "deny_other_egress" {
   depends_on = [google_project_iam_member.foundation_firewall]
 
@@ -135,44 +114,6 @@ resource "google_compute_firewall" "deny_other_egress" {
   # accidentally untagged endpoint would inherit Google's implied allow egress.
   deny {
     protocol = "all"
-  }
-}
-
-resource "google_compute_firewall" "allow_postgres_ingress" {
-  depends_on = [google_project_iam_member.foundation_firewall]
-
-  for_each = local.database_hosts
-
-  project = google_project.workload.project_id
-  name    = "agora-allow-${each.value.component}-postgres-ingress"
-  network = google_compute_network.production.name
-
-  direction     = "INGRESS"
-  priority      = 800
-  source_ranges = [var.subnet_cidr, var.egress_subnet_cidr]
-  target_tags   = [local.network_tags[each.value.identity]]
-
-  allow {
-    protocol = "tcp"
-    ports    = [tostring(each.value.port)]
-  }
-}
-
-resource "google_compute_firewall" "allow_iap_ssh" {
-  depends_on = [google_project_iam_member.foundation_firewall]
-
-  project = google_project.workload.project_id
-  name    = "agora-allow-iap-ssh"
-  network = google_compute_network.production.name
-
-  direction     = "INGRESS"
-  priority      = 810
-  source_ranges = ["35.235.240.0/20"]
-  target_tags   = sort([for host in values(local.database_hosts) : local.network_tags[host.identity]])
-
-  allow {
-    protocol = "tcp"
-    ports    = ["22"]
   }
 }
 
