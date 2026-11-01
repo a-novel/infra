@@ -328,7 +328,7 @@ run "serves_each_platform_on_its_host" {
         google_certificate_manager_certificate_map_entry.platform[platform].hostname == edge.host &&
         google_certificate_manager_certificate_map_entry.platform[platform].map == edge.certificate_map
       ]) &&
-      output.studio_edge.host == "studio.storyverse.fr" &&
+      output.platform_edges.studio.host == "studio.storyverse.fr" &&
       output.platform_edges.account.host == "account.storyverse.fr" &&
       contains(keys(google_project_iam_member.foundation), "roles/certificatemanager.editor")
     )

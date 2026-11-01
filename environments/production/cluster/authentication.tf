@@ -6,7 +6,7 @@ locals {
   # open Studio on its own host. The relay admits them by the NAT address, so they carry no SMTP
   # credential. RFC 5321 gives each SMTP command minutes, and no request waits for a send.
   authentication_mail_env = {
-    PLATFORM_AUTH_URL   = "https://${local.studio_host}"
+    PLATFORM_AUTH_URL   = "https://${local.platform_edges.studio.host}"
     SMTP_ADDR           = "${local.authentication_smtp.host}:587"
     SMTP_MAX_CONCURRENT = "8"
     SMTP_SENDER_EMAIL   = local.authentication_smtp.sender_email
@@ -21,14 +21,18 @@ locals {
     GOMEMLIMIT              = "384MiB"
     POSTGRES_MAX_OPEN_CONNS = "10"
     POSTGRES_MAX_IDLE_CONNS = "5"
-    # Only Studio calls the API for its visitors, so it can trust the visitor IP Studio forwards.
+    # Only the platforms call the API for their visitors, so it can trust the visitor IP they
+    # forward.
     REST_CLIENT_IP_HEADER  = "X-Client-IP"
     REST_PORT              = "8080"
     SERVICE_JSON_KEYS_HOST = "grpc.json-keys.svc"
     SERVICE_JSON_KEYS_PORT = local.json_keys_env.GRPC_PORT
     SERVICE_TOKEN_ISSUER   = local.service_token_issuer
     SERVICE_TOKEN_AUDIENCE = "authentication"
-    SERVICE_TOKEN_CALLERS  = "system:serviceaccount:studio:web,system:serviceaccount:authentication:smoke"
+    SERVICE_TOKEN_CALLERS = join(",", concat(
+      [for platform in keys(local.platforms) : "system:serviceaccount:${platform}:web"],
+      ["system:serviceaccount:authentication:smoke"],
+    ))
   })
 }
 
@@ -54,8 +58,9 @@ module "authentication_rest" {
   depends_on = [kubernetes_job_v1.migrations]
 }
 
-# Studio and Authentication's smoke and health checks call the API. It calls JSON Keys, and reaches
-# the issuer's keys through Google's restricted API addresses and the mail relay (egress.tf).
+# The platforms and Authentication's smoke and health checks call the API. It calls JSON Keys, and
+# reaches the issuer's keys through Google's restricted API addresses and the mail relay
+# (egress.tf).
 resource "kubernetes_network_policy_v1" "authentication_rest" {
   metadata {
     name      = "rest"
@@ -69,12 +74,16 @@ resource "kubernetes_network_policy_v1" "authentication_rest" {
     policy_types = ["Ingress", "Egress"]
 
     ingress {
-      from {
-        namespace_selector {
-          match_labels = { "kubernetes.io/metadata.name" = "studio" }
-        }
-        pod_selector {
-          match_labels = { "app.kubernetes.io/name" = "web" }
+      dynamic "from" {
+        for_each = local.platforms
+
+        content {
+          namespace_selector {
+            match_labels = { "kubernetes.io/metadata.name" = from.key }
+          }
+          pod_selector {
+            match_labels = { "app.kubernetes.io/name" = "web" }
+          }
         }
       }
       from {
