@@ -1,6 +1,6 @@
 locals {
-  # A retiring container is listed here: one apply unlocks it, and the next deletes it once its
-  # definition goes.
+  # A retiring container is listed here, and one apply unlocks it. The next moves it out of the
+  # protected resource to delete it.
   retiring_secrets = toset([])
 
   operator_secret_roles = toset([
@@ -45,16 +45,67 @@ resource "google_secret_manager_secret" "application" {
   depends_on = [google_project_service.management["secretmanager.googleapis.com"]]
 }
 
-# Sentry retired (a-novel/infra#1215). The previous apply unlocked these containers; moving them out
-# of the protected resource lets this one delete them. Remove these blocks once applied.
+# The database hosts retired (a-novel/infra#1208). The previous apply unlocked their passwords and
+# TLS credentials; moving them out of the protected resource lets this one delete them. Remove these
+# blocks once applied.
 moved {
-  from = google_secret_manager_secret.application["production-sentry-plan-token"]
-  to   = google_secret_manager_secret.retired["production-sentry-plan-token"]
+  from = google_secret_manager_secret.application["production-authentication-app-password"]
+  to   = google_secret_manager_secret.retired["production-authentication-app-password"]
 }
 
 moved {
-  from = google_secret_manager_secret.application["production-sentry-deploy-token"]
-  to   = google_secret_manager_secret.retired["production-sentry-deploy-token"]
+  from = google_secret_manager_secret.application["production-json-keys-app-password"]
+  to   = google_secret_manager_secret.retired["production-json-keys-app-password"]
+}
+
+moved {
+  from = google_secret_manager_secret.application["production-genai-app-password"]
+  to   = google_secret_manager_secret.retired["production-genai-app-password"]
+}
+
+moved {
+  from = google_secret_manager_secret.application["production-json-keys-pgbackrest-ca"]
+  to   = google_secret_manager_secret.retired["production-json-keys-pgbackrest-ca"]
+}
+
+moved {
+  from = google_secret_manager_secret.application["production-json-keys-pgbackrest-database"]
+  to   = google_secret_manager_secret.retired["production-json-keys-pgbackrest-database"]
+}
+
+moved {
+  from = google_secret_manager_secret.application["production-json-keys-pgbackrest-repository"]
+  to   = google_secret_manager_secret.retired["production-json-keys-pgbackrest-repository"]
+}
+
+moved {
+  from = google_secret_manager_secret.application["production-authentication-pgbackrest-ca"]
+  to   = google_secret_manager_secret.retired["production-authentication-pgbackrest-ca"]
+}
+
+moved {
+  from = google_secret_manager_secret.application["production-authentication-pgbackrest-database"]
+  to   = google_secret_manager_secret.retired["production-authentication-pgbackrest-database"]
+}
+
+moved {
+  from = google_secret_manager_secret.application["production-authentication-pgbackrest-repository"]
+  to   = google_secret_manager_secret.retired["production-authentication-pgbackrest-repository"]
+}
+
+moved {
+  from = google_secret_manager_secret.application["production-genai-pgbackrest-ca"]
+  to   = google_secret_manager_secret.retired["production-genai-pgbackrest-ca"]
+}
+
+moved {
+  from = google_secret_manager_secret.application["production-genai-pgbackrest-database"]
+  to   = google_secret_manager_secret.retired["production-genai-pgbackrest-database"]
+}
+
+moved {
+  from = google_secret_manager_secret.application["production-genai-pgbackrest-repository"]
+  to   = google_secret_manager_secret.retired["production-genai-pgbackrest-repository"]
 }
 
 removed {
@@ -62,15 +113,6 @@ removed {
 
   lifecycle {
     destroy = true
-  }
-}
-
-# The plan and deploy identities' grants on those tokens leave with them.
-removed {
-  from = google_secret_manager_secret_iam_member.sentry_token
-
-  lifecycle {
-    destroy = false
   }
 }
 
