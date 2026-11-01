@@ -155,19 +155,24 @@ resources, reaching the control plane through the DNS endpoint as the CI identit
 
 ## Services
 
-| Service        | Workloads                                                                       | Jobs                                                                  |
-| -------------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| JSON Keys      | `grpc`: 2 pods                                                                  | `migrations`, `rotate-keys`, `smoke`, `health`                        |
-| Authentication | `rest`: 1 pod, which holds the in-memory rate limits                            | `migrations`, `refresh-token-purge`, `maintenance`, `smoke`, `health` |
-| GenAI          | `grpc`: 1 to 3 pods; `sweep`: 1 pod, which checks the generations nobody polled | `migrations`, `smoke`, `health`, `provider-check`                     |
-| Studio         | `web`: 1 to 2 pods                                                              |                                                                       |
-| Account        | `web`: 1 to 2 pods                                                              |                                                                       |
+| Service        | Workloads                                                                       | Jobs                                                                                              |
+| -------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| JSON Keys      | `grpc`: 2 pods                                                                  | `migrations`, `rotate-keys`, `smoke`, `health`                                                    |
+| Authentication | `rest`: 1 pod, which holds the in-memory rate limits                            | `migrations`, `refresh-token-purge`, `authorization-code-purge`, `maintenance`, `smoke`, `health` |
+| GenAI          | `grpc`: 1 to 3 pods; `sweep`: 1 pod, which checks the generations nobody polled | `migrations`, `smoke`, `health`, `provider-check`                                                 |
+| Studio         | `web`: 1 to 2 pods                                                              |                                                                                                   |
+| Account        | `web`: 1 to 2 pods                                                              |                                                                                                   |
 
 Each service runs in the namespace of its name. A workload calls another service with a token the
 kubelet projects for that service's audience, which the cluster signs. Each service admits only its
 named callers: JSON Keys admits Authentication's API, Authentication admits the platforms, and each
 admits its own `smoke` identity. Authentication trusts the visitor address the platforms forward,
 since only they call it on a visitor's behalf.
+
+People sign in on the account platform alone. Every other platform is one of Authentication's OAuth
+clients: the account platform sends each sign-in back to `/auth/callback` on the platform's own
+host, and the platform exchanges the code as its `web` identity. The cluster root registers each
+platform it runs, so a new platform becomes a client by joining that list.
 
 Service images come from `ghcr.io/a-novel/*`. Each is pinned as `tag@digest` in its service root's
 `terraform.tfvars`, its database image included, and the cluster root reads those pins. Every plan
