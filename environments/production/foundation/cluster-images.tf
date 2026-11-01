@@ -54,8 +54,8 @@ resource "google_artifact_registry_repository_iam_member" "cluster_database_imag
   member     = google_service_account.runtime["cluster_nodes"].member
 }
 
-# Admission admits only images from the workload project. The services with a Cloud Run root run
-# from the private repositories it creates there. The others get one each for their cluster release,
+# Admission admits only images from the workload project. The services with a service root run from
+# the private repositories it creates there. The others get one each for their cluster release,
 # which the cluster root's deploy fills. Foundation applies first, so the repository exists for that
 # copy.
 resource "google_artifact_registry_repository" "cluster_release" {

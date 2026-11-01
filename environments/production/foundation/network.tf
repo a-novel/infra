@@ -1,17 +1,6 @@
 locals {
   network_name = "agora-production"
 
-  network_tags = {
-    authentication          = "agora-authentication"
-    authentication_database = "agora-database-authentication"
-    json_keys_database      = "agora-database-json-keys"
-    json_keys               = "agora-json-keys"
-    genai_database          = "agora-database-genai"
-    genai                   = "agora-genai"
-  }
-
-  private_egress_tags = toset(values(local.network_tags))
-
   restricted_google_api_ranges = toset([
     "199.36.153.4/30",
     "34.126.0.0/18",
@@ -31,90 +20,8 @@ locals {
     container_registry = "gcr.io."
   }
 
-  # Both networks resolve through the same zones and allowlist until agora-production retires.
-  dns_networks = [google_compute_network.production.id, google_compute_network.cluster.id]
-}
-
-resource "google_compute_network" "production" {
-  project = google_project.workload.project_id
-  name    = local.network_name
-
-  auto_create_subnetworks         = false
-  delete_default_routes_on_create = true
-  mtu                             = 1460
-  routing_mode                    = "REGIONAL"
-  # The egress allowlist's policy runs first: the classic deny-all would otherwise win.
-  network_firewall_policy_enforcement_order = "BEFORE_CLASSIC_FIREWALL"
-
-  depends_on = [google_project_service.workload["compute.googleapis.com"]]
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
-resource "google_compute_subnetwork" "production" {
-  project = google_project.workload.project_id
-  region  = var.region
-  name    = "${local.network_name}-${var.region}"
-
-  ip_cidr_range            = var.subnet_cidr
-  network                  = google_compute_network.production.id
-  private_ip_google_access = true
-  stack_type               = "IPV4_ONLY"
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
-# The network starts without Google's default routes. These two reach the restricted Google API
-# ranges, and internet-egress.tf adds the default route that Cloud NAT needs. IAP TCP forwarding
-# uses Google's separate non-removable system route.
-resource "google_compute_route" "restricted_google_apis" {
-  for_each = local.restricted_google_api_ranges
-
-  project = google_project.workload.project_id
-  name    = "restricted-google-${replace(replace(each.value, ".", "-"), "/", "-")}"
-  network = google_compute_network.production.id
-
-  dest_range       = each.value
-  next_hop_gateway = "default-internet-gateway"
-  priority         = 1000
-}
-
-resource "google_compute_firewall" "allow_restricted_google_apis" {
-  depends_on = [google_project_iam_member.foundation_firewall]
-
-  project = google_project.workload.project_id
-  name    = "agora-allow-restricted-google-apis"
-  network = google_compute_network.production.name
-
-  direction          = "EGRESS"
-  priority           = 800
-  destination_ranges = sort(tolist(local.restricted_google_api_ranges))
-  target_tags        = sort(tolist(local.private_egress_tags))
-
-  allow {
-    protocol = "tcp"
-    ports    = ["443"]
-  }
-}
-
-resource "google_compute_firewall" "deny_other_egress" {
-  depends_on = [google_project_iam_member.foundation_firewall]
-
-  project = google_project.workload.project_id
-  name    = "agora-deny-other-vpc-egress"
-  network = google_compute_network.production.name
-
-  direction          = "EGRESS"
-  priority           = 1200
-  destination_ranges = ["0.0.0.0/0"]
-
-  # Omitting targets makes this the VPC-wide fallback. Otherwise an
-  # accidentally untagged endpoint would inherit Google's implied allow egress.
-  deny {
-    protocol = "all"
-  }
+  # The cluster's network resolves through these zones and the allowlist.
+  dns_networks = [google_compute_network.cluster.id]
 }
 
 # Direct VPC egress logs no firewall verdict, so the network logs every lookup instead. The logs

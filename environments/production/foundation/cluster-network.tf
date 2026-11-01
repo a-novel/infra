@@ -1,6 +1,5 @@
-# The cluster's network, which replaces agora-production at the cutover (a-novel/.github#522). Only
-# the cluster's nodes run here, so its firewall applies network-wide, and the cluster's network
-# policies narrow it per workload. Retirement deletes agora-production and the peering.
+# The production network. Only the cluster's nodes run here, so its firewall applies network-wide,
+# and the cluster's network policies narrow it per workload.
 resource "google_compute_network" "cluster" {
   project = google_project.workload.project_id
   name    = "a-novel-production"
@@ -44,7 +43,7 @@ resource "google_compute_subnetwork" "cluster" {
   }
 }
 
-# Like agora-production, the network starts without Google's default routes.
+# The network starts without Google's default routes.
 resource "google_compute_route" "cluster_restricted_google_apis" {
   for_each = local.restricted_google_api_ranges
 
@@ -67,8 +66,8 @@ resource "google_compute_route" "cluster_internet" {
   priority         = 1000
 }
 
-# The cluster's internet egress leaves from this address. OpenAI's project and the Workspace SMTP
-# relay list it beside agora-production-nat before any workload moves.
+# The cluster's internet egress leaves from this address, which OpenAI's project and the Workspace
+# SMTP relay list.
 resource "google_compute_address" "cluster_nat" {
   project = google_project.workload.project_id
   region  = var.cluster_region

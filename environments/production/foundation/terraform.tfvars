@@ -11,23 +11,7 @@ folder_id              = null
 management_project_id  = "a-novel-management-prod"
 operations_alert_email = "geoffroy.vincent@agorastoryverse.com"
 organization_id        = "1031663934757"
-public_api_project_id  = "a-novel-public-api-prod"
-public_project_id      = "a-novel-public-prod"
 region                 = "europe-west1"
-service_release_zones = {
-  authentication = [
-    "private",
-    "public-api",
-  ]
-  json-keys = [
-    "private",
-  ]
-  genai = [
-    "private",
-  ]
-}
-subnet_cidr        = "10.20.0.0/24"
-egress_subnet_cidr = "10.20.1.0/24"
 # The cluster runs in Paris. Cloud Run, the database hosts and the old network keep region until they
 # retire.
 cluster_region = "europe-west9"

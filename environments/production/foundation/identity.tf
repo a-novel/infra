@@ -167,15 +167,6 @@ resource "google_project_iam_member" "database_operator" {
   member  = each.value.principal
 }
 
-# Operators read the public API's logs too, the perimeter's violations included.
-resource "google_project_iam_member" "database_operator_public_api_logs" {
-  for_each = var.database_operator_principals
-
-  project = module.public_api_project["public-api"].project_id
-  role    = "roles/logging.viewer"
-  member  = each.value
-}
-
 # The old platform's identities retire with it (a-novel/infra#1208). No grant names them anymore.
 moved {
   from = google_service_account.runtime["authentication_database"]
