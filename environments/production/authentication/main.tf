@@ -36,3 +36,13 @@ removed {
     destroy = false
   }
 }
+
+# The backup VM's grant on the tooling repository went with that repository (a-novel/infra#1391's
+# deploy), so its state goes without a call. The VM's identity, which waited on it, goes next.
+removed {
+  from = module.backups.google_artifact_registry_repository_iam_member.readers
+
+  lifecycle {
+    destroy = false
+  }
+}

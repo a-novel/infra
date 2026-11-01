@@ -39,3 +39,14 @@ removed {
     destroy = true
   }
 }
+
+# The move above left the tooling repository without its dependency edges, so it went before its
+# grants, which went with it. Their state goes without a call: Artifact Registry answers 403 for a
+# repository that no longer exists.
+removed {
+  from = google_artifact_registry_repository_iam_member.database
+
+  lifecycle {
+    destroy = false
+  }
+}
