@@ -2,7 +2,7 @@ custom_resources = true
 
 # Each new database lineage archives under a new name: Barman refuses an archive another database's
 # WAL already fills, and the buckets' retention keeps that WAL a week. A new lineage recreates every
-# database empty: the hosts it was imported from are gone (a-novel/infra#1208).
+# database empty.
 backup_server_name = "database-production"
 
 namespaces = [
@@ -45,11 +45,11 @@ grafana_cloud = {
   otlp_host   = "otlp-gateway-prod-eu-west-2.grafana.net"
 }
 
-# Each instance gets today's database host memory, and half a CPU, so each database reserves one.
-# Each used about 0.02 CPU on 2026-10-30 with no users; no CPU limit applies, so an instance takes
-# idle CPU in a burst, and Grafana warns once one holds 80% of its request. Each host's data held
-# about 0.1 GiB on 2026-10-29, so the volumes start small and grow in place; the room above the
-# data also absorbs WAL while archiving stalls. GenAI's purge bounds its payloads of up to 24 MiB.
+# Each instance gets half a CPU, so each database reserves one. Each used about 0.02 CPU on
+# 2026-10-30 with no users; no CPU limit applies, so an instance takes idle CPU in a burst, and
+# Grafana warns once one holds 80% of its request. Each database held about 0.1 GiB on 2026-10-29,
+# so the volumes start small and grow in place; the room above the data also absorbs WAL while
+# archiving stalls. GenAI's purge bounds its payloads of up to 24 MiB.
 databases = {
   authentication = { cpu = "500m", memory = "1536Mi", storage = "30Gi", max_connections = 50, extensions = ["uuid-ossp"] }
   genai          = { cpu = "500m", memory = "6Gi", storage = "20Gi", max_connections = 150, extensions = ["pg_cron", "uuid-ossp"] }
@@ -80,6 +80,5 @@ addon_secret_versions = {
   alloy = { push-token = 1 }
 }
 
-# Each new revision makes one real OpenAI call through GenAI, which the deploy waits on. The
-# cutover checks OpenAI from the cluster once production runs there (a-novel/infra#1207).
+# Each new revision makes one real OpenAI call through GenAI, which the deploy waits on.
 genai_provider_check = "cutover-1"

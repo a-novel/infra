@@ -1,6 +1,6 @@
-# The jobs Cloud Run runs today outside a deploy (a-novel/infra#1199): those Cloud Scheduler starts,
-# on the same schedules, and the maintenance operations the named operators start. A failed run is
-# not retried: the next one takes over, or the operator runs it again.
+# The jobs that run outside a deploy: those their schedules start, and the maintenance operations the
+# named operators start. A failed run is not retried: the next one takes over, or the operator runs
+# it again.
 locals {
   scheduled_jobs = {
     # JSON Keys signs nothing until a first run creates each usage's key. Later runs rotate a key once

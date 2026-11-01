@@ -185,7 +185,7 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
         run: gh pr edit "$PR" --repo "$GITHUB_REPOSITORY" --remove-label allow-resource-deletion
 
-  # The downtime label works the same way: it approves database host changes for the head it was
+  # The downtime label works the same way: it approves PostgreSQL major upgrades for the head it was
   # added on, during that service's planned downtime.
   revoke-downtime-label:
     if: >-

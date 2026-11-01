@@ -1,7 +1,6 @@
 # Each service's CloudNativePG database: a primary and a replica on separate nodes, archiving WAL to
-# the service's Barman bucket. The cutover imported it from the service's retired database host
-# (a-novel/infra#1207, a-novel/infra#1208). A new `backup_server_name` starts a new lineage, which
-# recreates every database empty.
+# the service's Barman bucket. A new `backup_server_name` starts a new lineage, which recreates every
+# database empty.
 data "terraform_remote_state" "bootstrap" {
   backend = "gcs"
   config = {
@@ -243,8 +242,8 @@ resource "kubernetes_config_map_v1" "database_queries" {
 }
 
 # CloudNativePG runs the queries as cnpg_metrics_exporter, which reads no table of ours, so the
-# tables' owner grants it the columns queries/<database>.sql lists. An import leaves privileges out,
-# and a migration may recreate a table, so the grants run again after each run of the migrations.
+# tables' owner grants it the columns queries/<database>.sql lists. A migration may recreate a
+# table, so the grants run again after each run of the migrations.
 resource "kubernetes_job_v1" "database_grants" {
   for_each = var.custom_resources ? { for name in keys(kubernetes_config_map_v1.database_queries) : name => file("${path.module}/queries/${name}.sql") } : {}
 

@@ -1,5 +1,4 @@
-# Authentication on the cluster, which serves no one until the cutover (a-novel/.github#522). It runs
-# one pod, which holds the in-memory rate limits.
+# Authentication's REST API. It runs one pod, which holds the in-memory rate limits.
 locals {
   authentication_smtp = local.service_inputs["authentication"].smtp
   # Registration and account emails, which the API and the maintenance Jobs send, and whose links

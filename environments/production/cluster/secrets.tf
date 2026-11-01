@@ -1,6 +1,5 @@
 locals {
-  # Each secret at the version its service's root pins for Cloud Run today. This root pins the
-  # add-ons' own.
+  # Each secret at the version its service's root pins. This root pins the add-ons' own.
   secret_versions = merge(var.addon_secret_versions, { for service in setintersection(keys(var.secrets), var.namespaces) : service => local.service_inputs[service].secret_versions })
   secret_grants = { for grant in flatten([for service, env in var.secrets : [for name in distinct(values(env)) : { service = service, name = name }]]) :
     "${grant.service}/${grant.name}" => grant
@@ -76,7 +75,7 @@ resource "kubernetes_manifest" "secrets" {
     }
   }
 
-  # A new database reads its host's password from the Secret as it starts its import.
+  # The workloads read the Secret as they start, so they deploy only once it syncs.
   wait {
     condition {
       type   = "Ready"
