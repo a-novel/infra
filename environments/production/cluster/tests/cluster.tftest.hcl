@@ -577,7 +577,7 @@ run "keeps_authentication_counters_in_a_locked_store" {
   assert {
     condition = (
       [for rule in split(" ", local.counter_store_values.auth.aclUsers.limiter.permissions) : rule if can(regex("^([~%&]|all(keys|channels)$)", rule))] == ["~httprate:*"] &&
-      toset([for rule in split(" ", local.counter_store_values.auth.aclUsers.limiter.permissions) : rule if startswith(rule, "+")]) == toset(["+mget", "+incrby", "+expire", "+multi", "+exec", "+ping", "+client|setinfo"]) &&
+      toset([for rule in split(" ", local.counter_store_values.auth.aclUsers.limiter.permissions) : rule if startswith(rule, "+")]) == toset(["+mget", "+incrby", "+expire", "+multi", "+exec", "+ping"]) &&
       length([for rule in split(" ", local.counter_store_values.auth.aclUsers.exporter.permissions) : rule if can(regex("^([~%&]|all(keys|channels)$)", rule))]) == 0 &&
       toset([for rule in split(" ", local.counter_store_values.auth.aclUsers.exporter.permissions) : rule if startswith(rule, "+")]) == toset(["+info", "+slowlog|len", "+slowlog|get", "+commandlog|len", "+command|info"]) &&
       toset(split(" ", local.counter_store_values.auth.aclUsers.default.permissions)) == toset(["off", "resetpass"]) &&

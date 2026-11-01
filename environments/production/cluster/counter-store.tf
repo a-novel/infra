@@ -38,9 +38,9 @@ locals {
         # The chart requires a default user and gives the exporter that user's password key. The
         # default user is off and keeps no password, so the key logs in only as the exporter.
         default = { passwordKey = "exporter", permissions = "off resetpass" }
-        # httprate's commands on its own keys. AUTH and HELLO need no grant, and go-redis sends
-        # CLIENT SETINFO as it connects.
-        limiter = { permissions = "~httprate:* -@all ${join(" ", [for command in local.counter_store_commands : "+${command}"])} +client|setinfo" }
+        # httprate's commands on its own keys. The client connects with HELLO, which needs no
+        # grant.
+        limiter = { permissions = "~httprate:* -@all ${join(" ", [for command in local.counter_store_commands : "+${command}"])}" }
         # The statistics the exporter reads on every scrape, whatever its flags, and no key.
         exporter = { permissions = "-@all +info +slowlog|len +slowlog|get +commandlog|len +command|info" }
       }
