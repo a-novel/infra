@@ -97,7 +97,7 @@
                     "spec": {
                       "instant": true,
                       "legendFormat": "new",
-                      "expr": "sum(max by (role) (cnpg_accounts_created_7d))"
+                      "expr": "max(cnpg_accounts_created_7d{role=\"all\"})"
                     }
                   }
                 }
@@ -1182,7 +1182,7 @@
                       "queryType": "traceql",
                       "metricsQueryType": "range",
                       "step": "1h",
-                      "query": "{ resource.service.name = \"service-genai\" && name = \"dao.PgGenerationUsageInsert\" } | sum_over_time(span.usage.output_tokens)"
+                      "query": "{ resource.service.name = \"service-genai\" && name = \"dao.PgGenerationUsageInsert\" } | sum_over_time(span.usage.output_tokens) by (name)"
                     }
                   }
                 }
@@ -1196,10 +1196,6 @@
                   "options": {
                     "regex": "^sum_over_time$",
                     "renamePattern": "input"
-                  },
-                  "filter": {
-                    "id": "byIndex",
-                    "options": 0
                   }
                 }
               },
@@ -1208,7 +1204,7 @@
                 "group": "renameByRegex",
                 "spec": {
                   "options": {
-                    "regex": "^sum_over_time$",
+                    "regex": "^dao\\.PgGenerationUsageInsert$",
                     "renamePattern": "output"
                   }
                 }
@@ -1449,7 +1445,18 @@
                 }
               }
             ],
-            "transformations": [],
+            "transformations": [
+              {
+                "kind": "Transformation",
+                "group": "renameByRegex",
+                "spec": {
+                  "options": {
+                    "regex": "^\\{p=[^,]*, span\\.server\\.address=\"([^\"]*)\"\\}$",
+                    "renamePattern": "$1"
+                  }
+                }
+              }
+            ],
             "queryOptions": {
               "timeFrom": "24h"
             }
@@ -2207,7 +2214,18 @@
                 }
               }
             ],
-            "transformations": [],
+            "transformations": [
+              {
+                "kind": "Transformation",
+                "group": "renameByRegex",
+                "spec": {
+                  "options": {
+                    "regex": "^\\{p=[^,]*, span\\.server\\.address=\"([^\"]*)\"\\}$",
+                    "renamePattern": "$1"
+                  }
+                }
+              }
+            ],
             "queryOptions": {
               "timeFrom": "24h"
             }

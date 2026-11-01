@@ -2,17 +2,19 @@
 # exports each column as cnpg_<query>_<column>. No query reads an email, a code or a target.
 # authentication.sql grants every column the queries read.
 
+# The rollup adds an `all` row, which an empty table still returns, so no account reads as 0
+# rather than as no data.
 accounts:
   query: |
-    SELECT role, count(*) AS total, count(*) FILTER (WHERE created_at > now() - interval '7 days') AS created_7d
+    SELECT coalesce(role, 'all') AS role, count(*) AS total, count(*) FILTER (WHERE created_at > now() - interval '7 days') AS created_7d
     FROM credentials
-    GROUP BY role
+    GROUP BY ROLLUP (role)
   primary: true
   target_databases: ["app"]
   metrics:
     - role:
         usage: LABEL
-        description: The accounts' role.
+        description: The accounts' role, or all of them.
     - total:
         usage: GAUGE
         description: Accounts with this role.
