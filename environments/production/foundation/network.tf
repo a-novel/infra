@@ -1,6 +1,4 @@
 locals {
-  network_name = "agora-production"
-
   restricted_google_api_ranges = toset([
     "199.36.153.4/30",
     "34.126.0.0/18",
@@ -16,9 +14,11 @@ locals {
   # GKE pulls its system images from gcr.io.
   private_google_domains = {
     artifact_registry  = "pkg.dev."
-    cloud_run          = "run.app."
     container_registry = "gcr.io."
   }
+  # Nothing resolves Cloud Run's domain since Cloud Run retired. This deploy deletes its records and
+  # unlocks its zone, so the next one can delete it (a-novel/infra#1208).
+  retired_google_domains = { cloud_run = "run.app." }
 
   # The cluster's network resolves through these zones and the allowlist.
   dns_networks = [google_compute_network.cluster.id]
@@ -28,7 +28,7 @@ locals {
 # show the names each workload resolves.
 resource "google_dns_policy" "production" {
   project = google_project.workload.project_id
-  name    = local.network_name
+  name    = "a-novel-production"
 
   enable_logging = true
 
@@ -88,7 +88,7 @@ resource "google_dns_record_set" "googleapis_wildcard" {
 }
 
 resource "google_dns_managed_zone" "private_google_domain" {
-  for_each = local.private_google_domains
+  for_each = merge(local.private_google_domains, local.retired_google_domains)
 
   project = google_project.workload.project_id
   name    = "private-${replace(each.key, "_", "-")}"
@@ -97,7 +97,7 @@ resource "google_dns_managed_zone" "private_google_domain" {
   description     = "Resolve ${each.value} through the restricted Google API VIP."
   visibility      = "private"
   force_destroy   = false
-  deletion_policy = "PREVENT"
+  deletion_policy = contains(keys(local.retired_google_domains), each.key) ? "DELETE" : "PREVENT"
 
   private_visibility_config {
     dynamic "networks" {
