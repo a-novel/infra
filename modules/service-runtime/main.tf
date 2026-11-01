@@ -2,7 +2,8 @@ locals {
   name = "agora-${var.service}-private"
 }
 
-# The cluster runs every release from the production repository.
+# The cluster ran every release from the production repository until its releases moved to the
+# cluster's region. Unlocked, it retires with a-novel/infra#1208.
 resource "google_artifact_registry_repository" "images" {
   for_each = toset(["production"])
 
@@ -11,7 +12,7 @@ resource "google_artifact_registry_repository" "images" {
   repository_id   = "${local.name}-${each.key}"
   format          = "DOCKER"
   mode            = "STANDARD_REPOSITORY"
-  deletion_policy = "PREVENT"
+  deletion_policy = "DELETE"
   labels          = { environment = "production", service = var.service }
 
   # A deployed digest can never be re-tagged to different content.
@@ -20,8 +21,4 @@ resource "google_artifact_registry_repository" "images" {
   }
 
   cleanup_policy_dry_run = true
-
-  lifecycle {
-    prevent_destroy = true
-  }
 }

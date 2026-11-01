@@ -6,11 +6,11 @@ variables {
   region     = "europe-west1"
 }
 
-run "keeps_the_production_repository" {
+run "unlocks_the_production_repository" {
   command = plan
 
   assert {
-    condition     = keys(google_artifact_registry_repository.images) == ["production"] && google_artifact_registry_repository.images["production"].deletion_policy == "PREVENT"
-    error_message = "The service keeps only its protected production repository, which the cluster pulls from."
+    condition     = keys(google_artifact_registry_repository.images) == ["production"] && google_artifact_registry_repository.images["production"].deletion_policy == "DELETE"
+    error_message = "The service keeps only its production repository, unlocked so that a-novel/infra#1208 can delete it."
   }
 }
