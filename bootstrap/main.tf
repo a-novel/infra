@@ -66,9 +66,8 @@ locals {
       display_name       = "Infra foundation deployment"
       provider_id        = "github-foundation"
       workflows = {
-        "deploy.yaml"        = "production"
-        "roll-database.yaml" = "production"
-        "recovery.yaml"      = "production"
+        "deploy.yaml"   = "production"
+        "recovery.yaml" = "production"
       }
       pull_requests = null
     }
@@ -121,10 +120,6 @@ locals {
   }
 
   secret_definitions = merge({
-    production-authentication-app-password = {
-      contract = "POSTGRES_PASSWORD"
-      purpose  = "Authentication application role password, for a login without superuser rights"
-    }
     production-authentication-waitlist-secret = {
       contract = "WAITLIST_SECRET"
       purpose  = "Authentication invitation-list request signing key"
@@ -133,17 +128,9 @@ locals {
       contract = "APP_MASTER_KEY"
       purpose  = "JSON Keys service application master key"
     }
-    production-json-keys-app-password = {
-      contract = "POSTGRES_PASSWORD"
-      purpose  = "JSON Keys application role password, for a login without superuser rights"
-    }
     production-genai-openai-api-key = {
       contract = "OPENAI_API_KEY"
       purpose  = "GenAI OpenAI API key, restricted to the Responses endpoints"
-    }
-    production-genai-app-password = {
-      contract = "POSTGRES_PASSWORD"
-      purpose  = "GenAI application role password, for a login without superuser rights"
     }
     production-downtime-discord-webhook = {
       contract = "DISCORD_WEBHOOK"
@@ -177,10 +164,7 @@ locals {
       contract = "GRAFANA_CLOUD_ACCESS_POLICY_TOKEN"
       purpose  = "Grafana Cloud token with which Alloy pushes metrics, logs and traces"
     }
-    }, { for secret, credential in local.pgbackrest_tls : secret => {
-      contract = credential.contract
-      purpose  = credential.purpose
-  } }, local.github_root_secrets)
+  }, local.github_root_secrets)
 
   audited_services = toset([
     # Service Account Credentials inherits IAM's Data Access configuration and

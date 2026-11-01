@@ -1,10 +1,7 @@
 locals {
-  # The database hosts' passwords and TLS credentials retire with the hosts (a-novel/infra#1208).
-  # These containers are unlocked here and deleted in the next apply.
-  retiring_secrets = setunion(
-    [for service in ["authentication", "json-keys", "genai"] : "production-${service}-app-password"],
-    keys(local.pgbackrest_tls),
-  )
+  # A retiring container is listed here: one apply unlocks it, and the next deletes it once its
+  # definition goes.
+  retiring_secrets = toset([])
 
   operator_secret_roles = toset([
     "roles/secretmanager.secretAccessor",

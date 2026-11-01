@@ -114,7 +114,8 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   display_name                       = each.value.display_name
   description                        = "Trusts only ${local.github.repository} ${join(", ", keys(each.value.workflows))} on master${each.value.pull_requests == null ? "" : " and its own pull requests"}."
   disabled                           = false
-  deletion_policy                    = "PREVENT"
+  # The scheduled health check retired with Cloud Run (a-novel/infra#1208).
+  deletion_policy = each.key == "health" ? "DELETE" : "PREVENT"
 
   attribute_mapping = merge(
     {
