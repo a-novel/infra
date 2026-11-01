@@ -15,40 +15,41 @@ OpenTofu definitions of A-Novel's production on Google Cloud.
 ## What this is
 
 This repository is A-Novel's production. Every Google Cloud resource the services run on is declared
-here, from the projects and the network to the cluster and each service's workloads on it. The
+here, from the project and the network to the cluster and each service's workloads on it. The
 code on `master` is what runs. A change reaches production only through a pull request.
 
-Each service gets its own root, its own identities and its own database. Shared pieces, such as the
-network and the trust-zone projects, live in foundation, and the CI identities live in bootstrap.
+Each service gets its own namespace on the cluster, with its own identities and its own database,
+and a root that pins its releases. Shared pieces, such as the network and the cluster, live in
+foundation, and the CI identities live in bootstrap.
 
 ## How a change reaches production
 
 Every change is a pull request. CI plans each root with a read-only identity, and a few kinds of
 change need a maintainer's label. Merging deploys the change.
-[`deploy.yaml`](.github/workflows/deploy.yaml) applies the roots, rolls the database hosts during
-their planned downtime, and checks production health. Nobody applies by hand, except bootstrap
-during a rebuild from nothing. [Ops basics](docs/ops-basics.md#from-a-pull-request-to-production)
-walks through it.
+[`deploy.yaml`](.github/workflows/deploy.yaml) applies the roots, and waits on the cluster's
+migrations and health checks. Nobody applies by hand, except bootstrap during a rebuild from
+nothing. [Ops basics](docs/ops-basics.md#from-a-pull-request-to-production) walks through it.
 
 Disabling `deploy.yaml` [freezes production](docs/runbooks/deployments.md#freeze-production).
 
 ## Layout
 
-| Path                                    | Contents                                                                         |
-| --------------------------------------- | -------------------------------------------------------------------------------- |
-| `bootstrap/`                            | Management project: state bucket, CI identities, secret containers.              |
-| `environments/production/foundation`    | Projects, networks, the cluster, firewall, monitoring, budget.                   |
-| `environments/production/<service>`     | One service: its release pins and secret versions, which the cluster root reads. |
-| `environments/production/cluster`       | The cluster's namespaces, add-ons and policies, applied only when they change.   |
-| `environments/production/grafana`       | Grafana's alerts and dashboards, applied only when they change.                  |
-| `environments/recovery-cluster`         | A cluster drill's throwaway cluster, which reads the restored services' backups. |
-| `environments/recovery-database`        | A cluster drill's databases, restored from production's backups and checked.     |
-| `modules/smoke-check`                   | The health check every service shares, which the cluster runs.                   |
-| `modules/project-shell`                 | An empty trust-zone project, for foundation.                                     |
-| `modules/database-operator`             | cert-manager, CloudNativePG and its Barman Cloud plugin, for the cluster.        |
-| `modules/cluster-workload`              | One gRPC or HTTP server on the cluster: its identity, pods, Service and scaling. |
-| `.github/actions/`, `.github/workflows` | The pipeline that plans, deploys and checks production.                          |
-| `.github/scripts/`                      | The pipeline's rules that can stop or misdeploy production, with their tests.    |
+| Path                                    | Contents                                                                          |
+| --------------------------------------- | --------------------------------------------------------------------------------- |
+| `bootstrap/`                            | Management project: state bucket, backup buckets, CI identities, secrets.         |
+| `environments/production/foundation`    | The workload project, its network, the cluster, the platforms' edges, budget.     |
+| `environments/production/cluster`       | Every service's workloads and database, the add-ons and the policies.             |
+| `environments/production/<service>`     | One service: its release pins and secret versions, which the cluster root reads.  |
+| `environments/production/grafana`       | Grafana's alerts and dashboards, applied only when they change.                   |
+| `environments/production/github`        | Both organizations' repositories, rulesets, teams and environments.               |
+| `environments/recovery-cluster`         | A recovery drill's throwaway cluster, which reads the restored services' backups. |
+| `environments/recovery-database`        | A recovery drill's databases, restored from production's backups and checked.     |
+| `modules/cluster-workload`              | One gRPC or HTTP server on the cluster: its identity, pods, Service and scaling.  |
+| `modules/database-operator`             | cert-manager, CloudNativePG and its Barman Cloud plugin, for the cluster.         |
+| `modules/github-organization`           | One organization's repositories and their config, for the GitHub root.            |
+| `modules/smoke-check`                   | The health check every service shares, which the cluster runs.                    |
+| `.github/actions/`, `.github/workflows` | The pipeline that plans, deploys and checks production.                           |
+| `.github/scripts/`                      | The pipeline's rules that can stop or misdeploy production, with their tests.     |
 
 ## Documentation
 

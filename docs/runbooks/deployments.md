@@ -6,30 +6,28 @@ This runbook is about how merged changes reach production, and what to do when o
 ## What a deploy runs
 
 Every merge to `master` starts `deploy.yaml`. It compares `master` with the last _successful_
-deploy, and applies bootstrap and foundation only when their inputs changed since then. A root's
-inputs are:
+deploy, and applies each root whose inputs changed since then. A root's inputs are:
 
 - its own directory, and the local modules it calls;
 - the tooling every root goes through: `.opentofu-version`, `.github/actions/tofu/` and
-  `deploy.yaml`.
+  `deploy.yaml`;
+- for the cluster root, every `terraform.tfvars` under `environments/production`, which holds the
+  release pins, and the health check's script;
+- for the Grafana root, foundation's and the cluster root's `terraform.tfvars`;
+- for the GitHub root, the scripts its job runs after applying.
 
-Markdown files never count, so a documentation change deploys nothing.
-
-Every deploy applies every service root. A service root also reads `DOWNTIME`, which no diff shows,
-and a downtime written while another deploy waited or ran must still reach the services. An
-unchanged service root applies nothing, and the announcement lists only the roots that changed.
+Markdown files never count, so a documentation change deploys nothing. Every deploy also plans each
+service root, which holds only its release pins and secret versions, and so applies nothing.
 
 ```text
-changes ─► bootstrap ─► foundation ─► one job per service ─┬─► rollout (per service)
-                                                           └─► health check
+changes ─► bootstrap ─┬─► foundation ─┬─► cluster ─► admission check
+                      │               └─► one job per service root
+                      └─► grafana, github
 ```
 
-Each root's job plans, verifies and copies its images, then applies. The `rollout` job moves the
-database hosts and backup repository VMs onto their applied configuration, as
-[How the rollout works](database.md#how-the-rollout-works) details. The health check calls
-Authentication's `/v2/healthcheck`, which also covers PostgreSQL, SMTP and JSON Keys, then Studio's
-`/healthcheck`, which covers Studio's path to Authentication. It runs whenever the service roots applied, even when one of them failed, and skips while a planned downtime
-runs.
+Each root's job plans, verifies and copies its images, then applies. The cluster root's apply runs
+the migrations Jobs, rolls the workloads and waits on the smoke Jobs and the provider check. After
+it, the deploy checks that admission still refuses what it must.
 
 Deploys run one at a time:
 
@@ -38,47 +36,42 @@ Deploys run one at a time:
 - Nothing is lost. The next run compares against the last successful deploy, so it covers the
   changes of any replaced or failed run.
 
-A deploy run by hand applies every root. Only admins can start one:
+A deploy run by hand applies every root, and so does the deploy that ends each `downtime.yaml` run.
+Only admins can start one:
 
 ```bash
 gh workflow run deploy.yaml --repo a-novel/infra
 ```
 
-Run one after a freeze, to undo drift the daily check reported, or to roll a database host change
-that waits for a downtime that has since started.
+Run one after a freeze, to undo drift the daily check reported, or to apply a PostgreSQL major
+upgrade whose downtime has since started.
 
 ## Release a service
 
 1. **The release opens its pull request.** Once a service's release workflow has published every
    image, it dispatches `pin-release.yaml`. That workflow opens one pull request per service, on
    `chore/deps/<repository>`, titled like `chore(deps): update service-json-keys images to v2.10.0`.
-   It moves every pin of the service's images: the `tag@digest` pins in `environments/production`
-   and the `FROM` lines of the `builds/` images built from them. A newer release of the same service replaces the open pull request's content.
-2. **CI plans it.** In the service's plan check, expect:
-   - the Cloud Run service and jobs on the new images;
-   - when the migration image changed, its `terraform_data` replaced and a new
-     `run_execution_token` on the migration job;
+   It moves every `tag@digest` pin of the service's images in its root's `terraform.tfvars`. A
+   newer release of the same service replaces the open pull request's content.
+2. **CI plans it.** In `plan-cluster`, expect:
+   - the workloads and CronJobs on the new images;
+   - when the migrations image changed, a new `migrations-<digest>` Job, and the `database-grants`
+     Job that follows it;
+   - a new `smoke-<hash>` Job;
+   - when the database image changed, its `ImageCatalog` updated;
    - each new image passing the [provenance check](../architecture.md#services).
 3. **It merges itself.** The Dependencies App opens it, so the auto-approve workflow approves and
-   queues it, as it does Renovate's updates. The queue merges it once its checks pass. A `FROM` line
-   counts as part of the pin when it takes a digest the same pull request pins in
-   `environments/production`. A blank line separates each service's pins in shared files, so
-   releases of different services merge side by side. When a merge still leaves one conflicting,
-   the next push to `master` rebuilds it from `master`.
-4. **The deploy applies it:**
+   queues it, as it does Renovate's updates. The queue merges it once its checks pass. When a merge
+   leaves one conflicting, the next push to `master` rebuilds it from `master`.
+4. **The cluster job applies it:**
    1. it copies the images to the service's Artifact Registry repository;
-   2. it applies, which runs the migration job and waits for it;
-   3. Cloud Run moves traffic to the new revision once its startup probe passes;
-   4. for JSON Keys and GenAI, it runs the smoke job;
-   5. it checks production health.
+   2. it runs the migrations Job and waits for it;
+   3. it rolls the workloads, each onto new pods once their probes pass;
+   4. it runs the smoke Job and waits for it.
 
-Migrations must stay backward compatible. The previous revision keeps serving until the new one is
-ready.
-
-A release that changes the database image has a new digest, which changes the database hosts. Its
-plan fails, so it waits for a planned downtime: merge it as a
-[database host change](database.md#change-a-database-host). A release that only changes the service
-keeps the database digest, because the database image builds reproducibly, and deploys right away.
+Migrations must stay backward compatible. The previous pods keep serving until the new ones are
+ready. A new database image rolls the database by switchover, with no downtime, as
+[Change a database](database.md#change-a-database) describes.
 
 When a release's dispatch never ran, send the event by hand:
 
@@ -88,6 +81,25 @@ VERSION=v2.10.1
 gh api repos/a-novel/infra/dispatches -f event_type=release \
   -f "client_payload[repository]=$REPOSITORY" -f "client_payload[version]=$VERSION"
 ```
+
+## Fix a bad change
+
+Infrastructure only moves forward. A faulty change is fixed by a new pull request, which can revert
+it. The commit-messages ruleset refuses GitHub's own `Revert "…"` subject, so revert with git:
+
+```bash
+SHA="<squash commit of the faulty pull request>"
+BRANCH="<branch name for the revert>"
+git fetch origin
+git switch -c "$BRANCH" origin/master
+git revert --no-commit "$SHA"
+git commit -m "revert: $(git log -1 --format=%s "$SHA")" -m "This reverts commit $SHA."
+git push -u origin "$BRANCH"
+gh pr create --repo a-novel/infra --fill
+```
+
+A revert that lowers a release pin fails its plan check: a bad release is fixed as the next section
+describes.
 
 ## Fix a bad release
 
@@ -131,16 +143,14 @@ the hotfix path changes. The last one shipped JSON Keys v2.10.3 on 2026-10-18 in
 | Pin merged, after the plans          | 17:39          |
 | Production healthy                   | 22:26          |
 
-Database migrations are never reverted. Damaged data goes back through [recovery](recovery.md), and
-a faulty database host change is fixed forward, as
-[Fix a bad host change](database.md#fix-a-bad-host-change) describes.
+Database migrations are never reverted. Damaged data goes back through [recovery](recovery.md).
 
 ## Deletions and weakened protections
 
 A plan fails its check when it deletes, replaces or forgets a resource, or weakens
 `deletion_protection`, `deletion_policy` or `force_destroy`. The check's error lists the addresses,
-and the job summary holds the full plan. Replacing an instance template or a `terraform_data` is
-exempt, since neither holds data.
+and the job summary holds the full plan. Replacing a Job or a `terraform_data` is exempt, since
+neither holds data.
 
 `plan-github` fails the same way when a repository holds a ruleset or deployment pattern the GitHub
 root does not produce, such as one made by hand: the deploy would prune it. Its warnings name each.
@@ -164,32 +174,16 @@ If the change is intended:
 
 ## Database changes
 
-A plan that changes a database host needs the `allow-downtime` label and a planned downtime of that
-service in progress. [Change a database host](database.md#change-a-database-host) covers the whole
-procedure.
-
-The cluster's databases roll without a downtime. CloudNativePG updates the replica, then switches
-over to it, which pauses writes for seconds. That covers a new release image of the same PostgreSQL
-major, settings, resources and operator upgrades, and a larger volume grows in place. GKE upgrades
-nodes only from Tuesday to Thursday, 01:00 to 07:00 UTC, and CloudNativePG switches over before a
-primary's node drains. A planned downtime holds every GKE upgrade from its start to its end.
-
-**A PostgreSQL major upgrade stops the database.** CloudNativePG shuts every instance down and runs
-`pg_upgrade`. A plan that raises `major` in a database's `imageCatalogRef` needs the
-`allow-downtime` label and a planned downtime listing `service-<root>.database` in progress, and the
-deploy applies it only while that downtime runs. Take a base backup before, and another once it
-ends: WAL from the old major recovers nothing past it.
-
-Volumes only grow. CloudNativePG refuses a smaller one, and another storage class applies only to
-instances recreated by hand.
+A database change rolls by switchover, with no downtime, except a PostgreSQL major upgrade, which
+needs the `allow-downtime` label and a planned downtime of that service in progress.
+[Databases](database.md#change-a-database) covers both.
 
 ## A deploy failed
 
 An apply that stops halfway keeps what it already applied. The state records it, and the next run
-plans only the rest. A Cloud Run service whose new revision fails to start is the exception: the
-state records the new configuration, while the previous revision keeps serving.
+plans only the rest.
 
-1. **Open the failed job.** The plan or apply output names the resource and the API error.
+1. **Open the failed job.** The plan or apply output names the resource and the error.
 
    ```bash
    gh run list --repo a-novel/infra --workflow deploy.yaml --limit 5
@@ -204,33 +198,39 @@ state records the new configuration, while the previous revision keeps serving.
      plans again, so a re-run is safe. A re-run applies only while its commit is still `master`'s
      head. Once `master` has moved on, it refuses, and a deploy run by hand applies the latest code
      instead.
-   - **Failed migration or smoke check:** the old revision keeps serving. Read the job's logs, here
-     for the JSON Keys migrations:
+   - **Failed migrations or smoke Job:** the previous pods keep serving, since the workloads roll
+     only after the migrations. Read the Job's logs, here in JSON Keys' namespace:
 
      ```bash
-     JOB=agora-json-keys-migrations
-     gcloud logging read "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"$JOB\"" \
-       --project=a-novel-production-prod --freshness=1d --limit=50
+     SERVICE=json-keys
+     kubectl --namespace="$SERVICE" get jobs
+     JOB="<name of the failed Job>"
+     kubectl --namespace="$SERVICE" logs "job/$JOB"
      ```
 
-     Fix the service and release it again, or fix the configuration in a new pull request. Every
-     plan reads each job's last execution, and replaces the token source of one that failed, such
-     as `terraform_data.migrations`, so the next deploy runs it again. A service that depends on a
-     failed migration does not deploy until the migration passes.
+     Fix the service and release it again, or fix the configuration in a new pull request. A failed
+     Job stays tainted, so the next deploy of the cluster root runs it again. A service whose
+     migrations fail does not roll until they pass.
 
-   - **Revision that fails to start:** the previous revision keeps serving. The apply's error names
-     the cause, such as a missing secret version or a failed startup probe. Fix it in a new pull
-     request, or add what the revision lacks, such as the secret version. Every plan reads each
-     service's last rollout, and replaces the token source of one that failed, such as
-     `terraform_data.rest_revision`, so the next deploy rolls the same configuration again. Each
-     deploy fails on that service until a rollout succeeds, and the drift check reports it.
+   - **Workload that never rolls out:** its old pods keep serving, and the apply fails once it gives
+     up waiting. The pods' events name the cause, such as a missing Secret, a failed probe or no
+     room on the nodes:
 
+     ```bash
+     kubectl --namespace="$SERVICE" get pods
+     kubectl --namespace="$SERVICE" describe pods --selector=app.kubernetes.io/name=grpc
+     ```
+
+   - **Database that never serves:** see
+     [When a database never serves](database.md#when-a-database-never-serves).
+   - **Admission check failed:** admission admitted a manifest it must refuse, or refused the
+     compliant pod. A policy or a Pod Security level changed. Fix it in a new pull request.
    - **Configuration error:** fix it in a new pull request. Never fix resources in the console. The
      next plan reverts the change, and the drift check reports it.
    - **403 during apply:** pull-request plans run as the read-only identity, so they cannot catch a
      permission the deploy identity lacks. Grant it in the foundation root, or in bootstrap for the
-     management project, and merge. The deploy applies the grant before it reaches the services.
-   - **403 that names VPC Service Controls:** the service perimeter refused the call. Each
+     management project, and merge. The deploy applies the grant before it reaches the cluster.
+   - **403 that names VPC Service Controls:** the service perimeter refused the call. The workload
      project's policy audit log holds its violations:
 
      ```bash
@@ -239,11 +239,6 @@ state records the new configuration, while the previous revision keeps serving.
      ```
 
      Admit the call with a rule in foundation's `service-perimeter.tf`, in a new pull request.
-
-   - **Rollout failed:** read the job log, then re-run it, or
-     [roll the host by hand](database.md#roll-a-host-by-hand).
-   - **Health check failed after apply:** see [Alerts](alerts.md#authentication-health). If the
-     release caused it, [fix it forward](#fix-a-bad-release).
 
 3. **"Error acquiring the state lock":** a cancelled run left its lock behind. Make sure no deploy
    is running, then [delete the lock](state.md#remove-a-stale-lock).

@@ -1,152 +1,71 @@
-# Database hosts
+# Databases
 
-This runbook is about the PostgreSQL hosts. Each service has a database host and a backup
-repository VM. GenAI's repository serves nothing until its host enrolls in native backups:
+This runbook is about the services' PostgreSQL databases. Each one is a CloudNativePG database named
+`database` in its service's namespace, `json-keys`, `authentication` or `genai`: a primary and a
+replica, which archive to the service's Barman bucket.
+[Architecture](../architecture.md#databases-and-backups) gives their sizes and backups.
 
-- the **database host** is the only member of the instance group `agora-database-<service>`. It runs
-  PostgreSQL from the service's `database` image, on a separate data disk `agora-data-<service>`
-  that outlives the VM;
-- the **backup repository VM** is `agora-pgbackrest-<service>`. The database host sends it WAL and
-  backups over mutual TLS, and it stores them in the service's backup bucket.
+## Inspect a database
 
-`<service>` is `json-keys`, `authentication` or `genai`. Their SQL role and database are
-`agora_json_keys`, `agora_authentication` and `agora_genai`.
-[Architecture](../architecture.md#databases-and-backups) lists their sizes, addresses and schedules.
-
-## Inspect and connect
-
-Humans have read access plus SSH through Identity-Aware Proxy. No host has a public address.
+Operators read each namespace through Kubernetes' `view` role. It shows the database's pods, their
+logs and the namespace's events, but never its Secrets, and it opens no session in a pod. It cannot
+read CloudNativePG's `Cluster` objects either. Grafana's **CloudNativePG** dashboard draws each
+database's state, replication, archiving and volume use.
 
 ```bash
 SERVICE=json-keys
-HOST="$(gcloud compute instance-groups managed list-instances "agora-database-$SERVICE" \
-  --zone=europe-west1-d --project=a-novel-production-prod --format='value(instance.basename())')"
-gcloud compute ssh "$HOST" --zone=europe-west1-d --project=a-novel-production-prod --tunnel-through-iap
+gcloud container clusters get-credentials a-novel-production --project=a-novel-production-prod --location=europe-west9-a --dns-endpoint
+kubectl --namespace="$SERVICE" get pods --selector=cnpg.io/cluster=database --label-columns=cnpg.io/instanceRole
+kubectl --namespace="$SERVICE" get events --sort-by=.lastTimestamp
 ```
 
-`gcloud` creates and registers an OS Login key on first use.
-
-A replaced host can present new SSH host keys, and `gcloud` then refuses to connect with "REMOTE
-HOST IDENTIFICATION HAS CHANGED". Compare the fingerprint it prints with the key the instance
-publishes, and drop the stale entry only when they match:
+The pod list names each instance and its role, `primary` or `replica`. Read one instance's log:
 
 ```bash
-gcloud compute instances get-guest-attributes "$HOST" --zone=europe-west1-d \
-  --project=a-novel-production-prod --query-path=hostkeys/ssh-ed25519 --format='value(value)' |
-  sed 's/^/ssh-ed25519 /' | ssh-keygen -lf -
-ID="$(gcloud compute instances describe "$HOST" --zone=europe-west1-d --project=a-novel-production-prod \
-  --format='value(id)')"
-ssh-keygen -R "compute.$ID" -f ~/.ssh/google_compute_known_hosts
+INSTANCE="<instance from the pod list>"
+kubectl --namespace="$SERVICE" logs "$INSTANCE" --container=postgres --since=1h
 ```
 
-Run these on the host. A host without native backups has no `agora-database.service`, and its
-startup script runs as `google-startup-scripts.service` instead. The container is
-`agora-postgres-<service>` either way.
+## Backups
 
-```bash
-SERVICE=json-keys
-sudo systemctl status agora-database.service
-sudo journalctl -u google-startup-scripts.service --since=-1h
-sudo docker ps
-df -h /mnt/disks/agora-data
-sudo journalctl -u agora-database.service --since=-1h
-DB="agora_${SERVICE//-/_}"
-sudo docker exec -it --user postgres "agora-postgres-$SERVICE" psql -U "$DB" -d "$DB"
-```
+Each database archives its WAL to its Barman bucket continuously. Its `daily` scheduled backup takes
+a base backup from the replica at 03:00 UTC, and a new lineage takes one at once. Barman keeps 14
+days of base backups and the WAL they need. Grafana's `WAL archiving failing` alert fires when a
+primary's latest archive attempt failed for 5 minutes.
 
-The repository VM works the same way. SSH to `agora-pgbackrest-$SERVICE`, whose unit is
-`agora-backup-repository.service`.
+Restores go through a [recovery drill](recovery.md), in a disposable project. Putting restored data
+back into production is a one-off change, planned and reviewed on its own.
 
-Never read files under `/run/agora*`, print a container's full configuration, or request a metadata
-token. They hold credentials.
+## Change a database
 
-## Back up now and verify
+A database's settings are its entry in the cluster root's `databases`: its CPU request, its memory,
+its volume, its connection limit and its extensions. Its image is the `database` pin of its service
+root, which each release moves.
 
-Only the hosts in foundation's `native_backups`, JSON Keys and Authentication today, run the
-`agora-backup-*` units. Their timers take a full backup on Sundays and a differential backup the
-other days, and run a check every hour. GenAI's host has none until
-[a-novel/infra#785](https://github.com/a-novel/infra/issues/785) adds its backups, so its only copy
-before a host change is the [pre-rollout snapshot](#pre-rollout-snapshots).
+These changes roll without a downtime. CloudNativePG updates the replica, then switches over to it,
+which pauses writes for seconds. That covers settings, resources, operator upgrades and a new
+release image of the same PostgreSQL major. GKE upgrades nodes only from Tuesday to Thursday, 01:00
+to 07:00 UTC, and CloudNativePG switches over before a primary's node drains.
 
-To take a backup by hand, for example before a database host change, run on the database host:
+Volumes only grow, in place. CloudNativePG refuses a smaller one, and another storage class applies
+only to instances recreated by hand. The volumes share the region's SSD quota with the nodes' boot
+disks.
 
-```bash
-sudo systemctl start --wait agora-backup-check.service
-sudo systemctl start --wait agora-backup-full.service
-sudo systemctl start --wait agora-backup-verify.service
-sudo journalctl -u agora-backup-full.service -u agora-backup-verify.service --since=-2h
-```
+## PostgreSQL major upgrades
 
-Keep `--wait`. These units are `Type=exec`, so a plain `start` returns as soon as the container
-launches. All three would then run at once, and verify would read the repository before the new
-backup exists.
+A major upgrade stops the database. CloudNativePG shuts every instance down and runs `pg_upgrade`. A
+plan that raises `major` in a database's `imageCatalogRef` needs the `allow-downtime` label and a
+planned downtime listing `service-<root>.database` in progress. The deploy applies it only while
+that downtime runs.
 
-A full backup ends with `backup command end: completed successfully`. The verify report must say
-`status: ok`. Read it, since verify can exit 0 even when it reports an error.
-
-## Change a database host
-
-A **database host change** is any change that restarts the database host once applied:
-
-- a new database image digest, which a service release brings;
-- a startup, OS or TLS setting, from `native_backups` or `database_*` in foundation's
-  `terraform.tfvars`;
-- the application role's password version, `database_releases.<service>.app_password_version`;
-- the machine type, container size or connection limit (see [capacity](#capacity)).
-
-The database is unavailable while its host restarts, so these changes happen during a
-[planned downtime](downtime.md), when the service's users are warned and its services stop. The pull
-request's plan enforces it. The plan fails until the pull request carries the `allow-downtime` label
-and a planned downtime listing that service has started.
-
-### How the rollout works
-
-Merging a database host change only updates the instance template and the group's configuration,
-so the host restarts nothing on apply. Every deploy then ends with a `rollout` job, one per service,
-which compares each host with its applied configuration:
-
-```text
-deploy:  roots applied ──► rollout (per service) ──► database host exists? ─ no ─► nothing to do
-                                                       ▼
-                                                     database host differs?
-                                                       │ no  ─► nothing to do
-                                                       │ yes ─► downtime started? ─ no ─► "rollout pending"
-                                                       │                          └ yes ─► service took it? ─ no ─► fail
-                                                       │                                                   └ yes ─► snapshot the data disk
-                                                       │                                                            restart or replace the host
-                                                       │                                                            wait for PostgreSQL
-                                                       ▼
-                                   backup repository VM differs, or its database host rolled? ─ yes ─► restart it
-```
-
-- Before restarting a database host, the job checks that each Cloud Run service writing to the
-  database took the downtime. That service's latest revision must be ready and carry the downtime's
-  start. Otherwise the job fails, and a deploy run by hand, which gives the service its
-  `DOWNTIME_START`, rolls the host.
-- The job reads the hosts, not the changes in that deploy. A change applied by a cancelled,
-  replaced or force-merged deploy still rolls at the next deploy that runs during the downtime.
-- The host keeps its data disk and IP. A template change replaces the VM, and any other change
-  restarts it. The database is down for one to two minutes.
-- The job then waits up to 10 minutes for PostgreSQL itself. Each boot's startup publishes
-  `<state>:<revision>:<boot id>` in the guest attribute `agora/database-release`. The rollout
-  succeeds once the new boot reports `healthy`, or `idle` for a host without a release, and fails
-  otherwise. A running VM alone proves nothing, since its startup can fail closed and leave
-  PostgreSQL stopped.
-- The snapshot keeps the data as it stood before the restart, as
-  [Pre-rollout snapshots](#pre-rollout-snapshots) describes.
-- A **backup repository VM** restarts whenever its `config` label differs from `running-config`, the
-  label the rollout sets after each restart. It needs no planned downtime. It also restarts right
-  after each restart of its database host, so both run the same pgBackRest version.
-
-### Steps
+WAL from the old major recovers nothing past the upgrade. The next base backup after it is the first
+one the new major can recover from.
 
 1. **Schedule a planned downtime** for the service, as
    [Schedule a downtime](downtime.md#schedule-or-change-a-downtime) describes. List the services
-   that depend on it too.
-2. **Take a full backup and verify it** ([above](#back-up-now-and-verify)) before the downtime
-   starts. A service outside `native_backups`, GenAI today, has no backups: its only copy is the
-   [snapshot](#pre-rollout-snapshots) the rollout takes before the restart.
-3. **Once the downtime has started, add the `allow-downtime` label** to the pull request. Its checks
+   that depend on it too. Start it after the 03:00 UTC base backup, so the upgrade begins from a
+   fresh one.
+2. **Once the downtime has started, add the `allow-downtime` label** to the pull request. Its checks
    re-run and pass.
 
    ```bash
@@ -167,7 +86,7 @@ deploy:  roots applied ──► rollout (per service) ──► database host e
    A push removes the label, because the label approved the plans of an earlier commit. Review the
    new plans and add it again.
 
-4. **Approve and merge.** A maintainer or admin reviews and approves the pull request. An admin who
+3. **Approve and merge.** A maintainer or admin reviews and approves the pull request. An admin who
    opened it may record the approval themselves instead:
 
    ```bash
@@ -180,86 +99,44 @@ deploy:  roots applied ──► rollout (per service) ──► database host e
    gh pr merge "$PR" --repo a-novel/infra
    ```
 
-   The deploy applies the change, including a release's migrations, then rolls the host. Its summary
-   names the snapshot. A release's smoke job skips its check during the downtime, since the service
-   refuses work.
+   The deploy applies the upgrade and waits until both instances serve and WAL reaches Barman.
 
-5. **Check the database.** The deploy's health check is skipped while the downtime runs, for the
-   same reason. [Connect to the host](#inspect-and-connect) and check `agora-database.service` and
-   its log instead.
-6. **Clear the downtime**, as [Clear the downtime](downtime.md#clear-the-downtime) describes. Its
-   deploy restarts the services, runs the smoke checks the downtime skipped, and checks health
-   again.
+4. **Check the database**, as [Inspect a database](#inspect-a-database) shows. The deploy's smoke
+   checks skip while the downtime runs, since the services refuse work.
+5. **Clear the downtime**, as [Clear the downtime](downtime.md#clear-the-downtime) describes. Its
+   deploy restarts the services and runs the smoke checks the downtime skipped.
 
-A database host change merged before its downtime started, by a force-merge for example, still
-applies, and every deploy reports "rollout pending". Nothing starts a deploy when a downtime begins,
-so once it has started, run a deploy by hand to roll the host:
+An upgrade merged before its downtime started fails its deploy, and every later deploy that applies
+the cluster root. Nothing starts a deploy when a downtime begins, so once it has started, run one by
+hand:
 
 ```bash
 gh workflow run deploy.yaml --repo a-novel/infra
 ```
 
-### Roll a host by hand
+## Lineages
 
-`roll-database.yaml` restarts a service's database host and backup repository VM now, whatever the
-downtime, then checks health. It takes the same snapshot first. Only admins can run it. Use it when
-a host must restart outside a downtime, for example to recover one stuck in a bad state:
+Each database archives under the cluster root's `backup_server_name`, `database-production`: its
+lineage. **Never change it in production.** A new name deletes every database, waits four minutes,
+then recreates each one empty, runs the migrations again and takes a base backup at once. Barman
+refuses to archive into a path another database's WAL already fills, so a lineage name serves once.
 
-```bash
-SERVICE=json-keys
-gh workflow run roll-database.yaml --repo a-novel/infra -f service="$SERVICE"
-```
+Bootstrap's `retired_barman_lineages` expires a former lineage 15 days after its objects were
+written. List a name there only once nothing needs its backups.
 
-The database is down for one to two minutes, and users are not warned.
+## When a database never serves
 
-## Fix a bad host change
+The deploy's `Describe the databases` step prints, for each database, its failing conditions, its
+stuck pods and its latest warnings. Follow its pods and their logs too: a new database starts as
+`database-1`, then a `join` Job brings up `database-2`.
 
-Database hosts only move forward. A faulty host change is fixed by a new pull request, merged
-during the downtime like any host change, as [steps](#steps) 3 and 4 describe.
+- **A replica that can't join** logs `tls: unknown certificate authority` when its certificate and
+  its primary's client CA differ. Our CA issues both, so this points at a certificate that has not
+  reached the namespace.
+- **A database whose creation timed out is tainted**, and its next plan replaces it. A replacement
+  starts empty, and Barman refuses to archive into the path its predecessor filled, so it never
+  turns ready. The replacement needs `allow-resource-deletion`: never add that label to a plan that
+  replaces a database holding data.
 
-The new pull request can revert the faulty one. The commit-messages ruleset refuses GitHub's own
-`Revert "…"` subject, so revert with git:
-
-```bash
-SHA="<squash commit of the faulty pull request>"
-BRANCH="<branch name for the revert>"
-git fetch origin
-git switch -c "$BRANCH" origin/master
-git revert --no-commit "$SHA"
-git commit -m "revert: $(git log -1 --format=%s "$SHA")" -m "This reverts commit $SHA."
-git push -u origin "$BRANCH"
-gh pr create --repo a-novel/infra --fill
-```
-
-Data damaged by the change goes back through [recovery](recovery.md), as a one-off change planned
-on its own.
-
-## Pre-rollout snapshots
-
-Before restarting a database host, the rollout snapshots its data disk as
-`agora-data-<service>-<UTC time>`, labelled `role=pre-rollout`. The deploy summary names it, and
-this lists them:
-
-```bash
-SERVICE=json-keys
-gcloud compute snapshots list --project=a-novel-production-prod --format='table(name,creationTimestamp)' \
-  --filter="labels.role=pre-rollout AND labels.component=$SERVICE"
-```
-
-A snapshot stays until a later rollout of that service finds it older than 14 days. It is recovery
-data: the disk as it stood before the restart. The data and WAL share that disk, so PostgreSQL
-reads a snapshot as after a power loss.
-
-## Capacity
-
-Each host's machine type, container CPU and memory, data disk size and connection limit are its
-entry in foundation's `database_capacity`, in `terraform.tfvars`. A `check` block keeps 1 GiB of
-memory and 0.5 vCPU for the host itself. Changing any of them is a
-[database host change](#change-a-database-host).
-
-Disks can grow but never shrink. A machine-type change replaces the VM and keeps the disk.
-
-## PostgreSQL major upgrades
-
-A new PostgreSQL major version (`PG_MAJOR`) cannot reuse the data directory. It needs a
-dump-and-restore plan of its own.
+Data damaged by a change goes back through [recovery](recovery.md), as a one-off change planned on
+its own.

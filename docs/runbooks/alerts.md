@@ -2,14 +2,13 @@
 
 This runbook is about what to do when an alert fires or a scheduled check fails.
 
-Google emails alerts to an operations channel: foundation's, or the service runtime's own, which
-also receives that service's backup alerts. Budget alerts go to both the cost and the operations
-channel.
+Grafana posts every alert to Discord, as [Grafana alerts](#grafana-alerts) describes. Google
+emails the budget alerts to both the cost and the operations addresses.
 
-Deploys and database rollouts post to the `a-novel-deployments` Discord channel when they start and
-when they end. A deploy posts only when it changes a root, or when it fails. A failure pings the
-`a-novel/infra` role and the failed service's role, whoever triggered the deploy. GitHub emails
-failed `drift` runs to whoever last edited its schedule.
+Deploys post to the `a-novel-deployments` Discord channel when they start and when they end. A
+deploy posts only when it changes a root, or when it fails. A failure pings the `a-novel/infra` role
+and the failed service's role, whoever triggered the deploy. GitHub emails failed `drift` runs to
+whoever last edited its schedule.
 
 ## Grafana alerts
 
@@ -77,7 +76,8 @@ Alloy gives each request and job run an outcome, which the dashboards and alerts
 - **A fault** is filed by hand, from its Discord post, as an issue in the service's repository. On
   the Errors dashboard, its operation opens its traces and its service opens its error logs.
 - **A failed or missed CronJob:** read its Jobs and their logs with `kubectl`, as
-  [Ops basics](../ops-basics.md) shows. A failed run is not retried, and the next one takes over.
+  [Ops basics](../ops-basics.md#identities) shows. A failed run is not retried, and the next one
+  takes over. A failed `health` run is a failed [health check](#health-checks).
 - **A full volume, a lagging replica or failing archiving:** read the database's state on the
   CloudNativePG dashboard first. Barman's archive errors appear in the instance's logs. Never
   delete WAL by hand.
@@ -89,7 +89,7 @@ Alloy gives each request and job run an outcome, which the dashboards and alerts
   nodes' disks share with the volumes.
 - **A container near its CPU request or memory limit, or killed for memory:** raise its request or
   limit in a pull request, the cluster root's `databases` for a database, before it saturates. No
-  container has a CPU limit, so a busy one slows its neighbours rather than throttling; memory past
+  container has a CPU limit, so a busy one slows its neighbors rather than throttling; memory past
   the limit kills the container.
 - **A service near its budget:** raise its `service_budgets` entry in the cluster root, in a pull
   request, before new pods are refused; mind that the budgets together fit the node pool.
@@ -102,10 +102,11 @@ Alloy gives each request and job run an outcome, which the dashboards and alerts
   [push token](secrets.md#alloy-push-token) or its egress to Grafana's gateway stopped.
 - **Signing keys running out:** JSON Keys' `rotate-keys` CronJob has stopped creating keys, which
   `Scheduled job failing` usually reported first, or someone revoked the last keys. Once no key is
-  left, Authentication can sign no session. Run the rotation job again; read its logs if it fails.
+  left, Authentication can sign no session. Read the rotation Jobs' logs, and fix the cause in a
+  pull request or a release; the next hourly run that succeeds rotates the keys.
 - **GenAI keeping content past retention:** the database's pg_cron purge stopped or falls behind,
-  so manuscripts outlive the retention promise. Follow [GenAI purge falling behind](#genai-purge-falling-behind)
-  against the cluster's database.
+  so manuscripts outlive the retention promise. Follow
+  [GenAI purge falling behind](#genai-purge-falling-behind).
 - **A Services panel empty:** its database query fails, and the two alerts above, which read such
   queries, stay silent. `cnpg_errors_total` names the query and its error in `errorUserQueries`. A
   `permission denied` means the cluster root's `queries/<database>.sql` misses a column it reads.
@@ -117,27 +118,39 @@ links. A test notification from **Alerting → Contact points** proves the `disc
 webhook. A firing rule proves the policy too, such as `Autoscaler at its maximum` while the pool
 runs its largest size.
 
-## Authentication health
+## Health checks
 
-`drift.yaml` calls Authentication's `/v2/healthcheck` every three hours, then Studio's public
-`/healthcheck`, which asks Authentication again as Studio. Each deploy calls both once after
-applying the service roots, even when one of them failed. Both skip them while a planned downtime
-runs. The job log prints each response:
+Each service's `health` CronJob runs the shared health check every five minutes, and each new
+image's `smoke-<hash>` Job runs it once, which the deploy waits on. The check retries for two
+minutes, so a failed run means the service failed for that long. Both skip while a planned downtime
+runs. Read the failed Job's log, which prints the service's answer:
 
-| Shows `down`      | Look at                                                                                                   |
-| ----------------- | --------------------------------------------------------------------------------------------------------- |
-| `client:postgres` | [Database hosts](database.md#inspect-and-connect): is `agora-database.service` running? Is the disk full? |
-| `client:smtp`     | [SMTP](secrets.md#smtp-google-workspace-relay): does the relay rule still admit the NAT address?          |
-| `api:jsonKeys`    | The `agora-json-keys-grpc` logs in Cloud Run, then its database.                                          |
+```bash
+SERVICE=authentication
+kubectl --namespace="$SERVICE" get jobs
+JOB="<name of the failed Job>"
+kubectl --namespace="$SERVICE" logs "job/$JOB"
+```
 
-No response at all means Authentication itself is down. Read the logs of `agora-authentication-rest`
-in the `a-novel-public-api-prod` project. When only Studio's check fails, Studio is down or
-Authentication refuses it: read the logs of `agora-studio-web` in the `a-novel-public-prod` project.
+Authentication's answer names each dependency it checked:
 
-An SMTP warning with `category=timeout` in those logs means the connection never left: the
+| Shows `down`      | Look at                                                                                          |
+| ----------------- | ------------------------------------------------------------------------------------------------ |
+| `client:postgres` | [Its database](database.md#inspect-a-database): do both instances serve? Is the volume full?     |
+| `client:smtp`     | [SMTP](secrets.md#smtp-google-workspace-relay): does the relay rule still admit the NAT address? |
+| `api:jsonKeys`    | JSON Keys' `grpc` pods and their logs, then its database.                                        |
+
+No answer at all means the service itself is down: read its pods' logs. An SMTP warning with
+`category=timeout` in Authentication's logs means the connection never left: the
 [egress allowlist](../architecture.md#network) or NAT dropped it, and neither logs a refusal. When
 the address it dialed lies outside `environments/production/foundation/google-service-ranges.json`,
 dispatch `refresh-google-ranges.yaml`, whose pull request proposes Google's current list.
+
+## Planned downtime past its end
+
+The three-hourly check fails when a planned downtime is still in place after its announced `end`,
+since its services still refuse work. [Clear it](downtime.md#clear-the-downtime) once the work is
+done, or schedule it again with a later `end`.
 
 If the checks stopped running, GitHub disabled the schedule after 60 days without repository
 activity. Enable it again:
@@ -146,128 +159,38 @@ activity. Enable it again:
 gh workflow enable drift.yaml --repo a-novel/infra
 ```
 
-## Planned downtime past its end
-
-The three-hourly check fails when a planned downtime is still in place after its announced `end`,
-since its services still refuse work. [Clear it](downtime.md#clear-the-downtime) once the work is
-done, or schedule it again with a later `end`.
-
-## Authentication 5xx rate
-
-More than 10% of requests failed for five minutes. If a deploy just happened,
-[fix it forward](deployments.md#fix-a-bad-release). Otherwise, read the revision's logs and check
-the dependencies [above](#authentication-health).
-
-## GenAI sweep calls failing
-
-At least three scheduled `/sweep` calls answered 5xx, other than 503, in ten minutes. Until the
-sweep recovers, nobody checks a generation its owner stopped polling. That generation keeps its
-owner's concurrency slot, and a finished result may expire at the provider. A planned downtime
-answers 503, so it does not fire this alert.
-
-1. Read the sweep's logs for the failing calls:
-
-   ```bash
-   gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="agora-genai-sweep" AND severity>=ERROR' \
-     --project=a-novel-production-prod --freshness=1h --limit=50
-   ```
-
-2. Check GenAI's [database host](database.md#inspect-and-connect).
-3. Check OpenAI's status page. The sweep fails when OpenAI refuses the key or is down. Connection
-   timeouts instead mean the [egress allowlist](../architecture.md#network) or NAT dropped the
-   calls, and neither logs a refusal.
-
 ## GenAI purge falling behind
 
-An expired generation waited more than 30 minutes for the retention purge, or GenAI's database host
-logged no wait for 30 minutes. Every five minutes, the host's `a-novel-database-probe.timer` logs
-how long the oldest expired generation has waited. pg_cron runs the purge every 10 seconds, oldest
-first, at most 1,000 rows and 64 MiB a call, so the wait stays near zero. Past 30 minutes, either
-the purge stopped, or more than 30 minutes of its fastest pace, about 11 GiB, waits ahead. Expired
-content then fills the data disk.
+`GenAI keeps content past retention` fires when a settled generation stays stored 30 minutes past
+its retention. pg_cron runs the purge in GenAI's database every 10 seconds, oldest first, at most
+1,000 rows and 64 MiB a call, so the wait stays near zero. Past 30 minutes, either the purge
+stopped, or more than 30 minutes of its fastest pace, about 11 GiB, waits ahead. Expired content
+then fills the volume.
 
-[Connect to GenAI's host](database.md#inspect-and-connect), then read the schedules, the backlog and
-the last runs:
+GenAI's migrations schedule the purge, and a new database lineage runs them again. Read the latest
+migrations Job's log, and the primary's log for pg_cron's errors, as
+[Inspect a database](database.md#inspect-a-database) shows:
 
 ```bash
-sudo docker exec --user postgres agora-postgres-genai psql -U agora_genai -d agora_genai \
-  -c 'SELECT jobname, schedule, active FROM cron.job;' \
-  -c 'SELECT count(*) FROM generations WHERE expires_at < now();' \
-  -c 'SELECT status, return_message, start_time FROM cron.job_run_details ORDER BY start_time DESC LIMIT 10;'
+kubectl --namespace=genai get jobs
+JOB="<name of the latest migrations Job>"
+kubectl --namespace=genai logs "job/$JOB"
 ```
 
-- **`service-genai-purge-settled` is missing:** the migrations job ran against another database, and
-  skipped the schedule without an error. Fix its target, then run it again.
-- **The runs fail:** their `return_message` says why.
-- **The runs succeed and the backlog still grows:** settled content arrives faster than the purge
-  deletes it. The disk alerts give the time left. Raising the purge's batch is a service-genai
+- **The migrations failed:** fix them as [A deploy failed](deployments.md#a-deploy-failed)
+  describes. The purge runs again once they schedule it.
+- **The purge runs and the backlog still grows:** settled content arrives faster than the purge
+  deletes it. The volume alerts give the time left. Raising the purge's batch is a service-genai
   change.
-- **No wait was logged:** check `sudo systemctl status a-novel-database-probe.timer` and
-  `sudo journalctl -u a-novel-database-probe.service --since=-1h`. A stopped PostgreSQL also fires
-  the sweep alert.
-
-## Application jobs and key rotation
-
-A job execution failed, or the rotation job went three hours without a successful run. It runs
-hourly and rotates the keys only once 24 hours have passed, so a single failure retries on its own.
-
-```bash
-gcloud logging read 'resource.type="cloud_run_job" AND severity>=ERROR' \
-  --project=a-novel-production-prod --freshness=6h --limit=50
-```
-
-A failed `migrations` job blocks its own deploy, as
-[A deploy failed](deployments.md#a-deploy-failed) describes.
-
-## Database capacity
-
-| Alert                                     | Severity |
-| ----------------------------------------- | -------- |
-| CPU above 70% for ten minutes             | warning  |
-| Memory or disk above 70% for ten minutes  | warning  |
-| Memory or disk above 85% for five minutes | critical |
-
-Each service with native backups also alerts its own channel when its database host's data disk is
-above 85%, or reports no disk data for an hour. That alert finds the host by name, so it follows a
-replaced VM.
-
-[Connect to the host](database.md#inspect-and-connect) and look for the cause: long queries, the
-connection count, or WAL that is not being archived. Then plan a
-[capacity change](database.md#capacity). Never delete WAL files by hand.
-
-## Backups
-
-One of these happened:
-
-- a backup failed;
-- the Sunday full backup had not succeeded by 04:00 UTC;
-- no backup succeeded in 24 hours 45 minutes;
-- the hourly archive check has not succeeded in three hours.
-
-Read the backup jobs' journal on the database host:
-
-```bash
-sudo journalctl -u 'agora-backup-*' --since=-1d
-```
-
-Common causes:
-
-- the repository VM is stopped or unreachable (`agora-backup-repository.service`);
-- a TLS certificate expires within 30 days, which calls for a
-  [renewal](secrets.md#pgbackrest-tls-certificates);
-- the database disk is full.
-
-After fixing it, [take a backup by hand](database.md#back-up-now-and-verify). Keep WAL archiving
-on.
 
 ## Budget
 
-The [monthly budget](../costs.md) reached 50, 75, 90 or 100%, actual or forecast. In the billing
-report, group by service. The usual causes are:
+The [monthly budget](../costs.md) reached 50, 75, 80, 90 or 100%, actual or forecast. In the
+billing report, group by service. The usual causes are:
 
-- Cloud Run instances that never go idle;
+- the cluster running above its baseline of nodes, which `Cluster above its baseline` reports too;
 - backup storage growth, as [Costs](../costs.md) explains;
-- rollout snapshots piling up.
+- a database volume that grew.
 
 Recovery drill projects sit outside the budget, so look for a forgotten one in the billing report
 too.
@@ -276,7 +199,5 @@ too.
 
 The cloud no longer matches `master`, and the job summary shows the plan. Either someone changed
 something in the console, or a provider default moved. Undo the console change, or codify the new
-value in a pull request. A recovery drill reports bootstrap as drifted while its backup reader is
-enabled. A plan that replaces a job's or service's token source, which the job's warning names,
-means its last execution or rollout failed: follow
+value in a pull request. A plan that replaces a Job means its last run failed: follow
 [A deploy failed](deployments.md#a-deploy-failed).

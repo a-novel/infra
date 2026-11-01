@@ -49,13 +49,15 @@ code.
 
 ## Rules
 
-- **Put a resource in the root that owns its lifecycle.** A service's runtime goes in its service
-  root, shared network and hosts in foundation, and identities and state in bootstrap.
+- **Put a resource in the root that owns its lifecycle.** A service's workloads and database go in
+  the cluster root, its release pins and secret versions in its service root, the network and the
+  cluster in foundation, and identities, state and backup buckets in bootstrap.
 - **Add a module** only for a second caller or a shared security invariant.
-- **Wire a new service root where GitHub cannot find it.** `deploy.yaml` and `drift.yaml` find the
-  root on disk. `lint-repository` fails until it has a `plan-<root>` job in `main.yaml`, its
-  required check, and an option in `roll-database.yaml`. A root with a database host also names the
-  Cloud Run services that write to it in `.github/actions/roll`.
+- **Wire a new service where the code cannot find it.** `deploy.yaml`, `drift.yaml` and
+  `downtime.yaml` find its root on disk. `lint-repository` fails until the root has a `plan-<root>`
+  job in `main.yaml`, its required check. The cluster root names its namespace, release roles and
+  budget, foundation its release repository, and bootstrap its Barman bucket when it has a
+  database.
 - **Watch a new service in Grafana, and keep watching it as it changes.** Errors, Health and
   Performance cover a workload once it runs in its namespace and exports spans. The rest comes with
   the service:
@@ -82,10 +84,11 @@ code.
   `deletion_policy = "PREVENT"`. A plan that weakens the last two, or `force_destroy`, needs the
   [deletion label](docs/runbooks/deployments.md#deletions-and-weakened-protections). Removing
   `prevent_destroy` changes only the code, so no plan flags it. Say so in the pull request.
-- **Change database hosts during a planned downtime.** Their plans need the `allow-downtime` label,
-  as [Change a database host](docs/runbooks/database.md#change-a-database-host) describes.
+- **Upgrade a PostgreSQL major during a planned downtime.** Its plan needs the `allow-downtime`
+  label, as [PostgreSQL major upgrades](docs/runbooks/database.md#postgresql-major-upgrades)
+  describes.
 - **Test security contracts, not arguments.** A `tofu test` assertion should state something that
-  matters, such as no public IP, internal-only ingress or a pinned secret.
+  matters, such as no public IP, a default-deny network policy or a pinned secret.
 - **Update the runbook** in the same pull request when you change a manual operation.
 - **Comment the why.** HCL comments say why, never what the arguments already say.
 
