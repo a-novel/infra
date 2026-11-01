@@ -525,9 +525,9 @@ run "runs_authentication" {
       length([for name in keys(local.authentication_env) : name if startswith(name, "SENTRY_")]) == 0 &&
       local.authentication_env.POSTGRES_HOST == one(kubernetes_manifest.database_server_certificate["authentication"].manifest.spec.dnsNames) &&
       local.authentication_env.SMTP_ADDR == "smtp-relay.gmail.com:587" &&
-      local.authentication_env.PLATFORM_AUTH_URL == "https://studio.storyverse.fr"
+      local.authentication_env.PLATFORM_AUTH_URL == "https://account.storyverse.fr"
     )
-    error_message = "Authentication must report nothing to Sentry, use its CloudNativePG database by its certificate's name, and send its root's mail with links to Studio."
+    error_message = "Authentication must report nothing to Sentry, use its CloudNativePG database by its certificate's name, and send its root's mail with links to the account platform."
   }
 
   # A release without service tokens sends Google ID tokens when GCLOUD_PROJECT_ID is set, which
@@ -687,7 +687,7 @@ run "serves_each_platform_through_its_gateway" {
       check.manifest.spec.targetRef.name == module.platform_web[platform].service.name &&
       check.manifest.spec.default.config.httpHealthCheck.requestPath == "/ping" &&
       check.manifest.spec.default.config.httpHealthCheck.port == module.platform_web[platform].service.port
-    ]) && local.authentication_env.PLATFORM_AUTH_URL == local.platform_env.studio.ORIGIN
+    ]) && local.authentication_env.PLATFORM_AUTH_URL == local.platform_env.account.ORIGIN
     error_message = "The load balancer must check each platform on its probes' path, and Authentication's links must name a Gateway's host."
   }
 
