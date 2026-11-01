@@ -18,9 +18,9 @@ locals {
   cluster = data.terraform_remote_state.drill.outputs.cluster
 
   # The drill restores with production's committed pins: the add-on images, each database's sizes
-  # and backup name, and its release image.
+  # and backup name, and the release image its service root pins.
   production      = provider::terraform::decode_tfvars(file("${path.module}/../production/cluster/terraform.tfvars"))
-  database_images = provider::terraform::decode_tfvars(file("${path.module}/../production/foundation/terraform.tfvars")).database_images
+  database_images = { for service in keys(local.production.databases) : service => provider::terraform::decode_tfvars(file("${path.module}/../production/${service}/terraform.tfvars")).images.database }
 
   # Each image pulls through the drill's caches, as production's pull through its own. The database
   # images go by their service's name. The drill runs only the database operators and the databases,

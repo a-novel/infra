@@ -3,7 +3,7 @@ mock_provider "kubernetes" {}
 variables {
   name      = "grpc"
   namespace = "json-keys"
-  image     = "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-json-keys-private-production/service-json-keys/grpc@sha256:30df698ad643886f231dfdfd821e7731a19d53e3530c61a350c7d29f01f0a770"
+  image     = "europe-west9-docker.pkg.dev/a-novel-production-prod/a-novel-json-keys/service-json-keys/grpc@sha256:30df698ad643886f231dfdfd821e7731a19d53e3530c61a350c7d29f01f0a770"
   port      = 8080
   ca_secret = "database-server-tls"
   resources = { cpu = "100m", memory = "512Mi" }
