@@ -87,26 +87,6 @@ run "denies_everything_the_network_does_not_allow" {
   }
 
   assert {
-    condition = alltrue([for rule in google_compute_network_firewall_policy_rule.egress_allowlist :
-      rule.direction == "EGRESS" && rule.action == "allow" && length(rule.target_service_accounts) > 0 &&
-      rule.match[0].dest_ip_ranges == null &&
-      (length(coalesce(rule.match[0].dest_fqdns, [])) > 0) != (length(coalesce(rule.match[0].dest_address_groups, [])) > 0) &&
-      alltrue([for layer4 in rule.match[0].layer4_configs : layer4.ip_protocol == "tcp" && length(layer4.ports) == 1])
-    ])
-    error_message = "The egress allowlist may only let named identities reach named hosts, or one address group, on one TCP port. Everything else must fall through to the deny."
-  }
-
-  assert {
-    condition = (
-      one(google_compute_network_firewall_policy_rule.egress_allowlist["smtp-relay"].match[0].dest_address_groups) == google_network_security_address_group.google_services.id &&
-      alltrue([for range in google_network_security_address_group.google_services.items :
-        can(cidrhost(range, 0)) && tonumber(split("/", range)[1]) >= 8
-      ])
-    )
-    error_message = "SMTP may reach only Google's service ranges, each a valid IPv4 CIDR no wider than a /8."
-  }
-
-  assert {
     condition = (
       google_compute_firewall.allow_iap_ssh.source_ranges == toset(["35.235.240.0/20"]) &&
       alltrue([for rule in google_compute_firewall.allow_postgres_ingress : rule.source_ranges == toset([var.subnet_cidr, var.egress_subnet_cidr])])
@@ -145,7 +125,7 @@ run "resolves_only_the_dns_allowlist" {
 
   assert {
     condition = alltrue(concat(
-      [for rule in google_compute_network_firewall_policy_rule.egress_allowlist :
+      [for rule in google_compute_network_firewall_policy_rule.cluster_egress_allowlist :
         alltrue([for fqdn in coalesce(rule.match[0].dest_fqdns, []) : contains(keys(google_dns_response_policy_rule.allow), "${fqdn}.")])
       ],
       [for zone in concat([google_dns_managed_zone.googleapis], values(google_dns_managed_zone.private_google_domain)) :
@@ -191,12 +171,23 @@ run "fences_the_cluster_network" {
   assert {
     condition = (
       keys(google_compute_network_firewall_policy_rule.cluster_egress_allowlist) == keys(local.egress_allowlist) &&
-      alltrue([for key, rule in google_compute_network_firewall_policy_rule.egress_allowlist :
-        google_compute_network_firewall_policy_rule.cluster_egress_allowlist[key].match == rule.match &&
-        google_compute_network_firewall_policy_rule.cluster_egress_allowlist[key].action == "allow"
+      alltrue([for rule in google_compute_network_firewall_policy_rule.cluster_egress_allowlist :
+        rule.direction == "EGRESS" && rule.action == "allow" && rule.match[0].dest_ip_ranges == null &&
+        (length(coalesce(rule.match[0].dest_fqdns, [])) > 0) != (length(coalesce(rule.match[0].dest_address_groups, [])) > 0) &&
+        alltrue([for layer4 in rule.match[0].layer4_configs : layer4.ip_protocol == "tcp" && length(layer4.ports) == 1])
       ])
     )
-    error_message = "The cluster's nodes may reach exactly the egress allowlist's destinations."
+    error_message = "The cluster's nodes may reach exactly the egress allowlist's named hosts, or one address group, each on one TCP port. Everything else must fall through to the deny."
+  }
+
+  assert {
+    condition = (
+      one(google_compute_network_firewall_policy_rule.cluster_egress_allowlist["smtp-relay"].match[0].dest_address_groups) == google_network_security_address_group.google_services.id &&
+      alltrue([for range in google_network_security_address_group.google_services.items :
+        can(cidrhost(range, 0)) && tonumber(split("/", range)[1]) >= 8
+      ])
+    )
+    error_message = "SMTP may reach only Google's service ranges, each a valid IPv4 CIDR no wider than a /8."
   }
 
   assert {
@@ -315,30 +306,6 @@ run "grants_no_basic_roles" {
       [for binding in values(google_project_iam_member.database_operator) : binding.role if startswith(binding.role, "roles/container.")] == [for principal in var.database_operator_principals : "roles/container.clusterViewer"]
     )
     error_message = "Operators may only connect to the cluster through IAM; the cluster root's RBAC decides what they read."
-  }
-
-  assert {
-    condition     = !google_cloud_scheduler_job.json_keys_rotation[0].paused
-    error_message = "Key rotation must stay scheduled."
-  }
-
-  assert {
-    condition = (
-      !google_cloud_scheduler_job.authentication_refresh_token_purge[0].paused &&
-      google_tags_location_tag_binding.application["authentication_refresh_token_purge"].tag_value == google_tags_tag_value.cloud_run_invocation["scheduled"].id
-    )
-    error_message = "The refresh token purge must stay scheduled, and tagged so the scheduler may run it without overrides."
-  }
-}
-
-run "keeps_humans_off_untagged_jobs" {
-  command = plan
-
-  assert {
-    condition = alltrue([for binding in google_project_iam_member.maintenance_operator :
-      binding.role == "roles/run.jobsExecutorWithOverrides" && length(binding.condition) == 1
-    ])
-    error_message = "Humans may run with arguments only the job tagged maintenance."
   }
 }
 

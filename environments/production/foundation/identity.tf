@@ -269,39 +269,11 @@ resource "google_tags_tag_value" "cloud_run_invocation" {
   }
 }
 
-resource "google_project_iam_member" "scheduler_cloud_run_invoker" {
-  project = google_project.workload.project_id
-  role    = "roles/run.jobsExecutor"
-  member  = "serviceAccount:${google_service_account.runtime["scheduler_invoker"].email}"
-
-  condition {
-    title       = "ScheduledCloudRunOnly"
-    description = "Scheduler may invoke only explicitly tagged idempotent jobs."
-    expression  = "resource.matchTagId('${google_tags_tag_key.cloud_run_invocation.id}', '${google_tags_tag_value.cloud_run_invocation["scheduled"].id}')"
-  }
-}
-
-# Named humans run Authentication's maintenance job. Each run names its operation in the execution's
-# arguments, which only runWithOverrides passes, and the tag keeps every other job out of reach. The
-# operators read Cloud Run and the logs to follow the run. On the cluster, they connect to the
-# control plane, and the cluster root's RBAC lets them run the job's Kubernetes counterpart.
-resource "google_project_iam_member" "maintenance_operator" {
-  for_each = var.authentication_maintenance_principals
-
-  project = google_project.workload.project_id
-  role    = "roles/run.jobsExecutorWithOverrides"
-  member  = each.value
-
-  condition {
-    title       = "MaintenanceJobsOnly"
-    description = "Named humans may run only the tagged maintenance job, with arguments."
-    expression  = "resource.matchTagId('${google_tags_tag_key.cloud_run_invocation.id}', '${google_tags_tag_value.cloud_run_invocation["maintenance"].id}')"
-  }
-}
-
+# Named humans run Authentication's maintenance job on the cluster: they connect to the control
+# plane, the cluster root's RBAC lets them run the job, and they read the logs to follow the run.
 resource "google_project_iam_member" "maintenance_observer" {
   for_each = {
-    for binding in setproduct(var.authentication_maintenance_principals, ["roles/container.clusterViewer", "roles/logging.viewer", "roles/run.viewer"]) :
+    for binding in setproduct(var.authentication_maintenance_principals, ["roles/container.clusterViewer", "roles/logging.viewer"]) :
     "${binding[0]}:${binding[1]}" => { principal = binding[0], role = binding[1] }
   }
 

@@ -52,9 +52,9 @@ resource "google_project_iam_member" "foundation_private_provisioning" {
 
 # Binding a tag also takes tagUser on its value, which the project's tagAdmin does not include.
 resource "google_tags_tag_value_iam_member" "foundation_application_tags" {
-  for_each = toset([for workload in values(local.application_invocation) : workload.class])
+  for_each = local.cloud_run_invocation_tag_values
 
-  tag_value = google_tags_tag_value.cloud_run_invocation[each.value].name
+  tag_value = google_tags_tag_value.cloud_run_invocation[each.key].name
   role      = "roles/resourcemanager.tagUser"
   member    = "serviceAccount:${local.automation_service_accounts.foundation}"
 }
@@ -201,13 +201,6 @@ resource "google_project_iam_member" "foundation_scheduler" {
   project = google_project.workload.project_id
   role    = google_project_iam_custom_role.foundation_scheduler[0].name
   member  = "serviceAccount:${local.automation_service_accounts.foundation}"
-}
-
-resource "google_service_account_iam_member" "foundation_scheduler_act_as" {
-  count              = length(google_project_iam_custom_role.foundation_scheduler)
-  service_account_id = google_service_account.runtime["scheduler_invoker"].name
-  role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:${local.automation_service_accounts.foundation}"
 }
 
 resource "google_project_service" "public_api_telemetry" {
