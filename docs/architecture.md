@@ -377,10 +377,11 @@ archives it.
   settings and warns when one differs. Each assert names the issue that replaces it with a
   provider resource.
 - **Prune removes what the root does not produce.** A ruleset or deployment pattern made by hand
-  fails the next pull request's `plan-github` until a maintainer adds `allow-resource-deletion`,
-  and the deploy of that pull request deletes it, as `.github/scripts/prune.mjs` does. It reads
-  patterns only in the environments the root manages, never deletes an environment, and the sweep
-  never prunes. Secret sync deletes the governance secrets no workflow names.
+  fails `plan-github` on the next pull request that changes the root, until a maintainer adds
+  `allow-resource-deletion`, and the deploy of that pull request deletes it, as
+  `.github/scripts/prune.mjs` does. It reads patterns only in the environments the root manages,
+  never deletes an environment, and the sweep never prunes. Secret sync deletes the governance
+  secrets no workflow names.
 - **Only the guarded environments are managed:** `release`, with its reviewers, `governance` and
   `sourcemaps`, each open on the refs a ruleset guards. GitHub creates the others, such as
   `github-pages` and `copilot`.
@@ -391,6 +392,11 @@ archives it.
 - **Pull requests plan without refreshing.** GitHub hides bypass lists, merge settings and security
   settings from the Plan App, so a pull request plans against what the last deploy applied. Deploys
   refresh with the Deploy App, which sees them.
+- **A pull request plans the root only when its merge applies it:** when it changes what the root
+  depends on, as `.github/scripts/root-changes.sh` lists for the deploy, or carries
+  `allow-resource-deletion`. Even unrefreshed, a plan reads every repository's workflows and pages
+  through each file's commit history, from the Plan App's hourly budget that all pull requests
+  share.
 - **Team access is authoritative; labels are not.** A team or person granted by hand loses access at
   the next apply. Only the managed labels are enforced: the Epic, gate and Dependabot labels stay.
 - **It applies from its own environment and identity,** `github` and `infra-github`, apart from
