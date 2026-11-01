@@ -33,7 +33,7 @@ resource "time_sleep" "database_lineage" {
 }
 
 # CloudNativePG reads PostgreSQL's major version from an image's tag, and ours carry the service's
-# release version, so a catalog states it. Foundation names each image as its release pins it.
+# release version, so a catalog states it. Each image is the one its service root pins.
 resource "kubernetes_manifest" "database_image" {
   for_each = var.custom_resources ? var.databases : {}
 
@@ -41,7 +41,7 @@ resource "kubernetes_manifest" "database_image" {
     apiVersion = "postgresql.cnpg.io/v1"
     kind       = "ImageCatalog"
     metadata   = { name = "postgresql", namespace = kubernetes_namespace_v1.service[each.key].metadata[0].name }
-    spec       = { images = [{ major = 18, image = local.cluster.database_images[each.key] }] }
+    spec       = { images = [{ major = 18, image = local.release_image["${each.key}/database"] }] }
   }
 }
 
@@ -280,7 +280,7 @@ resource "kubernetes_job_v1" "database_grants" {
         # psql sends the file as one statement list, which runs in a single transaction.
         container {
           name    = "grants"
-          image   = local.cluster.database_images[each.key]
+          image   = local.release_image["${each.key}/database"]
           command = ["psql", "--no-psqlrc", "--command", each.value]
 
           dynamic "env" {

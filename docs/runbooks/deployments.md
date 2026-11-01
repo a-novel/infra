@@ -52,9 +52,8 @@ that waits for a downtime that has since started.
 1. **The release opens its pull request.** Once a service's release workflow has published every
    image, it dispatches `pin-release.yaml`. That workflow opens one pull request per service, on
    `chore/deps/<repository>`, titled like `chore(deps): update service-json-keys images to v2.10.0`.
-   It moves every pin of the service's images: the `tag@digest` pins in `environments/production`,
-   foundation's `database_images` included, and the `FROM` lines of the `builds/` images built from
-   them. A newer release of the same service replaces the open pull request's content.
+   It moves every pin of the service's images: the `tag@digest` pins in `environments/production`
+   and the `FROM` lines of the `builds/` images built from them. A newer release of the same service replaces the open pull request's content.
 2. **CI plans it.** In the service's plan check, expect:
    - the Cloud Run service and jobs on the new images;
    - when the migration image changed, its `terraform_data` replaced and a new

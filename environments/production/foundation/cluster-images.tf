@@ -42,10 +42,49 @@ resource "google_artifact_registry_repository_iam_member" "cluster_upstream_node
   member     = google_service_account.runtime["cluster_nodes"].member
 }
 
-# The databases run each service's PostgreSQL image from its private repository, as its database
-# host does, so the nodes read those repositories too.
+# Admission admits only images from the workload project. Each service runs its release, its
+# database included, from its repository here, in the cluster's region, which the cluster root's
+# deploy fills. Foundation applies first, so a new repository exists for that copy.
+resource "google_artifact_registry_repository" "releases" {
+  for_each = toset(["account", "authentication", "genai", "json-keys", "narrative-engine", "studio"])
+
+  project         = google_project.workload.project_id
+  location        = var.cluster_region
+  repository_id   = "a-novel-${each.key}"
+  format          = "DOCKER"
+  mode            = "STANDARD_REPOSITORY"
+  deletion_policy = "PREVENT"
+  labels          = { environment = "production", service = each.key }
+
+  # A deployed digest can never be re-tagged to different content.
+  docker_config {
+    immutable_tags = true
+  }
+
+  cleanup_policy_dry_run = true
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [google_project_service.workload["artifactregistry.googleapis.com"]]
+}
+
+resource "google_artifact_registry_repository_iam_member" "releases_nodes" {
+  for_each = google_artifact_registry_repository.releases
+
+  project    = each.value.project
+  location   = each.value.location
+  repository = each.value.name
+  role       = "roles/artifactregistry.reader"
+  member     = google_service_account.runtime["cluster_nodes"].member
+}
+
+# The old region's repositories, which the cluster ran from until its releases moved beside it,
+# retire with a-novel/infra#1208: these grants on the service roots' own, and the repositories below
+# for the services without one.
 resource "google_artifact_registry_repository_iam_member" "cluster_database_images" {
-  for_each = local.database_image_repositories
+  for_each = toset(["authentication", "genai", "json-keys"])
 
   project    = var.workload_project_id
   location   = var.region
@@ -54,10 +93,6 @@ resource "google_artifact_registry_repository_iam_member" "cluster_database_imag
   member     = google_service_account.runtime["cluster_nodes"].member
 }
 
-# Admission admits only images from the workload project. The services with a service root run from
-# the private repositories it creates there. The others get one each for their cluster release,
-# which the cluster root's deploy fills. Foundation applies first, so the repository exists for that
-# copy.
 resource "google_artifact_registry_repository" "cluster_release" {
   for_each = toset(["account", "narrative-engine", "studio"])
 
