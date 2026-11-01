@@ -640,6 +640,230 @@
         }
       }
     },
+    "authentication-codes-issued": {
+      "kind": "Panel",
+      "spec": {
+        "id": 25,
+        "title": "Authorization codes issued",
+        "description": "Each hour's sign-ins the account platform completed for another platform, by client. A client exchanges each code within minutes, so Authorization codes exchanged follows this count.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "tempo",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-traces"
+                    },
+                    "spec": {
+                      "queryType": "traceql",
+                      "metricsQueryType": "range",
+                      "step": "1h",
+                      "query": "{ resource.service.name = \"service-authentication\" && name = \"core.AuthorizationCodeCreate\" && status != error } | count_over_time() by (span.client.id)"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": {
+              "timeFrom": "24h"
+            }
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "",
+          "spec": {
+            "options": {
+              "legend": {
+                "displayMode": "list",
+                "placement": "bottom"
+              },
+              "tooltip": {
+                "mode": "multi"
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short",
+                "decimals": 0,
+                "custom": {
+                  "drawStyle": "bars",
+                  "fillOpacity": 70,
+                  "stacking": {
+                    "mode": "normal"
+                  }
+                }
+              },
+              "overrides": []
+            }
+          }
+        }
+      }
+    },
+    "authentication-codes-exchanged": {
+      "kind": "Panel",
+      "spec": {
+        "id": 26,
+        "title": "Authorization codes exchanged",
+        "description": "Each hour's codes a client traded for its tokens. Fewer exchanges than issued codes means people sign in but never reach the client: check its callback.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "tempo",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-traces"
+                    },
+                    "spec": {
+                      "queryType": "traceql",
+                      "metricsQueryType": "range",
+                      "step": "1h",
+                      "query": "{ resource.service.name = \"service-authentication\" && name = \"core.TokenGrant\" && span.oauth.grant_type = \"authorization_code\" && status != error } | count_over_time() by (span.client.id)"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": {
+              "timeFrom": "24h"
+            }
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "",
+          "spec": {
+            "options": {
+              "legend": {
+                "displayMode": "list",
+                "placement": "bottom"
+              },
+              "tooltip": {
+                "mode": "multi"
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short",
+                "decimals": 0,
+                "custom": {
+                  "drawStyle": "bars",
+                  "fillOpacity": 70,
+                  "stacking": {
+                    "mode": "normal"
+                  }
+                }
+              },
+              "overrides": []
+            }
+          }
+        }
+      }
+    },
+    "authentication-token-refusals": {
+      "kind": "Panel",
+      "spec": {
+        "id": 27,
+        "title": "Refused client token requests",
+        "description": "Each hour's refused code exchanges and refreshes, by client and OAuth error. Ended sessions refuse a few refreshes with invalid_grant. A burst can mean replayed codes or stolen refresh tokens, and invalid_client alone a caller outside the registry.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "tempo",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-traces"
+                    },
+                    "spec": {
+                      "queryType": "traceql",
+                      "metricsQueryType": "range",
+                      "step": "1h",
+                      "query": "{ resource.service.name = \"service-authentication\" && name = \"core.TokenGrant\" && span.oauth.error != nil } | count_over_time() by (span.client.id, span.oauth.error)"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [
+              {
+                "kind": "Transformation",
+                "group": "renameByRegex",
+                "spec": {
+                  "options": {
+                    "regex": "^\\{span\\.client\\.id=\"([^\"]*)\", span\\.oauth\\.error=\"([^\"]*)\"\\}$",
+                    "renamePattern": "$1 $2"
+                  }
+                }
+              }
+            ],
+            "queryOptions": {
+              "timeFrom": "24h"
+            }
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "",
+          "spec": {
+            "options": {
+              "legend": {
+                "displayMode": "list",
+                "placement": "bottom"
+              },
+              "tooltip": {
+                "mode": "multi"
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short",
+                "decimals": 0,
+                "custom": {
+                  "drawStyle": "bars",
+                  "fillOpacity": 70,
+                  "stacking": {
+                    "mode": "normal"
+                  }
+                }
+              },
+              "overrides": []
+            }
+          }
+        }
+      }
+    },
     "genai-live": {
       "kind": "Panel",
       "spec": {
@@ -2414,6 +2638,33 @@
                       "element": {
                         "kind": "ElementReference",
                         "name": "authentication-refused-refresh"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "authentication-codes-issued"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "authentication-codes-exchanged"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "authentication-token-refusals"
                       }
                     }
                   }
