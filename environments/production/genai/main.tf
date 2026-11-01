@@ -18,11 +18,13 @@ locals {
   region     = local.foundation.region
 }
 
-# The cluster runs every release from this service's production repository.
-module "runtime" {
-  source = "../../../modules/service-runtime"
+# The cluster pulled every release from this service's repository in the old region until its
+# releases moved beside it (a-novel/infra#1208). This root now keeps only the service's pins, which
+# the cluster root reads from terraform.tfvars.
+removed {
+  from = module.runtime
 
-  service    = "genai"
-  project_id = local.project_id
-  region     = local.region
+  lifecycle {
+    destroy = true
+  }
 }

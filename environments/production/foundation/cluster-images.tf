@@ -80,38 +80,14 @@ resource "google_artifact_registry_repository_iam_member" "releases_nodes" {
   member     = google_service_account.runtime["cluster_nodes"].member
 }
 
-# The old region's repositories, which the cluster ran from until its releases moved beside it,
-# retire with a-novel/infra#1208. This deploy drops the nodes' grants on them, and on the service
-# roots' own, and unlocks them, so the next one can delete them.
-resource "google_artifact_registry_repository" "cluster_release" {
-  for_each = toset(["account", "narrative-engine", "studio"])
+# The old region's repositories, which the cluster ran from until its releases moved beside it
+# (a-novel/infra#1208).
+removed {
+  from = google_artifact_registry_repository.cluster_release
 
-  project         = var.workload_project_id
-  location        = var.region
-  repository_id   = "agora-${each.key}-private-production"
-  format          = "DOCKER"
-  mode            = "STANDARD_REPOSITORY"
-  deletion_policy = "DELETE"
-  labels          = { environment = "production", service = each.key }
-
-  # A deployed digest can never be re-tagged to different content.
-  docker_config {
-    immutable_tags = true
+  lifecycle {
+    destroy = true
   }
-
-  cleanup_policy_dry_run = true
-
-  depends_on = [google_project_service.workload["artifactregistry.googleapis.com"]]
-}
-
-moved {
-  from = google_artifact_registry_repository.studio
-  to   = google_artifact_registry_repository.cluster_release["studio"]
-}
-
-moved {
-  from = google_artifact_registry_repository.narrative_engine
-  to   = google_artifact_registry_repository.cluster_release["narrative-engine"]
 }
 
 # Inside the perimeter, Artifact Registry reaches no upstream by default. This lets the remote
