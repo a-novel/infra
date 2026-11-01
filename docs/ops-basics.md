@@ -50,7 +50,8 @@ deploy:  bootstrap ─► foundation ─► one job per service ─┬─► rol
 ```
 
 1. **The pull request.** CI validates and tests every root, lints the repository, scans it, and plans
-   each root with a read-only identity. The plans appear in the job summaries.
+   each root with a read-only identity, the GitHub root only when the merge would apply it. The plans
+   appear in the job summaries.
 2. **The policy.** Two kinds of plan fail until a maintainer adds a label:
    - a plan that deletes, replaces or forgets a resource, or weakens its protection, needs
      `allow-resource-deletion`, as does a ruleset or deployment pattern the GitHub root would

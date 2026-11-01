@@ -483,9 +483,28 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # The merge commit's first parent is the base the pull request merges into.
+          fetch-depth: 2
           persist-credentials: false
 
+      # Each plan reads every repository's workflows through the Plan App, whose hourly budget all
+      # pull requests share. It runs only when the merge would apply the root: when the pull request
+      # changes what the root depends on, or carries the deletion label, which makes the deploy prune.
+      - id: changes
+        name: Check whether the merge applies the root
+        shell: bash
+        run: |
+          set -euo pipefail
+          changes="$(.github/scripts/root-changes.sh environments/production/github HEAD^ HEAD)"
+          if [ -n "$changes" ] || [ "$ALLOW_DELETION" = true ]; then
+            echo "plan=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "plan=false" >>"$GITHUB_OUTPUT"
+            echo "Not planned: the pull request changes nothing the GitHub root depends on." >>"$GITHUB_STEP_SUMMARY"
+          fi
+
       - id: tofu
+        if: steps.changes.outputs.plan == 'true'
         uses: $/.github/actions/tofu
         with:
           root: environments/production/github
@@ -500,6 +519,7 @@ jobs:
       # Lists the rulesets and deployment patterns the deploy would prune. Like a deletion in the
       # plan, each needs allow-resource-deletion.
       - name: Check what prune would delete
+        if: steps.changes.outputs.plan == 'true'
         shell: bash
         env:
           PLAN: ${{ steps.tofu.outputs.plan }}
