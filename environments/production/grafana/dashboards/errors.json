@@ -1,5 +1,5 @@
 {
-  "description": "What needs action now. Faults are our own failures: fix them. Transient failures matter once they last. Expected refusals answer the caller's own mistakes and need no action, unless they spike.",
+  "description": "What needs action: the bars show when each failure happened, and the alert list what fires now. Faults are our own failures: fix them. Transient failures matter once they last. Expected refusals answer the caller's own mistakes and need no action, unless they spike.",
   "panels": [
     {
       "id": 1,
@@ -123,6 +123,7 @@
       "id": 5,
       "type": "timeseries",
       "title": "Failures over time",
+      "maxDataPoints": 168,
       "description": "Each bar counts the failures of its interval, by outcome. A red bar needs a fix; a growing orange or blue band needs a look.",
       "gridPos": { "x": 0, "y": 4, "w": 16, "h": 8 },
       "targets": [
