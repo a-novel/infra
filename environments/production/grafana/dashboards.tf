@@ -5,7 +5,7 @@ locals {
   # Services holds a tab per service, which only the v2 schema has.
   journey = {
     errors      = { title = "1. Errors", from = "now-7d", refresh = "1m" }
-    health      = { title = "2. Health", from = "now-7d", refresh = "1m" }
+    health      = { title = "2. Health", from = "now-24h", refresh = "1m" }
     performance = { title = "3. Performance", from = "now-7d", refresh = "5m" }
   }
 
