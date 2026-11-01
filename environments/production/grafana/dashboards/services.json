@@ -251,21 +251,28 @@
             ],
             "transformations": [
               {
-                "id": "merge"
+                "kind": "Transformation",
+                "group": "merge",
+                "spec": {
+                  "options": {}
+                }
               },
               {
-                "id": "organize",
-                "options": {
-                  "excludeByName": {
-                    "Time": true
-                  },
-                  "renameByName": {
-                    "usage": "Usage",
-                    "Value #A": "Mailed",
-                    "Value #B": "Used",
-                    "Value #C": "Replaced",
-                    "Value #D": "Expired",
-                    "Value #E": "Pending"
+                "kind": "Transformation",
+                "group": "organize",
+                "spec": {
+                  "options": {
+                    "excludeByName": {
+                      "Time": true
+                    },
+                    "renameByName": {
+                      "usage": "Usage",
+                      "Value #A": "Mailed",
+                      "Value #B": "Used",
+                      "Value #C": "Replaced",
+                      "Value #D": "Expired",
+                      "Value #E": "Pending"
+                    }
                   }
                 }
               }
@@ -400,7 +407,28 @@
                 }
               }
             ],
-            "transformations": [],
+            "transformations": [
+              {
+                "kind": "Transformation",
+                "group": "renameByRegex",
+                "spec": {
+                  "options": {
+                    "regex": "^\\{span\\.mail\\.kind=\"([^\"]*)\", status=\"(?:unset|ok)\"\\}$",
+                    "renamePattern": "$1"
+                  }
+                }
+              },
+              {
+                "kind": "Transformation",
+                "group": "renameByRegex",
+                "spec": {
+                  "options": {
+                    "regex": "^\\{span\\.mail\\.kind=\"([^\"]*)\", status=\"error\"\\}$",
+                    "renamePattern": "$1 failed"
+                  }
+                }
+              }
+            ],
             "queryOptions": {
               "timeFrom": "24h"
             }
@@ -471,7 +499,28 @@
                 }
               }
             ],
-            "transformations": [],
+            "transformations": [
+              {
+                "kind": "Transformation",
+                "group": "renameByRegex",
+                "spec": {
+                  "options": {
+                    "regex": "^.*\\(wait\\)$",
+                    "renamePattern": "waited"
+                  }
+                }
+              },
+              {
+                "kind": "Transformation",
+                "group": "renameByRegex",
+                "spec": {
+                  "options": {
+                    "regex": "^.*\\(reserve\\)$",
+                    "renamePattern": "refused"
+                  }
+                }
+              }
+            ],
             "queryOptions": {
               "timeFrom": "24h"
             }
@@ -542,7 +591,18 @@
                 }
               }
             ],
-            "transformations": [],
+            "transformations": [
+              {
+                "kind": "Transformation",
+                "group": "renameByRegex",
+                "spec": {
+                  "options": {
+                    "regex": "^count_over_time$",
+                    "renamePattern": "refused"
+                  }
+                }
+              }
+            ],
             "queryOptions": {
               "timeFrom": "24h"
             }
@@ -876,20 +936,27 @@
             ],
             "transformations": [
               {
-                "id": "merge"
+                "kind": "Transformation",
+                "group": "merge",
+                "spec": {
+                  "options": {}
+                }
               },
               {
-                "id": "organize",
-                "options": {
-                  "excludeByName": {
-                    "Time": true
-                  },
-                  "renameByName": {
-                    "status": "Status",
-                    "reason": "Reason",
-                    "Value #A": "Generations",
-                    "Value #B": "Retried",
-                    "Value #C": "p95"
+                "kind": "Transformation",
+                "group": "organize",
+                "spec": {
+                  "options": {
+                    "excludeByName": {
+                      "Time": true
+                    },
+                    "renameByName": {
+                      "status": "Status",
+                      "reason": "Reason",
+                      "Value #A": "Generations",
+                      "Value #B": "Retried",
+                      "Value #C": "p95"
+                    }
                   }
                 }
               }
@@ -1014,22 +1081,29 @@
             ],
             "transformations": [
               {
-                "id": "merge"
+                "kind": "Transformation",
+                "group": "merge",
+                "spec": {
+                  "options": {}
+                }
               },
               {
-                "id": "organize",
-                "options": {
-                  "excludeByName": {
-                    "Time": true
-                  },
-                  "renameByName": {
-                    "model": "Model",
-                    "class": "Effort",
-                    "tier": "Tier",
-                    "Value #A": "Input",
-                    "Value #B": "Cached input",
-                    "Value #C": "Output",
-                    "Value #D": "Reasoning"
+                "kind": "Transformation",
+                "group": "organize",
+                "spec": {
+                  "options": {
+                    "excludeByName": {
+                      "Time": true
+                    },
+                    "renameByName": {
+                      "model": "Model",
+                      "class": "Effort",
+                      "tier": "Tier",
+                      "Value #A": "Input",
+                      "Value #B": "Cached input",
+                      "Value #C": "Output",
+                      "Value #D": "Reasoning"
+                    }
                   }
                 }
               }
@@ -1114,7 +1188,32 @@
                 }
               }
             ],
-            "transformations": [],
+            "transformations": [
+              {
+                "kind": "Transformation",
+                "group": "renameByRegex",
+                "spec": {
+                  "options": {
+                    "regex": "^sum_over_time$",
+                    "renamePattern": "input"
+                  },
+                  "filter": {
+                    "id": "byIndex",
+                    "options": 0
+                  }
+                }
+              },
+              {
+                "kind": "Transformation",
+                "group": "renameByRegex",
+                "spec": {
+                  "options": {
+                    "regex": "^sum_over_time$",
+                    "renamePattern": "output"
+                  }
+                }
+              }
+            ],
             "queryOptions": {
               "timeFrom": "24h"
             }
@@ -1143,32 +1242,7 @@
                   "fillOpacity": 70
                 }
               },
-              "overrides": [
-                {
-                  "matcher": {
-                    "id": "byFrameRefID",
-                    "options": "A"
-                  },
-                  "properties": [
-                    {
-                      "id": "displayName",
-                      "value": "input"
-                    }
-                  ]
-                },
-                {
-                  "matcher": {
-                    "id": "byFrameRefID",
-                    "options": "B"
-                  },
-                  "properties": [
-                    {
-                      "id": "displayName",
-                      "value": "output"
-                    }
-                  ]
-                }
-              ]
+              "overrides": []
             }
           }
         }
@@ -1273,7 +1347,38 @@
                 }
               }
             ],
-            "transformations": [],
+            "transformations": [
+              {
+                "kind": "Transformation",
+                "group": "renameByRegex",
+                "spec": {
+                  "options": {
+                    "regex": "^.*\\(admit\\)$",
+                    "renamePattern": "refused by a cap"
+                  }
+                }
+              },
+              {
+                "kind": "Transformation",
+                "group": "renameByRegex",
+                "spec": {
+                  "options": {
+                    "regex": "^.*\\(releaseStart\\)$",
+                    "renamePattern": "turned away"
+                  }
+                }
+              },
+              {
+                "kind": "Transformation",
+                "group": "renameByRegex",
+                "spec": {
+                  "options": {
+                    "regex": "^.*\\(requeue\\)$",
+                    "renamePattern": "queued again"
+                  }
+                }
+              }
+            ],
             "queryOptions": {
               "timeFrom": "24h"
             }
@@ -1590,20 +1695,27 @@
             ],
             "transformations": [
               {
-                "id": "merge"
+                "kind": "Transformation",
+                "group": "merge",
+                "spec": {
+                  "options": {}
+                }
               },
               {
-                "id": "organize",
-                "options": {
-                  "excludeByName": {
-                    "Time": true
-                  },
-                  "renameByName": {
-                    "usage": "Usage",
-                    "Value #A": "Active",
-                    "Value #B": "Newest age",
-                    "Value #C": "Runway",
-                    "Value #D": "Revoked"
+                "kind": "Transformation",
+                "group": "organize",
+                "spec": {
+                  "options": {
+                    "excludeByName": {
+                      "Time": true
+                    },
+                    "renameByName": {
+                      "usage": "Usage",
+                      "Value #A": "Active",
+                      "Value #B": "Newest age",
+                      "Value #C": "Runway",
+                      "Value #D": "Revoked"
+                    }
                   }
                 }
               }
@@ -1674,7 +1786,7 @@
                       "queryType": "traceql",
                       "metricsQueryType": "range",
                       "step": "1h",
-                      "query": "{ resource.service.name = \"service-json-keys\" && name = \"core.ClaimsSign\" } | count_over_time() by (span.key.usage, status)"
+                      "query": "{ resource.service.name = \"service-json-keys\" && name = \"core.ClaimsSign\" } | count_over_time() by (span.key.usage)"
                     }
                   }
                 }
@@ -1921,7 +2033,18 @@
                 }
               }
             ],
-            "transformations": [],
+            "transformations": [
+              {
+                "kind": "Transformation",
+                "group": "renameByRegex",
+                "spec": {
+                  "options": {
+                    "regex": "^\\{[^=]+=(?:\"([^\"]*)\"|([^,}]*)), [^=]+=(?:\"([^\"]*)\"|([^,}]*))\\}$",
+                    "renamePattern": "$1$2 · $3$4"
+                  }
+                }
+              }
+            ],
             "queryOptions": {
               "timeFrom": "24h"
             }
@@ -1992,7 +2115,28 @@
                 }
               }
             ],
-            "transformations": [],
+            "transformations": [
+              {
+                "kind": "Transformation",
+                "group": "renameByRegex",
+                "spec": {
+                  "options": {
+                    "regex": "^true$",
+                    "renamePattern": "data requests"
+                  }
+                }
+              },
+              {
+                "kind": "Transformation",
+                "group": "renameByRegex",
+                "spec": {
+                  "options": {
+                    "regex": "^false$",
+                    "renamePattern": "pages"
+                  }
+                }
+              }
+            ],
             "queryOptions": {
               "timeFrom": "24h"
             }
@@ -2127,7 +2271,18 @@
                 }
               }
             ],
-            "transformations": [],
+            "transformations": [
+              {
+                "kind": "Transformation",
+                "group": "renameByRegex",
+                "spec": {
+                  "options": {
+                    "regex": "^\\{[^=]+=(?:\"([^\"]*)\"|([^,}]*)), [^=]+=(?:\"([^\"]*)\"|([^,}]*))\\}$",
+                    "renamePattern": "$1$2 · $3$4"
+                  }
+                }
+              }
+            ],
             "queryOptions": {
               "timeFrom": "24h"
             }

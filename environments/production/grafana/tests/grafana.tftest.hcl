@@ -107,6 +107,15 @@ run "links_the_journey" {
     ))
     error_message = "Every journey dashboard must carry the journey tag and link the others through it."
   }
+
+  # Grafana stores a transformation it does not recognize as an empty one, and the panel then shows
+  # its queries unjoined.
+  assert {
+    condition = alltrue(flatten([for element in jsondecode(grafana_apps_dashboard_dashboard_v2.services.spec.json).elements : [
+      for transformation in try(element.spec.data.spec.transformations, []) : transformation.kind == "Transformation" && transformation.group != "" && can(transformation.spec.options)
+    ]]))
+    error_message = "Each transformation of the Services dashboard must name its transformer in group, in the v2 schema."
+  }
 }
 
 run "links_every_alert" {
