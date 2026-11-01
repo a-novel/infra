@@ -1,5 +1,5 @@
-# The Grafana root reads its provider tokens from Secret Manager at plan time, as the Sentry root
-# does: a stack service account's token for Grafana itself, and a Grafana Cloud access policy's
+# The Grafana root reads its provider tokens from Secret Manager at plan time: a stack service
+# account's token for Grafana itself, and a Grafana Cloud access policy's
 # token for the Frontend Observability apps. Pull requests and the drift check plan with the plan
 # identity, which may hold only the read-only tokens, so a pull request can never write to Grafana.
 # Only the root's own deploy identity reads the tokens that write.

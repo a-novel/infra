@@ -34,12 +34,6 @@
       "automerge": false
     },
     {
-      "description": "Review the Sentry provider's updates: it is pre-1.0, so a minor release may break the configuration.",
-      "matchManagers": ["terraform"],
-      "matchPackageNames": ["jianyuan/sentry"],
-      "automerge": false
-    },
-    {
       "description": "Resolve Aqua Security tags directly from Git because its organization IP allow list rejects authenticated GitHub GraphQL lookups.",
       "matchPackageNames": ["aquasecurity/trivy", "aquasecurity/trivy-action"],
       "overrideDatasource": "git-tags",

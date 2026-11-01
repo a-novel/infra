@@ -1,11 +1,9 @@
 locals {
-  # The database hosts' passwords and TLS credentials retire with the hosts (a-novel/infra#1208), and
-  # the Sentry root's tokens with Sentry (a-novel/infra#1215). These containers are unlocked here and
-  # deleted in the next apply.
+  # The database hosts' passwords and TLS credentials retire with the hosts (a-novel/infra#1208).
+  # These containers are unlocked here and deleted in the next apply.
   retiring_secrets = setunion(
     [for service in ["authentication", "json-keys", "genai"] : "production-${service}-app-password"],
     keys(local.pgbackrest_tls),
-    ["production-sentry-plan-token", "production-sentry-deploy-token"],
   )
 
   operator_secret_roles = toset([
@@ -48,6 +46,35 @@ resource "google_secret_manager_secret" "application" {
   }
 
   depends_on = [google_project_service.management["secretmanager.googleapis.com"]]
+}
+
+# Sentry retired (a-novel/infra#1215). The previous apply unlocked these containers; moving them out
+# of the protected resource lets this one delete them. Remove these blocks once applied.
+moved {
+  from = google_secret_manager_secret.application["production-sentry-plan-token"]
+  to   = google_secret_manager_secret.retired["production-sentry-plan-token"]
+}
+
+moved {
+  from = google_secret_manager_secret.application["production-sentry-deploy-token"]
+  to   = google_secret_manager_secret.retired["production-sentry-deploy-token"]
+}
+
+removed {
+  from = google_secret_manager_secret.retired
+
+  lifecycle {
+    destroy = true
+  }
+}
+
+# The plan and deploy identities' grants on those tokens leave with them.
+removed {
+  from = google_secret_manager_secret_iam_member.sentry_token
+
+  lifecycle {
+    destroy = false
+  }
 }
 
 resource "google_secret_manager_secret_iam_member" "operator" {

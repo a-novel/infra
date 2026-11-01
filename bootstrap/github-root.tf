@@ -1,6 +1,5 @@
 # The GitHub root manages each organization's repository config through two GitHub Apps
-# (a-novel/.github#534), and reads their keys at plan time, as the Sentry and Grafana roots read
-# their tokens. Pull requests plan with the plan identity, which may read only the read-only Plan App
+# (a-novel/.github#534), and reads their keys at plan time, as the Grafana root reads its tokens. Pull requests plan with the plan identity, which may read only the read-only Plan App
 # keys. GitHub shows a ruleset's bypass list only to an App that can change it, so the drift check
 # plans with the Deploy App keys, through an identity no pull request can mint.
 locals {

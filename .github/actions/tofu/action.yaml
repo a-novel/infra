@@ -105,8 +105,8 @@ runs:
         LOCK: ${{ inputs.apply }}
         # Service roots pass the planned downtime window to their workloads.
         TF_VAR_downtime: ${{ env.DOWNTIME }}
-        # The Sentry root reads the token that writes only when it applies. The plan file keeps the
-        # value for the apply step.
+        # The Grafana and GitHub roots read the credentials that write only when they apply. The plan
+        # file keeps the value for the apply step.
         TF_VAR_writer: ${{ inputs.writer || inputs.apply }}
         REFRESH: ${{ inputs.refresh }}
         ACCESS_TOKEN: ${{ steps.auth.outputs.access_token || steps.auth_retry.outputs.access_token }}
