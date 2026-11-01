@@ -106,7 +106,8 @@ resources, reaching the control plane through the DNS endpoint as the CI identit
   each service API a certificate for its in-cluster host, such as `rest.authentication.svc`. Each
   API serves only TLS, on 8443. Its callers and health checks verify the host against the CA, which
   trust-manager copies into every service namespace as the `services-ca` ConfigMap. The kubelet's
-  gRPC probe speaks only plaintext, so a gRPC server's probes run the grpcurl its image carries.
+  gRPC probe speaks only plaintext, so a gRPC server's probes check that its TLS port accepts
+  connections.
 - **Counter store:** one Valkey pod in the `authentication` namespace, from the official chart,
   holds only the rate-limit counters, up to 64 MiB, evicting the least recently used first. It
   keeps nothing on disk. Its users each get a password External Secrets generates once into the

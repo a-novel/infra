@@ -16,16 +16,13 @@ locals {
     },
     { for audience, name in var.service_tokens : name => "/var/run/secrets/tokens/${audience}" },
   )
-  # The kubelet's gRPC probe speaks plaintext only, so a TLS gRPC server answers the grpcurl its
-  # image carries, which skips verification as the kubelet's HTTPS probe does. Its health service
-  # reports NOT_SERVING once shutdown begins.
-  grpc_tls_probe = ["sh", "-c", "grpcurl -insecure -connect-timeout 1 localhost:${var.port} grpc.health.v1.Health/Check | grep -q '\"SERVING\"'"]
+  # The kubelet's gRPC probe speaks plaintext only, so a TLS gRPC server's probes check that its port
+  # accepts connections. A terminating pod leaves its Service's endpoints all the same.
   probe = {
-    grpc    = local.protocol == "grpc" && var.tls == null
-    exec    = local.protocol == "grpc" && var.tls != null
-    http    = local.protocol == "http"
-    scheme  = var.tls == null ? "HTTP" : "HTTPS"
-    timeout = local.protocol == "grpc" && var.tls != null ? 2 : 1
+    grpc   = local.protocol == "grpc" && var.tls == null
+    tcp    = local.protocol == "grpc" && var.tls != null
+    http   = local.protocol == "http"
+    scheme = var.tls == null ? "HTTP" : "HTTPS"
   }
   # GKE names a gauge with a DNS label.
   gauge_name = var.scaling_gauge == null ? null : replace(var.scaling_gauge.name, "_", "-")
@@ -193,7 +190,6 @@ resource "kubernetes_deployment_v1" "workload" {
           startup_probe {
             period_seconds    = 2
             failure_threshold = 30
-            timeout_seconds   = local.probe.timeout
 
             dynamic "grpc" {
               for_each = local.probe.grpc ? [var.port] : []
@@ -203,11 +199,11 @@ resource "kubernetes_deployment_v1" "workload" {
               }
             }
 
-            dynamic "exec" {
-              for_each = local.probe.exec ? [local.grpc_tls_probe] : []
+            dynamic "tcp_socket" {
+              for_each = local.probe.tcp ? [var.port] : []
 
               content {
-                command = exec.value
+                port = tcp_socket.value
               }
             }
 
@@ -223,8 +219,7 @@ resource "kubernetes_deployment_v1" "workload" {
           }
 
           readiness_probe {
-            period_seconds  = 5
-            timeout_seconds = local.probe.timeout
+            period_seconds = 5
 
             dynamic "grpc" {
               for_each = local.probe.grpc ? [var.port] : []
@@ -234,11 +229,11 @@ resource "kubernetes_deployment_v1" "workload" {
               }
             }
 
-            dynamic "exec" {
-              for_each = local.probe.exec ? [local.grpc_tls_probe] : []
+            dynamic "tcp_socket" {
+              for_each = local.probe.tcp ? [var.port] : []
 
               content {
-                command = exec.value
+                port = tcp_socket.value
               }
             }
 
