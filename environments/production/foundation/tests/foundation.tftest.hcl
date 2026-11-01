@@ -18,6 +18,12 @@ mock_provider "google" {
   }
 }
 
+# Tests cannot import.
+variables {
+  orphan_addresses = {}
+  orphan_snapshots = {}
+}
+
 mock_provider "google-beta" {
   mock_resource "google_project_service_identity" {
     defaults = { member = "serviceAccount:mock-agent@gcp-sa-cloudscheduler.iam.gserviceaccount.com" }
