@@ -5,8 +5,8 @@ variable "secret_versions" {
   type        = map(number)
 
   validation {
-    condition     = toset(keys(var.secret_versions)) == toset(["app-password", "openai-api-key"])
-    error_message = "Pin exactly the app-password and openai-api-key versions."
+    condition     = toset(keys(var.secret_versions)) == toset(["openai-api-key"])
+    error_message = "Pin exactly the openai-api-key version."
   }
 }
 
