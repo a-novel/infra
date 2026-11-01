@@ -103,6 +103,9 @@ Alloy gives each request and job run an outcome, which the dashboards and alerts
 - **GenAI keeping content past retention:** the database's pg_cron purge stopped or falls behind,
   so manuscripts outlive the retention promise. Follow [GenAI purge falling behind](#genai-purge-falling-behind)
   against the cluster's database.
+- **A Services panel empty:** its database query fails, and the two alerts above, which read such
+  queries, stay silent. `cnpg_errors_total` names the query and its error in `errorUserQueries`. A
+  `permission denied` means the cluster root's `queries/<database>.sql` misses a column it reads.
 
 The contact point's **Title** is `{{ template "discord.title" . }}` and its **Message**
 `{{ template "discord.message" . }}`, with **Use embed description** on: the root's `discord`

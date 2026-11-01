@@ -263,6 +263,122 @@ resource "kubernetes_config_map_v1" "database_queries" {
   data = { "queries.yaml" = file(each.value) }
 }
 
+# CloudNativePG runs the queries as cnpg_metrics_exporter, which reads no table of ours, so the
+# tables' owner grants it the columns queries/<database>.sql lists. An import leaves privileges out,
+# and a migration may recreate a table, so the grants run again after each run of the migrations.
+resource "kubernetes_job_v1" "database_grants" {
+  for_each = var.custom_resources ? { for name in keys(kubernetes_config_map_v1.database_queries) : name => file("${path.module}/queries/${name}.sql") } : {}
+
+  metadata {
+    name      = "database-grants-${substr(sha256("${kubernetes_job_v1.migrations[each.key].metadata[0].name}\n${each.value}"), 0, 12)}"
+    namespace = kubernetes_namespace_v1.service[each.key].metadata[0].name
+  }
+
+  spec {
+    backoff_limit           = 0
+    active_deadline_seconds = 120
+
+    template {
+      metadata {
+        labels = merge(local.database_clients, { "app.kubernetes.io/name" = "database-grants" })
+      }
+
+      spec {
+        restart_policy                  = "Never"
+        automount_service_account_token = false
+        enable_service_links            = false
+
+        security_context {
+          run_as_non_root = true
+          run_as_user     = 65532
+          run_as_group    = 65532
+
+          seccomp_profile {
+            type = "RuntimeDefault"
+          }
+        }
+
+        # psql sends the file as one statement list, which runs in a single transaction.
+        container {
+          name    = "grants"
+          image   = local.cluster.database_images[each.key]
+          command = ["psql", "--no-psqlrc", "--command", each.value]
+
+          dynamic "env" {
+            for_each = {
+              PGHOST        = local.database_env[each.key].POSTGRES_HOST
+              PGPORT        = local.database_env[each.key].POSTGRES_PORT
+              PGDATABASE    = local.database_env[each.key].POSTGRES_DATABASE
+              PGSSLMODE     = "verify-full"
+              PGSSLROOTCERT = "/etc/database-ca/ca.crt"
+            }
+
+            content {
+              name  = env.key
+              value = env.value
+            }
+          }
+
+          dynamic "env" {
+            for_each = { PGUSER = local.database_secret_env.POSTGRES_USER, PGPASSWORD = local.database_secret_env.POSTGRES_PASSWORD }
+
+            content {
+              name = env.key
+
+              value_from {
+                secret_key_ref {
+                  name = env.value.secret
+                  key  = env.value.key
+                }
+              }
+            }
+          }
+
+          volume_mount {
+            name       = "database-ca"
+            mount_path = "/etc/database-ca"
+            read_only  = true
+          }
+
+          resources {
+            requests = { cpu = "50m", memory = "64Mi" }
+            limits   = { memory = "64Mi" }
+          }
+
+          security_context {
+            run_as_non_root            = true
+            allow_privilege_escalation = false
+            read_only_root_filesystem  = true
+
+            capabilities {
+              drop = ["ALL"]
+            }
+          }
+        }
+
+        volume {
+          name = "database-ca"
+
+          secret {
+            secret_name = kubernetes_manifest.database_server_certificate[each.key].manifest.spec.secretName
+
+            items {
+              key  = "ca.crt"
+              path = "ca.crt"
+            }
+          }
+        }
+      }
+    }
+  }
+
+  wait_for_completion = true
+
+  timeouts {
+    create = "5m"
+  }
+}
+
 # The deploy waits until both instances serve and WAL reaches Barman, which proves the image runs
 # under CloudNativePG (a-novel/infra#1194). Updates switch the replica over instead of restarting
 # the primary. CloudNativePG generates the credentials, in the `database-app` Secret.

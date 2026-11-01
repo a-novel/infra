@@ -1,5 +1,6 @@
 # Authentication's own numbers. CloudNativePG runs each query on the primary at every scrape, and
 # exports each column as cnpg_<query>_<column>. No query reads an email, a code or a target.
+# authentication.sql grants every column the queries read.
 
 accounts:
   query: |

@@ -273,6 +273,17 @@ run "keeps_each_database_available_and_backed_up" {
   }
 
   assert {
+    condition = toset(keys(kubernetes_job_v1.database_grants)) == toset(keys(kubernetes_config_map_v1.database_queries)) && alltrue([for service, job in kubernetes_job_v1.database_grants :
+      job.wait_for_completion &&
+      one(job.spec[0].template[0].spec[0].container).command == tolist(["psql", "--no-psqlrc", "--command", file("queries/${service}.sql")]) &&
+      alltrue([for statement in regexall("GRANT[^;]*;", file("queries/${service}.sql")) : can(regex("^GRANT SELECT \\([a-z_, ]+\\) ON [a-z_]+ TO cnpg_metrics_exporter;$", statement))]) &&
+      one([for env in one(job.spec[0].template[0].spec[0].container).env : env.value if env.name == "PGSSLMODE"]) == "verify-full" &&
+      one([for env in one(job.spec[0].template[0].spec[0].container).env : env.value if env.name == "PGHOST"]) == one(kubernetes_manifest.database_server_certificate[service].manifest.spec.dnsNames)
+    ])
+    error_message = "Each database must grant CloudNativePG's exporter only the columns its queries read, over verified TLS."
+  }
+
+  assert {
     condition = alltrue([for service, database in kubernetes_manifest.database :
       contains(database.manifest.spec.postgresql.shared_preload_libraries, "pg_cron") == contains(var.databases[service].extensions, "pg_cron")
     ])
