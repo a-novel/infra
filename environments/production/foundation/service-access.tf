@@ -189,9 +189,9 @@ resource "google_project_iam_custom_role" "foundation_scheduler" {
   project     = google_project.workload.project_id
   role_id     = "infraFoundationScheduler"
   title       = "Foundation existing schedule updates"
-  description = "Read, update, resume and delete existing schedules without creating or running jobs."
+  description = "Read, update, pause, resume and delete existing schedules without creating or running jobs."
   permissions = [
-    "cloudscheduler.jobs.delete", "cloudscheduler.jobs.enable",
+    "cloudscheduler.jobs.delete", "cloudscheduler.jobs.enable", "cloudscheduler.jobs.pause",
     "cloudscheduler.jobs.get", "cloudscheduler.jobs.fullView", "cloudscheduler.jobs.update",
   ]
 }
