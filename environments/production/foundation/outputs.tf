@@ -18,8 +18,6 @@ output "cluster" {
     # API addresses, for the network policies of pods that call either.
     node_range        = var.cluster_ranges.nodes
     google_api_ranges = sort(tolist(local.restricted_google_api_ranges))
-    # Each service's PostgreSQL image, pinned by digest in its private repository.
-    database_images = local.database_image
     # Where the add-ons pull each public registry's images from, by its host.
     image_registries = { for name, repository in google_artifact_registry_repository.cluster_upstream : replace(name, "-", ".") => repository.registry_uri }
   }

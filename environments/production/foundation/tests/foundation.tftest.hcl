@@ -168,13 +168,14 @@ run "keeps_the_cluster_private" {
   }
 
   assert {
-    condition = alltrue([for name, repository in google_artifact_registry_repository.cluster_release :
+    condition = alltrue([for name, repository in google_artifact_registry_repository.releases :
       repository.project == google_project.workload.project_id &&
+      repository.location == var.cluster_region &&
       one(repository.docker_config).immutable_tags &&
-      google_artifact_registry_repository_iam_member.cluster_release[name].role == "roles/artifactregistry.reader" &&
-      google_artifact_registry_repository_iam_member.cluster_release[name].member == google_service_account.runtime["cluster_nodes"].member
+      google_artifact_registry_repository_iam_member.releases_nodes[name].role == "roles/artifactregistry.reader" &&
+      google_artifact_registry_repository_iam_member.releases_nodes[name].member == google_service_account.runtime["cluster_nodes"].member
     ])
-    error_message = "Each cluster-only release must sit in the workload project, which admission requires, with immutable tags the nodes only read."
+    error_message = "Each release must sit beside the cluster in the workload project, which admission requires, with immutable tags the nodes only read."
   }
 }
 
@@ -194,20 +195,6 @@ run "grants_no_basic_roles" {
       [for binding in values(google_project_iam_member.database_operator) : binding.role if startswith(binding.role, "roles/container.")] == [for principal in var.database_operator_principals : "roles/container.clusterViewer"]
     )
     error_message = "Operators may only connect to the cluster through IAM; the cluster root's RBAC decides what they read."
-  }
-}
-
-run "copies_each_database_image_into_its_service_repository" {
-  command = plan
-
-  assert {
-    condition = output.image_copies == [for service, ref in var.database_images : {
-      source   = ref
-      producer = "a-novel/service-${service}"
-      workflow = "release.yaml"
-      target   = "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-${service}-private-production/service-${service}/database:${regex(":([^@]+)@", ref)[0]}"
-    }]
-    error_message = "Deploy must verify each database image against its service's release workflow and copy it into that service's production repository, which the cluster's databases pull from."
   }
 }
 

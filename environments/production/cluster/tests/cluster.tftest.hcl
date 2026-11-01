@@ -42,11 +42,6 @@ override_data {
         dns_endpoint      = "gke-mock.europe-west1-d.gke.goog"
         node_range        = "10.30.0.0/24"
         google_api_ranges = ["199.36.153.4/30", "34.126.0.0/18"]
-        database_images = {
-          authentication = "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-authentication-private-production/service-authentication/database@sha256:1111111111111111111111111111111111111111111111111111111111111111"
-          genai          = "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-genai-private-production/service-genai/database@sha256:2222222222222222222222222222222222222222222222222222222222222222"
-          json-keys      = "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-json-keys-private-production/service-json-keys/database@sha256:3333333333333333333333333333333333333333333333333333333333333333"
-        }
         image_registries = {
           "docker.io"       = "europe-west1-docker.pkg.dev/a-novel-production-prod/a-novel-docker-io"
           "ghcr.io"         = "europe-west1-docker.pkg.dev/a-novel-production-prod/a-novel-ghcr-io"
@@ -257,7 +252,7 @@ run "keeps_each_database_available_and_backed_up" {
 
   assert {
     condition = alltrue([for service, catalog in kubernetes_manifest.database_image :
-      one(catalog.manifest.spec.images).image == data.terraform_remote_state.foundation.outputs.cluster.database_images[service] &&
+      one(catalog.manifest.spec.images).image == local.release_image["${service}/database"] &&
       kubernetes_manifest.database_backups[service].manifest.spec.configuration.destinationPath == "gs://${data.terraform_remote_state.bootstrap.outputs.barman_buckets[service]}/"
     ])
     error_message = "Each database must run its service's released image and back up to its own bucket."
@@ -372,7 +367,7 @@ run "runs_each_release_from_its_private_repository" {
       toset([for copy in output.image_copies : copy.target]) == toset([for key, image in local.release_images : "${image.repository}/${image.path}:${image.tag}"]) &&
       alltrue([for key, image in local.release_images :
         can(regex("^ghcr\\.io/a-novel/(service|platform)-${split("/", key)[0]}[/:]", image.source)) &&
-        image.repository == "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-${split("/", key)[0]}-private-production" &&
+        image.repository == "europe-west9-docker.pkg.dev/a-novel-production-prod/a-novel-${split("/", key)[0]}" &&
         can(regex("@sha256:[a-f0-9]{64}$", local.release_image[key]))
       ])
     )

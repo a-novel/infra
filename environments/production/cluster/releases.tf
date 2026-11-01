@@ -1,20 +1,22 @@
 locals {
-  # The release images the cluster runs, by service and role, as each service's root pins them.
-  # This root's own deploy copies them into the service's private repository, which the nodes read.
+  # The release images the cluster runs, its databases' included, by service and role, as each
+  # service's root pins them. This root's own deploy copies them into the service's repository,
+  # which foundation keeps in the cluster's region: its control plane's zone without the letter.
   release_roles = {
     account        = ["web"]
-    authentication = ["maintenance", "migrations", "rest"]
-    genai          = ["grpc", "migrations", "sweep"]
-    json-keys      = ["grpc", "migrations", "rotatekeys"]
+    authentication = ["database", "maintenance", "migrations", "rest"]
+    genai          = ["database", "grpc", "migrations", "sweep"]
+    json-keys      = ["database", "grpc", "migrations", "rotatekeys"]
     studio         = ["web"]
   }
-  release_pins = { for service in keys(local.release_roles) : service => local.service_inputs[service].images }
+  release_registry = "${regex("^(.+)-[a-z]$", local.cluster.location)[0]}-docker.pkg.dev/${data.terraform_remote_state.foundation.outputs.workload_project_id}"
+  release_pins     = { for service in keys(local.release_roles) : service => local.service_inputs[service].images }
   release_images = { for item in flatten([for service, roles in local.release_roles : [for role in roles : { service = service, role = role }]]) :
     "${item.service}/${item.role}" => merge(
       regex("^ghcr\\.io/a-novel/(?P<path>[^:@]+):(?P<tag>[^@]+)@(?P<digest>sha256:[a-f0-9]{64})$", local.release_pins[item.service][item.role]),
       {
         source     = local.release_pins[item.service][item.role]
-        repository = "${data.terraform_remote_state.foundation.outputs.region}-docker.pkg.dev/${data.terraform_remote_state.foundation.outputs.workload_project_id}/agora-${item.service}-private-production"
+        repository = "${local.release_registry}/a-novel-${item.service}"
       },
     )
   }

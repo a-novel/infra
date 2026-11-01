@@ -212,18 +212,16 @@ instance answers. A service no consumer waits on, such as the sweep, is billed p
 its telemetry before each answer completes, through golib's `httpf.SendTelemetry`.
 
 Service images come from `ghcr.io/a-novel/*`. Each is pinned as `tag@digest` in its service root's
-`terraform.tfvars`, and each database image in foundation's `database_images` too. Every plan
+`terraform.tfvars`, its database image included. Every plan
 verifies each release image it changes:
 
 - the release tag's own run built it;
 - the release App published that tag as an immutable GitHub Release;
 - its version is not below the one deployed.
 
-Before applying, the deploy copies the images to Artifact Registry. Artifact Registry holds two
-repositories per service and zone, `…-production` and `…-tooling`, all with immutable tags. The
-tooling repositories hold the [host tools](runbooks/host-tools.md), pinned by digest. A database
-host reads only its service's private repositories: PostgreSQL from `…-production`, its host tools
-from `…-tooling`.
+Before applying, the cluster root's deploy copies the images to Artifact Registry, into the
+service's `a-novel-<service>` repository in `europe-west9`, beside the cluster. Each has immutable
+tags, and the nodes only read it.
 
 ## Databases and backups
 
@@ -244,13 +242,13 @@ cutover imports it again (a-novel/infra#1202). CloudNativePG generates its crede
 from cert-manager's ten-year `databases` CA, which keeps its key when renewed. The same CA issues
 its replica's `streaming_replica` certificate, named `streaming-replica.<service>`, which only that
 database maps to the role. The service's pods
-connect by that name and trust that CA beside the system roots. Its image catalog takes the service's
-release image from foundation, and GenAI preloads `pg_cron`. The deploy waits until both instances
+connect by that name and trust that CA beside the system roots. Its image catalog takes the database image
+its service root pins, and GenAI preloads `pg_cron`. The deploy waits until both instances
 serve and WAL reaches Barman; a daily base backup runs from the replica. Each database backs up to
 its own Barman bucket in management, `<prefix>-barman-<service>`. Each bucket has the pgBackRest
 buckets' protections, and only that database's Kubernetes service account, `database` in the
 service's namespace, writes it through Workload Identity. The nodes pull each service's PostgreSQL
-image from its private repository, as its host does. While a
+image from its release repository. While a
 [recovery drill](runbooks/recovery.md#cluster-databases) runs, each database it restores reads its
 own service's bucket through the `barmanReader` role, and writes none.
 
