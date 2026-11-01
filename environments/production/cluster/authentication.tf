@@ -3,10 +3,11 @@
 locals {
   authentication_smtp = local.service_inputs["authentication"].smtp
   # Registration and account emails, which the API and the maintenance Jobs send, and whose links
-  # open Studio on its own host. The relay admits them by the NAT address, so they carry no SMTP
-  # credential. RFC 5321 gives each SMTP command minutes, and no request waits for a send.
+  # open the account platform on its own host. The relay admits them by the NAT address, so they
+  # carry no SMTP credential. RFC 5321 gives each SMTP command minutes, and no request waits for a
+  # send.
   authentication_mail_env = {
-    PLATFORM_AUTH_URL   = "https://${local.platform_edges.studio.host}"
+    PLATFORM_AUTH_URL   = "https://${local.platform_edges.account.host}"
     SMTP_ADDR           = "${local.authentication_smtp.host}:587"
     SMTP_MAX_CONCURRENT = "8"
     SMTP_SENDER_EMAIL   = local.authentication_smtp.sender_email
