@@ -61,21 +61,21 @@ variables {
       class                  = "meta", topics = [], dispatcher = true, is_template = false, tags_ruleset = true, admins_only = false
       has_issues             = true, has_wiki = false, has_projects = true, has_discussions = true
       allow_squash_merge     = true, allow_merge_commit = false, allow_rebase_merge = false, allow_auto_merge = true
-      delete_branch_on_merge = true, allow_update_branch = true, web_commit_signoff_required = true
+      delete_branch_on_merge = true, allow_update_branch = true
       secret_scanning        = true, push_protection = true, vulnerability_alerts = true, dependabot_security_updates = false, pages = false
     }
     "service-genai" = {
       class                  = "service", topics = [], template = "a-novel/service-template", dispatcher = false, is_template = false, tags_ruleset = true, admins_only = false
       has_issues             = true, has_wiki = false, has_projects = true, has_discussions = true
       allow_squash_merge     = true, allow_merge_commit = false, allow_rebase_merge = false, allow_auto_merge = true
-      delete_branch_on_merge = true, allow_update_branch = true, web_commit_signoff_required = true
+      delete_branch_on_merge = true, allow_update_branch = true
       secret_scanning        = true, push_protection = true, vulnerability_alerts = true, dependabot_security_updates = true, pages = true
     }
     "infra" = {
       class                  = "infra", topics = [], dispatcher = false, is_template = false, tags_ruleset = false, admins_only = true
       has_issues             = true, has_wiki = false, has_projects = true, has_discussions = false
       allow_squash_merge     = true, allow_merge_commit = false, allow_rebase_merge = false, allow_auto_merge = true
-      delete_branch_on_merge = true, allow_update_branch = true, web_commit_signoff_required = true
+      delete_branch_on_merge = true, allow_update_branch = true
       secret_scanning        = true, push_protection = true, vulnerability_alerts = true, dependabot_security_updates = false, pages = false
     }
   }

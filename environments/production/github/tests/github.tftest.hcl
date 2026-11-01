@@ -59,9 +59,9 @@ run "resolves_each_repository_from_its_class" {
 
   assert {
     condition = alltrue([for repository in values(local.repositories) :
-      !repository.allow_merge_commit && !repository.allow_rebase_merge && repository.allow_squash_merge && repository.web_commit_signoff_required
+      !repository.allow_merge_commit && !repository.allow_rebase_merge && repository.allow_squash_merge
     ])
-    error_message = "Every repository merges by squash only, so the commit-messages ruleset judges each pull request's title, and requires sign-off."
+    error_message = "Every repository merges by squash only, so the commit-messages ruleset judges each pull request's title."
   }
 
   assert {

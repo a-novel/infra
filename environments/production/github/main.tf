@@ -12,7 +12,6 @@ locals {
     allow_auto_merge            = true
     delete_branch_on_merge      = true
     allow_update_branch         = true
-    web_commit_signoff_required = true
     secret_scanning             = true
     push_protection             = true
     vulnerability_alerts        = true
