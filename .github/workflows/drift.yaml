@@ -1,11 +1,10 @@
 name: drift
 
 # GitHub starts scheduled workflows hours late, so the dispatch clock starts the daily drift check on
-# time (bootstrap/github-dispatch.tf). A dispatch also runs the health check.
+# time (bootstrap/github-dispatch.tf). A dispatch also runs the downtime check.
 on:
   schedule:
-    # Every three hours: Authentication's health, and a reminder to clear a planned
-    # downtime past its announced end.
+    # Every three hours: a reminder to clear a planned downtime past its announced end.
     - cron: "43 */3 * * *"
   workflow_dispatch:
 
@@ -91,17 +90,11 @@ jobs:
           PLAN: ${{ steps.tofu.outputs.plan }}
         run: node .github/scripts/prune.mjs "$PLAN" deploy check
 
-  health:
+  downtime:
     if: github.event_name == 'workflow_dispatch' || github.event.schedule == '43 */3 * * *'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    permissions:
-      contents: read
-      id-token: write
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
       # Only clearing a downtime ends it, so a forgotten one keeps services refusing work.
       - name: Fail when a planned downtime outlived its announced end
         if: env.DOWNTIME != ''
@@ -113,15 +106,3 @@ jobs:
             echo "::error::The planned downtime was announced to end at $end, and its services still refuse work. Clear it with downtime.yaml once the work is done, or schedule it again with a later end."
             exit 1
           fi
-      # Authentication admits only IAM callers; the token names its custom audience. Pull requests
-      # can mint the plan identity, so this check runs as one that only drift.yaml on master gets.
-      - id: google
-        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
-        with:
-          workload_identity_provider: ${{ vars.GCP_HEALTH_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_HEALTH_SERVICE_ACCOUNT }}
-          token_format: id_token
-          id_token_audience: agora-authentication-rest
-      - uses: $/.github/actions/health
-        with:
-          id_token: ${{ steps.google.outputs.id_token }}
