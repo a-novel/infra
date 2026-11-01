@@ -1,8 +1,9 @@
-# Issues the Barman Cloud plugin's certificates. Its leases stay in its own namespace.
+# Issues the Barman Cloud plugin's certificates. Its leases stay in its own namespace. The chart
+# comes from the OCI registry, which cert-manager publishes first.
 resource "helm_release" "cert_manager" {
   name       = "cert-manager"
   namespace  = var.namespaces.cert_manager
-  repository = "https://charts.jetstack.io"
+  repository = "oci://quay.io/jetstack/charts"
   chart      = "cert-manager"
   version    = "v1.21.3"
 
