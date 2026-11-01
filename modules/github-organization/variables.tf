@@ -21,7 +21,6 @@ variable "repositories" {
     allow_auto_merge            = bool
     delete_branch_on_merge      = bool
     allow_update_branch         = bool
-    web_commit_signoff_required = bool
     secret_scanning             = bool
     push_protection             = bool
     vulnerability_alerts        = bool

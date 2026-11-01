@@ -52,7 +52,8 @@ resource "github_repository" "this" {
   # ruleset judges.
   squash_merge_commit_title   = "PR_TITLE"
   squash_merge_commit_message = "COMMIT_MESSAGES"
-  web_commit_signoff_required = each.value.web_commit_signoff_required
+  # The organization requires sign-off on web commits. GitHub then refuses web_commit_signoff_required
+  # in any repository update, even set to true, so the repository leaves it unset.
 
   security_and_analysis {
     secret_scanning {
