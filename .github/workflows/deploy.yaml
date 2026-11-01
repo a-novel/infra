@@ -100,33 +100,6 @@ jobs:
           [ "$EVENT" != push ] && all=true
           commits="$(printf '%s\n%s\n' "$commits" "$(git rev-parse HEAD)" | sort -u | sed '/^$/d')"
 
-          # A root depends on the action that applies it, its directory and the local modules it
-          # calls, directly or through another module. The loop also visits each module it adds.
-          deps() {
-            local dirs=("$1") i source
-            printf '%s\n' .opentofu-version .github/actions/tofu/ .github/workflows/deploy.yaml
-            # The cluster root reads each service root's pins from its terraform.tfvars, and its
-            # health checks run the smoke-check module's script. The Grafana root reads
-            # foundation's node pool. The GitHub root's job copies the governance secrets, asserts
-            # the repository settings and prunes after it applies.
-            [ "$1" != environments/production/cluster ] || printf '%s\n' 'environments/production/*/terraform.tfvars' modules/smoke-check/smoke.sh
-            [ "$1" != environments/production/grafana ] || printf '%s\n' environments/production/foundation/terraform.tfvars environments/production/cluster/terraform.tfvars
-            [ "$1" != environments/production/github ] || printf '%s\n' .github/scripts/secret-sync.mjs .github/scripts/repository-asserts.mjs .github/scripts/prune.mjs
-            for ((i = 0; i < ${#dirs[@]}; i++)); do
-              printf '%s/\n' "${dirs[i]}"
-              while read -r source; do
-                dirs+=("$(realpath --relative-to=. "${dirs[i]}/$source")")
-              done < <(grep -ho 'source *= *"\.[^"]*"' "${dirs[i]}"/*.tf | sed -E 's/.*"(.*)"/\1/')
-            done
-          }
-          changed() {
-            [ "$all" = true ] && return
-            local paths
-            mapfile -t paths < <(deps "$1")
-            # OpenTofu never reads Markdown, so documentation alone deploys nothing.
-            [ -n "$(git diff --name-only "$base" HEAD -- "${paths[@]}" ':(exclude)*.md')" ]
-          }
-
           # The service roots are the directories next to foundation, so a new one needs no edit here.
           # The cluster, Sentry, Grafana and GitHub roots apply only when they change, each in its own
           # job.
@@ -141,7 +114,10 @@ jobs:
           roots="" deploys=false
           declare -A deployed=([bootstrap]=false [environments/production/foundation]=false [environments/production/cluster]=false [environments/production/sentry]=false [environments/production/grafana]=false [environments/production/github]=false)
           for dir in bootstrap environments/production/foundation environments/production/cluster environments/production/sentry environments/production/grafana environments/production/github "${services[@]/#/environments/production/}"; do
-            changed "$dir" || continue
+            if [ "$all" = false ]; then
+              changes="$(.github/scripts/root-changes.sh "$dir" "$base" HEAD)"
+              [ -n "$changes" ] || continue
+            fi
             deploys=true deployed[$dir]=true
             images=""
             if [ "$all" = false ]; then
