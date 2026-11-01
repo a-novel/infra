@@ -68,15 +68,13 @@ deploy:  bootstrap ─► foundation ─► one job per service ─┬─► rol
    approve their own pull request with `approve-pr.yaml`, which refuses anyone else's. A bot's pull
    request merges on its own only as a release pin, or as a version update Renovate itself put on
    auto-merge: the Agent App approves and queues it. Renovate puts every minor or patch update on
-   auto-merge except OpenTofu's and the Google and Sentry providers'. Its plans still need a label
+   auto-merge except OpenTofu's and the Google providers'. Its plans still need a label
    for a deletion or a downtime, so such an update waits for a maintainer. Anything else a bot
    opens, such as a major update, waits for a maintainer's or an admin's review like a person's.
    Repository admins can bypass these rules.
 4. **The deploy.** Each merge starts `deploy.yaml`. It applies bootstrap and foundation when they
    changed since the last successful deploy. Then it applies every service root in parallel, so the
-   services always run the current planned downtime. Once a root's Cloud Run services serve a new
-   release, its job records the release's `production` deploy in Sentry. Two jobs then run side by
-   side: the database [rollout](#database-hosts-and-planned-downtime) and a production health check.
+   services always run the current planned downtime.
 
 A daily **drift** check re-plans every root. It fails when the cloud differs from `master`, as after
 a change made in the console. It also fails when a repository's setting differs from what the

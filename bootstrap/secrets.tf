@@ -1,11 +1,9 @@
 locals {
-  # The database hosts' passwords and TLS credentials retire with the hosts (a-novel/infra#1208), and
-  # the Sentry root's tokens with Sentry (a-novel/infra#1215). These containers are unlocked here and
-  # deleted in the next apply.
+  # The database hosts' passwords and TLS credentials retire with the hosts (a-novel/infra#1208).
+  # These containers are unlocked here and deleted in the next apply.
   retiring_secrets = setunion(
     [for service in ["authentication", "json-keys", "genai"] : "production-${service}-app-password"],
     keys(local.pgbackrest_tls),
-    ["production-sentry-plan-token", "production-sentry-deploy-token"],
   )
 
   operator_secret_roles = toset([
