@@ -139,7 +139,7 @@
       "title": "CPU by node",
       "description": "The dashed line is the alert's threshold.",
       "gridPos": { "x": 8, "y": 4, "w": 8, "h": 8 },
-      "targets": [{ "refId": "A", "legendFormat": "{{node}}", "expr": "rate(node_cpu_usage_seconds_total[$__rate_interval]) / on (node) kube_node_status_capacity{resource=\"cpu\"}" }],
+      "targets": [{ "refId": "A", "legendFormat": "{{node}}", "expr": "rate(node_cpu_usage_seconds_total[$__rate_interval]) / on (node) max by (node) (kube_node_status_capacity{resource=\"cpu\"})" }],
       "fieldConfig": {
         "defaults": {
           "unit": "percentunit",
@@ -157,7 +157,7 @@
       "title": "Memory by node",
       "description": "The dashed line is the alert's threshold.",
       "gridPos": { "x": 16, "y": 4, "w": 8, "h": 8 },
-      "targets": [{ "refId": "A", "legendFormat": "{{node}}", "expr": "node_memory_working_set_bytes / on (node) kube_node_status_capacity{resource=\"memory\"}" }],
+      "targets": [{ "refId": "A", "legendFormat": "{{node}}", "expr": "node_memory_working_set_bytes / on (node) max by (node) (kube_node_status_capacity{resource=\"memory\"})" }],
       "fieldConfig": {
         "defaults": {
           "unit": "percentunit",
