@@ -308,7 +308,7 @@
       "spec": {
         "id": 4,
         "title": "Sign-ins by response",
-        "description": "Each hour's sign-in attempts by HTTP status: 201 signed in, 401 refused credentials, 429 rate-limited.",
+        "description": "Each hour's sign-in attempts by HTTP status: 200 signed in, 401 refused credentials, 429 rate-limited.",
         "links": [],
         "data": {
           "kind": "QueryGroup",
