@@ -1,9 +1,8 @@
-# Each service's health check, which Cloud Run's smoke jobs and health action run too: JSON Keys'
-# and GenAI's Status RPC, and Authentication's health endpoint. A Job checks each new image, script
-# or setting, and the deploy waits on it; a CronJob checks every five minutes, so a failing service
-# shows as failed Jobs. Both call as the namespace's smoke identity, which each service admits,
-# with the service token the kubelet projects for its audience. A planned downtime skips the check,
-# and clearing it runs the Job again.
+# Each service's health check: JSON Keys' and GenAI's Status RPC, and Authentication's health
+# endpoint. A Job checks each new image, script or setting, and the deploy waits on it; a CronJob
+# checks every five minutes, so a failing service shows as failed Jobs. Both call as the namespace's
+# smoke identity, which each service admits, with the service token the kubelet projects for its
+# audience. A planned downtime skips the check, and clearing it runs the Job again.
 locals {
   health_check_script = file("${path.module}/../../../modules/smoke-check/smoke.sh")
   # Each check runs in its service's own image, which carries grpcurl or BusyBox wget.

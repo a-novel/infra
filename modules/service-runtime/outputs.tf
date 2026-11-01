@@ -1,20 +1,3 @@
-output "service_account" {
-  description = "Runtime service account email."
-  value       = google_service_account.runtime.email
-}
-
-output "member" {
-  description = "Runtime IAM member, for grants made by the caller."
-  value       = google_service_account.runtime.member
-}
-
-output "workloads" {
-  description = "Each workload's identity, by role: its service account email and IAM member."
-  value = { for role, account in google_service_account.workload :
-    role => { service_account = account.email, member = account.member }
-  }
-}
-
 output "repositories" {
   description = "Image repository URLs by purpose (production, tooling)."
   value = { for purpose, repository in google_artifact_registry_repository.images :

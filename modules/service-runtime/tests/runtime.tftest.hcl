@@ -1,22 +1,10 @@
-mock_provider "google" {
-  mock_resource "google_service_account" {
-    defaults = {
-      email  = "agora-genai-private@agora-test.iam.gserviceaccount.com"
-      member = "serviceAccount:agora-genai-private@agora-test.iam.gserviceaccount.com"
-      name   = "projects/agora-test/serviceAccounts/agora-genai-private@agora-test.iam.gserviceaccount.com"
-    }
-  }
-}
+mock_provider "google" {}
 
 variables {
-  service               = "genai"
-  zone                  = "private"
-  project_id            = "agora-test"
-  region                = "europe-west1"
-  management_project_id = "agora-management-test"
-  secrets               = []
-  deployer              = "infra-foundation@agora-management-test.iam.gserviceaccount.com"
-  alert_email           = "operations@example.test"
+  service     = "genai"
+  project_id  = "agora-test"
+  region      = "europe-west1"
+  alert_email = "operations@example.test"
 }
 
 # Every database host pulls its PostgreSQL image, with or without native backups.

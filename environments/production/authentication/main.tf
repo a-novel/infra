@@ -1,9 +1,9 @@
 provider "google" {
-  project = local.private_project_id
+  project = local.project_id
   region  = local.region
 }
 
-# The foundation root owns the projects, the network and the database host.
+# The foundation root owns the network and the database host.
 data "terraform_remote_state" "foundation" {
   backend = "gcs"
   config = {
@@ -12,67 +12,25 @@ data "terraform_remote_state" "foundation" {
   }
 }
 
-# The Sentry root owns the project, and with it the DSN and OTLP header the workloads report with.
-data "terraform_remote_state" "sentry" {
-  backend = "gcs"
-  config = {
-    bucket = "a-novel-management-prod-232403541574-tofu-state"
-    prefix = "sentry"
-  }
-}
-
-# The Studio root owns the platform's identity, the only one that calls the REST API for visitors,
-# and the URL that serves the pages the account emails link to.
-data "terraform_remote_state" "studio" {
-  backend = "gcs"
-  config = {
-    bucket = "a-novel-management-prod-232403541574-tofu-state"
-    prefix = "studio"
-  }
-}
-
 locals {
-  foundation            = data.terraform_remote_state.foundation.outputs
-  private_project_id    = local.foundation.production_projects["private"].project_id
-  api_project_id        = local.foundation.production_projects["public-api"].project_id
-  region                = local.foundation.region
-  management_project_id = "a-novel-management-prod"
-  deployer              = "infra-foundation@${local.management_project_id}.iam.gserviceaccount.com"
-  database              = local.foundation.database_hosts["authentication"]
-  sentry                = data.terraform_remote_state.sentry.outputs.services["service-authentication"]
+  foundation = data.terraform_remote_state.foundation.outputs
+  project_id = local.foundation.workload_project_id
+  region     = local.foundation.region
+  deployer   = "infra-foundation@a-novel-management-prod.iam.gserviceaccount.com"
+  database   = local.foundation.database_hosts["authentication"]
+  # The backup repository VM runs the release's PostgreSQL image from the production repository.
+  database_image = regex("^ghcr\\.io/a-novel/(?P<path>[^:@]+):[^@]+@(?P<digest>sha256:[a-f0-9]{64})$", var.images.database)
 }
 
-# Database migrations and the maintenance job run beside the database in the private zone.
+# The cluster runs every release from this service's production repository.
 module "private_runtime" {
   source = "../../../modules/service-runtime"
 
   service                  = "authentication"
-  zone                     = "private"
-  project_id               = local.private_project_id
+  project_id               = local.project_id
   region                   = local.region
-  management_project_id    = local.management_project_id
-  secrets                  = toset(["production-authentication-app-password"])
   database_service_account = local.database.service_account
-  # The maintenance job runs as its own identity, which reads only the secrets it mounts.
-  workloads = {
-    maintain = { secrets = toset([for name in values(local.maintenance_secret_env) : "production-authentication-${name}"]) }
-  }
-  deployer    = local.deployer
-  alert_email = var.alert_email
-}
-
-# The public REST API runs in the public-api zone.
-module "api_runtime" {
-  source = "../../../modules/service-runtime"
-
-  service               = "authentication"
-  zone                  = "public-api"
-  project_id            = local.api_project_id
-  region                = local.region
-  management_project_id = local.management_project_id
-  secrets               = toset([for name in keys(var.secret_versions) : "production-authentication-${name}"])
-  deployer              = local.deployer
-  alert_email           = var.alert_email
+  alert_email              = var.alert_email
 }
 
 module "backups" {
@@ -85,8 +43,8 @@ module "backups" {
     ip         = local.database.repository_ip
     cos_image  = var.backup_repository.cos_image
   }
-  runtime                   = merge(var.backup_repository.runtime, { server_image = local.image.database, credentials_image = local.database.credentials_image })
-  project_id                = local.private_project_id
+  runtime                   = merge(var.backup_repository.runtime, { server_image = "${module.private_runtime.repositories["production"]}/${local.database_image.path}@${local.database_image.digest}", credentials_image = local.database.credentials_image })
+  project_id                = local.project_id
   region                    = local.region
   bucket                    = "a-novel-management-prod-232403541574-pgbr-authentication"
   management_project_number = "232403541574"
@@ -95,68 +53,12 @@ module "backups" {
   notification_channel      = module.private_runtime.notification_channel
 }
 
-# Keep failed health requests and every application and audit log. Only successful probes to the
-# two public health paths are dropped, in the project the service runs in.
-resource "google_logging_project_exclusion" "successful_healthchecks" {
-  project = local.api_project_id
+# Authentication's grant on JSON Keys' server goes with that server, which the JSON Keys root
+# deletes in the same deploy (a-novel/infra#1208).
+removed {
+  from = google_cloud_run_v2_service_iam_member.json_keys_invoker
 
-  name        = "successful-cloud-run-healthchecks"
-  description = "Exclude successful Cloud Run request logs for /v2/ping and /v2/healthcheck only."
-  disabled    = false
-  filter      = <<-EOT
-    resource.type="cloud_run_revision"
-    resource.labels.service_name="agora-authentication-rest"
-    log_id("run.googleapis.com/requests")
-    httpRequest.requestUrl=~"/v2/(ping|healthcheck)(\\?.*)?$"
-    httpRequest.status>=200
-    httpRequest.status<400
-  EOT
-}
-
-resource "google_monitoring_alert_policy" "rest_error_rate" {
-  project      = local.api_project_id
-  display_name = "A-Novel authentication REST 5xx error rate"
-  combiner     = "OR"
-  enabled      = true
-  severity     = "ERROR"
-
-  documentation {
-    content   = "Owner: production operator. More than 10% of authentication REST requests returned 5xx for five minutes. Inspect the service's revision logs and dependency health before changing traffic."
-    mime_type = "text/markdown"
+  lifecycle {
+    destroy = false
   }
-
-  conditions {
-    display_name = "5xx responses exceed 10%"
-
-    condition_threshold {
-      filter             = "resource.type = \"cloud_run_revision\" AND resource.label.service_name = \"agora-authentication-rest\" AND resource.label.location = \"${local.region}\" AND metric.type = \"run.googleapis.com/request_count\" AND metric.label.response_code_class = \"5xx\""
-      denominator_filter = "resource.type = \"cloud_run_revision\" AND resource.label.service_name = \"agora-authentication-rest\" AND resource.label.location = \"${local.region}\" AND metric.type = \"run.googleapis.com/request_count\""
-      comparison         = "COMPARISON_GT"
-      threshold_value    = 0.10
-      duration           = "300s"
-
-      aggregations {
-        alignment_period     = "300s"
-        per_series_aligner   = "ALIGN_DELTA"
-        cross_series_reducer = "REDUCE_SUM"
-        group_by_fields      = ["resource.label.service_name"]
-      }
-
-      denominator_aggregations {
-        alignment_period     = "300s"
-        per_series_aligner   = "ALIGN_DELTA"
-        cross_series_reducer = "REDUCE_SUM"
-        group_by_fields      = ["resource.label.service_name"]
-      }
-
-      evaluation_missing_data = "EVALUATION_MISSING_DATA_INACTIVE"
-
-      trigger {
-        count = 1
-      }
-    }
-  }
-
-  notification_channels = [module.api_runtime.notification_channel]
-  deletion_policy       = "DELETE"
 }

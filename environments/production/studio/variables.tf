@@ -1,3 +1,5 @@
+# The cluster root reads this pin from this root's terraform.tfvars.
+# tflint-ignore: terraform_unused_declarations
 variable "images" {
   description = "Platform images as ghcr.io/a-novel/platform-studio:<tag>@<digest>, pinned by each release."
   type        = map(string)
@@ -8,10 +10,4 @@ variable "images" {
     ])
     error_message = "Pin the web image by release tag and digest."
   }
-}
-
-variable "alert_email" {
-  description = "Operations inbox for this platform's alerts."
-  type        = string
-  sensitive   = true
 }

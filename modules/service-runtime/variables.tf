@@ -3,58 +3,20 @@ variable "service" {
   type        = string
 }
 
-variable "zone" {
-  description = "Trust zone of the project: private or public-api for a service, public for a platform."
-  type        = string
-
-  validation {
-    condition     = contains(["private", "public-api", "public"], var.zone)
-    error_message = "Backend services run in the private or public-api zone, and platforms in the public zone."
-  }
-}
-
 variable "project_id" {
-  description = "Trust-zone project that runs the service."
+  description = "Workload project that holds the service's repositories."
   type        = string
 }
 
 variable "region" {
-  description = "Region of the image repositories and Cloud Run workloads."
+  description = "Region of the image repositories."
   type        = string
-}
-
-variable "management_project_id" {
-  description = "Project that owns the secret containers."
-  type        = string
-}
-
-variable "secrets" {
-  description = "Secret IDs the runtime identity may read."
-  type        = set(string)
 }
 
 variable "database_service_account" {
   description = "Email of the service's database host identity, owned by the foundation root. Null for a service without a database host."
   type        = string
   default     = null
-}
-
-variable "workloads" {
-  description = "Workloads that run apart from the main server, by role: each gets its own identity, which reads only the secret IDs listed."
-  type = map(object({
-    secrets = optional(set(string), [])
-  }))
-  default = {}
-
-  validation {
-    condition     = alltrue([for role in keys(var.workloads) : length("agora-${var.service}-${role}") <= 30])
-    error_message = "Each workload's account ID, agora-<service>-<role>, must fit 30 characters."
-  }
-}
-
-variable "deployer" {
-  description = "Service account email that deploys the workloads."
-  type        = string
 }
 
 variable "alert_email" {

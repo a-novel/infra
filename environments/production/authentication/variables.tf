@@ -10,19 +10,19 @@ variable "images" {
   }
 }
 
+# The cluster root reads these versions and the SMTP settings from this root's terraform.tfvars.
+# tflint-ignore: terraform_unused_declarations
 variable "secret_versions" {
   description = "Numeric secret versions the workloads read, by secret name suffix."
   type        = map(number)
 
   validation {
-    condition = (
-      contains(keys(var.secret_versions), "app-password") &&
-      (var.waitlist_url == null) != contains(keys(var.secret_versions), "waitlist-secret")
-    )
-    error_message = "Pin app-password, plus waitlist-secret exactly when waitlist_url is set."
+    condition     = contains(keys(var.secret_versions), "app-password")
+    error_message = "Pin app-password."
   }
 }
 
+# tflint-ignore: terraform_unused_declarations
 variable "smtp" {
   description = "Hosted SMTP relay settings. The relay admits the production NAT address without a password."
   type = object({
@@ -30,12 +30,6 @@ variable "smtp" {
     sender_email = string
     sender_name  = string
   })
-}
-
-variable "waitlist_url" {
-  description = "Invitation-list endpoint; null disables the waitlist."
-  type        = string
-  default     = null
 }
 
 variable "backup_repository" {
@@ -55,15 +49,3 @@ variable "alert_email" {
   type        = string
   sensitive   = true
 }
-
-variable "downtime" {
-  description = "The planned downtime as JSON, from the DOWNTIME repository variable: components, start and end. Empty without one."
-  type        = string
-  default     = ""
-
-  validation {
-    condition     = var.downtime == "" || can(tolist(jsondecode(var.downtime).components)) && can(jsondecode(var.downtime).start)
-    error_message = "The planned downtime must be JSON with components, start and end."
-  }
-}
-

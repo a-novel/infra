@@ -1,69 +1,9 @@
 locals {
-  # Resource names use "api" for the public-api zone.
-  name = "agora-${var.service}-${var.zone == "public-api" ? "api" : var.zone}"
+  name = "agora-${var.service}-private"
 }
 
-resource "google_service_account" "runtime" {
-  project      = var.project_id
-  account_id   = local.name
-  display_name = "A-Novel ${var.service} application"
-
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
-# The deploy identity attaches this account to Cloud Run services and jobs.
-resource "google_service_account_iam_member" "deployer" {
-  service_account_id = google_service_account.runtime.name
-  role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:${var.deployer}"
-}
-
-resource "google_secret_manager_secret_iam_member" "runtime" {
-  for_each = var.secrets
-
-  project   = var.management_project_id
-  secret_id = each.value
-  role      = "roles/secretmanager.secretAccessor"
-  member    = google_service_account.runtime.member
-}
-
-# The main server runs as the runtime identity. Every other workload runs as its own, so a job
-# reads only the secrets it mounts and a compromised image reaches nothing else.
-resource "google_service_account" "workload" {
-  for_each = var.workloads
-
-  project      = var.project_id
-  account_id   = "agora-${var.service}-${each.key}"
-  display_name = "A-Novel ${var.service} ${each.key}"
-
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
-resource "google_service_account_iam_member" "workload_deployer" {
-  for_each = var.workloads
-
-  service_account_id = google_service_account.workload[each.key].name
-  role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:${var.deployer}"
-}
-
-resource "google_secret_manager_secret_iam_member" "workload" {
-  for_each = merge([for role, workload in var.workloads : {
-    for secret in workload.secrets : "${role}:${secret}" => { role = role, secret = secret }
-  }]...)
-
-  project   = var.management_project_id
-  secret_id = each.value.secret
-  role      = "roles/secretmanager.secretAccessor"
-  member    = google_service_account.workload[each.value.role].member
-}
-
-# The cluster runs every release from the private production repository. The others retire with the
-# old platform (a-novel/infra#1208).
+# The cluster runs every release from the production repository. Tooling retires with the database
+# hosts (a-novel/infra#1208).
 resource "google_artifact_registry_repository" "images" {
   for_each = toset(["production", "tooling"])
 
@@ -72,7 +12,7 @@ resource "google_artifact_registry_repository" "images" {
   repository_id   = "${local.name}-${each.key}"
   format          = "DOCKER"
   mode            = "STANDARD_REPOSITORY"
-  deletion_policy = var.zone == "private" && each.key == "production" ? "PREVENT" : "DELETE"
+  deletion_policy = each.key == "production" ? "PREVENT" : "DELETE"
   labels          = { environment = "production", service = var.service }
 
   # A deployed digest can never be re-tagged to different content.

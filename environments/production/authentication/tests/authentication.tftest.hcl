@@ -1,3 +1,4 @@
+# The backup repository VM's identity.
 mock_provider "google" {
   mock_resource "google_service_account" {
     defaults = {
@@ -6,276 +7,51 @@ mock_provider "google" {
       name   = "projects/a-novel-production-prod/serviceAccounts/agora-mock@a-novel-production-prod.iam.gserviceaccount.com"
     }
   }
-  mock_data "google_cloud_run_v2_service" {
-    defaults = { uri = "https://agora-json-keys-grpc-test-ew.a.run.app" }
-  }
 }
 
 override_data {
   target = data.terraform_remote_state.foundation
   values = {
     outputs = {
-      region               = "europe-west1"
-      sentry_ingest_host   = "o1.ingest.us.sentry.io"
-      cloud_run_cpu_quotas = { private = 8000, "public-api" = 2000 }
-      production_projects = {
-        private      = { project_id = "a-novel-production-prod" }
-        "public-api" = { project_id = "a-novel-public-api-prod" }
-      }
+      region              = "europe-west1"
+      workload_project_id = "a-novel-production-prod"
       network = {
-        network_id   = "projects/a-novel-production-prod/global/networks/agora-production"
-        subnet_id    = "projects/a-novel-production-prod/regions/europe-west1/subnetworks/agora-production-europe-west1"
-        network_tags = { authentication = "agora-authentication" }
-        # The subnet Cloud NAT serves.
-        egress_subnet_id = "projects/a-novel-production-prod/regions/europe-west1/subnetworks/agora-production-egress-europe-west1"
+        subnet_id = "projects/a-novel-production-prod/regions/europe-west1/subnetworks/agora-production-europe-west1"
       }
       database_hosts = {
         authentication = {
-          instance_group_manager = "agora-database-authentication"
-          private_ip             = "10.20.0.4"
-          repository_ip          = "10.20.0.7"
-          credentials_image      = "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-authentication-private-tooling/host-credentials@sha256:a5e264fc51c824c52fb6fd59b035e14e52fdc9f77e47b0375b352d8ad9bfd00d"
-          port                   = 5433
-          service_account        = "agora-auth-database@a-novel-production-prod.iam.gserviceaccount.com"
-          zone                   = "europe-west1-d"
+          repository_ip     = "10.20.0.7"
+          credentials_image = "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-authentication-private-tooling/host-credentials@sha256:a5e264fc51c824c52fb6fd59b035e14e52fdc9f77e47b0375b352d8ad9bfd00d"
+          service_account   = "agora-auth-database@a-novel-production-prod.iam.gserviceaccount.com"
+          zone              = "europe-west1-d"
         }
       }
     }
   }
 }
 
-override_data {
-  target = data.terraform_remote_state.studio
-  values = {
-    outputs = {
-      service_account = "agora-studio-public@a-novel-public-prod.iam.gserviceaccount.com"
-      url             = "https://agora-studio-web-test-ew.a.run.app"
-    }
-  }
-}
-
-override_data {
-  target = data.terraform_remote_state.sentry
-  values = {
-    outputs = {
-      services = {
-        "service-authentication" = {
-          project_id   = "4512319614156800"
-          dsn          = "https://abc123@o1.ingest.us.sentry.io/4512319614156800"
-          otlp_headers = "x-sentry-auth=sentry sentry_key=abc123"
-        }
-      }
-    }
-  }
-}
-
-run "splits_private_migrations_from_the_public_api" {
+# The cluster root pulls every Authentication release from this repository.
+run "keeps_the_repository_the_cluster_pulls_from" {
   command = plan
 
   assert {
-    condition = (
-      google_logging_project_exclusion.successful_healthchecks.project == google_cloud_run_v2_service.rest.project &&
-      strcontains(google_logging_project_exclusion.successful_healthchecks.filter, "httpRequest.status<400")
-    )
-    error_message = "Only successful health checks are excluded, in the project the REST service runs in."
-  }
-
-  assert {
-    condition = (
-      google_cloud_run_v2_job.migrations.project == "a-novel-production-prod" &&
-      google_cloud_run_v2_service.rest.project == "a-novel-public-api-prod" &&
-      google_cloud_run_v2_service.rest.ingress == "INGRESS_TRAFFIC_ALL" &&
-      alltrue([for vpc in [
-        google_cloud_run_v2_service.rest.template[0].vpc_access[0],
-        google_cloud_run_v2_job.maintenance.template[0].template[0].vpc_access[0],
-        google_cloud_run_v2_job.refresh_token_purge.template[0].template[0].vpc_access[0],
-        ] : vpc.egress == "ALL_TRAFFIC" && endswith(vpc.network_interfaces[0].subnetwork, "/agora-production-egress-europe-west1")
-      ])
-    )
-    error_message = "Migrations stay private; only the REST API is public. Its egress and the jobs' that report to Sentry go through the egress subnet, whose NAT and allowlist decide what leaves."
-  }
-
-  assert {
-    condition = (
-      !google_cloud_run_v2_service.rest.invoker_iam_disabled &&
-      lookup({ for env in google_cloud_run_v2_service.rest.template[0].containers[0].env : env.name => env.value }, "REST_CLIENT_IP_HEADER", null) == "X-Client-IP" &&
-      !contains([for env in google_cloud_run_v2_service.rest.template[0].containers[0].env : env.name], "REST_RATE_LIMITS_ENABLED")
-    )
-    error_message = "Only IAM-admitted callers may reach the REST API, since it trusts their visitor IP header, and its rate limits always stay on."
-  }
-
-  assert {
-    condition = alltrue([for env in google_cloud_run_v2_service.rest.template[0].containers[0].env :
-      length(env.value_source) == 0 || can(regex("^[1-9][0-9]*$", env.value_source[0].secret_key_ref[0].version))
-    ])
-    error_message = "Secrets must be pinned to numeric versions, never latest."
-  }
-
-  assert {
-    condition = (
-      google_cloud_run_v2_service.rest.template[0].containers[0].resources[0].cpu_idle == false &&
-      !contains([for env in google_cloud_run_v2_service.rest.template[0].containers[0].env : env.name], "WAITLIST_URL")
-    )
-    error_message = "Authentication keeps CPU for detached mail, and the waitlist stays off unless configured."
-  }
-
-  assert {
-    condition = alltrue([
-      for vars in [{ for env in google_cloud_run_v2_service.rest.template[0].containers[0].env : env.name => env.value }] :
-      tonumber(trimsuffix(vars["SMTP_TIMEOUT"], "s")) >= 60 && tonumber(trimsuffix(vars["REST_TIMEOUT_SHUTDOWN"], "s")) <= 6
-    ])
-    error_message = "The REST API's mail must outlast Cloud NAT's warm-up, and its shutdown drain must leave its two 2-second flushes inside Cloud Run's 10 seconds."
-  }
-
-  assert {
-    condition = (
-      google_cloud_run_v2_job.maintenance.project == "a-novel-production-prod" &&
-      google_cloud_run_v2_job.maintenance.run_execution_token == null &&
-      length(coalesce(google_cloud_run_v2_job.maintenance.template[0].template[0].containers[0].args, [])) == 0 &&
-      google_cloud_run_v2_job.maintenance.template[0].template[0].max_retries == 0 &&
-      toset([for env in google_cloud_run_v2_job.maintenance.template[0].template[0].containers[0].env : env.name if length(env.value_source) > 0]) == toset(["POSTGRES_PASSWORD"])
-    )
-    error_message = "The maintenance job stays private, runs only when a human starts it with an operation, and mounts only the database password."
-  }
-
-  assert {
-    condition = alltrue([
-      for budget in [tonumber(trimsuffix({ for env in google_cloud_run_v2_job.maintenance.template[0].template[0].containers[0].env : env.name => env.value }["SMTP_TIMEOUT"], "s"))] :
-      budget >= 60 && budget < tonumber(trimsuffix(google_cloud_run_v2_job.maintenance.template[0].template[0].timeout, "s"))
-    ])
-    error_message = "The maintenance job's mail must outlast Cloud NAT's warm-up on a fresh instance, a minute at least, and end inside the task timeout."
-  }
-
-  assert {
-    condition = alltrue([for container in [
-      google_cloud_run_v2_service.rest.template[0].containers[0],
-      google_cloud_run_v2_job.maintenance.template[0].template[0].containers[0],
-      ] : { for env in container.env : env.name => env.value }["PLATFORM_AUTH_URL"] == "https://agora-studio-web-test-ew.a.run.app"
-    ])
-    error_message = "Every workload that sends mail links to the URL Studio serves on."
-  }
-
-  assert {
-    condition = (
-      google_cloud_run_v2_job.refresh_token_purge.project == "a-novel-production-prod" &&
-      google_cloud_run_v2_job.refresh_token_purge.run_execution_token == null &&
-      google_cloud_run_v2_job.refresh_token_purge.template[0].template[0].containers[0].args == tolist(["refresh-token-purge"]) &&
-      google_cloud_run_v2_job.refresh_token_purge.template[0].template[0].max_retries == 0 &&
-      toset([for env in google_cloud_run_v2_job.refresh_token_purge.template[0].template[0].containers[0].env : env.name if length(env.value_source) > 0]) == toset(["POSTGRES_PASSWORD"])
-    )
-    error_message = "The purge job stays private, runs only its stored operation, and mounts only the database password."
-  }
-
-  assert {
-    condition = alltrue([for container in [
-      google_cloud_run_v2_service.rest.template[0].containers[0],
-      google_cloud_run_v2_job.maintenance.template[0].template[0].containers[0],
-      google_cloud_run_v2_job.refresh_token_purge.template[0].template[0].containers[0],
-      ] : can(regex("^service-authentication@[0-9]+\\.[0-9]+\\.[0-9]+$", { for env in container.env : env.name => env.value }["SENTRY_RELEASE"]))
-    ])
-    error_message = "Every reporting workload names its release <repository>@<semver>, as release CI creates it in Sentry."
-  }
-
-  assert {
-    condition = alltrue([for container in [
-      google_cloud_run_v2_service.rest.template[0].containers[0],
-      google_cloud_run_v2_job.maintenance.template[0].template[0].containers[0],
-      google_cloud_run_v2_job.refresh_token_purge.template[0].template[0].containers[0],
-      ] : lookup({ for env in container.env : env.name => env.value }, "OTEL", null) == "true" &&
-      { for env in container.env : env.name => env.value }["OTEL_EXPORTER_OTLP_ENDPOINT"] == "https://o1.ingest.us.sentry.io/api/4512319614156800/integration/otlp" &&
-      lookup({ for env in container.env : env.name => env.value }, "SENTRY_DSN", null) == "https://abc123@o1.ingest.us.sentry.io/4512319614156800"
-    ])
-    error_message = "Every reporting workload turns telemetry on, reports with the DSN the Sentry root exports, and exports to its Sentry project's OTLP endpoint, on foundation's ingest host."
-  }
-
-  assert {
-    condition = (
-      { for env in google_cloud_run_v2_service.rest.template[0].containers[0].env : env.name => env.value }["OTEL_RESOURCE_ATTRIBUTES"] == "a_novel.workload=api" &&
-      alltrue([for job in [google_cloud_run_v2_job.maintenance, google_cloud_run_v2_job.refresh_token_purge] :
-        { for env in job.template[0].template[0].containers[0].env : env.name => env.value }["OTEL_RESOURCE_ATTRIBUTES"] == "a_novel.workload=job"
-      ])
-    )
-    error_message = "The REST API reports as an api and its jobs as jobs, so request and job-run durations stay apart."
+    condition     = module.private_runtime.repositories["production"] == "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-authentication-private-production"
+    error_message = "Authentication's private production repository must keep its name: the cluster runs every release from it."
   }
 }
 
-run "requires_the_waitlist_secret_with_its_url" {
+# The cluster root deploys the pins this root validates.
+run "rejects_an_unpinned_image" {
   command = plan
 
   variables {
-    waitlist_url = "https://example.com/waitlist"
-  }
-
-  expect_failures = [var.secret_versions]
-}
-
-run "passes_the_planned_downtime_start" {
-  command = plan
-
-  variables {
-    downtime = "{\"components\":[\"service-json-keys.database\",\"service-authentication.database\"],\"start\":\"2026-10-12T06:00:00Z\",\"end\":\"2026-10-12T07:00:00Z\"}"
-  }
-
-  assert {
-    condition = alltrue([for container in concat(
-      google_cloud_run_v2_service.rest.template[0].containers,
-      google_cloud_run_v2_job.migrations.template[0].template[0].containers,
-      google_cloud_run_v2_job.maintenance.template[0].template[0].containers,
-      google_cloud_run_v2_job.refresh_token_purge.template[0].template[0].containers,
-      ) : lookup({ for env in container.env : env.name => env.value }, "DOWNTIME_START", null) == "2026-10-12T06:00:00Z"
-    ])
-    error_message = "The REST API and every job must receive the planned downtime start."
-  }
-}
-
-run "ignores_another_services_downtime" {
-  command = plan
-
-  variables {
-    downtime = "{\"components\":[\"service-json-keys.database\"],\"start\":\"2026-10-12T06:00:00Z\",\"end\":\"2026-10-12T07:00:00Z\"}"
-  }
-
-  assert {
-    condition     = !contains([for env in google_cloud_run_v2_service.rest.template[0].containers[0].env : env.name], "DOWNTIME_START")
-    error_message = "A downtime that lists no Authentication component must leave Authentication alone."
-  }
-}
-
-run "refuses_instances_beyond_the_quota" {
-  command = plan
-
-  override_data {
-    target = data.terraform_remote_state.foundation
-    values = {
-      outputs = {
-        region               = "europe-west1"
-        sentry_ingest_host   = "o1.ingest.us.sentry.io"
-        cloud_run_cpu_quotas = { private = 8000, "public-api" = 1000 }
-        production_projects = {
-          private      = { project_id = "a-novel-production-prod" }
-          "public-api" = { project_id = "a-novel-public-api-prod" }
-        }
-        network = {
-          network_id   = "projects/a-novel-production-prod/global/networks/agora-production"
-          subnet_id    = "projects/a-novel-production-prod/regions/europe-west1/subnetworks/agora-production-europe-west1"
-          network_tags = { authentication = "agora-authentication" }
-          # The subnet Cloud NAT serves.
-          egress_subnet_id = "projects/a-novel-production-prod/regions/europe-west1/subnetworks/agora-production-egress-europe-west1"
-        }
-        database_hosts = {
-          authentication = {
-            instance_group_manager = "agora-database-authentication"
-            private_ip             = "10.20.0.4"
-            repository_ip          = "10.20.0.7"
-            credentials_image      = "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-authentication-private-tooling/host-credentials@sha256:a5e264fc51c824c52fb6fd59b035e14e52fdc9f77e47b0375b352d8ad9bfd00d"
-            port                   = 5433
-            service_account        = "agora-auth-database@a-novel-production-prod.iam.gserviceaccount.com"
-            zone                   = "europe-west1-d"
-          }
-        }
-      }
+    images = {
+      database    = "ghcr.io/a-novel/service-authentication/database:v2.8.0@sha256:95dd4bb962d5345f171b718dcd888d6bc11e1856022d442a8a80be4a6bdc86f6"
+      maintenance = "ghcr.io/a-novel/service-authentication/jobs/maintenance:v2.8.0@sha256:95dd4bb962d5345f171b718dcd888d6bc11e1856022d442a8a80be4a6bdc86f6"
+      migrations  = "ghcr.io/a-novel/service-authentication/jobs/migrations:v2.8.0@sha256:95dd4bb962d5345f171b718dcd888d6bc11e1856022d442a8a80be4a6bdc86f6"
+      rest        = "ghcr.io/a-novel/service-authentication/rest:latest"
     }
   }
 
-  expect_failures = [google_cloud_run_v2_service.rest]
+  expect_failures = [var.images]
 }
