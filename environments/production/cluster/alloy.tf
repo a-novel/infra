@@ -138,19 +138,21 @@ locals {
       namespaces   = local.admitted_namespaces
     }
 
-    # The databases' pods, which CloudNativePG annotates for it (databases.tf), and Authentication's
-    # counter store (counter-store.tf). Each database instance's settings cost hundreds of series.
+    # The databases' pods, which CloudNativePG annotates for it (databases.tf), Authentication's
+    # counter store (counter-store.tf) and cert-manager's controller, which its chart annotates. Each
+    # database instance's settings cost hundreds of series.
     annotationAutodiscovery = {
       enabled       = true
       collector     = "alloy"
       destinations  = ["grafana-cloud"]
-      namespaces    = sort(keys(var.databases))
+      namespaces    = concat(sort(keys(var.databases)), [local.namespace["cert-manager"]])
       services      = { enabled = false }
       bearerToken   = { enabled = false }
       metricsTuning = { excludeMetrics = ["cnpg_pg_settings_setting"] }
       # Of the counter store's series, which all start with redis_, Alloy keeps only those the first
       # rule marks: availability, uptime, memory, evicted and expired keys, clients, and httprate's
-      # commands with their time.
+      # commands with their time. Of cert-manager's, it keeps only each certificate's expiry, which
+      # the second rule marks.
       extraMetricProcessingRules = <<-EOT
         rule {
           source_labels = ["__name__", "cmd"]
@@ -159,8 +161,19 @@ locals {
           replacement   = "true"
         }
         rule {
+          source_labels = ["namespace", "__name__"]
+          regex         = "${local.namespace["cert-manager"]};certmanager_certificate_expiration_timestamp_seconds"
+          target_label  = "__tmp_keep"
+          replacement   = "true"
+        }
+        rule {
           source_labels = ["__name__", "__tmp_keep"]
           regex         = "redis_.*;"
+          action        = "drop"
+        }
+        rule {
+          source_labels = ["namespace", "__tmp_keep"]
+          regex         = "${local.namespace["cert-manager"]};"
           action        = "drop"
         }
         rule {
@@ -303,8 +316,8 @@ resource "helm_release" "alloy" {
 }
 
 # The services' pods send to the receiver. Alloy reaches the API server and the kubelets in the node
-# range, kube-state-metrics, the databases' metrics, the counter store's exporter, and Grafana
-# (egress.tf).
+# range, kube-state-metrics, the databases' metrics, the counter store's exporter, cert-manager's
+# controller, and Grafana (egress.tf).
 resource "kubernetes_network_policy_v1" "alloy" {
   metadata {
     name      = "alloy"
@@ -426,6 +439,22 @@ resource "kubernetes_network_policy_v1" "alloy" {
 
       ports {
         port     = "9121"
+        protocol = "TCP"
+      }
+    }
+
+    egress {
+      to {
+        namespace_selector {
+          match_labels = { "kubernetes.io/metadata.name" = local.namespace["cert-manager"] }
+        }
+        pod_selector {
+          match_labels = { "app.kubernetes.io/name" = "cert-manager", "app.kubernetes.io/component" = "controller" }
+        }
+      }
+
+      ports {
+        port     = "9402"
         protocol = "TCP"
       }
     }

@@ -72,6 +72,7 @@ Alloy gives each request, job run and email send an outcome, which the dashboard
 | `Usage: overage`                     | this month's usage costs anything beyond the plan                                                 |
 | `Signing keys running out`           | a key usage's newest key signs for less than 3 days more, for 15 minutes                          |
 | `GenAI keeps content past retention` | a settled generation stays stored 30 minutes past its retention, for 5 minutes                    |
+| `Certificate expiring`               | a certificate cert-manager issues expires in less than 14 days, for an hour                       |
 
 - **A fault** is filed by hand, from its Discord post, as an issue in the service's repository. On
   the Errors dashboard, its operation opens its traces and its service opens its error logs.
@@ -107,6 +108,10 @@ Alloy gives each request, job run and email send an outcome, which the dashboard
 - **GenAI keeping content past retention:** the database's pg_cron purge stopped or falls behind,
   so manuscripts outlive the retention promise. Follow
   [GenAI purge falling behind](#genai-purge-falling-behind).
+- **A certificate expiring:** cert-manager renews a certificate at two thirds of its life, so one
+  under 14 days has failed to renew for weeks. Read its `Certificate`'s conditions and events, then
+  cert-manager's logs in its namespace, as [Ops basics](../ops-basics.md#identities) shows. Once it
+  expires, its database or service API refuses every connection, since its callers verify it.
 - **A Services panel empty:** its database query fails, and the two alerts above, which read such
   queries, stay silent. `cnpg_errors_total` names the query and its error in `errorUserQueries`. A
   `permission denied` means the cluster root's `queries/<database>.sql` misses a column it reads.
