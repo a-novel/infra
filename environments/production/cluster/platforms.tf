@@ -20,7 +20,7 @@ locals {
     # The load balancer ends TLS, so the platform checks form posts against its public origin.
     ORIGIN = "https://${local.platform_edges[platform].host}"
   }, settings) }
-  # The port each platform serves, which its network policy admits before its pods roll.
+  # The port each platform serves.
   platform_port = 3000
   # The global load balancer's proxies and health checks reach the pods from these ranges.
   # https://cloud.google.com/load-balancing/docs/firewall-rules
@@ -41,10 +41,6 @@ module "platform_web" {
   service_ca       = one(kubernetes_manifest.service_trust_bundle[*].manifest.metadata.name)
   resources        = { cpu = "100m", memory = "512Mi" }
   replicas         = { min = 1, max = 2 }
-
-  # Its new pods call Authentication over TLS, once Authentication's pods serve it and the policy
-  # lets them reach it.
-  depends_on = [module.authentication_rest, kubernetes_network_policy_v1.platform_web]
 }
 
 moved {
@@ -95,13 +91,9 @@ resource "kubernetes_network_policy_v1" "platform_web" {
         }
       }
 
-      dynamic "ports" {
-        for_each = values(local.service_ports)
-
-        content {
-          port     = tostring(ports.value)
-          protocol = "TCP"
-        }
+      ports {
+        port     = tostring(local.service_port)
+        protocol = "TCP"
       }
     }
   }

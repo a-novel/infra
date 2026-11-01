@@ -68,10 +68,9 @@ variable "service_ca" {
 }
 
 variable "tls" {
-  description = "The server's TLS: the namespace's Secret holding the certificate `port` serves, and the plaintext port beside it, which the probes read while callers move to TLS."
+  description = "The server's TLS: the namespace's Secret holding the certificate `port` serves."
   type = object({
-    secret         = string
-    plaintext_port = number
+    secret = string
   })
   default = null
 }

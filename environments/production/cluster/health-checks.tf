@@ -5,8 +5,8 @@
 # audience. A planned downtime skips the check, and clearing it runs the Job again.
 locals {
   health_check_script = file("${path.module}/../../../modules/smoke-check/smoke.sh")
-  # Each check runs in its service's own image, which carries grpcurl or BusyBox wget, and calls its
-  # service's plaintext port.
+  # Each check runs in its service's own image, which carries grpcurl or BusyBox wget, and verifies
+  # its service against the services CA, which both read from SSL_CERT_FILE.
   health_check_targets = {
     authentication = { image = "authentication/rest", pods = "rest", audience = local.authentication_env.SERVICE_TOKEN_AUDIENCE, env = { PROTOCOL = "http", HEALTH_PATH = "/v2/healthcheck" } }
     genai          = { image = "genai/grpc", pods = "grpc", audience = local.genai_grpc_env.SERVICE_TOKEN_AUDIENCE, env = { PROTOCOL = "grpc", STATUS_RPC = "anovel.genai.v0.StatusService/Status" } }
@@ -14,7 +14,8 @@ locals {
   }
   health_checks = { for service, target in local.health_check_targets : service => merge(target, {
     env = merge(target.env, local.downtime_env[service], {
-      SERVICE_URL        = "http://${target.pods}.${service}.svc:${local.service_ports.plaintext}"
+      SERVICE_URL        = "https://${target.pods}.${service}.svc:${local.service_port}"
+      SSL_CERT_FILE      = "/etc/service-ca/ca.crt"
       SERVICE_TOKEN_PATH = "/var/run/secrets/tokens/${target.audience}"
     })
   }) }
@@ -55,7 +56,7 @@ resource "kubernetes_network_policy_v1" "smoke" {
       }
 
       ports {
-        port     = tostring(local.service_ports.plaintext)
+        port     = tostring(local.service_port)
         protocol = "TCP"
       }
     }
@@ -119,6 +120,12 @@ resource "kubernetes_job_v1" "smoke" {
           }
 
           volume_mount {
+            name       = "service-ca"
+            mount_path = "/etc/service-ca"
+            read_only  = true
+          }
+
+          volume_mount {
             name       = "tmp"
             mount_path = "/tmp"
           }
@@ -148,6 +155,20 @@ resource "kubernetes_job_v1" "smoke" {
                 audience = each.value.audience
                 path     = each.value.audience
               }
+            }
+          }
+        }
+
+        # Only the CA's certificate, which trust-manager keeps current.
+        volume {
+          name = "service-ca"
+
+          config_map {
+            name = kubernetes_manifest.service_trust_bundle[0].manifest.metadata.name
+
+            items {
+              key  = "ca.crt"
+              path = "ca.crt"
             }
           }
         }
@@ -241,6 +262,12 @@ resource "kubernetes_cron_job_v1" "health" {
               }
 
               volume_mount {
+                name       = "service-ca"
+                mount_path = "/etc/service-ca"
+                read_only  = true
+              }
+
+              volume_mount {
                 name       = "tmp"
                 mount_path = "/tmp"
               }
@@ -274,6 +301,20 @@ resource "kubernetes_cron_job_v1" "health" {
               }
             }
 
+            # Only the CA's certificate, which trust-manager keeps current.
+            volume {
+              name = "service-ca"
+
+              config_map {
+                name = kubernetes_manifest.service_trust_bundle[0].manifest.metadata.name
+
+                items {
+                  key  = "ca.crt"
+                  path = "ca.crt"
+                }
+              }
+            }
+
             volume {
               name = "tmp"
 
@@ -298,6 +339,7 @@ locals {
   provider_check_env = var.genai_provider_check == null ? null : merge(local.downtime_env["genai"], {
     SERVICE_URL        = local.health_checks["genai"].env.SERVICE_URL
     SERVICE_TOKEN_PATH = local.health_checks["genai"].env.SERVICE_TOKEN_PATH
+    SSL_CERT_FILE      = local.health_checks["genai"].env.SSL_CERT_FILE
     SUBMIT_REQUEST = jsonencode({
       # Each revision acts for its own user, whom no account holds, so it makes a new call under its
       # own caps. GenAI answers a resent request with the generation it already ran.
@@ -374,6 +416,12 @@ resource "kubernetes_job_v1" "provider_check" {
             read_only  = true
           }
 
+          volume_mount {
+            name       = "service-ca"
+            mount_path = "/etc/service-ca"
+            read_only  = true
+          }
+
           resources {
             requests = { cpu = "50m", memory = "64Mi" }
             limits   = { memory = "64Mi" }
@@ -399,6 +447,20 @@ resource "kubernetes_job_v1" "provider_check" {
                 audience = local.health_checks["genai"].audience
                 path     = local.health_checks["genai"].audience
               }
+            }
+          }
+        }
+
+        # Only the CA's certificate, which trust-manager keeps current.
+        volume {
+          name = "service-ca"
+
+          config_map {
+            name = kubernetes_manifest.service_trust_bundle[0].manifest.metadata.name
+
+            items {
+              key  = "ca.crt"
+              path = "ca.crt"
             }
           }
         }

@@ -11,13 +11,22 @@ locals {
     length(local.ca_dirs) == 0 ? {} : { SSL_CERT_DIR = join(":", concat(["/etc/ssl/certs"], local.ca_dirs)) },
     var.service_ca == null ? {} : { NODE_EXTRA_CA_CERTS = "/etc/service-ca/ca.crt" },
     var.tls == null ? {} : {
-      "${local.env_prefix}_TLS_CERT_FILE"  = "/etc/server-tls/tls.crt"
-      "${local.env_prefix}_TLS_KEY_FILE"   = "/etc/server-tls/tls.key"
-      "${local.env_prefix}_PLAINTEXT_PORT" = tostring(var.tls.plaintext_port)
+      "${local.env_prefix}_TLS_CERT_FILE" = "/etc/server-tls/tls.crt"
+      "${local.env_prefix}_TLS_KEY_FILE"  = "/etc/server-tls/tls.key"
     },
     { for audience, name in var.service_tokens : name => "/var/run/secrets/tokens/${audience}" },
   )
-  probe_port = var.tls == null ? var.port : var.tls.plaintext_port
+  # The kubelet's gRPC probe speaks plaintext only, so a TLS gRPC server answers the grpcurl its
+  # image carries, which skips verification as the kubelet's HTTPS probe does. Its health service
+  # reports NOT_SERVING once shutdown begins.
+  grpc_tls_probe = ["sh", "-c", "grpcurl -insecure -connect-timeout 1 localhost:${var.port} grpc.health.v1.Health/Check | grep -q '\"SERVING\"'"]
+  probe = {
+    grpc    = local.protocol == "grpc" && var.tls == null
+    exec    = local.protocol == "grpc" && var.tls != null
+    http    = local.protocol == "http"
+    scheme  = var.tls == null ? "HTTP" : "HTTPS"
+    timeout = local.protocol == "grpc" && var.tls != null ? 2 : 1
+  }
   # GKE names a gauge with a DNS label.
   gauge_name = var.scaling_gauge == null ? null : replace(var.scaling_gauge.name, "_", "-")
 }
@@ -88,15 +97,6 @@ resource "kubernetes_deployment_v1" "workload" {
           port {
             name           = local.protocol
             container_port = var.port
-          }
-
-          dynamic "port" {
-            for_each = var.tls == null ? [] : [var.tls.plaintext_port]
-
-            content {
-              name           = "plaintext"
-              container_port = port.value
-            }
           }
 
           dynamic "port" {
@@ -193,42 +193,62 @@ resource "kubernetes_deployment_v1" "workload" {
           startup_probe {
             period_seconds    = 2
             failure_threshold = 30
+            timeout_seconds   = local.probe.timeout
 
             dynamic "grpc" {
-              for_each = local.protocol == "grpc" ? [local.probe_port] : []
+              for_each = local.probe.grpc ? [var.port] : []
 
               content {
                 port = grpc.value
               }
             }
 
-            dynamic "http_get" {
-              for_each = local.protocol == "http" ? [var.http_health_path] : []
+            dynamic "exec" {
+              for_each = local.probe.exec ? [local.grpc_tls_probe] : []
 
               content {
-                path = http_get.value
-                port = local.probe_port
+                command = exec.value
+              }
+            }
+
+            dynamic "http_get" {
+              for_each = local.probe.http ? [var.http_health_path] : []
+
+              content {
+                path   = http_get.value
+                port   = var.port
+                scheme = local.probe.scheme
               }
             }
           }
 
           readiness_probe {
-            period_seconds = 5
+            period_seconds  = 5
+            timeout_seconds = local.probe.timeout
 
             dynamic "grpc" {
-              for_each = local.protocol == "grpc" ? [local.probe_port] : []
+              for_each = local.probe.grpc ? [var.port] : []
 
               content {
                 port = grpc.value
               }
             }
 
-            dynamic "http_get" {
-              for_each = local.protocol == "http" ? [var.http_health_path] : []
+            dynamic "exec" {
+              for_each = local.probe.exec ? [local.grpc_tls_probe] : []
 
               content {
-                path = http_get.value
-                port = local.probe_port
+                command = exec.value
+              }
+            }
+
+            dynamic "http_get" {
+              for_each = local.probe.http ? [var.http_health_path] : []
+
+              content {
+                path   = http_get.value
+                port   = var.port
+                scheme = local.probe.scheme
               }
             }
           }
@@ -344,15 +364,6 @@ resource "kubernetes_service_v1" "workload" {
       target_port = var.port
     }
 
-    dynamic "port" {
-      for_each = var.tls == null ? [] : [var.tls.plaintext_port]
-
-      content {
-        name        = "plaintext"
-        port        = port.value
-        target_port = port.value
-      }
-    }
   }
 }
 

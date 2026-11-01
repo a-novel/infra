@@ -5,8 +5,9 @@
 # checks nothing, so the polls drive the generation: a poll checks it with OpenAI once GenAI's
 # CHECK_INTERVAL has passed since the last check.
 #
-#   SERVICE_URL         GenAI's gRPC server, as http://<host>:<port>.
+#   SERVICE_URL         GenAI's gRPC server, as https://<host>:<port>.
 #   SERVICE_TOKEN_PATH  the file the kubelet projects GenAI's service token into.
+#   SSL_CERT_FILE       the services CA, which the check verifies GenAI against.
 #   SUBMIT_REQUEST      the GenerationSubmit request, as JSON.
 #   DOWNTIME_START      the planned downtime's start, from which the check is skipped.
 #
@@ -27,7 +28,7 @@ export SERVICE_TOKEN
 call() {
     # Header expansion keeps the token out of the command-line arguments.
     # shellcheck disable=SC2016
-    grpcurl -plaintext -connect-timeout 10 -max-time 60 -expand-headers -H 'X-Service-Authorization: ${SERVICE_TOKEN}' -d "$2" "${SERVICE_URL#http://}" "anovel.genai.v0.$1"
+    grpcurl -cacert "${SSL_CERT_FILE}" -connect-timeout 10 -max-time 60 -expand-headers -H 'X-Service-Authorization: ${SERVICE_TOKEN}' -d "$2" "${SERVICE_URL#https://}" "anovel.genai.v0.$1"
 }
 
 # field prints one of the generation's string fields from the last answer.

@@ -162,37 +162,36 @@ run "serves_http_with_service_tokens" {
   }
 }
 
-run "serves_tls_beside_plaintext" {
+run "serves_grpc_over_tls" {
   command = plan
 
   variables {
     port       = 8443
-    tls        = { secret = "grpc-server-tls", plaintext_port = 8080 }
+    tls        = { secret = "grpc-server-tls" }
     service_ca = "services-ca"
   }
 
   assert {
     condition = (
       { for env in one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).env : env.name => env.value if startswith(env.name, "GRPC_") } == {
-        GRPC_TLS_CERT_FILE  = "${one([for mount in one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).volume_mount : mount.mount_path if mount.name == "server-tls"])}/tls.crt"
-        GRPC_TLS_KEY_FILE   = "${one([for mount in one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).volume_mount : mount.mount_path if mount.name == "server-tls"])}/tls.key"
-        GRPC_PLAINTEXT_PORT = "8080"
+        GRPC_TLS_CERT_FILE = "${one([for mount in one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).volume_mount : mount.mount_path if mount.name == "server-tls"])}/tls.crt"
+        GRPC_TLS_KEY_FILE  = "${one([for mount in one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).volume_mount : mount.mount_path if mount.name == "server-tls"])}/tls.key"
       } &&
-      one([for volume in one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).volume : one(volume.secret).secret_name if volume.name == "server-tls"]) == "grpc-server-tls"
+      one([for volume in one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).volume : one(volume.secret).secret_name if volume.name == "server-tls"]) == "grpc-server-tls" &&
+      [for port in one(kubernetes_service_v1.workload.spec).port : port.port] == [8443]
     )
-    error_message = "A TLS server must name its certificate's files and its plaintext port to golib, from its Secret."
+    error_message = "A TLS server must name its certificate's files to golib, from its Secret, and serve its one port."
   }
 
   assert {
-    condition = (
-      toset([for port in one(kubernetes_service_v1.workload.spec).port : port.port]) == toset([8443, 8080]) &&
-      toset([for port in one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).port : port.container_port]) == toset([8443, 8080]) &&
-      alltrue([for probe in [
-        one(one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).startup_probe),
-        one(one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).readiness_probe),
-      ] : one(probe.grpc).port == 8080])
-    )
-    error_message = "A TLS server must serve both ports, and its probes must read the plaintext one."
+    condition = alltrue([for probe in [
+      one(one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).startup_probe),
+      one(one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).readiness_probe),
+      ] : length(probe.grpc) == 0 &&
+      strcontains(one(probe.exec).command[2], "grpcurl -insecure -connect-timeout 1 localhost:8443 grpc.health.v1.Health/Check") &&
+      probe.timeout_seconds == 2
+    ])
+    error_message = "A TLS gRPC server's probes must call its health service over TLS, which the kubelet's gRPC probe cannot."
   }
 
   assert {
@@ -202,5 +201,23 @@ run "serves_tls_beside_plaintext" {
       one([for env in one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).env : env.value if env.name == "NODE_EXTRA_CA_CERTS"]) == "/etc/service-ca/ca.crt"
     )
     error_message = "A workload that calls a service API must trust the services CA beside the system roots and its database's CA, in Go and in Node."
+  }
+}
+
+run "serves_http_over_tls" {
+  command = plan
+
+  variables {
+    port             = 8443
+    http_health_path = "/v2/ping"
+    tls              = { secret = "rest-server-tls" }
+  }
+
+  assert {
+    condition = alltrue([for probe in [
+      one(one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).startup_probe),
+      one(one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).readiness_probe),
+    ] : one(probe.http_get).scheme == "HTTPS" && one(probe.http_get).port == "8443" && length(probe.exec) == 0])
+    error_message = "A TLS HTTP server's probes must GET its health path over HTTPS."
   }
 }
