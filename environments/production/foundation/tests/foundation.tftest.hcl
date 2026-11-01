@@ -373,10 +373,19 @@ run "keeps_api_calls_inside_production" {
 
   assert {
     condition = (
-      one(google_access_context_manager_service_perimeter.production.spec[0].vpc_accessible_services).enable_restriction &&
-      one(google_access_context_manager_service_perimeter.production.spec[0].vpc_accessible_services).allowed_services == toset(["RESTRICTED-SERVICES"]) &&
+      !google_access_context_manager_service_perimeter.production.use_explicit_dry_run_spec &&
+      length(google_access_context_manager_service_perimeter.production.status) == 1 &&
+      length(google_access_context_manager_service_perimeter.production.spec) == 0
+    )
+    error_message = "The perimeter must enforce its rules as its status, with no dry-run spec of its own."
+  }
+
+  assert {
+    condition = (
+      one(google_access_context_manager_service_perimeter.production.status[0].vpc_accessible_services).enable_restriction &&
+      one(google_access_context_manager_service_perimeter.production.status[0].vpc_accessible_services).allowed_services == toset(["RESTRICTED-SERVICES"]) &&
       alltrue([for service in concat(keys(google_project_service.workload), keys(google_project_service.public_api_telemetry)) :
-        contains(google_access_context_manager_service_perimeter.production.spec[0].restricted_services, service)
+        contains(google_access_context_manager_service_perimeter.production.status[0].restricted_services, service)
       ])
     )
     error_message = "The VPC may call only the perimeter's restricted APIs, and every API the projects enable must be restricted."
@@ -384,10 +393,10 @@ run "keeps_api_calls_inside_production" {
 
   assert {
     condition = (
-      alltrue([for rule in google_access_context_manager_service_perimeter.production.spec[0].ingress_policies :
+      alltrue([for rule in google_access_context_manager_service_perimeter.production.status[0].ingress_policies :
         rule.ingress_from[0].identity_type == null && length(rule.ingress_from[0].identities) > 0
       ]) &&
-      alltrue([for rule in google_access_context_manager_service_perimeter.production.spec[0].egress_policies :
+      alltrue([for rule in google_access_context_manager_service_perimeter.production.status[0].egress_policies :
         rule.egress_to[0].resources == toset(["projects/${data.google_project.management.number}"])
       ])
     )
