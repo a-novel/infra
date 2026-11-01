@@ -15,9 +15,6 @@ tflint --init --config="$PWD/.tflint.hcl" && tflint --recursive --config="$PWD/.
 for dir in bootstrap environments/production/* environments/recovery* $(dirname modules/*/tests | sort -u); do
   tofu -chdir="$dir" init -backend=false -lockfile=readonly && tofu -chdir="$dir" validate && tofu -chdir="$dir" test
 done
-go test ./internal/hostcredentials/... ./internal/recovery/...
-go tool -modfile=golangci-lint.mod golangci-lint run ./...
-go tool -modfile=govulncheck.mod govulncheck ./...
 node --test '.github/scripts/*.test.mjs'
 npx --yes prettier@3.9.10 --no-config --no-editorconfig --check .
 ```
@@ -25,16 +22,14 @@ npx --yes prettier@3.9.10 --no-config --no-editorconfig --check .
 `tofu test` uses mocked providers and needs no credentials. Each job of `main.yaml` is a required
 check:
 
-| Job                                              | Checks                                                                                                         |
-| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
-| `validate-opentofu`                              | Formatting, TFLint, and `validate` and `tofu test` in every root and tested module.                            |
-| `lint-repository`                                | Prettier, the Renovate config, the workflow scripts, Go lint, service-root wiring, shell and workflow linters. |
-| `test-go`                                        | The host programs, with `-race`.                                                                               |
-| `test-backup`                                    | The [backup tests](tests/backup/README.md), inside each service's database image.                              |
-| `scan-infrastructure`                            | Trivy on the repository and on both [host tools](docs/runbooks/host-tools.md).                                 |
-| `scan-secrets`                                   | gitleaks on the working tree, with the fleet baseline and the allowlist in `.gitleaks.toml`.                   |
-| `revoke-deletion-label`, `revoke-downtime-label` | Remove a label a push made stale, so it approves only the commit it was added on.                              |
-| `plan-<root>`                                    | The root's real plan, with the read-only identity.                                                             |
+| Job                                              | Checks                                                                                                |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `validate-opentofu`                              | Formatting, TFLint, and `validate` and `tofu test` in every root and tested module.                   |
+| `lint-repository`                                | Prettier, the Renovate config, the workflow scripts, service-root wiring, shell and workflow linters. |
+| `scan-infrastructure`                            | Trivy on the repository.                                                                              |
+| `scan-secrets`                                   | gitleaks on the working tree, with the fleet baseline and the allowlist in `.gitleaks.toml`.          |
+| `revoke-deletion-label`, `revoke-downtime-label` | Remove a label a push made stale, so it approves only the commit it was added on.                     |
+| `plan-<root>`                                    | The root's real plan, with the read-only identity.                                                    |
 
 ## Plan against production
 

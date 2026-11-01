@@ -7,7 +7,6 @@ OpenTofu definitions of A-Novel's production on Google Cloud.
 
 <hr />
 
-![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/a-novel/infra)
 ![GitHub repo file or directory count](https://img.shields.io/github/directory-file-count/a-novel/infra)
 ![GitHub code size in bytes](https://img.shields.io/github/languages/code-size/a-novel/infra)
 
@@ -16,7 +15,7 @@ OpenTofu definitions of A-Novel's production on Google Cloud.
 ## What this is
 
 This repository is A-Novel's production. Every Google Cloud resource the services run on is declared
-here, from the projects and the network to each service's database host and Cloud Run workloads. The
+here, from the projects and the network to the cluster and each service's workloads on it. The
 code on `master` is what runs. A change reaches production only through a pull request.
 
 Each service gets its own root, its own identities and its own database. Shared pieces, such as the
@@ -38,25 +37,19 @@ Disabling `deploy.yaml` [freezes production](docs/runbooks/deployments.md#freeze
 | Path                                    | Contents                                                                         |
 | --------------------------------------- | -------------------------------------------------------------------------------- |
 | `bootstrap/`                            | Management project: state bucket, CI identities, secret containers.              |
-| `environments/production/foundation`    | Projects, VPC, firewall, database hosts, monitoring, budget.                     |
-| `environments/production/<service>`     | One service: its Cloud Run workloads, identities, backup repository and alerts.  |
+| `environments/production/foundation`    | Projects, networks, the cluster, firewall, monitoring, budget.                   |
+| `environments/production/<service>`     | One service: its release pins and the image repository the cluster pulls from.   |
 | `environments/production/cluster`       | The cluster's namespaces, add-ons and policies, applied only when they change.   |
-| `environments/production/sentry`        | Sentry's projects and configuration, applied only when they change.              |
 | `environments/production/grafana`       | Grafana's alerts and dashboards, applied only when they change.                  |
-| `environments/recovery`                 | Disposable disaster-recovery host, for manual drills.                            |
 | `environments/recovery-cluster`         | A cluster drill's throwaway cluster, which reads the restored services' backups. |
 | `environments/recovery-database`        | A cluster drill's databases, restored from production's backups and checked.     |
-| `modules/service-runtime`               | A service's identities, image repositories and alert channel in one project.     |
-| `modules/smoke-check`                   | A private service's smoke job, and the health check every service shares.        |
-| `modules/database-runtime`              | A database host's boot configuration and host scripts.                           |
-| `modules/backup-repository`             | A service's pgBackRest repository VM and its backup alerts.                      |
+| `modules/service-runtime`               | A service's production image repository.                                         |
+| `modules/smoke-check`                   | The health check every service shares, which the cluster runs.                   |
 | `modules/project-shell`                 | An empty trust-zone project, for foundation.                                     |
 | `modules/database-operator`             | cert-manager, CloudNativePG and its Barman Cloud plugin, for the cluster.        |
 | `modules/cluster-workload`              | One gRPC or HTTP server on the cluster: its identity, pods, Service and scaling. |
-| `cmd/`, `internal/`, `builds/`          | The two programs that run on the VMs: the TLS loader and the restore worker.     |
 | `.github/actions/`, `.github/workflows` | The pipeline that plans, deploys and checks production.                          |
 | `.github/scripts/`                      | The pipeline's rules that can stop or misdeploy production, with their tests.    |
-| `tests/backup/`                         | Offline backup and restore tests inside the real database images.                |
 
 ## Documentation
 

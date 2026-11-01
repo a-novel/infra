@@ -11,7 +11,6 @@ from deploys and release pins to database rollouts and scheduled checks.
 | Schedule or clear a planned downtime                      | [Planned downtime](downtime.md) |
 | Move production from Cloud Run to the cluster             | [Cutover](cutover.md)           |
 | Add or rotate a secret, SMTP, waitlist, TLS, GitHub token | [Secrets](secrets.md)           |
-| Publish or pin `host-credentials` or `native-restore`     | [Host tools](host-tools.md)     |
 | An alert or a failed scheduled check                      | [Alerts](alerts.md)             |
 | Restore a backup in a disposable project                  | [Recovery](recovery.md)         |
 | A state object is wrong or locked                         | [State](state.md)               |
