@@ -77,6 +77,16 @@
       "groupName": "cert-manager"
     },
     {
+      "description": "Move trust-manager's chart and image in their own pull request, apart from cert-manager's, whose rule matches both on quay.io too.",
+      "matchFileNames": ["environments/production/cluster/**"],
+      "matchPackageNames": [
+        "trust-manager",
+        "quay.io/jetstack/charts/trust-manager",
+        "quay.io/jetstack/trust-manager"
+      ],
+      "groupName": "trust-manager"
+    },
+    {
       "description": "Move CloudNativePG's chart and images in one pull request, since the chart expects its own images.",
       "matchFileNames": [
         "environments/production/cluster/**",

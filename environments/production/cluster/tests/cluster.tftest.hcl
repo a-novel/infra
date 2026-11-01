@@ -78,7 +78,7 @@ run "pulls_addons_through_our_registry" {
 
   assert {
     condition = alltrue([for registry in ["docker.io/", "ghcr.io/", "quay.io/", "registry.k8s.io/"] :
-      !strcontains(join("\n", concat(helm_release.external_secrets.values, helm_release.alloy.values, helm_release.counter_store[0].values)), registry)
+      !strcontains(join("\n", concat(helm_release.external_secrets.values, helm_release.trust_manager.values, helm_release.alloy.values, helm_release.counter_store[0].values)), registry)
     ])
     error_message = "No chart may keep an upstream registry reference."
   }

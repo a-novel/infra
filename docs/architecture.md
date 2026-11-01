@@ -100,8 +100,10 @@ resources, reaching the control plane through the DNS endpoint as the CI identit
   digest.
 - **Add-ons:** the cluster root installs cert-manager, the CloudNativePG operator, its Barman Cloud
   plugin, External Secrets and Grafana's `k8s-monitoring` chart with Helm, each in its own
-  namespace. Renovate moves each chart with its images after a week, and merges a minor or patch
-  update on its own.
+  namespace, and trust-manager in cert-manager's. Renovate moves each chart with its images after a
+  week, and merges a minor or patch update on its own.
+- **Service TLS:** cert-manager's ten-year `services` CA, which keeps its key when renewed, issues
+  each service API a certificate for its in-cluster host, such as `rest.authentication.svc`.
 - **Counter store:** one Valkey pod in the `authentication` namespace, from the official chart,
   holds only the rate-limit counters, up to 64 MiB, evicting the least recently used first. It
   keeps nothing on disk. Its users each get a password External Secrets generates once into the
