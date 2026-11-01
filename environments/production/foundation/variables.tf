@@ -149,7 +149,7 @@ variable "cluster_ranges" {
 }
 
 variable "database_operator_principals" {
-  description = "Human identities allowed to inspect the private database host through OS Login and IAP, read workload logs, and read the cluster's service namespaces. Data Access logs remain restricted. Use user: or group: IAM member syntax."
+  description = "Human identities allowed to read the workload project's resources, logs and alerts, and the cluster's service namespaces. Data Access logs remain restricted. Use user: or group: IAM member syntax."
   type        = set(string)
 
   validation {
@@ -213,7 +213,7 @@ variable "monthly_budget_units" {
 }
 
 variable "compute_cpu_quota" {
-  description = "Regional Compute Engine CPU ceiling for the database hosts, their backup repositories and the cluster's nodes."
+  description = "Compute Engine CPU ceiling in region, where no VM runs: it bounds a stray one's cost."
   type        = number
 
   validation {

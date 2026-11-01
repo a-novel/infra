@@ -24,8 +24,8 @@ alerts = {
   "service-json-keys" = { failure_rate = 0.05, p95_seconds = 0.5 }
 }
 
-# The volume thresholds match the database hosts' disk alerts in foundation.
 thresholds = {
+  # Early enough to raise a database's storage, which grows its volume in place, before it fills.
   volume_warning  = 0.7
   volume_critical = 0.85
   node_cpu        = 0.8

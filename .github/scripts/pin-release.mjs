@@ -8,10 +8,7 @@ import { fileURLToPath } from "node:url";
 
 import { isRelease, newest, semver } from "./versions.mjs";
 
-export const paths = [
-  ":(glob)environments/production/*/terraform.tfvars",
-  ":(glob)builds/*.Dockerfile",
-];
+export const paths = [":(glob)environments/production/*/terraform.tfvars"];
 const titlePattern = new RegExp(
   String.raw`^chore\(deps\): update [a-z0-9-]+ images to (${semver})$`,
 );
@@ -30,21 +27,12 @@ export function pins(content, source) {
   return [...content.matchAll(pattern)].map((match) => match.slice(1));
 }
 
-/**
- * Moves image to version in content. A digest-pinned reference takes the new digest; a tag-only one,
- * such as a FROM line, keeps no digest.
- */
+/** Moves every digest-pinned reference to image in content to version and digest. */
 export function rewrite(content, image, version, digest) {
-  const name = escape(image);
-  return content
-    .replace(
-      new RegExp(String.raw`${name}:${semver}@sha256:[a-f0-9]{64}`, "g"),
-      `${image}:${version}@${digest}`,
-    )
-    .replace(
-      new RegExp(String.raw`${name}:${semver}(?=[^@0-9.]|$)`, "gm"),
-      `${image}:${version}`,
-    );
+  return content.replace(
+    new RegExp(String.raw`${escape(image)}:${semver}@sha256:[a-f0-9]{64}`, "g"),
+    `${image}:${version}@${digest}`,
+  );
 }
 
 // A failure's message carries the command's stderr.

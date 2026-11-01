@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import {
   buildWindow,
   epoch,
+  knownComponents,
   planAnnouncements,
   startedFor,
 } from "./downtime.mjs";
@@ -43,6 +44,22 @@ describe("epoch", () => {
     ]) {
       assert.equal(epoch(value, now), null, value);
     }
+  });
+});
+
+describe("knownComponents", () => {
+  it("names the database of each service root, and of no shared root", () => {
+    assert.deepEqual(
+      knownComponents([
+        "json-keys",
+        "cluster",
+        "foundation",
+        "authentication",
+        "github",
+        "grafana",
+      ]),
+      ["service-authentication.database", "service-json-keys.database"],
+    );
   });
 });
 

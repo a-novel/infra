@@ -189,9 +189,8 @@ runs:
           echo "::error::This plan deletes or unprotects resources; it needs the allow-resource-deletion label: $(jq -c '.deletions + .weakened' <<<"$verdict")"
           exit 1
         fi
-        # A merged database host change is applied regardless; deploy rolls it out only during a
-        # planned downtime. A major upgrade runs as soon as it applies, so a deploy applies it only
-        # during one. Pull requests are where either waits for its downtime.
+        # A major upgrade runs as soon as it applies, so a deploy applies it only during its planned
+        # downtime. Pull requests are where it waits for that downtime.
         if [ "$GITHUB_EVENT_NAME" != pull_request ]; then
           for service in $(jq -r '.major_upgrades[]' <<<"$verdict"); do
             if [ "$(node .github/scripts/downtime.mjs started "service-$service.database")" != true ]; then

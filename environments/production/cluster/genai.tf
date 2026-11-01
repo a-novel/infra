@@ -1,6 +1,5 @@
-# GenAI on the cluster, which serves no one until the cutover (a-novel/.github#522): its gRPC server,
-# which scales on CPU and its calls in flight, and the sweep, which checks the generations nobody
-# polled. Both reach OpenAI once a-novel/infra#1200 opens the way.
+# GenAI's gRPC server, which scales on CPU and its calls in flight, and its sweep, which checks the
+# generations nobody polled.
 locals {
   genai_env        = merge(local.database_env["genai"], local.downtime_env["genai"])
   genai_secret_env = merge(local.database_secret_env, { OPENAI_API_KEY = { secret = "secrets", key = "OPENAI_API_KEY" } })
@@ -28,9 +27,7 @@ locals {
     POSTGRES_MAX_OPEN_CONNS = "4"
     POSTGRES_MAX_IDLE_CONNS = "4"
     REST_PORT               = "8080"
-    # The cutover hands every generation to this sweep and pauses Cloud Run's in the same deploy.
-    # Both stacks share one OpenAI account, so a second sweep would start pending generations again
-    # and stop calls the other tracks (a-novel/infra#1207).
+    # The sweep runs every SWEEP_INTERVAL on its own, so nothing posts to it.
     SWEEP_TICKER = "true"
   })
 }
@@ -51,7 +48,7 @@ module "genai_grpc" {
   pod_annotations = local.database_client_annotations
 
   # Full pods wait on OpenAI and use little CPU, so the server also keeps its calls in flight at 60%
-  # of its cap per pod, Cloud Run's default target.
+  # of its cap per pod.
   scaling_gauge = {
     name    = "grpc_server_calls_in_flight"
     port    = tonumber(local.genai_grpc_env.METRICS_PORT)

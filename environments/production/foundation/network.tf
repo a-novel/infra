@@ -21,8 +21,7 @@ locals {
   dns_networks = [google_compute_network.cluster.id]
 }
 
-# Direct VPC egress logs no firewall verdict, so the network logs every lookup instead. The logs
-# show the names each workload resolves.
+# The network logs every lookup, so the logs show the names each workload resolves.
 resource "google_dns_policy" "production" {
   project = google_project.workload.project_id
   name    = "a-novel-production"

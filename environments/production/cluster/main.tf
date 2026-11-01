@@ -8,8 +8,8 @@ data "terraform_remote_state" "foundation" {
 
 locals {
   cluster = data.terraform_remote_state.foundation.outputs.cluster
-  # Each service's Cloud Run root, which pins its releases and secret versions and holds its
-  # settings, read once for every service that runs here too.
+  # Each service's own root pins its releases and secret versions and holds its settings. This root
+  # reads it once per namespace.
   service_inputs = { for service in var.namespaces : service => provider::terraform::decode_tfvars(file("${path.module}/../${service}/terraform.tfvars")) }
 }
 

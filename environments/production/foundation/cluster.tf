@@ -1,5 +1,5 @@
 # The production cluster (a-novel/.github#523). It is zonal, so the billing account's free tier
-# covers its management fee, and its nodes span two zones. It holds no workload yet.
+# covers its management fee, and its nodes span two zones.
 resource "google_container_cluster" "production" {
   project        = google_project.workload.project_id
   name           = "a-novel-production"

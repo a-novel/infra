@@ -1,5 +1,5 @@
-# JSON Keys on the cluster, which serves no one until the cutover (a-novel/.github#522). Its pods run
-# only once the operators' kinds exist, since they read the database's and External Secrets' Secrets.
+# JSON Keys' gRPC server. Its pods run only once the operators' kinds exist, since they read the
+# database's and External Secrets' Secrets.
 locals {
   json_keys_env = merge(local.database_env["json-keys"], local.downtime_env["json-keys"], local.telemetry_env["json-keys"].api, {
     # Signing reads keys from a cache, so a few connections serve every pod.

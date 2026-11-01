@@ -201,8 +201,7 @@ jobs:
           service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
           github_token: ${{ github.token }}
 
-  # The cluster's namespaces, add-ons and policies. It needs foundation's cluster and grants, and no
-  # Cloud Run release waits on it.
+  # The cluster root, which runs every service. It needs foundation's cluster and grants.
   cluster:
     needs: [changes, bootstrap, foundation]
     if: ${{ !cancelled() && !failure() && needs.changes.outputs.cluster == 'true' }}

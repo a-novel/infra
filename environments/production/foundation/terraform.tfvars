@@ -12,8 +12,7 @@ management_project_id  = "a-novel-management-prod"
 operations_alert_email = "geoffroy.vincent@agorastoryverse.com"
 organization_id        = "1031663934757"
 region                 = "europe-west1"
-# The cluster runs in Paris. Cloud Run, the database hosts and the old network keep region until they
-# retire.
+# The cluster runs in Paris.
 cluster_region = "europe-west9"
 # A ceiling only Google raises, above the node pool's maximum: deliberate growth past it starts with
 # a quota request.
@@ -42,8 +41,7 @@ cluster_ranges = {
 }
 workload_project_id   = "a-novel-production-prod"
 workload_project_name = "A-Novel production"
-# No VM runs in this region since the database hosts retired (a-novel/infra#1208): the ceiling only
-# bounds a stray one's cost.
+# No VM runs in `region`: the ceiling only bounds a stray one's cost.
 compute_cpu_quota = 24
 # The whole project at moderate traffic, planned near EUR 360 a month, with margin.
 monthly_budget_units = 500

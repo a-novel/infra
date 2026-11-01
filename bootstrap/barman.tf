@@ -34,9 +34,9 @@ locals {
   }
 }
 
-# The same protections as the pgBackRest buckets: Barman owns expiry, and a week of retention and
-# soft deletion bounds a mistaken or hostile delete. Barman expires only the lineage its database
-# archives to, so a retired lineage, which may hold a copy of production data, expires by age.
+# Barman owns expiry, and a week of retention and soft deletion bounds a mistaken or hostile delete.
+# Barman expires only the lineage its database archives to, so a retired lineage, which may hold a
+# copy of production data, expires by age.
 resource "google_storage_bucket" "barman" {
   for_each = var.cluster_databases.services
 
