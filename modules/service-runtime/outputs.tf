@@ -1,16 +1,6 @@
 output "repositories" {
-  description = "Image repository URLs by purpose (production, tooling)."
+  description = "Image repository URLs by purpose: production."
   value = { for purpose, repository in google_artifact_registry_repository.images :
     purpose => "${repository.location}-docker.pkg.dev/${repository.project}/${repository.repository_id}"
   }
-}
-
-output "repository_ids" {
-  description = "Image repository IDs by purpose, for IAM grants."
-  value       = { for purpose, repository in google_artifact_registry_repository.images : purpose => repository.repository_id }
-}
-
-output "notification_channel" {
-  description = "Operations notification channel name."
-  value       = google_monitoring_notification_channel.operations.name
 }

@@ -5,19 +5,7 @@ images = {
   rotatekeys = "ghcr.io/a-novel/service-json-keys/jobs/rotatekeys:v2.14.1@sha256:c0a59dfb76df228db7a6aa4effc9fb22abae650c7294fc8ee98d12d73e2e0244"
 }
 
-
 secret_versions = {
   app-password   = 1
   app-master-key = 2
 }
-
-backup_repository = {
-  cos_image = "projects/cos-cloud/global/images/cos-129-19506-505-8"
-  runtime = {
-    client_name      = "agora-database.a-novel-production-prod"
-    ca_version       = "1"
-    identity_version = "2"
-  }
-}
-
-alert_email = "geoffroy.vincent@agorastoryverse.com"

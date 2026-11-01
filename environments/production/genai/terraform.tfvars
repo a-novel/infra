@@ -5,19 +5,7 @@ images = {
   sweep      = "ghcr.io/a-novel/service-genai/sweep:v0.8.2@sha256:d1e62686d239a289b588888a1e6dd47e0652125675e9b3b5ed23ae56c9da5191"
 }
 
-
 secret_versions = {
   app-password   = 1
   openai-api-key = 1
 }
-
-backup_repository = {
-  cos_image = "projects/cos-cloud/global/images/cos-129-19506-505-8"
-  runtime = {
-    client_name      = "a-novel-genai-database.a-novel-production-prod"
-    ca_version       = "1"
-    identity_version = "1"
-  }
-}
-
-alert_email = "geoffroy.vincent@agorastoryverse.com"

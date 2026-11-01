@@ -5,7 +5,6 @@ images = {
   rest        = "ghcr.io/a-novel/service-authentication/rest:v2.20.1@sha256:9a657d98096c83b01ecbbe8d087ce6af60ef2e03d94f9739e5eec1037a9aea9f"
 }
 
-
 secret_versions = {
   app-password = 1
 }
@@ -15,14 +14,3 @@ smtp = {
   sender_email = "no-reply@agorastoryverse.com"
   sender_name  = "Agora"
 }
-
-backup_repository = {
-  cos_image = "projects/cos-cloud/global/images/cos-129-19506-505-8"
-  runtime = {
-    client_name      = "agora-authentication-database.a-novel-production-prod"
-    ca_version       = "1"
-    identity_version = "1"
-  }
-}
-
-alert_email = "geoffroy.vincent@agorastoryverse.com"
