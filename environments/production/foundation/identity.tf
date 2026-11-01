@@ -206,7 +206,8 @@ resource "google_service_account" "runtime" {
   display_name = each.value.display_name
   description  = "Keyless production identity for the ${replace(each.key, "_", " ")} boundary."
 
-  deletion_policy = "PREVENT"
+  # The old platform's identities retire with it (a-novel/infra#1208).
+  deletion_policy = each.key == "cluster_nodes" ? "PREVENT" : "DELETE"
 
   depends_on = [google_project_service.workload["iam.googleapis.com"]]
   lifecycle {

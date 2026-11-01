@@ -21,7 +21,7 @@ resource "terraform_data" "smoke" {
 resource "google_cloud_run_v2_job" "smoke" {
   name                = "agora-${var.service}-smoke"
   location            = var.region
-  deletion_protection = true
+  deletion_protection = false
   labels              = { environment = "production", component = var.service, role = "smoke" }
   run_execution_token = substr(sha256(terraform_data.smoke.id), 0, 24)
 

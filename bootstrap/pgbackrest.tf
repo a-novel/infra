@@ -36,6 +36,7 @@ locals {
   }]...)
 }
 
+# The old database hosts' backups retire with them, retention included (a-novel/infra#1208).
 resource "google_storage_bucket" "pgbackrest" {
   for_each = var.native_backups
 
@@ -43,17 +44,13 @@ resource "google_storage_bucket" "pgbackrest" {
   name                        = "${local.bucket_name_prefix}-pgbr-${each.key}"
   location                    = var.storage_location
   storage_class               = "STANDARD"
-  force_destroy               = false
+  force_destroy               = true
   uniform_bucket_level_access = true
   public_access_prevention    = "enforced"
   labels                      = { service = each.key, purpose = "pgbackrest" }
 
   versioning {
     enabled = true
-  }
-  retention_policy {
-    retention_period = 604800
-    is_locked        = false
   }
   # A bucket that bounds how long replaced content lasts keeps no soft-deleted copy either.
   soft_delete_policy {

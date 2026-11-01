@@ -129,7 +129,7 @@ resource "google_compute_disk" "database" {
 
   labels = merge(local.labels, { role = "database-data", component = each.value.component })
 
-  deletion_policy = "PREVENT"
+  deletion_policy = "DELETE"
 
   depends_on = [google_project_service.workload["compute.googleapis.com"]]
   lifecycle {
@@ -299,7 +299,7 @@ resource "google_compute_instance_group_manager" "database" {
 
   wait_for_instances        = true
   wait_for_instances_status = "STABLE"
-  deletion_policy           = "PREVENT"
+  deletion_policy           = "DELETE"
 
   lifecycle {
     prevent_destroy = true

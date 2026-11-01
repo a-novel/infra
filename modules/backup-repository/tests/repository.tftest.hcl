@@ -67,12 +67,11 @@ run "keeps_the_repository_private_and_hardened" {
   assert {
     condition = (
       length(google_compute_instance.repository.network_interface[0].access_config) == 0 &&
-      google_compute_instance.repository.deletion_protection &&
       google_compute_instance.repository.shielded_instance_config[0].enable_secure_boot &&
       google_compute_instance.repository.metadata["enable-oslogin"] == "TRUE" &&
       google_compute_instance.repository.metadata["block-project-ssh-keys"] == "TRUE"
     )
-    error_message = "The repository VM must have no external IP, keep deletion protection and accept only OS Login."
+    error_message = "The repository VM must have no external IP and accept only OS Login."
   }
 
   assert {

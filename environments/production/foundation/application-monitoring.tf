@@ -54,7 +54,7 @@ resource "google_monitoring_alert_policy" "application_jobs_unhealthy" {
   }
 
   notification_channels = [google_monitoring_notification_channel.operations_email.name]
-  deletion_policy       = "PREVENT"
+  deletion_policy       = "DELETE"
   lifecycle {
     prevent_destroy = true
   }

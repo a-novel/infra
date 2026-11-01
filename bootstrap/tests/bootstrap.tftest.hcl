@@ -28,10 +28,10 @@ run "protects_state_and_backups" {
   command = plan
 
   assert {
-    condition = alltrue([for bucket in concat([google_storage_bucket.state], values(google_storage_bucket.pgbackrest), values(google_storage_bucket.barman)) :
+    condition = alltrue([for bucket in concat([google_storage_bucket.state], values(google_storage_bucket.barman)) :
       bucket.public_access_prevention == "enforced" && bucket.uniform_bucket_level_access && !bucket.force_destroy
     ])
-    error_message = "Management buckets must be private, uniformly controlled and never force-destroyed."
+    error_message = "State and backup buckets must be private, uniformly controlled and never force-destroyed."
   }
 
   # Expiry would delete the backups of the lineage the cluster's databases archive to now.
@@ -53,12 +53,12 @@ run "protects_state_and_backups" {
   }
 
   assert {
-    condition = alltrue([for bucket in concat(values(google_storage_bucket.pgbackrest), values(google_storage_bucket.barman)) :
+    condition = alltrue([for bucket in values(google_storage_bucket.barman) :
       bucket.versioning[0].enabled && tonumber(bucket.retention_policy[0].retention_period) == 604800
       ]) && alltrue([for bucket in google_storage_bucket.pgbackrest :
       alltrue([for rule in bucket.lifecycle_rule : alltrue([for condition in rule.condition : condition.age == null || condition.age == 0])])
     ])
-    error_message = "Backup repositories keep a week of retention, and pgBackRest's are never pruned by age: pgBackRest owns their expiry."
+    error_message = "Barman's buckets keep a week of retention, and pgBackRest's are never pruned by age: pgBackRest owns their expiry."
   }
 
   assert {

@@ -75,7 +75,7 @@ resource "google_compute_instance" "repository" {
   machine_type              = var.machine_type
   desired_status            = "RUNNING"
   allow_stopping_for_update = false
-  deletion_protection       = true
+  deletion_protection       = false
   can_ip_forward            = false
   tags                      = ["agora-pgbackrest-${var.service}"]
   # config fingerprints the cloud-config the VM boots from. The rollout restarts the VM while
