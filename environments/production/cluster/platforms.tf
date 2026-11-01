@@ -10,6 +10,8 @@ locals {
     # The account name opens the account platform.
     studio = { ACCOUNT_URL = "https://${local.platform_edges.account.host}" }
   }
+  # A platform takes each request's origin from its Host header, over https: only the HTTPS
+  # listener routes to it, and it keeps Host. Form posts and Studio's redirect URI rely on that.
   platform_env = { for platform, settings in local.platforms : platform => merge(local.telemetry_env[platform].api, {
     AUTHENTICATION_SERVICE_URL = "https://rest.authentication.svc:${local.authentication_env.REST_PORT}"
     # The load balancer appends the visitor's address, then its own, so the second entry from the
@@ -17,8 +19,6 @@ locals {
     # platform forwards.
     ADDRESS_HEADER = "X-Forwarded-For"
     XFF_DEPTH      = "2"
-    # The load balancer ends TLS, so the platform checks form posts against its public origin.
-    ORIGIN = "https://${local.platform_edges[platform].host}"
   }, settings) }
   # The port each platform serves.
   platform_port = 3000
