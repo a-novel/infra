@@ -1,7 +1,7 @@
 # Planned downtime
 
 This runbook is about planned downtimes. A planned downtime is an announced period during which some
-services stop, so their database can be changed safely.
+services stop, so their database can be upgraded safely. A PostgreSQL major upgrade needs one.
 
 ## How a downtime unfolds
 
@@ -22,14 +22,14 @@ There is at most one downtime at a time. It lives in the `DOWNTIME` repository v
 `{"components": [...], "start": "...", "end": "..."}`, and only `downtime.yaml` writes it. These
 read it:
 
-- **the services.** At each deploy, a listed service receives `DOWNTIME_START` and stops on its own
-  at that time. No deploy runs at `start`;
+- **the services.** A deploy of the cluster root gives each listed service's workloads and Jobs
+  `DOWNTIME_START`, and they stop on their own at that time. No deploy runs at `start`;
 - **the platform.** It reads the whole downtime from
   `https://raw.githubusercontent.com/a-novel/infra/downtime/downtime.json`, which holds `null` when
   none is planned. The `downtime` branch holds only that file, replaced on every run;
-- **deploys, plans and drift checks.** A database host change or a PostgreSQL major upgrade merges
-  only while a downtime listing that service has started, and the deploy rolls the host or applies
-  the upgrade only then. GKE holds every cluster upgrade from `start` to `end`.
+- **deploys, plans and drift checks.** A PostgreSQL major upgrade merges only while a downtime
+  listing that service has started, and the deploy applies it only then. GKE holds every cluster
+  upgrade from `start` to `end`.
 
 Users also read the downtime in the public `a-novel-planned-downtime` Discord channel. Each
 `downtime.yaml` run hands the `downtime-announcements` Cloud Workflow, in the management project,
@@ -64,8 +64,7 @@ gh workflow run downtime.yaml --repo a-novel/infra -f operation=schedule \
 - Announce a downtime well before its start. Users see it within minutes.
 - **List the services that depend on the one you stop.** Authentication signs its tokens through JSON
   Keys, so a JSON Keys downtime should list Authentication too.
-- Requests already running at `start` finish normally. Leave a margin before the database host
-  restarts.
+- Requests already running at `start` finish normally. Leave a margin before the upgrade.
 - Running it again replaces the downtime. A new `end` only changes what users see. A new `start` or
   new components also change when the services stop. A new downtime needs both components and a
   `start`.
@@ -80,8 +79,7 @@ still deploys. Every later deploy applies the current `DOWNTIME` too, so a merge
 cannot lose it.
 
 **Check that a deploy succeeded after the change, before `start`.** If none did, the services keep
-serving at `start`, and the rollout refuses to restart their database hosts until a deploy run by
-hand gives them `DOWNTIME_START`.
+serving at `start`, until a deploy run by hand gives them `DOWNTIME_START`.
 
 ```bash
 gh run list --repo a-novel/infra --workflow deploy.yaml --limit 3
@@ -89,12 +87,12 @@ gh run list --repo a-novel/infra --workflow deploy.yaml --limit 3
 
 ## While it runs
 
-Merge the database host changes the downtime was planned for, as
-[Change a database host](database.md#steps) describes.
+Merge the upgrades the downtime was planned for, as
+[PostgreSQL major upgrades](database.md#postgresql-major-upgrades) describes.
 
-The deploy's health and smoke checks skip while the downtime runs, since the listed services refuse
-work. So does a check that began just before `start` and failed after it. Check the database hosts
-directly instead ([Inspect and connect](database.md#inspect-and-connect)).
+The smoke and health checks skip while the downtime runs, since the listed services refuse work. So
+does a check that began just before `start` and failed after it. Check the databases directly
+instead ([Inspect a database](database.md#inspect-a-database)).
 
 ## Clear the downtime
 
@@ -105,8 +103,8 @@ gh workflow run downtime.yaml --repo a-novel/infra -f operation=clear
 ```
 
 The workflow deletes `DOWNTIME` and publishes `null`. Then `deploy.yaml` runs a full deploy, which
-restarts the services without `DOWNTIME_START`. The health check runs again, and so does each smoke
-check whose service the downtime listed.
+restarts the services without `DOWNTIME_START`, and runs again each smoke check whose service the
+downtime listed.
 
 **Check that a deploy succeeded after the clear.** Until one does, the services keep answering 503.
 If none is due, run one by hand:

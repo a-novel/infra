@@ -35,8 +35,8 @@ The workflows also read organization variables, which must be visible to this re
 Apps' client IDs and logins, `AGENT_KILL_SWITCH`, `DISCORD_REPO_ROLES` and `RELEASE_BOT_LOGIN`.
 Without `RELEASE_BOT_LOGIN`, every plan that changes a release image fails. The Apps' private keys
 live only in the `governance` environment, which the GitHub root creates and its secret sync fills
-from Secret Manager. The deploys and rollouts post to Discord through the `DEPLOY_WEBHOOK` secret, and skip
-their posts without it.
+from Secret Manager. The deploys post to Discord through the `DEPLOY_WEBHOOK` secret, and skip their
+posts without it.
 
 Environment `production` allows the `master` branch only, with no required reviewers:
 
@@ -114,9 +114,9 @@ done
 
 ## Rebuild from nothing
 
-Use this only if the management project is gone, since it holds the state, the CI identities and the
-secrets. Google never reuses a deleted project's ID, and every bucket name embeds the management
-project's number, so a rebuild starts with new names.
+Use this only if the management project is gone, since it holds the state, the CI identities, the
+secrets and the backups, so the databases start empty. Google never reuses a deleted project's ID,
+and every bucket name embeds the management project's number, so a rebuild starts with new names.
 
 1. **Create the management project** under a new ID, and link billing:
 
@@ -129,9 +129,9 @@ project's number, so a rebuild starts with new names.
 
 2. **Rename it everywhere, on a branch.** Replace the old project ID and number with the new ones in
    every file this lists. The project IDs and bucket names sit in each root's `versions.tf`,
-   `main.tf` and `terraform.tfvars`, and in the workflows. If the workload projects still exist,
-   give the rebuilt ones new IDs in foundation's `terraform.tfvars` too, or adopt them with `import`
-   blocks. The deploy identity has no rights outside the organization's projects.
+   `main.tf` and `terraform.tfvars`, and in the workflows. If the workload project still exists,
+   give the rebuilt one a new ID in foundation's and bootstrap's `terraform.tfvars` too, or adopt it
+   with `import` blocks. The deploy identity has no rights outside the organization's projects.
 
    ```bash
    grep -rlE 'a-novel-management-prod|232403541574' --exclude-dir=.git .
@@ -166,42 +166,44 @@ project's number, so a rebuild starts with new names.
 
 5. **Configure GitHub** [as above](#github-settings), with the values
    `tofu -chdir=bootstrap output` prints. CI can plan again from here.
-6. **Add every secret value**, as [Secrets](secrets.md) describes, including the pgBackRest TLS
-   certificates. Bootstrap created the empty secrets, and new secrets start at version 1. Set every
-   pinned version in the roots' `terraform.tfvars` to the versions you created, on the same branch.
-   Merge it. Its deploy creates the workload projects, the network, the database hosts and the
-   services.
-7. **Roll each database host by hand**, as [Roll a host by hand](database.md#roll-a-host-by-hand)
-   describes, so it starts with its secrets. Nobody uses the services yet, so no downtime is needed.
-8. **Configure SMTP**, the Workspace relay and its DNS records:
-   - the [relay rule](secrets.md#smtp-google-workspace-relay) admits the NAT address;
+6. **Add every secret value**, as [Secrets](secrets.md) describes. Bootstrap created the empty
+   secrets, and new secrets start at version 1. On the same branch, set every pinned version in the
+   roots' `terraform.tfvars` to the versions you created, and the cluster root's `custom_resources`
+   to `false`, since a fresh cluster lacks the add-ons' kinds. Merge it. Its deploy creates the
+   workload project, the network, the cluster and its add-ons.
+7. **Let OpenAI and the SMTP relay admit the NAT address**, which foundation's
+   `cluster_nat_address` output gives:
+   - OpenAI's project allows that address alone;
+   - the [relay rule](secrets.md#smtp-google-workspace-relay) admits it;
    - SPF includes `_spf.google.com`;
    - DKIM is active in Google Admin;
    - DMARC is present.
-9. **Grant the first administrator** by running Authentication's maintenance job with its
-   `account-role` operation. It emails the address a registration link, and the account it creates
-   gets the role. Only the `authentication_maintenance_principals` may run it:
+8. **Turn the custom resources on.** Set the cluster root's `custom_resources` to `true` in a pull
+   request, and merge it. Its deploy creates every database, empty, and the services, and waits on
+   their smoke checks and GenAI's call to OpenAI.
+9. **Point each platform's host at its address.** Foundation's `platform_edges` output lists the DNS
+   records each host needs, the certificate's authorization first, then the address. Add them in
+   Squarespace's DNS for `storyverse.fr`:
 
    ```bash
-   gcloud run jobs execute agora-authentication-maintenance --project=a-novel-production-prod \
-     --region=europe-west1 --wait --args=account-role,--email=<address>,--role=auth:superadmin
+   tofu -chdir=environments/production/foundation init
+   tofu -chdir=environments/production/foundation output -json platform_edges | jq '.[].dns_records'
    ```
 
-   The run's log ends with `account-role completed for <address> with outcome …`. Running it again
-   converges on the same role.
+10. **Grant the first administrator** by running Authentication's maintenance operation
+    `account-role`. It emails the address a registration link, and the account it creates gets the
+    role. Only the `authentication_maintenance_principals` may run it: they copy the suspended
+    `maintenance` CronJob into a Job whose arguments name the operation. Admission refuses any other
+    change to its template. With `kubectl`, `gke-gcloud-auth-plugin` and `jq` installed:
 
-   On the cluster, which serves from the cutover (a-novel/.github#522), the same principals copy
-   the suspended `maintenance` CronJob into a Job whose arguments name the operation. Admission
-   refuses any other change to its template. With `kubectl`, `gke-gcloud-auth-plugin` and `jq`
-   installed:
+    ```bash
+    gcloud container clusters get-credentials a-novel-production --project=a-novel-production-prod --location=europe-west9-a --dns-endpoint
+    kubectl --namespace=authentication create job --from=cronjob/maintenance first-admin --dry-run=client -o json |
+      jq '.spec.template.spec.containers[0].args = ["account-role", "--email=<address>", "--role=auth:superadmin"]' |
+      kubectl --namespace=authentication create -f -
+    kubectl --namespace=authentication logs --follow --pod-running-timeout=2m job/first-admin
+    ```
 
-   ```bash
-   gcloud container clusters get-credentials a-novel-production --project=a-novel-production-prod --location=europe-west9-a --dns-endpoint
-   kubectl --namespace=authentication create job --from=cronjob/maintenance first-admin --dry-run=client -o json |
-     jq '.spec.template.spec.containers[0].args = ["account-role", "--email=<address>", "--role=auth:superadmin"]' |
-     kubectl --namespace=authentication create -f -
-   kubectl --namespace=authentication logs --follow --pod-running-timeout=2m job/first-admin
-   ```
-
-   A Job's name serves once, so give a second run another name. A failed Job is not retried: read
-   its log, then run it again.
+    The log ends with `account-role completed for <address> with outcome …`. A Job's name serves
+    once, so give a second run another name. A failed Job is not retried: read its log, then run it
+    again. Running the operation again converges on the same role.

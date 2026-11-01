@@ -11,7 +11,7 @@ compares them with what exists, and makes the API calls that close the gap.
 | Term                   | Meaning                                                                                    |
 | ---------------------- | ------------------------------------------------------------------------------------------ |
 | **Provider**           | A plugin that talks to an API, pinned in each root's `versions.tf`.                        |
-| **Resource**           | One object to manage, such as a VM, a bucket or an IAM grant.                              |
+| **Resource**           | One object to manage, such as a node pool, a bucket or an IAM grant.                       |
 | **Data source**        | A read-only lookup of something managed elsewhere.                                         |
 | **Root**               | A directory you run `tofu` in, with its own state.                                         |
 | **Module**             | A reusable directory of resources that roots call, with no state of its own.               |
@@ -41,12 +41,13 @@ will change. Merging it deploys it, and nobody applies by hand.
 ```text
 pull request ──► checks: validate, lint, test, scan, one plan per root
                   │  plan deletes or unprotects something? ─► needs allow-resource-deletion
-                  │  plan stops a database?                ─► needs allow-downtime, during a planned downtime
+                  │  plan upgrades a PostgreSQL major?      ─► needs allow-downtime, during a planned downtime
                   ▼
              approval ──► merge queue ──► master
                                             ▼
-deploy:  bootstrap ─► foundation ─► one job per service ─┬─► rollout of the database hosts
-                                                         └─► health check
+deploy:  bootstrap ─► foundation ─┬─► cluster: images, migrations, workloads, health checks
+                                  ├─► grafana, github
+                                  └─► one job per service root
 ```
 
 1. **The pull request.** CI validates and tests every root, lints the repository, scans it, and plans
@@ -56,7 +57,7 @@ deploy:  bootstrap ─► foundation ─► one job per service ─┬─► rol
    - a plan that deletes, replaces or forgets a resource, or weakens its protection, needs
      `allow-resource-deletion`, as does a ruleset or deployment pattern the GitHub root would
      prune;
-   - a plan that changes a database host or a PostgreSQL major needs `allow-downtime`, and a planned
+   - a plan that upgrades a database's PostgreSQL major needs `allow-downtime`, and a planned
      downtime of that service in progress.
 
    A label approves the commit it was added on. A push removes it, so each new commit's plans get
@@ -72,9 +73,10 @@ deploy:  bootstrap ─► foundation ─► one job per service ─┬─► rol
    for a deletion or a downtime, so such an update waits for a maintainer. Anything else a bot
    opens, such as a major update, waits for a maintainer's or an admin's review like a person's.
    Repository admins can bypass these rules.
-4. **The deploy.** Each merge starts `deploy.yaml`. It applies bootstrap and foundation when they
-   changed since the last successful deploy. Then it applies every service root in parallel, so the
-   services always run the current planned downtime.
+4. **The deploy.** Each merge starts `deploy.yaml`. It applies each root that changed since the last
+   successful deploy: bootstrap, then foundation, then the cluster, Grafana and GitHub roots. It
+   plans every service root too, which holds only pins. A release pin changes the cluster root,
+   which reads them. A deploy run by hand, or by `downtime.yaml`, applies every root.
 
 A daily **drift** check re-plans every root. It fails when the cloud differs from `master`, as after
 a change made in the console. It also fails when a repository's setting differs from what the
@@ -87,15 +89,14 @@ GitHub Actions gets short-lived Google credentials through **Workload Identity F
 No service-account key exists anywhere. The trust conditions live in
 [`bootstrap/identity.tf`](../bootstrap/identity.tf).
 
-| Identity           | Used by                                                                                               | Can                                                 |
-| ------------------ | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| `infra-plan`       | pull-request plans, the drift check                                                                   | read everything a plan needs                        |
-| `infra-foundation` | `deploy.yaml`, `roll-database.yaml` and `recovery.yaml`, on `master`, in the `production` environment | change everything                                   |
-| `infra-downtime`   | `downtime.yaml`, on `master`                                                                          | start and cancel the planned downtime announcements |
-| `infra-health`     | the scheduled health check in `drift.yaml`, on `master`                                               | call Authentication's REST API, find Studio's URL   |
-| `infra-github`     | the GitHub root's `deploy.yaml` job and `sweep.yaml`, on `master`, in the `github` environment        | apply the GitHub root, with no Google Cloud role    |
-| `infra-drift`      | the GitHub root's drift check in `drift.yaml`, on `master`                                            | read the GitHub Deploy App keys and the state       |
-| `infra-grafana`    | the Grafana root's `deploy.yaml` job, on `master`, in the `grafana` environment                       | apply the Grafana root, with no Google Cloud role   |
+| Identity           | Used by                                                                                        | Can                                                 |
+| ------------------ | ---------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `infra-plan`       | pull-request plans, the drift check                                                            | read everything a plan needs                        |
+| `infra-foundation` | `deploy.yaml` and `recovery.yaml`, on `master`, in the `production` environment                | change everything                                   |
+| `infra-downtime`   | `downtime.yaml`, on `master`                                                                   | start and cancel the planned downtime announcements |
+| `infra-github`     | the GitHub root's `deploy.yaml` job and `sweep.yaml`, on `master`, in the `github` environment | apply the GitHub root, with no Google Cloud role    |
+| `infra-drift`      | the GitHub root's drift check in `drift.yaml`, on `master`                                     | read the GitHub Deploy App keys and the state       |
+| `infra-grafana`    | the Grafana root's `deploy.yaml` job, on `master`, in the `grafana` environment                | apply the Grafana root, with no Google Cloud role   |
 
 GitHub issues no OIDC token to pull requests from forks, so outside contributors get no cloud
 access.
@@ -105,14 +106,14 @@ Human operators are the members of bootstrap's `operator_principals` and foundat
 
 - **in the management project**, the administration of IAM, Cloud Scheduler, Workflows and the
   management buckets, private audit logs, and the right to add and read versions of every secret;
-- **in the production project**, read access, logs, and SSH with administrator rights to the VMs
-  through Identity-Aware Proxy;
+- **in the workload project**, read access to the cluster, the compute resources, the logs and the
+  alert policies;
 - **on the cluster**, read access to each service's namespace: its pods and their logs, events and
   workloads, never its Secrets.
 
-The cluster's workload logs stay off Cloud Logging, so operators read them through the control
-plane, with `kubectl` and `gke-gcloud-auth-plugin` installed. Each namespace's Jobs record its
-health checks: a `smoke-<hash>` Job per new image, and the `health` CronJob's last runs.
+The cluster's workload logs stay off Cloud Logging, so operators read them in Grafana, or through
+the control plane, with `kubectl` and `gke-gcloud-auth-plugin` installed. Each namespace's Jobs
+record its health checks: a `smoke-<hash>` Job per new image, and the `health` CronJob's last runs.
 
 ```bash
 gcloud container clusters get-credentials a-novel-production --project=a-novel-production-prod --location=europe-west9-a --dns-endpoint
@@ -120,33 +121,30 @@ kubectl --namespace=authentication logs deployment/rest
 kubectl --namespace=authentication get jobs
 ```
 
-They have no write access in the workload projects. Changes there go through pull requests, and
-host restarts through the workflows.
+They have no write access in the workload project or on the cluster. Changes there go through pull
+requests.
 
 Foundation's `authentication_maintenance_principals` run Authentication's maintenance operations,
-such as granting a role, as the [setup runbook](runbooks/setup.md) shows: on Cloud Run with the
-job's arguments, and on the cluster as a Job copied from the `maintenance` CronJob.
+such as granting a role, as a Job copied from the `maintenance` CronJob, as the
+[setup runbook](runbooks/setup.md) shows.
 
-## Database hosts and planned downtime
+## Changes and planned downtime
 
-Most changes deploy without anyone noticing, since Cloud Run moves traffic to a new revision only
-once it starts. A database host is different. Each service's PostgreSQL runs on one VM, and changing
-that VM means restarting it, which makes the database unavailable for a minute or two.
+Most changes deploy without anyone noticing. A workload moves to new pods only once their probes
+pass, and a database switches over to its replica, which pauses writes for seconds. A PostgreSQL
+major upgrade is different: CloudNativePG stops every instance of the database while `pg_upgrade`
+runs.
 
-Database host changes therefore follow their own path:
+A major upgrade therefore follows its own path:
 
-- **A planned downtime makes the restart safe.** An admin schedules one with `downtime.yaml`. Users
-  are warned in advance. From its start until it is cleared, the listed services refuse work and
-  leave their database alone.
-- **The change merges only during that downtime**, with the `allow-downtime` label.
-- **Merging restarts nothing.** It only updates the host's configuration. The deploy's **rollout**
-  job then restarts each database host that differs from its configuration, and only while its
-  downtime runs. It snapshots the data disk first, which keeps the data as it stood before.
-- **The backup repository VMs need no downtime.** The rollout restarts one whenever its
-  configuration changed, and after each restart of its database host.
+- **A planned downtime makes it safe.** An admin schedules one with `downtime.yaml`. Users are warned
+  in advance. From its start until it is cleared, the listed services refuse work and leave their
+  database alone.
+- **The upgrade merges only during that downtime**, with the `allow-downtime` label, and the deploy
+  applies it only then.
 
 [Planned downtime](runbooks/downtime.md) and
-[Change a database host](runbooks/database.md#change-a-database-host) walk through it.
+[PostgreSQL major upgrades](runbooks/database.md#postgresql-major-upgrades) walk through it.
 
 ## Fleet tooling
 
@@ -164,13 +162,15 @@ these pieces:
 
 - **Several roots.** Roots are split by owner and by blast radius. Bootstrap holds the state bucket
   and the CI identities, so a mistake elsewhere cannot lock us out. Foundation holds the long-lived
-  shared pieces. Each service root holds one service's moving parts, so a release plans a few dozen
-  resources instead of hundreds.
-- **Service roots read foundation's applied outputs** with `terraform_remote_state`. A new
-  foundation output therefore deploys in its own pull request, before a service root reads it.
+  shared pieces: the project, the network and the cluster. The cluster root holds every service's
+  workloads and database. Each service root holds only that service's release pins and secret
+  versions, so a release changes one file.
+- **The cluster root reads the other roots.** It reads foundation's applied outputs with
+  `terraform_remote_state`, so a new foundation output deploys in its own pull request first. It
+  reads each service root's `terraform.tfvars` directly, so a pin deploys in the same merge.
 - **Native features first.**
-  - Migrations run during apply through Cloud Run's `run_execution_token`.
-  - Traffic moves only to a revision whose startup probe passes.
+  - Migrations run as a Job the deploy waits on, before the server rolls.
+  - A Deployment moves to new pods only once their probes pass.
   - Images are pinned by digest, and copied only after their provenance is verified.
-  - Custom code is limited to the two programs that run on the VMs, and to the pipeline's rules in
+  - Custom code is limited to the health checks the cluster runs, and to the pipeline's rules in
     `.github/scripts`, each with its tests.

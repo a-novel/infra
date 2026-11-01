@@ -3,12 +3,11 @@
 This runbook is about secret values. OpenTofu manages the secret containers, in the management
 project. Humans add their values with `gcloud`, so the values never reach state, plans or Git. Each
 workload reads the numeric version its root's `terraform.tfvars` pins, so a new value takes effect
-only once a pull request pins it.
+only once a pull request pins it. External Secrets copies each pinned version into the namespace's
+`secrets` Secret, and a pod reads it when it starts.
 
 ## Rotate a secret
 
-This is the general procedure. The database password, the waitlist secret and the pgBackRest
-certificates rotate differently, because something besides the service reads them.
 `production-json-keys-app-master-key` has no rotation procedure. It encrypts the signing keys JSON
 Keys stores, and a new value cannot decrypt them.
 
@@ -22,16 +21,16 @@ Keys stores, and a new value cannot decrypt them.
    gcloud secrets versions list "$SECRET" --project=a-novel-management-prod --limit=3
    ```
 
-   | Secret              | Format                                                    |
-   | ------------------- | --------------------------------------------------------- |
-   | `*-app-password`    | 32–128 characters, `[A-Za-z0-9_-]`, different per service |
-   | `*-app-master-key`  | 64 hexadecimal characters                                 |
-   | `*-waitlist-secret` | at least 32 characters                                    |
-   | `*-openai-api-key`  | an OpenAI project key restricted to the Responses API     |
+   | Secret             | Format                                                |
+   | ------------------ | ----------------------------------------------------- |
+   | `*-app-master-key` | 64 hexadecimal characters                             |
+   | `*-openai-api-key` | an OpenAI project key restricted to the Responses API |
 
-2. **Pin the new number** in `secret_versions` in the service root, in a pull request, and merge it.
-   The deploy rolls out a new revision that reads it.
-3. **Disable the old version** once the deploy is healthy:
+2. **Pin the new number** in `secret_versions` in the service root, or in the cluster root's
+   `addon_secret_versions` for an add-on, in a pull request, and merge it. The deploy points the
+   namespace's `secrets` Secret at the new version. The running pods keep the value they started
+   with, so the new one takes effect at the workload's next rollout, such as its next release.
+3. **Disable the old version** once every pod that reads the secret has restarted on the new value:
 
    ```bash
    OLD="<old version number>"
@@ -46,19 +45,9 @@ Keys stores, and a new value cannot decrypt them.
    ```
 
 Disabling a version does not revoke the credential where it was issued. For a leak, also revoke it
-there, such as in the Google account or the database role.
+there, such as in OpenAI's project.
 
-### Database password
-
-The database host sets the application role's password at boot, from foundation's
-`database_releases.<service>.app_password_version`. The service reads the same secret through
-`secret_versions.app-password` in its root.
-
-1. Add the version.
-2. In **one** pull request, bump both values.
-3. Merge it as a [database host change](database.md#change-a-database-host), during a planned
-   downtime. The deploy gives the service the new version, then the rollout restarts the host, which
-   sets it. The services refuse work during the downtime, so nothing fails in between.
+The databases' passwords live in CloudNativePG's `database-app` Secrets, never in Secret Manager.
 
 ## SMTP (Google Workspace relay)
 
@@ -68,22 +57,12 @@ input names the relay and the sender.
 
 The relay rule is in Google Admin under **Apps → Google Workspace → Gmail → Routing → SMTP relay
 service**. Its settings are "only addresses in my domains", "only accept mail from the specified IP
-addresses" with the NAT addresses alone, and "require TLS", without SMTP authentication. The
-addresses are foundation's `cluster_nat_address` and, until the old network retires, `nat_address`.
+addresses" with the NAT address alone, and "require TLS", without SMTP authentication. The address
+is foundation's `cluster_nat_address`.
 
 Health reporting `client:smtp` up proves only that the relay answers over TLS. Only a real email
 proves that the relay accepts the service's address, so send one after any change to the rule or
 to the [NAT address](../architecture.md#network).
-
-## Waitlist
-
-To turn it on:
-
-1. Add a version of `production-authentication-waitlist-secret`.
-2. In the authentication root, set `waitlist_url` and `secret_versions.waitlist-secret`, and merge.
-
-The Apps Script behind the waitlist must use the same secret, so update both together. Requests
-fail while they differ. To turn the waitlist off, remove both settings.
 
 ## GitHub dispatch tokens
 
@@ -194,55 +173,6 @@ it in the stack's Grafana, under **Administration → Users and access → Cloud
 Add the token as a version of `production-alloy-push-token`, as in
 [Rotate a secret](#rotate-a-secret), and pin it in the cluster root's `addon_secret_versions`. For a
 leak, delete the token in Grafana as well as disabling its version.
-
-## pgBackRest TLS certificates
-
-The database and repository hosts authenticate each other with certificates from an offline CA.
-The hourly check fails 30 days before any certificate expires.
-
-| Secret                                       | Contents                                       |
-| -------------------------------------------- | ---------------------------------------------- |
-| `production-<service>-pgbackrest-ca`         | CA certificate only, never its key             |
-| `production-<service>-pgbackrest-database`   | client certificate followed by its private key |
-| `production-<service>-pgbackrest-repository` | server certificate followed by its private key |
-
-- **Client CN:** the service's `native_backups.<service>.client_name` in foundation's
-  `terraform.tfvars`.
-- **Server DNS name:** `agora-pgbackrest-<service>.europe-west1-d.c.a-novel-production-prod.internal`.
-
-The CA's private key stays offline with its custodian, and never reaches a VM or Secret Manager.
-`host-credentials` checks each bundle when a host starts, and refuses it unless:
-
-- the CA secret holds only CA certificates, currently valid;
-- each identity secret holds one unencrypted private key and its certificate, plus any
-  intermediates, chaining to that CA and valid now;
-- a client certificate allows TLS client authentication and has the client CN above;
-- a server certificate allows TLS server authentication and has the server DNS name above;
-- neither identity certificate is a CA.
-
-To renew:
-
-1. Issue the certificates offline, with the same names and purposes.
-2. Upload each PEM file, here the database host's:
-
-   ```bash
-   SERVICE=json-keys
-   ENDPOINT=database
-   FILE=database.pem
-   gcloud secrets versions add "production-$SERVICE-pgbackrest-$ENDPOINT" --project=a-novel-management-prod \
-     --data-file="$FILE"
-   ```
-
-3. Bump the versions in one pull request:
-   - for the database host, `native_backups.<service>.ca_version` and `identity_version` in
-     foundation;
-   - for the repository VM, `backup_repository.runtime.ca_version` and `identity_version` in the
-     service root.
-4. Merge it as a [database host change](database.md#change-a-database-host), during a planned
-   downtime. The rollout restarts the database host, then the repository VM, which load the new
-   certificates.
-
-Delete the local PEM files afterwards.
 
 ## Audit access
 
