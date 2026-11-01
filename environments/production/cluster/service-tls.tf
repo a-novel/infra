@@ -16,7 +16,7 @@ locals {
 resource "helm_release" "trust_manager" {
   name       = "trust-manager"
   namespace  = kubernetes_namespace_v1.addon["cert-manager"].metadata[0].name
-  repository = "https://charts.jetstack.io"
+  repository = "oci://quay.io/jetstack/charts"
   chart      = "trust-manager"
   version    = "v0.25.0"
 
