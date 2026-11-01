@@ -17,8 +17,10 @@ alerts = {
   "platform-account" = { failure_rate = 0.05, p95_seconds = 2 }
   "platform-studio"  = { failure_rate = 0.05, p95_seconds = 2 }
   # Its health check, every five minutes, also reaches the database and the mail relay, and took
-  # 0.9 seconds at the 95th percentile on 2026-10-30.
-  "service-authentication" = { failure_rate = 0.05, p95_seconds = 2 }
+  # 0.9 seconds at the 95th percentile on 2026-10-30. Each email goes out after its request answers,
+  # as a trace of its own that waits on the relay. An ignore is a regular expression, so [(] stands
+  # for a parenthesis.
+  "service-authentication" = { failure_rate = 0.05, p95_seconds = 2, latency_ignores = ["core[.]MailDelivery[(]send[)]"] }
   # A generation stream stays open until the model has finished writing.
   "service-genai"     = { failure_rate = 0.05, p95_seconds = 1, latency_ignores = ["anovel.genai.v0.GenerationStreamService/GenerationStream"] }
   "service-json-keys" = { failure_rate = 0.05, p95_seconds = 0.5 }

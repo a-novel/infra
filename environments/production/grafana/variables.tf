@@ -38,7 +38,7 @@ variable "contact_point" {
 }
 
 variable "alerts" {
-  description = "Each service's alert thresholds, by repository: the failing share of its requests and job runs, the p95 duration of its requests in seconds, and the spans whose duration says nothing of slowness."
+  description = "Each service's alert thresholds, by repository: the failing share of its requests and job runs, the p95 duration of its requests in seconds, and the spans whose duration says nothing of slowness, as regular expressions."
   type = map(object({
     failure_rate    = number
     p95_seconds     = number
