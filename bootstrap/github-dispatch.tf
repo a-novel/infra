@@ -21,6 +21,7 @@ locals {
     "clean-images.yaml" = {
       cron = "17 3 * * *"
       repositories = [
+        "a-novel/platform-account",
         "a-novel/platform-studio",
         "a-novel/service-authentication",
         "a-novel/service-genai",

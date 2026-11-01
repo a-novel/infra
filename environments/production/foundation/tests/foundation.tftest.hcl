@@ -206,23 +206,13 @@ run "keeps_the_cluster_private" {
   }
 
   assert {
-    condition = (
-      google_artifact_registry_repository.studio.project == google_project.workload.project_id &&
-      one(google_artifact_registry_repository.studio.docker_config).immutable_tags &&
-      google_artifact_registry_repository_iam_member.cluster_studio.role == "roles/artifactregistry.reader" &&
-      google_artifact_registry_repository_iam_member.cluster_studio.member == google_service_account.runtime["cluster_nodes"].member
-    )
-    error_message = "Studio's cluster release must sit in the workload project, which admission requires, with immutable tags the nodes only read."
-  }
-
-  assert {
-    condition = (
-      google_artifact_registry_repository.narrative_engine.project == google_project.workload.project_id &&
-      one(google_artifact_registry_repository.narrative_engine.docker_config).immutable_tags &&
-      google_artifact_registry_repository_iam_member.cluster_narrative_engine.role == "roles/artifactregistry.reader" &&
-      google_artifact_registry_repository_iam_member.cluster_narrative_engine.member == google_service_account.runtime["cluster_nodes"].member
-    )
-    error_message = "narrative-engine's cluster release must sit in the workload project, which admission requires, with immutable tags the nodes only read."
+    condition = alltrue([for name, repository in google_artifact_registry_repository.cluster_release :
+      repository.project == google_project.workload.project_id &&
+      one(repository.docker_config).immutable_tags &&
+      google_artifact_registry_repository_iam_member.cluster_release[name].role == "roles/artifactregistry.reader" &&
+      google_artifact_registry_repository_iam_member.cluster_release[name].member == google_service_account.runtime["cluster_nodes"].member
+    ])
+    error_message = "Each cluster-only release must sit in the workload project, which admission requires, with immutable tags the nodes only read."
   }
 }
 
@@ -318,28 +308,31 @@ run "caps_cloud_run_in_every_project" {
   }
 }
 
-run "serves_studio_on_its_host" {
+run "serves_each_platform_on_its_host" {
   command = plan
 
   assert {
     condition = (
       one(google_container_cluster.production.gateway_api_config).channel == "CHANNEL_STANDARD" &&
-      google_compute_ssl_policy.studio.profile == "MODERN" &&
-      google_compute_ssl_policy.studio.min_tls_version == "TLS_1_2"
+      alltrue([for policy in values(google_compute_ssl_policy.platform) : policy.profile == "MODERN" && policy.min_tls_version == "TLS_1_2"])
     )
-    error_message = "The cluster must run the Gateway API, and Studio's edge must refuse TLS below 1.2."
+    error_message = "The cluster must run the Gateway API, and each platform's edge must refuse TLS below 1.2."
   }
 
   assert {
     condition = (
-      one(google_certificate_manager_certificate.studio.managed).domains == tolist([output.studio_edge.host]) &&
-      length(one(google_certificate_manager_certificate.studio.managed).dns_authorizations) == 1 &&
-      google_certificate_manager_dns_authorization.studio.domain == output.studio_edge.host &&
-      google_certificate_manager_certificate_map_entry.studio.hostname == output.studio_edge.host &&
-      google_certificate_manager_certificate_map_entry.studio.map == output.studio_edge.certificate_map &&
+      alltrue([for platform, edge in output.platform_edges :
+        one(google_certificate_manager_certificate.platform[platform].managed).domains == tolist([edge.host]) &&
+        length(one(google_certificate_manager_certificate.platform[platform].managed).dns_authorizations) == 1 &&
+        google_certificate_manager_dns_authorization.platform[platform].domain == edge.host &&
+        google_certificate_manager_certificate_map_entry.platform[platform].hostname == edge.host &&
+        google_certificate_manager_certificate_map_entry.platform[platform].map == edge.certificate_map
+      ]) &&
+      output.studio_edge.host == "studio.storyverse.fr" &&
+      output.platform_edges.account.host == "account.storyverse.fr" &&
       contains(keys(google_project_iam_member.foundation), "roles/certificatemanager.editor")
     )
-    error_message = "Studio's certificate must cover only its host, authorized by DNS, and its map must serve it for that host, which the deploy identity may create."
+    error_message = "Each platform's certificate must cover only its host, authorized by DNS, and its map must serve it for that host, which the deploy identity may create."
   }
 }
 
