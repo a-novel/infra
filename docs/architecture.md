@@ -169,6 +169,11 @@ named callers: JSON Keys admits Authentication's API, Authentication admits the 
 admits its own `smoke` identity. Authentication trusts the visitor address the platforms forward,
 since only they call it on a visitor's behalf.
 
+People sign in on the account platform alone. Every other platform is one of Authentication's OAuth
+clients: the account platform sends each sign-in back to `/auth/callback` on the platform's own
+host, and the platform exchanges the code as its `web` identity. The cluster root registers each
+platform it runs, so a new platform becomes a client by joining that list.
+
 Service images come from `ghcr.io/a-novel/*`. Each is pinned as `tag@digest` in its service root's
 `terraform.tfvars`, its database image included, and the cluster root reads those pins. Every plan
 verifies each release image it changes:

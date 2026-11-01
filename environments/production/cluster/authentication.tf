@@ -30,11 +30,18 @@ locals {
     SERVICE_JSON_KEYS_TLS  = "true"
     SERVICE_TOKEN_ISSUER   = local.service_token_issuer
     SERVICE_TOKEN_AUDIENCE = "authentication"
-    SERVICE_TOKEN_CALLERS = join(",", concat(
-      [for platform in keys(local.platforms) : "system:serviceaccount:${platform}:web"],
-      ["system:serviceaccount:authentication:smoke"],
-    ))
+    SERVICE_TOKEN_CALLERS  = join(",", concat(values(local.platform_callers), ["system:serviceaccount:authentication:smoke"]))
+    # The account platform signs people in for the other platforms, which are OAuth clients: each
+    # redeems the codes it receives at its callback. Authentication refuses to start unless
+    # SERVICE_TOKEN_CALLERS admits every caller named here.
+    ACCOUNT_PLATFORM_CALLER = local.platform_callers.account
+    OAUTH_CLIENTS = jsonencode({ for platform, caller in local.platform_callers : platform => {
+      redirectURI = "https://${local.platform_edges[platform].host}/auth/callback"
+      caller      = caller
+    } if platform != "account" })
   })
+  # Each platform calls Authentication as its web workload's service account.
+  platform_callers = { for platform in keys(local.platforms) : platform => "system:serviceaccount:${platform}:web" }
 }
 
 module "authentication_rest" {

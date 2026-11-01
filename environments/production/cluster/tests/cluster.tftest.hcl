@@ -742,6 +742,33 @@ run "runs_each_platform" {
   }
 }
 
+run "registers_every_other_platform_as_a_client" {
+  command = plan
+
+  assert {
+    condition = (
+      toset(keys(jsondecode(local.authentication_env.OAUTH_CLIENTS))) == setsubtract(keys(local.platforms), ["account"]) &&
+      alltrue([for platform, client in jsondecode(local.authentication_env.OAUTH_CLIENTS) :
+        client == { redirectURI = "https://${local.platform_edges[platform].host}/auth/callback", caller = module.platform_web[platform].service_account }
+      ]) &&
+      jsondecode(local.authentication_env.OAUTH_CLIENTS).studio.redirectURI == "https://studio.storyverse.fr/auth/callback"
+    )
+    error_message = "Every platform but the account platform must be a client, redirected to its own host's /auth/callback and known by its web workload's caller."
+  }
+
+  # Authentication refuses to start on a registry its service tokens do not admit.
+  assert {
+    condition = (
+      local.authentication_env.ACCOUNT_PLATFORM_CALLER == module.platform_web["account"].service_account &&
+      alltrue([for caller in concat([local.authentication_env.ACCOUNT_PLATFORM_CALLER], [for client in values(jsondecode(local.authentication_env.OAUTH_CLIENTS)) : client.caller]) :
+        contains(split(",", local.authentication_env.SERVICE_TOKEN_CALLERS), caller)
+      ]) &&
+      !contains([for client in values(jsondecode(local.authentication_env.OAUTH_CLIENTS)) : client.caller], local.authentication_env.ACCOUNT_PLATFORM_CALLER)
+    )
+    error_message = "Authentication's service tokens must admit the account platform and every client, and no client may share the account platform's caller."
+  }
+}
+
 run "serves_each_platform_through_its_gateway" {
   command = plan
 
