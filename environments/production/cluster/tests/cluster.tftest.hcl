@@ -391,14 +391,15 @@ run "runs_each_release_from_its_private_repository" {
     condition = (
       toset(keys(kubernetes_job_v1.migrations)) == toset(["authentication", "genai", "json-keys"]) &&
       alltrue([for service, job in kubernetes_job_v1.migrations :
-        endswith(job.metadata[0].name, substr(trimprefix(local.release_images["${service}/migrations"].digest, "sha256:"), 0, 12)) &&
+        startswith(job.metadata[0].name, "migrations-${substr(trimprefix(local.release_images["${service}/migrations"].digest, "sha256:"), 0, 12)}-") &&
+        endswith(job.metadata[0].name, substr(sha256(var.backup_server_name), 0, 8)) &&
         job.wait_for_completion &&
         job.spec[0].backoff_limit == 0 &&
         !job.spec[0].template[0].spec[0].enable_service_links &&
         one(one(job.spec[0].template[0].spec[0].container).security_context).run_as_non_root
       ])
     )
-    error_message = "Each service's migrations image must run once, to completion, before its server rolls."
+    error_message = "Each service's migrations must run once per image and per database lineage, to completion, before its server rolls."
   }
 
   assert {

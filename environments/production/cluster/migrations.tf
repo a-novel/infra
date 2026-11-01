@@ -1,10 +1,12 @@
 # Each new migrations image runs once, before its service's server rolls. A finished Job stays as its
-# record. It runs only once the operators' kinds exist, since it reads the database's Secret.
+# record. It runs only once the operators' kinds exist, since it reads the database's Secret. A new
+# database lineage names a new Job too: an import leaves pg_cron's jobs out, and only the migrations
+# schedule them again (a-novel/service-genai#486). A Job's template can't change once created.
 resource "kubernetes_job_v1" "migrations" {
   for_each = var.custom_resources ? toset([for service, roles in local.release_roles : service if contains(roles, "migrations")]) : toset([])
 
   metadata {
-    name      = "migrations-${substr(trimprefix(local.release_images["${each.key}/migrations"].digest, "sha256:"), 0, 12)}"
+    name      = "migrations-${substr(trimprefix(local.release_images["${each.key}/migrations"].digest, "sha256:"), 0, 12)}-${substr(sha256(var.backup_server_name), 0, 8)}"
     namespace = kubernetes_namespace_v1.service[each.key].metadata[0].name
   }
 
