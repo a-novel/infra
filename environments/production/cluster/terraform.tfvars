@@ -33,6 +33,10 @@ addon_images = {
   alloy_operator     = "ghcr.io/grafana/alloy-operator:1.14.2@sha256:44afd94d078432336e753da3da2d3d5f130dbe930c9ea53b4839363878f0ab09"
   config_reloader    = "quay.io/prometheus-operator/prometheus-config-reloader:v0.94.2@sha256:a1897c67478bc23434534e91ad3855280771196b1daf17144db9dbcb655bef71"
   kube_state_metrics = "registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.20.0@sha256:42cfe3723a5f058171c627537fb57a3ea0f26e4380fa18555a95cb1a1b4cfc5b"
+
+  # Authentication's counter store and its exporter, which move with the Valkey chart.
+  valkey         = "docker.io/valkey/valkey:9.1.3-alpine@sha256:bf09d58e96d6b4524a15396b65b242bbe18beebbcc15a04d8ee75ddac62fae0b"
+  redis_exporter = "ghcr.io/oliver006/redis_exporter:v1.96.0@sha256:3d57b9eb142a62ffc600063606a41cd471cd53d81bed10be5b56b3a8918f2c26"
 }
 
 # The production stack, which Alloy sends every signal to with its push token.

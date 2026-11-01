@@ -138,8 +138,8 @@ locals {
       namespaces   = local.admitted_namespaces
     }
 
-    # The databases' pods, which CloudNativePG annotates for it (databases.tf). Each instance's
-    # settings cost hundreds of series.
+    # The databases' pods, which CloudNativePG annotates for it (databases.tf), and Authentication's
+    # counter store (counter-store.tf). Each database instance's settings cost hundreds of series.
     annotationAutodiscovery = {
       enabled       = true
       collector     = "alloy"
@@ -148,6 +148,26 @@ locals {
       services      = { enabled = false }
       bearerToken   = { enabled = false }
       metricsTuning = { excludeMetrics = ["cnpg_pg_settings_setting"] }
+      # Of the counter store's series, which all start with redis_, Alloy keeps only those the first
+      # rule marks: availability, uptime, memory, evicted and expired keys, clients, and httprate's
+      # commands with their time.
+      extraMetricProcessingRules = <<-EOT
+        rule {
+          source_labels = ["__name__", "cmd"]
+          regex         = "redis_(up|uptime_in_seconds|memory_used_bytes|memory_max_bytes|evicted_keys_total|expired_keys_total|connected_clients);|redis_commands_(total|duration_seconds_total);(${join("|", local.counter_store_commands)})"
+          target_label  = "__tmp_keep"
+          replacement   = "true"
+        }
+        rule {
+          source_labels = ["__name__", "__tmp_keep"]
+          regex         = "redis_.*;"
+          action        = "drop"
+        }
+        rule {
+          regex  = "__tmp_keep"
+          action = "labeldrop"
+        }
+      EOT
     }
 
     # The receiver of the workloads' traces and logs. Its host-info metrics stay off, since App
@@ -283,7 +303,8 @@ resource "helm_release" "alloy" {
 }
 
 # The services' pods send to the receiver. Alloy reaches the API server and the kubelets in the node
-# range, kube-state-metrics, the databases' metrics, and Grafana (egress.tf).
+# range, kube-state-metrics, the databases' metrics, the counter store's exporter, and Grafana
+# (egress.tf).
 resource "kubernetes_network_policy_v1" "alloy" {
   metadata {
     name      = "alloy"
@@ -389,6 +410,22 @@ resource "kubernetes_network_policy_v1" "alloy" {
 
       ports {
         port     = "9187"
+        protocol = "TCP"
+      }
+    }
+
+    egress {
+      to {
+        namespace_selector {
+          match_labels = { "kubernetes.io/metadata.name" = local.namespace["authentication"] }
+        }
+        pod_selector {
+          match_labels = local.counter_store_pods
+        }
+      }
+
+      ports {
+        port     = "9121"
         protocol = "TCP"
       }
     }

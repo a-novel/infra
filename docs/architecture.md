@@ -102,6 +102,11 @@ resources, reaching the control plane through the DNS endpoint as the CI identit
   plugin, External Secrets and Grafana's `k8s-monitoring` chart with Helm, each in its own
   namespace. Renovate moves each chart with its images after a week, and merges a minor or patch
   update on its own.
+- **Counter store:** one Valkey pod in the `authentication` namespace, from the official chart,
+  holds only the rate-limit counters, up to 64 MiB, evicting the least recently used first. It
+  keeps nothing on disk. Its users each get a password External Secrets generates once into the
+  `valkey-users` Secret: the limiter reaches the `httprate:*` keys alone, and the exporter reads
+  statistics and no key. Only Authentication's API pods reach Valkey, and only Alloy its exporter.
 - **Telemetry:** one Alloy pod in the `alloy` namespace sends every signal to the Grafana Cloud
   stack's OTLP gateway. The workloads export their traces and logs to its OTLP/HTTP receiver. It
   gives each server and root span an outcome, `a_novel.outcome`, then derives span metrics from
@@ -109,10 +114,10 @@ resources, reaching the control plane through the DNS endpoint as the CI identit
   numbers, such as accounts, tokens consumed or signing keys' runway, from the cluster root's
   `queries/<database>.yaml`. It runs them as `cnpg_metrics_exporter`, which reads only the columns
   `queries/<database>.sql` grants it: a Job runs those grants as the tables' owner after each run of
-  the migrations. Alloy scrapes the kubelets, cAdvisor, kube-state-metrics and the databases every
-  60 seconds, and sends the Kubernetes events, all in the cluster root's namespaces. It reads its
-  push token from `production-alloy-push-token`, and no Secret of the cluster. The Alloy Operator,
-  which the chart runs, manages that namespace alone.
+  the migrations. Alloy scrapes the kubelets, cAdvisor, kube-state-metrics, the databases and the
+  counter store every 60 seconds, and sends the Kubernetes events, all in the cluster root's
+  namespaces. It reads its push token from `production-alloy-push-token`, and no Secret of the
+  cluster. The Alloy Operator, which the chart runs, manages that namespace alone.
 - **Edge:** each platform answers on its own host through a Gateway of its name, on Google's global
   load balancer, which redirects plain HTTP to HTTPS: Studio on `studio.storyverse.fr`, Account on
   `account.storyverse.fr`. Foundation holds each one's address, a TLS 1.2 policy, and a Certificate

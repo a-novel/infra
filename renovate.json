@@ -124,6 +124,16 @@
         "registry.k8s.io/kube-state-metrics/kube-state-metrics"
       ],
       "groupName": "k8s-monitoring"
+    },
+    {
+      "description": "Move the Valkey chart with the server and exporter images it runs in one pull request, since the chart pins its own versions of them.",
+      "matchFileNames": ["environments/production/cluster/**"],
+      "matchPackageNames": [
+        "valkey",
+        "docker.io/valkey/valkey",
+        "ghcr.io/oliver006/redis_exporter"
+      ],
+      "groupName": "Valkey"
     }
   ],
   "customManagers": [
