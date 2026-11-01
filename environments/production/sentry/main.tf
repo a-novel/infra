@@ -1,3 +1,5 @@
+# Sentry retires (a-novel/infra#1215). This root keeps only its provider, so the deploy deletes what
+# it configured; the root itself goes next.
 provider "google" {
   project = var.management_project_id
 }
@@ -24,56 +26,4 @@ ephemeral "google_secret_manager_secret_version" "sentry_token" {
 provider "sentry" {
   base_url = var.base_url
   token    = ephemeral.google_secret_manager_secret_version.sentry_token.secret_data
-}
-
-data "sentry_team" "owner" {
-  organization = var.organization
-  slug         = var.team
-}
-
-resource "sentry_project" "service" {
-  for_each = var.projects
-
-  organization = var.organization
-  teams        = [data.sentry_team.owner.slug]
-  name         = each.key
-  slug         = each.key
-  platform     = "go"
-
-  # Deleting a project deletes its issues and history and invalidates its DSN.
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
-# Spike protection drops events above the project's usual rate, so one runaway fault cannot spend
-# the month's shared error quota.
-resource "sentry_project_spike_protection" "service" {
-  for_each = sentry_project.service
-
-  organization = var.organization
-  project      = each.value.slug
-  enabled      = true
-}
-
-# Sentry's health-check filter, on by default in every project, drops the health check's server
-# span, which the telemetry-stopped monitors count. The services leave their liveness probes
-# untraced themselves.
-resource "sentry_project_inbound_data_filter" "health_checks" {
-  for_each = sentry_project.service
-
-  organization = var.organization
-  project      = each.value.slug
-  filter_id    = "filtered-transaction"
-  active       = false
-}
-
-# The services read their DSN and OTLP header from this root's outputs. A DSN is not a secret:
-# Sentry documents it as safe to expose, and its public key only lets a sender submit events.
-data "sentry_key" "service" {
-  for_each = sentry_project.service
-
-  organization = var.organization
-  project      = each.value.slug
-  first        = true
 }
