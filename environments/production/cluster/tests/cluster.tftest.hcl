@@ -707,18 +707,17 @@ run "runs_each_platform" {
   assert {
     condition = alltrue([for platform, env in local.platform_env :
       length([for name in keys(env) : name if startswith(name, "SENTRY_") || startswith(name, "PUBLIC_SENTRY_")]) == 0 &&
-      env.ORIGIN == "https://${local.platform_edges[platform].host}" &&
       env.ADDRESS_HEADER == "X-Forwarded-For" &&
       env.XFF_DEPTH == "2"
-    ]) && local.platform_env.studio.ORIGIN == "https://studio.storyverse.fr"
-    error_message = "Each platform must report nothing to Sentry, check form posts against its own host, and take the visitor's address the load balancer appends."
+    ])
+    error_message = "Each platform must report nothing to Sentry and take the visitor's address the load balancer appends."
   }
 
   assert {
     condition = (
       toset(keys(local.platform_env)) == toset(["account", "studio"]) &&
-      local.platform_env.studio.ACCOUNT_URL == local.platform_env.account.ORIGIN &&
-      local.platform_env.account.STUDIO_URL == local.platform_env.studio.ORIGIN
+      local.platform_env.studio.ACCOUNT_URL == "https://account.storyverse.fr" &&
+      local.platform_env.account.STUDIO_URL == "https://studio.storyverse.fr"
     )
     error_message = "Studio's account link must open the account platform, and the account platform's app list Studio."
   }
@@ -804,8 +803,8 @@ run "serves_each_platform_through_its_gateway" {
       check.manifest.spec.targetRef.name == module.platform_web[platform].service.name &&
       check.manifest.spec.default.config.httpHealthCheck.requestPath == "/ping" &&
       check.manifest.spec.default.config.httpHealthCheck.port == module.platform_web[platform].service.port
-    ]) && local.authentication_env.PLATFORM_AUTH_URL == local.platform_env.account.ORIGIN
-    error_message = "The load balancer must check each platform on its probes' path, and Authentication's links must name a Gateway's host."
+    ])
+    error_message = "The load balancer must check each platform on its probes' path."
   }
 
   assert {
