@@ -1,7 +1,7 @@
 # Each service's CloudNativePG database: a primary and a replica on separate nodes, archiving WAL to
-# the service's Barman bucket. It starts as an import of the service's database host. A new
-# `backup_server_name` starts a new lineage, which recreates the database and imports it again: the
-# rehearsal does, then the cutover (a-novel/infra#1202, a-novel/infra#1207).
+# the service's Barman bucket. The cutover imported it from the service's retired database host
+# (a-novel/infra#1207, a-novel/infra#1208). A new `backup_server_name` starts a new lineage, which
+# recreates every database empty.
 data "terraform_remote_state" "bootstrap" {
   backend = "gcs"
   config = {
@@ -20,9 +20,6 @@ locals {
   # A client's pods read the database's generated password at start, so they roll with each new
   # lineage, once its database serves.
   database_client_annotations = { "a-novel.io/database-lineage" = var.backup_server_name }
-  # The import reads each service's database host, across the import peering. A service without
-  # one, such as a new service's, starts with an empty database.
-  database_hosts = { for service, host in local.cluster.database_imports : service => host if contains(keys(var.databases), service) }
 }
 
 # A new lineage replaces it, and so each database and its backup schedule. Its creation waits four
@@ -187,24 +184,6 @@ resource "kubernetes_network_policy_v1" "database" {
         for_each = ["80", "988"]
         content {
           port     = ports.value
-          protocol = "TCP"
-        }
-      }
-    }
-
-    # The import reads the service's database host, when it has one.
-    dynamic "egress" {
-      for_each = { for service, host in local.database_hosts : service => host if service == each.key }
-
-      content {
-        to {
-          ip_block {
-            cidr = "${egress.value.host}/32"
-          }
-        }
-
-        ports {
-          port     = tostring(egress.value.port)
           protocol = "TCP"
         }
       }
@@ -415,26 +394,15 @@ resource "kubernetes_manifest" "database" {
           )
         }
 
-        # The import dumps the host's database as the role that owns its tables, then restores it as
-        # `app`. pg_cron guards its jobs with row-level security, which pg_dump turns off, so a dump as
-        # that role leaves them out, and GenAI schedules its purge again (a-novel/service-genai#486).
         bootstrap = {
-          initdb = merge(
-            {
-              database = "app"
-              owner    = "app"
-              postInitApplicationSQL = concat(
-                [for extension in each.value.extensions : "CREATE EXTENSION IF NOT EXISTS \"${extension}\""],
-                contains(each.value.extensions, "pg_cron") ? ["GRANT USAGE ON SCHEMA cron TO app"] : [],
-              )
-            },
-            { for service, host in local.database_hosts : "import" => {
-              type               = "microservice"
-              databases          = [host.database]
-              source             = { externalCluster = "host" }
-              pgDumpExtraOptions = contains(each.value.extensions, "pg_cron") ? ["--exclude-table-data=cron.*"] : []
-            } if service == each.key },
-          )
+          initdb = {
+            database = "app"
+            owner    = "app"
+            postInitApplicationSQL = concat(
+              [for extension in each.value.extensions : "CREATE EXTENSION IF NOT EXISTS \"${extension}\""],
+              contains(each.value.extensions, "pg_cron") ? ["GRANT USAGE ON SCHEMA cron TO app"] : [],
+            )
+          }
         }
 
         plugins = [{ name = local.barman_plugin, isWALArchiver = true, parameters = { barmanObjectName = kubernetes_manifest.database_backups[each.key].manifest.metadata.name, serverName = var.backup_server_name } }]
@@ -456,17 +424,6 @@ resource "kubernetes_manifest" "database" {
           { name = queries.metadata[0].name, key = "queries.yaml" },
         ]
       } if name == each.key },
-      # The import's source, for a database whose service has a host.
-      { for service, host in local.database_hosts : "externalClusters" => [{
-        name = "host"
-        connectionParameters = {
-          host   = host.host
-          port   = tostring(host.port)
-          user   = host.user
-          dbname = host.database
-        }
-        password = { name = kubernetes_manifest.secrets[service].manifest.spec.target.name, key = "DATABASE_HOST_PASSWORD" }
-      }] if service == each.key },
     )
   }
 
@@ -516,7 +473,7 @@ resource "kubernetes_manifest" "database_schedule" {
     }
   }
 
-  # Each new lineage starts with a base backup, so the imported data has a recovery point at once.
+  # Each new lineage starts with a base backup, so its data has a recovery point at once.
   lifecycle {
     replace_triggered_by = [time_sleep.database_lineage]
   }

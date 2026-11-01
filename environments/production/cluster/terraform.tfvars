@@ -1,7 +1,8 @@
 custom_resources = true
 
 # Each new database lineage archives under a new name: Barman refuses an archive another database's
-# WAL already fills, and the buckets' retention keeps that WAL a week.
+# WAL already fills, and the buckets' retention keeps that WAL a week. A new lineage recreates every
+# database empty: the hosts it was imported from are gone (a-novel/infra#1208).
 backup_server_name = "database-production"
 
 namespaces = [
@@ -62,12 +63,11 @@ service_budgets = {
 }
 
 # The workloads' database passwords come from CloudNativePG's database-app Secrets. These come from
-# Secret Manager, with each database host's password, which the import reads.
+# Secret Manager.
 secrets = {
-  alloy          = { GRAFANA_CLOUD_TOKEN = "push-token" }
-  authentication = { DATABASE_HOST_PASSWORD = "app-password" }
-  genai          = { OPENAI_API_KEY = "openai-api-key", DATABASE_HOST_PASSWORD = "app-password" }
-  json-keys      = { APP_MASTER_KEY = "app-master-key", DATABASE_HOST_PASSWORD = "app-password" }
+  alloy     = { GRAFANA_CLOUD_TOKEN = "push-token" }
+  genai     = { OPENAI_API_KEY = "openai-api-key" }
+  json-keys = { APP_MASTER_KEY = "app-master-key" }
 }
 
 addon_secret_versions = {

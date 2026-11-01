@@ -15,7 +15,7 @@ variable "addon_secret_versions" {
 }
 
 variable "backup_server_name" {
-  description = "The name each database archives under in its Barman bucket, unique to its lineage."
+  description = "The name each database archives under in its Barman bucket, unique to its lineage. A new name recreates every database empty."
   type        = string
 
   validation {
