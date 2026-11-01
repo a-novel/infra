@@ -1,3 +1,5 @@
+# Studio runs on the cluster. This root keeps its release pin, which the cluster root reads from
+# terraform.tfvars, and deletes what the platform ran on Cloud Run (a-novel/infra#1208).
 provider "google" {
   project = local.project_id
   region  = local.region
@@ -12,42 +14,7 @@ data "terraform_remote_state" "foundation" {
   }
 }
 
-# The Sentry root owns the project, and with it the OTLP header the server's traces travel with.
-data "terraform_remote_state" "sentry" {
-  backend = "gcs"
-  config = {
-    bucket = "a-novel-management-prod-232403541574-tofu-state"
-    prefix = "sentry"
-  }
-}
-
-# Studio calls Authentication's public URL; the Authentication root owns the service.
-data "google_cloud_run_v2_service" "authentication" {
-  project  = local.foundation.production_projects["public-api"].project_id
-  name     = "agora-authentication-rest"
-  location = local.region
-}
-
 locals {
-  foundation            = data.terraform_remote_state.foundation.outputs
-  project_id            = local.foundation.production_projects["public"].project_id
-  region                = local.foundation.region
-  management_project_id = "a-novel-management-prod"
-  deployer              = "infra-foundation@${local.management_project_id}.iam.gserviceaccount.com"
-  sentry                = data.terraform_remote_state.sentry.outputs.services["platform-studio"]
-}
-
-# Studio serves from the public zone, outside the VPC, and reads no secret: it calls the platform
-# services over their public ingress with its own Google ID token.
-module "runtime" {
-  source = "../../../modules/service-runtime"
-
-  service               = "studio"
-  zone                  = "public"
-  project_id            = local.project_id
-  region                = local.region
-  management_project_id = local.management_project_id
-  secrets               = toset([])
-  deployer              = local.deployer
-  alert_email           = var.alert_email
+  project_id = data.terraform_remote_state.foundation.outputs.production_projects["public"].project_id
+  region     = data.terraform_remote_state.foundation.outputs.region
 }

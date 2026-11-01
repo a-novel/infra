@@ -10,6 +10,8 @@ variable "images" {
   }
 }
 
+# The cluster root reads these versions from this root's terraform.tfvars.
+# tflint-ignore: terraform_unused_declarations
 variable "secret_versions" {
   description = "Numeric secret versions the workloads read, by secret name suffix."
   type        = map(number)
@@ -37,15 +39,3 @@ variable "alert_email" {
   type        = string
   sensitive   = true
 }
-
-variable "downtime" {
-  description = "The planned downtime as JSON, from the DOWNTIME repository variable: components, start and end. Empty without one."
-  type        = string
-  default     = ""
-
-  validation {
-    condition     = var.downtime == "" || can(tolist(jsondecode(var.downtime).components)) && can(jsondecode(var.downtime).start)
-    error_message = "The planned downtime must be JSON with components, start and end."
-  }
-}
-

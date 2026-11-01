@@ -476,34 +476,6 @@ jobs:
           webhook: ${{ secrets.DEPLOY_WEBHOOK }}
           roles: ${{ vars.DISCORD_REPO_ROLES }}
 
-  # Authentication's health covers PostgreSQL, SMTP and the JSON Keys path, and Studio's its path to
-  # Authentication. It reports on production whenever the service roots applied, even when one of
-  # them failed.
-  health:
-    needs: services
-    if: ${{ !cancelled() && needs.services.result != 'skipped' }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    environment: production
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      # Authentication admits only IAM callers; the token names its custom audience.
-      - id: google
-        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
-        with:
-          workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
-          token_format: id_token
-          id_token_audience: agora-authentication-rest
-      - uses: $/.github/actions/health
-        with:
-          id_token: ${{ steps.google.outputs.id_token }}
-
   # Reports every deploy that applied a root, and any that failed. A failure pings a-novel/infra and
   # the role of each service whose root failed to apply.
   notify:
@@ -517,7 +489,6 @@ jobs:
       - github
       - services
       - rollout
-      - health
     if: ${{ always() && (needs.changes.outputs.deploys == 'true' || contains(needs.*.result, 'failure')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
