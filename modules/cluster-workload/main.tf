@@ -1,11 +1,23 @@
 locals {
   labels   = merge(var.labels, { "app.kubernetes.io/name" = var.name })
   protocol = var.http_health_path == null ? "grpc" : "http"
-  # Go reads every directory SSL_CERT_DIR lists, beside the system bundle. Each service token sits in
-  # a file named after its audience.
-  env = merge(var.env, var.ca_secret == null ? {} : { SSL_CERT_DIR = "/etc/ssl/certs:/etc/database-ca" }, {
-    for audience, name in var.service_tokens : name => "/var/run/secrets/tokens/${audience}"
-  })
+  # Go reads every directory SSL_CERT_DIR lists, beside the system bundle, and Node the file
+  # NODE_EXTRA_CA_CERTS names. golib serves TLS from the files its *_TLS_* variables name. Each
+  # service token sits in a file named after its audience.
+  ca_dirs    = concat(var.ca_secret == null ? [] : ["/etc/database-ca"], var.service_ca == null ? [] : ["/etc/service-ca"])
+  env_prefix = local.protocol == "grpc" ? "GRPC" : "REST"
+  env = merge(
+    var.env,
+    length(local.ca_dirs) == 0 ? {} : { SSL_CERT_DIR = join(":", concat(["/etc/ssl/certs"], local.ca_dirs)) },
+    var.service_ca == null ? {} : { NODE_EXTRA_CA_CERTS = "/etc/service-ca/ca.crt" },
+    var.tls == null ? {} : {
+      "${local.env_prefix}_TLS_CERT_FILE"  = "/etc/server-tls/tls.crt"
+      "${local.env_prefix}_TLS_KEY_FILE"   = "/etc/server-tls/tls.key"
+      "${local.env_prefix}_PLAINTEXT_PORT" = tostring(var.tls.plaintext_port)
+    },
+    { for audience, name in var.service_tokens : name => "/var/run/secrets/tokens/${audience}" },
+  )
+  probe_port = var.tls == null ? var.port : var.tls.plaintext_port
   # GKE names a gauge with a DNS label.
   gauge_name = var.scaling_gauge == null ? null : replace(var.scaling_gauge.name, "_", "-")
 }
@@ -79,6 +91,15 @@ resource "kubernetes_deployment_v1" "workload" {
           }
 
           dynamic "port" {
+            for_each = var.tls == null ? [] : [var.tls.plaintext_port]
+
+            content {
+              name           = "plaintext"
+              container_port = port.value
+            }
+          }
+
+          dynamic "port" {
             for_each = var.scaling_gauge == null ? [] : [var.scaling_gauge.port]
 
             content {
@@ -122,6 +143,26 @@ resource "kubernetes_deployment_v1" "workload" {
           }
 
           dynamic "volume_mount" {
+            for_each = var.service_ca == null ? [] : ["service-ca"]
+
+            content {
+              name       = volume_mount.value
+              mount_path = "/etc/service-ca"
+              read_only  = true
+            }
+          }
+
+          dynamic "volume_mount" {
+            for_each = var.tls == null ? [] : ["server-tls"]
+
+            content {
+              name       = volume_mount.value
+              mount_path = "/etc/server-tls"
+              read_only  = true
+            }
+          }
+
+          dynamic "volume_mount" {
             for_each = length(var.service_tokens) > 0 ? ["service-tokens"] : []
 
             content {
@@ -154,7 +195,7 @@ resource "kubernetes_deployment_v1" "workload" {
             failure_threshold = 30
 
             dynamic "grpc" {
-              for_each = local.protocol == "grpc" ? [var.port] : []
+              for_each = local.protocol == "grpc" ? [local.probe_port] : []
 
               content {
                 port = grpc.value
@@ -166,7 +207,7 @@ resource "kubernetes_deployment_v1" "workload" {
 
               content {
                 path = http_get.value
-                port = var.port
+                port = local.probe_port
               }
             }
           }
@@ -175,7 +216,7 @@ resource "kubernetes_deployment_v1" "workload" {
             period_seconds = 5
 
             dynamic "grpc" {
-              for_each = local.protocol == "grpc" ? [var.port] : []
+              for_each = local.protocol == "grpc" ? [local.probe_port] : []
 
               content {
                 port = grpc.value
@@ -187,7 +228,7 @@ resource "kubernetes_deployment_v1" "workload" {
 
               content {
                 path = http_get.value
-                port = var.port
+                port = local.probe_port
               }
             }
           }
@@ -206,6 +247,48 @@ resource "kubernetes_deployment_v1" "workload" {
               items {
                 key  = "ca.crt"
                 path = "ca.crt"
+              }
+            }
+          }
+        }
+
+        # Only the CA's certificate, which trust-manager keeps current.
+        dynamic "volume" {
+          for_each = var.service_ca == null ? [] : [var.service_ca]
+
+          content {
+            name = "service-ca"
+
+            config_map {
+              name = volume.value
+
+              items {
+                key  = "ca.crt"
+                path = "ca.crt"
+              }
+            }
+          }
+        }
+
+        # The kubelet updates the files when cert-manager renews the certificate, and the server
+        # loads them again.
+        dynamic "volume" {
+          for_each = var.tls == null ? [] : [var.tls.secret]
+
+          content {
+            name = "server-tls"
+
+            secret {
+              secret_name = volume.value
+
+              items {
+                key  = "tls.crt"
+                path = "tls.crt"
+              }
+
+              items {
+                key  = "tls.key"
+                path = "tls.key"
               }
             }
           }
@@ -259,6 +342,16 @@ resource "kubernetes_service_v1" "workload" {
       name        = local.protocol
       port        = var.port
       target_port = var.port
+    }
+
+    dynamic "port" {
+      for_each = var.tls == null ? [] : [var.tls.plaintext_port]
+
+      content {
+        name        = "plaintext"
+        port        = port.value
+        target_port = port.value
+      }
     }
   }
 }

@@ -161,3 +161,46 @@ run "serves_http_with_service_tokens" {
     error_message = "A workload without a database trusts only the system roots."
   }
 }
+
+run "serves_tls_beside_plaintext" {
+  command = plan
+
+  variables {
+    port       = 8443
+    tls        = { secret = "grpc-server-tls", plaintext_port = 8080 }
+    service_ca = "services-ca"
+  }
+
+  assert {
+    condition = (
+      { for env in one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).env : env.name => env.value if startswith(env.name, "GRPC_") } == {
+        GRPC_TLS_CERT_FILE  = "${one([for mount in one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).volume_mount : mount.mount_path if mount.name == "server-tls"])}/tls.crt"
+        GRPC_TLS_KEY_FILE   = "${one([for mount in one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).volume_mount : mount.mount_path if mount.name == "server-tls"])}/tls.key"
+        GRPC_PLAINTEXT_PORT = "8080"
+      } &&
+      one([for volume in one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).volume : one(volume.secret).secret_name if volume.name == "server-tls"]) == "grpc-server-tls"
+    )
+    error_message = "A TLS server must name its certificate's files and its plaintext port to golib, from its Secret."
+  }
+
+  assert {
+    condition = (
+      toset([for port in one(kubernetes_service_v1.workload.spec).port : port.port]) == toset([8443, 8080]) &&
+      toset([for port in one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).port : port.container_port]) == toset([8443, 8080]) &&
+      alltrue([for probe in [
+        one(one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).startup_probe),
+        one(one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).readiness_probe),
+      ] : one(probe.grpc).port == 8080])
+    )
+    error_message = "A TLS server must serve both ports, and its probes must read the plaintext one."
+  }
+
+  assert {
+    condition = (
+      [for item in one([for volume in one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).volume : one(volume.config_map) if volume.name == "service-ca"]).items : item.key] == ["ca.crt"] &&
+      one([for env in one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).env : env.value if env.name == "SSL_CERT_DIR"]) == "/etc/ssl/certs:/etc/database-ca:/etc/service-ca" &&
+      one([for env in one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).env : env.value if env.name == "NODE_EXTRA_CA_CERTS"]) == "/etc/service-ca/ca.crt"
+    )
+    error_message = "A workload that calls a service API must trust the services CA beside the system roots and its database's CA, in Go and in Node."
+  }
+}

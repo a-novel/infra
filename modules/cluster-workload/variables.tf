@@ -61,6 +61,21 @@ variable "ca_secret" {
   default     = null
 }
 
+variable "service_ca" {
+  description = "The namespace's ConfigMap whose `ca.crt` the workload trusts beside the system roots, for the service APIs it calls over TLS: the services CA, which trust-manager copies there."
+  type        = string
+  default     = null
+}
+
+variable "tls" {
+  description = "The server's TLS: the namespace's Secret holding the certificate `port` serves, and the plaintext port beside it, which the probes read while callers move to TLS."
+  type = object({
+    secret         = string
+    plaintext_port = number
+  })
+  default = null
+}
+
 variable "resources" {
   description = "Each pod's CPU request and memory, which also bounds it."
   type = object({

@@ -103,7 +103,10 @@ resources, reaching the control plane through the DNS endpoint as the CI identit
   namespace, and trust-manager in cert-manager's. Renovate moves each chart with its images after a
   week, and merges a minor or patch update on its own.
 - **Service TLS:** cert-manager's ten-year `services` CA, which keeps its key when renewed, issues
-  each service API a certificate for its in-cluster host, such as `rest.authentication.svc`.
+  each service API a certificate for its in-cluster host, such as `rest.authentication.svc`. Each
+  API serves TLS on 8443 and plaintext on 8080, which its probes and health checks still read. Its
+  callers dial 8443 and verify the host against the CA, which trust-manager copies into every
+  service namespace as the `services-ca` ConfigMap.
 - **Counter store:** one Valkey pod in the `authentication` namespace, from the official chart,
   holds only the rate-limit counters, up to 64 MiB, evicting the least recently used first. It
   keeps nothing on disk. Its users each get a password External Secrets generates once into the
