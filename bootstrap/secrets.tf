@@ -48,6 +48,35 @@ resource "google_secret_manager_secret" "application" {
   depends_on = [google_project_service.management["secretmanager.googleapis.com"]]
 }
 
+# Sentry retired (a-novel/infra#1215). The previous apply unlocked these containers; moving them out
+# of the protected resource lets this one delete them. Remove these blocks once applied.
+moved {
+  from = google_secret_manager_secret.application["production-sentry-plan-token"]
+  to   = google_secret_manager_secret.retired["production-sentry-plan-token"]
+}
+
+moved {
+  from = google_secret_manager_secret.application["production-sentry-deploy-token"]
+  to   = google_secret_manager_secret.retired["production-sentry-deploy-token"]
+}
+
+removed {
+  from = google_secret_manager_secret.retired
+
+  lifecycle {
+    destroy = true
+  }
+}
+
+# The plan and deploy identities' grants on those tokens leave with them.
+removed {
+  from = google_secret_manager_secret_iam_member.sentry_token
+
+  lifecycle {
+    destroy = false
+  }
+}
+
 resource "google_secret_manager_secret_iam_member" "operator" {
   for_each = local.operator_secret_bindings
 
