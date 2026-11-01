@@ -62,6 +62,8 @@ resource "google_secret_manager_secret_iam_member" "workload" {
   member    = google_service_account.workload[each.value.role].member
 }
 
+# The cluster runs every release from the private production repository. The others retire with the
+# old platform (a-novel/infra#1208).
 resource "google_artifact_registry_repository" "images" {
   for_each = toset(["production", "tooling"])
 
@@ -70,7 +72,7 @@ resource "google_artifact_registry_repository" "images" {
   repository_id   = "${local.name}-${each.key}"
   format          = "DOCKER"
   mode            = "STANDARD_REPOSITORY"
-  deletion_policy = "PREVENT"
+  deletion_policy = var.zone == "private" && each.key == "production" ? "PREVENT" : "DELETE"
   labels          = { environment = "production", service = var.service }
 
   # A deployed digest can never be re-tagged to different content.
@@ -103,7 +105,7 @@ resource "google_monitoring_notification_channel" "operations" {
   type            = "email"
   enabled         = true
   labels          = { email_address = var.alert_email }
-  deletion_policy = "PREVENT"
+  deletion_policy = "DELETE"
   force_delete    = false
 
   lifecycle {

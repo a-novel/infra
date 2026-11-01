@@ -65,8 +65,8 @@ resource "google_project_iam_custom_role" "foundation_public_api" {
   project     = var.public_api_project_id
   role_id     = "infraFoundationPublicAPI"
   title       = "Foundation public API deployment"
-  description = "Create and update Cloud Run APIs through protected native plans."
-  permissions = ["run.services.create", "run.services.update"]
+  description = "Create, update and retire Cloud Run APIs through protected native plans."
+  permissions = ["run.services.create", "run.services.update", "run.services.delete"]
 
   depends_on = [module.public_api_project]
 }
@@ -76,8 +76,8 @@ resource "google_project_iam_custom_role" "foundation_public_platforms" {
   project     = var.public_project_id
   role_id     = "infraFoundationPublicPlatforms"
   title       = "Foundation platform deployment"
-  description = "Create and update the platforms' Cloud Run services through protected native plans."
-  permissions = ["run.services.create", "run.services.update"]
+  description = "Create, update and retire the platforms' Cloud Run services through protected native plans."
+  permissions = ["run.services.create", "run.services.update", "run.services.delete"]
 
   depends_on = [module.public_project]
 }
@@ -94,10 +94,10 @@ resource "google_project_iam_custom_role" "foundation_private_release" {
   project     = google_project.workload.project_id
   role_id     = "infraFoundationPrivateRelease"
   title       = "Foundation private workload updates"
-  description = "Inspect and update existing private application definitions through protected native plans."
+  description = "Inspect, update and retire existing private application definitions through protected native plans."
   permissions = [
-    "run.services.get", "run.services.update", "run.services.listTagBindings",
-    "run.jobs.get", "run.jobs.update", "run.jobs.listTagBindings",
+    "run.services.get", "run.services.update", "run.services.delete", "run.services.listTagBindings",
+    "run.jobs.get", "run.jobs.update", "run.jobs.delete", "run.jobs.listTagBindings",
   ]
 }
 

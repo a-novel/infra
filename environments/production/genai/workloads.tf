@@ -59,7 +59,7 @@ resource "terraform_data" "migrations" {
 resource "google_cloud_run_v2_job" "migrations" {
   name                = "agora-genai-migrations"
   location            = local.region
-  deletion_protection = true
+  deletion_protection = false
   labels              = { environment = "production", component = "genai", role = "migrations" }
 
   # Apply runs the migration once per image change and fails until it succeeds. It also schedules
@@ -136,7 +136,7 @@ resource "google_cloud_run_v2_service" "grpc" {
   location             = local.region
   ingress              = "INGRESS_TRAFFIC_INTERNAL_ONLY"
   invoker_iam_disabled = false
-  deletion_protection  = true
+  deletion_protection  = false
   labels               = { environment = "production", component = "genai", role = "grpc" }
 
   # Each open GenerationStream holds one of an instance's 20 request slots, so streams scale out.
@@ -253,7 +253,7 @@ resource "google_cloud_run_v2_service" "sweep" {
   location             = local.region
   ingress              = "INGRESS_TRAFFIC_INTERNAL_ONLY"
   invoker_iam_disabled = false
-  deletion_protection  = true
+  deletion_protection  = false
   labels               = { environment = "production", component = "genai", role = "sweep" }
 
   scaling {

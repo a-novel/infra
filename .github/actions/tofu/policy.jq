@@ -10,11 +10,13 @@ def weakened:
 # finished Job only records its run, so replacing any of them deletes nothing that holds data.
 def harmless_replacement:
   (.type == "google_compute_instance_template" or .type == "terraform_data" or .type == "kubernetes_job_v1") and (.change.actions | index("create"));
-# A database host restarts onto a new template or group configuration once rolled out. Creating a
-# new host restarts nothing.
+# A database host restarts onto a new template or group configuration once rolled out. Creating or
+# retiring a host restarts nothing, and neither does lifting its deletion protection. A field known
+# only after apply follows a replaced template, which counts on its own.
 def database_host_change:
   (.type == "google_compute_instance_template" or .type == "google_compute_instance_group_manager")
-  and .name == "database" and (.change.actions | index("delete") or . == ["update"]);
+  and .name == "database" and (.change.actions | index("create") and index("delete") or . == ["update"])
+  and ([.change.before, .change.after] as [$b, $a] | any($a | keys[]; . != "deletion_policy" and $b[.] != $a[.]));
 # CloudNativePG upgrades a database's PostgreSQL major in place, with every instance stopped until
 # pg_upgrade ends. Any other change to a database rolls by switchover.
 def major_upgrade:

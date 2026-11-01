@@ -50,11 +50,6 @@ run "keeps_databases_private_and_preserved" {
   }
 
   assert {
-    condition     = alltrue([for disk in google_compute_disk.database : disk.deletion_policy == "PREVENT"])
-    error_message = "Database data disks must refuse deletion."
-  }
-
-  assert {
     condition = (
       alltrue([for template in google_compute_instance_template.database :
         template.project == google_logging_project_exclusion.database_health_probes.project

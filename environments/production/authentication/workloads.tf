@@ -75,7 +75,7 @@ resource "google_cloud_run_v2_job" "migrations" {
   project             = local.private_project_id
   name                = "agora-authentication-migrations"
   location            = local.region
-  deletion_protection = true
+  deletion_protection = false
   labels              = { environment = "production", component = "authentication", role = "migrations" }
 
   # Apply runs the migration once per image change and fails until it succeeds.
@@ -145,7 +145,7 @@ resource "google_cloud_run_v2_job" "maintenance" {
   project             = local.private_project_id
   name                = "agora-authentication-maintenance"
   location            = local.region
-  deletion_protection = true
+  deletion_protection = false
   labels              = { environment = "production", component = "authentication", role = "maintenance" }
 
   template {
@@ -218,7 +218,7 @@ resource "google_cloud_run_v2_job" "refresh_token_purge" {
   project             = local.private_project_id
   name                = "a-novel-authentication-refresh-token-purge"
   location            = local.region
-  deletion_protection = true
+  deletion_protection = false
   labels              = { environment = "production", component = "authentication", role = "refresh-token-purge" }
 
   template {
@@ -314,7 +314,7 @@ resource "google_cloud_run_v2_service" "rest" {
   ingress              = "INGRESS_TRAFFIC_ALL"
   invoker_iam_disabled = false
   custom_audiences     = ["agora-authentication-rest"]
-  deletion_protection  = true
+  deletion_protection  = false
   labels               = { environment = "production", component = "authentication", role = "rest" }
 
   # Rate limits count in memory, so one instance sees every request. Needing a second one is the

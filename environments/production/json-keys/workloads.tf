@@ -70,7 +70,7 @@ resource "google_cloud_run_v2_job" "application" {
 
   name                = "agora-json-keys-${each.key}"
   location            = local.region
-  deletion_protection = true
+  deletion_protection = false
   labels              = { environment = "production", component = "json-keys", role = each.key }
 
   # Apply runs the migration once per image change and fails until it succeeds.
@@ -145,7 +145,7 @@ resource "google_cloud_run_v2_service" "grpc" {
   location             = local.region
   ingress              = "INGRESS_TRAFFIC_INTERNAL_ONLY"
   invoker_iam_disabled = false
-  deletion_protection  = true
+  deletion_protection  = false
   labels               = { environment = "production", component = "json-keys", role = "grpc" }
 
   scaling {

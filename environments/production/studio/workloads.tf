@@ -34,7 +34,7 @@ resource "google_cloud_run_v2_service" "web" {
   location             = local.region
   ingress              = "INGRESS_TRAFFIC_ALL"
   invoker_iam_disabled = true
-  deletion_protection  = true
+  deletion_protection  = false
   labels               = { environment = "production", component = "studio", role = "web" }
 
   scaling {
