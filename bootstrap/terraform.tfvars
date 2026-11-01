@@ -40,4 +40,4 @@ cluster_databases = {
   ]
 }
 # The lineages the cluster's databases archived to before their current one.
-retired_barman_lineages = ["database-paris-2", "database-rehearsal", "database-rehearsal-2"]
+retired_barman_lineages = ["database-paris-2", "database-rehearsal", "database-rehearsal-2", "database-rehearsal-3"]
