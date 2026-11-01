@@ -62,20 +62,81 @@ locals {
   }
 }
 
-# The perimeter enforces its status. Its dry run then mirrors the status, so the policy audit log
-# holds only refused calls. To try a rule before enforcing it, set use_explicit_dry_run_spec and
-# give the perimeter a spec beside the status: the log then also holds the calls the spec would
-# refuse.
+# The perimeter enforces its status. Its dry-run spec repeats the status, so the policy audit log
+# holds only refused calls. To try a rule before enforcing it, add it to the spec alone: the log then
+# also holds the calls the spec would refuse.
+#
+# The spec stays explicit. The perimeter ran its spec in dry run before it enforced it, and Google
+# keeps a spec until a request clears it, which the provider never sends. A spec beside
+# use_explicit_dry_run_spec = false is refused, so the flag stays on.
 resource "google_access_context_manager_service_perimeter" "production" {
   parent      = "accessPolicies/${var.access_policy_id}"
   name        = "accessPolicies/${var.access_policy_id}/servicePerimeters/a_novel_production"
   title       = "a-novel-production"
   description = "Keeps the production workloads' Google API calls inside production and management."
 
-  use_explicit_dry_run_spec = false
+  use_explicit_dry_run_spec = true
   deletion_policy           = "PREVENT"
 
   status {
+    resources           = local.perimeter.resources
+    restricted_services = local.perimeter.restricted_services
+
+    vpc_accessible_services {
+      enable_restriction = true
+      allowed_services   = ["RESTRICTED-SERVICES"]
+    }
+
+    dynamic "ingress_policies" {
+      for_each = local.perimeter.ingress
+
+      content {
+        title = ingress_policies.key
+
+        ingress_from {
+          identities = ingress_policies.value
+
+          sources {
+            access_level = "*"
+          }
+        }
+
+        ingress_to {
+          resources = ["*"]
+
+          operations {
+            service_name = "*"
+          }
+        }
+      }
+    }
+
+    egress_policies {
+      title = "management"
+
+      egress_from {
+        identity_type = "ANY_IDENTITY"
+      }
+
+      egress_to {
+        resources = ["projects/${data.google_project.management.number}"]
+
+        dynamic "operations" {
+          for_each = local.perimeter.egress_services
+
+          content {
+            service_name = operations.value
+
+            method_selectors {
+              method = "*"
+            }
+          }
+        }
+      }
+    }
+  }
+
+  spec {
     resources           = local.perimeter.resources
     restricted_services = local.perimeter.restricted_services
 
