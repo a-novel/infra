@@ -46,7 +46,8 @@ resource "google_compute_address" "nat" {
   region  = var.region
   name    = "agora-production-nat"
 
-  deletion_policy = "PREVENT"
+  # The old network retires once the allowlists drop this address (a-novel/infra#1208).
+  deletion_policy = "DELETE"
   lifecycle {
     prevent_destroy = true
   }

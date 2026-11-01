@@ -56,8 +56,9 @@ module "public_api_project" {
 }
 
 resource "google_compute_shared_vpc_host_project" "production" {
-  project         = google_project.workload.project_id
-  deletion_policy = "PREVENT"
+  project = google_project.workload.project_id
+  # Retires with the public-api project, its only service project (a-novel/infra#1209).
+  deletion_policy = "DELETE"
 
   lifecycle {
     prevent_destroy = true
