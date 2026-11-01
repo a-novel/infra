@@ -27,6 +27,9 @@ first step:
 3. **Performance:** latency against the period before, the slowest operations and steps.
 4. **Services:** one tab per service with its own numbers, such as tokens consumed or mails sent.
 
+A new service appears on the first three by itself. Its thresholds and its Services tab come with
+it, as [Contributing](../../CONTRIBUTING.md#rules) describes.
+
 Core sets that home dashboard by hand, under **Administration → General → Default preferences**:
 reading it needs a role that also writes the organization, which the plan token must not hold.
 **CloudNativePG** details each database, from Health. Each alert's post links the panel that draws
