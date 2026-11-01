@@ -13,8 +13,9 @@ contact_point = "discord"
 
 # Tune these on real traffic. The thresholds read the span metrics' 10-minute rates.
 alerts = {
-  # Its server-side rendering waits on Authentication.
-  "platform-studio" = { failure_rate = 0.05, p95_seconds = 2 }
+  # Their server-side rendering waits on Authentication.
+  "platform-account" = { failure_rate = 0.05, p95_seconds = 2 }
+  "platform-studio"  = { failure_rate = 0.05, p95_seconds = 2 }
   # Its health check, every five minutes, also reaches the database and the mail relay, and took
   # 0.9 seconds at the 95th percentile on 2026-10-30.
   "service-authentication" = { failure_rate = 0.05, p95_seconds = 2 }

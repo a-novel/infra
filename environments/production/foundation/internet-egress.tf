@@ -21,8 +21,8 @@ locals {
     }
     github-raw = {
       priority = 1030
-      # Studio's planned downtime document. GitHub serves it from four anycast addresses that every
-      # client resolves alike.
+      # The platforms' planned downtime document. GitHub serves it from four anycast addresses that
+      # every client resolves alike.
       hosts          = ["raw.githubusercontent.com"]
       address_groups = []
       port           = "443"

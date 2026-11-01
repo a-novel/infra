@@ -52,7 +52,7 @@ own identities, image repositories, network tags and database hosts.
   | `api.openai.com:443`                               | `agora-genai-private`, `agora-genai-sweep`                                                                                                                       |
   | Google's service ranges on 587, for the SMTP relay | `agora-authentication-api`, `agora-authentication-maintain`                                                                                                      |
   | Sentry's ingest host on 443, `sentry_ingest_host`  | `agora-authentication-api`, `agora-authentication-maintain`, `agora-json-keys-private`, `agora-json-keys-rotatekeys`, `agora-genai-private`, `agora-genai-sweep` |
-  | `raw.githubusercontent.com:443`                    | None: only the cluster's nodes, for Studio's planned downtime document                                                                                           |
+  | `raw.githubusercontent.com:443`                    | None: only the cluster's nodes, for the platforms' planned downtime document                                                                                     |
   | `otlp-gateway-prod-eu-west-2.grafana.net:443`      | None: only the cluster's nodes, for Alloy's telemetry                                                                                                            |
 
   The firewall resolves a host name through the VPC's Cloud DNS and matches the addresses it
@@ -144,8 +144,9 @@ Kubernetes resources, reaching the control plane through the DNS endpoint as the
   Registry, pinned by digest, and no `LoadBalancer` Service. The services' namespaces deny all
   traffic but DNS until a workload's own policy opens a path. FQDN network policies give each
   workload its own internet hosts, matched on its own lookups: OpenAI for GenAI, the mail relay
-  for Authentication, GitHub's raw host for Studio, Grafana's gateway for Alloy. After each apply,
-  the deploy sends dry-run requests that admission must refuse, and one compliant pod it must admit.
+  for Authentication, GitHub's raw host for the platforms, Grafana's gateway for Alloy. After each
+  apply, the deploy sends dry-run requests that admission must refuse, and one compliant pod it
+  must admit.
 - **Budgets:** each service's namespace has its own ResourceQuota, the cluster root's
   `service_budgets`: the CPU and memory its pods may request in all, and how many run. Its
   autoscalers grow inside it, so one service cannot take the room another needs; raising one is a
@@ -168,10 +169,11 @@ Kubernetes resources, reaching the control plane through the DNS endpoint as the
   the migrations. Alloy scrapes the kubelets, cAdvisor, kube-state-metrics and the databases every
   60 seconds, and sends the Kubernetes events, all in the cluster root's namespaces. It reads its push token from `production-alloy-push-token`, and
   no Secret of the cluster. The Alloy Operator, which the chart runs, manages that namespace alone.
-- **Edge:** Studio answers on `studio.storyverse.fr` through the Gateway `studio`, on Google's
-  global load balancer, which redirects plain HTTP to HTTPS. Foundation holds its `studio` address,
-  a TLS 1.2 policy, and a Certificate Manager certificate the domain's DNS authorizes before any
-  traffic moves. Only the load balancer's ranges reach Studio's pods.
+- **Edge:** each platform answers on its own host through a Gateway of its name, on Google's global
+  load balancer, which redirects plain HTTP to HTTPS: Studio on `studio.storyverse.fr`, Account on
+  `account.storyverse.fr`. Foundation holds each one's address, a TLS 1.2 policy, and a Certificate
+  Manager certificate the domain's DNS authorizes before any traffic moves. Only the load balancer's
+  ranges reach the platforms' pods.
 - **Scaling:** an autoscaler absorbs bursts only. It adds or removes one pod a minute at most, and
   removes one only after five minutes below its targets. A workload's maximum moves by pull request,
   which the `Workload autoscaler at its maximum` alert prompts. GenAI's server scales on CPU and on

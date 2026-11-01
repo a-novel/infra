@@ -475,14 +475,15 @@ run "reaches_only_its_internet_hosts" {
   assert {
     condition = (
       { for name, policy in kubernetes_manifest.internet_egress : name => "${policy.manifest.metadata.namespace}:${join(",", policy.manifest.spec.podSelector.matchExpressions[0].values)}:${policy.manifest.spec.egress[0].matches[0].name}:${policy.manifest.spec.egress[0].ports[0].port}" } == {
-        openai       = "genai:grpc,sweep:api.openai.com:443"
-        smtp-relay   = "authentication:maintenance,rest:smtp-relay.gmail.com:587"
-        github-raw   = "studio:web:raw.githubusercontent.com:443"
-        grafana-otlp = "alloy:alloy:otlp-gateway-prod-eu-west-2.grafana.net:443"
+        openai             = "genai:grpc,sweep:api.openai.com:443"
+        smtp-relay         = "authentication:maintenance,rest:smtp-relay.gmail.com:587"
+        github-raw         = "studio:web:raw.githubusercontent.com:443"
+        github-raw-account = "account:web:raw.githubusercontent.com:443"
+        grafana-otlp       = "alloy:alloy:otlp-gateway-prod-eu-west-2.grafana.net:443"
       } &&
       alltrue([for policy in kubernetes_manifest.internet_egress : policy.manifest.kind == "FQDNNetworkPolicy" && length(policy.manifest.spec.egress) == 1])
     )
-    error_message = "GenAI may reach only OpenAI, Authentication only the mail relay, Studio only GitHub's raw host, and Alloy only Grafana's gateway, each on its own port."
+    error_message = "GenAI may reach only OpenAI, Authentication only the mail relay, the platforms only GitHub's raw host, and Alloy only Grafana's gateway, each on its own port."
   }
 }
 
@@ -546,7 +547,7 @@ run "runs_authentication" {
     condition = (
       length(one(kubernetes_network_policy_v1.authentication_rest.spec).ingress) == 1 &&
       toset([for peer in one(one(kubernetes_network_policy_v1.authentication_rest.spec).ingress).from : one(peer.pod_selector).match_labels["app.kubernetes.io/name"]]) == toset(["web", "smoke"]) &&
-      toset(split(",", local.authentication_env.SERVICE_TOKEN_CALLERS)) == toset(["system:serviceaccount:studio:web", "system:serviceaccount:authentication:smoke"]) &&
+      toset(split(",", local.authentication_env.SERVICE_TOKEN_CALLERS)) == toset(["system:serviceaccount:account:web", "system:serviceaccount:studio:web", "system:serviceaccount:authentication:smoke"]) &&
       one(one(one(kubernetes_network_policy_v1.authentication_rest.spec).ingress).ports).port == local.authentication_env.REST_PORT
     )
     error_message = "Only the platforms and the smoke check may call Authentication, whose visitor IP header trusts the platforms."
@@ -622,6 +623,15 @@ run "runs_each_platform" {
       env.XFF_DEPTH == "2"
     ]) && local.platform_env.studio.ORIGIN == "https://studio.storyverse.fr"
     error_message = "Each platform must report nothing to Sentry, check form posts against its own host, and take the visitor's address the load balancer appends."
+  }
+
+  assert {
+    condition = (
+      toset(keys(local.platform_env)) == toset(["account", "studio"]) &&
+      local.platform_env.studio.ACCOUNT_URL == local.platform_env.account.ORIGIN &&
+      local.platform_env.account.STUDIO_URL == local.platform_env.studio.ORIGIN
+    )
+    error_message = "Studio's account link must open the account platform, and the account platform's app list Studio."
   }
 
   # A release without service tokens sends Google ID tokens when AUTHENTICATION_SERVICE_AUDIENCE is

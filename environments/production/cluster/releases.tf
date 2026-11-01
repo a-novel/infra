@@ -2,6 +2,7 @@ locals {
   # The release images the cluster runs, by service and role, as each service's root pins them.
   # This root's own deploy copies them into the service's private repository, which the nodes read.
   release_roles = {
+    account        = ["web"]
     authentication = ["maintenance", "migrations", "rest"]
     genai          = ["grpc", "migrations", "sweep"]
     json-keys      = ["grpc", "migrations", "rotatekeys"]
