@@ -16,9 +16,6 @@ locals {
     artifact_registry  = "pkg.dev."
     container_registry = "gcr.io."
   }
-  # Nothing resolves Cloud Run's domain since Cloud Run retired. This deploy deletes its records and
-  # unlocks its zone, so the next one can delete it (a-novel/infra#1208).
-  retired_google_domains = { cloud_run = "run.app." }
 
   # The cluster's network resolves through these zones and the allowlist.
   dns_networks = [google_compute_network.cluster.id]
@@ -88,7 +85,7 @@ resource "google_dns_record_set" "googleapis_wildcard" {
 }
 
 resource "google_dns_managed_zone" "private_google_domain" {
-  for_each = merge(local.private_google_domains, local.retired_google_domains)
+  for_each = local.private_google_domains
 
   project = google_project.workload.project_id
   name    = "private-${replace(each.key, "_", "-")}"
@@ -97,7 +94,7 @@ resource "google_dns_managed_zone" "private_google_domain" {
   description     = "Resolve ${each.value} through the restricted Google API VIP."
   visibility      = "private"
   force_destroy   = false
-  deletion_policy = contains(keys(local.retired_google_domains), each.key) ? "DELETE" : "PREVENT"
+  deletion_policy = "PREVENT"
 
   private_visibility_config {
     dynamic "networks" {
@@ -112,6 +109,21 @@ resource "google_dns_managed_zone" "private_google_domain" {
   depends_on = [google_project_service.workload["dns.googleapis.com"]]
   lifecycle {
     prevent_destroy = true
+  }
+}
+
+# Cloud Run's zone, which nothing resolved since Cloud Run retired (a-novel/infra#1208). The previous
+# deploy deleted its records and unlocked it.
+moved {
+  from = google_dns_managed_zone.private_google_domain["cloud_run"]
+  to   = google_dns_managed_zone.retired_google_domain["cloud_run"]
+}
+
+removed {
+  from = google_dns_managed_zone.retired_google_domain
+
+  lifecycle {
+    destroy = true
   }
 }
 
