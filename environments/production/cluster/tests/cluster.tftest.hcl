@@ -22,11 +22,19 @@ override_data {
     outputs = {
       region              = "europe-west1"
       workload_project_id = "a-novel-production-prod"
-      studio_edge = {
-        host            = "studio.storyverse.fr"
-        address_name    = "studio"
-        ssl_policy      = "studio"
-        certificate_map = "studio"
+      platform_edges = {
+        account = {
+          host            = "account.storyverse.fr"
+          address_name    = "account"
+          ssl_policy      = "account"
+          certificate_map = "account"
+        }
+        studio = {
+          host            = "studio.storyverse.fr"
+          address_name    = "studio"
+          ssl_policy      = "studio"
+          certificate_map = "studio"
+        }
       }
       cluster = {
         name              = "a-novel-production"
@@ -212,21 +220,20 @@ run "sends_every_signal_to_grafana_through_alloy" {
 
   # Each workload exports to the receiver under its repository's name, as on Cloud Run.
   assert {
-    condition = alltrue([for workload in [
+    condition = alltrue([for workload in concat([
       { env = local.json_keys_env, kind = "api" },
       { env = local.authentication_env, kind = "api" },
       { env = local.genai_grpc_env, kind = "api" },
       { env = local.genai_sweep_env, kind = "job" },
-      { env = local.studio_env, kind = "api" },
       { env = { for env in one(kubernetes_cron_job_v1.scheduled["rotate-keys"].spec[0].job_template[0].spec[0].template[0].spec[0].container).env : env.name => env.value }, kind = "job" },
       { env = { for env in one(kubernetes_cron_job_v1.scheduled["refresh-token-purge"].spec[0].job_template[0].spec[0].template[0].spec[0].container).env : env.name => env.value }, kind = "job" },
-      ] :
+      ], [for env in values(local.platform_env) : { env = env, kind = "api" }]) :
       workload.env.OTEL == "true" &&
       workload.env.OTEL_EXPORTER_OTLP_ENDPOINT == "http://${one(keys(local.alloy_values.collectors))}.${helm_release.alloy.namespace}.svc:${local.alloy_values.applicationObservability.receivers.otlp.http.port}" &&
       can(regex("^(service|platform)-[a-z-]+$", workload.env.OTEL_SERVICE_NAME)) &&
       workload.env.OTEL_RESOURCE_ATTRIBUTES == "a_novel.workload=${workload.kind}"
     ])
-    error_message = "Every server, the sweep, the jobs and Studio must export to Alloy's receiver, named after their repository, as an api or a job."
+    error_message = "Every server, the sweep, the jobs and the platforms must export to Alloy's receiver, named after their repository, as an api or a job."
   }
 }
 
@@ -542,7 +549,7 @@ run "runs_authentication" {
       toset(split(",", local.authentication_env.SERVICE_TOKEN_CALLERS)) == toset(["system:serviceaccount:studio:web", "system:serviceaccount:authentication:smoke"]) &&
       one(one(one(kubernetes_network_policy_v1.authentication_rest.spec).ingress).ports).port == local.authentication_env.REST_PORT
     )
-    error_message = "Only Studio and the smoke check may call Authentication, whose visitor IP header trusts Studio."
+    error_message = "Only the platforms and the smoke check may call Authentication, whose visitor IP header trusts the platforms."
   }
 }
 
@@ -594,13 +601,13 @@ run "runs_genai" {
       [for metric in module.genai_grpc[0].autoscaler.spec.metric : metric.type] == ["Resource", "Pods"] &&
       one(one(module.genai_grpc[0].autoscaler.spec.metric[1].pods).target).average_value == tostring(floor(tonumber(local.genai_grpc_env.GRPC_MAX_CONCURRENT_CALLS) * 60 / 100)) &&
       module.genai_grpc[0].autoscaler.gauge.spec.metrics[0].pod.containers[0].endpoint.port == tonumber(local.genai_grpc_env.METRICS_PORT) &&
-      alltrue([for workload in [module.json_keys_grpc[0], module.authentication_rest[0], module.genai_sweep[0], module.studio_web] : workload.autoscaler.gauge == null])
+      alltrue([for workload in [module.json_keys_grpc[0], module.authentication_rest[0], module.genai_sweep[0], module.platform_web["studio"]] : workload.autoscaler.gauge == null])
     )
     error_message = "GenAI's server alone must scale on its calls in flight, beside CPU, at 60% of its call cap per pod, read on its metrics port."
   }
 }
 
-run "runs_studio" {
+run "runs_each_platform" {
   command = plan
 
   variables {
@@ -608,31 +615,34 @@ run "runs_studio" {
   }
 
   assert {
-    condition = (
-      length([for name in keys(local.studio_env) : name if startswith(name, "SENTRY_") || startswith(name, "PUBLIC_SENTRY_")]) == 0 &&
-      local.studio_env.ORIGIN == "https://studio.storyverse.fr" &&
-      local.studio_env.ADDRESS_HEADER == "X-Forwarded-For" &&
-      local.studio_env.XFF_DEPTH == "2"
-    )
-    error_message = "Studio must report nothing to Sentry, check form posts against its own host, and take the visitor's address the load balancer appends."
+    condition = alltrue([for platform, env in local.platform_env :
+      length([for name in keys(env) : name if startswith(name, "SENTRY_") || startswith(name, "PUBLIC_SENTRY_")]) == 0 &&
+      env.ORIGIN == "https://${local.platform_edges[platform].host}" &&
+      env.ADDRESS_HEADER == "X-Forwarded-For" &&
+      env.XFF_DEPTH == "2"
+    ]) && local.platform_env.studio.ORIGIN == "https://studio.storyverse.fr"
+    error_message = "Each platform must report nothing to Sentry, check form posts against its own host, and take the visitor's address the load balancer appends."
   }
 
   # A release without service tokens sends Google ID tokens when AUTHENTICATION_SERVICE_AUDIENCE is
   # set, which Authentication on the cluster cannot take.
   assert {
-    condition = (
-      !contains(keys(local.studio_env), "AUTHENTICATION_SERVICE_AUDIENCE") &&
-      local.studio_env.AUTHENTICATION_SERVICE_URL == "http://${module.authentication_rest[0].pod_labels["app.kubernetes.io/name"]}.authentication.svc:${local.authentication_env.REST_PORT}" &&
-      contains(split(",", local.authentication_env.SERVICE_TOKEN_CALLERS), module.studio_web.service_account) &&
-      one(one(one(kubernetes_network_policy_v1.studio_web.spec).egress).to).pod_selector[0].match_labels["app.kubernetes.io/name"] == module.authentication_rest[0].pod_labels["app.kubernetes.io/name"] &&
-      one(one(one(kubernetes_network_policy_v1.studio_web.spec).egress).ports).port == local.authentication_env.REST_PORT &&
-      contains([for peer in one(one(kubernetes_network_policy_v1.authentication_rest.spec).ingress).from : one(peer.pod_selector).match_labels["app.kubernetes.io/name"]], module.studio_web.pod_labels["app.kubernetes.io/name"])
-    )
-    error_message = "Studio must call Authentication's API directly, as a caller Authentication admits."
+    condition = alltrue([for platform, env in local.platform_env :
+      !contains(keys(env), "AUTHENTICATION_SERVICE_AUDIENCE") &&
+      env.AUTHENTICATION_SERVICE_URL == "http://${module.authentication_rest[0].pod_labels["app.kubernetes.io/name"]}.authentication.svc:${local.authentication_env.REST_PORT}" &&
+      contains(split(",", local.authentication_env.SERVICE_TOKEN_CALLERS), module.platform_web[platform].service_account) &&
+      one(one(one(kubernetes_network_policy_v1.platform_web[platform].spec).egress).to).pod_selector[0].match_labels["app.kubernetes.io/name"] == module.authentication_rest[0].pod_labels["app.kubernetes.io/name"] &&
+      one(one(one(kubernetes_network_policy_v1.platform_web[platform].spec).egress).ports).port == local.authentication_env.REST_PORT &&
+      contains([for peer in one(one(kubernetes_network_policy_v1.authentication_rest.spec).ingress).from :
+        "${one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"]}/${one(peer.pod_selector).match_labels["app.kubernetes.io/name"]}"
+        if length(peer.namespace_selector) > 0
+      ], "${platform}/${module.platform_web[platform].pod_labels["app.kubernetes.io/name"]}")
+    ])
+    error_message = "Each platform must call Authentication's API directly, as a caller Authentication admits."
   }
 }
 
-run "serves_studio_through_the_gateway" {
+run "serves_each_platform_through_its_gateway" {
   command = plan
 
   variables {
@@ -640,47 +650,45 @@ run "serves_studio_through_the_gateway" {
   }
 
   assert {
-    condition = (
-      kubernetes_manifest.studio_gateway[0].manifest.spec.gatewayClassName == "gke-l7-global-external-managed" &&
-      kubernetes_manifest.studio_gateway[0].manifest.spec.addresses == [{ type = "NamedAddress", value = "studio" }] &&
-      kubernetes_manifest.studio_gateway[0].manifest.metadata.annotations["networking.gke.io/certmap"] == "studio" &&
-      kubernetes_manifest.studio_gateway_policy[0].manifest.spec.default.sslPolicy == "studio" &&
-      alltrue([for listener in kubernetes_manifest.studio_gateway[0].manifest.spec.listeners : listener.hostname == local.studio_host])
-    )
-    error_message = "The Gateway must answer only for Studio's host, on foundation's address, certificate map and TLS policy."
+    condition = toset(keys(kubernetes_manifest.platform_gateway)) == toset(keys(local.platforms)) && alltrue([for platform, gateway in kubernetes_manifest.platform_gateway :
+      gateway.manifest.spec.gatewayClassName == "gke-l7-global-external-managed" &&
+      gateway.manifest.spec.addresses == [{ type = "NamedAddress", value = platform }] &&
+      gateway.manifest.metadata.annotations["networking.gke.io/certmap"] == platform &&
+      kubernetes_manifest.platform_gateway_policy[platform].manifest.spec.default.sslPolicy == platform &&
+      alltrue([for listener in gateway.manifest.spec.listeners : listener.hostname == local.platform_edges[platform].host])
+    ])
+    error_message = "Each platform's Gateway must answer only for its host, on foundation's address, certificate map and TLS policy."
   }
 
   assert {
-    condition = (
-      kubernetes_manifest.studio_route[0].manifest.spec.hostnames == [local.studio_host] &&
-      one(kubernetes_manifest.studio_route[0].manifest.spec.parentRefs).sectionName == "https" &&
-      one(one(kubernetes_manifest.studio_route[0].manifest.spec.rules).backendRefs) == module.studio_web.service &&
-      one(kubernetes_manifest.studio_redirect[0].manifest.spec.parentRefs).sectionName == "http" &&
-      one(one(kubernetes_manifest.studio_redirect[0].manifest.spec.rules).filters).requestRedirect.scheme == "https" &&
-      length(keys(one(kubernetes_manifest.studio_redirect[0].manifest.spec.rules))) == 1
-    )
-    error_message = "HTTPS must reach Studio's Service, and plain HTTP must only redirect to HTTPS."
+    condition = alltrue([for platform, route in kubernetes_manifest.platform_route :
+      route.manifest.spec.hostnames == [local.platform_edges[platform].host] &&
+      one(route.manifest.spec.parentRefs).sectionName == "https" &&
+      one(one(route.manifest.spec.rules).backendRefs) == module.platform_web[platform].service &&
+      one(kubernetes_manifest.platform_redirect[platform].manifest.spec.parentRefs).sectionName == "http" &&
+      one(one(kubernetes_manifest.platform_redirect[platform].manifest.spec.rules).filters).requestRedirect.scheme == "https" &&
+      length(keys(one(kubernetes_manifest.platform_redirect[platform].manifest.spec.rules))) == 1
+    ])
+    error_message = "HTTPS must reach each platform's Service, and plain HTTP must only redirect to HTTPS."
   }
 
   assert {
-    condition = (
-      kubernetes_manifest.studio_health_check[0].manifest.spec.targetRef.name == module.studio_web.service.name &&
-      kubernetes_manifest.studio_health_check[0].manifest.spec.default.config.httpHealthCheck.requestPath == "/ping" &&
-      kubernetes_manifest.studio_health_check[0].manifest.spec.default.config.httpHealthCheck.port == module.studio_web.service.port &&
-      local.studio_env.ORIGIN == "https://${local.studio_host}" &&
-      local.authentication_env.PLATFORM_AUTH_URL == local.studio_env.ORIGIN
-    )
-    error_message = "The load balancer must check Studio on its probes' path, and Studio and Authentication's links must name the Gateway's host."
+    condition = alltrue([for platform, check in kubernetes_manifest.platform_health_check :
+      check.manifest.spec.targetRef.name == module.platform_web[platform].service.name &&
+      check.manifest.spec.default.config.httpHealthCheck.requestPath == "/ping" &&
+      check.manifest.spec.default.config.httpHealthCheck.port == module.platform_web[platform].service.port
+    ]) && local.authentication_env.PLATFORM_AUTH_URL == local.platform_env.studio.ORIGIN
+    error_message = "The load balancer must check each platform on its probes' path, and Authentication's links must name a Gateway's host."
   }
 
   assert {
-    condition = (
-      length(one(kubernetes_network_policy_v1.studio_web.spec).ingress) == 1 &&
-      toset([for peer in one(one(kubernetes_network_policy_v1.studio_web.spec).ingress).from : one(peer.ip_block).cidr]) == toset(["35.191.0.0/16", "130.211.0.0/22"]) &&
-      alltrue([for peer in one(one(kubernetes_network_policy_v1.studio_web.spec).ingress).from : length(peer.pod_selector) == 0 && length(peer.namespace_selector) == 0]) &&
-      one(one(one(kubernetes_network_policy_v1.studio_web.spec).ingress).ports).port == tostring(module.studio_web.service.port)
-    )
-    error_message = "Only Google's load balancer may reach Studio, on its port."
+    condition = alltrue([for platform, policy in kubernetes_network_policy_v1.platform_web :
+      length(one(policy.spec).ingress) == 1 &&
+      toset([for peer in one(one(policy.spec).ingress).from : one(peer.ip_block).cidr]) == toset(["35.191.0.0/16", "130.211.0.0/22"]) &&
+      alltrue([for peer in one(one(policy.spec).ingress).from : length(peer.pod_selector) == 0 && length(peer.namespace_selector) == 0]) &&
+      one(one(one(policy.spec).ingress).ports).port == tostring(module.platform_web[platform].service.port)
+    ])
+    error_message = "Only Google's load balancer may reach each platform, on its port."
   }
 }
 

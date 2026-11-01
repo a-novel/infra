@@ -122,9 +122,3 @@ output "platform_edges" {
   description = "Each platform's public edge, which its Gateway in the cluster root names, and the DNS records its host needs: the certificate's authorization first, then the address."
   value       = local.platform_edges
 }
-
-# The cluster root reads Studio's edge here until it reads platform_edges.
-output "studio_edge" {
-  description = "Studio's public edge, as platform_edges holds it."
-  value       = local.platform_edges.studio
-}

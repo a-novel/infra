@@ -23,7 +23,7 @@ provider "kubernetes" {
   host  = "https://${local.cluster.dns_endpoint}"
   token = ephemeral.google_client_config.ci.access_token
   # GKE annotates Services for its load balancers' network endpoint groups, and the Gateway's
-  # controller annotates Studio's. Removing them would detach the load balancer's backends.
+  # controller annotates the platforms'. Removing them would detach the load balancer's backends.
   ignore_annotations = ["^cloud\\.google\\.com/neg"]
 }
 
