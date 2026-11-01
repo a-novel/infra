@@ -90,9 +90,15 @@ resource "grafana_apps_dashboard_dashboard_v2" "services" {
   }
 }
 
-# Grafana opens on the journey's first step.
-resource "grafana_organization_preferences" "home" {
-  home_dashboard_uid = grafana_dashboard.journey["errors"].uid
+# The organization's home dashboard, the journey's first step, is set by hand: reading it needs a
+# role that also writes the organization, which the plan token must not hold. Forgetting it keeps
+# the setting.
+removed {
+  from = grafana_organization_preferences.home
+
+  lifecycle {
+    destroy = false
+  }
 }
 
 resource "grafana_dashboard" "cloudnative_pg" {
