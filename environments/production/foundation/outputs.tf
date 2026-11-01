@@ -48,8 +48,3 @@ output "cluster_nat_address" {
   description = "The address the cluster's internet egress leaves from, which the providers' IP allowlists name beside nat_address."
   value       = google_compute_address.cluster_nat.address
 }
-
-output "sentry_ingest_host" {
-  description = "Sentry's ingest host. Error events and each project's OTLP endpoint share it."
-  value       = var.sentry_ingest_host
-}

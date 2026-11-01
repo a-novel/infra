@@ -19,14 +19,6 @@ locals {
       address_groups = [google_network_security_address_group.google_services.id]
       port           = "587"
     }
-    sentry = {
-      priority = 1020
-      # Sentry's ingest sits behind one Google Cloud anycast address that every client resolves
-      # alike, so the firewall resolves the one its clients do.
-      hosts          = [var.sentry_ingest_host]
-      address_groups = []
-      port           = "443"
-    }
     github-raw = {
       priority = 1030
       # Studio's planned downtime document. GitHub serves it from four anycast addresses that every

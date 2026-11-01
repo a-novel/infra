@@ -174,16 +174,6 @@ variable "cluster_ranges" {
   }
 }
 
-variable "sentry_ingest_host" {
-  description = "Ingest host of the Sentry organization the services report to, the one Sentry name the egress allowlist admits."
-  type        = string
-
-  validation {
-    condition     = can(regex("^o[0-9]+\\.ingest\\.[a-z]+\\.sentry\\.io$", var.sentry_ingest_host))
-    error_message = "Name one organization's ingest host, o<id>.ingest.<region>.sentry.io, never a wider Sentry domain."
-  }
-}
-
 variable "database_operator_principals" {
   description = "Human identities allowed to inspect the private database host through OS Login and IAP, read workload logs, and read the cluster's service namespaces. Data Access logs remain restricted. Use user: or group: IAM member syntax."
   type        = set(string)
@@ -297,4 +287,3 @@ variable "compute_cpu_quota" {
     error_message = "The Compute Engine CPU quota must be a whole number from 2 through 32."
   }
 }
-
