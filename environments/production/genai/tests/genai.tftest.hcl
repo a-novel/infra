@@ -10,16 +10,6 @@ override_data {
   }
 }
 
-# The cluster root pulls every GenAI release from this repository.
-run "keeps_the_repository_the_cluster_pulls_from" {
-  command = plan
-
-  assert {
-    condition     = module.runtime.repositories["production"] == "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-genai-private-production"
-    error_message = "GenAI's private production repository must keep its name: the cluster runs every release from it."
-  }
-}
-
 # The cluster root deploys the pins this root validates.
 run "rejects_an_unpinned_image" {
   command = plan

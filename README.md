@@ -38,12 +38,11 @@ Disabling `deploy.yaml` [freezes production](docs/runbooks/deployments.md#freeze
 | --------------------------------------- | -------------------------------------------------------------------------------- |
 | `bootstrap/`                            | Management project: state bucket, CI identities, secret containers.              |
 | `environments/production/foundation`    | Projects, networks, the cluster, firewall, monitoring, budget.                   |
-| `environments/production/<service>`     | One service: its release pins and the image repository the cluster pulls from.   |
+| `environments/production/<service>`     | One service: its release pins and secret versions, which the cluster root reads. |
 | `environments/production/cluster`       | The cluster's namespaces, add-ons and policies, applied only when they change.   |
 | `environments/production/grafana`       | Grafana's alerts and dashboards, applied only when they change.                  |
 | `environments/recovery-cluster`         | A cluster drill's throwaway cluster, which reads the restored services' backups. |
 | `environments/recovery-database`        | A cluster drill's databases, restored from production's backups and checked.     |
-| `modules/service-runtime`               | A service's production image repository.                                         |
 | `modules/smoke-check`                   | The health check every service shares, which the cluster runs.                   |
 | `modules/project-shell`                 | An empty trust-zone project, for foundation.                                     |
 | `modules/database-operator`             | cert-manager, CloudNativePG and its Barman Cloud plugin, for the cluster.        |
