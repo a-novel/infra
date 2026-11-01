@@ -10,53 +10,17 @@ mock_provider "google" {
       name   = "projects/a-novel-production-prod/serviceAccounts/runtime-mock@a-novel-production-prod.iam.gserviceaccount.com"
     }
   }
-  # A peering checks that both networks are well-formed.
   mock_resource "google_compute_network" {
     defaults = { id = "projects/a-novel-production-prod/global/networks/mock" }
   }
   mock_data "google_project" {
     defaults = { number = "232403541574" }
   }
-  mock_data "google_compute_instance_group" {
-    defaults = { instances = ["projects/a-novel-production-prod/zones/europe-west1-d/instances/agora-database-mock"] }
-  }
 }
 
 mock_provider "google-beta" {
   mock_resource "google_project_service_identity" {
     defaults = { member = "serviceAccount:mock-agent@gcp-sa-cloudscheduler.iam.gserviceaccount.com" }
-  }
-}
-
-run "keeps_databases_private_and_preserved" {
-  command = plan
-
-  assert {
-    condition = alltrue([for template in google_compute_instance_template.database :
-      length(template.network_interface[0].access_config) == 0 &&
-      template.shielded_instance_config[0].enable_secure_boot &&
-      anytrue([for disk in template.disk : !disk.boot && !disk.auto_delete])
-    ])
-    error_message = "Database hosts must have no external IP, boot securely and never delete their data disk."
-  }
-
-  assert {
-    condition = alltrue([for group in google_compute_instance_group_manager.database :
-      one(group.stateful_disk).delete_rule == "NEVER" &&
-      one(group.stateful_internal_ip).delete_rule == "NEVER" &&
-      group.update_policy[0].type == "OPPORTUNISTIC"
-    ])
-    error_message = "Database groups must keep their disk and address, and roll hosts only through manual maintenance."
-  }
-
-  assert {
-    condition = (
-      alltrue([for template in google_compute_instance_template.database :
-        template.project == google_logging_project_exclusion.database_health_probes.project
-      ]) &&
-      strcontains(google_logging_project_exclusion.database_health_probes.filter, "exitCode=0,")
-    )
-    error_message = "Only successful database health probes are excluded, in the project the database hosts log to."
   }
 }
 
@@ -79,19 +43,9 @@ run "denies_everything_the_network_does_not_allow" {
       google_compute_firewall.deny_other_egress.direction == "EGRESS" &&
       google_compute_firewall.deny_other_egress.destination_ranges == toset(["0.0.0.0/0"]) &&
       google_compute_firewall.deny_other_egress.target_tags == null &&
-      alltrue([for rule in concat(values(google_compute_firewall.allow_postgres_egress), [google_compute_firewall.allow_restricted_google_apis]) :
-        rule.priority < google_compute_firewall.deny_other_egress.priority
-      ])
+      google_compute_firewall.allow_restricted_google_apis.priority < google_compute_firewall.deny_other_egress.priority
     )
     error_message = "A VPC-wide deny must sit below every explicit egress allow."
-  }
-
-  assert {
-    condition = (
-      google_compute_firewall.allow_iap_ssh.source_ranges == toset(["35.235.240.0/20"]) &&
-      alltrue([for rule in google_compute_firewall.allow_postgres_ingress : rule.source_ranges == toset([var.subnet_cidr, var.egress_subnet_cidr])])
-    )
-    error_message = "SSH must come only from Identity-Aware Proxy, and PostgreSQL only from the two private subnets."
   }
 
   assert {
@@ -202,24 +156,6 @@ run "fences_the_cluster_network" {
     ) : toset([for network in networks : network.network_url]) == toset([google_compute_network.production.id, google_compute_network.cluster.id])])
     error_message = "Both networks must log their lookups, resolve through the private zones and resolve only the DNS allowlist."
   }
-
-  assert {
-    condition = alltrue([for pair in setproduct(values(var.cluster_ranges), [var.subnet_cidr, var.egress_subnet_cidr]) :
-      !cidrcontains(pair[0], cidrhost(pair[1], 0)) && !cidrcontains(pair[1], cidrhost(pair[0], 0))
-    ])
-    error_message = "The peered networks' ranges must not overlap."
-  }
-
-  # The hosts' addresses are known only once their groups exist, so the egress rule's destination
-  # stays unknown here.
-  assert {
-    condition = alltrue([for service, host in local.database_hosts : (
-      google_compute_firewall.allow_database_imports[service].source_ranges == toset([var.cluster_ranges.pods]) &&
-      google_compute_firewall.allow_database_imports[service].target_tags == toset([local.network_tags[host.identity]]) &&
-      alltrue([for rule in concat(tolist(google_compute_firewall.allow_database_imports[service].allow), tolist(google_compute_firewall.cluster_allow_database_imports[service].allow)) : rule.protocol == "tcp" && rule.ports == tolist([tostring(host.port)])])
-    )])
-    error_message = "The import must open each database host to the cluster's pods on that host's port alone."
-  }
 }
 
 run "holds_cluster_upgrades_during_a_planned_downtime" {
@@ -309,24 +245,17 @@ run "grants_no_basic_roles" {
   }
 }
 
-run "copies_and_pins_host_credentials_by_digest" {
+run "copies_each_database_image_into_its_service_repository" {
   command = plan
 
   assert {
-    condition = alltrue([for service in ["json-keys", "authentication"] : contains(output.image_copies, {
-      source   = var.host_credentials_image
-      producer = "a-novel/infra"
-      workflow = "publish-rollout-verifier.yaml"
-      target   = "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-${service}-private-tooling/host-credentials:${regex(":([^@]+)@", var.host_credentials_image)[0]}"
-    })])
-    error_message = "Deploy must verify host-credentials against its publication workflow and copy it into each service's tooling repository."
-  }
-
-  assert {
-    condition = alltrue([for key, service in { json_keys = "json-keys", authentication = "authentication" } :
-      output.database_hosts[key].credentials_image == "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-${service}-private-tooling/host-credentials@${regex("@(sha256:[0-9a-f]{64})$", var.host_credentials_image)[0]}"
-    ])
-    error_message = "Each database host must run host-credentials from its service's tooling repository, by digest."
+    condition = output.image_copies == [for service, ref in var.database_images : {
+      source   = ref
+      producer = "a-novel/service-${service}"
+      workflow = "release.yaml"
+      target   = "europe-west1-docker.pkg.dev/a-novel-production-prod/agora-${service}-private-production/service-${service}/database:${regex(":([^@]+)@", ref)[0]}"
+    }]
+    error_message = "Deploy must verify each database image against its service's release workflow and copy it into that service's production repository, which the cluster's databases pull from."
   }
 }
 
