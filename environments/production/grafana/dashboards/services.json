@@ -2231,12 +2231,12 @@
         }
       }
     },
-    "studio-forms": {
+    "studio-sign-ins": {
       "kind": "Panel",
       "spec": {
         "id": 21,
-        "title": "Form submissions",
-        "description": "Each hour's form submissions by action and result. Sign-in, waitlist and password reset share the home page's default action.",
+        "title": "Sign-ins",
+        "description": "Each hour's sign-ins through the account platform, by step and status. sign-in sends the visitor there and callback brings them back, both with a 303; failed counts the returns that did not complete. Worry when failed follows callback, or at any 5xx.",
         "links": [],
         "data": {
           "kind": "QueryGroup",
@@ -2258,7 +2258,7 @@
                       "queryType": "traceql",
                       "metricsQueryType": "range",
                       "step": "1h",
-                      "query": "{ resource.service.name = \"platform-studio\" && name = \"sveltekit.form_action\" } | count_over_time() by (span.sveltekit.form_action.name, span.sveltekit.form_action.result.type)"
+                      "query": "{ resource.service.name = \"platform-studio\" && (name = \"GET /auth/sign-in\" || name = \"GET /auth/callback\" || name = \"GET /(studio)/auth/sign-in/failed\") } | count_over_time() by (name, span.http.response.status_code)"
                     }
                   }
                 }
@@ -2270,8 +2270,8 @@
                 "group": "renameByRegex",
                 "spec": {
                   "options": {
-                    "regex": "^\\{[^=]+=(?:\"([^\"]*)\"|([^,}]*)), [^=]+=(?:\"([^\"]*)\"|([^,}]*))\\}$",
-                    "renamePattern": "$1$2 · $3$4"
+                    "regex": "^\\{[^=]+=\"GET /(?:[^\"]*/)?([^\"/]+)\", [^=]+=(?:\"([^\"]*)\"|([^,}]*))\\}$",
+                    "renamePattern": "$1 · $2$3"
                   }
                 }
               }
@@ -2838,7 +2838,7 @@
                     "spec": {
                       "element": {
                         "kind": "ElementReference",
-                        "name": "studio-forms"
+                        "name": "studio-sign-ins"
                       }
                     }
                   },
