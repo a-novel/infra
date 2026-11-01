@@ -78,7 +78,7 @@ run "pulls_addons_through_our_registry" {
 
   assert {
     condition = alltrue([for registry in ["docker.io/", "ghcr.io/", "quay.io/", "registry.k8s.io/"] :
-      !strcontains(join("\n", concat(helm_release.external_secrets.values, helm_release.alloy.values)), registry)
+      !strcontains(join("\n", concat(helm_release.external_secrets.values, helm_release.alloy.values, helm_release.counter_store[0].values)), registry)
     ])
     error_message = "No chart may keep an upstream registry reference."
   }
@@ -546,6 +546,79 @@ run "runs_authentication" {
       one(one(one(kubernetes_network_policy_v1.authentication_rest.spec).ingress).ports).port == local.authentication_env.REST_PORT
     )
     error_message = "Only the platforms and the smoke check may call Authentication, whose visitor IP header trusts the platforms."
+  }
+}
+
+run "keeps_authentication_counters_in_a_locked_store" {
+  command = plan
+
+  variables {
+    custom_resources = true
+  }
+
+  assert {
+    condition = alltrue([for image in [local.counter_store_values.image, local.counter_store_values.metrics.exporter.image] :
+      startswith(image.registry, "europe-west1-docker.pkg.dev/a-novel-production-prod/") && can(regex("^[^@]+@sha256:[a-f0-9]{64}$", image.tag))
+    ])
+    error_message = "Valkey and its exporter must pull through our Artifact Registry, pinned by digest."
+  }
+
+  assert {
+    condition = (
+      !try(local.counter_store_values.dataStorage.enabled, false) &&
+      !try(local.counter_store_values.replica.enabled, false) &&
+      length(setintersection(split("\n", local.counter_store_values.valkeyConfig), ["save \"\"", "appendonly no"])) == 2
+    )
+    error_message = "The counter store must keep nothing on disk: no volume, no replica, no snapshot and no append-only file."
+  }
+
+  # Each user's key and channel patterns, then its commands. The chart turns each user on but the
+  # default one.
+  assert {
+    condition = (
+      [for rule in split(" ", local.counter_store_values.auth.aclUsers.limiter.permissions) : rule if can(regex("^([~%&]|all(keys|channels)$)", rule))] == ["~httprate:*"] &&
+      toset([for rule in split(" ", local.counter_store_values.auth.aclUsers.limiter.permissions) : rule if startswith(rule, "+")]) == toset(["+mget", "+incrby", "+expire", "+multi", "+exec", "+ping"]) &&
+      length([for rule in split(" ", local.counter_store_values.auth.aclUsers.exporter.permissions) : rule if can(regex("^([~%&]|all(keys|channels)$)", rule))]) == 0 &&
+      toset([for rule in split(" ", local.counter_store_values.auth.aclUsers.exporter.permissions) : rule if startswith(rule, "+")]) == toset(["+info", "+slowlog|len", "+slowlog|get", "+commandlog|len", "+command|info"]) &&
+      toset(split(" ", local.counter_store_values.auth.aclUsers.default.permissions)) == toset(["off", "resetpass"]) &&
+      alltrue([for user in values(local.counter_store_values.auth.aclUsers) : !contains(split(" ", user.permissions), "nopass") && !contains(split(" ", user.permissions), "allcommands")])
+    )
+    error_message = "The limiter may run only httprate's commands on its own keys, the exporter only read statistics and no key, and the default user nothing."
+  }
+
+  # Every user's password comes from the generated Secret, and the exporter logs in as itself.
+  assert {
+    condition = (
+      kubernetes_manifest.counter_store_users[0].manifest.spec.target.name == local.counter_store_values.auth.usersExistingSecret &&
+      kubernetes_manifest.counter_store_users[0].manifest.spec.refreshPolicy == "CreatedOnce" &&
+      toset(kubernetes_manifest.counter_store_passwords[0].manifest.spec.secretKeys) == toset([for name, user in local.counter_store_values.auth.aclUsers : try(user.passwordKey, name)]) &&
+      contains(local.counter_store_values.metrics.exporter.args, "--redis.user=${local.counter_store_values.auth.aclUsers.default.passwordKey}")
+    )
+    error_message = "Each user's password must be generated once into the Secret the chart reads, and the exporter must log in as its own user."
+  }
+
+  assert {
+    condition = (
+      toset(one(kubernetes_network_policy_v1.counter_store.spec).policy_types) == toset(["Ingress", "Egress"]) &&
+      length(one(kubernetes_network_policy_v1.counter_store.spec).egress) == 0 &&
+      [for rule in one(kubernetes_network_policy_v1.counter_store.spec).ingress : [for port in rule.ports : port.port]] == [["6379"], ["9121"]] &&
+      [for peer in one(kubernetes_network_policy_v1.counter_store.spec).ingress[0].from : one(peer.pod_selector).match_labels["app.kubernetes.io/name"]] == [module.authentication_rest[0].pod_labels["app.kubernetes.io/name"]] &&
+      length(one(one(kubernetes_network_policy_v1.counter_store.spec).ingress[0].from).namespace_selector) == 0 &&
+      [for peer in one(kubernetes_network_policy_v1.counter_store.spec).ingress[1].from : one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"]] == [helm_release.alloy.namespace] &&
+      one(one(one(kubernetes_network_policy_v1.counter_store.spec).ingress[1].from).pod_selector).match_labels == one(kubernetes_network_policy_v1.alloy.spec).pod_selector[0].match_labels
+    )
+    error_message = "Only Authentication's API pods may reach Valkey, only Alloy its exporter, and the store's policy may open no egress."
+  }
+
+  assert {
+    condition = (
+      local.counter_store_values.podAnnotations["k8s.grafana.com/scrape"] == "true" &&
+      contains(local.alloy_values.annotationAutodiscovery.namespaces, helm_release.counter_store[0].namespace) &&
+      one([for rule in one(kubernetes_network_policy_v1.alloy.spec).egress : [for port in rule.ports : port.port] if anytrue([for peer in rule.to :
+        try(one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"] == helm_release.counter_store[0].namespace && one(peer.pod_selector).match_labels == tomap(local.counter_store_pods), false)
+      ])]) == ["9121"]
+    )
+    error_message = "Alloy must discover the counter store and reach its exporter's port alone."
   }
 }
 
