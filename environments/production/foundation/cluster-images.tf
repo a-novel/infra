@@ -81,18 +81,8 @@ resource "google_artifact_registry_repository_iam_member" "releases_nodes" {
 }
 
 # The old region's repositories, which the cluster ran from until its releases moved beside it,
-# retire with a-novel/infra#1208: these grants on the service roots' own, and the repositories below
-# for the services without one.
-resource "google_artifact_registry_repository_iam_member" "cluster_database_images" {
-  for_each = toset(["authentication", "genai", "json-keys"])
-
-  project    = var.workload_project_id
-  location   = var.region
-  repository = "agora-${each.key}-private-production"
-  role       = "roles/artifactregistry.reader"
-  member     = google_service_account.runtime["cluster_nodes"].member
-}
-
+# retire with a-novel/infra#1208. This deploy drops the nodes' grants on them, and on the service
+# roots' own, and unlocks them, so the next one can delete them.
 resource "google_artifact_registry_repository" "cluster_release" {
   for_each = toset(["account", "narrative-engine", "studio"])
 
@@ -101,7 +91,7 @@ resource "google_artifact_registry_repository" "cluster_release" {
   repository_id   = "agora-${each.key}-private-production"
   format          = "DOCKER"
   mode            = "STANDARD_REPOSITORY"
-  deletion_policy = "PREVENT"
+  deletion_policy = "DELETE"
   labels          = { environment = "production", service = each.key }
 
   # A deployed digest can never be re-tagged to different content.
@@ -110,10 +100,6 @@ resource "google_artifact_registry_repository" "cluster_release" {
   }
 
   cleanup_policy_dry_run = true
-
-  lifecycle {
-    prevent_destroy = true
-  }
 
   depends_on = [google_project_service.workload["artifactregistry.googleapis.com"]]
 }
@@ -126,26 +112,6 @@ moved {
 moved {
   from = google_artifact_registry_repository.narrative_engine
   to   = google_artifact_registry_repository.cluster_release["narrative-engine"]
-}
-
-resource "google_artifact_registry_repository_iam_member" "cluster_release" {
-  for_each = google_artifact_registry_repository.cluster_release
-
-  project    = each.value.project
-  location   = each.value.location
-  repository = each.value.name
-  role       = "roles/artifactregistry.reader"
-  member     = google_service_account.runtime["cluster_nodes"].member
-}
-
-moved {
-  from = google_artifact_registry_repository_iam_member.cluster_studio
-  to   = google_artifact_registry_repository_iam_member.cluster_release["studio"]
-}
-
-moved {
-  from = google_artifact_registry_repository_iam_member.cluster_narrative_engine
-  to   = google_artifact_registry_repository_iam_member.cluster_release["narrative-engine"]
 }
 
 # Inside the perimeter, Artifact Registry reaches no upstream by default. This lets the remote
