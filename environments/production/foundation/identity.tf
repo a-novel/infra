@@ -5,22 +5,6 @@ locals {
   }
 
   runtime_identities = {
-    authentication_database = {
-      account_id   = "agora-auth-database"
-      display_name = "A-Novel Authentication PostgreSQL host"
-    }
-    json_keys_database = {
-      account_id   = "agora-json-keys-database"
-      display_name = "A-Novel JSON Keys PostgreSQL host"
-    }
-    genai_database = {
-      account_id   = "agora-genai-database"
-      display_name = "A-Novel GenAI PostgreSQL host"
-    }
-    scheduler_invoker = {
-      account_id   = "agora-scheduler-invoker"
-      display_name = "A-Novel scheduled job invoker"
-    }
     cluster_nodes = {
       account_id   = "a-novel-cluster-nodes"
       display_name = "A-Novel cluster nodes"
@@ -45,25 +29,6 @@ locals {
     "roles/monitoring.alertPolicyEditor",
     "roles/monitoring.notificationChannelEditor",
   ])
-
-  cloud_run_invocation_tag_values = {
-    internal = {
-      short_name  = "internal"
-      description = "Private service-to-service invocation."
-    }
-    maintenance = {
-      short_name  = "maintenance"
-      description = "Human-run maintenance operations, passed as execution arguments."
-    }
-    release = {
-      short_name  = "release"
-      description = "Protected release-only migration execution."
-    }
-    scheduled = {
-      short_name  = "scheduled"
-      description = "Protected release and scheduler execution."
-    }
-  }
 
   # The cluster viewer role only finds the cluster and connects to it. The cluster root lets the
   # operators read the services' namespaces.
@@ -159,8 +124,7 @@ resource "google_service_account" "runtime" {
   display_name = each.value.display_name
   description  = "Keyless production identity for the ${replace(each.key, "_", " ")} boundary."
 
-  # The old platform's identities retire with it (a-novel/infra#1208).
-  deletion_policy = each.key == "cluster_nodes" ? "PREVENT" : "DELETE"
+  deletion_policy = "PREVENT"
 
   depends_on = [google_project_service.workload["iam.googleapis.com"]]
   lifecycle {
@@ -180,30 +144,6 @@ resource "google_service_account_iam_member" "foundation_cluster_nodes_act_as" {
   service_account_id = google_service_account.runtime["cluster_nodes"].name
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${local.automation_service_accounts.foundation}"
-}
-
-# The invocation tags authorize. Each caller holds one project-level grant conditioned on a tag
-# value, so the class a workload is tagged with decides who may run or invoke it.
-resource "google_tags_tag_key" "cloud_run_invocation" {
-  parent      = "projects/${google_project.workload.number}"
-  short_name  = "agora-invocation"
-  description = "Cloud Run invocation boundary managed by OpenTofu."
-
-  depends_on = [google_project_service.workload["cloudresourcemanager.googleapis.com"]]
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
-resource "google_tags_tag_value" "cloud_run_invocation" {
-  for_each = local.cloud_run_invocation_tag_values
-
-  parent      = google_tags_tag_key.cloud_run_invocation.id
-  short_name  = each.value.short_name
-  description = each.value.description
-  lifecycle {
-    prevent_destroy = true
-  }
 }
 
 # Named humans run Authentication's maintenance job on the cluster: they connect to the control
@@ -236,20 +176,31 @@ resource "google_project_iam_member" "database_operator_public_api_logs" {
   member  = each.value
 }
 
-# The deploy identity's and the group manager's grants on the database host identities leave with
-# those identities, so no host deletion in the same apply waits on them (a-novel/infra#1208).
-removed {
-  from = google_service_account_iam_member.foundation_database_act_as
+# The old platform's identities retire with it (a-novel/infra#1208). No grant names them anymore.
+moved {
+  from = google_service_account.runtime["authentication_database"]
+  to   = google_service_account.retired["authentication_database"]
+}
 
-  lifecycle {
-    destroy = false
-  }
+moved {
+  from = google_service_account.runtime["json_keys_database"]
+  to   = google_service_account.retired["json_keys_database"]
+}
+
+moved {
+  from = google_service_account.runtime["genai_database"]
+  to   = google_service_account.retired["genai_database"]
+}
+
+moved {
+  from = google_service_account.runtime["scheduler_invoker"]
+  to   = google_service_account.retired["scheduler_invoker"]
 }
 
 removed {
-  from = google_service_account_iam_member.mig_database_act_as
+  from = google_service_account.retired
 
   lifecycle {
-    destroy = false
+    destroy = true
   }
 }

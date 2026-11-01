@@ -25,28 +25,3 @@ resource "google_artifact_registry_repository" "images" {
     prevent_destroy = true
   }
 }
-
-# The tooling repository held the database hosts' tools, and retires with them (a-novel/infra#1208).
-moved {
-  from = google_artifact_registry_repository.images["tooling"]
-  to   = google_artifact_registry_repository.tooling
-}
-
-removed {
-  from = google_artifact_registry_repository.tooling
-
-  lifecycle {
-    destroy = true
-  }
-}
-
-# The move above left the tooling repository without its dependency edges, so it went before its
-# grants, which went with it. Their state goes without a call: Artifact Registry answers 403 for a
-# repository that no longer exists.
-removed {
-  from = google_artifact_registry_repository_iam_member.database
-
-  lifecycle {
-    destroy = false
-  }
-}

@@ -26,23 +26,3 @@ module "private_runtime" {
   project_id = local.project_id
   region     = local.region
 }
-
-# Authentication's grant on JSON Keys' server goes with that server, which the JSON Keys root
-# deletes in the same deploy (a-novel/infra#1208).
-removed {
-  from = google_cloud_run_v2_service_iam_member.json_keys_invoker
-
-  lifecycle {
-    destroy = false
-  }
-}
-
-# The backup VM's grant on the tooling repository went with that repository (a-novel/infra#1391's
-# deploy), so its state goes without a call. The VM's identity, which waited on it, goes next.
-removed {
-  from = module.backups.google_artifact_registry_repository_iam_member.readers
-
-  lifecycle {
-    destroy = false
-  }
-}

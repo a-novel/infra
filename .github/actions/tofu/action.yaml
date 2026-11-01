@@ -117,7 +117,7 @@ runs:
         attempt() {
           tofu -chdir="$ROOT" init -input=false -lockfile=readonly -no-color >/dev/null 2>"$errors" || return 1
           status=0
-          tofu -chdir="$ROOT" plan -input=false -no-color -lock="$LOCK" -refresh="$REFRESH" -detailed-exitcode -out=tfplan "$@" \
+          tofu -chdir="$ROOT" plan -input=false -no-color -lock="$LOCK" -refresh="$REFRESH" -detailed-exitcode -out=tfplan \
             >"$RUNNER_TEMP/plan.txt" 2>>"$errors" || status=$?
           [ "$status" -ne 1 ]
         }
@@ -139,7 +139,7 @@ runs:
         # within one attempt for minutes. transient runs first, so a late failure releases its lock.
         run_plan() {
           local deadline=""
-          until attempt "$@"; do
+          until attempt; do
             deadline="${deadline:-$((SECONDS + 120))}"
             if ! transient || [ "$SECONDS" -ge "$deadline" ]; then
               cat "$RUNNER_TEMP/plan.txt" "$errors" 2>/dev/null || true
@@ -152,14 +152,6 @@ runs:
           tofu -chdir="$ROOT" show -json tfplan >"$RUNNER_TEMP/plan.json"
         }
         run_plan
-        # A job run through run_execution_token keeps its new token even when the execution fails,
-        # and a service keeps its new template even when the revision fails, so neither would run
-        # again. Replacing its token source runs the job or rolls the service again in this plan.
-        mapfile -t rerun < <(node .github/scripts/rerun-failed-workloads.mjs "$RUNNER_TEMP/plan.json")
-        if [ "${#rerun[@]}" -gt 0 ]; then
-          echo "::warning::A job's last execution or a service's last rollout failed, so this plan starts it again: ${rerun[*]}"
-          run_plan "${rerun[@]/#/-replace=}"
-        fi
         echo "changes=$([ "$status" -eq 2 ] && echo true || echo false)" >>"$GITHUB_OUTPUT"
         echo "plan=$RUNNER_TEMP/plan.json" >>"$GITHUB_OUTPUT"
         # The log lists each change and the fields it touches; values stay in the job summary.

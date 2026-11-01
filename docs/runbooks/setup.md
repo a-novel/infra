@@ -24,15 +24,12 @@ Set the repository variables under **Settings → Secrets and variables → Acti
 | `GCP_PLAN_SERVICE_ACCOUNT`                | `infra-plan@a-novel-management-prod.iam.gserviceaccount.com`                                               |
 | `GCP_DOWNTIME_WORKLOAD_IDENTITY_PROVIDER` | `…/providers/github-downtime`                                                                              |
 | `GCP_DOWNTIME_SERVICE_ACCOUNT`            | `infra-downtime@a-novel-management-prod.iam.gserviceaccount.com`                                           |
-| `GCP_HEALTH_WORKLOAD_IDENTITY_PROVIDER`   | `…/providers/github-health`                                                                                |
-| `GCP_HEALTH_SERVICE_ACCOUNT`              | `infra-health@a-novel-management-prod.iam.gserviceaccount.com`                                             |
 | `GCP_DRIFT_WORKLOAD_IDENTITY_PROVIDER`    | `…/providers/github-drift`                                                                                 |
 | `GCP_DRIFT_SERVICE_ACCOUNT`               | `infra-drift@a-novel-management-prod.iam.gserviceaccount.com`                                              |
 
 `DOWNTIME` holds the planned downtime. Never set it by hand. [downtime.yaml](downtime.md) writes it
 with the `anovelbot-agent` App, which needs **Variables: Read and write**, and publishes it on the
-`downtime` branch. `HOST_CREDENTIALS_PUBLICATION_ENABLED` and `NATIVE_RESTORE_PUBLICATION_ENABLED`
-exist only while a [host tool](host-tools.md#publish-a-version) is being published.
+`downtime` branch.
 
 The workflows also read organization variables, which must be visible to this repository: the
 Apps' client IDs and logins, `AGENT_KILL_SWITCH`, `DISCORD_REPO_ROLES` and `RELEASE_BOT_LOGIN`.
@@ -64,9 +61,6 @@ root's deploys apply from it, apart from Google Cloud's production:
 | `GCP_GRAFANA_WORKLOAD_IDENTITY_PROVIDER` | `…/providers/github-grafana`                                    |
 | `GCP_GRAFANA_SERVICE_ACCOUNT`            | `infra-grafana@a-novel-management-prod.iam.gserviceaccount.com` |
 
-Environment `host-artifacts` has the `core` and `owners-infra` teams as required reviewers. Either
-one approves a host tool publication.
-
 The organization's Renovate (Dependencies) and Agent Apps need access to this repository.
 
 ## Organization guardrails
@@ -74,23 +68,12 @@ The organization's Renovate (Dependencies) and Agent Apps need access to this re
 Some rules sit above the projects, where no CI identity holds a role. An organization admin sets
 them by hand, once:
 
-- **Organization policies** keep Cloud Run internal and IAM-checked in the private project, and its
-  egress in the VPC in both workload projects, as [Architecture](../architecture.md#network)
-  describes.
 - **A deny policy** keeps the plan identity away from logs and traces. Pull requests can mint
   `infra-plan`, and its Viewer role reads everything else a plan needs.
 - **The access policy** holds the service perimeter, which foundation manages. The deploy identity
   edits the policy and the plan identity reads it. Both also read the organization's access
   policies, which Artifact Registry checks whenever its VPC Service Controls setting is set or
   read.
-
-Setting an organization policy needs Organization Policy Administrator on the organization:
-
-```bash
-for project in a-novel-production-prod a-novel-public-api-prod; do
-  gcloud resource-manager org-policies allow run.allowedVPCEgress all-traffic --project="$project"
-done
-```
 
 The deny policy lives in [`policies/infra-plan-data-deny.json`](policies/infra-plan-data-deny.json).
 Creating it needs the Deny Admin role on the organization:

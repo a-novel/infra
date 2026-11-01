@@ -91,18 +91,6 @@ jobs:
           # renovate: datasource=github-releases depName=aquasecurity/trivy
           version: v0.75.0
 
-      - name: Build and scan the host credential loader
-        uses: $/.github/actions/build-tooling-image
-        with:
-          image_name: host-credentials
-          trivy_installed: "true"
-
-      - name: Build and scan the restore worker
-        uses: $/.github/actions/build-tooling-image
-        with:
-          image_name: native-restore
-          trivy_installed: "true"
-
   # The fleet's gitleaks rules, beside trivy's secret scanner above.
   scan-secrets:
     runs-on: ubuntu-24.04
@@ -150,9 +138,6 @@ jobs:
         shell: bash
         run: node --test '.github/scripts/*.test.mjs'
 
-      - name: Lint Go
-        uses: a-novel-kit/workflows/go-actions/lint-go@v1.81.3
-
       - name: Check every service root is planned, deployed and drift-checked
         shell: bash
         run: .github/scripts/check-service-roots.sh
@@ -181,60 +166,6 @@ jobs:
         with:
           # renovate: datasource=docker depName=ghcr.io/zizmorcore/zizmor
           version: "1.31.1@sha256:42d409dbb851d4c5d35a058cf042b828bea1e3f2884378c526eb0974780e18d9"
-
-  test-go:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: false
-
-      - name: Test the programs that run on the database and recovery hosts
-        shell: bash
-        run: go test -race ./internal/hostcredentials/... ./internal/recovery/...
-
-  test-backup:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Run the backup tests inside each database image
-        shell: bash
-        run: |
-          set -euo pipefail
-          services=(json-keys authentication genai)
-          # The images test at once, one runner CPU each.
-          for service in "${services[@]}"; do
-            docker build -f builds/backup-test.Dockerfile --build-arg DATABASE_SERVICE="$service" -t "backup-test:$service" .
-            docker run --detach --name "backup-test-$service" --network=none --read-only --cap-drop=all \
-              --security-opt=no-new-privileges --cpus=1 --memory=2g --pids-limit=128 \
-              --tmpfs=/tmp:rw,size=1g,mode=1777 "backup-test:$service" >/dev/null
-          done
-          status=0
-          for service in "${services[@]}"; do
-            code="$(docker wait "backup-test-$service")"
-            echo "::group::Backup tests in the $service image"
-            docker logs "backup-test-$service" 2>&1
-            echo "::endgroup::"
-            if [ "$code" != 0 ]; then
-              echo "::error::The backup tests failed in the $service image (exit $code)."
-              status=1
-            fi
-          done
-          exit "$status"
 
   # The deletion label approves the plans of the head it was added on. A push's plans ignore it, and
   # this job removes it so a maintainer can add it again for the new head.

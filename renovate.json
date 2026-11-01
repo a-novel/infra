@@ -6,9 +6,6 @@
   ],
   "rangeStrategy": "pin",
   "ignoreUnstable": true,
-  "gomod": {
-    "managerFilePatterns": ["/^(?:golangci-lint|govulncheck)\\.mod$/"]
-  },
   "packageRules": [
     {
       "description": "Keep tooling images on version tags; production service images carry their digest beside the tag.",
@@ -61,32 +58,6 @@
       "matchFileNames": [".opentofu-version", "**/versions.tf"],
       "matchUpdateTypes": ["patch"],
       "minimumReleaseAge": "6 hours"
-    },
-    {
-      "description": "Refresh the host programs' module with the native Go manager.",
-      "matchManagers": ["gomod"],
-      "matchFileNames": ["go.mod"],
-      "postUpdateOptions": ["gomodTidy"]
-    },
-    {
-      "description": "Hold google.golang.org/api off v0.299.0 because its module graph forces vulnerable gRPC v1.84.0; admit the first later release.",
-      "matchManagers": ["gomod"],
-      "matchPackageNames": ["google.golang.org/api"],
-      "allowedVersions": "<0.299.0 || >0.299.0"
-    },
-    {
-      "description": "Resolve only declared tools in the isolated linter module, on separate branches from runtime dependencies.",
-      "matchManagers": ["gomod"],
-      "matchFileNames": ["golangci-lint.mod"],
-      "additionalBranchPrefix": "golangci-lint-",
-      "goGetDirs": ["tool"]
-    },
-    {
-      "description": "Resolve only the declared tool in the isolated vulnerability-scanner module, on a branch apart from the linter and runtime dependencies.",
-      "matchManagers": ["gomod"],
-      "matchFileNames": ["govulncheck.mod"],
-      "additionalBranchPrefix": "govulncheck-",
-      "goGetDirs": ["tool"]
     },
     {
       "description": "Hold the cluster add-ons' charts and images for a week, as provider releases are held, to bound a compromised upstream release.",

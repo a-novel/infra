@@ -12,18 +12,7 @@ variable "images" {
   }
 }
 
-# The cluster root reads these versions and the SMTP settings from this root's terraform.tfvars.
-# tflint-ignore: terraform_unused_declarations
-variable "secret_versions" {
-  description = "Numeric secret versions the workloads read, by secret name suffix."
-  type        = map(number)
-
-  validation {
-    condition     = contains(keys(var.secret_versions), "app-password")
-    error_message = "Pin app-password."
-  }
-}
-
+# The cluster root reads the SMTP settings from this root's terraform.tfvars.
 # tflint-ignore: terraform_unused_declarations
 variable "smtp" {
   description = "Hosted SMTP relay settings. The relay admits the production NAT address without a password."

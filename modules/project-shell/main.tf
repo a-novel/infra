@@ -1,12 +1,13 @@
 resource "google_project" "service" {
-  # Provider protection survives removal of a for_each module instance.
+  # Provider protection survives removal of a for_each module instance. The trust-zone projects retire
+  # with the old platform (a-novel/infra#1209).
   project_id          = var.project_id
   name                = var.project_id
   billing_account     = var.billing_account_id
   org_id              = var.organization_id
   folder_id           = var.folder_id
   auto_create_network = false
-  deletion_policy     = "PREVENT"
+  deletion_policy     = "DELETE"
   labels              = var.labels
 
   lifecycle {
@@ -107,7 +108,7 @@ resource "google_logging_project_bucket_config" "default" {
   location        = "global"
   bucket_id       = "_Default"
   retention_days  = 30
-  deletion_policy = "PREVENT"
+  deletion_policy = "DELETE"
 
   depends_on = [google_project_service.api["logging.googleapis.com"]]
 }
