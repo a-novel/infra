@@ -238,26 +238,6 @@ variable "monthly_budget_units" {
   }
 }
 
-variable "cloud_run_cpu_quota_millicpu" {
-  description = "Regional Cloud Run CPU ceiling in milli-vCPU across services and jobs."
-  type        = number
-
-  validation {
-    condition     = var.cloud_run_cpu_quota_millicpu >= 2000 && var.cloud_run_cpu_quota_millicpu <= 64000 && var.cloud_run_cpu_quota_millicpu % 1000 == 0
-    error_message = "The Cloud Run CPU quota must be 2,000-64,000 milli-vCPU in 1,000 milli-vCPU increments."
-  }
-}
-
-variable "cloud_run_memory_quota_bytes" {
-  description = "Regional Cloud Run memory ceiling in bytes across services and jobs."
-  type        = number
-
-  validation {
-    condition     = var.cloud_run_memory_quota_bytes >= 4294967296 && var.cloud_run_memory_quota_bytes <= 137438953472 && var.cloud_run_memory_quota_bytes % 1073741824 == 0
-    error_message = "The Cloud Run memory quota must be 4-128 GiB in whole GiB increments."
-  }
-}
-
 variable "shell_cloud_run_quota" {
   description = "Regional Cloud Run ceiling of each shell project, in milli-vCPU and memory bytes. It must fit each shell's services' max instances plus one rollout instance."
   type = object({

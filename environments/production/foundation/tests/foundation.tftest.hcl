@@ -296,11 +296,11 @@ run "alerts_at_each_budget_share" {
   }
 }
 
-run "caps_cloud_run_in_every_project" {
+run "caps_cloud_run_in_every_shell_project" {
   command = plan
 
   assert {
-    condition = alltrue([for project in concat(["cloud_run"], [for zone in ["public", "public-api"] : "${zone}/cloud_run"]) :
+    condition = alltrue([for project in [for zone in ["public", "public-api"] : "${zone}/cloud_run"] :
       google_cloud_quotas_quota_preference.cost_cap["${project}_cpu"].quota_id == "CpuAllocPerProjectRegion" &&
       google_cloud_quotas_quota_preference.cost_cap["${project}_memory"].quota_id == "MemAllocPerProjectRegion"
     ])

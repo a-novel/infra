@@ -67,11 +67,8 @@ database_images = {
 
   genai = "ghcr.io/a-novel/service-genai/database:v0.8.1@sha256:880e760f2f03f4ffdaf2affc186d10a91a12f711602a4c0983a9d70d837efb70"
 }
-# json-keys and genai at their maximum instances, plus one rollout instance each, and the jobs.
-cloud_run_cpu_quota_millicpu = 16000
-cloud_run_memory_quota_bytes = 25769803776
-# Three database hosts at their nominal vCPUs and the backup repository VMs (8), plus the cluster's
-# three e2-standard-4 nodes and one surge node (16). Retirement lowers it once the hosts go.
+# No VM runs in this region since the database hosts retired (a-novel/infra#1208): the ceiling only
+# bounds a stray one's cost.
 compute_cpu_quota = 24
 # The whole project at moderate traffic, planned near EUR 360 a month, with margin.
 monthly_budget_units = 500

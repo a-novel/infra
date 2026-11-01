@@ -9,18 +9,6 @@ locals {
   # Planning must not query APIs that the same plan still needs to enable.
   quota_preferences = merge(
     {
-      cloud_run_cpu = {
-        project_id = google_project.workload.project_id
-        service    = "run.googleapis.com"
-        quota_id   = "CpuAllocPerProjectRegion"
-        value      = var.cloud_run_cpu_quota_millicpu
-      }
-      cloud_run_memory = {
-        project_id = google_project.workload.project_id
-        service    = "run.googleapis.com"
-        quota_id   = "MemAllocPerProjectRegion"
-        value      = var.cloud_run_memory_quota_bytes
-      }
       compute_cpu = {
         project_id = google_project.workload.project_id
         service    = "compute.googleapis.com"
