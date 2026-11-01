@@ -299,8 +299,31 @@ locals {
       expr      = "max by (namespace) (sum by (namespace, pod) (cnpg_backends_total{namespace=\"${name}\"})) > ${database.max_connections * var.thresholds.database_connections}"
   }])
 
+  # Promises the services' data keeps, read from their databases (the cluster root's queries/): a
+  # signing key always outlives the rotation that replaces it, and GenAI deletes settled content
+  # soon after its retention.
+  data_rules = [
+    {
+      title     = "Signing keys running out"
+      for       = "15m"
+      dashboard = "services"
+      panel     = 17
+      summary   = "The newest {{ $labels.usage }} key signs for {{ humanizeDuration $values.query.Value }} more: rotation has stopped, or no key is left."
+      expr      = "min by (usage) (cnpg_keys_runway_seconds) < 259200"
+    },
+    {
+      title     = "GenAI keeps content past retention"
+      for       = "5m"
+      dashboard = "services"
+      panel     = 16
+      summary   = "A settled generation has been kept {{ humanizeDuration $values.query.Value }} past its retention: the purge has stopped or fallen behind."
+      expr      = "max(cnpg_generations_expired_oldest_seconds) > 1800"
+    },
+  ]
+
   rule_groups = merge(local.service_rules, {
     capacity = local.capacity_rules
+    data     = local.data_rules
     jobs     = local.job_rules
     platform = concat(local.platform_rules, local.request_rules)
     usage    = concat(local.usage_rules, [local.overage_rule])

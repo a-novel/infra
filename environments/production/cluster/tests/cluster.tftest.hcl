@@ -261,6 +261,17 @@ run "keeps_each_database_available_and_backed_up" {
     error_message = "Each database must run its service's released image and back up to its own bucket."
   }
 
+  # The webhook puts CloudNativePG's own queries first when the list lacks them, which every apply
+  # would then undo.
+  assert {
+    condition = alltrue([for service, database in kubernetes_manifest.database :
+      contains(keys(kubernetes_config_map_v1.database_queries), service)
+      ? database.manifest.spec.monitoring.customQueriesConfigMap == [{ name = "cnpg-default-monitoring", key = "queries" }, { name = "database-queries", key = "queries.yaml" }]
+      : !can(database.manifest.spec.monitoring)
+    ]) && toset(keys(kubernetes_config_map_v1.database_queries)) == toset(keys(var.databases))
+    error_message = "Each database must export its own numbers, listed after CloudNativePG's queries."
+  }
+
   assert {
     condition = alltrue([for service, database in kubernetes_manifest.database :
       contains(database.manifest.spec.postgresql.shared_preload_libraries, "pg_cron") == contains(var.databases[service].extensions, "pg_cron")

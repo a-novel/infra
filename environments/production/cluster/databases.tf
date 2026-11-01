@@ -249,6 +249,20 @@ resource "kubernetes_network_policy_v1" "database_clients" {
   }
 }
 
+# A database's own metrics, from queries/<database>.yaml when it exists. Each instance rereads the
+# ConfigMap, so a change restarts nothing.
+resource "kubernetes_config_map_v1" "database_queries" {
+  for_each = { for name in keys(var.databases) : name => "${path.module}/queries/${name}.yaml" if fileexists("${path.module}/queries/${name}.yaml") }
+
+  metadata {
+    name      = "database-queries"
+    namespace = kubernetes_namespace_v1.service[each.key].metadata[0].name
+    labels    = { "cnpg.io/reload" = "" }
+  }
+
+  data = { "queries.yaml" = file(each.value) }
+}
+
 # The deploy waits until both instances serve and WAL reaches Barman, which proves the image runs
 # under CloudNativePG (a-novel/infra#1194). Updates switch the replica over instead of restarting
 # the primary. CloudNativePG generates the credentials, in the `database-app` Secret.
@@ -318,6 +332,14 @@ resource "kubernetes_manifest" "database" {
           clientCASecret       = kubernetes_manifest.database_replication_certificate[each.key].manifest.spec.secretName
         }
       },
+      # The database's own queries, after CloudNativePG's, which its webhook would otherwise add
+      # first.
+      { for name, queries in kubernetes_config_map_v1.database_queries : "monitoring" => {
+        customQueriesConfigMap = [
+          { name = "cnpg-default-monitoring", key = "queries" },
+          { name = queries.metadata[0].name, key = "queries.yaml" },
+        ]
+      } if name == each.key },
       # The import's source, for a database whose service has a host.
       { for service, host in local.database_hosts : "externalClusters" => [{
         name = "host"

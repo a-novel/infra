@@ -1,0 +1,33 @@
+# JSON Keys' own numbers. CloudNativePG runs the query on the primary at every scrape, and exports
+# each column as cnpg_<query>_<column>. It never reads a key's material.
+
+# A key is active as the service's active_keys view defines it. The runway is how long the newest
+# key still signs: it shrinks once rotation stops, and turns negative once no key is left.
+keys:
+  query: |
+    SELECT
+      usage,
+      count(*) FILTER (WHERE expires_at > now() AND (deleted_at IS NULL OR deleted_at > now())) AS active,
+      coalesce(extract(epoch FROM now() - max(created_at) FILTER (WHERE expires_at > now() AND (deleted_at IS NULL OR deleted_at > now()))), -1) AS newest_age_seconds,
+      coalesce(extract(epoch FROM max(expires_at) FILTER (WHERE deleted_at IS NULL OR deleted_at > now()) - now()), -1) AS runway_seconds,
+      count(*) FILTER (WHERE deleted_at IS NOT NULL) AS revoked
+    FROM keys
+    GROUP BY usage
+  primary: true
+  target_databases: ["app"]
+  metrics:
+    - usage:
+        usage: LABEL
+        description: What the keys sign.
+    - active:
+        usage: GAUGE
+        description: Keys that still sign or verify.
+    - newest_age_seconds:
+        usage: GAUGE
+        description: Age of the newest active key, which rotation keeps under its period.
+    - runway_seconds:
+        usage: GAUGE
+        description: Time until the last unrevoked key expires.
+    - revoked:
+        usage: GAUGE
+        description: Keys revoked early, which only an operator does.
