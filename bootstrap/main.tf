@@ -78,15 +78,6 @@ locals {
       workflows          = { "downtime.yaml" = null }
       pull_requests      = null
     }
-    # Authentication trusts the visitor IP header its callers send, so no pull request may mint the
-    # identity that calls it on a schedule.
-    health = {
-      service_account_id = "infra-health"
-      display_name       = "Infra scheduled health check"
-      provider_id        = "github-health"
-      workflows          = { "drift.yaml" = null }
-      pull_requests      = null
-    }
     # The GitHub root applies from its own environment, apart from Google Cloud's production. It
     # reads its Deploy App keys, the governance secrets and its own state, and nothing in Google
     # Cloud.

@@ -18,48 +18,9 @@ mock_provider "google" {
   }
 }
 
-# Tests cannot import.
-variables {
-  orphan_addresses = {}
-  orphan_snapshots = {}
-}
-
 mock_provider "google-beta" {
   mock_resource "google_project_service_identity" {
     defaults = { member = "serviceAccount:mock-agent@gcp-sa-cloudscheduler.iam.gserviceaccount.com" }
-  }
-}
-
-run "denies_everything_the_network_does_not_allow" {
-  command = plan
-
-  # Mocks give both subnets the same generated ID, which would hide the subnet NAT serves.
-  override_resource {
-    target = google_compute_subnetwork.production
-    values = { id = "projects/a-novel-production-prod/regions/europe-west1/subnetworks/agora-production-europe-west1" }
-  }
-
-  override_resource {
-    target = google_compute_subnetwork.egress
-    values = { id = "projects/a-novel-production-prod/regions/europe-west1/subnetworks/agora-production-egress-europe-west1" }
-  }
-
-  assert {
-    condition = (
-      google_compute_firewall.deny_other_egress.direction == "EGRESS" &&
-      google_compute_firewall.deny_other_egress.destination_ranges == toset(["0.0.0.0/0"]) &&
-      google_compute_firewall.deny_other_egress.target_tags == null &&
-      google_compute_firewall.allow_restricted_google_apis.priority < google_compute_firewall.deny_other_egress.priority
-    )
-    error_message = "A VPC-wide deny must sit below every explicit egress allow."
-  }
-
-  assert {
-    condition = (
-      google_compute_router_nat.production.source_subnetwork_ip_ranges_to_nat == "LIST_OF_SUBNETWORKS" &&
-      [for subnet in google_compute_router_nat.production.subnetwork : subnet.name] == [google_compute_subnetwork.egress.id]
-    )
-    error_message = "Cloud NAT must serve the egress subnet alone, never the VMs' subnet."
   }
 }
 
@@ -102,11 +63,6 @@ run "fences_the_cluster_network" {
 
   # Mocks give every network and subnet the same generated ID, which would hide which one a binding
   # names.
-  override_resource {
-    target = google_compute_network.production
-    values = { id = "projects/a-novel-production-prod/global/networks/agora-production" }
-  }
-
   override_resource {
     target = google_compute_network.cluster
     values = { id = "projects/a-novel-production-prod/global/networks/a-novel-production" }
@@ -159,8 +115,8 @@ run "fences_the_cluster_network" {
     condition = alltrue([for networks in concat(
       [google_dns_policy.production.networks, google_dns_response_policy.allowlist.networks],
       [for zone in concat([google_dns_managed_zone.googleapis], values(google_dns_managed_zone.private_google_domain)) : one(zone.private_visibility_config).networks],
-    ) : toset([for network in networks : network.network_url]) == toset([google_compute_network.production.id, google_compute_network.cluster.id])])
-    error_message = "Both networks must log their lookups, resolve through the private zones and resolve only the DNS allowlist."
+    ) : toset([for network in networks : network.network_url]) == toset([google_compute_network.cluster.id])])
+    error_message = "The cluster's network must log its lookups, resolve through the private zones and resolve only the DNS allowlist."
   }
 }
 
@@ -226,7 +182,7 @@ run "grants_no_basic_roles" {
   command = plan
 
   assert {
-    condition = alltrue([for binding in concat(values(google_project_iam_member.foundation), values(google_project_iam_member.database_operator), values(google_project_iam_member.database_operator_public_api_logs)) :
+    condition = alltrue([for binding in concat(values(google_project_iam_member.foundation), values(google_project_iam_member.database_operator)) :
       !contains(["roles/owner", "roles/editor"], binding.role)
     ])
     error_message = "Automation and operators get scoped roles, never owner or editor."
@@ -271,7 +227,7 @@ run "keeps_api_calls_inside_production" {
     condition = (
       one(google_access_context_manager_service_perimeter.production.status[0].vpc_accessible_services).enable_restriction &&
       one(google_access_context_manager_service_perimeter.production.status[0].vpc_accessible_services).allowed_services == toset(["RESTRICTED-SERVICES"]) &&
-      alltrue([for service in concat(keys(google_project_service.workload), keys(google_project_service.public_api_telemetry)) :
+      alltrue([for service in keys(google_project_service.workload) :
         contains(google_access_context_manager_service_perimeter.production.status[0].restricted_services, service)
       ])
     )
@@ -299,18 +255,6 @@ run "alerts_at_each_budget_share" {
       sort([for rule in google_billing_budget.workload.threshold_rules : tostring(rule.threshold_percent) if rule.spend_basis == basis]) == sort(["0.5", "0.75", "0.8", "0.9", "1"])
     ])
     error_message = "The budget alerts at 50, 75, 80, 90 and 100%, for both the spend so far and the month's forecast."
-  }
-}
-
-run "caps_cloud_run_in_every_shell_project" {
-  command = plan
-
-  assert {
-    condition = alltrue([for project in [for zone in ["public", "public-api"] : "${zone}/cloud_run"] :
-      google_cloud_quotas_quota_preference.cost_cap["${project}_cpu"].quota_id == "CpuAllocPerProjectRegion" &&
-      google_cloud_quotas_quota_preference.cost_cap["${project}_memory"].quota_id == "MemAllocPerProjectRegion"
-    ])
-    error_message = "Every project that runs Cloud Run services needs a CPU and a memory ceiling."
   }
 }
 

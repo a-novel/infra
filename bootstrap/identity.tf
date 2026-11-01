@@ -114,8 +114,7 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   display_name                       = each.value.display_name
   description                        = "Trusts only ${local.github.repository} ${join(", ", keys(each.value.workflows))} on master${each.value.pull_requests == null ? "" : " and its own pull requests"}."
   disabled                           = false
-  # The scheduled health check retired with Cloud Run (a-novel/infra#1208).
-  deletion_policy = each.key == "health" ? "DELETE" : "PREVENT"
+  deletion_policy                    = "PREVENT"
 
   attribute_mapping = merge(
     {
@@ -275,5 +274,46 @@ resource "google_project_iam_audit_config" "management" {
 
   audit_log_config {
     log_type = "DATA_WRITE"
+  }
+}
+
+# The scheduled health check retired with Cloud Run (a-novel/infra#1208). Its provider was unlocked
+# by the previous apply. The identity's trust binding lives on the identity and leaves with it.
+moved {
+  from = google_service_account.automation["health"]
+  to   = google_service_account.retired_automation["health"]
+}
+
+moved {
+  from = google_iam_workload_identity_pool_provider.github["health"]
+  to   = google_iam_workload_identity_pool_provider.retired_github["health"]
+}
+
+moved {
+  from = google_service_account_iam_member.github["health"]
+  to   = google_service_account_iam_member.retired_github["health"]
+}
+
+removed {
+  from = google_service_account.retired_automation
+
+  lifecycle {
+    destroy = true
+  }
+}
+
+removed {
+  from = google_iam_workload_identity_pool_provider.retired_github
+
+  lifecycle {
+    destroy = true
+  }
+}
+
+removed {
+  from = google_service_account_iam_member.retired_github
+
+  lifecycle {
+    destroy = false
   }
 }

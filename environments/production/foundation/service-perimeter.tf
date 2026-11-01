@@ -9,11 +9,11 @@ variable "access_policy_id" {
 }
 
 # The restricted VIP serves any project's resources. The perimeter limits the production workloads'
-# Google API calls to the private and public-api projects, and to management's secrets and backup
-# buckets, so a poisoned dependency cannot copy data to another organization's resources.
+# Google API calls to the workload project, and to management's secrets and backup buckets, so a
+# poisoned dependency cannot copy data to another organization's resources.
 locals {
   perimeter = {
-    resources = [for number in concat([google_project.workload.number], [for project in module.public_api_project : project.project_number]) : "projects/${number}"]
+    resources = ["projects/${google_project.workload.number}"]
 
     # Every API the perimeter's projects enable, plus Secret Manager, which their workloads call in
     # management, and the APIs GKE's nodes call. The VPC reaches only these, so an API missing here
@@ -52,11 +52,11 @@ locals {
     # GitHub-hosted runners have no fixed addresses, so CI enters from any source as its own
     # identities, and IAM bounds what each may do.
     ingress = {
-      ci        = [for account in ["infra-foundation", "infra-plan", "infra-health"] : "serviceAccount:${account}@${var.management_project_id}.iam.gserviceaccount.com"]
+      ci        = [for account in ["infra-foundation", "infra-plan"] : "serviceAccount:${account}@${var.management_project_id}.iam.gserviceaccount.com"]
       operators = setunion(var.database_operator_principals, var.authentication_maintenance_principals)
     }
 
-    # Workloads read their secrets in management, and the repository VMs write its backup buckets.
+    # Workloads read their secrets in management, and the databases write its backup buckets.
     # Any identity may call these two APIs there, since management holds only our own resources.
     egress_services = ["secretmanager.googleapis.com", "storage.googleapis.com"]
   }

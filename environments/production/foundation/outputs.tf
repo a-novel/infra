@@ -8,25 +8,6 @@ output "workload_project_id" {
   value       = google_project.workload.project_id
 }
 
-output "network" {
-  description = "Direct VPC network and subnet consumed by production resources."
-  value = {
-    name         = google_compute_network.production.name
-    network_id   = google_compute_network.production.id
-    subnet       = google_compute_subnetwork.production.name
-    subnet_id    = google_compute_subnetwork.production.id
-    subnet_cidr  = google_compute_subnetwork.production.ip_cidr_range
-    network_tags = local.network_tags
-    # The subnet whose workloads leave for the internet, through Cloud NAT.
-    egress_subnet_id = google_compute_subnetwork.egress.id
-  }
-}
-
-output "nat_address" {
-  description = "The one address production's internet egress leaves from, which the providers' IP allowlists name."
-  value       = google_compute_address.nat.address
-}
-
 output "cluster" {
   description = "The production cluster, which the Kubernetes roots reach through its DNS endpoint."
   value = {
@@ -45,6 +26,6 @@ output "cluster" {
 }
 
 output "cluster_nat_address" {
-  description = "The address the cluster's internet egress leaves from, which the providers' IP allowlists name beside nat_address."
+  description = "The address the cluster's internet egress leaves from, which the providers' IP allowlists name."
   value       = google_compute_address.cluster_nat.address
 }

@@ -5,7 +5,7 @@ override_data {
   values = {
     outputs = {
       region              = "europe-west1"
-      production_projects = { public = { project_id = "a-novel-public-prod" } }
+      workload_project_id = "a-novel-production-prod"
     }
   }
 }

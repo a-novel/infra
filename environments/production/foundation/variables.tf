@@ -75,32 +75,6 @@ variable "region" {
   }
 }
 
-variable "subnet_cidr" {
-  description = "Private IPv4 range of the production VMs and of the Direct VPC egress that stays inside Google."
-  type        = string
-  default     = "10.20.0.0/24"
-
-  validation {
-    condition     = can(cidrhost(var.subnet_cidr, 1)) && can(regex("^([0-9]{1,3}\\.){3}[0-9]{1,3}/24$", var.subnet_cidr))
-    error_message = "The production subnet must be a valid IPv4 /24 CIDR."
-  }
-}
-
-variable "egress_subnet_cidr" {
-  description = "Private IPv4 range of the Direct VPC egress that Cloud NAT serves: the workloads in the egress allowlist."
-  type        = string
-  default     = "10.20.1.0/24"
-
-  validation {
-    condition = (
-      can(cidrhost(var.egress_subnet_cidr, 1)) && tonumber(split("/", var.egress_subnet_cidr)[1]) <= 26 &&
-      !cidrcontains(var.subnet_cidr, cidrhost(var.egress_subnet_cidr, 0)) &&
-      !cidrcontains(var.egress_subnet_cidr, cidrhost(var.subnet_cidr, 0))
-    )
-    error_message = "The egress subnet must be a valid IPv4 CIDR of /26 or larger, Direct VPC egress's minimum, apart from the production subnet."
-  }
-}
-
 variable "downtime" {
   description = "The planned downtime as JSON, from the DOWNTIME repository variable: components, start and end. Empty without one."
   type        = string
@@ -113,7 +87,7 @@ variable "downtime" {
 }
 
 variable "cluster_region" {
-  description = "Google Cloud region of the cluster and everything only it uses. The Cloud Run platform keeps region until it retires."
+  description = "Google Cloud region of the cluster and everything only it uses."
   type        = string
 
   validation {
@@ -235,26 +209,6 @@ variable "monthly_budget_units" {
   validation {
     condition     = var.monthly_budget_units >= 10 && var.monthly_budget_units <= 1000 && floor(var.monthly_budget_units) == var.monthly_budget_units
     error_message = "The monthly budget must be a whole billing-currency amount from 10 through 1000."
-  }
-}
-
-variable "shell_cloud_run_quota" {
-  description = "Regional Cloud Run ceiling of each shell project, in milli-vCPU and memory bytes. It must fit each shell's services' max instances plus one rollout instance."
-  type = object({
-    cpu_millicpu = number
-    memory_bytes = number
-  })
-  # Google refuses a ceiling below recent usage, and Authentication has used 3 vCPU.
-  default = { cpu_millicpu = 3000, memory_bytes = 4294967296 }
-
-  validation {
-    condition = (
-      var.shell_cloud_run_quota.cpu_millicpu >= 2000 && var.shell_cloud_run_quota.cpu_millicpu <= 64000 &&
-      var.shell_cloud_run_quota.cpu_millicpu % 1000 == 0 &&
-      var.shell_cloud_run_quota.memory_bytes >= 4294967296 && var.shell_cloud_run_quota.memory_bytes <= 137438953472 &&
-      var.shell_cloud_run_quota.memory_bytes % 1073741824 == 0
-    )
-    error_message = "The shell Cloud Run quota must be 2,000-64,000 milli-vCPU in 1,000 increments and 4-128 GiB in whole GiB."
   }
 }
 

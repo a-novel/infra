@@ -150,10 +150,6 @@ run "trusts_only_reviewed_workflows" {
         "assertion.repository_owner_id == '131281268' && assertion.repository_id == '1344262359' && (",
         "(assertion.ref == 'refs/heads/master' && assertion.workflow_ref == 'a-novel/infra/.github/workflows/downtime.yaml@refs/heads/master'))",
       ]) &&
-      google_iam_workload_identity_pool_provider.github["health"].attribute_condition == join("", [
-        "assertion.repository_owner_id == '131281268' && assertion.repository_id == '1344262359' && (",
-        "(assertion.ref == 'refs/heads/master' && assertion.workflow_ref == 'a-novel/infra/.github/workflows/drift.yaml@refs/heads/master'))",
-      ]) &&
       google_iam_workload_identity_pool_provider.github["github"].attribute_condition == join("", [
         "assertion.repository_owner_id == '131281268' && assertion.repository_id == '1344262359' && (",
         "(assertion.ref == 'refs/heads/master' && assertion.workflow_ref == 'a-novel/infra/.github/workflows/deploy.yaml@refs/heads/master' && assertion.environment == 'github') || ",
