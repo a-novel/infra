@@ -56,6 +56,21 @@ code.
   root on disk. `lint-repository` fails until it has a `plan-<root>` job in `main.yaml`, its
   required check, and an option in `roll-database.yaml`. A root with a database host also names the
   Cloud Run services that write to it in `.github/actions/roll`.
+- **Watch a new service in Grafana, and keep watching it as it changes.** Errors, Health and
+  Performance cover a workload once it runs in its namespace and exports spans. The rest comes with
+  the service:
+  - its thresholds in the Grafana root's `alerts`, with a `p95_seconds` above its measured p95 and
+    `latency_ignores` for its streams;
+  - its database's queries in the cluster root's `queries/<database>.yaml`, and their columns in
+    `queries/<database>.sql`, which grants them to CloudNativePG's exporter;
+  - its tab in `dashboards/services.json`, with the numbers that prove it works: what it holds, what
+    it does each hour and what it refuses;
+  - a `data_rules` alert for each promise that would fail silently, with its row in the
+    [alerts runbook](docs/runbooks/alerts.md#grafana-alerts).
+
+  A release that renames a span, an attribute, a table or a column updates them in the same train.
+  A stale trace panel reads empty, and a grant on a dropped column fails the deploy.
+
 - **Inputs go in `terraform.tfvars`.** Secret values never do. Humans add them with `gcloud`, as
   [Secrets](docs/runbooks/secrets.md) describes.
 - **Put a rule that can stop or misdeploy production in a tested script.** Workflow steps that call
