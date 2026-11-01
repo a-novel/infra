@@ -2340,7 +2340,7 @@
                       "queryType": "traceql",
                       "metricsQueryType": "range",
                       "step": "1h",
-                      "query": "{ resource.service.name = \"platform-studio\" && name = \"sveltekit.handle.root\" } | count_over_time() by (span.sveltekit.is_data_request)"
+                      "query": "{ resource.service.name = \"platform-studio\" && kind = server } | count_over_time() by (span.sveltekit.is_data_request)"
                     }
                   }
                 }
