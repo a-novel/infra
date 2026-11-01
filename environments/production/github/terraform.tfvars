@@ -151,5 +151,4 @@ labels = {
   "with-feature-env"              = { color = "0e8a16", description = "Tags this pull request's images for its current head; a push removes it" }
   "automation:paused"             = { color = "d93f0b", description = "Pauses this Epic's [Agent] automation (best-effort; org kill-switch is the hard halt)" }
   "escalation"                    = { color = "b60205", description = "Automated governance escalation (escalate action)." }
-  "sentry"                        = { color = "362d59", description = "Opened by Sentry's GitHub App from a Sentry issue" }
 }

@@ -398,14 +398,10 @@ jobs:
 
   # Every deploy applies every service root, found on disk by the changes job, so the services run
   # the current DOWNTIME whichever deploy applies last: a downtime written while another deploy
-  # waited or ran would otherwise reach no service. An unchanged root applies nothing. The services
-  # read their Sentry DSN from the Sentry root, so they wait for its job, which runs only when it
-  # changes. They run even when it fails, on the outputs it last applied: a deploy re-runs every
-  # root changed since the last successful one, so a failing Sentry root would otherwise hold
-  # every release until it is fixed.
+  # waited or ran would otherwise reach no service. An unchanged root applies nothing.
   services:
     name: ${{ matrix.service }}
-    needs: [changes, bootstrap, foundation, sentry]
+    needs: [changes, bootstrap, foundation]
     if: >-
       ${{ !cancelled() && needs.changes.outputs.apply == 'true' &&
       needs.bootstrap.result != 'failure' && needs.foundation.result != 'failure' }}
@@ -433,14 +429,6 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
           github_token: ${{ github.token }}
-      # Release CI creates each release in Sentry when it cuts the tag. This step records the
-      # release's production deploy once the root serves it, and never fails the job.
-      - name: Record the Sentry deploys
-        shell: bash
-        env:
-          PLAN: ${{ steps.tofu.outputs.plan }}
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-        run: node .github/scripts/sentry-deploys.mjs "$PLAN"
 
   # Reports every deploy that applied a root, and any that failed. A failure pings a-novel/infra and
   # the role of each service whose root failed to apply.

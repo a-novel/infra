@@ -56,7 +56,6 @@ cluster_ranges = {
   services = "10.30.4.0/22"
   pods     = "10.30.16.0/20"
 }
-sentry_ingest_host    = "o4504952660951040.ingest.us.sentry.io"
 workload_project_id   = "a-novel-production-prod"
 workload_project_name = "A-Novel production"
 # A blank line separates each service's pin, so concurrent release pull requests merge cleanly. Git
