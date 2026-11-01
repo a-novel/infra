@@ -232,7 +232,7 @@ state records the new configuration, while the previous revision keeps serving.
      permission the deploy identity lacks. Grant it in the foundation root, or in bootstrap for the
      management project, and merge. The deploy applies the grant before it reaches the services.
    - **403 that names VPC Service Controls:** the service perimeter refused the call. Each
-     project's policy audit log holds its violations, and in dry run the calls it would refuse:
+     project's policy audit log holds its violations:
 
      ```bash
      gcloud logging read 'log_id("cloudaudit.googleapis.com/policy")' \

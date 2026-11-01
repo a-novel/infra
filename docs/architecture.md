@@ -116,8 +116,8 @@ own identities, image repositories, network tags and database hosts.
   those APIs reach only resources inside it. CI's identities and the operators enter from anywhere.
   Any identity inside may call Secret Manager and Cloud Storage in management, for the secrets and
   the backups. Artifact Registry's VPC Service Controls setting is `ALLOW` in `europe-west9`, so the
-  cluster's pull-through caches can fetch from their public registries. The perimeter runs in dry
-  run, which logs the calls it would refuse. Organization admins create its access policy and grant
+  cluster's pull-through caches can fetch from their public registries. The perimeter enforces its
+  rules and logs every call it refuses. Organization admins create its access policy and grant
   on it by hand.
 - **An organization deny policy** keeps `infra-plan` from reading logs and traces, which its Viewer
   role would otherwise cover. Pull requests can mint that identity. Organization admins set the
