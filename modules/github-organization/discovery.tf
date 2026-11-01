@@ -8,19 +8,20 @@ locals {
   actions_app = 15368
 }
 
+# Each file is one contents API call. github_repository_file would also page through the file's whole
+# commit history for attributes nothing here reads, which made up four fifths of every plan's calls.
+#
 # A repository is ready once its default branch holds main.yaml. Until then it gets no rulesets,
 # environments or secret access. Each repository names its other workflows as it likes, so readiness
-# never depends on their names. A missing file reads as no content, an empty repository's included.
-data "github_repository_file" "main" {
+# never depends on their names. A missing file answers 404, an empty repository's included.
+data "github_rest_api" "main" {
   for_each = var.repositories
 
-  repository = each.key
-  branch     = local.default_branch
-  file       = ".github/workflows/main.yaml"
+  endpoint = "repos/${var.owner}/${each.key}/contents/.github/workflows/main.yaml?ref=${local.default_branch}"
 }
 
 locals {
-  ready = toset([for name, file in data.github_repository_file.main : name if file.content != null])
+  ready = toset([for name, file in data.github_rest_api.main : name if file.code == 200])
 }
 
 data "github_tree" "default_branch" {
@@ -39,24 +40,20 @@ locals {
   }
 }
 
-data "github_repository_file" "workflow" {
+data "github_rest_api" "workflow" {
   for_each = toset(flatten([for name in local.ready : [for path in local.workflow_paths[name] : "${name}:${path}"]]))
 
-  repository = split(":", each.key)[0]
-  branch     = local.default_branch
-  file       = split(":", each.key)[1]
+  endpoint = "repos/${var.owner}/${split(":", each.key)[0]}/contents/${split(":", each.key)[1]}?ref=${local.default_branch}"
 }
 
-data "github_repository_file" "package" {
+data "github_rest_api" "package" {
   for_each = local.ready
 
-  repository = each.key
-  branch     = local.default_branch
-  file       = "package.json"
+  endpoint = "repos/${var.owner}/${each.key}/contents/package.json?ref=${local.default_branch}"
 }
 
 locals {
-  workflows = { for key, file in data.github_repository_file.workflow : key => yamldecode(file.content) }
+  workflows = { for key, file in data.github_rest_api.workflow : key => yamldecode(base64decode(jsondecode(file.body).content)) }
 
   discovered = {
     for name in local.ready : name => {
@@ -93,7 +90,7 @@ locals {
       ]))
 
       # A repository without a version reads as major 0.
-      major = try(tonumber(split(".", jsondecode(data.github_repository_file.package[name].content).version)[0]), 0)
+      major = try(tonumber(split(".", jsondecode(base64decode(jsondecode(data.github_rest_api.package[name].body).content)).version)[0]), 0)
     }
   }
 }

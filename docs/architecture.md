@@ -394,9 +394,8 @@ archives it.
   refresh with the Deploy App, which sees them.
 - **A pull request plans the root only when its merge applies it:** when it changes what the root
   depends on, as `.github/scripts/root-changes.sh` lists for the deploy, or carries
-  `allow-resource-deletion`. Even unrefreshed, a plan reads every repository's workflows and pages
-  through each file's commit history, from the Plan App's hourly budget that all pull requests
-  share.
+  `allow-resource-deletion`. Even unrefreshed, a plan reads every repository's workflows, one call
+  each, from the Plan App's hourly budget that all pull requests share.
 - **Team access is authoritative; labels are not.** A team or person granted by hand loses access at
   the next apply. Only the managed labels are enforced: the Epic, gate and Dependabot labels stay.
 - **It applies from its own environment and identity,** `github` and `infra-github`, apart from

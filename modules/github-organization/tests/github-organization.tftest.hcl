@@ -9,28 +9,33 @@ mock_provider "github" {
     defaults = { id = "7" }
   }
 
-  mock_data "github_repository_file" {
+  # A mock takes no function call, so each file is the contents API's answer: this workflow,
+  # base64-encoded and wrapped every 60 characters as GitHub sends it.
+  #
+  #   on: pull_request
+  #   jobs:
+  #     lint-go:
+  #       name: lint-go
+  #       runs-on: ubuntu-24.04
+  #       steps:
+  #         - run: upload "${{ secrets.CODECOV_TOKEN }}" # secrets.IN_A_COMMENT
+  #     release:
+  #       runs-on: ubuntu-24.04
+  #       environment: release
+  #     report-coverage:
+  #       runs-on: ubuntu-24.04
+  #     publish:
+  #       if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+  #       runs-on: ubuntu-24.04
+  #       environment:
+  #         name: governance
+  #       steps:
+  #         - run: sign "${{ secrets.AGENT_BOT_PRIVATE_KEY }}"
+  mock_data "github_rest_api" {
     defaults = {
-      content = <<-EOT
-        on: pull_request
-        jobs:
-          lint-go:
-            name: lint-go
-            runs-on: ubuntu-24.04
-            steps:
-              - run: upload "$${{ secrets.CODECOV_TOKEN }}" # secrets.IN_A_COMMENT
-          release:
-            runs-on: ubuntu-24.04
-            environment: release
-          report-coverage:
-            runs-on: ubuntu-24.04
-          publish:
-            if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-            runs-on: ubuntu-24.04
-            environment:
-              name: governance
-            steps:
-              - run: sign "$${{ secrets.AGENT_BOT_PRIVATE_KEY }}"
+      code = 200
+      body = <<-EOT
+        {"content": "b246IHB1bGxfcmVxdWVzdApqb2JzOgogIGxpbnQtZ286CiAgICBuYW1lOiBs\naW50LWdvCiAgICBydW5zLW9uOiB1YnVudHUtMjQuMDQKICAgIHN0ZXBzOgog\nICAgICAtIHJ1bjogdXBsb2FkICIke3sgc2VjcmV0cy5DT0RFQ09WX1RPS0VO\nIH19IiAjIHNlY3JldHMuSU5fQV9DT01NRU5UCiAgcmVsZWFzZToKICAgIHJ1\nbnMtb246IHVidW50dS0yNC4wNAogICAgZW52aXJvbm1lbnQ6IHJlbGVhc2UK\nICByZXBvcnQtY292ZXJhZ2U6CiAgICBydW5zLW9uOiB1YnVudHUtMjQuMDQK\nICBwdWJsaXNoOgogICAgaWY6IGdpdGh1Yi5ldmVudF9uYW1lID09ICdwdXNo\nJyAmJiBnaXRodWIucmVmID09ICdyZWZzL2hlYWRzL21hc3RlcicKICAgIHJ1\nbnMtb246IHVidW50dS0yNC4wNAogICAgZW52aXJvbm1lbnQ6CiAgICAgIG5h\nbWU6IGdvdmVybmFuY2UKICAgIHN0ZXBzOgogICAgICAtIHJ1bjogc2lnbiAi\nJHt7IHNlY3JldHMuQUdFTlRfQk9UX1BSSVZBVEVfS0VZIH19Igo=\n", "encoding": "base64"}
       EOT
     }
   }
@@ -50,6 +55,7 @@ mock_provider "github" {
 }
 
 variables {
+  owner              = "a-novel"
   tiers              = { developers = "push", maintainers = "maintain", owners = "admin" }
   admin_team         = "core"
   labels             = { documentation = { color = "0075ca", description = "Improvements or additions to documentation" } }

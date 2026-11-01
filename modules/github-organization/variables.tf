@@ -33,6 +33,11 @@ variable "repositories" {
   }))
 }
 
+variable "owner" {
+  description = "The organization's login, which discovery's API paths name."
+  type        = string
+}
+
 variable "bots" {
   description = "App IDs of the organization's bots: agent posts the governance checks, dependencies opens Renovate's pull requests, and release cuts releases."
   type = object({
