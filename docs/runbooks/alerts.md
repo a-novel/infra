@@ -69,7 +69,7 @@ Alloy gives each request and job run an outcome, which the dashboards and alerts
 | `Service above 80% of its budget`    | a service's pods request more than `service_budget` of its namespace's quota for 10 minutes       |
 | `Workload autoscaler at its max`     | a workload's autoscaler has run its most replicas for 15 minutes                                  |
 | `<database>: connections above…`     | a database holds more than `database_connections` of its `max_connections` for 10 minutes         |
-| `Usage: … above 80% of the plan`     | a Grafana Cloud allowance reached `usage` of what the Pro plan includes this month                |
+| `Usage: … above 80% of the plan`     | a Grafana Cloud allowance stayed past `usage` of the Pro plan this month, for 30 minutes          |
 | `Usage: overage`                     | this month's usage costs anything beyond the plan                                                 |
 | `Signing keys running out`           | a key usage's newest key signs for less than 3 days more, for 15 minutes                          |
 | `GenAI keeps content past retention` | a settled generation stays stored 30 minutes past its retention, for 5 minutes                    |

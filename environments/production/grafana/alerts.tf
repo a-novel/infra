@@ -206,7 +206,8 @@ locals {
   }]
 
   # Grafana Cloud's usage metrics, against what the Pro plan includes each month. Active series
-  # read live, the rest accrue over the month.
+  # read live, the rest accrue over the month. A replaced scrape target gives each of its series a
+  # new instance, and Grafana counts the old copies for 20 more minutes, so the rules wait longer.
   allowances = {
     "metrics series"                  = { used = "grafanacloud_instance_active_series", included = "grafanacloud_org_metrics_included_series" }
     "logs"                            = { used = "grafanacloud_org_logs_usage", included = "grafanacloud_org_logs_included_usage" }
@@ -219,7 +220,7 @@ locals {
 
   usage_rules = [for allowance, metric in local.allowances : {
     title      = "Usage: ${allowance} above ${format("%.0f", var.thresholds.usage * 100)}% of the plan"
-    for        = "0s"
+    for        = "30m"
     datasource = local.usage
     summary    = "The month's ${allowance} reached {{ humanizePercentage $values.query.Value }} of what the plan includes."
     expr       = "sum(${metric.used}) / sum(${metric.included}) > ${var.thresholds.usage}"
