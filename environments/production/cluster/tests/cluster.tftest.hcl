@@ -409,16 +409,17 @@ run "schedules_the_jobs_cloud_scheduler_runs" {
 
   assert {
     condition = (
-      toset([for name, job in kubernetes_cron_job_v1.scheduled : name if !job.spec[0].suspend]) == toset(["refresh-token-purge", "rotate-keys"]) &&
+      toset([for name, job in kubernetes_cron_job_v1.scheduled : name if !job.spec[0].suspend]) == toset(["authorization-code-purge", "refresh-token-purge", "rotate-keys"]) &&
       kubernetes_cron_job_v1.scheduled["rotate-keys"].spec[0].schedule == "10 * * * *" &&
       kubernetes_cron_job_v1.scheduled["refresh-token-purge"].spec[0].schedule == "40 3 * * *" &&
+      kubernetes_cron_job_v1.scheduled["authorization-code-purge"].spec[0].schedule == "50 3 * * *" &&
       alltrue([for job in kubernetes_cron_job_v1.scheduled :
         job.spec[0].timezone == "Etc/UTC" &&
         job.spec[0].concurrency_policy == "Forbid" &&
         job.spec[0].job_template[0].spec[0].backoff_limit == 0
       ])
     )
-    error_message = "Key rotation must run hourly at :10 and the refresh token purge daily at 03:40 UTC, one run at a time, never retried."
+    error_message = "Key rotation must run hourly at :10, the refresh token purge daily at 03:40 UTC and the authorization code purge at 03:50, one run at a time, never retried."
   }
 
   assert {
@@ -428,9 +429,13 @@ run "schedules_the_jobs_cloud_scheduler_runs" {
       one([for env in one(kubernetes_cron_job_v1.scheduled["rotate-keys"].spec[0].job_template[0].spec[0].template[0].spec[0].container).env : "${one(one(env.value_from).secret_key_ref).name}/${one(one(env.value_from).secret_key_ref).key}" if env.name == "APP_MASTER_KEY"]) == "secrets/APP_MASTER_KEY" &&
       kubernetes_cron_job_v1.scheduled["refresh-token-purge"].metadata[0].namespace == "authentication" &&
       one(kubernetes_cron_job_v1.scheduled["refresh-token-purge"].spec[0].job_template[0].spec[0].template[0].spec[0].container).image == local.release_image["authentication/maintenance"] &&
-      one(kubernetes_cron_job_v1.scheduled["refresh-token-purge"].spec[0].job_template[0].spec[0].template[0].spec[0].container).args == tolist(["refresh-token-purge"])
+      alltrue([for purge in ["refresh-token-purge", "authorization-code-purge"] :
+        kubernetes_cron_job_v1.scheduled[purge].metadata[0].namespace == "authentication" &&
+        one(kubernetes_cron_job_v1.scheduled[purge].spec[0].job_template[0].spec[0].template[0].spec[0].container).image == local.release_image["authentication/maintenance"] &&
+        one(kubernetes_cron_job_v1.scheduled[purge].spec[0].job_template[0].spec[0].template[0].spec[0].container).args == tolist([purge])
+      ])
     )
-    error_message = "Key rotation must run JSON Keys' rotatekeys image with its master key, and the purge Authentication's maintenance image."
+    error_message = "Key rotation must run JSON Keys' rotatekeys image with its master key, and each purge Authentication's maintenance image with the purge's operation."
   }
 
   assert {

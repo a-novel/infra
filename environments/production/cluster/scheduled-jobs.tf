@@ -24,6 +24,16 @@ locals {
       env        = {}
       secret_env = {}
     }
+    # Deletes the expired authorization codes, after the refresh token purge.
+    authorization-code-purge = {
+      service    = "authentication"
+      image      = "authentication/maintenance"
+      schedule   = "50 3 * * *"
+      suspend    = false
+      args       = ["authorization-code-purge"]
+      env        = {}
+      secret_env = {}
+    }
     # The maintenance template never runs on its own. The named operators' Jobs copy it and name
     # their operation in its arguments (maintenance.tf). Without one, the image prints its help.
     # account-role sends its mail within SMTP_TIMEOUT, and the deadline leaves room for the exit.

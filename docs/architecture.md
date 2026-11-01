@@ -155,13 +155,13 @@ resources, reaching the control plane through the DNS endpoint as the CI identit
 
 ## Services
 
-| Service        | Workloads                                                                       | Jobs                                                                  |
-| -------------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| JSON Keys      | `grpc`: 2 pods                                                                  | `migrations`, `rotate-keys`, `smoke`, `health`                        |
-| Authentication | `rest`: 1 pod, which holds the in-memory rate limits                            | `migrations`, `refresh-token-purge`, `maintenance`, `smoke`, `health` |
-| GenAI          | `grpc`: 1 to 3 pods; `sweep`: 1 pod, which checks the generations nobody polled | `migrations`, `smoke`, `health`, `provider-check`                     |
-| Studio         | `web`: 1 to 2 pods                                                              |                                                                       |
-| Account        | `web`: 1 to 2 pods                                                              |                                                                       |
+| Service        | Workloads                                                                       | Jobs                                                                                              |
+| -------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| JSON Keys      | `grpc`: 2 pods                                                                  | `migrations`, `rotate-keys`, `smoke`, `health`                                                    |
+| Authentication | `rest`: 1 pod, which holds the in-memory rate limits                            | `migrations`, `refresh-token-purge`, `authorization-code-purge`, `maintenance`, `smoke`, `health` |
+| GenAI          | `grpc`: 1 to 3 pods; `sweep`: 1 pod, which checks the generations nobody polled | `migrations`, `smoke`, `health`, `provider-check`                                                 |
+| Studio         | `web`: 1 to 2 pods                                                              |                                                                                                   |
+| Account        | `web`: 1 to 2 pods                                                              |                                                                                                   |
 
 Each service runs in the namespace of its name. A workload calls another service with a token the
 kubelet projects for that service's audience, which the cluster signs. Each service admits only its
