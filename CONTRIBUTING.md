@@ -62,7 +62,7 @@ code.
   Performance cover a workload once it runs in its namespace and exports spans. The rest comes with
   the service:
   - its thresholds in the Grafana root's `alerts`, with a `p95_seconds` above its measured p95 and
-    `latency_ignores` for its streams;
+    `latency_ignores` for its streams and the work it runs after a request, such as an email send;
   - its database's queries in the cluster root's `queries/<database>.yaml`, and their columns in
     `queries/<database>.sql`, which grants them to CloudNativePG's exporter;
   - its tab in `dashboards/services.json`, with the numbers that prove it works: what it holds, what

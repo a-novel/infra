@@ -34,11 +34,11 @@ reading it needs a role that also writes the organization, which the plan token 
 **CloudNativePG** details each database, from Health. Each alert's post links the panel that draws
 what it watches.
 
-Alloy gives each request and job run an outcome, which the dashboards and alerts read:
+Alloy gives each request, job run and email send an outcome, which the dashboards and alerts read:
 
 | Outcome     | Means                               | Codes                                                                                                                                                              |
 | ----------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `fault`     | our own failure: fix it             | any other failure: HTTP 5xx, gRPC `INTERNAL`, `UNKNOWN`, `DATA_LOSS`, `UNIMPLEMENTED`, a panic, a failed job                                                       |
+| `fault`     | our own failure: fix it             | any other failure: HTTP 5xx, gRPC `INTERNAL`, `UNKNOWN`, `DATA_LOSS`, `UNIMPLEMENTED`, a panic, a failed job or email send                                         |
 | `transient` | a dependency or timeout: watch it   | HTTP 429, 502, 503, 504; gRPC `UNAVAILABLE`, `DEADLINE_EXCEEDED`, `RESOURCE_EXHAUSTED`, `ABORTED`                                                                  |
 | `expected`  | the caller's own mistake: no action | other HTTP 4xx; gRPC `CANCELLED`, `INVALID_ARGUMENT`, `NOT_FOUND`, `ALREADY_EXISTS`, `PERMISSION_DENIED`, `UNAUTHENTICATED`, `FAILED_PRECONDITION`, `OUT_OF_RANGE` |
 | `ok`        | success                             |                                                                                                                                                                    |

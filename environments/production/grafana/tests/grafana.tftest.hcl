@@ -97,6 +97,16 @@ run "refuses_a_latency_alert_without_a_threshold" {
   expect_failures = [var.alerts]
 }
 
+run "leaves_mail_sends_out_of_latency" {
+  command = plan
+
+  # Prometheus anchors a label regex at both ends, as this one does.
+  assert {
+    condition     = can(regex("^(?:${join("|", var.alerts["service-authentication"].latency_ignores)})$", "core.MailDelivery(send)"))
+    error_message = "Authentication's emails go out after their request answers, so its slow-requests alert must leave the send out. An ignore is a regular expression: write a parenthesis as [(]."
+  }
+}
+
 run "links_the_journey" {
   command = plan
 
