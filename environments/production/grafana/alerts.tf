@@ -93,10 +93,11 @@ locals {
   # Foundation's node pool, which the autoscaler grows up to its maximum.
   node_pool = provider::terraform::decode_tfvars(file("${path.module}/../foundation/terraform.tfvars")).cluster
 
-  # The used share of each node's CPU and memory, and of each volume.
+  # The used share of each node's CPU and memory, and of each volume. For about a minute after a
+  # restart, kube-state-metrics reports each node twice. The join takes one capacity per node.
   node_usage = {
-    cpu    = "rate(node_cpu_usage_seconds_total[5m]) / on (node) kube_node_status_capacity{resource=\"cpu\"}"
-    memory = "node_memory_working_set_bytes / on (node) kube_node_status_capacity{resource=\"memory\"}"
+    cpu    = "rate(node_cpu_usage_seconds_total[5m]) / on (node) max by (node) (kube_node_status_capacity{resource=\"cpu\"})"
+    memory = "node_memory_working_set_bytes / on (node) max by (node) (kube_node_status_capacity{resource=\"memory\"})"
   }
   volume_usage = "kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes"
 
