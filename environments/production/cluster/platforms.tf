@@ -5,7 +5,10 @@ locals {
   platform_edges = data.terraform_remote_state.foundation.outputs.platform_edges
   # Each platform's own settings, on top of those every platform takes.
   platforms = {
-    studio = {}
+    # The app list opens Studio.
+    account = { STUDIO_URL = "https://${local.platform_edges.studio.host}" }
+    # The account name opens the account platform.
+    studio = { ACCOUNT_URL = "https://${local.platform_edges.account.host}" }
   }
   platform_env = { for platform, settings in local.platforms : platform => merge(local.telemetry_env[platform].api, {
     AUTHENTICATION_SERVICE_URL = "http://rest.authentication.svc:${local.authentication_env.REST_PORT}"

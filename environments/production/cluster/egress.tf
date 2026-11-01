@@ -6,8 +6,9 @@ locals {
   internet_egress = {
     openai     = { namespace = "genai", pods = ["grpc", "sweep"], host = "api.openai.com", port = 443 }
     smtp-relay = { namespace = "authentication", pods = ["maintenance", "rest"], host = local.authentication_smtp.host, port = 587 }
-    # Studio's planned downtime document.
-    github-raw = { namespace = "studio", pods = ["web"], host = "raw.githubusercontent.com", port = 443 }
+    # The platforms' planned downtime document.
+    github-raw         = { namespace = "studio", pods = ["web"], host = "raw.githubusercontent.com", port = 443 }
+    github-raw-account = { namespace = "account", pods = ["web"], host = "raw.githubusercontent.com", port = 443 }
     # The Grafana Cloud stack, which receives every signal (alloy.tf).
     grafana-otlp = { namespace = "alloy", pods = ["alloy"], host = var.grafana_cloud.otlp_host, port = 443 }
   }
