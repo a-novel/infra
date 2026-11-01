@@ -313,6 +313,14 @@ locals {
       expr      = "min by (usage) (cnpg_keys_runway_seconds) < 259200"
     },
     {
+      title     = "Certificate expiring"
+      for       = "1h"
+      dashboard = "health"
+      panel     = 18
+      summary   = "{{ $labels.namespace }}/{{ $labels.name }} expires in {{ humanizeDuration $values.query.Value }}: cert-manager has stopped renewing it."
+      expr      = "min by (namespace, name) (certmanager_certificate_expiration_timestamp_seconds) - time() < 1209600"
+    },
+    {
       title     = "GenAI keeps content past retention"
       for       = "5m"
       dashboard = "services"

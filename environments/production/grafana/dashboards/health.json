@@ -303,6 +303,46 @@
       "targets": [{ "refId": "A", "legendFormat": "{{namespace}}/{{pod}}", "expr": "cnpg_pg_replication_lag" }],
       "fieldConfig": { "defaults": { "unit": "s", "min": 0 } },
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 18,
+      "type": "bargauge",
+      "title": "Certificates: time to expiry",
+      "description": "Each certificate cert-manager issues: the CAs, and the databases' and the service APIs' certificates. cert-manager renews one at two thirds of its life, so a service certificate keeps a month at least, and its bar fills at 90 days. Below 14 days, renewal has failed, and the alert fires.",
+      "gridPos": { "x": 0, "y": 35, "w": 24, "h": 8 },
+      "targets": [
+        {
+          "refId": "A",
+          "instant": true,
+          "legendFormat": "{{namespace}}/{{name}}",
+          "expr": "sort(min by (namespace, name) (certmanager_certificate_expiration_timestamp_seconds) - time())"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "max": 7776000,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 1209600 },
+              { "color": "green", "value": 2592000 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "displayMode": "basic",
+        "orientation": "horizontal",
+        "showUnfilled": true,
+        "valueMode": "text",
+        "namePlacement": "left",
+        "sizing": "manual",
+        "minVizHeight": 12,
+        "maxVizHeight": 16
+      }
     }
   ]
 }

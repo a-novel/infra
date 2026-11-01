@@ -624,6 +624,20 @@ run "keeps_authentication_counters_in_a_locked_store" {
   }
 }
 
+run "watches_certificate_expiry" {
+  command = plan
+
+  assert {
+    condition = (
+      contains(local.alloy_values.annotationAutodiscovery.namespaces, local.namespace["cert-manager"]) &&
+      one([for rule in one(kubernetes_network_policy_v1.alloy.spec).egress : [for port in rule.ports : port.port] if anytrue([for peer in rule.to :
+        try(one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"] == local.namespace["cert-manager"], false)
+      ])]) == ["9402"]
+    )
+    error_message = "Alloy must discover cert-manager's controller and reach its metrics port alone."
+  }
+}
+
 run "runs_genai" {
   command = plan
 
