@@ -373,11 +373,11 @@ run "keeps_api_calls_inside_production" {
 
   assert {
     condition = (
-      !google_access_context_manager_service_perimeter.production.use_explicit_dry_run_spec &&
+      google_access_context_manager_service_perimeter.production.use_explicit_dry_run_spec &&
       length(google_access_context_manager_service_perimeter.production.status) == 1 &&
-      length(google_access_context_manager_service_perimeter.production.spec) == 0
+      google_access_context_manager_service_perimeter.production.spec == google_access_context_manager_service_perimeter.production.status
     )
-    error_message = "The perimeter must enforce its rules as its status, with no dry-run spec of its own."
+    error_message = "The perimeter must enforce its rules as its status, with a dry-run spec that repeats them."
   }
 
   assert {
