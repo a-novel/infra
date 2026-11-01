@@ -64,6 +64,7 @@ module "a_novel" {
     github = github.a_novel
   }
 
+  owner              = "a-novel"
   repositories       = local.owned["a-novel"]
   tiers              = var.tiers
   admin_team         = "core"
@@ -80,6 +81,7 @@ module "a_novel_kit" {
     github = github.a_novel_kit
   }
 
+  owner              = "a-novel-kit"
   repositories       = local.owned["a-novel-kit"]
   tiers              = var.tiers
   admin_team         = "core"
