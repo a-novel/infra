@@ -30,6 +30,10 @@ provider "grafana" {
   url      = var.url
   stack_id = var.stack_id
   auth     = ephemeral.google_secret_manager_secret_version.grafana_token.secret_data
+
+  # Grafana Cloud sometimes answers 503 for longer than the three default retries wait (14 seconds).
+  # Six retries wait up to two minutes, the window the plan gives Google's transient errors.
+  retries = 6
 }
 
 # Holds every alert rule group and dashboard this root manages.
