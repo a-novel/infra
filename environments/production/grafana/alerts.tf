@@ -331,12 +331,47 @@ locals {
     },
   ]
 
+  # Authentication's counter store (the cluster root's counter-store.tf). While it does not answer,
+  # each pod counts its rate limits on its own. Its exporter runs beside Valkey, so a store whose pod
+  # is gone sends no series. Once its counters fill its memory cap, Valkey evicts some, which loosens
+  # their limits.
+  rate_limit_rules = [
+    {
+      title     = "Counter store down"
+      for       = "5m"
+      dashboard = "services"
+      panel     = 28
+      summary   = "Authentication's counter store has not answered for 5 minutes, so each pod counts its rate limits on its own."
+      expr      = "max(redis_up{namespace=\"authentication\"}) < 1 or absent(redis_up{namespace=\"authentication\"})"
+    },
+    {
+      title     = "Rate limits counted locally"
+      for       = "5m"
+      dashboard = "services"
+      panel     = 31
+      summary   = "Authentication counted {{ humanize $values.query.Value }} requests in its pods over 5 minutes while its counter store answered."
+      expr      = <<-EOT
+        sum(increase(${local.calls}{service_name="service-authentication", rate_limit_local="true"}[5m])) > 0
+          and on () max(redis_up{namespace="authentication"}) == 1
+      EOT
+    },
+    {
+      title     = "Counters evicted"
+      for       = "0s"
+      dashboard = "services"
+      panel     = 29
+      summary   = "Authentication's counter store evicted {{ humanize $values.query.Value }} counters in the last hour, which loosened their limits."
+      expr      = "sum(increase(redis_evicted_keys_total{namespace=\"authentication\"}[1h])) > 0"
+    },
+  ]
+
   rule_groups = merge(local.service_rules, {
-    capacity = local.capacity_rules
-    data     = local.data_rules
-    jobs     = local.job_rules
-    platform = concat(local.platform_rules, local.request_rules)
-    usage    = concat(local.usage_rules, [local.overage_rule])
+    capacity      = local.capacity_rules
+    data          = local.data_rules
+    jobs          = local.job_rules
+    platform      = concat(local.platform_rules, local.request_rules)
+    "rate-limits" = local.rate_limit_rules
+    usage         = concat(local.usage_rules, [local.overage_rule])
   })
 }
 

@@ -66,7 +66,9 @@ locals {
 
           // Beside the service, span name and status: the outcome, the response's code, the
           // innermost error's type and whether the span served a request or ran a job. Every pod of
-          // a service adds to the same series.
+          // a service adds to the same series. A request whose rate limits counted in its pod, as
+          // they do while the counter store does not answer, carries rate_limit.local; no other
+          // span does, so it adds series only then.
           otelcol.connector.spanmetrics "default" {
             dimension {
               name = "a_novel.outcome"
@@ -82,6 +84,9 @@ locals {
             }
             dimension {
               name = "a_novel.workload"
+            }
+            dimension {
+              name = "rate_limit.local"
             }
             exclude_dimensions              = ["span.kind"]
             resource_metrics_key_attributes = ["service.name"]

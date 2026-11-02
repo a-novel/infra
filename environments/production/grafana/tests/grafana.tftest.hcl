@@ -140,8 +140,41 @@ run "links_every_alert" {
   }
 
   assert {
+    condition = alltrue(flatten([for group in grafana_rule_group.alerts : [for rule in group.rule :
+      contains(rule.annotations.__dashboardUid__ == "journey-services"
+        ? [for element in values(jsondecode(grafana_apps_dashboard_dashboard_v2.services.spec.json).elements) : tostring(element.spec.id)]
+        : [for panel in jsondecode(grafana_dashboard.journey[trimprefix(rule.annotations.__dashboardUid__, "journey-")].config_json).panels : tostring(panel.id)],
+      rule.annotations.__panelId__)
+      if can(rule.annotations.__dashboardUid__)
+    ]]))
+    error_message = "An alert must link a panel its dashboard holds."
+  }
+
+  assert {
     condition     = strcontains(grafana_message_template.discord.template, "define \"discord.title\"") && strcontains(grafana_message_template.discord.template, "define \"discord.message\"")
     error_message = "The contact point calls discord.title and discord.message, so the template must define both."
+  }
+}
+
+run "watches_the_counter_store" {
+  command = plan
+
+  assert {
+    condition     = toset(grafana_rule_group.alerts["rate-limits"].rule[*].name) == toset(["Counter store down", "Rate limits counted locally", "Counters evicted"])
+    error_message = "Authentication's rate limits need three alerts: the counter store down, counting in the pods while it answers, and an evicted counter."
+  }
+
+  # The exporter runs beside Valkey, so a store whose pod is gone sends no series.
+  assert {
+    condition     = strcontains(jsondecode(one([for rule in grafana_rule_group.alerts["rate-limits"].rule : rule if rule.name == "Counter store down"]).data[0].model).expr, "or absent(redis_up{")
+    error_message = "The store-down alert must also fire when the store sends no series."
+  }
+
+  assert {
+    condition = alltrue([for fragment in ["rate_limit_local=\"true\"", "and on () max(redis_up{"] :
+      strcontains(jsondecode(one([for rule in grafana_rule_group.alerts["rate-limits"].rule : rule if rule.name == "Rate limits counted locally"]).data[0].model).expr, fragment)
+    ])
+    error_message = "The counting-locally alert must read the spans' rate_limit.local, and fire only while the store answers, since the store-down alert reports the rest."
   }
 }
 
