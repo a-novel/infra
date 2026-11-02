@@ -55,9 +55,10 @@ module "genai_grpc" {
     port    = tonumber(local.genai_grpc_env.METRICS_PORT)
     average = floor(tonumber(local.genai_grpc_env.GRPC_MAX_CONCURRENT_CALLS) * 60 / 100)
   }
-  # The autoscaler absorbs bursts only. replicas.max times GRPC_MAX_CONCURRENT_CALLS bounds the calls
-  # the server runs at once, and so the requests it sends OpenAI: a hard bound on spend and load.
-  replicas = { min = 1, max = 3 }
+  # Two keep generations up through a lost pod or node. The autoscaler absorbs bursts only.
+  # replicas.max times GRPC_MAX_CONCURRENT_CALLS bounds the calls the server runs at once, and so the
+  # requests it sends OpenAI: a hard bound on spend and load.
+  replicas = { min = 2, max = 3 }
 
   depends_on = [kubernetes_job_v1.migrations, kubernetes_manifest.secrets]
 }
@@ -75,9 +76,12 @@ module "genai_sweep" {
   secret_env       = local.genai_secret_env
   ca_secret        = kubernetes_manifest.database_server_certificate["genai"].manifest.spec.secretName
   resources        = { cpu = "100m", memory = "1Gi" }
-  replicas         = { min = 1, max = 1 }
   labels           = local.database_clients
   pod_annotations  = local.database_client_annotations
+
+  # Concurrent sweeps take disjoint batches, so two keep the sweep running through a lost pod or
+  # node, and a third, on CPU, drains a backlog.
+  replicas = { min = 2, max = 3 }
 
   depends_on = [kubernetes_job_v1.migrations, kubernetes_manifest.secrets]
 }

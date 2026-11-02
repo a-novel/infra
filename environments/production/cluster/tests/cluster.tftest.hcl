@@ -489,6 +489,23 @@ run "reaches_only_its_internet_hosts" {
   }
 }
 
+run "runs_every_workload_on_two_pods_or_more" {
+  command = plan
+
+  variables {
+    custom_resources = true
+  }
+
+  # The module adds a disruption budget once min exceeds 1. GenAI's maximum also bounds its OpenAI
+  # calls.
+  assert {
+    condition = alltrue([for workload in concat([module.json_keys_grpc[0], module.authentication_rest[0], module.genai_grpc[0], module.genai_sweep[0]], values(module.platform_web)) :
+      workload.autoscaler.spec.min_replicas == 2 && workload.autoscaler.spec.max_replicas == 3
+    ])
+    error_message = "Every workload must run two to three pods: two keep it serving through a lost pod or node, and its autoscaler adds a third."
+  }
+}
+
 run "runs_json_keys" {
   command = plan
 

@@ -99,7 +99,7 @@ variable "scaling_gauge" {
 }
 
 variable "replicas" {
-  description = "The pods to run: an autoscaler moves between min and max on CPU, and on the scaling gauge when one is set; equal bounds run a fixed count."
+  description = "The pods to run: an autoscaler moves between min and max on CPU, and on the scaling gauge when one is set. Equal bounds run a fixed count, which the Deployment takes only when it is created: it ignores its count afterwards."
   type = object({
     min = number
     max = number

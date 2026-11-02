@@ -40,7 +40,10 @@ module "platform_web" {
   service_tokens   = { (local.authentication_env.SERVICE_TOKEN_AUDIENCE) = "SERVICE_TOKEN_PATH" }
   service_ca       = one(kubernetes_manifest.service_trust_bundle[*].manifest.metadata.name)
   resources        = { cpu = "100m", memory = "512Mi" }
-  replicas         = { min = 1, max = 2 }
+
+  # Two keep the platform up through a lost pod or node. A third, on CPU, matches Authentication's
+  # maximum, which every page calls.
+  replicas = { min = 2, max = 3 }
 }
 
 moved {

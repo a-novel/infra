@@ -134,12 +134,14 @@ resources, reaching the control plane through the DNS endpoint as the CI identit
   `account.storyverse.fr`. Foundation holds each one's address, a TLS 1.2 policy, and a Certificate
   Manager certificate the domain's DNS authorizes. Only the load balancer's ranges reach the
   platforms' pods.
-- **Scaling:** an autoscaler absorbs bursts only. It adds or removes one pod a minute at most, and
-  removes one only after five minutes below its targets. A workload's maximum moves by pull request,
-  which the `Workload autoscaler at its maximum` alert prompts. GenAI's server scales on CPU and on
-  its calls in flight, at 60% of `GRPC_MAX_CONCURRENT_CALLS` per pod: GKE reads that gauge from
-  each pod's metrics port through an `AutoscalingMetric`. Its maximum of three pods times that cap
-  bounds the calls it runs at once, and so its OpenAI spend.
+- **Scaling:** every workload runs two pods at least, which the scheduler spreads across nodes, and
+  a disruption budget keeps one serving through a drain. An autoscaler absorbs bursts only. It adds
+  or removes one pod a minute at most, and removes one only after five minutes below its targets. A
+  workload's maximum moves by pull request, which the `Workload autoscaler at its maximum` alert
+  prompts. GenAI's server scales on CPU and on its calls in flight, at 60% of
+  `GRPC_MAX_CONCURRENT_CALLS` per pod: GKE reads that gauge from each pod's metrics port through an
+  `AutoscalingMetric`. Its maximum of three pods times that cap bounds the calls it runs at once,
+  and so its OpenAI spend.
 - **Jobs:** each new migrations image runs once as a Job before its server rolls, and so does each
   new database lineage. CronJobs run JSON Keys' key rotation hourly at :10 and Authentication's
   refresh token purge daily at 03:40 UTC, one run at a time, never retried. The suspended
@@ -160,13 +162,13 @@ resources, reaching the control plane through the DNS endpoint as the CI identit
 
 ## Services
 
-| Service        | Workloads                                                                       | Jobs                                                                                              |
-| -------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| JSON Keys      | `grpc`: 2 pods                                                                  | `migrations`, `rotate-keys`, `smoke`, `health`                                                    |
-| Authentication | `rest`: 2 to 3 pods, which share their rate limits through the counter store    | `migrations`, `refresh-token-purge`, `authorization-code-purge`, `maintenance`, `smoke`, `health` |
-| GenAI          | `grpc`: 1 to 3 pods; `sweep`: 1 pod, which checks the generations nobody polled | `migrations`, `smoke`, `health`, `provider-check`                                                 |
-| Studio         | `web`: 1 to 2 pods                                                              |                                                                                                   |
-| Account        | `web`: 1 to 2 pods                                                              |                                                                                                   |
+| Service        | Workloads                                                                                                       | Jobs                                                                                              |
+| -------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| JSON Keys      | `grpc`: 2 to 3 pods                                                                                             | `migrations`, `rotate-keys`, `smoke`, `health`                                                    |
+| Authentication | `rest`: 2 to 3 pods, which share their rate limits through the counter store                                    | `migrations`, `refresh-token-purge`, `authorization-code-purge`, `maintenance`, `smoke`, `health` |
+| GenAI          | `grpc`: 2 to 3 pods; `sweep`: 2 to 3 pods, which check the generations nobody polled, each taking its own batch | `migrations`, `smoke`, `health`, `provider-check`                                                 |
+| Studio         | `web`: 2 to 3 pods                                                                                              |                                                                                                   |
+| Account        | `web`: 2 to 3 pods                                                                                              |                                                                                                   |
 
 Each service runs in the namespace of its name. A workload calls another service with a token the
 kubelet projects for that service's audience, which the cluster signs. Each service admits only its
