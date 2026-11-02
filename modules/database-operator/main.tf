@@ -1,5 +1,6 @@
 # Issues the Barman Cloud plugin's certificates. Its leases stay in its own namespace. The chart
-# comes from the OCI registry, which cert-manager publishes first.
+# comes from the OCI registry, which cert-manager publishes first. Alloy discovers the controller by
+# its own annotations, not the chart's prometheus.io ones, and scrapes only its metrics port.
 resource "helm_release" "cert_manager" {
   name       = "cert-manager"
   namespace  = var.namespaces.cert_manager
@@ -11,6 +12,7 @@ resource "helm_release" "cert_manager" {
     crds            = { enabled = true, keep = true }
     global          = { leaderElection = { namespace = var.namespaces.cert_manager } }
     image           = var.images.cert_manager_controller
+    podAnnotations  = { "k8s.grafana.com/scrape" = "true", "k8s.grafana.com/metrics.portName" = "http-metrics" }
     webhook         = { image = var.images.cert_manager_webhook }
     cainjector      = { image = var.images.cert_manager_cainjector }
     startupapicheck = { enabled = false }

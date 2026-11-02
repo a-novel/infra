@@ -144,7 +144,7 @@ locals {
     }
 
     # The databases' pods, which CloudNativePG annotates for it (databases.tf), Authentication's
-    # counter store (counter-store.tf) and cert-manager's controller, which its chart annotates. Each
+    # counter store (counter-store.tf) and cert-manager's controller (modules/database-operator). Each
     # database instance's settings cost hundreds of series.
     annotationAutodiscovery = {
       enabled       = true
