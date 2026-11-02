@@ -96,9 +96,11 @@ resource "kubernetes_cron_job_v1" "scheduled" {
               image = local.release_image[each.value.image]
               args  = each.value.args
 
+              # Each job runs one statement at a time, so one connection serves it.
               dynamic "env" {
                 for_each = merge(local.database_env[each.value.service], local.downtime_env[each.value.service], each.value.env, local.telemetry_env[each.value.service].job, {
-                  SSL_CERT_DIR = "/etc/ssl/certs:/etc/database-ca"
+                  SSL_CERT_DIR            = "/etc/ssl/certs:/etc/database-ca"
+                  POSTGRES_MAX_OPEN_CONNS = "1"
                 })
 
                 content {
