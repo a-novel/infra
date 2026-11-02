@@ -26,9 +26,12 @@ module "json_keys_grpc" {
   secret_env      = merge(local.database_secret_env, { APP_MASTER_KEY = { secret = "secrets", key = "APP_MASTER_KEY" } })
   ca_secret       = kubernetes_manifest.database_server_certificate["json-keys"].manifest.spec.secretName
   resources       = { cpu = "100m", memory = "512Mi" }
-  replicas        = { min = 2, max = 2 }
   labels          = local.database_clients
   pod_annotations = local.database_client_annotations
+
+  # Two keep signing up through a lost pod or node. A third, on CPU, follows Authentication's third,
+  # which signs through it.
+  replicas = { min = 2, max = 3 }
 
   depends_on = [kubernetes_job_v1.migrations, kubernetes_manifest.secrets]
 }

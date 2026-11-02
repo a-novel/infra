@@ -63,11 +63,11 @@ databases = {
 # above. Together they fit the node pool at its maximum. Grafana warns at 80% of each; raising one
 # is a deliberate change.
 service_budgets = {
-  account        = { cpu = "1", memory = "2Gi", pods = 10 }
+  account        = { cpu = "1", memory = "3Gi", pods = 10 }
   authentication = { cpu = "3", memory = "8Gi", pods = 20 }
   genai          = { cpu = "4", memory = "28Gi", pods = 20 }
   json-keys      = { cpu = "3", memory = "8Gi", pods = 20 }
-  studio         = { cpu = "1", memory = "2Gi", pods = 10 }
+  studio         = { cpu = "1", memory = "3Gi", pods = 10 }
 }
 
 # The workloads' database passwords come from CloudNativePG's database-app Secrets. These come from
