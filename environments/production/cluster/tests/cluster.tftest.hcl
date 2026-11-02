@@ -947,12 +947,12 @@ run "lets_only_the_named_operators_run_maintenance" {
       kubernetes_role_binding_v1.maintenance.role_ref[0].kind == "Role" &&
       alltrue([for rule in kubernetes_role_v1.maintenance.rule :
         !contains(rule.resources, "secrets") &&
-        length(setsubtract(rule.verbs, ["create", "get", "list", "watch"])) == 0 &&
-        (!contains(rule.verbs, "create") || toset(rule.resources) == toset(["jobs"])) &&
+        length(setsubtract(rule.verbs, ["create", "delete", "get", "list", "watch"])) == 0 &&
+        (length(setintersection(rule.verbs, ["create", "delete"])) == 0 || toset(rule.resources) == toset(["jobs"])) &&
         (!contains(rule.resources, "cronjobs") || toset(rule.resource_names) == toset([kubernetes_cron_job_v1.scheduled["maintenance"].metadata[0].name]))
       ])
     )
-    error_message = "Only foundation's maintenance principals may read the maintenance template and create Jobs in Authentication's namespace, never read its Secrets, and change nothing else."
+    error_message = "Only foundation's maintenance principals may read the maintenance template and create and delete Jobs in Authentication's namespace, never read its Secrets, and change nothing else."
   }
 
   assert {

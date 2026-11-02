@@ -38,7 +38,7 @@ locals {
   )
 }
 
-# The operators read the template, create Jobs and follow their pods' logs.
+# The operators read the template, create Jobs, follow their pods' logs and delete them.
 resource "kubernetes_role_v1" "maintenance" {
   metadata {
     name      = "maintenance"
@@ -55,7 +55,7 @@ resource "kubernetes_role_v1" "maintenance" {
   rule {
     api_groups = ["batch"]
     resources  = ["jobs"]
-    verbs      = ["create", "get", "list", "watch"]
+    verbs      = ["create", "delete", "get", "list", "watch"]
   }
 
   rule {

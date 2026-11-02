@@ -83,8 +83,8 @@ resources, reaching the control plane through the DNS endpoint as the CI identit
 - **Access:** outside the network, the control plane answers only through its DNS endpoint, which
   IAM and the perimeter guard. Nodes use its internal endpoint. Operators read each service's
   namespace through Kubernetes' `view` role, which never reads Secrets. The named maintenance
-  operators create Jobs in `authentication`, which an admission policy holds to the `maintenance`
-  template but for their arguments.
+  operators create and delete Jobs in `authentication`. An admission policy holds the Jobs they
+  create to the `maintenance` template but for their arguments.
 - **Isolation:** Dataplane V2 enforces network policies, FQDN ones included. Workload Identity gives
   each pod its own identity, never the node's. Every namespace the cluster root manages enforces
   Pod Security's `restricted` level and two admission policies: images only from our Artifact
