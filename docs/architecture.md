@@ -113,6 +113,8 @@ resources, reaching the control plane through the DNS endpoint as the CI identit
   keeps nothing on disk. Its users each get a password External Secrets generates once into the
   `valkey-users` Secret: the limiter reaches the `httprate:*` keys alone, and the exporter reads
   statistics and no key. Only Authentication's API pods reach Valkey, and only Alloy its exporter.
+  Authentication counts its rate limits there, and each pod counts on its own while it does not
+  answer.
 - **Telemetry:** one Alloy pod in the `alloy` namespace sends every signal to the Grafana Cloud
   stack's OTLP gateway. The workloads export their traces and logs to its OTLP/HTTP receiver. It
   gives each server and root span an outcome, `a_novel.outcome`, then derives span metrics from
@@ -158,7 +160,7 @@ resources, reaching the control plane through the DNS endpoint as the CI identit
 | Service        | Workloads                                                                       | Jobs                                                                                              |
 | -------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | JSON Keys      | `grpc`: 2 pods                                                                  | `migrations`, `rotate-keys`, `smoke`, `health`                                                    |
-| Authentication | `rest`: 1 pod, which holds the in-memory rate limits                            | `migrations`, `refresh-token-purge`, `authorization-code-purge`, `maintenance`, `smoke`, `health` |
+| Authentication | `rest`: 1 pod, whose rate limits count in the counter store                     | `migrations`, `refresh-token-purge`, `authorization-code-purge`, `maintenance`, `smoke`, `health` |
 | GenAI          | `grpc`: 1 to 3 pods; `sweep`: 1 pod, which checks the generations nobody polled | `migrations`, `smoke`, `health`, `provider-check`                                                 |
 | Studio         | `web`: 1 to 2 pods                                                              |                                                                                                   |
 | Account        | `web`: 1 to 2 pods                                                              |                                                                                                   |

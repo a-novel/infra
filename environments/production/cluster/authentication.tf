@@ -1,4 +1,5 @@
-# Authentication's REST API. It runs one pod, which holds the in-memory rate limits.
+# Authentication's REST API, which counts its rate limits in the counter store (counter-store.tf).
+# It still runs one pod, until Grafana shows the store at work (a-novel/infra#1414).
 locals {
   authentication_smtp = local.service_inputs["authentication"].smtp
   # Registration and account emails, which the API and the maintenance Jobs send, and whose links
@@ -31,6 +32,10 @@ locals {
     SERVICE_TOKEN_ISSUER   = local.service_token_issuer
     SERVICE_TOKEN_AUDIENCE = "authentication"
     SERVICE_TOKEN_CALLERS  = join(",", concat(values(local.platform_callers), ["system:serviceaccount:authentication:smoke"]))
+    # Every pod counts its rate limits in the counter store as its limiter user, and on its own
+    # while the store does not answer.
+    REST_RATE_LIMIT_STORE_ADDR     = "valkey.authentication.svc:6379"
+    REST_RATE_LIMIT_STORE_USERNAME = "limiter"
     # The account platform signs people in for the other platforms, which are OAuth clients: each
     # redeems the codes it receives at its callback. Authentication refuses to start unless
     # SERVICE_TOKEN_CALLERS admits every caller named here.
@@ -39,6 +44,9 @@ locals {
       redirectURI = "https://${local.platform_edges[platform].host}/auth/callback"
       caller      = caller
     } if platform != "account" })
+  })
+  authentication_secret_env = merge(local.database_secret_env, {
+    REST_RATE_LIMIT_STORE_PASSWORD = { secret = local.counter_store_values.auth.usersExistingSecret, key = "limiter" }
   })
   # Each platform calls Authentication as its web workload's service account.
   platform_callers = { for platform in keys(local.platforms) : platform => "system:serviceaccount:${platform}:web" }
@@ -56,7 +64,7 @@ module "authentication_rest" {
   service_ca       = kubernetes_manifest.service_trust_bundle[0].manifest.metadata.name
   http_health_path = "/v2/ping"
   env              = local.authentication_env
-  secret_env       = local.database_secret_env
+  secret_env       = local.authentication_secret_env
   service_tokens   = { (local.json_keys_env.SERVICE_TOKEN_AUDIENCE) = "SERVICE_TOKEN_PATH" }
   ca_secret        = kubernetes_manifest.database_server_certificate["authentication"].manifest.spec.secretName
   # Argon2 bursts above the request: the pod has no CPU limit.
@@ -68,9 +76,9 @@ module "authentication_rest" {
   depends_on = [kubernetes_job_v1.migrations]
 }
 
-# The platforms and Authentication's smoke and health checks call the API. It calls JSON Keys, and
+# The platforms and Authentication's smoke and health checks call the API. It calls JSON Keys,
 # reaches the issuer's keys through Google's restricted API addresses and the mail relay
-# (egress.tf).
+# (egress.tf), and counts its rate limits in the counter store.
 resource "kubernetes_network_policy_v1" "authentication_rest" {
   metadata {
     name      = "rest"
@@ -137,6 +145,19 @@ resource "kubernetes_network_policy_v1" "authentication_rest" {
 
       ports {
         port     = "443"
+        protocol = "TCP"
+      }
+    }
+
+    egress {
+      to {
+        pod_selector {
+          match_labels = local.counter_store_pods
+        }
+      }
+
+      ports {
+        port     = "6379"
         protocol = "TCP"
       }
     }

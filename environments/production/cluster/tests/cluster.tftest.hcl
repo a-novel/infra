@@ -151,7 +151,7 @@ run "sends_every_signal_to_grafana_through_alloy" {
     condition = (
       local.alloy_values.applicationObservability.traces.transforms.span == local.outcome_statements &&
       strcontains(local.alloy_values.destinations.span-metrics.config, "span = [`kind != SPAN_KIND_SERVER and not IsRootSpan()`]") &&
-      toset(flatten(regexall("name = \"([^\"]+)\"", local.alloy_values.destinations.span-metrics.config))) == toset(["a_novel.outcome", "http.response.status_code", "rpc.response.status_code", "error.type", "a_novel.workload"]) &&
+      toset(flatten(regexall("name = \"([^\"]+)\"", local.alloy_values.destinations.span-metrics.config))) == toset(["a_novel.outcome", "http.response.status_code", "rpc.response.status_code", "error.type", "a_novel.workload", "rate_limit.local"]) &&
       strcontains(local.alloy_values.destinations.span-metrics.config, "exponential {") &&
       strcontains(local.alloy_values.destinations.span-metrics.config, "exclude_dimensions              = [\"span.kind\"]") &&
       strcontains(local.alloy_values.destinations.span-metrics.config, "resource_metrics_key_attributes = [\"service.name\"]") &&
@@ -161,7 +161,7 @@ run "sends_every_signal_to_grafana_through_alloy" {
       !try(local.alloy_values.applicationObservability.connectors.spanMetrics.enabled, false) &&
       local.alloy_values.collectors.alloy.presets == ["singleton"]
     )
-    error_message = "Span metrics must count the classified server and root spans by service, span name, status, outcome, response code, error type and workload, in a native histogram, on a single collector, with no pod or instance label."
+    error_message = "Span metrics must count the classified server and root spans by service, span name, status, outcome, response code, error type, workload and local rate-limit counting, in a native histogram, on a single collector, with no pod or instance label."
   }
 
   # Alloy reads no Secret, and the operator manages its own namespace alone.
@@ -615,6 +615,19 @@ run "keeps_authentication_counters_in_a_locked_store" {
       one(one(one(kubernetes_network_policy_v1.counter_store.spec).ingress[1].from).pod_selector).match_labels == one(kubernetes_network_policy_v1.alloy.spec).pod_selector[0].match_labels
     )
     error_message = "Only Authentication's API pods may reach Valkey, only Alloy its exporter, and the store's policy may open no egress."
+  }
+
+  # The chart names the store's Service after its release.
+  assert {
+    condition = (
+      local.authentication_env.REST_RATE_LIMIT_STORE_ADDR == "${helm_release.counter_store[0].name}.${helm_release.counter_store[0].namespace}.svc:${one(one(kubernetes_network_policy_v1.counter_store.spec).ingress[0].ports).port}" &&
+      local.authentication_secret_env.REST_RATE_LIMIT_STORE_PASSWORD == { secret = kubernetes_manifest.counter_store_users[0].manifest.spec.target.name, key = local.authentication_env.REST_RATE_LIMIT_STORE_USERNAME } &&
+      contains(kubernetes_manifest.counter_store_passwords[0].manifest.spec.secretKeys, local.authentication_env.REST_RATE_LIMIT_STORE_USERNAME) &&
+      one([for rule in one(kubernetes_network_policy_v1.authentication_rest.spec).egress : [for port in rule.ports : port.port] if anytrue([for peer in rule.to :
+        try(length(peer.namespace_selector) == 0 && one(peer.pod_selector).match_labels == tomap(local.counter_store_pods), false)
+      ])]) == [one(one(kubernetes_network_policy_v1.counter_store.spec).ingress[0].ports).port]
+    )
+    error_message = "Authentication must count in the store as the limiter, with the password External Secrets generated, through an egress to the store's port alone."
   }
 
   assert {
