@@ -27,3 +27,15 @@ run "pulls_every_image_from_the_callers_registry" {
     error_message = "The plugin's chart takes its registry apart from the repository."
   }
 }
+
+run "lets_alloy_scrape_the_controller" {
+  command = plan
+
+  assert {
+    condition = (
+      yamldecode(helm_release.cert_manager.values[0]).podAnnotations["k8s.grafana.com/scrape"] == "true" &&
+      yamldecode(helm_release.cert_manager.values[0]).podAnnotations["k8s.grafana.com/metrics.portName"] == "http-metrics"
+    )
+    error_message = "Alloy must discover cert-manager's controller and scrape its metrics port alone, not its health port."
+  }
+}
