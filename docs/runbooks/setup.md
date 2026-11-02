@@ -206,4 +206,5 @@ and every bucket name embeds the management project's number, so a rebuild start
 
     The log ends with `account-role completed for <address> with outcome …`. A Job's name serves
     once, so give a second run another name. A failed Job is not retried: read its log, then run it
-    again. Running the operation again converges on the same role.
+    again. Running the operation again converges on the same role. Once you have read the log,
+    `kubectl --namespace=authentication delete job first-admin` removes the Job.
