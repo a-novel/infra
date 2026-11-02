@@ -475,15 +475,17 @@ run "reaches_only_its_internet_hosts" {
   assert {
     condition = (
       { for name, policy in kubernetes_manifest.internet_egress : name => "${policy.manifest.metadata.namespace}:${join(",", policy.manifest.spec.podSelector.matchExpressions[0].values)}:${policy.manifest.spec.egress[0].matches[0].name}:${policy.manifest.spec.egress[0].ports[0].port}" } == {
-        openai             = "genai:grpc,sweep:api.openai.com:443"
-        smtp-relay         = "authentication:maintenance,rest:smtp-relay.gmail.com:587"
-        github-raw         = "studio:web:raw.githubusercontent.com:443"
-        github-raw-account = "account:web:raw.githubusercontent.com:443"
-        grafana-otlp       = "alloy:alloy:otlp-gateway-prod-eu-west-2.grafana.net:443"
+        openai              = "genai:grpc,sweep:api.openai.com:443"
+        smtp-relay          = "authentication:maintenance,rest:smtp-relay.gmail.com:587"
+        apps-script         = "authentication:rest:script.google.com:443"
+        apps-script-content = "authentication:rest:script.googleusercontent.com:443"
+        github-raw          = "studio:web:raw.githubusercontent.com:443"
+        github-raw-account  = "account:web:raw.githubusercontent.com:443"
+        grafana-otlp        = "alloy:alloy:otlp-gateway-prod-eu-west-2.grafana.net:443"
       } &&
       alltrue([for policy in kubernetes_manifest.internet_egress : policy.manifest.kind == "FQDNNetworkPolicy" && length(policy.manifest.spec.egress) == 1])
     )
-    error_message = "GenAI may reach only OpenAI, Authentication only the mail relay, the platforms only GitHub's raw host, and Alloy only Grafana's gateway, each on its own port."
+    error_message = "GenAI may reach only OpenAI, Authentication only the mail relay and, from its API, the invitation list's Apps Script, the platforms only GitHub's raw host, and Alloy only Grafana's gateway, each on its own port."
   }
 }
 

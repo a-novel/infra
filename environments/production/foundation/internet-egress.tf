@@ -19,6 +19,14 @@ locals {
       address_groups = [google_network_security_address_group.google_services.id]
       port           = "587"
     }
+    apps-script = {
+      priority = 1020
+      # Authentication's invitation list: an Apps Script web app, and the host its answer redirects
+      # to. Google answers each client location with another frontend there too.
+      hosts          = ["script.google.com", "script.googleusercontent.com"]
+      address_groups = [google_network_security_address_group.google_services.id]
+      port           = "443"
+    }
     github-raw = {
       priority = 1030
       # The platforms' planned downtime document. GitHub serves it from four anycast addresses that

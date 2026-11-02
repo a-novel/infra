@@ -21,10 +21,16 @@ Keys stores, and a new value cannot decrypt them.
    gcloud secrets versions list "$SECRET" --project=a-novel-management-prod --limit=3
    ```
 
-   | Secret             | Format                                                |
-   | ------------------ | ----------------------------------------------------- |
-   | `*-app-master-key` | 64 hexadecimal characters                             |
-   | `*-openai-api-key` | an OpenAI project key restricted to the Responses API |
+   | Secret              | Format                                                    |
+   | ------------------- | --------------------------------------------------------- |
+   | `*-app-master-key`  | 64 hexadecimal characters                                 |
+   | `*-openai-api-key`  | an OpenAI project key restricted to the Responses API     |
+   | `*-waitlist-secret` | the invitation list's signing key, at least 32 characters |
+
+   The invitation list's Apps Script holds the same key in its `WAITLIST_SECRET` script property,
+   and every join fails while the two differ. Change both together, as service-authentication's
+   [waitlist guide](https://github.com/a-novel/service-authentication/blob/master/scripts/waitlist/README.md#rotate-the-signing-key)
+   shows.
 
 2. **Pin the new number** in `secret_versions` in the service root, or in the cluster root's
    `addon_secret_versions` for an add-on, in a pull request, and merge it. The deploy points the

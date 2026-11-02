@@ -31,21 +31,23 @@ Services keep apart inside the cluster, each in its own namespace, as [Cluster](
   the hosts below, and nothing else on the internet. The firewall sees only the nodes, so each
   workload's FQDN network policy narrows the list to its own hosts:
 
-  | Destination                                                | Pods                                            |
-  | ---------------------------------------------------------- | ----------------------------------------------- |
-  | `api.openai.com:443`                                       | GenAI's `grpc` and `sweep`                      |
-  | Google's service ranges on 587, for `smtp-relay.gmail.com` | Authentication's `rest` and `maintenance`       |
-  | `raw.githubusercontent.com:443`                            | The platforms' `web`, for the downtime document |
-  | `otlp-gateway-prod-eu-west-2.grafana.net:443`              | Alloy, for telemetry                            |
+  | Destination                                                | Pods                                             |
+  | ---------------------------------------------------------- | ------------------------------------------------ |
+  | `api.openai.com:443`                                       | GenAI's `grpc` and `sweep`                       |
+  | Google's service ranges on 587, for `smtp-relay.gmail.com` | Authentication's `rest` and `maintenance`        |
+  | Google's service ranges on 443, for the Apps Script hosts  | Authentication's `rest`, for the invitation list |
+  | `raw.githubusercontent.com:443`                            | The platforms' `web`, for the downtime document  |
+  | `otlp-gateway-prod-eu-west-2.grafana.net:443`              | Alloy, for telemetry                             |
 
   The firewall resolves a host name through the VPC's Cloud DNS and matches the addresses it
   returns, which works only when every client gets the same answer. `api.openai.com` gives everyone
   the same two Cloudflare addresses, GitHub's raw host the same four, and Grafana's OTLP gateway one
   fixed address.
-  `smtp-relay.gmail.com` answers each client location with another frontend, so SMTP matches the
-  `google-services` address group instead: every range Google announces, minus those its Cloud
-  customers rent. `refresh-google-ranges.yaml` proposes Google's latest list daily, and its pull
-  request merges alone when it holds exactly what Google publishes.
+  `smtp-relay.gmail.com`, `script.google.com` and `script.googleusercontent.com` answer each client
+  location with another frontend, so they match the `google-services` address group instead: every
+  range Google announces, minus those its Cloud customers rent. `refresh-google-ranges.yaml` proposes
+  Google's latest list daily, and its pull request merges alone when it holds exactly what Google
+  publishes.
 
   Other traffic falls through to the firewall rules, which log no verdict, so a refused connection
   shows only as the caller's own error.
