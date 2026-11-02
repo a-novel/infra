@@ -10,3 +10,9 @@ smtp = {
   sender_email = "no-reply@agorastoryverse.com"
   sender_name  = "Agora"
 }
+
+secret_versions = {
+  waitlist-secret = 1
+}
+
+waitlist_url = "https://script.google.com/macros/s/AKfycbynt0DbObOkLBwIJh4cyf8ZjXTXPG55wdhp8bs6JEFkj8T100xcBaT8tzavOXOgoSpO/exec"

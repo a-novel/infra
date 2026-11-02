@@ -73,9 +73,10 @@ service_budgets = {
 # The workloads' database passwords come from CloudNativePG's database-app Secrets. These come from
 # Secret Manager.
 secrets = {
-  alloy     = { GRAFANA_CLOUD_TOKEN = "push-token" }
-  genai     = { OPENAI_API_KEY = "openai-api-key" }
-  json-keys = { APP_MASTER_KEY = "app-master-key" }
+  alloy          = { GRAFANA_CLOUD_TOKEN = "push-token" }
+  authentication = { WAITLIST_SECRET = "waitlist-secret" }
+  genai          = { OPENAI_API_KEY = "openai-api-key" }
+  json-keys      = { APP_MASTER_KEY = "app-master-key" }
 }
 
 addon_secret_versions = {

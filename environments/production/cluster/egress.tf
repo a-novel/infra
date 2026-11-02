@@ -6,6 +6,9 @@ locals {
   internet_egress = {
     openai     = { namespace = "genai", pods = ["grpc", "sweep"], host = "api.openai.com", port = 443 }
     smtp-relay = { namespace = "authentication", pods = ["maintenance", "rest"], host = local.authentication_smtp.host, port = 587 }
+    # The invitation list's Apps Script, and the host its answer redirects to.
+    apps-script         = { namespace = "authentication", pods = ["rest"], host = "script.google.com", port = 443 }
+    apps-script-content = { namespace = "authentication", pods = ["rest"], host = "script.googleusercontent.com", port = 443 }
     # The platforms' planned downtime document.
     github-raw         = { namespace = "studio", pods = ["web"], host = "raw.githubusercontent.com", port = 443 }
     github-raw-account = { namespace = "account", pods = ["web"], host = "raw.githubusercontent.com", port = 443 }

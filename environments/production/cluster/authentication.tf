@@ -37,6 +37,9 @@ locals {
     # while the store does not answer.
     REST_RATE_LIMIT_STORE_ADDR     = "valkey.authentication.svc:6379"
     REST_RATE_LIMIT_STORE_USERNAME = "limiter"
+    # The invitation list that "Register" joins: an Apps Script web app, which accepts only requests
+    # signed with WAITLIST_SECRET. Without it, every join fails.
+    WAITLIST_URL = local.service_inputs["authentication"].waitlist_url
     # The account platform signs people in for the other platforms, which are OAuth clients: each
     # redeems the codes it receives at its callback. Authentication refuses to start unless
     # SERVICE_TOKEN_CALLERS admits every caller named here.
@@ -48,6 +51,7 @@ locals {
   })
   authentication_secret_env = merge(local.database_secret_env, {
     REST_RATE_LIMIT_STORE_PASSWORD = { secret = local.counter_store_values.auth.usersExistingSecret, key = "limiter" }
+    WAITLIST_SECRET                = { secret = "secrets", key = "WAITLIST_SECRET" }
   })
   # Each platform calls Authentication as its web workload's service account.
   platform_callers = { for platform in keys(local.platforms) : platform => "system:serviceaccount:${platform}:web" }
@@ -75,7 +79,7 @@ module "authentication_rest" {
   labels          = local.database_clients
   pod_annotations = local.database_client_annotations
 
-  depends_on = [kubernetes_job_v1.migrations]
+  depends_on = [kubernetes_job_v1.migrations, kubernetes_manifest.secrets]
 }
 
 # The platforms and Authentication's smoke and health checks call the API. It calls JSON Keys,
