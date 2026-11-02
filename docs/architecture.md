@@ -204,6 +204,11 @@ and a replica on separate nodes. The cluster root's `databases` sizes each one:
 | Authentication | 0.5 vCPU    | 1536 MiB | 30 GiB | 50          |
 | GenAI          | 0.5 vCPU    | 6 GiB    | 20 GiB | 150         |
 
+Each database's connections, less PostgreSQL's 3 superuser slots, hold every workload's pool at its
+maximum pods plus a rollout's surge pod, every job's pool, the grants Job and the metrics exporter
+at once, which a cluster test checks. The migrations open 2 connections, golib's lock and the one
+that applies them; every other job opens 1.
+
 GenAI's rows hold payloads and responses of up to 24 MiB, so its database has more memory. Each
 instance's memory is its limit too, and no instance has a CPU limit. Volumes use `standard-rwo` and
 grow in place.

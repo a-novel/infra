@@ -39,8 +39,12 @@ resource "kubernetes_job_v1" "migrations" {
           name  = "migrations"
           image = local.release_image["${each.key}/migrations"]
 
+          # golib holds one connection for its migration lock and applies the migrations on another.
           dynamic "env" {
-            for_each = merge(local.database_env[each.key], local.downtime_env[each.key], { SSL_CERT_DIR = "/etc/ssl/certs:/etc/database-ca" })
+            for_each = merge(local.database_env[each.key], local.downtime_env[each.key], {
+              SSL_CERT_DIR            = "/etc/ssl/certs:/etc/database-ca"
+              POSTGRES_MAX_OPEN_CONNS = "2"
+            })
 
             content {
               name  = env.key

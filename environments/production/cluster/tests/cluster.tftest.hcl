@@ -355,6 +355,30 @@ run "keeps_each_database_available_and_backed_up" {
   }
 }
 
+# A database admits its max_connections less PostgreSQL's 3 superuser slots. Every workload's pool at
+# its maximum pods plus a rollout's surge pod, every job's pool, and one connection each for the
+# grants Job and the metrics exporter must fit at once. A job without a pool cap fails the sum.
+run "fits_each_database_in_its_connections" {
+  command = plan
+
+  variables {
+    custom_resources = true
+  }
+
+  assert {
+    condition = alltrue([for database, workloads in {
+      authentication = tonumber(local.authentication_env.POSTGRES_MAX_OPEN_CONNS) * (module.authentication_rest[0].autoscaler.spec.max_replicas + 1)
+      genai          = tonumber(local.genai_grpc_env.POSTGRES_MAX_OPEN_CONNS) * (module.genai_grpc[0].autoscaler.spec.max_replicas + 1) + tonumber(local.genai_sweep_env.POSTGRES_MAX_OPEN_CONNS) * (module.genai_sweep[0].autoscaler.spec.max_replicas + 1)
+      json-keys      = tonumber(local.json_keys_env.POSTGRES_MAX_OPEN_CONNS) * (module.json_keys_grpc[0].autoscaler.spec.max_replicas + 1)
+      } : workloads + 2 + sum(concat(
+        [one([for env in one(kubernetes_job_v1.migrations[database].spec[0].template[0].spec[0].container).env : tonumber(env.value) if env.name == "POSTGRES_MAX_OPEN_CONNS"])],
+        [for name, job in kubernetes_cron_job_v1.scheduled : one([for env in one(job.spec[0].job_template[0].spec[0].template[0].spec[0].container).env : tonumber(env.value) if env.name == "POSTGRES_MAX_OPEN_CONNS"]) if local.scheduled_jobs[name].service == database],
+      )) <= var.databases[database].max_connections - 3
+    ])
+    error_message = "Each database must hold every workload at its maximum with a surge pod, every job, the grants Job and the metrics exporter at once, within its connections less the superuser slots."
+  }
+}
+
 run "runs_each_release_from_its_private_repository" {
   command = plan
 
