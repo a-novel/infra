@@ -5,6 +5,458 @@
   "annotations": [],
   "variables": [],
   "elements": {
+    "account-dialog": {
+      "kind": "Panel",
+      "spec": {
+        "id": 33,
+        "title": "Sign-in dialog",
+        "description": "Each hour's submissions of the sign-in dialog, by status: signing in, joining the waitlist and asking for a password reset. 303 signed a visitor in, and 200 recorded a waitlist request or sent a reset email. 400 refused an invalid form, 401 wrong credentials, 409 an email already on the waitlist or registered, 429 a visitor over the rate limit. Worry at any 5xx: Authentication could not answer.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "tempo",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-traces"
+                    },
+                    "spec": {
+                      "queryType": "traceql",
+                      "metricsQueryType": "range",
+                      "step": "1h",
+                      "query": "{ resource.service.name = \"platform-account\" && kind = server && name = \"POST /(app)/(home)\" } | count_over_time() by (span.http.response.status_code)"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": {
+              "timeFrom": "24h"
+            }
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "",
+          "spec": {
+            "options": {
+              "legend": {
+                "displayMode": "list",
+                "placement": "bottom"
+              },
+              "tooltip": {
+                "mode": "multi"
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short",
+                "decimals": 0,
+                "custom": {
+                  "drawStyle": "bars",
+                  "fillOpacity": 70,
+                  "stacking": {
+                    "mode": "normal"
+                  }
+                }
+              },
+              "overrides": []
+            }
+          }
+        }
+      }
+    },
+    "account-waitlist": {
+      "kind": "Panel",
+      "spec": {
+        "id": 34,
+        "title": "Waitlist",
+        "description": "Each hour's waitlist requests, by Authentication's answer: 200 recorded the email, 409 found it already listed or registered, 429 refused a visitor over the rate limit. An invitation is the only way to an account, so worry at any 5xx: the request was lost, and the visitor saw an error.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "tempo",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-traces"
+                    },
+                    "spec": {
+                      "queryType": "traceql",
+                      "metricsQueryType": "range",
+                      "step": "1h",
+                      "query": "{ resource.service.name = \"platform-account\" && kind = client && span.http.request.method = \"PUT\" && span.url.path = \"/v2/waitlist\" } | count_over_time() by (span.http.response.status_code)"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": {
+              "timeFrom": "24h"
+            }
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "",
+          "spec": {
+            "options": {
+              "legend": {
+                "displayMode": "list",
+                "placement": "bottom"
+              },
+              "tooltip": {
+                "mode": "multi"
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short",
+                "decimals": 0,
+                "custom": {
+                  "drawStyle": "bars",
+                  "fillOpacity": 70,
+                  "stacking": {
+                    "mode": "normal"
+                  }
+                }
+              },
+              "overrides": []
+            }
+          }
+        }
+      }
+    },
+    "account-changes": {
+      "kind": "Panel",
+      "spec": {
+        "id": 35,
+        "title": "Account changes",
+        "description": "Each hour's forms outside the sign-in dialog, by form and status. The account page changes a password or an email and signs out; the email links create an invited account, confirm an email or reset a password. 200 and 303 completed the step. 400 refused an invalid form, 403 a wrong current password. A link also answers 303 once it has expired, and 503 when the visitor hit the rate limit: Refusals from Authentication tells them apart. Worry at any other 5xx.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "tempo",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-traces"
+                    },
+                    "spec": {
+                      "queryType": "traceql",
+                      "metricsQueryType": "range",
+                      "step": "1h",
+                      "query": "{ resource.service.name = \"platform-account\" && kind = server && name =~ \"POST .*\" && name != \"POST /(app)/(home)\" } | count_over_time() by (name, span.http.response.status_code)"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [
+              {
+                "kind": "Transformation",
+                "group": "renameByRegex",
+                "spec": {
+                  "options": {
+                    "regex": "^\\{[^=]+=\"POST /(?:[^\"]*\\)/)?([^\"]*)\", [^=]+=(?:\"([^\"]*)\"|([^,}]*))\\}$",
+                    "renamePattern": "$1 · $2$3"
+                  }
+                }
+              }
+            ],
+            "queryOptions": {
+              "timeFrom": "24h"
+            }
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "",
+          "spec": {
+            "options": {
+              "legend": {
+                "displayMode": "list",
+                "placement": "bottom"
+              },
+              "tooltip": {
+                "mode": "multi"
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short",
+                "decimals": 0,
+                "custom": {
+                  "drawStyle": "bars",
+                  "fillOpacity": 70,
+                  "stacking": {
+                    "mode": "normal"
+                  }
+                }
+              },
+              "overrides": []
+            }
+          }
+        }
+      }
+    },
+    "account-authorizations": {
+      "kind": "Panel",
+      "spec": {
+        "id": 36,
+        "title": "Authorizations",
+        "description": "Each hour's authorization requests, through which an Agora app such as Studio signs its visitors in. 303 sent the visitor on: to the sign-in dialog, or back to the app with a code or an error. 400 refused a request naming no valid client to return to. Worry at any 5xx, or when 400s follow an app's release.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "tempo",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-traces"
+                    },
+                    "spec": {
+                      "queryType": "traceql",
+                      "metricsQueryType": "range",
+                      "step": "1h",
+                      "query": "{ resource.service.name = \"platform-account\" && kind = server && name = \"GET /(app)/authorize\" } | count_over_time() by (span.http.response.status_code)"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": {
+              "timeFrom": "24h"
+            }
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "",
+          "spec": {
+            "options": {
+              "legend": {
+                "displayMode": "list",
+                "placement": "bottom"
+              },
+              "tooltip": {
+                "mode": "multi"
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short",
+                "decimals": 0,
+                "custom": {
+                  "drawStyle": "bars",
+                  "fillOpacity": 70,
+                  "stacking": {
+                    "mode": "normal"
+                  }
+                }
+              },
+              "overrides": []
+            }
+          }
+        }
+      }
+    },
+    "account-calls": {
+      "kind": "Panel",
+      "spec": {
+        "id": 37,
+        "title": "Calls to Authentication: p95",
+        "description": "How long the platform's server waits on each Authentication endpoint, at the 95th percentile. Every page a visitor with a session opens waits on GET /v2/session, so worry when it climbs.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "tempo",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-traces"
+                    },
+                    "spec": {
+                      "queryType": "traceql",
+                      "metricsQueryType": "range",
+                      "step": "1h",
+                      "query": "{ resource.service.name = \"platform-account\" && kind = client && span.server.address = \"rest.authentication.svc\" } | quantile_over_time(duration, .95) by (span.http.request.method, span.url.path)"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [
+              {
+                "kind": "Transformation",
+                "group": "renameByRegex",
+                "spec": {
+                  "options": {
+                    "regex": "^\\{p=[^,]*, [^=]+=\"([^\"]*)\", [^=]+=\"([^\"]*)\"\\}$",
+                    "renamePattern": "$1 $2"
+                  }
+                }
+              }
+            ],
+            "queryOptions": {
+              "timeFrom": "24h"
+            }
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "",
+          "spec": {
+            "options": {
+              "legend": {
+                "displayMode": "list",
+                "placement": "bottom"
+              },
+              "tooltip": {
+                "mode": "multi"
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "s",
+                "min": 0
+              },
+              "overrides": []
+            }
+          }
+        }
+      }
+    },
+    "account-refusals": {
+      "kind": "Panel",
+      "spec": {
+        "id": 38,
+        "title": "Refusals from Authentication",
+        "description": "Each hour's calls Authentication answered with an error status, by endpoint and status: where a visitor's request met a limit, an expired link or a fault. Worry at any 5xx.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "tempo",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-traces"
+                    },
+                    "spec": {
+                      "queryType": "traceql",
+                      "metricsQueryType": "range",
+                      "step": "1h",
+                      "query": "{ resource.service.name = \"platform-account\" && kind = client && span.server.address = \"rest.authentication.svc\" && span.http.response.status_code >= 400 } | count_over_time() by (span.http.request.method, span.url.path, span.http.response.status_code)"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [
+              {
+                "kind": "Transformation",
+                "group": "renameByRegex",
+                "spec": {
+                  "options": {
+                    "regex": "^\\{[^=]+=\"([^\"]*)\", [^=]+=(?:\"([^\"]*)\"|([^,]*)), [^=]+=\"([^\"]*)\"\\}$",
+                    "renamePattern": "$1 $4 · $2$3"
+                  }
+                }
+              }
+            ],
+            "queryOptions": {
+              "timeFrom": "24h"
+            }
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "",
+          "spec": {
+            "options": {
+              "legend": {
+                "displayMode": "list",
+                "placement": "bottom"
+              },
+              "tooltip": {
+                "mode": "multi"
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short",
+                "decimals": 0,
+                "custom": {
+                  "drawStyle": "bars",
+                  "fillOpacity": 70,
+                  "stacking": {
+                    "mode": "normal"
+                  }
+                }
+              },
+              "overrides": []
+            }
+          }
+        }
+      }
+    },
     "authentication-accounts": {
       "kind": "Panel",
       "spec": {
@@ -3058,6 +3510,76 @@
     "kind": "TabsLayout",
     "spec": {
       "tabs": [
+        {
+          "kind": "TabsLayoutTab",
+          "spec": {
+            "title": "Account",
+            "layout": {
+              "kind": "AutoGridLayout",
+              "spec": {
+                "maxColumnCount": 3,
+                "columnWidthMode": "standard",
+                "rowHeightMode": "standard",
+                "items": [
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "account-dialog"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "account-waitlist"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "account-changes"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "account-authorizations"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "account-calls"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "account-refusals"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
         {
           "kind": "TabsLayoutTab",
           "spec": {
