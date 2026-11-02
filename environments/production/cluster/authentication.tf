@@ -1,5 +1,6 @@
-# Authentication's REST API, which counts its rate limits in the counter store (counter-store.tf).
-# It still runs one pod, until Grafana shows the store at work (a-novel/infra#1414).
+# Authentication's REST API. Its pods share each rate limit's budget through the counter store
+# (counter-store.tf). golib's router limit (REST_RATE_LIMIT) stays in each pod and grows with their
+# count: it guards against floods, while the shared limits guard sign-in.
 locals {
   authentication_smtp = local.service_inputs["authentication"].smtp
   # Registration and account emails, which the API and the maintenance Jobs send, and whose links
@@ -67,9 +68,10 @@ module "authentication_rest" {
   secret_env       = local.authentication_secret_env
   service_tokens   = { (local.json_keys_env.SERVICE_TOKEN_AUDIENCE) = "SERVICE_TOKEN_PATH" }
   ca_secret        = kubernetes_manifest.database_server_certificate["authentication"].manifest.spec.secretName
-  # Argon2 bursts above the request: the pod has no CPU limit.
+  # Argon2 bursts above the request: the pod has no CPU limit, and a third pod takes a long burst.
+  # Two keep sign-in up through a lost pod or node. Each hashes one password at a time.
   resources       = { cpu = "250m", memory = "512Mi" }
-  replicas        = { min = 1, max = 1 }
+  replicas        = { min = 2, max = 3 }
   labels          = local.database_clients
   pod_annotations = local.database_client_annotations
 

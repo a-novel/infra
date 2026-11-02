@@ -554,6 +554,17 @@ run "runs_authentication" {
     )
     error_message = "Only the platforms and the smoke check may call Authentication, whose visitor IP header trusts the platforms."
   }
+
+  # Several pods keep one budget per rate limit only through the counter store.
+  assert {
+    condition = (
+      module.authentication_rest[0].autoscaler.spec.min_replicas == 2 &&
+      module.authentication_rest[0].autoscaler.spec.max_replicas == 3 &&
+      [for metric in module.authentication_rest[0].autoscaler.spec.metric : metric.type] == ["Resource"] &&
+      local.authentication_env.REST_RATE_LIMIT_STORE_ADDR != ""
+    )
+    error_message = "Authentication must run two to three pods on CPU, sharing their rate limits through the counter store."
+  }
 }
 
 run "keeps_authentication_counters_in_a_locked_store" {
