@@ -224,7 +224,7 @@ run "refuses_a_local_opt_out" {
   command = plan
 
   variables {
-    env        = { SERVICE_TOKEN_ISSUER_OPTIONAL = "true" }
+    env        = { SERVICE_ISSUER_OPTIONAL = "true" }
     secret_env = { REST_RATE_LIMITS_ENABLED = { secret = "secrets", key = "REST_RATE_LIMITS_ENABLED" } }
   }
 
