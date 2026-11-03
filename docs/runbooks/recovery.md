@@ -67,6 +67,7 @@ The drill passes when its `run` job succeeds: each database recovered, serves an
 check. Each check connects as the database's owner, and fails at the first of these that does not
 hold:
 
+- the database refuses a connection without TLS;
 - every extension production creates came back;
 - the migrations history came back;
 - every constraint is validated;

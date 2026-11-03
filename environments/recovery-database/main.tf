@@ -133,6 +133,9 @@ resource "kubernetes_manifest" "database" {
       storage         = { size = local.production.databases[each.key].storage, storageClass = "standard-rwo" }
 
       postgresql = {
+        # Refuse every connection without TLS. CloudNativePG's own rules, local and certificate
+        # replication, come first, and its default password rule last.
+        pg_hba                   = ["hostnossl all all all reject"]
         shared_preload_libraries = contains(local.production.databases[each.key].extensions, "pg_cron") ? ["pg_cron"] : []
         parameters = merge(
           { max_connections = tostring(local.production.databases[each.key].max_connections) },
@@ -170,10 +173,11 @@ resource "kubernetes_manifest" "database" {
   }
 }
 
-# The drill passes once each restored database passes its checks. The check connects as the owner
-# whose credentials CloudNativePG generated for the restore, over TLS it verifies against the
-# database's own CA, and fails the apply at the first difference. Its log, which recovery.yaml
-# prints, counts each table's rows.
+# The drill passes once each restored database passes its checks. The check first proves the
+# database refuses a connection without TLS. It then connects as the owner whose credentials
+# CloudNativePG generated for the restore, over TLS it verifies against the database's own CA, and
+# fails the apply at the first difference. Its log, which recovery.yaml prints, counts each table's
+# rows.
 resource "kubernetes_job_v1" "check" {
   for_each = var.recovery.services
 
@@ -207,7 +211,7 @@ resource "kubernetes_job_v1" "check" {
         container {
           name    = "check"
           image   = one(kubernetes_manifest.image[each.key].manifest.spec.images).image
-          command = ["psql", "--no-psqlrc", "--set=ON_ERROR_STOP=1", "--command", templatefile("${path.module}/check.sql.tftpl", { extensions = local.production.databases[each.key].extensions })]
+          command = ["sh", "-c", file("${path.module}/check.sh"), "check", templatefile("${path.module}/check.sql.tftpl", { extensions = local.production.databases[each.key].extensions })]
 
           dynamic "env" {
             for_each = {
