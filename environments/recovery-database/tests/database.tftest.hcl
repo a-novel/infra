@@ -81,6 +81,20 @@ run "checks_every_restored_database" {
   }
 }
 
+# Kubernetes collapses a doubled dollar sign into one in a container's command, which breaks a
+# dollar-quoted block.
+run "passes_the_check_sql_through_kubernetes_intact" {
+  command = plan
+
+  assert {
+    condition = alltrue([for check in kubernetes_job_v1.check :
+      !strcontains(check.spec[0].template[0].spec[0].container[0].command[4], "$$") &&
+      strcontains(check.spec[0].template[0].spec[0].container[0].command[4], "DO $check$")
+    ])
+    error_message = "Each check must quote its blocks with a tag: Kubernetes collapses a doubled dollar sign in a container's command."
+  }
+}
+
 run "recovers_the_selected_services_to_the_latest_without_a_target" {
   command = plan
 
