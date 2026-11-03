@@ -61,6 +61,11 @@ root's deploys apply from it, apart from Google Cloud's production:
 | `GCP_GRAFANA_WORKLOAD_IDENTITY_PROVIDER` | `…/providers/github-grafana`                                    |
 | `GCP_GRAFANA_SERVICE_ACCOUNT`            | `infra-grafana@a-novel-management-prod.iam.gserviceaccount.com` |
 
+Environment `plan` holds every pull request's plan jobs until a reviewer admits the run, since they
+read production as `infra-plan`. The GitHub root creates it because `main.yaml` names it, with
+infra's maintainers, owners and the admin team as reviewers, on every branch, and with no variable:
+the plan jobs read the repository's `GCP_PLAN_*` variables.
+
 The organization's Renovate (Dependencies) and Agent Apps need access to this repository.
 
 ## Organization guardrails

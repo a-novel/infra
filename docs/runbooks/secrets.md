@@ -97,21 +97,53 @@ The Grafana root reads one token per CI identity, from a service account of the 
 Create each one in the stack's Grafana, under **Administration → Users and access → Service
 accounts**:
 
-| Secret                            | Service account | Role   |
-| --------------------------------- | --------------- | ------ |
-| `production-grafana-plan-token`   | `infra-plan`    | Viewer |
-| `production-grafana-deploy-token` | `infra-deploy`  | Admin  |
+| Secret                            | Service account | Role                                    | Token expiry |
+| --------------------------------- | --------------- | --------------------------------------- | ------------ |
+| `production-grafana-plan-token`   | `infra-plan`    | No basic role, custom role `infra-plan` | 90 days      |
+| `production-grafana-deploy-token` | `infra-deploy`  | Admin                                   | none         |
 
 The deploy account is an Admin because Grafana caches each identity's folder permissions: an
 Editor that creates a folder cannot read it back for a moment, which leaves the folder tainted.
-Give neither account a provisioning role. The provisioning API accepts the alerting permissions of
-the basic roles, and **Read via Provisioning API + Export Secrets** hands the Discord contact
-point's webhook to pull-request code.
+Give neither account `alert.provisioning.secrets:read`, which **Read via Provisioning API + Export
+Secrets** grants: it hands the Discord contact point's webhook to pull-request code.
+
+The plan account reads what the Grafana root manages and queries no data source, so its token
+reads no log, trace or metric. Its custom role grants the folders, the dashboards and the alerting
+configuration. `alert.provisioning:read` reads each alert rule without the query access to its data
+sources that the rules API would require, and leaves contact points' secure fields out. Create the
+role and give it to the account with the deploy token, as an operator:
+
+```bash
+GRAFANA_TOKEN="$(gcloud secrets versions access latest --secret=production-grafana-deploy-token --project=a-novel-management-prod)"
+curl -sS --fail-with-body -H "Authorization: Bearer $GRAFANA_TOKEN" -H 'Content-Type: application/json' \
+  https://anovel.grafana.net/api/access-control/roles -d '{
+    "name": "custom:infra-plan", "uid": "infra-plan", "displayName": "infra-plan", "version": 1, "global": false,
+    "description": "Reads what the Grafana root manages. Queries no data source.",
+    "permissions": [
+      {"action": "folders:read", "scope": "folders:*"},
+      {"action": "dashboards:read", "scope": "folders:*"},
+      {"action": "alert.rules:read", "scope": "folders:*"},
+      {"action": "alert.notifications:read"},
+      {"action": "alert.provisioning:read"}
+    ]}'
+PLAN_ACCOUNT="$(curl -sS --fail-with-body -H "Authorization: Bearer $GRAFANA_TOKEN" \
+  'https://anovel.grafana.net/api/serviceaccounts/search?query=infra-plan' | jq -r '.serviceAccounts[] | select(.name == "infra-plan") | .id')"
+curl -sS --fail-with-body -X PATCH -H "Authorization: Bearer $GRAFANA_TOKEN" -H 'Content-Type: application/json' \
+  "https://anovel.grafana.net/api/serviceaccounts/$PLAN_ACCOUNT" -d '{"role": "None"}'
+curl -sS --fail-with-body -X PUT -H "Authorization: Bearer $GRAFANA_TOKEN" -H 'Content-Type: application/json' \
+  "https://anovel.grafana.net/api/access-control/users/$PLAN_ACCOUNT/roles" -d '{"roleUids": ["infra-plan"], "global": false}'
+unset GRAFANA_TOKEN
+```
+
+Then re-run a Grafana root plan, which must still read "No changes". A plan that fails on a 403
+names the permission the role lacks.
 
 Add each token as a version of its secret, as in [Rotate a secret](#rotate-a-secret), and pin it in
 the Grafana root's `token_versions`. Pull requests and the drift check read the plan token as
-`infra-plan`, and deploys the deploy token as `infra-grafana`. Create the tokens without an expiry.
-For a leak, delete the token in Grafana as well as disabling its version.
+`infra-plan`, and deploys the deploy token as `infra-grafana`. Create the plan token with a 90-day
+expiry, under the account's **Add service account token**, and replace it every 60 days, so a lost
+or leaked copy lapses on its own. The deploy token, which only master's deploy reads, has none. For
+a leak, delete the token in Grafana as well as disabling its version.
 
 Grafana's Discord contact point is created by hand in the same stack, so its webhook never reaches
 state. Its title and message call the Grafana root's templates, as
@@ -150,6 +182,10 @@ gcloud secrets versions add "$SECRET" --project=a-novel-management-prod --data-f
 | ------------------------------------ | ----------------------- | ----------------------------------------------------------------------- |
 | `production-github-plan-key-<org>`   | the Plan App, read-only | `infra-plan`, for pull requests                                         |
 | `production-github-deploy-key-<org>` | the Deploy App          | `infra-github` for deploys and the sweep, `infra-drift` for drift plans |
+
+Replace each Plan App key every 90 days, since pull requests read it. Generate a new key, add it
+as a version and bump `apps.<org>.plan.key_version` in the GitHub root's `terraform.tfvars`. Once
+that pull request has merged, delete the old key in the App's settings and disable its version.
 
 For a leak, delete the key in the App's settings as well as disabling its version.
 

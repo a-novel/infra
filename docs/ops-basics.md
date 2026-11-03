@@ -39,7 +39,7 @@ Git is the source of truth for production. Every change is a pull request, which
 will change. Merging it deploys it, and nobody applies by hand.
 
 ```text
-pull request ──► checks: validate, lint, test, scan, one plan per root
+pull request ──► checks: validate, lint, test, scan, one plan per root, admitted by a maintainer
                   │  plan deletes or unprotects something? ─► needs allow-resource-deletion
                   │  plan upgrades a PostgreSQL major?      ─► needs allow-downtime, during a planned downtime
                   ▼
@@ -51,8 +51,11 @@ deploy:  bootstrap ─► foundation ─┬─► cluster: images, migrations, w
 ```
 
 1. **The pull request.** CI validates and tests every root, lints the repository, scans it, and plans
-   each root with a read-only identity, the GitHub root only when the merge would apply it. The plans
-   appear in the job summaries.
+   each root with a read-only identity, the GitHub root only when the merge would apply it. That
+   identity reads production, so the plan jobs wait in the `plan` environment until a maintainer, an
+   owner or an admin reviews the pull request's code and approves the run, under **Review pending
+   deployments** on the run's page. Each push and each label change starts a run to approve. The
+   plans appear in the job summaries.
 2. **The policy.** Two kinds of plan fail until a maintainer adds a label:
    - a plan that deletes, replaces or forgets a resource, or weakens its protection, needs
      `allow-resource-deletion`, as does a ruleset or deployment pattern the GitHub root would
@@ -68,7 +71,8 @@ deploy:  bootstrap ─► foundation ─┬─► cluster: images, migrations, w
    their own pull request, so a maintainer or admin reviews and approves it. An admin may instead
    approve their own pull request with `approve-pr.yaml`, which refuses anyone else's. A bot's pull
    request merges on its own only as a release pin, or as a version update Renovate itself put on
-   auto-merge: the Agent App approves and queues it. Renovate puts every minor or patch update on
+   auto-merge: the Agent App approves and queues it once a maintainer has admitted its plans.
+   Renovate puts every minor or patch update on
    auto-merge except OpenTofu's and the Google providers'. Its plans still need a label
    for a deletion or a downtime, so such an update waits for a maintainer. Anything else a bot
    opens, such as a major update, waits for a maintainer's or an admin's review like a person's.
@@ -91,7 +95,7 @@ No service-account key exists anywhere. The trust conditions live in
 
 | Identity           | Used by                                                                                        | Can                                                 |
 | ------------------ | ---------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| `infra-plan`       | pull-request plans, the drift check                                                            | read everything a plan needs                        |
+| `infra-plan`       | pull-request plans in the `plan` environment, the drift check                                  | read what a plan needs, as listed below             |
 | `infra-foundation` | `deploy.yaml` and `recovery.yaml`, on `master`, in the `production` environment                | change everything                                   |
 | `infra-downtime`   | `downtime.yaml`, on `master`                                                                   | start and cancel the planned downtime announcements |
 | `infra-github`     | the GitHub root's `deploy.yaml` job and `sweep.yaml`, on `master`, in the `github` environment | apply the GitHub root, with no Google Cloud role    |
@@ -99,7 +103,21 @@ No service-account key exists anywhere. The trust conditions live in
 | `infra-grafana`    | the Grafana root's `deploy.yaml` job, on `master`, in the `grafana` environment                | apply the Grafana root, with no Google Cloud role   |
 
 GitHub issues no OIDC token to pull requests from forks, so outside contributors get no cloud
-access.
+access. A same-repository pull request mints `infra-plan` only once a reviewer of the `plan`
+environment admits its run. `infra-plan` reads:
+
+- **every root's state**, which holds no secret value;
+- **in the management project**, the configuration of IAM, service accounts, Workload Identity,
+  Cloud Scheduler, Workflows, the enabled APIs, the buckets and the secrets, but the value of four
+  secrets only: the Grafana root's two plan tokens and the GitHub root's two Plan App keys;
+- **in the workload project**, what the Viewer role reads, except Cloud Logging and Cloud Trace,
+  which an organization deny policy removes. On the cluster, it reads every object but Secrets, and
+  the pods' logs;
+- **the organization's access policies**, which hold the service perimeter;
+- **in Grafana**, through its token, the folders, dashboards and alerting configuration the Grafana
+  root manages, but no data source. Its Grafana Cloud token reads the stack and Frontend
+  Observability's apps;
+- **in GitHub**, through the Plan App keys, both organizations' repository configuration, read-only.
 
 Human operators are the members of bootstrap's `operator_principals` and foundation's
 `database_operator_principals`. They hold three sets of roles:
