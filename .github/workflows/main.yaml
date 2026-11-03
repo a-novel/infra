@@ -246,8 +246,8 @@ jobs:
           root: bootstrap
           allow_deletion: ${{ github.event.action != 'synchronize' && contains(github.event.pull_request.labels.*.name, 'allow-resource-deletion') }}
           allow_downtime: ${{ github.event.action != 'synchronize' && contains(github.event.pull_request.labels.*.name, 'allow-downtime') }}
-          workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
+          workload_identity_provider: projects/232403541574/locations/global/workloadIdentityPools/github-actions/providers/github-narrow-plan
+          service_account: infra-narrow-plan@a-novel-management-prod.iam.gserviceaccount.com
           github_token: ${{ github.token }}
 
   plan-foundation:
@@ -268,8 +268,8 @@ jobs:
           root: environments/production/foundation
           allow_deletion: ${{ github.event.action != 'synchronize' && contains(github.event.pull_request.labels.*.name, 'allow-resource-deletion') }}
           allow_downtime: ${{ github.event.action != 'synchronize' && contains(github.event.pull_request.labels.*.name, 'allow-downtime') }}
-          workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
+          workload_identity_provider: projects/232403541574/locations/global/workloadIdentityPools/github-actions/providers/github-narrow-plan
+          service_account: infra-narrow-plan@a-novel-management-prod.iam.gserviceaccount.com
           github_token: ${{ github.token }}
 
   plan-json-keys:
@@ -290,8 +290,8 @@ jobs:
           root: environments/production/json-keys
           allow_deletion: ${{ github.event.action != 'synchronize' && contains(github.event.pull_request.labels.*.name, 'allow-resource-deletion') }}
           allow_downtime: ${{ github.event.action != 'synchronize' && contains(github.event.pull_request.labels.*.name, 'allow-downtime') }}
-          workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
+          workload_identity_provider: projects/232403541574/locations/global/workloadIdentityPools/github-actions/providers/github-narrow-plan
+          service_account: infra-narrow-plan@a-novel-management-prod.iam.gserviceaccount.com
           github_token: ${{ github.token }}
 
   plan-genai:
@@ -312,8 +312,8 @@ jobs:
           root: environments/production/genai
           allow_deletion: ${{ github.event.action != 'synchronize' && contains(github.event.pull_request.labels.*.name, 'allow-resource-deletion') }}
           allow_downtime: ${{ github.event.action != 'synchronize' && contains(github.event.pull_request.labels.*.name, 'allow-downtime') }}
-          workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
+          workload_identity_provider: projects/232403541574/locations/global/workloadIdentityPools/github-actions/providers/github-narrow-plan
+          service_account: infra-narrow-plan@a-novel-management-prod.iam.gserviceaccount.com
           github_token: ${{ github.token }}
 
   plan-narrative-engine:
@@ -334,8 +334,8 @@ jobs:
           root: environments/production/narrative-engine
           allow_deletion: ${{ github.event.action != 'synchronize' && contains(github.event.pull_request.labels.*.name, 'allow-resource-deletion') }}
           allow_downtime: ${{ github.event.action != 'synchronize' && contains(github.event.pull_request.labels.*.name, 'allow-downtime') }}
-          workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
+          workload_identity_provider: projects/232403541574/locations/global/workloadIdentityPools/github-actions/providers/github-narrow-plan
+          service_account: infra-narrow-plan@a-novel-management-prod.iam.gserviceaccount.com
           github_token: ${{ github.token }}
 
   plan-authentication:
@@ -356,8 +356,8 @@ jobs:
           root: environments/production/authentication
           allow_deletion: ${{ github.event.action != 'synchronize' && contains(github.event.pull_request.labels.*.name, 'allow-resource-deletion') }}
           allow_downtime: ${{ github.event.action != 'synchronize' && contains(github.event.pull_request.labels.*.name, 'allow-downtime') }}
-          workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
+          workload_identity_provider: projects/232403541574/locations/global/workloadIdentityPools/github-actions/providers/github-narrow-plan
+          service_account: infra-narrow-plan@a-novel-management-prod.iam.gserviceaccount.com
           github_token: ${{ github.token }}
 
   plan-account:
@@ -378,8 +378,8 @@ jobs:
           root: environments/production/account
           allow_deletion: ${{ github.event.action != 'synchronize' && contains(github.event.pull_request.labels.*.name, 'allow-resource-deletion') }}
           allow_downtime: ${{ github.event.action != 'synchronize' && contains(github.event.pull_request.labels.*.name, 'allow-downtime') }}
-          workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
+          workload_identity_provider: projects/232403541574/locations/global/workloadIdentityPools/github-actions/providers/github-narrow-plan
+          service_account: infra-narrow-plan@a-novel-management-prod.iam.gserviceaccount.com
           github_token: ${{ github.token }}
 
   plan-studio:
@@ -400,8 +400,8 @@ jobs:
           root: environments/production/studio
           allow_deletion: ${{ github.event.action != 'synchronize' && contains(github.event.pull_request.labels.*.name, 'allow-resource-deletion') }}
           allow_downtime: ${{ github.event.action != 'synchronize' && contains(github.event.pull_request.labels.*.name, 'allow-downtime') }}
-          workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
+          workload_identity_provider: projects/232403541574/locations/global/workloadIdentityPools/github-actions/providers/github-narrow-plan
+          service_account: infra-narrow-plan@a-novel-management-prod.iam.gserviceaccount.com
           github_token: ${{ github.token }}
 
   plan-cluster:
@@ -421,8 +421,8 @@ jobs:
         with:
           root: environments/production/cluster
           allow_deletion: ${{ github.event.action != 'synchronize' && contains(github.event.pull_request.labels.*.name, 'allow-resource-deletion') }}
-          workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
+          workload_identity_provider: projects/232403541574/locations/global/workloadIdentityPools/github-actions/providers/github-narrow-plan
+          service_account: infra-narrow-plan@a-novel-management-prod.iam.gserviceaccount.com
           github_token: ${{ github.token }}
 
   # The Grafana and GitHub plans wait for a reviewer, so they run only when the merge would apply
