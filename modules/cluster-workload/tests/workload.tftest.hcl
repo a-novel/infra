@@ -219,3 +219,14 @@ run "serves_http_over_tls" {
     error_message = "A TLS HTTP server's probes must GET its health path over HTTPS."
   }
 }
+
+run "refuses_a_local_opt_out" {
+  command = plan
+
+  variables {
+    env        = { SERVICE_TOKEN_ISSUER_OPTIONAL = "true" }
+    secret_env = { REST_RATE_LIMITS_ENABLED = { secret = "secrets", key = "REST_RATE_LIMITS_ENABLED" } }
+  }
+
+  expect_failures = [var.env, var.secret_env]
+}
