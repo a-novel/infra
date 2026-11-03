@@ -1,6 +1,11 @@
 variable "management_project_id" {
   description = "Management project ID, which holds the Grafana token secrets."
   type        = string
+
+  validation {
+    condition     = can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", var.management_project_id))
+    error_message = "The management project ID must be a valid 6-30 character Google Cloud project ID."
+  }
 }
 
 variable "url" {
