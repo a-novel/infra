@@ -5,7 +5,9 @@ import { describe, it } from "node:test";
 import {
   branchVersion,
   breaking,
+  holdLabel,
   paths,
+  pinRequest,
   pins,
   rewrite,
   run,
@@ -73,6 +75,36 @@ describe("breaking", () => {
         "fix: say hello! to the user\n\nA breaking change: none.",
       ]),
       false,
+    );
+  });
+});
+
+describe("pinRequest", () => {
+  const server = "https://github.com";
+
+  it("holds a breaking release's pin for a maintainer's review", () => {
+    const request = pinRequest(
+      "a-novel/service-authentication",
+      "v2.24.0",
+      true,
+      server,
+    );
+    assert.deepEqual(request.labels, ["dependencies", holdLabel]);
+    assert.deepEqual(request.reviewers, ["maintainers-infra"]);
+    assert.match(
+      request.body,
+      /Approve once every service and platform that calls a-novel\/service-authentication runs a version that handles the change\.$/,
+    );
+  });
+
+  it("lets an ordinary release's pin merge alone", () => {
+    assert.deepEqual(
+      pinRequest("a-novel/service-authentication", "v2.23.3", false, server),
+      {
+        body: "Deploys [a-novel/service-authentication v2.23.3](https://github.com/a-novel/service-authentication/releases/tag/v2.23.3), whose release published every image pinned here.",
+        labels: ["dependencies"],
+        reviewers: [],
+      },
     );
   });
 });

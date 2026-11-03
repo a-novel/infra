@@ -36,6 +36,24 @@ const breakingFooter = /^BREAKING[ -]CHANGE: /m;
 export const breaking = (texts) =>
   texts.some((text) => breakingSubject.test(text) || breakingFooter.test(text));
 
+// The label auto-approve-dependabot.yaml skips, and the team that then reviews the pin.
+export const holdLabel = "breaking-release";
+const holdReviewers = ["maintainers-infra"];
+
+/**
+ * The pin pull request's body, labels and requested reviewers. A breaking release's pin waits with
+ * the hold label for a maintainer's review, and its body says what to check before approving.
+ */
+export function pinRequest(source, version, hold, serverUrl) {
+  const deploys = `Deploys [${source} ${version}](${serverUrl}/${source}/releases/tag/${version}), whose release published every image pinned here.`;
+  if (!hold) return { body: deploys, labels: ["dependencies"], reviewers: [] };
+  return {
+    body: `${deploys}\n\nThis release breaks a contract. Approve once every service and platform that calls ${source} runs a version that handles the change.`,
+    labels: ["dependencies", holdLabel],
+    reviewers: holdReviewers,
+  };
+}
+
 /** Moves every digest-pinned reference to image in content to version and digest. */
 export function rewrite(content, image, version, digest) {
   return content.replace(
@@ -244,11 +262,10 @@ function pin(env, source, released) {
   // A merge since the fetch leaves this commit behind master, and that merge's own run may already
   // have rebuilt the pull request. The pin then starts again from the new tip.
   if (masterMoved()) return pin(env, source, released);
-  moveBranch(GH_REPO, branch, commit);
 
-  // A breaking release waits as a draft, which the auto-approver skips, until a person marks it ready
-  // once its consumers handle the change. The commits run from the release master pins.
-  const draft = breaking([
+  // A breaking release waits for a maintainer's review. An open pin takes the label before its
+  // branch moves, so the auto-approver's event for the new head already carries it.
+  const hold = breaking([
     read(
       env,
       "release",
@@ -271,17 +288,12 @@ function pin(env, source, released) {
       ),
     ),
   ]);
-  const body = [
-    `Deploys [${source} ${version}](${GITHUB_SERVER_URL}/${source}/releases/tag/${version}), whose release published every image pinned here.`,
-    ...(draft
-      ? [
-          "",
-          "Draft: this release contains a breaking change. Mark it ready once every consumer runs a version that handles it.",
-        ]
-      : []),
-  ].join("\n");
+  if (pr && hold) gh("pr", "edit", pr, "--add-label", holdLabel);
+  moveBranch(GH_REPO, branch, commit);
+
+  const request = pinRequest(source, version, hold, GITHUB_SERVER_URL);
   const url = pr
-    ? gh("pr", "edit", pr, "--title", title, "--body", body)
+    ? gh("pr", "edit", pr, "--title", title, "--body", request.body)
     : gh(
         "pr",
         "create",
@@ -290,12 +302,18 @@ function pin(env, source, released) {
         "--title",
         title,
         "--body",
-        body,
-        "--label",
-        "dependencies",
-        ...(draft ? ["--draft"] : []),
+        request.body,
+        ...request.labels.flatMap((label) => ["--label", label]),
       );
-  if (pr && draft) gh("pr", "ready", pr, "--undo");
+  // GitHub notifies a requested team at once, and the stuck-pull-request feed pings it later.
+  for (const team of request.reviewers)
+    gh(
+      "api",
+      `repos/${GH_REPO}/pulls/${url.split("/").pop()}/requested_reviewers`,
+      "-f",
+      `team_reviewers[]=${team}`,
+      "--silent",
+    );
   console.log(`Pinned ${source} ${version}: ${url}`);
   appendFileSync(GITHUB_STEP_SUMMARY, `Pinned ${source} ${version}: ${url}\n`);
 }
