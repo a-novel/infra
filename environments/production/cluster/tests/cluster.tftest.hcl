@@ -858,11 +858,12 @@ run "serves_each_platform_through_its_gateway" {
       route.manifest.spec.hostnames == [local.platform_edges[platform].host] &&
       one(route.manifest.spec.parentRefs).sectionName == "https" &&
       one(one(route.manifest.spec.rules).backendRefs) == module.platform_web[platform].service &&
+      one(one(one(route.manifest.spec.rules).filters).responseHeaderModifier.set).name == "Strict-Transport-Security" &&
       one(kubernetes_manifest.platform_redirect[platform].manifest.spec.parentRefs).sectionName == "http" &&
-      one(one(kubernetes_manifest.platform_redirect[platform].manifest.spec.rules).filters).requestRedirect.scheme == "https" &&
+      one(one(kubernetes_manifest.platform_redirect[platform].manifest.spec.rules).filters).requestRedirect == { scheme = "https", statusCode = 308 } &&
       length(keys(one(kubernetes_manifest.platform_redirect[platform].manifest.spec.rules))) == 1
     ])
-    error_message = "HTTPS must reach each platform's Service, and plain HTTP must only redirect to HTTPS."
+    error_message = "HTTPS must reach each platform's Service with HSTS, and plain HTTP must only redirect to HTTPS, keeping the method."
   }
 
   assert {
