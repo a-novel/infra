@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 
-import { appJwt, copy, plan } from "./secret-sync.mjs";
+import { appJwt, copy, plan, sources } from "./secret-sync.mjs";
 
 const day = (n) => new Date(Date.UTC(2026, 9, n));
 
@@ -40,6 +40,39 @@ describe("plan", () => {
       ),
       { write: [], remove: ["ANOTHER", "OLD_KEY"] },
     );
+  });
+});
+
+describe("sources", () => {
+  const organization = {
+    AGENT_BOT_PRIVATE_KEY: {
+      secret: "production-github-governance-a-novel-agent-bot-private-key",
+      version: 2,
+    },
+    BWS_READ_TOKEN: {
+      secret: "production-github-governance-a-novel-bws-read-token",
+      version: 1,
+    },
+  };
+  const own = {
+    infra: {
+      AGENT_BOT_PRIVATE_KEY: {
+        secret:
+          "production-github-governance-a-novel-infra-agent-bot-private-key",
+        version: 1,
+      },
+    },
+  };
+
+  it("gives a repository with Apps of its own their keys, and the organization's for the rest", () => {
+    assert.deepEqual(sources(organization, own, "infra"), {
+      AGENT_BOT_PRIVATE_KEY: own.infra.AGENT_BOT_PRIVATE_KEY,
+      BWS_READ_TOKEN: organization.BWS_READ_TOKEN,
+    });
+  });
+
+  it("gives every other repository the organization's keys", () => {
+    assert.deepEqual(sources(organization, own, "service-genai"), organization);
   });
 });
 

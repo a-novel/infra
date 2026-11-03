@@ -204,6 +204,13 @@ one, and deletes one no workflow names. A value travels only through a pipe from
 To rotate one, add a version as in [Rotate a secret](#rotate-a-secret), then bump its pin in a pull
 request. Its deploy copies it into every repository that names it.
 
+A repository whose Agent and Dependencies Apps are installed on it alone, listed in the GitHub
+root's `dedicated_apps`, takes their keys instead:
+`production-github-governance-<owner>-<name>-agent-bot-private-key` and
+`…-dependency-bot-private-key`, pinned there as each App's `key_version`. The root also sets its
+repository variables `AGENT_BOT_CLIENT_ID`, `AGENT_BOT_LOGIN`, `DEPENDENCY_BOT_CLIENT_ID` and
+`DEPENDENCY_BOT_LOGIN`, which win over the organization's, so its workflows act as those Apps.
+
 ## Alloy push token
 
 Alloy pushes metrics, logs and traces to the production stack with one access policy token. Create

@@ -68,7 +68,7 @@ locals {
           { actor_id = 5, actor_type = "RepositoryRole", bypass_mode = "always" },
         ] :
         entry == "dependabot" ? [{ actor_id = 29110, actor_type = "Integration", bypass_mode = local.bot_mode[ruleset.ruleset] }] :
-        [{ actor_id = var.bots[entry], actor_type = "Integration", bypass_mode = local.bot_mode[ruleset.ruleset] }]
+        [{ actor_id = try(var.dedicated_bots[ruleset.repository][entry].id, var.bots[entry]), actor_type = "Integration", bypass_mode = local.bot_mode[ruleset.ruleset] }]
       )
       # GitHub accepts Dependabot only where it runs, and the release App acts only where releases
       # do. A class whose merges deploy production keeps the admins alone.

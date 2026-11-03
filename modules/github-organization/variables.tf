@@ -47,6 +47,15 @@ variable "bots" {
   })
 }
 
+variable "dedicated_bots" {
+  description = "By repository name, the Agent and Dependencies Apps installed on that repository alone, which replace the organization's there: their IDs for its rulesets, and their client IDs and logins for its workflows."
+  type = map(object({
+    agent        = object({ id = number, client_id = string, login = string })
+    dependencies = object({ id = number, client_id = string, login = string })
+  }))
+  default = {}
+}
+
 variable "scoped_secrets" {
   description = "Organization secrets with selected-repository visibility, each granted to the repositories whose workflows name it. An admin switches a secret to selected visibility by hand before listing it."
   type        = set(string)

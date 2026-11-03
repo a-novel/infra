@@ -202,3 +202,32 @@ run "derives_config_from_the_workflows" {
     error_message = "Each governance environment holds exactly the privileged secrets its repository's workflows name, never a scoped one."
   }
 }
+
+run "gives_a_repository_its_own_apps" {
+  command = plan
+
+  variables {
+    dedicated_bots = {
+      infra = {
+        agent        = { id = 900, client_id = "Iv23-infra-agent", login = "infra-agent[bot]" }
+        dependencies = { id = 901, client_id = "Iv23-infra-dependencies", login = "infra-dependencies[bot]" }
+      }
+    }
+  }
+
+  assert {
+    condition = (
+      local.discovered["infra"].checks["review-gate"] == 900 && local.discovered["infra"].checks["merge-gate"] == 900 &&
+      local.discovered["service-genai"].checks["review-gate"] == 100
+    )
+    error_message = "A repository with Apps of its own takes its App-posted checks from its own Agent App, and the others from the organization's."
+  }
+
+  assert {
+    condition = (
+      toset(keys(github_actions_variable.dedicated_bot)) == toset(["infra:AGENT_BOT_CLIENT_ID", "infra:AGENT_BOT_LOGIN", "infra:DEPENDENCY_BOT_CLIENT_ID", "infra:DEPENDENCY_BOT_LOGIN"]) &&
+      github_actions_variable.dedicated_bot["infra:AGENT_BOT_LOGIN"].value == "infra-agent[bot]"
+    )
+    error_message = "A repository with Apps of its own names them to its workflows through repository variables."
+  }
+}
