@@ -11,8 +11,11 @@ on:
 
 permissions: {}
 
+# A new head cancels the run of the previous one. A label event's run gets a group of its own: a pull
+# request takes its labels in the second it opens, and GitHub can admit those runs out of order, so a
+# shared group could cancel the newest run and leave the required checks waiting on it.
 concurrency:
-  group: main-${{ github.workflow }}-${{ github.ref }}
+  group: main-${{ github.workflow }}-${{ github.ref }}${{ endsWith(github.event.action, 'labeled') && format('-{0}', github.run_id) || '' }}
   cancel-in-progress: true
 
 env:
