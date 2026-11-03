@@ -2,8 +2,7 @@
 # copied from the suspended maintenance CronJob (scheduled-jobs.tf), whose arguments name the
 # operation, as the setup runbook shows. Foundation's IAM only lets them reach the control plane.
 locals {
-  maintenance_principals = provider::terraform::decode_tfvars(file("${path.module}/../foundation/terraform.tfvars")).authentication_maintenance_principals
-  maintenance_emails     = [for principal in local.maintenance_principals : split(":", principal)[1]]
+  maintenance_emails = [for principal in local.foundation_inputs.authentication_maintenance_principals : split(":", principal)[1]]
 
   # These pod fields could run a command, read a Secret or act as another identity. A maintenance
   # Job keeps each one as its template sets it, or unset. Only the container's arguments differ.
@@ -79,7 +78,7 @@ resource "kubernetes_role_binding_v1" "maintenance" {
 
   # As operators.tf binds the database operators.
   dynamic "subject" {
-    for_each = local.maintenance_principals
+    for_each = local.foundation_inputs.authentication_maintenance_principals
 
     content {
       api_group = "rbac.authorization.k8s.io"

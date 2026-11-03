@@ -8,6 +8,9 @@ data "terraform_remote_state" "foundation" {
 
 locals {
   cluster = data.terraform_remote_state.foundation.outputs.cluster
+  # Foundation's committed inputs name the management project and the humans this root lets into
+  # the cluster.
+  foundation_inputs = provider::terraform::decode_tfvars(file("${path.module}/../foundation/terraform.tfvars"))
   # Each service's own root pins its releases and secret versions and holds its settings. This root
   # reads it once per namespace.
   service_inputs = { for service in var.namespaces : service => provider::terraform::decode_tfvars(file("${path.module}/../${service}/terraform.tfvars")) }

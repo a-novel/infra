@@ -6,11 +6,4 @@ terraform {
     bucket = "a-novel-management-prod-232403541574-tofu-state"
     prefix = "genai"
   }
-
-  required_providers {
-    google = {
-      source  = "hashicorp/google"
-      version = "8.9.0"
-    }
-  }
 }

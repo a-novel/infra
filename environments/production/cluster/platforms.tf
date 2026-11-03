@@ -46,11 +46,6 @@ module "platform_web" {
   replicas = { min = 2, max = 3 }
 }
 
-moved {
-  from = module.studio_web
-  to   = module.platform_web["studio"]
-}
-
 # The load balancer reaches each platform, which calls Authentication's API and reads the planned
 # downtime document from GitHub (egress.tf).
 resource "kubernetes_network_policy_v1" "platform_web" {
@@ -102,11 +97,6 @@ resource "kubernetes_network_policy_v1" "platform_web" {
   }
 }
 
-moved {
-  from = kubernetes_network_policy_v1.studio_web
-  to   = kubernetes_network_policy_v1.platform_web["studio"]
-}
-
 # Each Gateway answers on foundation's address with its certificate map, which serves the
 # platform's certificate for its host. Its kinds exist once the cluster runs the Gateway API.
 resource "kubernetes_manifest" "platform_gateway" {
@@ -131,11 +121,6 @@ resource "kubernetes_manifest" "platform_gateway" {
   }
 }
 
-moved {
-  from = kubernetes_manifest.studio_gateway[0]
-  to   = kubernetes_manifest.platform_gateway["studio"]
-}
-
 # The load balancer accepts only foundation's TLS policy, TLS 1.2 or above.
 resource "kubernetes_manifest" "platform_gateway_policy" {
   for_each = var.custom_resources ? local.platforms : {}
@@ -149,11 +134,6 @@ resource "kubernetes_manifest" "platform_gateway_policy" {
       targetRef = { group = "gateway.networking.k8s.io", kind = "Gateway", name = kubernetes_manifest.platform_gateway[each.key].manifest.metadata.name }
     }
   }
-}
-
-moved {
-  from = kubernetes_manifest.studio_gateway_policy[0]
-  to   = kubernetes_manifest.platform_gateway_policy["studio"]
 }
 
 resource "kubernetes_manifest" "platform_route" {
@@ -171,11 +151,6 @@ resource "kubernetes_manifest" "platform_route" {
   }
 }
 
-moved {
-  from = kubernetes_manifest.studio_route[0]
-  to   = kubernetes_manifest.platform_route["studio"]
-}
-
 # Plain HTTP only redirects to HTTPS.
 resource "kubernetes_manifest" "platform_redirect" {
   for_each = var.custom_resources ? local.platforms : {}
@@ -190,11 +165,6 @@ resource "kubernetes_manifest" "platform_redirect" {
       rules      = [{ filters = [{ type = "RequestRedirect", requestRedirect = { scheme = "https", statusCode = 301 } }] }]
     }
   }
-}
-
-moved {
-  from = kubernetes_manifest.studio_redirect[0]
-  to   = kubernetes_manifest.platform_redirect["studio"]
 }
 
 # The load balancer checks the pods on their probes' path, since a platform's root may redirect
@@ -216,9 +186,4 @@ resource "kubernetes_manifest" "platform_health_check" {
       targetRef = { group = "", kind = "Service", name = module.platform_web[each.key].service.name }
     }
   }
-}
-
-moved {
-  from = kubernetes_manifest.studio_health_check[0]
-  to   = kubernetes_manifest.platform_health_check["studio"]
 }

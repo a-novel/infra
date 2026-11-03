@@ -80,16 +80,6 @@ resource "google_artifact_registry_repository_iam_member" "releases_nodes" {
   member     = google_service_account.runtime["cluster_nodes"].member
 }
 
-# The old region's repositories, which the cluster ran from until its releases moved beside it
-# (a-novel/infra#1208).
-removed {
-  from = google_artifact_registry_repository.cluster_release
-
-  lifecycle {
-    destroy = true
-  }
-}
-
 # Inside the perimeter, Artifact Registry reaches no upstream by default. This lets the remote
 # repositories above fetch from theirs, and opens nothing else.
 resource "google_artifact_registry_vpcsc_config" "workload" {

@@ -111,21 +111,6 @@ resource "google_dns_managed_zone" "private_google_domain" {
   }
 }
 
-# Cloud Run's zone, which nothing resolved since Cloud Run retired (a-novel/infra#1208). The previous
-# deploy deleted its records and unlocked it.
-moved {
-  from = google_dns_managed_zone.private_google_domain["cloud_run"]
-  to   = google_dns_managed_zone.retired_google_domain["cloud_run"]
-}
-
-removed {
-  from = google_dns_managed_zone.retired_google_domain
-
-  lifecycle {
-    destroy = true
-  }
-}
-
 resource "google_dns_record_set" "private_google_domain_apex" {
   for_each = local.private_google_domains
 

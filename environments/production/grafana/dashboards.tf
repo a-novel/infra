@@ -90,16 +90,8 @@ resource "grafana_apps_dashboard_dashboard_v2" "services" {
   }
 }
 
-# The organization's home dashboard, the journey's first step, is set by hand: reading it needs a
-# role that also writes the organization, which the plan token must not hold. Forgetting it keeps
-# the setting.
-removed {
-  from = grafana_organization_preferences.home
-
-  lifecycle {
-    destroy = false
-  }
-}
+# Core sets the organization's home dashboard, the journey's first step, by hand: reading it needs a
+# role that also writes the organization, which the plan token must not hold.
 
 resource "grafana_dashboard" "cloudnative_pg" {
   folder = grafana_folder.production.uid

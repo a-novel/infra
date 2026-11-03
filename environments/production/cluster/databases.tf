@@ -10,8 +10,6 @@ data "terraform_remote_state" "bootstrap" {
 }
 
 locals {
-  barman_plugin      = "barman-cloud.cloudnative-pg.io"
-  management_project = "a-novel-management-prod"
   # Each database's pods carry CloudNativePG's label for their Cluster, which is named `database`.
   database_pods = { "cnpg.io/cluster" = "database" }
   # The service's own workloads and jobs that connect to its database carry this label.
@@ -56,7 +54,7 @@ resource "kubernetes_manifest" "database_backups" {
       retentionPolicy = "14d"
       # Workload Identity gives the sidecar a token but no project, which Cloud Storage's client
       # requires: the bucket's own project stands in.
-      instanceSidecarConfiguration = { env = [{ name = "GOOGLE_CLOUD_PROJECT", value = local.management_project }] }
+      instanceSidecarConfiguration = { env = [{ name = "GOOGLE_CLOUD_PROJECT", value = local.foundation_inputs.management_project_id }] }
       configuration = {
         destinationPath   = "gs://${data.terraform_remote_state.bootstrap.outputs.barman_buckets[each.key]}/"
         googleCredentials = { gkeEnvironment = true }
@@ -404,7 +402,7 @@ resource "kubernetes_manifest" "database" {
           }
         }
 
-        plugins = [{ name = local.barman_plugin, isWALArchiver = true, parameters = { barmanObjectName = kubernetes_manifest.database_backups[each.key].manifest.metadata.name, serverName = var.backup_server_name } }]
+        plugins = [{ name = module.database_operator.barman_plugin, isWALArchiver = true, parameters = { barmanObjectName = kubernetes_manifest.database_backups[each.key].manifest.metadata.name, serverName = var.backup_server_name } }]
 
         # cert-manager's Secrets hold each certificate and the CA that signed it. The replica
         # authenticates with our CA's certificate, so the operator generates no client CA.
@@ -467,7 +465,7 @@ resource "kubernetes_manifest" "database_schedule" {
       backupOwnerReference = "self"
       cluster              = { name = kubernetes_manifest.database[each.key].manifest.metadata.name }
       method               = "plugin"
-      pluginConfiguration  = { name = local.barman_plugin }
+      pluginConfiguration  = { name = module.database_operator.barman_plugin }
       target               = "prefer-standby"
     }
   }

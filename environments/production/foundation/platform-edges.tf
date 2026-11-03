@@ -22,11 +22,6 @@ resource "google_compute_global_address" "platform" {
   depends_on = [google_project_service.workload["compute.googleapis.com"]]
 }
 
-moved {
-  from = google_compute_global_address.studio
-  to   = google_compute_global_address.platform["studio"]
-}
-
 resource "google_compute_ssl_policy" "platform" {
   for_each = local.platform_hosts
 
@@ -38,11 +33,6 @@ resource "google_compute_ssl_policy" "platform" {
   depends_on = [google_project_service.workload["compute.googleapis.com"]]
 }
 
-moved {
-  from = google_compute_ssl_policy.studio
-  to   = google_compute_ssl_policy.platform["studio"]
-}
-
 # The deploy identity creates Certificate Manager's resources with the role foundation grants it.
 resource "google_certificate_manager_dns_authorization" "platform" {
   for_each = local.platform_hosts
@@ -52,11 +42,6 @@ resource "google_certificate_manager_dns_authorization" "platform" {
   domain  = each.value
 
   depends_on = [google_project_service.workload["certificatemanager.googleapis.com"], google_project_iam_member.foundation]
-}
-
-moved {
-  from = google_certificate_manager_dns_authorization.studio
-  to   = google_certificate_manager_dns_authorization.platform["studio"]
 }
 
 resource "google_certificate_manager_certificate" "platform" {
@@ -71,11 +56,6 @@ resource "google_certificate_manager_certificate" "platform" {
   }
 }
 
-moved {
-  from = google_certificate_manager_certificate.studio
-  to   = google_certificate_manager_certificate.platform["studio"]
-}
-
 resource "google_certificate_manager_certificate_map" "platform" {
   for_each = local.platform_hosts
 
@@ -83,11 +63,6 @@ resource "google_certificate_manager_certificate_map" "platform" {
   name    = each.key
 
   depends_on = [google_project_service.workload["certificatemanager.googleapis.com"], google_project_iam_member.foundation]
-}
-
-moved {
-  from = google_certificate_manager_certificate_map.studio
-  to   = google_certificate_manager_certificate_map.platform["studio"]
 }
 
 resource "google_certificate_manager_certificate_map_entry" "platform" {
@@ -98,11 +73,6 @@ resource "google_certificate_manager_certificate_map_entry" "platform" {
   map          = google_certificate_manager_certificate_map.platform[each.key].name
   hostname     = each.value
   certificates = [google_certificate_manager_certificate.platform[each.key].id]
-}
-
-moved {
-  from = google_certificate_manager_certificate_map_entry.studio
-  to   = google_certificate_manager_certificate_map_entry.platform["studio"]
 }
 
 locals {
