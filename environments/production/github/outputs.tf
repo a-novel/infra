@@ -2,7 +2,7 @@
 # the repositories and environments whose objects they assert or prune, and the Secret Manager
 # version each governance environment receives.
 output "organizations" {
-  description = "Per organization: the Plan App and the Deploy App with their keys, every repository, every managed environment, each governance secret's pinned version, and the secrets each repository's governance environment holds."
+  description = "Per organization: the Plan App and the Deploy App with their keys, every repository, every managed environment, each governance secret's pinned version, the secrets each repository's governance environment holds, and the keys a repository with Apps of its own takes instead."
   value = {
     for owner, organization in var.organizations : owner => {
       project = var.management_project_id
@@ -22,6 +22,13 @@ output "organizations" {
         }
       }
       governance = { a-novel = module.a_novel.governance_secrets, a-novel-kit = module.a_novel_kit.governance_secrets }[owner]
+      # A repository with Apps of its own takes their keys instead of the organization's.
+      repository_secrets = {
+        for key, apps in var.dedicated_apps : split("/", key)[1] => {
+          AGENT_BOT_PRIVATE_KEY      = { secret = "production-github-governance-${replace(key, "/", "-")}-agent-bot-private-key", version = apps.agent.key_version }
+          DEPENDENCY_BOT_PRIVATE_KEY = { secret = "production-github-governance-${replace(key, "/", "-")}-dependency-bot-private-key", version = apps.dependencies.key_version }
+        } if split("/", key)[0] == owner
+      }
     }
   }
 }

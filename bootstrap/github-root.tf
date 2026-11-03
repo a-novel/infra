@@ -5,6 +5,9 @@
 locals {
   github_root_owners = toset(["a-novel", "a-novel-kit"])
 
+  # The repositories whose Agent and Dependencies Apps are installed on them alone.
+  github_dedicated_app_repositories = toset(["a-novel/infra"])
+
   # The privileged secrets of each organization's governance environments. Only deploys read them,
   # to copy them into the repositories whose workflows name them.
   github_governance_secrets = {
@@ -27,6 +30,14 @@ locals {
       "production-github-governance-${pair[0]}-${lower(replace(pair[1], "_", "-"))}" => {
         contract = pair[1]
         purpose  = "${local.github_governance_secrets[pair[1]]}, copied into the ${pair[0]} governance environments"
+      }
+    },
+    # A repository with Apps of its own takes their keys instead of the organization's
+    # (a-novel/.github#560).
+    { for pair in setproduct(local.github_dedicated_app_repositories, ["AGENT_BOT_PRIVATE_KEY", "DEPENDENCY_BOT_PRIVATE_KEY"]) :
+      "production-github-governance-${replace(pair[0], "/", "-")}-${lower(replace(pair[1], "_", "-"))}" => {
+        contract = pair[1]
+        purpose  = "Private key of ${pair[0]}'s own ${pair[1] == "AGENT_BOT_PRIVATE_KEY" ? "Agent" : "Dependencies"} App, copied into its governance environment alone"
       }
     },
   )

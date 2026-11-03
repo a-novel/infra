@@ -67,10 +67,10 @@ locals {
           } : context => local.actions_app
         },
         {
-          merge-gate         = var.bots.agent
-          epic-freeze        = var.bots.agent
+          merge-gate         = try(var.dedicated_bots[name].agent.id, var.bots.agent)
+          epic-freeze        = try(var.dedicated_bots[name].agent.id, var.bots.agent)
           check-dependencies = local.actions_app
-          review-gate        = var.bots.agent
+          review-gate        = try(var.dedicated_bots[name].agent.id, var.bots.agent)
         },
       )
 

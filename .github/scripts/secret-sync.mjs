@@ -20,6 +20,14 @@ export function plan(wanted, live, created) {
   };
 }
 
+/**
+ * Where each governance secret a repository receives comes from: the keys of the Apps installed on
+ * it alone where it has them, else the organization's.
+ */
+export function sources(secrets, repositorySecrets, repository) {
+  return { ...secrets, ...repositorySecrets[repository] };
+}
+
 const base64url = (value) => Buffer.from(value).toString("base64url");
 
 /** A JSON Web Token that authenticates as the App for 10 minutes, backdated against clock drift. */
@@ -108,30 +116,37 @@ export async function installationToken(project, app) {
 }
 
 export async function main(organizations) {
-  for (const [owner, { project, apps, secrets, governance }] of Object.entries(
-    organizations,
-  )) {
+  for (const [
+    owner,
+    { project, apps, secrets, governance, repository_secrets = {} },
+  ] of Object.entries(organizations)) {
     const token = await installationToken(project, apps.deploy);
 
-    const created = Object.fromEntries(
-      Object.entries(secrets).map(([name, source]) => [
-        name,
-        new Date(
-          gcloud(
-            project,
-            "secrets",
-            "versions",
-            "describe",
-            String(source.version),
-            `--secret=${source.secret}`,
-            "--format=value(createTime)",
+    // Each source's creation time, read once even when several repositories receive it.
+    const createdAt = new Map();
+    const created = (source) => {
+      const key = `${source.secret}@${source.version}`;
+      if (!createdAt.has(key))
+        createdAt.set(
+          key,
+          new Date(
+            gcloud(
+              project,
+              "secrets",
+              "versions",
+              "describe",
+              String(source.version),
+              `--secret=${source.secret}`,
+              "--format=value(createTime)",
+            ),
           ),
-        ),
-      ]),
-    );
+        );
+      return createdAt.get(key);
+    };
 
     for (const [name, wanted] of Object.entries(governance)) {
       const repository = `${owner}/${name}`;
+      const from = sources(secrets, repository_secrets, name);
       const { secrets: held } = await github(
         token,
         "GET",
@@ -142,7 +157,9 @@ export async function main(organizations) {
         Object.fromEntries(
           held.map((secret) => [secret.name, new Date(secret.updated_at)]),
         ),
-        created,
+        Object.fromEntries(
+          wanted.map((secret) => [secret, created(from[secret])]),
+        ),
       );
       for (const secret of remove)
         await github(
@@ -151,7 +168,7 @@ export async function main(organizations) {
           `repos/${repository}/environments/governance/secrets/${secret}`,
         );
       for (const secret of write)
-        copy(project, secrets[secret], repository, secret, token);
+        copy(project, from[secret], repository, secret, token);
       if (write.length + remove.length > 0) {
         console.log(
           `${repository}: wrote ${write.join(", ") || "nothing"}; deleted ${remove.join(", ") || "nothing"}.`,

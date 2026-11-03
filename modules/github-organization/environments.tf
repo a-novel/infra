@@ -71,3 +71,20 @@ resource "github_actions_organization_secret_repositories" "this" {
   secret_name             = each.key
   selected_repository_ids = sort([for name in local.ready : github_repository.this[name].repo_id if contains(local.discovered[name].secrets, each.key)])
 }
+
+# A repository variable wins over the organization variable of the same name, so a repository with
+# Apps of its own names them to its workflows without changing a line of them.
+resource "github_actions_variable" "dedicated_bot" {
+  for_each = merge([
+    for name, bots in var.dedicated_bots : {
+      "${name}:AGENT_BOT_CLIENT_ID"      = { repository = name, value = bots.agent.client_id }
+      "${name}:AGENT_BOT_LOGIN"          = { repository = name, value = bots.agent.login }
+      "${name}:DEPENDENCY_BOT_CLIENT_ID" = { repository = name, value = bots.dependencies.client_id }
+      "${name}:DEPENDENCY_BOT_LOGIN"     = { repository = name, value = bots.dependencies.login }
+    }
+  ]...)
+
+  repository    = github_repository.this[each.value.repository].name
+  variable_name = split(":", each.key)[1]
+  value         = each.value.value
+}

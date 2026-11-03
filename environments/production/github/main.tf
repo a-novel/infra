@@ -70,6 +70,7 @@ module "a_novel" {
   admin_team         = "core"
   labels             = var.labels
   bots               = var.organizations["a-novel"].bots
+  dedicated_bots     = { for key, apps in var.dedicated_apps : split("/", key)[1] => apps if split("/", key)[0] == "a-novel" }
   scoped_secrets     = var.organizations["a-novel"].scoped_secrets
   governance_secrets = toset(keys(var.organizations["a-novel"].governance_secrets))
 }
@@ -87,6 +88,7 @@ module "a_novel_kit" {
   admin_team         = "core"
   labels             = var.labels
   bots               = var.organizations["a-novel-kit"].bots
+  dedicated_bots     = { for key, apps in var.dedicated_apps : split("/", key)[1] => apps if split("/", key)[0] == "a-novel-kit" }
   scoped_secrets     = var.organizations["a-novel-kit"].scoped_secrets
   governance_secrets = toset(keys(var.organizations["a-novel-kit"].governance_secrets))
 }

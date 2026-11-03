@@ -26,6 +26,10 @@ organizations = {
   }
 }
 
+# Repositories whose Agent and Dependencies Apps are installed on them alone (a-novel/.github#560),
+# as "<owner>/<name>" = { agent = { id, client_id, login, key_version }, dependencies = { … } }.
+dedicated_apps = {}
+
 tiers = {
   developers  = "push"
   maintainers = "maintain"

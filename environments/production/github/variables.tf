@@ -52,6 +52,20 @@ variable "organizations" {
   }))
 }
 
+variable "dedicated_apps" {
+  description = "By repository, as <owner>/<name>, the Agent and Dependencies Apps installed on that repository alone (a-novel/.github#560): their IDs, client IDs and logins, and the pinned version of the key each one's secret holds."
+  type = map(object({
+    agent        = object({ id = number, client_id = string, login = string, key_version = number })
+    dependencies = object({ id = number, client_id = string, login = string, key_version = number })
+  }))
+  default = {}
+
+  validation {
+    condition     = alltrue(flatten([for apps in values(var.dedicated_apps) : [for app in values(apps) : app.id > 0 && app.key_version > 0 && endswith(app.login, "[bot]")]]))
+    error_message = "Each dedicated App needs its ID, its login as <slug>[bot] and a key version, which core records when it creates the App."
+  }
+}
+
 variable "tiers" {
   description = "Each contributor tier's team and the role its area teams hold on their class's repositories."
   type        = map(string)
