@@ -52,7 +52,7 @@ locals {
     # GitHub-hosted runners have no fixed addresses, so CI enters from any source as its own
     # identities, and IAM bounds what each may do.
     ingress = {
-      ci        = [for account in ["infra-foundation", "infra-plan"] : "serviceAccount:${account}@${var.management_project_id}.iam.gserviceaccount.com"]
+      ci        = [for account in ["infra-foundation", "infra-plan", "infra-narrow-plan"] : "serviceAccount:${account}@${var.management_project_id}.iam.gserviceaccount.com"]
       operators = setunion(var.database_operator_principals, var.authentication_maintenance_principals)
     }
 
