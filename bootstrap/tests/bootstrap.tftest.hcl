@@ -68,12 +68,11 @@ run "protects_state_and_backups" {
 
   assert {
     condition = (
-      google_secret_manager_secret_iam_member.grafana_token["plan"].secret_id == "production-grafana-plan-token" &&
-      toset(keys(google_secret_manager_secret_iam_member.grafana_token)) == toset(["plan", "grafana"]) &&
-      google_secret_manager_secret_iam_member.grafana_cloud_token["plan"].secret_id == "production-grafana-cloud-plan-token" &&
-      toset(keys(google_secret_manager_secret_iam_member.grafana_cloud_token)) == toset(["plan", "grafana"])
+      toset(keys(google_secret_manager_secret_iam_member.grafana_token)) == toset(["grafana"]) &&
+      toset(keys(google_secret_manager_secret_iam_member.grafana_cloud_token)) == toset(["grafana"]) &&
+      length([for key, member in google_secret_manager_secret_iam_member.github_root : key if startswith(key, "plan:")]) == 0
     )
-    error_message = "The plan identity runs pull-request code, so it may read only the read-only Grafana tokens, and only the Grafana root's deploys read the write tokens."
+    error_message = "The unreviewed plan identity reads no third party's credential, and only the Grafana root's deploys read the write tokens."
   }
 
   assert {
@@ -88,14 +87,14 @@ run "protects_state_and_backups" {
 
   assert {
     condition = (
-      toset([for key, grant in google_secret_manager_secret_iam_member.github_root : grant.secret_id if startswith(key, "plan:")]) ==
+      toset([for grant in google_secret_manager_secret_iam_member.reviewed_plan : grant.secret_id if startswith(grant.secret_id, "production-github-")]) ==
       toset(["production-github-plan-key-a-novel", "production-github-plan-key-a-novel-kit"]) &&
       toset([for key, grant in google_secret_manager_secret_iam_member.github_root : grant.secret_id if startswith(key, "drift:")]) ==
       toset(["production-github-deploy-key-a-novel", "production-github-deploy-key-a-novel-kit"]) &&
       alltrue([for key, grant in google_secret_manager_secret_iam_member.github_root : startswith(key, "github:") if strcontains(grant.secret_id, "-governance-")]) &&
       !anytrue([for key in keys(google_secret_manager_secret_iam_member.github_root) : startswith(key, "foundation:")])
     )
-    error_message = "The plan identity runs pull-request code, so it may read only the Plan App keys; the drift identity reads only the Deploy App keys; only the GitHub root's deploys read the governance secrets, and Google Cloud's deploy identity reads none of them."
+    error_message = "The reviewed plan identity runs pull-request code, so it may read only the Plan App keys; the drift identity reads only the Deploy App keys; only the GitHub root's deploys read the governance secrets, and Google Cloud's deploy identity reads none of them."
   }
 
   assert {

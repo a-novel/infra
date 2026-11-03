@@ -93,15 +93,15 @@ GitHub Actions gets short-lived Google credentials through **Workload Identity F
 No service-account key exists anywhere. The trust conditions live in
 [`bootstrap/identity.tf`](../bootstrap/identity.tf).
 
-| Identity              | Used by                                                                                        | Can                                                 |
-| --------------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| `infra-plan`          | pull-request plans of the Google Cloud roots, the drift check                                  | read what those plans need, as listed below         |
-| `infra-reviewed-plan` | pull-request plans of the Grafana and GitHub roots, in the `plan` environment                  | read those roots' plan credentials, as listed below |
-| `infra-foundation`    | `deploy.yaml` and `recovery.yaml`, on `master`, in the `production` environment                | change everything                                   |
-| `infra-downtime`      | `downtime.yaml`, on `master`                                                                   | start and cancel the planned downtime announcements |
-| `infra-github`        | the GitHub root's `deploy.yaml` job and `sweep.yaml`, on `master`, in the `github` environment | apply the GitHub root, with no Google Cloud role    |
-| `infra-drift`         | the GitHub root's drift check in `drift.yaml`, on `master`                                     | read the GitHub Deploy App keys and the state       |
-| `infra-grafana`       | the Grafana root's `deploy.yaml` job, on `master`, in the `grafana` environment                | apply the Grafana root, with no Google Cloud role   |
+| Identity              | Used by                                                                                                    | Can                                                 |
+| --------------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `infra-plan`          | pull-request plans of the Google Cloud roots, the drift check                                              | read what those plans need, as listed below         |
+| `infra-reviewed-plan` | pull-request plans of the Grafana and GitHub roots, in the `plan` environment, and the Grafana drift check | read those roots' plan credentials, as listed below |
+| `infra-foundation`    | `deploy.yaml` and `recovery.yaml`, on `master`, in the `production` environment                            | change everything                                   |
+| `infra-downtime`      | `downtime.yaml`, on `master`                                                                               | start and cancel the planned downtime announcements |
+| `infra-github`        | the GitHub root's `deploy.yaml` job and `sweep.yaml`, on `master`, in the `github` environment             | apply the GitHub root, with no Google Cloud role    |
+| `infra-drift`         | the GitHub root's drift check in `drift.yaml`, on `master`                                                 | read the GitHub Deploy App keys and the state       |
+| `infra-grafana`       | the Grafana root's `deploy.yaml` job, on `master`, in the `grafana` environment                            | apply the Grafana root, with no Google Cloud role   |
 
 GitHub issues no OIDC token to pull requests from forks, so outside contributors get no cloud
 access. A same-repository pull request mints `infra-plan` for the roots that touch only Google
@@ -110,8 +110,7 @@ of the `plan` environment admits its run. `infra-plan` reads:
 
 - **every root's state**, which holds no secret value;
 - **in the management project**, the configuration of IAM, service accounts, Workload Identity,
-  Cloud Scheduler, Workflows, the enabled APIs, the buckets and the secrets, never a secret's value
-  once the Grafana and GitHub plans have moved to `infra-reviewed-plan`;
+  Cloud Scheduler, Workflows, the enabled APIs, the buckets and the secrets, never a secret's value;
 - **in the workload project**, what the Viewer role reads, except Cloud Logging and Cloud Trace,
   which an organization deny policy removes. On the cluster, it reads every object but Secrets, and
   the pods' logs, which Viewer grants and no deny policy can remove;

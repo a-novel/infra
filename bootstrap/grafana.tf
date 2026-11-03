@@ -1,15 +1,13 @@
 # The Grafana root reads its provider tokens from Secret Manager at plan time: a stack service
 # account's token for Grafana itself, and a Grafana Cloud access policy's
-# token for the Frontend Observability apps. Pull requests and the drift check plan with the plan
-# identity, which may hold only the read-only tokens, so a pull request can never write to Grafana.
+# token for the Frontend Observability apps. Pull requests and the drift check read the read-only
+# plan token as infra-reviewed-plan (reviewed-plan.tf), so a pull request can never write to Grafana.
 # Only the root's own deploy identity reads the tokens that write.
 locals {
   grafana_tokens = {
-    plan    = "production-grafana-plan-token"
     grafana = "production-grafana-deploy-token"
   }
   grafana_cloud_tokens = {
-    plan    = "production-grafana-cloud-plan-token"
     grafana = "production-grafana-cloud-deploy-token"
   }
 }

@@ -1,6 +1,6 @@
 # The GitHub root manages each organization's repository config through two GitHub Apps
-# (a-novel/.github#534), and reads their keys at plan time, as the Grafana root reads its tokens. Pull requests plan with the plan identity, which may read only the read-only Plan App
-# keys. GitHub shows a ruleset's bypass list only to an App that can change it, so the drift check
+# (a-novel/.github#534), and reads their keys at plan time, as the Grafana root reads its tokens. Pull requests plan with infra-reviewed-plan, which may read only the read-only Plan App
+# keys (reviewed-plan.tf). GitHub shows a ruleset's bypass list only to an App that can change it, so the drift check
 # plans with the Deploy App keys, through an identity no pull request can mint.
 locals {
   github_root_owners = toset(["a-novel", "a-novel-kit"])
@@ -43,7 +43,6 @@ locals {
   )
 
   github_root_readers = {
-    plan   = [for owner in local.github_root_owners : "production-github-plan-key-${owner}"]
     drift  = [for owner in local.github_root_owners : "production-github-deploy-key-${owner}"]
     github = [for secret in keys(local.github_root_secrets) : secret if !startswith(secret, "production-github-plan-key-")]
   }
