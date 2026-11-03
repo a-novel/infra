@@ -904,12 +904,20 @@ run "serves_each_platform_through_its_gateway" {
       route.manifest.spec.hostnames == [local.platform_edges[platform].host] &&
       one(route.manifest.spec.parentRefs).sectionName == "https" &&
       one(one(route.manifest.spec.rules).backendRefs) == module.platform_web[platform].service &&
-      one(one(one(route.manifest.spec.rules).filters).responseHeaderModifier.set).name == "Strict-Transport-Security" &&
+      [for filter in one(route.manifest.spec.rules).filters : one(filter.responseHeaderModifier.set).name if filter.type == "ResponseHeaderModifier"] == ["Strict-Transport-Security"] &&
       one(kubernetes_manifest.platform_redirect[platform].manifest.spec.parentRefs).sectionName == "http" &&
       one(one(kubernetes_manifest.platform_redirect[platform].manifest.spec.rules).filters).requestRedirect == { scheme = "https", statusCode = 308 } &&
       length(keys(one(kubernetes_manifest.platform_redirect[platform].manifest.spec.rules))) == 1
     ])
     error_message = "HTTPS must reach each platform's Service with HSTS, and plain HTTP must only redirect to HTTPS, keeping the method."
+  }
+
+  assert {
+    condition = alltrue([for platform, route in kubernetes_manifest.platform_route :
+      jsonencode([for filter in one(route.manifest.spec.rules).filters : filter.requestHeaderModifier.set if filter.type == "RequestHeaderModifier"]) ==
+      jsonencode(platform == "account" ? [[{ name = "X-Client-Region", value = "{client_region}" }, { name = "X-Client-City", value = "{client_city}" }]] : [])
+    ])
+    error_message = "Only the account platform must receive the visitor's region and city, which the load balancer sets."
   }
 
   assert {
