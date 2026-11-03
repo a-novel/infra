@@ -146,12 +146,21 @@ resource "kubernetes_manifest" "platform_route" {
     spec = {
       parentRefs = [{ name = kubernetes_manifest.platform_gateway[each.key].manifest.metadata.name, sectionName = "https" }]
       hostnames  = [local.platform_edges[each.key].host]
-      rules      = [{ backendRefs = [module.platform_web[each.key].service] }]
+      rules = [{
+        backendRefs = [module.platform_web[each.key].service]
+        # Browsers then reach the host only over HTTPS for a year (RFC 6797). Only HTTPS answers
+        # carry the header, as its section 7.2 requires.
+        filters = [{
+          type                   = "ResponseHeaderModifier"
+          responseHeaderModifier = { set = [{ name = "Strict-Transport-Security", value = "max-age=31536000" }] }
+        }]
+      }]
     }
   }
 }
 
-# Plain HTTP only redirects to HTTPS.
+# Plain HTTP only redirects to HTTPS, with 308 to keep the method (RFC 9110 section 15.4.9). Gateway
+# API accepts 308 from its v1.5.0 CRDs, which GKE installs from 1.35.2-gke.1842000.
 resource "kubernetes_manifest" "platform_redirect" {
   for_each = var.custom_resources ? local.platforms : {}
 
@@ -162,7 +171,7 @@ resource "kubernetes_manifest" "platform_redirect" {
     spec = {
       parentRefs = [{ name = kubernetes_manifest.platform_gateway[each.key].manifest.metadata.name, sectionName = "http" }]
       hostnames  = [local.platform_edges[each.key].host]
-      rules      = [{ filters = [{ type = "RequestRedirect", requestRedirect = { scheme = "https", statusCode = 301 } }] }]
+      rules      = [{ filters = [{ type = "RequestRedirect", requestRedirect = { scheme = "https", statusCode = 308 } }] }]
     }
   }
 }
