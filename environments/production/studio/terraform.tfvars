@@ -1,3 +1,3 @@
 images = {
-  web = "ghcr.io/a-novel/platform-studio:v0.7.1@sha256:7e617927c1f842628e51264ceb873d66a129218a16a41b65b734615645b9a0a5"
+  web = "ghcr.io/a-novel/platform-studio:v0.8.0@sha256:767dda17fdfe76195b32eedb19c6d6e0acbcbbaf7d88c6d90b00e8313606002d"
 }
