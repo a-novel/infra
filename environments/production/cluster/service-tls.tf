@@ -5,9 +5,10 @@ locals {
   # Each service API that serves TLS, by namespace: its workload, whose Service name its certificate
   # names.
   service_tls = {
-    authentication = "rest"
-    genai          = "grpc"
-    json-keys      = "grpc"
+    authentication   = "rest"
+    genai            = "grpc"
+    json-keys        = "grpc"
+    narrative-engine = "rest"
   }
   # The port each API serves TLS on.
   service_port = 8443

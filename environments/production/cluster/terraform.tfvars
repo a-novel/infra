@@ -10,6 +10,7 @@ namespaces = [
   "authentication",
   "genai",
   "json-keys",
+  "narrative-engine",
   "studio",
 ]
 
@@ -51,11 +52,13 @@ grafana_cloud = {
 # 2026-10-30 with no users; no CPU limit applies, so an instance takes idle CPU in a burst, and
 # Grafana warns once one holds 80% of its request. Each database held about 0.1 GiB on 2026-10-29,
 # so the volumes start small and grow in place; the room above the data also absorbs WAL while
-# archiving stalls. GenAI's purge bounds its payloads of up to 24 MiB.
+# archiving stalls. GenAI's purge bounds its payloads of up to 24 MiB. Narrative-engine starts empty,
+# and caps each project at 16 MiB.
 databases = {
-  authentication = { cpu = "500m", memory = "1536Mi", storage = "30Gi", max_connections = 50, extensions = ["uuid-ossp"] }
-  genai          = { cpu = "500m", memory = "6Gi", storage = "20Gi", max_connections = 150, extensions = ["pg_cron", "uuid-ossp"] }
-  json-keys      = { cpu = "500m", memory = "1536Mi", storage = "10Gi", max_connections = 50, extensions = ["uuid-ossp"] }
+  authentication   = { cpu = "500m", memory = "1536Mi", storage = "30Gi", max_connections = 50, extensions = ["uuid-ossp"] }
+  genai            = { cpu = "500m", memory = "6Gi", storage = "20Gi", max_connections = 150, extensions = ["pg_cron", "uuid-ossp"] }
+  json-keys        = { cpu = "500m", memory = "1536Mi", storage = "10Gi", max_connections = 50, extensions = ["uuid-ossp"] }
+  narrative-engine = { cpu = "500m", memory = "1Gi", storage = "10Gi", max_connections = 50, extensions = ["uuid-ossp"] }
 }
 
 # Each service's ceiling, so one service cannot take the room another needs: its workloads at their
@@ -63,11 +66,12 @@ databases = {
 # above. Together they fit the node pool at its maximum. Grafana warns at 80% of each; raising one
 # is a deliberate change.
 service_budgets = {
-  account        = { cpu = "1", memory = "3Gi", pods = 10 }
-  authentication = { cpu = "3", memory = "8Gi", pods = 20 }
-  genai          = { cpu = "4", memory = "28Gi", pods = 20 }
-  json-keys      = { cpu = "3", memory = "8Gi", pods = 20 }
-  studio         = { cpu = "1", memory = "3Gi", pods = 10 }
+  account          = { cpu = "1", memory = "3Gi", pods = 10 }
+  authentication   = { cpu = "3", memory = "8Gi", pods = 20 }
+  genai            = { cpu = "4", memory = "28Gi", pods = 20 }
+  json-keys        = { cpu = "3", memory = "8Gi", pods = 20 }
+  narrative-engine = { cpu = "3", memory = "6Gi", pods = 10 }
+  studio           = { cpu = "1", memory = "3Gi", pods = 10 }
 }
 
 # The workloads' database passwords come from CloudNativePG's database-app Secrets. These come from

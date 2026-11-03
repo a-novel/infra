@@ -24,6 +24,9 @@ alerts = {
   # A generation stream stays open until the model has finished writing.
   "service-genai"     = { failure_rate = 0.05, p95_seconds = 1, latency_ignores = ["anovel.genai.v0.GenerationStreamService/GenerationStream"] }
   "service-json-keys" = { failure_rate = 0.05, p95_seconds = 0.5 }
+  # A stream stays open for up to five minutes, and a generation submit waits on GenAI for two calls
+  # of up to 35 seconds each.
+  "service-narrative-engine" = { failure_rate = 0.05, p95_seconds = 2, latency_ignores = ["GET /v1/(project|generation)/stream", "POST /v1/generation"] }
 }
 
 thresholds = {

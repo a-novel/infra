@@ -1,16 +1,18 @@
-# Each service's health check: JSON Keys' and GenAI's Status RPC, and Authentication's health
-# endpoint. A Job checks each new image, script or setting, and the deploy waits on it; a CronJob
-# checks every five minutes, so a failing service shows as failed Jobs. Both call as the namespace's
-# smoke identity, which each service admits, with the service token the kubelet projects for its
-# audience. A planned downtime skips the check, and clearing it runs the Job again.
+# Each service's health check: JSON Keys' and GenAI's Status RPC, and Authentication's and
+# narrative-engine's health endpoints. A Job checks each new image, script or setting, and the deploy
+# waits on it; a CronJob checks every five minutes, so a failing service shows as failed Jobs. Both
+# call as the namespace's smoke identity, which each service admits, with the service token the
+# kubelet projects for its audience. A planned downtime skips the check, and clearing it runs the Job
+# again.
 locals {
   health_check_script = file("${path.module}/../../../modules/smoke-check/smoke.sh")
   # Each check runs in its service's own image, which carries grpcurl or BusyBox wget, and verifies
   # its service against the services CA, which both read from SSL_CERT_FILE.
   health_check_targets = {
-    authentication = { image = "authentication/rest", pods = "rest", audience = local.authentication_env.SERVICE_TOKEN_AUDIENCE, env = { PROTOCOL = "http", HEALTH_PATH = "/v2/healthcheck" } }
-    genai          = { image = "genai/grpc", pods = "grpc", audience = local.genai_grpc_env.SERVICE_TOKEN_AUDIENCE, env = { PROTOCOL = "grpc", STATUS_RPC = "anovel.genai.v0.StatusService/Status" } }
-    json-keys      = { image = "json-keys/grpc", pods = "grpc", audience = local.json_keys_env.SERVICE_TOKEN_AUDIENCE, env = { PROTOCOL = "grpc", STATUS_RPC = "anovel.jsonkeys.v2.StatusService/Status" } }
+    authentication   = { image = "authentication/rest", pods = "rest", audience = local.authentication_env.SERVICE_TOKEN_AUDIENCE, env = { PROTOCOL = "http", HEALTH_PATH = "/v2/healthcheck" } }
+    genai            = { image = "genai/grpc", pods = "grpc", audience = local.genai_grpc_env.SERVICE_TOKEN_AUDIENCE, env = { PROTOCOL = "grpc", STATUS_RPC = "anovel.genai.v0.StatusService/Status" } }
+    json-keys        = { image = "json-keys/grpc", pods = "grpc", audience = local.json_keys_env.SERVICE_TOKEN_AUDIENCE, env = { PROTOCOL = "grpc", STATUS_RPC = "anovel.jsonkeys.v2.StatusService/Status" } }
+    narrative-engine = { image = "narrative-engine/rest", pods = "rest", audience = local.narrative_engine_env.SERVICE_TOKEN_AUDIENCE, env = { PROTOCOL = "http", HEALTH_PATH = "/v1/healthcheck" } }
   }
   health_checks = { for service, target in local.health_check_targets : service => merge(target, {
     env = merge(target.env, local.downtime_env[service], {
@@ -193,7 +195,7 @@ resource "kubernetes_job_v1" "smoke" {
   }
 
   # Each check needs its service rolled out and reachable, Authentication's mail relay included.
-  depends_on = [module.authentication_rest, module.genai_grpc, module.json_keys_grpc, kubernetes_network_policy_v1.smoke, kubernetes_manifest.internet_egress]
+  depends_on = [module.authentication_rest, module.genai_grpc, module.json_keys_grpc, module.narrative_engine_rest, kubernetes_network_policy_v1.smoke, kubernetes_manifest.internet_egress]
 }
 
 # The CronJob runs the same check on a schedule. The script retries for two minutes, so a failed run

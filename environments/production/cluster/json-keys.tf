@@ -9,7 +9,7 @@ locals {
     GOMEMLIMIT              = "400MiB"
     SERVICE_TOKEN_ISSUER    = local.service_token_issuer
     SERVICE_TOKEN_AUDIENCE  = "json-keys"
-    SERVICE_TOKEN_CALLERS   = "system:serviceaccount:authentication:rest,system:serviceaccount:json-keys:smoke"
+    SERVICE_TOKEN_CALLERS   = "system:serviceaccount:authentication:rest,system:serviceaccount:narrative-engine:rest,system:serviceaccount:json-keys:smoke"
   })
 }
 
@@ -36,8 +36,8 @@ module "json_keys_grpc" {
   depends_on = [kubernetes_job_v1.migrations, kubernetes_manifest.secrets]
 }
 
-# Authentication's API and JSON Keys' smoke check call the server, which reaches the issuer's keys
-# through Google's restricted API addresses.
+# Authentication's and narrative-engine's APIs and JSON Keys' smoke check call the server, which
+# reaches the issuer's keys through Google's restricted API addresses.
 resource "kubernetes_network_policy_v1" "json_keys_grpc" {
   metadata {
     name      = "grpc"
@@ -51,12 +51,16 @@ resource "kubernetes_network_policy_v1" "json_keys_grpc" {
     policy_types = ["Ingress", "Egress"]
 
     ingress {
-      from {
-        namespace_selector {
-          match_labels = { "kubernetes.io/metadata.name" = "authentication" }
-        }
-        pod_selector {
-          match_labels = { "app.kubernetes.io/name" = "rest" }
+      dynamic "from" {
+        for_each = ["authentication", "narrative-engine"]
+
+        content {
+          namespace_selector {
+            match_labels = { "kubernetes.io/metadata.name" = from.value }
+          }
+          pod_selector {
+            match_labels = { "app.kubernetes.io/name" = "rest" }
+          }
         }
       }
       from {

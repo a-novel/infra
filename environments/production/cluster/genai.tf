@@ -18,7 +18,7 @@ locals {
     POSTGRES_MAX_IDLE_CONNS   = "10"
     SERVICE_TOKEN_ISSUER      = local.service_token_issuer
     SERVICE_TOKEN_AUDIENCE    = "genai"
-    SERVICE_TOKEN_CALLERS     = "system:serviceaccount:genai:smoke"
+    SERVICE_TOKEN_CALLERS     = "system:serviceaccount:narrative-engine:rest,system:serviceaccount:genai:smoke"
   })
 
   genai_sweep_env = merge(local.genai_env, local.telemetry_env["genai"].job, {
@@ -86,9 +86,9 @@ module "genai_sweep" {
   depends_on = [kubernetes_job_v1.migrations, kubernetes_manifest.secrets]
 }
 
-# Only GenAI's smoke and provider checks call the server, which reaches the issuer's keys through
-# Google's restricted API addresses and OpenAI (egress.tf). Nothing calls the sweep, which reaches
-# OpenAI alone.
+# Narrative-engine's API and GenAI's smoke and provider checks call the server, which reaches the
+# issuer's keys through Google's restricted API addresses and OpenAI (egress.tf). Nothing calls the
+# sweep, which reaches OpenAI alone.
 resource "kubernetes_network_policy_v1" "genai_grpc" {
   metadata {
     name      = "grpc"
@@ -102,6 +102,14 @@ resource "kubernetes_network_policy_v1" "genai_grpc" {
     policy_types = ["Ingress", "Egress"]
 
     ingress {
+      from {
+        namespace_selector {
+          match_labels = { "kubernetes.io/metadata.name" = "narrative-engine" }
+        }
+        pod_selector {
+          match_labels = { "app.kubernetes.io/name" = "rest" }
+        }
+      }
       from {
         pod_selector {
           match_labels = { "app.kubernetes.io/name" = "smoke" }
