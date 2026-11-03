@@ -343,6 +343,45 @@
         "minVizHeight": 12,
         "maxVizHeight": 16
       }
+    },
+    {
+      "id": 19,
+      "type": "bargauge",
+      "title": "Databases: last base backup",
+      "description": "How long ago each database's last base backup completed, as the Barman Cloud plugin reports it. Each takes one at 03:00 UTC, so a bar stays under a day. Past 26 hours the daily backup failed or stopped, and the alert fires.",
+      "gridPos": { "x": 0, "y": 43, "w": 24, "h": 6 },
+      "targets": [
+        {
+          "refId": "A",
+          "instant": true,
+          "legendFormat": "{{namespace}}",
+          "expr": "sort_desc(time() - max by (namespace) (barman_cloud_cloudnative_pg_io_last_available_backup_timestamp))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "max": 93600,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 93600 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "displayMode": "basic",
+        "orientation": "horizontal",
+        "showUnfilled": true,
+        "valueMode": "text",
+        "namePlacement": "left",
+        "sizing": "manual",
+        "minVizHeight": 12,
+        "maxVizHeight": 16
+      }
     }
   ]
 }
