@@ -74,8 +74,9 @@ hold:
 - a database that runs pg_cron brought its schedules back, active;
 - every row of every table reads, its stored values included.
 
-The `Report the databases` step prints, for each service, where its recovery stopped, its check's
-row counts and latest migration, and whatever kept the database from serving. Follow the run:
+The `Report the databases` step prints, for each service, where its recovery stopped, how many
+tables its check read and its latest migration, and whatever kept the database from serving. The
+run's log is public, so it never prints row counts. Follow the run:
 
 ```bash
 gh run list --repo a-novel/infra --workflow recovery.yaml --limit 1

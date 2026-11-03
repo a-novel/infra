@@ -22,15 +22,17 @@ END
 $$;
 
 -- Reading each row as text reads every page and detoasts every value, so damaged data fails here.
+-- The drill's log is public, so it names how many tables it read, never how many rows they hold.
 DO $$
 DECLARE
   item record;
-  total bigint;
+  tables integer := 0;
 BEGIN
   FOR item IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename LOOP
-    EXECUTE format('SELECT count(t::text) FROM public.%I AS t', item.tablename) INTO total;
-    RAISE NOTICE '% rows in %', total, item.tablename;
+    EXECUTE format('SELECT count(t::text) FROM public.%I AS t', item.tablename);
+    tables := tables + 1;
   END LOOP;
+  RAISE NOTICE 'read every row of % tables', tables;
 END
 $$;
 
