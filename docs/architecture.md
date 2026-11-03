@@ -234,7 +234,7 @@ grow in place.
   `databases` CA, which keeps its key when renewed. The same CA issues its replica's
   `streaming_replica` certificate, named `streaming-replica.<service>`, which only that database
   maps to the role. The service's pods connect by that name and trust that CA beside the system
-  roots.
+  roots. The database refuses every connection without TLS.
 - **Clients:** only the pods of the service's own workloads and Jobs reach the database's port.
 - **Updates** switch over to the replica, which pauses writes for seconds. The deploy waits until
   both instances serve and WAL reaches Barman.
