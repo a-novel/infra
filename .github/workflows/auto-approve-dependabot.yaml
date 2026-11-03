@@ -39,9 +39,11 @@ on:
     branches: ["dependabot/**"]
 
 jobs:
+  # A release pin labeled breaking-release waits for a maintainer, whom pin-release.mjs requests.
   auto-approve:
     if: >-
       github.actor != vars.DEPENDABOT_SECURITY_LOGIN &&
+      !contains(github.event.pull_request.labels.*.name, 'breaking-release') &&
       (github.event.action != 'auto_merge_enabled' || github.event.sender.login == vars.DEPENDENCY_BOT_LOGIN) &&
       (github.event.pull_request.user.login == vars.DEPENDENCY_BOT_LOGIN ||
        github.event.pull_request.user.login == vars.DEPENDABOT_SECURITY_LOGIN ||

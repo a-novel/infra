@@ -2,7 +2,16 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
-import { branchVersion, paths, pins, rewrite, run } from "./pin-release.mjs";
+import {
+  branchVersion,
+  breaking,
+  holdLabel,
+  paths,
+  pinRequest,
+  pins,
+  rewrite,
+  run,
+} from "./pin-release.mjs";
 
 const old = `sha256:${"a".repeat(64)}`;
 const fresh = `sha256:${"b".repeat(64)}`;
@@ -27,6 +36,76 @@ describe("branchVersion", () => {
       "",
     );
     assert.equal(branchVersion(""), "");
+  });
+});
+
+describe("breaking", () => {
+  it("finds a subject marked breaking, with or without a scope", () => {
+    assert.equal(
+      breaking(["fix(credentials)!: require the current password (#1776)"]),
+      true,
+    );
+    assert.equal(breaking(["feat!: drop the v1 routes"]), true);
+  });
+
+  it("finds a BREAKING CHANGE footer in a squashed commit's body", () => {
+    assert.equal(
+      breaking([
+        "fix(credentials): require the current password\n\n* fix: …\n\nBREAKING CHANGE: the email change takes currentPassword.",
+      ]),
+      true,
+    );
+  });
+
+  it("finds a breaking pull request title in the release notes", () => {
+    assert.equal(
+      breaking([
+        "## What's Changed\n* fix(credentials)!: require the current password by @kushuh in https://github.com/a-novel/service-authentication/pull/1776",
+      ]),
+      true,
+    );
+  });
+
+  it("lets an ordinary release through", () => {
+    assert.equal(
+      breaking([
+        "## What's Changed\n* fix(handlers): return clientID by @kushuh in https://github.com/a-novel/service-authentication/pull/1767",
+        "feat(core): issue and exchange authorization codes (#1751)",
+        "chore(release): 2.23.0",
+        "fix: say hello! to the user\n\nA breaking change: none.",
+      ]),
+      false,
+    );
+  });
+});
+
+describe("pinRequest", () => {
+  const server = "https://github.com";
+
+  it("holds a breaking release's pin for a maintainer's review", () => {
+    const request = pinRequest(
+      "a-novel/service-authentication",
+      "v2.24.0",
+      true,
+      server,
+    );
+    assert.deepEqual(request.labels, ["dependencies", holdLabel]);
+    assert.deepEqual(request.reviewers, ["maintainers-infra"]);
+    assert.match(
+      request.body,
+      /Approve once every service and platform that calls a-novel\/service-authentication runs a version that handles the change\.$/,
+    );
+  });
+
+  it("lets an ordinary release's pin merge alone", () => {
+    assert.deepEqual(
+      pinRequest("a-novel/service-authentication", "v2.23.3", false, server),
+      {
+        body: "Deploys [a-novel/service-authentication v2.23.3](https://github.com/a-novel/service-authentication/releases/tag/v2.23.3), whose release published every image pinned here.",
+        labels: ["dependencies"],
+        reviewers: [],
+      },
+    );
   });
 });
 

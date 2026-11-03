@@ -49,4 +49,6 @@ jobs:
           EVENT: ${{ github.event_name }}
           RELEASE_REPOSITORY: ${{ github.event.client_payload.repository }}
           RELEASE_VERSION: ${{ github.event.client_payload.version }}
+          # Reads the released repository's notes and commits, which the App's token cannot.
+          READ_TOKEN: ${{ github.token }}
         run: node .github/scripts/pin-release.mjs
