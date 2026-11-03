@@ -12,9 +12,10 @@ override_data {
   values = {
     outputs = {
       barman_buckets = {
-        authentication = "a-novel-management-prod-232403541574-barman-authentication"
-        genai          = "a-novel-management-prod-232403541574-barman-genai"
-        json-keys      = "a-novel-management-prod-232403541574-barman-json-keys"
+        authentication   = "a-novel-management-prod-232403541574-barman-authentication"
+        genai            = "a-novel-management-prod-232403541574-barman-genai"
+        json-keys        = "a-novel-management-prod-232403541574-barman-json-keys"
+        narrative-engine = "a-novel-management-prod-232403541574-barman-narrative-engine"
       }
       barman_reader_role = "projects/a-novel-management-prod/roles/barmanReader"
     }
@@ -88,7 +89,7 @@ run "restores_every_service_by_default" {
   command = plan
 
   assert {
-    condition     = keys(google_storage_bucket_iam_member.backups) == ["authentication", "genai", "json-keys"]
+    condition     = keys(google_storage_bucket_iam_member.backups) == ["authentication", "genai", "json-keys", "narrative-engine"]
     error_message = "A drill must restore every cluster database unless told otherwise."
   }
 }
@@ -103,11 +104,12 @@ run "refuses_a_protected_project" {
   expect_failures = [var.recovery]
 }
 
-run "refuses_an_unknown_service" {
+# Studio runs on the cluster, but holds no database to restore.
+run "refuses_a_service_without_a_database" {
   command = plan
 
   variables {
-    recovery = { project = "a-novel-recovery-261101", services = ["narrative-engine"] }
+    recovery = { project = "a-novel-recovery-261101", services = ["studio"] }
   }
 
   expect_failures = [var.recovery]
