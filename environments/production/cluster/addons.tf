@@ -40,21 +40,6 @@ module "database_operator" {
   }
 }
 
-moved {
-  from = helm_release.cert_manager
-  to   = module.database_operator.helm_release.cert_manager
-}
-
-moved {
-  from = helm_release.cloudnative_pg
-  to   = module.database_operator.helm_release.cloudnative_pg
-}
-
-moved {
-  from = helm_release.plugin_barman_cloud
-  to   = module.database_operator.helm_release.plugin_barman_cloud
-}
-
 resource "helm_release" "external_secrets" {
   name       = "external-secrets"
   namespace  = kubernetes_namespace_v1.addon["external-secrets"].metadata[0].name

@@ -166,32 +166,3 @@ resource "google_project_iam_member" "database_operator" {
   role    = each.value.role
   member  = each.value.principal
 }
-
-# The old platform's identities retire with it (a-novel/infra#1208). No grant names them anymore.
-moved {
-  from = google_service_account.runtime["authentication_database"]
-  to   = google_service_account.retired["authentication_database"]
-}
-
-moved {
-  from = google_service_account.runtime["json_keys_database"]
-  to   = google_service_account.retired["json_keys_database"]
-}
-
-moved {
-  from = google_service_account.runtime["genai_database"]
-  to   = google_service_account.retired["genai_database"]
-}
-
-moved {
-  from = google_service_account.runtime["scheduler_invoker"]
-  to   = google_service_account.retired["scheduler_invoker"]
-}
-
-removed {
-  from = google_service_account.retired
-
-  lifecycle {
-    destroy = true
-  }
-}

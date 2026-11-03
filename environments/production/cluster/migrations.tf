@@ -116,8 +116,3 @@ resource "kubernetes_job_v1" "migrations" {
 
   depends_on = [kubernetes_manifest.database, kubernetes_network_policy_v1.database_clients]
 }
-
-moved {
-  from = kubernetes_job_v1.json_keys_migrations[0]
-  to   = kubernetes_job_v1.migrations["json-keys"]
-}
