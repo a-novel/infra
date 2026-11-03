@@ -31,6 +31,9 @@ concurrency:
 
 env:
   TF_IN_AUTOMATION: "true"
+  # Each root's state prefix names the drill project, so every tofu command reads the variable,
+  # state list and output included.
+  TF_VAR_recovery: ${{ inputs.drill }}
 
 jobs:
   run:
@@ -65,17 +68,14 @@ jobs:
       - name: Run the operation
         shell: bash
         env:
-          DRILL: ${{ inputs.drill }}
           OPERATION: ${{ inputs.operation }}
         run: |
           set -euo pipefail
-          vars="$RUNNER_TEMP/drill.tfvars.json"
-          jq -n --argjson recovery "$DRILL" '{recovery: $recovery}' >"$vars"
           in_root() {
             local dir="environments/$1"
             shift
-            tofu -chdir="$dir" init -input=false -lockfile=readonly -no-color -var-file="$vars"
-            tofu -chdir="$dir" "$@" -input=false -no-color -var-file="$vars"
+            tofu -chdir="$dir" init -input=false -lockfile=readonly -no-color
+            tofu -chdir="$dir" "$@" -input=false -no-color
           }
           case "$OPERATION" in
             # The databases plan only once the cluster they install into exists.
@@ -162,21 +162,17 @@ jobs:
 
       - name: Destroy the drill
         shell: bash
-        env:
-          DRILL: ${{ inputs.drill }}
         run: |
           set -euo pipefail
-          vars="$RUNNER_TEMP/drill.tfvars.json"
-          jq -n --argjson recovery "$DRILL" '{recovery: $recovery}' >"$vars"
           # The databases go first: deleting them deletes their volumes' disks, which outlive a
           # deleted cluster.
           for root in recovery-database recovery-cluster; do
             dir="environments/$root"
-            tofu -chdir="$dir" init -input=false -lockfile=readonly -no-color -var-file="$vars"
+            tofu -chdir="$dir" init -input=false -lockfile=readonly -no-color
             # A root that never applied holds nothing, and reads outputs its drill may lack.
             resources="$(tofu -chdir="$dir" state list)"
             if [ -n "$resources" ]; then
-              tofu -chdir="$dir" destroy -input=false -no-color -auto-approve -var-file="$vars"
+              tofu -chdir="$dir" destroy -input=false -no-color -auto-approve
             fi
           done
 
