@@ -23,9 +23,10 @@ override_data {
   values = {
     outputs = {
       barman_buckets = {
-        authentication = "a-novel-management-prod-232403541574-barman-authentication"
-        genai          = "a-novel-management-prod-232403541574-barman-genai"
-        json-keys      = "a-novel-management-prod-232403541574-barman-json-keys"
+        authentication   = "a-novel-management-prod-232403541574-barman-authentication"
+        genai            = "a-novel-management-prod-232403541574-barman-genai"
+        json-keys        = "a-novel-management-prod-232403541574-barman-json-keys"
+        narrative-engine = "a-novel-management-prod-232403541574-barman-narrative-engine"
       }
     }
   }
@@ -39,7 +40,7 @@ run "restores_every_database_from_its_production_backups_read_only" {
   command = plan
 
   assert {
-    condition = alltrue([for service in ["authentication", "genai", "json-keys"] : (
+    condition = alltrue([for service in ["authentication", "genai", "json-keys", "narrative-engine"] : (
       kubernetes_manifest.database[service].manifest.spec.bootstrap.recovery.source == "production" &&
       kubernetes_manifest.database[service].manifest.spec.bootstrap.recovery.recoveryTarget.targetTime == "2026-10-30T12:00:00Z" &&
       one(kubernetes_manifest.database[service].manifest.spec.externalClusters).plugin.parameters.serverName == local.production.backup_server_name &&
