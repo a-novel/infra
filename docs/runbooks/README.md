@@ -7,6 +7,7 @@ from deploys and release pins to database updates and scheduled checks.
 | Situation                                                 | Runbook                         |
 | --------------------------------------------------------- | ------------------------------- |
 | Release, hotfix, deletion label, failed deploy, freeze    | [Deployments](deployments.md)   |
+| Bring a new service to the cluster                        | [Add a service](new-service.md) |
 | Inspect, change or upgrade a database                     | [Databases](database.md)        |
 | Schedule or clear a planned downtime                      | [Planned downtime](downtime.md) |
 | Add or rotate a secret, SMTP, a GitHub or a Grafana token | [Secrets](secrets.md)           |

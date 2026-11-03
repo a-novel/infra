@@ -150,10 +150,11 @@ resources, reaching the control plane through the DNS endpoint as the CI identit
   `maintenance` CronJob holds the template of Authentication's maintenance Jobs, which the
   [setup runbook](runbooks/setup.md) runs.
 - **Health checks:** the shared health check, `modules/smoke-check/smoke.sh`, calls JSON Keys' and
-  GenAI's `Status` RPC and Authentication's `/v2/healthcheck`, as the namespace's `smoke` identity
-  with a service token for the service's audience. A `smoke-<hash>` Job runs it on each new image,
-  script or setting, and the deploy waits on it. Each namespace's `health` CronJob runs it every
-  five minutes, so a failing service shows as failed Jobs. Both skip a planned downtime.
+  GenAI's `Status` RPC, Authentication's `/v2/healthcheck` and narrative-engine's `/v1/healthcheck`,
+  as the namespace's `smoke` identity with a service token for the service's audience. A
+  `smoke-<hash>` Job runs it on each new image, script or setting, and the deploy waits on it. Each
+  namespace's `health` CronJob runs it every five minutes, so a failing service shows as failed
+  Jobs. Both skip a planned downtime.
 - **OpenAI call:** the `provider-check-<revision>` Job submits one small generation to GenAI, as
   its `smoke` identity, and polls it until it settles. It runs once for each new value of the
   cluster root's `genai_provider_check`, the deploy waits on it, and it fails unless the generation
@@ -164,18 +165,19 @@ resources, reaching the control plane through the DNS endpoint as the CI identit
 
 ## Services
 
-| Service        | Workloads                                                                                                       | Jobs                                                                                              |
-| -------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| JSON Keys      | `grpc`: 2 to 3 pods                                                                                             | `migrations`, `rotate-keys`, `smoke`, `health`                                                    |
-| Authentication | `rest`: 2 to 3 pods, which share their rate limits through the counter store                                    | `migrations`, `refresh-token-purge`, `authorization-code-purge`, `maintenance`, `smoke`, `health` |
-| GenAI          | `grpc`: 2 to 3 pods; `sweep`: 2 to 3 pods, which check the generations nobody polled, each taking its own batch | `migrations`, `smoke`, `health`, `provider-check`                                                 |
-| Studio         | `web`: 2 to 3 pods                                                                                              |                                                                                                   |
-| Account        | `web`: 2 to 3 pods                                                                                              |                                                                                                   |
+| Service          | Workloads                                                                                                       | Jobs                                                                                              |
+| ---------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| JSON Keys        | `grpc`: 2 to 3 pods                                                                                             | `migrations`, `rotate-keys`, `smoke`, `health`                                                    |
+| Authentication   | `rest`: 2 to 3 pods, which share their rate limits through the counter store                                    | `migrations`, `refresh-token-purge`, `authorization-code-purge`, `maintenance`, `smoke`, `health` |
+| GenAI            | `grpc`: 2 to 3 pods; `sweep`: 2 to 3 pods, which check the generations nobody polled, each taking its own batch | `migrations`, `smoke`, `health`, `provider-check`                                                 |
+| Narrative engine | `rest`: 2 to 3 pods, which only the smoke check calls until Studio does                                         | `migrations`, `smoke`, `health`                                                                   |
+| Studio           | `web`: 2 to 3 pods                                                                                              |                                                                                                   |
+| Account          | `web`: 2 to 3 pods                                                                                              |                                                                                                   |
 
 Each service runs in the namespace of its name. A workload calls another service with a token the
 kubelet projects for that service's audience, which the cluster signs. Each service admits only its
-named callers: JSON Keys admits Authentication's API, Authentication admits the platforms, and each
-admits its own `smoke` identity. Authentication trusts the visitor address the platforms forward,
+named callers: JSON Keys admits Authentication's and narrative-engine's APIs, GenAI admits
+narrative-engine's, Authentication admits the platforms, and each admits its own `smoke` identity. Authentication trusts the visitor address the platforms forward,
 since only they call it on a visitor's behalf.
 
 People sign in on the account platform alone. Every other platform is one of Authentication's OAuth
@@ -200,11 +202,12 @@ tags, and the nodes only read it.
 Each service with data has a CloudNativePG database named `database` in its namespace: a primary
 and a replica on separate nodes. The cluster root's `databases` sizes each one:
 
-| Service        | CPU request | Memory   | Volume | Connections |
-| -------------- | ----------- | -------- | ------ | ----------- |
-| JSON Keys      | 0.5 vCPU    | 1536 MiB | 10 GiB | 50          |
-| Authentication | 0.5 vCPU    | 1536 MiB | 30 GiB | 50          |
-| GenAI          | 0.5 vCPU    | 6 GiB    | 20 GiB | 150         |
+| Service          | CPU request | Memory   | Volume | Connections |
+| ---------------- | ----------- | -------- | ------ | ----------- |
+| JSON Keys        | 0.1 vCPU    | 1536 MiB | 10 GiB | 50          |
+| Authentication   | 0.1 vCPU    | 1536 MiB | 30 GiB | 50          |
+| GenAI            | 0.1 vCPU    | 6 GiB    | 20 GiB | 150         |
+| Narrative engine | 0.1 vCPU    | 1 GiB    | 10 GiB | 50          |
 
 Each database's connections, less PostgreSQL's 3 superuser slots, hold every workload's pool at its
 maximum pods plus a rollout's surge pod, every job's pool, the grants Job and the metrics exporter

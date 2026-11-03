@@ -57,7 +57,7 @@ code.
   `downtime.yaml` find its root on disk. `lint-repository` fails until the root has a `plan-<root>`
   job in `main.yaml`, its required check. The cluster root names its namespace, release roles and
   budget, foundation its release repository, and bootstrap its Barman bucket when it has a
-  database.
+  database. [Add a service](docs/runbooks/new-service.md) gives the order.
 - **Watch a new service in Grafana, and keep watching it as it changes.** Errors, Health and
   Performance cover a workload once it runs in its namespace and exports spans. The rest comes with
   the service:
