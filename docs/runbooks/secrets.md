@@ -91,6 +91,12 @@ Add each one as a version of `production-github-dispatch-<org>`, as in
 next dispatch after the deploy reads it. The token can start, rerun, cancel and delete workflow runs
 in those repositories. For a leak, revoke it on GitHub as well as disabling its version.
 
+GitHub records each dispatch as the token owner's, and role gates such as `require-role` read that
+account's role. An admin's token therefore passes the admin gates of infra's `deploy.yaml`,
+`downtime.yaml` and `recovery.yaml`, while the scheduled workflows gate on no role and need only
+Write. Only `github-dispatcher` reads the token, and `github-dispatch` dispatches only the workflows
+its schedules list.
+
 ## Grafana configuration tokens
 
 The Grafana root reads one token per CI identity, from a service account of the production stack.

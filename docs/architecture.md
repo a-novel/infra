@@ -52,6 +52,11 @@ Services keep apart inside the cluster, each in its own namespace, as [Cluster](
   Other traffic falls through to the firewall rules, which log no verdict, so a refused connection
   shows only as the caller's own error.
 
+  The allowlist names hosts, not accounts. OpenAI's API, GitHub's raw host and Grafana's OTLP
+  gateway serve every customer at the same address, and Google's ranges hold every Google frontend,
+  so a pod they admit reaches other customers' accounts there as well as ours. The allowlist bounds
+  where traffic goes; each workload's code and credentials bound what it sends.
+
 - **DNS allowlist.** A Cloud DNS response policy, `a-novel-dns-allowlist`, resolves only the private
   zones, Compute Engine's internal names and the egress allowlist's hosts. Every other name answers
   with a CNAME to `blocked.internal.` and no address, so the lookup fails at once and no outside
