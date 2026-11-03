@@ -48,17 +48,18 @@ grafana_cloud = {
   otlp_host   = "otlp-gateway-prod-eu-west-2.grafana.net"
 }
 
-# Each instance gets half a CPU, so each database reserves one. Each used about 0.02 CPU on
-# 2026-10-30 with no users; no CPU limit applies, so an instance takes idle CPU in a burst, and
-# Grafana warns once one holds 80% of its request. Each database held about 0.1 GiB on 2026-10-29,
+# Each instance requests a tenth of a CPU. From 2026-10-30 to 2026-11-03, at waitlist traffic, each
+# used 0.016 CPU at the 95th percentile, and 0.14 over ten minutes while every database rolled. No
+# CPU limit applies, so an instance takes idle CPU in a burst, and Grafana warns once one holds 80%
+# of its request for 15 minutes: raise it then. Each database held about 0.1 GiB on 2026-10-29,
 # so the volumes start small and grow in place; the room above the data also absorbs WAL while
 # archiving stalls. GenAI's purge bounds its payloads of up to 24 MiB. Narrative-engine starts empty,
 # and caps each project at 16 MiB.
 databases = {
-  authentication   = { cpu = "500m", memory = "1536Mi", storage = "30Gi", max_connections = 50, extensions = ["uuid-ossp"] }
-  genai            = { cpu = "500m", memory = "6Gi", storage = "20Gi", max_connections = 150, extensions = ["pg_cron", "uuid-ossp"] }
-  json-keys        = { cpu = "500m", memory = "1536Mi", storage = "10Gi", max_connections = 50, extensions = ["uuid-ossp"] }
-  narrative-engine = { cpu = "500m", memory = "1Gi", storage = "10Gi", max_connections = 50, extensions = ["uuid-ossp"] }
+  authentication   = { cpu = "100m", memory = "1536Mi", storage = "30Gi", max_connections = 50, extensions = ["uuid-ossp"] }
+  genai            = { cpu = "100m", memory = "6Gi", storage = "20Gi", max_connections = 150, extensions = ["pg_cron", "uuid-ossp"] }
+  json-keys        = { cpu = "100m", memory = "1536Mi", storage = "10Gi", max_connections = 50, extensions = ["uuid-ossp"] }
+  narrative-engine = { cpu = "100m", memory = "1Gi", storage = "10Gi", max_connections = 50, extensions = ["uuid-ossp"] }
 }
 
 # Each service's ceiling, so one service cannot take the room another needs: its workloads at their

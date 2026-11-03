@@ -39,7 +39,7 @@ module "narrative_engine_rest" {
     (local.genai_grpc_env.SERVICE_TOKEN_AUDIENCE) = "SERVICE_GENAI_TOKEN_PATH"
   }
   ca_secret       = kubernetes_manifest.database_server_certificate["narrative-engine"].manifest.spec.secretName
-  resources       = { cpu = "250m", memory = "512Mi" }
+  resources       = { cpu = "100m", memory = "512Mi" }
   labels          = local.database_clients
   pod_annotations = local.database_client_annotations
 

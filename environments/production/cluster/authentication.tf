@@ -74,7 +74,7 @@ module "authentication_rest" {
   ca_secret        = kubernetes_manifest.database_server_certificate["authentication"].manifest.spec.secretName
   # Argon2 bursts above the request: the pod has no CPU limit, and a third pod takes a long burst.
   # Two keep sign-in up through a lost pod or node. Each hashes one password at a time.
-  resources       = { cpu = "250m", memory = "512Mi" }
+  resources       = { cpu = "100m", memory = "512Mi" }
   replicas        = { min = 2, max = 3 }
   labels          = local.database_clients
   pod_annotations = local.database_client_annotations
