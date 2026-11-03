@@ -68,9 +68,8 @@ Services keep apart inside the cluster, each in its own namespace, as [Cluster](
   admins create its access policy and grant on it by hand.
 - **An organization deny policy** keeps `infra-plan` from reading Cloud Logging and Cloud Trace,
   which its Viewer role would otherwise cover. The workloads' own logs and traces live in Grafana,
-  whose plan token queries no data source, and on the cluster, whose pod logs `infra-plan` reads.
-  A pull request mints that identity only once a reviewer of the `plan` environment admits its run,
-  as [Identities](ops-basics.md#identities) lists. Organization admins set the policy by hand, from
+  whose plan token queries no data source, and on the cluster, whose pod logs `infra-plan` reads
+  through Viewer, as [Identities](ops-basics.md#identities) lists. Organization admins set the policy by hand, from
   [the setup runbook](runbooks/setup.md#organization-guardrails).
 
 ## Cluster
