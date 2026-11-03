@@ -139,7 +139,7 @@ run "trusts_only_reviewed_workflows" {
         "assertion.repository_owner_id == '131281268' && assertion.repository_id == '1344262359' && (",
         "(assertion.ref == 'refs/heads/master' && assertion.workflow_ref == 'a-novel/infra/.github/workflows/drift.yaml@refs/heads/master') || ",
         "(assertion.event_name == 'pull_request' && assertion.base_ref == 'master' && ",
-        "assertion.workflow_ref.startsWith('a-novel/infra/.github/workflows/main.yaml@refs/pull/')))",
+        "assertion.workflow_ref.startsWith('a-novel/infra/.github/workflows/main.yaml@refs/pull/') && assertion.environment == 'plan'))",
       ]) &&
       google_iam_workload_identity_pool_provider.github["foundation"].attribute_condition == join("", [
         "assertion.repository_owner_id == '131281268' && assertion.repository_id == '1344262359' && (",
@@ -164,7 +164,7 @@ run "trusts_only_reviewed_workflows" {
         "(assertion.ref == 'refs/heads/master' && assertion.workflow_ref == 'a-novel/infra/.github/workflows/drift.yaml@refs/heads/master'))",
       ])
     )
-    error_message = "Only master workflows behind their environment may write, call Authentication or read the GitHub Deploy App keys, and only same-repository pull requests may plan."
+    error_message = "Only master workflows behind their environment may write, call Authentication or read the GitHub Deploy App keys, and only same-repository pull requests admitted to the plan environment may plan."
   }
 
   assert {

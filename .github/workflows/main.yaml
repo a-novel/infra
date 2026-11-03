@@ -203,10 +203,13 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
         run: gh pr edit "$PR" --repo "$GITHUB_REPOSITORY" --remove-label allow-downtime
 
-  # Each root's plan is its own required check. GitHub issues no OIDC token to
-  # fork pull requests, so their plans fail until a maintainer pushes the branch.
+  # Each root's plan is its own required check. It waits in the plan environment
+  # until a maintainer, an owner or an admin admits the run, since the plan
+  # identity reads production. GitHub issues no OIDC token to fork pull requests,
+  # so their plans fail until a maintainer pushes the branch.
   plan-bootstrap:
     if: github.event_name == 'pull_request'
+    environment: plan
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -229,6 +232,7 @@ jobs:
 
   plan-foundation:
     if: github.event_name == 'pull_request'
+    environment: plan
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -251,6 +255,7 @@ jobs:
 
   plan-json-keys:
     if: github.event_name == 'pull_request'
+    environment: plan
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -273,6 +278,7 @@ jobs:
 
   plan-genai:
     if: github.event_name == 'pull_request'
+    environment: plan
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -295,6 +301,7 @@ jobs:
 
   plan-authentication:
     if: github.event_name == 'pull_request'
+    environment: plan
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -317,6 +324,7 @@ jobs:
 
   plan-account:
     if: github.event_name == 'pull_request'
+    environment: plan
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -339,6 +347,7 @@ jobs:
 
   plan-studio:
     if: github.event_name == 'pull_request'
+    environment: plan
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -361,6 +370,7 @@ jobs:
 
   plan-cluster:
     if: github.event_name == 'pull_request'
+    environment: plan
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -382,6 +392,7 @@ jobs:
 
   plan-grafana:
     if: github.event_name == 'pull_request'
+    environment: plan
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -404,6 +415,7 @@ jobs:
   # Plans repository config. Deploys and the drift check refresh it with the Deploy App.
   plan-github:
     if: github.event_name == 'pull_request'
+    environment: plan
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
