@@ -170,6 +170,18 @@ locals {
       summary   = "{{ $labels.namespace }}/{{ $labels.pod }} fails to archive its WAL to the backup bucket."
       expr      = "cnpg_pg_stat_archiver_last_failed_time > cnpg_pg_stat_archiver_last_archived_time"
     },
+    # Each database takes a base backup from its replica at 03:00 UTC, so past 26 hours the daily one
+    # failed or stopped, and a restore replays all the WAL since the last. The Barman Cloud plugin
+    # reports its backups: CloudNativePG's own collector reads 0 for them. A database that never
+    # completed one reads as decades old, and a new lineage's first backup lands within the hour.
+    {
+      title     = "Base backup stale"
+      dashboard = "health"
+      panel     = 19
+      for       = "1h"
+      summary   = "The {{ $labels.namespace }} database's last base backup is {{ humanizeDuration $values.query.Value }} old: its daily backup failed or stopped."
+      expr      = "time() - max by (namespace) (barman_cloud_cloudnative_pg_io_last_available_backup_timestamp) > 93600"
+    },
     # The autoscaler absorbs spikes and transient load. Capacity that stays is a decision: raise the
     # node pool's minimum, or lower the load, in a pull request.
     {

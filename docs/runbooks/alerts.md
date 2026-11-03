@@ -57,6 +57,7 @@ Alloy gives each request, job run and email send an outcome, which the dashboard
 | `Replica lagging`                    | a replica replays WAL more than `replica_lag` seconds behind its primary, for 5 minutes           |
 | `Replica not streaming`              | a database's primary streams to no replica for 5 minutes                                          |
 | `WAL archiving failing`              | a primary's latest WAL archive attempt failed, for 5 minutes                                      |
+| `Base backup stale`                  | a database's last base backup is more than 26 hours old, for an hour                              |
 | `No room for a lost node's …`        | the pods' CPU or memory requests exceed every node but the largest, for 15 minutes                |
 | `Cluster above its baseline`         | the cluster has run more nodes than foundation's `cluster.min_nodes` for 2 hours                  |
 | `Autoscaler at its maximum`          | the cluster has run as many nodes as foundation's `cluster.max_nodes` for 30 minutes              |
@@ -85,6 +86,10 @@ Alloy gives each request, job run and email send an outcome, which the dashboard
 - **A full volume, a lagging replica or failing archiving:** read the database's state on the
   CloudNativePG dashboard first. Barman's archive errors appear in the instance's logs. Never
   delete WAL by hand.
+- **A stale base backup:** the replica's 03:00 UTC backup failed or never ran. WAL still archives,
+  so no data is lost yet, but a restore replays every segment since the last base backup. Read the
+  namespace's events for kind `Backup`, then the replica's `plugin-barman-cloud` container logs, as
+  [Ops basics](../ops-basics.md#identities) shows. The next 03:00 UTC run that succeeds resolves it.
 - **The cluster above its baseline:** the autoscaler absorbs spikes and transient load; capacity that
   stays is a decision. Raise foundation's `cluster.min_nodes`, or lower the load, in a pull request,
   or let it fall back once the load passes.

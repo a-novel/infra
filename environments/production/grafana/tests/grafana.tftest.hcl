@@ -118,6 +118,19 @@ run "leaves_streams_and_generations_out_of_latency" {
   }
 }
 
+# CloudNativePG's own collector reads 0 for the Barman Cloud plugin's backups, so a rule on it would
+# fire on every database at once, or never.
+run "watches_base_backups_through_the_plugin" {
+  command = plan
+
+  assert {
+    condition = length([for rule in grafana_rule_group.alerts["platform"].rule : rule
+      if rule.name == "Base backup stale" && strcontains(jsondecode(rule.data[0].model).expr, "barman_cloud_cloudnative_pg_io_last_available_backup_timestamp")
+    ]) == 1 && !anytrue(flatten([for group in grafana_rule_group.alerts : [for rule in group.rule : strcontains(jsondecode(rule.data[0].model).expr, "cnpg_collector_last_available_backup_timestamp")]]))
+    error_message = "A stale base backup must alert from the Barman Cloud plugin's timestamp, never from CloudNativePG's collector, which reads 0 for plugin backups."
+  }
+}
+
 run "links_the_journey" {
   command = plan
 
