@@ -50,3 +50,8 @@ resource "helm_release" "plugin_barman_cloud" {
 
   depends_on = [helm_release.cert_manager, helm_release.cloudnative_pg]
 }
+
+output "barman_plugin" {
+  description = "The name the Barman Cloud plugin registers, which a database's Cluster names to archive and restore through it."
+  value       = "barman-cloud.cloudnative-pg.io"
+}

@@ -482,7 +482,7 @@ run "lets_operators_read_the_services" {
       alltrue([for binding in kubernetes_role_binding_v1.operators :
         binding.role_ref[0].kind == "ClusterRole" &&
         binding.role_ref[0].name == "view" &&
-        toset([for subject in binding.subject : "${lower(subject.kind)}:${subject.name}"]) == toset(local.operators)
+        toset([for subject in binding.subject : "${lower(subject.kind)}:${subject.name}"]) == toset(local.foundation_inputs.database_operator_principals)
       ])
     )
     error_message = "Foundation's database operators must read each service's namespace through the view role, which never reads Secrets, and nothing more."
@@ -984,7 +984,7 @@ run "lets_only_the_named_operators_run_maintenance" {
 
   assert {
     condition = (
-      toset([for subject in kubernetes_role_binding_v1.maintenance.subject : "${lower(subject.kind)}:${subject.name}"]) == toset(local.maintenance_principals) &&
+      toset([for subject in kubernetes_role_binding_v1.maintenance.subject : "${lower(subject.kind)}:${subject.name}"]) == toset(local.foundation_inputs.authentication_maintenance_principals) &&
       kubernetes_role_binding_v1.maintenance.role_ref[0].kind == "Role" &&
       alltrue([for rule in kubernetes_role_v1.maintenance.rule :
         !contains(rule.resources, "secrets") &&

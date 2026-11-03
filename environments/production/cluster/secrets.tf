@@ -24,7 +24,7 @@ resource "kubernetes_service_account_v1" "secrets" {
 resource "google_secret_manager_secret_iam_member" "secrets" {
   for_each = local.secret_grants
 
-  project   = local.management_project
+  project   = local.foundation_inputs.management_project_id
   secret_id = "production-${each.value.service}-${each.value.name}"
   role      = "roles/secretmanager.secretAccessor"
   member    = "principal://iam.googleapis.com/projects/${data.google_project.workload.number}/locations/global/workloadIdentityPools/${data.google_project.workload.project_id}.svc.id.goog/subject/ns/${each.value.service}/sa/${kubernetes_service_account_v1.secrets[each.value.service].metadata[0].name}"
@@ -41,7 +41,7 @@ resource "kubernetes_manifest" "secret_store" {
     spec = {
       provider = {
         gcpsm = {
-          projectID = local.management_project
+          projectID = local.foundation_inputs.management_project_id
           auth = {
             workloadIdentity = {
               clusterProjectID  = data.google_project.workload.project_id

@@ -33,8 +33,9 @@ locals {
     } if contains(keys(local.cluster.image_registries), parts.host)
   }
 
-  barman_plugin      = "barman-cloud.cloudnative-pg.io"
-  management_project = "a-novel-management-prod"
+  # The Barman buckets live in production's management project.
+  management_project = provider::terraform::decode_tfvars(file("${path.module}/../production/foundation/terraform.tfvars")).management_project_id
+
   pod_security = {
     "pod-security.kubernetes.io/enforce"         = "restricted"
     "pod-security.kubernetes.io/enforce-version" = "latest"
@@ -148,7 +149,7 @@ resource "kubernetes_manifest" "database" {
 
       externalClusters = [{
         name   = "production"
-        plugin = { name = local.barman_plugin, parameters = { barmanObjectName = kubernetes_manifest.backups[each.key].manifest.metadata.name, serverName = local.production.backup_server_name } }
+        plugin = { name = module.database_operator.barman_plugin, parameters = { barmanObjectName = kubernetes_manifest.backups[each.key].manifest.metadata.name, serverName = local.production.backup_server_name } }
       }]
     }
   }
