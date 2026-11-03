@@ -29,7 +29,8 @@ name: auto-approve dependencies
 on:
   # Runs this default-branch copy; the approval reads the pull request through the API only.
   pull_request_target: # zizmor: ignore[dangerous-triggers] Fixed API calls only; no pull request checkout.
-    types: [opened, synchronize, reopened, auto_merge_enabled]
+    # A release pin opened as a draft waits for a person to mark it ready.
+    types: [opened, synchronize, reopened, ready_for_review, auto_merge_enabled]
   status:
   # Only fixed API calls and pinned actions consume validated metadata; no PR checkout, artifacts, caches or environment files.
   # Only the Dependabot job reads it, so every other branch's CI starts no run.
@@ -42,6 +43,7 @@ jobs:
   auto-approve:
     if: >-
       github.actor != vars.DEPENDABOT_SECURITY_LOGIN &&
+      github.event.pull_request.draft != true &&
       (github.event.action != 'auto_merge_enabled' || github.event.sender.login == vars.DEPENDENCY_BOT_LOGIN) &&
       (github.event.pull_request.user.login == vars.DEPENDENCY_BOT_LOGIN ||
        github.event.pull_request.user.login == vars.DEPENDABOT_SECURITY_LOGIN ||

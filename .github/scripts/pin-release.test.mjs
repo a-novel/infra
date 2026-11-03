@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
-import { branchVersion, paths, pins, rewrite, run } from "./pin-release.mjs";
+import {
+  branchVersion,
+  breaking,
+  paths,
+  pins,
+  rewrite,
+  run,
+} from "./pin-release.mjs";
 
 const old = `sha256:${"a".repeat(64)}`;
 const fresh = `sha256:${"b".repeat(64)}`;
@@ -27,6 +34,46 @@ describe("branchVersion", () => {
       "",
     );
     assert.equal(branchVersion(""), "");
+  });
+});
+
+describe("breaking", () => {
+  it("finds a subject marked breaking, with or without a scope", () => {
+    assert.equal(
+      breaking(["fix(credentials)!: require the current password (#1776)"]),
+      true,
+    );
+    assert.equal(breaking(["feat!: drop the v1 routes"]), true);
+  });
+
+  it("finds a BREAKING CHANGE footer in a squashed commit's body", () => {
+    assert.equal(
+      breaking([
+        "fix(credentials): require the current password\n\n* fix: …\n\nBREAKING CHANGE: the email change takes currentPassword.",
+      ]),
+      true,
+    );
+  });
+
+  it("finds a breaking pull request title in the release notes", () => {
+    assert.equal(
+      breaking([
+        "## What's Changed\n* fix(credentials)!: require the current password by @kushuh in https://github.com/a-novel/service-authentication/pull/1776",
+      ]),
+      true,
+    );
+  });
+
+  it("lets an ordinary release through", () => {
+    assert.equal(
+      breaking([
+        "## What's Changed\n* fix(handlers): return clientID by @kushuh in https://github.com/a-novel/service-authentication/pull/1767",
+        "feat(core): issue and exchange authorization codes (#1751)",
+        "chore(release): 2.23.0",
+        "fix: say hello! to the user\n\nA breaking change: none.",
+      ]),
+      false,
+    );
   });
 });
 

@@ -27,6 +27,15 @@ export function pins(content, source) {
   return [...content.matchAll(pattern)].map((match) => match.slice(1));
 }
 
+// Conventional Commits 1.0.0 marks a breaking change with "!" before the subject's colon or a
+// BREAKING CHANGE footer. A release note lists each pull request's title as "* <title> by …".
+const breakingSubject = /^(?:\* )?[a-z]+(?:\([^)\n]*\))?!: /m;
+const breakingFooter = /^BREAKING[ -]CHANGE: /m;
+
+/** Whether any of texts, the commits a pin brings and the release's notes, announces a breaking change. */
+export const breaking = (texts) =>
+  texts.some((text) => breakingSubject.test(text) || breakingFooter.test(text));
+
 /** Moves every digest-pinned reference to image in content to version and digest. */
 export function rewrite(content, image, version, digest) {
   return content.replace(
@@ -43,6 +52,14 @@ export const run = (command, args, input) =>
     stdio: "pipe",
   }).trim();
 export const gh = (...args) => run("gh", args);
+// The Dependencies App's token reaches infra alone, so other repositories' releases and commits are
+// read with the workflow's token.
+const read = (env, ...args) =>
+  execFileSync("gh", args, {
+    encoding: "utf8",
+    stdio: "pipe",
+    env: { ...process.env, GH_TOKEN: env.READ_TOKEN },
+  }).trim();
 const lines = (text) => text.split("\n").filter(Boolean);
 
 function headVersion(repository, branch) {
@@ -229,7 +246,40 @@ function pin(env, source, released) {
   if (masterMoved()) return pin(env, source, released);
   moveBranch(GH_REPO, branch, commit);
 
-  const body = `Deploys [${source} ${version}](${GITHUB_SERVER_URL}/${source}/releases/tag/${version}), whose release published every image pinned here.`;
+  // A breaking release waits as a draft, which the auto-approver skips, until a person marks it ready
+  // once its consumers handle the change. The commits run from the release master pins.
+  const draft = breaking([
+    read(
+      env,
+      "release",
+      "view",
+      version,
+      "--repo",
+      source,
+      "--json",
+      "body",
+      "--jq",
+      ".body",
+    ),
+    ...JSON.parse(
+      read(
+        env,
+        "api",
+        `repos/${source}/compare/${current}...${version}`,
+        "--jq",
+        "[.commits[].commit.message]",
+      ),
+    ),
+  ]);
+  const body = [
+    `Deploys [${source} ${version}](${GITHUB_SERVER_URL}/${source}/releases/tag/${version}), whose release published every image pinned here.`,
+    ...(draft
+      ? [
+          "",
+          "Draft: this release contains a breaking change. Mark it ready once every consumer runs a version that handles it.",
+        ]
+      : []),
+  ].join("\n");
   const url = pr
     ? gh("pr", "edit", pr, "--title", title, "--body", body)
     : gh(
@@ -243,7 +293,9 @@ function pin(env, source, released) {
         body,
         "--label",
         "dependencies",
+        ...(draft ? ["--draft"] : []),
       );
+  if (pr && draft) gh("pr", "ready", pr, "--undo");
   console.log(`Pinned ${source} ${version}: ${url}`);
   appendFileSync(GITHUB_STEP_SUMMARY, `Pinned ${source} ${version}: ${url}\n`);
 }
