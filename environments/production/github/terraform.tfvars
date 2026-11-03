@@ -127,6 +127,12 @@ repositories = {
     homepage_url = "https://a-novel.github.io/service-narrative-engine/"
     topics       = ["agora-storyverse", "creative-writing", "generative-ai", "go", "golang", "llm", "microservice", "narrative-engine", "postgresql", "rest-api", "storytelling"]
   }
+  "a-novel/service-profile" = {
+    class        = "service"
+    description  = "The public profile of each Agora account: a username and a profile picture."
+    homepage_url = "https://a-novel.github.io/service-profile/"
+    topics       = ["agora-storyverse", "go", "golang", "microservice", "postgresql", "rest-api", "user-profile"]
+  }
   "a-novel/service-template" = {
     class        = "service"
     description  = "A template repository for quickstarting backend services."
